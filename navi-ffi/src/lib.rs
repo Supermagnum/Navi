@@ -609,6 +609,23 @@ pub struct FfiVehicleLimits {
     pub total_weight_kg: Option<f64>,
 }
 
+/// Car rest / break settings. Edits persist as the profile default (not trip-only).
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiCarRestSettings {
+    /// Desired hours between breaks (stored as both min and max interval).
+    pub break_interval_hours: f64,
+    /// Desired break duration in minutes (stored as both min and max duration).
+    pub rest_duration_minutes: u32,
+    pub eco_mode_enabled: bool,
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiFuelConfig {
+    pub tank_capacity_l: Option<f64>,
+    pub fuel_added_l: Option<f64>,
+    pub prefer_liters: bool,
+}
+
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct FfiGpsFix {
     pub lat: f64,
@@ -742,6 +759,77 @@ pub fn save_vehicle_limits(data_dir: String, limits: FfiVehicleLimits) -> bool {
         .is_ok()
 }
 
+#[uniffi::export]
+pub fn load_car_rest_settings(data_dir: String) -> FfiCarRestSettings {
+    let default = driver_break_core::config::CarRestParams::default();
+    let fallback = FfiCarRestSettings {
+        break_interval_hours: default.break_interval_min_hours,
+        rest_duration_minutes: default.break_duration_min_minutes,
+        eco_mode_enabled: default.eco_mode_enabled,
+    };
+    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+        return fallback;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    let rest = store.load_rest_config().unwrap_or_default();
+    FfiCarRestSettings {
+        break_interval_hours: rest.car.break_interval_min_hours,
+        rest_duration_minutes: rest.car.break_duration_min_minutes,
+        eco_mode_enabled: rest.car.eco_mode_enabled,
+    }
+}
+
+/// Persist car break interval / rest duration as the default RestConfig (not a one-trip override).
+#[uniffi::export]
+pub fn save_car_rest_settings(data_dir: String, settings: FfiCarRestSettings) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    let mut rest = store.load_rest_config().unwrap_or_default();
+    let hours = settings.break_interval_hours.clamp(1.0, 12.0);
+    let mins = settings.rest_duration_minutes.clamp(5, 120);
+    rest.car.break_interval_min_hours = hours;
+    rest.car.break_interval_max_hours = hours;
+    rest.car.break_duration_min_minutes = mins;
+    rest.car.break_duration_max_minutes = mins;
+    rest.car.eco_mode_enabled = settings.eco_mode_enabled;
+    store.save_rest_config(&rest).is_ok()
+}
+
+#[uniffi::export]
+pub fn load_fuel_config(data_dir: String) -> FfiFuelConfig {
+    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+        return FfiFuelConfig {
+            tank_capacity_l: None,
+            fuel_added_l: None,
+            prefer_liters: true,
+        };
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    let fuel = store.load_fuel_config().unwrap_or_default();
+    FfiFuelConfig {
+        tank_capacity_l: fuel.tank_capacity_l,
+        fuel_added_l: fuel.fuel_added_l,
+        prefer_liters: fuel.prefer_liters,
+    }
+}
+
+#[uniffi::export]
+pub fn save_fuel_config(data_dir: String, config: FfiFuelConfig) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store
+        .save_fuel_config(&driver_break_core::config::FuelConfig {
+            tank_capacity_l: config.tank_capacity_l,
+            fuel_added_l: config.fuel_added_l,
+            prefer_liters: config.prefer_liters,
+        })
+        .is_ok()
+}
+
 /// Stub GPS fix for UI actions until Android fused location is wired.
 #[uniffi::export]
 pub fn last_gps_fix() -> FfiGpsFix {
@@ -829,4 +917,142 @@ pub fn osm_weekly_reminder_due(data_dir: String) -> bool {
 #[uniffi::export]
 pub fn osm_update_staleness_days() -> u64 {
     driver_break_core::routing::STALENESS_FULL_REDOWNLOAD_DAYS
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiTrackStation {
+    pub id: String,
+    pub lat: f64,
+    pub lon: f64,
+    pub symbol_table: String,
+    pub symbol_code: String,
+    pub symbol_key: String,
+    pub last_heard_unix: u64,
+    pub comment: String,
+}
+
+#[derive(uniffi::Object)]
+pub struct FfiTrackStore {
+    inner: std::sync::Mutex<driver_break_core::tracks::TrackStore>,
+}
+
+#[uniffi::export]
+impl FfiTrackStore {
+    #[uniffi::constructor]
+    pub fn new(timeout_s: u64, range_km: f64) -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self {
+            inner: std::sync::Mutex::new(driver_break_core::tracks::TrackStore::new(
+                timeout_s, range_km,
+            )),
+        })
+    }
+
+    /// Upsert by id. Returns "created" or "updated". Never duplicates.
+    pub fn upsert(
+        &self,
+        id: String,
+        lat: f64,
+        lon: f64,
+        symbol_table: String,
+        symbol_code: String,
+        symbol_key: String,
+        last_heard_unix: u64,
+        comment: String,
+    ) -> String {
+        let station = driver_break_core::tracks::TrackStation {
+            id,
+            lat,
+            lon,
+            symbol_table,
+            symbol_code,
+            symbol_key,
+            last_heard_unix,
+            comment,
+        };
+        let mut guard = self.inner.lock().expect("track store lock");
+        match guard.upsert(station) {
+            driver_break_core::tracks::UpsertOutcome::Created => "created".into(),
+            driver_break_core::tracks::UpsertOutcome::Updated => "updated".into(),
+        }
+    }
+
+    pub fn expire(&self, now_unix: u64) -> Vec<String> {
+        self.inner.lock().expect("track store lock").expire(now_unix)
+    }
+
+    pub fn visible(&self, center_lat: f64, center_lon: f64) -> Vec<FfiTrackStation> {
+        self.inner
+            .lock()
+            .expect("track store lock")
+            .visible(center_lat, center_lon)
+            .into_iter()
+            .map(|s| FfiTrackStation {
+                id: s.id.clone(),
+                lat: s.lat,
+                lon: s.lon,
+                symbol_table: s.symbol_table.clone(),
+                symbol_code: s.symbol_code.clone(),
+                symbol_key: s.symbol_key.clone(),
+                last_heard_unix: s.last_heard_unix,
+                comment: s.comment.clone(),
+            })
+            .collect()
+    }
+
+    pub fn all(&self) -> Vec<FfiTrackStation> {
+        self.inner
+            .lock()
+            .expect("track store lock")
+            .all()
+            .into_iter()
+            .map(|s| FfiTrackStation {
+                id: s.id.clone(),
+                lat: s.lat,
+                lon: s.lon,
+                symbol_table: s.symbol_table.clone(),
+                symbol_code: s.symbol_code.clone(),
+                symbol_key: s.symbol_key.clone(),
+                last_heard_unix: s.last_heard_unix,
+                comment: s.comment.clone(),
+            })
+            .collect()
+    }
+
+    pub fn len(&self) -> u32 {
+        self.inner.lock().expect("track store lock").len() as u32
+    }
+
+    pub fn timeout_s(&self) -> u64 {
+        self.inner.lock().expect("track store lock").timeout_s()
+    }
+
+    pub fn range_km(&self) -> f64 {
+        self.inner.lock().expect("track store lock").range_km()
+    }
+}
+
+#[uniffi::export]
+pub fn station_timeout_max_s() -> u64 {
+    driver_break_core::tracks::STATION_TIMEOUT_MAX_S
+}
+
+#[uniffi::export]
+pub fn display_range_min_km() -> f64 {
+    driver_break_core::tracks::DISPLAY_RANGE_MIN_KM
+}
+
+#[uniffi::export]
+pub fn display_range_max_km() -> f64 {
+    driver_break_core::tracks::DISPLAY_RANGE_MAX_KM
+}
+
+#[uniffi::export]
+pub fn offset_lat_lon_m(lat: f64, lon: f64, east_m: f64, north_m: f64) -> Vec<f64> {
+    let (a, b) = driver_break_core::tracks::offset_lat_lon(lat, lon, east_m, north_m);
+    vec![a, b]
+}
+
+#[uniffi::export]
+pub fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    driver_break_core::tracks::haversine_km(lat1, lon1, lat2, lon2)
 }

@@ -203,18 +203,31 @@ Mic-E / compressed ─ dense encoding of lat/lon (+ course/speed ± altitude)
 
 ---
 
-## Relevance to Navi (future)
+## Relevance to Navi
 
-| APRS field | Likely Navi sink |
+| APRS field | Navi sink |
 |---|---|
-| Position + course/speed | Map overlay, “friends” / tactical tracks (T0-related) |
-| `/A=` / Mic-E altitude | Elevation cross-check vs DEM (advisory only) |
-| WX `b` / `t` / `h` / rain | Optional weather layer; not a substitute for DEM |
+| Position + course/speed | [`TrackStore`](../core/src/tracks/mod.rs) + MapLibre moving icons |
+| `/A=` / Mic-E altitude | Elevation cross-check vs DEM (advisory; future) |
+| WX `b` / `t` / `h` / rain | Optional weather layer (future) |
 | `:` messages | In-app messaging when a radio/i-gate path exists |
 
-Until a radio or APRS-IS client is wired, treat this file as protocol
-reference only. Related stubs: sensor tier (T0) in `architecture.md`,
-telemetry extension points in `driver_break_core::ecu`.
+### Moving icons (implemented)
+
+- Core: `driver_break_core::tracks::TrackStore` — upsert by station id (in-place
+  coordinate update, no duplicate markers), timeout **≤ 3600 s**, display range
+  clamped to **50–150 km**.
+- App: MapLibre `tracks-src` SymbolLayer; test hooks push a full track snapshot
+  after each upsert batch.
+- Symbols for tests: hessu/aprs-symbols crops under `core/src/icons/aprs/` (see
+  that directory’s `COPYRIGHT.md` — licensing is **per symbol**).
+
+### Packet ingest
+
+RF / AX.25 decode is **not** implemented yet. Instrumented tests simulate beacon
+updates by calling `FfiTrackStore.upsert` with new lat/lon for an existing id.
+
+Related: sensor tier (T0) in `architecture.md`.
 
 ## References
 

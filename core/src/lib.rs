@@ -14,11 +14,16 @@ pub mod routing;
 pub mod search;
 pub mod sensors;
 pub mod storage;
+pub mod tracks;
 
-pub use config::{Profile, RestConfig, SafetyConfig, VehicleLimits};
+pub use config::{FuelConfig, Profile, RestConfig, SafetyConfig, VehicleLimits};
 pub use poi::{PoiCategory, PoiIndex, PoiRecord};
 pub use routing::elevation::{ElevationCache, ElevationDownloader, ElevationJob, ElevationService};
 pub use routing::graph::{RouteGraph, RouteOptions, RoutingProfile};
 pub use routing::workers::WorkerPoolPlan;
 pub use search::{NameHit, NameIndex, RouteStore, SavedRoute};
 pub use storage::Storage;
+pub use tracks::{
+    clamp_range, clamp_timeout, haversine_km, offset_lat_lon, TrackStation, TrackStore,
+    UpsertOutcome, DISPLAY_RANGE_MAX_KM, DISPLAY_RANGE_MIN_KM, STATION_TIMEOUT_MAX_S,
+};

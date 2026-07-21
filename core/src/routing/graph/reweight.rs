@@ -35,6 +35,7 @@ pub fn reweight_graph_for_eco_with_live(
         };
         let predicted = eco.segment_energy_joules(edge.length_m, delta_h);
         let refined = refine_energy_cost(predicted, edge.length_m, live);
-        edge.eco_weight = Some(refined.max(edge.base_weight * 0.01));
+        // Floor already applied inside segment_energy_joules (joule units).
+        edge.eco_weight = Some(refined.max(0.0));
     });
 }

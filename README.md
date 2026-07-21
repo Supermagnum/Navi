@@ -104,3 +104,11 @@ cargo test -p navi-plugin-host --test isolation -- --nocapture
 cargo test -p driver-break-core poi::
 cargo test -p driver-break-core osm_update::
 ```
+
+## Known issues
+
+- **Moving icons (APRS-style tracked markers):** the instrumented map test currently
+  fails — it aborts with no icons rendered on screen. Root cause is not yet
+  identified. The test remains in the suite (not skipped) so failures stay
+  visible. Debugging this is **deprioritized** behind routing, rest/break config,
+  and vehicle-settings correctness.

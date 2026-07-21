@@ -2,13 +2,14 @@ use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::config::{EcoConfig, RestConfig, SafetyConfig, VehicleLimits};
+use crate::config::{EcoConfig, FuelConfig, RestConfig, SafetyConfig, VehicleLimits};
 use crate::storage::Storage;
 
 const REST_CONFIG_KEY: &str = "rest_config";
 const SAFETY_CONFIG_KEY: &str = "safety_config";
 const ECO_CONFIG_KEY: &str = "eco_config";
 const VEHICLE_LIMITS_KEY: &str = "vehicle_limits";
+const FUEL_CONFIG_KEY: &str = "fuel_config";
 
 pub struct ConfigStore<'a> {
     storage: &'a Storage,
@@ -49,6 +50,14 @@ impl<'a> ConfigStore<'a> {
 
     pub fn save_vehicle_limits(&self, limits: &VehicleLimits) -> SqlResult<()> {
         self.save_json(VEHICLE_LIMITS_KEY, limits)
+    }
+
+    pub fn load_fuel_config(&self) -> SqlResult<FuelConfig> {
+        self.load_json(FUEL_CONFIG_KEY, FuelConfig::default)
+    }
+
+    pub fn save_fuel_config(&self, config: &FuelConfig) -> SqlResult<()> {
+        self.save_json(FUEL_CONFIG_KEY, config)
     }
 
     fn load_json<T>(&self, key: &str, default: fn() -> T) -> SqlResult<T>

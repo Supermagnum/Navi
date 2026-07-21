@@ -10,6 +10,10 @@ pub struct EcoConfig {
     pub mass_kg: f64,
     pub rolling_resistance: f64,
     pub cruise_speed_m_s: f64,
+    /// Fraction of gravitational PE recovered on descent (0 = combustion / braking
+    /// dissipates all descent energy; EV regen typically 0.2–0.6).
+    #[serde(default)]
+    pub regen_efficiency: f64,
 }
 
 impl Default for EcoConfig {
@@ -20,16 +24,70 @@ impl Default for EcoConfig {
             mass_kg: DEFAULT_VEHICLE_MASS_KG,
             rolling_resistance: DEFAULT_ROLLING_RESISTANCE,
             cruise_speed_m_s: DEFAULT_CRUISE_SPEED_M_S,
+            regen_efficiency: DEFAULT_REGEN_EFFICIENCY,
         }
     }
 }
 
 impl EcoConfig {
-    /// Segment energy cost: E ≈ (F_rolling + F_drag) × d + m g Δh
-    pub fn segment_energy_joules(&self, distance_m: f64, delta_h_m: f64) -> f64 {
+    /// Flat (rolling + aerodynamic) energy for a level segment, joules.
+    pub fn flat_energy_joules(&self, distance_m: f64) -> f64 {
         let f_rolling = self.rolling_resistance * self.mass_kg * GRAVITY_M_S2;
-        let f_drag = 0.5 * AIR_DENSITY_KG_M3 * self.drag_coefficient * self.frontal_area_m2
-            * self.cruise_speed_m_s * self.cruise_speed_m_s;
-        (f_rolling + f_drag) * distance_m + self.mass_kg * GRAVITY_M_S2 * delta_h_m
+        let f_drag = 0.5
+            * AIR_DENSITY_KG_M3
+            * self.drag_coefficient
+            * self.frontal_area_m2
+            * self.cruise_speed_m_s
+            * self.cruise_speed_m_s;
+        (f_rolling + f_drag) * distance_m
+    }
+
+    /// Segment energy cost in joules.
+    ///
+    /// Climb: charge full `m g Δh`. Descent: apply `regen_efficiency * m g Δh`
+    /// (negative). Default regen is 0, so undulating terrain is not free — only
+    /// climbs add PE cost. Floor at 1% of flat energy keeps weights in joules
+    /// (never `length_m * 0.01`, which mixed metres into a joule cost).
+    pub fn segment_energy_joules(&self, distance_m: f64, delta_h_m: f64) -> f64 {
+        let flat = self.flat_energy_joules(distance_m);
+        let pe = self.mass_kg * GRAVITY_M_S2 * delta_h_m;
+        let pe_cost = if delta_h_m >= 0.0 {
+            pe
+        } else {
+            self.regen_efficiency.clamp(0.0, 1.0) * pe
+        };
+        (flat + pe_cost).max(flat * 0.01)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EcoConfig;
+
+    #[test]
+    fn climb_costs_pe_descent_does_not_refund_without_regen() {
+        let eco = EcoConfig {
+            regen_efficiency: 0.0,
+            ..EcoConfig::default()
+        };
+        let d = 100.0;
+        let flat = eco.flat_energy_joules(d);
+        let up = eco.segment_energy_joules(d, 10.0);
+        let down = eco.segment_energy_joules(d, -10.0);
+        assert!(up > flat);
+        assert!(
+            (down - flat).abs() < 1e-6,
+            "descent should equal flat when regen=0"
+        );
+        assert!(up > down);
+    }
+
+    #[test]
+    fn floor_is_in_joules_not_metres() {
+        let eco = EcoConfig::default();
+        let e = eco.segment_energy_joules(50.0, -100.0);
+        let flat = eco.flat_energy_joules(50.0);
+        assert!(e >= flat * 0.01 - 1e-6);
+        assert!(e >= 100.0, "must not collapse to ~length*0.01 metres");
     }
 }

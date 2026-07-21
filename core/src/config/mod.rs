@@ -85,3 +85,24 @@ impl Default for VehicleLimits {
         }
     }
 }
+
+/// Fuel tank / fill-up inputs for adaptive consumption learning (persisted).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FuelConfig {
+    /// Tank capacity in litres (canonical storage unit).
+    pub tank_capacity_l: Option<f64>,
+    /// Last fuel added in litres (feeds adaptive learning when live ECU is absent).
+    pub fuel_added_l: Option<f64>,
+    /// When false, UI should present gallons (value still stored as litres).
+    pub prefer_liters: bool,
+}
+
+impl Default for FuelConfig {
+    fn default() -> Self {
+        Self {
+            tank_capacity_l: None,
+            fuel_added_l: None,
+            prefer_liters: true,
+        }
+    }
+}

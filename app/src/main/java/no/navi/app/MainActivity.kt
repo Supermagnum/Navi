@@ -81,6 +81,7 @@ import uniffi.navi.ensurePlaceIndex
 import uniffi.navi.formatAvoidMajorReport
 import uniffi.navi.lastGpsFix
 import uniffi.navi.listSavedRoutes
+import uniffi.navi.loadCarRestSettings
 import uniffi.navi.loadVehicleLimits
 import uniffi.navi.osmWeeklyReminderDue
 import uniffi.navi.provisionRegionData
@@ -116,6 +117,9 @@ data class MapRouteState(
     val cameraLat: Double? = null,
     val cameraLon: Double? = null,
     val cameraZoom: Double? = null,
+    /** Map bearing degrees clockwise from north; used with rotation modes. */
+    val cameraBearing: Double = 0.0,
+    val tracks: List<TrackMarker> = emptyList(),
     val layerEpoch: Int = 0,
 )
 
@@ -157,6 +161,9 @@ private fun NaviMapScreen() {
     var weeklyReminder by remember { mutableStateOf(false) }
     var pendingUpdatePlan by remember { mutableStateOf<String?>(null) }
     var updateReminderDue by remember { mutableStateOf(false) }
+    var driveHud by remember { mutableStateOf(DriveHudState()) }
+    var showDriveSettings by remember { mutableStateOf(false) }
+    var drivingHoursSinceBreak by remember { mutableDoubleStateOf(0.0) }
 
     val dataDir = remember {
         (context.getExternalFilesDir(null) ?: context.filesDir).also { it.mkdirs() }
@@ -189,6 +196,17 @@ private fun NaviMapScreen() {
         widthM = limits.widthM?.toString().orEmpty()
         refreshRoutes()
         updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
+        runCatching {
+            val rest = loadCarRestSettings(dataDir.absolutePath)
+            ecoEnabled = rest.ecoModeEnabled || ecoModeDefault(profile)
+            val intervalH = rest.breakIntervalHours
+            val minsLeft = ((intervalH - drivingHoursSinceBreak) * 60.0).coerceAtLeast(0.0)
+            driveHud = driveHud.copy(
+                ecoActive = ecoEnabled,
+                minutesToBreak = minsLeft,
+                distanceToTurnKm = null,
+            )
+        }
         while (true) {
             delay(250)
             val pending = NaviMapTestHooks.pendingRoute
@@ -214,6 +232,16 @@ private fun NaviMapScreen() {
                     cameraZoom = cam.third,
                     layerEpoch = mapState.layerEpoch + 1,
                 )
+            }
+            val tracks = NaviMapTestHooks.pendingTracks
+            if (tracks != null) {
+                NaviMapTestHooks.pendingTracks = null
+                mapState = mapState.copy(
+                    tracks = tracks,
+                    layerEpoch = mapState.layerEpoch + 1,
+                )
+                NaviMapTestHooks.lastTrackIds = tracks.map { it.id }
+                NaviMapTestHooks.tracksEpoch += 1
             }
             hideChrome = NaviMapTestHooks.hideUiChrome
             NaviMapTestHooks.lastReportedLayerCount = mapLayerCount
@@ -283,6 +311,54 @@ private fun NaviMapScreen() {
                 .verticalScroll(rememberScrollState()),
         ) {
             if (!hideChrome) {
+            TopDriveHud(
+                state = driveHud.copy(
+                    ecoActive = ecoEnabled,
+                    tripEtaMinutes = null,
+                ),
+                onRotation = { mode ->
+                    driveHud = driveHud.copy(rotationMode = mode)
+                    val bearing = when (mode) {
+                        MapRotationMode.NorthUp -> 0.0
+                        MapRotationMode.Compass,
+                        MapRotationMode.DirectionOfTravel -> mapState.cameraBearing
+                    }
+                    mapState = mapState.copy(
+                        cameraBearing = bearing,
+                        layerEpoch = mapState.layerEpoch + 1,
+                    )
+                },
+                onToggleTripEta = { on ->
+                    driveHud = driveHud.copy(showTripEta = on)
+                },
+                onToggleBreakReminders = { on ->
+                    driveHud = driveHud.copy(breakRemindersEnabled = on)
+                },
+                onZoomIn = {
+                    val z = (mapState.cameraZoom ?: 12.0) + 1.0
+                    mapState = mapState.copy(
+                        cameraZoom = z.coerceAtMost(20.0),
+                        layerEpoch = mapState.layerEpoch + 1,
+                    )
+                },
+                onZoomOut = {
+                    val z = (mapState.cameraZoom ?: 12.0) - 1.0
+                    mapState = mapState.copy(
+                        cameraZoom = z.coerceAtLeast(3.0),
+                        layerEpoch = mapState.layerEpoch + 1,
+                    )
+                },
+                onToggleAutoZoom = { on ->
+                    driveHud = driveHud.copy(autoZoomWhileMoving = on)
+                    if (on) {
+                        mapState = mapState.copy(
+                            cameraZoom = driveHud.autoZoomLevel,
+                            layerEpoch = mapState.layerEpoch + 1,
+                        )
+                    }
+                },
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 tonalElevation = 4.dp,
@@ -783,15 +859,43 @@ private fun NaviMapScreen() {
                 }
             }
         } else if (!hideChrome) {
-            Text(
-                text = status.take(160),
+            Column(
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(12.dp)
-                    .background(Color(0xCCFFFFFF), RoundedCornerShape(8.dp))
-                    .padding(8.dp),
-                style = MaterialTheme.typography.bodySmall,
-            )
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (showDriveSettings) {
+                    DriveSettingsSheet(
+                        dataDir = dataDir.absolutePath,
+                        iconDir = iconsDir.absolutePath,
+                        ecoActive = ecoEnabled,
+                        onEcoChange = {
+                            ecoEnabled = it
+                            driveHud = driveHud.copy(ecoActive = it)
+                        },
+                        onApplied = {
+                            showDriveSettings = false
+                            status = "Drive settings applied"
+                            driveHud = driveHud.copy(ecoActive = ecoEnabled)
+                        },
+                        onDismiss = { showDriveSettings = false },
+                    )
+                }
+                BottomDriveHud(
+                    state = driveHud.copy(ecoActive = ecoEnabled),
+                    iconDir = iconsDir.absolutePath,
+                    onOpenSettings = { showDriveSettings = true },
+                )
+                Text(
+                    text = status.take(120),
+                    modifier = Modifier
+                        .background(Color(0xCCFFFFFF), RoundedCornerShape(8.dp))
+                        .padding(8.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
     }
 }
@@ -820,59 +924,184 @@ private fun CorridorMapView(
         }
     }
 
+    // Load basemap once. Re-calling setStyle on every Compose update wiped GeoJSON
+    // track layers and raced LaunchedEffect, so moving-icon screenshots looked identical.
+    val styleReady = remember { androidx.compose.runtime.mutableStateOf(false) }
+    val styleLoadStarted = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
+    // Always read the latest route/tracks/camera from here inside async MapLibre callbacks.
+    val stateRef = remember { java.util.concurrent.atomic.AtomicReference(state) }
+    stateRef.set(state)
+
     AndroidView(
         factory = { mapView },
         modifier = modifier,
         update = { view ->
+            if (!styleLoadStarted.compareAndSet(false, true)) return@AndroidView
             view.getMapAsync { map ->
-                map.setStyle("https://tiles.openfreemap.org/styles/liberty") { style ->
-                    onLayerCount(style.layers.size)
-                    applyRouteToStyle(style, state)
-                    when {
-                        state.cameraLat != null && state.cameraLon != null -> {
-                            map.animateCamera(
-                                CameraUpdateFactory.newLatLngZoom(
-                                    LatLng(state.cameraLat!!, state.cameraLon!!),
-                                    state.cameraZoom ?: 12.0,
-                                ),
-                            )
-                        }
-                        state.polyline.isNotBlank() -> {
-                            val pts = parsePolyline(state.polyline)
-                            if (pts.size >= 2) {
-                                val bounds = LatLngBounds.Builder().apply {
-                                    pts.forEach { include(it) }
-                                    if (state.poiLat != 0.0 || state.poiLon != 0.0) {
-                                        include(LatLng(state.poiLat, state.poiLon))
-                                    }
-                                }.build()
-                                map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 64))
-                            }
-                        }
-                        else -> {
-                            map.animateCamera(
-                                CameraUpdateFactory.newLatLngZoom(LatLng(61.2, 10.7), 6.5),
-                            )
-                        }
-                    }
-                    onLayerCount(style.layers.size)
+                map.setStyle("https://tiles.openfreemap.org/styles/liberty") { _ ->
+                    // Do NOT apply tracks/route here: this callback closes over the
+                    // composition-time state and can wipe a later LaunchedEffect upsert.
+                    // Signal ready only after style is fully loaded; data layers apply below.
+                    styleReady.value = true
                 }
             }
         },
     )
 
-    LaunchedEffect(state.layerEpoch) {
+    LaunchedEffect(state.layerEpoch, styleReady.value) {
+        if (!styleReady.value) return@LaunchedEffect
+        val latest = stateRef.get()
         mapView.getMapAsync { map ->
             map.getStyle { style ->
-                applyRouteToStyle(style, state)
+                applyRouteToStyle(style, latest)
+                applyTracksToStyle(style, latest.tracks, mapView.context)
+                map.triggerRepaint()
                 onLayerCount(style.layers.size)
-                if (state.cameraLat != null && state.cameraLon != null) {
-                    map.animateCamera(
-                        CameraUpdateFactory.newLatLngZoom(
-                            LatLng(state.cameraLat, state.cameraLon),
-                            state.cameraZoom ?: 12.0,
-                        ),
+                if (latest.cameraLat != null && latest.cameraLon != null) {
+                    val pos = org.maplibre.android.camera.CameraPosition.Builder()
+                        .target(LatLng(latest.cameraLat, latest.cameraLon))
+                        .zoom(latest.cameraZoom ?: 12.0)
+                        .bearing(latest.cameraBearing)
+                        .build()
+                    map.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
+                } else if (latest.polyline.isNotBlank()) {
+                    val pts = parsePolyline(latest.polyline)
+                    if (pts.size >= 2) {
+                        val bounds = LatLngBounds.Builder().apply {
+                            pts.forEach { include(it) }
+                            if (latest.poiLat != 0.0 || latest.poiLon != 0.0) {
+                                include(LatLng(latest.poiLat, latest.poiLon))
+                            }
+                        }.build()
+                        map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 64))
+                    }
+                } else {
+                    map.moveCamera(
+                        CameraUpdateFactory.newLatLngZoom(LatLng(61.2, 10.7), 6.5),
                     )
+                }
+            }
+        }
+    }
+
+    // Map framebuffer capture for instrumented tests.
+    // map.snapshot() often returns a tiny blank PNG on this emulator; PixelCopy
+    // of the MapView surface reliably includes basemap + track symbol/circle layers.
+    // Wait for idle (or enough frames) so we are not copying a black first buffer.
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(200)
+            val req = NaviMapTestHooks.snapshotRequestId
+            if (req <= NaviMapTestHooks.lastSnapshotId || !styleReady.value) continue
+
+            fun publishPng(bmp: android.graphics.Bitmap) {
+                val out = java.io.ByteArrayOutputStream()
+                bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+                NaviMapTestHooks.lastSnapshotPng = out.toByteArray()
+                NaviMapTestHooks.lastSnapshotId = req
+            }
+
+            fun findSurfaceView(v: android.view.View): android.view.SurfaceView? {
+                if (v is android.view.SurfaceView) return v
+                if (v is android.view.ViewGroup) {
+                    for (i in 0 until v.childCount) {
+                        findSurfaceView(v.getChildAt(i))?.let { return it }
+                    }
+                }
+                return null
+            }
+
+            fun captureView() {
+                val w = mapView.width
+                val h = mapView.height
+                if (w <= 0 || h <= 0) {
+                    mapView.getMapAsync { map ->
+                        map.snapshot { bmp -> publishPng(bmp) }
+                    }
+                    return
+                }
+                val bmp = android.graphics.Bitmap.createBitmap(
+                    w,
+                    h,
+                    android.graphics.Bitmap.Config.ARGB_8888,
+                )
+                val handler = android.os.Handler(android.os.Looper.getMainLooper())
+                val surface = findSurfaceView(mapView)
+                val window = (mapView.context as? android.app.Activity)?.window
+                val listener = android.view.PixelCopy.OnPixelCopyFinishedListener { result ->
+                    if (result == android.view.PixelCopy.SUCCESS) {
+                        publishPng(bmp)
+                    } else {
+                        mapView.getMapAsync { map ->
+                            map.snapshot { snap -> publishPng(snap) }
+                        }
+                    }
+                }
+                try {
+                    when {
+                        // Window copy includes TextureView/SurfaceView map content.
+                        window != null ->
+                            android.view.PixelCopy.request(window, bmp, listener, handler)
+                        surface != null ->
+                            android.view.PixelCopy.request(surface, bmp, listener, handler)
+                        else ->
+                            mapView.getMapAsync { map ->
+                                map.snapshot { snap -> publishPng(snap) }
+                            }
+                    }
+                } catch (_: Exception) {
+                    mapView.getMapAsync { map ->
+                        map.snapshot { snap -> publishPng(snap) }
+                    }
+                }
+            }
+
+            var done = false
+            val idleListener = object : MapView.OnDidBecomeIdleListener {
+                override fun onDidBecomeIdle() {
+                    if (done) return
+                    done = true
+                    mapView.removeOnDidBecomeIdleListener(this)
+                    captureView()
+                }
+            }
+            val frameListener = object : MapView.OnDidFinishRenderingFrameListener {
+                private var frames = 0
+                override fun onDidFinishRenderingFrame(
+                    fully: Boolean,
+                    framingTime: Double,
+                    renderingTime: Double,
+                ) {
+                    frames++
+                    if (!fully && frames < 8) return
+                    if (done) return
+                    done = true
+                    mapView.removeOnDidFinishRenderingFrameListener(this)
+                    mapView.removeOnDidBecomeIdleListener(idleListener)
+                    captureView()
+                }
+            }
+            mapView.addOnDidBecomeIdleListener(idleListener)
+            mapView.addOnDidFinishRenderingFrameListener(frameListener)
+            mapView.getMapAsync { map -> map.triggerRepaint() }
+
+            val waitUntil = System.currentTimeMillis() + 8_000
+            while (
+                NaviMapTestHooks.lastSnapshotId < req &&
+                System.currentTimeMillis() < waitUntil
+            ) {
+                kotlinx.coroutines.delay(100)
+            }
+            if (NaviMapTestHooks.lastSnapshotId < req) {
+                mapView.removeOnDidBecomeIdleListener(idleListener)
+                mapView.removeOnDidFinishRenderingFrameListener(frameListener)
+                captureView()
+                val fallbackUntil = System.currentTimeMillis() + 3_000
+                while (
+                    NaviMapTestHooks.lastSnapshotId < req &&
+                    System.currentTimeMillis() < fallbackUntil
+                ) {
+                    kotlinx.coroutines.delay(100)
                 }
             }
         }
@@ -924,6 +1153,87 @@ private fun applyRouteToStyle(style: Style, state: MapRouteState) {
                 ?.setGeoJson(FeatureCollection.fromFeature(feature))
         }
     }
+}
+
+private fun applyTracksToStyle(
+    style: Style,
+    tracks: List<TrackMarker>,
+    context: android.content.Context,
+) {
+    val features = tracks.map { t ->
+        val f = Feature.fromGeometry(Point.fromLngLat(t.lon, t.lat))
+        f.addStringProperty("id", t.id)
+        f.addStringProperty("label", t.label)
+        f.addStringProperty("icon", "track-${t.symbolKey}")
+        f
+    }
+    val collection = FeatureCollection.fromFeatures(features)
+    NaviMapTestHooks.lastTrackFeatureCount = tracks.size
+
+    for (t in tracks) {
+        val imageId = "track-${t.symbolKey}"
+        if (style.getImage(imageId) == null) {
+            try {
+                context.assets.open("icons/aprs/${t.symbolKey}.png").use { input ->
+                    val bytes = input.readBytes()
+                    val raw = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    if (raw != null) {
+                        style.addImage(imageId, padIconOnDisk(raw))
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    if (style.getSource("tracks-src") == null) {
+        style.addSource(GeoJsonSource("tracks-src", collection))
+        style.addLayer(
+            org.maplibre.android.style.layers.CircleLayer("tracks-halo", "tracks-src")
+                .withProperties(
+                    PropertyFactory.circleRadius(18f),
+                    PropertyFactory.circleColor("#FFEB3B"),
+                    PropertyFactory.circleOpacity(0.9f),
+                    PropertyFactory.circleStrokeWidth(2.5f),
+                    PropertyFactory.circleStrokeColor("#111111"),
+                ),
+        )
+        style.addLayer(
+            SymbolLayer("tracks-layer", "tracks-src").withProperties(
+                PropertyFactory.iconImage("{icon}"),
+                PropertyFactory.iconSize(1.8f),
+                PropertyFactory.iconAllowOverlap(true),
+                PropertyFactory.iconIgnorePlacement(true),
+                PropertyFactory.textField("{label}"),
+                PropertyFactory.textOffset(arrayOf(0f, 1.8f)),
+                PropertyFactory.textSize(13f),
+                PropertyFactory.textColor("#111111"),
+                PropertyFactory.textHaloColor("#FFFFFF"),
+                PropertyFactory.textHaloWidth(1.5f),
+                PropertyFactory.textAllowOverlap(true),
+                PropertyFactory.textIgnorePlacement(true),
+            ),
+        )
+    } else {
+        (style.getSource("tracks-src") as? GeoJsonSource)?.setGeoJson(collection)
+    }
+}
+
+private fun padIconOnDisk(src: android.graphics.Bitmap): android.graphics.Bitmap {
+    val size = maxOf(src.width, src.height) + 12
+    val out = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(out)
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    paint.color = android.graphics.Color.WHITE
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 1f, paint)
+    paint.color = android.graphics.Color.BLACK
+    paint.style = android.graphics.Paint.Style.STROKE
+    paint.strokeWidth = 2f
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 2f, paint)
+    val left = (size - src.width) / 2f
+    val top = (size - src.height) / 2f
+    canvas.drawBitmap(src, left, top, null)
+    return out
 }
 
 private fun parsePolyline(encoded: String): List<LatLng> {

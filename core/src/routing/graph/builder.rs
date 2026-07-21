@@ -166,6 +166,22 @@ impl RouteGraph {
         })
     }
 
+    /// True if this node has at least one outgoing edge for the active profile.
+    pub fn has_outgoing(&self, id: NodeId) -> bool {
+        self.adjacency
+            .get(&id)
+            .map(|v| !v.is_empty())
+            .unwrap_or(false)
+    }
+
+    /// True if the node is incident to any profile edge (source or target).
+    pub fn is_linked(&self, id: NodeId) -> bool {
+        if self.has_outgoing(id) {
+            return true;
+        }
+        self.edges.iter().any(|e| e.target == id)
+    }
+
     pub fn apply_eco_reweighting(
         &mut self,
         elevation: &ElevationService,
