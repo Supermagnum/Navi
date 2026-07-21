@@ -13,7 +13,8 @@ use crate::routing::elevation::ElevationService;
 
 use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
 
-const CACHE_MAGIC: &[u8; 8] = b"NAVIGPH1";
+// Bump when on-disk graph topology semantics change (e.g. car reverse edges).
+const CACHE_MAGIC: &[u8; 8] = b"NAVIGPH2";
 
 /// Source PBF and eco inputs used to validate a cached reweighted graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

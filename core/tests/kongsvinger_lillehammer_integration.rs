@@ -267,6 +267,8 @@ fn run_integration() -> anyhow::Result<()> {
     report.log_route_metrics("Flat-weight", &metrics2, path2.1);
 
     let same_path = compare_paths(&path1.0, &path2.0);
+    let paths_differ = !same_path;
+    report.line(&format!("paths_differ: {paths_differ}"));
     report.line(&format!(
         "Path identical: {same_path} (distance delta {:.1} m, cost delta {:.0})",
         (metrics1.distance_m - metrics2.distance_m).abs(),

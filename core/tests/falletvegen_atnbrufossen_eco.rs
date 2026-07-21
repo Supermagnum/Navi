@@ -253,8 +253,9 @@ fn run() -> anyhow::Result<()> {
 
     // Cross-score: physics energy of each geometry (already both with use_eco=true above).
     report.section("Comparison (physics energy on each chosen geometry)");
-    let same = path_on.0 == path_off.0;
-    report.line(&format!("Paths identical: {same}"));
+    let paths_differ = path_on.0 != path_off.0;
+    report.line(&format!("paths_differ: {paths_differ}"));
+    report.line(&format!("Paths identical: {}", !paths_differ));
     report.line(&format!(
         "Distance delta (eco-on - eco-off): {:.2} km",
         (m_on.distance_m - m_off.distance_m) / 1000.0
@@ -269,7 +270,7 @@ fn run() -> anyhow::Result<()> {
         (m_on.energy_j - m_off.energy_j) / J_PER_KWH
     ));
     report.line(&format!(
-        "Atnosen proximity: eco-on {:.1} km vs eco-off {:.1} km (closer = more likely via Atnosen corridor)",
+        "Atnosen proximity: eco-on {:.1} km vs eco-off {:.1} km (observation only)",
         atn_on / 1000.0,
         atn_off / 1000.0
     ));
@@ -284,6 +285,96 @@ fn run() -> anyhow::Result<()> {
     } else {
         report.line("RESULT: physics energy essentially equal on both paths.");
     }
+
+    // --- Atnosen reachability + diagnostic energy of via-Atnosen geometry ---
+    // Diagnostic only: does NOT force eco selection; checks graph filters and
+    // whether the ~10 km longer detour would win on energy under Passat physics.
+    report.section("Atnosen graph reachability (not a forced eco via)");
+    let atn_node = nearest_routable(&graph_flat, ATNOSEN_LAT, ATNOSEN_LON, false)?;
+    report.line(&format!(
+        "Atnosen snap: node {} @ ({:.6},{:.6}) {:.0} m from hamlet",
+        atn_node.0 .0, atn_node.1, atn_node.2, atn_node.3
+    ));
+    let to_atn = graph_flat.shortest_path(start.0, atn_node.0, false);
+    let from_atn = graph_flat.shortest_path(atn_node.0, goal.0, false);
+    match (&to_atn, &from_atn) {
+        (Some(a), Some(b)) => {
+            report.line("Atnosen IS reachable from start and to goal under Car profile (not filter-excluded).");
+            let mut via_nodes = a.0.clone();
+            if via_nodes.last() == b.0.first() {
+                via_nodes.extend(b.0.iter().skip(1).copied());
+            } else {
+                via_nodes.extend(b.0.iter().copied());
+            }
+            let via_edges = path_edge_indices(&graph_flat, &via_nodes);
+            let m_via = route_metrics(&graph_flat, &via_edges, &elevation, &eco, true);
+            let kwh_via = m_via.energy_j / J_PER_KWH;
+            report.log_route_metrics("Diagnostic via-Atnosen geometry", &m_via, a.1 + b.1);
+            report.line(&format!(
+                "  Energy: {kwh_via:.2} kWh total · climb {:.0} m · descent {:.0} m",
+                m_via.total_climb_m, m_via.total_descent_m
+            ));
+            report.line(&format!(
+                "  Distance vs eco-off direct: via {:.2} km vs direct {:.2} km (delta {:+.2} km)",
+                m_via.distance_m / 1000.0,
+                m_off.distance_m / 1000.0,
+                (m_via.distance_m - m_off.distance_m) / 1000.0
+            ));
+            report.line(&format!(
+                "  Energy vs eco-off direct: via {:.0} J vs direct {:.0} J (delta {:+.0} J)",
+                m_via.energy_j,
+                m_off.energy_j,
+                m_via.energy_j - m_off.energy_j
+            ));
+            if m_via.energy_j + 1.0 < m_on.energy_j {
+                report.line(
+                    "NOTE: via-Atnosen has LOWER physics energy than eco-on choice — eco should have preferred it (selection gap).",
+                );
+            } else {
+                report.line(
+                    "NOTE: via-Atnosen has higher-or-equal physics energy than eco-on — skipping Atnosen is consistent with the cost model (extra distance costs more than climb saved).",
+                );
+            }
+            // Sample highway tags on edges within 2 km of Atnosen.
+            let mut near_hw: Vec<String> = via_edges
+                .iter()
+                .filter_map(|&i| {
+                    let e = &graph_flat.edges[i];
+                    let d0 = haversine_m(ATNOSEN_LAT, ATNOSEN_LON, e.start_lat, e.start_lon);
+                    let d1 = haversine_m(ATNOSEN_LAT, ATNOSEN_LON, e.end_lat, e.end_lon);
+                    if d0.min(d1) < 2_000.0 {
+                        e.highway.clone()
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            near_hw.sort();
+            near_hw.dedup();
+            report.line(&format!(
+                "Highway tags within 2 km of Atnosen on via-path: {:?}",
+                near_hw
+            ));
+        }
+        _ => {
+            report.line(
+                "Atnosen NOT fully reachable under Car profile — filter/connectivity issue (separate from cost function).",
+            );
+            report.line(&format!(
+                "  start->Atnosen: {}; Atnosen->goal: {}",
+                to_atn.is_some(),
+                from_atn.is_some()
+            ));
+        }
+    }
+
+    report.section("Distance cross-check notes");
+    report.line(
+        "OSRM driving (same coords): direct ~189.5 km; via Atnosen ~204.7 km — aligns with Navi ~190.6 km, not the 206.4/216.4 km 'recommended' figures.",
+    );
+    report.line(
+        "Navi A* uses length (eco-off) / energy (eco-on); it is a shortest/lowest-cost path, not a Google-style 'preferred road' route.",
+    );
 
     // DEM coverage on both geometries
     report.section("DEM coverage on chosen edges");

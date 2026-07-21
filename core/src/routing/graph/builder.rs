@@ -83,54 +83,46 @@ impl RouteGraph {
             profile,
         };
         for edge in filtered {
-            let idx = graph.edges.len();
             let start = graph.nodes.get(&edge.source).ok_or_else(|| {
                 anyhow::anyhow!("missing source node {}", edge.source.0)
             })?;
             let end = graph.nodes.get(&edge.target).ok_or_else(|| {
                 anyhow::anyhow!("missing target node {}", edge.target.0)
             })?;
+            let start_lat = start.coord.y;
+            let start_lon = start.coord.x;
+            let end_lat = end.coord.y;
+            let end_lon = end.coord.x;
             let length_m = edge.length();
             let meta = edge_meta(&edge);
-            graph.edges.push(GraphEdge {
-                id: edge.id.clone(),
-                source: edge.source,
-                target: edge.target,
-                length_m,
-                base_weight: length_m,
-                eco_weight: None,
-                start_lat: start.coord.y,
-                start_lon: start.coord.x,
-                end_lat: end.coord.y,
-                end_lon: end.coord.x,
-                highway: meta.0.clone(),
-                maxweight_t: meta.1,
-                maxaxleload_t: meta.2,
-                maxheight_m: meta.3,
-                maxwidth_m: meta.4,
-            });
-            graph.adjacency.entry(edge.source).or_default().push(idx);
-
-            if matches!(profile, RoutingProfile::Foot | RoutingProfile::Bicycle) {
-                let rev_idx = graph.edges.len();
-                graph.edges.push(GraphEdge {
-                    id: format!("{}-rev", edge.id),
-                    source: edge.target,
-                    target: edge.source,
+            let (forward_ok, backward_ok) = directed_access(&edge, profile);
+            if forward_ok {
+                push_directed_edge(
+                    &mut graph,
+                    edge.id.clone(),
+                    edge.source,
+                    edge.target,
+                    start_lat,
+                    start_lon,
+                    end_lat,
+                    end_lon,
                     length_m,
-                    base_weight: length_m,
-                    eco_weight: None,
-                    start_lat: end.coord.y,
-                    start_lon: end.coord.x,
-                    end_lat: start.coord.y,
-                    end_lon: start.coord.x,
-                    highway: meta.0,
-                    maxweight_t: meta.1,
-                    maxaxleload_t: meta.2,
-                    maxheight_m: meta.3,
-                    maxwidth_m: meta.4,
-                });
-                graph.adjacency.entry(edge.target).or_default().push(rev_idx);
+                    &meta,
+                );
+            }
+            if backward_ok {
+                push_directed_edge(
+                    &mut graph,
+                    format!("{}-rev", edge.id),
+                    edge.target,
+                    edge.source,
+                    end_lat,
+                    end_lon,
+                    start_lat,
+                    start_lon,
+                    length_m,
+                    &meta,
+                );
             }
         }
         Ok(graph)
@@ -250,13 +242,72 @@ impl RouteGraph {
     }
 }
 
-fn edge_meta(edge: &Edge) -> (Option<String>, Option<f64>, Option<f64>, Option<f64>, Option<f64>) {
+type EdgeMeta = (Option<String>, Option<f64>, Option<f64>, Option<f64>, Option<f64>);
+
+fn edge_meta(edge: &Edge) -> EdgeMeta {
     let highway = edge.tags.get("highway").cloned();
     let maxweight_t = edge.tags.get("maxweight").and_then(|s| parse_metric(s));
     let maxaxleload_t = edge.tags.get("maxaxleload").and_then(|s| parse_metric(s));
     let maxheight_m = edge.tags.get("maxheight").and_then(|s| parse_metric(s));
     let maxwidth_m = edge.tags.get("maxwidth").and_then(|s| parse_metric(s));
     (highway, maxweight_t, maxaxleload_t, maxheight_m, maxwidth_m)
+}
+
+fn push_directed_edge(
+    graph: &mut RouteGraph,
+    id: String,
+    source: NodeId,
+    target: NodeId,
+    start_lat: f64,
+    start_lon: f64,
+    end_lat: f64,
+    end_lon: f64,
+    length_m: f64,
+    meta: &EdgeMeta,
+) {
+    let idx = graph.edges.len();
+    graph.edges.push(GraphEdge {
+        id,
+        source,
+        target,
+        length_m,
+        base_weight: length_m,
+        eco_weight: None,
+        start_lat,
+        start_lon,
+        end_lat,
+        end_lon,
+        highway: meta.0.clone(),
+        maxweight_t: meta.1,
+        maxaxleload_t: meta.2,
+        maxheight_m: meta.3,
+        maxwidth_m: meta.4,
+    });
+    graph.adjacency.entry(source).or_default().push(idx);
+}
+
+/// Which OSM-way directions are traversable for `profile`.
+///
+/// osm4routing stores one undirected topology edge with separate forward/backward
+/// accessibility. Car/truck/bicycle must honour those flags; foot is treated as
+/// bidirectional when allowed at all.
+fn directed_access(edge: &Edge, profile: RoutingProfile) -> (bool, bool) {
+    let mut props = edge.properties;
+    props.normalize();
+    match profile {
+        RoutingProfile::Car | RoutingProfile::Truck => (
+            props.car_forward != CarAccessibility::Forbidden,
+            props.car_backward != CarAccessibility::Forbidden,
+        ),
+        RoutingProfile::Bicycle => (
+            props.bike_forward != BikeAccessibility::Forbidden,
+            props.bike_backward != BikeAccessibility::Forbidden,
+        ),
+        RoutingProfile::Foot => {
+            let ok = props.foot != FootAccessibility::Forbidden;
+            (ok, ok)
+        }
+    }
 }
 
 fn parse_metric(raw: &str) -> Option<f64> {
@@ -356,5 +407,29 @@ mod tests {
     #[test]
     fn profile_mapping() {
         assert_eq!(RoutingProfile::from(Profile::Hiking), RoutingProfile::Foot);
+    }
+
+    #[test]
+    fn car_directed_access_respects_oneway() {
+        let mut edge = Edge::default();
+        edge.properties.car_forward = CarAccessibility::Trunk;
+        edge.properties.car_backward = CarAccessibility::Forbidden;
+        edge.properties.normalize();
+        assert_eq!(
+            directed_access(&edge, RoutingProfile::Car),
+            (true, false)
+        );
+    }
+
+    #[test]
+    fn car_directed_access_two_way() {
+        let mut edge = Edge::default();
+        edge.properties.car_forward = CarAccessibility::Trunk;
+        // Unknown backward copies forward on normalize (two-way road).
+        edge.properties.normalize();
+        assert_eq!(
+            directed_access(&edge, RoutingProfile::Car),
+            (true, true)
+        );
     }
 }

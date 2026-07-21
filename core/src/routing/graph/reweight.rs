@@ -28,8 +28,12 @@ pub fn reweight_graph_for_eco_with_live(
         let h_end = elevation.get_elevation(edge.end_lat, edge.end_lon);
         let delta_h = match (h_start, h_end) {
             (Some(a), Some(b)) => b - a,
+            // Keep units in joules. Falling back to `length_m` made uncovered
+            // edges ~200x cheaper than DEM-covered ones and invited long detours.
             _ => {
-                edge.eco_weight = None;
+                let predicted = eco.flat_energy_joules(edge.length_m);
+                let refined = refine_energy_cost(predicted, edge.length_m, live);
+                edge.eco_weight = Some(refined.max(0.0));
                 return;
             }
         };

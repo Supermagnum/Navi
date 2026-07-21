@@ -30,6 +30,21 @@ impl Default for EcoConfig {
 }
 
 impl EcoConfig {
+    /// Profile-scoped defaults: combustion/ICE keep regen at 0; electric drivetrains
+    /// get [`DEFAULT_EV_REGEN_EFFICIENCY`] so descent recovers a fraction of PE.
+    pub fn for_profile(profile: crate::config::Profile) -> Self {
+        let mut cfg = Self::default();
+        if matches!(
+            profile,
+            crate::config::Profile::CarElectric
+                | crate::config::Profile::TruckElectric
+                | crate::config::Profile::MotorcycleElectric
+        ) {
+            cfg.regen_efficiency = DEFAULT_EV_REGEN_EFFICIENCY;
+        }
+        cfg
+    }
+
     /// Flat (rolling + aerodynamic) energy for a level segment, joules.
     pub fn flat_energy_joules(&self, distance_m: f64) -> f64 {
         let f_rolling = self.rolling_resistance * self.mass_kg * GRAVITY_M_S2;
@@ -89,5 +104,46 @@ mod tests {
         let flat = eco.flat_energy_joules(50.0);
         assert!(e >= flat * 0.01 - 1e-6);
         assert!(e >= 100.0, "must not collapse to ~length*0.01 metres");
+    }
+
+    #[test]
+    fn electric_regen_makes_descent_cheaper_than_combustion() {
+        use crate::config::Profile;
+        let ice = EcoConfig::for_profile(Profile::Car);
+        let ev = EcoConfig::for_profile(Profile::CarElectric);
+        assert_eq!(ice.regen_efficiency, 0.0);
+        assert!(ev.regen_efficiency > 0.0);
+        let d = 200.0;
+        let dh = -25.0;
+        let ice_down = ice.segment_energy_joules(d, dh);
+        let ev_down = ev.segment_energy_joules(d, dh);
+        assert!(
+            ev_down < ice_down,
+            "EV regen descent ({ev_down}) must be cheaper than ICE ({ice_down})"
+        );
+        let ice_up = ice.segment_energy_joules(d, 25.0);
+        let ev_up = ev.segment_energy_joules(d, 25.0);
+        assert!(
+            (ice_up - ev_up).abs() < 1e-6,
+            "climb cost must match when only regen differs"
+        );
+    }
+
+    #[test]
+    fn non_electric_profiles_keep_zero_regen() {
+        use crate::config::Profile;
+        for p in [
+            Profile::Car,
+            Profile::Truck,
+            Profile::Motorcycle,
+            Profile::Hiking,
+            Profile::Cycling,
+        ] {
+            assert_eq!(
+                EcoConfig::for_profile(p).regen_efficiency,
+                0.0,
+                "{p:?} must not get EV regen by default"
+            );
+        }
     }
 }
