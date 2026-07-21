@@ -1,0 +1,7 @@
+[target.x86_64-linux-android]
+linker = "/home/haaken/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android34-clang"
+rustflags = ["-C", "link-arg=-lc++_shared"]
+
+[target.aarch64-linux-android]
+linker = "/home/haaken/Android/Sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang"
+rustflags = ["-C", "link-arg=-lc++_shared"]

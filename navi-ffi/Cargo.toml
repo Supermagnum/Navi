@@ -1,0 +1,21 @@
+[package]
+name = "navi-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "UniFFI bindings for Navi / driver-break-core on Android and other hosts"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+name = "navi"
+
+[dependencies]
+driver-break-core = { path = "../core" }
+uniffi = { workspace = true, features = ["cli"] }
+osm4routing = { workspace = true }
+uuid = { workspace = true }
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"

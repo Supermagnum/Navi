@@ -1,0 +1,9 @@
+{
+  "name": "log_hello",
+  "version": "0.1.0",
+  "entry": "plugin_main",
+  "capabilities": ["log"],
+  "fuel_limit": 5000000,
+  "timeout_ms": 500,
+  "wasm": "plugin.wasm"
+}

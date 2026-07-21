@@ -1,0 +1,13 @@
+[package]
+name = "navi-plugin-sdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Guest-side wrappers for the Navi plugin HostApi ABI"
+rust-version = "1.75"
+
+[dependencies]
+
+[lib]
+crate-type = ["rlib"]

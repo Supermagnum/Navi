@@ -1,0 +1,19 @@
+[package]
+name = "navi-plugin-log-hello"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+navi-plugin-sdk = { path = "../../plugin-sdk" }
+wee_alloc = "0.4.5"
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"

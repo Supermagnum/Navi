@@ -1,0 +1,42 @@
+[package]
+name = "driver-break-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Driver Break navigation core: elevation, routing, POI, rest parameters"
+
+[dependencies]
+anyhow.workspace = true
+bincode.workspace = true
+geo.workspace = true
+geo-types.workspace = true
+pathfinding.workspace = true
+reqwest.workspace = true
+rstar.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+srtm_reader.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+osmpbf.workspace = true
+osm4routing.workspace = true
+geotiff.workspace = true
+zip.workspace = true
+tar = { workspace = true }
+rayon.workspace = true
+libc.workspace = true
+usvg.workspace = true
+resvg.workspace = true
+flate2.workspace = true
+png.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+rayon = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+osm4routing = { workspace = true }
+reqwest = { workspace = true, features = ["rustls-tls", "json"] }
+anyhow = { workspace = true }

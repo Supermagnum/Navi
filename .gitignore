@@ -1,0 +1,26 @@
+# Rust / Cargo
+/target/
+core/target/
+**/target/
+
+# Android / Gradle
+.gradle/
+**/build/
+app/build/
+local.properties
+*.iml
+.idea/
+*.apk
+*.aab
+
+# OS
+.DS_Store
+
+# Integration fixtures (large)
+core/target/integration-fixtures/*.pbf
+core/target/integration-fixtures/*.tar
+core/target/integration-fixtures/elevation/
+
+# Allow documentation images
+!docs/images/
+!docs/images/*.png

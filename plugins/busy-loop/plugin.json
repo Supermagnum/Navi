@@ -1,0 +1,9 @@
+{
+  "name": "busy_loop",
+  "version": "0.1.0",
+  "entry": "plugin_main",
+  "capabilities": ["log"],
+  "fuel_limit": 200000,
+  "timeout_ms": 80,
+  "wasm": "plugin.wasm"
+}
