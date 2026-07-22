@@ -72,6 +72,14 @@ object NaviMapTestHooks {
     @Volatile
     var lastCameraZoom: Double = 12.0
 
+    /** Last camera target latitude (updated on camera idle). */
+    @Volatile
+    var lastCameraLat: Double = 0.0
+
+    /** Last camera target longitude (updated on camera idle). */
+    @Volatile
+    var lastCameraLon: Double = 0.0
+
     /** Last rotation mode selected in the HUD. */
     @Volatile
     var lastRotationMode: MapRotationMode = MapRotationMode.NorthUp
@@ -178,4 +186,16 @@ object NaviMapTestHooks {
     /** Screen-space Compose overlay mark count (visible moving icons). */
     @Volatile
     var lastTrackOverlayCount: Int = 0
+
+    /** Count of MapLibre move-gesture begins (pan). */
+    @Volatile
+    var mapGestureMoves: Int = 0
+
+    /** Count of MapLibre scale-gesture begins (pinch). */
+    @Volatile
+    var mapGestureScales: Int = 0
+
+    /** Dispatches a MotionEvent to the live MapView (UI thread). */
+    @Volatile
+    var mapViewTouch: ((android.view.MotionEvent) -> Boolean)? = null
 }

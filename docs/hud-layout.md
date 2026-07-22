@@ -23,10 +23,17 @@ map does not open or close either sheet.
 **Zoom:** the app owns **one** zoom −/+ set on the bottom bar. AAOS system chrome
 often shows separate climate − N + controls; those are not map zoom.
 
-**Eco:** leaf / `ECO` text on the **bottom** bar only when eco-mode is active.
+**Eco:** rasterized `leaf.svg` (via `eco-mode` / icon pipeline) on the **bottom**
+bar only when eco-mode is active — not a text “ECO” label.
 
 **Turn stubs:** not on the bottom bar. See [`approach-instructions.md`](approach-instructions.md)
 (deferred temporary approach box).
+
+**Status toast:** bottom-**end** chip (`status_toast`), above the bottom bar —
+never bottom-left over MapLibre/OSM attribution.
+
+**Settings sheets:** floating overlays (`zIndex` above map + bars), not siblings
+that insert into the top/bottom chrome columns.
 
 Garmin reference proportions (~14% top instruction / ~6.4% bottom strip) inform
 collapsed `heightIn(min = …)` floors and the future approach box — size by
@@ -34,10 +41,9 @@ content first.
 
 **Measured on emulator (2026-07-22)** from
 `docs/images/hud/hud_map_top_bottom_only.png` (1280×720): collapsed top
-**6.67%** (48 px), collapsed bottom **8.89%** (64 px). Visually confirmed
-collapsed defaults and eco on/off; toast-vs-attribution overlap and auto-zoom
-`−`/`+` styling still open — see [`android-test-results.md`](../android-test-results.md)
-Item 7.
+**6.67%** (48 px), collapsed bottom **8.89%** (64 px). See
+[`android-test-results.md`](../android-test-results.md) for toast / leaf / overlay
+confirmation shots.
 
 ## Screen stack (placement)
 
@@ -49,7 +55,9 @@ is a full-screen `Box`:
 | `CorridorMapView` | fill | MapLibre map |
 | Top `Column` | `TopCenter` | Top drive HUD + search / profile chrome (scrollable) |
 | Tools `Surface` | `BottomCenter` | Region/debug panel when Tools is open |
-| Bottom `Column` | `BottomCenter` | Drive settings sheet (optional) + bottom HUD + status line |
+| Bottom `Column` | `BottomCenter` | Bottom HUD only |
+| Status chip | `BottomEnd` | Ephemeral status (settings applied, Ready, …) |
+| Map / drive settings sheets | Top/Bottom center | Floating overlays above bars (`zIndex`) |
 
 ```
 +------------------------------------------+
@@ -60,10 +68,10 @@ is a full-screen `Box`:
 |                                          |
 |              map                         |
 |                                          |
+|  [MapSettingsSheet / DriveSettingsSheet] |  <-- overlay (floats above bars)
 |  [tools_menu]  (optional)                |  <-- BottomCenter, +88.dp lift
-|  [DriveSettingsSheet] (optional)         |
 |  [BottomDriveHud]                        |  <-- BottomCenter Column
-|  status chip                             |      padding 10.dp
+|                     [status toast] ----> |  <-- BottomEnd (not over attribution)
 +------------------------------------------+
 |  system nav / climate bar (AAOS)         |
 +------------------------------------------+

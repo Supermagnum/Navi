@@ -233,27 +233,26 @@ class HudVerificationInstrumentedTest {
 
     private fun setTripEta(on: Boolean) {
         if (NaviMapTestHooks.lastShowTripEta == on) return
-        android.util.Log.e("HudVerification", "test setTripEta request=$on")
-        NaviMapTestHooks.requestShowTripEta = on
-        android.util.Log.e(
-            "HudVerification",
-            "test after set request=${NaviMapTestHooks.requestShowTripEta} last=${NaviMapTestHooks.lastShowTripEta} hooks=${System.identityHashCode(NaviMapTestHooks)} loader=${NaviMapTestHooks::class.java.classLoader}",
-        )
+        if (NaviMapTestHooks.mapSettingsOpen) {
+            clickTag("toggle_trip_eta")
+        } else {
+            openMapSettings()
+            clickTag("toggle_trip_eta")
+        }
         val deadline = System.currentTimeMillis() + 5_000
         while (System.currentTimeMillis() < deadline) {
             if (NaviMapTestHooks.lastShowTripEta == on) return
             Thread.sleep(100)
         }
-        android.util.Log.e(
-            "HudVerification",
-            "test setTripEta TIMEOUT request=${NaviMapTestHooks.requestShowTripEta} last=${NaviMapTestHooks.lastShowTripEta}",
-        )
         assertEquals("trip ETA toggle", on, NaviMapTestHooks.lastShowTripEta)
     }
 
     private fun setBreakReminders(on: Boolean) {
         if (NaviMapTestHooks.lastBreakRemindersEnabled == on) return
-        NaviMapTestHooks.requestBreakReminders = on
+        if (!NaviMapTestHooks.mapSettingsOpen) {
+            openMapSettings()
+        }
+        clickTag("toggle_breaks")
         val deadline = System.currentTimeMillis() + 5_000
         while (System.currentTimeMillis() < deadline) {
             if (NaviMapTestHooks.lastBreakRemindersEnabled == on) return
@@ -339,30 +338,78 @@ class HudVerificationInstrumentedTest {
         openDriveSettings()
         clickTag("btn_apply_drive_settings")
         waitSettingsOpen(false)
-        Thread.sleep(500)
+        Thread.sleep(800)
         composeRule.onNodeWithTag("hud_eco_icon", useUnmergedTree = true).assertIsDisplayed()
+        assertTrue(
+            "eco must render as leaf icon, not ECO text",
+            composeRule.onAllNodesWithText("ECO", useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .isEmpty(),
+        )
         assertEquals(412.0, NaviMapTestHooks.lastHudAltitudeM!!, 0.1)
+        shot("hud_eco_leaf_on.png")
         val mapOnly = shot("hud_map_top_bottom_only.png")
         assertTrue(mapOnly.length() > 5_000)
         val idle = shot("hud_idle_both_bars.png")
         assertTrue(idle.length() > 5_000)
 
-        // --- 2. Bottom bar: tap opens drive settings (no Settings link) ---
+        // Eco off — leaf hidden
+        assertTrue(
+            saveCarRestSettings(
+                dataDir.absolutePath,
+                FfiCarRestSettings(
+                    breakIntervalHours = restForEco.breakIntervalHours,
+                    restDurationMinutes = restForEco.restDurationMinutes,
+                    ecoModeEnabled = false,
+                ),
+            ),
+        )
+        openDriveSettings()
+        clickTag("btn_apply_drive_settings")
+        waitSettingsOpen(false)
+        Thread.sleep(500)
+        assertTrue(
+            composeRule.onAllNodesWithTag("hud_eco_icon", useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .isEmpty(),
+        )
+        shot("hud_eco_leaf_off.png")
+        // Restore eco for remaining shots
+        assertTrue(
+            saveCarRestSettings(
+                dataDir.absolutePath,
+                FfiCarRestSettings(
+                    breakIntervalHours = restForEco.breakIntervalHours,
+                    restDurationMinutes = restForEco.restDurationMinutes,
+                    ecoModeEnabled = true,
+                ),
+            ),
+        )
+        openDriveSettings()
+        clickTag("btn_apply_drive_settings")
+        waitSettingsOpen(false)
+        Thread.sleep(500)
+
+        // --- 2. Bottom bar: tap opens drive settings overlay (above bars) ---
         openDriveSettings()
         composeRule.onNodeWithTag("drive_settings_title", useUnmergedTree = true)
             .assertIsDisplayed()
+        composeRule.onNodeWithTag("bottom_drive_hud", useUnmergedTree = true).assertIsDisplayed()
+        shot("hud_settings_overlay.png")
         shot("hud_settings_open.png")
 
-        // Break hours apply + auto-close + persist
+        // Break hours apply + auto-close + persist; toast must not sit on attribution (bottom-left)
         setField("field_break_hours", "3.5")
         clickTag("btn_apply_drive_settings")
         waitSettingsOpen(false)
         Thread.sleep(500)
         val restAfterBreak = loadCarRestSettings(dataDir.absolutePath)
         assertEquals(3.5, restAfterBreak.breakIntervalHours, 0.001)
+        composeRule.onNodeWithTag("status_toast", useUnmergedTree = true).assertIsDisplayed()
         shot("hud_after_break_hours_apply.png")
+        shot("hud_status_toast_settings_applied.png")
 
-        // Rest time apply
+        // Rest time apply (second toast scenario)
         openDriveSettings()
         setField("field_rest_mins", "20")
         clickTag("btn_apply_drive_settings")
@@ -370,6 +417,7 @@ class HudVerificationInstrumentedTest {
         Thread.sleep(400)
         assertEquals(20u, loadCarRestSettings(dataDir.absolutePath).restDurationMinutes)
         shot("hud_after_rest_mins_apply.png")
+        shot("hud_status_toast_rest_applied.png")
 
         // Tank capacity apply (force liters so "55" is not treated as gallons).
         openDriveSettings()
@@ -410,9 +458,11 @@ class HudVerificationInstrumentedTest {
         )
         shot("hud_after_fuel_units_apply.png")
 
-        // --- Top bar: open map settings, rotation chips ---
+        // --- Top bar: open map settings overlay ---
         openMapSettings()
         composeRule.onNodeWithTag("map_settings_title", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("top_drive_hud", useUnmergedTree = true).assertIsDisplayed()
+        shot("hud_map_settings_overlay.png")
         clickTag("rot_compass")
         assertEquals(MapRotationMode.Compass, NaviMapTestHooks.lastRotationMode)
         shot("hud_rot_mode_compass.png")
@@ -424,11 +474,13 @@ class HudVerificationInstrumentedTest {
         waitBearing(0.0)
         shot("hud_rot_mode_north_up.png")
 
-        // Trip ETA on/off — bottom bar shows ETA line
+        // Trip ETA on/off — bottom bar shows ETA line (keep map sheet open but not covering bar)
         setTripEta(true)
+        Thread.sleep(400)
         composeRule.onNodeWithText("ETA 95 min", useUnmergedTree = true).assertIsDisplayed()
         shot("hud_trip_eta_on.png")
         setTripEta(false)
+        Thread.sleep(400)
         composeRule.onNodeWithText("ETA off", useUnmergedTree = true).assertIsDisplayed()
         val etaStillVisible = composeRule
             .onAllNodesWithText("ETA 95 min", useUnmergedTree = true)
@@ -564,5 +616,338 @@ class HudVerificationInstrumentedTest {
         android.util.Log.i("HudVerification", "DONE HUD verification")
         android.util.Log.i("HudVerification", "HOLD_FOR_PULL")
         Thread.sleep(90_000)
+    }
+
+    /**
+     * Tapping the map (not a bar) must not open/close/change settings sheets.
+     * Pan and pinch on the map must still work when sheets are closed.
+     */
+    @Test
+    fun hud_map_tap_does_not_affect_settings_sheets() {
+        waitStyle()
+        NaviMapTestHooks.hideSearchChrome = true
+        Thread.sleep(800)
+
+        // --- 1. Sheets closed: map tap must not open either sheet ---
+        assertSheetsClosed()
+        val rot0 = NaviMapTestHooks.lastRotationMode
+        val zoom0 = NaviMapTestHooks.lastCameraZoom
+        tapMapAwayFromChrome()
+        Thread.sleep(400)
+        assertSheetsClosed()
+        assertEquals("map tap must not change rotation mode", rot0, NaviMapTestHooks.lastRotationMode)
+        assertEquals("map tap must not change zoom", zoom0, NaviMapTestHooks.lastCameraZoom, 0.05)
+
+        // --- 2. Map settings open: map tap must leave sheet open and unchanged ---
+        openMapSettings()
+        composeRule.onNodeWithTag("map_settings_sheet", useUnmergedTree = true).assertIsDisplayed()
+        val rotOpen = NaviMapTestHooks.lastRotationMode
+        val zoomOpen = NaviMapTestHooks.lastCameraZoom
+        val etaOpen = NaviMapTestHooks.lastShowTripEta
+        val breaksOpen = NaviMapTestHooks.lastBreakRemindersEnabled
+        tapMapAwayFromChrome()
+        Thread.sleep(500)
+        assertTrue("map settings must stay open after map tap", NaviMapTestHooks.mapSettingsOpen)
+        assertFalse("drive settings must stay closed", NaviMapTestHooks.driveSettingsOpen)
+        composeRule.onNodeWithTag("map_settings_sheet", useUnmergedTree = true).assertIsDisplayed()
+        assertEquals(rotOpen, NaviMapTestHooks.lastRotationMode)
+        assertEquals(zoomOpen, NaviMapTestHooks.lastCameraZoom, 0.05)
+        assertEquals(etaOpen, NaviMapTestHooks.lastShowTripEta)
+        assertEquals(breaksOpen, NaviMapTestHooks.lastBreakRemindersEnabled)
+        closeMapSettings()
+
+        // --- 3. Drive settings open: map tap must leave sheet open and unchanged ---
+        openDriveSettings()
+        composeRule.onNodeWithTag("drive_settings_sheet", useUnmergedTree = true).assertIsDisplayed()
+        val breakBefore = fieldText("field_break_hours")
+        val restBefore = fieldText("field_rest_mins")
+        tapMapAwayFromChrome()
+        Thread.sleep(500)
+        assertTrue("drive settings must stay open after map tap", NaviMapTestHooks.driveSettingsOpen)
+        assertFalse("map settings must stay closed", NaviMapTestHooks.mapSettingsOpen)
+        composeRule.onNodeWithTag("drive_settings_sheet", useUnmergedTree = true).assertIsDisplayed()
+        assertEquals(breakBefore, fieldText("field_break_hours"))
+        assertEquals(restBefore, fieldText("field_rest_mins"))
+        clickTag("btn_cancel_drive_settings")
+        waitSettingsOpen(false)
+
+        // --- 4. Sheets closed: pan + pinch still move the map ---
+        assertSheetsClosed()
+        NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, baseZoom)
+        Thread.sleep(2_000)
+        waitZoom(baseZoom, tol = 0.3)
+        val latBefore = NaviMapTestHooks.lastCameraLat
+        val lonBefore = NaviMapTestHooks.lastCameraLon
+        val zoomBeforePan = NaviMapTestHooks.lastCameraZoom
+        assertTrue("camera lat hook should be set", kotlin.math.abs(latBefore) > 1.0)
+
+        panMapHorizontal()
+        val panDeadline = System.currentTimeMillis() + 8_000
+        var panMoved = false
+        while (System.currentTimeMillis() < panDeadline) {
+            val dLat = kotlin.math.abs(NaviMapTestHooks.lastCameraLat - latBefore)
+            val dLon = kotlin.math.abs(NaviMapTestHooks.lastCameraLon - lonBefore)
+            if (dLat > 0.00005 || dLon > 0.00005) {
+                panMoved = true
+                break
+            }
+            Thread.sleep(100)
+        }
+        assertTrue(
+            "map pan must change camera target (lat=$latBefore->${NaviMapTestHooks.lastCameraLat}, " +
+                "lon=$lonBefore->${NaviMapTestHooks.lastCameraLon})",
+            panMoved,
+        )
+        assertSheetsClosed()
+
+        NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, baseZoom)
+        Thread.sleep(2_000)
+        waitZoom(baseZoom, tol = 0.3)
+        val zoomBeforeZoomGesture = NaviMapTestHooks.lastCameraZoom
+        // Prefer pinch; fall back to MapLibre double-tap zoom if synthetic multi-touch
+        // does not complete on this AVD (onScaleBegin alone is not enough).
+        pinchZoomMap(zoomIn = true)
+        Thread.sleep(500)
+        if (kotlin.math.abs(NaviMapTestHooks.lastCameraZoom - zoomBeforeZoomGesture) <= 0.15) {
+            android.util.Log.i("HudVerification", "pinch did not move zoom; trying double-tap")
+            doubleTapZoomMap()
+        }
+        val zoomDeadline = System.currentTimeMillis() + 8_000
+        var zoomMoved = false
+        while (System.currentTimeMillis() < zoomDeadline) {
+            if (kotlin.math.abs(NaviMapTestHooks.lastCameraZoom - zoomBeforeZoomGesture) > 0.15) {
+                zoomMoved = true
+                break
+            }
+            Thread.sleep(100)
+        }
+        assertTrue(
+            "map zoom gesture must change zoom ($zoomBeforeZoomGesture -> ${NaviMapTestHooks.lastCameraZoom})",
+            zoomMoved,
+        )
+        assertSheetsClosed()
+        android.util.Log.i(
+            "HudVerification",
+            "map-tap test ok zoomBeforePan=$zoomBeforePan",
+        )
+    }
+
+    private fun assertSheetsClosed() {
+        assertFalse("map settings should be closed", NaviMapTestHooks.mapSettingsOpen)
+        assertFalse("drive settings should be closed", NaviMapTestHooks.driveSettingsOpen)
+        assertTrue(
+            composeRule.onAllNodesWithTag("map_settings_sheet", useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .isEmpty(),
+        )
+        assertTrue(
+            composeRule.onAllNodesWithTag("drive_settings_sheet", useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .isEmpty(),
+        )
+    }
+
+    /** Tap the map band between the top and bottom HUD (and clear of open sheets). */
+    private fun tapMapAwayFromChrome() {
+        val device = androidx.test.uiautomator.UiDevice.getInstance(
+            InstrumentationRegistry.getInstrumentation(),
+        )
+        val w = device.displayWidth
+        val h = device.displayHeight
+        val y = when {
+            NaviMapTestHooks.mapSettingsOpen -> (h * 0.62).toInt()
+            NaviMapTestHooks.driveSettingsOpen -> (h * 0.30).toInt()
+            else -> (h * 0.45).toInt()
+        }
+        val x = w / 2
+        android.util.Log.i("HudVerification", "tapMap x=$x y=$y w=$w h=$h")
+        device.click(x, y)
+        composeRule.waitForIdle()
+    }
+
+    private fun panMapHorizontal() {
+        val device = androidx.test.uiautomator.UiDevice.getInstance(
+            InstrumentationRegistry.getInstrumentation(),
+        )
+        val w = device.displayWidth
+        val h = device.displayHeight
+        val y = (h * 0.45).toInt()
+        val x0 = (w * 0.20).toInt()
+        val x1 = (w * 0.80).toInt()
+        NaviMapTestHooks.mapGestureMoves = 0
+        // Shell input is more reliable than UiDevice.swipe for MapLibre on this AVD.
+        InstrumentationRegistry.getInstrumentation().uiAutomation
+            .executeShellCommand("input swipe $x0 $y $x1 $y 400")
+            .close()
+        composeRule.waitForIdle()
+        Thread.sleep(1_200)
+        android.util.Log.i(
+            "HudVerification",
+            "after pan gestureMoves=${NaviMapTestHooks.mapGestureMoves} " +
+                "lat=${NaviMapTestHooks.lastCameraLat} lon=${NaviMapTestHooks.lastCameraLon}",
+        )
+    }
+
+    private fun doubleTapZoomMap() {
+        val device = androidx.test.uiautomator.UiDevice.getInstance(
+            InstrumentationRegistry.getInstrumentation(),
+        )
+        val cx = device.displayWidth / 2
+        val cy = (device.displayHeight * 0.45).toInt()
+        InstrumentationRegistry.getInstrumentation().uiAutomation
+            .executeShellCommand("input tap $cx $cy")
+            .close()
+        Thread.sleep(60)
+        InstrumentationRegistry.getInstrumentation().uiAutomation
+            .executeShellCommand("input tap $cx $cy")
+            .close()
+        composeRule.waitForIdle()
+        Thread.sleep(1_200)
+        android.util.Log.i(
+            "HudVerification",
+            "after double-tap zoom=${NaviMapTestHooks.lastCameraZoom}",
+        )
+    }
+
+    private fun pinchZoomMap(zoomIn: Boolean) {
+        val device = androidx.test.uiautomator.UiDevice.getInstance(
+            InstrumentationRegistry.getInstrumentation(),
+        )
+        val cx = device.displayWidth / 2
+        val cy = (device.displayHeight * 0.45).toInt()
+        val startSpan = if (zoomIn) 80 else 220
+        val endSpan = if (zoomIn) 220 else 80
+        injectPinch(cx, cy, startSpan, endSpan)
+        composeRule.waitForIdle()
+        Thread.sleep(800)
+    }
+
+    private fun injectPinch(cx: Int, cy: Int, startSpan: Int, endSpan: Int) {
+        val dispatch: (android.view.MotionEvent) -> Unit = { event ->
+            var handled = false
+            composeRule.runOnUiThread {
+                handled = NaviMapTestHooks.mapViewTouch?.invoke(event) == true
+            }
+            if (!handled) {
+                InstrumentationRegistry.getInstrumentation().sendPointerSync(event)
+            }
+        }
+        val downTime = android.os.SystemClock.uptimeMillis()
+        fun event(
+            action: Int,
+            t: Long,
+            x0: Float,
+            y0: Float,
+            x1: Float,
+            y1: Float,
+            pointerCount: Int,
+        ): android.view.MotionEvent {
+            val props = Array(pointerCount) { android.view.MotionEvent.PointerProperties() }
+            val coords = Array(pointerCount) { android.view.MotionEvent.PointerCoords() }
+            props[0].id = 0
+            props[0].toolType = android.view.MotionEvent.TOOL_TYPE_FINGER
+            coords[0].x = x0
+            coords[0].y = y0
+            coords[0].pressure = 1f
+            coords[0].size = 1f
+            if (pointerCount > 1) {
+                props[1].id = 1
+                props[1].toolType = android.view.MotionEvent.TOOL_TYPE_FINGER
+                coords[1].x = x1
+                coords[1].y = y1
+                coords[1].pressure = 1f
+                coords[1].size = 1f
+            }
+            return android.view.MotionEvent.obtain(
+                downTime,
+                t,
+                action,
+                pointerCount,
+                props,
+                coords,
+                0,
+                0,
+                1f,
+                1f,
+                0,
+                0,
+                android.view.InputDevice.SOURCE_TOUCHSCREEN,
+                0,
+            )
+        }
+        NaviMapTestHooks.mapGestureScales = 0
+        val steps = 16
+        var t = downTime
+        val y0s = (cy - startSpan / 2).toFloat()
+        val y1s = (cy + startSpan / 2).toFloat()
+        var e = event(android.view.MotionEvent.ACTION_DOWN, t, cx.toFloat(), y0s, 0f, 0f, 1)
+        dispatch(e)
+        e.recycle()
+        t += 20
+        e = event(
+            android.view.MotionEvent.ACTION_POINTER_DOWN or
+                (1 shl android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+            t,
+            cx.toFloat(),
+            y0s,
+            cx.toFloat(),
+            y1s,
+            2,
+        )
+        dispatch(e)
+        e.recycle()
+        for (i in 1..steps) {
+            t += 20
+            val frac = i.toFloat() / steps
+            val span = startSpan + ((endSpan - startSpan) * frac).toInt()
+            val ya = (cy - span / 2).toFloat()
+            val yb = (cy + span / 2).toFloat()
+            e = event(
+                android.view.MotionEvent.ACTION_MOVE,
+                t,
+                cx.toFloat(),
+                ya,
+                cx.toFloat(),
+                yb,
+                2,
+            )
+            dispatch(e)
+            e.recycle()
+        }
+        t += 20
+        val y0e = (cy - endSpan / 2).toFloat()
+        val y1e = (cy + endSpan / 2).toFloat()
+        e = event(
+            android.view.MotionEvent.ACTION_POINTER_UP or
+                (1 shl android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+            t,
+            cx.toFloat(),
+            y0e,
+            cx.toFloat(),
+            y1e,
+            2,
+        )
+        dispatch(e)
+        e.recycle()
+        t += 20
+        e = event(android.view.MotionEvent.ACTION_UP, t, cx.toFloat(), y0e, 0f, 0f, 1)
+        dispatch(e)
+        e.recycle()
+        android.util.Log.i(
+            "HudVerification",
+            "after pinch scales=${NaviMapTestHooks.mapGestureScales} zoom=${NaviMapTestHooks.lastCameraZoom}",
+        )
+    }
+
+    private fun fieldText(tag: String): String {
+        val node = composeRule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode()
+        val editable = node.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.EditableText) {
+            androidx.compose.ui.text.AnnotatedString("")
+        }
+        if (editable.text.isNotEmpty()) return editable.text
+        val textList = node.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Text) {
+            emptyList()
+        }
+        return textList.joinToString("") { it.text }
     }
 }

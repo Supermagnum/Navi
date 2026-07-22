@@ -52,16 +52,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -379,7 +382,8 @@ private fun NaviMapScreen() {
                     NaviMapTestHooks.driveSettingsOpen = showDriveSettings
                     NaviMapTestHooks.mapSettingsOpen = showMapSettings
                     NaviMapTestHooks.lastRotationMode = driveHud.rotationMode
-                    NaviMapTestHooks.lastCameraZoom = mapState.cameraZoom ?: NaviMapTestHooks.lastCameraZoom
+                    // Do not overwrite lastCameraZoom / lat / lon from Compose state here —
+                    // MapLibre camera-idle is the source of truth (user pan/pinch/double-tap).
                     NaviMapTestHooks.lastCameraBearing = mapState.cameraBearing
                     NaviMapTestHooks.lastBreakRemindersEnabled = driveHud.breakRemindersEnabled
                     NaviMapTestHooks.lastShowTripEta = driveHud.showTripEta
@@ -408,10 +412,7 @@ private fun NaviMapScreen() {
         }
         handler.post(runnable)
         onDispose {
-            // Intentionally do not removeCallbacks: instrumented tests were observing
-            // LaunchedEffect/DisposableEffect teardown mid-run after screenshots.
-            // The runnable no-ops safely if composition state is gone; a new
-            // DisposableEffect will post another runnable on recreate.
+            handler.removeCallbacks(runnable)
         }
     }
 
@@ -473,6 +474,7 @@ private fun NaviMapScreen() {
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
+                .zIndex(1f)
                 .padding(10.dp)
                 .heightIn(max = 520.dp)
                 .verticalScroll(rememberScrollState()),
@@ -489,70 +491,6 @@ private fun NaviMapScreen() {
                 },
                 modifier = Modifier.padding(bottom = 8.dp),
             )
-            if (showMapSettings) {
-                MapSettingsSheet(
-                    state = driveHud.copy(ecoActive = ecoEnabled),
-                    onRotation = { mode ->
-                        driveHud = driveHud.copy(rotationMode = mode)
-                        NaviMapTestHooks.lastRotationMode = mode
-                        val bearing = when (mode) {
-                            MapRotationMode.NorthUp -> 0.0
-                            MapRotationMode.Compass ->
-                                NaviMapTestHooks.magneticHeadingDeg ?: mapState.cameraBearing
-                            MapRotationMode.DirectionOfTravel ->
-                                NaviMapTestHooks.gpsBearingDeg ?: mapState.cameraBearing
-                        }
-                        if (NaviMapTestHooks.applyBearingToMap) {
-                            mapState = mapState.copy(cameraBearing = bearing)
-                        }
-                        NaviMapTestHooks.lastCameraBearing = bearing
-                    },
-                    onToggleTripEta = { on ->
-                        driveHud = driveHud.copy(
-                            showTripEta = on,
-                            tripEtaMinutes = when {
-                                on && driveHud.tripEtaMinutes == null -> 95.0
-                                else -> driveHud.tripEtaMinutes
-                            },
-                        )
-                    },
-                    onToggleBreakReminders = { on ->
-                        driveHud = driveHud.copy(breakRemindersEnabled = on)
-                    },
-                    onToggleAutoZoom = { on ->
-                        driveHud = driveHud.copy(autoZoomWhileMoving = on)
-                        MapHudPrefs.saveAutoZoom(
-                            context,
-                            driveHud.autoZoomLevel,
-                            enabled = on,
-                        )
-                        if (on) {
-                            mapState = mapState.copy(
-                                cameraZoom = driveHud.autoZoomLevel,
-                                layerEpoch = mapState.layerEpoch + 1,
-                            )
-                            NaviMapTestHooks.lastCameraZoom = driveHud.autoZoomLevel
-                        }
-                    },
-                    onAutoZoomLevelChange = { level ->
-                        val next = MapHudPrefs.clampZoom(level)
-                        driveHud = driveHud.copy(autoZoomLevel = next)
-                        MapHudPrefs.saveAutoZoom(
-                            context,
-                            next,
-                            enabled = driveHud.autoZoomWhileMoving,
-                        )
-                        if (driveHud.autoZoomWhileMoving) {
-                            mapState = mapState.copy(
-                                cameraZoom = next,
-                                layerEpoch = mapState.layerEpoch + 1,
-                            )
-                            NaviMapTestHooks.lastCameraZoom = next
-                        }
-                    },
-                    onClose = { showMapSettings = false },
-                )
-            }
             if (!hideSearch) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
@@ -1070,41 +1008,10 @@ private fun NaviMapScreen() {
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(10.dp),
+                    .padding(10.dp)
+                    .zIndex(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (showDriveSettings) {
-                    DriveSettingsSheet(
-                        dataDir = dataDir.absolutePath,
-                        iconDir = iconsDir.absolutePath,
-                        ecoActive = ecoEnabled,
-                        onEcoChange = {
-                            ecoEnabled = it
-                            driveHud = driveHud.copy(ecoActive = it)
-                        },
-                        onApplied = {
-                            showDriveSettings = false
-                            NaviMapTestHooks.driveSettingsOpen = false
-                            status = "Drive settings applied"
-                            driveHud = driveHud.copy(ecoActive = ecoEnabled)
-                            runCatching {
-                                val rest = loadCarRestSettings(dataDir.absolutePath)
-                                val intervalH = rest.breakIntervalHours
-                                val minsLeft =
-                                    ((intervalH - drivingHoursSinceBreak) * 60.0).coerceAtLeast(0.0)
-                                driveHud = driveHud.copy(
-                                    ecoActive = rest.ecoModeEnabled || ecoEnabled,
-                                    minutesToBreak = minsLeft,
-                                )
-                                ecoEnabled = rest.ecoModeEnabled || ecoEnabled
-                            }
-                        },
-                        onDismiss = {
-                            showDriveSettings = false
-                            NaviMapTestHooks.driveSettingsOpen = false
-                        },
-                    )
-                }
                 BottomDriveHud(
                     state = driveHud.copy(ecoActive = ecoEnabled),
                     iconDir = iconsDir.absolutePath,
@@ -1132,18 +1039,131 @@ private fun NaviMapScreen() {
                         NaviMapTestHooks.driveSettingsOpen = showDriveSettings
                     },
                 )
-                Text(
-                    text = status.take(120),
+            }
+
+            // Status chip: bottom-end so it never covers MapLibre/OSM attribution (bottom-left).
+            Text(
+                text = status.take(120),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .zIndex(3f)
+                    .padding(end = 12.dp, bottom = 88.dp)
+                    .background(Color(0xCCFFFFFF), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                    .testTag("status_toast"),
+                style = MaterialTheme.typography.bodySmall,
+            )
+
+            if (showMapSettings) {
+                MapSettingsSheet(
+                    state = driveHud.copy(ecoActive = ecoEnabled),
+                    onRotation = { mode ->
+                        driveHud = driveHud.copy(rotationMode = mode)
+                        NaviMapTestHooks.lastRotationMode = mode
+                        val bearing = when (mode) {
+                            MapRotationMode.NorthUp -> 0.0
+                            MapRotationMode.Compass ->
+                                NaviMapTestHooks.magneticHeadingDeg ?: mapState.cameraBearing
+                            MapRotationMode.DirectionOfTravel ->
+                                NaviMapTestHooks.gpsBearingDeg ?: mapState.cameraBearing
+                        }
+                        if (NaviMapTestHooks.applyBearingToMap) {
+                            mapState = mapState.copy(cameraBearing = bearing)
+                        }
+                        NaviMapTestHooks.lastCameraBearing = bearing
+                    },
+                    onToggleTripEta = { on ->
+                        driveHud = driveHud.copy(
+                            showTripEta = on,
+                            tripEtaMinutes = when {
+                                on && driveHud.tripEtaMinutes == null -> 95.0
+                                else -> driveHud.tripEtaMinutes
+                            },
+                        )
+                    },
+                    onToggleBreakReminders = { on ->
+                        driveHud = driveHud.copy(breakRemindersEnabled = on)
+                    },
+                    onToggleAutoZoom = { on ->
+                        driveHud = driveHud.copy(autoZoomWhileMoving = on)
+                        MapHudPrefs.saveAutoZoom(
+                            context,
+                            driveHud.autoZoomLevel,
+                            enabled = on,
+                        )
+                        if (on) {
+                            mapState = mapState.copy(
+                                cameraZoom = driveHud.autoZoomLevel,
+                                layerEpoch = mapState.layerEpoch + 1,
+                            )
+                            NaviMapTestHooks.lastCameraZoom = driveHud.autoZoomLevel
+                        }
+                    },
+                    onAutoZoomLevelChange = { level ->
+                        val next = MapHudPrefs.clampZoom(level)
+                        driveHud = driveHud.copy(autoZoomLevel = next)
+                        MapHudPrefs.saveAutoZoom(
+                            context,
+                            next,
+                            enabled = driveHud.autoZoomWhileMoving,
+                        )
+                        if (driveHud.autoZoomWhileMoving) {
+                            mapState = mapState.copy(
+                                cameraZoom = next,
+                                layerEpoch = mapState.layerEpoch + 1,
+                            )
+                            NaviMapTestHooks.lastCameraZoom = next
+                        }
+                    },
+                    onClose = { showMapSettings = false },
                     modifier = Modifier
-                        .background(Color(0xCCFFFFFF), RoundedCornerShape(8.dp))
-                        .padding(8.dp),
-                    style = MaterialTheme.typography.bodySmall,
+                        .align(Alignment.TopCenter)
+                        .zIndex(4f)
+                        .padding(10.dp),
+                )
+            }
+
+            if (showDriveSettings) {
+                DriveSettingsSheet(
+                    dataDir = dataDir.absolutePath,
+                    iconDir = iconsDir.absolutePath,
+                    ecoActive = ecoEnabled,
+                    onEcoChange = {
+                        ecoEnabled = it
+                        driveHud = driveHud.copy(ecoActive = it)
+                    },
+                    onApplied = {
+                        showDriveSettings = false
+                        NaviMapTestHooks.driveSettingsOpen = false
+                        status = "Drive settings applied"
+                        driveHud = driveHud.copy(ecoActive = ecoEnabled)
+                        runCatching {
+                            val rest = loadCarRestSettings(dataDir.absolutePath)
+                            val intervalH = rest.breakIntervalHours
+                            val minsLeft =
+                                ((intervalH - drivingHoursSinceBreak) * 60.0).coerceAtLeast(0.0)
+                            driveHud = driveHud.copy(
+                                ecoActive = rest.ecoModeEnabled || ecoEnabled,
+                                minutesToBreak = minsLeft,
+                            )
+                            ecoEnabled = rest.ecoModeEnabled || ecoEnabled
+                        }
+                    },
+                    onDismiss = {
+                        showDriveSettings = false
+                        NaviMapTestHooks.driveSettingsOpen = false
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .zIndex(4f)
+                        .padding(10.dp),
                 )
             }
         }
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun CorridorMapView(
     state: MapRouteState,
@@ -1205,8 +1225,10 @@ private fun CorridorMapView(
                 }
             }
         }
+        NaviMapTestHooks.mapViewTouch = { event -> mapView.dispatchTouchEvent(event) }
         onDispose {
             NaviMapTestHooks.mapPauseHandler = null
+            NaviMapTestHooks.mapViewTouch = null
             mapView.onPause()
             mapView.onStop()
             mapView.onDestroy()
@@ -1223,7 +1245,33 @@ private fun CorridorMapView(
                     mapRef = map
                     map.addOnCameraIdleListener {
                         refreshTrackOverlay(map)
+                        val pos = map.cameraPosition
+                        NaviMapTestHooks.lastCameraZoom = pos.zoom
+                        NaviMapTestHooks.lastCameraBearing = pos.bearing
+                        pos.target?.let { target ->
+                            NaviMapTestHooks.lastCameraLat = target.latitude
+                            NaviMapTestHooks.lastCameraLon = target.longitude
+                        }
                     }
+                    map.addOnMoveListener(object : org.maplibre.android.maps.MapLibreMap.OnMoveListener {
+                        override fun onMoveBegin(detector: org.maplibre.android.gestures.MoveGestureDetector) {
+                            NaviMapTestHooks.mapGestureMoves += 1
+                        }
+
+                        override fun onMove(detector: org.maplibre.android.gestures.MoveGestureDetector) {}
+
+                        override fun onMoveEnd(detector: org.maplibre.android.gestures.MoveGestureDetector) {}
+                    })
+                    map.addOnScaleListener(object : org.maplibre.android.maps.MapLibreMap.OnScaleListener {
+                        override fun onScaleBegin(detector: org.maplibre.android.gestures.StandardScaleGestureDetector) {
+                            NaviMapTestHooks.mapGestureScales += 1
+                        }
+
+                        override fun onScale(detector: org.maplibre.android.gestures.StandardScaleGestureDetector) {}
+
+                        override fun onScaleEnd(detector: org.maplibre.android.gestures.StandardScaleGestureDetector) {}
+                    })
+                    map.uiSettings.setAllGesturesEnabled(true)
                     map.setStyle("https://tiles.openfreemap.org/styles/liberty") { _ ->
                         styleReady.value = true
                         NaviMapTestHooks.styleReady = true
@@ -1232,7 +1280,14 @@ private fun CorridorMapView(
             },
         )
 
-        Canvas(modifier = Modifier.fillMaxSize()) {
+        // Forward touches so the marker overlay Canvas does not block MapLibre pan/pinch.
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInteropFilter { event ->
+                    mapView.dispatchTouchEvent(event)
+                },
+        ) {
             val labelPaint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
                 color = android.graphics.Color.BLACK
                 textSize = 34f
@@ -1322,27 +1377,46 @@ private fun CorridorMapView(
         }
     }
 
-    // Bearing / zoom-only camera updates without re-applying GeoJSON style layers.
-    LaunchedEffect(state.cameraBearing, state.cameraZoom, styleReady.value) {
+    // Bearing-only updates must not re-apply Compose zoom (that undoes user pinch / double-tap).
+    LaunchedEffect(state.cameraBearing, styleReady.value) {
         if (!styleReady.value) return@LaunchedEffect
         if (!NaviMapTestHooks.applyBearingToMap) {
             NaviMapTestHooks.lastCameraBearing = state.cameraBearing
-            state.cameraZoom?.let { NaviMapTestHooks.lastCameraZoom = it }
             return@LaunchedEffect
         }
-        val latest = stateRef.get()
-        val bearing = latest.cameraBearing
-        val zoom = latest.cameraZoom
+        val bearing = stateRef.get().cameraBearing
         mapView.getMapAsync { map ->
             try {
-                val builder = org.maplibre.android.camera.CameraPosition.Builder(map.cameraPosition)
-                    .bearing(bearing)
-                if (zoom != null) builder.zoom(zoom)
-                map.moveCamera(CameraUpdateFactory.newCameraPosition(builder.build()))
+                map.moveCamera(
+                    CameraUpdateFactory.newCameraPosition(
+                        org.maplibre.android.camera.CameraPosition.Builder(map.cameraPosition)
+                            .bearing(bearing)
+                            .build(),
+                    ),
+                )
                 NaviMapTestHooks.lastCameraBearing = bearing
-                if (zoom != null) NaviMapTestHooks.lastCameraZoom = zoom
             } catch (e: Exception) {
-                android.util.Log.e("HudVerification", "camera update failed", e)
+                android.util.Log.e("HudVerification", "bearing update failed", e)
+            }
+        }
+    }
+
+    // Zoom updates from HUD / pendingCamera (layerEpoch path also sets zoom).
+    LaunchedEffect(state.cameraZoom, styleReady.value) {
+        if (!styleReady.value) return@LaunchedEffect
+        val zoom = stateRef.get().cameraZoom ?: return@LaunchedEffect
+        mapView.getMapAsync { map ->
+            try {
+                map.moveCamera(
+                    CameraUpdateFactory.newCameraPosition(
+                        org.maplibre.android.camera.CameraPosition.Builder(map.cameraPosition)
+                            .zoom(zoom)
+                            .build(),
+                    ),
+                )
+                NaviMapTestHooks.lastCameraZoom = zoom
+            } catch (e: Exception) {
+                android.util.Log.e("HudVerification", "zoom update failed", e)
             }
         }
     }
@@ -1643,16 +1717,38 @@ private fun parsePolyline(encoded: String): List<LatLng> {
 }
 
 private fun ensureIconsCopied(context: android.content.Context, dest: File) {
-    if (dest.isDirectory && dest.list()?.isNotEmpty() == true) return
     dest.mkdirs()
     try {
-        val am = context.assets
-        val names = am.list("icons") ?: return
-        for (name in names) {
-            am.open("icons/$name").use { input ->
-                File(dest, name).outputStream().use { output -> input.copyTo(output) }
+        copyAssetDir(context.assets, "icons", dest)
+    } catch (_: Exception) {
+    }
+    // Always refresh leaf.svg so eco HUD never falls back to a missing-icon path
+    // after a partial/old iconsDir (e.g. early return when aprs/ was listed first).
+    runCatching {
+        context.assets.open("icons/leaf.svg").use { input ->
+            File(dest, "leaf.svg").outputStream().use { output -> input.copyTo(output) }
+        }
+    }
+}
+
+private fun copyAssetDir(
+    am: android.content.res.AssetManager,
+    assetPath: String,
+    destDir: File,
+) {
+    val names = am.list(assetPath) ?: return
+    destDir.mkdirs()
+    for (name in names) {
+        val childAsset = "$assetPath/$name"
+        val children = am.list(childAsset)
+        if (children != null && children.isNotEmpty()) {
+            copyAssetDir(am, childAsset, File(destDir, name))
+        } else {
+            runCatching {
+                am.open(childAsset).use { input ->
+                    File(destDir, name).outputStream().use { output -> input.copyTo(output) }
+                }
             }
         }
-    } catch (_: Exception) {
     }
 }

@@ -1,3 +1,10 @@
+# Testers wanted
+
+**Testers wanted** for testing on **actual hardware** (Android Automotive / head
+units). Development so far is emulator-only — real devices differ for GPS, MapLibre,
+Vulkan/GLES, and performance. Checklist:
+[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+
 # AI assistance
 
 This project was developed with AI assistance (Claude). The author has a
@@ -14,8 +21,6 @@ throughout.
   - [How features work](#how-features-work)
   - [Settings](#settings)
 - [Working app (emulator screenshots)](#working-app-emulator-screenshots)
-  - [Map / routing](#map--routing)
-  - [Drive HUD (upper + lower bars) and menus](#drive-hud-upper--lower-bars-and-menus)
 - [Documents](#documents)
 - [Icons (Navit)](#icons-navit)
 - [Building Android packages](#building-android-packages)
@@ -55,7 +60,7 @@ noted). Icon assets under `core/src/icons` are Navit-derived (**GPL v2**); see
 | **Map rotation** | Compass, direction-of-travel, or north-up camera bearing |
 | **Moving icons** | APRS-style tracked stations via `TrackStore` (upsert, timeout, 50–150 km range) |
 | **OSM updates** | Opt-in Geofabrik check / `.osc.gz` apply or full re-download ([`docs/osm-updates.md`](docs/osm-updates.md)) |
-| **Plugins** | Sandboxed WASM HostApi; planned: APRS, weather, road info, CAT, ECU/EV, **voice guidance** — [`docs/plugins.md`](docs/plugins.md) |
+| **Plugins** | Sandboxed WASM HostApi; ideas for plugins: APRS, weather, road info, CAT, ECU/EV, voice guidance — [`docs/plugins.md`](docs/plugins.md) |
 
 **Real hardware:** Development and automated checks so far use the Android
 Automotive **emulator only**. The app **needs testing on real hardware** before
@@ -118,7 +123,7 @@ dismisses; Cancel discards the sheet without saving that edit session.
 |---|---|
 | **Zoom − / +** | Sole app-owned map zoom (AAOS climate − 63 + in system chrome is not zoom) |
 | **Break / ETA** | Time-to-break and trip ETA only (no turn stub — see approach-instructions) |
-| **Eco leaf** | Shown on this bar only when eco-mode is active for the profile |
+| **Eco leaf** | Shown on this bar only when eco-mode is active for the profile (`leaf.svg` via icon rasterizer) |
 | **Tap status** | Opens drive / rest / fuel settings (no separate Settings link) |
 
 ### Drive settings sheet (bottom HUD tap — persisted)
@@ -155,51 +160,20 @@ More detail: [`architecture.md`](architecture.md), [`docs/API.md`](docs/API.md),
 ## Working app (emulator screenshots)
 
 Captured on Android Automotive emulator with MapLibre + OpenFreeMap liberty
-basemap.
+basemap. Collapsed top/bottom drive HUD (search chrome hidden):
 
-### Map / routing
+![Idle both bars](docs/images/hud/hud_idle_both_bars.png)
 
-| Zoom / scene | Preview |
-|---|---|
-| Regional (z6.5) at 58.991547, 6.138377 | ![Regional map](docs/images/zoom_z6_5.png) |
-| Town (z11) | ![Town map](docs/images/zoom_z11.png) |
-| Street (z16) — basemap POIs visible | ![Street POIs](docs/images/zoom_z16.png) |
-| Corridor route Espa → Atnbrufossen | ![Route overlay](docs/images/route_map.png) |
-
-### Drive HUD (upper + lower bars) and menus
-
-Clickable **top** bar (collapsed): altitude; tap opens map/display settings.
-Clickable **bottom** bar (collapsed): zoom −/+, break / ETA, eco leaf; tap opens
-drive settings. Search/profile chrome sit under the top bar when shown.
-
-How to change bar/menu **size and placement**:
-[`docs/hud-layout.md`](docs/hud-layout.md). Temporary maneuver approach box
-(deferred): [`docs/approach-instructions.md`](docs/approach-instructions.md).
-
-| Scene | Preview |
-|---|---|
-| Map + top/bottom HUD only (eco on) | ![Map HUD only](docs/images/hud/hud_map_top_bottom_only.png) |
-| Eco off (no leaf / ECO on bottom bar) | ![Eco off](docs/images/hud/hud_settings_eco_off.png) |
-| Upper + lower HUD with search (To/Via/Tools) | ![HUD bars and menus](docs/images/hud/hud_upper_lower_bars_with_menus.png) |
-| Profile menu (Car / Bicycle / Hiking / Motorcycle) | ![Profile menu](docs/images/hud/hud_profile_menu.png) |
-| Tools menu open (region / OSM actions) | ![Tools menu](docs/images/hud/hud_tools_menu_open.png) |
-| Top + bottom HUD (search chrome hidden) | ![Idle both bars](docs/images/hud/hud_idle_both_bars.png) |
-| Drive / vehicle settings sheet | ![Settings open](docs/images/hud/hud_settings_open.png) |
-| Rotation: Compass selected | ![Rot compass](docs/images/hud/hud_rot_mode_compass.png) |
-| Trip ETA on | ![Trip ETA](docs/images/hud/hud_trip_eta_on.png) |
-
-HUD bar layout fixes (collapsed defaults, bottom content, eco placement, tap
-sheets, single app zoom): **fixed and visually confirmed** on 2026-07-22 —
-except map-tap sheet immunity (**still-needs-testing**), toast covering MapLibre
-attribution (**confirmed-broken**), and auto-zoom `−`/`+` styling when on
-(**confirmed-broken**). Details: [`android-test-results.md`](android-test-results.md)
-Item 7. More captures: `docs/images/hud/`.
+All other screenshots (map zoom levels, route overlay, menus, settings
+overlays, eco leaf, rotation, bearing, moving icons):
+[`docs/pictures.md`](docs/pictures.md).
 
 ## Documents
 
 | Document | Description |
 |---|---|
 | [`architecture.md`](architecture.md) | Crate wiring, thread tiers, SQLite / FTS / graph cache, plugins |
+| [`docs/pictures.md`](docs/pictures.md) | Emulator screenshot gallery |
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Adjust size and placement of drive HUD bars and menus |
 | [`docs/approach-instructions.md`](docs/approach-instructions.md) | Deferred: temporary maneuver approach box (icon + distance + name) |
 | [`docs/poi.md`](docs/poi.md) | Searchable POI categories and OSM tag rules |
@@ -312,7 +286,7 @@ cargo test -p driver-break-core osm_update::
 
 - **Moving icons (APRS-style tracked markers):** fixed. Instrumented test
   `MovingIconInstrumentedTest` passes with visible yellow-halo APRS markers on the
-  map (see `docs/images/navi_moving_*.png`). Root cause was not zoom: MapLibre
+  map (see [`docs/pictures.md`](docs/pictures.md)). Root cause was not zoom: MapLibre
   GeoJSON Circle/Symbol layers were not painting on this Automotive emulator even
   with a valid source/images; markers are drawn via a Compose screen-space overlay
   projected from the map camera (z16, after `styleReady`). Residual: native
@@ -330,6 +304,5 @@ cargo test -p driver-break-core osm_update::
   angles (10°). Matches upstream
   [maplibre-native#2371](https://github.com/maplibre/maplibre-native/issues/2371).
   Same underlying emulator GLES instability class as the moving-icons native
-  paint failure; Vulkan avoids the bad path. Verified screenshots at Compass
-  0°/90°/180°/270°: `docs/images/bearing/bearing_iso_*.png` and
-  `docs/images/hud/hud_compass_heading_*.png`.
+  paint failure; Vulkan avoids the bad path. Verified Compass / bearing shots:
+  [`docs/pictures.md`](docs/pictures.md).

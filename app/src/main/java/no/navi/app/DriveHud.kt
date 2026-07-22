@@ -2,7 +2,6 @@ package no.navi.app
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,7 +29,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -134,18 +132,21 @@ fun MapSettingsSheet(
     onToggleAutoZoom: (Boolean) -> Unit,
     onAutoZoomLevelChange: (Double) -> Unit,
     onClose: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         shape = RoundedCornerShape(12.dp),
-        tonalElevation = 6.dp,
-        modifier = Modifier
+        tonalElevation = 8.dp,
+        shadowElevation = 8.dp,
+        modifier = modifier
             .fillMaxWidth()
-            .testTag("map_settings_sheet")
-            .padding(bottom = 4.dp),
+            .testTag("map_settings_sheet"),
     ) {
-        // No verticalScroll here: parent top chrome Column already scrolls.
         Column(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier
+                .padding(12.dp)
+                .heightIn(max = 280.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
@@ -265,16 +266,22 @@ fun BottomDriveHud(
             leafBmp = null
             return@LaunchedEffect
         }
-        val png = runCatching {
-            rasterizeIconPng(
-                key = "eco-mode",
-                theme = FfiIconTheme.DAY,
-                width = 64u,
-                height = 64u,
-                bundledDir = iconDir,
-            )
-        }.getOrNull()
-        leafBmp = png?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+        // Same resolution path as POI/nav/status: aliases eco-mode / eco → leaf.svg.
+        var decoded: android.graphics.Bitmap? = null
+        for (key in listOf("eco-mode", "eco", "leaf")) {
+            val png = runCatching {
+                rasterizeIconPng(
+                    key = key,
+                    theme = FfiIconTheme.DAY,
+                    width = 64u,
+                    height = 64u,
+                    bundledDir = iconDir,
+                )
+            }.getOrNull() ?: continue
+            decoded = BitmapFactory.decodeByteArray(png, 0, png.size)
+            if (decoded != null) break
+        }
+        leafBmp = decoded
     }
 
     Surface(
@@ -325,24 +332,15 @@ fun BottomDriveHud(
                     modifier = Modifier.testTag("hud_trip_eta"),
                 )
             }
-            // Eco lives on the bottom bar only (not the approach box; not the top bar).
-            if (state.ecoActive) {
-                if (leafBmp != null) {
-                    Image(
-                        bitmap = leafBmp!!.asImageBitmap(),
-                        contentDescription = "Eco mode",
-                        modifier = Modifier
-                            .size(36.dp)
-                            .testTag("hud_eco_icon"),
-                    )
-                } else {
-                    Text(
-                        "ECO",
-                        color = Color(0xFF2E7D32),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.testTag("hud_eco_icon"),
-                    )
-                }
+            // Eco lives on the bottom bar only — rasterized leaf.svg (not a text label).
+            if (state.ecoActive && leafBmp != null) {
+                Image(
+                    bitmap = leafBmp!!.asImageBitmap(),
+                    contentDescription = "Eco mode",
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("hud_eco_icon"),
+                )
             }
         }
     }
@@ -361,6 +359,7 @@ fun DriveSettingsSheet(
     onEcoChange: (Boolean) -> Unit,
     onApplied: () -> Unit,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var breakHours by remember { mutableStateOf("4.0") }
     var restMins by remember { mutableStateOf("15") }
@@ -386,11 +385,10 @@ fun DriveSettingsSheet(
 
     Surface(
         shape = RoundedCornerShape(12.dp),
-        tonalElevation = 6.dp,
-        modifier = Modifier
+        tonalElevation = 8.dp,
+        shadowElevation = 8.dp,
+        modifier = modifier
             .fillMaxWidth()
-            .background(Color.Transparent)
-            .padding(10.dp)
             .heightIn(max = 360.dp)
             .testTag("drive_settings_sheet"),
     ) {

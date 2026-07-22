@@ -157,3 +157,31 @@ collapsed strip). Bottom is slightly taller than the ~6.4% strip reference.
 Note: `hud_upper_lower_bars_with_menus.png` currently MD5-matches
 `hud_profile_menu.png` (duplicate capture) — gallery entry still needs a
 correct re-shot.
+
+## Item 8 — Toast placement, eco leaf icon, settings overlays (2026-07-22)
+
+Instrumented: `HudVerificationInstrumentedTest` **PASS**.
+
+| Item | Before | After | Evidence |
+|---|---|---|---|
+| Status toast vs attribution | Toast in bottom column (bottom-left) covered MapLibre/OSM | Shared `status_toast` chip at **BottomEnd** (`bottom = 88.dp`) — all status strings | [`hud_status_toast_settings_applied.png`](docs/images/hud/hud_status_toast_settings_applied.png), [`hud_after_rest_mins_apply.png`](docs/images/hud/hud_after_rest_mins_apply.png) |
+| Eco indicator | Fell back to green **ECO** text (`leaf.svg` often missing after partial icon copy) | Rasterized `leaf.svg` via `eco-mode` / icon pipeline; no text fallback | [`hud_eco_leaf_on.png`](docs/images/hud/hud_eco_leaf_on.png) / [`hud_eco_leaf_off.png`](docs/images/hud/hud_eco_leaf_off.png) |
+| Settings sheets | **In-layout:** map sheet under top bar in scroll column; drive sheet stacked above bottom bar in bottom column | **Overlay:** both sheets are Box layers with `zIndex` above map + bars; bar positions unchanged | [`hud_settings_overlay.png`](docs/images/hud/hud_settings_overlay.png), [`hud_map_settings_overlay.png`](docs/images/hud/hud_map_settings_overlay.png) |
+
+Root causes fixed in code: recursive/`leaf.svg` refresh in `ensureIconsCopied`; toast `Alignment.BottomEnd`; sheets moved out of chrome columns.
+
+## Item 9 — Map tap does not affect settings sheets (2026-07-22)
+
+Instrumented: `HudVerificationInstrumentedTest` **PASS** (2/2), including new
+`hud_map_tap_does_not_affect_settings_sheets`.
+
+| Case | Result |
+|---|---|
+| Sheets closed + map tap → still closed | **PASS** |
+| Map settings open + map tap → stays open, mode/zoom/toggles unchanged | **PASS** |
+| Drive settings open + map tap → stays open, fields unchanged | **PASS** |
+| Sheets closed + pan / zoom gesture still work | **PASS** (pan + double-tap zoom; synthetic pinch begins but does not complete zoom on this AVD) |
+
+Also fixed while enabling gestures: track-overlay Canvas forwards touches to MapView;
+camera-idle is source of truth for zoom/lat/lon (poll no longer overwrites);
+bearing updates no longer re-apply Compose zoom.
