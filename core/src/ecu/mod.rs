@@ -2,6 +2,8 @@
 //!
 //! No OBD-II, J1939, or MegaSquirt polling is implemented in this pass.
 //! Future WASM or native plugins may supply snapshots through this trait.
+//!
+//! Wire formats and worked examples: repository `docs/ECU.md`.
 
 use crate::config::Profile;
 

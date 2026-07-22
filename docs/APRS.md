@@ -6,9 +6,12 @@ messages. Canonical reference: Bob Bruninga / TAPR,
 [APRS Protocol Reference 1.0.1](https://www.aprs.org/doc/APRS101.PDF)
 (`APRS101.PDF`).
 
-Navi does **not** implement APRS in this codebase yet. This document describes
-the wire/information-field conventions so a future radio or i-gate path can
-map fields cleanly onto T0 sensors, map overlays, and messaging UI.
+Navi does **not** implement RF APRS decode in this codebase yet. Information-field
+conventions below map cleanly onto T0 sensors, [`TrackStore`](../core/src/tracks/mod.rs)
+overlays, and messaging UI. Station **display + range filtering** are
+implemented; SDR receive is documented for a future
+[`rtl-sdr-rs`](https://crates.io/crates/rtl-sdr-rs) path — see
+[`APRS-SDR.md`](APRS-SDR.md).
 
 ## Packet shape (AX.25 UI frame)
 
@@ -217,17 +220,83 @@ Mic-E / compressed ─ dense encoding of lat/lon (+ course/speed ± altitude)
 - Core: `driver_break_core::tracks::TrackStore` — upsert by station id (in-place
   coordinate update, no duplicate markers), timeout **≤ 3600 s**, display range
   clamped to **50–150 km**.
-- App: MapLibre `tracks-src` SymbolLayer; test hooks push a full track snapshot
-  after each upsert batch.
+- App: screen-space Compose overlay (native MapLibre Circle/Symbol layers do not
+  paint reliably on the Automotive emulator GLES path; see README known issues).
+  Test hooks push a full track snapshot after each upsert batch.
 - Symbols for tests: hessu/aprs-symbols crops under `core/src/icons/aprs/` (see
   that directory’s `COPYRIGHT.md` — licensing is **per symbol**).
 
-### Packet ingest
+### Range filtering (implemented)
 
-RF / AX.25 decode is **not** implemented yet. Instrumented tests simulate beacon
-updates by calling `FfiTrackStore.upsert` with new lat/lon for an existing id.
+Limits which stations the UI should show, by Haversine distance from a centre
+point. Implemented in `TrackStore::visible(center_lat, center_lon)` using
+`haversine_km` (Earth radius **6371 km**).
 
-Related: sensor tier (T0) in `architecture.md`.
+```text
+a = sin²(Δlat/2) + cos(lat1)·cos(lat2)·sin²(Δlon/2)
+distance_km = 2 · R · asin(√a)     (equivalent atan2 form also fine)
+```
+
+**Process**
+
+1. Centre = operator / GPS position (or a fixed area of interest).
+2. Range = `TrackStore::range_km()` after `clamp_range`.
+3. For each stored station, keep if `haversine_km(centre, station) ≤ range_km`.
+
+**Navi clamps (unlike unlimited Navit-style “0 = global”)**
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `DISPLAY_RANGE_MIN_KM` | 50 | Floor — values below clamp up |
+| `DISPLAY_RANGE_MAX_KM` | 150 | Ceiling — global / unlimited is **forbidden** |
+| `STATION_TIMEOUT_MAX_S` | 3600 | Max last-heard timeout |
+
+```rust
+use driver_break_core::tracks::{TrackStore, DISPLAY_RANGE_MAX_KM};
+
+let mut store = TrackStore::new(/* timeout_s */ 3600, /* range_km */ 100.0);
+store.set_range_km(75.0); // clamped into 50..=150
+let on_map = store.visible(/* lat */ 60.72, /* lon */ 10.61);
+```
+
+UniFFI: `FfiTrackStore`, `haversineKm`, `displayRangeMinKm` /
+`displayRangeMaxKm`. Instrumented coverage:
+`MovingIconInstrumentedTest`.
+
+**Typical ranges (km)**
+
+| Range km | Typical use |
+|---|---|
+| 50 | Dense metro / min clamp |
+| 75–100 | Regional drive |
+| 150 | Max clamp (wide area) |
+
+When no stations appear: range too small, wrong centre, empty store, or
+stations expired past `timeout_s`. When too many: lower `range_km` toward 50.
+
+Filtering is applied on read (`visible`); upsert still stores all heard
+stations until `expire`. Future SQL pre-filter is optional for huge DBs.
+
+### Packet ingest / SDR (not implemented)
+
+RF / AX.25 decode is **not** in-tree yet. Instrumented tests simulate beacons
+via `FfiTrackStore.upsert`.
+
+Planned receive stack:
+
+| Piece | Role |
+|---|---|
+| [`rtl-sdr-rs`](https://crates.io/crates/rtl-sdr-rs) | Rust RTL-SDR USB IQ capture |
+| APRS SDR DSP | FM discriminator + bit-timing PLL → AX.25 (see [`APRS-SDR.md`](APRS-SDR.md)) |
+| Information-field parse | Map CSE/SPD, symbols, comments onto `TrackStation` |
+
+Use a **non-zero IF offset** (typically 50–100 kHz) on real RTL-SDR hardware;
+DC-centered tune is synthetic-test only. Full bit-stream expectations,
+footguns, and hardware notes: [`APRS-SDR.md`](APRS-SDR.md).
+
+Related: sensor tier (T0) in [`architecture.md`](../architecture.md). Protocol
+index: [`PROTOCOLS.md`](PROTOCOLS.md). Vehicle energy buses (separate from
+APRS): [`ECU.md`](ECU.md).
 
 ## References
 
@@ -235,3 +304,6 @@ Related: sensor tier (T0) in `architecture.md`.
 - [PROTOCOL.TXT (historical overview)](https://www.aprs.org/APRS-docs/PROTOCOL.TXT)
 - [APRSpedia — weather field](https://aprspedia.com/doku.php?id=aprs_protocols%3Ainformation_field%3Aweather_field)
 - [APRSpedia — position field](https://aprspedia.com/doku.php?id=aprs_protocols%3Ainformation_field%3Aposition_field)
+- [`rtl-sdr-rs` on crates.io](https://crates.io/crates/rtl-sdr-rs) — planned IQ front-end
+- [`rtl-sdr-rs` docs.rs](https://docs.rs/rtl-sdr-rs)
+- [`APRS-SDR.md`](APRS-SDR.md) — DSP pipeline stages, RTL-SDR IF offset, fault table

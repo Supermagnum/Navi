@@ -12,8 +12,17 @@ Notable exports:
 - Travel profile helpers (`ecoModeToggleable`, `ecoModeDefault`)
 - Saved routes and vehicle limits (see UniFFI records in `navi-ffi`)
 
-Plugin guest API: see [`plugins.md`](plugins.md).
+Plugin guest API: see [`plugins.md`](plugins.md) (includes planned APRS, weather,
+road info, CAT, ECU/EV plugins).
 POI categories: see [`poi.md`](poi.md).
 OSM update cadence: see [`osm-updates.md`](osm-updates.md).
+ECU / OBD energy extension: see [`ECU.md`](ECU.md) (core types in
+`driver_break_core::ecu`; no live polling API exported via UniFFI yet).
+APRS tracks: UniFFI `FfiTrackStore` / `haversineKm` (see [`APRS.md`](APRS.md));
+SDR ingest planned with [`rtl-sdr-rs`](https://crates.io/crates/rtl-sdr-rs)
+([`APRS-SDR.md`](APRS-SDR.md)).
+CAT / repeater auto-tune: see [`CAT.md`](CAT.md).
+Crate wiring and databases: see [`../architecture.md`](../architecture.md).
+Wire protocol index: see [`PROTOCOLS.md`](PROTOCOLS.md).
 
 Internal Rust modules are documented at the crate root of `driver-break-core`.

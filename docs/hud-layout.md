@@ -1,0 +1,252 @@
+# Drive HUD and menu layout
+
+How to change the **size** and **placement** of the top/bottom drive bars and
+the menus that sit with them. All of this is Compose UI in the Android host;
+there is no runtime “theme size” setting yet — edit the Kotlin sources and
+rebuild the APK.
+
+Reference screenshot (map + bars only):
+[`docs/images/hud/hud_map_top_bottom_only.png`](images/hud/hud_map_top_bottom_only.png).
+
+## Collapsed vs expanded (default behaviour)
+
+Both drive bars are **collapsed by default**.
+
+| Bar | Collapsed content | Tap |
+|---|---|---|
+| Top (`TopDriveHud`) | Map label, altitude, rotation hint | Toggles `MapSettingsSheet` (rotation, Trip ETA, Breaks, Auto-zoom) |
+| Bottom (`BottomDriveHud`) | Zoom −/+, break time, trip ETA, eco leaf | Status area toggles `DriveSettingsSheet` (rest / fuel / eco) |
+
+Sheets close on Apply/Cancel/Close, or by tapping the same bar again. Tapping the
+map does not open or close either sheet.
+
+**Zoom:** the app owns **one** zoom −/+ set on the bottom bar. AAOS system chrome
+often shows separate climate − N + controls; those are not map zoom.
+
+**Eco:** leaf / `ECO` text on the **bottom** bar only when eco-mode is active.
+
+**Turn stubs:** not on the bottom bar. See [`approach-instructions.md`](approach-instructions.md)
+(deferred temporary approach box).
+
+Garmin reference proportions (~14% top instruction / ~6.4% bottom strip) inform
+collapsed `heightIn(min = …)` floors and the future approach box — size by
+content first.
+
+**Measured on emulator (2026-07-22)** from
+`docs/images/hud/hud_map_top_bottom_only.png` (1280×720): collapsed top
+**6.67%** (48 px), collapsed bottom **8.89%** (64 px). Visually confirmed
+collapsed defaults and eco on/off; toast-vs-attribution overlap and auto-zoom
+`−`/`+` styling still open — see [`android-test-results.md`](../android-test-results.md)
+Item 7.
+
+## Screen stack (placement)
+
+`NaviMapScreen` in [`app/src/main/java/no/navi/app/MainActivity.kt`](../app/src/main/java/no/navi/app/MainActivity.kt)
+is a full-screen `Box`:
+
+| Layer | Alignment | Role |
+|---|---|---|
+| `CorridorMapView` | fill | MapLibre map |
+| Top `Column` | `TopCenter` | Top drive HUD + search / profile chrome (scrollable) |
+| Tools `Surface` | `BottomCenter` | Region/debug panel when Tools is open |
+| Bottom `Column` | `BottomCenter` | Drive settings sheet (optional) + bottom HUD + status line |
+
+```
++------------------------------------------+
+|  system status bar (AAOS)                |
++------------------------------------------+
+|  [TopDriveHud]                           |  <-- TopCenter Column
+|  [search_chrome / profile_menu / ...]    |      padding 10.dp, max height 520.dp
+|                                          |
+|              map                         |
+|                                          |
+|  [tools_menu]  (optional)                |  <-- BottomCenter, +88.dp lift
+|  [DriveSettingsSheet] (optional)         |
+|  [BottomDriveHud]                        |  <-- BottomCenter Column
+|  status chip                             |      padding 10.dp
++------------------------------------------+
+|  system nav / climate bar (AAOS)         |
++------------------------------------------+
+```
+
+### Move the top stack
+
+In `MainActivity.kt`, top chrome:
+
+```kotlin
+Column(
+    modifier = Modifier
+        .align(Alignment.TopCenter)   // placement on the map
+        .fillMaxWidth()
+        .padding(10.dp)               // inset from screen edges
+        .heightIn(max = 520.dp)       // cap before scrolling
+        .verticalScroll(...),
+)
+```
+
+| Want | Change |
+|---|---|
+| Closer to the top edge | Lower `.padding(10.dp)` (e.g. `4.dp`) |
+| Narrower / side margins | Use `.padding(horizontal = …, vertical = …)` |
+| Shorter scroll window | Lower `heightIn(max = 520.dp)` |
+| Pin to a corner | `Alignment.TopStart` / `TopEnd` instead of `TopCenter` |
+| Gap under top HUD before search | `TopDriveHud(…, modifier = Modifier.padding(bottom = 8.dp))` |
+
+### Move the bottom stack
+
+```kotlin
+Column(
+    modifier = Modifier
+        .align(Alignment.BottomCenter)
+        .fillMaxWidth()
+        .padding(10.dp),
+    verticalArrangement = Arrangement.spacedBy(8.dp),
+)
+```
+
+| Want | Change |
+|---|---|
+| Clear AAOS system nav / climate bar | Increase bottom padding (e.g. `.padding(bottom = 24.dp)` in addition to `10.dp`) |
+| Tighter gap between settings sheet and bar | Lower `Arrangement.spacedBy(8.dp)` |
+| Status chip above the bar instead of below | Reorder children: status `Text` before `BottomDriveHud` |
+
+The tools panel sits above the bottom HUD with an extra lift so it does not
+cover zoom/settings:
+
+```kotlin
+.padding(bottom = 88.dp)   // lift tools_menu above BottomDriveHud
+.heightIn(max = 220.dp)
+```
+
+Raise `88.dp` if the bottom HUD grows; lower it if you want the tools panel
+closer to the bar.
+
+## Bar size (DriveHud.kt)
+
+Composables live in
+[`app/src/main/java/no/navi/app/DriveHud.kt`](../app/src/main/java/no/navi/app/DriveHud.kt).
+
+Bars are `Surface` + padding. They **grow with content**; there is no fixed
+pixel height. To make a bar taller/shorter or denser:
+
+### Top bar (`TopDriveHud`)
+
+| Knob | Current | Effect |
+|---|---|---|
+| Corner radius | `RoundedCornerShape(10.dp)` | Softer / sharper panel |
+| Elevation | `tonalElevation = 3.dp` | Shadow / separation from map |
+| Inner padding | `Modifier.padding(8.dp)` | Overall bar thickness |
+| Row spacing | `Arrangement.spacedBy(6.dp)` / `10.dp` | Vertical / horizontal density |
+| Altitude type | `MaterialTheme.typography.titleMedium` | Readout size |
+| Labels | `bodySmall` / `labelLarge` | Chip and toggle label size |
+| Filter chips | Material3 `FilterChip` defaults | Compass / Travel / N-up hit targets |
+| Auto-zoom −/+ | `TextButton` | Step control size |
+
+Example: denser top bar for a smaller head unit —
+
+```kotlin
+Column(
+    modifier = Modifier.padding(4.dp),
+    verticalArrangement = Arrangement.spacedBy(4.dp),
+) { /* … */ }
+```
+
+### Bottom bar (`BottomDriveHud`)
+
+| Knob | Current | Effect |
+|---|---|---|
+| Corner radius | `RoundedCornerShape(10.dp)` | Panel shape |
+| Elevation | `tonalElevation = 4.dp` | Separation from map |
+| Inner padding | `padding(horizontal = 8.dp, vertical = 6.dp)` | Bar height |
+| Item gap | `Arrangement.spacedBy(4.dp)` | Space between zoom, turn text, Settings |
+| Turn / break type | `titleMedium` / `bodySmall` | Primary status size |
+| Eco leaf | `Modifier.size(36.dp)` | Icon size |
+| Zoom −/+ | `TextButton` with tags `zoom_out` / `zoom_in` | Always-visible zoom |
+
+Example: larger zoom hit targets for driving —
+
+```kotlin
+TextButton(
+    onClick = onZoomIn,
+    modifier = Modifier
+        .testTag("zoom_in")
+        .size(56.dp),   // or padding / MinTouchTarget
+) { Text("+", style = MaterialTheme.typography.headlineSmall) }
+```
+
+### Drive settings sheet (`DriveSettingsSheet`)
+
+Opens **above** the bottom bar (same bottom `Column`).
+
+| Knob | Current | Effect |
+|---|---|---|
+| Max height | `heightIn(max = 360.dp)` | Sheet scroll window |
+| Outer padding | `padding(10.dp)` | Margin vs screen |
+| Inner padding | `padding(12.dp)` | Field density |
+| Field spacing | `spacedBy(8.dp)` | Vertical rhythm |
+
+## Menu items (search / profile / tools)
+
+These are **not** in `DriveHud.kt`; they are `Surface` blocks in the top
+scroll column (and the tools overlay) in `MainActivity.kt`.
+
+| Menu | `testTag` | Where |
+|---|---|---|
+| Search (To / Via / Place / Address / Tools) | `search_chrome` | Top column, under top HUD |
+| Profile chips + eco | `profile_menu` | Top column, further down (scroll) |
+| Tools / region | `tools_menu` | Bottom overlay when Tools is toggled |
+| Drive settings | `drive_settings_title` | Above bottom HUD |
+
+### Size
+
+Each menu panel uses roughly:
+
+```kotlin
+Surface(
+    shape = RoundedCornerShape(12.dp),
+    tonalElevation = 4.dp,   // tools uses 6.dp
+    modifier = Modifier.fillMaxWidth(),
+) {
+    Column(modifier = Modifier.padding(10.dp)) { /* chips, fields, buttons */ }
+}
+```
+
+| Want | Change |
+|---|---|
+| Larger tap targets on chips | Increase chip / `FilterChip` padding, or wrap in taller `Row` |
+| More space between To/Via/Place/Address | `Arrangement.spacedBy(8.dp)` on that row |
+| Compact profile row | Lower `spacedBy(6.dp)` and panel `padding(10.dp)` |
+| Shorter tools panel | Lower `heightIn(max = 220.dp)` on `tools_menu` |
+
+### Placement / order
+
+Top column child order (top → bottom) when chrome is visible:
+
+1. `TopDriveHud`
+2. `search_chrome` (if search not hidden)
+3. Profile / eco / vehicle / saved-routes blocks (`profile_menu`, etc.)
+
+To put profile **above** search, move the `Surface(… testTag("profile_menu"))`
+block above the `search_chrome` `Surface` in `MainActivity.kt`.
+
+To hide search but keep bars (HUD screenshots / focus mode):
+`NaviMapTestHooks.hideSearchChrome = true` (or the matching UI path that sets
+`hideSearch`).
+
+Full chrome off: `NaviMapTestHooks.hideUiChrome = true`.
+
+## Typography (global size feel)
+
+Bars and menus use `MaterialTheme.typography.*` from the default Material3
+theme set in `MainActivity` (`MaterialTheme { … }`). To enlarge **all** HUD
+text at once, wrap content in a custom `Typography` / `MaterialTheme` with
+larger `bodySmall` / `titleMedium` / `labelLarge`, or pass explicit
+`TextStyle` / `fontSize` on individual `Text` calls in `DriveHud.kt`.
+
+## After you change layout
+
+1. Rebuild/install: see [`android-build.md`](android-build.md).
+2. Re-run `HudVerificationInstrumentedTest` so `docs/images/hud/` shots match.
+3. Check on a real head unit — AAOS system bars differ from the emulator;
+   bottom padding (`88.dp` tools lift, bottom `Column` padding) usually needs
+   the most tuning ([`real-hardware-testing.md`](real-hardware-testing.md)).

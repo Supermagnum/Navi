@@ -74,7 +74,7 @@ Confirmed in the image:
 |---|---|
 | `core/src/bus/mod.rs` | Minimal stubs (inter-thread snapshots) — not corridor-critical |
 | `core/src/sensors/mod.rs` | Placeholders; GPS/IMU out of scope |
-| `core/src/lib.rs` / ECU | Live ECU/OBD out of scope (extension point only) |
+| `core/src/lib.rs` / ECU | Live ECU/OBD out of scope (extension point only; see [`docs/ECU.md`](docs/ECU.md)) |
 | `core/src/icons` `unknown.svg` | Intentional fallback placeholder when a POI `icon_key` has no matching asset in the lean on-device pack |
 | No `todo!()` / `unimplemented!()` | in corridor / FFI / map paths for this pass |
 
@@ -119,3 +119,41 @@ adb pull /data/local/tmp/navi_zoom_16.png core/target/integration-fixtures/zoom_
 ```
 
 Connected result: `tests=1 failures=0` (2026-07-21 closing pass).
+
+## Item 7 — HUD bar fix visual confirmation (2026-07-22)
+
+Instrumented: `HudVerificationInstrumentedTest` **PASS** on `emulator-5554`
+(xtrons AAOS). Fresh pulls under [`docs/images/hud/`](docs/images/hud/)
+(including `hud_map_top_bottom_only.png`).
+
+Status key: **fixed and visually confirmed** / **confirmed-broken** /
+**still-needs-testing**.
+
+| Claim | Status | Evidence |
+|---|---|---|
+| Collapsed by default (not stuck-open Map settings) | **fixed and visually confirmed** | [`hud_map_top_bottom_only.png`](docs/images/hud/hud_map_top_bottom_only.png) — single-line top (Map / Alt / N-up) + bottom; map settings closed |
+| Bottom: break + ETA only (no `Turn --`, no Settings link) | **fixed and visually confirmed** | Same shot + apply shots; test asserts no `Turn --` |
+| Eco on bottom when active | **fixed and visually confirmed** | Green `ECO` on bottom bar in `hud_map_top_bottom_only.png` (42 strong-green pixels in HUD band) |
+| Eco absent when inactive | **fixed and visually confirmed** | [`hud_settings_eco_off.png`](docs/images/hud/hud_settings_eco_off.png) / [`hud_eco_off.png`](docs/images/hud/hud_eco_off.png) — eco switch off, 0 ECO green in HUD band |
+| Tap top → map settings; tap bottom → drive settings; Apply/Close collapses | **fixed and visually confirmed** | [`hud_rot_mode_compass.png`](docs/images/hud/hud_rot_mode_compass.png), [`hud_settings_open.png`](docs/images/hud/hud_settings_open.png), [`hud_after_break_hours_apply.png`](docs/images/hud/hud_after_break_hours_apply.png) |
+| Tap map does nothing to sheets | **still-needs-testing** | No instrumented assert / no dedicated shot |
+| One app zoom −/+ on bottom bar; AAOS `- 63 +` is climate | **fixed and visually confirmed** | App −/+ on bottom HUD; climate `- 63 +` in system bar (distinct position/style) |
+| Toast vs MapLibre attribution | **confirmed-broken** | “Drive settings applied” covers attribution in `hud_map_top_bottom_only.png`, `hud_settings_open.png`, `hud_after_break_hours_apply.png` |
+| Auto-zoom −/+ enabled styling consistent | **confirmed-broken** | [`hud_auto_zoom_preset.png`](docs/images/hud/hud_auto_zoom_preset.png) — with auto-zoom on, `−` has pill background, `+` is plain |
+
+### Collapsed bar heights vs Garmin reference
+
+Measured on `hud_map_top_bottom_only.png` (1280×720) via lavender HUD-band rows:
+
+| Bar | Pixels | % of screen | Garmin ref |
+|---|---|---|---|
+| Top | 48 (y 86–133) | **6.67%** | ~14% (instruction bar — different role) |
+| Bottom | 64 (y 510–573) | **8.89%** | ~6.4% |
+
+Content-driven `heightIn(min ≈ 48/46.dp)` is **legible** on this density; top is
+much thinner than the Garmin approach/instruction reference (expected for the
+collapsed strip). Bottom is slightly taller than the ~6.4% strip reference.
+
+Note: `hud_upper_lower_bars_with_menus.png` currently MD5-matches
+`hud_profile_menu.png` (duplicate capture) — gallery entry still needs a
+correct re-shot.

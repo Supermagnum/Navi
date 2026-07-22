@@ -5,6 +5,8 @@
 pub struct PositionSample {
     pub lat: f64,
     pub lon: f64,
+    /// WGS84 altitude in meters when the provider reports it.
+    pub altitude_m: Option<f64>,
     pub speed_m_s: f64,
     pub course_deg: f64,
     pub timestamp_unix: u64,

@@ -21,6 +21,7 @@ core/target/integration-fixtures/*.pbf
 core/target/integration-fixtures/*.tar
 core/target/integration-fixtures/elevation/
 
-# Allow documentation images
+# Allow documentation images (including nested HUD / bearing folders)
 !docs/images/
-!docs/images/*.png
+!docs/images/**/
+!docs/images/**/*.png

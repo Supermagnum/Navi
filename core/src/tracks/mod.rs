@@ -3,6 +3,10 @@
 //! Upsert by station id updates coordinates in place (no duplicate markers).
 //! Timeout is hard-capped at [`STATION_TIMEOUT_MAX_S`]. Display range is clamped
 //! to [`DISPLAY_RANGE_MIN_KM`]..=[`DISPLAY_RANGE_MAX_KM`].
+//!
+//! RF ingest is not in this module; see repository `docs/APRS.md` and
+//! `docs/APRS-SDR.md` (planned [`rtl-sdr-rs`](https://crates.io/crates/rtl-sdr-rs)
+//! IQ front-end).
 
 use std::collections::HashMap;
 

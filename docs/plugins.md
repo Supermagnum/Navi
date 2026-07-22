@@ -5,7 +5,9 @@ in the routing / sensor / UI process address space as native code.
 
 Guest plugins compile to `wasm32-unknown-unknown` and call a narrow HostApi via
 WASM imports. **WASI filesystem and network are not linked** — only the
-capabilities declared in the plugin manifest are wired.
+capabilities declared in the plugin manifest are wired. Host-owned code (Android
+service, native accessory) may open USB/serial/network and feed sanitized
+snapshots into the core; WASM guests must not get raw sockets.
 
 ## Crates
 
@@ -34,7 +36,7 @@ Capabilities are validated **before** the module is instantiated. Unknown
 capability names reject the load. Requested capabilities must be a subset of the
 host policy set passed to `PluginHost::load_dir`.
 
-## Capabilities (HostApi)
+## Capabilities (HostApi) — implemented today
 
 | Capability | Import | Purpose |
 |---|---|---|
@@ -65,3 +67,115 @@ Copy the produced `.wasm` next to `plugin.json` as `plugin.wasm`, then:
 ```bash
 cargo test -p navi-plugin-host --test isolation -- --nocapture
 ```
+
+---
+
+## Beneficial plugins (planned)
+
+None of the plugins below are shipped yet. They are the intended extension
+surface: each should stay sandboxed (or host-side with a thin capability), push
+normalized data into core stores, and never starve T2 UI/audio. Protocol and
+DSP docs already exist where noted.
+
+### 1. APRS (`aprs` / `aprs_sdr`)
+
+| | |
+|---|---|
+| **Benefit** | Live tactical positions, weather beacons, short messages on map |
+| **Docs to implement** | [`APRS.md`](APRS.md) (fields, `TrackStore` range), [`APRS-SDR.md`](APRS-SDR.md) (AFSK/AX.25 stages, IF offset), crate [`rtl-sdr-rs`](https://crates.io/crates/rtl-sdr-rs) for IQ |
+| **Host duties** | Own RTL-SDR / TNC; decode frames; upsert `TrackStation` |
+| **Guest duties** | Optional: filter/annotate beacons, map symbol keys, messaging UI helpers |
+| **Proposed caps** | `position_read`, `track_upsert` (new), `log`; network/USB stay host-side |
+
+Range display already clamps to **50–150 km** in core — plugins must respect
+that (no global dump onto the map).
+
+### 2. Weather (`weather`)
+
+| | |
+|---|---|
+| **Benefit** | Current conditions / alerts along route (wind, precip, temp, pressure) |
+| **Providers** | Free/open APIs preferred (e.g. Open-Meteo, national met services). Weather Underground–class feeds only where Terms of Use and API keys allow; keys stay in host secrets, never in WASM. |
+| **Host duties** | HTTPS fetch (opt-in network), cache JSON in SQLite, rate-limit |
+| **Guest duties** | Select stations near route / position; format HUD chips |
+| **Proposed caps** | `position_read`, `weather_read` (new), `log` |
+| **Offline** | Last-known cache only; no silent background refresh without user opt-in |
+
+APRS WX beacons (`b`/`t`/`h` keys) remain a radio-side path; this plugin is the
+internet weather overlay.
+
+### 3. Road info (`road_info`)
+
+| | |
+|---|---|
+| **Benefit** | Closed roads, mountain convoy schedules, accidents / temporary hazards |
+| **Sources** | National road authorities, DATEX-II style feeds, OSM notes/`highway=*` diffs, user reports — always opt-in network |
+| **Host duties** | Fetch + validate; store incidents with bbox + expiry |
+| **Core effect** | Soft or hard edge penalties / avoid flags during A* (future graph hook) |
+| **Proposed caps** | `position_read`, `incident_query` / `incident_write` (new), `log` |
+| **UI** | Map banners + route recalc prompt; never rewrite the `.pbf` silently |
+
+### 4. CAT radio control (`cat`)
+
+| | |
+|---|---|
+| **Benefit** | Set VFO frequency / offset / CTCSS from nearby NFM repeaters while driving |
+| **Docs** | [`CAT.md`](CAT.md) — auto-tune algorithm, RepeaterBook + OSM onboard DB, Innlandsnettet example |
+| **Host duties** | Serial/USB CAT dialect (Kenwood/Yaesu/Icom/…); never auto-TX |
+| **Proposed caps** | `position_read`, `repeater_query` (new), `cat_vfo_set` (new, host-gated), `log` |
+| **Safety** | Read/query free; **TX inhibited** unless user explicitly arms PTT path |
+
+Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
+**150 km**, resolve output frequency, shift/offset, and CTCSS/DCS, then program
+**VFO 1** only.
+
+### 5. ECU / EV telemetry (`ecu`)
+
+| | |
+|---|---|
+| **Benefit** | Live fuel rate / SoC / power for eco reweight and range UI |
+| **Docs** | [`ECU.md`](ECU.md) — OBD-II, J1939, MegaSquirt examples → `LiveEnergySnapshot` |
+| **ICE** | `fuel_rate_l_h` from PID `5E` / J1939 LFE / MS pulse-width |
+| **EV / hybrid** | `state_of_charge_pct`, `power_kw` (traction / HV), optional remaining range |
+| **Host duties** | Bluetooth SPP / USB / SocketCAN; read-only diagnostics |
+| **Core effect** | `refine_energy_cost` / `LiveEnergyProvider` on T1 |
+| **Proposed caps** | `ecu_read` (new), `log` — no DTC clear / programming |
+
+### 6. Voice guidance (`voice` / `voice_guidance`)
+
+| | |
+|---|---|
+| **Benefit** | Turn-by-turn spoken directions (recorded packs; optional Piper TTS) |
+| **Docs** | [`voice-guidance.md`](voice-guidance.md) — clip layout, fragment keys, localization open questions, rodio/cpal and Piper/ONNX spikes |
+| **Host duties** | Audio output (rodio/cpal or Android-native fallback); load `/sounds/<lang>/<gender>/`; mute/volume + language/gender settings |
+| **Guest duties** | Optional: phrase assembly / pack selection; triggers from nav maneuver state |
+| **Proposed caps** | `position_read`, `voice_speak` / `voice_pack_query` (new), `log` |
+| **Notes** | Recorded voice is the default path; Piper is additive and gated on Android ONNX. Spoken guidance is a legitimate foreground audio interruption (unlike silent background routing). Per-language concat vs whole-phrase clips is an open design question. |
+
+### Capability sketch (not in ABI yet)
+
+| Proposed | Purpose |
+|---|---|
+| `track_upsert` | Push APRS / track stations into host `TrackStore` |
+| `weather_read` | Read cached weather samples near lat/lon |
+| `incident_query` / `incident_write` | Road closures / convoy / accident overlays |
+| `repeater_query` | Nearest NFM repeaters from onboard DB (+ optional RepeaterBook sync) |
+| `cat_vfo_set` | Ask host to program VFO 1 (frequency, offset, tone) |
+| `ecu_read` | Latest `LiveEnergySnapshot` |
+| `voice_speak` / `voice_pack_query` | Queue guidance utterance or list installed voice packs |
+
+Add a capability to `plugin-host` `Capability` enum + HostApi **before** shipping
+any guest that needs it. Until then, host-native services may write into core
+via UniFFI without WASM.
+
+## Design rules for all plugins
+
+1. **Offline-first:** network is opt-in; core routing must work with plugins
+   disabled.
+2. **No silent map-data mutation:** OSM extracts and graph caches change only via
+   explicit user actions ([`osm-updates.md`](osm-updates.md)).
+3. **Tier priorities:** plugins run at T0/T1 priority budgets — never block UI.
+4. **Privacy:** no VIN / callsign / location upload unless the user enables it.
+5. **Range discipline:** map overlays respect the same ~150 km class of filters
+   used by tracks and CAT repeater search unless the user raises a documented
+   clamp.

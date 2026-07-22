@@ -28,9 +28,10 @@ class MovingIconInstrumentedTest {
 
     private val centerLat = 60.722823
     private val centerLon = 10.613182
-    // AA landscape chrome shortens the map viewport; z≈17.5 clips a 300 m radius
-    // vertically. 16.5 keeps ~300 m readable with room for four independent moves.
-    private val zoom = 16.5
+    // Same street-level zoom that ZoomPoiScreenshotTest proved renders tiles (z16).
+    // 16.5 was in-range but early PixelCopy frames were often still black; z16 +
+    // waiting for styleReady matches the working multi-zoom test path.
+    private val zoom = 16.0
 
     private data class IconSpec(
         val id: String,
@@ -66,18 +67,34 @@ class MovingIconInstrumentedTest {
         assertTrue("300 m edge must be << 50 km (got $dKm km)", dKm < 1.0)
         assertTrue("300 m within display max", dKm <= displayRangeMaxKm())
 
-        activityRule.launchActivity(null)
-        assertTrue(activityRule.activity.isFinishing.not())
-
+        // Reset hooks before launch so we do not clear styleReady after the style
+        // callback already fired.
         NaviMapTestHooks.hideUiChrome = true
+        NaviMapTestHooks.styleReady = false
         NaviMapTestHooks.tracksEpoch = 0
+        NaviMapTestHooks.tracksAppliedEpoch = 0
         NaviMapTestHooks.lastTrackIds = emptyList()
         NaviMapTestHooks.lastTrackFeatureCount = 0
+        NaviMapTestHooks.lastTrackImagesReady = 0
         NaviMapTestHooks.snapshotRequestId = 0
         NaviMapTestHooks.lastSnapshotId = 0
         NaviMapTestHooks.lastSnapshotPng = null
+        NaviMapTestHooks.pendingTracks = null
         NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, zoom)
-        Thread.sleep(5_000)
+
+        activityRule.launchActivity(null)
+        assertTrue(activityRule.activity.isFinishing.not())
+
+        // Wait for MapLibre style (camera/tracks before styleReady are easy to drop).
+        val styleDeadline = System.currentTimeMillis() + 20_000
+        while (System.currentTimeMillis() < styleDeadline) {
+            if (NaviMapTestHooks.styleReady) break
+            Thread.sleep(200)
+        }
+        assertTrue("MapLibre style not ready", NaviMapTestHooks.styleReady)
+        // Re-pin camera after style load and give tiles a moment (ZoomPoi uses ~4.5s).
+        NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, zoom)
+        Thread.sleep(4_500)
 
         // Short timeout for expiry simulation; still ≤ 3600.
         val store = FfiTrackStore(timeoutS = 2u, rangeKm = 150.0)
@@ -108,9 +125,16 @@ class MovingIconInstrumentedTest {
             assertEquals("no duplicate marker ids", ids.size, ids.toSet().size)
             // Re-pin camera after each track push so zoom/center cannot drift.
             NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, zoom)
-            val featDeadline = System.currentTimeMillis() + 5_000
+            val featDeadline = System.currentTimeMillis() + 8_000
             while (System.currentTimeMillis() < featDeadline) {
-                if (NaviMapTestHooks.lastTrackFeatureCount == snap.size) break
+                if (
+                    NaviMapTestHooks.lastTrackFeatureCount == snap.size &&
+                    NaviMapTestHooks.tracksAppliedEpoch >= epochWait &&
+                    NaviMapTestHooks.lastTrackOverlayCount == snap.size &&
+                    NaviMapTestHooks.lastTrackImagesReady >= snap.size
+                ) {
+                    break
+                }
                 Thread.sleep(100)
             }
             assertEquals(
@@ -118,6 +142,21 @@ class MovingIconInstrumentedTest {
                 snap.size,
                 NaviMapTestHooks.lastTrackFeatureCount,
             )
+            assertTrue(
+                "tracks not yet on MapLibre style (appliedEpoch=${NaviMapTestHooks.tracksAppliedEpoch})",
+                NaviMapTestHooks.tracksAppliedEpoch >= epochWait,
+            )
+            assertEquals(
+                "visible overlay markers",
+                snap.size,
+                NaviMapTestHooks.lastTrackOverlayCount,
+            )
+            assertTrue(
+                "track icons not registered (${NaviMapTestHooks.lastTrackImagesReady}/${snap.size})",
+                NaviMapTestHooks.lastTrackImagesReady >= snap.size,
+            )
+            // Let the GL thread paint symbols after geojson/image registration.
+            Thread.sleep(1_500)
         }
 
         fun pos(east: Double, north: Double): Pair<Double, Double> {
@@ -256,42 +295,15 @@ class MovingIconInstrumentedTest {
     }
 
     /**
-     * Capture a map screenshot after MapLibre reports idle (via snapshot hooks).
-     * Uses UiAutomation + screencap so export works across Android Automotive user 10;
-     * MapLibre map.snapshot() returns blank buffers on this emulator.
+     * Capture via UiAutomation screencap (same path as ZoomPoiScreenshotTest).
+     * MapLibre PixelCopy/snapshot often returns a blank buffer on this Automotive emulator.
      */
     private fun mapSnapshot(name: String): File {
+        // Nudge the map idle/snapshot hooks, but do not trust tiny/blank hook PNGs.
         val req = NaviMapTestHooks.snapshotRequestId + 1
         NaviMapTestHooks.lastSnapshotPng = null
         NaviMapTestHooks.snapshotRequestId = req
-        val deadline = System.currentTimeMillis() + 12_000
-        while (System.currentTimeMillis() < deadline) {
-            if (NaviMapTestHooks.lastSnapshotId >= req && NaviMapTestHooks.lastSnapshotPng != null) {
-                break
-            }
-            Thread.sleep(200)
-        }
-        // Prefer hook PNG only when it belongs to this request and looks real.
-        var png: ByteArray? = null
-        if (NaviMapTestHooks.lastSnapshotId >= req) {
-            val hooked = NaviMapTestHooks.lastSnapshotPng
-            if (hooked != null && hooked.size >= 20_000) {
-                png = hooked
-            }
-        }
-        if (png == null) {
-            val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
-            assertTrue("UiAutomation screenshot null for $name", shot != null)
-            val outStream = java.io.ByteArrayOutputStream()
-            shot!!.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outStream)
-            png = outStream.toByteArray()
-        }
-        assertTrue("snapshot empty for $name", png != null && png!!.isNotEmpty())
-        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        val dir = (ctx.getExternalFilesDir(null) ?: ctx.filesDir).also { it.mkdirs() }
-        val out = File(dir, name)
-        out.writeBytes(png!!)
-        assertTrue("$name too small", out.length() > 5_000)
+        Thread.sleep(800)
 
         fun shell(cmd: String) {
             val pfd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(cmd)
@@ -302,24 +314,44 @@ class MovingIconInstrumentedTest {
             }
             pfd.close()
         }
-        // Device screencap is the reliable pull path (same as ZoomPoi / Corridor tests).
+
+        val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+        assertTrue("UiAutomation screenshot null for $name", shot != null)
+        val outStream = java.io.ByteArrayOutputStream()
+        shot!!.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outStream)
+        val png = outStream.toByteArray()
+        assertTrue("snapshot empty for $name", png.isNotEmpty())
+
+        // Reject near-black frames (style/tiles not painted yet).
+        var nonBlack = 0
+        val step = (shot.width * shot.height / 2000).coerceAtLeast(1)
+        var i = 0
+        while (i < shot.width * shot.height) {
+            val c = shot.getPixel(i % shot.width, i / shot.width)
+            val r = (c shr 16) and 0xff
+            val g = (c shr 8) and 0xff
+            val b = c and 0xff
+            if (r > 20 || g > 20 || b > 20) nonBlack++
+            i += step
+        }
+        assertTrue(
+            "$name looks blank/black (nonBlack samples=$nonBlack) — map not ready",
+            nonBlack > 30,
+        )
+
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val dir = (ctx.getExternalFilesDir(null) ?: ctx.filesDir).also { it.mkdirs() }
+        val out = File(dir, name)
+        out.writeBytes(png)
+        assertTrue("$name too small", out.length() > 20_000)
+
         shell("screencap -p /data/local/tmp/$name")
         shell("ls -la /data/local/tmp/$name")
-        // Also try copying the exact PNG bytes we asserted on.
-        try {
-            val b64 = android.util.Base64.encodeToString(png, android.util.Base64.NO_WRAP)
-            val b64Path = "/data/local/tmp/${name}.hook.b64"
-            shell("rm -f $b64Path /data/local/tmp/${name}.hook.png")
-            for (chunk in b64.chunked(6000)) {
-                shell("printf '%s' '$chunk' >> $b64Path")
-            }
-            shell("base64 -d $b64Path > /data/local/tmp/${name}.hook.png")
-            shell("rm -f $b64Path")
-        } catch (_: Throwable) {
-        }
         android.util.Log.i(
             "MovingIconTest",
-            "mapSnapshot $name bytes=${out.length()} path=${out.absolutePath}",
+            "mapSnapshot $name bytes=${out.length()} path=${out.absolutePath} " +
+                "features=${NaviMapTestHooks.lastTrackFeatureCount} " +
+                "images=${NaviMapTestHooks.lastTrackImagesReady}",
         )
         return out
     }
