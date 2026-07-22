@@ -70,7 +70,7 @@ cargo test -p navi-plugin-host --test isolation -- --nocapture
 
 ---
 
-## Beneficial plugins (planned)
+## Ideas for beneficial plugins
 
 None of the plugins below are shipped yet. They are the intended extension
 surface: each should stay sandboxed (or host-side with a thin capability), push
