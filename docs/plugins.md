@@ -152,6 +152,17 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | **Proposed caps** | `position_read`, `voice_speak` / `voice_pack_query` (new), `log` |
 | **Notes** | Recorded voice is the default path; Piper is additive and gated on Android ONNX. Spoken guidance is a legitimate foreground audio interruption (unlike silent background routing). Per-language concat vs whole-phrase clips is an open design question. |
 
+### 7. Right-to-roam overnight camping (`right_to_roam_camping`)
+
+| | |
+|---|---|
+| **Benefit** | Suggest legal wild-camping positions along a route where a broad right-to-roam exists (Norway *allemannsretten* and country-aware packs) |
+| **Docs** | [`plugins/right-to-roam-camping-spec.md`](plugins/right-to-roam-camping-spec.md) — intersection/track candidates, shared 150 m `SafetyConfig`, two-night plugin state, fire/foraging/leave-no-trace guidance, multi-country rules |
+| **Host duties** | Expose route/junction hints, POI/area queries, safety config, admin region, clock; render suggestion cards + disclaimer |
+| **Guest duties** | Rank road∩track seeds, walk short distance along track, filter by country rules, persist two-night keys, assemble guidance text |
+| **Proposed caps** | `position_read`, `poi_query`, `route_read`, `safety_config_read`, `admin_region_read`, `clock_read`, `plugin_kv` / `storage`, `log` |
+| **Notes** | Spec only — not implemented. Informational guidance, not legal advice. No Nordic wild-camp logic for England/Wales or Denmark. |
+
 ### Capability sketch (not in ABI yet)
 
 | Proposed | Purpose |
@@ -163,6 +174,11 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | `cat_vfo_set` | Ask host to program VFO 1 (frequency, offset, tone) |
 | `ecu_read` | Latest `LiveEnergySnapshot` |
 | `voice_speak` / `voice_pack_query` | Queue guidance utterance or list installed voice packs |
+| `route_read` | Active corridor samples / junction hints for camping plugin |
+| `safety_config_read` | `SafetyConfig` (e.g. `min_building_distance_m`) for shared overnight distance |
+| `admin_region_read` | Country / county for lat/lon (right-to-roam rule pack) |
+| `clock_read` | Current date for seasonal fire-ban guidance |
+| `plugin_kv` / `storage` | Small per-plugin persist (e.g. two-night camping memory) |
 
 Add a capability to `plugin-host` `Capability` enum + HostApi **before** shipping
 any guest that needs it. Until then, host-native services may write into core

@@ -22,15 +22,123 @@ the General radius of **15 km**).
 Separate from the POI R-tree: the offline `NameIndex` (FTS5) indexes named OSM
 features for the **To** / **Via** UI (places, huts, peaks, roads, settlements).
 That index is built from the regional `.osm.pbf` via **Tools → Download corridor
-region + build place index** (or equivalent provision).
+region + build place index** (or equivalent provision). Named fishing spots that
+appear in FTS are searchable by name without a dedicated `PoiCategory`; the
+category system below is for **typed nearby / rest planning** queries
+(`PoiIndex::nearest`).
 
 ## Icon keys
 
 Craft brewery / alcohol retail maps to semantic icon key `shop-alcohol`. Other
-POIs use `amenity-*`, `tourism-*`, etc. See [`icons.md`](icons.md).
+POIs use `amenity-*`, `tourism-*`, `leisure-*`, etc. via `osm_icon_key` in
+`core/src/poi/icons.rs`. See [`icons.md`](icons.md).
+
+## Adding a POI category (example: fishing)
+
+Use this checklist when you want a new typed POI such as **fishing** (spots,
+piers, shops), not only name search.
+
+### 1. Decide OSM tags
+
+Pick the OpenStreetMap tags that should match. For fishing, common choices
+include (OR any that you care about):
+
+| Tag | Meaning (typical) |
+|---|---|
+| `leisure=fishing` | Fishing spot / area |
+| `sport=fishing` | Sport fishing |
+| `shop=fishing` | Fishing tackle shop |
+| `leisure=fishing_pier` | Pier used for fishing (where mapped) |
+
+Confirm against [OSM Taginfo](https://taginfo.openstreetmap.org/) / the wiki so
+you do not invent tags the extract will never contain.
+
+### 2. Add `PoiCategory` + default radius
+
+In [`core/src/poi/categories.rs`](../core/src/poi/categories.rs):
+
+1. Add a variant, e.g. `Fishing`.
+2. Map it in `default_radius_m` — either reuse an existing safety radius
+   (`poi_radius_general_m`) or add a dedicated field on `SafetyConfig`
+   ([`core/src/config/safety.rs`](../core/src/config/safety.rs) +
+   [`core/src/config/defaults.rs`](../core/src/config/defaults.rs)).
+
+Example radius choice: **5–15 km** for “nearby on a drive”; tighter (e.g. 2 km)
+if the POI is only useful when almost on-route.
+
+### 3. Classify OSM tags
+
+In [`core/src/poi/classifier.rs`](../core/src/poi/classifier.rs), extend
+`classify_tags` so matching objects push `PoiCategory::Fishing` (objects may
+already push other categories too).
+
+```rust
+let leisure = tags.get("leisure").map(String::as_str);
+let sport = tags.get("sport").map(String::as_str);
+let shop = tags.get("shop").map(String::as_str);
+
+if leisure == Some("fishing")
+    || leisure == Some("fishing_pier")
+    || sport == Some("fishing")
+    || shop == Some("fishing")
+{
+    out.push(PoiCategory::Fishing);
+}
+```
+
+Add unit tests next to the existing craft-brewery tests (match each tag style;
+assert non-fishing tags do not match).
+
+### 4. Icon key (optional but recommended)
+
+`osm_icon_key` already returns `leisure-fishing` / `shop-fishing` from those
+tags. For a stable product key (like brewery → `shop-alcohol`), add an early
+branch in [`core/src/poi/icons.rs`](../core/src/poi/icons.rs), e.g. return
+`"fishing"`, then provide:
+
+- `core/src/icons/fishing.svg` (and/or alias in the icon resolver), and
+- the same file under `app/src/main/assets/icons/` if the Android lean pack must
+  show it on-device.
+
+Authoring steps: [`icons.md`](icons.md).
+
+### 5. Wire consumers
+
+Anything that **queries by category** must know the new variant:
+
+| Area | What to update |
+|---|---|
+| Rest / overnight / corridor helpers | Call `poi.nearest(PoiCategory::Fishing, …)` where fishing should influence planning |
+| Integration tests | Assert hits near a known fishing node in a fixture extract |
+| UniFFI / Android | Expose the category if the host UI lists POI types (`navi-ffi`, Kotlin bindings) |
+| This doc | Add a row to the table above |
+
+Rebuild the POI index after code changes (re-run region provision / graph+POI
+pipeline). Old on-disk indexes do not gain new categories until rebuilt from
+`.osm.pbf`.
+
+### 6. Verify
+
+```bash
+cargo test -p driver-break-core poi::
+# plus any ignored integration test that loads a real extract
+```
+
+On device: provision a region that contains fishing tags, then confirm
+`nearest(Fishing, …)` (or the host UI that uses it) returns expected places.
+
+### What you usually do **not** need
+
+- Changing MapLibre basemap styles (vector “fishing” icons on the tile layer are
+  separate from Navi’s `PoiIndex`).
+- FTS place search — names still resolve via the place index if the OSM object
+  is named; a category is only required for typed “find fishing near me / on
+  route” logic.
 
 ## Code
 
 - `core/src/poi/categories.rs` — enum + radii
 - `core/src/poi/classifier.rs` — tag rules
+- `core/src/poi/icons.rs` — OSM → icon key
 - `core/src/poi/index.rs` — R-tree load / `nearest` query
+- `core/src/config/safety.rs` / `defaults.rs` — default search radii

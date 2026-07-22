@@ -30,9 +30,10 @@ throughout.
 - [Known issues](#known-issues)
 
 Further reading in-repo: crate wiring and SQLite layout in
-[`architecture.md`](architecture.md); planned plugins in
+[`architecture.md`](architecture.md); plugin ideas in
 [`docs/plugins.md`](docs/plugins.md); Android build steps in
-[`docs/android-build.md`](docs/android-build.md); HUD bar/menu layout in
+[`docs/android-build.md`](docs/android-build.md); debugging in
+[`docs/debugging.md`](docs/debugging.md); HUD bar/menu layout in
 [`docs/hud-layout.md`](docs/hud-layout.md).
 
 # Navi
@@ -47,6 +48,15 @@ License of this repository: see `LICENSE` (GPL-3.0-or-later unless otherwise
 noted). Icon assets under `core/src/icons` are Navit-derived (**GPL v2**); see
 [`docs/icons.md`](docs/icons.md).
 
+This navigation app has optional awareness of terrain steepness: with eco mode
+on, it tries to find the route that uses the least energy. When eco mode is on,
+a small leaf icon is visible in the app’s lower-right corner. It can also find
+suitable places to take breaks — cafeterias, public bathrooms, breweries with
+direct sales, drinking water, and places to camp overnight. You can set break
+intervals (for example every two hours, with a 30-minute break). It supports
+moving icons, so others can implement an APRS plugin. Ideas for nice-to-have
+plugins are included in this repository ([`docs/plugins.md`](docs/plugins.md)).
+
 ## Features
 
 | Feature | What you get |
@@ -54,7 +64,7 @@ noted). Icon assets under `core/src/icons` are Navit-derived (**GPL v2**); see
 | **Profiles** | Car, motorcycle, cycling, hiking as primary UI modes (truck / electric variants exist in the routing enum) |
 | **Eco routing** | Edge costs from elevation + vehicle physics (drag, mass, rolling resistance); optional regen on electric profiles |
 | **Corridor / region routing** | OSM `.pbf` → graph → eco-reweight → cached graph → A* corridor route with POI overlay |
-| **POI search** | FTS place index from OSM tags; To / Via waypoints from search hits |
+| **POI search** | [FTS place index from OSM tags; To / Via waypoints from search hits](docs/poi.md) |
 | **Rest & breaks** | Profile rest intervals; car HUD shows minutes-to-break; overnight / safety checks for hiking |
 | **Drive HUD** | Collapsed top (altitude; tap → map settings) + bottom (zoom −/+, break/ETA, eco; tap → drive settings) |
 | **Map rotation** | Compass, direction-of-travel, or north-up camera bearing |
@@ -87,8 +97,13 @@ vector style; app-owned markers use rasterized Navit icons.
 
 **Rest / overnight.** Rest parameters are profile-scoped (car hours between
 breaks, hiking rast distances, etc.). Safety rules reject overnight candidates
-too close to buildings/glaciers. The HUD “Breaks” toggle gates reminder display;
-interval/duration defaults are edited in Drive settings.
+too close to buildings or glaciers. The building-distance check follows the
+Norwegian **right to roam** (*allemannsretten*): wild camping is generally
+allowed when you stay a respectful distance from houses and cultivated land.
+That legal framework is Norwegian and **may not apply in other countries** —
+local access and camping law can be stricter or different, so treat the rule as
+a Norway-oriented default, not universal advice. The HUD “Breaks” toggle gates
+reminder display; interval/duration defaults are edited in Drive settings.
 
 **Map & HUD.** MapLibre Vulkan renders the basemap. Collapsed top HUD shows GPS
 altitude; tap opens map settings (rotation, Trip ETA, Breaks, Auto-zoom level).
@@ -176,9 +191,10 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/pictures.md`](docs/pictures.md) | Emulator screenshot gallery |
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Adjust size and placement of drive HUD bars and menus |
 | [`docs/approach-instructions.md`](docs/approach-instructions.md) | Deferred: temporary maneuver approach box (icon + distance + name) |
-| [`docs/poi.md`](docs/poi.md) | Searchable POI categories and OSM tag rules |
+| [`docs/poi.md`](docs/poi.md) | Searchable POI categories, OSM tag rules, and how to add types (e.g. fishing) |
 | [`docs/osm-updates.md`](docs/osm-updates.md) | Opt-in Geofabrik check / `.osc.gz` / full re-download |
-| [`docs/plugins.md`](docs/plugins.md) | HostApi, isolation, and planned plugins (APRS, weather, road info, CAT, ECU, voice) |
+| [`docs/plugins.md`](docs/plugins.md) | HostApi, isolation, and ideas for plugins (APRS, weather, road info, CAT, ECU, voice, right-to-roam camping) |
+| [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Spec: allemannsretten / multi-country wild-camping suggestions (plugin, not core) |
 | [`docs/icons.md`](docs/icons.md) | Icon inventory; custom SVG icons (Inkscape / Synfig); Navit GPL-v2 |
 | [`docs/API.md`](docs/API.md) | UniFFI / host API overview |
 | [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) | Wire protocol index (UniFFI, plugins, ECU/APRS/CAT) |
@@ -187,8 +203,9 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/APRS-SDR.md`](docs/APRS-SDR.md) | APRS SDR DSP pipeline; RTL-SDR IF offset; planned `rtl-sdr-rs` |
 | [`docs/CAT.md`](docs/CAT.md) | CAT VFO auto-tune from NFM repeaters (≤150 km); OSM network example |
 | [`docs/voice-guidance.md`](docs/voice-guidance.md) | Planned voice guidance plugin (recordings + optional Piper) |
-| [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | **Required:** physical device checklist vs emulator baseline |
 | [`docs/android-build.md`](docs/android-build.md) | Compile native `libnavi.so`, UniFFI bindings, and Gradle APKs |
+| [`docs/debugging.md`](docs/debugging.md) | Host + Android debug loops (logcat, Studio, instrumented tests) |
+| [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | **Required:** physical device checklist vs emulator baseline |
 | [`test-results.md`](test-results.md) | Host integration test notes |
 | [`android-test-results.md`](android-test-results.md) | On-device / emulator results |
 

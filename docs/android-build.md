@@ -180,6 +180,9 @@ under `jniLibs/` before `assemble*`.
 
 ## Quick path (emulator debug)
 
+For logcat tags, Android Studio attach, and instrumented-test harnesses, see
+[`debugging.md`](debugging.md).
+
 ```bash
 export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<version>"
 ./scripts/build-android-native.sh x86_64-linux-android release
