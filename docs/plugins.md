@@ -1,5 +1,18 @@
 # Plugin system
 
+## Status (intentional at this stage)
+
+The **plugin host infrastructure** is implemented and tested: wasmtime sandbox,
+manifest parsing, capability gating, HostApi imports, fuel budget, and epoch
+timeout isolation (`plugin-host` + `log-hello` / `busy-loop` examples).
+
+**No product content plugins** have been built yet (allemannsretten camping-spot
+spec, marine traffic, weather overlays, bathymetry, sonar, RTL-SDR/APRS-adjacent
+guests, etc.). That is **expected and intentional**, not a bug or an oversight —
+the host exists so future contributors can ship those plugins independently
+without changing the navigation core. See [Ideas for beneficial plugins](#ideas-for-beneficial-plugins)
+below as an open invitation / roadmap, not as incomplete core features.
+
 Navi runs untrusted extension code in a **wasmtime** sandbox (`plugin-host`), not
 in the routing / sensor / UI process address space as native code.
 

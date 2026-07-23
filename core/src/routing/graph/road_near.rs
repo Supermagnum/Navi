@@ -1,6 +1,7 @@
 //! Spatial index of routing-graph nodes for “near a road” checks.
 
 use geo::{Distance, Haversine, Point};
+use osm4routing::NodeId;
 use rstar::RTree;
 
 use super::builder::RouteGraph;
@@ -18,6 +19,18 @@ impl RoadNodeIndex {
         let pts: Vec<[f64; 2]> = graph
             .nodes
             .values()
+            .map(|n| [n.coord.x, n.coord.y])
+            .collect();
+        Self {
+            tree: RTree::bulk_load(pts),
+        }
+    }
+
+    /// Index only nodes on a planned route (road / path / trail geometry).
+    pub fn from_path_nodes(graph: &RouteGraph, path: &[NodeId]) -> Self {
+        let pts: Vec<[f64; 2]> = path
+            .iter()
+            .filter_map(|id| graph.nodes.get(id))
             .map(|n| [n.coord.x, n.coord.y])
             .collect();
         Self {

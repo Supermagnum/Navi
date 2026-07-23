@@ -91,6 +91,17 @@ pub fn classify_tags(tags: &HashMap<String, String>) -> Vec<PoiCategory> {
         out.push(PoiCategory::CraftBrewery);
     }
 
+    let leisure = tags.get("leisure").map(String::as_str);
+    let sport = tags.get("sport").map(String::as_str);
+    let shop = tags.get("shop").map(String::as_str);
+    if leisure == Some("fishing")
+        || leisure == Some("fishing_pier")
+        || sport == Some("fishing")
+        || shop == Some("fishing")
+    {
+        out.push(PoiCategory::Fishing);
+    }
+
     out.sort_unstable();
     out.dedup();
     out
@@ -125,5 +136,16 @@ mod tests {
     fn craft_brewery_does_not_require_all_three_tags() {
         let only_shop = classify_tags(&tags(&[("shop", "alcohol"), ("name", "Tap Room")]));
         assert_eq!(only_shop, vec![PoiCategory::CraftBrewery]);
+    }
+
+    #[test]
+    fn fishing_matches_leisure_and_related() {
+        assert!(classify_tags(&tags(&[("leisure", "fishing")])).contains(&PoiCategory::Fishing));
+        assert!(
+            classify_tags(&tags(&[("leisure", "fishing_pier")])).contains(&PoiCategory::Fishing)
+        );
+        assert!(classify_tags(&tags(&[("sport", "fishing")])).contains(&PoiCategory::Fishing));
+        assert!(classify_tags(&tags(&[("shop", "fishing")])).contains(&PoiCategory::Fishing));
+        assert!(!classify_tags(&tags(&[("leisure", "park")])).contains(&PoiCategory::Fishing));
     }
 }

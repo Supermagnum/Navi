@@ -854,6 +854,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -923,6 +927,8 @@ fun uniffi_navi_checksum_func_load_car_rest_settings(
 ): Short
 fun uniffi_navi_checksum_func_load_fuel_config(
 ): Short
+fun uniffi_navi_checksum_func_load_prefer_official_networks(
+): Short
 fun uniffi_navi_checksum_func_load_vehicle_limits(
 ): Short
 fun uniffi_navi_checksum_func_offset_lat_lon_m(
@@ -982,6 +988,8 @@ fun uniffi_navi_checksum_func_save_car_rest_settings(
 fun uniffi_navi_checksum_func_save_fuel_config(
 ): Short
 fun uniffi_navi_checksum_func_save_named_route(
+): Short
+fun uniffi_navi_checksum_func_save_prefer_official_networks(
 ): Short
 fun uniffi_navi_checksum_func_save_vehicle_limits(
 ): Short
@@ -1132,6 +1140,8 @@ fun uniffi_navi_fn_func_load_car_rest_settings(`dataDir`: RustBuffer.ByValue,uni
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_fuel_config(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_load_prefer_official_networks(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_load_vehicle_limits(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_offset_lat_lon_m(`lat`: Double,`lon`: Double,`eastM`: Double,`northM`: Double,uniffi_out_err: UniffiRustCallStatus, 
@@ -1140,9 +1150,9 @@ fun uniffi_navi_fn_func_osm_update_staleness_days(uniffi_out_err: UniffiRustCall
 ): Long
 fun uniffi_navi_fn_func_osm_weekly_reminder_due(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
-fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMajor`: Byte,`avoidTolls`: Byte,`avoidFerries`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_navi_fn_func_plan_hiking_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`waypointsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_navi_fn_func_plan_hiking_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`waypointsJson`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_pmtiles_cancel_job(`jobId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1192,6 +1202,8 @@ fun uniffi_navi_fn_func_save_fuel_config(`dataDir`: RustBuffer.ByValue,`config`:
 ): Byte
 fun uniffi_navi_fn_func_save_named_route(`dataDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`startName`: RustBuffer.ByValue,`endLat`: Double,`endLon`: Double,`endName`: RustBuffer.ByValue,`viaJson`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`summaryJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_save_prefer_official_networks(`dataDir`: RustBuffer.ByValue,`prefer`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_save_vehicle_limits(`dataDir`: RustBuffer.ByValue,`limits`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_search_places(`indexDbPath`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
@@ -1409,6 +1421,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_load_fuel_config() != 47253.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_load_prefer_official_networks() != 40384.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_load_vehicle_limits() != 31229.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1421,10 +1436,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_osm_weekly_reminder_due() != 61589.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_plan_car_route() != 44397.toShort()) {
+    if (lib.uniffi_navi_checksum_func_plan_car_route() != 63162.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_plan_hiking_route() != 34603.toShort()) {
+    if (lib.uniffi_navi_checksum_func_plan_hiking_route() != 37044.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_pmtiles_cancel_job() != 53964.toShort()) {
@@ -1497,6 +1512,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_save_named_route() != 29751.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_save_prefer_official_networks() != 11384.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_save_vehicle_limits() != 61328.toShort()) {
@@ -3464,6 +3482,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     )
     }
     
+
+        /**
+         * Soft preference for official hiking/cycling route networks (default off).
+         */ fun `loadPreferOfficialNetworks`(`dataDir`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_load_prefer_official_networks(
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
  fun `loadVehicleLimits`(`dataDir`: kotlin.String): FfiVehicleLimits {
             return FfiConverterTypeFfiVehicleLimits.lift(
     uniffiRustCall() { _status ->
@@ -3502,15 +3532,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     
 
         /**
-         * Plan a car route between two WGS84 points using a local OSM `.pbf` graph.
+         * Plan a motor / bicycle route between two WGS84 points using a local OSM `.pbf`.
          *
-         * Unlike [`run_car_corridor_pipeline`], this does not require the Espa–Atnbrufossen
-         * endpoints or a minimum corridor length — suitable for local Raufoss-scale trips.
-         */ fun `planCarRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean): CorridorRouteResult {
+         * Always builds a **bbox-clipped** graph (`[min_lat,min_lon,max_lat,max_lon]` padded
+         * around the endpoints) so truck / mobile-home / motorcycle / bicycle never load a
+         * full Ostlandet extract into RAM. Hiking uses [`plan_hiking_route`] instead.
+         *
+         * [`TravelProfile::Hiking`] is rejected (call [`plan_hiking_route`]).
+         */ fun `planCarRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean, `profile`: TravelProfile, `avoidMajor`: kotlin.Boolean, `avoidTolls`: kotlin.Boolean, `avoidFerries`: kotlin.Boolean, `vehicle`: FfiVehicleLimits, `preferOfficialNetworks`: kotlin.Boolean): CorridorRouteResult {
             return FfiConverterTypeCorridorRouteResult.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_plan_car_route(
-        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`elevDir`),FfiConverterString.lower(`cacheDir`),FfiConverterDouble.lower(`startLat`),FfiConverterDouble.lower(`startLon`),FfiConverterDouble.lower(`endLat`),FfiConverterDouble.lower(`endLon`),FfiConverterBoolean.lower(`useEco`),_status)
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`elevDir`),FfiConverterString.lower(`cacheDir`),FfiConverterDouble.lower(`startLat`),FfiConverterDouble.lower(`startLon`),FfiConverterDouble.lower(`endLat`),FfiConverterDouble.lower(`endLon`),FfiConverterBoolean.lower(`useEco`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterBoolean.lower(`avoidMajor`),FfiConverterBoolean.lower(`avoidTolls`),FfiConverterBoolean.lower(`avoidFerries`),FfiConverterTypeFfiVehicleLimits.lower(`vehicle`),FfiConverterBoolean.lower(`preferOfficialNetworks`),_status)
 }
     )
     }
@@ -3522,11 +3555,11 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
          * `waypoints_json` is `[{"name","lat","lon"}, ...]` with at least two points
          * (start … vias … end). Pause stops prefer huts/cabins; otherwise camp pitches
          * or a synthetic corridor tent (never mountain peak names).
-         */ fun `planHikingRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `waypointsJson`: kotlin.String): CorridorRouteResult {
+         */ fun `planHikingRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `waypointsJson`: kotlin.String, `preferOfficialNetworks`: kotlin.Boolean): CorridorRouteResult {
             return FfiConverterTypeCorridorRouteResult.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_plan_hiking_route(
-        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`elevDir`),FfiConverterString.lower(`cacheDir`),FfiConverterString.lower(`waypointsJson`),_status)
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`elevDir`),FfiConverterString.lower(`cacheDir`),FfiConverterString.lower(`waypointsJson`),FfiConverterBoolean.lower(`preferOfficialNetworks`),_status)
 }
     )
     }
@@ -3784,6 +3817,15 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_save_named_route(
         FfiConverterString.lower(`dataDir`),FfiConverterDouble.lower(`startLat`),FfiConverterDouble.lower(`startLon`),FfiConverterString.lower(`startName`),FfiConverterDouble.lower(`endLat`),FfiConverterDouble.lower(`endLon`),FfiConverterString.lower(`endName`),FfiConverterString.lower(`viaJson`),FfiConverterString.lower(`profile`),FfiConverterString.lower(`summaryJson`),_status)
+}
+    )
+    }
+    
+ fun `savePreferOfficialNetworks`(`dataDir`: kotlin.String, `prefer`: kotlin.Boolean): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_save_prefer_official_networks(
+        FfiConverterString.lower(`dataDir`),FfiConverterBoolean.lower(`prefer`),_status)
 }
     )
     }

@@ -151,7 +151,8 @@ impl RouteGraph {
         self.profile
     }
 
-    pub(crate) fn from_parts(
+    /// Build a graph from pre-built nodes/edges (tests and synthetic fixtures).
+    pub fn from_parts(
         nodes: HashMap<NodeId, Node>,
         edges: Vec<GraphEdge>,
         profile: RoutingProfile,

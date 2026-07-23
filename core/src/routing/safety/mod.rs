@@ -1,4 +1,10 @@
-//! Overnight safety filters: building distance and glacier proximity.
+//! Overnight safety filters and dangerous linear barriers for break access.
+
+mod barriers;
+mod overnight;
+
+pub use barriers::DangerBarrierIndex;
+pub use overnight::OvernightProximityIndex;
 
 use geo::{Distance, Haversine, Point};
 
@@ -64,6 +70,18 @@ mod tests {
         }
     }
 
+    fn tent_poi() -> PoiRecord {
+        PoiRecord {
+            osm_id: 2,
+            lat: 60.0,
+            lon: 10.0,
+            categories: vec![PoiCategory::TentSite],
+            icon_key: "tourism-camp_site".into(),
+            tags: HashMap::new(),
+            name: Some("Camp".into()),
+        }
+    }
+
     #[test]
     fn glacier_override_for_hut() {
         let safety = SafetyConfig::default();
@@ -80,6 +98,17 @@ mod tests {
         assert_eq!(
             check_overnight_candidate(60.0, 10.0, &safety, &poi, &buildings, &[]),
             Some(OvernightRejectReason::TooCloseToBuilding)
+        );
+    }
+
+    #[test]
+    fn tent_rejected_near_glacier() {
+        let safety = SafetyConfig::default();
+        let poi = tent_poi();
+        let glaciers = vec![(60.0005, 10.0005)];
+        assert_eq!(
+            check_overnight_candidate(60.0, 10.0, &safety, &poi, &[], &glaciers),
+            Some(OvernightRejectReason::TooCloseToGlacier)
         );
     }
 }

@@ -16,6 +16,11 @@ the General radius of **15 km**).
 | **NetworkHut** | 25 km | wilderness_hut / alpine_hut **and** `operator` or `network` contains DNT, STF, DAV, SAC, OeAV, or Metsähallitus |
 | **General** | 15 km | `amenity` ∈ cafe, restaurant, fast_food, museum, gallery, zoo, aquarium, viewpoint, picnic_site; **or** `tourism` ∈ viewpoint, attraction, museum |
 | **CraftBrewery** | 15 km (General) | **OR** of: `microbrewery=yes`, `shop=alcohol`, `craft=brewery` |
+| **TentSite** | Cabin radius | `tourism` ∈ camp_site, camp_pitch; **or** `amenity=camping` |
+| **Fishing** | 15 km (General) | **OR** of: `leisure=fishing`, `leisure=fishing_pier`, `sport=fishing`, `shop=fishing` — icon: Navit-derived `fish.svg` as `leisure-fishing` ([`icons.md`](icons.md)) |
+
+Suggested preference radii and regional nearest-neighbor spacing (for tuning
+hiking/cycling search): [`poi-search-defaults.md`](poi-search-defaults.md).
 
 ## Place / address FTS search
 

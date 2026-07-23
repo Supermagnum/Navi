@@ -24,6 +24,9 @@ pub struct GraphCacheFingerprint {
     pub profile: RoutingProfile,
     pub eco_drag_coefficient: Option<f64>,
     pub eco_mass_kg: Option<f64>,
+    /// EV regen must invalidate ICE-weighted caches when the same Cd/mass apply.
+    #[serde(default)]
+    pub eco_regen_efficiency: Option<f64>,
 }
 
 impl GraphCacheFingerprint {
@@ -47,6 +50,7 @@ impl GraphCacheFingerprint {
             profile,
             eco_drag_coefficient: eco.map(|e| e.drag_coefficient),
             eco_mass_kg: eco.map(|e| e.mass_kg),
+            eco_regen_efficiency: eco.map(|e| e.regen_efficiency),
         })
     }
 
@@ -62,6 +66,7 @@ impl GraphCacheFingerprint {
             && self.profile == expected.profile
             && self.eco_drag_coefficient == expected.eco_drag_coefficient
             && self.eco_mass_kg == expected.eco_mass_kg
+            && self.eco_regen_efficiency == expected.eco_regen_efficiency
     }
 }
 
@@ -386,6 +391,7 @@ mod tests {
             profile: RoutingProfile::Car,
             eco_drag_coefficient: Some(0.28),
             eco_mass_kg: Some(1500.0),
+            eco_regen_efficiency: Some(0.0),
         };
         let cache_path = dir.path().join("test.navigph");
 
@@ -412,6 +418,7 @@ mod tests {
             profile: RoutingProfile::Car,
             eco_drag_coefficient: Some(0.28),
             eco_mass_kg: Some(1500.0),
+            eco_regen_efficiency: Some(0.0),
         };
         let cache_path = dir.path().join("test.navigph");
         save_reweighted_graph(&graph, &cache_path, &fingerprint).expect("save");

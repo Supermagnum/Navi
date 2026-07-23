@@ -55,6 +55,7 @@ impl NameIndex {
     }
 
     pub fn load_from_pbf(&mut self, path: impl AsRef<Path>) -> anyhow::Result<usize> {
+        let path = path.as_ref();
         let file = std::fs::File::open(path)?;
         let reader = ElementReader::new(file);
         let mut batch: Vec<(i64, String, String, f64, f64)> = Vec::new();
@@ -75,6 +76,21 @@ impl NameIndex {
                 _ => {}
             }
         })?;
+
+        // Official hiking/cycling route relations (name/ref/operator) for To/Via search.
+        // Uses negative osm_id space offset is unnecessary — relation ids are distinct
+        // from node ids in OSM, but we store relation id as-is (FTS rowid = osm_id).
+        match crate::routing::graph::load_named_route_entries(path) {
+            Ok(routes) => {
+                for r in routes {
+                    batch.push((r.osm_id, r.name, r.kind, r.lat, r.lon));
+                }
+            }
+            Err(e) => {
+                log::warn!("named route relation index skipped: {e:#}");
+            }
+        }
+
         let tx = self.conn.unchecked_transaction()?;
         for (osm_id, name, kind, lat, lon) in &batch {
             tx.execute(

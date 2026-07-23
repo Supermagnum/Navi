@@ -7,17 +7,23 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use driver_break_core::config::{EcoConfig, RestConfig, HIKING_MAIN_BREAK_DISTANCE_KM};
+use driver_break_core::config::{
+    EcoConfig, RestConfig, SafetyConfig, VehicleLimits, HIKING_MAIN_BREAK_DISTANCE_KM,
+};
 use driver_break_core::icons::{self, IconTheme};
 use driver_break_core::poi::{PoiCategory, PoiIndex, PoiRecord};
-use driver_break_core::routing::{fixed_pace_minutes, motor_path_minutes, HIKING_MIN_PER_KM};
 use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
 use driver_break_core::routing::graph::{
-    load_or_build_reweighted, load_or_build_reweighted_bbox, RoadNodeIndex, RouteGraph,
-    RoutingProfile,
+    apply_official_network_preference, difficulty_notes_for_path, load_official_network_way_ids,
+    load_or_build_reweighted, load_or_build_reweighted_bbox, load_way_difficulty_tags,
+    OfficialNetworkKind, RoadNodeIndex, RouteGraph, RouteOptions, RoutingProfile,
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
+use driver_break_core::routing::safety::{
+    check_overnight_candidate, DangerBarrierIndex, OvernightProximityIndex,
+};
 use driver_break_core::routing::workers::WorkerPoolPlan;
+use driver_break_core::routing::{fixed_pace_minutes, motor_path_minutes, HIKING_MIN_PER_KM};
 use osm4routing::NodeId;
 use serde::Deserialize;
 use serde_json::json;
@@ -110,9 +116,18 @@ fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 }
 
 fn nearest(graph: &RouteGraph, lat: f64, lon: f64) -> NodeId {
-    graph
-        .nodes
-        .values()
+    // Prefer nodes that participate in the routing graph. Snapping to an
+    // isolated POI/stub node yields "no route between snapped nodes".
+    let linked = graph.nodes.values().filter(|n| graph.is_linked(n.id));
+    let pool = {
+        let v: Vec<_> = linked.collect();
+        if v.is_empty() {
+            graph.nodes.values().collect()
+        } else {
+            v
+        }
+    };
+    pool.into_iter()
         .min_by(|a, b| {
             let da = haversine_m(lat, lon, a.coord.y, a.coord.x);
             let db = haversine_m(lat, lon, b.coord.y, b.coord.x);
@@ -120,6 +135,17 @@ fn nearest(graph: &RouteGraph, lat: f64, lon: f64) -> NodeId {
         })
         .map(|n| n.id)
         .expect("empty graph")
+}
+
+fn load_break_barriers(graph: &RouteGraph, pbf: &Path, bbox: [f64; 4]) -> DangerBarrierIndex {
+    let mut barriers = DangerBarrierIndex::from_graph(graph);
+    match DangerBarrierIndex::load_from_pbf_bbox(pbf, bbox) {
+        Ok(extra) => barriers.merge(extra),
+        Err(e) => {
+            log::warn!("danger barrier PBF load skipped: {e:#}");
+        }
+    }
+    barriers
 }
 
 fn car_required_breaks(driving_hours: f64, max_interval_hours: f64) -> u32 {
@@ -136,6 +162,68 @@ fn passat_eco() -> EcoConfig {
         frontal_area_m2: 2.2,
         mass_kg: 1500.0,
         ..EcoConfig::default()
+    }
+}
+
+/// Profile-scoped eco physics for planning. Electric profiles get regen credit from
+/// [`EcoConfig::for_profile`]; car-like masses keep the Passat Cd/area/mass baseline.
+fn eco_for_travel_profile(profile: TravelProfile) -> EcoConfig {
+    let mut eco = EcoConfig::for_profile(profile.to_core());
+    match profile {
+        TravelProfile::Car
+        | TravelProfile::CarElectric
+        | TravelProfile::Motorcycle
+        | TravelProfile::MotorcycleElectric => {
+            eco.drag_coefficient = 0.28;
+            eco.frontal_area_m2 = 2.2;
+            eco.mass_kg = 1500.0;
+        }
+        _ => {}
+    }
+    eco
+}
+
+fn ffi_vehicle_to_limits(v: &FfiVehicleLimits) -> Option<VehicleLimits> {
+    if v.axle_weight_kg.is_none()
+        && v.bogie_weight_kg.is_none()
+        && v.height_m.is_none()
+        && v.width_m.is_none()
+        && v.length_m.is_none()
+        && v.total_weight_kg.is_none()
+    {
+        return None;
+    }
+    Some(VehicleLimits {
+        axle_weight_kg: v.axle_weight_kg,
+        bogie_weight_kg: v.bogie_weight_kg,
+        height_m: v.height_m,
+        width_m: v.width_m,
+        length_m: v.length_m,
+        total_weight_kg: v.total_weight_kg,
+    })
+}
+
+fn apply_network_pref_if_requested(
+    graph: &mut RouteGraph,
+    pbf: &Path,
+    kind: OfficialNetworkKind,
+    prefer: bool,
+    report: &mut String,
+) {
+    if !prefer {
+        return;
+    }
+    match load_official_network_way_ids(pbf, kind) {
+        Ok(ways) => {
+            report.push_str(&format!(
+                "official_network_ways={}; prefer_official_networks=true\n",
+                ways.len()
+            ));
+            apply_official_network_preference(graph, &ways);
+        }
+        Err(e) => {
+            report.push_str(&format!("WARN: official network load failed: {e:#}\n"));
+        }
     }
 }
 
@@ -271,35 +359,211 @@ fn first_named<'a>(hits: &[&'a PoiRecord]) -> Option<&'a PoiRecord> {
         .or_else(|| hits.first().copied())
 }
 
-/// Prefer hut/cabin/shelter; else a camp pitch; else an unlabeled synthetic tent
-/// point on the corridor (never label mountain peaks as pause stops).
-fn pick_pause_at(
+/// Path length along graph edges (metres).
+fn path_length_m(graph: &RouteGraph, path: &[NodeId]) -> f64 {
+    let mut m = 0.0;
+    for w in path.windows(2) {
+        if let Some(idx) = graph.edge_index(w[0], w[1]) {
+            m += graph.edges[idx].length_m;
+        }
+    }
+    m
+}
+
+/// True when `to` is reachable from `from` on the profile graph without ferries,
+/// without crow-flies crossing a railway / major highway / river, and without a
+/// large detour (e.g. around a lake).
+fn reachable_without_barrier(
+    graph: &RouteGraph,
+    barriers: &DangerBarrierIndex,
+    from_lat: f64,
+    from_lon: f64,
+    to_lat: f64,
+    to_lon: f64,
+) -> bool {
+    let crow = haversine_m(from_lat, from_lon, to_lat, to_lon);
+    if crow < 1.0 {
+        return true;
+    }
+    // Railways, motorway/trunk, and rivers block straight-line access.
+    if barriers.blocks_access(from_lat, from_lon, to_lat, to_lon) {
+        return false;
+    }
+    let start = nearest(graph, from_lat, from_lon);
+    let goal = nearest(graph, to_lat, to_lon);
+    if start == goal {
+        return true;
+    }
+    let opts = RouteOptions {
+        avoid_ferries: true,
+        // Hiking: do not treat major-road walking as safe access to a break POI.
+        avoid_major_roads: matches!(graph.profile(), RoutingProfile::Foot),
+        ..RouteOptions::default()
+    };
+    let Some((path, _)) = graph.shortest_path_with_options(start, goal, false, &opts) else {
+        return false;
+    };
+    let path_m = path_length_m(graph, &path);
+    // Allow short absolute slack; reject lake-around detours (path >> crow-flies).
+    const MAX_DETOUR_RATIO: f64 = 2.5;
+    const SLACK_M: f64 = 800.0;
+    path_m <= crow * MAX_DETOUR_RATIO + SLACK_M
+}
+
+fn sort_pois_near_sample(hits: &mut [&PoiRecord], lat: f64, lon: f64) {
+    hits.sort_by(|a, b| {
+        let da = haversine_m(lat, lon, a.lat, a.lon);
+        let db = haversine_m(lat, lon, b.lat, b.lon);
+        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+    });
+}
+
+/// Prefer POIs linked to the planned road/path/trail; else any POI reachable
+/// without ferry/lake-scale detour or crow-flies across railway/highway/river;
+/// else a synthetic stop on the sample.
+///
+/// Overnight / tent candidates are filtered with [`check_overnight_candidate`]
+/// (building + glacier proximity) when `overnight` is provided.
+fn pick_hiking_pause_at(
     poi: &PoiIndex,
+    graph: &RouteGraph,
+    barriers: &DangerBarrierIndex,
+    route_link: &RoadNodeIndex,
     lat: f64,
     lon: f64,
     hut_radius_m: f64,
+    overnight: Option<&(SafetyConfig, OvernightProximityIndex)>,
 ) -> (String, f64, f64, String, String) {
+    let overnight_ok = |p: &PoiRecord| -> bool {
+        let Some((safety, prox)) = overnight else {
+            return true;
+        };
+        check_overnight_candidate(
+            p.lat,
+            p.lon,
+            safety,
+            p,
+            &prox.buildings,
+            &prox.glaciers,
+        )
+        .is_none()
+    };
+    let pick_hut = |p: &PoiRecord| -> (String, f64, f64, String, String) {
+        let name = p
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("Hut {}", p.osm_id));
+        (name, p.lat, p.lon, "hut".into(), p.icon_key.clone())
+    };
     for cat in [
         PoiCategory::NetworkHut,
         PoiCategory::Cabin,
         PoiCategory::OvernightFacility,
     ] {
-        if let Some(p) = first_named(&poi.nearest(cat, lat, lon, hut_radius_m)) {
-            let name = p
-                .name
-                .clone()
-                .unwrap_or_else(|| format!("Hut {}", p.osm_id));
-            return (name, p.lat, p.lon, "hut".into(), p.icon_key.clone());
+        let mut all: Vec<&PoiRecord> = poi.nearest(cat, lat, lon, hut_radius_m);
+        sort_pois_near_sample(&mut all, lat, lon);
+        let linked: Vec<&PoiRecord> = all
+            .iter()
+            .copied()
+            .filter(|p| route_link.within_road_link(p.lat, p.lon) && overnight_ok(p))
+            .collect();
+        if let Some(p) = first_named(&linked) {
+            return pick_hut(p);
+        }
+        let mut best_unnamed: Option<&PoiRecord> = None;
+        for p in all {
+            if !overnight_ok(p) {
+                continue;
+            }
+            if route_link.within_road_link(p.lat, p.lon) {
+                continue;
+            }
+            if !reachable_without_barrier(graph, barriers, lat, lon, p.lat, p.lon) {
+                continue;
+            }
+            if p.name.as_ref().is_some_and(|n| !n.trim().is_empty()) {
+                return pick_hut(p);
+            }
+            if best_unnamed.is_none() {
+                best_unnamed = Some(p);
+            }
+        }
+        if let Some(p) = best_unnamed {
+            return pick_hut(p);
         }
     }
-    // Tent amenity only (camp_site / camp_pitch), never named peaks/mountains.
-    if let Some(p) = first_named(&poi.nearest(PoiCategory::TentSite, lat, lon, hut_radius_m * 1.5))
-    {
+    let mut tents: Vec<&PoiRecord> =
+        poi.nearest(PoiCategory::TentSite, lat, lon, hut_radius_m * 1.5);
+    sort_pois_near_sample(&mut tents, lat, lon);
+    let linked: Vec<&PoiRecord> = tents
+        .iter()
+        .copied()
+        .filter(|p| route_link.within_road_link(p.lat, p.lon) && overnight_ok(p))
+        .collect();
+    if let Some(p) = first_named(&linked) {
         let name = p
             .name
             .clone()
             .unwrap_or_else(|| "Tent site".into());
         return (name, p.lat, p.lon, "tent".into(), p.icon_key.clone());
+    }
+    let mut best_unnamed: Option<&PoiRecord> = None;
+    for p in tents {
+        if !overnight_ok(p) {
+            continue;
+        }
+        if route_link.within_road_link(p.lat, p.lon) {
+            continue;
+        }
+        if !reachable_without_barrier(graph, barriers, lat, lon, p.lat, p.lon) {
+            continue;
+        }
+        if p.name.as_ref().is_some_and(|n| !n.trim().is_empty()) {
+            let name = p.name.clone().unwrap_or_else(|| "Tent site".into());
+            return (name, p.lat, p.lon, "tent".into(), p.icon_key.clone());
+        }
+        if best_unnamed.is_none() {
+            best_unnamed = Some(p);
+        }
+    }
+    if let Some(p) = best_unnamed {
+        let name = p
+            .name
+            .clone()
+            .unwrap_or_else(|| "Tent site".into());
+        return (name, p.lat, p.lon, "tent".into(), p.icon_key.clone());
+    }
+    // Synthetic corridor tent: reject if overnight filter forbids it at the sample.
+    if let Some((safety, prox)) = overnight {
+        let synthetic = PoiRecord {
+            osm_id: 0,
+            lat,
+            lon,
+            categories: vec![PoiCategory::TentSite],
+            icon_key: "shelter".into(),
+            tags: Default::default(),
+            name: Some("Tent site".into()),
+        };
+        if check_overnight_candidate(
+            lat,
+            lon,
+            safety,
+            &synthetic,
+            &prox.buildings,
+            &prox.glaciers,
+        )
+        .is_some()
+        {
+            // Still return a marker so the break interval has a stop, but label it
+            // so the host can see the safety rejection in the report path.
+            return (
+                "Tent site (safety review)".into(),
+                lat,
+                lon,
+                "tent".into(),
+                "shelter".into(),
+            );
+        }
     }
     (
         "Tent site".into(),
@@ -310,11 +574,13 @@ fn pick_pause_at(
     )
 }
 
-/// Motor-profile break: amenity must be within 1 km of the road network, and
-/// among those we pick the one closest to the route sample.
+/// Prefer amenities linked to the planned road; else reachable without ferry/
+/// lake-scale detour or crow-flies across railway/highway/river; else synthetic.
 fn pick_motor_pause_at(
     poi: &PoiIndex,
-    roads: &RoadNodeIndex,
+    graph: &RouteGraph,
+    barriers: &DangerBarrierIndex,
+    route_link: &RoadNodeIndex,
     lat: f64,
     lon: f64,
     search_radius_m: f64,
@@ -330,17 +596,10 @@ fn pick_motor_pause_at(
             by_id.entry(p.osm_id).or_insert(p);
         }
     }
-    let mut candidates: Vec<&PoiRecord> = by_id
-        .into_values()
-        .filter(|p| roads.within_road_link(p.lat, p.lon))
-        .collect();
-    // Closest to the route sample first (prefer on/near the planned path).
-    candidates.sort_by(|a, b| {
-        let da = haversine_m(lat, lon, a.lat, a.lon);
-        let db = haversine_m(lat, lon, b.lat, b.lon);
-        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-    });
-    if let Some(p) = first_named(&candidates) {
+    let mut all: Vec<&PoiRecord> = by_id.into_values().collect();
+    sort_pois_near_sample(&mut all, lat, lon);
+
+    let pick = |p: &PoiRecord| -> (String, f64, f64, String, String) {
         let kind = if p.categories.contains(&PoiCategory::Restroom) {
             "amenity"
         } else if p.categories.contains(&PoiCategory::OvernightFacility)
@@ -354,9 +613,35 @@ fn pick_motor_pause_at(
             .name
             .clone()
             .unwrap_or_else(|| format!("Stop {}", p.osm_id));
-        return (name, p.lat, p.lon, kind.into(), p.icon_key.clone());
+        (name, p.lat, p.lon, kind.into(), p.icon_key.clone())
+    };
+
+    let linked: Vec<&PoiRecord> = all
+        .iter()
+        .copied()
+        .filter(|p| route_link.within_road_link(p.lat, p.lon))
+        .collect();
+    if let Some(p) = first_named(&linked) {
+        return pick(p);
     }
-    // Route sample itself is on the car graph — always road-linked.
+    let mut best_unnamed: Option<&PoiRecord> = None;
+    for p in all {
+        if route_link.within_road_link(p.lat, p.lon) {
+            continue;
+        }
+        if !reachable_without_barrier(graph, barriers, lat, lon, p.lat, p.lon) {
+            continue;
+        }
+        if p.name.as_ref().is_some_and(|n| !n.trim().is_empty()) {
+            return pick(p);
+        }
+        if best_unnamed.is_none() {
+            best_unnamed = Some(p);
+        }
+    }
+    if let Some(p) = best_unnamed {
+        return pick(p);
+    }
     (
         "Rest stop".into(),
         lat,
@@ -366,27 +651,52 @@ fn pick_motor_pause_at(
     )
 }
 
-/// `roads`: when set (car / truck / moto / motorhome), only road-linked POIs
-/// within [`RoadNodeIndex::MAX_LINK_M`] are used, preferring closest to the route.
+/// Break POIs prefer candidates linked to the planned route network
+/// ([`RoadNodeIndex::MAX_LINK_M`]); otherwise fall back to POIs reachable
+/// without ferry / lake-scale detours / crow-flies across dangerous barriers.
+/// `hiking` selects hut vs motor categories.
 fn build_break_pois_json(
     poi: &PoiIndex,
     polyline: &str,
     interval_km: f64,
     search_radius_m: f64,
-    roads: Option<&RoadNodeIndex>,
+    graph: &RouteGraph,
+    barriers: &DangerBarrierIndex,
+    route_path: &[NodeId],
+    hiking: bool,
+    overnight: Option<&(SafetyConfig, OvernightProximityIndex)>,
 ) -> String {
     let samples = sample_polyline_km(polyline);
     if samples.len() < 2 {
         return "[]".into();
     }
+    let route_link = RoadNodeIndex::from_path_nodes(graph, route_path);
     let total = samples.last().map(|s| s.2).unwrap_or(0.0);
     let mut stops = Vec::new();
     let mut next = interval_km;
     while next < total - 0.5 {
         let (lat, lon) = interpolate_at_km(&samples, next);
-        let (name, plat, plon, kind, icon) = match roads {
-            Some(r) => pick_motor_pause_at(poi, r, lat, lon, search_radius_m.min(5_000.0)),
-            None => pick_pause_at(poi, lat, lon, search_radius_m),
+        let (name, plat, plon, kind, icon) = if hiking {
+            pick_hiking_pause_at(
+                poi,
+                graph,
+                barriers,
+                &route_link,
+                lat,
+                lon,
+                search_radius_m,
+                overnight,
+            )
+        } else {
+            pick_motor_pause_at(
+                poi,
+                graph,
+                barriers,
+                &route_link,
+                lat,
+                lon,
+                search_radius_m.min(5_000.0),
+            )
         };
         // Avoid stacking duplicate names within ~2 km.
         let dup = stops.iter().any(|s: &serde_json::Value| {
@@ -621,7 +931,11 @@ pub fn run_car_corridor_pipeline(
         &polyline,
         break_at_km.max(15.0),
         12_000.0,
-        Some(&RoadNodeIndex::from_graph(&graph)),
+        &graph,
+        &load_break_barriers(&graph, pbf, [60.35, 9.95, 62.05, 11.65]),
+        &path,
+        false,
+        None,
     );
     report.push_str(&format!("break_pois={break_pois_json}\n"));
 
@@ -664,10 +978,13 @@ pub fn run_car_corridor_pipeline(
     }
 }
 
-/// Plan a car route between two WGS84 points using a local OSM `.pbf` graph.
+/// Plan a motor / bicycle route between two WGS84 points using a local OSM `.pbf`.
 ///
-/// Unlike [`run_car_corridor_pipeline`], this does not require the Espa–Atnbrufossen
-/// endpoints or a minimum corridor length — suitable for local Raufoss-scale trips.
+/// Always builds a **bbox-clipped** graph (`[min_lat,min_lon,max_lat,max_lon]` padded
+/// around the endpoints) so truck / mobile-home / motorcycle / bicycle never load a
+/// full Ostlandet extract into RAM. Hiking uses [`plan_hiking_route`] instead.
+///
+/// [`TravelProfile::Hiking`] is rejected (call [`plan_hiking_route`]).
 #[uniffi::export]
 pub fn plan_car_route(
     pbf_path: String,
@@ -678,10 +995,29 @@ pub fn plan_car_route(
     end_lat: f64,
     end_lon: f64,
     use_eco: bool,
+    profile: TravelProfile,
+    avoid_major: bool,
+    avoid_tolls: bool,
+    avoid_ferries: bool,
+    vehicle: FfiVehicleLimits,
+    prefer_official_networks: bool,
 ) -> CorridorRouteResult {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         plan_car_route_inner(
-            pbf_path, elev_dir, cache_dir, start_lat, start_lon, end_lat, end_lon, use_eco,
+            pbf_path,
+            elev_dir,
+            cache_dir,
+            start_lat,
+            start_lon,
+            end_lat,
+            end_lon,
+            use_eco,
+            profile,
+            avoid_major,
+            avoid_tolls,
+            avoid_ferries,
+            vehicle,
+            prefer_official_networks,
         )
     })) {
         Ok(result) => result,
@@ -700,17 +1036,46 @@ fn plan_car_route_inner(
     end_lat: f64,
     end_lon: f64,
     use_eco: bool,
+    profile: TravelProfile,
+    avoid_major: bool,
+    avoid_tolls: bool,
+    avoid_ferries: bool,
+    vehicle: FfiVehicleLimits,
+    prefer_official_networks: bool,
 ) -> CorridorRouteResult {
     let empty = empty_corridor;
 
+    if profile == TravelProfile::Hiking {
+        return empty(
+            "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: use plan_hiking_route for hiking\n".into(),
+        );
+    }
+
+    let routing_profile = RoutingProfile::from(profile.to_core());
     let plan = WorkerPoolPlan::detect();
     WorkerPoolPlan::lower_current_thread_priority();
     let _ = plan.install_rayon_pool();
 
+    let vehicle_limits = ffi_vehicle_to_limits(&vehicle);
+    let route_opts = RouteOptions {
+        avoid_major_roads: avoid_major,
+        avoid_tolls,
+        avoid_ferries,
+        vehicle: vehicle_limits.clone(),
+    };
+
     let mut report = String::new();
     report.push_str("TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\n");
     report.push_str(&format!(
-        "start={start_lat:.6},{start_lon:.6}; end={end_lat:.6},{end_lon:.6}; use_eco={use_eco}\n"
+        "profile={profile:?}; routing={routing_profile:?}; start={start_lat:.6},{start_lon:.6}; end={end_lat:.6},{end_lon:.6}; use_eco={use_eco}\n"
+    ));
+    report.push_str(&format!(
+        "avoid_major={avoid_major}; avoid_tolls={avoid_tolls}; avoid_ferries={avoid_ferries}; vehicle_limits={}\n",
+        vehicle_limits.is_some()
+    ));
+    report.push_str(&format!(
+        "eco_regen={:.3}\n",
+        eco_for_travel_profile(profile).regen_efficiency
     ));
 
     let pbf = Path::new(pbf_path.trim());
@@ -721,7 +1086,7 @@ fn plan_car_route_inner(
     let elev = PathBuf::from(&elev_dir);
     let cache = PathBuf::from(&cache_dir);
     let _ = std::fs::create_dir_all(&cache);
-    let eco = passat_eco();
+    let eco = eco_for_travel_profile(profile);
     let elevation = ElevationService::new(ElevationCache::new(&elev));
     let _ = elevation.warm_bbox([
         start_lat.min(end_lat) - 0.05,
@@ -731,7 +1096,7 @@ fn plan_car_route_inner(
     ]);
 
     let t0 = Instant::now();
-    // Clip to the trip bbox so we never load a full Ostlandet car graph into RAM
+    // Clip to the trip bbox so we never load a full Ostlandet graph into RAM
     // (that OOMs 4GB Automotive AVDs). Still reads the same region .pbf.
     let pad = 0.35;
     let bbox = [
@@ -749,10 +1114,10 @@ fn plan_car_route_inner(
         Some(5),
         "Planning route: building area graph…",
     );
-    let (graph, cache_hit) = match load_or_build_reweighted_bbox(
+    let (mut graph, cache_hit) = match load_or_build_reweighted_bbox(
         pbf,
         &cache,
-        RoutingProfile::Car,
+        routing_profile,
         &elevation,
         &eco,
         bbox,
@@ -763,6 +1128,15 @@ fn plan_car_route_inner(
             return empty(report);
         }
     };
+    if profile == TravelProfile::Bicycle && prefer_official_networks {
+        apply_network_pref_if_requested(
+            &mut graph,
+            pbf,
+            OfficialNetworkKind::Cycling,
+            true,
+            &mut report,
+        );
+    }
     let build_s = t0.elapsed().as_secs_f64();
     report.push_str(&format!(
         "build_s={build_s:.2}; cache_hit={cache_hit}; nodes={}; edges={}\n",
@@ -773,7 +1147,7 @@ fn plan_car_route_inner(
     driver_break_core::download::progress::set(3, Some(5), "Planning route: finding path…");
     let s = nearest(&graph, start_lat, start_lon);
     let g = nearest(&graph, end_lat, end_lon);
-    let Some((path, cost)) = graph.shortest_path(s, g, use_eco) else {
+    let Some((path, cost)) = graph.shortest_path_with_options(s, g, use_eco, &route_opts) else {
         report.push_str("FAIL: no route between snapped nodes\n");
         return empty(report);
     };
@@ -813,21 +1187,44 @@ fn plan_car_route_inner(
     let eta_minutes = motor_path_minutes(&graph, &path);
     let path_nodes = path.len();
     driver_break_core::download::progress::set(4, Some(5), "Planning route: break stops…");
-    // Keep a road-proximity index; drop the heavy graph before the POI scan.
-    let roads = RoadNodeIndex::from_graph(&graph);
-    drop(graph);
     // Clip POI load to the same trip bbox (never a full Ostlandet POI scan).
     let poi_index = PoiIndex::load_from_pbf_bbox(pbf, bbox).unwrap_or_else(|_| PoiIndex::new());
+    let barriers = load_break_barriers(&graph, pbf, bbox);
     let break_interval_km = 40.0_f64.min((dist_km / 2.0).max(15.0));
-    // Car / truck / moto / motorhome: road-linked POIs only (≤1 km from a road),
-    // preferring the stop closest to the planned route.
+    // Prefer stops on the planned road; fall back if reachable without danger barriers.
     let break_pois_json = build_break_pois_json(
         &poi_index,
         &polyline,
         break_interval_km,
         5_000.0,
-        Some(&roads),
+        &graph,
+        &barriers,
+        &path,
+        false,
+        None,
     );
+    // Difficulty metadata on cycling network ways (informational only).
+    if profile == TravelProfile::Bicycle && prefer_official_networks {
+        let way_ids: std::collections::HashSet<i64> = path
+            .windows(2)
+            .filter_map(|w| graph.edge_index(w[0], w[1]))
+            .filter_map(|i| {
+                graph.edges[i]
+                    .id
+                    .strip_suffix("-rev")
+                    .unwrap_or(&graph.edges[i].id)
+                    .split('-')
+                    .next()
+                    .and_then(|s| s.parse().ok())
+            })
+            .collect();
+        if let Ok(tags) = load_way_difficulty_tags(pbf, &way_ids) {
+            let notes = difficulty_notes_for_path(&graph, &path, &tags);
+            if !notes.is_empty() {
+                report.push_str(&format!("route_metadata={}\n", notes.join("; ")));
+            }
+        }
+    }
     report.push_str(&format!(
         "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={path_nodes}; path_cost={cost:.0}; polyline_chars={}; break_pois={}\nPASS\n",
         polyline.len(),
@@ -862,6 +1259,7 @@ pub fn plan_hiking_route(
     elev_dir: String,
     cache_dir: String,
     waypoints_json: String,
+    prefer_official_networks: bool,
 ) -> CorridorRouteResult {
     #[derive(Deserialize)]
     struct Wp {
@@ -871,6 +1269,9 @@ pub fn plan_hiking_route(
     }
 
     let mut report = String::from("TEST_KIND=PLAN_HIKING_ROUTE\nDATA_SOURCE=real_pbf\n");
+    report.push_str(&format!(
+        "prefer_official_networks={prefer_official_networks}\n"
+    ));
     let wps: Vec<Wp> = match serde_json::from_str(&waypoints_json) {
         Ok(v) => v,
         Err(e) => {
@@ -896,21 +1297,41 @@ pub fn plan_hiking_route(
     let elev = PathBuf::from(&elev_dir);
     let cache = PathBuf::from(&cache_dir);
     let _ = std::fs::create_dir_all(&cache);
-    let eco = passat_eco();
+    let eco = eco_for_travel_profile(TravelProfile::Hiking);
     let elevation = ElevationService::new(ElevationCache::new(&elev));
     let min_lat = wps.iter().map(|w| w.lat).fold(f64::INFINITY, f64::min);
     let max_lat = wps.iter().map(|w| w.lat).fold(f64::NEG_INFINITY, f64::max);
     let min_lon = wps.iter().map(|w| w.lon).fold(f64::INFINITY, f64::min);
     let max_lon = wps.iter().map(|w| w.lon).fold(f64::NEG_INFINITY, f64::max);
-    let _ = elevation.warm_bbox([min_lat - 0.1, min_lon - 0.1, max_lat + 0.1, max_lon + 0.1]);
+    // Clip to the trip bbox so we never load a full Ostlandet foot graph into RAM
+    // (that OOMs 4GB Automotive AVDs during hiking plan). Same region .pbf.
+    let span = (max_lat - min_lat).max(max_lon - min_lon);
+    let pad = (span * 0.25).clamp(0.30, 0.55);
+    let bbox = [
+        min_lat - pad,
+        min_lon - pad,
+        max_lat + pad,
+        max_lon + pad,
+    ];
+    report.push_str(&format!(
+        "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}\n",
+        bbox[0], bbox[1], bbox[2], bbox[3]
+    ));
+    let _ = elevation.warm_bbox(bbox);
 
     let t0 = Instant::now();
-    let (graph, cache_hit) = match load_or_build_reweighted(
+    driver_break_core::download::progress::set(
+        0,
+        Some(5),
+        "Planning route: building hiking area graph…",
+    );
+    let (mut graph, cache_hit) = match load_or_build_reweighted_bbox(
         pbf,
         &cache,
         RoutingProfile::Foot,
         &elevation,
         &eco,
+        bbox,
     ) {
         Ok(v) => v,
         Err(e) => {
@@ -918,6 +1339,13 @@ pub fn plan_hiking_route(
             return empty_corridor(report);
         }
     };
+    apply_network_pref_if_requested(
+        &mut graph,
+        pbf,
+        OfficialNetworkKind::Hiking,
+        prefer_official_networks,
+        &mut report,
+    );
     let build_s = t0.elapsed().as_secs_f64();
     report.push_str(&format!(
         "build_s={build_s:.2}; cache_hit={cache_hit}; nodes={}; edges={}\n",
@@ -956,6 +1384,28 @@ pub fn plan_hiking_route(
         }
     }
 
+    if prefer_official_networks {
+        let way_ids: std::collections::HashSet<i64> = full_path
+            .windows(2)
+            .filter_map(|w| graph.edge_index(w[0], w[1]))
+            .filter_map(|i| {
+                graph.edges[i]
+                    .id
+                    .strip_suffix("-rev")
+                    .unwrap_or(&graph.edges[i].id)
+                    .split('-')
+                    .next()
+                    .and_then(|s| s.parse().ok())
+            })
+            .collect();
+        if let Ok(tags) = load_way_difficulty_tags(pbf, &way_ids) {
+            let notes = difficulty_notes_for_path(&graph, &full_path, &tags);
+            if !notes.is_empty() {
+                report.push_str(&format!("route_metadata={}\n", notes.join("; ")));
+            }
+        }
+    }
+
     let mut polyline = String::new();
     let stride = if full_path.len() < 120 { 1 } else { 8 };
     for (i, id) in full_path.iter().enumerate() {
@@ -968,20 +1418,39 @@ pub fn plan_hiking_route(
     }
 
     let dist_km = distance_m / 1000.0;
-    let poi_index = match PoiIndex::load_from_pbf(pbf) {
+    // Clip POI load to the same trip bbox (never a full Ostlandet POI scan).
+    let poi_index = match PoiIndex::load_from_pbf_bbox_with_overnight_buildings(pbf, bbox) {
         Ok(i) => i,
         Err(e) => {
             report.push_str(&format!("FAIL: POI index: {e:#}\n"));
             return empty_corridor(report);
         }
     };
-    // Hiking rast interval (~11.3 km); include named vias that are huts as pauses too.
+    let barriers = load_break_barriers(&graph, pbf, bbox);
+    let safety = SafetyConfig::default();
+    // Buildings from the POI load; glaciers from the barrier index already built
+    // for break access — no extra overnight PBF scan.
+    let overnight_prox = OvernightProximityIndex::from_poi_buildings_and_barriers(
+        poi_index.overnight_buildings().to_vec(),
+        &barriers,
+    );
+    report.push_str(&format!(
+        "overnight_buildings={}; overnight_glaciers={}; overnight_source=poi+barriers\n",
+        overnight_prox.buildings.len(),
+        overnight_prox.glaciers.len()
+    ));
+    let overnight_ctx = (safety, overnight_prox);
+    // Hiking rast interval (~11.3 km); prefer path-linked huts, else reachable fallback.
     let mut break_pois_json = build_break_pois_json(
         &poi_index,
         &polyline,
         HIKING_MAIN_BREAK_DISTANCE_KM,
         15_000.0,
-        None,
+        &graph,
+        &barriers,
+        &full_path,
+        true,
+        Some(&overnight_ctx),
     );
     // Ensure hut vias/end appear as pause labels even if the interval skipped them.
     if let Ok(mut arr) = serde_json::from_str::<Vec<serde_json::Value>>(&break_pois_json) {
@@ -1423,6 +1892,25 @@ pub fn save_vehicle_limits(data_dir: String, limits: FfiVehicleLimits) -> bool {
             total_weight_kg: limits.total_weight_kg,
         })
         .is_ok()
+}
+
+/// Soft preference for official hiking/cycling route networks (default off).
+#[uniffi::export]
+pub fn load_prefer_official_networks(data_dir: String) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.load_prefer_official_networks().unwrap_or(false)
+}
+
+#[uniffi::export]
+pub fn save_prefer_official_networks(data_dir: String, prefer: bool) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.save_prefer_official_networks(prefer).is_ok()
 }
 
 #[uniffi::export]

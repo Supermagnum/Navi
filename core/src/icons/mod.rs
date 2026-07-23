@@ -155,6 +155,7 @@ fn candidate_filenames(key: &str, theme: IconTheme) -> Vec<String> {
         "cabin" | "shelter" => out.push("shelter.svg".into()),
         "fuel" => out.push("fuel.svg".into()),
         "toilets" | "restroom" => out.push("toilets.svg".into()),
+        "leisure-fishing" | "fishing" | "fish" => out.push("fish.svg".into()),
         _ => {}
     }
     if let Some(rest) = key.strip_prefix("country_") {

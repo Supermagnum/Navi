@@ -60,7 +60,8 @@ pipeline — the core loads SVG bytes via `usvg` / `resvg`.
 ```
 
 Aliases already mapped in code (examples): `eco` / `eco-mode` → `leaf.svg`;
-`water` → `drinking_water.svg`. Prefer matching those names so overrides apply
+`water` → `drinking_water.svg`; `leisure-fishing` / `fishing` / `fish` →
+`fish.svg` (Navit-derived). Prefer matching those names so overrides apply
 without code changes.
 
 ### Animated icons (Synfig Studio)
@@ -110,7 +111,14 @@ Icons are named by OSM-style keys where applicable, for example:
 - `natural-*`, `leisure-*`, `shop-*`
 - Craft brewery / alcohol retail maps to `shop-alcohol` when classified as
   `PoiCategory::CraftBrewery`
-- `leaf.svg` — eco-mode indicator (custom drop-in example)
+- `leaf.svg` — eco-mode indicator (**custom** Navi drop-in; not from the Navit
+  inventory — same override-by-filename mechanism as other keys; document any
+  further custom art the same way)
+- `fish.svg` — **pre-existing Navit-derived** icon (present in the initial
+  bundled Navit set under `core/src/icons`, same provenance/timestamp class as
+  e.g. `fuel.svg`). Used for `PoiCategory::Fishing` via keys `leisure-fishing` /
+  `fishing` / `fish`. Covered by the existing **GPL v2** Navit licensing note
+  above — not a new custom asset for the Fishing POI work.
 - `unknown.svg` — final fallback
 
 Rasterization for the Android map overlay uses `usvg` / `resvg` via

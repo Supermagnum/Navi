@@ -10,6 +10,7 @@ const SAFETY_CONFIG_KEY: &str = "safety_config";
 const ECO_CONFIG_KEY: &str = "eco_config";
 const VEHICLE_LIMITS_KEY: &str = "vehicle_limits";
 const FUEL_CONFIG_KEY: &str = "fuel_config";
+const PREFER_OFFICIAL_NETWORKS_KEY: &str = "prefer_official_networks";
 
 pub struct ConfigStore<'a> {
     storage: &'a Storage,
@@ -58,6 +59,15 @@ impl<'a> ConfigStore<'a> {
 
     pub fn save_fuel_config(&self, config: &FuelConfig) -> SqlResult<()> {
         self.save_json(FUEL_CONFIG_KEY, config)
+    }
+
+    /// Soft preference for official hiking/cycling networks (off by default).
+    pub fn load_prefer_official_networks(&self) -> SqlResult<bool> {
+        self.load_json(PREFER_OFFICIAL_NETWORKS_KEY, || false)
+    }
+
+    pub fn save_prefer_official_networks(&self, prefer: bool) -> SqlResult<()> {
+        self.save_json(PREFER_OFFICIAL_NETWORKS_KEY, &prefer)
     }
 
     fn load_json<T>(&self, key: &str, default: fn() -> T) -> SqlResult<T>

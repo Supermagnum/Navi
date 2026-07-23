@@ -8,6 +8,15 @@ pub fn osm_icon_key(tags: &HashMap<String, String>) -> String {
     {
         return "shop-alcohol".to_string();
     }
+    // Bundled Navit-derived `fish.svg` (GPL v2; not a custom drop-in) maps to
+    // leisure-fishing / shop-fishing.
+    if tags.get("leisure").map(String::as_str) == Some("fishing")
+        || tags.get("leisure").map(String::as_str) == Some("fishing_pier")
+        || tags.get("sport").map(String::as_str) == Some("fishing")
+        || tags.get("shop").map(String::as_str) == Some("fishing")
+    {
+        return "leisure-fishing".to_string();
+    }
     if let Some(amenity) = tags.get("amenity") {
         return format!("amenity-{amenity}");
     }

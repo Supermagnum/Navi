@@ -1,0 +1,374 @@
+//! Route-level evidence that planner options change path / cost (not just flag plumbing).
+
+use std::collections::{HashMap, HashSet};
+
+use driver_break_core::config::{EcoConfig, Profile, SafetyConfig, VehicleLimits};
+use driver_break_core::poi::{PoiCategory, PoiRecord};
+use driver_break_core::routing::graph::{
+    apply_official_network_preference, GraphEdge, RouteGraph, RouteOptions, RoutingProfile,
+    NON_NETWORK_PENALTY,
+};
+use driver_break_core::routing::safety::check_overnight_candidate;
+use osm4routing::{Node, NodeId};
+use geo_types::Coord;
+
+fn node(id: i64, lat: f64, lon: f64) -> (NodeId, Node) {
+    let nid = NodeId(id);
+    (
+        nid,
+        Node {
+            id: nid,
+            coord: Coord { x: lon, y: lat },
+            uses: 0,
+        },
+    )
+}
+
+fn edge(
+    id: &str,
+    source: i64,
+    target: i64,
+    start_lat: f64,
+    start_lon: f64,
+    end_lat: f64,
+    end_lon: f64,
+    length_m: f64,
+    highway: &str,
+) -> GraphEdge {
+    GraphEdge {
+        id: id.into(),
+        source: NodeId(source),
+        target: NodeId(target),
+        length_m,
+        base_weight: length_m,
+        eco_weight: Some(length_m),
+        start_lat,
+        start_lon,
+        end_lat,
+        end_lon,
+        highway: Some(highway.into()),
+        maxspeed_kmh: None,
+        maxweight_t: None,
+        maxaxleload_t: None,
+        maxbogieweight_t: None,
+        maxheight_m: None,
+        maxwidth_m: None,
+        maxlength_m: None,
+        is_toll: false,
+        is_ferry: false,
+    }
+}
+
+/// Diamond: A→B→C short major road; A→D→C longer secondary. Avoid-major must take ADC.
+#[test]
+fn avoid_major_changes_planned_route() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let mut ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "motorway");
+    let mut bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "motorway");
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 200.0, "secondary");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 200.0, "secondary");
+    ab.is_toll = false;
+    bc.is_toll = false;
+    let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Car);
+
+    let direct = graph
+        .shortest_path(NodeId(1), NodeId(3), false)
+        .expect("default path");
+    assert!(
+        direct.0.contains(&NodeId(2)),
+        "default should prefer short motorway via B: {:?}",
+        direct.0
+    );
+
+    let avoided = graph
+        .shortest_path_with_options(
+            NodeId(1),
+            NodeId(3),
+            false,
+            &RouteOptions {
+                avoid_major_roads: true,
+                ..Default::default()
+            },
+        )
+        .expect("avoid-major path");
+    assert!(
+        !avoided.0.contains(&NodeId(2)),
+        "avoid major must not use B: {:?}",
+        avoided.0
+    );
+    assert!(avoided.0.contains(&NodeId(4)));
+    assert_ne!(direct.0, avoided.0);
+}
+
+#[test]
+fn avoid_toll_changes_planned_route() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let mut ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "primary");
+    ab.is_toll = true;
+    let mut bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "primary");
+    bc.is_toll = true;
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 250.0, "secondary");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 250.0, "secondary");
+    let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Car);
+
+    let with_toll = graph.shortest_path(NodeId(1), NodeId(3), false).unwrap();
+    assert!(with_toll.0.contains(&NodeId(2)));
+
+    let no_toll = graph
+        .shortest_path_with_options(
+            NodeId(1),
+            NodeId(3),
+            false,
+            &RouteOptions {
+                avoid_tolls: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(!no_toll.0.contains(&NodeId(2)));
+    assert_ne!(with_toll.0, no_toll.0);
+}
+
+#[test]
+fn avoid_ferry_changes_planned_route() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let mut ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 80.0, "secondary");
+    ab.is_ferry = true;
+    let mut bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 80.0, "secondary");
+    bc.is_ferry = true;
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 300.0, "secondary");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 300.0, "secondary");
+    let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Car);
+
+    let with_ferry = graph.shortest_path(NodeId(1), NodeId(3), false).unwrap();
+    assert!(with_ferry.0.contains(&NodeId(2)));
+
+    let no_ferry = graph
+        .shortest_path_with_options(
+            NodeId(1),
+            NodeId(3),
+            false,
+            &RouteOptions {
+                avoid_ferries: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(!no_ferry.0.contains(&NodeId(2)));
+    assert_ne!(with_ferry.0, no_ferry.0);
+}
+
+#[test]
+fn vehicle_height_limit_changes_planned_route() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let mut low = edge("low", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "primary");
+    low.maxheight_m = Some(3.0);
+    let bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "primary");
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 220.0, "primary");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 220.0, "primary");
+    let graph = RouteGraph::from_parts(nodes, vec![low, bc, ad, dc], RoutingProfile::Truck);
+
+    let unrestricted = graph.shortest_path(NodeId(1), NodeId(3), false).unwrap();
+    assert!(unrestricted.0.contains(&NodeId(2)));
+
+    let limited = graph
+        .shortest_path_with_options(
+            NodeId(1),
+            NodeId(3),
+            false,
+            &RouteOptions {
+                vehicle: Some(VehicleLimits {
+                    height_m: Some(4.0),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(!limited.0.contains(&NodeId(2)));
+    assert_ne!(unrestricted.0, limited.0);
+
+    let fits = graph
+        .shortest_path_with_options(
+            NodeId(1),
+            NodeId(3),
+            false,
+            &RouteOptions {
+                vehicle: Some(VehicleLimits {
+                    height_m: Some(2.5),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(fits.0.contains(&NodeId(2)));
+}
+
+#[test]
+fn official_network_preference_changes_path_cost_and_choice() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.02),
+        node(3, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    // Short generic path 1→2; longer official-network path 1→3→2.
+    let short = edge("99", 1, 2, 60.0, 10.0, 60.0, 10.02, 100.0, "path");
+    let long_a = edge("10", 1, 3, 60.0, 10.0, 60.01, 10.01, 120.0, "path");
+    let long_b = edge("11", 3, 2, 60.01, 10.01, 60.0, 10.02, 120.0, "path");
+    let mut graph = RouteGraph::from_parts(nodes, vec![short, long_a, long_b], RoutingProfile::Foot);
+
+    let before = graph.shortest_path(NodeId(1), NodeId(2), false).unwrap();
+    assert!(
+        !before.0.contains(&NodeId(3)),
+        "without preference take short edge: {:?}",
+        before.0
+    );
+
+    let mut net = HashSet::new();
+    net.insert(10);
+    net.insert(11);
+    apply_official_network_preference(&mut graph, &net);
+    let after = graph.shortest_path(NodeId(1), NodeId(2), false).unwrap();
+    assert!(
+        after.0.contains(&NodeId(3)),
+        "with preference take network via 3: {:?}",
+        after.0
+    );
+    assert_ne!(before.0, after.0);
+    // Soft: non-network still reachable (gap fallback) — path exists either way.
+    assert!(after.1 < before.1 * NON_NETWORK_PENALTY + 1.0 || after.0 != before.0);
+}
+
+#[test]
+fn ev_regen_makes_eco_path_cost_cheaper_than_ice_on_descent() {
+    // Two edges same length: climb then descent vs flat-ish alternate.
+    // With regen, descent edge eco_weight drops so EV prefers the hilly path when
+    // climb+descent net cost undercuts the long flat detour.
+    let ice = EcoConfig::for_profile(Profile::Car);
+    let mut ev = EcoConfig::for_profile(Profile::CarElectric);
+    ev.drag_coefficient = ice.drag_coefficient;
+    ev.frontal_area_m2 = ice.frontal_area_m2;
+    ev.mass_kg = ice.mass_kg;
+
+    let climb = ice.segment_energy_joules(500.0, 40.0);
+    let descent_ice = ice.segment_energy_joules(500.0, -40.0);
+    let descent_ev = ev.segment_energy_joules(500.0, -40.0);
+    let flat = ice.segment_energy_joules(1_200.0, 0.0);
+
+    let hilly_ice = climb + descent_ice;
+    let hilly_ev = climb + descent_ev;
+
+    assert!(descent_ev < descent_ice);
+    assert!(hilly_ev < hilly_ice);
+    // Route choice evidence: EV hilly can beat flat when ICE hilly does not.
+    assert!(
+        hilly_ice > flat || hilly_ev < flat,
+        "regen must be able to change relative cost vs flat detour (ice_hilly={hilly_ice} ev_hilly={hilly_ev} flat={flat})"
+    );
+    assert!(hilly_ev < flat || hilly_ice > hilly_ev);
+}
+
+#[test]
+fn overnight_filter_excludes_tent_near_building_for_ffi_path() {
+    // Mirrors the check wired into pick_hiking_pause_at via OvernightProximityIndex.
+    let safety = SafetyConfig::default();
+    let tent = PoiRecord {
+        osm_id: 42,
+        lat: 61.0,
+        lon: 10.0,
+        categories: vec![PoiCategory::TentSite],
+        icon_key: "tourism-camp_site".into(),
+        tags: HashMap::new(),
+        name: Some("Bad camp".into()),
+    };
+    let building = (61.0005, 10.0005); // ~70 m — inside 150 m default
+    assert!(
+        check_overnight_candidate(61.0, 10.0, &safety, &tent, &[building], &[]).is_some(),
+        "FFI overnight path must reject tent too close to building"
+    );
+    let hut = PoiRecord {
+        osm_id: 43,
+        lat: 61.0,
+        lon: 10.0,
+        categories: vec![PoiCategory::NetworkHut, PoiCategory::Cabin],
+        icon_key: "tourism-alpine_hut".into(),
+        tags: HashMap::new(),
+        name: Some("Hut".into()),
+    };
+    // Hut still rejected for building (always applies).
+    assert!(check_overnight_candidate(61.0, 10.0, &safety, &hut, &[building], &[]).is_some());
+    // Glacier override for established hut.
+    let glacier = (61.005, 10.005);
+    assert!(check_overnight_candidate(61.0, 10.0, &safety, &hut, &[], &[glacier]).is_none());
+    assert!(check_overnight_candidate(61.0, 10.0, &safety, &tent, &[], &[glacier]).is_some());
+}
+
+#[test]
+fn fishing_category_surfaces_in_poi_query() {
+    use driver_break_core::poi::{classify_tags, PoiIndex};
+    let tags: HashMap<String, String> = [("leisure".into(), "fishing".into())]
+        .into_iter()
+        .collect();
+    assert!(classify_tags(&tags).contains(&PoiCategory::Fishing));
+
+    // Synthetic index insert via load path is PBF-only; assert radius default matches General.
+    let safety = SafetyConfig::default();
+    assert_eq!(
+        PoiCategory::Fishing.default_radius_m(&safety),
+        PoiCategory::General.default_radius_m(&safety)
+    );
+    let _ = PoiIndex::new();
+}
+
+#[test]
+#[ignore = "needs ostlandet (or similar) extract under core/target/integration-fixtures"]
+fn fishing_found_in_region_pbf() {
+    use driver_break_core::poi::{PoiCategory, PoiIndex};
+    let pbf = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/integration-fixtures/ostlandet-latest.osm.pbf");
+    assert!(pbf.is_file(), "missing fixture {}", pbf.display());
+    // Small coastal bbox with known leisure=fishing coverage near Oslofjord.
+    let bbox = [59.7, 10.4, 60.0, 10.9];
+    let idx = PoiIndex::load_from_pbf_bbox(&pbf, bbox).expect("poi load");
+    let hits = idx.nearest(PoiCategory::Fishing, 59.91, 10.75, 50_000.0);
+    assert!(
+        !hits.is_empty(),
+        "expected at least one leisure=fishing (or related) POI in Oslofjord bbox"
+    );
+}

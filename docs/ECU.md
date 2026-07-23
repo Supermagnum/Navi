@@ -1,5 +1,9 @@
 # ECU / vehicle energy protocols
 
+Readable derivation formulas (MAF fuel rate, J1939 scaling, MegaSquirt,
+range, eco segment energy):
+[`mathematical-formulas.md`](mathematical-formulas.md).
+
 Navi does **not** poll a vehicle ECU in this codebase yet. Live telemetry is an
 extension point: a future T1 plugin (WASM or native) implements
 `driver_break_core::ecu::LiveEnergyProvider` and feeds

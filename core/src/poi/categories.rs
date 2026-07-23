@@ -14,6 +14,8 @@ pub enum PoiCategory {
     CraftBrewery,
     /// Peak / ridge were never pause labels. TentSite is camp_site / camp_pitch only.
     TentSite,
+    /// Fishing spots (`leisure=fishing` and related).
+    Fishing,
 }
 
 impl PoiCategory {
@@ -28,6 +30,7 @@ impl PoiCategory {
             // Same default reach as General (15 km) unless safety overrides general.
             Self::CraftBrewery => safety.poi_radius_general_m,
             Self::TentSite => safety.poi_radius_cabin_m,
+            Self::Fishing => safety.poi_radius_general_m,
         }
     }
 }

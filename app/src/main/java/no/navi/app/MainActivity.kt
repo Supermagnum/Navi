@@ -198,8 +198,8 @@ private enum class SearchMode { Place, Address }
  * Pre-departure trip ETA in minutes for the HUD (before live GPS speed exists).
  *
  * Motor profiles use the FFI per-edge `maxspeed` / highway-fallback estimate.
- * Hiking uses the hiking planner's fixed 16 min/km. Cycling overrides to ~4 min/km
- * because [planCarRoute] currently builds a car graph for bicycle chips too.
+ * Hiking uses the hiking planner's fixed 16 min/km. Cycling uses ~4 min/km
+ * on the bicycle bbox graph from [planCarRoute].
  */
 private fun preDepartureEtaMinutes(
     profile: TravelProfile,
@@ -272,6 +272,7 @@ private fun NaviMapScreen() {
     var avoidMajor by remember { mutableStateOf(false) }
     var avoidTolls by remember { mutableStateOf(false) }
     var avoidFerries by remember { mutableStateOf(false) }
+    var preferOfficialNetworks by remember { mutableStateOf(false) }
     var prioritySharePct by remember { mutableDoubleStateOf(0.0) }
     var savedRoutes by remember { mutableStateOf<List<FfiSavedRoute>>(emptyList()) }
     var axleKg by remember { mutableStateOf("") }
@@ -367,6 +368,9 @@ private fun NaviMapScreen() {
 
     val dataDir = remember {
         NaviAppData.resolve(context)
+    }
+    LaunchedEffect(dataDir) {
+        preferOfficialNetworks = uniffi.navi.loadPreferOfficialNetworks(dataDir.absolutePath)
     }
     val iconsDir = remember {
         File(context.filesDir, "icons").also { ensureIconsCopied(context, it) }
@@ -638,6 +642,20 @@ private fun NaviMapScreen() {
                         val breaks = parseBreakPoisJson(
                             runCatching { pending.breakPoisJson }.getOrDefault("[]"),
                         )
+                        // Anchor labels to the chosen waypoints (search/GPS), not the
+                        // decimated polyline tips — those can sit slightly off the hut.
+                        val endLatFix = toPoint.lat.takeIf { it != 0.0 }
+                            ?: endPt?.latitude
+                            ?: pending.poiLat
+                        val endLonFix = toPoint.lon.takeIf { it != 0.0 }
+                            ?: endPt?.longitude
+                            ?: pending.poiLon
+                        val startLatFix = fromPoint?.lat?.takeIf { it != 0.0 }
+                            ?: startPt?.latitude
+                            ?: 0.0
+                        val startLonFix = fromPoint?.lon?.takeIf { it != 0.0 }
+                            ?: startPt?.longitude
+                            ?: 0.0
                         mapState = MapRouteState(
                             polyline = pending.routePolyline,
                             poiLat = pending.poiLat,
@@ -645,15 +663,15 @@ private fun NaviMapScreen() {
                             poiName = pending.poiName,
                             poiIconPng = iconPng,
                             startName = startLabel,
-                            startLat = startPt?.latitude ?: 0.0,
-                            startLon = startPt?.longitude ?: 0.0,
+                            startLat = startLatFix,
+                            startLon = startLonFix,
                             viaName = viaLabel,
                             viaLat = viaPoints.firstOrNull()?.lat ?: 0.0,
                             viaLon = viaPoints.firstOrNull()?.lon ?: 0.0,
                             viaPoints = viaPoints,
                             endName = endLabel,
-                            endLat = endPt?.latitude ?: pending.poiLat,
-                            endLon = endPt?.longitude ?: pending.poiLon,
+                            endLat = endLatFix,
+                            endLon = endLonFix,
                             breakPois = breaks,
                             gpsLat = mapState.gpsLat,
                             gpsLon = mapState.gpsLon,
@@ -1197,6 +1215,7 @@ private fun NaviMapScreen() {
                                                 File(dataDir, "elevation").absolutePath,
                                                 File(dataDir, "graph-cache-foot").absolutePath,
                                                 wpsJson,
+                                                preferOfficialNetworks,
                                             )
                                             RoutingPlanLog.progress(
                                                 90,
@@ -1206,15 +1225,23 @@ private fun NaviMapScreen() {
                                             hike
                                         }
                                         else -> {
-                                            // Multi-leg car: plan consecutive legs.
+                                            // Multi-leg motor/bike: bbox-clipped graph per profile.
                                             var poly = ""
                                             var dist = 0.0
                                             var etaSum = 0.0
                                             var last: uniffi.navi.CorridorRouteResult? = null
                                             val legTotal = pts.size - 1
+                                            val graphTag = when (profile) {
+                                                TravelProfile.BICYCLE -> "bicycle"
+                                                TravelProfile.TRUCK,
+                                                TravelProfile.TRUCK_ELECTRIC,
+                                                TravelProfile.MOBILE_HOME,
+                                                -> "truck"
+                                                else -> "car"
+                                            }
                                             val cacheDir = File(
                                                 dataDir,
-                                                "graph-cache-${pbf!!.nameWithoutExtension}",
+                                                "graph-cache-${pbf!!.nameWithoutExtension}-$graphTag",
                                             )
                                             for (i in 0 until legTotal) {
                                                 val a = pts[i]
@@ -1234,6 +1261,12 @@ private fun NaviMapScreen() {
                                                     b.lat,
                                                     b.lon,
                                                     ecoForPlan,
+                                                    profile,
+                                                    avoidMajor,
+                                                    avoidTolls,
+                                                    avoidFerries,
+                                                    loadVehicleLimits(dataDir.absolutePath),
+                                                    preferOfficialNetworks,
                                                 )
                                                 if (!legRes.report.contains("PASS")) {
                                                     return@runCatching legRes
@@ -1479,6 +1512,25 @@ private fun NaviMapScreen() {
                             },
                             enabled = ecoModeToggleable(profile),
                         )
+                    }
+                    if (profile == TravelProfile.HIKING || profile == TravelProfile.BICYCLE) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text("Follow official hiking/cycling networks")
+                            Switch(
+                                checked = preferOfficialNetworks,
+                                onCheckedChange = { on ->
+                                    preferOfficialNetworks = on
+                                    uniffi.navi.savePreferOfficialNetworks(
+                                        dataDir.absolutePath,
+                                        on,
+                                    )
+                                },
+                            )
+                        }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -2720,6 +2772,11 @@ private fun CorridorMapView(
                 if (!styleLoadStarted.compareAndSet(false, true)) return@AndroidView
                 view.getMapAsync { map ->
                     mapRef = map
+                    map.addOnCameraMoveListener {
+                        // Keep Compose waypoint/track pins glued to geo while
+                        // pan/zoom is in progress (idle-only refresh drifts on screen).
+                        refreshTrackOverlay(map)
+                    }
                     map.addOnCameraIdleListener {
                         refreshTrackOverlay(map)
                         val pos = map.cameraPosition

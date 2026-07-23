@@ -15,6 +15,7 @@
 mod bbox_build;
 mod builder;
 mod cache;
+mod network_pref;
 mod reweight;
 mod road_near;
 
@@ -24,6 +25,11 @@ pub use builder::{
 pub use cache::{
     graph_cache_path, load_or_build_reweighted, load_or_build_reweighted_bbox,
     load_reweighted_graph, save_reweighted_graph, GraphCacheFingerprint,
+};
+pub use network_pref::{
+    apply_official_network_preference, difficulty_notes_for_path, is_official_route_relation,
+    load_named_route_entries, load_official_network_way_ids, load_way_difficulty_tags,
+    NamedRouteEntry, OfficialNetworkKind, NON_NETWORK_PENALTY,
 };
 pub use reweight::reweight_graph_for_eco;
 pub use road_near::RoadNodeIndex;

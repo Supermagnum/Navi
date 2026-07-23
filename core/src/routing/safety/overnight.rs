@@ -1,0 +1,162 @@
+//! Building and glacier proximity points for overnight candidate filtering.
+//!
+//! Buildings are collected during the same PBF load as [`crate::poi::PoiIndex`]
+//! (see `overnight_buildings`). Glaciers are sampled from
+//! [`super::DangerBarrierIndex`] which is already built for break-stop access.
+//! Do **not** add a separate full-extract `osmpbf` pass for overnight checks.
+
+use super::DangerBarrierIndex;
+
+/// Point lists used by [`super::check_overnight_candidate`].
+#[derive(Debug, Clone, Default)]
+pub struct OvernightProximityIndex {
+    pub buildings: Vec<(f64, f64)>,
+    pub glaciers: Vec<(f64, f64)>,
+}
+
+impl OvernightProximityIndex {
+    pub fn is_empty(&self) -> bool {
+        self.buildings.is_empty() && self.glaciers.is_empty()
+    }
+
+    /// Build from POI-load building points + barrier glacier samples (no PBF I/O).
+    pub fn from_poi_buildings_and_barriers(
+        buildings: Vec<(f64, f64)>,
+        barriers: &DangerBarrierIndex,
+    ) -> Self {
+        Self {
+            buildings,
+            glaciers: barriers.glacier_sample_points(),
+        }
+    }
+
+    /// Legacy raw PBF loader — **prefer** [`Self::from_poi_buildings_and_barriers`].
+    ///
+    /// Kept only so benchmarks can compare redundant-scan cost against the
+    /// merged path. Not used by the hiking FFI planner.
+    #[doc(hidden)]
+    pub fn load_from_pbf_bbox_legacy(
+        path: impl AsRef<std::path::Path>,
+        bbox: [f64; 4],
+    ) -> anyhow::Result<Self> {
+        use std::collections::HashMap;
+        use osmpbf::{Element, ElementReader};
+
+        let [min_lat, min_lon, max_lat, max_lon] = bbox;
+        let in_bbox = |lat: f64, lon: f64| {
+            lat >= min_lat && lat <= max_lat && lon >= min_lon && lon <= max_lon
+        };
+
+        let mut buildings = Vec::new();
+        let mut glaciers = Vec::new();
+        let mut node_coord: HashMap<i64, (f64, f64)> = HashMap::new();
+
+        {
+            let file = std::fs::File::open(path.as_ref())?;
+            let reader = ElementReader::new(file);
+            reader.for_each(|element| {
+                match element {
+                    Element::Node(n) => {
+                        let lat = n.lat();
+                        let lon = n.lon();
+                        if !in_bbox(lat, lon) {
+                            return;
+                        }
+                        node_coord.insert(n.id(), (lat, lon));
+                        let mut is_building = false;
+                        let mut is_glacier = false;
+                        for (k, v) in n.tags() {
+                            if k == "building" && v != "no" {
+                                is_building = true;
+                            }
+                            if k == "natural" && v == "glacier" {
+                                is_glacier = true;
+                            }
+                        }
+                        if is_building {
+                            buildings.push((lat, lon));
+                        }
+                        if is_glacier {
+                            glaciers.push((lat, lon));
+                        }
+                    }
+                    Element::DenseNode(n) => {
+                        let lat = n.lat();
+                        let lon = n.lon();
+                        if !in_bbox(lat, lon) {
+                            return;
+                        }
+                        node_coord.insert(n.id, (lat, lon));
+                        let mut is_building = false;
+                        let mut is_glacier = false;
+                        for (k, v) in n.tags() {
+                            if k == "building" && v != "no" {
+                                is_building = true;
+                            }
+                            if k == "natural" && v == "glacier" {
+                                is_glacier = true;
+                            }
+                        }
+                        if is_building {
+                            buildings.push((lat, lon));
+                        }
+                        if is_glacier {
+                            glaciers.push((lat, lon));
+                        }
+                    }
+                    _ => {}
+                }
+            })?;
+        }
+
+        {
+            let file = std::fs::File::open(path.as_ref())?;
+            let reader = ElementReader::new(file);
+            reader.for_each(|element| {
+                if let Element::Way(way) = element {
+                    let mut is_building = false;
+                    let mut is_glacier = false;
+                    for (k, v) in way.tags() {
+                        if k == "building" && v != "no" {
+                            is_building = true;
+                        }
+                        if k == "natural" && v == "glacier" {
+                            is_glacier = true;
+                        }
+                    }
+                    if !is_building && !is_glacier {
+                        return;
+                    }
+                    let mut sum_lat = 0.0;
+                    let mut sum_lon = 0.0;
+                    let mut n = 0usize;
+                    for nid in way.refs() {
+                        if let Some(&(lat, lon)) = node_coord.get(&nid) {
+                            sum_lat += lat;
+                            sum_lon += lon;
+                            n += 1;
+                        }
+                    }
+                    if n == 0 {
+                        return;
+                    }
+                    let (lat, lon) = (sum_lat / n as f64, sum_lon / n as f64);
+                    if !in_bbox(lat, lon) {
+                        return;
+                    }
+                    if is_building {
+                        buildings.push((lat, lon));
+                    }
+                    if is_glacier {
+                        glaciers.push((lat, lon));
+                    }
+                }
+            })?;
+        }
+
+        Ok(Self {
+            buildings,
+            glaciers,
+        })
+    }
+}

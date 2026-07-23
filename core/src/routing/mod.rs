@@ -21,7 +21,8 @@ pub use eta::{
     PreDeparturePace, CYCLING_MIN_PER_KM, HIKING_MIN_PER_KM,
 };
 pub use graph::{
-    format_route_avoidance_report, RouteGraph, RouteOptions, RoutingProfile,
+    apply_official_network_preference, format_route_avoidance_report, GraphEdge, RouteGraph,
+    RouteOptions, RoutingProfile, NON_NETWORK_PENALTY,
 };
 pub use osm_update::{
     apply_pending_update, apply_update_plan, bind_geofabrik_extract, check_for_updates,
@@ -33,3 +34,6 @@ pub use region::{
     provision_region, provision_region_with_elev_tar, RegionProvision, CORRIDOR_BBOX,
 };
 pub use workers::WorkerPoolPlan;
+pub use safety::{
+    check_overnight_candidate, DangerBarrierIndex, OvernightProximityIndex, OvernightRejectReason,
+};

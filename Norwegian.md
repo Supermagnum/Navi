@@ -55,30 +55,33 @@ angitt). Ikonressurser under `core/src/icons` er Navit-avledet (**GPL v2**); se
 [`docs/icons.md`](docs/icons.md).
 
 Navigasjonsappen har valgfri bevissthet om terrenghelning: med økomodus på
-forsøker den å finne ruten som bruker minst energi. Når økomodus er på, vises
-et lite bladikon nederst til høyre. Den kan også finne egnede pausesteder —
-kafeer, offentlige toaletter, bryggerier med direktesalg, drikkevann og
-overnatting. Du kan sette pauseintervaller (for eksempel hver andre time, med
-30 minutters pause). Den støtter bevegelige ikoner, slik at andre kan lage en
-APRS-plugin. Idéer til nyttige plugins finnes i depotet
-([`docs/plugins.md`](docs/plugins.md)).
+forsøker den å finne ruten som bruker minst energi (personbil-baseline;
+elektriske profiler får regen-kreditt via `EcoConfig::for_profile`). Når
+økomodus er på, vises et lite bladikon nederst til høyre. Den kan foreslå
+pausestopp langs planlagt rute, anvende kjøretøygrenser og unngå
+hovedvei/bom/ferge ved planlegging, og valgfritt **følge offisielle
+tur-/sykkelnettverk** (myk preferanse, av som standard). Du kan sette
+bil-pauseintervaller. Den har et minnebasert bevegelig-ikon-lager
+(`TrackStore`) og en sandkasse WASM-pluginvert for fremtidige plugins;
+produktplugins er ikke levert ennå ([`docs/plugins.md`](docs/plugins.md)).
 
 ## Funksjoner
 
-| Funksjon | Hva du får |
-|---|---|
-| **Profiler** | Bil, motorsykkel, sykling, fottur, lastebil, bobil (elektriske varianter i enum) |
-| **Kjøretøygrenser** | Aksel- / boggi-vekt, høyde, bredde, lengde — frihøydefiltre utelukker brudd og omruter |
-| **Unngåelser** | Uavhengige brytere: unngå hovedveier, bom, ferger (motorprofiler; av som standard) |
-| **Økoruting** | Kantkostnader fra høyde + kjøretøyfysikk (luftmotstand, masse, rulle); valgfri regenerering på el-profiler |
-| **Korridor- / regionsruting** | OSM `.pbf` → graf → øko-omvekt → bufret graf → A*-korridorrute med POI-overlegg |
-| **POI-søk** | [FTS-stedsindeks fra OSM-tagger; Til / Via fra søketreff](docs/poi.md) |
-| **Hvile og pauser** | Profilbaserte intervaller; bil-HUD viser minutter til pause; overnatting / sikkerhet for fottur |
-| **Kjøre-HUD** | Kollapset topp (høyde; trykk → kartinnstillinger) + bunn (zoom −/+, pause/ETA, øko; trykk → kjøreinnstillinger) |
-| **Kartrotasjon** | Kompass, kjøreretning eller nord opp |
-| **Bevegelige ikoner** | APRS-lignende stasjoner via `TrackStore` (upsert, tidsavbrudd, 50–150 km rekkevidde) |
-| **OSM-oppdateringer** | Valgfri Geofabrik-sjekk / `.osc.gz` eller full nedlasting ([`docs/osm-updates.md`](docs/osm-updates.md)) |
-| **Plugins** | Sandkasse WASM HostApi; idéer: APRS, vær, veiinfo, CAT, ECU/EV, stemmeveiledning — [`docs/plugins.md`](docs/plugins.md) |
+| Funksjon | Hva du får | Status |
+|---|---|---|
+| **Profiler** | Bil, motorsykkel, sykling, fottur, lastebil, bobil (elektriske varianter i enum; primære UI-brikker er de ikke-elektriske) | Ferdig |
+| **Kjøretøygrenser** | Aksel / boggi / høyde / bredde / lengde lagres i SQLite og brukes av `plan_car_route` (hard ekskludering ved OSM-begrensninger) | Ferdig |
+| **Unngåelser** | Unngå hovedvei / bom / ferge endrer faktisk planlagt rute | Ferdig |
+| **Følg offisielle nettverk** | Myk preferanse for tur-/sykkelrutenett (av som standard); hull faller tilbake til vanlige stier; vanskelighets-tagger som metadata; navngitte ruter i FTS | Ferdig |
+| **Økoruting** | DEM-høyde + luftmotstand/masse/rulle; grafbuffer; A*; EV-regen via `EcoConfig::for_profile` i FFI-planleggeren; formler i [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md) | Ferdig |
+| **Korridor- / regionsruting** | OSM `.pbf` → graf → øko-omvekt → bufret graf → A* → polylinje + pause-POI på MapLibre | Ferdig |
+| **POI-søk** | FTS-stedsindeks (inkl. navngitte ruter); Til / Via / Fra ([`docs/poi.md`](docs/poi.md)). Hytteradius: [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md). Kategori Fishing (`leisure=fishing`) | Ferdig |
+| **Hvile og pauser** | Profilstandarder ([rast/vei for fottur/sykkel](docs/historisk-bakgrunn.md)); bil-HUD minutter til pause; pause-POI; overnatting bygg/bre-filter på hiking-FFI | Ferdig |
+| **Kjøre-HUD** | Kollapset topp (høyde; trykk → kartinnstillinger) + bunn (zoom −/+, pause/ETA, øko; trykk → kjøreinnstillinger) | Ferdig |
+| **Kartrotasjon** | Kompass, kjøreretning eller nord opp | Ferdig |
+| **Bevegelige ikoner** | `TrackStore` (upsert, tidsavbrudd, 50–150 km); Compose kan tegne stasjoner | **Delvis** — lager + kartsti finnes; ingen live APRS; app via testhooks |
+| **OSM-oppdateringer** | Valgfri Geofabrik-sjekk / `.osc.gz` (trenger `osmium`) eller full nedlasting ([`docs/osm-updates.md`](docs/osm-updates.md)) | Ferdig |
+| **Plugins** | Sandkasse WASM-vert + HostApi + isolasjonstester; eksempel `log-hello` / `busy-loop` | **Vert ferdig; innholdsplugins utsatt** — bevisst (se [`docs/plugins.md`](docs/plugins.md)); lastes ikke av Android-appen ennå |
 
 **Ekte maskinvare:** Utvikling og automatiske sjekker så langt bruker bare
 Android Automotive-**emulatoren**. Appen **må testes på ekte maskinvare** før
@@ -110,6 +113,16 @@ lastes Protomaps frakoblet. Valgfri terreng-DEM er samme sti med
 
 ## Slik fungerer funksjonene
 
+**Følg offisielle nettverk (fottur / sykling).** Av som standard. Når på, får
+kanter som er medlemmer av matchende `type=route`-relasjoner
+(`route=hiking|foot` + `network=iwn|nwn|rwn|lwn`, eller `route=bicycle|mtb` +
+`icn|ncn|rcn|lcn`) en myk kostnadspreferanse — ikke-nettverk forblir
+tilgjengelig så hull aldri feiler planen. Vanskelighets-tagger (`sac_scale`,
+`mtb:scale`, …) vises som informasjons-`route_metadata`. Navngitte ruters
+`name`/`ref`/`operator` indekseres i FTS for Til/Via. Kjente begrensninger
+denne runden: ett nivå `type=superroute`; Benelux-node-nettverk og
+nivåvektet preferanse er utsatt.
+
 **Rutingsstabel.** En regional `.pbf` parses til en veigraf. Med øko på
 omvektes kanter med DEM-høyde og `EcoConfig`-fysikk (`segment_energy_joules`),
 deretter lagres (`NAVIGPH1`-buffer) så neste oppstart hopper over full
@@ -117,23 +130,26 @@ omvekt. A* finner en korridor; Android-verten tegner polylinjen og
 destinasjonsmarkør på MapLibre.
 
 **Øko vs lengde.** Ren lengderuting ignorerer bakker. Øko foretrekker lavere
-energi (stigninger koster PE; ICE-regen er 0 så nedoverbakker er ikke «gratis»).
+energi (stigninger koster PE). Forbrenningsprofiler beholder regen 0; elektriske
+profiler krediterer en andel av nedstignings-PE via `EcoConfig::for_profile`.
 Live OBD/J1939 kan senere forbedre kostnader via `LiveEnergySnapshot`
 ([`docs/ECU.md`](docs/ECU.md)); i dag brukes lagret tank / påfylt drivstoff når
 ECU mangler.
 
-**POI og søk.** Kategorier og taggregler står i [`docs/poi.md`](docs/poi.md).
-Søketreff setter Til/Via og flytter kamera. Grunnkart-POI kommer fra
-vektorstilen; appens egne markører bruker rasteriserte Navit-ikoner.
+**POI og søk.** Kategorier og taggregler står i [`docs/poi.md`](docs/poi.md)
+(inkl. **Fishing** / `leisure=fishing`, ikon `fish.svg`). Foreslåtte
+nettverkshytte- / løypepreferanseradius står i
+[`docs/poi-search-defaults.md`](docs/poi-search-defaults.md). FTS indekserer også
+navngitte offisielle ruterelasjoner. Søketreff setter Til/Via og flytter kamera.
 
-**Hvile / overnatting.** Hvileparametre er profilavhengige (bil-timer mellom
-pauser, fottur-rastavstander, osv.). Sikkerhetsregler avviser
-overnattingsskandidater for nær bygninger eller isbreer.
-Bygningsavstandssjekken følger norsk **allemannsrett**: villcamping er
-generelt tillatt når man holder respektfull avstand til hus og dyrket mark.
-Det juridiske rammeverket er norsk og **gjelder ikke nødvendigvis i andre
-land** — lokal ferdsel- og campingsrett kan være strengere eller annerledes,
-så behandle regelen som en Norge-orientert standard, ikke universell råd.
+**Hvile / overnatting.** Hvileparametre er profilavhengige. Standardverdier for
+fottur og sykling kommer fra skandinavisk *rast*- / *vei*-tradisjon — se
+[`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md)
+([engelsk](docs/historical-background.md)).
+Sikkerhetsregler avviser overnattingsskandidater for nær bygninger eller
+isbreer (koblet inn i hiking-FFI via `OvernightProximityIndex`).
+Bygningsavstandssjekken følger norsk **allemannsrett** — det juridiske
+rammeverket er norsk og **gjelder ikke nødvendigvis i andre land**.
 HUD-bryteren «Pauser» styrer påminnelsestekst; intervall/varighet redigeres i
 kjøreinnstillinger.
 
@@ -205,9 +221,11 @@ Auto-zoom-nivå redigeres i **kartinnstillinger** (topplinje), lagres via
 
 | Kontroll | Lagres som | Merknad |
 |---|---|---|
-| Reiseprofil-chip | I minne + hvilelast ved bytte | Menyfokus: bil, sykling, fottur, motorsykkel |
+| Reiseprofil-chip | I minne + hvilelast ved bytte | Menyfokus: bil, sykling, fottur, motorsykkel (lastebil / bobil / el i enum) |
 | Øko-bryter | Med hvile- / profilstandarder | Fottur og sykling låser øko på; motorprofiler kan veksle |
-| Kjøretøygrenser | `VehicleLimits` | Brukes for lastebil / bobil; høyde utelukker kanter og finner alternativ |
+| **Følg offisielle tur-/sykkelnettverk** | `prefer_official_networks` (av som standard) | Bare fottur / sykling — myk preferanse; hull faller tilbake til vanlige stier |
+| Unngå hovedvei / bom / ferge | Sendes inn i `plan_car_route` ved plan | Endrer faktisk rute (ikke bare rapporttekst) |
+| Kjøretøygrenser | `VehicleLimits` | Brukes ved plan for motorprofiler; brudd på OSM-frihøyde utelukkes |
 
 ### Spor (APRS-stil)
 
@@ -242,17 +260,20 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 | [`architecture.md`](architecture.md) | Kassekobling, trådlag, SQLite / FTS / grafbuffer, plugins |
 | [`docs/bilder.md`](docs/bilder.md) | Emulatorskjermbildegalleri (norsk) |
 | [`docs/pictures.md`](docs/pictures.md) | Emulatorskjermbildegalleri (engelsk) |
+| [`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md) | Rast/vei-grunnlag for standard pauseintervaller (fottur og sykling); [engelsk](docs/historical-background.md) |
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Størrelse og plassering av kjøre-HUD og menyer |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs frakoblet Protomaps PMTiles; 3D-port |
 | [`docs/approach-instructions.md`](docs/approach-instructions.md) | Midlertidig manøver-tilnærmingsboks |
-| [`docs/poi.md`](docs/poi.md) | Søkbar POI-kategorier, OSM-taggregler, hvordan legge til typer |
+| [`docs/poi.md`](docs/poi.md) | Søkbar POI-kategorier (inkl. Fishing), OSM-taggregler |
+| [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md) | Foreslåtte hytte-/løyperadius for fottur og sykling (DNT-avstand) |
 | [`docs/osm-updates.md`](docs/osm-updates.md) | Valgfri Geofabrik-sjekk / `.osc.gz` / full nedlasting |
-| [`docs/plugins.md`](docs/plugins.md) | HostApi, isolasjon og plugin-idéer |
+| [`docs/plugins.md`](docs/plugins.md) | Plugin-vert-status (bevisst: ingen innholdsplugins ennå) + HostApi, isolasjon, veikart |
 | [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Spesifikasjon: allemannsrett / flerland villcamping (plugin) |
 | [`docs/icons.md`](docs/icons.md) | Ikonoversikt; egne SVG-ikoner; Navit GPL-v2 |
 | [`docs/API.md`](docs/API.md) | UniFFI / vert-API-oversikt |
 | [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) | Protokollindeks |
 | [`docs/ECU.md`](docs/ECU.md) | ECU-protokoller: OBD-II, J1939, MegaSquirt + EV |
+| [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md) | Formler: MAF/J1939/MegaSquirt-drivstoff, rekkevidde, øko-segmentenergi |
 | [`docs/APRS.md`](docs/APRS.md) | APRS-felter, TrackStore-filtrering, bevegelige ikoner |
 | [`docs/APRS-SDR.md`](docs/APRS-SDR.md) | APRS SDR DSP; RTL-SDR; planlagt `rtl-sdr-rs` |
 | [`docs/CAT.md`](docs/CAT.md) | CAT VFO auto-tune fra NFM-repeatere |
@@ -362,23 +383,26 @@ lyd/UI.
 - `core/` (`driver-break-core`) — høyde, ruting, POI, hvile/sikkerhet, søk, ikoner, spor, SQLite.
 - `navi-ffi/` — UniFFI CDYLIB for Android og andre verter.
 - `app/` — Android-vert (Kotlin/Compose) som kobler til kjernen via UniFFI.
-- `plugin-host/` / `plugin-sdk/` / `plugins/` — sandkasse WASM-plugins.
+- `plugin-host/` / `plugin-sdk/` / `plugins/` — sandkasse WASM-vert (innholdsplugins utsatt; se [`docs/plugins.md`](docs/plugins.md)).
 - Hvordan kasser og databaser henger sammen: [`architecture.md`](architecture.md).
-- Planlagte plugins: [`docs/plugins.md`](docs/plugins.md).
 - `test-results.md` / `android-test-results.md` — integrasjonsrapporter.
 
 ## Vertstester
 
 ```bash
+cargo test -p driver-break-core --test planner_options_routes
 cargo test --test kongsvinger_lillehammer_integration -- --nocapture --ignored
 cargo test --test dnt_hiking_integration -- --nocapture --ignored
 cargo test -p navi-plugin-host --test isolation -- --nocapture
-cargo test -p driver-break-core poi::
+cargo test -p driver-break-core fishing -- --nocapture
 cargo test -p driver-break-core osm_update::
 ```
 
 ## Kjente problemer
 
+- **Plugins (innhold):** WASM-vert/sandkasse er klar; produktplugins er bevisst
+  utsatt for uavhengige bidragsytere — se [`docs/plugins.md`](docs/plugins.md).
+  Ikke en feil i navigasjonskjernen.
 - **GUI-puss:** Compose HUD / søk / verktøy fungerer, men trenger fortsatt
   visuelt og UX-puss (avstand, typografi, tetthet på Automotive-skjermer).
   Bidrag er velkomne.
