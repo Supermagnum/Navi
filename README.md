@@ -1,3 +1,5 @@
+**[Dokument på Norsk](Norwegian.md)**
+
 # Testers wanted
 
 **Testers wanted** for testing on **actual hardware** (Android Automotive / head
@@ -225,7 +227,8 @@ AVD GNSS altitude is often wrong — see note above). One rest stop is visible:
 
 All other screenshots (map zoom levels, route overlay, menus, settings
 overlays, eco leaf, rotation, bearing, moving icons):
-[`docs/pictures.md`](docs/pictures.md).
+[`docs/pictures.md`](docs/pictures.md)
+(Norwegian gallery: [`docs/bilder.md`](docs/bilder.md)).
 
 ## Documents
 
@@ -233,6 +236,7 @@ overlays, eco leaf, rotation, bearing, moving icons):
 |---|---|
 | [`architecture.md`](architecture.md) | Crate wiring, thread tiers, SQLite / FTS / graph cache, plugins |
 | [`docs/pictures.md`](docs/pictures.md) | Emulator screenshot gallery |
+| [`docs/bilder.md`](docs/bilder.md) | Emulator screenshot gallery (Norwegian) |
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Adjust size and placement of drive HUD bars and menus |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs offline Protomaps PMTiles; 3D gate |
 | [`docs/approach-instructions.md`](docs/approach-instructions.md) | Deferred: temporary maneuver approach box (icon + distance + name) |

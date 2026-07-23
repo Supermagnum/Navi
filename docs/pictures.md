@@ -18,12 +18,16 @@ Idle HUD bars and the Helgøya → Atnbrua route capture live in the
 (`docs/images/hud/hud_idle_both_bars.png`,
 `docs/images/terrain/hike_eldabu_ramshogda_3d.png`).
 
+Norwegian gallery: [`bilder.md`](bilder.md).
+
 ## Map / routing
 
 | Scene | Preview |
 |---|---|
 | Prekestolen base camp, POI's visible. | ![Prekestolen POIs](images/zoom_z16.png) |
-| Helgøya → Atnbrua (eco + 3D on) | ![Route overlay](images/route_map.png) |
+| Helgøya → Atnbrua (eco + 3D on, breaks visible) | ![Route overlay](images/route_map.png) |
+| Route from Gjendebu to Thonvollen, 3D map. | ![Gjendebu to Thonvollen 3D](images/gjendebu_thonvollen_3d.png) |
+| Gjendebu to Thonvollen, flat map. | ![Gjendebu to Thonvollen flat](images/gjendebu_thonvollen_flat.png) |
 
 Prefer `images/terrain/` and recent HUD shots when comparing route visuals.
 Older `route_map.png` copies were ~57% MapLibre empty background (`#f8f4f0`)
@@ -57,22 +61,3 @@ attach + camera logged). Drive HUD bars kept visible (`hideUiChrome=false`).
 | Coverage boundary → live Liberty (Tromsø) | ![Boundary Liberty](images/basemap/basemap_coverage_boundary_tromso.png) |
 | Online 3D (Mapterhorn DEM hillshade, Gjendebu, Jotunheimen) | ![3D hillshade](images/basemap/basemap_3d_mapterhorn_hillshade.png) |
 | Flat map, Gjendebu, Jotunheimen | ![Flat map](images/basemap/basemap_3d_fallback_liberty.png) |
-
-## Mapterhorn terrain 3D — routes (permitted uploads)
-
-| Scene | Preview |
-|---|---|
-| Car Espa→Atnbrufossen, 3D off | ![Car 2D](images/terrain/route_car_espa_atnbrufossen_3d_off.png) |
-| Innlandet online (network on) | ![Online](images/terrain/innlandet_online_route.png) |
-| Eldåbu corridor (2D) | ![Eldabu 2D](images/terrain/hike_eldabu_ramshogda_2d.png) |
-
-Pause labels along hiking routes prefer huts/cabins; when none are nearby the
-planner falls back to camp pitches or a generic corridor tent point — never
-mountain peaks (Store Ramshøgda stays unlabeled). The on-map status chip never
-shows `TEST_KIND` / `detected_cores` pipeline dumps (user-facing text is e.g.
-`Route planned · 112.5 km`).
-
-AAOS note: some terrain captures still show the system location permission
-dialog over the map; MapLibre frames without that dialog are currently empty
-in `UiAutomation.takeScreenshot` on this emulator. Re-capture without the
-dialog is welcome GUI polish.
