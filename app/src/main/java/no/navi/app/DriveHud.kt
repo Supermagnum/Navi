@@ -1,6 +1,7 @@
 package no.navi.app
 
 import android.graphics.BitmapFactory
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +29,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import uniffi.navi.TravelProfile
+import uniffi.navi.ecoModeDefault
+import uniffi.navi.ecoModeToggleable
+import uniffi.navi.travelProfileMenuFocus
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
@@ -56,12 +61,48 @@ data class DriveHudState(
     val showTripEta: Boolean = false,
     val tripEtaMinutes: Double? = null,
     val breakRemindersEnabled: Boolean = true,
+    /** When true, format break remaining as distance; else as time. */
+    val breakAsDistance: Boolean = false,
+    val preferMetric: Boolean = true,
     val rotationMode: MapRotationMode = MapRotationMode.NorthUp,
     val autoZoomWhileMoving: Boolean = false,
     val autoZoomLevel: Double = 16.5,
-    /** GPS altitude in meters (WGS84); null when no fix. */
+    /** Terrain / GPS altitude in meters; null when unknown. Prefer DEM when present. */
     val altitudeM: Double? = null,
+    /** Opt-in Mapterhorn DEM hillshade 3D (online). Never default-on. */
+    val optIn3d: Boolean = false,
+    /** Vulkan SDK linked — gate for offering 3D. */
+    val vulkanAvailable: Boolean = true,
 )
+
+/**
+ * Format the bottom-HUD break line, or null when nothing should be shown.
+ *
+ * Hard rule: callers must pass [routePlanned]=false when no corridor is active —
+ * this function never invents break copy without a route.
+ */
+fun formatBreakHudLine(
+    routePlanned: Boolean,
+    breakRemindersEnabled: Boolean,
+    minutesToBreak: Double?,
+    breakAsDistance: Boolean,
+    preferMetric: Boolean,
+    cruiseSpeedKmh: Double = MapHudPrefs.BREAK_DISPLAY_SPEED_KMH,
+): String? {
+    if (!routePlanned) return null
+    if (!breakRemindersEnabled) return "Break reminders off"
+    val mins = minutesToBreak ?: return null
+    return if (breakAsDistance) {
+        val km = (mins / 60.0) * cruiseSpeedKmh
+        if (preferMetric) {
+            String.format("Break in %.0f km", km)
+        } else {
+            String.format("Break in %.0f mi", km / 1.609344)
+        }
+    } else {
+        String.format("Break in %.0f min", mins)
+    }
+}
 
 /**
  * Collapsed top drive HUD: altitude (+ short rotation hint). Tap opens [MapSettingsSheet].
@@ -121,7 +162,7 @@ fun TopDriveHud(
 
 /**
  * Map / display settings opened from the collapsed top bar.
- * Apply is not required for toggles (they apply immediately); Close collapses the sheet.
+ * Toggles apply immediately; Save persists prefs and closes; Close dismisses.
  */
 @Composable
 fun MapSettingsSheet(
@@ -131,6 +172,8 @@ fun MapSettingsSheet(
     onToggleBreakReminders: (Boolean) -> Unit,
     onToggleAutoZoom: (Boolean) -> Unit,
     onAutoZoomLevelChange: (Double) -> Unit,
+    onToggle3d: (Boolean) -> Unit = {},
+    onSave: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -145,7 +188,7 @@ fun MapSettingsSheet(
         Column(
             modifier = Modifier
                 .padding(12.dp)
-                .heightIn(max = 280.dp)
+                .heightIn(max = 340.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -233,10 +276,35 @@ fun MapSettingsSheet(
                     modifier = Modifier.testTag("auto_zoom_level_in"),
                 ) { Text("+") }
             }
-            TextButton(
-                onClick = onClose,
-                modifier = Modifier.testTag("btn_close_map_settings"),
-            ) { Text("Close") }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("3D (experimental)", style = MaterialTheme.typography.bodySmall)
+                Switch(
+                    checked = state.optIn3d && state.vulkanAvailable,
+                    enabled = state.vulkanAvailable,
+                    onCheckedChange = onToggle3d,
+                    modifier = Modifier.testTag("toggle_basemap_3d"),
+                )
+                if (!state.vulkanAvailable) {
+                    Text(
+                        "Unavailable on this GPU path",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onSave,
+                    modifier = Modifier.testTag("btn_save_map_settings"),
+                ) { Text("Save") }
+                TextButton(
+                    onClick = onClose,
+                    modifier = Modifier.testTag("btn_close_map_settings"),
+                ) { Text("Close") }
+            }
         }
     }
 }
@@ -258,6 +326,8 @@ fun BottomDriveHud(
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     onOpenSettings: () -> Unit,
+    /** Break countdown only applies while a corridor/route is active. */
+    routePlanned: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     var leafBmp by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
@@ -313,13 +383,20 @@ fun BottomDriveHud(
                     .clickable(onClick = onOpenSettings)
                     .padding(horizontal = 4.dp),
             ) {
-                val breakTxt = when {
-                    !state.breakRemindersEnabled -> "Break reminders off"
-                    state.minutesToBreak != null ->
-                        String.format("Break in %.0f min", state.minutesToBreak)
-                    else -> "Break --"
+                val breakTxt = formatBreakHudLine(
+                    routePlanned = routePlanned,
+                    breakRemindersEnabled = state.breakRemindersEnabled,
+                    minutesToBreak = state.minutesToBreak,
+                    breakAsDistance = state.breakAsDistance,
+                    preferMetric = state.preferMetric,
+                )
+                if (breakTxt != null) {
+                    Text(
+                        breakTxt,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.testTag("hud_break_countdown"),
+                    )
                 }
-                Text(breakTxt, style = MaterialTheme.typography.titleMedium)
                 val etaTxt = when {
                     !state.showTripEta -> "ETA off"
                     state.tripEtaMinutes != null ->
@@ -348,15 +425,21 @@ fun BottomDriveHud(
 
 /**
  * Drive / rest / fuel settings opened from the collapsed bottom HUD.
- * Apply persists and dismisses; Cancel / Close dismisses without requiring a change.
+ * Save persists and dismisses; Close dismisses without requiring a change.
  * Auto-zoom lives in [MapSettingsSheet], not here.
  */
 @Composable
 fun DriveSettingsSheet(
     dataDir: String,
     iconDir: String,
+    travelProfile: TravelProfile,
+    onTravelProfileChange: (TravelProfile) -> Unit,
     ecoActive: Boolean,
     onEcoChange: (Boolean) -> Unit,
+    breakAsDistance: Boolean,
+    onBreakAsDistanceChange: (Boolean) -> Unit,
+    preferMetric: Boolean,
+    onPreferMetricChange: (Boolean) -> Unit,
     onApplied: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -367,6 +450,8 @@ fun DriveSettingsSheet(
     var fuelAdded by remember { mutableStateOf("") }
     var preferLiters by remember { mutableStateOf(true) }
     var status by remember { mutableStateOf("") }
+    var asDistance by remember { mutableStateOf(breakAsDistance) }
+    var metric by remember { mutableStateOf(preferMetric) }
 
     LaunchedEffect(dataDir) {
         val rest = runCatching { loadCarRestSettings(dataDir) }.getOrNull()
@@ -381,6 +466,8 @@ fun DriveSettingsSheet(
             fuelAdded = fuel.fuelAddedL?.toString().orEmpty()
             preferLiters = fuel.preferLiters
         }
+        asDistance = breakAsDistance
+        metric = preferMetric
     }
 
     Surface(
@@ -389,7 +476,7 @@ fun DriveSettingsSheet(
         shadowElevation = 8.dp,
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(max = 360.dp)
+            .heightIn(max = 420.dp)
             .testTag("drive_settings_sheet"),
     ) {
         Column(
@@ -403,6 +490,46 @@ fun DriveSettingsSheet(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.testTag("drive_settings_title"),
             )
+            Text("Travel mode", style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .testTag("drive_settings_profiles"),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                TravelProfile.entries.filter { travelProfileMenuFocus(it) }.forEach { p ->
+                    FilterChip(
+                        selected = travelProfile == p,
+                        onClick = {
+                            onTravelProfileChange(p)
+                            if (!ecoModeToggleable(p)) {
+                                onEcoChange(ecoModeDefault(p))
+                            }
+                        },
+                        label = {
+                            Text(
+                                when (p) {
+                                    TravelProfile.CAR -> "Car"
+                                    TravelProfile.BICYCLE -> "Bicycle"
+                                    TravelProfile.HIKING -> "Hiking"
+                                    TravelProfile.MOTORCYCLE -> "Motorcycle"
+                                    TravelProfile.TRUCK -> "Truck"
+                                    TravelProfile.MOBILE_HOME -> "Mobile home"
+                                    else -> p.name
+                                },
+                            )
+                        },
+                        modifier = Modifier.testTag(
+                            when (p) {
+                                TravelProfile.HIKING -> "drive_chip_profile_hiking"
+                                TravelProfile.CAR -> "drive_chip_profile_car"
+                                else -> "drive_chip_profile_${p.name.lowercase()}"
+                            },
+                        ),
+                    )
+                }
+            }
             Text(
                 "Break and rest values save as the Car profile default (not a one-trip override).",
                 style = MaterialTheme.typography.bodySmall,
@@ -425,6 +552,31 @@ fun DriveSettingsSheet(
                     .fillMaxWidth()
                     .testTag("field_rest_mins"),
             )
+            Text("Next break shown as", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = !asDistance,
+                    onClick = { asDistance = false },
+                    label = { Text("Time") },
+                    modifier = Modifier.testTag("chip_break_as_time"),
+                )
+                FilterChip(
+                    selected = asDistance,
+                    onClick = { asDistance = true },
+                    label = { Text("Distance") },
+                    modifier = Modifier.testTag("chip_break_as_distance"),
+                )
+            }
+            if (asDistance) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (metric) "Distance units: km" else "Distance units: miles")
+                    Switch(
+                        checked = metric,
+                        onCheckedChange = { metric = it },
+                        modifier = Modifier.testTag("toggle_break_metric"),
+                    )
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Eco mode")
                 Switch(
@@ -491,6 +643,8 @@ fun DriveSettingsSheet(
                                 preferLiters = preferLiters,
                             ),
                         )
+                        onBreakAsDistanceChange(asDistance)
+                        onPreferMetricChange(metric)
                         if (restOk && fuelOk) {
                             onApplied()
                         } else {
@@ -499,12 +653,12 @@ fun DriveSettingsSheet(
                         @Suppress("UNUSED_EXPRESSION")
                         iconDir
                     },
-                    modifier = Modifier.testTag("btn_apply_drive_settings"),
-                ) { Text("Apply") }
+                    modifier = Modifier.testTag("btn_save_drive_settings"),
+                ) { Text("Save") }
                 TextButton(
                     onClick = onDismiss,
-                    modifier = Modifier.testTag("btn_cancel_drive_settings"),
-                ) { Text("Cancel") }
+                    modifier = Modifier.testTag("btn_close_drive_settings"),
+                ) { Text("Close") }
             }
         }
     }

@@ -39,6 +39,45 @@ object NaviMapTestHooks {
     @Volatile
     var styleReady: Boolean = false
 
+    /** Last basemap kind from [BasemapStyleResolver] (OnlineLiberty / Online3d / OfflineProtomaps). */
+    @Volatile
+    var lastBasemapKind: String = ""
+
+    /** Last MapLibre style load failure message, if any. */
+    @Volatile
+    var lastStyleLoadError: String? = null
+
+    /** True when Mapterhorn hillshade attach succeeded for the current style. */
+    @Volatile
+    var lastTerrainAttached: Boolean = false
+
+    /** Last MapLibre camera pitch/tilt (degrees); viewing aid with hillshade 3D. */
+    @Volatile
+    var lastCameraPitch: Double = 0.0
+
+    /** When set, Tools uses this Geofabrik path on the next composition pass. */
+    @Volatile
+    var pendingGeofabrikPath: String? = null
+
+    /**
+     * When true, Plan route (Hiking) may load a host-staged polyline + breaks
+     * from `/data/local/tmp/navi_fixtures/skolla_rondvassbu.*` so instrumented
+     * tests exercise search/keyboard without rebuilding the Ostlandet foot graph.
+     */
+    @Volatile
+    var preferStagedHikingRoute: Boolean = false
+
+    /** Optional start / via / end labels for map SymbolLayer (tests + search). */
+    @Volatile
+    var routeStartLabel: String = ""
+
+    @Volatile
+    var routeViaLabel: String = ""
+
+    @Volatile
+    var routeEndLabel: String = ""
+
+
     /**
      * Synthetic magnetic heading (degrees clockwise from north). Used when rotation
      * mode is Compass. Null = leave bearing unchanged from this source.
@@ -84,6 +123,33 @@ object NaviMapTestHooks {
     @Volatile
     var lastRotationMode: MapRotationMode = MapRotationMode.NorthUp
 
+    @Volatile
+    var lastRoutePolylineChars: Int = 0
+
+    @Volatile
+    var lastBreakPoiCount: Int = 0
+
+    @Volatile
+    var lastSearchHitCount: Int = 0
+
+    @Volatile
+    var lastSearchQuery: String = ""
+
+    @Volatile
+    var lastSearchHitNames: List<String> = emptyList()
+
+    /** When true, MainActivity clears the search query field (test helper). */
+    @Volatile
+    var requestClearSearch: Boolean = false
+
+    /** When set, MainActivity applies this place hit as From/To/Via (test helper). */
+    @Volatile
+    var pendingApplyHit: uniffi.navi.PlaceHit? = null
+
+    /** When set, MainActivity assigns the search query and runs search (test helper). */
+    @Volatile
+    var requestSearchQuery: String? = null
+
     /** When true, MainActivity opens the drive settings sheet (test injection). */
     @Volatile
     var requestOpenDriveSettings: Boolean = false
@@ -99,6 +165,10 @@ object NaviMapTestHooks {
     /** Whether the map settings sheet is currently open. */
     @Volatile
     var mapSettingsOpen: Boolean = false
+
+    /** Optional test injection for 3D hillshade (null = no request). */
+    @Volatile
+    var requestOptIn3d: Boolean? = null
 
     /** Optional test injection for Trip ETA toggle (null = no request). */
     @Volatile
@@ -119,6 +189,18 @@ object NaviMapTestHooks {
     /** Mirror of minutes-to-break shown on the bottom HUD. */
     @Volatile
     var lastMinutesToBreak: Double? = null
+
+    /** True when the bottom HUD currently renders a break-info line. */
+    @Volatile
+    var lastBreakHudVisible: Boolean = false
+
+    /** When true, clear the active corridor polyline and break countdown. */
+    @Volatile
+    var requestClearRoute: Boolean = false
+
+    /** Optional: set break display mode (null = no request). */
+    @Volatile
+    var requestBreakAsDistance: Boolean? = null
 
     /**
      * Full replacement snapshot of moving icons (upsert semantics applied in the test /
@@ -198,4 +280,15 @@ object NaviMapTestHooks {
     /** Dispatches a MotionEvent to the live MapView (UI thread). */
     @Volatile
     var mapViewTouch: ((android.view.MotionEvent) -> Boolean)? = null
+
+    /**
+     * Injected approach / next-maneuver guidance (shared publisher for UI + voice).
+     * Null = leave current Compose state unchanged.
+     */
+    @Volatile
+    var pendingApproachGuidance: ApproachGuidanceState? = null
+
+    /** Last approach phase applied (for assertions). */
+    @Volatile
+    var lastApproachPhase: ApproachUiPhase = ApproachUiPhase.Hidden
 }

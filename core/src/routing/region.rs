@@ -1,26 +1,64 @@
 //! Host-facing region download helpers (OSM extract + elevation tiles).
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
+use futures_util::StreamExt;
+use tokio::io::AsyncWriteExt;
 
+use crate::download::{available_bytes, enrich_io_error, progress as download_progress, DownloadControl};
 use crate::routing::elevation::{
-    bbox_to_tiles, DownloadControl, ElevationCache, ElevationDownloader,
+    bbox_to_tiles, ElevationCache, ElevationDownloader,
 };
 use crate::storage::{ElevationJobStore, JobStatus, Storage};
 
 /// Espa -> Atnbrufossen corridor bbox [min_lat, min_lon, max_lat, max_lon].
 pub const CORRIDOR_BBOX: [f64; 4] = [60.40, 10.00, 62.00, 11.50];
 
+const PROGRESS_LOG_EVERY_BYTES: u64 = 5 * 1024 * 1024;
+
 /// Download a file from `url` to `dest`, creating parent directories.
 ///
-/// Used by the in-app "download region" flow and by instrumented tests (emulator
-/// reaches the host via `http://10.0.2.2:...`).
+/// Streams in bounded chunks (never buffers the whole body in RAM). Used by the
+/// in-app "download region" flow and by instrumented tests (emulator reaches the
+/// host via `http://10.0.2.2:...`).
 pub fn download_file(url: &str, dest: &Path) -> anyhow::Result<u64> {
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)?;
+    }
+    // Local file copy (instrumented tests stage fixtures under /data/local/tmp).
+    if let Some(path) = url.strip_prefix("file://") {
+        let src = Path::new(path);
+        log::info!(
+            target: "NaviDownload",
+            "[NaviDownload] copy start src={path} dest={}",
+            dest.display()
+        );
+        let bytes = fs::copy(src, dest).with_context(|| format!("copy {path} -> {dest:?}"))?;
+        log::info!(
+            target: "NaviDownload",
+            "[NaviDownload] copy complete dest={} bytes={bytes}",
+            dest.display()
+        );
+        return Ok(bytes);
+    }
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        let src = Path::new(url);
+        if src.is_file() {
+            log::info!(
+                target: "NaviDownload",
+                "[NaviDownload] copy start src={url} dest={}",
+                dest.display()
+            );
+            let bytes = fs::copy(src, dest).with_context(|| format!("copy {url} -> {dest:?}"))?;
+            log::info!(
+                target: "NaviDownload",
+                "[NaviDownload] copy complete dest={} bytes={bytes}",
+                dest.display()
+            );
+            return Ok(bytes);
+        }
     }
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -33,10 +71,81 @@ pub fn download_file(url: &str, dest: &Path) -> anyhow::Result<u64> {
         if !resp.status().is_success() {
             bail!("HTTP {} for {url}", resp.status());
         }
-        let bytes = resp.bytes().await.context("read body")?;
-        let mut f = fs::File::create(dest)?;
-        f.write_all(&bytes)?;
-        Ok(bytes.len() as u64)
+        let expected = resp.content_length();
+        let avail = available_bytes(dest);
+        log::info!(
+            target: "NaviDownload",
+            "[NaviDownload] start url={url} dest={} expected_bytes={:?} available_bytes={:?}",
+            dest.display(),
+            expected,
+            avail
+        );
+        if let (Some(need), Some(free)) = (expected, avail) {
+            if free < need {
+                bail!(
+                    "insufficient space for download: need {need} bytes, available {free} bytes at {}",
+                    dest.display()
+                );
+            }
+        }
+
+        let mut partial = dest.as_os_str().to_owned();
+        partial.push(".partial");
+        let partial_path = PathBuf::from(partial);
+        let _ = fs::remove_file(&partial_path);
+
+        let mut file = tokio::fs::File::create(&partial_path)
+            .await
+            .map_err(|e| enrich_io_error(e, &partial_path))?;
+        let mut stream = resp.bytes_stream();
+        let mut written: u64 = 0;
+        let mut last_logged: u64 = 0;
+        let mut last_ui: u64 = 0;
+        download_progress::set(0, expected, "Downloading region…");
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.context("stream chunk")?;
+            if let Err(e) = file.write_all(&chunk).await {
+                let _ = fs::remove_file(&partial_path);
+                return Err(enrich_io_error(e, &partial_path));
+            }
+            written += chunk.len() as u64;
+            if written - last_ui >= 256 * 1024 || expected.is_some_and(|t| written >= t) {
+                download_progress::set(written, expected, "Downloading region…");
+                last_ui = written;
+            }
+            if written - last_logged >= PROGRESS_LOG_EVERY_BYTES
+                || expected.is_some_and(|t| written >= t)
+            {
+                let pct = expected.map(|t| {
+                    if t == 0 {
+                        100
+                    } else {
+                        (written.saturating_mul(100) / t).min(100)
+                    }
+                });
+                log::info!(
+                    target: "NaviDownload",
+                    "progress dest={} written={written} expected={:?} pct={:?} available_bytes={:?}",
+                    dest.display(),
+                    expected,
+                    pct,
+                    available_bytes(dest)
+                );
+                last_logged = written;
+            }
+        }
+        file.flush()
+            .await
+            .map_err(|e| enrich_io_error(e, &partial_path))?;
+        drop(file);
+        fs::rename(&partial_path, dest).map_err(|e| enrich_io_error(e, dest))?;
+        download_progress::set(written, Some(written), "Downloading region…");
+        log::info!(
+            target: "NaviDownload",
+            "[NaviDownload] complete dest={} bytes={written}",
+            dest.display()
+        );
+        Ok(written)
     })
 }
 
@@ -127,11 +236,28 @@ pub fn provision_region_with_elev_tar(
             let _ = download_file(tar_url, &tar_path)?;
             extract_tar_to(data_dir, &tar_path)?;
         }
+        // When a fixture tar was supplied, never fall through to live Copernicus
+        // (emulator may be offline). Require at least one corridor tile on disk.
+        let cache = ElevationCache::new(&elev_dir);
+        let tiles = bbox_to_tiles(CORRIDOR_BBOX);
+        let present = tiles.iter().filter(|t| cache.tile_exists(**t)).count();
+        if present == 0 {
+            bail!(
+                "elevation tar produced 0/{} corridor DEM tiles under {}",
+                tiles.len(),
+                elev_dir.display()
+            );
+        }
+        return Ok(RegionProvision {
+            pbf_path,
+            elev_dir,
+            cache_dir,
+            osm_downloaded_bytes: osm_bytes,
+            dem_download_s: 0.0,
+        });
     }
 
-    let db_path = data_dir.join("navi.db");
-    let (_done, _total, dem_s) = ensure_corridor_dem(&elev_dir, &db_path)?;
-
+    let (_, _, dem_s) = ensure_corridor_dem(&elev_dir, &data_dir.join("navi.db"))?;
     Ok(RegionProvision {
         pbf_path,
         elev_dir,
@@ -141,9 +267,9 @@ pub fn provision_region_with_elev_tar(
     })
 }
 
-fn extract_tar_to(dest_parent: &Path, tar_path: &Path) -> anyhow::Result<()> {
-    let file = fs::File::open(tar_path)?;
-    let mut archive = tar::Archive::new(file);
-    archive.unpack(dest_parent).context("untar elevation fixture")?;
+fn extract_tar_to(data_dir: &Path, tar_path: &Path) -> anyhow::Result<()> {
+    let f = fs::File::open(tar_path)?;
+    let mut archive = tar::Archive::new(f);
+    archive.unpack(data_dir)?;
     Ok(())
 }

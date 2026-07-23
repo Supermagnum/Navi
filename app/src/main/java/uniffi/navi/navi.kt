@@ -800,6 +800,60 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -817,6 +871,14 @@ internal interface IntegrityCheckingUniffiLib : Library {
     // Integrity check functions only
     fun uniffi_navi_checksum_func_apply_osm_update(
 ): Short
+fun uniffi_navi_checksum_func_approach_appear_m(
+): Short
+fun uniffi_navi_checksum_func_approach_hide_m(
+): Short
+fun uniffi_navi_checksum_func_approach_phase_for_distance(
+): Short
+fun uniffi_navi_checksum_func_approach_urgency_m(
+): Short
 fun uniffi_navi_checksum_func_bind_geofabrik_region(
 ): Short
 fun uniffi_navi_checksum_func_check_osm_updates(
@@ -829,17 +891,29 @@ fun uniffi_navi_checksum_func_display_range_max_km(
 ): Short
 fun uniffi_navi_checksum_func_display_range_min_km(
 ): Short
+fun uniffi_navi_checksum_func_download_progress_clear(
+): Short
+fun uniffi_navi_checksum_func_download_progress_snapshot(
+): Short
 fun uniffi_navi_checksum_func_eco_mode_default(
 ): Short
 fun uniffi_navi_checksum_func_eco_mode_toggleable(
+): Short
+fun uniffi_navi_checksum_func_elevation_at(
 ): Short
 fun uniffi_navi_checksum_func_ensure_place_index(
 ): Short
 fun uniffi_navi_checksum_func_ffi_linkage_smoke_test(
 ): Short
+fun uniffi_navi_checksum_func_format_approach_distance(
+): Short
 fun uniffi_navi_checksum_func_format_avoid_major_report(
 ): Short
+fun uniffi_navi_checksum_func_format_route_avoidance_report(
+): Short
 fun uniffi_navi_checksum_func_haversine_km(
+): Short
+fun uniffi_navi_checksum_func_init_native_logging(
 ): Short
 fun uniffi_navi_checksum_func_last_gps_fix(
 ): Short
@@ -856,6 +930,40 @@ fun uniffi_navi_checksum_func_offset_lat_lon_m(
 fun uniffi_navi_checksum_func_osm_update_staleness_days(
 ): Short
 fun uniffi_navi_checksum_func_osm_weekly_reminder_due(
+): Short
+fun uniffi_navi_checksum_func_plan_car_route(
+): Short
+fun uniffi_navi_checksum_func_plan_hiking_route(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_cancel_job(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_default_base_url(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_delete_job(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_fallback_planet_url(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_get_job(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_list_covering(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_list_jobs(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_pause_job(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_planet_url(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_queue_dem_region(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_queue_region(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_region_bbox(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_region_key(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_resume_job(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_run_job(
 ): Short
 fun uniffi_navi_checksum_func_provision_region_data(
 ): Short
@@ -972,6 +1080,14 @@ fun uniffi_navi_fn_method_ffitrackstore_visible(`ptr`: Pointer,`centerLat`: Doub
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_apply_osm_update(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_approach_appear_m(uniffi_out_err: UniffiRustCallStatus, 
+): Double
+fun uniffi_navi_fn_func_approach_hide_m(uniffi_out_err: UniffiRustCallStatus, 
+): Double
+fun uniffi_navi_fn_func_approach_phase_for_distance(`active`: Byte,`distanceM`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_approach_urgency_m(uniffi_out_err: UniffiRustCallStatus, 
+): Double
 fun uniffi_navi_fn_func_bind_geofabrik_region(`dataDir`: RustBuffer.ByValue,`geofabrikRegion`: RustBuffer.ByValue,`pbfFilename`: RustBuffer.ByValue,`localSequence`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_check_osm_updates(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -984,18 +1100,30 @@ fun uniffi_navi_fn_func_display_range_max_km(uniffi_out_err: UniffiRustCallStatu
 ): Double
 fun uniffi_navi_fn_func_display_range_min_km(uniffi_out_err: UniffiRustCallStatus, 
 ): Double
+fun uniffi_navi_fn_func_download_progress_clear(uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_navi_fn_func_download_progress_snapshot(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_eco_mode_default(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_eco_mode_toggleable(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_elevation_at(`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ffi_linkage_smoke_test(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_format_approach_distance(`distanceM`: Double,`preferMetric`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_format_avoid_major_report(`avoidMajor`: Byte,`priorityPathSharePct`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_format_route_avoidance_report(`avoidMajor`: Byte,`avoidTolls`: Byte,`avoidFerries`: Byte,`priorityPathSharePct`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_haversine_km(`lat1`: Double,`lon1`: Double,`lat2`: Double,`lon2`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): Double
+fun uniffi_navi_fn_func_init_native_logging(uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_navi_fn_func_last_gps_fix(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_list_saved_routes(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1012,6 +1140,40 @@ fun uniffi_navi_fn_func_osm_update_staleness_days(uniffi_out_err: UniffiRustCall
 ): Long
 fun uniffi_navi_fn_func_osm_weekly_reminder_due(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_plan_hiking_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`waypointsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_pmtiles_cancel_job(`jobId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_navi_fn_func_pmtiles_default_base_url(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_pmtiles_delete_job(`dataDir`: RustBuffer.ByValue,`jobId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_navi_fn_func_pmtiles_fallback_planet_url(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_pmtiles_get_job(`dataDir`: RustBuffer.ByValue,`jobId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_pmtiles_list_covering(`dataDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_pmtiles_list_jobs(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_pmtiles_pause_job(`jobId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_navi_fn_func_pmtiles_planet_url(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_pmtiles_queue_dem_region(`dataDir`: RustBuffer.ByValue,`geofabrikPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_pmtiles_queue_region(`dataDir`: RustBuffer.ByValue,`geofabrikPath`: RustBuffer.ByValue,`baseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_pmtiles_region_bbox(`geofabrikPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_pmtiles_region_key(`geofabrikPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_pmtiles_resume_job(`jobId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_navi_fn_func_pmtiles_run_job(`dataDir`: RustBuffer.ByValue,`jobId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_provision_region_data(`dataDir`: RustBuffer.ByValue,`pbfUrl`: RustBuffer.ByValue,`pbfFilename`: RustBuffer.ByValue,`elevationTarUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_rasterize_icon_check(`key`: RustBuffer.ByValue,`theme`: RustBuffer.ByValue,`width`: Int,`height`: Int,`bundledDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1169,6 +1331,18 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_apply_osm_update() != 13642.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_approach_appear_m() != 49380.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_approach_hide_m() != 1584.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_approach_phase_for_distance() != 48405.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_approach_urgency_m() != 63847.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_bind_geofabrik_region() != 54334.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1187,10 +1361,19 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_display_range_min_km() != 25328.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_download_progress_clear() != 56698.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_download_progress_snapshot() != 25697.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_eco_mode_default() != 51756.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_eco_mode_toggleable() != 50686.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_elevation_at() != 51192.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_ensure_place_index() != 50894.toShort()) {
@@ -1199,13 +1382,22 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_ffi_linkage_smoke_test() != 11010.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_format_avoid_major_report() != 62066.toShort()) {
+    if (lib.uniffi_navi_checksum_func_format_approach_distance() != 13757.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_format_avoid_major_report() != 4139.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_format_route_avoidance_report() != 54522.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_haversine_km() != 51239.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_last_gps_fix() != 42347.toShort()) {
+    if (lib.uniffi_navi_checksum_func_init_native_logging() != 25400.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_last_gps_fix() != 57883.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_list_saved_routes() != 35027.toShort()) {
@@ -1227,6 +1419,57 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_osm_weekly_reminder_due() != 61589.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_plan_car_route() != 44397.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_plan_hiking_route() != 34603.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_cancel_job() != 53964.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_default_base_url() != 33280.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_delete_job() != 1807.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_fallback_planet_url() != 59488.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_get_job() != 36047.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_list_covering() != 55459.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_list_jobs() != 50852.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_pause_job() != 23239.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_planet_url() != 31038.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_queue_dem_region() != 57954.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_queue_region() != 39231.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_region_bbox() != 23254.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_region_key() != 5065.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_resume_job() != 9271.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pmtiles_run_job() != 12879.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_provision_region_data() != 5529.toShort()) {
@@ -1967,6 +2210,13 @@ public object FfiConverterTypeFfiTrackStore: FfiConverter<FfiTrackStore, Pointer
 data class CorridorRouteResult (
     var `report`: kotlin.String, 
     var `distanceKm`: kotlin.Double, 
+    /**
+     * Pre-departure duration estimate in minutes (before live GPS speed).
+     *
+     * Motor profiles: per-edge OSM `maxspeed` with highway-class fallback.
+     * Hiking / cycling callers may override using fixed pace on `distance_km`.
+     */
+    var `etaMinutes`: kotlin.Double, 
     var `cacheHit`: kotlin.Boolean, 
     var `coldBuildS`: kotlin.Double, 
     var `warmLoadS`: kotlin.Double, 
@@ -1977,7 +2227,12 @@ data class CorridorRouteResult (
     var `poiLat`: kotlin.Double, 
     var `poiLon`: kotlin.Double, 
     var `poiName`: kotlin.String, 
-    var `poiIconKey`: kotlin.String
+    var `poiIconKey`: kotlin.String, 
+    /**
+     * JSON array of pause / overnight stops along the route:
+     * `[{"name","lat","lon","kind","icon"}]` where kind is `hut`, `tent`, or `amenity`.
+     */
+    var `breakPoisJson`: kotlin.String
 ) {
     
     companion object
@@ -1991,6 +2246,7 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
         return CorridorRouteResult(
             FfiConverterString.read(buf),
             FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterDouble.read(buf),
             FfiConverterDouble.read(buf),
@@ -1999,12 +2255,14 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterDouble.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
     override fun allocationSize(value: CorridorRouteResult) = (
             FfiConverterString.allocationSize(value.`report`) +
             FfiConverterDouble.allocationSize(value.`distanceKm`) +
+            FfiConverterDouble.allocationSize(value.`etaMinutes`) +
             FfiConverterBoolean.allocationSize(value.`cacheHit`) +
             FfiConverterDouble.allocationSize(value.`coldBuildS`) +
             FfiConverterDouble.allocationSize(value.`warmLoadS`) +
@@ -2012,12 +2270,14 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterDouble.allocationSize(value.`poiLat`) +
             FfiConverterDouble.allocationSize(value.`poiLon`) +
             FfiConverterString.allocationSize(value.`poiName`) +
-            FfiConverterString.allocationSize(value.`poiIconKey`)
+            FfiConverterString.allocationSize(value.`poiIconKey`) +
+            FfiConverterString.allocationSize(value.`breakPoisJson`)
     )
 
     override fun write(value: CorridorRouteResult, buf: ByteBuffer) {
             FfiConverterString.write(value.`report`, buf)
             FfiConverterDouble.write(value.`distanceKm`, buf)
+            FfiConverterDouble.write(value.`etaMinutes`, buf)
             FfiConverterBoolean.write(value.`cacheHit`, buf)
             FfiConverterDouble.write(value.`coldBuildS`, buf)
             FfiConverterDouble.write(value.`warmLoadS`, buf)
@@ -2026,6 +2286,7 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterDouble.write(value.`poiLon`, buf)
             FfiConverterString.write(value.`poiName`, buf)
             FfiConverterString.write(value.`poiIconKey`, buf)
+            FfiConverterString.write(value.`breakPoisJson`, buf)
     }
 }
 
@@ -2071,6 +2332,46 @@ public object FfiConverterTypeFfiCarRestSettings: FfiConverterRustBuffer<FfiCarR
             FfiConverterDouble.write(value.`breakIntervalHours`, buf)
             FfiConverterUInt.write(value.`restDurationMinutes`, buf)
             FfiConverterBoolean.write(value.`ecoModeEnabled`, buf)
+    }
+}
+
+
+
+data class FfiDownloadProgress (
+    var `unitsDone`: kotlin.ULong, 
+    var `unitsTotal`: kotlin.ULong?, 
+    var `percent`: kotlin.UInt?, 
+    var `label`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiDownloadProgress: FfiConverterRustBuffer<FfiDownloadProgress> {
+    override fun read(buf: ByteBuffer): FfiDownloadProgress {
+        return FfiDownloadProgress(
+            FfiConverterULong.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalUInt.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiDownloadProgress) = (
+            FfiConverterULong.allocationSize(value.`unitsDone`) +
+            FfiConverterOptionalULong.allocationSize(value.`unitsTotal`) +
+            FfiConverterOptionalUInt.allocationSize(value.`percent`) +
+            FfiConverterString.allocationSize(value.`label`)
+    )
+
+    override fun write(value: FfiDownloadProgress, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`unitsDone`, buf)
+            FfiConverterOptionalULong.write(value.`unitsTotal`, buf)
+            FfiConverterOptionalUInt.write(value.`percent`, buf)
+            FfiConverterString.write(value.`label`, buf)
     }
 }
 
@@ -2143,6 +2444,78 @@ public object FfiConverterTypeFfiGpsFix: FfiConverterRustBuffer<FfiGpsFix> {
             FfiConverterDouble.write(value.`lat`, buf)
             FfiConverterDouble.write(value.`lon`, buf)
             FfiConverterBoolean.write(value.`available`, buf)
+    }
+}
+
+
+
+data class FfiPmtilesJob (
+    var `id`: kotlin.String, 
+    var `regionKey`: kotlin.String, 
+    var `url`: kotlin.String, 
+    var `localPath`: kotlin.String, 
+    var `bytesReceived`: kotlin.ULong, 
+    var `totalBytes`: kotlin.ULong?, 
+    var `status`: kotlin.String, 
+    var `paused`: kotlin.Boolean, 
+    var `minLat`: kotlin.Double?, 
+    var `minLon`: kotlin.Double?, 
+    var `maxLat`: kotlin.Double?, 
+    var `maxLon`: kotlin.Double?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiPmtilesJob: FfiConverterRustBuffer<FfiPmtilesJob> {
+    override fun read(buf: ByteBuffer): FfiPmtilesJob {
+        return FfiPmtilesJob(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalDouble.read(buf),
+            FfiConverterOptionalDouble.read(buf),
+            FfiConverterOptionalDouble.read(buf),
+            FfiConverterOptionalDouble.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiPmtilesJob) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`regionKey`) +
+            FfiConverterString.allocationSize(value.`url`) +
+            FfiConverterString.allocationSize(value.`localPath`) +
+            FfiConverterULong.allocationSize(value.`bytesReceived`) +
+            FfiConverterOptionalULong.allocationSize(value.`totalBytes`) +
+            FfiConverterString.allocationSize(value.`status`) +
+            FfiConverterBoolean.allocationSize(value.`paused`) +
+            FfiConverterOptionalDouble.allocationSize(value.`minLat`) +
+            FfiConverterOptionalDouble.allocationSize(value.`minLon`) +
+            FfiConverterOptionalDouble.allocationSize(value.`maxLat`) +
+            FfiConverterOptionalDouble.allocationSize(value.`maxLon`)
+    )
+
+    override fun write(value: FfiPmtilesJob, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`regionKey`, buf)
+            FfiConverterString.write(value.`url`, buf)
+            FfiConverterString.write(value.`localPath`, buf)
+            FfiConverterULong.write(value.`bytesReceived`, buf)
+            FfiConverterOptionalULong.write(value.`totalBytes`, buf)
+            FfiConverterString.write(value.`status`, buf)
+            FfiConverterBoolean.write(value.`paused`, buf)
+            FfiConverterOptionalDouble.write(value.`minLat`, buf)
+            FfiConverterOptionalDouble.write(value.`minLon`, buf)
+            FfiConverterOptionalDouble.write(value.`maxLat`, buf)
+            FfiConverterOptionalDouble.write(value.`maxLon`, buf)
     }
 }
 
@@ -2278,8 +2651,10 @@ public object FfiConverterTypeFfiTrackStation: FfiConverterRustBuffer<FfiTrackSt
 
 data class FfiVehicleLimits (
     var `axleWeightKg`: kotlin.Double?, 
+    var `bogieWeightKg`: kotlin.Double?, 
     var `heightM`: kotlin.Double?, 
     var `widthM`: kotlin.Double?, 
+    var `lengthM`: kotlin.Double?, 
     var `totalWeightKg`: kotlin.Double?
 ) {
     
@@ -2296,20 +2671,26 @@ public object FfiConverterTypeFfiVehicleLimits: FfiConverterRustBuffer<FfiVehicl
             FfiConverterOptionalDouble.read(buf),
             FfiConverterOptionalDouble.read(buf),
             FfiConverterOptionalDouble.read(buf),
+            FfiConverterOptionalDouble.read(buf),
+            FfiConverterOptionalDouble.read(buf),
         )
     }
 
     override fun allocationSize(value: FfiVehicleLimits) = (
             FfiConverterOptionalDouble.allocationSize(value.`axleWeightKg`) +
+            FfiConverterOptionalDouble.allocationSize(value.`bogieWeightKg`) +
             FfiConverterOptionalDouble.allocationSize(value.`heightM`) +
             FfiConverterOptionalDouble.allocationSize(value.`widthM`) +
+            FfiConverterOptionalDouble.allocationSize(value.`lengthM`) +
             FfiConverterOptionalDouble.allocationSize(value.`totalWeightKg`)
     )
 
     override fun write(value: FfiVehicleLimits, buf: ByteBuffer) {
             FfiConverterOptionalDouble.write(value.`axleWeightKg`, buf)
+            FfiConverterOptionalDouble.write(value.`bogieWeightKg`, buf)
             FfiConverterOptionalDouble.write(value.`heightM`, buf)
             FfiConverterOptionalDouble.write(value.`widthM`, buf)
+            FfiConverterOptionalDouble.write(value.`lengthM`, buf)
             FfiConverterOptionalDouble.write(value.`totalWeightKg`, buf)
     }
 }
@@ -2397,6 +2778,7 @@ enum class TravelProfile {
     CAR_ELECTRIC,
     TRUCK,
     TRUCK_ELECTRIC,
+    MOBILE_HOME,
     BICYCLE,
     HIKING,
     MOTORCYCLE,
@@ -2423,6 +2805,38 @@ public object FfiConverterTypeTravelProfile: FfiConverterRustBuffer<TravelProfil
 }
 
 
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalUInt: FfiConverterRustBuffer<kotlin.UInt?> {
+    override fun read(buf: ByteBuffer): kotlin.UInt? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterUInt.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.UInt?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterUInt.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.UInt?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterUInt.write(value, buf)
+        }
+    }
+}
 
 
 
@@ -2526,6 +2940,70 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeFfiPmtilesJob: FfiConverterRustBuffer<FfiPmtilesJob?> {
+    override fun read(buf: ByteBuffer): FfiPmtilesJob? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeFfiPmtilesJob.read(buf)
+    }
+
+    override fun allocationSize(value: FfiPmtilesJob?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeFfiPmtilesJob.allocationSize(value)
+        }
+    }
+
+    override fun write(value: FfiPmtilesJob?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeFfiPmtilesJob.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalSequenceDouble: FfiConverterRustBuffer<List<kotlin.Double>?> {
+    override fun read(buf: ByteBuffer): List<kotlin.Double>? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterSequenceDouble.read(buf)
+    }
+
+    override fun allocationSize(value: List<kotlin.Double>?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterSequenceDouble.allocationSize(value)
+        }
+    }
+
+    override fun write(value: List<kotlin.Double>?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterSequenceDouble.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceDouble: FfiConverterRustBuffer<List<kotlin.Double>> {
     override fun read(buf: ByteBuffer): List<kotlin.Double> {
         val len = buf.getInt()
@@ -2572,6 +3050,34 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterString.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiPmtilesJob: FfiConverterRustBuffer<List<FfiPmtilesJob>> {
+    override fun read(buf: ByteBuffer): List<FfiPmtilesJob> {
+        val len = buf.getInt()
+        return List<FfiPmtilesJob>(len) {
+            FfiConverterTypeFfiPmtilesJob.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiPmtilesJob>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiPmtilesJob.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiPmtilesJob>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiPmtilesJob.write(it, buf)
         }
     }
 }
@@ -2672,6 +3178,48 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     
 
         /**
+         * Locked approach thresholds (meters).
+         */ fun `approachAppearM`(): kotlin.Double {
+            return FfiConverterDouble.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_approach_appear_m(
+        _status)
+}
+    )
+    }
+    
+ fun `approachHideM`(): kotlin.Double {
+            return FfiConverterDouble.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_approach_hide_m(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Approach-box phase for a distance (shared with voice guidance timing).
+         */ fun `approachPhaseForDistance`(`active`: kotlin.Boolean, `distanceM`: kotlin.Double): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_approach_phase_for_distance(
+        FfiConverterBoolean.lower(`active`),FfiConverterDouble.lower(`distanceM`),_status)
+}
+    )
+    }
+    
+ fun `approachUrgencyM`(): kotlin.Double {
+            return FfiConverterDouble.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_approach_urgency_m(
+        _status)
+}
+    )
+    }
+    
+
+        /**
          * Bind a Geofabrik region to the local extract (required before update checks).
          */ fun `bindGeofabrikRegion`(`dataDir`: kotlin.String, `geofabrikRegion`: kotlin.String, `pbfFilename`: kotlin.String, `localSequence`: kotlin.ULong?): kotlin.String {
             return FfiConverterString.lift(
@@ -2735,6 +3283,29 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     
 
         /**
+         * Clear the shared download progress snapshot.
+         */ fun `downloadProgressClear`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_download_progress_clear(
+        _status)
+}
+    
+    
+
+        /**
+         * Snapshot of the in-flight download (region PBF or PMTiles extract) for UI polling.
+         */ fun `downloadProgressSnapshot`(): FfiDownloadProgress {
+            return FfiConverterTypeFfiDownloadProgress.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_download_progress_snapshot(
+        _status)
+}
+    )
+    }
+    
+
+        /**
          * Default eco enabled for profile.
          */ fun `ecoModeDefault`(`profile`: TravelProfile): kotlin.Boolean {
             return FfiConverterBoolean.lift(
@@ -2753,6 +3324,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_eco_mode_toggleable(
         FfiConverterTypeTravelProfile.lower(`profile`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Sample on-disk DEM elevation (meters) at a WGS84 point, or null if no tile.
+         */ fun `elevationAt`(`elevDir`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double): kotlin.Double? {
+            return FfiConverterOptionalDouble.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_elevation_at(
+        FfiConverterString.lower(`elevDir`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),_status)
 }
     )
     }
@@ -2786,12 +3369,36 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     
 
         /**
-         * Format a short validation blurb for avoid-major-roads / priority-path share.
+         * Format approach distance for display (metric vs imperial).
+         */ fun `formatApproachDistance`(`distanceM`: kotlin.Double, `preferMetric`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_format_approach_distance(
+        FfiConverterDouble.lower(`distanceM`),FfiConverterBoolean.lower(`preferMetric`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Format a short validation blurb for avoid-major / toll / ferry preferences.
          */ fun `formatAvoidMajorReport`(`avoidMajor`: kotlin.Boolean, `priorityPathSharePct`: kotlin.Double): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_format_avoid_major_report(
         FfiConverterBoolean.lower(`avoidMajor`),FfiConverterDouble.lower(`priorityPathSharePct`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Extended avoidance report (motorways + tolls + ferries). Defaults for toll/ferry: off.
+         */ fun `formatRouteAvoidanceReport`(`avoidMajor`: kotlin.Boolean, `avoidTolls`: kotlin.Boolean, `avoidFerries`: kotlin.Boolean, `priorityPathSharePct`: kotlin.Double): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_format_route_avoidance_report(
+        FfiConverterBoolean.lower(`avoidMajor`),FfiConverterBoolean.lower(`avoidTolls`),FfiConverterBoolean.lower(`avoidFerries`),FfiConverterDouble.lower(`priorityPathSharePct`),_status)
 }
     )
     }
@@ -2807,7 +3414,20 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     
 
         /**
-         * Stub GPS fix for UI actions until Android fused location is wired.
+         * Initialize native logging so download progress appears in `adb logcat`
+         * (tag `NaviNative`). Safe to call more than once. Also invoked automatically
+         * from download FFI entry points.
+         */ fun `initNativeLogging`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_init_native_logging(
+        _status)
+}
+    
+    
+
+        /**
+         * Stub GPS fix — Android LocationManager is the source of truth for the map puck.
          */ fun `lastGpsFix`(): FfiGpsFix {
             return FfiConverterTypeFfiGpsFix.lift(
     uniffiRustCall() { _status ->
@@ -2876,6 +3496,185 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_osm_weekly_reminder_due(
         FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Plan a car route between two WGS84 points using a local OSM `.pbf` graph.
+         *
+         * Unlike [`run_car_corridor_pipeline`], this does not require the Espa–Atnbrufossen
+         * endpoints or a minimum corridor length — suitable for local Raufoss-scale trips.
+         */ fun `planCarRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean): CorridorRouteResult {
+            return FfiConverterTypeCorridorRouteResult.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_plan_car_route(
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`elevDir`),FfiConverterString.lower(`cacheDir`),FfiConverterDouble.lower(`startLat`),FfiConverterDouble.lower(`startLon`),FfiConverterDouble.lower(`endLat`),FfiConverterDouble.lower(`endLon`),FfiConverterBoolean.lower(`useEco`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Plan a hiking (foot) route through ordered waypoints.
+         *
+         * `waypoints_json` is `[{"name","lat","lon"}, ...]` with at least two points
+         * (start … vias … end). Pause stops prefer huts/cabins; otherwise camp pitches
+         * or a synthetic corridor tent (never mountain peak names).
+         */ fun `planHikingRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `waypointsJson`: kotlin.String): CorridorRouteResult {
+            return FfiConverterTypeCorridorRouteResult.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_plan_hiking_route(
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`elevDir`),FfiConverterString.lower(`cacheDir`),FfiConverterString.lower(`waypointsJson`),_status)
+}
+    )
+    }
+    
+ fun `pmtilesCancelJob`(`jobId`: kotlin.String)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_cancel_job(
+        FfiConverterString.lower(`jobId`),_status)
+}
+    
+    
+ fun `pmtilesDefaultBaseUrl`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_default_base_url(
+        _status)
+}
+    )
+    }
+    
+ fun `pmtilesDeleteJob`(`dataDir`: kotlin.String, `jobId`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_delete_job(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`jobId`),_status)
+}
+    )
+    }
+    
+ fun `pmtilesFallbackPlanetUrl`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_fallback_planet_url(
+        _status)
+}
+    )
+    }
+    
+ fun `pmtilesGetJob`(`dataDir`: kotlin.String, `jobId`: kotlin.String): FfiPmtilesJob? {
+            return FfiConverterOptionalTypeFfiPmtilesJob.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_get_job(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`jobId`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Completed PMTiles extracts whose stored bbox covers (lat, lon).
+         */ fun `pmtilesListCovering`(`dataDir`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double): List<FfiPmtilesJob> {
+            return FfiConverterSequenceTypeFfiPmtilesJob.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_list_covering(
+        FfiConverterString.lower(`dataDir`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),_status)
+}
+    )
+    }
+    
+ fun `pmtilesListJobs`(`dataDir`: kotlin.String): List<FfiPmtilesJob> {
+            return FfiConverterSequenceTypeFfiPmtilesJob.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_list_jobs(
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+ fun `pmtilesPauseJob`(`jobId`: kotlin.String)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_pause_job(
+        FfiConverterString.lower(`jobId`),_status)
+}
+    
+    
+
+        /**
+         * Current Protomaps public planet URL (resolved from builds metadata when online).
+         */ fun `pmtilesPlanetUrl`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_planet_url(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Queue a Mapterhorn DEM extract for the same Geofabrik bbox as the basemap.
+         * Writes `{region_key}_dem.pmtiles` beside the vector extract.
+         */ fun `pmtilesQueueDemRegion`(`dataDir`: kotlin.String, `geofabrikPath`: kotlin.String): FfiPmtilesJob {
+            return FfiConverterTypeFfiPmtilesJob.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_queue_dem_region(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`geofabrikPath`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Queue a PMTiles download for the selected Geofabrik path.
+         */ fun `pmtilesQueueRegion`(`dataDir`: kotlin.String, `geofabrikPath`: kotlin.String, `baseUrl`: kotlin.String?): FfiPmtilesJob {
+            return FfiConverterTypeFfiPmtilesJob.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_queue_region(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`geofabrikPath`),FfiConverterOptionalString.lower(`baseUrl`),_status)
+}
+    )
+    }
+    
+ fun `pmtilesRegionBbox`(`geofabrikPath`: kotlin.String): List<kotlin.Double>? {
+            return FfiConverterOptionalSequenceDouble.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_region_bbox(
+        FfiConverterString.lower(`geofabrikPath`),_status)
+}
+    )
+    }
+    
+ fun `pmtilesRegionKey`(`geofabrikPath`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_region_key(
+        FfiConverterString.lower(`geofabrikPath`),_status)
+}
+    )
+    }
+    
+ fun `pmtilesResumeJob`(`jobId`: kotlin.String)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_resume_job(
+        FfiConverterString.lower(`jobId`),_status)
+}
+    
+    
+
+        /**
+         * Run (or continue) a queued PMTiles job on the calling thread until terminal status.
+         */ fun `pmtilesRunJob`(`dataDir`: kotlin.String, `jobId`: kotlin.String): FfiPmtilesJob {
+            return FfiConverterTypeFfiPmtilesJob.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_run_job(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`jobId`),_status)
 }
     )
     }

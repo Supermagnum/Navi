@@ -340,7 +340,7 @@ class MovingIconInstrumentedTest {
         )
 
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        val dir = (ctx.getExternalFilesDir(null) ?: ctx.filesDir).also { it.mkdirs() }
+        val dir = NaviAppData.resolve(ctx)
         val out = File(dir, name)
         out.writeBytes(png)
         assertTrue("$name too small", out.length() > 20_000)

@@ -203,8 +203,40 @@ path.
 |---|---|
 | **Trigger source** | Ferrostar’s navigation state machine already tracks distance-to-next-maneuver and maneuver type — voice prompts should fire from that state (or an equivalent Navi nav-state layer if Ferrostar is not wired yet). |
 | **Audio vs background compute** | Existing design: background routing/compute must not stutter concurrent music. Spoken guidance is a **legitimate foreground interruption** (like any nav app’s directions) and does **not** need to defer to background music the way silent T3/T4 work does. Still avoid starving UI; duck or pause media per platform norms if desired later. |
-| **User settings** | Mute / volume for guidance; persisted **language** and **voice gender** (and later: recorded vs Piper). Store with other Drive settings ([README settings](../README.md#settings) / SQLite `app_config`). |
+| **User settings** | Mute / volume for guidance; persisted **language** and **voice gender** (and later: recorded vs Piper); optional **persona suffix** ([§8](#8-persona-sentence-ending-suffixes-optional)). Store with other Drive settings ([README settings](../README.md#settings) / SQLite `app_config`). |
 | **Offline** | Recorded packs must work fully offline. Piper models, if used, should be on-device and opt-in by size. |
+
+---
+
+## 8. Persona sentence-ending suffixes (optional)
+
+Optional **presentation-only** personalization for spoken guidance: a configurable
+word or short phrase appended to the end of assembled spoken instructions — for
+example `"master,"` or `"nya,"` — for users who want a more playful or
+anime-inspired voice character (catgirl/catboy-style speech patterns being the
+concrete example driving this request).
+
+### Rules
+
+| Concern | Spec |
+|---|---|
+| Scope | Pure presentation layer on top of the existing fragment / phrase system. Does **not** change navigation logic, maneuver data, distance triggers, or timing. |
+| Default | **Off** — empty suffix. Default voice packs and phrasing are unchanged unless the user deliberately enables a suffix. |
+| Config | User-chosen string (or empty). Stored with other voice settings alongside language / voice gender ([§7](#7-integration-points-documented-not-built)). |
+| Concatenation | The same per-language caveat as [§5](#5-localization--open-design-question) applies: naive append of a trailing suffix to a concatenated phrase may sound unnatural in some languages. Review per language; prefer whole-phrase packs where needed. |
+
+### Playback backends
+
+When Piper TTS is eventually wired ([§6](#6-piper-tts--candidate-crates-and-known-constraints)):
+
+| Path | How the suffix is applied |
+|---|---|
+| **TTS (Piper)** | Include the suffix in the text string passed to synthesis (live). |
+| **Pre-recorded clips** | Either append a separate short recorded clip per persona-suffix option after the assembled instruction, or record whole phrases that already include the suffix. |
+
+Both are valid; choose at implementation time. Keep persona clips / strings
+clearly separate from the default voice pack so the default experience stays
+unaffected when the setting is empty/off.
 
 ---
 
@@ -224,6 +256,7 @@ path.
 | Recorded-voice folder contract | Specified here; tree not created |
 | Fragment key list | Minimum set documented; connectors TBD with assembly |
 | Per-language concat vs whole phrases | **Open** |
+| Persona sentence-ending suffixes | Specified here (optional, off by default); not implemented |
 | rodio / cpal on Android | **Spike required** |
 | Piper / ONNX on Android | **Spike required**; optional |
 | Implementation / crates in workspace | **Not started** |

@@ -45,6 +45,14 @@ pub fn classify_tags(tags: &HashMap<String, String>) -> Vec<PoiCategory> {
         out.push(PoiCategory::OvernightFacility);
     }
 
+    // Named peaks / hills are terrain features — never pause labels.
+    // Tent fallback uses tourism=camp_site / camp_pitch (and synthetic corridor points).
+    if matches!(tourism, Some("camp_site") | Some("camp_pitch"))
+        || amenity == Some("camping")
+    {
+        out.push(PoiCategory::TentSite);
+    }
+
     if matches!(
         amenity,
         Some("cafe")

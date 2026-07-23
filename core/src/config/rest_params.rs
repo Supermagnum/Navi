@@ -113,7 +113,9 @@ impl RestConfig {
             | Profile::CarElectric
             | Profile::Motorcycle
             | Profile::MotorcycleElectric => ProfileRestParams::Car(&self.car),
-            Profile::Truck | Profile::TruckElectric => ProfileRestParams::Truck(&self.truck),
+            Profile::Truck | Profile::TruckElectric | Profile::MobileHome => {
+                ProfileRestParams::Truck(&self.truck)
+            }
             Profile::Hiking => ProfileRestParams::Hiking(&self.hiking),
             Profile::Cycling => ProfileRestParams::Cycling(&self.cycling),
         }
@@ -125,7 +127,9 @@ impl RestConfig {
             | Profile::CarElectric
             | Profile::Motorcycle
             | Profile::MotorcycleElectric => self.car.eco_mode_enabled,
-            Profile::Truck | Profile::TruckElectric => self.truck.eco_mode_enabled,
+            Profile::Truck | Profile::TruckElectric | Profile::MobileHome => {
+                self.truck.eco_mode_enabled
+            }
             Profile::Hiking | Profile::Cycling => true,
         }
     }

@@ -21,8 +21,9 @@ the General radius of **15 km**).
 
 Separate from the POI R-tree: the offline `NameIndex` (FTS5) indexes named OSM
 features for the **To** / **Via** UI (places, huts, peaks, roads, settlements).
-That index is built from the regional `.osm.pbf` via **Tools → Download corridor
-region + build place index** (or equivalent provision). Named fishing spots that
+That index is built from the regional `.osm.pbf` via **Tools → Download region
++ build place index** (country or region-in-country Geofabrik extract, or
+equivalent provision). Named fishing spots that
 appear in FTS are searchable by name without a dedicated `PoiCategory`; the
 category system below is for **typed nearby / rest planning** queries
 (`PoiIndex::nearest`).

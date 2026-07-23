@@ -1,44 +1,13 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-
 use reqwest::Client;
 use uuid::Uuid;
 
+use crate::download::DownloadControl;
 use crate::routing::elevation::cache::ElevationCache;
 use crate::routing::elevation::sources::{download_tile, DemSource};
 use crate::routing::elevation::tile_id::{bbox_to_tiles, country_bbox, HgtTileId};
 use crate::storage::{
     ElevationJobRecord, ElevationJobStore, JobScope, JobStatus, Storage, TileStatus,
 };
-
-/// Handle for pause/resume/cancel during an elevation job.
-#[derive(Clone, Default)]
-pub struct DownloadControl {
-    paused: Arc<AtomicBool>,
-    cancelled: Arc<AtomicBool>,
-}
-
-impl DownloadControl {
-    pub fn pause(&self) {
-        self.paused.store(true, Ordering::SeqCst);
-    }
-
-    pub fn resume(&self) {
-        self.paused.store(false, Ordering::SeqCst);
-    }
-
-    pub fn cancel(&self) {
-        self.cancelled.store(true, Ordering::SeqCst);
-    }
-
-    pub fn is_paused(&self) -> bool {
-        self.paused.load(Ordering::SeqCst)
-    }
-
-    pub fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::SeqCst)
-    }
-}
 
 pub struct ElevationJob {
     pub id: Uuid,

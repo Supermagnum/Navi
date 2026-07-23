@@ -135,6 +135,7 @@ mod tests {
         for p in [
             Profile::Car,
             Profile::Truck,
+            Profile::MobileHome,
             Profile::Motorcycle,
             Profile::Hiking,
             Profile::Cycling,

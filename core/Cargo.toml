@@ -6,6 +6,13 @@ license.workspace = true
 repository.workspace = true
 description = "Driver Break navigation core: elevation, routing, POI, rest parameters"
 
+[features]
+default = []
+## Pure-Rust gpsd TCP/JSON client via `gpsd_proto` (no libgps).
+gpsd = ["dep:gpsd_proto"]
+## Linux SBC IMU publish helpers (software fusion stub; board drivers optional).
+linux-imu = []
+
 [dependencies]
 anyhow.workspace = true
 bincode.workspace = true
@@ -13,6 +20,9 @@ geo.workspace = true
 geo-types.workspace = true
 pathfinding.workspace = true
 reqwest.workspace = true
+futures-util = "0.3"
+bytes = "1"
+pmtiles = { version = "0.23", default-features = false, features = ["write", "mmap-async-tokio"] }
 rstar.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
@@ -28,10 +38,12 @@ zip.workspace = true
 tar = { workspace = true }
 rayon.workspace = true
 libc.workspace = true
+log.workspace = true
 usvg.workspace = true
 resvg.workspace = true
 flate2.workspace = true
 png.workspace = true
+gpsd_proto = { version = "1.0", optional = true }
 
 [dev-dependencies]
 tempfile = "3"

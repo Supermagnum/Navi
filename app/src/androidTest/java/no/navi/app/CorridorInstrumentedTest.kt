@@ -35,7 +35,7 @@ class CorridorInstrumentedTest {
     @Before
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        dataDir = (context.getExternalFilesDir(null) ?: context.filesDir).also { it.mkdirs() }
+        dataDir = NaviAppData.resolve(context)
         iconsDir = File(context.filesDir, "icons").also { dest ->
             dest.mkdirs()
             val am = context.assets
@@ -183,7 +183,12 @@ class CorridorInstrumentedTest {
         )
         NaviMapTestHooks.pendingIconPng = iconPng
         NaviMapTestHooks.pendingRoute = result
-        NaviMapTestHooks.hideUiChrome = true
+        // Keep top/bottom drive HUD bars visible for route evidence screenshots.
+        NaviMapTestHooks.hideUiChrome = false
+        NaviMapTestHooks.hideSearchChrome = true
+        NaviMapTestHooks.gpsAltitudeM = 412.0
+        NaviMapTestHooks.requestShowTripEta = true
+        NaviMapTestHooks.requestBreakReminders = true
 
         // Wait for Compose to apply the route overlay + MapLibre style layers.
         var layers = 0
@@ -191,7 +196,7 @@ class CorridorInstrumentedTest {
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(500)
             layers = NaviMapTestHooks.lastReportedLayerCount
-            if (layers >= 2) break
+            if (layers >= 2 && NaviMapTestHooks.lastBreakHudVisible) break
         }
         assertTrue(
             "MapLibre style should expose basemap (+ route) layers, got $layers",

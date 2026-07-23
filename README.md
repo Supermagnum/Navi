@@ -133,12 +133,20 @@ local access and camping law can be stricter or different, so treat the rule as
 a Norway-oriented default, not universal advice. The HUD “Breaks” toggle gates
 reminder display; interval/duration defaults are edited in Drive settings.
 
-**Map & HUD.** MapLibre Vulkan renders the basemap. Collapsed top HUD shows GPS
+**Map & HUD.** MapLibre Vulkan renders the basemap. Collapsed top HUD shows
 altitude; tap opens map settings (rotation, Trip ETA, Breaks, Auto-zoom level).
 Collapsed bottom HUD shows zoom −/+, break time, trip ETA, and eco leaf; tap
 opens drive/rest/fuel settings. Near a turn, the temporary approach-instruction
 box shows maneuver icon + distance + next street
 ([`docs/approach-instructions.md`](docs/approach-instructions.md)).
+
+**Altitude on the emulator.** Android Studio’s Automotive emulator GNSS often
+reports a wrong vertical fix (`Location.altitude` / MSL fields that do not match
+terrain — e.g. `0` or a large offset at a known ~172 m site). That is an
+**emulator GPS limitation**, not an app bug. The HUD prefers on-disk DEM terrain
+height when a tile covers the fix so the readout stays useful during emulator
+development; on real hardware, GPS altitude can still be used when no DEM tile
+is present.
 
 **Tracks.** `TrackStore` upserts stations by id, expires by timeout, and filters
 with Haversine range ([`docs/APRS.md`](docs/APRS.md)). RF decode is not shipped;
@@ -154,12 +162,14 @@ dismisses; Cancel discards the sheet without saving that edit session.
 
 | Control | Behaviour |
 |---|---|
-| **Collapsed strip** | Shows Map label, GPS altitude, rotation hint; tap toggles map/display settings |
-| **Altitude** | GPS sensor altitude in meters (`Alt --` until a fix with altitude) |
+| **Collapsed strip** | Shows Map label, altitude, rotation hint; tap toggles map/display settings |
+| **Altitude** | DEM terrain height when a tile covers the fix; otherwise GPS altitude (`Alt --` until either is available). Emulator GNSS altitude is often wrong — that is the AVD, not the app (see note above) |
 | **Compass / Travel / N-up** | In map settings sheet: camera bearing from magnetic heading, GPS course, or north-up |
 | **Trip ETA** | In map settings: enables ETA line on the bottom bar |
 | **Breaks** | In map settings: enables/disables break-reminder text on the bottom bar |
 | **Auto-zoom** | In map settings: when on, snaps zoom to the configured level (−/+ 0.5 steps) |
+
+**Pre-departure duration estimates** (shown before the vehicle/hiker/cyclist starts moving) are calculated estimates, not live measurements — based on posted `maxspeed` limits (with a highway-class fallback where the tag is missing) for Car/Motorcycle/Truck, and fixed average-pace figures (16 min/km hiking, ~4 min/km cycling on average terrain) for Hiking/Cycling. These are starting estimates only; actual travel time will vary with real conditions, traffic, weather, fitness, and terrain, and updates automatically once real movement/GPS speed data is available.
 
 ### Bottom HUD (collapsed — tap status area for drive settings)
 
@@ -208,9 +218,10 @@ basemap. Collapsed top/bottom drive HUD (search chrome hidden):
 
 ![Idle both bars](docs/images/hud/hud_idle_both_bars.png)
 
-Hiking corridor near Eldåbu and Store Ramshøgda (Mapterhorn 3D hillshade):
+Car route Helgøya → Atnbrua on the Automotive emulator (HUD shows altitude;
+AVD GNSS altitude is often wrong — see note above):
 
-![Eldabu Ramshogda 3D](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
+![Helgøya to Atnbrua route](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
 
 All other screenshots (map zoom levels, route overlay, menus, settings
 overlays, eco leaf, rotation, bearing, moving icons):

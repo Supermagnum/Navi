@@ -60,6 +60,26 @@ pub fn migrate(conn: &Connection) -> SqlResult<()> {
 
         CREATE INDEX IF NOT EXISTS idx_elevation_job_tiles_status
             ON elevation_job_tiles(job_id, status);
+
+        CREATE TABLE IF NOT EXISTS pmtiles_jobs (
+            id TEXT PRIMARY KEY NOT NULL,
+            region_key TEXT NOT NULL,
+            url TEXT NOT NULL,
+            local_path TEXT NOT NULL,
+            bytes_received INTEGER NOT NULL DEFAULT 0,
+            total_bytes INTEGER,
+            status TEXT NOT NULL,
+            paused INTEGER NOT NULL DEFAULT 0,
+            min_lat REAL,
+            min_lon REAL,
+            max_lat REAL,
+            max_lon REAL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pmtiles_jobs_region
+            ON pmtiles_jobs(region_key);
         ",
     )
 }

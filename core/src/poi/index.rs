@@ -55,6 +55,19 @@ impl PoiIndex {
     }
 
     pub fn load_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        Self::load_from_pbf_filtered(path, None)
+    }
+
+    /// Load only POI nodes inside `bbox` `[min_lat, min_lon, max_lat, max_lon]`.
+    /// Used after routing so we never keep a full-region POI index in RAM.
+    pub fn load_from_pbf_bbox(path: impl AsRef<Path>, bbox: [f64; 4]) -> anyhow::Result<Self> {
+        Self::load_from_pbf_filtered(path, Some(bbox))
+    }
+
+    fn load_from_pbf_filtered(
+        path: impl AsRef<Path>,
+        bbox: Option<[f64; 4]>,
+    ) -> anyhow::Result<Self> {
         let mut index = Self::new();
         let file = std::fs::File::open(path)?;
         let reader = ElementReader::new(file);
@@ -63,6 +76,11 @@ impl PoiIndex {
                 Element::Node(node) => {
                     let lat = node.lat();
                     let lon = node.lon();
+                    if let Some(b) = bbox {
+                        if lat < b[0] || lat > b[2] || lon < b[1] || lon > b[3] {
+                            return;
+                        }
+                    }
                     let tags: HashMap<String, String> = node
                         .tags()
                         .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -72,22 +90,18 @@ impl PoiIndex {
                 Element::DenseNode(node) => {
                     let lat = node.lat();
                     let lon = node.lon();
+                    if let Some(b) = bbox {
+                        if lat < b[0] || lat > b[2] || lon < b[1] || lon > b[3] {
+                            return;
+                        }
+                    }
                     let tags: HashMap<String, String> = node
                         .tags()
                         .map(|(k, v)| (k.to_string(), v.to_string()))
                         .collect();
                     index.insert_node(node.id(), lat, lon, tags);
                 }
-                Element::Way(way) => {
-                    let tags: HashMap<String, String> = way
-                        .tags()
-                        .map(|(k, v)| (k.to_string(), v.to_string()))
-                        .collect();
-                    if !tags.is_empty() && classify_tags(&tags).is_empty() {
-                        return;
-                    }
-                    let _ = (way.id(), tags);
-                }
+                Element::Way(_) => {}
                 _ => {}
             }
         })?;

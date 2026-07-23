@@ -7,7 +7,7 @@ repository.workspace = true
 description = "UniFFI bindings for Navi / driver-break-core on Android and other hosts"
 
 [lib]
-crate-type = ["cdylib", "staticlib"]
+crate-type = ["cdylib", "staticlib", "rlib"]
 name = "navi"
 
 [dependencies]
@@ -15,7 +15,17 @@ driver-break-core = { path = "../core" }
 uniffi = { workspace = true, features = ["cli"] }
 osm4routing = { workspace = true }
 uuid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.14"
 
 [[bin]]
 name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
+
+[[bin]]
+name = "plan-skolla-rondvassbu"
+path = "src/bin/plan_skolla_rondvassbu.rs"

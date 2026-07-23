@@ -2,12 +2,14 @@
 
 mod config_store;
 mod elevation_jobs;
+mod pmtiles_jobs;
 mod schema;
 
 pub use config_store::ConfigStore;
 pub use elevation_jobs::{
     ElevationJobRecord, ElevationJobStore, JobScope, JobStatus, TileRecord, TileStatus,
 };
+pub use pmtiles_jobs::{PmtilesJobRecord, PmtilesJobStatus, PmtilesJobStore};
 pub use schema::migrate;
 
 use rusqlite::{Connection, Result as SqlResult};

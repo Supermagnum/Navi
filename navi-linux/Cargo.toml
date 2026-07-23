@@ -1,0 +1,21 @@
+[package]
+name = "navi-linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Linux gpsd + IMU sensor feed demo for Navi core (no desktop map UI)"
+publish = false
+
+[[bin]]
+name = "navi-linux"
+path = "src/main.rs"
+
+[features]
+default = ["gpsd", "linux-imu"]
+gpsd = ["driver-break-core/gpsd"]
+linux-imu = ["driver-break-core/linux-imu"]
+
+[dependencies]
+anyhow.workspace = true
+driver-break-core = { path = "../core" }

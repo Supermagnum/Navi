@@ -18,12 +18,32 @@ Both drive bars are **collapsed by default**.
 | Top (`TopDriveHud`) | Map label, altitude, rotation hint | Toggles `MapSettingsSheet` (rotation, Trip ETA, Breaks, Auto-zoom, experimental 3D) |
 | Bottom (`BottomDriveHud`) | Zoom −/+, trip ETA, eco leaf; **break countdown (time or distance) only when a route is planned** | Status area toggles `DriveSettingsSheet` (rest / fuel / eco / break display mode) |
 
-Altitude: GPS fixes without usable vertical accuracy (common on the AVD, often
-exactly `0.0`) are ignored and shown as `Alt --`. Instrumented screenshots inject
-`NaviMapTestHooks.gpsAltitudeM` for a stable non-zero reading.
+Altitude: when a DEM tile covers the fix, the HUD shows terrain height from
+on-disk Copernicus/SRTM (~MSL), not `Location.altitude` (AVD/network providers
+often report a plausible but wrong value). GPS altitude is used only if no DEM
+tile is present. Fixes without usable vertical data and no DEM show `Alt --`.
+Instrumented screenshots inject `NaviMapTestHooks.gpsAltitudeM` for a stable
+non-zero reading.
 
-Sheets close on Apply/Cancel/Close, or by tapping the same bar again. Tapping the
-map does not open or close either sheet.
+Sheets close on Save/Close, or by tapping the same bar again. Tapping the
+map does not open or close either sheet. Every menu (Map settings, Drive
+settings, Tools, Profile, Vehicle, Saved routes) exposes **Save** and **Close**.
+**Delete route** clears the active planned corridor from the Route panel (when a
+polyline is on the map) and removes a stored entry from **Saved routes**
+(per-row **Delete route**). Saved routes also offer **Delete planned route**
+while a corridor is active on the map.
+**Close** on Profile / Vehicle / Saved routes, or the **Close** next to Tools in
+the planning chrome, dismisses the whole route-planning panel so the map is
+usable; reopen with the **Route** button under the top Map bar.
+
+Route planning progress is visible in logcat:
+
+```bash
+adb logcat -s NaviRouting:I
+```
+
+Lines include `planning_progress pct=… eco=…`, then after 100%
+`planning_done duration_ms=…` and `planning_pois count=… names=…`.
 
 **Zoom:** the app owns **one** zoom −/+ set on the bottom bar. AAOS system chrome
 often shows separate climate − N + controls; those are not map zoom.

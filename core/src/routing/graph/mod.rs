@@ -12,13 +12,18 @@
 //! `routx` remains a valid alternative if its profile/tag API grows; swap the builder
 //! in [`builder`] without changing elevation or rest logic.
 
+mod bbox_build;
 mod builder;
 mod cache;
 mod reweight;
+mod road_near;
 
-pub use builder::{RouteGraph, RouteOptions, RoutingProfile};
+pub use builder::{
+    format_route_avoidance_report, GraphEdge, RouteGraph, RouteOptions, RoutingProfile,
+};
 pub use cache::{
-    graph_cache_path, load_or_build_reweighted, load_reweighted_graph, save_reweighted_graph,
-    GraphCacheFingerprint,
+    graph_cache_path, load_or_build_reweighted, load_or_build_reweighted_bbox,
+    load_reweighted_graph, save_reweighted_graph, GraphCacheFingerprint,
 };
 pub use reweight::reweight_graph_for_eco;
+pub use road_near::RoadNodeIndex;

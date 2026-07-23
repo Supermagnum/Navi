@@ -7,16 +7,68 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use driver_break_core::config::{EcoConfig, RestConfig};
+use driver_break_core::config::{EcoConfig, RestConfig, HIKING_MAIN_BREAK_DISTANCE_KM};
 use driver_break_core::icons::{self, IconTheme};
-use driver_break_core::poi::{PoiCategory, PoiIndex};
+use driver_break_core::poi::{PoiCategory, PoiIndex, PoiRecord};
+use driver_break_core::routing::{fixed_pace_minutes, motor_path_minutes, HIKING_MIN_PER_KM};
 use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
-use driver_break_core::routing::graph::{load_or_build_reweighted, RouteGraph, RoutingProfile};
+use driver_break_core::routing::graph::{
+    load_or_build_reweighted, load_or_build_reweighted_bbox, RoadNodeIndex, RouteGraph,
+    RoutingProfile,
+};
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::workers::WorkerPoolPlan;
 use osm4routing::NodeId;
+use serde::Deserialize;
+use serde_json::json;
 
 uniffi::setup_scaffolding!();
+
+fn ensure_native_logging() {
+    #[cfg(target_os = "android")]
+    {
+        android_logger::init_once(
+            android_logger::Config::default()
+                .with_max_level(log::LevelFilter::Info)
+                .with_tag("NaviNative"),
+        );
+    }
+}
+
+/// Initialize native logging so download progress appears in `adb logcat`
+/// (tag `NaviNative`). Safe to call more than once. Also invoked automatically
+/// from download FFI entry points.
+#[uniffi::export]
+pub fn init_native_logging() {
+    ensure_native_logging();
+    log::info!(target: "NaviDownload", "native logging ready");
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiDownloadProgress {
+    pub units_done: u64,
+    pub units_total: Option<u64>,
+    pub percent: Option<u32>,
+    pub label: String,
+}
+
+/// Snapshot of the in-flight download (region PBF or PMTiles extract) for UI polling.
+#[uniffi::export]
+pub fn download_progress_snapshot() -> FfiDownloadProgress {
+    let s = driver_break_core::download::progress::snapshot();
+    FfiDownloadProgress {
+        units_done: s.units_done,
+        units_total: s.units_total,
+        percent: s.percent,
+        label: s.label,
+    }
+}
+
+/// Clear the shared download progress snapshot.
+#[uniffi::export]
+pub fn download_progress_clear() {
+    driver_break_core::download::progress::clear();
+}
 
 /// Number of logical CPU cores detected on the host (routing worker autodetect input).
 #[uniffi::export]
@@ -98,6 +150,7 @@ pub fn provision_region_data(
     pbf_filename: String,
     elevation_tar_url: Option<String>,
 ) -> String {
+    ensure_native_logging();
     let result = driver_break_core::routing::region::provision_region_with_elev_tar(
         Path::new(&data_dir),
         &pbf_url,
@@ -128,6 +181,11 @@ pub fn provision_region_data(
 pub struct CorridorRouteResult {
     pub report: String,
     pub distance_km: f64,
+    /// Pre-departure duration estimate in minutes (before live GPS speed).
+    ///
+    /// Motor profiles: per-edge OSM `maxspeed` with highway-class fallback.
+    /// Hiking / cycling callers may override using fixed pace on `distance_km`.
+    pub eta_minutes: f64,
     pub cache_hit: bool,
     pub cold_build_s: f64,
     pub warm_load_s: f64,
@@ -137,6 +195,217 @@ pub struct CorridorRouteResult {
     pub poi_lon: f64,
     pub poi_name: String,
     pub poi_icon_key: String,
+    /// JSON array of pause / overnight stops along the route:
+    /// `[{"name","lat","lon","kind","icon"}]` where kind is `hut`, `tent`, or `amenity`.
+    pub break_pois_json: String,
+}
+
+fn empty_corridor(msg: String) -> CorridorRouteResult {
+    CorridorRouteResult {
+        report: msg,
+        distance_km: 0.0,
+        eta_minutes: 0.0,
+        cache_hit: false,
+        cold_build_s: 0.0,
+        warm_load_s: 0.0,
+        route_polyline: String::new(),
+        poi_lat: 0.0,
+        poi_lon: 0.0,
+        poi_name: String::new(),
+        poi_icon_key: String::new(),
+        break_pois_json: String::from("[]"),
+    }
+}
+
+fn sample_polyline_km(polyline: &str) -> Vec<(f64, f64, f64)> {
+    // Returns (lon, lat, cumulative_km)
+    let mut out = Vec::new();
+    let mut cum = 0.0;
+    let mut prev: Option<(f64, f64)> = None;
+    for part in polyline.split(';') {
+        let bits: Vec<_> = part.split(',').collect();
+        if bits.len() != 2 {
+            continue;
+        }
+        let (Ok(lon), Ok(lat)) = (bits[0].parse::<f64>(), bits[1].parse::<f64>()) else {
+            continue;
+        };
+        if let Some((plon, plat)) = prev {
+            cum += haversine_m(plat, plon, lat, lon) / 1000.0;
+        }
+        out.push((lon, lat, cum));
+        prev = Some((lon, lat));
+    }
+    out
+}
+
+fn interpolate_at_km(samples: &[(f64, f64, f64)], target_km: f64) -> (f64, f64) {
+    if samples.is_empty() {
+        return (0.0, 0.0);
+    }
+    if target_km <= samples[0].2 {
+        return (samples[0].1, samples[0].0); // lat, lon
+    }
+    for w in samples.windows(2) {
+        let (lon0, lat0, k0) = w[0];
+        let (lon1, lat1, k1) = w[1];
+        if target_km <= k1 {
+            let t = if (k1 - k0).abs() < 1e-9 {
+                0.0
+            } else {
+                (target_km - k0) / (k1 - k0)
+            };
+            let lat = lat0 + (lat1 - lat0) * t;
+            let lon = lon0 + (lon1 - lon0) * t;
+            return (lat, lon);
+        }
+    }
+    let last = samples.last().unwrap();
+    (last.1, last.0)
+}
+
+fn first_named<'a>(hits: &[&'a PoiRecord]) -> Option<&'a PoiRecord> {
+    hits.iter()
+        .copied()
+        .find(|p| p.name.as_ref().is_some_and(|n| !n.trim().is_empty()))
+        .or_else(|| hits.first().copied())
+}
+
+/// Prefer hut/cabin/shelter; else a camp pitch; else an unlabeled synthetic tent
+/// point on the corridor (never label mountain peaks as pause stops).
+fn pick_pause_at(
+    poi: &PoiIndex,
+    lat: f64,
+    lon: f64,
+    hut_radius_m: f64,
+) -> (String, f64, f64, String, String) {
+    for cat in [
+        PoiCategory::NetworkHut,
+        PoiCategory::Cabin,
+        PoiCategory::OvernightFacility,
+    ] {
+        if let Some(p) = first_named(&poi.nearest(cat, lat, lon, hut_radius_m)) {
+            let name = p
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("Hut {}", p.osm_id));
+            return (name, p.lat, p.lon, "hut".into(), p.icon_key.clone());
+        }
+    }
+    // Tent amenity only (camp_site / camp_pitch), never named peaks/mountains.
+    if let Some(p) = first_named(&poi.nearest(PoiCategory::TentSite, lat, lon, hut_radius_m * 1.5))
+    {
+        let name = p
+            .name
+            .clone()
+            .unwrap_or_else(|| "Tent site".into());
+        return (name, p.lat, p.lon, "tent".into(), p.icon_key.clone());
+    }
+    (
+        "Tent site".into(),
+        lat,
+        lon,
+        "tent".into(),
+        "shelter".into(),
+    )
+}
+
+/// Motor-profile break: amenity must be within 1 km of the road network, and
+/// among those we pick the one closest to the route sample.
+fn pick_motor_pause_at(
+    poi: &PoiIndex,
+    roads: &RoadNodeIndex,
+    lat: f64,
+    lon: f64,
+    search_radius_m: f64,
+) -> (String, f64, f64, String, String) {
+    let mut by_id: std::collections::HashMap<i64, &PoiRecord> = std::collections::HashMap::new();
+    for cat in [
+        PoiCategory::General,
+        PoiCategory::Restroom,
+        PoiCategory::OvernightFacility,
+        PoiCategory::Cabin,
+    ] {
+        for p in poi.nearest(cat, lat, lon, search_radius_m) {
+            by_id.entry(p.osm_id).or_insert(p);
+        }
+    }
+    let mut candidates: Vec<&PoiRecord> = by_id
+        .into_values()
+        .filter(|p| roads.within_road_link(p.lat, p.lon))
+        .collect();
+    // Closest to the route sample first (prefer on/near the planned path).
+    candidates.sort_by(|a, b| {
+        let da = haversine_m(lat, lon, a.lat, a.lon);
+        let db = haversine_m(lat, lon, b.lat, b.lon);
+        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    if let Some(p) = first_named(&candidates) {
+        let kind = if p.categories.contains(&PoiCategory::Restroom) {
+            "amenity"
+        } else if p.categories.contains(&PoiCategory::OvernightFacility)
+            || p.categories.contains(&PoiCategory::Cabin)
+        {
+            "hut"
+        } else {
+            "amenity"
+        };
+        let name = p
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("Stop {}", p.osm_id));
+        return (name, p.lat, p.lon, kind.into(), p.icon_key.clone());
+    }
+    // Route sample itself is on the car graph — always road-linked.
+    (
+        "Rest stop".into(),
+        lat,
+        lon,
+        "amenity".into(),
+        "fuel".into(),
+    )
+}
+
+/// `roads`: when set (car / truck / moto / motorhome), only road-linked POIs
+/// within [`RoadNodeIndex::MAX_LINK_M`] are used, preferring closest to the route.
+fn build_break_pois_json(
+    poi: &PoiIndex,
+    polyline: &str,
+    interval_km: f64,
+    search_radius_m: f64,
+    roads: Option<&RoadNodeIndex>,
+) -> String {
+    let samples = sample_polyline_km(polyline);
+    if samples.len() < 2 {
+        return "[]".into();
+    }
+    let total = samples.last().map(|s| s.2).unwrap_or(0.0);
+    let mut stops = Vec::new();
+    let mut next = interval_km;
+    while next < total - 0.5 {
+        let (lat, lon) = interpolate_at_km(&samples, next);
+        let (name, plat, plon, kind, icon) = match roads {
+            Some(r) => pick_motor_pause_at(poi, r, lat, lon, search_radius_m.min(5_000.0)),
+            None => pick_pause_at(poi, lat, lon, search_radius_m),
+        };
+        // Avoid stacking duplicate names within ~2 km.
+        let dup = stops.iter().any(|s: &serde_json::Value| {
+            let slat = s["lat"].as_f64().unwrap_or(0.0);
+            let slon = s["lon"].as_f64().unwrap_or(0.0);
+            haversine_m(plat, plon, slat, slon) < 2_000.0
+        });
+        if !dup {
+            stops.push(json!({
+                "name": name,
+                "lat": plat,
+                "lon": plon,
+                "kind": kind,
+                "icon": icon,
+            }));
+        }
+        next += interval_km;
+    }
+    serde_json::to_string(&stops).unwrap_or_else(|_| "[]".into())
 }
 
 /// Real on-device corridor pipeline (Espa -> Atnbrufossen).
@@ -151,18 +420,7 @@ pub fn run_car_corridor_pipeline(
     cache_dir: String,
     break_interval_hours: f64,
 ) -> CorridorRouteResult {
-    let empty = |msg: String| CorridorRouteResult {
-        report: msg,
-        distance_km: 0.0,
-        cache_hit: false,
-        cold_build_s: 0.0,
-        warm_load_s: 0.0,
-        route_polyline: String::new(),
-        poi_lat: 0.0,
-        poi_lon: 0.0,
-        poi_name: String::new(),
-        poi_icon_key: String::new(),
-    };
+    let empty = empty_corridor;
 
     let plan = WorkerPoolPlan::detect();
     WorkerPoolPlan::lower_current_thread_priority();
@@ -312,6 +570,7 @@ pub fn run_car_corridor_pipeline(
     }
 
     let dist_km = distance_m / 1000.0;
+    let eta_minutes = motor_path_minutes(&graph, &path);
     let avg_speed = 90.0;
     let duration_h = dist_km / avg_speed;
     let mut rest = RestConfig::default();
@@ -357,8 +616,17 @@ pub fn run_car_corridor_pipeline(
         "map_poi={poi_name:?} ({poi_lat:.5},{poi_lon:.5}) icon={poi_icon}\n"
     ));
 
+    let break_pois_json = build_break_pois_json(
+        &poi_index,
+        &polyline,
+        break_at_km.max(15.0),
+        12_000.0,
+        Some(&RoadNodeIndex::from_graph(&graph)),
+    );
+    report.push_str(&format!("break_pois={break_pois_json}\n"));
+
     report.push_str(&format!(
-        "distance_km={dist_km:.2}; distance_m={distance_m:.0}; path_cost={cost:.0}; duration_h={duration_h:.2}\n\
+        "distance_km={dist_km:.2}; distance_m={distance_m:.0}; path_cost={cost:.0}; duration_h={duration_h:.2}; eta_min={eta_minutes:.1}\n\
          required_breaks={breaks}; break_at_km={break_at_km:.1}\n\
          route_points={}\n",
         path.len()
@@ -383,6 +651,7 @@ pub fn run_car_corridor_pipeline(
     CorridorRouteResult {
         report,
         distance_km: dist_km,
+        eta_minutes,
         cache_hit: hit2,
         cold_build_s: cold_s,
         warm_load_s: warm_s,
@@ -391,6 +660,393 @@ pub fn run_car_corridor_pipeline(
         poi_lon,
         poi_name,
         poi_icon_key: poi_icon,
+        break_pois_json,
+    }
+}
+
+/// Plan a car route between two WGS84 points using a local OSM `.pbf` graph.
+///
+/// Unlike [`run_car_corridor_pipeline`], this does not require the Espa–Atnbrufossen
+/// endpoints or a minimum corridor length — suitable for local Raufoss-scale trips.
+#[uniffi::export]
+pub fn plan_car_route(
+    pbf_path: String,
+    elev_dir: String,
+    cache_dir: String,
+    start_lat: f64,
+    start_lon: f64,
+    end_lat: f64,
+    end_lon: f64,
+    use_eco: bool,
+) -> CorridorRouteResult {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        plan_car_route_inner(
+            pbf_path, elev_dir, cache_dir, start_lat, start_lon, end_lat, end_lon, use_eco,
+        )
+    })) {
+        Ok(result) => result,
+        Err(_) => empty_corridor(
+            "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: native panic during plan_car_route\n".into(),
+        ),
+    }
+}
+
+fn plan_car_route_inner(
+    pbf_path: String,
+    elev_dir: String,
+    cache_dir: String,
+    start_lat: f64,
+    start_lon: f64,
+    end_lat: f64,
+    end_lon: f64,
+    use_eco: bool,
+) -> CorridorRouteResult {
+    let empty = empty_corridor;
+
+    let plan = WorkerPoolPlan::detect();
+    WorkerPoolPlan::lower_current_thread_priority();
+    let _ = plan.install_rayon_pool();
+
+    let mut report = String::new();
+    report.push_str("TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\n");
+    report.push_str(&format!(
+        "start={start_lat:.6},{start_lon:.6}; end={end_lat:.6},{end_lon:.6}; use_eco={use_eco}\n"
+    ));
+
+    let pbf = Path::new(pbf_path.trim());
+    if !pbf.is_file() {
+        report.push_str(&format!("FAIL: PBF missing: \"{pbf_path}\"\n"));
+        return empty(report);
+    }
+    let elev = PathBuf::from(&elev_dir);
+    let cache = PathBuf::from(&cache_dir);
+    let _ = std::fs::create_dir_all(&cache);
+    let eco = passat_eco();
+    let elevation = ElevationService::new(ElevationCache::new(&elev));
+    let _ = elevation.warm_bbox([
+        start_lat.min(end_lat) - 0.05,
+        start_lon.min(end_lon) - 0.05,
+        start_lat.max(end_lat) + 0.05,
+        start_lon.max(end_lon) + 0.05,
+    ]);
+
+    let t0 = Instant::now();
+    // Clip to the trip bbox so we never load a full Ostlandet car graph into RAM
+    // (that OOMs 4GB Automotive AVDs). Still reads the same region .pbf.
+    let pad = 0.35;
+    let bbox = [
+        start_lat.min(end_lat) - pad,
+        start_lon.min(end_lon) - pad,
+        start_lat.max(end_lat) + pad,
+        start_lon.max(end_lon) + pad,
+    ];
+    report.push_str(&format!(
+        "bbox={:.3},{:.3},{:.3},{:.3}\n",
+        bbox[0], bbox[1], bbox[2], bbox[3]
+    ));
+    driver_break_core::download::progress::set(
+        0,
+        Some(5),
+        "Planning route: building area graph…",
+    );
+    let (graph, cache_hit) = match load_or_build_reweighted_bbox(
+        pbf,
+        &cache,
+        RoutingProfile::Car,
+        &elevation,
+        &eco,
+        bbox,
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            report.push_str(&format!("FAIL: graph build: {e:#}\n"));
+            return empty(report);
+        }
+    };
+    let build_s = t0.elapsed().as_secs_f64();
+    report.push_str(&format!(
+        "build_s={build_s:.2}; cache_hit={cache_hit}; nodes={}; edges={}\n",
+        graph.nodes.len(),
+        graph.edges.len()
+    ));
+
+    driver_break_core::download::progress::set(3, Some(5), "Planning route: finding path…");
+    let s = nearest(&graph, start_lat, start_lon);
+    let g = nearest(&graph, end_lat, end_lon);
+    let Some((path, cost)) = graph.shortest_path(s, g, use_eco) else {
+        report.push_str("FAIL: no route between snapped nodes\n");
+        return empty(report);
+    };
+    if path.len() < 2 {
+        report.push_str("FAIL: zero-length route\n");
+        return empty(report);
+    }
+
+    let mut distance_m = 0.0;
+    let mut polyline = String::new();
+    // Keep denser geometry on short urban trips so MapLibre does not look like
+    // a single chord (corridor pipeline decimates every 20th node).
+    let stride = if path.len() < 80 { 1 } else { 5 };
+    for (i, w) in path.windows(2).enumerate() {
+        if let Some(idx) = graph.edge_index(w[0], w[1]) {
+            distance_m += graph.edges[idx].length_m;
+        }
+        let n0 = &graph.nodes[&w[0]];
+        if i == 0 {
+            polyline.push_str(&format!("{},{}", n0.coord.x, n0.coord.y));
+        }
+        let n1 = &graph.nodes[&w[1]];
+        if i % stride == 0 || i + 1 == path.len().saturating_sub(1) {
+            polyline.push_str(&format!(";{},{}", n1.coord.x, n1.coord.y));
+        }
+    }
+    if let Some(last) = path.last() {
+        let n = &graph.nodes[last];
+        let tail = format!("{},{}", n.coord.x, n.coord.y);
+        if !polyline.ends_with(&tail) {
+            polyline.push(';');
+            polyline.push_str(&tail);
+        }
+    }
+
+    let dist_km = distance_m / 1000.0;
+    let eta_minutes = motor_path_minutes(&graph, &path);
+    let path_nodes = path.len();
+    driver_break_core::download::progress::set(4, Some(5), "Planning route: break stops…");
+    // Keep a road-proximity index; drop the heavy graph before the POI scan.
+    let roads = RoadNodeIndex::from_graph(&graph);
+    drop(graph);
+    // Clip POI load to the same trip bbox (never a full Ostlandet POI scan).
+    let poi_index = PoiIndex::load_from_pbf_bbox(pbf, bbox).unwrap_or_else(|_| PoiIndex::new());
+    let break_interval_km = 40.0_f64.min((dist_km / 2.0).max(15.0));
+    // Car / truck / moto / motorhome: road-linked POIs only (≤1 km from a road),
+    // preferring the stop closest to the planned route.
+    let break_pois_json = build_break_pois_json(
+        &poi_index,
+        &polyline,
+        break_interval_km,
+        5_000.0,
+        Some(&roads),
+    );
+    report.push_str(&format!(
+        "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={path_nodes}; path_cost={cost:.0}; polyline_chars={}; break_pois={}\nPASS\n",
+        polyline.len(),
+        break_pois_json
+    ));
+    driver_break_core::download::progress::set(5, Some(5), "Planning route: done");
+
+    CorridorRouteResult {
+        report,
+        distance_km: dist_km,
+        eta_minutes,
+        cache_hit,
+        cold_build_s: build_s,
+        warm_load_s: 0.0,
+        route_polyline: polyline,
+        poi_lat: end_lat,
+        poi_lon: end_lon,
+        poi_name: String::from("End"),
+        poi_icon_key: String::from("fuel"),
+        break_pois_json,
+    }
+}
+
+/// Plan a hiking (foot) route through ordered waypoints.
+///
+/// `waypoints_json` is `[{"name","lat","lon"}, ...]` with at least two points
+/// (start … vias … end). Pause stops prefer huts/cabins; otherwise camp pitches
+/// or a synthetic corridor tent (never mountain peak names).
+#[uniffi::export]
+pub fn plan_hiking_route(
+    pbf_path: String,
+    elev_dir: String,
+    cache_dir: String,
+    waypoints_json: String,
+) -> CorridorRouteResult {
+    #[derive(Deserialize)]
+    struct Wp {
+        name: String,
+        lat: f64,
+        lon: f64,
+    }
+
+    let mut report = String::from("TEST_KIND=PLAN_HIKING_ROUTE\nDATA_SOURCE=real_pbf\n");
+    let wps: Vec<Wp> = match serde_json::from_str(&waypoints_json) {
+        Ok(v) => v,
+        Err(e) => {
+            report.push_str(&format!("FAIL: waypoints_json: {e}\n"));
+            return empty_corridor(report);
+        }
+    };
+    if wps.len() < 2 {
+        report.push_str("FAIL: need at least start and end waypoints\n");
+        return empty_corridor(report);
+    }
+    report.push_str(&format!("waypoints={}\n", wps.len()));
+
+    let plan = WorkerPoolPlan::detect();
+    WorkerPoolPlan::lower_current_thread_priority();
+    let _ = plan.install_rayon_pool();
+
+    let pbf = Path::new(pbf_path.trim());
+    if !pbf.is_file() {
+        report.push_str(&format!("FAIL: PBF missing: \"{pbf_path}\"\n"));
+        return empty_corridor(report);
+    }
+    let elev = PathBuf::from(&elev_dir);
+    let cache = PathBuf::from(&cache_dir);
+    let _ = std::fs::create_dir_all(&cache);
+    let eco = passat_eco();
+    let elevation = ElevationService::new(ElevationCache::new(&elev));
+    let min_lat = wps.iter().map(|w| w.lat).fold(f64::INFINITY, f64::min);
+    let max_lat = wps.iter().map(|w| w.lat).fold(f64::NEG_INFINITY, f64::max);
+    let min_lon = wps.iter().map(|w| w.lon).fold(f64::INFINITY, f64::min);
+    let max_lon = wps.iter().map(|w| w.lon).fold(f64::NEG_INFINITY, f64::max);
+    let _ = elevation.warm_bbox([min_lat - 0.1, min_lon - 0.1, max_lat + 0.1, max_lon + 0.1]);
+
+    let t0 = Instant::now();
+    let (graph, cache_hit) = match load_or_build_reweighted(
+        pbf,
+        &cache,
+        RoutingProfile::Foot,
+        &elevation,
+        &eco,
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            report.push_str(&format!("FAIL: foot graph build: {e:#}\n"));
+            return empty_corridor(report);
+        }
+    };
+    let build_s = t0.elapsed().as_secs_f64();
+    report.push_str(&format!(
+        "build_s={build_s:.2}; cache_hit={cache_hit}; nodes={}; edges={}\n",
+        graph.nodes.len(),
+        graph.edges.len()
+    ));
+
+    let mut full_path: Vec<NodeId> = Vec::new();
+    let mut distance_m = 0.0;
+    for pair in wps.windows(2) {
+        let s = nearest(&graph, pair[0].lat, pair[0].lon);
+        let g = nearest(&graph, pair[1].lat, pair[1].lon);
+        let Some((path, _cost)) = graph.shortest_path(s, g, false) else {
+            report.push_str(&format!(
+                "FAIL: no foot route {} -> {}\n",
+                pair[0].name, pair[1].name
+            ));
+            return empty_corridor(report);
+        };
+        if path.len() < 2 {
+            report.push_str(&format!(
+                "FAIL: zero-length leg {} -> {}\n",
+                pair[0].name, pair[1].name
+            ));
+            return empty_corridor(report);
+        }
+        for w in path.windows(2) {
+            if let Some(idx) = graph.edge_index(w[0], w[1]) {
+                distance_m += graph.edges[idx].length_m;
+            }
+        }
+        if full_path.is_empty() {
+            full_path.extend(path);
+        } else {
+            full_path.extend(path.into_iter().skip(1));
+        }
+    }
+
+    let mut polyline = String::new();
+    let stride = if full_path.len() < 120 { 1 } else { 8 };
+    for (i, id) in full_path.iter().enumerate() {
+        let n = &graph.nodes[id];
+        if i == 0 {
+            polyline.push_str(&format!("{},{}", n.coord.x, n.coord.y));
+        } else if i % stride == 0 || i + 1 == full_path.len() {
+            polyline.push_str(&format!(";{},{}", n.coord.x, n.coord.y));
+        }
+    }
+
+    let dist_km = distance_m / 1000.0;
+    let poi_index = match PoiIndex::load_from_pbf(pbf) {
+        Ok(i) => i,
+        Err(e) => {
+            report.push_str(&format!("FAIL: POI index: {e:#}\n"));
+            return empty_corridor(report);
+        }
+    };
+    // Hiking rast interval (~11.3 km); include named vias that are huts as pauses too.
+    let mut break_pois_json = build_break_pois_json(
+        &poi_index,
+        &polyline,
+        HIKING_MAIN_BREAK_DISTANCE_KM,
+        15_000.0,
+        None,
+    );
+    // Ensure hut vias/end appear as pause labels even if the interval skipped them.
+    if let Ok(mut arr) = serde_json::from_str::<Vec<serde_json::Value>>(&break_pois_json) {
+        for wp in &wps {
+            let lower = wp.name.to_lowercase();
+            if lower.contains("hytte")
+                || lower.contains("hytta")
+                || lower.contains("bu")
+                || lower.contains("cabin")
+                || lower.contains("rondvass")
+            {
+                let already = arr.iter().any(|s| {
+                    s["name"]
+                        .as_str()
+                        .map(|n: &str| n.eq_ignore_ascii_case(&wp.name))
+                        .unwrap_or(false)
+                });
+                if !already && !lower.contains("skolla") {
+                    // Skip pure start road addresses; keep hut vias/end.
+                    if lower.contains("harland")
+                        || lower.contains("eldå")
+                        || lower.contains("elda")
+                        || lower.contains("rondvass")
+                    {
+                        arr.push(json!({
+                            "name": wp.name,
+                            "lat": wp.lat,
+                            "lon": wp.lon,
+                            "kind": "hut",
+                            "icon": "cabin",
+                        }));
+                    }
+                }
+            }
+        }
+        // Never label mountain peaks (e.g. Store Ramshøgda) as pause stops.
+        arr.retain(|s| {
+            let name = s["name"].as_str().unwrap_or("").to_lowercase();
+            let kind = s["kind"].as_str().unwrap_or("");
+            !(kind == "tent" && name.contains("ramsh"))
+        });
+        break_pois_json = serde_json::to_string(&arr).unwrap_or(break_pois_json);
+    }
+
+    let end = wps.last().unwrap();
+    // Hiking: fixed 16 min/km (no climb adjustment in this pass).
+    let eta_minutes = fixed_pace_minutes(dist_km, HIKING_MIN_PER_KM);
+    report.push_str(&format!(
+        "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={}; break_pois={break_pois_json}\nPASS\n",
+        full_path.len()
+    ));
+
+    CorridorRouteResult {
+        report,
+        distance_km: dist_km,
+        eta_minutes,
+        cache_hit,
+        cold_build_s: build_s,
+        warm_load_s: 0.0,
+        route_polyline: polyline,
+        poi_lat: end.lat,
+        poi_lon: end.lon,
+        poi_name: end.name.clone(),
+        poi_icon_key: String::from("cabin"),
+        break_pois_json,
     }
 }
 
@@ -546,6 +1202,7 @@ pub enum TravelProfile {
     CarElectric,
     Truck,
     TruckElectric,
+    MobileHome,
     Bicycle,
     Hiking,
     Motorcycle,
@@ -559,6 +1216,7 @@ impl TravelProfile {
             Self::CarElectric => driver_break_core::config::Profile::CarElectric,
             Self::Truck => driver_break_core::config::Profile::Truck,
             Self::TruckElectric => driver_break_core::config::Profile::TruckElectric,
+            Self::MobileHome => driver_break_core::config::Profile::MobileHome,
             Self::Bicycle => driver_break_core::config::Profile::Cycling,
             Self::Hiking => driver_break_core::config::Profile::Hiking,
             Self::Motorcycle => driver_break_core::config::Profile::Motorcycle,
@@ -604,8 +1262,10 @@ pub struct FfiSavedRoute {
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct FfiVehicleLimits {
     pub axle_weight_kg: Option<f64>,
+    pub bogie_weight_kg: Option<f64>,
     pub height_m: Option<f64>,
     pub width_m: Option<f64>,
+    pub length_m: Option<f64>,
     pub total_weight_kg: Option<f64>,
 }
 
@@ -728,8 +1388,10 @@ pub fn load_vehicle_limits(data_dir: String) -> FfiVehicleLimits {
     let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
         return FfiVehicleLimits {
             axle_weight_kg: None,
+            bogie_weight_kg: None,
             height_m: None,
             width_m: None,
+            length_m: None,
             total_weight_kg: None,
         };
     };
@@ -737,8 +1399,10 @@ pub fn load_vehicle_limits(data_dir: String) -> FfiVehicleLimits {
     let limits = store.load_vehicle_limits().unwrap_or_default();
     FfiVehicleLimits {
         axle_weight_kg: limits.axle_weight_kg,
+        bogie_weight_kg: limits.bogie_weight_kg,
         height_m: limits.height_m,
         width_m: limits.width_m,
+        length_m: limits.length_m,
         total_weight_kg: limits.total_weight_kg,
     }
 }
@@ -752,8 +1416,10 @@ pub fn save_vehicle_limits(data_dir: String, limits: FfiVehicleLimits) -> bool {
     store
         .save_vehicle_limits(&driver_break_core::config::VehicleLimits {
             axle_weight_kg: limits.axle_weight_kg,
+            bogie_weight_kg: limits.bogie_weight_kg,
             height_m: limits.height_m,
             width_m: limits.width_m,
+            length_m: limits.length_m,
             total_weight_kg: limits.total_weight_kg,
         })
         .is_ok()
@@ -830,28 +1496,83 @@ pub fn save_fuel_config(data_dir: String, config: FfiFuelConfig) -> bool {
         .is_ok()
 }
 
-/// Stub GPS fix for UI actions until Android fused location is wired.
+/// Sample on-disk DEM elevation (meters) at a WGS84 point, or null if no tile.
+#[uniffi::export]
+pub fn elevation_at(elev_dir: String, lat: f64, lon: f64) -> Option<f64> {
+    let elev = ElevationService::new(ElevationCache::new(Path::new(&elev_dir)));
+    elev.get_elevation(lat, lon)
+}
+
+/// Stub GPS fix — Android LocationManager is the source of truth for the map puck.
 #[uniffi::export]
 pub fn last_gps_fix() -> FfiGpsFix {
     FfiGpsFix {
-        lat: 61.2,
-        lon: 10.7,
-        available: true,
+        lat: 0.0,
+        lon: 0.0,
+        available: false,
     }
 }
 
-/// Format a short validation blurb for avoid-major-roads / priority-path share.
+/// Format a short validation blurb for avoid-major / toll / ferry preferences.
 #[uniffi::export]
 pub fn format_avoid_major_report(avoid_major: bool, priority_path_share_pct: f64) -> String {
-    if avoid_major {
-        format!(
-            "Avoid motorways/trunk/primary: ON\nPriority-path share on last plan: {priority_path_share_pct:.1}%"
-        )
-    } else {
-        format!(
-            "Avoid motorways/trunk/primary: OFF\nPriority-path share on last plan: {priority_path_share_pct:.1}%"
-        )
+    format_route_avoidance_report(avoid_major, false, false, priority_path_share_pct)
+}
+
+/// Extended avoidance report (motorways + tolls + ferries). Defaults for toll/ferry: off.
+#[uniffi::export]
+pub fn format_route_avoidance_report(
+    avoid_major: bool,
+    avoid_tolls: bool,
+    avoid_ferries: bool,
+    priority_path_share_pct: f64,
+) -> String {
+    let opts = driver_break_core::RouteOptions {
+        avoid_major_roads: avoid_major,
+        avoid_tolls,
+        avoid_ferries,
+        vehicle: None,
+    };
+    driver_break_core::format_route_avoidance_report(&opts, 0, priority_path_share_pct)
+}
+
+/// Approach-box phase for a distance (shared with voice guidance timing).
+#[uniffi::export]
+pub fn approach_phase_for_distance(active: bool, distance_m: f64) -> String {
+    let g = driver_break_core::NavGuidance {
+        active,
+        kind: driver_break_core::ManeuverKind::Unknown,
+        distance_m,
+        next_street: None,
+        roundabout_exit: None,
+    };
+    match g.phase() {
+        driver_break_core::ApproachPhase::Hidden => "hidden".into(),
+        driver_break_core::ApproachPhase::Appear => "appear".into(),
+        driver_break_core::ApproachPhase::Urgency => "urgency".into(),
     }
+}
+
+/// Format approach distance for display (metric vs imperial).
+#[uniffi::export]
+pub fn format_approach_distance(distance_m: f64, prefer_metric: bool) -> String {
+    driver_break_core::format_distance_m(distance_m, prefer_metric)
+}
+
+/// Locked approach thresholds (meters).
+#[uniffi::export]
+pub fn approach_appear_m() -> f64 {
+    driver_break_core::APPROACH_APPEAR_M
+}
+
+#[uniffi::export]
+pub fn approach_urgency_m() -> f64 {
+    driver_break_core::APPROACH_URGENCY_M
+}
+
+#[uniffi::export]
+pub fn approach_hide_m() -> f64 {
+    driver_break_core::APPROACH_HIDE_M
 }
 
 /// Bind a Geofabrik region to the local extract (required before update checks).
@@ -1055,4 +1776,311 @@ pub fn offset_lat_lon_m(lat: f64, lon: f64, east_m: f64, north_m: f64) -> Vec<f6
 #[uniffi::export]
 pub fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     driver_break_core::tracks::haversine_km(lat1, lon1, lat2, lon2)
+}
+
+// --- Offline PMTiles basemap downloads ---------------------------------------
+
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
+use driver_break_core::download::DownloadControl;
+use driver_break_core::routing::basemap::{
+    default_pmtiles_planet_url, geofabrik_path_to_region_key, region_bbox, PmtilesDownloader,
+    PROTOMAPS_PLANET_FALLBACK_URL,
+};
+use driver_break_core::storage::{PmtilesJobStatus, Storage};
+
+fn pmtiles_controls() -> &'static Mutex<HashMap<String, DownloadControl>> {
+    static CONTROLS: OnceLock<Mutex<HashMap<String, DownloadControl>>> = OnceLock::new();
+    CONTROLS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn pmtiles_db(data_dir: &Path) -> Result<Storage, String> {
+    let db = data_dir.join("navi.db");
+    if let Some(parent) = db.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    Storage::open(&db).map_err(|e| e.to_string())
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiPmtilesJob {
+    pub id: String,
+    pub region_key: String,
+    pub url: String,
+    pub local_path: String,
+    pub bytes_received: u64,
+    pub total_bytes: Option<u64>,
+    pub status: String,
+    pub paused: bool,
+    pub min_lat: Option<f64>,
+    pub min_lon: Option<f64>,
+    pub max_lat: Option<f64>,
+    pub max_lon: Option<f64>,
+}
+
+fn map_pmtiles_job(j: driver_break_core::storage::PmtilesJobRecord) -> FfiPmtilesJob {
+    let status = match j.status {
+        PmtilesJobStatus::Pending => "pending",
+        PmtilesJobStatus::Running => "running",
+        PmtilesJobStatus::Paused => "paused",
+        PmtilesJobStatus::Completed => "completed",
+        PmtilesJobStatus::Cancelled => "cancelled",
+        PmtilesJobStatus::Failed => "failed",
+    };
+    FfiPmtilesJob {
+        id: j.id.to_string(),
+        region_key: j.region_key,
+        url: j.url,
+        local_path: j.local_path,
+        bytes_received: j.bytes_received,
+        total_bytes: j.total_bytes,
+        status: status.to_string(),
+        paused: j.paused,
+        min_lat: j.min_lat,
+        min_lon: j.min_lon,
+        max_lat: j.max_lat,
+        max_lon: j.max_lon,
+    }
+}
+
+#[uniffi::export]
+pub fn pmtiles_default_base_url() -> String {
+    default_pmtiles_planet_url()
+}
+
+/// Current Protomaps public planet URL (resolved from builds metadata when online).
+#[uniffi::export]
+pub fn pmtiles_planet_url() -> String {
+    default_pmtiles_planet_url()
+}
+
+#[uniffi::export]
+pub fn pmtiles_fallback_planet_url() -> String {
+    PROTOMAPS_PLANET_FALLBACK_URL.to_string()
+}
+
+#[uniffi::export]
+pub fn pmtiles_region_key(geofabrik_path: String) -> String {
+    geofabrik_path_to_region_key(&geofabrik_path)
+}
+
+#[uniffi::export]
+pub fn pmtiles_region_bbox(geofabrik_path: String) -> Option<Vec<f64>> {
+    region_bbox(&geofabrik_path).map(|b| b.to_vec())
+}
+
+/// Queue a Mapterhorn DEM extract for the same Geofabrik bbox as the basemap.
+/// Writes `{region_key}_dem.pmtiles` beside the vector extract.
+#[uniffi::export]
+pub fn pmtiles_queue_dem_region(data_dir: String, geofabrik_path: String) -> FfiPmtilesJob {
+    let empty = |msg: &str| FfiPmtilesJob {
+        id: String::new(),
+        region_key: String::new(),
+        url: String::new(),
+        local_path: String::new(),
+        bytes_received: 0,
+        total_bytes: None,
+        status: format!("failed:{msg}"),
+        paused: false,
+        min_lat: None,
+        min_lon: None,
+        max_lat: None,
+        max_lon: None,
+    };
+    let storage = match pmtiles_db(Path::new(&data_dir)) {
+        Ok(s) => s,
+        Err(e) => return empty(&e),
+    };
+    let bbox = match region_bbox(&geofabrik_path) {
+        Some(b) => b,
+        None => return empty("no bbox for geofabrik path"),
+    };
+    let base_key = geofabrik_path_to_region_key(&geofabrik_path);
+    let dem_key = format!("{base_key}_dem");
+    let dl = PmtilesDownloader::new(storage, PathBuf::from(&data_dir));
+    const MAPTERHORN_PLANET: &str = "https://download.mapterhorn.com/planet.pmtiles";
+    match dl.queue_url(&dem_key, MAPTERHORN_PLANET, Some(bbox)) {
+        Ok(job) => {
+            let control = DownloadControl::default();
+            pmtiles_controls()
+                .lock()
+                .expect("pmtiles controls")
+                .insert(job.id.to_string(), control);
+            map_pmtiles_job(job.record)
+        }
+        Err(e) => empty(&e.to_string()),
+    }
+}
+
+/// Queue a PMTiles download for the selected Geofabrik path.
+#[uniffi::export]
+pub fn pmtiles_queue_region(
+    data_dir: String,
+    geofabrik_path: String,
+    base_url: Option<String>,
+) -> FfiPmtilesJob {
+    let empty = |msg: &str| FfiPmtilesJob {
+        id: String::new(),
+        region_key: String::new(),
+        url: String::new(),
+        local_path: String::new(),
+        bytes_received: 0,
+        total_bytes: None,
+        status: format!("failed:{msg}"),
+        paused: false,
+        min_lat: None,
+        min_lon: None,
+        max_lat: None,
+        max_lon: None,
+    };
+    let storage = match pmtiles_db(Path::new(&data_dir)) {
+        Ok(s) => s,
+        Err(e) => return empty(&e),
+    };
+    let dl = PmtilesDownloader::new(storage, PathBuf::from(&data_dir));
+    let planet = base_url
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(default_pmtiles_planet_url);
+    match dl.queue_geofabrik_region(&geofabrik_path, Some(planet.as_str())) {
+        Ok(job) => {
+            let control = DownloadControl::default();
+            pmtiles_controls()
+                .lock()
+                .expect("pmtiles controls")
+                .insert(job.id.to_string(), control);
+            map_pmtiles_job(job.record)
+        }
+        Err(e) => empty(&e.to_string()),
+    }
+}
+
+/// Run (or continue) a queued PMTiles job on the calling thread until terminal status.
+#[uniffi::export]
+pub fn pmtiles_run_job(data_dir: String, job_id: String) -> FfiPmtilesJob {
+    ensure_native_logging();
+    log::info!(
+        target: "NaviDownload",
+        "[NaviDownload] pmtiles_run_job start job_id={job_id} data_dir={data_dir}"
+    );
+    let empty = |msg: &str| FfiPmtilesJob {
+        id: job_id.clone(),
+        region_key: String::new(),
+        url: String::new(),
+        local_path: String::new(),
+        bytes_received: 0,
+        total_bytes: None,
+        status: format!("failed:{msg}"),
+        paused: false,
+        min_lat: None,
+        min_lon: None,
+        max_lat: None,
+        max_lon: None,
+    };
+    let uuid = match uuid::Uuid::parse_str(&job_id) {
+        Ok(u) => u,
+        Err(_) => return empty("invalid job id"),
+    };
+    let storage = match pmtiles_db(Path::new(&data_dir)) {
+        Ok(s) => s,
+        Err(e) => return empty(&e),
+    };
+    let dl = PmtilesDownloader::new(storage, PathBuf::from(&data_dir));
+    let control = {
+        let mut map = pmtiles_controls().lock().expect("pmtiles controls");
+        map.entry(job_id.clone())
+            .or_insert_with(DownloadControl::default)
+            .clone()
+    };
+    // Do not call control.reset() here: Resume must only clear the pause flag via
+    // pmtiles_resume_job. Resetting would race a still-running extract and start a
+    // second job that deletes the partial file. Fresh controls are inserted at queue.
+    match dl.run_job_blocking(uuid, &control) {
+        Ok(rec) => map_pmtiles_job(rec),
+        Err(e) => empty(&e.to_string()),
+    }
+}
+
+#[uniffi::export]
+pub fn pmtiles_pause_job(job_id: String) {
+    if let Some(c) = pmtiles_controls()
+        .lock()
+        .expect("pmtiles controls")
+        .get(&job_id)
+    {
+        c.pause();
+    }
+}
+
+#[uniffi::export]
+pub fn pmtiles_resume_job(job_id: String) {
+    if let Some(c) = pmtiles_controls()
+        .lock()
+        .expect("pmtiles controls")
+        .get(&job_id)
+    {
+        c.resume();
+    }
+}
+
+#[uniffi::export]
+pub fn pmtiles_cancel_job(job_id: String) {
+    if let Some(c) = pmtiles_controls()
+        .lock()
+        .expect("pmtiles controls")
+        .get(&job_id)
+    {
+        c.cancel();
+    }
+}
+
+#[uniffi::export]
+pub fn pmtiles_get_job(data_dir: String, job_id: String) -> Option<FfiPmtilesJob> {
+    let uuid = uuid::Uuid::parse_str(&job_id).ok()?;
+    let storage = pmtiles_db(Path::new(&data_dir)).ok()?;
+    let dl = PmtilesDownloader::new(storage, PathBuf::from(&data_dir));
+    dl.get_job(uuid).ok().flatten().map(map_pmtiles_job)
+}
+
+#[uniffi::export]
+pub fn pmtiles_list_jobs(data_dir: String) -> Vec<FfiPmtilesJob> {
+    let storage = match pmtiles_db(Path::new(&data_dir)) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let dl = PmtilesDownloader::new(storage, PathBuf::from(&data_dir));
+    dl.list_jobs()
+        .unwrap_or_default()
+        .into_iter()
+        .map(map_pmtiles_job)
+        .collect()
+}
+
+/// Completed PMTiles extracts whose stored bbox covers (lat, lon).
+#[uniffi::export]
+pub fn pmtiles_list_covering(data_dir: String, lat: f64, lon: f64) -> Vec<FfiPmtilesJob> {
+    let storage = match pmtiles_db(Path::new(&data_dir)) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let dl = PmtilesDownloader::new(storage, PathBuf::from(&data_dir));
+    dl.list_completed_covering(lat, lon)
+        .unwrap_or_default()
+        .into_iter()
+        .map(map_pmtiles_job)
+        .collect()
+}
+
+#[uniffi::export]
+pub fn pmtiles_delete_job(data_dir: String, job_id: String) -> bool {
+    let uuid = match uuid::Uuid::parse_str(&job_id) {
+        Ok(u) => u,
+        Err(_) => return false,
+    };
+    let storage = match pmtiles_db(Path::new(&data_dir)) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let dl = PmtilesDownloader::new(storage, PathBuf::from(&data_dir));
+    dl.delete_job(uuid).is_ok()
 }

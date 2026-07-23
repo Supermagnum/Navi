@@ -1,6 +1,14 @@
 [workspace]
 resolver = "2"
-members = ["core", "navi-ffi", "plugin-host", "plugin-sdk", "plugins/log-hello", "plugins/busy-loop"]
+members = [
+    "core",
+    "navi-ffi",
+    "navi-linux",
+    "plugin-host",
+    "plugin-sdk",
+    "plugins/log-hello",
+    "plugins/busy-loop",
+]
 default-members = ["core", "plugin-host"]
 
 [workspace.package]
@@ -30,6 +38,7 @@ geotiff = "0.1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tar = "0.4"
 rayon = "1"
+log = "0.4"
 libc = "0.2"
 uniffi = "0.29"
 usvg = "0.44"

@@ -13,7 +13,7 @@ Do **not** use synthetic (hand-drawn / 2-point stub) routes in tests or in any
 screenshot that documents routing — corridor geometry must come from a real
 planner run (host `raufoss_approach_route`, in-app corridor pipeline, etc.).
 
-Idle HUD bars and the Eldåbu + Store Ramshøgda **3D** capture live in the
+Idle HUD bars and the Helgøya → Atnbrua route capture live in the
 [README](../README.md#working-app-emulator-screenshots) only
 (`docs/images/hud/hud_idle_both_bars.png`,
 `docs/images/terrain/hike_eldabu_ramshogda_3d.png`).
@@ -24,7 +24,7 @@ Idle HUD bars and the Eldåbu + Store Ramshøgda **3D** capture live in the
 |---|---|
 | Town (z11) | ![Town map](images/zoom_z11.png) |
 | Street (z16) — basemap POIs visible | ![Street POIs](images/zoom_z16.png) |
-| Corridor route Espa → Atnbrufossen | ![Route overlay](images/route_map.png) |
+| Helgøya → Atnbrua (eco + 3D on) | ![Route overlay](images/route_map.png) |
 | Corridor route (Navi capture) | ![Navi route](images/navi_route_map.png) |
 
 Prefer `images/terrain/` and recent HUD shots when comparing route visuals.
@@ -68,34 +68,29 @@ Layout notes: [`hud-layout.md`](hud-layout.md).
 ## Offline PMTiles basemap / 3D
 
 Evidence for [`map-styles.md`](map-styles.md). Captured by
-`BasemapPmtilesScreenshotTest` / `TerrainRouteScreenshotTest` on the Automotive
-emulator (kind + terrain attach + camera logged). Drive HUD bars kept visible
-(`hideUiChrome=false`).
+`BasemapPmtilesScreenshotTest` on the Automotive emulator (kind + terrain
+attach + camera logged). Drive HUD bars kept visible (`hideUiChrome=false`).
 
 | Scene | Preview |
 |---|---|
-| Offline Protomaps (Oslo, `OfflineProtomaps`, Alt shown) | ![Offline Protomaps](images/basemap/basemap_offline_protomaps.png) |
+| Offline Protomaps (Kløfta, 3D off) | ![Offline Protomaps](images/basemap/basemap_offline_protomaps.png) |
 | Coverage boundary → live Liberty (Tromsø) | ![Boundary Liberty](images/basemap/basemap_coverage_boundary_tromso.png) |
-| Online 3D (Mapterhorn DEM hillshade, Jotunheimen) | ![3D hillshade](images/basemap/basemap_3d_mapterhorn_hillshade.png) |
-| 3D fallback flat Liberty | ![3D fallback](images/basemap/basemap_3d_fallback_liberty.png) |
+| Online 3D (Mapterhorn DEM hillshade, Gjendebu, Jotunheimen) | ![3D hillshade](images/basemap/basemap_3d_mapterhorn_hillshade.png) |
+| Flat map, Gjendebu, Jotunheimen | ![Flat map](images/basemap/basemap_3d_fallback_liberty.png) |
 
 ## Mapterhorn terrain 3D — routes (permitted uploads)
 
 | Scene | Preview |
 |---|---|
 | Car Espa→Atnbrufossen, 3D off | ![Car 2D](images/terrain/route_car_espa_atnbrufossen_3d_off.png) |
-| Car Espa→Atnbrufossen, 3D on | ![Car 3D](images/terrain/route_car_espa_atnbrufossen_3d_on.png) |
-| Hike Fondsbu→Spiterstulen, 3D off | ![Hike 2D](images/terrain/route_hike_fondsbu_spiterstulen_3d_off.png) |
-| Hike Fondsbu→Spiterstulen, 3D on | ![Hike 3D](images/terrain/route_hike_fondsbu_spiterstulen_3d_on.png) |
 | Innlandet online (network on) | ![Online](images/terrain/innlandet_online_route.png) |
-| Innlandet offline + 3D (airplane mode) | ![Offline 3D](images/terrain/innlandet_offline_3d_route.png) |
-| Hike Skolla→Rondvassbu (search UI, 3D) | ![Hike Skolla 3D](images/terrain/hike_skolla_rondvassbu_3d.png) |
-| Eldåbu + Store Ramshøgda (2D) | ![Eldabu 2D](images/terrain/hike_eldabu_ramshogda_2d.png) |
+| Eldåbu corridor (2D) | ![Eldabu 2D](images/terrain/hike_eldabu_ramshogda_2d.png) |
 
 Pause labels along hiking routes prefer huts/cabins; when none are nearby the
-planner falls back to tent sites (named peaks / camp pitches, e.g. Store
-Ramshøgda). The on-map status chip never shows `TEST_KIND` / `detected_cores`
-pipeline dumps (user-facing text is e.g. `Route planned · 112.5 km`).
+planner falls back to camp pitches or a generic corridor tent point — never
+mountain peaks (Store Ramshøgda stays unlabeled). The on-map status chip never
+shows `TEST_KIND` / `detected_cores` pipeline dumps (user-facing text is e.g.
+`Route planned · 112.5 km`).
 
 AAOS note: some terrain captures still show the system location permission
 dialog over the map; MapLibre frames without that dialog are currently empty

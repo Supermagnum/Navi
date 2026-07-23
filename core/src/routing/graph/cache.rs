@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -13,8 +12,8 @@ use crate::routing::elevation::ElevationService;
 
 use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
 
-// Bump when on-disk graph topology semantics change (e.g. car reverse edges).
-const CACHE_MAGIC: &[u8; 8] = b"NAVIGPH2";
+// Bump when on-disk graph topology / edge meta semantics change.
+const CACHE_MAGIC: &[u8; 8] = b"NAVIGPH4";
 
 /// Source PBF and eco inputs used to validate a cached reweighted graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -50,6 +49,20 @@ impl GraphCacheFingerprint {
             eco_mass_kg: eco.map(|e| e.mass_kg),
         })
     }
+
+    /// Cache validity across host/device copies of the same extract.
+    ///
+    /// Absolute path and mtime differ after `adb push`; file name + size + eco
+    /// profile are enough to reject a mismatched extract.
+    pub fn matches_source(&self, expected: &Self) -> bool {
+        let self_name = Path::new(&self.pbf_path).file_name();
+        let expected_name = Path::new(&expected.pbf_path).file_name();
+        self_name == expected_name
+            && self.pbf_size_bytes == expected.pbf_size_bytes
+            && self.profile == expected.profile
+            && self.eco_drag_coefficient == expected.eco_drag_coefficient
+            && self.eco_mass_kg == expected.eco_mass_kg
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -72,10 +85,15 @@ struct CachedGraphEdge {
     end_lat: f64,
     end_lon: f64,
     highway: Option<String>,
+    maxspeed_kmh: Option<f64>,
     maxweight_t: Option<f64>,
     maxaxleload_t: Option<f64>,
+    maxbogieweight_t: Option<f64>,
     maxheight_m: Option<f64>,
     maxwidth_m: Option<f64>,
+    maxlength_m: Option<f64>,
+    is_toll: bool,
+    is_ferry: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -96,19 +114,15 @@ fn profile_tag(profile: RoutingProfile) -> &'static str {
 }
 
 /// Deterministic on-disk path for a reweighted graph cache entry.
+///
+/// Uses extract file name + profile only (not absolute path) so a cache built on
+/// the host can be pushed to the device for the same region extract.
 pub fn graph_cache_path(cache_dir: &Path, pbf_path: &Path, profile: RoutingProfile) -> PathBuf {
-    let abs = pbf_path
-        .canonicalize()
-        .unwrap_or_else(|_| pbf_path.to_path_buf());
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    abs.to_string_lossy().hash(&mut hasher);
-    profile.hash(&mut hasher);
-    let hash = hasher.finish();
     let stem = pbf_path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("graph");
-    cache_dir.join(format!("{stem}_{}_{hash:016x}.navigph", profile_tag(profile)))
+    cache_dir.join(format!("{stem}_{}.navigph", profile_tag(profile)))
 }
 
 pub fn save_reweighted_graph(
@@ -147,10 +161,15 @@ pub fn save_reweighted_graph(
                 end_lat: edge.end_lat,
                 end_lon: edge.end_lon,
                 highway: edge.highway.clone(),
+                maxspeed_kmh: edge.maxspeed_kmh,
                 maxweight_t: edge.maxweight_t,
                 maxaxleload_t: edge.maxaxleload_t,
+                maxbogieweight_t: edge.maxbogieweight_t,
                 maxheight_m: edge.maxheight_m,
                 maxwidth_m: edge.maxwidth_m,
+                maxlength_m: edge.maxlength_m,
+                is_toll: edge.is_toll,
+                is_ferry: edge.is_ferry,
             })
             .collect(),
     };
@@ -181,7 +200,7 @@ pub fn load_reweighted_graph(
         Err(_) => return Ok(None),
     };
 
-    if payload.fingerprint != *expected || payload.profile != expected.profile {
+    if !payload.fingerprint.matches_source(expected) || payload.profile != expected.profile {
         return Ok(None);
     }
 
@@ -207,6 +226,54 @@ pub fn load_or_build_reweighted(
     graph.apply_eco_reweighting(elevation, eco);
     save_reweighted_graph(&graph, &cache_path, &expected)?;
     Ok((graph, false))
+}
+
+/// Like [`load_or_build_reweighted`], but builds only the road network inside `bbox`
+/// (`[min_lat, min_lon, max_lat, max_lon]`). Used by on-device `plan_car_route` so a
+/// full Ostlandet graph is never loaded into a memory-constrained process.
+pub fn load_or_build_reweighted_bbox(
+    pbf: &Path,
+    cache_dir: &Path,
+    profile: RoutingProfile,
+    elevation: &ElevationService,
+    eco: &EcoConfig,
+    bbox: [f64; 4],
+) -> anyhow::Result<(RouteGraph, bool)> {
+    std::fs::create_dir_all(cache_dir)?;
+    let expected = GraphCacheFingerprint::from_pbf(pbf, profile, Some(eco))?;
+    let cache_path = graph_cache_path_bbox(cache_dir, pbf, profile, bbox);
+
+    if let Some(graph) = load_reweighted_graph(&cache_path, &expected)? {
+        crate::download::progress::set(3, Some(4), "Planning route: cached graph ready");
+        return Ok((graph, true));
+    }
+
+    let mut graph = RouteGraph::build_from_pbf_bbox(pbf, profile, bbox)?;
+    graph.apply_eco_reweighting(elevation, eco);
+    crate::download::progress::set(3, Some(4), "Planning route: saving graph cache…");
+    save_reweighted_graph(&graph, &cache_path, &expected)?;
+    Ok((graph, false))
+}
+
+/// Cache file for a bbox-clipped reweighted graph.
+pub fn graph_cache_path_bbox(
+    cache_dir: &Path,
+    pbf_path: &Path,
+    profile: RoutingProfile,
+    bbox: [f64; 4],
+) -> PathBuf {
+    let stem = pbf_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("graph");
+    cache_dir.join(format!(
+        "{stem}_{}_{:.2}_{:.2}_{:.2}_{:.2}.navigph",
+        profile_tag(profile),
+        bbox[0],
+        bbox[1],
+        bbox[2],
+        bbox[3]
+    ))
 }
 
 fn reconstruct_graph(payload: CachedRouteGraph) -> RouteGraph {
@@ -243,10 +310,15 @@ fn reconstruct_graph(payload: CachedRouteGraph) -> RouteGraph {
             end_lat: edge.end_lat,
             end_lon: edge.end_lon,
             highway: edge.highway,
+            maxspeed_kmh: edge.maxspeed_kmh,
             maxweight_t: edge.maxweight_t,
             maxaxleload_t: edge.maxaxleload_t,
+            maxbogieweight_t: edge.maxbogieweight_t,
             maxheight_m: edge.maxheight_m,
             maxwidth_m: edge.maxwidth_m,
+            maxlength_m: edge.maxlength_m,
+            is_toll: edge.is_toll,
+            is_ferry: edge.is_ferry,
         })
         .collect();
 
@@ -290,10 +362,15 @@ mod tests {
             end_lat: 60.01,
             end_lon: 10.01,
             highway: Some("primary".to_string()),
+            maxspeed_kmh: None,
             maxweight_t: None,
             maxaxleload_t: None,
+            maxbogieweight_t: None,
             maxheight_m: None,
             maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
     }
@@ -344,6 +421,14 @@ mod tests {
         assert!(load_reweighted_graph(&cache_path, &stale)
             .expect("load")
             .is_none());
+
+        // Absolute path / mtime may differ after adb push; still a hit.
+        let mut relocated = fingerprint.clone();
+        relocated.pbf_path = "/data/user/10/no.navi.app/files/test.osm.pbf".into();
+        relocated.pbf_modified_unix_secs += 99;
+        assert!(load_reweighted_graph(&cache_path, &relocated)
+            .expect("load")
+            .is_some());
     }
 
     #[test]
@@ -355,5 +440,9 @@ mod tests {
         assert_eq!(a, b);
         assert!(a.starts_with(dir));
         assert!(a.to_string_lossy().contains("car"));
+        assert_eq!(
+            a.file_name().and_then(|s| s.to_str()),
+            Some("norway.osm_car.navigph")
+        );
     }
 }

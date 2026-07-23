@@ -25,6 +25,8 @@ pub enum Profile {
     Truck,
     /// Battery-electric truck (enum present; not a primary menu chip).
     TruckElectric,
+    /// Motorhome / camper — same physical clearance constraints as truck.
+    MobileHome,
     Hiking,
     Cycling,
     Motorcycle,
@@ -53,15 +55,43 @@ impl Profile {
                 | Profile::MotorcycleElectric
                 | Profile::Truck
                 | Profile::TruckElectric
+                | Profile::MobileHome
         )
     }
 
-    /// Primary travel-mode chips in the UI. Truck and electric variants stay in
-    /// the enum for routing/rest logic but are not menu-focus entries.
+    /// Primary travel-mode chips in the UI. Truck / mobile home / electric
+    /// variants stay in the enum for routing/rest logic but are not all chips.
     pub fn menu_focus(self) -> bool {
         matches!(
             self,
-            Profile::Car | Profile::Cycling | Profile::Hiking | Profile::Motorcycle
+            Profile::Car
+                | Profile::Cycling
+                | Profile::Hiking
+                | Profile::Motorcycle
+                | Profile::Truck
+                | Profile::MobileHome
+        )
+    }
+
+    /// Motor profiles that expose avoid-toll / avoid-ferry toggles.
+    pub fn supports_toll_ferry_avoid(self) -> bool {
+        matches!(
+            self,
+            Profile::Car
+                | Profile::CarElectric
+                | Profile::Truck
+                | Profile::TruckElectric
+                | Profile::MobileHome
+                | Profile::Motorcycle
+                | Profile::MotorcycleElectric
+        )
+    }
+
+    /// Profiles that apply full vehicle dimension/weight clearance filters.
+    pub fn uses_vehicle_clearance_limits(self) -> bool {
+        matches!(
+            self,
+            Profile::Truck | Profile::TruckElectric | Profile::MobileHome
         )
     }
 }
@@ -70,8 +100,14 @@ impl Profile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VehicleLimits {
     pub axle_weight_kg: Option<f64>,
+    /// Max bogie (axle-group) weight — EU multi-axle truck / mobile-home rules.
+    #[serde(default)]
+    pub bogie_weight_kg: Option<f64>,
     pub height_m: Option<f64>,
     pub width_m: Option<f64>,
+    /// Overall vehicle length (maxlength OSM tag).
+    #[serde(default)]
+    pub length_m: Option<f64>,
     pub total_weight_kg: Option<f64>,
 }
 
@@ -79,8 +115,10 @@ impl Default for VehicleLimits {
     fn default() -> Self {
         Self {
             axle_weight_kg: None,
+            bogie_weight_kg: None,
             height_m: None,
             width_m: None,
+            length_m: None,
             total_weight_kg: None,
         }
     }

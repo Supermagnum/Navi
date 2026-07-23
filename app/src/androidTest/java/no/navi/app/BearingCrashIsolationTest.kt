@@ -34,7 +34,7 @@ class BearingCrashIsolationTest {
     @Before
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        dataDir = (context.getExternalFilesDir(null) ?: context.filesDir).also { it.mkdirs() }
+        dataDir = NaviAppData.resolve(context)
         NaviMapTestHooks.hideUiChrome = true
         NaviMapTestHooks.hideSearchChrome = true
         NaviMapTestHooks.applyBearingToMap = true

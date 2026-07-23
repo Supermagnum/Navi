@@ -18,8 +18,10 @@ Workspace members are declared in the root `Cargo.toml`. Default members:
 
 Core routing, rest planning, and POI queries work fully offline once a region
 extract is on disk. Network access is an **opt-in enhancement layer** (DEM
-tiles, Geofabrik update checks, fixture downloads). Map data is never replaced
-silently in the background — see [`docs/osm-updates.md`](docs/osm-updates.md).
+tiles, Geofabrik update checks, fixture downloads, optional PMTiles basemap
+download, live OpenFreeMap tiles when no local PMTiles cover the camera). Map
+data is never replaced silently in the background — see
+[`docs/osm-updates.md`](docs/osm-updates.md) and [`docs/map-styles.md`](docs/map-styles.md).
 
 ## Thread priority tiers
 
@@ -95,6 +97,8 @@ the default working set on ~4 GB devices.
 | User action | Path |
 |---|---|
 | Provision region | App → UniFFI `provisionRegionData` → download/parse `.pbf` + DEM → graph build/reweight → cache on disk |
+| Download basemap | App Tools → `pmtilesQueueRegion` / `pmtilesRunJob` → `{dataDir}/pmtiles/*.pmtiles` → MapLibre `pmtiles://file://` |
+| Download terrain DEM | App Tools → `pmtilesQueueDemRegion` / `pmtilesRunJob` → `{dataDir}/pmtiles/{region}_dem.pmtiles` (Mapterhorn) |
 | Search place | App → `searchPlaces` → `NameIndex` FTS5 DB |
 | Route corridor | App → `runCarCorridorPipeline` → `RouteGraph` A* (+ eco weights) → polyline + POI back to MapLibre |
 | Save drive settings | App → `saveCarRestSettings` / `saveFuelConfig` → `ConfigStore` → `app_config` rows |
@@ -106,10 +110,11 @@ the default working set on ~4 GB devices.
 
 | Module | Role |
 |---|---|
-| `routing` | OSM graph build, eco reweight, A*, workers, OSM updates, elevation |
+| `routing` | OSM graph build, eco reweight, A*, workers, OSM updates, elevation, PMTiles basemap jobs |
 | `poi` | Categories, classifier, R-tree index, icons |
 | `search` | FTS5 name index + saved `routes` table helpers |
-| `storage` | SQLite `Storage`, migrations, config + elevation job stores |
+| `storage` | SQLite `Storage`, migrations, config + elevation + pmtiles job stores |
+| `download` | Shared `DownloadControl` (pause / resume / cancel) |
 | `config` | Profiles, rest/eco/safety/fuel/vehicle limits |
 | `tracks` | APRS-style station upsert / range / timeout |
 | `ecu` | `LiveEnergyProvider` / `refine_energy_cost` (no polling yet) |

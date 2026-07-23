@@ -42,7 +42,7 @@ class ZoomPoiScreenshotTest {
         }
 
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val dataDir = (context.getExternalFilesDir(null) ?: context.filesDir).also { it.mkdirs() }
+        val dataDir = NaviAppData.resolve(context)
 
         val zooms = listOf(
             6.5 to "navi_zoom_6_5.png",

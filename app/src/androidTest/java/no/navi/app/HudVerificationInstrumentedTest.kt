@@ -67,7 +67,7 @@ class HudVerificationInstrumentedTest {
     @Before
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        dataDir = (context.getExternalFilesDir(null) ?: context.filesDir).also { it.mkdirs() }
+        dataDir = NaviAppData.resolve(context)
         NaviMapTestHooks.hideUiChrome = false
         NaviMapTestHooks.hideSearchChrome = true
         NaviMapTestHooks.magneticHeadingDeg = null
@@ -196,6 +196,29 @@ class HudVerificationInstrumentedTest {
         }
         bmp.recycle()
         assertTrue("$name written", out.isFile && out.length() > 3_000)
+        // Publish via MediaStore Downloads (readable without su after instrumentation).
+        runCatching {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                put(
+                    android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                    android.os.Environment.DIRECTORY_DOWNLOADS + "/navi_hud",
+                )
+                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val resolver = InstrumentationRegistry.getInstrumentation().targetContext.contentResolver
+            val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            if (uri != null) {
+                resolver.openOutputStream(uri)?.use { os ->
+                    out.inputStream().use { it.copyTo(os) }
+                }
+                val done = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+                }
+                resolver.update(uri, done, null, null)
+            }
+        }
         // Mirror via root `cat >` so adb can pull after instrumentation exits.
         val mirrored = runCatching {
             val dest = "/data/local/tmp/navi_hud/$name"
@@ -289,8 +312,19 @@ class HudVerificationInstrumentedTest {
         composeRule.onNodeWithTag("btn_tools", useUnmergedTree = true).performScrollTo()
         clickTag("btn_tools")
         composeRule.onNodeWithTag("tools_menu", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Region", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Download region + build place index", useUnmergedTree = true)
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("Country", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Region in country", useUnmergedTree = true).assertIsDisplayed()
+        // Hide search chrome so the Region panel is not covered in the shot.
+        NaviMapTestHooks.hideSearchChrome = true
+        Thread.sleep(800)
         shot("hud_tools_menu_open.png")
-        clickTag("btn_tools") // hide tools panel
+        // Re-show search briefly so Tools toggle is available, then dismiss panel.
+        NaviMapTestHooks.hideSearchChrome = false
+        Thread.sleep(500)
+        clickTag("btn_tools")
         NaviMapTestHooks.hideSearchChrome = true
         Thread.sleep(800)
 
@@ -336,7 +370,7 @@ class HudVerificationInstrumentedTest {
             ),
         )
         openDriveSettings()
-        clickTag("btn_apply_drive_settings")
+        clickTag("btn_save_drive_settings")
         waitSettingsOpen(false)
         Thread.sleep(800)
         composeRule.onNodeWithTag("hud_eco_icon", useUnmergedTree = true).assertIsDisplayed()
@@ -348,10 +382,35 @@ class HudVerificationInstrumentedTest {
         )
         assertEquals(412.0, NaviMapTestHooks.lastHudAltitudeM!!, 0.1)
         shot("hud_eco_leaf_on.png")
+        // Tools must be closed for idle / map-only captures.
+        if (composeRule.onAllNodesWithTag("tools_menu", useUnmergedTree = true)
+            .fetchSemanticsNodes().isNotEmpty()
+        ) {
+            NaviMapTestHooks.hideSearchChrome = false
+            Thread.sleep(400)
+            clickTag("btn_tools")
+            NaviMapTestHooks.hideSearchChrome = true
+            Thread.sleep(500)
+        }
+        composeRule.onAllNodesWithTag("tools_menu", useUnmergedTree = true)
+            .fetchSemanticsNodes()
+            .let { assertTrue("tools menu must be closed for idle shots", it.isEmpty()) }
         val mapOnly = shot("hud_map_top_bottom_only.png")
         assertTrue(mapOnly.length() > 5_000)
         val idle = shot("hud_idle_both_bars.png")
         assertTrue(idle.length() > 5_000)
+        assertTrue(
+            "idle HUD must not show break countdown without a planned route",
+            composeRule.onAllNodesWithText("Break in", substring = true, useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .isEmpty(),
+        )
+        assertTrue(
+            "idle HUD must not show break reminders line without a planned route",
+            composeRule.onAllNodesWithText("Break reminders off", useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .isEmpty(),
+        )
 
         // Eco off — leaf hidden
         assertTrue(
@@ -365,7 +424,7 @@ class HudVerificationInstrumentedTest {
             ),
         )
         openDriveSettings()
-        clickTag("btn_apply_drive_settings")
+        clickTag("btn_save_drive_settings")
         waitSettingsOpen(false)
         Thread.sleep(500)
         assertTrue(
@@ -386,7 +445,7 @@ class HudVerificationInstrumentedTest {
             ),
         )
         openDriveSettings()
-        clickTag("btn_apply_drive_settings")
+        clickTag("btn_save_drive_settings")
         waitSettingsOpen(false)
         Thread.sleep(500)
 
@@ -400,7 +459,7 @@ class HudVerificationInstrumentedTest {
 
         // Break hours apply + auto-close + persist; toast must not sit on attribution (bottom-left)
         setField("field_break_hours", "3.5")
-        clickTag("btn_apply_drive_settings")
+        clickTag("btn_save_drive_settings")
         waitSettingsOpen(false)
         Thread.sleep(500)
         val restAfterBreak = loadCarRestSettings(dataDir.absolutePath)
@@ -412,7 +471,7 @@ class HudVerificationInstrumentedTest {
         // Rest time apply (second toast scenario)
         openDriveSettings()
         setField("field_rest_mins", "20")
-        clickTag("btn_apply_drive_settings")
+        clickTag("btn_save_drive_settings")
         waitSettingsOpen(false)
         Thread.sleep(400)
         assertEquals(20u, loadCarRestSettings(dataDir.absolutePath).restDurationMinutes)
@@ -427,7 +486,7 @@ class HudVerificationInstrumentedTest {
             composeRule.waitForIdle()
         }
         setField("field_tank", "55")
-        clickTag("btn_apply_drive_settings")
+        clickTag("btn_save_drive_settings")
         waitSettingsOpen(false)
         Thread.sleep(400)
         val fuelTank = loadFuelConfig(dataDir.absolutePath)
@@ -438,7 +497,7 @@ class HudVerificationInstrumentedTest {
         // Fuel added + unit toggle (L then gallons path)
         openDriveSettings()
         setField("field_fuel_added", "10")
-        clickTag("btn_apply_drive_settings")
+        clickTag("btn_save_drive_settings")
         waitSettingsOpen(false)
         Thread.sleep(400)
         assertEquals(10.0, loadFuelConfig(dataDir.absolutePath).fuelAddedL!!, 0.05)
@@ -448,7 +507,7 @@ class HudVerificationInstrumentedTest {
         clickTag("toggle_fuel_units") // flip liters/gallons
         composeRule.waitForIdle()
         setField("field_fuel_added", "5")
-        clickTag("btn_apply_drive_settings")
+        clickTag("btn_save_drive_settings")
         waitSettingsOpen(false)
         Thread.sleep(400)
         val fuelAfterGal = loadFuelConfig(dataDir.absolutePath)
@@ -489,7 +548,35 @@ class HudVerificationInstrumentedTest {
         assertFalse("Trip ETA value should hide when toggle off", etaStillVisible)
         shot("hud_trip_eta_off.png")
 
-        // Break reminders — cross-check bottom HUD text
+        // Break reminders — HUD countdown only with a **real** planned corridor
+        // (Grimåsfeltet→Nysethvegen from ostlandet host plan). No synthetic polylines.
+        val zoomBeforeBreak = NaviMapTestHooks.lastCameraZoom
+        val plannedPolyline = InstrumentationRegistry.getInstrumentation().context
+            .assets.open("raufoss_grimafeltet_nysethvegen.polyline.txt")
+            .bufferedReader()
+            .use { it.readText().trim() }
+        assertTrue("host-planned polyline required", plannedPolyline.contains(';'))
+        assertTrue(
+            "polyline must be a real multi-vertex plan, not a 2-point stub",
+            plannedPolyline.count { it == ';' } >= 10,
+        )
+        NaviMapTestHooks.pendingRoute = uniffi.navi.CorridorRouteResult(
+            report = "PLANNED Grimåsfeltet → Nysethvegen (Raufoss / Tollerud)",
+            distanceKm = 1.953,
+            etaMinutes = 1.953 / 50.0 * 60.0,
+            cacheHit = true,
+            coldBuildS = 0.0,
+            warmLoadS = 0.0,
+            routePolyline = plannedPolyline,
+            poiLat = 60.7278207,
+            poiLon = 10.6049538,
+            poiName = "Nysethvegen",
+            poiIconKey = "fuel",
+            breakPoisJson = "[]",
+        )
+        // Keep prior zoom; route apply would otherwise fit-bounds and break zoom checks.
+        NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, zoomBeforeBreak)
+        Thread.sleep(1_500)
         setBreakReminders(false)
         composeRule.onNodeWithText("Break reminders off", useUnmergedTree = true)
             .assertIsDisplayed()
@@ -500,8 +587,13 @@ class HudVerificationInstrumentedTest {
             .fetchSemanticsNodes()
             .isNotEmpty()
         assertFalse("Break countdown / interval text should return", breakOffStill)
+        composeRule.onNodeWithTag("hud_break_countdown", useUnmergedTree = true)
+            .assertIsDisplayed()
         shot("hud_breaks_on.png")
         closeMapSettings()
+        NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, baseZoom)
+        Thread.sleep(1_200)
+        waitZoom(baseZoom, tol = 0.4)
 
         // Zoom in / out — sole app zoom set on bottom bar
         val z0 = NaviMapTestHooks.lastCameraZoom
@@ -525,7 +617,7 @@ class HudVerificationInstrumentedTest {
         // Zoom persists across drive settings open/close
         val zPersist = NaviMapTestHooks.lastCameraZoom
         openDriveSettings()
-        clickTag("btn_cancel_drive_settings")
+        clickTag("btn_close_drive_settings")
         waitSettingsOpen(false)
         Thread.sleep(500)
         assertEquals(
@@ -668,7 +760,7 @@ class HudVerificationInstrumentedTest {
         composeRule.onNodeWithTag("drive_settings_sheet", useUnmergedTree = true).assertIsDisplayed()
         assertEquals(breakBefore, fieldText("field_break_hours"))
         assertEquals(restBefore, fieldText("field_rest_mins"))
-        clickTag("btn_cancel_drive_settings")
+        clickTag("btn_close_drive_settings")
         waitSettingsOpen(false)
 
         // --- 4. Sheets closed: pan + pinch still move the map ---

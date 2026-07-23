@@ -3,6 +3,23 @@
 Navi uses MapLibre Native (`org.maplibre.gl:android-sdk-vulkan` **11.8.8**, which
 includes `pmtiles://` support added in 11.7.0).
 
+## On-device storage (large downloads)
+
+Navi stores PMTiles basemap extracts, Mapterhorn DEM extracts, OSM `.pbf`
+files, elevation tiles, and graph caches under the app **internal** files
+directory (`Context.filesDir` → `/data/user/<id>/no.navi.app/files/…` on
+device). That volume is backed by the large `/data` partition.
+
+Earlier builds preferred `getExternalFilesDir()`. On some Automotive emulator
+images the primary external volume is a tiny emulated SD card (~510 MB under
+`/mnt/media_rw/…`), which cannot hold a regional basemap (~180 MB) plus DEM
+(~2.7 GB). Downloads then stalled or failed with little UI feedback. Internal
+storage is now the default; legacy external trees are migrated once on launch.
+
+Download progress is logged to logcat (`NaviNative` / `NaviDownload`): start
+(URL + target path + expected bytes + free space), periodic progress, completion,
+and insufficient-space failures with `available_bytes`.
+
 ## Two visual basemaps (intentional)
 
 | Mode | Style | Tile schema | When used |

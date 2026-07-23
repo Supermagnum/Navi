@@ -129,16 +129,33 @@ fn classify_named<'a>(
     tags: impl Iterator<Item = (&'a str, &'a str)>,
 ) -> Option<(i64, String, String, f64, f64)> {
     let mut name = None;
+    let mut addr_street = None;
+    let mut addr_housenumber = None;
     let mut kind = "named".to_string();
     for (k, v) in tags {
         match k {
             "name" => name = Some(v.to_string()),
+            "addr:street" => addr_street = Some(v.to_string()),
+            "addr:housenumber" => addr_housenumber = Some(v.to_string()),
             "place" => kind = format!("place:{v}"),
             "tourism" => kind = format!("tourism:{v}"),
             "natural" if v == "peak" => kind = "natural:peak".into(),
             "highway" => kind = format!("highway:{v}"),
             "amenity" => kind = format!("amenity:{v}"),
             _ => {}
+        }
+    }
+    if name.is_none() {
+        if let (Some(street), Some(num)) = (addr_street.as_ref(), addr_housenumber.as_ref()) {
+            name = Some(format!("{street} {num}"));
+            if kind == "named" {
+                kind = "addr:housenumber".into();
+            }
+        } else if let Some(street) = addr_street {
+            name = Some(street);
+            if kind == "named" {
+                kind = "addr:street".into();
+            }
         }
     }
     name.map(|n| (osm_id, n, kind, lat, lon))

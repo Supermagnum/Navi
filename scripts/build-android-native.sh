@@ -38,7 +38,20 @@ if [[ -z "${RUSTUP_TOOLCHAIN:-}" ]]; then
 fi
 
 echo "Building navi-ffi for $TARGET ($PROFILE)..."
-cargo build -p navi-ffi --target "$TARGET" --"$PROFILE" --lib
+CARGO_PROFILE_ARGS=()
+case "$PROFILE" in
+  release)
+    CARGO_PROFILE_ARGS=(--release)
+    ;;
+  debug)
+    # cargo has no --debug flag; debug is the default profile
+    CARGO_PROFILE_ARGS=()
+    ;;
+  *)
+    CARGO_PROFILE_ARGS=(--profile "$PROFILE")
+    ;;
+esac
+cargo build -p navi-ffi --target "$TARGET" "${CARGO_PROFILE_ARGS[@]}" --lib
 
 LIB_SRC="$ROOT/target/$TARGET/$PROFILE/libnavi.so"
 LIB_DST_DIR="$ROOT/app/src/main/jniLibs/$ABI_DIR"

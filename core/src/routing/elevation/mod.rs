@@ -9,7 +9,9 @@ pub mod sources;
 pub mod tile_id;
 
 pub use cache::ElevationCache;
-pub use downloader::{DownloadControl, ElevationDownloader, ElevationJob};
+pub use country::lookup as country_lookup;
+pub use crate::download::DownloadControl;
+pub use downloader::{ElevationDownloader, ElevationJob};
 pub use reader::ElevationReader;
 pub use service::ElevationService;
 pub use tile_id::{bbox_to_tiles, country_bbox, HgtTileId};

@@ -12,6 +12,8 @@ pub enum PoiCategory {
     OvernightFacility,
     /// Microbrewery / craft alcohol (OSM tag variants OR'd together).
     CraftBrewery,
+    /// Peak / ridge were never pause labels. TentSite is camp_site / camp_pitch only.
+    TentSite,
 }
 
 impl PoiCategory {
@@ -25,6 +27,7 @@ impl PoiCategory {
             Self::OvernightFacility => safety.poi_radius_cabin_m,
             // Same default reach as General (15 km) unless safety overrides general.
             Self::CraftBrewery => safety.poi_radius_general_m,
+            Self::TentSite => safety.poi_radius_cabin_m,
         }
     }
 }

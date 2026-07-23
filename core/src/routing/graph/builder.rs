@@ -25,7 +25,7 @@ impl From<Profile> for RoutingProfile {
             Profile::Car | Profile::CarElectric | Profile::Motorcycle | Profile::MotorcycleElectric => {
                 Self::Car
             }
-            Profile::Truck | Profile::TruckElectric => Self::Truck,
+            Profile::Truck | Profile::TruckElectric | Profile::MobileHome => Self::Truck,
             Profile::Hiking => Self::Foot,
             Profile::Cycling => Self::Bicycle,
         }
@@ -45,16 +45,29 @@ pub struct GraphEdge {
     pub end_lat: f64,
     pub end_lon: f64,
     pub highway: Option<String>,
+    /// OSM `maxspeed` in km/h when parseable; `None` → highway-class fallback for ETA.
+    pub maxspeed_kmh: Option<f64>,
     pub maxweight_t: Option<f64>,
     pub maxaxleload_t: Option<f64>,
+    pub maxbogieweight_t: Option<f64>,
     pub maxheight_m: Option<f64>,
     pub maxwidth_m: Option<f64>,
+    pub maxlength_m: Option<f64>,
+    pub is_toll: bool,
+    pub is_ferry: bool,
 }
 
-/// Per-query routing filters (sightseeing avoid-majors, vehicle physical limits).
+/// Per-query routing filters (sightseeing avoid-majors, tolls/ferries, vehicle limits).
+///
+/// Clearance: violating edges are **excluded** from A*; the router searches an
+/// alternate path rather than failing hard when any restricted edge exists.
 #[derive(Debug, Clone, Default)]
 pub struct RouteOptions {
     pub avoid_major_roads: bool,
+    /// Exclude OSM toll roads (`toll=yes` and related). Default off.
+    pub avoid_tolls: bool,
+    /// Exclude ferry connections. Default off.
+    pub avoid_ferries: bool,
     pub vehicle: Option<crate::config::VehicleLimits>,
 }
 
@@ -69,10 +82,16 @@ impl RouteGraph {
     pub fn build_from_pbf(path: impl AsRef<Path>, profile: RoutingProfile) -> anyhow::Result<Self> {
         let (nodes, edges) = Reader::new()
             .read_tag("highway")
+            .read_tag("maxspeed")
             .read_tag("maxweight")
             .read_tag("maxaxleload")
+            .read_tag("maxbogieweight")
             .read_tag("maxheight")
             .read_tag("maxwidth")
+            .read_tag("maxlength")
+            .read_tag("toll")
+            .read_tag("route")
+            .read_tag("ferry")
             .read(path.as_ref())
             .map_err(|e| anyhow::anyhow!("osm4routing: {e}"))?;
         let filtered = filter_edges(edges, profile);
@@ -233,24 +252,107 @@ impl RouteGraph {
         result.map(|(path, cost)| (path, cost as f64 / 1000.0))
     }
 
-    /// Count edges on a path that would be excluded by vehicle/major-road options.
+    /// Count edges on a path that would be excluded by vehicle/avoidance options.
     pub fn restricted_edge_count(&self, edge_indices: &[usize], options: &RouteOptions) -> usize {
         edge_indices
             .iter()
             .filter(|&&i| !edge_allowed_for_options(&self.edges[i], options))
             .count()
     }
+
+    /// Human-readable summary of what a route avoided / how many restricted segments.
+    pub fn format_avoidance_report(
+        &self,
+        edge_indices: &[usize],
+        options: &RouteOptions,
+        priority_path_share_pct: f64,
+    ) -> String {
+        let avoided = self.restricted_edge_count(edge_indices, options);
+        format_route_avoidance_report(options, avoided, priority_path_share_pct)
+    }
 }
 
-type EdgeMeta = (Option<String>, Option<f64>, Option<f64>, Option<f64>, Option<f64>);
+/// Shared text for UI validation (motorway / toll / ferry / clearance).
+pub fn format_route_avoidance_report(
+    options: &RouteOptions,
+    avoided_on_reference: usize,
+    priority_path_share_pct_hint: f64,
+) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "Avoid motorways/trunk/primary: {}",
+        if options.avoid_major_roads { "ON" } else { "OFF" }
+    ));
+    lines.push(format!(
+        "Avoid toll roads: {}",
+        if options.avoid_tolls { "ON" } else { "OFF" }
+    ));
+    lines.push(format!(
+        "Avoid ferries: {}",
+        if options.avoid_ferries { "ON" } else { "OFF" }
+    ));
+    if options.vehicle.is_some() {
+        lines.push(format!(
+            "Route avoids {avoided_on_reference} weight/height/width/length-restricted segments (vs unrestricted reference)"
+        ));
+    }
+    lines.push(format!(
+        "Priority-path share on last plan: {priority_path_share_pct_hint:.1}%"
+    ));
+    lines.join("\n")
+}
+
+type EdgeMeta = (
+    Option<String>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    bool,
+    bool,
+);
 
 fn edge_meta(edge: &Edge) -> EdgeMeta {
     let highway = edge.tags.get("highway").cloned();
+    let maxspeed_kmh = edge
+        .tags
+        .get("maxspeed")
+        .and_then(|s| crate::routing::eta::parse_maxspeed_kmh(s));
     let maxweight_t = edge.tags.get("maxweight").and_then(|s| parse_metric(s));
     let maxaxleload_t = edge.tags.get("maxaxleload").and_then(|s| parse_metric(s));
+    let maxbogieweight_t = edge
+        .tags
+        .get("maxbogieweight")
+        .and_then(|s| parse_metric(s));
     let maxheight_m = edge.tags.get("maxheight").and_then(|s| parse_metric(s));
     let maxwidth_m = edge.tags.get("maxwidth").and_then(|s| parse_metric(s));
-    (highway, maxweight_t, maxaxleload_t, maxheight_m, maxwidth_m)
+    let maxlength_m = edge.tags.get("maxlength").and_then(|s| parse_metric(s));
+    let is_toll = edge.tags.get("toll").map(|s| is_truthy_tag(s)).unwrap_or(false);
+    let is_ferry = edge.tags.get("route").map(|s| s.eq_ignore_ascii_case("ferry")).unwrap_or(false)
+        || edge.tags.get("ferry").map(|s| is_truthy_tag(s)).unwrap_or(false)
+        || highway.as_deref() == Some("ferry");
+    (
+        highway,
+        maxspeed_kmh,
+        maxweight_t,
+        maxaxleload_t,
+        maxbogieweight_t,
+        maxheight_m,
+        maxwidth_m,
+        maxlength_m,
+        is_toll,
+        is_ferry,
+    )
+}
+
+fn is_truthy_tag(raw: &str) -> bool {
+    matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "yes" | "true" | "1" | "toll"
+    )
 }
 
 fn push_directed_edge(
@@ -278,10 +380,15 @@ fn push_directed_edge(
         end_lat,
         end_lon,
         highway: meta.0.clone(),
-        maxweight_t: meta.1,
-        maxaxleload_t: meta.2,
-        maxheight_m: meta.3,
-        maxwidth_m: meta.4,
+        maxspeed_kmh: meta.1,
+        maxweight_t: meta.2,
+        maxaxleload_t: meta.3,
+        maxbogieweight_t: meta.4,
+        maxheight_m: meta.5,
+        maxwidth_m: meta.6,
+        maxlength_m: meta.7,
+        is_toll: meta.8,
+        is_ferry: meta.9,
     });
     graph.adjacency.entry(source).or_default().push(idx);
 }
@@ -337,6 +444,12 @@ fn edge_allowed_for_options(edge: &GraphEdge, options: &RouteOptions) -> bool {
             return false;
         }
     }
+    if options.avoid_tolls && edge.is_toll {
+        return false;
+    }
+    if options.avoid_ferries && edge.is_ferry {
+        return false;
+    }
     if let Some(ref limits) = options.vehicle {
         if let (Some(limit), Some(max)) = (limits.total_weight_kg, edge.maxweight_t) {
             // OSM maxweight is typically tonnes.
@@ -349,6 +462,11 @@ fn edge_allowed_for_options(edge: &GraphEdge, options: &RouteOptions) -> bool {
                 return false;
             }
         }
+        if let (Some(bogie), Some(max)) = (limits.bogie_weight_kg, edge.maxbogieweight_t) {
+            if bogie / 1000.0 > max {
+                return false;
+            }
+        }
         if let (Some(h), Some(max)) = (limits.height_m, edge.maxheight_m) {
             if h > max {
                 return false;
@@ -356,6 +474,11 @@ fn edge_allowed_for_options(edge: &GraphEdge, options: &RouteOptions) -> bool {
         }
         if let (Some(w), Some(max)) = (limits.width_m, edge.maxwidth_m) {
             if w > max {
+                return false;
+            }
+        }
+        if let (Some(len), Some(max)) = (limits.length_m, edge.maxlength_m) {
+            if len > max {
                 return false;
             }
         }
@@ -431,5 +554,141 @@ mod tests {
             directed_access(&edge, RoutingProfile::Car),
             (true, true)
         );
+    }
+
+    #[test]
+    fn mobile_home_maps_to_truck_graph() {
+        assert_eq!(
+            RoutingProfile::from(Profile::MobileHome),
+            RoutingProfile::Truck
+        );
+    }
+
+    #[test]
+    fn clearance_excludes_low_bridge_and_finds_alternate() {
+        use geo_types::Coord;
+        use std::collections::HashMap;
+
+        let n_a = Node {
+            id: NodeId(1),
+            coord: Coord { x: 10.0, y: 60.0 },
+            uses: 0,
+        };
+        let n_b = Node {
+            id: NodeId(2),
+            coord: Coord { x: 10.01, y: 60.0 },
+            uses: 0,
+        };
+        let n_c = Node {
+            id: NodeId(3),
+            coord: Coord { x: 10.02, y: 60.0 },
+            uses: 0,
+        };
+        let n_d = Node {
+            id: NodeId(4),
+            coord: Coord { x: 10.01, y: 60.01 },
+            uses: 0,
+        };
+        let mut nodes = HashMap::new();
+        nodes.insert(n_a.id, n_a);
+        nodes.insert(n_b.id, n_b);
+        nodes.insert(n_c.id, n_c);
+        nodes.insert(n_d.id, n_d);
+        let edge = |id: &str,
+                    s: i64,
+                    t: i64,
+                    lat0: f64,
+                    lon0: f64,
+                    lat1: f64,
+                    lon1: f64,
+                    max_h: Option<f64>| GraphEdge {
+            id: id.into(),
+            source: NodeId(s),
+            target: NodeId(t),
+            length_m: 1000.0,
+            base_weight: 1000.0,
+            eco_weight: None,
+            start_lat: lat0,
+            start_lon: lon0,
+            end_lat: lat1,
+            end_lon: lon1,
+            highway: Some("secondary".into()),
+            maxspeed_kmh: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: max_h,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+        };
+        let edges = vec![
+            edge("low", 1, 2, 60.0, 10.0, 60.0, 10.01, Some(3.0)),
+            edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, None),
+            edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, None),
+            edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, None),
+        ];
+        let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Truck);
+        let limits = crate::config::VehicleLimits {
+            height_m: Some(4.0),
+            ..Default::default()
+        };
+        let opts = RouteOptions {
+            vehicle: Some(limits),
+            ..Default::default()
+        };
+        let path = graph
+            .shortest_path_with_options(NodeId(1), NodeId(3), false, &opts)
+            .expect("alternate around low bridge");
+        assert!(
+            !path.0.contains(&NodeId(2)),
+            "must not use low bridge node B: {:?}",
+            path.0
+        );
+        assert!(path.0.contains(&NodeId(4)));
+    }
+
+    #[test]
+    fn avoid_toll_and_ferry_flags() {
+        let mut edge = GraphEdge {
+            id: "t".into(),
+            source: NodeId(1),
+            target: NodeId(2),
+            length_m: 100.0,
+            base_weight: 100.0,
+            eco_weight: None,
+            start_lat: 0.0,
+            start_lon: 0.0,
+            end_lat: 0.0,
+            end_lon: 0.0,
+            highway: Some("primary".into()),
+            maxspeed_kmh: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: true,
+            is_ferry: false,
+        };
+        assert!(!edge_allowed_for_options(
+            &edge,
+            &RouteOptions {
+                avoid_tolls: true,
+                ..Default::default()
+            }
+        ));
+        edge.is_toll = false;
+        edge.is_ferry = true;
+        assert!(!edge_allowed_for_options(
+            &edge,
+            &RouteOptions {
+                avoid_ferries: true,
+                ..Default::default()
+            }
+        ));
+        assert!(edge_allowed_for_options(&edge, &RouteOptions::default()));
     }
 }
