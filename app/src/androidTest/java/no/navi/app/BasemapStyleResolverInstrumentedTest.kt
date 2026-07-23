@@ -114,14 +114,15 @@ class BasemapStyleResolverInstrumentedTest {
             "raster-dem",
             sources.getJSONObject(MapterhornTerrain.HILLSHADE_SOURCE_ID).getString("type"),
         )
-        assertEquals(
-            MapterhornTerrain.TILEJSON_URL,
-            sources.getJSONObject(MapterhornTerrain.HILLSHADE_SOURCE_ID).getString("url"),
+        val demSrc = sources.getJSONObject(MapterhornTerrain.HILLSHADE_SOURCE_ID)
+        assertEquals("terrarium", demSrc.getString("encoding"))
+        assertEquals(512, demSrc.getInt("tileSize"))
+        assertTrue(demSrc.has("tiles"))
+        assertTrue(
+            demSrc.getJSONArray("tiles").getString(0).contains("mapterhorn.com"),
         )
         assertTrue(
-            sources.getJSONObject(MapterhornTerrain.HILLSHADE_SOURCE_ID)
-                .getString("attribution")
-                .contains("Mapterhorn"),
+            demSrc.getString("attribution").contains("Mapterhorn"),
         )
         val layers = out.getJSONArray("layers")
         var hillsIdx = -1

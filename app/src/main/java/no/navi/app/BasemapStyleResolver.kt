@@ -20,14 +20,14 @@ object BasemapStyleResolver {
     const val LIBERTY_URL = "https://tiles.openfreemap.org/styles/liberty"
 
     /**
-     * Viewing tilt applied with Mapterhorn hillshade so relief reads in
-     * perspective. Mesh extrusion (`style.terrain`) is not available on MapLibre
-     * Native — see [MapterhornTerrain].
+     * Opt-in “3D” is Mapterhorn DEM **hillshade** only. MapLibre Native has no
+     * mesh `terrain` / `sky` — see [MapterhornTerrain]. Camera stays flat (no tilt).
      */
-    const val TERRAIN_VIEW_TILT = MapterhornTerrain.VIEW_TILT_DEG
+    @Deprecated("3D no longer tilts the camera; always 0", ReplaceWith("0.0"))
+    const val TERRAIN_VIEW_TILT = 0.0
 
-    @Deprecated("Renamed; use TERRAIN_VIEW_TILT", ReplaceWith("TERRAIN_VIEW_TILT"))
-    const val OPENFREEMAP_3D_PITCH = TERRAIN_VIEW_TILT
+    @Deprecated("Renamed; unused", ReplaceWith("0.0"))
+    const val OPENFREEMAP_3D_PITCH = 0.0
 
     @Deprecated("Hardcoded liberty-3d bearing removed; camera follows user rotation modes")
     const val OPENFREEMAP_3D_BEARING = 0.0

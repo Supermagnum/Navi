@@ -22,40 +22,20 @@ Idle HUD bars and the Helgøya → Atnbrua route capture live in the
 
 | Scene | Preview |
 |---|---|
-| Town (z11) | ![Town map](images/zoom_z11.png) |
-| Street (z16) — basemap POIs visible | ![Street POIs](images/zoom_z16.png) |
+| Prekestolen base camp, POI's visible. | ![Prekestolen POIs](images/zoom_z16.png) |
 | Helgøya → Atnbrua (eco + 3D on) | ![Route overlay](images/route_map.png) |
-| Corridor route (Navi capture) | ![Navi route](images/navi_route_map.png) |
 
 Prefer `images/terrain/` and recent HUD shots when comparing route visuals.
-Older `route_map.png` / `route_hud_bars.png` copies were ~57% MapLibre empty
-background (`#f8f4f0`) because tiles never loaded — that is the “beige outdated”
-failure mode. Regenerated shots (allowlisted) show Liberty/Protomaps tiles plus
-start/end labels. Pale land fill in Liberty/Protomaps light styles is normal and
-is not the same as empty-map beige.
+Older `route_map.png` copies were ~57% MapLibre empty background (`#f8f4f0`)
+because tiles never loaded — that is the “beige outdated” failure mode.
+Regenerated shots (allowlisted) show Liberty/Protomaps tiles plus start/end
+labels. Pale land fill in Liberty/Protomaps light styles is normal and is not
+the same as empty-map beige.
 
 Start / via / end **place names** are drawn as a Compose map overlay (and a
 MapLibre waypoints layer). Screenshot tests set
 `NaviMapTestHooks.routeStartLabel` / `routeEndLabel` because search chrome is
 often hidden with `hideSearchChrome=true`.
-
-## Drive HUD
-
-Collapsed idle bars: see [README](../README.md#working-app-emulator-screenshots)
-(not duplicated here).
-
-| Scene | Preview |
-|---|---|
-| Tools menu open (region download) | ![Tools menu](images/hud/hud_tools_menu_open.png) |
-| Real Espa→Atnbrufossen route + both bars | ![Route HUD](images/route_hud_bars.png) |
-| Map settings with planned route | ![Map settings](images/hud/route_map_settings_menu.png) |
-| Drive settings with planned route | ![Drive settings](images/hud/route_drive_settings_menu.png) |
-| Tools/Region with planned route | ![Tools + route](images/hud/route_tools_menu_open.png) |
-
-Tools download buttons (basemap PMTiles + terrain DEM) are covered by
-`ToolsDownloadUiInstrumentedTest` (`btn_download_pmtiles`, `btn_download_dem`).
-
-Layout notes: [`hud-layout.md`](hud-layout.md).
 
 ## Moving icons (APRS-style)
 

@@ -2455,6 +2455,12 @@ private fun CorridorMapView(
     val styleApplyGen = remember { java.util.concurrent.atomic.AtomicInteger(0) }
     val stateRef = remember { java.util.concurrent.atomic.AtomicReference(state) }
     stateRef.set(state)
+    // Camera-idle / one-shot getMapAsync listeners capture applyResolvedStyle once;
+    // always read the live 3D preference from these refs (not the Compose closure).
+    val prefer3dRef = remember { java.util.concurrent.atomic.AtomicReference(prefer3d) }
+    val vulkanRef = remember { java.util.concurrent.atomic.AtomicReference(vulkanAvailable) }
+    prefer3dRef.set(prefer3d)
+    vulkanRef.set(vulkanAvailable)
 
     fun flattenCamera(map: MapLibreMap) {
         if (map.cameraPosition.tilt <= 0.05) {
@@ -2513,13 +2519,9 @@ private fun CorridorMapView(
     }
 
     fun applyResolvedStyle(map: MapLibreMap, force: Boolean = false) {
-        val applyGen = styleApplyGen.incrementAndGet()
-        val want3d = prefer3d && vulkanAvailable
-        // Flatten immediately (sync) so 3D-off is not left waiting on getStyle.
-        if (!want3d) {
-            flattenCamera(map)
-            NaviMapTestHooks.lastTerrainAttached = false
-        }
+        val livePrefer3d = prefer3dRef.get()
+        val liveVulkan = vulkanRef.get()
+        val want3d = livePrefer3d && liveVulkan
         val latest = stateRef.get()
         // Prefer Compose camera target (pendingCamera) over the live MapLibre
         // camera so style switches are not delayed one idle frame behind state.
@@ -2534,32 +2536,41 @@ private fun CorridorMapView(
             dataDir = dataDir,
             lat = lat,
             lon = lon,
-            prefer3d = prefer3d,
-            vulkanAvailable = vulkanAvailable,
+            prefer3d = livePrefer3d,
+            vulkanAvailable = liveVulkan,
         )
         val sameUri = resolved.styleUri == currentStyleUri.value
         val sameKind = resolved.kind == currentStyleKind.value
-        // Liberty 2D and 3D share the same style URL; OfflineProtomaps URI is
-        // also unchanged when enabling online-DEM 3D. Compare kind too.
+
+        // Coverage-only idle callbacks: if URI/kind unchanged and terrain/tilt
+        // already match, do not bump applyGen (that would cancel an in-flight 3D attach).
         if (!force && sameUri && sameKind) {
             map.getStyle { style ->
-                if (applyGen != styleApplyGen.get()) return@getStyle
                 if (style == null) return@getStyle
                 val attached = MapterhornTerrain.isAttached(style)
-                when {
-                    // Enable or re-apply hillshade/tilt when 3D is requested.
-                    resolved.attachMapterhornTerrain &&
-                        (!attached || map.cameraPosition.tilt < 0.5) -> {
-                        applyTerrainAndPitch(map, style, resolved, applyGen)
-                    }
-                    // Strip leftover hillshade / tilt when 3D is off.
-                    !resolved.attachMapterhornTerrain &&
-                        (attached || map.cameraPosition.tilt > 0.5) -> {
-                        applyTerrainAndPitch(map, style, resolved, applyGen)
-                    }
+                val tilt = map.cameraPosition.tilt
+                val tiltMatches = if (resolved.cameraPitch > 0.0) {
+                    tilt >= resolved.cameraPitch - 1.0
+                } else {
+                    tilt <= 0.5
                 }
+                val terrainMatches = attached == resolved.attachMapterhornTerrain
+                if (terrainMatches && tiltMatches) return@getStyle
+                val applyGen = styleApplyGen.incrementAndGet()
+                if (!want3d) {
+                    flattenCamera(map)
+                    NaviMapTestHooks.lastTerrainAttached = false
+                }
+                applyTerrainAndPitch(map, style, resolved, applyGen)
             }
             return
+        }
+
+        val applyGen = styleApplyGen.incrementAndGet()
+        // Flatten immediately (sync) so 3D-off is not left waiting on getStyle.
+        if (!want3d) {
+            flattenCamera(map)
+            NaviMapTestHooks.lastTerrainAttached = false
         }
         styleReady.value = false
         NaviMapTestHooks.styleReady = false
@@ -2591,7 +2602,7 @@ private fun CorridorMapView(
             if (style == null) {
                 NaviMapTestHooks.lastStyleLoadError = "setStyle returned null (${resolved.styleUri})"
                 onStyleNote("Basemap load failed; falling back to 2D Liberty")
-                if (prefer3d) {
+                if (livePrefer3d) {
                     on3dFailed()
                 }
                 val fallbackUri = BasemapStyleResolver.LIBERTY_URL
@@ -2847,7 +2858,7 @@ private fun CorridorMapView(
 
     LaunchedEffect(state.layerEpoch, styleReady.value, prefer3d, vulkanAvailable) {
         if (!styleReady.value) return@LaunchedEffect
-        val want3d = prefer3d && vulkanAvailable
+        val want3d = prefer3dRef.get() && vulkanRef.get()
         mapView.getMapAsync { map ->
             mapRef = map
             if (!want3d) {

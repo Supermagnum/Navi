@@ -219,7 +219,7 @@ basemap. Collapsed top/bottom drive HUD (search chrome hidden):
 ![Idle both bars](docs/images/hud/hud_idle_both_bars.png)
 
 Car route Helgøya → Atnbrua on the Automotive emulator (HUD shows altitude;
-AVD GNSS altitude is often wrong — see note above):
+AVD GNSS altitude is often wrong — see note above). One rest stop is visible:
 
 ![Helgøya to Atnbrua route](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
 

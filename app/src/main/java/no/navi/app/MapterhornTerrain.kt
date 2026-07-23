@@ -119,15 +119,20 @@ object MapterhornTerrain {
 
     fun augmentStyleJson(style: JSONObject, demSourceUri: String = TILEJSON_URL): JSONObject {
         val sources = style.getJSONObject("sources")
+        // Prefer `tiles` + `encoding` over `url`. MapLibre Native historically
+        // ignored style-level encoding when only a TileJSON/PMTiles `url` was set
+        // (maplibre-native#3564); explicit tiles keep terrarium decoding correct.
         val dem = JSONObject()
             .put("type", "raster-dem")
             .put("attribution", ATTRIBUTION)
+            .put("encoding", "terrarium")
+            .put("tileSize", 512)
         if (demSourceUri.startsWith("pmtiles://")) {
-            dem.put("url", demSourceUri)
-            dem.put("encoding", "terrarium")
-            dem.put("tileSize", 512)
+            dem.put("tiles", JSONArray().put(demSourceUri))
+        } else if (demSourceUri.contains("tilejson")) {
+            dem.put("tiles", JSONArray().put("https://tiles.mapterhorn.com/{z}/{x}/{y}.webp"))
         } else {
-            dem.put("url", demSourceUri)
+            dem.put("tiles", JSONArray().put(demSourceUri))
         }
         if (!sources.has(TERRAIN_SOURCE_ID)) {
             sources.put(TERRAIN_SOURCE_ID, JSONObject(dem.toString()))
