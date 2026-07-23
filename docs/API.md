@@ -6,6 +6,9 @@ Primary host API: UniFFI bindings generated from `navi-ffi` into
 Notable exports:
 
 - Region provision / corridor routing (`provisionRegionData`, `runCarCorridorPipeline`)
+- Offline basemap PMTiles (`pmtilesQueueRegion`, `pmtilesRunJob`, pause/resume/cancel; see [`map-styles.md`](map-styles.md))
+- Offline terrain DEM (`pmtilesQueueDemRegion` → `{region}_dem.pmtiles` from Mapterhorn; same run/pause/cancel path)
+- Hiking multi-waypoint plan (`planHikingRoute`) with hut pauses and tent-site fallback
 - Place index + FTS search (`ensurePlaceIndex`, `searchPlaces`)
 - OSM updates (`checkOsmUpdates`, `applyOsmUpdate`, `bindGeofabrikRegion`, weekly reminder helpers)
 - Icon rasterization (`rasterizeIconPng`, `rasterizeIconCheck`)

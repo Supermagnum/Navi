@@ -18,13 +18,14 @@ throughout.
 
 - [Navi](#navi)
   - [Features](#features)
+  - [Where data comes from](#where-data-comes-from)
   - [How features work](#how-features-work)
   - [Settings](#settings)
 - [Working app (emulator screenshots)](#working-app-emulator-screenshots)
 - [Documents](#documents)
 - [Icons (Navit)](#icons-navit)
 - [Building Android packages](#building-android-packages)
-- [Performance constraints](#performance-constraints-target-8-core--2-ghz-4-gb-ram)
+- [Performance constraints](#performance-constraints-minimum-8-core--2-ghz-4-gb-ram)
 - [Workspace layout](#workspace-layout)
 - [Host tests](#host-tests)
 - [Known issues](#known-issues)
@@ -32,9 +33,12 @@ throughout.
 Further reading in-repo: crate wiring and SQLite layout in
 [`architecture.md`](architecture.md); plugin ideas in
 [`docs/plugins.md`](docs/plugins.md); Android build steps in
-[`docs/android-build.md`](docs/android-build.md); debugging in
+[`docs/android-build.md`](docs/android-build.md); Linux core build in
+[`docs/build-linux.md`](docs/build-linux.md); debugging in
 [`docs/debugging.md`](docs/debugging.md); HUD bar/menu layout in
-[`docs/hud-layout.md`](docs/hud-layout.md).
+[`docs/hud-layout.md`](docs/hud-layout.md); map styles / PMTiles / 3D in
+[`docs/map-styles.md`](docs/map-styles.md); IMU mount calibration (deferred) in
+[`docs/imu-calibration.md`](docs/imu-calibration.md).
 
 # Navi
 
@@ -61,7 +65,9 @@ plugins are included in this repository ([`docs/plugins.md`](docs/plugins.md)).
 
 | Feature | What you get |
 |---|---|
-| **Profiles** | Car, motorcycle, cycling, hiking as primary UI modes (truck / electric variants exist in the routing enum) |
+| **Profiles** | Car, motorcycle, cycling, hiking, truck, mobile home (electric variants in enum) |
+| **Vehicle limits** | Axle / bogie weight, height, width, length — clearance filters exclude violating edges and reroute |
+| **Avoidances** | Independent toggles: avoid major roads, tolls, ferries (motor profiles; default off) |
 | **Eco routing** | Edge costs from elevation + vehicle physics (drag, mass, rolling resistance); optional regen on electric profiles |
 | **Corridor / region routing** | OSM `.pbf` → graph → eco-reweight → cached graph → A* corridor route with POI overlay |
 | **POI search** | [FTS place index from OSM tags; To / Via waypoints from search hits](docs/poi.md) |
@@ -77,6 +83,28 @@ Automotive **emulator only**. The app **needs testing on real hardware** before
 any shipping claim — GPS/IMU, MapLibre native layers, Vulkan/GLES, sensors, and
 performance differ from the AVD. Follow
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+
+## Where data comes from
+
+Navi is **offline-first**: routing, search, and eco costing run from files on
+disk. Network is used only when you opt in (provision, update check/apply, or
+live basemap tiles while online).
+
+| Data | Source | How it is used |
+|---|---|---|
+| **Road / POI extract** | [OpenStreetMap](https://www.openstreetmap.org/) via [Geofabrik](https://download.geofabrik.de/) regional `.osm.pbf` (or a custom corridor cut) | Graph for routing; FTS place/address index; POI categories |
+| **OSM updates** | Geofabrik `state.txt` + `.osc.gz` diffs or full `*-latest.osm.pbf` | Opt-in check/apply only — never silent ([`docs/osm-updates.md`](docs/osm-updates.md)) |
+| **Elevation (DEM)** | Copernicus DSM / SRTM / Viewfinder-style tiles (downloaded or seeded as archives) | Eco-route energy costs and related terrain logic |
+| **Basemap (visual)** | Online: [OpenFreeMap](https://openfreemap.org/) Liberty (MapLibre). Offline: regional **Protomaps PMTiles** + bundled Protomaps light style ([`docs/map-styles.md`](docs/map-styles.md)). Optional opt-in **3D**: Mapterhorn DEM hillshade (online TileJSON or local `{region}_dem.pmtiles`; Vulkan-gated) | On-screen map; not the routing graph |
+| **Position / heading** | Device GPS (Android) or **gpsd** + IMU on Linux | Live location, altitude HUD, Compass / direction-of-travel |
+| **Icons** | Bundled Navit-derived SVG under `core/src/icons` | Maneuver / POI / eco leaf rasterization |
+
+Once a region extract and DEM tiles are on the device, core navigation does not
+need the network. The visual basemap uses live OpenFreeMap Liberty until a
+regional PMTiles file is downloaded (Tools → Download basemap); then Protomaps
+tiles load offline. Optional terrain DEM is the same path with
+**Download terrain DEM (Mapterhorn)** (`{region}_dem.pmtiles`).
+([`docs/map-styles.md`](docs/map-styles.md)).
 
 ## How features work
 
@@ -108,8 +136,9 @@ reminder display; interval/duration defaults are edited in Drive settings.
 **Map & HUD.** MapLibre Vulkan renders the basemap. Collapsed top HUD shows GPS
 altitude; tap opens map settings (rotation, Trip ETA, Breaks, Auto-zoom level).
 Collapsed bottom HUD shows zoom −/+, break time, trip ETA, and eco leaf; tap
-opens drive/rest/fuel settings. Maneuver turn stubs are deferred to the
-approach-instruction box ([`docs/approach-instructions.md`](docs/approach-instructions.md)).
+opens drive/rest/fuel settings. Near a turn, the temporary approach-instruction
+box shows maneuver icon + distance + next street
+([`docs/approach-instructions.md`](docs/approach-instructions.md)).
 
 **Tracks.** `TrackStore` upserts stations by id, expires by timeout, and filters
 with Haversine range ([`docs/APRS.md`](docs/APRS.md)). RF decode is not shipped;
@@ -160,7 +189,7 @@ Auto-zoom level is edited in the **map settings** sheet (top bar), persisted via
 |---|---|---|
 | Travel profile chip | In-memory + rest load on change | Menu focus: Car, Cycling, Hiking, Motorcycle |
 | Eco toggle | With rest / profile defaults | Hiking & cycling lock eco on; motor profiles can toggle |
-| Vehicle limits (axle / height / width / weight) | `VehicleLimits` | Used to respect OSM access restrictions where tagged |
+| Vehicle limits (axle / bogie / height / width / length / weight) | `VehicleLimits` | Applied to Truck / Mobile Home routing; height clearance excludes edges and finds an alternate |
 
 ### Tracks (APRS-style)
 
@@ -179,6 +208,10 @@ basemap. Collapsed top/bottom drive HUD (search chrome hidden):
 
 ![Idle both bars](docs/images/hud/hud_idle_both_bars.png)
 
+Hiking corridor near Eldåbu and Store Ramshøgda (Mapterhorn 3D hillshade):
+
+![Eldabu Ramshogda 3D](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
+
 All other screenshots (map zoom levels, route overlay, menus, settings
 overlays, eco leaf, rotation, bearing, moving icons):
 [`docs/pictures.md`](docs/pictures.md).
@@ -190,6 +223,7 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`architecture.md`](architecture.md) | Crate wiring, thread tiers, SQLite / FTS / graph cache, plugins |
 | [`docs/pictures.md`](docs/pictures.md) | Emulator screenshot gallery |
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Adjust size and placement of drive HUD bars and menus |
+| [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs offline Protomaps PMTiles; 3D gate |
 | [`docs/approach-instructions.md`](docs/approach-instructions.md) | Deferred: temporary maneuver approach box (icon + distance + name) |
 | [`docs/poi.md`](docs/poi.md) | Searchable POI categories, OSM tag rules, and how to add types (e.g. fishing) |
 | [`docs/osm-updates.md`](docs/osm-updates.md) | Opt-in Geofabrik check / `.osc.gz` / full re-download |
@@ -204,6 +238,9 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/CAT.md`](docs/CAT.md) | CAT VFO auto-tune from NFM repeaters (≤150 km); OSM network example |
 | [`docs/voice-guidance.md`](docs/voice-guidance.md) | Planned voice guidance plugin (recordings + optional Piper) |
 | [`docs/android-build.md`](docs/android-build.md) | Compile native `libnavi.so`, UniFFI bindings, and Gradle APKs |
+| [`docs/build-linux.md`](docs/build-linux.md) | Linux: Rust core, integration tests, gpsd + IMU (no desktop map UI yet) |
+| [`docs/imu-calibration.md`](docs/imu-calibration.md) | Deferred: vehicle-mount IMU pitch/roll zeroing for eco elevation |
+| [`docs/approach-instructions.md`](docs/approach-instructions.md) | Approach-instruction box (Navit prior art + locked thresholds) |
 | [`docs/debugging.md`](docs/debugging.md) | Host + Android debug loops (logcat, Studio, instrumented tests) |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | **Required:** physical device checklist vs emulator baseline |
 | [`test-results.md`](test-results.md) | Host integration test notes |
@@ -243,11 +280,19 @@ export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
 Update `.cargo/config.toml` linker paths to your NDK before the first native
 build. `minSdk` 26, `compileSdk` / `targetSdk` 35, JDK 17.
 
-## Performance constraints (target: 8-core ~2 GHz, 4 GB RAM)
+## Performance constraints (minimum: 8-core ~2 GHz, 4 GB RAM)
 
-Planning targets (not yet measured on the target device). Reference: a Rust
-OSM-graph project parsing ~9M nodes / ~18M edges in ~30 s / &lt;5 GB on an 8-core
-desktop, scaled down for lower clocks and a 4 GB budget.
+**Minimum required hardware** for the intended Automotive / embedded class of
+device (not a “nice to have” desktop target):
+
+| Resource | Minimum |
+|---|---|
+| CPU | **8 cores**, about **2 GHz** class |
+| RAM | **4 GB** |
+
+Planning estimates below are not yet measured on that device class. Reference: a
+Rust OSM-graph project parsing ~9M nodes / ~18M edges in ~30 s / &lt;5 GB on an
+8-core desktop, scaled down for lower clocks and a 4 GB budget.
 
 | Task | Data scale | Estimated time | Notes |
 |---|---|---|---|
@@ -265,6 +310,34 @@ desktop, scaled down for lower clocks and a 4 GB budget.
   opt-in with an in-app warning ("may be slow or fail on low-RAM devices").
 - The 9M-node reference already needed under 5 GB on desktop; that scale is not
   a safe in-memory default on this class of device.
+
+### Minimum free storage (SD card / internal drive)
+
+Offline **routing** data (Geofabrik `.osm.pbf` + on-disk graph cache + place/FTS
+index + DEM tiles + scratch for updates). Does **not** include MapLibre basemap
+tiles unless you also download regional **PMTiles** (add roughly another
+**1–3×** a comparable Geofabrik extract for a clipped Protomaps region, plus
+bundled sprites/glyphs already in the APK). See [`docs/map-styles.md`](docs/map-styles.md).
+
+Geofabrik `.osm.pbf` sizes (approx., mid-2026; they grow over time):
+
+| Country / extract | `.osm.pbf` only | **Minimum free space to budget** |
+|---|---|---|
+| **Sweden** | ~0.8 GB | **~3–5 GB** |
+| **Norway** | ~1.3 GB | **~4–6 GB** |
+| **Russia** | ~4.1 GB | **~12–16 GB** |
+| **Germany** | ~4.8 GB | **~14–18 GB** |
+| **USA** | ~12 GB | **~36–48 GB** |
+
+Budget rule of thumb: keep about **3–4×** the `.osm.pbf` free so graph build,
+eco-reweight cache, FTS index, DEM coverage, and a temporary second copy during
+OSM update/re-download all fit. Prefer a **regional** extract (e.g. Norway
+Østlandet ~0.4 GB PBF, or a US state / Russian federal district) on 4 GB RAM
+devices. Full **Germany**, **Russia**, or especially the **USA** are not
+practical as a single in-memory country load on the minimum hardware — disk may
+fit with a large card; RAM will not.
+
+App install / APK and icon assets are small relative to country extracts.
 
 ### Required mitigations
 
@@ -301,6 +374,9 @@ cargo test -p driver-break-core osm_update::
 
 ## Known issues
 
+- **GUI polish:** the Compose HUD / search / tools UI works but still needs visual
+  and UX polishing (spacing, typography, density on Automotive screens). If you
+  want to improve the look-and-feel, please do — contributions welcome.
 - **Moving icons (APRS-style tracked markers):** fixed. Instrumented test
   `MovingIconInstrumentedTest` passes with visible yellow-halo APRS markers on the
   map (see [`docs/pictures.md`](docs/pictures.md)). Root cause was not zoom: MapLibre
@@ -311,6 +387,10 @@ cargo test -p driver-break-core osm_update::
   understood on-device. See
   [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) for how to
   check whether the native-layer failure is emulator-only.
+  **Note:** corridor / approach **route `LineLayer`** is a different path — it
+  paints under the Vulkan SDK (no screen-space workaround). Missing route lines
+  in early approach shots were empty polyline injection in the test, not this
+  Circle/Symbol GLES issue ([`docs/approach-instructions.md`](docs/approach-instructions.md)).
 - **Map rotation SIGSEGV (emulator GLES):** fixed by switching the app dependency
   from `org.maplibre.gl:android-sdk` (OpenGL ES) to
   `org.maplibre.gl:android-sdk-vulkan` 11.8.8. On the Automotive AVD

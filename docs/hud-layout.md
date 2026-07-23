@@ -5,8 +5,9 @@ the menus that sit with them. All of this is Compose UI in the Android host;
 there is no runtime “theme size” setting yet — edit the Kotlin sources and
 rebuild the APK.
 
-Reference screenshot (map + bars only):
-[`docs/images/hud/hud_map_top_bottom_only.png`](images/hud/hud_map_top_bottom_only.png).
+Reference screenshot (map + bars only): see the
+[README working-app section](../README.md#working-app-emulator-screenshots)
+(`docs/images/hud/hud_idle_both_bars.png`).
 
 ## Collapsed vs expanded (default behaviour)
 
@@ -14,8 +15,12 @@ Both drive bars are **collapsed by default**.
 
 | Bar | Collapsed content | Tap |
 |---|---|---|
-| Top (`TopDriveHud`) | Map label, altitude, rotation hint | Toggles `MapSettingsSheet` (rotation, Trip ETA, Breaks, Auto-zoom) |
-| Bottom (`BottomDriveHud`) | Zoom −/+, break time, trip ETA, eco leaf | Status area toggles `DriveSettingsSheet` (rest / fuel / eco) |
+| Top (`TopDriveHud`) | Map label, altitude, rotation hint | Toggles `MapSettingsSheet` (rotation, Trip ETA, Breaks, Auto-zoom, experimental 3D) |
+| Bottom (`BottomDriveHud`) | Zoom −/+, trip ETA, eco leaf; **break countdown (time or distance) only when a route is planned** | Status area toggles `DriveSettingsSheet` (rest / fuel / eco / break display mode) |
+
+Altitude: GPS fixes without usable vertical accuracy (common on the AVD, often
+exactly `0.0`) are ignored and shown as `Alt --`. Instrumented screenshots inject
+`NaviMapTestHooks.gpsAltitudeM` for a stable non-zero reading.
 
 Sheets close on Apply/Cancel/Close, or by tapping the same bar again. Tapping the
 map does not open or close either sheet.
@@ -30,7 +35,9 @@ bar only when eco-mode is active — not a text “ECO” label.
 (deferred temporary approach box).
 
 **Status toast:** bottom-**end** chip (`status_toast`), above the bottom bar —
-never bottom-left over MapLibre/OSM attribution.
+never bottom-left over MapLibre/OSM attribution (covers OpenFreeMap and
+Protomaps offline styles alike). Basemap style selection is documented in
+[`map-styles.md`](map-styles.md).
 
 **Settings sheets:** floating overlays (`zIndex` above map + bars), not siblings
 that insert into the top/bottom chrome columns.
@@ -40,10 +47,10 @@ collapsed `heightIn(min = …)` floors and the future approach box — size by
 content first.
 
 **Measured on emulator (2026-07-22)** from
-`docs/images/hud/hud_map_top_bottom_only.png` (1280×720): collapsed top
+`docs/images/hud/hud_idle_both_bars.png` (1280×720): collapsed top
 **6.67%** (48 px), collapsed bottom **8.89%** (64 px). See
-[`android-test-results.md`](../android-test-results.md) for toast / leaf / overlay
-confirmation shots.
+[`android-test-results.md`](../android-test-results.md) for historical toast / leaf
+notes.
 
 ## Screen stack (placement)
 
@@ -54,7 +61,7 @@ is a full-screen `Box`:
 |---|---|---|
 | `CorridorMapView` | fill | MapLibre map |
 | Top `Column` | `TopCenter` | Top drive HUD + search / profile chrome (scrollable) |
-| Tools `Surface` | `BottomCenter` | Region/debug panel when Tools is open |
+| Tools `Surface` | `BottomCenter` | Region panel when Tools is open |
 | Bottom `Column` | `BottomCenter` | Bottom HUD only |
 | Status chip | `BottomEnd` | Ephemeral status (settings applied, Ready, …) |
 | Map / drive settings sheets | Top/Bottom center | Floating overlays above bars (`zIndex`) |
@@ -123,7 +130,7 @@ cover zoom/settings:
 
 ```kotlin
 .padding(bottom = 88.dp)   // lift tools_menu above BottomDriveHud
-.heightIn(max = 220.dp)
+.heightIn(max = 360.dp)
 ```
 
 Raise `88.dp` if the bottom HUD grows; lower it if you want the tools panel
@@ -224,7 +231,11 @@ Surface(
 | Larger tap targets on chips | Increase chip / `FilterChip` padding, or wrap in taller `Row` |
 | More space between To/Via/Place/Address | `Arrangement.spacedBy(8.dp)` on that row |
 | Compact profile row | Lower `spacedBy(6.dp)` and panel `padding(10.dp)` |
-| Shorter tools panel | Lower `heightIn(max = 220.dp)` on `tools_menu` |
+| Shorter tools panel | Lower `heightIn(max = 360.dp)` on `tools_menu` |
+
+Tools includes **Download basemap (PMTiles)** (`btn_download_pmtiles`) and
+**Download terrain DEM (Mapterhorn)** (`btn_download_dem`) for the selected
+Geofabrik path. See [`map-styles.md`](map-styles.md).
 
 ### Placement / order
 
