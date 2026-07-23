@@ -110,6 +110,8 @@ regional PMTiles-fil er lastet ned (Verktøy → Last ned grunnkart); deretter
 lastes Protomaps frakoblet. Valgfri terreng-DEM er samme sti med
 **Last ned terreng-DEM (Mapterhorn)** (`{region}_dem.pmtiles`).
 ([`docs/map-styles.md`](docs/map-styles.md)).
+Land-/regionsuttrekk av PMTiles kan forberedes med
+[PMT-splitter](https://github.com/Supermagnum/PMT-splitter).
 
 ## Slik fungerer funksjonene
 

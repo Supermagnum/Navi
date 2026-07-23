@@ -111,6 +111,8 @@ regional PMTiles file is downloaded (Tools → Download basemap); then Protomaps
 tiles load offline. Optional terrain DEM is the same path with
 **Download terrain DEM (Mapterhorn)** (`{region}_dem.pmtiles`).
 ([`docs/map-styles.md`](docs/map-styles.md)).
+Country/region PMTiles extracts can be prepared with
+[PMT-splitter](https://github.com/Supermagnum/PMT-splitter).
 
 ## How features work
 
