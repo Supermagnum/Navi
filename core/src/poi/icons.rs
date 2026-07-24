@@ -32,5 +32,8 @@ pub fn osm_icon_key(tags: &HashMap<String, String>) -> String {
     if let Some(shop) = tags.get("shop") {
         return format!("shop-{shop}");
     }
+    if let Some(highway) = tags.get("highway") {
+        return format!("highway-{highway}");
+    }
     "poi-generic".to_string()
 }

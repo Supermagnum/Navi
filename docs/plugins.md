@@ -10,7 +10,9 @@ timeout isolation (`plugin-host` + `log-hello` / `busy-loop` examples).
 spec, marine traffic, weather overlays, bathymetry, sonar, RTL-SDR/APRS-adjacent
 guests, etc.). That is **expected and intentional**, not a bug or an oversight —
 the host exists so future contributors can ship those plugins independently
-without changing the navigation core. See [Ideas for beneficial plugins](#ideas-for-beneficial-plugins)
+without changing the navigation core. Country/region-dependent packs (camping,
+future driving-hour families, horse access, …) follow the reusable pattern in
+[`jurisdiction-rules.md`](jurisdiction-rules.md). See [Ideas for beneficial plugins](#ideas-for-beneficial-plugins)
 below as an open invitation / roadmap, not as incomplete core features.
 
 Navi runs untrusted extension code in a **wasmtime** sandbox (`plugin-host`), not
@@ -174,7 +176,7 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | **Host duties** | Expose route/junction hints, POI/area queries, safety config, admin region, clock; render suggestion cards + disclaimer |
 | **Guest duties** | Rank road∩track seeds, walk short distance along track, filter by country rules, persist two-night keys, assemble guidance text |
 | **Proposed caps** | `position_read`, `poi_query`, `route_read`, `safety_config_read`, `admin_region_read`, `clock_read`, `plugin_kv` / `storage`, `log` |
-| **Notes** | Spec only — not implemented. Informational guidance, not legal advice. No Nordic wild-camp logic for England/Wales or Denmark. |
+| **Notes** | Spec only — not implemented. Informational guidance, not legal advice. No Nordic wild-camp logic for England/Wales or Denmark. Country packs and “decline rather than guess” are the reference example in [`jurisdiction-rules.md`](jurisdiction-rules.md). |
 
 ### 8. Safety / resupply lookahead (`safety` / `resupply_safety`)
 

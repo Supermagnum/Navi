@@ -16,6 +16,10 @@ pub enum PoiCategory {
     TentSite,
     /// Fishing spots (`leisure=fishing` and related).
     Fishing,
+    /// Truck / HGV rest: `highway=rest_area`, `highway=services`, or HGV parking.
+    RestArea,
+    /// Motor overnight lodging: hotel / motel / guest house / etc.
+    Lodging,
 }
 
 impl PoiCategory {
@@ -31,6 +35,9 @@ impl PoiCategory {
             Self::CraftBrewery => safety.poi_radius_general_m,
             Self::TentSite => safety.poi_radius_cabin_m,
             Self::Fishing => safety.poi_radius_general_m,
+            // Slightly wider than amenity pauses — truck rest areas are sparser.
+            Self::RestArea => safety.poi_radius_general_m.max(20_000.0),
+            Self::Lodging => safety.poi_radius_general_m.max(20_000.0),
         }
     }
 }

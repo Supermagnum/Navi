@@ -32,6 +32,13 @@ pub const CAR_BREAK_DURATION_MIN_MINUTES: u32 = 15;
 /// Car break duration upper bound (minutes).
 pub const CAR_BREAK_DURATION_MAX_MINUTES: u32 = 45;
 
+/// Soft suggested maximum driving hours per day for car / motorcycle / mobilehome
+/// multi-day overnight splitting (wellbeing guidance, not legal).
+pub const CAR_MAX_DAILY_HOURS: f64 = 8.0;
+
+/// Soft warning threshold (hours) before the daily max for car-style profiles.
+pub const CAR_SOFT_LIMIT_HOURS: f64 = 7.0;
+
 /// Truck mandatory break after driving (hours), EU Regulation EC 561/2006.
 pub const TRUCK_MANDATORY_BREAK_AFTER_HOURS: f64 = 4.5;
 

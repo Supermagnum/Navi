@@ -127,7 +127,7 @@ pub fn evaluate_truck_trip(
         ));
     }
     notes.push(format!(
-        "daily_rest_policy: regular {:.0} h (reduced {:.0} h up to {}×); split {:.0}+{:.0} h informational until multi-day truck planning",
+        "daily_rest_policy: regular {:.0} h (reduced {:.0} h up to {}×); split {:.0}+{:.0} h — multi-day segmentation applies when trip exceeds daily driving cap",
         truck.daily_rest_hours,
         truck.daily_rest_reduced_hours,
         truck.max_reduced_daily_rests,
@@ -135,10 +135,11 @@ pub fn evaluate_truck_trip(
         truck.split_daily_rest_second_hours
     ));
     notes.push(format!(
-        "weekly_rest_policy: regular {:.0} h (reduced {:.0} h); in-cab forbidden for regular={}; multi-day enforcement deferred",
+        "weekly_rest_policy: regular {:.0} h (reduced {:.0} h); in-cab forbidden for regular={}; multi-day planner inserts weekly rest after {} consecutive working days",
         truck.weekly_rest_hours,
         truck.weekly_rest_reduced_hours,
-        truck.regular_weekly_rest_not_in_cab
+        truck.regular_weekly_rest_not_in_cab,
+        truck.max_consecutive_working_days
     ));
 
     TruckDutyEvaluation {

@@ -4,6 +4,11 @@ Navi indexes OpenStreetMap features into `PoiCategory` values used by rest /
 overnight planning and nearby search. A single OSM object may match **more than
 one** category.
 
+Overnight POI use: truck EC 561 multi-day rests — [`ec-561-truck-rest.md`](ec-561-truck-rest.md)
+(**RestArea**); soft car / motorcycle / mobile home / cycle multi-day overnight —
+README “Rest and overnight” (**Lodging**, camping tags, **RestArea** fallback).
+Jurisdiction scope for legal packs: [`jurisdiction-rules.md`](jurisdiction-rules.md).
+
 Default search radii come from `SafetyConfig` / `defaults.rs` (CraftBrewery uses
 the General radius of **15 km**).
 
@@ -18,6 +23,8 @@ the General radius of **15 km**).
 | **CraftBrewery** | 15 km (General) | **OR** of: `microbrewery=yes`, `shop=alcohol`, `craft=brewery` |
 | **TentSite** | Cabin radius | `tourism` ∈ camp_site, camp_pitch; **or** `amenity=camping` |
 | **Fishing** | 15 km (General) | **OR** of: `leisure=fishing`, `leisure=fishing_pier`, `sport=fishing`, `shop=fishing` — icon: Navit-derived `fish.svg` as `leisure-fishing` ([`icons.md`](icons.md)) |
+| **RestArea** | max(General, 20 km) | **OR** of: `highway=rest_area`, `highway=services`, or `amenity=parking` with HGV access (`hgv` / `access:hgv` = yes or designated). Used for truck EC 561 overnight matching and as a fallback for car / motorcycle / mobile home soft multi-day overnight (intentionally simpler than hiking hut scoring — nearest tagged stop within a fixed radius) |
+| **Lodging** | max(General, 20 km) | **OR** of: `tourism` ∈ hotel, motel, guest_house, apartment, chalet, hostel. Used for car / motorcycle / mobile home / cycle multi-day overnight matching (nearest within radius; simpler than hiking hut scoring) |
 
 Suggested preference radii and regional nearest-neighbor spacing (for tuning
 hiking/cycling search): [`poi-search-defaults.md`](poi-search-defaults.md).

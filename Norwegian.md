@@ -39,7 +39,8 @@ Mer å lese i depotet: hvordan delene henger sammen i
 [`docs/debugging.md`](docs/debugging.md); HUD-layout i
 [`docs/hud-layout.md`](docs/hud-layout.md); kartstiler / frakoblede kart / 3D i
 [`docs/map-styles.md`](docs/map-styles.md); lastebil kjøre-/hviletidsregler i
-[`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md); IMU-monteringskalibrering (utsatt) i
+[`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md); land-/regionregelpakker i
+[`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md); IMU-monteringskalibrering (utsatt) i
 [`docs/imu-calibration.md`](docs/imu-calibration.md).
 
 # Navi
@@ -77,7 +78,7 @@ produktplugins er ikke levert ennå ([`docs/plugins.md`](docs/plugins.md)).
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Elektriske modus får kreditt for energi tilbake i nedoverbakke. Formler: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Ferdig |
 | **Frakoblet ruteplan** | Last ned en kartregion én gang, planlegg på enheten, og se ruten pluss foreslåtte stopp på kartet. | Ferdig |
 | **Stedssøk** | Søk steder og sett Fra / Via / Til ([`docs/poi.md`](docs/poi.md)). Inkluderer fiskeplasser og veiledning for hytteradius ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Ferdig |
-| **Hvile og pauser** | Pausepåminnelser og foreslåtte stopp langs ruten. Fottur og sykling bruker tradisjonelle skandinaviske rasteavstander ([bakgrunn](docs/historisk-bakgrunn.md)). **Lastebil** / **lastebil elektrisk** følger EU EC 561/2006 for pauseavstand og daglige / ukentlige / 14-dagers kjøretidstak med lagret historikk ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). **Bobil** bruker bil-lignende myke påminnelser (velvære — ikke kommersiell HGV-juridisk sporing). Overnatting på fottur holder avstand til hus og isbreer. | **Delvis** — bil, MC, fottur, sykkel og bobil myke pauser klart; lastebil pauseplassering og duty-tak for enkeltur klart; flerdagers lastebil *hvile* (døgn/uke) utsatt |
+| **Hvile og pauser** | Pausepåminnelser og foreslåtte stopp langs ruten. Fottur og sykling bruker tradisjonelle skandinaviske rasteavstander ([bakgrunn](docs/historisk-bakgrunn.md)). **Lastebil** / **lastebil elektrisk** følger EU EC 561/2006 for pauseavstand, daglige / ukentlige / 14-dagers kjøretidstak og flerdagers døgn-/ukeshvile med lagret historikk ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). **Bil** / **motorsykkel** / **sykkel** / **bobil** bruker myk flerdagers overnatting når turen overstiger et daglig budsjett (8 t kjøring eller 100 km sykling) med hotell/camping/rasteplass-forslag. Fottur-pausestopp prefererer hytter/telt og holder avstand til hus og isbreer. | **Delvis** — lastebil EC 561 pauser, duty-tak og flerdagers døgn-/ukeshvile implementert (kompensasjonsbok og rik overnattingsskåring fortsatt utsatt — se EC 561-dokumentet); bil / MC / sykkel / bobil myk flerdagers overnatting implementert; fottur rast-intervall hytte/telt + overnattingssikkerhet i `planHikingRoute` (dag-for-dag `plan_multi_day` bare i integrasjonstester) |
 | **Kjørefelt (HUD)** | Slim toppstripe (høyde; trykk for kartinnstillinger) og bunnstripe (zoom, pausetid, tur-ETA, økoblad; trykk for kjøreinnstillinger). | Ferdig |
 | **Kartrotasjon** | Rett kartet etter kompass, etter kjøreretning, eller med nord alltid opp. | Ferdig |
 | **Bevegelige ikoner** | Vis nærliggende spormarkører på kartet (for eksempel radiostasjoner) innen ca. 50–150 km. | **Delvis** — tegning virker; live radiomating er ikke innebygd ennå |
@@ -141,16 +142,24 @@ løyper står i [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md).
 Søketreff setter Fra / Via / Til og flytter kartet. Grunnkartet viser egne
 etiketter; appmarkører bruker medfølgende ikoner.
 
-**Hvile og overnatting.** Hver reisemåte har egne pausestandarder. Bil bruker
-timer mellom pauser; fottur og sykling bruker tradisjonelle skandinaviske
-rasteavstander ([`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md));
+**Hvile og overnatting.** Hver reisemåte har egne pausestandarder. Bil og
+motorsykkel bruker timer mellom pauser; fottur og sykling bruker tradisjonelle
+skandinaviske rasteavstander
+([`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md));
 **lastebil** / **lastebil elektrisk** følger EU EC 561/2006
 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)); **bobil** beholder
-bil-lignende myke påminnelser (ikke HGV-juridisk sporing). For overnatting på
-fottur avviser Navi steder for nær hus eller isbreer. Bygningsavstanden følger
-norsk **allemannsrett**: villcamping er vanligvis lov når du holder respektfull
-avstand til hus og dyrket mark. Det er en Norge-orientert standard og
-**gjelder ikke nødvendigvis andre steder** — lokal campinglov kan være strengere.
+bil-lignende myke påminnelser (ikke HGV-juridisk sporing). Når bil / motorsykkel /
+bobil / sykkeltur overstiger det myke daglige budsjettet (standard **8 t** kjøring
+eller **100 km** sykling), deler planleggeren turen i dager og foreslår overnatting
+ved hotell, camping eller rasteplass nær dagsgrensen (informativt hvis ingen POI
+finnes — se [`docs/poi.md`](docs/poi.md)). For fottur plasserer `planHikingRoute`
+hytte-/teltpauser langs rastintervaller og avviser overnattingskandidater for nær
+hus eller isbreer; dag-for-dag flerdagers fottursegmentering (`plan_multi_day`)
+kjøres i integrasjonstester, ikke som UniFFI-planlegger ennå. Bygningsavstanden
+følger norsk **allemannsrett**: villcamping er vanligvis lov når du holder
+respektfull avstand til hus og dyrket mark. Det er en Norge-orientert standard og
+**gjelder ikke nødvendigvis andre steder** — lokal campinglov kan være strengere;
+landpakker følger [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md).
 Bryteren «Pauser» styrer bare om påminnelsen vises; rediger tider i
 kjøreinnstillinger (bil vs lastebil når lastebilprofil er valgt).
 
@@ -263,7 +272,8 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 | [`docs/bilder.md`](docs/bilder.md) | Emulatorskjermbildegalleri (norsk) |
 | [`docs/pictures.md`](docs/pictures.md) | Emulatorskjermbildegalleri (engelsk) |
 | [`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md) | Rast/vei-grunnlag for standard pauseintervaller (fottur og sykling); [engelsk](docs/historical-background.md) |
-| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Lastebil EU kjøre-/hviletid: håndhevet vs sporet vs utsatt |
+| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Lastebil EU kjøre-/hviletid: håndhevede duty-tak, implementert flerdagers døgn-/ukeshvile, øvrige utsatte punkter |
+| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Mønster for land-/regionavhengige regler (EC 561 + allemannsrett; Horse-eksempel) |
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Størrelse og plassering av kjøre-HUD og menyer |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs frakoblet Protomaps PMTiles; 3D-port |
 | [`docs/approach-instructions.md`](docs/approach-instructions.md) | Midlertidig manøver-tilnærmingsboks |

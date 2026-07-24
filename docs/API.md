@@ -8,7 +8,14 @@ Notable exports:
 - Region provision / corridor routing (`provisionRegionData`, `runCarCorridorPipeline`)
 - Offline basemap PMTiles (`pmtilesQueueRegion`, `pmtilesRunJob`, pause/resume/cancel; see [`map-styles.md`](map-styles.md))
 - Offline terrain DEM (`pmtilesQueueDemRegion` → `{region}_dem.pmtiles` from Mapterhorn; same run/pause/cancel path)
-- Hiking multi-waypoint plan (`planHikingRoute`) with hut pauses and tent-site fallback
+- Hiking multi-waypoint plan (`planHikingRoute`) with rast-interval hut pauses
+  and tent-site fallback (day-by-day `plan_multi_day` is integration-test only,
+  not exported via UniFFI)
+- Car / motorcycle / cycle / truck corridor plan (`planCarRoute`) — soft motor
+  multi-day overnight report lines / break POIs; Truck / TruckElectric also run
+  EC 561 duty + multi-day daily/weekly rest (see [`ec-561-truck-rest.md`](ec-561-truck-rest.md))
+- Truck rest settings helpers (`loadTruckRestSettings` / `saveTruckRestSettings` /
+  exceptional-extension arming — see EC 561 doc)
 - Place index + FTS search (`ensurePlaceIndex`, `searchPlaces`)
 - OSM updates (`checkOsmUpdates`, `applyOsmUpdate`, `bindGeofabrikRegion`, weekly reminder helpers)
 - Icon rasterization (`rasterizeIconPng`, `rasterizeIconCheck`)
@@ -18,6 +25,8 @@ Notable exports:
 Plugin guest API: see [`plugins.md`](plugins.md) (includes planned APRS, weather,
 road info, CAT, ECU/EV plugins).
 POI categories: see [`poi.md`](poi.md).
+Truck rest / jurisdiction pattern: [`ec-561-truck-rest.md`](ec-561-truck-rest.md),
+[`jurisdiction-rules.md`](jurisdiction-rules.md).
 OSM update cadence: see [`osm-updates.md`](osm-updates.md).
 ECU / OBD energy extension: see [`ECU.md`](ECU.md) (core types in
 `driver_break_core::ecu`; no live polling API exported via UniFFI yet).

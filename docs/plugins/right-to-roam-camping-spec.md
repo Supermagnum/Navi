@@ -308,6 +308,7 @@ set for its location.
 ## 8. Related documents
 
 - [`plugins.md`](../plugins.md) — sandbox, capabilities, design rules  
+- [`../jurisdiction-rules.md`](../jurisdiction-rules.md) — reusable country/region rule-pack pattern (this camping table is a grounding example)  
 - [`../poi.md`](../poi.md) — POI categories / spatial index  
 - Core: `SafetyConfig`, `SAFETY_MIN_BUILDING_DISTANCE_M`  
-- README Rest / overnight note on Norwegian *allemannsretten*
+- [`../README.md`](../README.md) — Rest and overnight (*allemannsretten* default note)

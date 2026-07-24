@@ -142,7 +142,8 @@ Opened via `driver_break_core::storage::Storage::open(path)`. Migration in
 | `routes` | Saved route endpoints, profile, via JSON, break/overnight hints |
 
 `ConfigStore` keys (JSON values): `rest_config`, `safety_config`, `eco_config`,
-`vehicle_limits`, `fuel_config`.
+`vehicle_limits`, `fuel_config`, `truck_driving_history` (EC 561 day rows /
+extensions — see [`ec-561-truck-rest.md`](ec-561-truck-rest.md)).
 
 Access is serialized with `Arc<Mutex<Connection>>` (T4). UniFFI load/save
 helpers used by Drive settings write through this store.

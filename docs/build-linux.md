@@ -81,6 +81,11 @@ Unit / module tests:
 cargo test -p driver-break-core
 cargo test -p driver-break-core poi::
 cargo test -p driver-break-core config::eco -- --nocapture
+cargo test -p driver-break-core truck_multi_day -- --nocapture
+cargo test -p driver-break-core motor_multi_day -- --nocapture
+cargo test -p driver-break-core rest_area -- --nocapture
+cargo test -p driver-break-core lodging -- --nocapture
+cargo test -p driver-break-core --test truck_driving_history -- --nocapture
 ```
 
 Ignored integration tests (need fixtures under `core/target/integration-fixtures/`

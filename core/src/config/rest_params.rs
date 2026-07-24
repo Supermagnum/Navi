@@ -23,8 +23,10 @@ impl Default for RestConfig {
     }
 }
 
-/// Car rest parameters. Soft/max hours are configurable without hardcoded defaults
-/// (product decision pending).
+/// Car rest parameters (also used for motorcycle and mobilehome soft guidance).
+///
+/// `max_hours` drives multi-day overnight splitting when a trip's driving time
+/// exceeds the daily budget. Soft wellbeing guidance — not legal EC 561.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CarRestParams {
     pub soft_limit_hours: Option<f64>,
@@ -39,8 +41,8 @@ pub struct CarRestParams {
 impl Default for CarRestParams {
     fn default() -> Self {
         Self {
-            soft_limit_hours: None,
-            max_hours: None,
+            soft_limit_hours: Some(CAR_SOFT_LIMIT_HOURS),
+            max_hours: Some(CAR_MAX_DAILY_HOURS),
             break_interval_min_hours: CAR_BREAK_INTERVAL_MIN_HOURS,
             break_interval_max_hours: CAR_BREAK_INTERVAL_MAX_HOURS,
             break_duration_min_minutes: CAR_BREAK_DURATION_MIN_MINUTES,
@@ -80,6 +82,9 @@ pub struct TruckRestParams {
     pub split_daily_rest_first_hours: f64,
     #[serde(default = "default_split_daily_second")]
     pub split_daily_rest_second_hours: f64,
+    /// When true, prefer 3 h + 9 h split daily rest over one continuous block.
+    #[serde(default)]
+    pub prefer_split_daily_rest: bool,
     #[serde(default = "default_weekly_rest")]
     pub weekly_rest_hours: f64,
     #[serde(default = "default_weekly_rest_reduced")]
@@ -153,6 +158,7 @@ impl Default for TruckRestParams {
             max_reduced_daily_rests: TRUCK_MAX_REDUCED_DAILY_RESTS,
             split_daily_rest_first_hours: TRUCK_SPLIT_DAILY_REST_FIRST_HOURS,
             split_daily_rest_second_hours: TRUCK_SPLIT_DAILY_REST_SECOND_HOURS,
+            prefer_split_daily_rest: false,
             weekly_rest_hours: TRUCK_WEEKLY_REST_HOURS,
             weekly_rest_reduced_hours: TRUCK_WEEKLY_REST_REDUCED_HOURS,
             max_consecutive_working_days: TRUCK_MAX_CONSECUTIVE_WORKING_DAYS,

@@ -86,6 +86,9 @@ Post-fix path (supersedes pre-fix 153.0 km / 2749 m climb and interim 145.6 km):
 - **DEM coverage: 316/316 edges (100%)** — not a missing-tile joule-fallback artifact
 - **DNT coverage: 116.8 / 139.9 km = 83.5%** (was 91.5% on 153 km; 85.0% on 145.6 km)
 - Overall priority-path: see latest `dnt_hiking_report.md`
+- **Multi-day segmentation:** exercised via test helper `plan_multi_day` in this
+  integration suite — not via UniFFI `planHikingRoute` (which places rast-interval
+  hut/tent pauses with overnight safety filtering).
 
 ## Water POIs (tracked separately from eco)
 

@@ -40,7 +40,8 @@ Further reading in-repo: how the pieces fit together in
 [`docs/debugging.md`](docs/debugging.md); HUD bar/menu layout in
 [`docs/hud-layout.md`](docs/hud-layout.md); map styles / offline maps / 3D in
 [`docs/map-styles.md`](docs/map-styles.md); truck driving-time rules in
-[`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md); IMU mount calibration (deferred) in
+[`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md); country/region rule packs in
+[`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md); IMU mount calibration (deferred) in
 [`docs/imu-calibration.md`](docs/imu-calibration.md).
 
 # Navi
@@ -78,7 +79,7 @@ plugins are not shipped yet ([`docs/plugins.md`](docs/plugins.md)).
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. Electric modes get credit for downhill recovery. Formulas: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Done |
 | **Offline route planning** | Download a map region once, plan on the device, and see the route line plus suggested stops on the map. | Done |
 | **Place search** | Search places and set From / Via / To ([`docs/poi.md`](docs/poi.md)). Includes fishing spots and hut search distance guidance ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Done |
-| **Rest & breaks** | Break reminders and suggested stops along the route. Hiking and cycling use traditional Scandinavian rest distances ([background](docs/historical-background.md)). **Truck** / **TruckElectric** follow EU EC 561/2006 for break spacing and daily / weekly / fortnightly driving caps with persisted history ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). **Mobile home** uses car-style soft reminders (wellbeing only — not commercial HGV legal tracking). Hiking overnight stops keep a respectful distance from buildings and glaciers. | **Partial** — car, motorcycle, hike, cycle, and motorhome soft breaks ready; truck single-trip break placement and duty caps ready; multi-day truck daily/weekly *rest* segmentation deferred |
+| **Rest & breaks** | Break reminders and suggested stops along the route. Hiking and cycling use traditional Scandinavian rest distances ([background](docs/historical-background.md)). **Truck** / **TruckElectric** follow EU EC 561/2006 for break spacing, daily / weekly / fortnightly driving caps, and multi-day daily/weekly rest segmentation with persisted history ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). **Car** / **motorcycle** / **cycle** / **mobile home** use soft multi-day overnight splitting when a trip exceeds a daily budget (8 h driving or 100 km cycling) with lodging/camping/rest-area suggestions. Hiking overnight pauses prefer huts/tents and keep a respectful distance from buildings and glaciers. | **Partial** — truck EC 561 breaks, duty caps, and multi-day daily/weekly rest implemented (compensation ledger and rich overnight scoring still deferred — see EC 561 doc); car / motorcycle / cycle / motorhome soft multi-day overnight implemented; hiking rast-interval hut/tent pauses + overnight safety filter in `planHikingRoute` (day-by-day `plan_multi_day` only in integration tests) |
 | **Drive bars** | Slim top bar (altitude; tap for map settings) and bottom bar (zoom, break time, trip ETA, eco leaf; tap for drive settings). | Done |
 | **Map rotation** | Align the map with the compass, with your travel direction, or with north always up. | Done |
 | **Moving icons** | Show nearby tracked markers on the map (for example radio station symbols) within about 50–150 km. | **Partial** — drawing works; a live radio feed is not built in yet |
@@ -150,12 +151,20 @@ Scandinavian rest distances
 ([`docs/historical-background.md`](docs/historical-background.md));
 **Truck** / **TruckElectric** use EU EC 561/2006 driving-time rules
 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)); **mobile home** keeps
-car-style soft reminders (not HGV legal tracking). For hiking overnight
-suggestions, Navi rejects spots too close to buildings or glaciers. The
-building-distance idea follows the Norwegian **right to roam**
-(*allemannsretten*): wild camping is generally allowed if you stay a respectful
-distance from houses and cultivated land. That is a Norway-oriented default and
-**may not apply elsewhere** — local camping law can be stricter. The “Breaks”
+car-style soft reminders (not HGV legal tracking). When a car / motorcycle /
+mobilehome / cycle trip exceeds the soft daily budget (default **8 h** driving
+or **100 km** cycling), the planner splits into days and suggests overnight
+lodging, camping, or rest-area stops near day boundaries (informational if no
+POI is nearby — see [`docs/poi.md`](docs/poi.md) **Lodging** / **RestArea**).
+For hiking, `planHikingRoute` places hut/tent pauses along rast intervals and
+rejects overnight candidates too close to buildings or glaciers; day-by-day
+multi-day hiking segmentation (`plan_multi_day`) is exercised in integration
+tests, not yet as a UniFFI planner. The building-distance idea follows the
+Norwegian **right to roam** (*allemannsretten*): wild camping is generally
+allowed if you stay a respectful distance from houses and cultivated land.
+That is a Norway-oriented default and **may not apply elsewhere** — local
+camping law can be stricter; country packs follow
+[`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). The “Breaks”
 toggle only controls whether the reminder is shown; edit times in Drive
 settings (Car vs Truck when a truck profile is selected).
 
@@ -263,7 +272,8 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/pictures.md`](docs/pictures.md) | Emulator screenshot gallery |
 | [`docs/bilder.md`](docs/bilder.md) | Emulator screenshot gallery (Norwegian) |
 | [`docs/historical-background.md`](docs/historical-background.md) | Rast/vei basis for hiking & cycling rest-interval defaults |
-| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Truck EC 561/2006: enforced vs tracked vs deferred |
+| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Truck EC 561/2006: enforced duty caps, implemented multi-day daily/weekly rest, remaining deferred items |
+| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Pattern for country/region-dependent rules (EC 561 + right-to-roam precedents; Horse worked example) |
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Adjust size and placement of drive HUD bars and menus |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs offline Protomaps PMTiles; 3D gate |
 | [`docs/approach-instructions.md`](docs/approach-instructions.md) | Deferred: temporary maneuver approach box (icon + distance + name) |
@@ -346,7 +356,7 @@ Rust OSM-graph project parsing ~9M nodes / ~18M edges in ~30 s / &lt;5 GB on an
 | POI R-tree build | Low thousands of POIs | &lt; 1 s | Near-linear bulk load |
 | Eco-reweighting (elevation) | ~1.26M edges, ~9 DEM tiles | ~10–60 s, once per region | Cache decompressed tiles; do not re-read per edge |
 | A* single route | ~1.26M edges | &lt; 1 s (often 100–300 ms) | |
-| Multi-day + hut matching | Regional graph | 1–3 s | On an already-loaded graph |
+| Multi-day + hut matching | Regional graph | 1–3 s | Hiking integration / hut POI matching on a loaded graph; full day-by-day hiking segmentation is test-helper only, not UniFFI |
 
 ### Hard constraint: RAM
 
@@ -413,6 +423,10 @@ work runs at lower OS priority than audio/UI.
 ```bash
 cargo test -p driver-break-core --test planner_options_routes
 cargo test -p driver-break-core --test truck_driving_history -- --nocapture
+cargo test -p driver-break-core truck_multi_day -- --nocapture
+cargo test -p driver-break-core motor_multi_day -- --nocapture
+cargo test -p driver-break-core rest_area -- --nocapture
+cargo test -p driver-break-core lodging -- --nocapture
 cargo test -p driver-break-core --test overnight_scan_bench -- --ignored --nocapture
 cargo test --test kongsvinger_lillehammer_integration -- --nocapture --ignored
 cargo test --test dnt_hiking_integration -- --nocapture --ignored
@@ -425,7 +439,11 @@ cargo test -p driver-break-core osm_update::
 preference, EV regen cost, overnight filter, fishing category behaviour, and
 truck break spacing vs car heuristic without a full region extract.
 `truck_driving_history` covers empty history, multi-day accumulation / daily
-extensions, and rolling fortnight pruning. `overnight_scan_bench` times the removed redundant
+extensions, and rolling fortnight pruning. `truck_multi_day` (unit tests in
+`core/src/routing/rest/truck_multi_day.rs`) covers day segmentation, weekly
+rest after six working days, and corridor RestArea attachment; `motor_multi_day`
+covers soft car/cycle overnight day splits and lodging preference; `rest_area` /
+`lodging` match classifier tests for those POI tags. `overnight_scan_bench` times the removed redundant
 overnight PBF scan vs POI+barrier reuse on the DNT corridor bbox. Optional fishing
 hit against Ostlandet:
 

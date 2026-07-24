@@ -34,11 +34,16 @@ pub use region::{
     provision_region, provision_region_with_elev_tar, RegionProvision, CORRIDOR_BBOX,
 };
 pub use rest::{
-    car_break_interval_hours, commit_truck_trip, evaluate_truck_trip, motor_break_interval_km,
+    car_break_interval_hours, car_style_daily_hours, choose_daily_overnight_rest,
+    commit_truck_multi_day_plan, commit_truck_trip, cycling_daily_km, evaluate_truck_trip,
+    motor_break_interval_km, motor_daily_budget, plan_motor_multi_day, plan_truck_multi_day,
     truck_break_distances_km, truck_break_duration_minutes, truck_break_interval_km,
-    truck_effective_break_parts, truck_mandatory_break_after_hours, truck_max_daily_driving_hours,
-    truck_max_fortnightly_driving_hours, truck_max_weekly_driving_hours, truck_required_breaks,
-    uses_truck_rest, BreakKind, TruckDutyEvaluation,
+    truck_day_cap_hours, truck_effective_break_parts, truck_mandatory_break_after_hours,
+    truck_max_daily_driving_hours, truck_max_fortnightly_driving_hours,
+    truck_max_weekly_driving_hours, truck_required_breaks, uses_motor_multi_day, uses_truck_rest,
+    BreakKind, MotorDailyBudget, MotorDaySegment, MotorMultiDayPlan, MotorOvernightCandidate,
+    MotorOvernightKind, MotorOvernightStop, TruckDaySegment, TruckDutyEvaluation,
+    TruckMultiDayPlan, TruckOvernightKind, TruckOvernightRest, TruckRestCandidate,
 };
 pub use workers::WorkerPoolPlan;
 pub use safety::{

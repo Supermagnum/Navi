@@ -102,9 +102,50 @@ pub fn classify_tags(tags: &HashMap<String, String>) -> Vec<PoiCategory> {
         out.push(PoiCategory::Fishing);
     }
 
+    // Truck rest / services: any one of these qualifies (OR, not AND).
+    let highway = tags.get("highway").map(String::as_str);
+    let hgv = tags.get("hgv").map(String::as_str);
+    let access_hgv = tags.get("access:hgv").map(String::as_str);
+    let parking_hgv = hgv == Some("yes")
+        || hgv == Some("designated")
+        || access_hgv == Some("yes")
+        || access_hgv == Some("designated");
+    if highway == Some("rest_area")
+        || highway == Some("services")
+        || (amenity == Some("parking") && parking_hgv)
+    {
+        out.push(PoiCategory::RestArea);
+    }
+
+    // Motor overnight lodging: any one of these tourism values qualifies (OR).
+    if matches!(
+        tourism,
+        Some("hotel")
+            | Some("motel")
+            | Some("guest_house")
+            | Some("apartment")
+            | Some("chalet")
+            | Some("hostel")
+    ) {
+        out.push(PoiCategory::Lodging);
+    }
+
     out.sort_unstable();
     out.dedup();
     out
+}
+
+/// True when tags (or derived icon key) suggest a full-service stop suitable
+/// for EC 561 weekly rest (typically `highway=services`, not bare rest areas).
+pub fn rest_area_suitable_for_weekly(tags: &HashMap<String, String>, icon_key: &str) -> bool {
+    if tags.get("highway").map(String::as_str) == Some("services") {
+        return true;
+    }
+    if icon_key.contains("services") {
+        return true;
+    }
+    tags.get("name")
+        .is_some_and(|n| n.to_ascii_lowercase().contains("service"))
 }
 
 #[cfg(test)]
@@ -147,5 +188,50 @@ mod tests {
         assert!(classify_tags(&tags(&[("sport", "fishing")])).contains(&PoiCategory::Fishing));
         assert!(classify_tags(&tags(&[("shop", "fishing")])).contains(&PoiCategory::Fishing));
         assert!(!classify_tags(&tags(&[("leisure", "park")])).contains(&PoiCategory::Fishing));
+    }
+
+    #[test]
+    fn rest_area_matches_highway_or_hgv_parking() {
+        assert!(classify_tags(&tags(&[("highway", "rest_area")])).contains(&PoiCategory::RestArea));
+        assert!(classify_tags(&tags(&[("highway", "services")])).contains(&PoiCategory::RestArea));
+        assert!(classify_tags(&tags(&[("amenity", "parking"), ("hgv", "yes")]))
+            .contains(&PoiCategory::RestArea));
+        assert!(
+            !classify_tags(&tags(&[("amenity", "parking")])).contains(&PoiCategory::RestArea)
+        );
+    }
+
+    #[test]
+    fn rest_area_weekly_suitable_for_services_not_bare_rest_area() {
+        use crate::poi::osm_icon_key;
+
+        let services = tags(&[("highway", "services")]);
+        assert!(rest_area_suitable_for_weekly(
+            &services,
+            &osm_icon_key(&services)
+        ));
+        let rest = tags(&[("highway", "rest_area")]);
+        assert!(!rest_area_suitable_for_weekly(&rest, &osm_icon_key(&rest)));
+        let named = tags(&[("highway", "rest_area"), ("name", "North Services Plaza")]);
+        assert!(rest_area_suitable_for_weekly(
+            &named,
+            &osm_icon_key(&named)
+        ));
+    }
+
+    #[test]
+    fn lodging_matches_hotel_motel_guest_house_or_hostel() {
+        assert!(classify_tags(&tags(&[("tourism", "hotel")])).contains(&PoiCategory::Lodging));
+        assert!(classify_tags(&tags(&[("tourism", "motel")])).contains(&PoiCategory::Lodging));
+        assert!(
+            classify_tags(&tags(&[("tourism", "guest_house")])).contains(&PoiCategory::Lodging)
+        );
+        assert!(classify_tags(&tags(&[("tourism", "apartment")])).contains(&PoiCategory::Lodging));
+        assert!(classify_tags(&tags(&[("tourism", "chalet")])).contains(&PoiCategory::Lodging));
+        // Hostel is both Lodging and OvernightFacility.
+        let hostel = classify_tags(&tags(&[("tourism", "hostel")]));
+        assert!(hostel.contains(&PoiCategory::Lodging));
+        assert!(hostel.contains(&PoiCategory::OvernightFacility));
+        assert!(!classify_tags(&tags(&[("tourism", "attraction")])).contains(&PoiCategory::Lodging));
     }
 }

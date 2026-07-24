@@ -11,7 +11,7 @@ use driver_break_core::config::{
     EcoConfig, RestConfig, SafetyConfig, VehicleLimits, HIKING_MAIN_BREAK_DISTANCE_KM,
 };
 use driver_break_core::icons::{self, IconTheme};
-use driver_break_core::poi::{PoiCategory, PoiIndex, PoiRecord};
+use driver_break_core::poi::{rest_area_suitable_for_weekly, PoiCategory, PoiIndex, PoiRecord};
 use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
 use driver_break_core::routing::graph::{
     apply_official_network_preference, difficulty_notes_for_path, load_official_network_way_ids,
@@ -20,7 +20,9 @@ use driver_break_core::routing::graph::{
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::{
-    evaluate_truck_trip, motor_break_interval_km, truck_effective_break_parts, uses_truck_rest,
+    commit_truck_multi_day_plan, evaluate_truck_trip, motor_break_interval_km, motor_daily_budget,
+    plan_motor_multi_day, plan_truck_multi_day, truck_effective_break_parts, uses_motor_multi_day,
+    uses_truck_rest, MotorOvernightCandidate, MotorOvernightKind, TruckRestCandidate,
 };
 use driver_break_core::routing::safety::{
     check_overnight_candidate, DangerBarrierIndex, OvernightProximityIndex,
@@ -590,6 +592,7 @@ fn pick_motor_pause_at(
 ) -> (String, f64, f64, String, String) {
     let mut by_id: std::collections::HashMap<i64, &PoiRecord> = std::collections::HashMap::new();
     for cat in [
+        PoiCategory::RestArea,
         PoiCategory::General,
         PoiCategory::Restroom,
         PoiCategory::OvernightFacility,
@@ -600,10 +603,36 @@ fn pick_motor_pause_at(
         }
     }
     let mut all: Vec<&PoiRecord> = by_id.into_values().collect();
-    sort_pois_near_sample(&mut all, lat, lon);
+    // Prefer RestArea ahead of generic amenities at the same distance.
+    all.sort_by(|a, b| {
+        let ar = a.categories.contains(&PoiCategory::RestArea);
+        let br = b.categories.contains(&PoiCategory::RestArea);
+        match (ar, br) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => std::cmp::Ordering::Equal,
+        }
+    });
+    // Secondary sort by distance to sample (stable-ish with RestArea preference).
+    let mut rest: Vec<&PoiRecord> = all
+        .iter()
+        .copied()
+        .filter(|p| p.categories.contains(&PoiCategory::RestArea))
+        .collect();
+    let mut other: Vec<&PoiRecord> = all
+        .iter()
+        .copied()
+        .filter(|p| !p.categories.contains(&PoiCategory::RestArea))
+        .collect();
+    sort_pois_near_sample(&mut rest, lat, lon);
+    sort_pois_near_sample(&mut other, lat, lon);
+    rest.append(&mut other);
+    let all = rest;
 
     let pick = |p: &PoiRecord| -> (String, f64, f64, String, String) {
-        let kind = if p.categories.contains(&PoiCategory::Restroom) {
+        let kind = if p.categories.contains(&PoiCategory::RestArea) {
+            "rest_area"
+        } else if p.categories.contains(&PoiCategory::Restroom) {
             "amenity"
         } else if p.categories.contains(&PoiCategory::OvernightFacility)
             || p.categories.contains(&PoiCategory::Cabin)
@@ -1099,9 +1128,13 @@ fn plan_car_route_inner(
     ]);
 
     let t0 = Instant::now();
-    // Clip to the trip bbox so we never load a full Ostlandet graph into RAM
+    // Clip to the trip bbox so we never load a full country graph into RAM
     // (that OOMs 4GB Automotive AVDs). Still reads the same region .pbf.
-    let pad = 0.35;
+    // Pad scales with corridor span: a fixed 0.35° is enough for Ostlandet-scale
+    // trips but clips long northbound legs (E6 swings west through Trondheim).
+    let lat_span = (start_lat - end_lat).abs();
+    let lon_span = (start_lon - end_lon).abs();
+    let pad = (lat_span.max(lon_span) * 0.35).clamp(0.35, 2.5);
     let bbox = [
         start_lat.min(end_lat) - pad,
         start_lon.min(end_lon) - pad,
@@ -1109,7 +1142,7 @@ fn plan_car_route_inner(
         start_lon.max(end_lon) + pad,
     ];
     report.push_str(&format!(
-        "bbox={:.3},{:.3},{:.3},{:.3}\n",
+        "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}\n",
         bbox[0], bbox[1], bbox[2], bbox[3]
     ));
     driver_break_core::download::progress::set(
@@ -1225,34 +1258,116 @@ fn plan_car_route_inner(
         let week_id = iso_week_id_utc();
         let week_dates = driver_break_core::config::rolling_date_window(&today, 7);
         let fortnight_dates = driver_break_core::config::rolling_date_window(&today, 14);
-        let duty = evaluate_truck_trip(
+
+        // RestArea / services candidates along the corridor for overnight matching
+        // (intentionally simpler than hiking hut scoring — nearest tagged stop).
+        let samples = sample_polyline_km(&polyline);
+        let mut candidates: Vec<TruckRestCandidate> = Vec::new();
+        let mut seen_poi = std::collections::HashSet::new();
+        for (i, (lat, lon, km)) in samples.iter().enumerate() {
+            if i % 4 != 0 && i + 1 != samples.len() {
+                continue;
+            }
+            for p in poi_index.nearest(PoiCategory::RestArea, *lat, *lon, 20_000.0) {
+                if !seen_poi.insert(p.osm_id) {
+                    continue;
+                }
+                let suitable_for_weekly =
+                    rest_area_suitable_for_weekly(&p.tags, &p.icon_key);
+                candidates.push(TruckRestCandidate {
+                    along_km: *km,
+                    lat: p.lat,
+                    lon: p.lon,
+                    name: p
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| format!("Rest {}", p.osm_id)),
+                    suitable_for_weekly,
+                });
+            }
+        }
+
+        let multi = plan_truck_multi_day(
             &rest.truck,
             &history,
             driving_h,
+            dist_km,
             &today,
             &week_id,
-            &week_dates,
-            &fortnight_dates,
+            &candidates,
+            false,
         );
-        report.push_str(&format!(
-            "truck_duty: within_daily={}; within_weekly={}; within_fortnightly={}; allowed_daily_h={:.1}; weekly_rest_due={}\n",
-            duty.within_daily,
-            duty.within_weekly,
-            duty.within_fortnightly,
-            duty.allowed_daily_hours,
-            duty.weekly_rest_due,
-        ));
-        for n in &duty.notes {
-            report.push_str(&format!("truck_duty_note: {n}\n"));
+        if multi.multi_day {
+            report.push_str(&format!(
+                "truck_multi_day: days={}; total_driving_h={driving_h:.2}\n",
+                multi.days.len()
+            ));
+            for d in &multi.days {
+                report.push_str(&format!(
+                    "truck_day: idx={}; date={}; start_km={:.1}; end_km={:.1}; driving_h={:.2}; extension={}\n",
+                    d.day_index, d.date, d.start_km, d.end_km, d.driving_hours, d.used_daily_extension
+                ));
+                if let Some(o) = &d.overnight {
+                    report.push_str(&format!(
+                        "truck_overnight: kind={:?}; hours={:.1}; not_in_cab={}; poi_found={}; name={:?}; lat={:?}; lon={:?}\n",
+                        o.kind, o.hours, o.not_in_cab, o.poi_found, o.name, o.lat, o.lon
+                    ));
+                    for n in &o.notes {
+                        report.push_str(&format!("truck_overnight_note: {n}\n"));
+                    }
+                }
+            }
+            // Duty summary still uses total trip hours for weekly/fortnightly caps.
+            let duty = evaluate_truck_trip(
+                &rest.truck,
+                &history,
+                driving_h,
+                &today,
+                &week_id,
+                &week_dates,
+                &fortnight_dates,
+            );
+            report.push_str(&format!(
+                "truck_duty: within_daily={}; within_weekly={}; within_fortnightly={}; allowed_daily_h={:.1}; weekly_rest_due={}; multi_day=true\n",
+                duty.within_daily,
+                duty.within_weekly,
+                duty.within_fortnightly,
+                duty.allowed_daily_hours,
+                duty.weekly_rest_due,
+            ));
+            for n in &duty.notes {
+                report.push_str(&format!("truck_duty_note: {n}\n"));
+            }
+            commit_truck_multi_day_plan(&mut rest.truck, &mut history, &multi, &week_id);
+        } else {
+            let duty = evaluate_truck_trip(
+                &rest.truck,
+                &history,
+                driving_h,
+                &today,
+                &week_id,
+                &week_dates,
+                &fortnight_dates,
+            );
+            report.push_str(&format!(
+                "truck_duty: within_daily={}; within_weekly={}; within_fortnightly={}; allowed_daily_h={:.1}; weekly_rest_due={}; multi_day=false\n",
+                duty.within_daily,
+                duty.within_weekly,
+                duty.within_fortnightly,
+                duty.allowed_daily_hours,
+                duty.weekly_rest_due,
+            ));
+            for n in &duty.notes {
+                report.push_str(&format!("truck_duty_note: {n}\n"));
+            }
+            driver_break_core::routing::commit_truck_trip(
+                &mut rest.truck,
+                &mut history,
+                &duty,
+                &today,
+                &week_id,
+            );
         }
-        // Persist accumulation so weekly / fortnightly caps track across plans.
-        driver_break_core::routing::commit_truck_trip(
-            &mut rest.truck,
-            &mut history,
-            &duty,
-            &today,
-            &week_id,
-        );
         save_rest_and_truck_history_near_cache(&cache, &rest, &history);
     } else {
         report.push_str(&format!(
@@ -1260,8 +1375,113 @@ fn plan_car_route_inner(
         ));
     }
 
+    // Soft multi-day overnight for car / motorcycle / cycle / mobilehome (not truck).
+    let mut motor_overnight_pins: Vec<serde_json::Value> = Vec::new();
+    if uses_motor_multi_day(core_profile) {
+        let driving_h = eta_minutes / 60.0;
+        if let Some(budget) = motor_daily_budget(core_profile, &rest.car, &rest.cycling) {
+            let samples = sample_polyline_km(&polyline);
+            let mut candidates: Vec<MotorOvernightCandidate> = Vec::new();
+            let mut seen_poi = std::collections::HashSet::new();
+            for (i, (lat, lon, km)) in samples.iter().enumerate() {
+                if i % 4 != 0 && i + 1 != samples.len() {
+                    continue;
+                }
+                for cat in [
+                    PoiCategory::Lodging,
+                    PoiCategory::OvernightFacility,
+                    PoiCategory::TentSite,
+                    PoiCategory::Cabin,
+                    PoiCategory::RestArea,
+                ] {
+                    for p in poi_index.nearest(cat, *lat, *lon, 20_000.0) {
+                        if !seen_poi.insert(p.osm_id) {
+                            continue;
+                        }
+                        let kind = if p.categories.contains(&PoiCategory::Lodging) {
+                            MotorOvernightKind::Lodging
+                        } else if p.categories.contains(&PoiCategory::TentSite)
+                            || p.categories.contains(&PoiCategory::OvernightFacility)
+                            || p.categories.contains(&PoiCategory::Cabin)
+                        {
+                            MotorOvernightKind::Camping
+                        } else if p.categories.contains(&PoiCategory::RestArea) {
+                            MotorOvernightKind::RestArea
+                        } else {
+                            continue;
+                        };
+                        candidates.push(MotorOvernightCandidate {
+                            along_km: *km,
+                            lat: p.lat,
+                            lon: p.lon,
+                            name: p
+                                .name
+                                .clone()
+                                .unwrap_or_else(|| format!("Overnight {}", p.osm_id)),
+                            kind,
+                        });
+                    }
+                }
+            }
+            let multi = plan_motor_multi_day(budget, driving_h, dist_km, &candidates);
+            if multi.multi_day {
+                report.push_str(&format!(
+                    "motor_multi_day: days={}; budget={:?}; total_driving_h={driving_h:.2}; total_km={dist_km:.1}\n",
+                    multi.days.len(),
+                    multi.budget
+                ));
+                for d in &multi.days {
+                    report.push_str(&format!(
+                        "motor_day: idx={}; start_km={:.1}; end_km={:.1}; driving_h={:.2}; distance_km={:.1}\n",
+                        d.day_index, d.start_km, d.end_km, d.driving_hours, d.distance_km
+                    ));
+                    if let Some(o) = &d.overnight {
+                        let kind_s = match o.kind {
+                            MotorOvernightKind::Lodging => "lodging",
+                            MotorOvernightKind::Camping => "camping",
+                            MotorOvernightKind::RestArea => "rest_area",
+                            MotorOvernightKind::None => "none",
+                        };
+                        report.push_str(&format!(
+                            "motor_overnight: kind={kind_s}; poi_found={}; name={:?}; lat={:?}; lon={:?}\n",
+                            o.poi_found, o.name, o.lat, o.lon
+                        ));
+                        for n in &o.notes {
+                            report.push_str(&format!("motor_overnight_note: {n}\n"));
+                        }
+                        if o.poi_found {
+                            if let (Some(lat), Some(lon)) = (o.lat, o.lon) {
+                                let json_kind = match o.kind {
+                                    MotorOvernightKind::Lodging => "lodging",
+                                    MotorOvernightKind::Camping => "hut",
+                                    MotorOvernightKind::RestArea => "rest_area",
+                                    MotorOvernightKind::None => "amenity",
+                                };
+                                motor_overnight_pins.push(serde_json::json!({
+                                    "name": o.name.clone().unwrap_or_else(|| "Overnight".into()),
+                                    "lat": lat,
+                                    "lon": lon,
+                                    "kind": json_kind,
+                                    "icon_key": match o.kind {
+                                        MotorOvernightKind::Lodging => "tourism-hotel",
+                                        MotorOvernightKind::Camping => "tourism-camp_site",
+                                        MotorOvernightKind::RestArea => "highway-rest_area",
+                                        MotorOvernightKind::None => "fuel",
+                                    },
+                                    "along_km": d.end_km,
+                                }));
+                            }
+                        }
+                    }
+                }
+            } else {
+                report.push_str("motor_multi_day: days=1; multi_day=false\n");
+            }
+        }
+    }
+
     // Prefer stops on the planned road; fall back if reachable without danger barriers.
-    let break_pois_json = build_break_pois_json(
+    let mut break_pois_json = build_break_pois_json(
         &poi_index,
         &polyline,
         break_interval_km,
@@ -1272,6 +1492,14 @@ fn plan_car_route_inner(
         false,
         None,
     );
+    if !motor_overnight_pins.is_empty() {
+        if let Ok(mut arr) = serde_json::from_str::<Vec<serde_json::Value>>(&break_pois_json) {
+            arr.extend(motor_overnight_pins);
+            if let Ok(s) = serde_json::to_string(&arr) {
+                break_pois_json = s;
+            }
+        }
+    }
     // Difficulty metadata on cycling network ways (informational only).
     if profile == TravelProfile::Bicycle && prefer_official_networks {
         let way_ids: std::collections::HashSet<i64> = path

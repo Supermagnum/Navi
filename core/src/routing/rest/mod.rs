@@ -1,13 +1,25 @@
 //! Rest-stop interval helpers driven by persisted profile parameters.
 
+mod motor_multi_day;
 mod truck_duty;
+mod truck_multi_day;
 
 use crate::config::{Profile, ProfileRestParams, RestConfig, TruckRestParams};
 use crate::config::{
     TRUCK_SPLIT_BREAK_FIRST_MINUTES, TRUCK_SPLIT_BREAK_SECOND_MINUTES,
 };
 
+pub use motor_multi_day::{
+    car_style_daily_hours, cycling_daily_km, motor_daily_budget, plan_motor_multi_day,
+    uses_motor_multi_day, MotorDailyBudget, MotorDaySegment, MotorMultiDayPlan,
+    MotorOvernightCandidate, MotorOvernightKind, MotorOvernightStop,
+};
 pub use truck_duty::{commit_truck_trip, evaluate_truck_trip, TruckDutyEvaluation};
+pub use truck_multi_day::{
+    choose_daily_overnight_rest, commit_truck_multi_day_plan, plan_truck_multi_day,
+    truck_day_cap_hours, TruckDaySegment, TruckMultiDayPlan, TruckOvernightKind,
+    TruckOvernightRest, TruckRestCandidate,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BreakKind {
