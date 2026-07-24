@@ -18,7 +18,7 @@ called out in `core/src/ecu/mod.rs`:
 |---|---|---|
 | **OBD-II** (ISO 15765-4 / ELM327) | Bluetooth / USB serial (AT + hex PID) | Passenger car fuel rate, RPM, MAF |
 | **SAE J1939** | CAN (250/500 kbit/s) | Truck / heavy vehicle fuel economy, SoC |
-| **MegaSquirt** (MSQ / TunerStudio) | Serial (RS-232 / USB-serial) | Aftermarket ECU fuel / AFR / MAP |
+| **MegaSquirt** (MSQ / TunerStudio) | Serial (RS-232 / USB-serial) | Aftermarket ECU fuel / AFR / MAP; **flex-fuel** ethanol % when a composition sensor is fitted |
 
 Until a plugin is loaded, the core uses `NoLiveEnergy` (always `None`). Fuel
 learning falls back to persisted `FuelConfig` (tank capacity / fuel added)
@@ -38,9 +38,10 @@ pub struct LiveEnergySnapshot {
 
 | Snapshot field | Typical OBD-II source | Typical J1939 source | MegaSquirt |
 |---|---|---|---|
-| `fuel_rate_l_h` | PID `5E` (fuel rate) or derived from MAF/`01 0C`+`01 10` | PGN 65257 (LFE) / 65266 | Pulse width × RPM → L/h |
+| `fuel_rate_l_h` | PID `5E` (fuel rate) or derived from MAF/`01 0C`+`01 10` | PGN 65257 (LFE) / 65266 | Pulse width × RPM → L/h (scale with flex ethanol % when available) |
 | `state_of_charge_pct` | PID `5B` (hybrid/EV SoC) where supported | PGN 65280 / OEM proprietary | N/A (ICE) |
 | `power_kw` | Derived (current × voltage) or OEM | PGN 61444 / torque × speed | MAP/load × displacement model |
+| *(future)* ethanol / fuel blend | PID `52` (ethanol %) where supported | Rare / OEM | Flex fuel composition sensor → % ethanol (+ optional fuel temp) |
 
 ### Electric vehicles
 
@@ -313,11 +314,69 @@ r\x00\x00\x00…   # page/offset/length
 
 Always verify against the firmware’s protocol PDF before shipping a plugin.
 
+### Flex fuel (fuel composition)
+
+MegaSquirt **supports flex-fuel / fuel-composition sensing** so a vehicle can run
+gasoline–ethanol blends (E0 through E85/E100) without a fixed tune for one
+blend. This is a first-class MS capability (especially on **MS3** / MS3X), not a
+rare OEM-only feature, and an ECU plugin for Navi should expose it when the
+firmware reports a live ethanol percentage.
+
+**What the sensor does**
+
+A Continental / GM / Ford-style **fuel composition sensor** sits in the fuel
+line and reports:
+
+| Quantity | Typical encoding (GM/Continental-class) |
+|---|---|
+| Ethanol content | Square-wave **frequency**: ~**50 Hz** = 0% ethanol, ~**150 Hz** = 100% ethanol (linear between) |
+| Fuel temperature | **Pulse width** of the same signal (e.g. ~1 ms ≈ −40 °C, ~5 ms ≈ 125 °C) when temperature decoding is enabled |
+
+The signal is **digital frequency**, not a 0–5 V analogue voltage — it must land
+on a digital / flex input. On **MS3X**, the harness typically has a dedicated
+**FLEX** pin. On base MS3 boards, a spare digital input (e.g. JS7/JS11 with
+hardware prep) is used and selected in TunerStudio
+(**Fuel Settings → Fuel Sensor Settings (Flex)**).
+
+**What the ECU does with it**
+
+- **MS2 / simpler modes:** scale fueling with an ethanol-dependent multiplier
+  (more ethanol → longer pulsewidth).
+- **MS3 Flex Blend:** blend (or switch) between calibration tables
+  (VE / spark / enrichments, etc.) as ethanol % changes — two-endpoint (or
+  multi) maps interpolated by the sensor reading.
+
+Higher ethanol content needs **more injected volume** for the same energy and
+usually **more spark advance**; the ECU already applies that when flex is
+enabled. Water contamination can fool composition sensors (ethanol is
+hygroscopic) — treat extreme or stuck readings as suspect.
+
+**Navi plugin implications**
+
+1. After the signature/`Q` identify step, parse the realtime block for the
+   firmware’s ethanol / flex channel (name varies by MS2/MS3/Speeduino build —
+   key off signature, do not hard-code one offset for all firmwares).
+2. Prefer the ECU’s **already-corrected** injector pulse width when computing
+   `fuel_rate_l_h` (MS has already flexed PW). Do not apply a second ethanol
+   multiplier on top of flexed PW.
+3. Still record **ethanol %** (and fuel temp if present) for:
+   - HUD / range context (“running ~E70”),
+   - refining energy density / AFR assumptions if deriving rate another way,
+   - future extension of `LiveEnergySnapshot` or `FuelConfig` (blend is not in
+     the snapshot struct yet — liquid L/h remains the primary live field).
+4. OBD-II PID `52` (ethanol fuel %) is the OEM parallel; MegaSquirt flex is the
+   aftermarket parallel. See also AFR/ethanol notes in
+   [`mathematical-formulas.md`](mathematical-formulas.md).
+
 ### References
 
 - MegaSquirt / MSEXTRA serial protocol notes (msextra.com)
 - TunerStudio communications documentation
 - Speeduino serial protocol (speeduino.com)
+- MS3 / MS3X hardware manuals — Flex / fuel composition sensor input
+  ([MS3X hardware PDF](https://www.msextra.com/doc/pdf/MS3XV357_Hardware-1.5.pdf);
+  TunerStudio **Fuel Sensor Settings (Flex)**)
+- [Flex fuel with MegaSquirt (background)](https://www.megamanual.com/flexfuel.htm)
 
 ---
 
@@ -368,6 +427,7 @@ let cost = refine_energy_cost(/* predicted */ 1.2e6, /* distance_m */ 500.0, Som
 | `LiveEnergySnapshot` / `LiveEnergyProvider` / `NoLiveEnergy` | Present |
 | `refine_energy_cost` used from graph reweight | Present |
 | OBD-II / J1939 / MegaSquirt polling | **Not implemented** |
+| MegaSquirt flex-fuel (composition sensor) | **Documented** above; not polled yet — plugin should read ethanol % when firmware exposes it |
 | HostApi `ecu_read` capability | **Not implemented** |
 | Android Bluetooth OBD UX | **Not implemented** |
 
