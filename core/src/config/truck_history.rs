@@ -10,6 +10,25 @@ pub struct TruckDrivingDay {
     pub driving_hours: f64,
 }
 
+/// Outstanding (or repaid) compensation after a reduced weekly rest (Art. 8).
+///
+/// A reduced weekly rest (24 h instead of 45 h) creates a shortfall that must be
+/// taken en bloc and attached to another rest of at least 9 h before the end of
+/// the third week following the week of the reduction.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WeeklyRestCompensationDebt {
+    /// Civil date when the reduced weekly rest was taken.
+    pub reduced_on_date: String,
+    /// Hours owed (typically 45 − 24 = 21).
+    pub shortfall_hours: f64,
+    /// Inclusive deadline: last day of the third week following the week of reduction.
+    pub compensate_by_date: String,
+    #[serde(default)]
+    pub repaid: bool,
+    #[serde(default)]
+    pub repaid_on_date: Option<String>,
+}
+
 /// Persisted truck duty history (ConfigStore key `truck_driving_history`).
 ///
 /// Stored in the existing `app_config` JSON blob store (same mechanism as
@@ -29,6 +48,9 @@ pub struct TruckDrivingHistory {
     /// Last weekly rest taken (informational / multi-day).
     #[serde(default)]
     pub last_weekly_rest: TruckRestKind,
+    /// Reduced weekly-rest compensation ledger (Art. 8).
+    #[serde(default)]
+    pub weekly_rest_compensations: Vec<WeeklyRestCompensationDebt>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -77,6 +99,108 @@ pub fn prune_truck_driving_history(
         return;
     };
     history.days.retain(|d| d.date.as_str() >= cutoff.as_str());
+}
+
+/// Monday of the ISO week containing `ymd` (`YYYY-MM-DD`).
+pub fn iso_week_monday(ymd: &str) -> Option<String> {
+    let parts: Vec<&str> = ymd.split('-').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let y: i32 = parts[0].parse().ok()?;
+    let m: u32 = parts[1].parse().ok()?;
+    let d: u32 = parts[2].parse().ok()?;
+    let mon0 = weekday_iso_mon0(y, m, d)?;
+    civil_date_add_days(ymd, -(mon0 as i64))
+}
+
+/// Last day (Sunday) of the third ISO week following the week that contains `ymd`.
+///
+/// Used as the Art. 8 compensation deadline after a reduced weekly rest taken on
+/// (or in the week of) `ymd`.
+pub fn weekly_rest_compensation_deadline(reduced_on: &str) -> Option<String> {
+    let monday = iso_week_monday(reduced_on)?;
+    // Monday of week W → Sunday of week W+3 = monday + 6 + 21.
+    civil_date_add_days(&monday, 6 + 21)
+}
+
+/// Record a reduced weekly rest on the compensation ledger.
+pub fn record_reduced_weekly_compensation(
+    history: &mut TruckDrivingHistory,
+    reduced_on_date: &str,
+    shortfall_hours: f64,
+) {
+    let Some(compensate_by_date) = weekly_rest_compensation_deadline(reduced_on_date) else {
+        return;
+    };
+    history
+        .weekly_rest_compensations
+        .push(WeeklyRestCompensationDebt {
+            reduced_on_date: reduced_on_date.to_string(),
+            shortfall_hours: shortfall_hours.max(0.0),
+            compensate_by_date,
+            repaid: false,
+            repaid_on_date: None,
+        });
+}
+
+/// Try to repay the oldest unpaid compensation debt by attaching it to a rest
+/// period of at least 9 h that is long enough to include the shortfall en bloc
+/// (`attached_rest_hours >= 9 + shortfall`), or a full regular weekly rest (45 h).
+///
+/// Returns true when a debt was marked repaid.
+pub fn try_repay_weekly_rest_compensation(
+    history: &mut TruckDrivingHistory,
+    rest_date: &str,
+    attached_rest_hours: f64,
+) -> bool {
+    if attached_rest_hours < 9.0 - 1e-6 {
+        return false;
+    }
+    let Some(idx) = history
+        .weekly_rest_compensations
+        .iter()
+        .position(|d| !d.repaid)
+    else {
+        return false;
+    };
+    let shortfall = history.weekly_rest_compensations[idx].shortfall_hours;
+    let can_repay = attached_rest_hours + 1e-6 >= 9.0 + shortfall
+        || attached_rest_hours + 1e-6 >= 45.0;
+    if !can_repay {
+        return false;
+    }
+    let debt = &mut history.weekly_rest_compensations[idx];
+    debt.repaid = true;
+    debt.repaid_on_date = Some(rest_date.to_string());
+    true
+}
+
+/// Unpaid compensation debts (oldest first).
+pub fn outstanding_weekly_rest_compensations(
+    history: &TruckDrivingHistory,
+) -> Vec<&WeeklyRestCompensationDebt> {
+    history
+        .weekly_rest_compensations
+        .iter()
+        .filter(|d| !d.repaid)
+        .collect()
+}
+
+/// Sakamoto weekday with Monday = 0 … Sunday = 6 (ISO).
+fn weekday_iso_mon0(y: i32, m: u32, d: u32) -> Option<u32> {
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    // Tomohiko Sakamoto: 0 = Sunday.
+    let t = [0u32, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+    let mut yy = y;
+    if m < 3 {
+        yy -= 1;
+    }
+    let y = yy as u32;
+    let sun0 = (y + y / 4 - y / 100 + y / 400 + t[(m - 1) as usize] + d) % 7;
+    Some((sun0 + 6) % 7)
 }
 
 /// Simple `YYYY-MM-DD` ± days (proleptic Gregorian; enough for duty windows).
@@ -134,4 +258,74 @@ pub fn rolling_date_window(today: &str, n: usize) -> Vec<String> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iso_week_monday_known_friday() {
+        // 2026-07-24 is a Friday; ISO week Monday is 2026-07-20.
+        assert_eq!(
+            iso_week_monday("2026-07-24").as_deref(),
+            Some("2026-07-20")
+        );
+    }
+
+    #[test]
+    fn compensation_deadline_is_sunday_of_week_plus_three() {
+        // Reduced on Friday 2026-07-24 (week of Mon 20 Jul).
+        // End of third following week = Sunday 2026-08-16.
+        assert_eq!(
+            weekly_rest_compensation_deadline("2026-07-24").as_deref(),
+            Some("2026-08-16")
+        );
+    }
+
+    #[test]
+    fn reduced_weekly_records_debt_and_regular_repay() {
+        let mut history = TruckDrivingHistory::default();
+        record_reduced_weekly_compensation(&mut history, "2026-07-24", 21.0);
+        assert_eq!(history.weekly_rest_compensations.len(), 1);
+        let d = &history.weekly_rest_compensations[0];
+        assert!(!d.repaid);
+        assert!((d.shortfall_hours - 21.0).abs() < 1e-9);
+        assert_eq!(d.compensate_by_date, "2026-08-16");
+
+        // 11 h daily rest cannot carry 21 h compensation en bloc with 9 h base.
+        assert!(!try_repay_weekly_rest_compensation(
+            &mut history,
+            "2026-07-31",
+            11.0
+        ));
+        assert!(!history.weekly_rest_compensations[0].repaid);
+
+        // Full regular 45 h weekly rest can repay.
+        assert!(try_repay_weekly_rest_compensation(
+            &mut history,
+            "2026-08-02",
+            45.0
+        ));
+        assert!(history.weekly_rest_compensations[0].repaid);
+        assert_eq!(
+            history.weekly_rest_compensations[0]
+                .repaid_on_date
+                .as_deref(),
+            Some("2026-08-02")
+        );
+        assert!(outstanding_weekly_rest_compensations(&history).is_empty());
+    }
+
+    #[test]
+    fn thirty_hour_rest_repays_twenty_one_shortfall() {
+        let mut history = TruckDrivingHistory::default();
+        record_reduced_weekly_compensation(&mut history, "2026-07-24", 21.0);
+        assert!(try_repay_weekly_rest_compensation(
+            &mut history,
+            "2026-08-01",
+            30.0
+        ));
+        assert!(history.weekly_rest_compensations[0].repaid);
+    }
 }

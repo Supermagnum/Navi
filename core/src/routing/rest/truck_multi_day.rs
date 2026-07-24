@@ -4,8 +4,20 @@
 //! boundary → next day) but budgets in **driving hours** instead of kilometres.
 
 use crate::config::{
-    civil_date_add_days, TruckDrivingHistory, TruckRestKind, TruckRestParams,
+    civil_date_add_days, outstanding_weekly_rest_compensations, record_reduced_weekly_compensation,
+    try_repay_weekly_rest_compensation, TruckDrivingHistory, TruckRestKind, TruckRestParams,
 };
+
+/// Facility tier for truck overnight preference (higher is better).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TruckRestFacility {
+    /// HGV-allowed parking without highway rest/services tags.
+    HgvParking = 0,
+    /// `highway=rest_area`.
+    RestArea = 1,
+    /// `highway=services` (fuller facilities).
+    Services = 2,
+}
 
 /// Candidate rest / services stop along a planned corridor (km from start).
 #[derive(Debug, Clone)]
@@ -14,6 +26,9 @@ pub struct TruckRestCandidate {
     pub lat: f64,
     pub lon: f64,
     pub name: String,
+    /// Lateral / off-route distance from the corridor sample used to discover this POI (km).
+    pub detour_km: f64,
+    pub facility: TruckRestFacility,
     /// True when OSM suggests facilities suitable for a full 45 h weekly rest
     /// (e.g. `highway=services`); bare `rest_area` / HGV parking may be false.
     pub suitable_for_weekly: bool,
@@ -101,6 +116,26 @@ pub fn truck_day_cap_hours(
     (allowed, used_ext && (already + need_hours > base + 1e-6))
 }
 
+/// How much farther a higher-tier facility may be (detour km) and still win.
+const FACILITY_DETOUR_SLACK_KM: f64 = 8.0;
+
+fn candidate_score(c: &TruckRestCandidate, target_km: f64, radius_km: f64) -> Option<f64> {
+    let along_err = (c.along_km - target_km).abs();
+    if along_err > radius_km {
+        return None;
+    }
+    // Detour-weighted: lateral off-route distance dominates; along-route miss is soft.
+    let mut score = c.detour_km + along_err * 0.15;
+    // Facility preference within a similar detour band (services > rest_area > parking).
+    let facility_bonus = match c.facility {
+        TruckRestFacility::Services => FACILITY_DETOUR_SLACK_KM,
+        TruckRestFacility::RestArea => FACILITY_DETOUR_SLACK_KM * 0.35,
+        TruckRestFacility::HgvParking => 0.0,
+    };
+    score -= facility_bonus;
+    Some(score)
+}
+
 fn pick_candidate_near(
     candidates: &[TruckRestCandidate],
     target_km: f64,
@@ -110,13 +145,11 @@ fn pick_candidate_near(
     let mut best: Option<&TruckRestCandidate> = None;
     let mut best_score = f64::INFINITY;
     for c in candidates {
-        let d = (c.along_km - target_km).abs();
-        if d > radius_km {
+        let Some(mut score) = candidate_score(c, target_km, radius_km) else {
             continue;
-        }
-        let mut score = d;
+        };
         if prefer_weekly_suitable && c.suitable_for_weekly {
-            score -= 2.0; // prefer facilities within the window
+            score -= 1.5;
         }
         if score < best_score {
             best_score = score;
@@ -201,18 +234,34 @@ fn choose_weekly_overnight(
     at_km: f64,
 ) -> TruckOvernightRest {
     let mut notes = Vec::new();
-    // Reduced 24 h every second week: if last weekly was Regular45, allow Reduced24.
-    let use_reduced = matches!(history.last_weekly_rest, TruckRestKind::Regular45);
+    let pending = outstanding_weekly_rest_compensations(history);
+    for d in &pending {
+        notes.push(format!(
+            "compensation_pending: reduced_weekly on {}; shortfall_h={:.0}; compensate_by={}",
+            d.reduced_on_date, d.shortfall_hours, d.compensate_by_date
+        ));
+    }
+    // Reduced 24 h every second week: if last weekly was Regular45, allow Reduced24 —
+    // unless an unpaid compensation debt already exists (prefer regular to repay / avoid stacking).
+    let use_reduced = matches!(history.last_weekly_rest, TruckRestKind::Regular45) && pending.is_empty();
     let (kind, hours, not_in_cab) = if use_reduced {
-        notes.push(
-            "weekly_rest: reduced 24 h (last weekly was regular 45 h; compensation for reduced rests is documented, not auto-tracked as a future debt ledger in this pass)".into(),
-        );
+        let shortfall = (truck.weekly_rest_hours - truck.weekly_rest_reduced_hours).max(0.0);
+        notes.push(format!(
+            "weekly_rest: reduced {:.0} h (last weekly was regular {:.0} h; shortfall {:.0} h recorded on compensation ledger)",
+            truck.weekly_rest_reduced_hours, truck.weekly_rest_hours, shortfall
+        ));
         (
             TruckOvernightKind::WeeklyReduced,
             truck.weekly_rest_reduced_hours,
             false, // reduced weekly may remain in-vehicle if stationary
         )
     } else {
+        if !pending.is_empty() && matches!(history.last_weekly_rest, TruckRestKind::Regular45) {
+            notes.push(
+                "weekly_rest: preferring regular 45 h because compensation debt is still outstanding"
+                    .into(),
+            );
+        }
         notes.push(format!(
             "weekly_rest: regular {:.0} h; not_in_cab={} (do not treat bare roadside as sufficient)",
             truck.weekly_rest_hours, truck.regular_weekly_rest_not_in_cab
@@ -234,6 +283,11 @@ fn choose_weekly_overnight(
             "weekly_rest_poi: nearest stop may lack facilities for a full 45 h away-from-cab rest"
                 .into(),
         );
+    } else if let Some(c) = cand {
+        notes.push(format!(
+            "weekly_rest_poi: facility={:?}; detour_km={:.1}",
+            c.facility, c.detour_km
+        ));
     }
 
     TruckOvernightRest {
@@ -252,9 +306,9 @@ fn choose_weekly_overnight(
 /// Segment a truck trip into driving days with daily / weekly rests between them.
 ///
 /// When total driving fits in the remaining capacity of `start_date`, returns a
-/// single day with no overnight. Rest-stop matching is intentionally simpler
-/// than hiking hut scoring: nearest tagged RestArea/services within a fixed
-/// radius of the day-boundary kilometre.
+/// single day with no overnight. Overnight stops are scored by detour distance
+/// from the corridor plus facility tier (`services` preferred over bare
+/// `rest_area` / HGV parking within a similar detour band).
 pub fn plan_truck_multi_day(
     truck: &TruckRestParams,
     history: &TruckDrivingHistory,
@@ -334,10 +388,18 @@ pub fn plan_truck_multi_day(
                 sim.consecutive_working_days >= truck.max_consecutive_working_days;
             let rest = if weekly_due {
                 let w = choose_weekly_overnight(truck, &sim, candidates, end_km);
-                sim.last_weekly_rest = match w.kind {
-                    TruckOvernightKind::WeeklyReduced => TruckRestKind::Reduced24,
-                    _ => TruckRestKind::Regular45,
-                };
+                match w.kind {
+                    TruckOvernightKind::WeeklyReduced => {
+                        let shortfall =
+                            (truck.weekly_rest_hours - truck.weekly_rest_reduced_hours).max(0.0);
+                        record_reduced_weekly_compensation(&mut sim, &driving_date, shortfall);
+                        sim.last_weekly_rest = TruckRestKind::Reduced24;
+                    }
+                    _ => {
+                        let _ = try_repay_weekly_rest_compensation(&mut sim, &driving_date, w.hours);
+                        sim.last_weekly_rest = TruckRestKind::Regular45;
+                    }
+                }
                 sim.consecutive_working_days = 0;
                 sim.reduced_daily_rests_since_weekly = 0;
                 w
@@ -411,13 +473,28 @@ pub fn commit_truck_multi_day_plan(
                     history.last_weekly_rest = TruckRestKind::Regular45;
                     history.consecutive_working_days = 0;
                     history.reduced_daily_rests_since_weekly = 0;
+                    let _ = try_repay_weekly_rest_compensation(
+                        history,
+                        &day.date,
+                        rest.hours,
+                    );
                 }
                 TruckOvernightKind::WeeklyReduced => {
                     history.last_weekly_rest = TruckRestKind::Reduced24;
                     history.consecutive_working_days = 0;
                     history.reduced_daily_rests_since_weekly = 0;
+                    let shortfall =
+                        (truck.weekly_rest_hours - truck.weekly_rest_reduced_hours).max(0.0);
+                    record_reduced_weekly_compensation(history, &day.date, shortfall);
                 }
-                TruckOvernightKind::DailyRegular | TruckOvernightKind::DailySplit => {}
+                TruckOvernightKind::DailyRegular | TruckOvernightKind::DailySplit => {
+                    // A long enough attached rest can repay (9 h + shortfall en bloc).
+                    let _ = try_repay_weekly_rest_compensation(
+                        history,
+                        &day.date,
+                        rest.hours,
+                    );
+                }
             }
         }
     }
@@ -575,6 +652,8 @@ mod tests {
             lat: 61.0,
             lon: 10.0,
             name: "Test Services".into(),
+            detour_km: 0.5,
+            facility: TruckRestFacility::Services,
             suitable_for_weekly: true,
         }];
         let plan = plan_truck_multi_day(
@@ -591,6 +670,135 @@ mod tests {
         assert!(o.poi_found);
         assert_eq!(o.name.as_deref(), Some("Test Services"));
         assert!((o.lat.unwrap() - 61.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn overnight_prefers_services_over_closer_bare_rest_area() {
+        let truck = TruckRestParams::default();
+        let history = TruckDrivingHistory::default();
+        // Boundary ~720 km. Bare rest_area is closer (detour 1 km) but services at
+        // 5 km detour should win within FACILITY_DETOUR_SLACK_KM.
+        let cands = vec![
+            TruckRestCandidate {
+                along_km: 720.0,
+                lat: 61.0,
+                lon: 10.0,
+                name: "Bare Rest".into(),
+                detour_km: 1.0,
+                facility: TruckRestFacility::RestArea,
+                suitable_for_weekly: false,
+            },
+            TruckRestCandidate {
+                along_km: 722.0,
+                lat: 61.05,
+                lon: 10.05,
+                name: "Full Services".into(),
+                detour_km: 5.0,
+                facility: TruckRestFacility::Services,
+                suitable_for_weekly: true,
+            },
+        ];
+        let plan = plan_truck_multi_day(
+            &truck,
+            &history,
+            16.0,
+            1280.0,
+            "2026-07-24",
+            "2026-W30",
+            &cands,
+            false,
+        );
+        let o = plan.days[0].overnight.as_ref().unwrap();
+        assert_eq!(o.name.as_deref(), Some("Full Services"));
+    }
+
+    #[test]
+    fn overnight_keeps_near_rest_area_when_services_detour_is_large() {
+        let truck = TruckRestParams::default();
+        let history = TruckDrivingHistory::default();
+        let cands = vec![
+            TruckRestCandidate {
+                along_km: 720.0,
+                lat: 61.0,
+                lon: 10.0,
+                name: "Near Rest".into(),
+                detour_km: 0.5,
+                facility: TruckRestFacility::RestArea,
+                suitable_for_weekly: false,
+            },
+            TruckRestCandidate {
+                along_km: 725.0,
+                lat: 61.2,
+                lon: 10.2,
+                name: "Far Services".into(),
+                detour_km: 20.0,
+                facility: TruckRestFacility::Services,
+                suitable_for_weekly: true,
+            },
+        ];
+        let plan = plan_truck_multi_day(
+            &truck,
+            &history,
+            16.0,
+            1280.0,
+            "2026-07-24",
+            "2026-W30",
+            &cands,
+            false,
+        );
+        let o = plan.days[0].overnight.as_ref().unwrap();
+        assert_eq!(o.name.as_deref(), Some("Near Rest"));
+    }
+
+    #[test]
+    fn commit_records_and_repays_reduced_weekly_compensation() {
+        let truck = TruckRestParams::default();
+        let mut history = TruckDrivingHistory {
+            consecutive_working_days: 5,
+            last_weekly_rest: TruckRestKind::Regular45,
+            ..Default::default()
+        };
+        let plan = plan_truck_multi_day(
+            &truck,
+            &history,
+            16.0,
+            1280.0,
+            "2026-07-24",
+            "2026-W30",
+            &[],
+            false,
+        );
+        let o = plan.days[0].overnight.as_ref().unwrap();
+        assert_eq!(o.kind, TruckOvernightKind::WeeklyReduced);
+
+        let mut truck2 = truck.clone();
+        commit_truck_multi_day_plan(&mut truck2, &mut history, &plan, "2026-W30");
+        assert_eq!(history.weekly_rest_compensations.len(), 1);
+        assert!(!history.weekly_rest_compensations[0].repaid);
+        assert_eq!(
+            history.weekly_rest_compensations[0].compensate_by_date,
+            "2026-08-16"
+        );
+
+        // Later: another multi-day after consecutive days, with last weekly Reduced → Regular.
+        history.consecutive_working_days = 5;
+        let plan2 = plan_truck_multi_day(
+            &truck2,
+            &history,
+            16.0,
+            1280.0,
+            "2026-08-02",
+            "2026-W31",
+            &[],
+            false,
+        );
+        let o2 = plan2.days[0].overnight.as_ref().unwrap();
+        assert_eq!(o2.kind, TruckOvernightKind::WeeklyRegular);
+        commit_truck_multi_day_plan(&mut truck2, &mut history, &plan2, "2026-W31");
+        assert!(
+            history.weekly_rest_compensations[0].repaid,
+            "regular weekly should repay compensation debt"
+        );
     }
 
     #[test]

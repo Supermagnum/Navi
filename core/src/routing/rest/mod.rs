@@ -24,7 +24,7 @@ pub use truck_duty::{commit_truck_trip, evaluate_truck_trip, TruckDutyEvaluation
 pub use truck_multi_day::{
     choose_daily_overnight_rest, commit_truck_multi_day_plan, plan_truck_multi_day,
     truck_day_cap_hours, TruckDaySegment, TruckMultiDayPlan, TruckOvernightKind,
-    TruckOvernightRest, TruckRestCandidate,
+    TruckOvernightRest, TruckRestCandidate, TruckRestFacility,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]

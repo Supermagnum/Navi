@@ -14,8 +14,10 @@ pub use rest_params::{
 };
 pub use safety::SafetyConfig;
 pub use truck_history::{
-    civil_date_add_days, prune_truck_driving_history, record_truck_driving_hours,
-    rolling_date_window, TruckDrivingDay, TruckDrivingHistory, TruckRestKind,
+    civil_date_add_days, iso_week_monday, outstanding_weekly_rest_compensations,
+    prune_truck_driving_history, record_reduced_weekly_compensation, record_truck_driving_hours,
+    rolling_date_window, try_repay_weekly_rest_compensation, weekly_rest_compensation_deadline,
+    TruckDrivingDay, TruckDrivingHistory, TruckRestKind, WeeklyRestCompensationDebt,
 };
 
 use serde::{Deserialize, Serialize};

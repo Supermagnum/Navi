@@ -24,6 +24,7 @@ use driver_break_core::routing::{
     max_daily_distance_km, motor_break_interval_km, motor_daily_budget, plan_hiking_multi_day,
     plan_motor_multi_day, plan_truck_multi_day, truck_effective_break_parts, uses_motor_multi_day,
     uses_truck_rest, MotorOvernightCandidate, MotorOvernightKind, TruckRestCandidate,
+    TruckRestFacility,
 };
 use driver_break_core::routing::safety::{
     check_overnight_candidate, DangerBarrierIndex, OvernightProximityIndex,
@@ -1261,7 +1262,7 @@ fn plan_car_route_inner(
         let fortnight_dates = driver_break_core::config::rolling_date_window(&today, 14);
 
         // RestArea / services candidates along the corridor for overnight matching
-        // (intentionally simpler than hiking hut scoring — nearest tagged stop).
+        // (detour-weighted + facility-tier preference).
         let samples = sample_polyline_km(&polyline);
         let mut candidates: Vec<TruckRestCandidate> = Vec::new();
         let mut seen_poi = std::collections::HashSet::new();
@@ -1275,6 +1276,12 @@ fn plan_car_route_inner(
                 }
                 let suitable_for_weekly =
                     rest_area_suitable_for_weekly(&p.tags, &p.icon_key);
+                let facility = match p.tags.get("highway").map(String::as_str) {
+                    Some("services") => TruckRestFacility::Services,
+                    Some("rest_area") => TruckRestFacility::RestArea,
+                    _ => TruckRestFacility::HgvParking,
+                };
+                let detour_km = haversine_m(*lat, *lon, p.lat, p.lon) / 1000.0;
                 candidates.push(TruckRestCandidate {
                     along_km: *km,
                     lat: p.lat,
@@ -1283,9 +1290,27 @@ fn plan_car_route_inner(
                         .name
                         .clone()
                         .unwrap_or_else(|| format!("Rest {}", p.osm_id)),
+                    detour_km,
+                    facility,
                     suitable_for_weekly,
                 });
             }
+        }
+
+        for d in driver_break_core::config::outstanding_weekly_rest_compensations(&history) {
+            report.push_str(&format!(
+                "truck_compensation: pending=true; reduced_on={}; shortfall_h={:.0}; compensate_by={}\n",
+                d.reduced_on_date, d.shortfall_hours, d.compensate_by_date
+            ));
+        }
+        let pending_n =
+            driver_break_core::config::outstanding_weekly_rest_compensations(&history).len();
+        if pending_n == 0 {
+            report.push_str("truck_compensation: pending=0\n");
+        } else {
+            report.push_str(&format!(
+                "truck_compensation_summary: pending_count={pending_n}\n"
+            ));
         }
 
         let multi = plan_truck_multi_day(
@@ -1340,6 +1365,18 @@ fn plan_car_route_inner(
                 report.push_str(&format!("truck_duty_note: {n}\n"));
             }
             commit_truck_multi_day_plan(&mut rest.truck, &mut history, &multi, &week_id);
+            let pending_after =
+                driver_break_core::config::outstanding_weekly_rest_compensations(&history);
+            report.push_str(&format!(
+                "truck_compensation_after_commit: pending_count={}\n",
+                pending_after.len()
+            ));
+            for d in pending_after {
+                report.push_str(&format!(
+                    "truck_compensation: pending=true; reduced_on={}; shortfall_h={:.0}; compensate_by={}\n",
+                    d.reduced_on_date, d.shortfall_hours, d.compensate_by_date
+                ));
+            }
         } else {
             let duty = evaluate_truck_trip(
                 &rest.truck,

@@ -46,7 +46,8 @@ overnight” and [`poi.md`](poi.md) **Lodging** / **RestArea**).
 | Fortnightly 90 h | Art. 6(3) | **Enforced** against rolling history in `app_config` key `truck_driving_history` (`max_fortnightly_driving_hours`). |
 | Exceptional +1 h to reach a suitable stop | Art. 12 (as amended) | **Enforced** only when the user explicitly arms it (`exceptional_extension_armed` / Drive settings toggle). Disarmed after use on commit. |
 | Daily rest 11 h / reduced 9 h ≤3× / split 3+9 | Art. 8 | **Implemented** in multi-day segmentation (`plan_truck_multi_day`): trips that exceed the remaining daily driving budget are split into days with an overnight daily rest (regular 11 h by default; reduced 9 h when preferred and slots remain; split 3+9 when `prefer_split_daily_rest`). Reduced-rest count is stored on `TruckDrivingHistory.reduced_daily_rests_since_weekly`. |
-| Weekly rest 45 h / reduced 24 h, ≤6 consecutive working days, no in-cab for regular 45 h | Art. 8 | **Implemented** in multi-day segmentation: after `max_consecutive_working_days` (6) working days, the overnight is a weekly rest (45 h regular with `not_in_cab=true`, or 24 h reduced when the previous weekly rest was regular). Compensation owed after reduced weekly rests is **documented** in plan notes, not modeled as an enforced future-debt ledger in this pass. |
+| Weekly rest 45 h / reduced 24 h, ≤6 consecutive working days, no in-cab for regular 45 h | Art. 8 | **Implemented** in multi-day segmentation: after `max_consecutive_working_days` (6) working days, the overnight is a weekly rest (45 h regular with `not_in_cab=true`, or 24 h reduced when the previous weekly rest was regular and no unpaid compensation debt remains). |
+| Compensation after reduced weekly rest | Art. 8 | **Implemented** as a tracked ledger on `TruckDrivingHistory.weekly_rest_compensations`: each reduced weekly rest records shortfall hours (typically 21) and a deadline (end of the third ISO week following the week of the reduction). Plan report surfaces outstanding debts (`truck_compensation:`). A later rest of ≥ 9 h that is long enough to carry the shortfall en bloc (or a full 45 h regular weekly rest) marks the oldest debt repaid on commit. **Planning auto-factoring:** when unpaid debt exists, the planner prefers a regular 45 h weekly rest over stacking another reduced weekly rest; it does **not** yet invent extra mid-week compensation blocks solely to repay debt. |
 
 ## Multi-day segmentation (implemented)
 
@@ -59,17 +60,18 @@ extension is still available), `plan_car_route` runs `plan_truck_multi_day`:
 2. Insert a daily or weekly overnight between days (see table above).
 3. Match a **RestArea** POI near the day-boundary kilometre when one exists
    (tag rules: [`poi.md`](poi.md) **RestArea** — `highway=rest_area` OR
-   `highway=services` OR `amenity=parking` + HGV access tags). Matching is
-   **intentionally simpler** than hiking hut scoring: nearest tagged stop
-   within a fixed radius (~25 km daily / ~40 km weekly), preferring
-   `services`-like stops for 45 h rests. Missing POIs do **not** hard-fail the
-   plan (informational notes only).
+   `highway=services` OR `amenity=parking` + HGV access tags). Candidates are
+   scored by **detour distance** from the corridor sample plus **facility tier**
+   (`highway=services` preferred over bare `highway=rest_area` / HGV parking
+   within ~8 km detour slack). Missing POIs do **not** hard-fail the plan
+   (informational notes only).
 4. Commit each driving day into `TruckDrivingHistory` (same store as
    single-trip duty), updating consecutive working days, reduced-daily count,
-   and last weekly rest kind as applicable.
+   last weekly rest kind, and the reduced-weekly **compensation ledger** as
+   applicable.
 
 Report lines: `truck_multi_day:`, `truck_day:`, `truck_overnight:`,
-`truck_overnight_note:`.
+`truck_overnight_note:`, `truck_compensation:` / `truck_compensation_summary:`.
 
 ## Wiring notes
 
@@ -80,17 +82,18 @@ Report lines: `truck_multi_day:`, `truck_day:`, `truck_overnight:`,
   runs multi-day segmentation when needed, and commits into `TruckDrivingHistory`.
 - HUD: `usesTruckRestSettings(profile)` is true only for Truck / TruckElectric.
 - History prune: day rows older than ~21 days are dropped from the persisted blob;
-  evaluation sums only a rolling 7-/14-day calendar window.
+  evaluation sums only a rolling 7-/14-day calendar window. Compensation ledger
+  entries are retained independently of day-row prune (serde field on the same blob).
 
 ## Deferred / incomplete (stated accurately)
 
-- **Compensation ledger** after reduced weekly rests (Art. 8): noted in overnight
-  text; not an enforced “must compensate by date X” tracker.
-- **Richer overnight scoring** (hiking-style network preference / multi-criteria
-  ranking) for truck rest stops — deliberately not in this pass.
 - **UI surfaces** for multi-day day cards / overnight map pins beyond plan report
   JSON and break POIs — host may render later.
 - **Multi-jurisdiction packs** (AETR vs EC 561 vs non-European HOS): still a
   single EU/EEA-shaped parameter set today; see
   [`jurisdiction-rules.md`](jurisdiction-rules.md) for the pattern when adding
   further packs.
+- **Dedicated mid-trip compensation rest blocks** invented solely to repay ledger
+  debt (beyond preferring regular weekly rest when debt is outstanding) — not
+  implemented; ledger track + surface + repay-on-sufficient-rest is the delivered
+  scope.

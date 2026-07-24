@@ -46,7 +46,7 @@ pub use rest::{
     HikingOvernightStop, HikingRouteSample, MotorDailyBudget, MotorDaySegment, MotorMultiDayPlan,
     MotorOvernightCandidate, MotorOvernightKind, MotorOvernightStop, TruckDaySegment,
     TruckDutyEvaluation, TruckMultiDayPlan, TruckOvernightKind, TruckOvernightRest,
-    TruckRestCandidate, OVERNIGHT_NEAR_HUT_MAX_M,
+    TruckRestCandidate, TruckRestFacility, OVERNIGHT_NEAR_HUT_MAX_M,
 };
 pub use workers::WorkerPoolPlan;
 pub use safety::{
