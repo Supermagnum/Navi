@@ -39,7 +39,8 @@ Mer å lese i depotet: hvordan delene henger sammen i
 [`docs/debugging.md`](docs/debugging.md); HUD-layout i
 [`docs/hud-layout.md`](docs/hud-layout.md); kartstiler / frakoblede kart / 3D i
 [`docs/map-styles.md`](docs/map-styles.md); lastebil kjøre-/hviletidsregler i
-[`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md); land-/regionregelpakker i
+[`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md); US FMCSA i
+[`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md); land-/regionregelpakker i
 [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md); IMU-monteringskalibrering (utsatt) i
 [`docs/imu-calibration.md`](docs/imu-calibration.md).
 
@@ -81,7 +82,7 @@ WASM-pluginvert for fremtidige plugins; produktplugins er ikke levert ennå
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Elektriske modus får kreditt for energi tilbake i nedoverbakke. Formler: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Ferdig |
 | **Frakoblet ruteplan** | Last ned en kartregion én gang, planlegg på enheten, og se ruten pluss foreslåtte stopp på kartet. | Ferdig |
 | **Stedssøk** | Søk steder og sett Fra / Via / Til ([`docs/poi.md`](docs/poi.md)). Inkluderer fiskeplasser og veiledning for hytteradius ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Ferdig |
-| **Hvile og pauser** | Pausepåminnelser og foreslåtte stopp langs ruten. Fottur og sykling bruker tradisjonelle skandinaviske rasteavstander ([bakgrunn](docs/historisk-bakgrunn.md)). **Lastebil** / **lastebil elektrisk** følger EU EC 561/2006 for pauseavstand, daglige / ukentlige / 14-dagers kjøretidstak, flerdagers døgn-/ukeshvile, kompensasjonsbok etter redusert ukeshvile, og omvei-/anleggsbasert overnattingsskåring med lagret historikk ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) — flerdagers korridor bekreftet på live-GPS Norge (Minnesund-beltet → Bodø). **Bil** / **motorsykkel** / **sykkel** / **bobil** bruker myk flerdagers overnatting når turen overstiger et daglig budsjett (8 t kjøring eller 100 km sykling) med hotell/camping/rasteplass-forslag ([`docs/poi.md`](docs/poi.md)). Fottur-pausestopp prefererer hytter/telt og holder avstand til hus og isbreer; dag-for-dag flerdagers overnatting planlegges i `planHikingRoute`. Land-/regionpakker: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). | **Delvis** — lastebil EC 561 pauser, duty-tak, flerdagers døgn-/ukeshvile, kompensasjonsbok og omvei-/anleggsskåring implementert (live-GPS-sjekket for flerdagers korridor; UI-dagskort og flerjuridiksjonspakker fortsatt utsatt — se EC 561-dokumentet); bil / MC / sykkel / bobil myk flerdagers overnatting implementert; fottur rast-intervall hytte/telt, overnattingssikkerhet og dag-for-dag flerdagers overnatting er alle koblet i `planHikingRoute` |
+| **Hvile og pauser** | Pausepåminnelser og foreslåtte stopp langs ruten. Fottur og sykling bruker tradisjonelle skandinaviske rasteavstander ([bakgrunn](docs/historisk-bakgrunn.md)). **Lastebil** / **lastebil elektrisk** velger jurisdiksjonspakke ved start: EU EC 561/2006 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) eller US FMCSA ([`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md)); ukjent jurisdiksjon avslår juridisk sporing. Flerdagers dagskort vises i plan-UI. **Bil** / **motorsykkel** / **sykkel** / **bobil** bruker myk flerdagers overnatting når turen overstiger et daglig budsjett (8 t kjøring eller 100 km sykling) med hotell/camping/rasteplass-forslag ([`docs/poi.md`](docs/poi.md)). Fottur-pausestopp prefererer hytter/telt og holder avstand til hus og isbreer; dag-for-dag flerdagers overnatting planlegges i `planHikingRoute`. Land-/regionpakker: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). | Ferdig |
 | **Kjørefelt (HUD)** | Slim toppstripe (høyde; trykk for kartinnstillinger) og bunnstripe (zoom, pausetid, tur-ETA, økoblad; trykk for kjøreinnstillinger). | Ferdig |
 | **Kartrotasjon** | Rett kartet etter kompass, etter kjøreretning, eller med nord alltid opp. | Ferdig |
 | **Bevegelige ikoner** | Vis nærliggende spormarkører på kartet (for eksempel radiostasjoner) innen ca. 50–150 km. | **Delvis** — tegning virker; live radiomating er ikke innebygd ennå |
@@ -284,8 +285,9 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 | [`docs/bilder.md`](docs/bilder.md) | Emulatorskjermbildegalleri (norsk) |
 | [`docs/pictures.md`](docs/pictures.md) | Emulatorskjermbildegalleri (engelsk) |
 | [`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md) | Rast/vei-grunnlag for standard pauseintervaller (fottur og sykling); [engelsk](docs/historical-background.md) |
-| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Lastebil EU kjøre-/hviletid: duty-tak, flerdagers hvile, kompensasjonsbok, overnattingsskåring; øvrige utsatte punkter |
-| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Mønster for land-/regionavhengige regler (EC 561 + allemannsrett) |
+| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Lastebil EU kjøre-/hviletid: duty-tak, flerdagers hvile, kompensasjonsbok, overnattingsskåring |
+| [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | Lastebil US FMCSA HOS (11 t / 14 t / 8 t pause / 70 t-syklus) |
+| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Mønster for land-/regionavhengige regler (EC 561 + FMCSA + allemannsrett) |
 | [`docs/horse-profile.md`](docs/horse-profile.md) | Arbeidseksempel: legge til Horse-profil (kun dokumentert; ikke implementert) |
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Størrelse og plassering av kjøre-HUD og menyer |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs frakoblet Protomaps PMTiles; 3D-port |

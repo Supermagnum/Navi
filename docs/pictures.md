@@ -61,3 +61,14 @@ attach + camera logged). Drive HUD bars kept visible (`hideUiChrome=false`).
 | Coverage boundary → live Liberty (Tromsø) | ![Boundary Liberty](images/basemap/basemap_coverage_boundary_tromso.png) |
 | Online 3D (Mapterhorn DEM hillshade, Gjendebu, Jotunheimen) | ![3D hillshade](images/basemap/basemap_3d_mapterhorn_hillshade.png) |
 | Flat map, Gjendebu, Jotunheimen | ![Flat map](images/basemap/basemap_3d_fallback_liberty.png) |
+
+## Multi-day day cards
+
+Captured by `MultiDayDayCardsScreenshotTest` (route tools sheet day list).
+Live truck corridor (emulator GPS → Bodø) by `LiveMultiDayDayCardsInstrumentedTest`.
+
+| Scene | Preview |
+|---|---|
+| Truck multi-day day cards | ![Truck day cards](images/multi_day_day_cards.png) |
+| Hiking multi-day day cards | ![Hiking day cards](images/multi_day_day_cards_hiking.png) |
+| Truck live multi-day day cards (GPS → Bodø) | ![Live truck day cards](images/multi_day_day_cards_live.png) |

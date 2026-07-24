@@ -2286,7 +2286,14 @@ data class CorridorRouteResult (
      * JSON array of pause / overnight stops along the route:
      * `[{"name","lat","lon","kind","icon"}]` where kind is `hut`, `tent`, or `amenity`.
      */
-    var `breakPoisJson`: kotlin.String
+    var `breakPoisJson`: kotlin.String, 
+    /**
+     * JSON array of multi-day day cards (empty `"[]"` when single-day / unknown).
+     * Fields: day_index, date, start_km, end_km, distance_km, driving_hours,
+     * profile, rest_kind, rest_hours, rest_label, overnight_name, overnight_found,
+     * not_in_cab, compensation, is_final.
+     */
+    var `daysJson`: kotlin.String
 ) {
     
     companion object
@@ -2310,6 +2317,7 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -2325,7 +2333,8 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterDouble.allocationSize(value.`poiLon`) +
             FfiConverterString.allocationSize(value.`poiName`) +
             FfiConverterString.allocationSize(value.`poiIconKey`) +
-            FfiConverterString.allocationSize(value.`breakPoisJson`)
+            FfiConverterString.allocationSize(value.`breakPoisJson`) +
+            FfiConverterString.allocationSize(value.`daysJson`)
     )
 
     override fun write(value: CorridorRouteResult, buf: ByteBuffer) {
@@ -2341,6 +2350,7 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterString.write(value.`poiName`, buf)
             FfiConverterString.write(value.`poiIconKey`, buf)
             FfiConverterString.write(value.`breakPoisJson`, buf)
+            FfiConverterString.write(value.`daysJson`, buf)
     }
 }
 

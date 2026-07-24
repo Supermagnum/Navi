@@ -96,6 +96,8 @@ fn main() {
         .map(|v| v.len())
         .unwrap_or(0);
     println!("break_poi_count={n_breaks}");
+    println!("days_json_chars={}", r.days_json.len());
+    println!("days_json={}", r.days_json);
     println!("--- report ---");
     print!("{}", r.report);
     if !r.report.contains("PASS") {

@@ -13,7 +13,8 @@ details of each example. For the Horse profile walkthrough, see
 
 Related:
 
-- Truck driving hours: [`ec-561-truck-rest.md`](ec-561-truck-rest.md)
+- Truck driving hours: [`ec-561-truck-rest.md`](ec-561-truck-rest.md),
+  [`fmcsa-truck-rest.md`](fmcsa-truck-rest.md)
   (MobileHome separation:
   [`#mobilehome-private-motorhome--deliberate-separation`](ec-561-truck-rest.md#mobilehome-private-motorhome--deliberate-separation))
 - Right-to-roam camping (plugin spec): [`plugins/right-to-roam-camping-spec.md`](plugins/right-to-roam-camping-spec.md)
@@ -128,10 +129,12 @@ the right-to-roam country table:
 | `GB-SCT` or country=`GB` + region=`Scotland` | … | Sub-national or nation-within-UK as required |
 | *(unlisted)* | — | **Decline / do not apply** (see fallback) |
 
-Truck-style packs use the same idea even if today there is only one row
-(“EC 561 / EEA-aligned”). Extending to AETR or US FMCSA Hours of Service means
-**adding rows** (or parallel pack enums), not forking unrelated one-off code
-paths.
+Truck-style packs use the same idea. Today Navi resolves
+[`JurisdictionDrivingHoursPack`](../core/src/config/driving_hours_pack.rs) at the
+corridor start: **EC 561** (EEA-aligned country bboxes), **FMCSA** (US bbox —
+[`fmcsa-truck-rest.md`](fmcsa-truck-rest.md)), or **Unknown** (decline legal
+tracking). Extending further (e.g. AETR) means **adding rows**, not forking
+unrelated one-off code paths.
 
 ### 2.3 Fallback / unknown jurisdiction (standing default)
 
@@ -196,9 +199,8 @@ explicitly when they are **not** regulation-derived (see
 
 Illustrative; **not implemented** in this pass:
 
-- **Non-EU / non-AETR driving-hour regimes** — e.g. US FMCSA Hours of Service
-  (structure differs from EC 561; would be a separate pack keyed by jurisdiction,
-  not a silent rename of truck defaults).
+- **AETR / additional treaty packs** beyond the current EC 561 family bbox list
+  (structure parallels EC 561; add keyed rows rather than renaming defaults).
 - **National `maxspeed` fallback tables** — pre-departure ETA already uses
   highway-class fallbacks when OSM `maxspeed` is missing; per-country defaults
   (e.g. `NO:rural`) may need explicit tuning packs.
@@ -208,6 +210,10 @@ Illustrative; **not implemented** in this pass:
   [`horse-profile.md` §5](horse-profile.md#5-jurisdiction-dependent-horse-access);
   do **not** assume horse access equals foot access under allemannsretten /
   allemansrätten / CRoW without checking each jurisdiction.
+
+**Shipped driving-hours packs:** EC 561 (see [`ec-561-truck-rest.md`](ec-561-truck-rest.md))
+and US FMCSA property-carrying (see [`fmcsa-truck-rest.md`](fmcsa-truck-rest.md)),
+with Unknown → decline-by-default.
 
 ---
 

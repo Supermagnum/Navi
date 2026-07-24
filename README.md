@@ -40,7 +40,8 @@ Further reading in-repo: how the pieces fit together in
 [`docs/debugging.md`](docs/debugging.md); HUD bar/menu layout in
 [`docs/hud-layout.md`](docs/hud-layout.md); map styles / offline maps / 3D in
 [`docs/map-styles.md`](docs/map-styles.md); truck driving-time rules in
-[`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md); country/region rule packs in
+[`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md); US FMCSA truck HOS in
+[`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md); country/region rule packs in
 [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md); IMU mount calibration (deferred) in
 [`docs/imu-calibration.md`](docs/imu-calibration.md).
 
@@ -81,7 +82,7 @@ yet ([`docs/plugins.md`](docs/plugins.md)).
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. Electric modes get credit for downhill recovery. Formulas: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Done |
 | **Offline route planning** | Download a map region once, plan on the device, and see the route line plus suggested stops on the map. | Done |
 | **Place search** | Search places and set From / Via / To ([`docs/poi.md`](docs/poi.md)). Includes fishing spots and hut search distance guidance ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Done |
-| **Rest & breaks** | Break reminders and suggested stops along the route. Hiking and cycling use traditional Scandinavian rest distances ([background](docs/historical-background.md)). **Truck** / **TruckElectric** follow EU EC 561/2006 for break spacing, daily / weekly / fortnightly driving caps, multi-day daily/weekly rest, reduced-weekly compensation ledger, and detour/facility overnight scoring with persisted history ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) — multi-day corridor confirmed on live-GPS Norway (Minnesund belt → Bodø). **Car** / **motorcycle** / **cycle** / **mobile home** use soft multi-day overnight splitting when a trip exceeds a daily budget (8 h driving or 100 km cycling) with lodging/camping/rest-area suggestions ([`docs/poi.md`](docs/poi.md)). Hiking overnight pauses prefer huts/tents and keep a respectful distance from buildings and glaciers; day-by-day multi-day overnight is planned in `planHikingRoute`. Country/region rule packs: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). | **Partial** — truck EC 561 breaks, duty caps, multi-day daily/weekly rest, compensation ledger, and detour/facility overnight scoring implemented (live-GPS checked for multi-day corridor; UI day-cards and multi-jurisdiction packs still deferred — see EC 561 doc); car / motorcycle / cycle / motorhome soft multi-day overnight implemented; hiking rast-interval hut/tent pauses, overnight safety filter, and day-by-day multi-day overnight are all wired in `planHikingRoute` |
+| **Rest & breaks** | Break reminders and suggested stops along the route. Hiking and cycling use traditional Scandinavian rest distances ([background](docs/historical-background.md)). **Truck** / **TruckElectric** resolve a jurisdiction pack at start: EU EC 561/2006 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) or US FMCSA property-carrying HOS ([`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md)); unknown jurisdictions decline legal tracking. Multi-day day cards and overnight pins are shown in the plan UI (live-verified on emulator GPS Norway Minnesund belt → Bodø; see [`docs/pictures.md`](docs/pictures.md)). **Car** / **motorcycle** / **cycle** / **mobile home** use soft multi-day overnight splitting when a trip exceeds a daily budget (8 h driving or 100 km cycling) with lodging/camping/rest-area suggestions ([`docs/poi.md`](docs/poi.md)). Hiking overnight pauses prefer huts/tents and keep a respectful distance from buildings and glaciers; day-by-day multi-day overnight is planned in `planHikingRoute`. Country/region rule packs: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). | Done |
 | **Drive bars** | Slim top bar (altitude; tap for map settings) and bottom bar (zoom, break time, trip ETA, eco leaf; tap for drive settings). | Done |
 | **Map rotation** | Align the map with the compass, with your travel direction, or with north always up. | Done |
 | **Moving icons** | Show nearby tracked markers on the map (for example radio station symbols) within about 50–150 km. | **Partial** — drawing works; a live radio feed is not built in yet |
@@ -151,14 +152,19 @@ labels; app markers use the bundled icons.
 motorcycles use hours between breaks; hiking and cycling use traditional
 Scandinavian rest distances
 ([`docs/historical-background.md`](docs/historical-background.md));
-**Truck** / **TruckElectric** use EU EC 561/2006 driving-time rules
-([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)), including multi-day
-daily rest (11 h / reduced 9 h / split 3+9), weekly rest after at most six
-consecutive working days when the trip does not fit the remaining daily budget,
-a **compensation ledger** after reduced weekly rests (Art. 8 shortfall +
+**Truck** / **TruckElectric** use jurisdiction-keyed driving-time rules: EU
+EC 561/2006 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) when the
+corridor starts in an EC 561 / EEA-aligned country bbox, or US FMCSA
+property-carrying Hours of Service
+([`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md)) in the US. Unrecognized
+starts decline commercial legal tracking rather than guessing. EC 561 includes
+multi-day daily rest (11 h / reduced 9 h / split 3+9), weekly rest after at most
+six consecutive working days when the trip does not fit the remaining daily
+budget, a **compensation ledger** after reduced weekly rests (Art. 8 shortfall +
 deadline, surfaced in the plan report), and **detour-weighted / facility-tier**
 overnight stop scoring (`highway=services` preferred over bare rest areas
-within a similar detour). **Mobile home** keeps car-style soft reminders (not
+within a similar detour). Multi-day day cards appear in the plan panel when a
+trip spans more than one day. **Mobile home** keeps car-style soft reminders (not
 HGV legal tracking). When a
 car / motorcycle / mobilehome / cycle trip exceeds the soft daily budget
 (default **8 h** driving or **100 km** cycling), the planner splits into days
@@ -281,8 +287,9 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/pictures.md`](docs/pictures.md) | Emulator screenshot gallery |
 | [`docs/bilder.md`](docs/bilder.md) | Emulator screenshot gallery (Norwegian) |
 | [`docs/historical-background.md`](docs/historical-background.md) | Rast/vei basis for hiking & cycling rest-interval defaults |
-| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Truck EC 561/2006: duty caps, multi-day rest, compensation ledger, overnight scoring; remaining deferred items |
-| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Pattern for country/region-dependent rules (EC 561 + right-to-roam precedents) |
+| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Truck EC 561/2006: duty caps, multi-day rest, compensation ledger, overnight scoring |
+| [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | Truck US FMCSA property-carrying HOS pack (11 h / 14 h / 8 h break / 70 h cycle) |
+| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Pattern for country/region-dependent rules (EC 561 + FMCSA + right-to-roam precedents) |
 | [`docs/horse-profile.md`](docs/horse-profile.md) | Worked example: adding a Horse profile (doc only; not implemented) |
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Adjust size and placement of drive HUD bars and menus |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs offline Protomaps PMTiles; 3D gate |

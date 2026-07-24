@@ -9,6 +9,7 @@ Official summary:
 [EU driving time and rest periods](https://transport.ec.europa.eu/transport-modes/road/social-provisions/driving-time-and-rest-periods_en).
 
 Related: jurisdiction pack pattern — [`jurisdiction-rules.md`](jurisdiction-rules.md);
+US FMCSA pack — [`fmcsa-truck-rest.md`](fmcsa-truck-rest.md);
 truck overnight POI tags — [`poi.md`](poi.md) (**RestArea**).
 
 ## MobileHome (private motorhome) — deliberate separation
@@ -87,13 +88,13 @@ Report lines: `truck_multi_day:`, `truck_day:`, `truck_overnight:`,
 
 ## Deferred / incomplete (stated accurately)
 
-- **UI surfaces** for multi-day day cards / overnight map pins beyond plan report
-  JSON and break POIs — host may render later.
-- **Multi-jurisdiction packs** (AETR vs EC 561 vs non-European HOS): still a
-  single EU/EEA-shaped parameter set today; see
-  [`jurisdiction-rules.md`](jurisdiction-rules.md) for the pattern when adding
-  further packs.
 - **Dedicated mid-trip compensation rest blocks** invented solely to repay ledger
   debt (beyond preferring regular weekly rest when debt is outstanding) — not
   implemented; ledger track + surface + repay-on-sufficient-rest is the delivered
   scope.
+
+Multi-day day cards and overnight map pins are delivered via
+`CorridorRouteResult.days_json` / `break_pois_json` and Android
+`MultiDayPlanCards` (search chrome). Multi-jurisdiction packs (EC 561 vs FMCSA
+vs decline-unknown) are wired — see [`fmcsa-truck-rest.md`](fmcsa-truck-rest.md)
+and [`jurisdiction-rules.md`](jurisdiction-rules.md).

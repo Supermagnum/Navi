@@ -573,6 +573,7 @@ class HudVerificationInstrumentedTest {
             poiName = "Nysethvegen",
             poiIconKey = "fuel",
             breakPoisJson = "[]",
+            daysJson = "[]",
         )
         // Keep prior zoom; route apply would otherwise fit-bounds and break zoom checks.
         NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, zoomBeforeBreak)

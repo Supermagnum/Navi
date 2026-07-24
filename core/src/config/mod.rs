@@ -1,13 +1,17 @@
 //! Named defaults and configurable rest/safety/eco parameters.
 
 mod defaults;
+mod driving_hours_pack;
 mod eco;
+mod fmcsa_params;
 mod rest_params;
 mod safety;
 mod truck_history;
 
 pub use defaults::*;
+pub use driving_hours_pack::JurisdictionDrivingHoursPack;
 pub use eco::EcoConfig;
+pub use fmcsa_params::FmcsaHosParams;
 pub use rest_params::{
     CarRestParams, CyclingRestParams, HikingRestParams, ProfileRestParams, RestConfig,
     TruckRestParams,

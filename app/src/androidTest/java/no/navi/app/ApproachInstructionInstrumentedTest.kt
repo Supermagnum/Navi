@@ -108,6 +108,7 @@ class ApproachInstructionInstrumentedTest {
             poiName = "Nysethvegen",
             poiIconKey = "fuel",
             breakPoisJson = "[]",
+            daysJson = "[]",
         )
         NaviMapTestHooks.pendingCamera = Triple(
             (START_LAT + END_LAT) / 2.0,

@@ -134,6 +134,7 @@ class HikingRouteMapScreenshotTest {
             poiName = "Rondvassbu",
             poiIconKey = "cabin",
             breakPoisJson = breaks,
+            daysJson = "[]",
         )
         NaviMapTestHooks.pendingRoute = route()
         val deadline = System.currentTimeMillis() + 60_000

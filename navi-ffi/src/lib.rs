@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use driver_break_core::config::{
-    EcoConfig, RestConfig, SafetyConfig, VehicleLimits, HIKING_MAIN_BREAK_DISTANCE_KM,
+    EcoConfig, FmcsaHosParams, JurisdictionDrivingHoursPack, RestConfig, SafetyConfig,
+    VehicleLimits, HIKING_MAIN_BREAK_DISTANCE_KM,
 };
 use driver_break_core::icons::{self, IconTheme};
 use driver_break_core::poi::{rest_area_suitable_for_weekly, PoiCategory, PoiIndex, PoiRecord};
@@ -20,11 +21,13 @@ use driver_break_core::routing::graph::{
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::{
-    commit_truck_multi_day_plan, evaluate_truck_trip, hiking_samples_from_coords,
-    max_daily_distance_km, motor_break_interval_km, motor_daily_budget, plan_hiking_multi_day,
-    plan_motor_multi_day, plan_truck_multi_day, truck_effective_break_parts, uses_motor_multi_day,
-    uses_truck_rest, MotorOvernightCandidate, MotorOvernightKind, TruckRestCandidate,
-    TruckRestFacility,
+    commit_truck_multi_day_plan, evaluate_fmcsa_trip, evaluate_truck_trip,
+    hiking_samples_from_coords, max_daily_distance_km, motor_break_interval_km,
+    motor_daily_budget, plan_fmcsa_multi_day, plan_hiking_multi_day, plan_motor_multi_day,
+    plan_truck_multi_day, resolve_driving_hours_pack_at, truck_effective_break_parts,
+    uses_motor_multi_day, uses_truck_rest, HikingMultiDayPlan, MotorMultiDayPlan,
+    MotorOvernightCandidate, MotorOvernightKind, TruckMultiDayPlan, TruckOvernightKind,
+    TruckOvernightRest, TruckRestCandidate, TruckRestFacility,
 };
 use driver_break_core::routing::safety::{
     check_overnight_candidate, DangerBarrierIndex, OvernightProximityIndex,
@@ -293,6 +296,11 @@ pub struct CorridorRouteResult {
     /// JSON array of pause / overnight stops along the route:
     /// `[{"name","lat","lon","kind","icon"}]` where kind is `hut`, `tent`, or `amenity`.
     pub break_pois_json: String,
+    /// JSON array of multi-day day cards (empty `"[]"` when single-day / unknown).
+    /// Fields: day_index, date, start_km, end_km, distance_km, driving_hours,
+    /// profile, rest_kind, rest_hours, rest_label, overnight_name, overnight_found,
+    /// not_in_cab, compensation, is_final.
+    pub days_json: String,
 }
 
 fn empty_corridor(msg: String) -> CorridorRouteResult {
@@ -309,6 +317,255 @@ fn empty_corridor(msg: String) -> CorridorRouteResult {
         poi_name: String::new(),
         poi_icon_key: String::new(),
         break_pois_json: String::from("[]"),
+        days_json: String::from("[]"),
+    }
+}
+
+fn truck_rest_kind_key(kind: TruckOvernightKind) -> &'static str {
+    match kind {
+        TruckOvernightKind::DailyRegular => "daily_regular",
+        TruckOvernightKind::DailyReduced => "daily_reduced",
+        TruckOvernightKind::DailySplit => "daily_split",
+        TruckOvernightKind::WeeklyRegular => "weekly_regular",
+        TruckOvernightKind::WeeklyReduced => "weekly_reduced",
+    }
+}
+
+fn truck_rest_label(o: &TruckOvernightRest) -> String {
+    match o.kind {
+        TruckOvernightKind::DailyRegular => format!("Daily rest {:.0} h", o.hours),
+        TruckOvernightKind::DailyReduced => format!("Reduced daily rest {:.0} h", o.hours),
+        TruckOvernightKind::DailySplit => {
+            if let Some((a, b)) = o.split_parts {
+                format!("Split daily rest {a:.0}+{b:.0} h")
+            } else {
+                format!("Split daily rest {:.0} h", o.hours)
+            }
+        }
+        TruckOvernightKind::WeeklyRegular => format!("Weekly rest {:.0} h", o.hours),
+        TruckOvernightKind::WeeklyReduced => format!("Reduced weekly rest {:.0} h", o.hours),
+    }
+}
+
+fn truck_compensation_note(o: &TruckOvernightRest) -> String {
+    if o.kind == TruckOvernightKind::WeeklyReduced {
+        return "compensation due after reduced weekly rest".into();
+    }
+    o.notes
+        .iter()
+        .find(|n| n.to_lowercase().contains("compensat"))
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn days_json_from_truck(plan: &TruckMultiDayPlan, profile: &str) -> String {
+    let n = plan.days.len();
+    let arr: Vec<serde_json::Value> = plan
+        .days
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            let is_final = i + 1 == n;
+            let (rest_kind, rest_hours, rest_label, overnight_name, overnight_found, not_in_cab, compensation) =
+                match &d.overnight {
+                    Some(o) => (
+                        truck_rest_kind_key(o.kind).to_string(),
+                        o.hours,
+                        truck_rest_label(o),
+                        o.name.clone().unwrap_or_default(),
+                        o.poi_found,
+                        o.not_in_cab,
+                        truck_compensation_note(o),
+                    ),
+                    None => (
+                        String::new(),
+                        0.0,
+                        String::new(),
+                        String::new(),
+                        false,
+                        false,
+                        String::new(),
+                    ),
+                };
+            json!({
+                "day_index": d.day_index,
+                "date": d.date,
+                "start_km": d.start_km,
+                "end_km": d.end_km,
+                "distance_km": (d.end_km - d.start_km).max(0.0),
+                "driving_hours": d.driving_hours,
+                "profile": profile,
+                "rest_kind": rest_kind,
+                "rest_hours": rest_hours,
+                "rest_label": rest_label,
+                "overnight_name": overnight_name,
+                "overnight_found": overnight_found,
+                "not_in_cab": not_in_cab,
+                "compensation": compensation,
+                "is_final": is_final,
+            })
+        })
+        .collect();
+    serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into())
+}
+
+fn days_json_from_hiking(plan: &HikingMultiDayPlan) -> String {
+    let n = plan.days.len();
+    let arr: Vec<serde_json::Value> = plan
+        .days
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            let is_final = i + 1 == n;
+            let (rest_kind, rest_label, overnight_name, overnight_found) = match &d.overnight {
+                Some(o) => (
+                    if o.is_network {
+                        "network_hut"
+                    } else {
+                        "hut"
+                    }
+                    .to_string(),
+                    if o.is_network {
+                        "Network hut overnight"
+                    } else {
+                        "Hut overnight"
+                    }
+                    .to_string(),
+                    o.name.clone(),
+                    !o.safety_rejected,
+                ),
+                None => (String::new(), String::new(), String::new(), false),
+            };
+            json!({
+                "day_index": d.day_index,
+                "date": "",
+                "start_km": d.start_km,
+                "end_km": d.end_km,
+                "distance_km": d.distance_km,
+                "driving_hours": 0.0,
+                "profile": "hiking",
+                "rest_kind": rest_kind,
+                "rest_hours": 0.0,
+                "rest_label": rest_label,
+                "overnight_name": overnight_name,
+                "overnight_found": overnight_found,
+                "not_in_cab": false,
+                "compensation": "",
+                "is_final": is_final,
+            })
+        })
+        .collect();
+    serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into())
+}
+
+fn days_json_from_motor(plan: &MotorMultiDayPlan, profile: &str) -> String {
+    let n = plan.days.len();
+    let arr: Vec<serde_json::Value> = plan
+        .days
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            let is_final = i + 1 == n;
+            let (rest_kind, rest_label, overnight_name, overnight_found) = match &d.overnight {
+                Some(o) => {
+                    let kind = match o.kind {
+                        MotorOvernightKind::Lodging => "lodging",
+                        MotorOvernightKind::Camping => "camping",
+                        MotorOvernightKind::RestArea => "rest_area",
+                        MotorOvernightKind::None => "none",
+                    };
+                    (
+                        kind.to_string(),
+                        match o.kind {
+                            MotorOvernightKind::Lodging => "Lodging overnight",
+                            MotorOvernightKind::Camping => "Camping overnight",
+                            MotorOvernightKind::RestArea => "Rest-area overnight",
+                            MotorOvernightKind::None => "Overnight (no POI)",
+                        }
+                        .to_string(),
+                        o.name.clone().unwrap_or_default(),
+                        o.poi_found,
+                    )
+                }
+                None => (String::new(), String::new(), String::new(), false),
+            };
+            json!({
+                "day_index": d.day_index,
+                "date": "",
+                "start_km": d.start_km,
+                "end_km": d.end_km,
+                "distance_km": d.distance_km,
+                "driving_hours": d.driving_hours,
+                "profile": profile,
+                "rest_kind": rest_kind,
+                "rest_hours": 0.0,
+                "rest_label": rest_label,
+                "overnight_name": overnight_name,
+                "overnight_found": overnight_found,
+                "not_in_cab": false,
+                "compensation": "",
+                "is_final": is_final,
+            })
+        })
+        .collect();
+    serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into())
+}
+
+fn truck_overnight_break_pins(plan: &TruckMultiDayPlan) -> Vec<serde_json::Value> {
+    let mut pins = Vec::new();
+    for d in &plan.days {
+        let Some(o) = &d.overnight else { continue };
+        if !o.poi_found {
+            continue;
+        }
+        let (Some(lat), Some(lon)) = (o.lat, o.lon) else {
+            continue;
+        };
+        pins.push(json!({
+            "name": o.name.clone().unwrap_or_else(|| "Truck rest".into()),
+            "lat": lat,
+            "lon": lon,
+            "kind": "rest_area",
+            "icon": "highway-rest_area",
+            "icon_key": "highway-rest_area",
+            "along_km": d.end_km,
+            "overnight": true,
+            "rest_kind": truck_rest_kind_key(o.kind),
+            "not_in_cab": o.not_in_cab,
+        }));
+    }
+    pins
+}
+
+fn merge_break_poi_pins(break_pois_json: &mut String, pins: Vec<serde_json::Value>) {
+    if pins.is_empty() {
+        return;
+    }
+    if let Ok(mut arr) = serde_json::from_str::<Vec<serde_json::Value>>(break_pois_json) {
+        arr.extend(pins);
+        if let Ok(s) = serde_json::to_string(&arr) {
+            *break_pois_json = s;
+        }
+    }
+}
+
+fn fmcsa_break_interval_km(params: &FmcsaHosParams, dist_km: f64, eta_minutes: f64) -> f64 {
+    let eta_h = (eta_minutes / 60.0).max(1e-6);
+    let speed_kmh = (dist_km / eta_h).max(1.0);
+    (speed_kmh * params.break_after_driving_hours).max(1.0)
+}
+
+fn travel_profile_report_key(profile: TravelProfile) -> &'static str {
+    match profile {
+        TravelProfile::Car => "car",
+        TravelProfile::CarElectric => "car_electric",
+        TravelProfile::Motorcycle => "motorcycle",
+        TravelProfile::MotorcycleElectric => "motorcycle_electric",
+        TravelProfile::Bicycle => "bicycle",
+        TravelProfile::Hiking => "hiking",
+        TravelProfile::Truck => "truck",
+        TravelProfile::TruckElectric => "truck_electric",
+        TravelProfile::MobileHome => "mobilehome",
     }
 }
 
@@ -1009,6 +1266,7 @@ pub fn run_car_corridor_pipeline(
         poi_name,
         poi_icon_key: poi_icon,
         break_pois_json,
+        days_json: String::from("[]"),
     }
 }
 
@@ -1239,22 +1497,19 @@ fn plan_car_route_inner(
     let poi_index = PoiIndex::load_from_pbf_bbox(pbf, bbox).unwrap_or_else(|_| PoiIndex::new());
     let barriers = load_break_barriers(&graph, pbf, bbox);
 
-    // Truck / TruckElectric: EC 561 timing from TruckRestParams (loaded beside cache_dir).
+    // Truck / TruckElectric: jurisdiction-keyed HOS (EC 561 or FMCSA).
     // MobileHome uses car soft break spacing (not commercial HGV legal tracking).
     let core_profile = profile.to_core();
     let mut rest = load_rest_config_near_cache(&cache);
-    let break_interval_km =
+    let mut break_interval_km =
         motor_break_interval_km(core_profile, &rest, dist_km, eta_minutes);
+    let mut days_json = String::from("[]");
+    let mut truck_overnight_pins: Vec<serde_json::Value> = Vec::new();
     if uses_truck_rest(core_profile) {
         let driving_h = eta_minutes / 60.0;
-        let parts = truck_effective_break_parts(&rest.truck);
-        report.push_str(&format!(
-            "truck_rest: break_after_h={:.2}; break_parts_min={parts:?}; daily_max_h={:.1}; weekly_max_h={:.1}; fortnightly_max_h={:.1}; break_interval_km={break_interval_km:.1}; driving_h={driving_h:.2}\n",
-            rest.truck.mandatory_break_after_hours,
-            rest.truck.max_daily_driving_hours,
-            rest.truck.max_weekly_driving_hours,
-            rest.truck.max_fortnightly_driving_hours,
-        ));
+        let hos_pack = resolve_driving_hours_pack_at(start_lat, start_lon);
+        report.push_str(&format!("hos_pack={}\n", hos_pack.as_report_key()));
+
         let mut history = load_truck_history_near_cache(&cache);
         let today = civil_today_utc();
         let week_id = iso_week_id_utc();
@@ -1297,116 +1552,193 @@ fn plan_car_route_inner(
             }
         }
 
-        for d in driver_break_core::config::outstanding_weekly_rest_compensations(&history) {
-            report.push_str(&format!(
-                "truck_compensation: pending=true; reduced_on={}; shortfall_h={:.0}; compensate_by={}\n",
-                d.reduced_on_date, d.shortfall_hours, d.compensate_by_date
-            ));
-        }
-        let pending_n =
-            driver_break_core::config::outstanding_weekly_rest_compensations(&history).len();
-        if pending_n == 0 {
-            report.push_str("truck_compensation: pending=0\n");
-        } else {
-            report.push_str(&format!(
-                "truck_compensation_summary: pending_count={pending_n}\n"
-            ));
-        }
+        match hos_pack {
+            JurisdictionDrivingHoursPack::Ec561 => {
+                let parts = truck_effective_break_parts(&rest.truck);
+                report.push_str(&format!(
+                    "truck_rest: break_after_h={:.2}; break_parts_min={parts:?}; daily_max_h={:.1}; weekly_max_h={:.1}; fortnightly_max_h={:.1}; break_interval_km={break_interval_km:.1}; driving_h={driving_h:.2}\n",
+                    rest.truck.mandatory_break_after_hours,
+                    rest.truck.max_daily_driving_hours,
+                    rest.truck.max_weekly_driving_hours,
+                    rest.truck.max_fortnightly_driving_hours,
+                ));
 
-        let multi = plan_truck_multi_day(
-            &rest.truck,
-            &history,
-            driving_h,
-            dist_km,
-            &today,
-            &week_id,
-            &candidates,
-            false,
-        );
-        if multi.multi_day {
-            report.push_str(&format!(
-                "truck_multi_day: days={}; total_driving_h={driving_h:.2}\n",
-                multi.days.len()
-            ));
-            for d in &multi.days {
-                report.push_str(&format!(
-                    "truck_day: idx={}; date={}; start_km={:.1}; end_km={:.1}; driving_h={:.2}; extension={}\n",
-                    d.day_index, d.date, d.start_km, d.end_km, d.driving_hours, d.used_daily_extension
-                ));
-                if let Some(o) = &d.overnight {
+                for d in driver_break_core::config::outstanding_weekly_rest_compensations(&history) {
                     report.push_str(&format!(
-                        "truck_overnight: kind={:?}; hours={:.1}; not_in_cab={}; poi_found={}; name={:?}; lat={:?}; lon={:?}\n",
-                        o.kind, o.hours, o.not_in_cab, o.poi_found, o.name, o.lat, o.lon
+                        "truck_compensation: pending=true; reduced_on={}; shortfall_h={:.0}; compensate_by={}\n",
+                        d.reduced_on_date, d.shortfall_hours, d.compensate_by_date
                     ));
-                    for n in &o.notes {
-                        report.push_str(&format!("truck_overnight_note: {n}\n"));
-                    }
                 }
+                let pending_n =
+                    driver_break_core::config::outstanding_weekly_rest_compensations(&history).len();
+                if pending_n == 0 {
+                    report.push_str("truck_compensation: pending=0\n");
+                } else {
+                    report.push_str(&format!(
+                        "truck_compensation_summary: pending_count={pending_n}\n"
+                    ));
+                }
+
+                let multi = plan_truck_multi_day(
+                    &rest.truck,
+                    &history,
+                    driving_h,
+                    dist_km,
+                    &today,
+                    &week_id,
+                    &candidates,
+                    false,
+                );
+                days_json = days_json_from_truck(&multi, travel_profile_report_key(profile));
+                truck_overnight_pins = truck_overnight_break_pins(&multi);
+                if multi.multi_day {
+                    report.push_str(&format!(
+                        "truck_multi_day: days={}; total_driving_h={driving_h:.2}\n",
+                        multi.days.len()
+                    ));
+                    for d in &multi.days {
+                        report.push_str(&format!(
+                            "truck_day: idx={}; date={}; start_km={:.1}; end_km={:.1}; driving_h={:.2}; extension={}\n",
+                            d.day_index, d.date, d.start_km, d.end_km, d.driving_hours, d.used_daily_extension
+                        ));
+                        if let Some(o) = &d.overnight {
+                            report.push_str(&format!(
+                                "truck_overnight: kind={:?}; hours={:.1}; not_in_cab={}; poi_found={}; name={:?}; lat={:?}; lon={:?}\n",
+                                o.kind, o.hours, o.not_in_cab, o.poi_found, o.name, o.lat, o.lon
+                            ));
+                            for n in &o.notes {
+                                report.push_str(&format!("truck_overnight_note: {n}\n"));
+                            }
+                        }
+                    }
+                    let duty = evaluate_truck_trip(
+                        &rest.truck,
+                        &history,
+                        driving_h,
+                        &today,
+                        &week_id,
+                        &week_dates,
+                        &fortnight_dates,
+                    );
+                    report.push_str(&format!(
+                        "truck_duty: within_daily={}; within_weekly={}; within_fortnightly={}; allowed_daily_h={:.1}; weekly_rest_due={}; multi_day=true\n",
+                        duty.within_daily,
+                        duty.within_weekly,
+                        duty.within_fortnightly,
+                        duty.allowed_daily_hours,
+                        duty.weekly_rest_due,
+                    ));
+                    for n in &duty.notes {
+                        report.push_str(&format!("truck_duty_note: {n}\n"));
+                    }
+                    commit_truck_multi_day_plan(&mut rest.truck, &mut history, &multi, &week_id);
+                    let pending_after =
+                        driver_break_core::config::outstanding_weekly_rest_compensations(&history);
+                    report.push_str(&format!(
+                        "truck_compensation_after_commit: pending_count={}\n",
+                        pending_after.len()
+                    ));
+                    for d in pending_after {
+                        report.push_str(&format!(
+                            "truck_compensation: pending=true; reduced_on={}; shortfall_h={:.0}; compensate_by={}\n",
+                            d.reduced_on_date, d.shortfall_hours, d.compensate_by_date
+                        ));
+                    }
+                } else {
+                    let duty = evaluate_truck_trip(
+                        &rest.truck,
+                        &history,
+                        driving_h,
+                        &today,
+                        &week_id,
+                        &week_dates,
+                        &fortnight_dates,
+                    );
+                    report.push_str(&format!(
+                        "truck_duty: within_daily={}; within_weekly={}; within_fortnightly={}; allowed_daily_h={:.1}; weekly_rest_due={}; multi_day=false\n",
+                        duty.within_daily,
+                        duty.within_weekly,
+                        duty.within_fortnightly,
+                        duty.allowed_daily_hours,
+                        duty.weekly_rest_due,
+                    ));
+                    for n in &duty.notes {
+                        report.push_str(&format!("truck_duty_note: {n}\n"));
+                    }
+                    driver_break_core::routing::commit_truck_trip(
+                        &mut rest.truck,
+                        &mut history,
+                        &duty,
+                        &today,
+                        &week_id,
+                    );
+                }
+                save_rest_and_truck_history_near_cache(&cache, &rest, &history);
             }
-            // Duty summary still uses total trip hours for weekly/fortnightly caps.
-            let duty = evaluate_truck_trip(
-                &rest.truck,
-                &history,
-                driving_h,
-                &today,
-                &week_id,
-                &week_dates,
-                &fortnight_dates,
-            );
-            report.push_str(&format!(
-                "truck_duty: within_daily={}; within_weekly={}; within_fortnightly={}; allowed_daily_h={:.1}; weekly_rest_due={}; multi_day=true\n",
-                duty.within_daily,
-                duty.within_weekly,
-                duty.within_fortnightly,
-                duty.allowed_daily_hours,
-                duty.weekly_rest_due,
-            ));
-            for n in &duty.notes {
-                report.push_str(&format!("truck_duty_note: {n}\n"));
-            }
-            commit_truck_multi_day_plan(&mut rest.truck, &mut history, &multi, &week_id);
-            let pending_after =
-                driver_break_core::config::outstanding_weekly_rest_compensations(&history);
-            report.push_str(&format!(
-                "truck_compensation_after_commit: pending_count={}\n",
-                pending_after.len()
-            ));
-            for d in pending_after {
+            JurisdictionDrivingHoursPack::Fmcsa => {
+                let fmcsa = FmcsaHosParams::default();
+                break_interval_km = fmcsa_break_interval_km(&fmcsa, dist_km, eta_minutes);
                 report.push_str(&format!(
-                    "truck_compensation: pending=true; reduced_on={}; shortfall_h={:.0}; compensate_by={}\n",
-                    d.reduced_on_date, d.shortfall_hours, d.compensate_by_date
+                    "truck_rest: pack=fmcsa; break_after_h={:.2}; daily_max_h={:.1}; on_duty_window_h={:.1}; cycle={:.0}h/{}d; break_interval_km={break_interval_km:.1}; driving_h={driving_h:.2}\n",
+                    fmcsa.break_after_driving_hours,
+                    fmcsa.max_driving_hours,
+                    fmcsa.on_duty_window_hours,
+                    fmcsa.cycle_on_duty_hours,
+                    fmcsa.cycle_days,
+                ));
+                let multi = plan_fmcsa_multi_day(
+                    &fmcsa,
+                    &history,
+                    driving_h,
+                    dist_km,
+                    &today,
+                    &candidates,
+                );
+                days_json = days_json_from_truck(&multi, travel_profile_report_key(profile));
+                truck_overnight_pins = truck_overnight_break_pins(&multi);
+                if multi.multi_day {
+                    report.push_str(&format!(
+                        "truck_multi_day: pack=fmcsa; days={}; total_driving_h={driving_h:.2}\n",
+                        multi.days.len()
+                    ));
+                    for d in &multi.days {
+                        report.push_str(&format!(
+                            "truck_day: idx={}; date={}; start_km={:.1}; end_km={:.1}; driving_h={:.2}; extension={}\n",
+                            d.day_index, d.date, d.start_km, d.end_km, d.driving_hours, d.used_daily_extension
+                        ));
+                        if let Some(o) = &d.overnight {
+                            report.push_str(&format!(
+                                "truck_overnight: kind={:?}; hours={:.1}; not_in_cab={}; poi_found={}; name={:?}; lat={:?}; lon={:?}\n",
+                                o.kind, o.hours, o.not_in_cab, o.poi_found, o.name, o.lat, o.lon
+                            ));
+                            for n in &o.notes {
+                                report.push_str(&format!("truck_overnight_note: {n}\n"));
+                            }
+                        }
+                    }
+                } else {
+                    report.push_str("truck_multi_day: pack=fmcsa; days=1; multi_day=false\n");
+                }
+                let (within_daily, within_cycle, notes) =
+                    evaluate_fmcsa_trip(&fmcsa, &history, driving_h, &today);
+                report.push_str(&format!(
+                    "truck_duty: pack=fmcsa; within_daily={within_daily}; within_cycle={within_cycle}; multi_day={}\n",
+                    multi.multi_day
+                ));
+                for n in &notes {
+                    report.push_str(&format!("truck_duty_note: {n}\n"));
+                }
+                // FMCSA duty history commit is not yet persisted (evaluate-only).
+            }
+            JurisdictionDrivingHoursPack::Unknown => {
+                report.push_str(
+                    "hos_pack_unknown: declining commercial driving-hours legal tracking — jurisdiction not recognized; no duty commit\n",
+                );
+                report.push_str(&format!(
+                    "truck_rest: pack=unknown; break_interval_km={break_interval_km:.1}; driving_h={driving_h:.2} (informational spacing only)\n"
                 ));
             }
-        } else {
-            let duty = evaluate_truck_trip(
-                &rest.truck,
-                &history,
-                driving_h,
-                &today,
-                &week_id,
-                &week_dates,
-                &fortnight_dates,
-            );
-            report.push_str(&format!(
-                "truck_duty: within_daily={}; within_weekly={}; within_fortnightly={}; allowed_daily_h={:.1}; weekly_rest_due={}; multi_day=false\n",
-                duty.within_daily,
-                duty.within_weekly,
-                duty.within_fortnightly,
-                duty.allowed_daily_hours,
-                duty.weekly_rest_due,
-            ));
-            for n in &duty.notes {
-                report.push_str(&format!("truck_duty_note: {n}\n"));
-            }
-            driver_break_core::routing::commit_truck_trip(
-                &mut rest.truck,
-                &mut history,
-                &duty,
-                &today,
-                &week_id,
-            );
         }
-        save_rest_and_truck_history_near_cache(&cache, &rest, &history);
     } else {
         report.push_str(&format!(
             "motor_break_interval_km={break_interval_km:.1} (legacy / car-style heuristic)\n"
@@ -1462,6 +1794,9 @@ fn plan_car_route_inner(
                 }
             }
             let multi = plan_motor_multi_day(budget, driving_h, dist_km, &candidates);
+            if multi.multi_day || !multi.days.is_empty() {
+                days_json = days_json_from_motor(&multi, travel_profile_report_key(profile));
+            }
             if multi.multi_day {
                 report.push_str(&format!(
                     "motor_multi_day: days={}; budget={:?}; total_driving_h={driving_h:.2}; total_km={dist_km:.1}\n",
@@ -1530,14 +1865,8 @@ fn plan_car_route_inner(
         false,
         None,
     );
-    if !motor_overnight_pins.is_empty() {
-        if let Ok(mut arr) = serde_json::from_str::<Vec<serde_json::Value>>(&break_pois_json) {
-            arr.extend(motor_overnight_pins);
-            if let Ok(s) = serde_json::to_string(&arr) {
-                break_pois_json = s;
-            }
-        }
-    }
+    merge_break_poi_pins(&mut break_pois_json, motor_overnight_pins);
+    merge_break_poi_pins(&mut break_pois_json, truck_overnight_pins);
     // Difficulty metadata on cycling network ways (informational only).
     if profile == TravelProfile::Bicycle && prefer_official_networks {
         let way_ids: std::collections::HashSet<i64> = path
@@ -1580,6 +1909,7 @@ fn plan_car_route_inner(
         poi_name: String::from("End"),
         poi_icon_key: String::from("fuel"),
         break_pois_json,
+        days_json,
     }
 }
 
@@ -1796,6 +2126,7 @@ pub fn plan_hiking_route(
         &poi_index,
         &overnight_ctx.1,
     );
+    let days_json = days_json_from_hiking(&multi);
     let mut hiking_overnight_pins: Vec<serde_json::Value> = Vec::new();
     if multi.multi_day {
         report.push_str(&format!(
@@ -1905,6 +2236,7 @@ pub fn plan_hiking_route(
         poi_name: end.name.clone(),
         poi_icon_key: String::from("cabin"),
         break_pois_json,
+        days_json,
     }
 }
 

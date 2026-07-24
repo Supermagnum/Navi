@@ -12,8 +12,10 @@ Notable exports:
   tent-site fallback, overnight safety filter, and day-by-day multi-day overnight
   (`plan_hiking_multi_day` report lines + overnight pins in `break_pois_json`)
 - Car / motorcycle / cycle / truck corridor plan (`planCarRoute`) — soft motor
-  multi-day overnight report lines / break POIs; Truck / TruckElectric also run
-  EC 561 duty + multi-day daily/weekly rest (see [`ec-561-truck-rest.md`](ec-561-truck-rest.md))
+  multi-day overnight + `days_json` day cards; Truck / TruckElectric resolve
+  `hos_pack` (EC 561 / FMCSA / unknown decline) — see
+  [`ec-561-truck-rest.md`](ec-561-truck-rest.md),
+  [`fmcsa-truck-rest.md`](fmcsa-truck-rest.md)
 - Truck rest settings helpers (`loadTruckRestSettings` / `saveTruckRestSettings` /
   exceptional-extension arming — see EC 561 doc)
 - Place index + FTS search (`ensurePlaceIndex`, `searchPlaces`)
@@ -26,6 +28,7 @@ Plugin guest API: see [`plugins.md`](plugins.md) (includes planned APRS, weather
 road info, CAT, ECU/EV plugins).
 POI categories: see [`poi.md`](poi.md).
 Truck rest / jurisdiction pattern: [`ec-561-truck-rest.md`](ec-561-truck-rest.md),
+[`fmcsa-truck-rest.md`](fmcsa-truck-rest.md),
 [`jurisdiction-rules.md`](jurisdiction-rules.md).
 OSM update cadence: see [`osm-updates.md`](osm-updates.md).
 ECU / OBD energy extension: see [`ECU.md`](ECU.md) (core types in

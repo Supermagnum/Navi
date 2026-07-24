@@ -98,6 +98,7 @@ class TruckRestHudInstrumentedTest {
             poiName = "Test",
             poiIconKey = "fuel",
             breakPoisJson = "[]",
+            daysJson = "[]",
         )
         NaviMapTestHooks.requestBreakReminders = true
     }

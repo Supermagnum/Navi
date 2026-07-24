@@ -175,6 +175,8 @@ data class MapRouteState(
     val endLon: Double = 0.0,
     /** Pause / overnight labels along the corridor (hut or tent fallback). */
     val breakPois: List<BreakPoiMark> = emptyList(),
+    /** Multi-day day cards from plan `daysJson` (empty when single-day). */
+    val multiDayCards: List<MultiDayCard> = emptyList(),
     /** Live GPS / last known position (0,0 = unknown). */
     val gpsLat: Double = 0.0,
     val gpsLon: Double = 0.0,
@@ -330,6 +332,7 @@ private fun NaviMapScreen() {
             endLat = 0.0,
             endLon = 0.0,
             breakPois = emptyList(),
+            multiDayCards = emptyList(),
             layerEpoch = mapState.layerEpoch + 1,
         )
         driveHud = driveHud.copy(minutesToBreak = null, tripEtaMinutes = null)
@@ -653,6 +656,9 @@ private fun NaviMapScreen() {
                         val breaks = parseBreakPoisJson(
                             runCatching { pending.breakPoisJson }.getOrDefault("[]"),
                         )
+                        val dayCards = parseDaysJson(
+                            runCatching { pending.daysJson }.getOrDefault("[]"),
+                        )
                         // Anchor labels to the chosen waypoints (search/GPS), not the
                         // decimated polyline tips — those can sit slightly off the hut.
                         val endLatFix = toPoint.lat.takeIf { it != 0.0 }
@@ -684,6 +690,7 @@ private fun NaviMapScreen() {
                             endLat = endLatFix,
                             endLon = endLonFix,
                             breakPois = breaks,
+                            multiDayCards = dayCards,
                             gpsLat = mapState.gpsLat,
                             gpsLon = mapState.gpsLon,
                             gpsAccuracyM = mapState.gpsAccuracyM,
@@ -1234,6 +1241,7 @@ private fun NaviMapScreen() {
                                             poiName = toPoint.name,
                                             poiIconKey = "cabin",
                                             breakPoisJson = breaks,
+                                            daysJson = "[]",
                                         )
                                     } else when (profile) {
                                         TravelProfile.HIKING -> {
@@ -1327,6 +1335,7 @@ private fun NaviMapScreen() {
                                                 poiName = toPoint.name,
                                                 poiIconKey = base.poiIconKey,
                                                 breakPoisJson = base.breakPoisJson,
+                                                daysJson = base.daysJson,
                                             )
                                         }
                                     }
@@ -1345,6 +1354,7 @@ private fun NaviMapScreen() {
                                             poiName = "",
                                             poiIconKey = "",
                                             breakPoisJson = "[]",
+                                            daysJson = "[]",
                                         )
                                     }
                                     }
@@ -1418,6 +1428,12 @@ private fun NaviMapScreen() {
                             )
                         }
                     }
+                    MultiDayPlanCards(
+                        days = mapState.multiDayCards,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(
                             onClick = {

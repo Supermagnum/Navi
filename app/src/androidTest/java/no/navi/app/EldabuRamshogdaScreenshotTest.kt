@@ -142,6 +142,7 @@ class EldabuRamshogdaScreenshotTest {
             poiName = "Eldåbu",
             poiIconKey = "cabin",
             breakPoisJson = breaks,
+            daysJson = "[]",
         )
         NaviMapTestHooks.pendingRoute = route()
         val deadline = System.currentTimeMillis() + 60_000
