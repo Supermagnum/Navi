@@ -60,12 +60,15 @@ Navigasjonsappen har valgfri bevissthet om terrenghelning: med økomodus på
 forsøker den å finne ruten som bruker minst energi (personbil-baseline;
 elektriske profiler får regen-kreditt via `EcoConfig::for_profile`). Når
 økomodus er på, vises et lite bladikon nederst til høyre. Den kan foreslå
-pausestopp langs planlagt rute, anvende kjøretøygrenser og unngå
+pausestopp langs planlagt rute (fasiliteter / hytter / telt / hotell /
+rasteplass avhengig av profil), anvende kjøretøygrenser og unngå
 hovedvei/bom/ferge ved planlegging, og valgfritt **følge offisielle
 tur-/sykkelnettverk** (myk preferanse, av som standard). Du kan sette
-bil-pauseintervaller. Den har et minnebasert bevegelig-ikon-lager
-(`TrackStore`) og en sandkasse WASM-pluginvert for fremtidige plugins;
-produktplugins er ikke levert ennå ([`docs/plugins.md`](docs/plugins.md)).
+bil-pauseintervaller. Lastebilprofiler bruker EC 561/2006 kjøre-/hviletidsregler
+med flerdagers døgn-/ukeshvile når turen varer lenger enn én pliktdag. Den har
+et minnebasert bevegelig-ikon-lager (`TrackStore`) og en sandkasse
+WASM-pluginvert for fremtidige plugins; produktplugins er ikke levert ennå
+([`docs/plugins.md`](docs/plugins.md)).
 
 ## Funksjoner
 
@@ -78,7 +81,7 @@ produktplugins er ikke levert ennå ([`docs/plugins.md`](docs/plugins.md)).
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Elektriske modus får kreditt for energi tilbake i nedoverbakke. Formler: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Ferdig |
 | **Frakoblet ruteplan** | Last ned en kartregion én gang, planlegg på enheten, og se ruten pluss foreslåtte stopp på kartet. | Ferdig |
 | **Stedssøk** | Søk steder og sett Fra / Via / Til ([`docs/poi.md`](docs/poi.md)). Inkluderer fiskeplasser og veiledning for hytteradius ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Ferdig |
-| **Hvile og pauser** | Pausepåminnelser og foreslåtte stopp langs ruten. Fottur og sykling bruker tradisjonelle skandinaviske rasteavstander ([bakgrunn](docs/historisk-bakgrunn.md)). **Lastebil** / **lastebil elektrisk** følger EU EC 561/2006 for pauseavstand, daglige / ukentlige / 14-dagers kjøretidstak og flerdagers døgn-/ukeshvile med lagret historikk ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). **Bil** / **motorsykkel** / **sykkel** / **bobil** bruker myk flerdagers overnatting når turen overstiger et daglig budsjett (8 t kjøring eller 100 km sykling) med hotell/camping/rasteplass-forslag. Fottur-pausestopp prefererer hytter/telt og holder avstand til hus og isbreer. | **Delvis** — lastebil EC 561 pauser, duty-tak og flerdagers døgn-/ukeshvile implementert (kompensasjonsbok og rik overnattingsskåring fortsatt utsatt — se EC 561-dokumentet); bil / MC / sykkel / bobil myk flerdagers overnatting implementert; fottur rast-intervall hytte/telt + overnattingssikkerhet i `planHikingRoute` (dag-for-dag `plan_multi_day` bare i integrasjonstester) |
+| **Hvile og pauser** | Pausepåminnelser og foreslåtte stopp langs ruten. Fottur og sykling bruker tradisjonelle skandinaviske rasteavstander ([bakgrunn](docs/historisk-bakgrunn.md)). **Lastebil** / **lastebil elektrisk** følger EU EC 561/2006 for pauseavstand, daglige / ukentlige / 14-dagers kjøretidstak og flerdagers døgn-/ukeshvile med lagret historikk ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) — bekreftet på live-GPS Norge-korridor (Minnesund-beltet → Bodø). **Bil** / **motorsykkel** / **sykkel** / **bobil** bruker myk flerdagers overnatting når turen overstiger et daglig budsjett (8 t kjøring eller 100 km sykling) med hotell/camping/rasteplass-forslag ([`docs/poi.md`](docs/poi.md)). Fottur-pausestopp prefererer hytter/telt og holder avstand til hus og isbreer. Land-/regionpakker: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). | **Delvis** — lastebil EC 561 pauser, duty-tak og flerdagers døgn-/ukeshvile implementert og live-GPS-sjekket (kompensasjonsbok og rik overnattingsskåring fortsatt utsatt — se EC 561-dokumentet); bil / MC / sykkel / bobil myk flerdagers overnatting implementert; fottur rast-intervall hytte/telt + overnattingssikkerhet i `planHikingRoute` (dag-for-dag `plan_multi_day` bare i integrasjonstester) |
 | **Kjørefelt (HUD)** | Slim toppstripe (høyde; trykk for kartinnstillinger) og bunnstripe (zoom, pausetid, tur-ETA, økoblad; trykk for kjøreinnstillinger). | Ferdig |
 | **Kartrotasjon** | Rett kartet etter kompass, etter kjøreretning, eller med nord alltid opp. | Ferdig |
 | **Bevegelige ikoner** | Vis nærliggende spormarkører på kartet (for eksempel radiostasjoner) innen ca. 50–150 km. | **Delvis** — tegning virker; live radiomating er ikke innebygd ennå |
@@ -147,21 +150,25 @@ motorsykkel bruker timer mellom pauser; fottur og sykling bruker tradisjonelle
 skandinaviske rasteavstander
 ([`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md));
 **lastebil** / **lastebil elektrisk** følger EU EC 561/2006
-([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)); **bobil** beholder
-bil-lignende myke påminnelser (ikke HGV-juridisk sporing). Når bil / motorsykkel /
-bobil / sykkeltur overstiger det myke daglige budsjettet (standard **8 t** kjøring
-eller **100 km** sykling), deler planleggeren turen i dager og foreslår overnatting
-ved hotell, camping eller rasteplass nær dagsgrensen (informativt hvis ingen POI
-finnes — se [`docs/poi.md`](docs/poi.md)). For fottur plasserer `planHikingRoute`
-hytte-/teltpauser langs rastintervaller og avviser overnattingskandidater for nær
-hus eller isbreer; dag-for-dag flerdagers fottursegmentering (`plan_multi_day`)
-kjøres i integrasjonstester, ikke som UniFFI-planlegger ennå. Bygningsavstanden
-følger norsk **allemannsrett**: villcamping er vanligvis lov når du holder
-respektfull avstand til hus og dyrket mark. Det er en Norge-orientert standard og
-**gjelder ikke nødvendigvis andre steder** — lokal campinglov kan være strengere;
-landpakker følger [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md).
-Bryteren «Pauser» styrer bare om påminnelsen vises; rediger tider i
-kjøreinnstillinger (bil vs lastebil når lastebilprofil er valgt).
+([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)), inkludert flerdagers
+døgnhvile (11 t / redusert 9 t / delt 3+9) og ukeshvile etter høyst seks
+påfølgende arbeidsdager når turen ikke får plass i gjenværende dagsbudsjett.
+**Bobil** beholder bil-lignende myke påminnelser (ikke HGV-juridisk sporing).
+Når bil / motorsykkel / bobil / sykkeltur overstiger det myke daglige budsjettet
+(standard **8 t** kjøring eller **100 km** sykling), deler planleggeren turen i
+dager og foreslår overnatting ved hotell, camping eller rasteplass nær
+dagsgrensen (informativt hvis ingen POI finnes — se [`docs/poi.md`](docs/poi.md)
+**Lodging** / **RestArea**). For fottur plasserer `planHikingRoute`
+hytte-/teltpauser langs rastintervaller og avviser overnattingskandidater for
+nær hus eller isbreer; dag-for-dag flerdagers fottursegmentering
+(`plan_multi_day`) kjøres i integrasjonstester, ikke som UniFFI-planlegger ennå.
+Bygningsavstanden følger norsk **allemannsrett**: villcamping er vanligvis lov
+når du holder respektfull avstand til hus og dyrket mark. Det er en
+Norge-orientert standard og **gjelder ikke nødvendigvis andre steder** — lokal
+campinglov kan være strengere; landpakker følger
+[`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). Bryteren «Pauser»
+styrer bare om påminnelsen vises; rediger tider i kjøreinnstillinger (bil vs
+lastebil når lastebilprofil er valgt).
 
 **Kart og skjermstriper.** Kartet tegnes med MapLibre. Kollapset toppstripe viser
 høyde; trykk for kartinnstillinger (rotasjon, tur-ETA, pauser, auto-zoom).
@@ -277,7 +284,7 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Størrelse og plassering av kjøre-HUD og menyer |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs frakoblet Protomaps PMTiles; 3D-port |
 | [`docs/approach-instructions.md`](docs/approach-instructions.md) | Midlertidig manøver-tilnærmingsboks |
-| [`docs/poi.md`](docs/poi.md) | Søkbar POI-kategorier (inkl. Fishing), OSM-taggregler |
+| [`docs/poi.md`](docs/poi.md) | Søkbar POI-kategorier (Fishing, RestArea, Lodging, …), OSM-taggregler |
 | [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md) | Foreslåtte hytte-/løyperadius for fottur og sykling (DNT-avstand) |
 | [`docs/osm-updates.md`](docs/osm-updates.md) | Valgfri Geofabrik-sjekk / `.osc.gz` / full nedlasting |
 | [`docs/plugins.md`](docs/plugins.md) | Plugin-vert-status (bevisst: ingen innholdsplugins ennå) + HostApi, isolasjon, veikart |
@@ -405,12 +412,30 @@ lyd/UI.
 
 ```bash
 cargo test -p driver-break-core --test planner_options_routes
+cargo test -p driver-break-core --test truck_driving_history -- --nocapture
+cargo test -p driver-break-core truck_multi_day -- --nocapture
+cargo test -p driver-break-core motor_multi_day -- --nocapture
+cargo test -p driver-break-core rest_area -- --nocapture
+cargo test -p driver-break-core lodging -- --nocapture
 cargo test --test kongsvinger_lillehammer_integration -- --nocapture --ignored
 cargo test --test dnt_hiking_integration -- --nocapture --ignored
 cargo test -p navi-plugin-host --test isolation -- --nocapture
 cargo test -p driver-break-core fishing -- --nocapture
 cargo test -p driver-break-core osm_update::
 ```
+
+**Live-GPS lastebilplan (vert):** startkoordinater må komme fra
+`adb shell dumpsys location` (ingen hardkodede korridorstarter). Sett
+`NAVI_START_LAT` / `NAVI_START_LON` fra den fiksasjonen, velg destinasjon først
+etter at start er kjent, deretter:
+
+```bash
+cargo run -p navi-ffi --bin plan-truck-live-gps --release
+```
+
+Se `navi-ffi/src/bin/plan_truck_live_gps.rs`. Flerdagers døgnhvile og
+historikk les/skriv er bekreftet på en live-GPS Norge-tur (Minnesund-beltet →
+Bodø).
 
 ## Kjente problemer
 
