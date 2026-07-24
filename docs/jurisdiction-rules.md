@@ -8,7 +8,8 @@ rule set without re-deriving the approach each time.
 
 **This page is documentation only.** It does not implement new rule packs, a
 Horse profile, or new admin-boundary APIs. Cite the source docs for the live
-details of each example.
+details of each example. For the Horse profile walkthrough, see
+[`horse-profile.md`](horse-profile.md).
 
 Related:
 
@@ -16,6 +17,7 @@ Related:
   (MobileHome separation:
   [`#mobilehome-private-motorhome--deliberate-separation`](ec-561-truck-rest.md#mobilehome-private-motorhome--deliberate-separation))
 - Right-to-roam camping (plugin spec): [`plugins/right-to-roam-camping-spec.md`](plugins/right-to-roam-camping-spec.md)
+- Horse profile worked example (doc only): [`horse-profile.md`](horse-profile.md)
 - Plugin host / capabilities: [`plugins.md`](plugins.md)
 - POI overnight categories: [`poi.md`](poi.md) (**RestArea**, **Lodging**)
 - Profile / rest overview: [`../README.md`](../README.md)
@@ -166,7 +168,8 @@ Every jurisdiction pack that claims legal or safety-adjacent parameters must
 cite **traceable sources** (regulation text, official summary, national outdoor
 access code) the same way EC 561 and the allemannsretten table do. Navi must
 not silently invent those numbers. Mark illustrative / welfare defaults
-explicitly when they are **not** regulation-derived (see Horse rest below).
+explicitly when they are **not** regulation-derived (see
+[`horse-profile.md`](horse-profile.md) rest notes).
 
 ---
 
@@ -201,108 +204,14 @@ Illustrative; **not implemented** in this pass:
   (e.g. `NO:rural`) may need explicit tuning packs.
 - **Additional right-to-roam-adjacent jurisdictions** — extend the camping table
   only with sources; until verified, treat like “uncertain → decline.”
-- **Horse-specific right-of-access packs** — see [§5.5](#55-jurisdiction-dependent-horse-access);
+- **Horse-specific right-of-access packs** — see
+  [`horse-profile.md` §5](horse-profile.md#5-jurisdiction-dependent-horse-access);
   do **not** assume horse access equals foot access under allemannsretten /
   allemansrätten / CRoW without checking each jurisdiction.
 
 ---
 
-## 5. Worked example: adding a Horse profile
-
-This walkthrough shows how a new travel profile intersects the jurisdiction
-pattern. **Horse is not implemented** — OSM already knows `route=horse`, and
-Navi’s network-preference tests explicitly show that tag is **not** matched by
-Hiking or Cycling packs today (`OfficialNetworkKind` only lists hiking/foot and
-bicycle/mtb).
-
-### 5.1 Profile definition
-
-- Add `Horse` beside existing profiles (Hiking, Cycling, Car, Truck, and their
-  electric variants / MobileHome as already established).
-- **Cost model:** start from **Hiking** (human/animal-powered, non-motor), not
-  from Car/Truck. Adjust pace (below), not a greenfield cost formula.
-- **Eco-mode:** locked **on** by default, same idea as Hiking / Cycling — there
-  is no meaningful “eco off” for a horse profile.
-
-### 5.2 Road / path preference
-
-- **Official networks:** reuse the existing soft network-preference mechanism
-  (“Follow official networks”). Matching is already generic
-  (`type=route` + `route=*` + `network=*`). Adding Horse means recognizing
-  `route=horse` (and an appropriate `OfficialNetworkKind::Horse` or equivalent)
-  — **not** inventing a new matcher.
-- **Ways:** prefer `highway=bridleway`, `highway=track`, `highway=path` where
-  `horse=yes` / `horse=designated`; start from Hiking’s forbidden high-class
-  road filter (avoid motorway / trunk / primary as a baseline), then adjust for
-  horse-specific access (`horse=no` / `horse=private` exclusions that do not
-  apply the same way to foot).
-
-### 5.3 Pace / duration estimation
-
-Pre-departure ETA already uses a small pace table (motor: OSM `maxspeed` +
-highway fallback; hiking ~16 min/km; cycling ~4 min/km). Document Horse as a
-**new illustrative row** in that same table:
-
-| Mode | Illustrative default | Notes |
-|---|---|---|
-| Hiking | ~16 min/km | Existing |
-| Cycling | ~4 min/km | Existing |
-| **Horse (walk)** | ~**8.5 min/km** (~**7 km/h**) | Walking pace for distance planning; trot/canter are not sustainable all-day defaults |
-
-Treat ~7 km/h as a **starting welfare/practical estimate to refine**, not as a
-regulation-grade figure like EC 561’s hours.
-
-### 5.4 Rest / break parameters
-
-Horse has **no** EC 561-style regulatory source in Navi’s truck work. Rest /
-water stops for a horse are a **welfare and practical judgment**, not a hard
-legal duty pack.
-
-Per [§2.4](#24-where-rule-sets-live-core-vs-plugin):
-
-- Soft interval suggestions (water / rest reminders) → **plugin-appropriate,
-  advisory-only** (or soft car/hiking-style reminders clearly labelled as
-  non-legal).
-- Do **not** build Horse rest as a hard-enforced core constraint in the EC 561
-  sense unless a cited regulation for the active jurisdiction requires it.
-
-### 5.5 Jurisdiction-dependent horse access
-
-Horse **access rights** vary by country in ways that parallel the right-to-roam
-table: e.g. Sweden’s *allemansrätten* and UK access regimes have horse-specific
-provisions that are **not** identical to foot or bicycle rights. Therefore:
-
-- Adding Horse surfaces a **new jurisdiction-dependent rule-set candidate**
-  (horse right-of-access / bridle access per country) — listed in [§4](#4-candidate-future-rule-sets-list-only).
-- Do **not** automatically inherit Hiking’s allemannsretten / overnight camping
-  treatment for horses without verifying horse access in that jurisdiction.
-- Follow the same detection → keyed pack → decline-if-unknown → cite-sources
-  process as the rest of this document.
-
-### 5.6 Icon and UI
-
-- Check the bundled Navit-derived set under `core/src/icons` (see
-  [`icons.md`](icons.md)) for an equestrian / horse / bridleway-appropriate
-  asset **before** commissioning a custom icon. As of this writing there is no
-  dedicated `horse*` icon in that tree; if still absent, add an SVG via the
-  normal custom-icon path and document provenance.
-- **Menu placement:** treat Horse like other secondary profiles (similar to how
-  electric truck variants are not the primary four-mode focus) unless product
-  later promotes it — i.e. available in the profile enum / extended picker, not
-  necessarily one of the primary HUD shortcuts on first ship.
-
-### 5.7 Implementation status
-
-| Item | Status |
-|---|---|
-| Horse profile / routing / ETA | **Not implemented** (doc only) |
-| `route=horse` network preference | Tag exists in OSM; Navi matcher does not select it yet |
-| Horse jurisdiction access packs | Candidate only ([§4](#4-candidate-future-rule-sets-list-only)) |
-| Horse rest regulation pack | None; advisory welfare if added |
-
----
-
-## 6. Summary
+## 5. Summary
 
 1. Ground new location-dependent behaviour in the **EC 561** and
    **right-to-roam** precedents.
@@ -311,5 +220,6 @@ provisions that are **not** identical to foot or bicycle rights. Therefore:
 3. Use a **keyed pack table**; **decline** when unknown for legal/safety claims.
 4. Put **hard planning** rules in **core**, **advisory** rules in **plugins**.
 5. Always **cite sources**; mark illustrative defaults honestly.
-6. Use the **Horse** walkthrough as a template when a new profile brings both
-   routing reuse and a fresh jurisdiction pack candidate.
+6. Use the **Horse** walkthrough ([`horse-profile.md`](horse-profile.md)) as a
+   template when a new profile brings both routing reuse and a fresh
+   jurisdiction pack candidate.

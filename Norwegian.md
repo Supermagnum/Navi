@@ -282,7 +282,8 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 | [`docs/pictures.md`](docs/pictures.md) | Emulatorskjermbildegalleri (engelsk) |
 | [`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md) | Rast/vei-grunnlag for standard pauseintervaller (fottur og sykling); [engelsk](docs/historical-background.md) |
 | [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Lastebil EU kjøre-/hviletid: håndhevede duty-tak, implementert flerdagers døgn-/ukeshvile, øvrige utsatte punkter |
-| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Mønster for land-/regionavhengige regler (EC 561 + allemannsrett; Horse-eksempel) |
+| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Mønster for land-/regionavhengige regler (EC 561 + allemannsrett) |
+| [`docs/horse-profile.md`](docs/horse-profile.md) | Arbeidseksempel: legge til Horse-profil (kun dokumentert; ikke implementert) |
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Størrelse og plassering av kjøre-HUD og menyer |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs frakoblet Protomaps PMTiles; 3D-port |
 | [`docs/approach-instructions.md`](docs/approach-instructions.md) | Midlertidig manøver-tilnærmingsboks |

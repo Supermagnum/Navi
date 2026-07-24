@@ -278,7 +278,8 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/bilder.md`](docs/bilder.md) | Emulator screenshot gallery (Norwegian) |
 | [`docs/historical-background.md`](docs/historical-background.md) | Rast/vei basis for hiking & cycling rest-interval defaults |
 | [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Truck EC 561/2006: enforced duty caps, implemented multi-day daily/weekly rest, remaining deferred items |
-| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Pattern for country/region-dependent rules (EC 561 + right-to-roam precedents; Horse worked example) |
+| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Pattern for country/region-dependent rules (EC 561 + right-to-roam precedents) |
+| [`docs/horse-profile.md`](docs/horse-profile.md) | Worked example: adding a Horse profile (doc only; not implemented) |
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Adjust size and placement of drive HUD bars and menus |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs offline Protomaps PMTiles; 3D gate |
 | [`docs/approach-instructions.md`](docs/approach-instructions.md) | Deferred: temporary maneuver approach box (icon + distance + name) |
