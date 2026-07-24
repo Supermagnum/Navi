@@ -77,12 +77,12 @@ produktplugins er ikke levert ennå ([`docs/plugins.md`](docs/plugins.md)).
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Elektriske modus får kreditt for energi tilbake i nedoverbakke. Formler: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Ferdig |
 | **Frakoblet ruteplan** | Last ned en kartregion én gang, planlegg på enheten, og se ruten pluss foreslåtte stopp på kartet. | Ferdig |
 | **Stedssøk** | Søk steder og sett Fra / Via / Til ([`docs/poi.md`](docs/poi.md)). Inkluderer fiskeplasser og veiledning for hytteradius ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Ferdig |
-| **Hvile og pauser** | Pausepåminnelser og foreslåtte stopp langs ruten. Fottur og sykling bruker tradisjonelle skandinaviske rasteavstander ([bakgrunn](docs/historisk-bakgrunn.md)). Lastebil følger EU-regler for pauser og daglig/ukentlig kjøretid ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). Overnatting på fottur holder avstand til hus og isbreer. | **Delvis** — bil, fottur og sykkel klart; lastebil kjøring/pause for én dag klart; flerdagers lastebilhvile ikke ennå |
+| **Hvile og pauser** | Pausepåminnelser og foreslåtte stopp langs ruten. Fottur og sykling bruker tradisjonelle skandinaviske rasteavstander ([bakgrunn](docs/historisk-bakgrunn.md)). **Lastebil** / **lastebil elektrisk** følger EU EC 561/2006 for pauseavstand og daglige / ukentlige / 14-dagers kjøretidstak med lagret historikk ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). **Bobil** bruker bil-lignende myke påminnelser (velvære — ikke kommersiell HGV-juridisk sporing). Overnatting på fottur holder avstand til hus og isbreer. | **Delvis** — bil, MC, fottur, sykkel og bobil myke pauser klart; lastebil pauseplassering og duty-tak for enkeltur klart; flerdagers lastebil *hvile* (døgn/uke) utsatt |
 | **Kjørefelt (HUD)** | Slim toppstripe (høyde; trykk for kartinnstillinger) og bunnstripe (zoom, pausetid, tur-ETA, økoblad; trykk for kjøreinnstillinger). | Ferdig |
 | **Kartrotasjon** | Rett kartet etter kompass, etter kjøreretning, eller med nord alltid opp. | Ferdig |
 | **Bevegelige ikoner** | Vis nærliggende spormarkører på kartet (for eksempel radiostasjoner) innen ca. 50–150 km. | **Delvis** — tegning virker; live radiomating er ikke innebygd ennå |
 | **Kartoppdateringer** | Når du velger det: sjekk OpenStreetMap-oppdateringer og bruk dem, eller last en fersk region ([`docs/osm-updates.md`](docs/osm-updates.md)). Aldri stille i bakgrunnen. | Ferdig |
-| **Plugins** | Et trygt pluginsystem er klart for fremtidige tillegg. Produktplugins er ikke levert ennå med vilje ([`docs/plugins.md`](docs/plugins.md)). | Vert klar; innhold utsatt |
+| **Plugins** | Sandkasse-WASM-vert er klar. Produktplugins er ikke levert ennå med vilje; flere er spesifisert for bidragsytere ([`docs/plugins.md`](docs/plugins.md) — camping, forsyning, instrumentcluster/AGL, ECU, APRS, …). | Vert klar; innhold utsatt |
 
 **Ekte maskinvare:** Så langt er appen utviklet og sjekket hovedsakelig på Android
 Automotive-**emulatoren**. Den **må fortsatt testes på ekte bilskjermer** før
@@ -144,14 +144,15 @@ etiketter; appmarkører bruker medfølgende ikoner.
 **Hvile og overnatting.** Hver reisemåte har egne pausestandarder. Bil bruker
 timer mellom pauser; fottur og sykling bruker tradisjonelle skandinaviske
 rasteavstander ([`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md));
-lastebil følger EU-regler for kjøre- og hviletid
-([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). For overnatting på
+**lastebil** / **lastebil elektrisk** følger EU EC 561/2006
+([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)); **bobil** beholder
+bil-lignende myke påminnelser (ikke HGV-juridisk sporing). For overnatting på
 fottur avviser Navi steder for nær hus eller isbreer. Bygningsavstanden følger
 norsk **allemannsrett**: villcamping er vanligvis lov når du holder respektfull
 avstand til hus og dyrket mark. Det er en Norge-orientert standard og
 **gjelder ikke nødvendigvis andre steder** — lokal campinglov kan være strengere.
 Bryteren «Pauser» styrer bare om påminnelsen vises; rediger tider i
-kjøreinnstillinger (bil vs lastebil).
+kjøreinnstillinger (bil vs lastebil når lastebilprofil er valgt).
 
 **Kart og skjermstriper.** Kartet tegnes med MapLibre. Kollapset toppstripe viser
 høyde; trykk for kartinnstillinger (rotasjon, tur-ETA, pauser, auto-zoom).

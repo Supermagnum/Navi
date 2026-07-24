@@ -78,12 +78,12 @@ plugins are not shipped yet ([`docs/plugins.md`](docs/plugins.md)).
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. Electric modes get credit for downhill recovery. Formulas: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Done |
 | **Offline route planning** | Download a map region once, plan on the device, and see the route line plus suggested stops on the map. | Done |
 | **Place search** | Search places and set From / Via / To ([`docs/poi.md`](docs/poi.md)). Includes fishing spots and hut search distance guidance ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Done |
-| **Rest & breaks** | Break reminders and suggested stops along the route. Hiking and cycling use traditional Scandinavian rest distances ([background](docs/historical-background.md)). Trucks follow EU driving-time rules for breaks and daily/weekly driving limits ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). Hiking overnight stops keep a respectful distance from buildings and glaciers. | **Partial** — car, hike, and cycle ready; truck single-day driving and breaks ready; multi-day truck rest planning not yet |
+| **Rest & breaks** | Break reminders and suggested stops along the route. Hiking and cycling use traditional Scandinavian rest distances ([background](docs/historical-background.md)). **Truck** / **TruckElectric** follow EU EC 561/2006 for break spacing and daily / weekly / fortnightly driving caps with persisted history ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). **Mobile home** uses car-style soft reminders (wellbeing only — not commercial HGV legal tracking). Hiking overnight stops keep a respectful distance from buildings and glaciers. | **Partial** — car, motorcycle, hike, cycle, and motorhome soft breaks ready; truck single-trip break placement and duty caps ready; multi-day truck daily/weekly *rest* segmentation deferred |
 | **Drive bars** | Slim top bar (altitude; tap for map settings) and bottom bar (zoom, break time, trip ETA, eco leaf; tap for drive settings). | Done |
 | **Map rotation** | Align the map with the compass, with your travel direction, or with north always up. | Done |
 | **Moving icons** | Show nearby tracked markers on the map (for example radio station symbols) within about 50–150 km. | **Partial** — drawing works; a live radio feed is not built in yet |
 | **Map data updates** | When you choose, check for OpenStreetMap updates and apply them, or download a fresh region ([`docs/osm-updates.md`](docs/osm-updates.md)). Never updates quietly in the background. | Done |
-| **Plugins** | A safe plugin system is ready for future extras. Extra content plugins are not shipped yet on purpose ([`docs/plugins.md`](docs/plugins.md)). | Host ready; content deferred |
+| **Plugins** | Sandboxed WASM host is ready. Product plugins are not shipped yet on purpose; several are specified for contributors ([`docs/plugins.md`](docs/plugins.md) — camping, resupply, instrument cluster/AGL, ECU, APRS, …). | Host ready; content deferred |
 
 **Real hardware:** So far the app has been developed and checked mainly on the
 Android Automotive **emulator**. It still **needs testing on real head units**
@@ -144,18 +144,20 @@ huts and trails are in [`docs/poi-search-defaults.md`](docs/poi-search-defaults.
 Search results set From / Via / To and move the map. The basemap shows its own
 labels; app markers use the bundled icons.
 
-**Rest and overnight.** Each travel mode has its own break defaults. Cars use
-hours between breaks; hiking and cycling use traditional Scandinavian rest
-distances ([`docs/historical-background.md`](docs/historical-background.md));
-trucks use EU driving-time rules
-([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). For hiking overnight
+**Rest and overnight.** Each travel mode has its own break defaults. Cars and
+motorcycles use hours between breaks; hiking and cycling use traditional
+Scandinavian rest distances
+([`docs/historical-background.md`](docs/historical-background.md));
+**Truck** / **TruckElectric** use EU EC 561/2006 driving-time rules
+([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)); **mobile home** keeps
+car-style soft reminders (not HGV legal tracking). For hiking overnight
 suggestions, Navi rejects spots too close to buildings or glaciers. The
 building-distance idea follows the Norwegian **right to roam**
 (*allemannsretten*): wild camping is generally allowed if you stay a respectful
 distance from houses and cultivated land. That is a Norway-oriented default and
 **may not apply elsewhere** — local camping law can be stricter. The “Breaks”
 toggle only controls whether the reminder is shown; edit times in Drive
-settings (Car vs Truck).
+settings (Car vs Truck when a truck profile is selected).
 
 **Map and on-screen bars.** The map is drawn with MapLibre. The collapsed top
 bar shows altitude; tap it for map settings (rotation, trip ETA, breaks,
@@ -206,10 +208,10 @@ dismisses; Cancel discards the sheet without saving that edit session.
 
 | Field | Persisted as | Notes |
 |---|---|---|
-| Hours between breaks | Car **or** Truck rest defaults | Truck uses EC 561 `mandatory_break_after_hours` when Truck/Mobile home is selected |
+| Hours between breaks | Car **or** Truck rest defaults | Truck / TruckElectric use EC 561 `mandatory_break_after_hours`; Mobile home uses **car** rest (not EC 561) |
 | Rest time (minutes) | Car **or** Truck rest defaults | Truck continuous 45 (or 15+30 when split is on) |
 | Eco mode | Profile rest `ecoModeEnabled` | Leaf on bottom HUD when on |
-| Truck split break / +1 h exceptional | `TruckRestParams` | Truck profile only; exceptional arm is explicit opt-in |
+| Truck split break / +1 h exceptional | `TruckRestParams` | Truck / TruckElectric only; exceptional arm is explicit opt-in |
 | Units liters / gallons | `FuelConfig.prefer_liters` | Display preference; storage is always litres |
 | Tank capacity | `FuelConfig.tank_capacity_l` | Converted from gal→L on save when units are gallons |
 | Fuel added | `FuelConfig.fuel_added_l` | Feeds adaptive consumption when live ECU is absent |
@@ -410,6 +412,7 @@ work runs at lower OS priority than audio/UI.
 
 ```bash
 cargo test -p driver-break-core --test planner_options_routes
+cargo test -p driver-break-core --test truck_driving_history -- --nocapture
 cargo test -p driver-break-core --test overnight_scan_bench -- --ignored --nocapture
 cargo test --test kongsvinger_lillehammer_integration -- --nocapture --ignored
 cargo test --test dnt_hiking_integration -- --nocapture --ignored
@@ -419,8 +422,10 @@ cargo test -p driver-break-core osm_update::
 ```
 
 `planner_options_routes` covers vehicle limits, avoidances, official-network soft
-preference, EV regen cost, overnight filter, and fishing category behaviour
-without a full region extract. `overnight_scan_bench` times the removed redundant
+preference, EV regen cost, overnight filter, fishing category behaviour, and
+truck break spacing vs car heuristic without a full region extract.
+`truck_driving_history` covers empty history, multi-day accumulation / daily
+extensions, and rolling fortnight pruning. `overnight_scan_bench` times the removed redundant
 overnight PBF scan vs POI+barrier reuse on the DNT corridor bbox. Optional fishing
 hit against Ostlandet:
 
@@ -431,9 +436,10 @@ cargo test -p driver-break-core --test planner_options_routes fishing_found -- -
 ## Known issues
 
 - **Plugins (content):** the WASM host/sandbox is ready; shipping product plugins
-  (APRS, weather, allemannsretten camping, marine, etc.) is intentionally deferred
-  for independent contributors — see [`docs/plugins.md`](docs/plugins.md). Not a
-  defect in the navigation core.
+  (APRS, weather, allemannsretten camping, resupply, instrument cluster/AGL,
+  ECU, marine, etc.) is intentionally deferred for independent contributors —
+  specs live under [`docs/plugins.md`](docs/plugins.md). Not a defect in the
+  navigation core.
 - **GUI polish:** the Compose HUD / search / tools UI works but still needs visual
   and UX polishing (spacing, typography, density on Automotive screens). If you
   want to improve the look-and-feel, please do — contributions welcome.
