@@ -187,6 +187,17 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | **Proposed caps** | `position_read`, `poi_query`, `route_read`, `fuel_config_read`, `plugin_kv` / `storage`, `weather_read` (optional), `log` |
 | **Notes** | Spec only — not implemented. Distinct from core `SafetyConfig` (POI radii / overnight distances). Conservative guidance, not a supply guarantee. |
 
+### 9. Instrument cluster / AGL signal export (`instrument_cluster`)
+
+| | |
+|---|---|
+| **Benefit** | Export Navi nav state (speed, limit, next maneuver, ETA, break timing, eco, polyline) to open-source clusters and AGL via VSS/Kuksa.val, with a simple JSON fallback |
+| **Docs** | [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) — VSS mapping + `Vehicle.Private.Navi.*`, `navi.cluster.v1` JSON, host-mediated publish, AGL scope boundary |
+| **Host duties** | Assemble guidance snapshot; implement Kuksa.val / loopback JSON / log sinks; user opt-in; never grant raw sockets to WASM |
+| **Guest duties** | Decide what/when to publish; call `vehicle_signal_publish`; enforce no-route clear for rest fields |
+| **Proposed caps** | `nav_guidance_read` (new), `vehicle_signal_publish` (new), `position_read`, `log` |
+| **Notes** | Spec only — not implemented. Export only (not ECU in). Not an AGL `afm` / Wayland packaging effort. |
+
 ### Capability sketch (not in ABI yet)
 
 | Proposed | Purpose |
@@ -204,6 +215,8 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | `admin_region_read` | Country / county for lat/lon (right-to-roam rule pack) |
 | `clock_read` | Current date for seasonal fire-ban guidance |
 | `plugin_kv` / `storage` | Small per-plugin persist (e.g. two-night camping memory, POI confirmations) |
+| `nav_guidance_read` | Active route / maneuver / ETA / break / eco / polyline snapshot for cluster export |
+| `vehicle_signal_publish` | Ask host to publish VSS path/values or `navi.cluster.v1` JSON (host owns Kuksa/UDP/WS) |
 
 Add a capability to `plugin-host` `Capability` enum + HostApi **before** shipping
 any guest that needs it. Until then, host-native services may write into core

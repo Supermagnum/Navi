@@ -16,6 +16,7 @@ position, tracks).
 | Document | Topic | Implementation status |
 |---|---|---|
 | [`ECU.md`](ECU.md) | OBD-II (ELM327), SAE J1939, MegaSquirt → `LiveEnergySnapshot` | Extension point only (`driver_break_core::ecu`) |
+| [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Nav state **export** → VSS/Kuksa.val + `navi.cluster.v1` JSON (instrument cluster / AGL) | Spec only; host-mediated publish |
 | [`APRS.md`](APRS.md) | APRS information fields; `TrackStore` range filtering | Protocol + display/range; RF ingest not shipped |
 | [`APRS-SDR.md`](APRS-SDR.md) | APRS AFSK DSP stages; RTL-SDR IF offset; **`rtl-sdr-rs`** | Planned IQ front-end / DSP (not in-tree) |
 | [`CAT.md`](CAT.md) | Amateur radio CAT; NFM repeater auto-tune → VFO 1 (≤150 km) | Specified; not implemented |
