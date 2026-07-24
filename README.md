@@ -153,9 +153,13 @@ Scandinavian rest distances
 ([`docs/historical-background.md`](docs/historical-background.md));
 **Truck** / **TruckElectric** use EU EC 561/2006 driving-time rules
 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)), including multi-day
-daily rest (11 h / reduced 9 h / split 3+9) and weekly rest after at most six
-consecutive working days when the trip does not fit the remaining daily budget.
-**Mobile home** keeps car-style soft reminders (not HGV legal tracking). When a
+daily rest (11 h / reduced 9 h / split 3+9), weekly rest after at most six
+consecutive working days when the trip does not fit the remaining daily budget,
+a **compensation ledger** after reduced weekly rests (Art. 8 shortfall +
+deadline, surfaced in the plan report), and **detour-weighted / facility-tier**
+overnight stop scoring (`highway=services` preferred over bare rest areas
+within a similar detour). **Mobile home** keeps car-style soft reminders (not
+HGV legal tracking). When a
 car / motorcycle / mobilehome / cycle trip exceeds the soft daily budget
 (default **8 h** driving or **100 km** cycling), the planner splits into days
 and suggests overnight lodging, camping, or rest-area stops near day boundaries

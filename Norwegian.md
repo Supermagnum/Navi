@@ -151,9 +151,12 @@ skandinaviske rasteavstander
 ([`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md));
 **lastebil** / **lastebil elektrisk** følger EU EC 561/2006
 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)), inkludert flerdagers
-døgnhvile (11 t / redusert 9 t / delt 3+9) og ukeshvile etter høyst seks
-påfølgende arbeidsdager når turen ikke får plass i gjenværende dagsbudsjett.
-**Bobil** beholder bil-lignende myke påminnelser (ikke HGV-juridisk sporing).
+døgnhvile (11 t / redusert 9 t / delt 3+9), ukeshvile etter høyst seks
+påfølgende arbeidsdager når turen ikke får plass i gjenværende dagsbudsjett,
+**kompensasjonsbok** etter redusert ukeshvile (Art. 8-shortfall + frist,
+synlig i planrapporten), og **omvei-/anleggsbasert** overnattingsskåring
+(`highway=services` foretrekkes fremfor bare rasteplasser innenfor lignende
+omvei). **Bobil** beholder bil-lignende myke påminnelser (ikke HGV-juridisk sporing).
 Når bil / motorsykkel / bobil / sykkeltur overstiger det myke daglige budsjettet
 (standard **8 t** kjøring eller **100 km** sykling), deler planleggeren turen i
 dager og foreslår overnatting ved hotell, camping eller rasteplass nær
