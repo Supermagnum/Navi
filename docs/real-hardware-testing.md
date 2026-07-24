@@ -102,10 +102,10 @@ HUD verification screenshots from the emulator baseline live under
 
 - With real GPS and IMU present (not simulated/fed data, unlike the emulator
   rotation test), confirm:
-  - "Start from GPS" — check status against the known **stub** issue already
-    logged (`lastGpsFix()` currently returns a demo coordinate, not real fused
-    location) — confirm whether this is still stubbed or has been fixed by the
-    time you are testing.
+  - "Start from GPS" — uses Android `LocationManager` last known / live fixes for
+  the map puck and From waypoint. Native `lastGpsFix()` mirrors those pushes via
+  `updateGpsFix` (it is **not** a demo coordinate stub). Confirm the on-screen
+  coordinates match `adb shell dumpsys location` for the current user.
   - Compass and Direction-of-travel rotation modes respond correctly to real
     device movement/orientation, not just fed synthetic values.
 - Log: `adb logcat` for location/sensor provider tags during a short real walk

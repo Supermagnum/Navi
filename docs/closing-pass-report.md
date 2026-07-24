@@ -34,15 +34,15 @@ Command: `cargo test -p navi-plugin-host --test isolation -- --nocapture` → `3
 
 | Document | Exists |
 |---|---|
-| `architecture.md` | yes |
+| `docs/architecture.md` | yes |
 | `docs/plugins.md` | yes (plugin system) |
 | `docs/icons.md` | yes (icon system) |
 | `docs/API.md` | yes |
 | `docs/PROTOCOLS.md` | yes |
 | `docs/APRS.md` | yes |
 | `docs/CAT.md` | yes |
-| `test-results.md` | yes |
-| `android-test-results.md` | yes |
+| `docs/test-results.md` | yes |
+| `docs/android-test-results.md` | yes |
 
 README Documents table lists the above; no broken links found in this audit.
 

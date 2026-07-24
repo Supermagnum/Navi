@@ -34,7 +34,7 @@ cargo test -p driver-break-core --test dnt_hiking_integration \
 ```
 
 Use `--nocapture` so `println!` / logging from the test binary stays on the
-terminal. Notes from past runs: [`test-results.md`](../test-results.md).
+terminal. Notes from past runs: [`test-results.md`](test-results.md).
 
 ### IDE / debugger
 
@@ -146,7 +146,7 @@ instrumented tests or `adb shell uiautomator dump`.
 
 Watch the same logcat tags while the suite runs. HUD screenshots are written
 under the app external files dir (and sometimes mirrored under
-`/data/local/tmp/`); see [`android-test-results.md`](../android-test-results.md).
+`/data/local/tmp/`); see [`android-test-results.md`](android-test-results.md).
 
 `NaviMapTestHooks` injects camera, headings, altitude, and sheet open requests
 for tests — useful when reproducing HUD/map issues without manual UI.

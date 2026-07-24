@@ -69,7 +69,7 @@ content first.
 **Measured on emulator (2026-07-22)** from
 `docs/images/hud/hud_idle_both_bars.png` (1280×720): collapsed top
 **6.67%** (48 px), collapsed bottom **8.89%** (64 px). See
-[`android-test-results.md`](../android-test-results.md) for historical toast / leaf
+[`android-test-results.md`](android-test-results.md) for historical toast / leaf
 notes.
 
 ## Screen stack (placement)

@@ -31,14 +31,15 @@ Designvalg, krav og testing er styrt og gjennomgått av forfatteren underveis.
 - [Vertstester](#vertstester)
 - [Kjente problemer](#kjente-problemer)
 
-Mer å lese i depotet: kassekobling og SQLite-oppsett i
-[`architecture.md`](architecture.md); plugin-idéer i
+Mer å lese i depotet: hvordan delene henger sammen i
+[`docs/architecture.md`](docs/architecture.md); plugin-idéer i
 [`docs/plugins.md`](docs/plugins.md); Android-byggesteg i
 [`docs/android-build.md`](docs/android-build.md); Linux-kjernebygg i
 [`docs/build-linux.md`](docs/build-linux.md); feilsøking i
 [`docs/debugging.md`](docs/debugging.md); HUD-layout i
-[`docs/hud-layout.md`](docs/hud-layout.md); kartstiler / PMTiles / 3D i
-[`docs/map-styles.md`](docs/map-styles.md); IMU-monteringskalibrering (utsatt) i
+[`docs/hud-layout.md`](docs/hud-layout.md); kartstiler / frakoblede kart / 3D i
+[`docs/map-styles.md`](docs/map-styles.md); lastebil kjøre-/hviletidsregler i
+[`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md); IMU-monteringskalibrering (utsatt) i
 [`docs/imu-calibration.md`](docs/imu-calibration.md).
 
 # Navi
@@ -69,24 +70,24 @@ produktplugins er ikke levert ennå ([`docs/plugins.md`](docs/plugins.md)).
 
 | Funksjon | Hva du får | Status |
 |---|---|---|
-| **Profiler** | Bil, motorsykkel, sykling, fottur, lastebil, bobil (elektriske varianter i enum; primære UI-brikker er de ikke-elektriske) | Ferdig |
-| **Kjøretøygrenser** | Aksel / boggi / høyde / bredde / lengde lagres i SQLite og brukes av `plan_car_route` (hard ekskludering ved OSM-begrensninger) | Ferdig |
-| **Unngåelser** | Unngå hovedvei / bom / ferge endrer faktisk planlagt rute | Ferdig |
-| **Følg offisielle nettverk** | Myk preferanse for tur-/sykkelrutenett (av som standard); hull faller tilbake til vanlige stier; vanskelighets-tagger som metadata; navngitte ruter i FTS | Ferdig |
-| **Økoruting** | DEM-høyde + luftmotstand/masse/rulle; grafbuffer; A*; EV-regen via `EcoConfig::for_profile` i FFI-planleggeren; formler i [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md) | Ferdig |
-| **Korridor- / regionsruting** | OSM `.pbf` → graf → øko-omvekt → bufret graf → A* → polylinje + pause-POI på MapLibre | Ferdig |
-| **POI-søk** | FTS-stedsindeks (inkl. navngitte ruter); Til / Via / Fra ([`docs/poi.md`](docs/poi.md)). Hytteradius: [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md). Kategori Fishing (`leisure=fishing`) | Ferdig |
-| **Hvile og pauser** | Profilstandarder ([rast/vei for fottur/sykkel](docs/historisk-bakgrunn.md)); bil-HUD minutter til pause; pause-POI; overnatting bygg/bre-filter på hiking-FFI | Ferdig |
-| **Kjøre-HUD** | Kollapset topp (høyde; trykk → kartinnstillinger) + bunn (zoom −/+, pause/ETA, øko; trykk → kjøreinnstillinger) | Ferdig |
-| **Kartrotasjon** | Kompass, kjøreretning eller nord opp | Ferdig |
-| **Bevegelige ikoner** | `TrackStore` (upsert, tidsavbrudd, 50–150 km); Compose kan tegne stasjoner | **Delvis** — lager + kartsti finnes; ingen live APRS; app via testhooks |
-| **OSM-oppdateringer** | Valgfri Geofabrik-sjekk / `.osc.gz` (trenger `osmium`) eller full nedlasting ([`docs/osm-updates.md`](docs/osm-updates.md)) | Ferdig |
-| **Plugins** | Sandkasse WASM-vert + HostApi + isolasjonstester; eksempel `log-hello` / `busy-loop` | **Vert ferdig; innholdsplugins utsatt** — bevisst (se [`docs/plugins.md`](docs/plugins.md)); lastes ikke av Android-appen ennå |
+| **Reisemåter** | Bil, motorsykkel, sykkel, fottur, lastebil og bobil. Elektriske varianter finnes til senere bruk; hovedknappene er hverdagsmodusene. | Ferdig |
+| **Kjøretøystørrelse** | Lagre høyde, bredde, lengde, aksellast og lignende. Ruter unngår veier kartet sier er for trange eller for lave for kjøretøyet ditt. | Ferdig |
+| **Unngåelser** | Slå på unngå motorvei, bom eller ferge — den planlagte ruten endres faktisk. | Ferdig |
+| **Følg offisielle nettverk** | For fottur og sykling: foretrekk merkede langturer og sykkelruter når valget er på (av som standard). Vanlige stier forblir tilgjengelige, så et hull i merket nett aldri stopper hele turen. Navngitte ruter er søkbare. | Ferdig |
+| **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Elektriske modus får kreditt for energi tilbake i nedoverbakke. Formler: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Ferdig |
+| **Frakoblet ruteplan** | Last ned en kartregion én gang, planlegg på enheten, og se ruten pluss foreslåtte stopp på kartet. | Ferdig |
+| **Stedssøk** | Søk steder og sett Fra / Via / Til ([`docs/poi.md`](docs/poi.md)). Inkluderer fiskeplasser og veiledning for hytteradius ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Ferdig |
+| **Hvile og pauser** | Pausepåminnelser og foreslåtte stopp langs ruten. Fottur og sykling bruker tradisjonelle skandinaviske rasteavstander ([bakgrunn](docs/historisk-bakgrunn.md)). Lastebil følger EU-regler for pauser og daglig/ukentlig kjøretid ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). Overnatting på fottur holder avstand til hus og isbreer. | **Delvis** — bil, fottur og sykkel klart; lastebil kjøring/pause for én dag klart; flerdagers lastebilhvile ikke ennå |
+| **Kjørefelt (HUD)** | Slim toppstripe (høyde; trykk for kartinnstillinger) og bunnstripe (zoom, pausetid, tur-ETA, økoblad; trykk for kjøreinnstillinger). | Ferdig |
+| **Kartrotasjon** | Rett kartet etter kompass, etter kjøreretning, eller med nord alltid opp. | Ferdig |
+| **Bevegelige ikoner** | Vis nærliggende spormarkører på kartet (for eksempel radiostasjoner) innen ca. 50–150 km. | **Delvis** — tegning virker; live radiomating er ikke innebygd ennå |
+| **Kartoppdateringer** | Når du velger det: sjekk OpenStreetMap-oppdateringer og bruk dem, eller last en fersk region ([`docs/osm-updates.md`](docs/osm-updates.md)). Aldri stille i bakgrunnen. | Ferdig |
+| **Plugins** | Et trygt pluginsystem er klart for fremtidige tillegg. Produktplugins er ikke levert ennå med vilje ([`docs/plugins.md`](docs/plugins.md)). | Vert klar; innhold utsatt |
 
-**Ekte maskinvare:** Utvikling og automatiske sjekker så langt bruker bare
-Android Automotive-**emulatoren**. Appen **må testes på ekte maskinvare** før
-noe leveringskrav — GPS/IMU, MapLibre-lag, Vulkan/GLES, sensorer og ytelse
-skiller seg fra AVD. Følg
+**Ekte maskinvare:** Så langt er appen utviklet og sjekket hovedsakelig på Android
+Automotive-**emulatoren**. Den **må fortsatt testes på ekte bilskjermer** før
+noen behandler den som klar til levering — GPS, sensorer, grafikk og hastighet
+skiller seg på ekte biler. Sjekkliste:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 
 ## Hvor data kommer fra
@@ -115,61 +116,59 @@ Land-/regionsuttrekk av PMTiles kan forberedes med
 
 ## Slik fungerer funksjonene
 
-**Følg offisielle nettverk (fottur / sykling).** Av som standard. Når på, får
-kanter som er medlemmer av matchende `type=route`-relasjoner
-(`route=hiking|foot` + `network=iwn|nwn|rwn|lwn`, eller `route=bicycle|mtb` +
-`icn|ncn|rcn|lcn`) en myk kostnadspreferanse — ikke-nettverk forblir
-tilgjengelig så hull aldri feiler planen. Vanskelighets-tagger (`sac_scale`,
-`mtb:scale`, …) vises som informasjons-`route_metadata`. Navngitte ruters
-`name`/`ref`/`operator` indekseres i FTS for Til/Via. Kjente begrensninger
-denne runden: ett nivå `type=superroute`; Benelux-node-nettverk og
-nivåvektet preferanse er utsatt.
+**Følg offisielle nettverk (fottur / sykling).** Av som standard. Når på, foretrekker
+planleggeren merkede tur- og sykkelnett der de finnes, men kan fortsatt bruke
+vanlige stier, så et manglende stykke merket løype aldri stopper hele turen.
+Vanskelighetsmerknader kan komme som ekstra info på planen. Navngitte offisielle
+ruter er med i stedssøk. Ikke ennå: å foretrekke høyere nettverksnivå over lokale,
+og enkelte «nodenett»-stiler brukt i deler av Europa.
 
-**Rutingsstabel.** En regional `.pbf` parses til en veigraf. Med øko på
-omvektes kanter med DEM-høyde og `EcoConfig`-fysikk (`segment_energy_joules`),
-deretter lagres (`NAVIGPH1`-buffer) så neste oppstart hopper over full
-omvekt. A* finner en korridor; Android-verten tegner polylinjen og
-destinasjonsmarkør på MapLibre.
+**Slik planlegges en rute.** Du laster ned et regionalt OpenStreetMap-uttrekk én
+gang. Navi bygger et veinett fra det. Med øko på endrer bakker hvor «dyrt» hvert
+veistykke er, og resultatet bufres så neste plan går raskere. Appen finner en
+vei og tegner den på kartet med destinasjon og eventuelle foreslåtte pauser.
 
-**Øko vs lengde.** Ren lengderuting ignorerer bakker. Øko foretrekker lavere
-energi (stigninger koster PE). Forbrenningsprofiler beholder regen 0; elektriske
-profiler krediterer en andel av nedstignings-PE via `EcoConfig::for_profile`.
-Live OBD/J1939 kan senere forbedre kostnader via `LiveEnergySnapshot`
-([`docs/ECU.md`](docs/ECU.md)); i dag brukes lagret tank / påfylt drivstoff når
-ECU mangler.
+**Øko vs kortest.** Korteste vei ignorerer bakker. Øko foretrekker lavere
+energibruk, så bratte stigninger koster mer. Bensin- og dieselmodus behandler
+ikke nedoverbakke som «gratis»; elektriske modus får delvis kreditt for energi
+gjenvunnet i nedoverbakke. Hvis en bilcomputer (OBD / lignende) kobles til
+senere, kan live drivstofforbruk forbedre dette ([`docs/ECU.md`](docs/ECU.md)).
+Uten det i dag kan appen lære av tankstørrelse og påfylt drivstoff.
 
-**POI og søk.** Kategorier og taggregler står i [`docs/poi.md`](docs/poi.md)
-(inkl. **Fishing** / `leisure=fishing`, ikon `fish.svg`). Foreslåtte
-nettverkshytte- / løypepreferanseradius står i
-[`docs/poi-search-defaults.md`](docs/poi-search-defaults.md). FTS indekserer også
-navngitte offisielle ruterelasjoner. Søketreff setter Til/Via og flytter kamera.
+**Steder og søk.** Hva som teller som kafe, hytte, fiskeplass og så videre står i
+[`docs/poi.md`](docs/poi.md). Foreslåtte søkeavstander for nettverkshytter og
+løyper står i [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md).
+Søketreff setter Fra / Via / Til og flytter kartet. Grunnkartet viser egne
+etiketter; appmarkører bruker medfølgende ikoner.
 
-**Hvile / overnatting.** Hvileparametre er profilavhengige. Standardverdier for
-fottur og sykling kommer fra skandinavisk *rast*- / *vei*-tradisjon — se
-[`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md)
-([engelsk](docs/historical-background.md)).
-Sikkerhetsregler avviser overnattingsskandidater for nær bygninger eller
-isbreer (koblet inn i hiking-FFI via `OvernightProximityIndex`).
-Bygningsavstandssjekken følger norsk **allemannsrett** — det juridiske
-rammeverket er norsk og **gjelder ikke nødvendigvis i andre land**.
-HUD-bryteren «Pauser» styrer påminnelsestekst; intervall/varighet redigeres i
-kjøreinnstillinger.
+**Hvile og overnatting.** Hver reisemåte har egne pausestandarder. Bil bruker
+timer mellom pauser; fottur og sykling bruker tradisjonelle skandinaviske
+rasteavstander ([`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md));
+lastebil følger EU-regler for kjøre- og hviletid
+([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). For overnatting på
+fottur avviser Navi steder for nær hus eller isbreer. Bygningsavstanden følger
+norsk **allemannsrett**: villcamping er vanligvis lov når du holder respektfull
+avstand til hus og dyrket mark. Det er en Norge-orientert standard og
+**gjelder ikke nødvendigvis andre steder** — lokal campinglov kan være strengere.
+Bryteren «Pauser» styrer bare om påminnelsen vises; rediger tider i
+kjøreinnstillinger (bil vs lastebil).
 
-**Kart og HUD.** MapLibre Vulkan tegner grunnkartet. Kollapset topp-HUD viser
-høyde; trykk åpner kartinnstillinger (rotasjon, tur-ETA, pauser, auto-zoom).
-Kollapset bunn-HUD viser zoom −/+, pausetid, tur-ETA og øko-blad; trykk åpner
-kjøre-/hvile-/drivstoffinnstillinger. Nær en sving viser den midlertidige
-tilnærmingsboksen manøverikon + avstand + neste gate
+**Kart og skjermstriper.** Kartet tegnes med MapLibre. Kollapset toppstripe viser
+høyde; trykk for kartinnstillinger (rotasjon, tur-ETA, pauser, auto-zoom).
+Kollapset bunnstripe viser zoom, pausetid, tur-ETA og økoblad; trykk for kjøre-,
+hvile- og drivstoffinnstillinger. Nær en sving viser en kort instruksjonsboks
+manøver, avstand og neste gate
 ([`docs/approach-instructions.md`](docs/approach-instructions.md)).
 
-**Høyde på emulatoren.** Android Studios Automotive-emulator GNSS rapporterer
-ofte feil vertikal fiksering. Det er en **emulatorbegrensning**, ikke en
-appfeil. HUD foretrekker DEM-terrenghøyde fra disk når en flis dekker fikset;
-på ekte maskinvare kan GPS-høyde brukes når DEM mangler.
+**Høyde på emulatoren.** Automotive-emulatorens GPS-høyde er ofte feil (for
+eksempel 0 m eller et stort avvik på et kjent sted). Det er en
+**emulatorbegrensning**, ikke en appfeil. Høydevisningen foretrekker
+terrenghøyde fra nedlastede høydefiler når de finnes; på ekte enhet kan
+GPS-høyde brukes når slike filer mangler.
 
-**Spor.** `TrackStore` oppdaterer stasjoner etter id, utløper etter tidsavbrudd
-og filtrerer med Haversine-rekkevidde ([`docs/APRS.md`](docs/APRS.md)).
-RF-dekoding leveres ikke; IQ via `rtl-sdr-rs` er planlagt
+**Bevegelige markører.** Nærliggende sporstasjoner kan vises på kartet og
+forsvinne når de er utdaterte ([`docs/APRS.md`](docs/APRS.md)). Live
+radiodekoding er ikke med ennå; USB-SDR er planlagt
 ([`docs/APRS-SDR.md`](docs/APRS-SDR.md)).
 
 ## Innstillinger
@@ -236,7 +235,7 @@ Auto-zoom-nivå redigeres i **kartinnstillinger** (topplinje), lagres via
 | Visningsrekkevidde | Begrenset **50–150 km** | `TrackStore::set_range_km` / `visible` |
 | Stasjons-tidsavbrudd | Maks **3600 s** | `TrackStore::set_timeout_s` / `expire` |
 
-Mer detalj: [`architecture.md`](architecture.md), [`docs/API.md`](docs/API.md),
+Mer detalj: [`docs/architecture.md`](docs/architecture.md), [`docs/API.md`](docs/API.md),
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 
 ## Fungerende app (emulatorskjermbilder)
@@ -259,10 +258,11 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 
 | Dokument | Beskrivelse |
 |---|---|
-| [`architecture.md`](architecture.md) | Kassekobling, trådlag, SQLite / FTS / grafbuffer, plugins |
+| [`docs/architecture.md`](docs/architecture.md) | Hvordan delene henger sammen (databaser, tråder, plugins) |
 | [`docs/bilder.md`](docs/bilder.md) | Emulatorskjermbildegalleri (norsk) |
 | [`docs/pictures.md`](docs/pictures.md) | Emulatorskjermbildegalleri (engelsk) |
 | [`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md) | Rast/vei-grunnlag for standard pauseintervaller (fottur og sykling); [engelsk](docs/historical-background.md) |
+| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Lastebil EU kjøre-/hviletid: håndhevet vs sporet vs utsatt |
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Størrelse og plassering av kjøre-HUD og menyer |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs frakoblet Protomaps PMTiles; 3D-port |
 | [`docs/approach-instructions.md`](docs/approach-instructions.md) | Midlertidig manøver-tilnærmingsboks |
@@ -285,8 +285,8 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 | [`docs/imu-calibration.md`](docs/imu-calibration.md) | Utsatt: IMU pitch/roll-nullstilling for øko-høyde |
 | [`docs/debugging.md`](docs/debugging.md) | Vert- + Android-feilsøkingsløkker |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | **Påkrevd:** sjekkliste for fysisk enhet vs emulator |
-| [`test-results.md`](test-results.md) | Vert-integrasjonstestnotater |
-| [`android-test-results.md`](android-test-results.md) | Resultater på enhet / emulator |
+| [`docs/test-results.md`](docs/test-results.md) | Vert-integrasjonstestnotater |
+| [`docs/android-test-results.md`](docs/android-test-results.md) | Resultater på enhet / emulator |
 
 ## Ikoner (Navit)
 
@@ -386,8 +386,9 @@ lyd/UI.
 - `navi-ffi/` — UniFFI CDYLIB for Android og andre verter.
 - `app/` — Android-vert (Kotlin/Compose) som kobler til kjernen via UniFFI.
 - `plugin-host/` / `plugin-sdk/` / `plugins/` — sandkasse WASM-vert (innholdsplugins utsatt; se [`docs/plugins.md`](docs/plugins.md)).
-- Hvordan kasser og databaser henger sammen: [`architecture.md`](architecture.md).
-- `test-results.md` / `android-test-results.md` — integrasjonsrapporter.
+- Hvordan delene henger sammen: [`docs/architecture.md`](docs/architecture.md).
+- [`docs/test-results.md`](docs/test-results.md) /
+  [`docs/android-test-results.md`](docs/android-test-results.md) — integrasjonsrapporter.
 
 ## Vertstester
 

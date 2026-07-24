@@ -25,7 +25,7 @@ APRS tracks: UniFFI `FfiTrackStore` / `haversineKm` (see [`APRS.md`](APRS.md));
 SDR ingest planned with [`rtl-sdr-rs`](https://crates.io/crates/rtl-sdr-rs)
 ([`APRS-SDR.md`](APRS-SDR.md)).
 CAT / repeater auto-tune: see [`CAT.md`](CAT.md).
-Crate wiring and databases: see [`../architecture.md`](../architecture.md).
+Crate wiring and databases: see [`architecture.md`](architecture.md).
 Wire protocol index: see [`PROTOCOLS.md`](PROTOCOLS.md).
 
 Internal Rust modules are documented at the crate root of `driver-break-core`.

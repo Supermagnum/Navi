@@ -32,14 +32,15 @@ throughout.
 - [Host tests](#host-tests)
 - [Known issues](#known-issues)
 
-Further reading in-repo: crate wiring and SQLite layout in
-[`architecture.md`](architecture.md); plugin ideas in
+Further reading in-repo: how the pieces fit together in
+[`docs/architecture.md`](docs/architecture.md); plugin ideas in
 [`docs/plugins.md`](docs/plugins.md); Android build steps in
 [`docs/android-build.md`](docs/android-build.md); Linux core build in
 [`docs/build-linux.md`](docs/build-linux.md); debugging in
 [`docs/debugging.md`](docs/debugging.md); HUD bar/menu layout in
-[`docs/hud-layout.md`](docs/hud-layout.md); map styles / PMTiles / 3D in
-[`docs/map-styles.md`](docs/map-styles.md); IMU mount calibration (deferred) in
+[`docs/hud-layout.md`](docs/hud-layout.md); map styles / offline maps / 3D in
+[`docs/map-styles.md`](docs/map-styles.md); truck driving-time rules in
+[`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md); IMU mount calibration (deferred) in
 [`docs/imu-calibration.md`](docs/imu-calibration.md).
 
 # Navi
@@ -70,24 +71,24 @@ plugins are not shipped yet ([`docs/plugins.md`](docs/plugins.md)).
 
 | Feature | What you get | Status |
 |---|---|---|
-| **Profiles** | Car, motorcycle, cycling, hiking, truck, mobile home (electric variants in enum; primary UI chips are the non-electric set) | Done |
-| **Vehicle limits** | Axle / bogie / height / width / length persist in SQLite and are applied by `plan_car_route` via `RouteOptions` (hard exclude when OSM clearance tags are violated) | Done |
-| **Avoidances** | Avoid major roads / tolls / ferries toggles change the planned route through `shortest_path_with_options` | Done |
-| **Follow official networks** | Hiking / cycling soft preference for `type=route` + matching `network=` tiers (off by default); gaps fall back to ordinary paths; difficulty tags as route metadata; named routes in FTS | Done |
-| **Eco routing** | DEM elevation + drag/mass/rolling into edge costs; graph cache; A*; `EcoConfig::for_profile` regen on electric profiles in the FFI planner; formulas in [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md) | Done |
-| **Corridor / region routing** | OSM `.pbf` → graph → eco-reweight → cached graph → A* → polyline + break POIs on MapLibre | Done |
-| **POI search** | FTS place index (incl. named route relations); To / Via / From ([`docs/poi.md`](docs/poi.md)). Hut radius guidance: [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md). Categories include Fishing (`leisure=fishing`) | Done |
-| **Rest & breaks** | Profile rest defaults ([rast/vei for hike/cycle](docs/historical-background.md)); car HUD minutes-to-break; break POIs along route; overnight building/glacier filter on hiking FFI pauses | Done |
-| **Drive HUD** | Collapsed top (altitude; tap → map settings) + bottom (zoom −/+, break/ETA, eco; tap → drive settings) | Done |
-| **Map rotation** | Compass, direction-of-travel, or north-up camera bearing | Done |
-| **Moving icons** | `TrackStore` (upsert, timeout, 50–150 km range); Compose overlay can draw stations | **Partial** — store + map path exist; no live APRS feed; app demos via test hooks |
-| **OSM updates** | Opt-in Geofabrik check / `.osc.gz` (needs host `osmium`) or full re-download ([`docs/osm-updates.md`](docs/osm-updates.md)) | Done |
-| **Plugins** | Sandboxed WASM host + HostApi + isolation tests; example `log-hello` / `busy-loop` | **Host done; content plugins deferred** — intentional (see [`docs/plugins.md`](docs/plugins.md)); not loaded by the Android app yet |
+| **Travel modes** | Car, motorcycle, bicycle, hiking, truck, and motorhome. Electric versions exist for later use; the main buttons are the everyday modes. | Done |
+| **Vehicle size limits** | Save height, width, length, axle load, and similar limits. Routes skip roads the map says are too tight or too low for your vehicle. | Done |
+| **Avoidances** | Turn on avoid motorways, tolls, or ferries and the planned path actually changes. | Done |
+| **Follow official networks** | For hiking and cycling, prefer marked long-distance trails and cycle routes when that option is on (off by default). Ordinary paths stay available so a gap in the marked network never strands you. Named trails are searchable. | Done |
+| **Eco routing** | Prefer routes that use less energy by taking hills into account. Electric modes get credit for downhill recovery. Formulas: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Done |
+| **Offline route planning** | Download a map region once, plan on the device, and see the route line plus suggested stops on the map. | Done |
+| **Place search** | Search places and set From / Via / To ([`docs/poi.md`](docs/poi.md)). Includes fishing spots and hut search distance guidance ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Done |
+| **Rest & breaks** | Break reminders and suggested stops along the route. Hiking and cycling use traditional Scandinavian rest distances ([background](docs/historical-background.md)). Trucks follow EU driving-time rules for breaks and daily/weekly driving limits ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). Hiking overnight stops keep a respectful distance from buildings and glaciers. | **Partial** — car, hike, and cycle ready; truck single-day driving and breaks ready; multi-day truck rest planning not yet |
+| **Drive bars** | Slim top bar (altitude; tap for map settings) and bottom bar (zoom, break time, trip ETA, eco leaf; tap for drive settings). | Done |
+| **Map rotation** | Align the map with the compass, with your travel direction, or with north always up. | Done |
+| **Moving icons** | Show nearby tracked markers on the map (for example radio station symbols) within about 50–150 km. | **Partial** — drawing works; a live radio feed is not built in yet |
+| **Map data updates** | When you choose, check for OpenStreetMap updates and apply them, or download a fresh region ([`docs/osm-updates.md`](docs/osm-updates.md)). Never updates quietly in the background. | Done |
+| **Plugins** | A safe plugin system is ready for future extras. Extra content plugins are not shipped yet on purpose ([`docs/plugins.md`](docs/plugins.md)). | Host ready; content deferred |
 
-**Real hardware:** Development and automated checks so far use the Android
-Automotive **emulator only**. The app **needs testing on real hardware** before
-any shipping claim — GPS/IMU, MapLibre native layers, Vulkan/GLES, sensors, and
-performance differ from the AVD. Follow
+**Real hardware:** So far the app has been developed and checked mainly on the
+Android Automotive **emulator**. It still **needs testing on real head units**
+before anyone treats it as ready to ship — GPS, sensors, graphics, and speed
+differ on real cars. Checklist:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 
 ## Where data comes from
@@ -116,73 +117,62 @@ Country/region PMTiles extracts can be prepared with
 
 ## How features work
 
-**Follow official networks (hiking / cycling).** Off by default. When enabled,
-edges that are members of matching `type=route` relations (`route=hiking|foot` +
-`network=iwn|nwn|rwn|lwn`, or `route=bicycle|mtb` + `icn|ncn|rcn|lcn`) get a soft
-cost preference — non-network ways stay available so gaps never fail the plan.
-Difficulty tags (`sac_scale`, `mtb:scale`, …) appear as informational
-`route_metadata` in the plan report. Named route `name`/`ref`/`operator` values
-are indexed into place FTS for To/Via search. Known limitations this pass: one
-level of `type=superroute` only; Benelux-style node networks and tier-weighted
-preference (e.g. `nwn` over `lwn`) are deferred.
+**Follow official networks (hiking / cycling).** Off by default. When on, the
+planner prefers marked hiking and cycling networks where they exist, but it can
+still use ordinary paths so a missing stretch of trail never blocks the whole
+route. Trail difficulty notes may appear as extra info on the plan. Named
+official routes are included in place search. Not yet: preferring higher-tier
+networks over local ones, and some special “node network” styles used in parts
+of Europe.
 
-**Routing stack.** A regional `.pbf` is parsed into a road graph. With eco on,
-edges are reweighted using DEM elevation and `EcoConfig` physics
-(`segment_energy_joules`), then persisted (`NAVIGPH1` cache) so the next launch
-skips a full reweight. A* finds a corridor; the Android host draws the polyline
-and destination marker on MapLibre.
+**How a route is planned.** You download a regional OpenStreetMap extract once.
+Navi builds a road network from it. With eco mode on, hills change how
+“expensive” each road segment is, and that result is cached so the next plan is
+faster. The app finds a path and draws it on the map with the destination and
+any suggested breaks.
 
-**Eco vs length.** Length-only routing ignores hills. Eco prefers lower energy
-(climbs cost PE). Combustion profiles keep regen at 0 so descents are not
-“free”; electric profiles (`CarElectric` / `TruckElectric` /
-`MotorcycleElectric`) credit a fraction of descent PE via
-`EcoConfig::for_profile`. Live OBD/J1939 fuel rate can refine costs later via
-`LiveEnergySnapshot` ([`docs/ECU.md`](docs/ECU.md)); today fuel learning uses
-persisted tank / fuel-added when no ECU is present.
+**Eco vs shortest.** Shortest distance ignores hills. Eco prefers less energy
+use, so steep climbs cost more. Petrol and diesel modes do not treat downhill as
+“free”; electric modes get partial credit for energy recovered going downhill.
+If a car computer (OBD / similar) is connected later, live fuel use can refine
+this ([`docs/ECU.md`](docs/ECU.md)). Today, without that, the app can learn from
+tank size and fuel added.
 
-**POI & search.** Categories and tag rules live in [`docs/poi.md`](docs/poi.md)
-(including **Fishing** / `leisure=fishing`, icon `fish.svg`). Suggested
-network-hut / trail preference radii for hiking and cycling (spacing stats for
-DNT, STF, Alps, etc.) are in
-[`docs/poi-search-defaults.md`](docs/poi-search-defaults.md). Place FTS also
-indexes named official route relations (`name` / `ref` / `operator`). Search
-hits set To/Via and recentre the camera. Basemap POIs come from the vector
-style; app-owned markers use rasterized Navit icons.
+**Places and search.** What counts as a cafe, hut, fishing spot, and so on is
+described in [`docs/poi.md`](docs/poi.md). Suggested search distances for network
+huts and trails are in [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md).
+Search results set From / Via / To and move the map. The basemap shows its own
+labels; app markers use the bundled icons.
 
-**Rest / overnight.** Rest parameters are profile-scoped (car hours between
-breaks, hiking/cycling rast distances, etc.). Hiking and cycling defaults
-(11.295 km / 2.275 km / 40 km day; 28.24 km / 5.69 km / 100 km day) come from
-Scandinavian *rast* / *vei* tradition — see
-[`docs/historical-background.md`](docs/historical-background.md). Safety rules
-reject overnight candidates too close to buildings or glaciers (hiking FFI:
-buildings from the POI load, glaciers from the existing barrier index — no
-extra overnight PBF scan). The
-building-distance check follows the Norwegian **right to roam**
-(*allemannsretten*): wild camping is generally allowed when you stay a
-respectful distance from houses and cultivated land. That legal framework is
-Norwegian and **may not apply in other countries** — local access and camping
-law can be stricter or different, so treat the rule as a Norway-oriented
-default, not universal advice. The HUD “Breaks” toggle gates reminder display;
-interval/duration defaults are edited in Drive settings.
+**Rest and overnight.** Each travel mode has its own break defaults. Cars use
+hours between breaks; hiking and cycling use traditional Scandinavian rest
+distances ([`docs/historical-background.md`](docs/historical-background.md));
+trucks use EU driving-time rules
+([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)). For hiking overnight
+suggestions, Navi rejects spots too close to buildings or glaciers. The
+building-distance idea follows the Norwegian **right to roam**
+(*allemannsretten*): wild camping is generally allowed if you stay a respectful
+distance from houses and cultivated land. That is a Norway-oriented default and
+**may not apply elsewhere** — local camping law can be stricter. The “Breaks”
+toggle only controls whether the reminder is shown; edit times in Drive
+settings (Car vs Truck).
 
-**Map & HUD.** MapLibre Vulkan renders the basemap. Collapsed top HUD shows
-altitude; tap opens map settings (rotation, Trip ETA, Breaks, Auto-zoom level).
-Collapsed bottom HUD shows zoom −/+, break time, trip ETA, and eco leaf; tap
-opens drive/rest/fuel settings. Near a turn, the temporary approach-instruction
-box shows maneuver icon + distance + next street
+**Map and on-screen bars.** The map is drawn with MapLibre. The collapsed top
+bar shows altitude; tap it for map settings (rotation, trip ETA, breaks,
+auto-zoom). The collapsed bottom bar shows zoom, break time, trip ETA, and the
+eco leaf; tap it for drive, rest, and fuel settings. Near a turn, a short
+instruction box shows the maneuver, distance, and next street
 ([`docs/approach-instructions.md`](docs/approach-instructions.md)).
 
-**Altitude on the emulator.** Android Studio’s Automotive emulator GNSS often
-reports a wrong vertical fix (`Location.altitude` / MSL fields that do not match
-terrain — e.g. `0` or a large offset at a known ~172 m site). That is an
-**emulator GPS limitation**, not an app bug. The HUD prefers on-disk DEM terrain
-height when a tile covers the fix so the readout stays useful during emulator
-development; on real hardware, GPS altitude can still be used when no DEM tile
-is present.
+**Altitude on the emulator.** The Automotive emulator’s GPS height is often
+wrong (for example 0 m or a large offset at a known hill). That is an
+**emulator GPS limitation**, not an app bug. The altitude readout prefers
+terrain height from downloaded elevation files when available; on a real device,
+GPS height can still be used when those files are missing.
 
-**Tracks.** `TrackStore` upserts stations by id, expires by timeout, and filters
-with Haversine range ([`docs/APRS.md`](docs/APRS.md)). RF decode is not shipped;
-IQ via `rtl-sdr-rs` is planned ([`docs/APRS-SDR.md`](docs/APRS-SDR.md)).
+**Moving markers.** Nearby tracked stations can appear on the map and time out
+when stale ([`docs/APRS.md`](docs/APRS.md)). Live radio decoding is not included
+yet; USB SDR support is planned ([`docs/APRS-SDR.md`](docs/APRS-SDR.md)).
 
 ## Settings
 
@@ -216,9 +206,10 @@ dismisses; Cancel discards the sheet without saving that edit session.
 
 | Field | Persisted as | Notes |
 |---|---|---|
-| Hours between breaks | Car rest defaults | Profile default for Car, not a one-trip override |
-| Rest time (minutes) | Car rest defaults | Same persistence as break interval |
-| Eco mode | Car rest `ecoModeEnabled` | Leaf on bottom HUD when on |
+| Hours between breaks | Car **or** Truck rest defaults | Truck uses EC 561 `mandatory_break_after_hours` when Truck/Mobile home is selected |
+| Rest time (minutes) | Car **or** Truck rest defaults | Truck continuous 45 (or 15+30 when split is on) |
+| Eco mode | Profile rest `ecoModeEnabled` | Leaf on bottom HUD when on |
+| Truck split break / +1 h exceptional | `TruckRestParams` | Truck profile only; exceptional arm is explicit opt-in |
 | Units liters / gallons | `FuelConfig.prefer_liters` | Display preference; storage is always litres |
 | Tank capacity | `FuelConfig.tank_capacity_l` | Converted from gal→L on save when units are gallons |
 | Fuel added | `FuelConfig.fuel_added_l` | Feeds adaptive consumption when live ECU is absent |
@@ -229,7 +220,7 @@ Auto-zoom level is edited in the **map settings** sheet (top bar), persisted via
 
 | Control | Persisted as | Notes |
 |---|---|---|
-| Travel profile chip | In-memory + rest load on change | Menu focus: Car, Cycling, Hiking, Motorcycle (truck / mobile home / electrics in enum) |
+| Travel profile chip | In-memory + rest load on change | Menu focus: Car, Cycling, Hiking, Motorcycle, Truck, Mobile home |
 | Eco toggle | With rest / profile defaults | Hiking & cycling lock eco on; motor profiles can toggle |
 | **Follow official hiking/cycling networks** | `prefer_official_networks` (default off) | Hiking / Cycling only — soft cost preference; gaps fall back to ordinary paths |
 | Avoid motorways / tolls / ferries | Passed into `plan_car_route` each plan | Changes the planned route (not report-only) |
@@ -242,7 +233,7 @@ Auto-zoom level is edited in the **map settings** sheet (top bar), persisted via
 | Display range | Clamped **50–150 km** (no unlimited global) | `TrackStore::set_range_km` / `visible` |
 | Station timeout | Max **3600 s** | `TrackStore::set_timeout_s` / `expire` |
 
-More detail: [`architecture.md`](architecture.md), [`docs/API.md`](docs/API.md),
+More detail: [`docs/architecture.md`](docs/architecture.md), [`docs/API.md`](docs/API.md),
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 
 ## Working app (emulator screenshots)
@@ -266,10 +257,11 @@ overlays, eco leaf, rotation, bearing, moving icons):
 
 | Document | Description |
 |---|---|
-| [`architecture.md`](architecture.md) | Crate wiring, thread tiers, SQLite / FTS / graph cache, plugins |
+| [`docs/architecture.md`](docs/architecture.md) | How the parts fit together (databases, threads, plugins) |
 | [`docs/pictures.md`](docs/pictures.md) | Emulator screenshot gallery |
 | [`docs/bilder.md`](docs/bilder.md) | Emulator screenshot gallery (Norwegian) |
 | [`docs/historical-background.md`](docs/historical-background.md) | Rast/vei basis for hiking & cycling rest-interval defaults |
+| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Truck EC 561/2006: enforced vs tracked vs deferred |
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Adjust size and placement of drive HUD bars and menus |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs offline Protomaps PMTiles; 3D gate |
 | [`docs/approach-instructions.md`](docs/approach-instructions.md) | Deferred: temporary maneuver approach box (icon + distance + name) |
@@ -278,6 +270,7 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/osm-updates.md`](docs/osm-updates.md) | Opt-in Geofabrik check / `.osc.gz` / full re-download |
 | [`docs/plugins.md`](docs/plugins.md) | Plugin **host** status (intentional: no content plugins yet) + HostApi, isolation, roadmap ideas |
 | [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Spec: allemannsretten / multi-country wild-camping suggestions (plugin, not core) |
+| [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Spec: fuel/water resupply lookahead, POI confidence, remote/arid buffers (plugin, not core) |
 | [`docs/icons.md`](docs/icons.md) | Icon inventory; custom SVG icons (Inkscape / Synfig); Navit GPL-v2 |
 | [`docs/API.md`](docs/API.md) | UniFFI / host API overview |
 | [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) | Wire protocol index (UniFFI, plugins, ECU/APRS/CAT) |
@@ -293,8 +286,8 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/approach-instructions.md`](docs/approach-instructions.md) | Approach-instruction box (Navit prior art + locked thresholds) |
 | [`docs/debugging.md`](docs/debugging.md) | Host + Android debug loops (logcat, Studio, instrumented tests) |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | **Required:** physical device checklist vs emulator baseline |
-| [`test-results.md`](test-results.md) | Host integration test notes |
-| [`android-test-results.md`](android-test-results.md) | On-device / emulator results |
+| [`docs/test-results.md`](docs/test-results.md) | Host integration test notes |
+| [`docs/android-test-results.md`](docs/android-test-results.md) | On-device / emulator results |
 
 ## Icons (Navit)
 
@@ -408,8 +401,9 @@ work runs at lower OS priority than audio/UI.
 - `navi-ffi/` — UniFFI CDYLIB for Android and other hosts.
 - `app/` — Android host (Kotlin/Compose) linking the core via UniFFI.
 - `plugin-host/` / `plugin-sdk/` / `plugins/` — sandboxed WASM host (content plugins deferred; see [`docs/plugins.md`](docs/plugins.md)).
-- How crates and databases connect: [`architecture.md`](architecture.md).
-- `test-results.md` / `android-test-results.md` — integration reports.
+- How the parts fit together: [`docs/architecture.md`](docs/architecture.md).
+- [`docs/test-results.md`](docs/test-results.md) /
+  [`docs/android-test-results.md`](docs/android-test-results.md) — integration reports.
 
 ## Host tests
 

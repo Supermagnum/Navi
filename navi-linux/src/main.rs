@@ -2,7 +2,7 @@
 //!
 //! There is no desktop MapLibre UI; this binary proves the highest-priority
 //! sensor tier can ingest real hardware data for Compass / Direction-of-travel
-//! rotation modes (see docs/build-linux.md, architecture.md).
+//! rotation modes (see docs/build-linux.md, docs/architecture.md).
 
 use std::env;
 use std::thread;

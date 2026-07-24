@@ -198,6 +198,10 @@ object NaviMapTestHooks {
     @Volatile
     var requestClearRoute: Boolean = false
 
+    /** When set, MainActivity switches travel profile (test injection). */
+    @Volatile
+    var requestTravelProfile: uniffi.navi.TravelProfile? = null
+
     /** Optional: set break display mode (null = no request). */
     @Volatile
     var requestBreakAsDistance: Boolean? = null

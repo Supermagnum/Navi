@@ -42,11 +42,30 @@ import androidx.compose.ui.unit.dp
 import uniffi.navi.FfiCarRestSettings
 import uniffi.navi.FfiFuelConfig
 import uniffi.navi.FfiIconTheme
+import uniffi.navi.FfiTruckRestSettings
 import uniffi.navi.loadCarRestSettings
 import uniffi.navi.loadFuelConfig
+import uniffi.navi.loadTruckRestSettings
 import uniffi.navi.rasterizeIconPng
 import uniffi.navi.saveCarRestSettings
 import uniffi.navi.saveFuelConfig
+import uniffi.navi.saveTruckRestSettings
+
+/** Profiles that use TruckRestParams / EC 561 (commercial HGV cadence). */
+fun usesTruckRestSettings(profile: TravelProfile): Boolean =
+    profile == TravelProfile.TRUCK ||
+        profile == TravelProfile.TRUCK_ELECTRIC
+// Mobile home uses car-style soft break reminders — not EC 561 legal tracking.
+
+/** Hours until the next mandatory break for the active profile. */
+fun breakIntervalHoursForProfile(dataDir: String, profile: TravelProfile): Double =
+    if (usesTruckRestSettings(profile)) {
+        runCatching { loadTruckRestSettings(dataDir).mandatoryBreakAfterHours }
+            .getOrDefault(4.5)
+    } else {
+        runCatching { loadCarRestSettings(dataDir).breakIntervalHours }
+            .getOrDefault(4.0)
+    }
 
 enum class MapRotationMode {
     Compass,
@@ -446,19 +465,35 @@ fun DriveSettingsSheet(
 ) {
     var breakHours by remember { mutableStateOf("4.0") }
     var restMins by remember { mutableStateOf("15") }
+    var preferSplitBreak by remember { mutableStateOf(false) }
+    var exceptionalArmed by remember { mutableStateOf(false) }
     var tank by remember { mutableStateOf("") }
     var fuelAdded by remember { mutableStateOf("") }
     var preferLiters by remember { mutableStateOf(true) }
     var status by remember { mutableStateOf("") }
     var asDistance by remember { mutableStateOf(breakAsDistance) }
     var metric by remember { mutableStateOf(preferMetric) }
+    val truckRest = usesTruckRestSettings(travelProfile)
 
-    LaunchedEffect(dataDir) {
-        val rest = runCatching { loadCarRestSettings(dataDir) }.getOrNull()
-        if (rest != null) {
-            breakHours = rest.breakIntervalHours.toString()
-            restMins = rest.restDurationMinutes.toString()
-            onEcoChange(rest.ecoModeEnabled)
+    LaunchedEffect(dataDir, travelProfile) {
+        if (usesTruckRestSettings(travelProfile)) {
+            val rest = runCatching { loadTruckRestSettings(dataDir) }.getOrNull()
+            if (rest != null) {
+                breakHours = rest.mandatoryBreakAfterHours.toString()
+                restMins = rest.breakDurationMinutes.toString()
+                preferSplitBreak = rest.preferSplitBreak
+                exceptionalArmed = rest.exceptionalExtensionArmed
+                onEcoChange(rest.ecoModeEnabled)
+            }
+        } else {
+            val rest = runCatching { loadCarRestSettings(dataDir) }.getOrNull()
+            if (rest != null) {
+                breakHours = rest.breakIntervalHours.toString()
+                restMins = rest.restDurationMinutes.toString()
+                preferSplitBreak = false
+                exceptionalArmed = false
+                onEcoChange(rest.ecoModeEnabled)
+            }
         }
         val fuel = runCatching { loadFuelConfig(dataDir) }.getOrNull()
         if (fuel != null) {
@@ -531,13 +566,26 @@ fun DriveSettingsSheet(
                 }
             }
             Text(
-                "Break and rest values save as the Car profile default (not a one-trip override).",
+                if (truckRest) {
+                    "Break / rest values save as Truck EC 561/2006 defaults (not a one-trip override)."
+                } else {
+                    "Break and rest values save as the Car profile default (not a one-trip override)."
+                },
                 style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("drive_rest_profile_hint"),
             )
             OutlinedTextField(
                 value = breakHours,
                 onValueChange = { breakHours = it },
-                label = { Text("Desired hours between breaks (Car)") },
+                label = {
+                    Text(
+                        if (truckRest) {
+                            "Mandatory break after (hours, Truck)"
+                        } else {
+                            "Desired hours between breaks (Car)"
+                        },
+                    )
+                },
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -546,12 +594,38 @@ fun DriveSettingsSheet(
             OutlinedTextField(
                 value = restMins,
                 onValueChange = { restMins = it },
-                label = { Text("Rest time (minutes)") },
+                label = {
+                    Text(
+                        if (truckRest) {
+                            "Break duration (minutes, continuous)"
+                        } else {
+                            "Rest time (minutes)"
+                        },
+                    )
+                },
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("field_rest_mins"),
             )
+            if (truckRest) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Split break 15+30 min")
+                    Switch(
+                        checked = preferSplitBreak,
+                        onCheckedChange = { preferSplitBreak = it },
+                        modifier = Modifier.testTag("toggle_truck_split_break"),
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Arm +1 h exceptional extension")
+                    Switch(
+                        checked = exceptionalArmed,
+                        onCheckedChange = { exceptionalArmed = it },
+                        modifier = Modifier.testTag("toggle_truck_exceptional"),
+                    )
+                }
+            }
             Text("Next break shown as", style = MaterialTheme.typography.labelLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
@@ -627,14 +701,36 @@ fun DriveSettingsSheet(
                         val toLiters = if (preferLiters) 1.0 else 3.785411784
                         val tankL = tank.toDoubleOrNull()?.times(toLiters)
                         val addedL = fuelAdded.toDoubleOrNull()?.times(toLiters)
-                        val restOk = saveCarRestSettings(
-                            dataDir,
-                            FfiCarRestSettings(
-                                breakIntervalHours = hours,
-                                restDurationMinutes = mins.toUInt(),
-                                ecoModeEnabled = ecoActive,
-                            ),
-                        )
+                        val restOk = if (usesTruckRestSettings(travelProfile)) {
+                            val prev = runCatching { loadTruckRestSettings(dataDir) }.getOrNull()
+                            saveTruckRestSettings(
+                                dataDir,
+                                FfiTruckRestSettings(
+                                    mandatoryBreakAfterHours = hours,
+                                    breakDurationMinutes = mins.toUInt(),
+                                    preferSplitBreak = preferSplitBreak,
+                                    maxDailyDrivingHours = prev?.maxDailyDrivingHours ?: 9.0,
+                                    maxDailyDrivingExtendedHours =
+                                        prev?.maxDailyDrivingExtendedHours ?: 10.0,
+                                    maxDailyExtensionsPerWeek =
+                                        prev?.maxDailyExtensionsPerWeek ?: 2u,
+                                    maxWeeklyDrivingHours = prev?.maxWeeklyDrivingHours ?: 56.0,
+                                    maxFortnightlyDrivingHours =
+                                        prev?.maxFortnightlyDrivingHours ?: 90.0,
+                                    exceptionalExtensionArmed = exceptionalArmed,
+                                    ecoModeEnabled = ecoActive,
+                                ),
+                            )
+                        } else {
+                            saveCarRestSettings(
+                                dataDir,
+                                FfiCarRestSettings(
+                                    breakIntervalHours = hours,
+                                    restDurationMinutes = mins.toUInt(),
+                                    ecoModeEnabled = ecoActive,
+                                ),
+                            )
+                        }
                         val fuelOk = saveFuelConfig(
                             dataDir,
                             FfiFuelConfig(

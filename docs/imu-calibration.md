@@ -11,7 +11,7 @@ Compass or Direction-of-travel map rotation (those modes need heading/course;
 they work without this calibration).
 
 Related: [`build-linux.md`](build-linux.md) (gpsd + IMU on Linux),
-[`architecture.md`](../architecture.md) (sensor tier), eco costing in core.
+[`architecture.md`](architecture.md) (sensor tier), eco costing in core.
 
 ---
 

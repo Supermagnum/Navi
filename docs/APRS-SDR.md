@@ -364,5 +364,5 @@ rtl-sdr-rs (IQ) → mixer/decimate → FM disc + PLL bits → AX.25/HDLC
 | Map markers | Implemented: Compose overlay / MapLibre hooks |
 
 See also: [`APRS.md`](APRS.md) (protocol fields + range filtering),
-[`PROTOCOLS.md`](PROTOCOLS.md), [`architecture.md`](../architecture.md) (T0
+[`PROTOCOLS.md`](PROTOCOLS.md), [`architecture.md`](architecture.md) (T0
 sensor tier).

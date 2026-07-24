@@ -294,7 +294,7 @@ Use a **non-zero IF offset** (typically 50–100 kHz) on real RTL-SDR hardware;
 DC-centered tune is synthetic-test only. Full bit-stream expectations,
 footguns, and hardware notes: [`APRS-SDR.md`](APRS-SDR.md).
 
-Related: sensor tier (T0) in [`architecture.md`](../architecture.md). Protocol
+Related: sensor tier (T0) in [`architecture.md`](architecture.md). Protocol
 index: [`PROTOCOLS.md`](PROTOCOLS.md). Vehicle energy buses (separate from
 APRS): [`ECU.md`](ECU.md).
 

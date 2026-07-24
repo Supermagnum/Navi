@@ -2,7 +2,9 @@ use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::config::{EcoConfig, FuelConfig, RestConfig, SafetyConfig, VehicleLimits};
+use crate::config::{
+    EcoConfig, FuelConfig, RestConfig, SafetyConfig, TruckDrivingHistory, VehicleLimits,
+};
 use crate::storage::Storage;
 
 const REST_CONFIG_KEY: &str = "rest_config";
@@ -11,6 +13,7 @@ const ECO_CONFIG_KEY: &str = "eco_config";
 const VEHICLE_LIMITS_KEY: &str = "vehicle_limits";
 const FUEL_CONFIG_KEY: &str = "fuel_config";
 const PREFER_OFFICIAL_NETWORKS_KEY: &str = "prefer_official_networks";
+const TRUCK_DRIVING_HISTORY_KEY: &str = "truck_driving_history";
 
 pub struct ConfigStore<'a> {
     storage: &'a Storage,
@@ -68,6 +71,15 @@ impl<'a> ConfigStore<'a> {
 
     pub fn save_prefer_official_networks(&self, prefer: bool) -> SqlResult<()> {
         self.save_json(PREFER_OFFICIAL_NETWORKS_KEY, &prefer)
+    }
+
+    /// Rolling truck duty history for EC 561 weekly / fortnightly caps.
+    pub fn load_truck_driving_history(&self) -> SqlResult<TruckDrivingHistory> {
+        self.load_json(TRUCK_DRIVING_HISTORY_KEY, TruckDrivingHistory::default)
+    }
+
+    pub fn save_truck_driving_history(&self, history: &TruckDrivingHistory) -> SqlResult<()> {
+        self.save_json(TRUCK_DRIVING_HISTORY_KEY, history)
     }
 
     fn load_json<T>(&self, key: &str, default: fn() -> T) -> SqlResult<T>

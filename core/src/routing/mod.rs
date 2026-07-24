@@ -33,6 +33,13 @@ pub use osm_update::{
 pub use region::{
     provision_region, provision_region_with_elev_tar, RegionProvision, CORRIDOR_BBOX,
 };
+pub use rest::{
+    car_break_interval_hours, commit_truck_trip, evaluate_truck_trip, motor_break_interval_km,
+    truck_break_distances_km, truck_break_duration_minutes, truck_break_interval_km,
+    truck_effective_break_parts, truck_mandatory_break_after_hours, truck_max_daily_driving_hours,
+    truck_max_fortnightly_driving_hours, truck_max_weekly_driving_hours, truck_required_breaks,
+    uses_truck_rest, BreakKind, TruckDutyEvaluation,
+};
 pub use workers::WorkerPoolPlan;
 pub use safety::{
     check_overnight_candidate, DangerBarrierIndex, OvernightProximityIndex, OvernightRejectReason,

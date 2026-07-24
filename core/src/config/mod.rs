@@ -4,6 +4,7 @@ mod defaults;
 mod eco;
 mod rest_params;
 mod safety;
+mod truck_history;
 
 pub use defaults::*;
 pub use eco::EcoConfig;
@@ -12,6 +13,10 @@ pub use rest_params::{
     TruckRestParams,
 };
 pub use safety::SafetyConfig;
+pub use truck_history::{
+    civil_date_add_days, prune_truck_driving_history, record_truck_driving_hours,
+    rolling_date_window, TruckDrivingDay, TruckDrivingHistory, TruckRestKind,
+};
 
 use serde::{Deserialize, Serialize};
 

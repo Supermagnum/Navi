@@ -19,6 +19,9 @@ use driver_break_core::routing::graph::{
     OfficialNetworkKind, RoadNodeIndex, RouteGraph, RouteOptions, RoutingProfile,
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
+use driver_break_core::routing::{
+    evaluate_truck_trip, motor_break_interval_km, truck_effective_break_parts, uses_truck_rest,
+};
 use driver_break_core::routing::safety::{
     check_overnight_candidate, DangerBarrierIndex, OvernightProximityIndex,
 };
@@ -1147,6 +1150,16 @@ fn plan_car_route_inner(
     driver_break_core::download::progress::set(3, Some(5), "Planning route: finding path…");
     let s = nearest(&graph, start_lat, start_lon);
     let g = nearest(&graph, end_lat, end_lon);
+    {
+        let sn = &graph.nodes[&s];
+        let gn = &graph.nodes[&g];
+        let snap_start_m = haversine_m(start_lat, start_lon, sn.coord.y, sn.coord.x);
+        let snap_end_m = haversine_m(end_lat, end_lon, gn.coord.y, gn.coord.x);
+        report.push_str(&format!(
+            "snap_start={:.6},{:.6} dist_m={snap_start_m:.0}; snap_end={:.6},{:.6} dist_m={snap_end_m:.0}\n",
+            sn.coord.y, sn.coord.x, gn.coord.y, gn.coord.x
+        ));
+    }
     let Some((path, cost)) = graph.shortest_path_with_options(s, g, use_eco, &route_opts) else {
         report.push_str("FAIL: no route between snapped nodes\n");
         return empty(report);
@@ -1190,7 +1203,63 @@ fn plan_car_route_inner(
     // Clip POI load to the same trip bbox (never a full Ostlandet POI scan).
     let poi_index = PoiIndex::load_from_pbf_bbox(pbf, bbox).unwrap_or_else(|_| PoiIndex::new());
     let barriers = load_break_barriers(&graph, pbf, bbox);
-    let break_interval_km = 40.0_f64.min((dist_km / 2.0).max(15.0));
+
+    // Truck / TruckElectric: EC 561 timing from TruckRestParams (loaded beside cache_dir).
+    // MobileHome uses car soft break spacing (not commercial HGV legal tracking).
+    let core_profile = profile.to_core();
+    let mut rest = load_rest_config_near_cache(&cache);
+    let break_interval_km =
+        motor_break_interval_km(core_profile, &rest, dist_km, eta_minutes);
+    if uses_truck_rest(core_profile) {
+        let driving_h = eta_minutes / 60.0;
+        let parts = truck_effective_break_parts(&rest.truck);
+        report.push_str(&format!(
+            "truck_rest: break_after_h={:.2}; break_parts_min={parts:?}; daily_max_h={:.1}; weekly_max_h={:.1}; fortnightly_max_h={:.1}; break_interval_km={break_interval_km:.1}; driving_h={driving_h:.2}\n",
+            rest.truck.mandatory_break_after_hours,
+            rest.truck.max_daily_driving_hours,
+            rest.truck.max_weekly_driving_hours,
+            rest.truck.max_fortnightly_driving_hours,
+        ));
+        let mut history = load_truck_history_near_cache(&cache);
+        let today = civil_today_utc();
+        let week_id = iso_week_id_utc();
+        let week_dates = driver_break_core::config::rolling_date_window(&today, 7);
+        let fortnight_dates = driver_break_core::config::rolling_date_window(&today, 14);
+        let duty = evaluate_truck_trip(
+            &rest.truck,
+            &history,
+            driving_h,
+            &today,
+            &week_id,
+            &week_dates,
+            &fortnight_dates,
+        );
+        report.push_str(&format!(
+            "truck_duty: within_daily={}; within_weekly={}; within_fortnightly={}; allowed_daily_h={:.1}; weekly_rest_due={}\n",
+            duty.within_daily,
+            duty.within_weekly,
+            duty.within_fortnightly,
+            duty.allowed_daily_hours,
+            duty.weekly_rest_due,
+        ));
+        for n in &duty.notes {
+            report.push_str(&format!("truck_duty_note: {n}\n"));
+        }
+        // Persist accumulation so weekly / fortnightly caps track across plans.
+        driver_break_core::routing::commit_truck_trip(
+            &mut rest.truck,
+            &mut history,
+            &duty,
+            &today,
+            &week_id,
+        );
+        save_rest_and_truck_history_near_cache(&cache, &rest, &history);
+    } else {
+        report.push_str(&format!(
+            "motor_break_interval_km={break_interval_km:.1} (legacy / car-style heuristic)\n"
+        ));
+    }
+
     // Prefer stops on the planned road; fall back if reachable without danger barriers.
     let break_pois_json = build_break_pois_json(
         &poi_index,
@@ -1951,6 +2020,149 @@ pub fn save_car_rest_settings(data_dir: String, settings: FfiCarRestSettings) ->
     store.save_rest_config(&rest).is_ok()
 }
 
+/// Truck / mobile-home EC 561/2006 rest settings (persisted on `RestConfig.truck`).
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiTruckRestSettings {
+    pub mandatory_break_after_hours: f64,
+    pub break_duration_minutes: u32,
+    pub prefer_split_break: bool,
+    pub max_daily_driving_hours: f64,
+    pub max_daily_driving_extended_hours: f64,
+    pub max_daily_extensions_per_week: u32,
+    pub max_weekly_driving_hours: f64,
+    pub max_fortnightly_driving_hours: f64,
+    pub exceptional_extension_armed: bool,
+    pub eco_mode_enabled: bool,
+}
+
+fn truck_settings_from_params(t: &driver_break_core::config::TruckRestParams) -> FfiTruckRestSettings {
+    FfiTruckRestSettings {
+        mandatory_break_after_hours: t.mandatory_break_after_hours,
+        break_duration_minutes: t.break_duration_minutes,
+        prefer_split_break: t.prefer_split_break,
+        max_daily_driving_hours: t.max_daily_driving_hours,
+        max_daily_driving_extended_hours: t.max_daily_driving_extended_hours,
+        max_daily_extensions_per_week: t.max_daily_extensions_per_week,
+        max_weekly_driving_hours: t.max_weekly_driving_hours,
+        max_fortnightly_driving_hours: t.max_fortnightly_driving_hours,
+        exceptional_extension_armed: t.exceptional_extension_armed,
+        eco_mode_enabled: t.eco_mode_enabled,
+    }
+}
+
+#[uniffi::export]
+pub fn load_truck_rest_settings(data_dir: String) -> FfiTruckRestSettings {
+    let default = driver_break_core::config::TruckRestParams::default();
+    let fallback = truck_settings_from_params(&default);
+    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+        return fallback;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    let rest = store.load_rest_config().unwrap_or_default();
+    truck_settings_from_params(&rest.truck)
+}
+
+#[uniffi::export]
+pub fn save_truck_rest_settings(data_dir: String, settings: FfiTruckRestSettings) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    let mut rest = store.load_rest_config().unwrap_or_default();
+    rest.truck.mandatory_break_after_hours = settings.mandatory_break_after_hours.clamp(1.0, 6.0);
+    rest.truck.break_duration_minutes = settings.break_duration_minutes.clamp(15, 90);
+    rest.truck.prefer_split_break = settings.prefer_split_break;
+    rest.truck.max_daily_driving_hours = settings.max_daily_driving_hours.clamp(1.0, 15.0);
+    rest.truck.max_daily_driving_extended_hours =
+        settings.max_daily_driving_extended_hours.clamp(1.0, 15.0);
+    rest.truck.max_daily_extensions_per_week = settings.max_daily_extensions_per_week.min(7);
+    rest.truck.max_weekly_driving_hours = settings.max_weekly_driving_hours.clamp(1.0, 80.0);
+    rest.truck.max_fortnightly_driving_hours =
+        settings.max_fortnightly_driving_hours.clamp(1.0, 120.0);
+    rest.truck.exceptional_extension_armed = settings.exceptional_extension_armed;
+    rest.truck.eco_mode_enabled = settings.eco_mode_enabled;
+    store.save_rest_config(&rest).is_ok()
+}
+
+/// Arm / disarm the +1 h exceptional extension (explicit opt-in; not a silent default).
+#[uniffi::export]
+pub fn set_truck_exceptional_extension_armed(data_dir: String, armed: bool) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    let mut rest = store.load_rest_config().unwrap_or_default();
+    rest.truck.exceptional_extension_armed = armed;
+    store.save_rest_config(&rest).is_ok()
+}
+
+fn load_rest_config_near_cache(cache: &Path) -> RestConfig {
+    let data_dir = cache.parent().unwrap_or(cache);
+    let Ok(storage) = driver_break_core::storage::Storage::open(data_dir.join("navi.db")) else {
+        return RestConfig::default();
+    };
+    driver_break_core::storage::ConfigStore::new(&storage)
+        .load_rest_config()
+        .unwrap_or_default()
+}
+
+fn load_truck_history_near_cache(
+    cache: &Path,
+) -> driver_break_core::config::TruckDrivingHistory {
+    let data_dir = cache.parent().unwrap_or(cache);
+    let Ok(storage) = driver_break_core::storage::Storage::open(data_dir.join("navi.db")) else {
+        return driver_break_core::config::TruckDrivingHistory::default();
+    };
+    driver_break_core::storage::ConfigStore::new(&storage)
+        .load_truck_driving_history()
+        .unwrap_or_default()
+}
+
+fn save_rest_and_truck_history_near_cache(
+    cache: &Path,
+    rest: &RestConfig,
+    history: &driver_break_core::config::TruckDrivingHistory,
+) {
+    let data_dir = cache.parent().unwrap_or(cache);
+    let Ok(storage) = driver_break_core::storage::Storage::open(data_dir.join("navi.db")) else {
+        return;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    let _ = store.save_rest_config(rest);
+    let _ = store.save_truck_driving_history(history);
+}
+
+/// UTC civil date `YYYY-MM-DD` from Unix days (Howard Hinnant civil_from_days).
+fn civil_today_utc() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let z = (secs / 86_400) as i64 + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+fn iso_week_id_utc() -> String {
+    let today = civil_today_utc();
+    let y: i32 = today[0..4].parse().unwrap_or(2026);
+    let m: u32 = today[5..7].parse().unwrap_or(1);
+    let d: u32 = today[8..10].parse().unwrap_or(1);
+    static CUM: [u32; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    let doy = CUM[(m.saturating_sub(1) as usize).min(11)] + d;
+    let week = ((doy.saturating_sub(1)) / 7 + 1).min(53);
+    format!("{y:04}-W{week:02}")
+}
+
 #[uniffi::export]
 pub fn load_fuel_config(data_dir: String) -> FfiFuelConfig {
     let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
@@ -1991,14 +2203,46 @@ pub fn elevation_at(elev_dir: String, lat: f64, lon: f64) -> Option<f64> {
     elev.get_elevation(lat, lon)
 }
 
-/// Stub GPS fix — Android LocationManager is the source of truth for the map puck.
+/// Last GPS fix pushed from the Android host ([`update_gps_fix`]).
+///
+/// Rust cannot call Android LocationManager. The host must push each fused /
+/// GPS update here; [`last_gps_fix`] then returns that value. Until the first
+/// push, `available` is false (not a demo coordinate).
+fn gps_fix_slot() -> &'static std::sync::Mutex<FfiGpsFix> {
+    static SLOT: std::sync::OnceLock<std::sync::Mutex<FfiGpsFix>> = std::sync::OnceLock::new();
+    SLOT.get_or_init(|| {
+        std::sync::Mutex::new(FfiGpsFix {
+            lat: 0.0,
+            lon: 0.0,
+            available: false,
+        })
+    })
+}
+
+/// Push the device LocationManager / fused fix into the native layer.
+#[uniffi::export]
+pub fn update_gps_fix(lat: f64, lon: f64, available: bool) {
+    if let Ok(mut g) = gps_fix_slot().lock() {
+        *g = FfiGpsFix {
+            lat,
+            lon,
+            available,
+        };
+    }
+}
+
+/// Last GPS fix from [`update_gps_fix`] (Android LocationManager is the source
+/// of truth; this mirror exists for hosts/tests that read via UniFFI).
 #[uniffi::export]
 pub fn last_gps_fix() -> FfiGpsFix {
-    FfiGpsFix {
-        lat: 0.0,
-        lon: 0.0,
-        available: false,
-    }
+    gps_fix_slot()
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or(FfiGpsFix {
+            lat: 0.0,
+            lon: 0.0,
+            available: false,
+        })
 }
 
 /// Format a short validation blurb for avoid-major / toll / ferry preferences.

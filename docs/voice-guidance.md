@@ -244,7 +244,7 @@ unaffected when the setting is empty/off.
 
 | Doc | Relevance |
 |---|---|
-| [`architecture.md`](../architecture.md) | Thread tiers (T2 UI/audio); keep guidance off the routing pool |
+| [`architecture.md`](architecture.md) | Thread tiers (T2 UI/audio); keep guidance off the routing pool |
 | [`android-build.md`](android-build.md) | ABI / NDK constraints for any native audio or ONNX spike |
 | [`icons.md`](icons.md) | GPL bundling decision shared with Piper |
 | [`plugins.md`](plugins.md) | Optional future: voice as `voice_guidance` plugin ([§6](plugins.md#6-voice-guidance-voice--voice_guidance)) |

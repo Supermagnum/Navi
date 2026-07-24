@@ -149,7 +149,7 @@ Single class:
 ```
 
 Corridor fixtures: see `scripts/prepare-android-fixtures.sh`,
-`scripts/serve-android-fixtures.sh`, and [`android-test-results.md`](../android-test-results.md).
+`scripts/serve-android-fixtures.sh`, and [`android-test-results.md`](android-test-results.md).
 
 ---
 

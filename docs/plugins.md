@@ -176,6 +176,17 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | **Proposed caps** | `position_read`, `poi_query`, `route_read`, `safety_config_read`, `admin_region_read`, `clock_read`, `plugin_kv` / `storage`, `log` |
 | **Notes** | Spec only — not implemented. Informational guidance, not legal advice. No Nordic wild-camp logic for England/Wales or Denmark. |
 
+### 8. Safety / resupply lookahead (`safety` / `resupply_safety`)
+
+| | |
+|---|---|
+| **Benefit** | Before departure, warn when the largest gap between *reliable* fuel or water stops exceeds usable range (tank/load minus conservative buffer), with stricter buffers in remote/arid terrain |
+| **Docs** | [`plugins/safety-resupply.md`](plugins/safety-resupply.md) — confidence scoring, Köppen/remote mode, buffer selection, lookahead, heat/water for foot travel, confirmation cache |
+| **Host duties** | Corridor POI scan, tank/water capacity, HUD chips / spoken summary, optional weather WBGT; persist confirmations |
+| **Guest duties** | Score POIs, decide remote mode, pick buffer, run lookahead gap detection, optional heat water estimate |
+| **Proposed caps** | `position_read`, `poi_query`, `route_read`, `fuel_config_read`, `plugin_kv` / `storage`, `weather_read` (optional), `log` |
+| **Notes** | Spec only — not implemented. Distinct from core `SafetyConfig` (POI radii / overnight distances). Conservative guidance, not a supply guarantee. |
+
 ### Capability sketch (not in ABI yet)
 
 | Proposed | Purpose |
@@ -187,11 +198,12 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | `cat_vfo_set` | Ask host to program VFO 1 (frequency, offset, tone) |
 | `ecu_read` | Latest `LiveEnergySnapshot` |
 | `voice_speak` / `voice_pack_query` | Queue guidance utterance or list installed voice packs |
-| `route_read` | Active corridor samples / junction hints for camping plugin |
+| `route_read` | Active corridor samples / junction hints for camping or resupply plugins |
 | `safety_config_read` | `SafetyConfig` (e.g. `min_building_distance_m`) for shared overnight distance |
+| `fuel_config_read` | Tank / energy capacity for resupply usable-range math |
 | `admin_region_read` | Country / county for lat/lon (right-to-roam rule pack) |
 | `clock_read` | Current date for seasonal fire-ban guidance |
-| `plugin_kv` / `storage` | Small per-plugin persist (e.g. two-night camping memory) |
+| `plugin_kv` / `storage` | Small per-plugin persist (e.g. two-night camping memory, POI confirmations) |
 
 Add a capability to `plugin-host` `Capability` enum + HostApi **before** shipping
 any guest that needs it. Until then, host-native services may write into core

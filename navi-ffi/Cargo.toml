@@ -29,3 +29,7 @@ path = "uniffi-bindgen.rs"
 [[bin]]
 name = "plan-skolla-rondvassbu"
 path = "src/bin/plan_skolla_rondvassbu.rs"
+
+[[bin]]
+name = "plan-truck-live-gps"
+path = "src/bin/plan_truck_live_gps.rs"

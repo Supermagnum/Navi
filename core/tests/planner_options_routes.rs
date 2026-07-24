@@ -372,3 +372,54 @@ fn fishing_found_in_region_pbf() {
         "expected at least one leisure=fishing (or related) POI in Oslofjord bbox"
     );
 }
+
+/// Route-level: TruckRestParams break-after hours change break sample spacing
+/// (not the car mid-route km heuristic).
+#[test]
+fn truck_rest_params_change_break_placement_along_route() {
+    use driver_break_core::config::{RestConfig, TruckRestParams};
+    use driver_break_core::routing::{
+        motor_break_interval_km, truck_break_distances_km, truck_required_breaks,
+    };
+    use driver_break_core::config::Profile;
+
+    // Synthetic long truck day: 520 km, ~6.5 h @ 80 km/h (> 4.5 h → needs a break).
+    let dist_km = 520.0;
+    let eta_min = 6.5 * 60.0;
+    let driving_h = eta_min / 60.0;
+
+    let default_truck = TruckRestParams::default();
+    assert!(driving_h > default_truck.mandatory_break_after_hours);
+    assert_eq!(truck_required_breaks(&default_truck, driving_h), 1);
+    let default_breaks = truck_break_distances_km(&default_truck, dist_km, eta_min);
+    assert_eq!(default_breaks.len(), 1);
+    // 80 km/h * 4.5 h = 360 km.
+    assert!(
+        (default_breaks[0] - 360.0).abs() < 1.0,
+        "EC 561 default places break near 360 km, got {:?}",
+        default_breaks
+    );
+
+    let mut tight = TruckRestParams::default();
+    tight.mandatory_break_after_hours = 2.0;
+    let tight_breaks = truck_break_distances_km(&tight, dist_km, eta_min);
+    assert!(
+        tight_breaks.len() >= 2,
+        "2 h truck interval must place more breaks: {tight_breaks:?}"
+    );
+    assert!(
+        tight_breaks[0] < default_breaks[0] - 100.0,
+        "edited TruckRestParams must move first break earlier: {:?} vs {:?}",
+        tight_breaks,
+        default_breaks
+    );
+
+    // Car heuristic must not equal the truck EC spacing for the same trip.
+    let rest = RestConfig::default();
+    let car_iv = motor_break_interval_km(Profile::Car, &rest, dist_km, eta_min);
+    let truck_iv = motor_break_interval_km(Profile::Truck, &rest, dist_km, eta_min);
+    assert!(
+        (truck_iv - 360.0).abs() < 1.0 && (car_iv - 40.0).abs() < 1.0,
+        "truck uses hour-derived km ({truck_iv}), car keeps heuristic ({car_iv})"
+    );
+}

@@ -1,4 +1,4 @@
-//! Sensor samples for the highest-priority publish-only tier (architecture.md).
+//! Sensor samples for the highest-priority publish-only tier (docs/architecture.md).
 //!
 //! Android uses LocationManager / fused sensors. On Linux, optional `gpsd` and
 //! `linux-imu` features feed the same [`PositionSample`] / [`ImuSample`] types.

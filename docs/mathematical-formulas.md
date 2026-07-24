@@ -2,7 +2,7 @@
 
 Readable reference for how an implementation derives numbers (concrete code may
 live in C or the host’s native language). Related protocol notes:
-[`ECU.md`](ECU.md). Eco routing context: [`architecture.md`](../architecture.md).
+[`ECU.md`](ECU.md). Eco routing context: [`architecture.md`](architecture.md).
 
 ## OBD-II — MAF-based fuel rate
 

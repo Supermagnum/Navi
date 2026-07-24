@@ -106,6 +106,10 @@ import uniffi.navi.listSavedRoutes
 import uniffi.navi.loadCarRestSettings
 import uniffi.navi.saveCarRestSettings
 import uniffi.navi.FfiCarRestSettings
+import uniffi.navi.loadTruckRestSettings
+import uniffi.navi.saveTruckRestSettings
+import uniffi.navi.FfiTruckRestSettings
+import uniffi.navi.updateGpsFix
 import uniffi.navi.loadVehicleLimits
 import uniffi.navi.osmWeeklyReminderDue
 import uniffi.navi.pmtilesCancelJob
@@ -477,8 +481,11 @@ private fun NaviMapScreen() {
         refreshRoutes()
         updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
         runCatching {
-            val rest = loadCarRestSettings(dataDir.absolutePath)
-            ecoEnabled = rest.ecoModeEnabled || ecoModeDefault(profile)
+            ecoEnabled = if (usesTruckRestSettings(profile)) {
+                loadTruckRestSettings(dataDir.absolutePath).ecoModeEnabled
+            } else {
+                loadCarRestSettings(dataDir.absolutePath).ecoModeEnabled
+            } || ecoModeDefault(profile)
             // Break minutes are only meaningful with an active route — do not seed on launch.
             driveHud = driveHud.copy(
                 ecoActive = ecoEnabled,
@@ -519,6 +526,10 @@ private fun NaviMapScreen() {
             if (loc == null) return
             // Always update map GPS mark from a valid fix.
             if (loc.latitude != 0.0 || loc.longitude != 0.0) {
+                // Mirror into native so lastGpsFix() is never a demo stub.
+                runCatching {
+                    updateGpsFix(loc.latitude, loc.longitude, available = true)
+                }
                 val acc = if (loc.hasAccuracy()) loc.accuracy else null
                 val moved = kotlin.math.hypot(
                     loc.latitude - mapState.gpsLat,
@@ -689,9 +700,12 @@ private fun NaviMapScreen() {
                         )
                         if (pending.routePolyline.isNotBlank()) {
                             runCatching {
-                                val rest = loadCarRestSettings(dataDir.absolutePath)
+                                val intervalH = breakIntervalHoursForProfile(
+                                    dataDir.absolutePath,
+                                    profile,
+                                )
                                 val minsLeft =
-                                    ((rest.breakIntervalHours - drivingHoursSinceBreak) * 60.0)
+                                    ((intervalH - drivingHoursSinceBreak) * 60.0)
                                         .coerceAtLeast(0.0)
                                 val etaMin = preDepartureEtaMinutes(profile, pending)
                                 driveHud = driveHud.copy(
@@ -836,6 +850,24 @@ private fun NaviMapScreen() {
                         driveHud = driveHud.copy(breakRemindersEnabled = breakReq)
                         NaviMapTestHooks.lastBreakRemindersEnabled = breakReq
                     }
+                    val profileReq = NaviMapTestHooks.requestTravelProfile
+                    if (profileReq != null) {
+                        NaviMapTestHooks.requestTravelProfile = null
+                        profile = profileReq
+                        ecoEnabled = ecoModeDefault(profileReq)
+                        driveHud = driveHud.copy(ecoActive = ecoEnabled)
+                        if (mapState.polyline.isNotBlank() && driveHud.breakRemindersEnabled) {
+                            val intervalH = breakIntervalHoursForProfile(
+                                dataDir.absolutePath,
+                                profileReq,
+                            )
+                            driveHud = driveHud.copy(
+                                minutesToBreak = ((intervalH - drivingHoursSinceBreak) * 60.0)
+                                    .coerceAtLeast(0.0),
+                            )
+                        }
+                        status = "Profile: ${profileReq.name.lowercase()}"
+                    }
                     val hookAlt = NaviMapTestHooks.gpsAltitudeM
                     if (hookAlt != null && driveHud.altitudeM != hookAlt) {
                         driveHud = driveHud.copy(altitudeM = hookAlt)
@@ -927,9 +959,9 @@ private fun NaviMapScreen() {
             }
         } else if (driveHud.minutesToBreak == null && driveHud.breakRemindersEnabled) {
             runCatching {
-                val rest = loadCarRestSettings(dataDir.absolutePath)
+                val intervalH = breakIntervalHoursForProfile(dataDir.absolutePath, profile)
                 val minsLeft =
-                    ((rest.breakIntervalHours - drivingHoursSinceBreak) * 60.0).coerceAtLeast(0.0)
+                    ((intervalH - drivingHoursSinceBreak) * 60.0).coerceAtLeast(0.0)
                 driveHud = driveHud.copy(minutesToBreak = minsLeft)
             }
         }
@@ -1619,15 +1651,39 @@ private fun NaviMapScreen() {
                         Button(
                             onClick = {
                                 runCatching {
-                                    val rest = loadCarRestSettings(dataDir.absolutePath)
-                                    saveCarRestSettings(
-                                        dataDir.absolutePath,
-                                        FfiCarRestSettings(
-                                            breakIntervalHours = rest.breakIntervalHours,
-                                            restDurationMinutes = rest.restDurationMinutes,
-                                            ecoModeEnabled = ecoEnabled,
-                                        ),
-                                    )
+                                    if (usesTruckRestSettings(profile)) {
+                                        val rest = loadTruckRestSettings(dataDir.absolutePath)
+                                        saveTruckRestSettings(
+                                            dataDir.absolutePath,
+                                            FfiTruckRestSettings(
+                                                mandatoryBreakAfterHours =
+                                                    rest.mandatoryBreakAfterHours,
+                                                breakDurationMinutes = rest.breakDurationMinutes,
+                                                preferSplitBreak = rest.preferSplitBreak,
+                                                maxDailyDrivingHours = rest.maxDailyDrivingHours,
+                                                maxDailyDrivingExtendedHours =
+                                                    rest.maxDailyDrivingExtendedHours,
+                                                maxDailyExtensionsPerWeek =
+                                                    rest.maxDailyExtensionsPerWeek,
+                                                maxWeeklyDrivingHours = rest.maxWeeklyDrivingHours,
+                                                maxFortnightlyDrivingHours =
+                                                    rest.maxFortnightlyDrivingHours,
+                                                exceptionalExtensionArmed =
+                                                    rest.exceptionalExtensionArmed,
+                                                ecoModeEnabled = ecoEnabled,
+                                            ),
+                                        )
+                                    } else {
+                                        val rest = loadCarRestSettings(dataDir.absolutePath)
+                                        saveCarRestSettings(
+                                            dataDir.absolutePath,
+                                            FfiCarRestSettings(
+                                                breakIntervalHours = rest.breakIntervalHours,
+                                                restDurationMinutes = rest.restDurationMinutes,
+                                                ecoModeEnabled = ecoEnabled,
+                                            ),
+                                        )
+                                    }
                                 }
                                 status = "Profile settings saved"
                             },
@@ -2437,21 +2493,29 @@ private fun NaviMapScreen() {
                         status = "Drive settings saved"
                         driveHud = driveHud.copy(ecoActive = ecoEnabled)
                         runCatching {
-                            val rest = loadCarRestSettings(dataDir.absolutePath)
+                            val intervalH = breakIntervalHoursForProfile(
+                                dataDir.absolutePath,
+                                profile,
+                            )
                             val routeActive = mapState.polyline.isNotBlank()
                             val minsLeft = if (routeActive) {
-                                ((rest.breakIntervalHours - drivingHoursSinceBreak) * 60.0)
+                                ((intervalH - drivingHoursSinceBreak) * 60.0)
                                     .coerceAtLeast(0.0)
                             } else {
                                 null
                             }
+                            val ecoFromStore = if (usesTruckRestSettings(profile)) {
+                                loadTruckRestSettings(dataDir.absolutePath).ecoModeEnabled
+                            } else {
+                                loadCarRestSettings(dataDir.absolutePath).ecoModeEnabled
+                            }
                             driveHud = driveHud.copy(
-                                ecoActive = rest.ecoModeEnabled || ecoEnabled,
+                                ecoActive = ecoFromStore || ecoEnabled,
                                 minutesToBreak = minsLeft,
                                 breakAsDistance = MapHudPrefs.loadBreakAsDistance(context),
                                 preferMetric = MapHudPrefs.loadPreferMetric(context),
                             )
-                            ecoEnabled = rest.ecoModeEnabled || ecoEnabled
+                            ecoEnabled = ecoFromStore || ecoEnabled
                         }
                     },
                     onDismiss = {

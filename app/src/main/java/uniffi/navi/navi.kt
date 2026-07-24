@@ -858,6 +858,14 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -929,6 +937,8 @@ fun uniffi_navi_checksum_func_load_fuel_config(
 ): Short
 fun uniffi_navi_checksum_func_load_prefer_official_networks(
 ): Short
+fun uniffi_navi_checksum_func_load_truck_rest_settings(
+): Short
 fun uniffi_navi_checksum_func_load_vehicle_limits(
 ): Short
 fun uniffi_navi_checksum_func_offset_lat_lon_m(
@@ -991,15 +1001,21 @@ fun uniffi_navi_checksum_func_save_named_route(
 ): Short
 fun uniffi_navi_checksum_func_save_prefer_official_networks(
 ): Short
+fun uniffi_navi_checksum_func_save_truck_rest_settings(
+): Short
 fun uniffi_navi_checksum_func_save_vehicle_limits(
 ): Short
 fun uniffi_navi_checksum_func_search_places(
 ): Short
 fun uniffi_navi_checksum_func_set_osm_weekly_reminder(
 ): Short
+fun uniffi_navi_checksum_func_set_truck_exceptional_extension_armed(
+): Short
 fun uniffi_navi_checksum_func_station_timeout_max_s(
 ): Short
 fun uniffi_navi_checksum_func_travel_profile_menu_focus(
+): Short
+fun uniffi_navi_checksum_func_update_gps_fix(
 ): Short
 fun uniffi_navi_checksum_method_ffitrackstore_all(
 ): Short
@@ -1142,6 +1158,8 @@ fun uniffi_navi_fn_func_load_fuel_config(`dataDir`: RustBuffer.ByValue,uniffi_ou
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_prefer_official_networks(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_load_truck_rest_settings(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_vehicle_limits(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_offset_lat_lon_m(`lat`: Double,`lon`: Double,`eastM`: Double,`northM`: Double,uniffi_out_err: UniffiRustCallStatus, 
@@ -1204,16 +1222,22 @@ fun uniffi_navi_fn_func_save_named_route(`dataDir`: RustBuffer.ByValue,`startLat
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_save_prefer_official_networks(`dataDir`: RustBuffer.ByValue,`prefer`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_save_truck_rest_settings(`dataDir`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_save_vehicle_limits(`dataDir`: RustBuffer.ByValue,`limits`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_search_places(`indexDbPath`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_set_osm_weekly_reminder(`dataDir`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_set_truck_exceptional_extension_armed(`dataDir`: RustBuffer.ByValue,`armed`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_station_timeout_max_s(uniffi_out_err: UniffiRustCallStatus, 
 ): Long
 fun uniffi_navi_fn_func_travel_profile_menu_focus(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_update_gps_fix(`lat`: Double,`lon`: Double,`available`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun ffi_navi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1409,7 +1433,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_init_native_logging() != 25400.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_last_gps_fix() != 57883.toShort()) {
+    if (lib.uniffi_navi_checksum_func_last_gps_fix() != 31720.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_list_saved_routes() != 35027.toShort()) {
@@ -1422,6 +1446,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_load_prefer_official_networks() != 40384.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_load_truck_rest_settings() != 11002.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_load_vehicle_limits() != 31229.toShort()) {
@@ -1517,6 +1544,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_save_prefer_official_networks() != 11384.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_save_truck_rest_settings() != 32221.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_save_vehicle_limits() != 61328.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1526,10 +1556,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_set_osm_weekly_reminder() != 51186.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_set_truck_exceptional_extension_armed() != 17978.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_station_timeout_max_s() != 23541.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_travel_profile_menu_focus() != 46717.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_update_gps_fix() != 26321.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_method_ffitrackstore_all() != 9523.toShort()) {
@@ -2667,6 +2703,73 @@ public object FfiConverterTypeFfiTrackStation: FfiConverterRustBuffer<FfiTrackSt
 
 
 
+/**
+ * Truck / mobile-home EC 561/2006 rest settings (persisted on `RestConfig.truck`).
+ */
+data class FfiTruckRestSettings (
+    var `mandatoryBreakAfterHours`: kotlin.Double, 
+    var `breakDurationMinutes`: kotlin.UInt, 
+    var `preferSplitBreak`: kotlin.Boolean, 
+    var `maxDailyDrivingHours`: kotlin.Double, 
+    var `maxDailyDrivingExtendedHours`: kotlin.Double, 
+    var `maxDailyExtensionsPerWeek`: kotlin.UInt, 
+    var `maxWeeklyDrivingHours`: kotlin.Double, 
+    var `maxFortnightlyDrivingHours`: kotlin.Double, 
+    var `exceptionalExtensionArmed`: kotlin.Boolean, 
+    var `ecoModeEnabled`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiTruckRestSettings: FfiConverterRustBuffer<FfiTruckRestSettings> {
+    override fun read(buf: ByteBuffer): FfiTruckRestSettings {
+        return FfiTruckRestSettings(
+            FfiConverterDouble.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiTruckRestSettings) = (
+            FfiConverterDouble.allocationSize(value.`mandatoryBreakAfterHours`) +
+            FfiConverterUInt.allocationSize(value.`breakDurationMinutes`) +
+            FfiConverterBoolean.allocationSize(value.`preferSplitBreak`) +
+            FfiConverterDouble.allocationSize(value.`maxDailyDrivingHours`) +
+            FfiConverterDouble.allocationSize(value.`maxDailyDrivingExtendedHours`) +
+            FfiConverterUInt.allocationSize(value.`maxDailyExtensionsPerWeek`) +
+            FfiConverterDouble.allocationSize(value.`maxWeeklyDrivingHours`) +
+            FfiConverterDouble.allocationSize(value.`maxFortnightlyDrivingHours`) +
+            FfiConverterBoolean.allocationSize(value.`exceptionalExtensionArmed`) +
+            FfiConverterBoolean.allocationSize(value.`ecoModeEnabled`)
+    )
+
+    override fun write(value: FfiTruckRestSettings, buf: ByteBuffer) {
+            FfiConverterDouble.write(value.`mandatoryBreakAfterHours`, buf)
+            FfiConverterUInt.write(value.`breakDurationMinutes`, buf)
+            FfiConverterBoolean.write(value.`preferSplitBreak`, buf)
+            FfiConverterDouble.write(value.`maxDailyDrivingHours`, buf)
+            FfiConverterDouble.write(value.`maxDailyDrivingExtendedHours`, buf)
+            FfiConverterUInt.write(value.`maxDailyExtensionsPerWeek`, buf)
+            FfiConverterDouble.write(value.`maxWeeklyDrivingHours`, buf)
+            FfiConverterDouble.write(value.`maxFortnightlyDrivingHours`, buf)
+            FfiConverterBoolean.write(value.`exceptionalExtensionArmed`, buf)
+            FfiConverterBoolean.write(value.`ecoModeEnabled`, buf)
+    }
+}
+
+
+
 data class FfiVehicleLimits (
     var `axleWeightKg`: kotlin.Double?, 
     var `bogieWeightKg`: kotlin.Double?, 
@@ -3445,7 +3548,8 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     
 
         /**
-         * Stub GPS fix — Android LocationManager is the source of truth for the map puck.
+         * Last GPS fix from [`update_gps_fix`] (Android LocationManager is the source
+         * of truth; this mirror exists for hosts/tests that read via UniFFI).
          */ fun `lastGpsFix`(): FfiGpsFix {
             return FfiConverterTypeFfiGpsFix.lift(
     uniffiRustCall() { _status ->
@@ -3489,6 +3593,15 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_load_prefer_official_networks(
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+ fun `loadTruckRestSettings`(`dataDir`: kotlin.String): FfiTruckRestSettings {
+            return FfiConverterTypeFfiTruckRestSettings.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_load_truck_rest_settings(
         FfiConverterString.lower(`dataDir`),_status)
 }
     )
@@ -3830,6 +3943,15 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     )
     }
     
+ fun `saveTruckRestSettings`(`dataDir`: kotlin.String, `settings`: FfiTruckRestSettings): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_save_truck_rest_settings(
+        FfiConverterString.lower(`dataDir`),FfiConverterTypeFfiTruckRestSettings.lower(`settings`),_status)
+}
+    )
+    }
+    
  fun `saveVehicleLimits`(`dataDir`: kotlin.String, `limits`: FfiVehicleLimits): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
@@ -3863,6 +3985,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     )
     }
     
+
+        /**
+         * Arm / disarm the +1 h exceptional extension (explicit opt-in; not a silent default).
+         */ fun `setTruckExceptionalExtensionArmed`(`dataDir`: kotlin.String, `armed`: kotlin.Boolean): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_set_truck_exceptional_extension_armed(
+        FfiConverterString.lower(`dataDir`),FfiConverterBoolean.lower(`armed`),_status)
+}
+    )
+    }
+    
  fun `stationTimeoutMaxS`(): kotlin.ULong {
             return FfiConverterULong.lift(
     uniffiRustCall() { _status ->
@@ -3883,6 +4017,17 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
 }
     )
     }
+    
+
+        /**
+         * Push the device LocationManager / fused fix into the native layer.
+         */ fun `updateGpsFix`(`lat`: kotlin.Double, `lon`: kotlin.Double, `available`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_update_gps_fix(
+        FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterBoolean.lower(`available`),_status)
+}
+    
     
 
 

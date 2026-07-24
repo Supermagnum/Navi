@@ -38,11 +38,53 @@ pub const TRUCK_MANDATORY_BREAK_AFTER_HOURS: f64 = 4.5;
 /// Truck mandatory break duration (minutes), EU Regulation EC 561/2006.
 pub const TRUCK_BREAK_DURATION_MINUTES: u32 = 45;
 
+/// Split-break first part (minutes), EC 561/2006 alternative to continuous 45.
+pub const TRUCK_SPLIT_BREAK_FIRST_MINUTES: u32 = 15;
+
+/// Split-break second part (minutes), EC 561/2006 (must follow the 15).
+pub const TRUCK_SPLIT_BREAK_SECOND_MINUTES: u32 = 30;
+
 /// Truck maximum daily driving hours, EU Regulation EC 561/2006.
 pub const TRUCK_MAX_DAILY_DRIVING_HOURS: f64 = 9.0;
 
+/// Extended daily driving hours (allowed at most twice per week).
+pub const TRUCK_MAX_DAILY_DRIVING_EXTENDED_HOURS: f64 = 10.0;
+
+/// How many times per week the 10 h daily extension may be used.
+pub const TRUCK_MAX_DAILY_EXTENSIONS_PER_WEEK: u32 = 2;
+
 /// Truck weekly driving limit (hours), EU Regulation EC 561/2006.
 pub const TRUCK_MAX_WEEKLY_DRIVING_HOURS: f64 = 56.0;
+
+/// Fortnightly (any two consecutive weeks) driving limit (hours).
+pub const TRUCK_MAX_FORTNIGHTLY_DRIVING_HOURS: f64 = 90.0;
+
+/// Regular daily rest (hours).
+pub const TRUCK_DAILY_REST_HOURS: f64 = 11.0;
+
+/// Reduced daily rest (hours), at most three times between weekly rests.
+pub const TRUCK_DAILY_REST_REDUCED_HOURS: f64 = 9.0;
+
+/// Max reduced daily rests between weekly rests.
+pub const TRUCK_MAX_REDUCED_DAILY_RESTS: u32 = 3;
+
+/// Split daily rest — first uninterrupted block (hours).
+pub const TRUCK_SPLIT_DAILY_REST_FIRST_HOURS: f64 = 3.0;
+
+/// Split daily rest — second uninterrupted block (hours); total 12 h.
+pub const TRUCK_SPLIT_DAILY_REST_SECOND_HOURS: f64 = 9.0;
+
+/// Regular weekly rest (hours, continuous).
+pub const TRUCK_WEEKLY_REST_HOURS: f64 = 45.0;
+
+/// Reduced weekly rest (hours); compensation owed; every second week.
+pub const TRUCK_WEEKLY_REST_REDUCED_HOURS: f64 = 24.0;
+
+/// Max consecutive working days before a weekly rest is due.
+pub const TRUCK_MAX_CONSECUTIVE_WORKING_DAYS: u32 = 6;
+
+/// Exceptional extension to reach a suitable stop (hours); user opt-in only.
+pub const TRUCK_EXCEPTIONAL_EXTENSION_HOURS: f64 = 1.0;
 
 /// Default search radius for drinking water POIs (metres).
 pub const POI_RADIUS_WATER_M: f64 = 2_000.0;
