@@ -81,7 +81,7 @@ yet ([`docs/plugins.md`](docs/plugins.md)).
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. Electric modes get credit for downhill recovery. Formulas: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Done |
 | **Offline route planning** | Download a map region once, plan on the device, and see the route line plus suggested stops on the map. | Done |
 | **Place search** | Search places and set From / Via / To ([`docs/poi.md`](docs/poi.md)). Includes fishing spots and hut search distance guidance ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Done |
-| **Rest & breaks** | Break reminders and suggested stops along the route. Hiking and cycling use traditional Scandinavian rest distances ([background](docs/historical-background.md)). **Truck** / **TruckElectric** follow EU EC 561/2006 for break spacing, daily / weekly / fortnightly driving caps, and multi-day daily/weekly rest segmentation with persisted history ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) — confirmed on a live-GPS Norway corridor (Minnesund belt → Bodø). **Car** / **motorcycle** / **cycle** / **mobile home** use soft multi-day overnight splitting when a trip exceeds a daily budget (8 h driving or 100 km cycling) with lodging/camping/rest-area suggestions ([`docs/poi.md`](docs/poi.md)). Hiking overnight pauses prefer huts/tents and keep a respectful distance from buildings and glaciers. Country/region rule packs: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). | **Partial** — truck EC 561 breaks, duty caps, and multi-day daily/weekly rest implemented and live-GPS checked (compensation ledger and rich overnight scoring still deferred — see EC 561 doc); car / motorcycle / cycle / motorhome soft multi-day overnight implemented; hiking rast-interval hut/tent pauses + overnight safety filter in `planHikingRoute` (day-by-day `plan_multi_day` only in integration tests) |
+| **Rest & breaks** | Break reminders and suggested stops along the route. Hiking and cycling use traditional Scandinavian rest distances ([background](docs/historical-background.md)). **Truck** / **TruckElectric** follow EU EC 561/2006 for break spacing, daily / weekly / fortnightly driving caps, and multi-day daily/weekly rest segmentation with persisted history ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) — confirmed on a live-GPS Norway corridor (Minnesund belt → Bodø). **Car** / **motorcycle** / **cycle** / **mobile home** use soft multi-day overnight splitting when a trip exceeds a daily budget (8 h driving or 100 km cycling) with lodging/camping/rest-area suggestions ([`docs/poi.md`](docs/poi.md)). Hiking overnight pauses prefer huts/tents and keep a respectful distance from buildings and glaciers; day-by-day multi-day overnight is planned in `planHikingRoute`. Country/region rule packs: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). | **Partial** — truck EC 561 breaks, duty caps, and multi-day daily/weekly rest implemented and live-GPS checked (compensation ledger and rich overnight scoring still deferred — see EC 561 doc); car / motorcycle / cycle / motorhome soft multi-day overnight implemented; hiking rast-interval hut/tent pauses, overnight safety filter, and day-by-day multi-day overnight in `planHikingRoute` |
 | **Drive bars** | Slim top bar (altitude; tap for map settings) and bottom bar (zoom, break time, trip ETA, eco leaf; tap for drive settings). | Done |
 | **Map rotation** | Align the map with the compass, with your travel direction, or with north always up. | Done |
 | **Moving icons** | Show nearby tracked markers on the map (for example radio station symbols) within about 50–150 km. | **Partial** — drawing works; a live radio feed is not built in yet |
@@ -116,7 +116,7 @@ tiles load offline. Optional terrain DEM is the same path with
 **Download terrain DEM (Mapterhorn)** (`{region}_dem.pmtiles`).
 ([`docs/map-styles.md`](docs/map-styles.md)).
 Country/region PMTiles extracts can be prepared with
-[PMT-splitter](https://github.com/Supermagnum/PMT-splitter).
+[PMT-splitter](https://github.com/Supermagnum/PMT-splitter/tree/main).
 
 ## How features work
 
@@ -161,10 +161,11 @@ car / motorcycle / mobilehome / cycle trip exceeds the soft daily budget
 and suggests overnight lodging, camping, or rest-area stops near day boundaries
 (informational if no POI is nearby — see [`docs/poi.md`](docs/poi.md)
 **Lodging** / **RestArea**). For hiking, `planHikingRoute` places hut/tent
-pauses along rast intervals and rejects overnight candidates too close to
-buildings or glaciers; day-by-day multi-day hiking segmentation
-(`plan_multi_day`) is exercised in integration tests, not yet as a UniFFI
-planner. The building-distance idea follows the Norwegian **right to roam**
+pauses along rast intervals, rejects overnight candidates too close to
+buildings or glaciers, and when the trip exceeds the daily distance budget
+(default **40 km**) splits into days with overnight hut pins near day
+boundaries (`plan_hiking_multi_day` in core; same scoring spirit as the DNT
+integration helper). The building-distance idea follows the Norwegian **right to roam**
 (*allemannsretten*): wild camping is generally allowed if you stay a respectful
 distance from houses and cultivated land. That is a Norway-oriented default and
 **may not apply elsewhere** — local camping law can be stricter; country packs

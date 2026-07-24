@@ -20,7 +20,8 @@ use driver_break_core::routing::graph::{
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::{
-    commit_truck_multi_day_plan, evaluate_truck_trip, motor_break_interval_km, motor_daily_budget,
+    commit_truck_multi_day_plan, evaluate_truck_trip, hiking_samples_from_coords,
+    max_daily_distance_km, motor_break_interval_km, motor_daily_budget, plan_hiking_multi_day,
     plan_motor_multi_day, plan_truck_multi_day, truck_effective_break_parts, uses_motor_multi_day,
     uses_truck_rest, MotorOvernightCandidate, MotorOvernightKind, TruckRestCandidate,
 };
@@ -1737,6 +1738,59 @@ pub fn plan_hiking_route(
         overnight_prox.glaciers.len()
     ));
     let overnight_ctx = (safety, overnight_prox);
+    // Day-by-day multi-day overnight (mirrors truck/motor; same spirit as DNT helper).
+    let rest = RestConfig::default();
+    let max_daily = max_daily_distance_km(&rest, driver_break_core::config::Profile::Hiking)
+        .unwrap_or(40.0);
+    let hike_coords: Vec<(f64, f64)> = full_path
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i % stride == 0 || *i + 1 == full_path.len())
+        .map(|(_, id)| {
+            let n = &graph.nodes[id];
+            (n.coord.y, n.coord.x)
+        })
+        .collect();
+    let hike_samples = hiking_samples_from_coords(&hike_coords);
+    let multi = plan_hiking_multi_day(
+        &hike_samples,
+        max_daily,
+        &overnight_ctx.0,
+        &poi_index,
+        &overnight_ctx.1,
+    );
+    let mut hiking_overnight_pins: Vec<serde_json::Value> = Vec::new();
+    if multi.multi_day {
+        report.push_str(&format!(
+            "hiking_multi_day: days={}; max_daily_km={max_daily:.1}; total_km={dist_km:.1}\n",
+            multi.days.len()
+        ));
+        for d in &multi.days {
+            report.push_str(&format!(
+                "hiking_day: idx={}; start_km={:.1}; end_km={:.1}; distance_km={:.1}; overnight_gap={}\n",
+                d.day_index, d.start_km, d.end_km, d.distance_km, d.overnight_gap
+            ));
+            if let Some(o) = &d.overnight {
+                report.push_str(&format!(
+                    "hiking_overnight: name={:?}; network={}; safety_rejected={}; dist_m={:.0}; lat={:.5}; lon={:.5}\n",
+                    o.name, o.is_network, o.safety_rejected, o.distance_from_target_m, o.lat, o.lon
+                ));
+                hiking_overnight_pins.push(json!({
+                    "name": o.name,
+                    "lat": o.lat,
+                    "lon": o.lon,
+                    "kind": if o.is_network { "network_hut" } else { "hut" },
+                    "icon": "cabin",
+                    "icon_key": o.icon_key,
+                    "along_km": d.end_km,
+                    "overnight": true,
+                    "safety_rejected": o.safety_rejected,
+                }));
+            }
+        }
+    } else {
+        report.push_str("hiking_multi_day: days=1; multi_day=false\n");
+    }
     // Hiking rast interval (~11.3 km); prefer path-linked huts, else reachable fallback.
     let mut break_pois_json = build_break_pois_json(
         &poi_index,
@@ -1789,6 +1843,7 @@ pub fn plan_hiking_route(
             let kind = s["kind"].as_str().unwrap_or("");
             !(kind == "tent" && name.contains("ramsh"))
         });
+        arr.extend(hiking_overnight_pins);
         break_pois_json = serde_json::to_string(&arr).unwrap_or(break_pois_json);
     }
 

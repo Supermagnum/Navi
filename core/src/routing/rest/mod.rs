@@ -1,5 +1,6 @@
 //! Rest-stop interval helpers driven by persisted profile parameters.
 
+mod hiking_multi_day;
 mod motor_multi_day;
 mod truck_duty;
 mod truck_multi_day;
@@ -9,6 +10,11 @@ use crate::config::{
     TRUCK_SPLIT_BREAK_FIRST_MINUTES, TRUCK_SPLIT_BREAK_SECOND_MINUTES,
 };
 
+pub use hiking_multi_day::{
+    choose_hiking_overnight, hiking_samples_from_coords, plan_hiking_multi_day,
+    HikingDaySegment, HikingMultiDayPlan, HikingOvernightStop, HikingRouteSample,
+    OVERNIGHT_NEAR_HUT_MAX_M,
+};
 pub use motor_multi_day::{
     car_style_daily_hours, cycling_daily_km, motor_daily_budget, plan_motor_multi_day,
     uses_motor_multi_day, MotorDailyBudget, MotorDaySegment, MotorMultiDayPlan,

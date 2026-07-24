@@ -8,9 +8,9 @@ Notable exports:
 - Region provision / corridor routing (`provisionRegionData`, `runCarCorridorPipeline`)
 - Offline basemap PMTiles (`pmtilesQueueRegion`, `pmtilesRunJob`, pause/resume/cancel; see [`map-styles.md`](map-styles.md))
 - Offline terrain DEM (`pmtilesQueueDemRegion` → `{region}_dem.pmtiles` from Mapterhorn; same run/pause/cancel path)
-- Hiking multi-waypoint plan (`planHikingRoute`) with rast-interval hut pauses
-  and tent-site fallback (day-by-day `plan_multi_day` is integration-test only,
-  not exported via UniFFI)
+- Hiking multi-waypoint plan (`planHikingRoute`) with rast-interval hut pauses,
+  tent-site fallback, overnight safety filter, and day-by-day multi-day overnight
+  (`plan_hiking_multi_day` report lines + overnight pins in `break_pois_json`)
 - Car / motorcycle / cycle / truck corridor plan (`planCarRoute`) — soft motor
   multi-day overnight report lines / break POIs; Truck / TruckElectric also run
   EC 561 duty + multi-day daily/weekly rest (see [`ec-561-truck-rest.md`](ec-561-truck-rest.md))
