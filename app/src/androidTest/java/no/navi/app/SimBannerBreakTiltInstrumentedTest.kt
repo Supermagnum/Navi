@@ -411,8 +411,29 @@ class SimBannerBreakTiltInstrumentedTest {
             NaviMapTestHooks.lastTerrainAttached,
         )
         assertEquals(45.0, NaviMapTestHooks.lastCameraPitch, 1.5)
+        // Style switch can race GeoJSON overlays — re-assert the corridor and wait
+        // for layers to settle so the red route line is above hillshade.
+        assertTrue(
+            "polyline must still be planned before 3D tilt shot",
+            NaviMapTestHooks.lastRoutePolylineChars > 50,
+        )
+        NaviMapTestHooks.pendingRoute = planned
+        NaviMapTestHooks.requestCameraTiltDeg = 45.0
+        Thread.sleep(3_500)
         dismissPermissionIfPresent()
         saveShot(shotDir, "tilt45_3d_on.png")
+        // Host pull target used by docs/README.
+        val pfdTilt = InstrumentationRegistry.getInstrumentation().uiAutomation
+            .executeShellCommand(
+                "su 0 cp ${File(shotDir, "tilt45_3d_on.png").absolutePath} " +
+                    "/data/local/tmp/tilt45_3d_on.png",
+            )
+        java.io.FileInputStream(pfdTilt.fileDescriptor).use { input ->
+            val buf = ByteArray(4096)
+            while (input.read(buf) >= 0) {
+            }
+        }
+        pfdTilt.close()
 
         NaviMapTestHooks.requestCameraTiltDeg = 0.0
         NaviMapTestHooks.requestOptIn3d = false

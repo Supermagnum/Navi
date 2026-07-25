@@ -3069,6 +3069,11 @@ private fun CorridorMapView(
         }
         if (applyGen != styleApplyGen.get()) return
         NaviMapTestHooks.lastTerrainAttached = terrainOk
+        // setStyle / offline 3D JSON wipe GeoJSON overlays — re-apply immediately
+        // so the corridor is not missing while layerEpoch catches up.
+        applyRouteToStyle(style, stateRef.get())
+        applyTracksToStyle(style, stateRef.get().tracks, mapView.context)
+        ensureRouteAboveHillshade(style)
         applyCameraTilt(map)
         styleReady.value = true
         NaviMapTestHooks.styleReady = true
@@ -3427,6 +3432,7 @@ private fun CorridorMapView(
                 }
                 applyRouteToStyle(style, latest)
                 applyTracksToStyle(style, latest.tracks, mapView.context)
+                ensureRouteAboveHillshade(style)
                 map.triggerRepaint()
                 onLayerCount(style.layers.size)
                 refreshTrackOverlay(map)
@@ -3654,6 +3660,18 @@ private fun CorridorMapView(
     }
 }
 
+private fun ensureRouteAboveHillshade(style: Style) {
+    val hillsId = MapterhornTerrain.HILLS_LAYER_ID
+    if (style.getLayer(hillsId) == null) return
+    for (id in listOf("route-line", "waypoints-dots", "waypoints-layer", "gps-accuracy", "gps-dot")) {
+        val layer = style.getLayer(id) ?: continue
+        runCatching {
+            style.removeLayer(layer)
+            style.addLayerAbove(layer, hillsId)
+        }
+    }
+}
+
 private fun applyRouteToStyle(style: Style, state: MapRouteState) {
     if (state.polyline.isNotBlank()) {
         val pts = parsePolyline(state.polyline).map { Point.fromLngLat(it.longitude, it.latitude) }
@@ -3785,6 +3803,7 @@ private fun applyRouteToStyle(style: Style, state: MapRouteState) {
         if (style.getLayer("gps-accuracy") != null) style.removeLayer("gps-accuracy")
         if (style.getSource("gps-src") != null) style.removeSource("gps-src")
     }
+    ensureRouteAboveHillshade(style)
 }
 
 private fun applyTracksToStyle(
