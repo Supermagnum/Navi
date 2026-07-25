@@ -323,7 +323,8 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 | [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Spesifikasjon: drivstoff-/vannforsyning langs rute (plugin) |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Spesifikasjon: eksport av nav-tilstand til cluster/AGL (plugin) |
 | [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Spesifikasjon: UI-språk/oversettelsespakker (plugin; appen er engelsk i dag) |
-| [`docs/icons.md`](docs/icons.md) | Ikonoversikt; egne SVG-ikoner; Navit GPL-v2 |
+| [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Spesifikasjon: animerte ikoner (Synfig → SVG-rammer; plugin) |
+| [`docs/icons.md`](docs/icons.md) | Ikonoversikt; egne statiske SVG (Inkscape); Navit GPL-v2 |
 | [`docs/API.md`](docs/API.md) | UniFFI vert-API + plugin HostApi-referanse |
 | [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) | Protokollindeks |
 | [`docs/ECU.md`](docs/ECU.md) | ECU-protokoller: OBD-II, J1939, MegaSquirt + EV |
@@ -348,9 +349,11 @@ Oppløsning foretrekker brukeroverskrivninger, deretter medfølgende sett, deret
 `unknown.svg`.
 
 **Egne ikoner:** bruk **SVG** (eller `.svgz`). Statisk kunst i
-[Inkscape](https://inkscape.org/); animasjoner i
-[Synfig Studio](https://www.synfig.org/). Navngi etter semantisk nøkkel — steg
-i [`docs/icons.md`](docs/icons.md#adding-custom-icons).
+[Inkscape](https://inkscape.org/); navngi etter semantisk nøkkel og legg i
+override-katalog eller `core/src/icons` — steg i
+[`docs/icons.md`](docs/icons.md#adding-custom-icons). Animasjoner i
+[Synfig Studio](https://www.synfig.org/) — se
+[`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md).
 
 ## Bygge Android-pakker
 

@@ -332,7 +332,8 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Spec: fuel/water resupply lookahead, POI confidence, remote/arid buffers (plugin, not core) |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Spec: export nav state to clusters/AGL via VSS/Kuksa + JSON fallback (plugin, not core) |
 | [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Spec: offline UI language packs (plugin; app UI is English-only today, no language toggle) |
-| [`docs/icons.md`](docs/icons.md) | Icon inventory; custom SVG icons (Inkscape / Synfig); Navit GPL-v2 |
+| [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Spec: Synfig-authored animated icons / frame packs (plugin; static SVG stays in icons.md) |
+| [`docs/icons.md`](docs/icons.md) | Icon inventory; custom static SVG (Inkscape); Navit GPL-v2 |
 | [`docs/API.md`](docs/API.md) | UniFFI host API + plugin HostApi reference |
 | [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) | Wire protocol index (UniFFI, plugins, ECU/APRS/CAT) |
 | [`docs/ECU.md`](docs/ECU.md) | ECU protocols: OBD-II, J1939, MegaSquirt + EV SoC/power |
@@ -356,10 +357,11 @@ POI/maneuver/status icons under `core/src/icons` are Navit-derived (**GPL v2**).
 Resolution prefers user overrides, then the bundled set, then `unknown.svg`.
 
 **Custom icons:** use **SVG** (or `.svgz`). Author static art in
-[Inkscape](https://inkscape.org/); author animations in
-[Synfig Studio](https://www.synfig.org/) and export SVG / frames for Navi.
-Name files after the semantic key and place them in the override directory or
-`core/src/icons` — step-by-step in [`docs/icons.md`](docs/icons.md#adding-custom-icons).
+[Inkscape](https://inkscape.org/); name files after the semantic key and place
+them in the override directory or `core/src/icons` — step-by-step in
+[`docs/icons.md`](docs/icons.md#adding-custom-icons). Author animations in
+[Synfig Studio](https://www.synfig.org/) and export SVG / frames — see
+[`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md).
 
 ## Building Android packages
 

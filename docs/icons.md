@@ -26,37 +26,42 @@ Custom icons must be **SVG** (or gzip-compressed **`.svgz`** for flags / large
 sets). Raster-only sources (PNG/JPEG) are not used by the resolver — convert or
 re-draw to SVG first.
 
-### Authoring tools
-
-| Kind | Tool | Output |
+| Kind | Tool | Where documented |
 |---|---|---|
-| **Static** (POI, nav, status, eco leaf, …) | [Inkscape](https://inkscape.org/) | Plain `.svg` (preferred) or `.svgz` |
-| **Animated** | [Synfig Studio](https://www.synfig.org/) | Design in Synfig; export for Navi as SVG frames or an SVG that the host can present (see note below) |
+| **Static** (POI, nav, status, eco leaf, …) | [Inkscape](https://inkscape.org/) → plain `.svg` (preferred) or `.svgz` | Steps below |
+| **Animated** | [Synfig Studio](https://www.synfig.org/) → SVG stills / frame packs | Plugin spec: [`plugins/animated-icons-spec.md`](plugins/animated-icons-spec.md) |
 
 Do not author map/POI icons in proprietary binary formats for the override
 pipeline — the core loads SVG bytes via `usvg` / `resvg`.
 
-### Static icons (Inkscape)
+### Static icons — step by step (Inkscape)
 
-1. Create or open the artwork in **Inkscape**.
-2. Prefer a square canvas (e.g. 48×48 or 128×128 user units) and keep paths
-   simple (few filters; solid fills work best when rasterized small).
-3. Save as **Plain SVG** (`*.svg`), not Inkscape SVG with editor-only extras if
-   you can avoid them — plain SVG rasterizes more reliably.
-4. Name the file after the **semantic key** the app already uses, for example:
+1. **Open Inkscape** and create a new document (or open an existing icon to
+   edit).
+2. **Set a square canvas** (File → Document Properties), e.g. 48×48 or 128×128
+   user units. Keep paths simple: solid fills, few filters — map pins often
+   render at 32–64 px.
+3. **Draw the artwork** aligned to the semantic meaning of an existing app key
+   (fuel pump, toilet, eco leaf, turn arrow, …).
+4. **File → Save As… → Plain SVG** (`*.svg`). Prefer Plain SVG over “Inkscape
+   SVG” so editor-only metadata does not confuse `usvg`. For large flag-like
+   assets you may gzip to **`.svgz`** (same basename rules).
+5. **Name the file after the semantic key** the app already uses — basename
+   only, matching resolver lookup:
    - `fuel.svg`, `toilets.svg`, `leaf.svg` (eco)
    - `amenity-restaurant.svg`, `tourism-wilderness_hut.svg`
    - Day/night nav or status: `nav_straight_bk.svg` / `nav_straight_wh.svg`
-5. Install the file by either:
-   - **User override:** put it in the override directory passed to
-     `resolve_icon` / rasterize (same basename wins over the bundled set), or
+6. **Install** the file in exactly one of these places:
+   - **User override directory** passed to `resolve_icon` / `rasterize_icon_png`
+     (same basename **wins** over the bundled set), or
    - **Bundle:** copy into `core/src/icons/` (and into the Android lean icon pack
      under `app` assets if the key must ship on-device).
-6. Verify with UniFFI / host:
+7. **Verify** the key rasterizes to non-empty pixels (not blank / not
+   `unknown`):
 
 ```bash
-# From a host that calls rasterize_key / rasterizeIconPng for key "fuel"
-# Theme Day, size 64×64 — expect non-empty PNG/RGBA
+# Host or instrumented check: rasterizeIconPng / rasterize_key
+# key e.g. "fuel" or "eco-mode", theme Day, size 64×64 → non-empty PNG/RGBA
 ```
 
 Aliases already mapped in code (examples): `eco` / `eco-mode` → `leaf.svg`;
@@ -64,27 +69,15 @@ Aliases already mapped in code (examples): `eco` / `eco-mode` → `leaf.svg`;
 `fish.svg` (Navit-derived). Prefer matching those names so overrides apply
 without code changes.
 
-### Animated icons (Synfig Studio)
+### Animated icons (Synfig)
 
-1. Author the animation in **Synfig Studio**.
-2. Export in a form Navi can consume as SVG:
-   - **Preferred for map markers today:** export a **representative still** (or
-     the first/key frame) to SVG via Synfig’s SVG export / Inkscape cleanup, then
-     install like a static icon; or
-   - **Frame sequence:** export SVG (or PNG) frames and let a future UI layer
-     animate them; the core rasterizer currently renders **one SVG document per
-     call** (no Synfig `.sif` playback in `usvg`).
-3. Keep frame artworks square and high-contrast at small sizes (map pins are
-   often 32–64 px on screen).
-4. Place exported SVG under the override or bundle path using the same semantic
-   key naming as static icons.
+Author motion in **Synfig Studio**, then export SVG stills or frame sequences for
+Navi. Full packaging, host player, reduce-motion, and proposed capabilities are
+in **[`plugins/animated-icons-spec.md`](plugins/animated-icons-spec.md)** — not
+in the core icon crate. Until that plugin ships, export a **representative
+still SVG** and install it with the static steps above.
 
-**Runtime note:** `rasterize_key` / `rasterizeIconPng` produce a single bitmap
-from SVG/SVGZ. Full Synfig timeline playback is not implemented in the Rust
-icon crate; Synfig is the **authoring** tool for animated designs, with SVG
-(or frame exports) as the interchange format into Navi.
-
-### Checklist
+### Checklist (static)
 
 - [ ] Format is `.svg` or `.svgz` (not only PNG)
 - [ ] Filename matches the semantic key (and `_bk` / `_wh` if themed)

@@ -8,7 +8,7 @@ timeout isolation (`plugin-host` + `log-hello` / `busy-loop` examples).
 
 **No product content plugins** have been built yet (allemannsretten camping-spot
 spec, marine traffic, weather overlays, bathymetry, sonar, RTL-SDR/APRS-adjacent
-guests, UI translation packs, etc.). That is **expected and intentional**, not a bug or an oversight —
+guests, UI translation packs, animated icon packs, etc.). That is **expected and intentional**, not a bug or an oversight —
 the host exists so future contributors can ship those plugins independently
 without changing the navigation core. Country/region-dependent packs (camping,
 future driving-hour families, horse access, …) follow the reusable pattern in
@@ -211,6 +211,17 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | **Proposed caps** | `i18n_catalog_query`, `i18n_string_resolve`, `i18n_locale_get` / `i18n_locale_set`, `plugin_kv` / `storage`, `log` |
 | **Notes** | Spec only — not implemented. **Today the app UI is English only and has no language toggle.** Parallel markdown (`Norwegian.md`, etc.) is documentation, not in-app i18n. |
 
+### 11. Animated icons (`animated_icons` / `icon_anim`)
+
+| | |
+|---|---|
+| **Benefit** | Synfig-authored motion for HUD / selected markers without putting a Synfig runtime in the routing core |
+| **Docs** | [`plugins/animated-icons-spec.md`](plugins/animated-icons-spec.md) — Synfig → SVG frames / packs, host player, reduce motion; static Inkscape flow stays in [`icons.md`](icons.md) |
+| **Host duties** | Load `{dataDir}/icon_anim/{key}/` packs; advance frames; call existing SVG rasterize; respect reduce motion |
+| **Guest duties** | Optional: validate packs / choose keys; must not download packs or play `.sif` |
+| **Proposed caps** | `icon_anim_query`, `icon_anim_frame`, `plugin_kv` / `storage`, `log` |
+| **Notes** | Spec only — not implemented. Core still renders one SVG per `rasterize_key` call. |
+
 ### Capability sketch (not in ABI yet)
 
 | Proposed | Purpose |
@@ -233,6 +244,8 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | `i18n_catalog_query` | List installed UI translation packs |
 | `i18n_string_resolve` | Resolve message id (+ args) for the active locale |
 | `i18n_locale_get` / `i18n_locale_set` | Read/write persisted UI locale preference |
+| `icon_anim_query` | List installed animated-icon packs (key, fps, frames) |
+| `icon_anim_frame` | Resolve SVG bytes/path for `key` + frame index |
 
 Add a capability to `plugin-host` `Capability` enum + HostApi **before** shipping
 any guest that needs it. Until then, host-native services may write into core
