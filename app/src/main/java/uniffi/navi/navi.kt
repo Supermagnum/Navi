@@ -2339,7 +2339,13 @@ data class CorridorRouteResult (
      * Turn / destination maneuvers along the path:
      * `[{"lat","lon","cum_m","kind","street","roundabout_exit"}]`.
      */
-    var `maneuversJson`: kotlin.String
+    var `maneuversJson`: kotlin.String, 
+    /**
+     * Non-major highway share of planned path length (0–100). Motor: 100% minus
+     * motorway/trunk/primary distance. Used by the avoid-majors report; 0 when
+     * no path was planned.
+     */
+    var `priorityPathSharePct`: kotlin.Double
 ) {
     
     companion object
@@ -2366,6 +2372,7 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterDouble.read(buf),
         )
     }
 
@@ -2384,7 +2391,8 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterString.allocationSize(value.`breakPoisJson`) +
             FfiConverterString.allocationSize(value.`daysJson`) +
             FfiConverterString.allocationSize(value.`simSamplesJson`) +
-            FfiConverterString.allocationSize(value.`maneuversJson`)
+            FfiConverterString.allocationSize(value.`maneuversJson`) +
+            FfiConverterDouble.allocationSize(value.`priorityPathSharePct`)
     )
 
     override fun write(value: CorridorRouteResult, buf: ByteBuffer) {
@@ -2403,6 +2411,7 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterString.write(value.`daysJson`, buf)
             FfiConverterString.write(value.`simSamplesJson`, buf)
             FfiConverterString.write(value.`maneuversJson`, buf)
+            FfiConverterDouble.write(value.`priorityPathSharePct`, buf)
     }
 }
 

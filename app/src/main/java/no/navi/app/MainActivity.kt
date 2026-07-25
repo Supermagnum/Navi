@@ -1689,6 +1689,7 @@ private fun NaviMapScreen() {
                                             daysJson = "[]",
                                             simSamplesJson = "[]",
                                             maneuversJson = "[]",
+                                            priorityPathSharePct = 0.0,
                                         )
                                     } else when (profile) {
                                         TravelProfile.HIKING -> {
@@ -1716,6 +1717,7 @@ private fun NaviMapScreen() {
                                             var poly = ""
                                             var dist = 0.0
                                             var etaSum = 0.0
+                                            var shareWeighted = 0.0
                                             var last: uniffi.navi.CorridorRouteResult? = null
                                             val legSamples = mutableListOf<List<RouteSimSample>>()
                                             val legManeuvers = mutableListOf<List<RouteManeuver>>()
@@ -1762,6 +1764,7 @@ private fun NaviMapScreen() {
                                                 }
                                                 dist += legRes.distanceKm
                                                 etaSum += legRes.etaMinutes
+                                                shareWeighted += legRes.priorityPathSharePct * legRes.distanceKm
                                                 poly = if (poly.isEmpty()) {
                                                     legRes.routePolyline
                                                 } else {
@@ -1775,8 +1778,13 @@ private fun NaviMapScreen() {
                                             val base = last!!
                                             val mergedSamples = mergeSimSamples(legSamples)
                                             val mergedManeuvers = mergeManeuvers(legManeuvers)
+                                            val mergedShare = if (dist > 0.0) {
+                                                shareWeighted / dist
+                                            } else {
+                                                base.priorityPathSharePct
+                                            }
                                             uniffi.navi.CorridorRouteResult(
-                                                report = "TEST_KIND=PLAN_MULTI\nPASS\ndistance_km=$dist\n",
+                                                report = "TEST_KIND=PLAN_MULTI\nPASS\ndistance_km=$dist\npriority_path_share_pct=$mergedShare\n",
                                                 distanceKm = dist,
                                                 etaMinutes = etaSum,
                                                 cacheHit = base.cacheHit,
@@ -1811,6 +1819,7 @@ private fun NaviMapScreen() {
                                                             .put("roundabout_exit", m.roundaboutExit)
                                                     },
                                                 ).toString(),
+                                                priorityPathSharePct = mergedShare,
                                             )
                                         }
                                     }
@@ -1832,6 +1841,7 @@ private fun NaviMapScreen() {
                                             daysJson = "[]",
                                             simSamplesJson = "[]",
                                             maneuversJson = "[]",
+                                            priorityPathSharePct = 0.0,
                                         )
                                     }
                                     }
@@ -1857,9 +1867,13 @@ private fun NaviMapScreen() {
                                 NaviMapTestHooks.routeViaLabel =
                                     viaPoints.joinToString(", ") { it.name }
                                 NaviMapTestHooks.pendingRoute = result
-                                status = userFacingStatus(
-                                    "Route planned · ${"%.1f".format(result.distanceKm)} km",
-                                )
+                                prioritySharePct = result.priorityPathSharePct
+                                status = formatRouteAvoidanceReport(
+                                    avoidMajor,
+                                    avoidTolls,
+                                    avoidFerries,
+                                    prioritySharePct,
+                                ) + "\nRoute planned · ${"%.1f".format(result.distanceKm)} km"
                             }
                         },
                         enabled = !planningRoute,
@@ -2085,7 +2099,6 @@ private fun NaviMapScreen() {
                             checked = avoidMajor,
                             onCheckedChange = { on ->
                                 avoidMajor = on
-                                prioritySharePct = if (on || avoidTolls || avoidFerries) 72.5 else 41.0
                                 status = formatRouteAvoidanceReport(
                                     avoidMajor,
                                     avoidTolls,
@@ -2105,7 +2118,6 @@ private fun NaviMapScreen() {
                             checked = avoidTolls,
                             onCheckedChange = { on ->
                                 avoidTolls = on
-                                prioritySharePct = if (avoidMajor || on || avoidFerries) 72.5 else 41.0
                                 status = formatRouteAvoidanceReport(
                                     avoidMajor,
                                     avoidTolls,
@@ -2132,7 +2144,6 @@ private fun NaviMapScreen() {
                             checked = avoidFerries,
                             onCheckedChange = { on ->
                                 avoidFerries = on
-                                prioritySharePct = if (avoidMajor || avoidTolls || on) 72.5 else 41.0
                                 status = formatRouteAvoidanceReport(
                                     avoidMajor,
                                     avoidTolls,

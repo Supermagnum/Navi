@@ -576,6 +576,7 @@ class HudVerificationInstrumentedTest {
             daysJson = "[]",
             simSamplesJson = "[]",
             maneuversJson = "[]",
+            priorityPathSharePct = 0.0,
         )
         // Keep prior zoom; route apply would otherwise fit-bounds and break zoom checks.
         NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, zoomBeforeBreak)

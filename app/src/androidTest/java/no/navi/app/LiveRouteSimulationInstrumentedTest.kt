@@ -166,6 +166,7 @@ class LiveRouteSimulationInstrumentedTest {
                             .put("roundabout_exit", m.roundaboutExit)
                     },
                 ).toString(),
+                priorityPathSharePct = base.priorityPathSharePct,
             )
             android.util.Log.i(
                 "LiveRouteSim",

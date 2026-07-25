@@ -108,6 +108,21 @@ fn avoid_major_changes_planned_route() {
     );
     assert!(avoided.0.contains(&NodeId(4)));
     assert_ne!(direct.0, avoided.0);
+
+    let share_direct = graph.non_major_highway_share_pct(&direct.0);
+    let share_avoided = graph.non_major_highway_share_pct(&avoided.0);
+    assert!(
+        (share_direct - 0.0).abs() < 0.01,
+        "default motorway path should be 0% non-major, got {share_direct}"
+    );
+    assert!(
+        (share_avoided - 100.0).abs() < 0.01,
+        "avoid-major secondary path should be 100% non-major, got {share_avoided}"
+    );
+    assert_ne!(
+        share_direct, share_avoided,
+        "priority-path share must be derived from the plan, not a constant"
+    );
 }
 
 #[test]

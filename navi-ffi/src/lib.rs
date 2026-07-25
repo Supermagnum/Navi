@@ -312,6 +312,10 @@ pub struct CorridorRouteResult {
     /// Turn / destination maneuvers along the path:
     /// `[{"lat","lon","cum_m","kind","street","roundabout_exit"}]`.
     pub maneuvers_json: String,
+    /// Non-major highway share of planned path length (0–100). Motor: 100% minus
+    /// motorway/trunk/primary distance. Used by the avoid-majors report; 0 when
+    /// no path was planned.
+    pub priority_path_share_pct: f64,
 }
 
 fn empty_corridor(msg: String) -> CorridorRouteResult {
@@ -331,6 +335,7 @@ fn empty_corridor(msg: String) -> CorridorRouteResult {
         days_json: String::from("[]"),
         sim_samples_json: String::from("[]"),
         maneuvers_json: String::from("[]"),
+        priority_path_share_pct: 0.0,
     }
 }
 
@@ -1266,6 +1271,11 @@ pub fn run_car_corridor_pipeline(
     }
 
     report.push_str("PASS\n");
+    let priority_path_share_pct = graph.non_major_highway_share_pct(&path);
+    report.push_str(&format!(
+        "priority_path_share_pct={priority_path_share_pct:.2}; major_highway_share_pct={:.2}\n",
+        100.0 - priority_path_share_pct
+    ));
     CorridorRouteResult {
         report,
         distance_km: dist_km,
@@ -1282,6 +1292,7 @@ pub fn run_car_corridor_pipeline(
         days_json: String::from("[]"),
         sim_samples_json: String::from("[]"),
         maneuvers_json: String::from("[]"),
+        priority_path_share_pct,
     }
 }
 
@@ -1906,6 +1917,11 @@ fn plan_car_route_inner(
             }
         }
     }
+    let priority_path_share_pct = graph.non_major_highway_share_pct(&path);
+    report.push_str(&format!(
+        "priority_path_share_pct={priority_path_share_pct:.2}; major_highway_share_pct={:.2}\n",
+        graph.major_highway_share_pct(&path)
+    ));
     report.push_str(&format!(
         "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={path_nodes}; path_cost={cost:.0}; polyline_chars={}; break_pois={}\nPASS\n",
         polyline.len(),
@@ -1929,6 +1945,7 @@ fn plan_car_route_inner(
         days_json,
         sim_samples_json,
         maneuvers_json,
+        priority_path_share_pct,
     }
 }
 
@@ -2234,6 +2251,10 @@ pub fn plan_hiking_route(
         break_pois_json = serde_json::to_string(&arr).unwrap_or(break_pois_json);
     }
 
+    let priority_path_share_pct = graph.non_major_highway_share_pct(&full_path);
+    report.push_str(&format!(
+        "priority_path_share_pct={priority_path_share_pct:.2}\n"
+    ));
     let end = wps.last().unwrap();
     // Hiking: fixed 16 min/km (no climb adjustment in this pass).
     let eta_minutes = fixed_pace_minutes(dist_km, HIKING_MIN_PER_KM);
@@ -2258,6 +2279,7 @@ pub fn plan_hiking_route(
         days_json,
         sim_samples_json: String::from("[]"),
         maneuvers_json: String::from("[]"),
+        priority_path_share_pct,
     }
 }
 

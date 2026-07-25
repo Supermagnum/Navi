@@ -167,6 +167,11 @@ Device shots from `ApproachInstructionInstrumentedTest` are local only; they are
 ## 6. Implementation checklist
 
 1. Locked appear **750 m** / urgency **150 m** / hide **25 m** — done.
+   Source of truth: Rust `APPROACH_*_M` in `core/src/nav/mod.rs`, UniFFI
+   `approachAppearM` / `approachUrgencyM` / `approachHideM`. Phase styling uses
+   `approachPhaseForDistance`. Maneuver-cursor advance in `RouteProgressTracker`
+   uses `hideDistanceM` defaulting to `approachHideM()` (metres) — no local magic
+   number.
 2. Shared guidance state (`core` nav module + Android hooks) — done.
 3. `ApproachInstructionBox` Compose overlay — done.
 4. `nav_*` rasterization — done.
@@ -179,5 +184,7 @@ Device shots from `ApproachInstructionInstrumentedTest` are local only; they are
 
 - Lane-level OSM parsing / second panel
 - Navit-style tap-to-clear
-- Current-street continuous OSD line
 - Full Ferrostar SDK (optional later publisher into the same `NavGuidance` bus)
+
+Current-street bottom HUD line is implemented separately — see
+[`current-street.md`](current-street.md).

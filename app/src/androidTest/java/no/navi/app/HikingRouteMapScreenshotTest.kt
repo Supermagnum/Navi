@@ -137,6 +137,7 @@ class HikingRouteMapScreenshotTest {
             daysJson = "[]",
             simSamplesJson = "[]",
             maneuversJson = "[]",
+            priorityPathSharePct = 0.0,
         )
         NaviMapTestHooks.pendingRoute = route()
         val deadline = System.currentTimeMillis() + 60_000

@@ -70,6 +70,7 @@ class MultiDayDayCardsScreenshotTest {
             daysJson = days,
             simSamplesJson = "[]",
             maneuversJson = "[]",
+            priorityPathSharePct = 0.0,
         )
     }
 
@@ -102,6 +103,7 @@ class MultiDayDayCardsScreenshotTest {
             daysJson = days,
             simSamplesJson = "[]",
             maneuversJson = "[]",
+            priorityPathSharePct = 0.0,
         )
     }
 

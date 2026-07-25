@@ -4,6 +4,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+import uniffi.navi.approachHideM
 
 data class RouteProgressSnapshot(
     val alongM: Double,
@@ -26,6 +27,11 @@ data class RouteProgressSnapshot(
 /**
  * Snap GPS (or simulated) position onto the planned sample chain and derive
  * next-maneuver distance, via/end arrival, and remaining ETA.
+ *
+ * [hideDistanceM] is metres past which a maneuver is treated as passed (approach
+ * box hide). Default is UniFFI [approachHideM] — same value as Rust
+ * `APPROACH_HIDE_M` / docs/approach-instructions.md (25 m). Do not hardcode
+ * a second magic number here.
  */
 class RouteProgressTracker(
     private val samples: List<RouteSimSample>,
@@ -34,6 +40,7 @@ class RouteProgressTracker(
     private val endPoint: Waypoint,
     private val viaRadiusM: Double = 80.0,
     private val endRadiusM: Double = 60.0,
+    private val hideDistanceM: Double = approachHideM(),
 ) {
     private var maneuverCursor = 0
     private var viaReached = -1
@@ -61,10 +68,10 @@ class RouteProgressTracker(
         val nearest = nearestSampleIndex(lat, lon)
         val sample = samples[nearest]
         val along = sample.cumM
-        // Advance past maneuvers within hide distance.
+        // Advance past maneuvers within hide distance (metres).
         while (maneuverCursor < maneuvers.size) {
             val m = maneuvers[maneuverCursor]
-            if (along + 25.0 >= m.cumM) {
+            if (along + hideDistanceM >= m.cumM) {
                 maneuverCursor++
             } else {
                 break

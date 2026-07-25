@@ -111,6 +111,7 @@ class ApproachInstructionInstrumentedTest {
             daysJson = "[]",
             simSamplesJson = "[]",
             maneuversJson = "[]",
+            priorityPathSharePct = 0.0,
         )
         NaviMapTestHooks.pendingCamera = Triple(
             (START_LAT + END_LAT) / 2.0,

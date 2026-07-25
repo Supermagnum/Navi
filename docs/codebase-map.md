@@ -112,6 +112,9 @@ next maneuver”).
 | What | Where |
 |---|---|
 | Appear / urgency / hide meters | `core/src/nav/mod.rs` (`APPROACH_APPEAR_M` 750, `APPROACH_URGENCY_M` 150, `APPROACH_HIDE_M` 25) |
+| UniFFI thresholds | `approachAppearM` / `approachUrgencyM` / `approachHideM` |
+| Phase string for UI | `approachPhaseForDistance` → `ApproachInstructionBox` |
+| Maneuver cursor advance | `RouteProgressTracker.hideDistanceM` (default `approachHideM()`) |
 | Phase logic | `NavGuidance::phase` |
 | Product copy / layout rules | [`approach-instructions.md`](approach-instructions.md) |
 | Compose UI | `ApproachInstructionBox.kt` |

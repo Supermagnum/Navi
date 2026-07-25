@@ -141,6 +141,7 @@ class SimBannerBreakTiltInstrumentedTest {
                     },
                 ).toString(),
                 maneuversJson = "[]",
+                priorityPathSharePct = base.priorityPathSharePct,
             )
         }
 

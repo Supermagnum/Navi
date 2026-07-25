@@ -267,6 +267,33 @@ impl RouteGraph {
             .count()
     }
 
+    /// Distance-weighted share (%) of path length on motorway/trunk/primary.
+    pub fn major_highway_share_pct(&self, path: &[NodeId]) -> f64 {
+        let mut total_m = 0.0;
+        let mut major_m = 0.0;
+        for w in path.windows(2) {
+            let Some(idx) = self.edge_index(w[0], w[1]) else {
+                continue;
+            };
+            let e = &self.edges[idx];
+            let len = e.length_m.max(0.0);
+            total_m += len;
+            if highway_is_major(e.highway.as_deref()) {
+                major_m += len;
+            }
+        }
+        if total_m <= 0.0 {
+            return 0.0;
+        }
+        100.0 * major_m / total_m
+    }
+
+    /// Share (%) of path length **not** on major highways (sightseeing / avoid-major
+    /// “priority-path” metric for motor profiles — higher when majors are avoided).
+    pub fn non_major_highway_share_pct(&self, path: &[NodeId]) -> f64 {
+        (100.0 - self.major_highway_share_pct(path)).clamp(0.0, 100.0)
+    }
+
     /// Human-readable summary of what a route avoided / how many restricted segments.
     pub fn format_avoidance_report(
         &self,
@@ -304,7 +331,7 @@ pub fn format_route_avoidance_report(
         ));
     }
     lines.push(format!(
-        "Priority-path share on last plan: {priority_path_share_pct_hint:.1}%"
+        "Non-major road share on last plan: {priority_path_share_pct_hint:.1}% (100% minus motorway/trunk/primary length)"
     ));
     lines.join("\n")
 }
@@ -447,6 +474,11 @@ fn is_major_highway(highway: &str) -> bool {
             | "primary"
             | "primary_link"
     )
+}
+
+/// True when OSM `highway` is motorway / trunk / primary (incl. `*_link`).
+pub fn highway_is_major(highway: Option<&str>) -> bool {
+    highway.is_some_and(is_major_highway)
 }
 
 fn edge_allowed_for_options(edge: &GraphEdge, options: &RouteOptions) -> bool {
