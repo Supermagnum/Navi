@@ -68,7 +68,7 @@ tur-/sykkelnettverk** (myk preferanse, av som standard). Du kan sette
 bil-pauseintervaller. Lastebilprofiler bruker EC 561/2006 kjøre-/hviletidsregler
 med flerdagers døgn-/ukeshvile når turen varer lenger enn én pliktdag. Den har
 et minnebasert bevegelig-ikon-lager (`TrackStore`) og en sandkasse
-WASM-pluginvert for fremtidige plugins; produktplugins er ikke levert ennå
+WASM-pluginvert for fremtidige plugins; plugins er ikke laget ennå
 ([`docs/plugins.md`](docs/plugins.md)).
 
 ## Funksjoner
@@ -178,7 +178,7 @@ lastebil når lastebilprofil er valgt).
 
 **Kart og skjermstriper.** Kartet tegnes med MapLibre. Kollapset toppstripe viser
 høyde; trykk for kartinnstillinger (rotasjon, tur-ETA, pauser, auto-zoom,
-3D-hillshade, kameratilt). Kollapset bunnstripe viser zoom, pausetid, tur-ETA og
+3D-hillshade, kameratilt). Kollapset bunnstripe viser zoom, pausetid, navnet på veien eller gaten du er på, tur-ETA og
 økoblad; trykk for reisemodus, hvile og drivstoff. **Fotturruter krever at
 reisemodus Hiking/Fottur er valgt** — planlegging med bil (eller annen
 motorprofil) bruker veinettet og vil feile eller gi ubrukelig sti for fotstier.
