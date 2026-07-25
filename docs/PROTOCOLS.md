@@ -8,8 +8,8 @@ position, tracks).
 
 | Path | Role |
 |---|---|
-| UniFFI (`navi-ffi`) | Kotlin UI ↔ Rust core |
-| WASM HostApi | `plugin-host` ↔ guest plugins — see [`plugins.md`](plugins.md) |
+| UniFFI (`navi-ffi`) | Kotlin UI ↔ Rust core — full export list in [`API.md`](API.md) |
+| WASM HostApi | `plugin-host` ↔ guest plugins — see [`plugins.md`](plugins.md) and [`API.md`](API.md) §2 |
 
 ## External / vehicle / radio (documented; mostly not implemented)
 

@@ -1,5 +1,8 @@
 # Navi architecture
 
+File-level “where do I edit X?” map for contributors:
+[`codebase-map.md`](codebase-map.md). Callable APIs: [`API.md`](API.md).
+
 ## Layout
 
 | Path | Crate / role |

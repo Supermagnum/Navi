@@ -21,6 +21,8 @@ Idle HUD-linjer og Helgøya → Atnbrua-ruteopptaket ligger bare i
 [engelsk README](../README.md#working-app-emulator-screenshots)
 (`docs/images/hud/hud_idle_both_bars.png`,
 `docs/images/terrain/hike_eldabu_ramshogda_3d.png`).
+Karttilt ved 45° (3D av / 3D på) vises også der
+(`docs/images/tilt45_3d_off.png`, `docs/images/tilt45_3d_on.png`).
 
 ## Kart / ruting
 
@@ -30,6 +32,8 @@ Idle HUD-linjer og Helgøya → Atnbrua-ruteopptaket ligger bare i
 | Helgøya → Atnbrua (øko + 3D på, pauser synlige) | ![Ruteoverlegg](images/route_map.png) |
 | Rute fra Gjendebu til Thonvollen, 3D-kart. | ![Gjendebu til Thonvollen 3D](images/gjendebu_thonvollen_3d.png) |
 | Gjendebu til Thonvollen, flatt kart. | ![Gjendebu til Thonvollen flat](images/gjendebu_thonvollen_flat.png) |
+| Hamar-løkke, 45° tilt, 3D av | ![45° tilt 3D av](images/tilt45_3d_off.png) |
+| Hamar-løkke, 45° tilt, 3D på | ![45° tilt 3D på](images/tilt45_3d_on.png) |
 
 Foretrekk `images/terrain/` og nyere HUD-opptak når du sammenligner rutevisual.
 Eldre `route_map.png`-kopier var ~57 % MapLibre tom bakgrunn (`#f8f4f0`) fordi

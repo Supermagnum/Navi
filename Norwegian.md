@@ -87,7 +87,7 @@ WASM-pluginvert for fremtidige plugins; produktplugins er ikke levert ennå
 | **Kartrotasjon** | Rett kartet etter kompass, etter kjøreretning, eller med nord alltid opp. | Ferdig |
 | **Bevegelige ikoner** | Vis nærliggende spormarkører på kartet (for eksempel radiostasjoner) innen ca. 50–150 km. | **Delvis** — tegning virker; live radiomating er ikke innebygd ennå |
 | **Kartoppdateringer** | Når du velger det: sjekk OpenStreetMap-oppdateringer og bruk dem, eller last en fersk region ([`docs/osm-updates.md`](docs/osm-updates.md)). Aldri stille i bakgrunnen. | Ferdig |
-| **Plugins** | Sandkasse-WASM-vert er klar. Produktplugins er ikke levert ennå med vilje; flere er spesifisert for bidragsytere ([`docs/plugins.md`](docs/plugins.md) — camping, forsyning, instrumentcluster/AGL, ECU, APRS, …). | Vert klar; innhold utsatt |
+| **Plugins** | Sandkasse-WASM-vert er klar. Produktplugins er ikke levert ennå med vilje; flere er spesifisert for bidragsytere ([`docs/plugins.md`](docs/plugins.md) — camping, forsyning, instrumentcluster/AGL, UI-oversettelse, ECU, APRS, …). | Vert klar; innhold utsatt |
 
 **Ekte maskinvare:** Så langt er appen utviklet og sjekket hovedsakelig på Android
 Automotive-**emulatoren**. Den **må fortsatt testes på ekte bilskjermer** før
@@ -177,10 +177,12 @@ styrer bare om påminnelsen vises; rediger tider i kjøreinnstillinger (bil vs
 lastebil når lastebilprofil er valgt).
 
 **Kart og skjermstriper.** Kartet tegnes med MapLibre. Kollapset toppstripe viser
-høyde; trykk for kartinnstillinger (rotasjon, tur-ETA, pauser, auto-zoom).
-Kollapset bunnstripe viser zoom, pausetid, tur-ETA og økoblad; trykk for kjøre-,
-hvile- og drivstoffinnstillinger. Nær en sving viser en kort instruksjonsboks
-manøver, avstand og neste gate
+høyde; trykk for kartinnstillinger (rotasjon, tur-ETA, pauser, auto-zoom,
+3D-hillshade, kameratilt). Kollapset bunnstripe viser zoom, pausetid, tur-ETA og
+økoblad; trykk for reisemodus, hvile og drivstoff. **Fotturruter krever at
+reisemodus Hiking/Fottur er valgt** — planlegging med bil (eller annen
+motorprofil) bruker veinettet og vil feile eller gi ubrukelig sti for fotstier.
+Nær en sving viser en kort instruksjonsboks manøver, avstand og neste gate
 ([`docs/approach-instructions.md`](docs/approach-instructions.md)).
 
 **Høyde på emulatoren.** Automotive-emulatorens GPS-høyde er ofte feil (for
@@ -196,70 +198,81 @@ radiodekoding er ikke med ennå; USB-SDR er planlagt
 
 ## Innstillinger
 
-Innstillinger lagres i appens SQLite-config under enhetens datakatalog
-(UniFFI `load*` / `save*`). Bruk på kjøreinnstillinger skriver og lukker;
-Avbryt forkaster uten å lagre den redigeringsøkten.
+**Språk i appen:** brukergrensesnittet er foreløpig **kun engelsk**. Det finnes
+**ingen språkbryter** i kart- eller kjøreinnstillinger. Norsk tekst her og i
+andre markdown-filer er **dokumentasjon**, ikke oversatte appstrenger. En
+fremtidig UI-oversettelsesplugin er spesifisert i
+[`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
 
-### Topp-HUD (kollapset som standard — trykk for kartinnstillinger)
+Innstillinger lagres under appens datakatalog: hvile/drivstoff/kjøretøy via
+SQLite (UniFFI `load*` / `save*`); kart-HUD (auto-zoom, 3D, tilt, pausevisning)
+via `MapHudPrefs`. **Save** skriver og lukker; **Close** lukker (kartbrytere
+kan allerede være lagret umiddelbart).
 
-| Kontroll | Oppførsel |
+### Kart- / visningsinnstillinger (trykk topp-HUD)
+
+| Innstilling | Hva den gjør |
 |---|---|
-| **Kollapset stripe** | Viser kartetikett, høyde, rotasjonstips; trykk veksler kart-/visningsinnstillinger |
-| **Høyde** | DEM-terrenghøyde når flis dekker fikset; ellers GPS-høyde (`Alt --` til noe er tilgjengelig). Emulator-GNSS-høyde er ofte feil — det er AVD, ikke appen |
-| **Kompass / Reise / N-opp** | I kartinnstillinger: kameraretning fra magnetisk kurs, GPS-kurs eller nord opp |
-| **Tur-ETA** | I kartinnstillinger: aktiverer ETA-linje på bunnlinjen |
-| **Pauser** | I kartinnstillinger: aktiverer/deaktiverer pausepåminnelsestekst på bunnlinjen |
-| **Auto-zoom** | I kartinnstillinger: når på, setter zoom til konfigurert nivå (−/+ 0,5 steg) |
+| **Compass** | Roterer kartet etter magnetisk / kompasskurs |
+| **Travel** | Roterer kartet etter GPS- (eller simulert) kjøreretning |
+| **N-up** | Holder kartet med nord opp (bearing 0°) |
+| **Trip ETA** | Viser gjenstående tur-ETA på bunnlinjen |
+| **Breaks** | Viser pausepåminnelsen på bunnlinjen (`Break in …` / av). Endrer ikke planlagt stoppavstand alene |
+| **Auto-zoom** | Når på, snapper zoom til satt nivå under bevegelse |
+| **Auto-zoom − / +** | Endrer måzoom i 0,5-steg (ca. z 3–20) |
+| **3D (experimental)** | Valgfri Mapterhorn DEM-**hillshade** (Vulkan-port). Uavhengig av kameratilt; se [`docs/map-styles.md`](docs/map-styles.md) |
+| **Map tilt** | Snapper kameravinkel til **0° / 35° / 45° / 65°** (Vulkan-port; låst til 0° uten Vulkan). Fungerer med 3D på eller av |
+| **Save / Close** | Lagrer kart-HUD-preferanser og lukker, eller lukker |
 
-**Estimater før avreise** (vist før kjøretøy/turgåer/syklist begynner å bevege
-seg) er beregnede estimater, ikke live målinger — basert på skiltet `maxspeed`
-(med motorvei-klasse som reserve) for bil/MC/lastebil, og faste
-gjennomsnittsfarter (16 min/km fottur, ~4 min/km sykling) for fottur/sykling.
-Dette er startestimater; faktisk tid varierer med forhold, trafikk, vær, form
-og terreng, og oppdateres automatisk når ekte bevegelse/GPS-hastighet finnes.
+**Estimater før avreise** bruker skiltet `maxspeed` (med veiklasse-reserve) for
+motorprofiler, og fast tempo (ca. 16 min/km fottur, ~4 min/km sykling) for
+fottur/sykling. De er startestimater; live fremdrift oppdaterer når GPS /
+simulering gir hastighet.
 
-### Bunn-HUD (kollapset — trykk statusområdet for kjøreinnstillinger)
+### Bunn-HUD
 
-| Kontroll | Oppførsel |
+| Kontroll | Hva den gjør |
 |---|---|
-| **Zoom − / +** | Appens egen kartzoom (AAOS klima − 63 + i systemkrom er ikke zoom) |
-| **Pause / ETA** | Tid til pause og tur-ETA (ingen svingstubb — se tilnærmingsinstruksjoner) |
-| **Øko-blad** | Vises på denne linjen bare når økomodus er aktiv for profilen |
-| **Trykk status** | Åpner kjøre- / hvile- / drivstoffinnstillinger |
+| **Zoom − / +** | Appens egen kartzoom (AAOS klima − 63 + er ikke zoom) |
+| **Pause- / ETA-linjer** | Tid (eller avstand) til neste pause, og tur-ETA når aktivert |
+| **Øko-blad** | Synlig når økomodus er på for aktiv profil |
+| **Trykk statusområdet** | Åpner kjøre- / kjøretøyinnstillinger (ikke zoom-knappene) |
 
-### Kjøreinnstillinger (trykk bunn-HUD — lagres)
+### Kjøre- / kjøretøyinnstillinger (trykk bunn-HUD)
 
-| Felt | Lagres som | Merknad |
-|---|---|---|
-| Timer mellom pauser | Bil-hvilestandarder | Profilstandard for bil, ikke engangs overstyring |
-| Hviletid (minutter) | Bil-hvilestandarder | Samme lagring som pauseintervall |
-| Økomodus | Bil-hvile `ecoModeEnabled` | Blad på bunn-HUD når på |
-| Enheter liter / gallon | `FuelConfig.prefer_liters` | Visningspreferanse; lagring er alltid liter |
-| Tankkapasitet | `FuelConfig.tank_capacity_l` | Konverteres fra gal→L ved lagring når enhet er gallon |
-| Drivstoff påfylt | `FuelConfig.fuel_added_l` | Gir adaptivt forbruk når live ECU mangler |
+| Innstilling | Hva den gjør |
+|---|---|
+| **Travel mode** | **Car / Bicycle / Hiking / Motorcycle / Truck / Mobile home.** Velger planlegger og hvilepakke. **Hiking må være valgt for fotturruter** — ellers brukes veinettet og planlegging feiler eller misrouter stier |
+| **Hours between breaks** | Mykt bilintervall (eller lastebilens «pause etter X timer»). Lagres som profilstandard, ikke engangsoverstyring |
+| **Rest time (minutes)** | Foreslått hvilengde (lastebil: sammenhengende pauselengde) |
+| **Split break 15+30** | Bare lastebil — foretrekk delt pause i stedet for én sammenhengende |
+| **Arm +1 h exceptional** | Bare lastebil — eksplisitt valg for eksepsjonell forlengelse |
+| **Next break shown as Time / Distance** | Bunnlinjens pause som minutter eller km/mi ved antatt cruisehastighet |
+| **Distance units km / miles** | Når pause-som-avstand er på, metrisk eller imperial |
+| **Eco mode** | Terrengbevisst energikost; blad på bunn-HUD. Fottur/sykling låser øko på; motorprofiler kan veksle |
+| **Fuel units liters / gallons** | Visningspreferanse; lagring er liter |
+| **Fuel tank capacity** | Tankstørrelse for adaptive forbruksheuristikker |
+| **Fuel added** | Siste påfylling for samme heuristikker |
+| **Save / Close** | Skriv hvile/drivstoff til SQLite og lukk, eller lukk uten den lagringen |
 
-Auto-zoom-nivå redigeres i **kartinnstillinger** (topplinje), lagres via
-`MapHudPrefs`.
+### Rute- / verktøypanel (hovedkrom)
 
-### Profil- / kjøretøypanel (verktøy-UI — lagres)
-
-| Kontroll | Lagres som | Merknad |
-|---|---|---|
-| Reiseprofil-chip | I minne + hvilelast ved bytte | Menyfokus: bil, sykling, fottur, motorsykkel (lastebil / bobil / el i enum) |
-| Øko-bryter | Med hvile- / profilstandarder | Fottur og sykling låser øko på; motorprofiler kan veksle |
-| **Følg offisielle tur-/sykkelnettverk** | `prefer_official_networks` (av som standard) | Bare fottur / sykling — myk preferanse; hull faller tilbake til vanlige stier |
-| Unngå hovedvei / bom / ferge | Sendes inn i `plan_car_route` ved plan | Endrer faktisk rute (ikke bare rapporttekst) |
-| Kjøretøygrenser | `VehicleLimits` | Brukes ved plan for motorprofiler; brudd på OSM-frihøyde utelukkes |
+| Innstilling | Hva den gjør |
+|---|---|
+| **Follow official hiking/cycling networks** | Myk preferanse for merkede nettverk (av som standard). Bare fottur/sykling |
+| **Avoid motorways / tolls / ferries** | Endrer neste motorplan (ikke bare rapporttekst) |
+| **Vehicle limits** | Høyde, bredde, lengde, aksel/boggi/vekt m.m. Motorplaner utelukker OSM-kanter som bryter frihøyde |
 
 ### Spor (APRS-stil)
 
-| Innstilling | Grenser | API |
-|---|---|---|
-| Visningsrekkevidde | Begrenset **50–150 km** | `TrackStore::set_range_km` / `visible` |
-| Stasjons-tidsavbrudd | Maks **3600 s** | `TrackStore::set_timeout_s` / `expire` |
+| Innstilling | Hva den gjør |
+|---|---|
+| **Display range** | Vis stasjoner innen **50–150 km** (begrenset; ingen ubegrenset global) |
+| **Station timeout** | Fjern utdaterte stasjoner etter maks **3600 s** |
 
-Mer detalj: [`docs/architecture.md`](docs/architecture.md), [`docs/API.md`](docs/API.md),
-[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+Mer detalj: [`docs/architecture.md`](docs/architecture.md),
+[`docs/codebase-map.md`](docs/codebase-map.md), [`docs/API.md`](docs/API.md),
+[`docs/hud-layout.md`](docs/hud-layout.md), [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 
 ## Fungerende app (emulatorskjermbilder)
 
@@ -273,6 +286,13 @@ AVD GNSS-høyde er ofte feil — se merknad over). Én rast er synlig:
 
 ![Helgøya til Atnbrua-rute](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
 
+Kartkamera-tilt (0° / 35° / 45° / 65°) er uavhengig av valgfri 3D-hillshade.
+Hamar kort løkke ved **45°** — flat 2D, deretter 3D på:
+
+![45° tilt, 3D av](docs/images/tilt45_3d_off.png)
+
+![45° tilt, 3D på](docs/images/tilt45_3d_on.png)
+
 Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 øko-blad, rotasjon, kurs, bevegelige ikoner):
 [`docs/bilder.md`](docs/bilder.md).
@@ -282,6 +302,7 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 | Dokument | Beskrivelse |
 |---|---|
 | [`docs/architecture.md`](docs/architecture.md) | Hvordan delene henger sammen (databaser, tråder, plugins) |
+| [`docs/codebase-map.md`](docs/codebase-map.md) | Bidragsyter-filkart: hvor feil fikses, zoom, tilnærming, ruting, HUD |
 | [`docs/bilder.md`](docs/bilder.md) | Emulatorskjermbildegalleri (norsk) |
 | [`docs/pictures.md`](docs/pictures.md) | Emulatorskjermbildegalleri (engelsk) |
 | [`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md) | Rast/vei-grunnlag for standard pauseintervaller (fottur og sykling); [engelsk](docs/historical-background.md) |
@@ -297,8 +318,11 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 | [`docs/osm-updates.md`](docs/osm-updates.md) | Valgfri Geofabrik-sjekk / `.osc.gz` / full nedlasting |
 | [`docs/plugins.md`](docs/plugins.md) | Plugin-vert-status (bevisst: ingen innholdsplugins ennå) + HostApi, isolasjon, veikart |
 | [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Spesifikasjon: allemannsrett / flerland villcamping (plugin) |
+| [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Spesifikasjon: drivstoff-/vannforsyning langs rute (plugin) |
+| [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Spesifikasjon: eksport av nav-tilstand til cluster/AGL (plugin) |
+| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Spesifikasjon: UI-språk/oversettelsespakker (plugin; appen er engelsk i dag) |
 | [`docs/icons.md`](docs/icons.md) | Ikonoversikt; egne SVG-ikoner; Navit GPL-v2 |
-| [`docs/API.md`](docs/API.md) | UniFFI / vert-API-oversikt |
+| [`docs/API.md`](docs/API.md) | UniFFI vert-API + plugin HostApi-referanse |
 | [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) | Protokollindeks |
 | [`docs/ECU.md`](docs/ECU.md) | ECU-protokoller: OBD-II, J1939, MegaSquirt + EV |
 | [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md) | Formler: MAF/J1939/MegaSquirt-drivstoff, rekkevidde, øko-segmentenergi |
@@ -413,6 +437,8 @@ lyd/UI.
 - `app/` — Android-vert (Kotlin/Compose) som kobler til kjernen via UniFFI.
 - `plugin-host/` / `plugin-sdk/` / `plugins/` — sandkasse WASM-vert (innholdsplugins utsatt; se [`docs/plugins.md`](docs/plugins.md)).
 - Hvordan delene henger sammen: [`docs/architecture.md`](docs/architecture.md).
+- Hvor funksjoner endres / feil fikses: [`docs/codebase-map.md`](docs/codebase-map.md).
+- Kallbare API-er: [`docs/API.md`](docs/API.md).
 - [`docs/test-results.md`](docs/test-results.md) /
   [`docs/android-test-results.md`](docs/android-test-results.md) — integrasjonsrapporter.
 
@@ -448,7 +474,8 @@ Bodø).
 ## Kjente problemer
 
 - **Plugins (innhold):** WASM-vert/sandkasse er klar; produktplugins er bevisst
-  utsatt for uavhengige bidragsytere — se [`docs/plugins.md`](docs/plugins.md).
+  utsatt for uavhengige bidragsytere (camping, forsyning, instrumentcluster/AGL,
+  UI-oversettelse, ECU, APRS, …) — se [`docs/plugins.md`](docs/plugins.md).
   Ikke en feil i navigasjonskjernen.
 - **GUI-puss:** Compose HUD / søk / verktøy fungerer, men trenger fortsatt
   visuelt og UX-puss (avstand, typografi, tetthet på Automotive-skjermer).

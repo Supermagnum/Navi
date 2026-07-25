@@ -8,7 +8,7 @@ timeout isolation (`plugin-host` + `log-hello` / `busy-loop` examples).
 
 **No product content plugins** have been built yet (allemannsretten camping-spot
 spec, marine traffic, weather overlays, bathymetry, sonar, RTL-SDR/APRS-adjacent
-guests, etc.). That is **expected and intentional**, not a bug or an oversight —
+guests, UI translation packs, etc.). That is **expected and intentional**, not a bug or an oversight —
 the host exists so future contributors can ship those plugins independently
 without changing the navigation core. Country/region-dependent packs (camping,
 future driving-hour families, horse access, …) follow the reusable pattern in
@@ -200,6 +200,17 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | **Proposed caps** | `nav_guidance_read` (new), `vehicle_signal_publish` (new), `position_read`, `log` |
 | **Notes** | Spec only — not implemented. Export only (not ECU in). Not an AGL `afm` / Wayland packaging effort. |
 
+### 10. UI language / translation (`i18n` / `ui_translation`)
+
+| | |
+|---|---|
+| **Benefit** | Offline UI string packs (BCP 47 locales) so the Compose host is not English-only forever |
+| **Docs** | [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md) — catalog layout, fallback to English, host-owned lookup, when to show a language control |
+| **Host duties** | Load packs from `{dataDir}/i18n/`; resolve message ids in Compose; persist `ui_locale`; install packs via Tools (no WASM sockets) |
+| **Guest duties** | Optional: validate packs, suggest locale; must not fetch translations itself |
+| **Proposed caps** | `i18n_catalog_query`, `i18n_string_resolve`, `i18n_locale_get` / `i18n_locale_set`, `plugin_kv` / `storage`, `log` |
+| **Notes** | Spec only — not implemented. **Today the app UI is English only and has no language toggle.** Parallel markdown (`Norwegian.md`, etc.) is documentation, not in-app i18n. |
+
 ### Capability sketch (not in ABI yet)
 
 | Proposed | Purpose |
@@ -219,6 +230,9 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | `plugin_kv` / `storage` | Small per-plugin persist (e.g. two-night camping memory, POI confirmations) |
 | `nav_guidance_read` | Active route / maneuver / ETA / break / eco / polyline snapshot for cluster export |
 | `vehicle_signal_publish` | Ask host to publish VSS path/values or `navi.cluster.v1` JSON (host owns Kuksa/UDP/WS) |
+| `i18n_catalog_query` | List installed UI translation packs |
+| `i18n_string_resolve` | Resolve message id (+ args) for the active locale |
+| `i18n_locale_get` / `i18n_locale_set` | Read/write persisted UI locale preference |
 
 Add a capability to `plugin-host` `Capability` enum + HostApi **before** shipping
 any guest that needs it. Until then, host-native services may write into core

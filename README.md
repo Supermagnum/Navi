@@ -87,7 +87,7 @@ yet ([`docs/plugins.md`](docs/plugins.md)).
 | **Map rotation** | Align the map with the compass, with your travel direction, or with north always up. | Done |
 | **Moving icons** | Show nearby tracked markers on the map (for example radio station symbols) within about 50–150 km. | **Partial** — drawing works; a live radio feed is not built in yet |
 | **Map data updates** | When you choose, check for OpenStreetMap updates and apply them, or download a fresh region ([`docs/osm-updates.md`](docs/osm-updates.md)). Never updates quietly in the background. | Done |
-| **Plugins** | Sandboxed WASM host is ready. Product plugins are not shipped yet on purpose; several are specified for contributors ([`docs/plugins.md`](docs/plugins.md) — camping, resupply, instrument cluster/AGL, ECU, APRS, …). | Host ready; content deferred |
+| **Plugins** | Sandboxed WASM host is ready. Product plugins are not shipped yet on purpose; several are specified for contributors ([`docs/plugins.md`](docs/plugins.md) — camping, resupply, instrument cluster/AGL, UI translation, ECU, APRS, …). | Host ready; content deferred |
 
 **Real hardware:** So far the app has been developed and checked mainly on the
 Android Automotive **emulator**. It still **needs testing on real head units**
@@ -185,9 +185,12 @@ settings (Car vs Truck when a truck profile is selected).
 
 **Map and on-screen bars.** The map is drawn with MapLibre. The collapsed top
 bar shows altitude; tap it for map settings (rotation, trip ETA, breaks,
-auto-zoom). The collapsed bottom bar shows zoom, break time, trip ETA, and the
-eco leaf; tap it for drive, rest, and fuel settings. Near a turn, a short
-instruction box shows the maneuver, distance, and next street
+auto-zoom, 3D hillshade, camera tilt). The collapsed bottom bar shows zoom,
+break time, trip ETA, and the eco leaf; tap it for travel mode, rest, and fuel
+settings. **Hiking routes require the Hiking travel mode** — planning with Car
+(or another motor profile) uses the road graph and will fail or produce a
+useless path for foot trails. Near a turn, a short instruction box shows the
+maneuver, distance, and next street
 ([`docs/approach-instructions.md`](docs/approach-instructions.md)).
 
 **Altitude on the emulator.** The Automotive emulator’s GPS height is often
@@ -202,65 +205,82 @@ yet; USB SDR support is planned ([`docs/APRS-SDR.md`](docs/APRS-SDR.md)).
 
 ## Settings
 
-Settings persist in the app SQLite config store under the device data directory
-(UniFFI `load*` / `save*` helpers). Apply on the Drive settings sheet writes and
-dismisses; Cancel discards the sheet without saving that edit session.
+**UI language:** the in-app chrome is **English only** today. There is **no
+language-switching control** in map or drive settings. Parallel markdown
+(`Norwegian.md`, `docs/bilder.md`, …) is documentation, not an in-app locale
+system. A future UI translation plugin is specified in
+[`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
 
-### Top HUD (collapsed by default — tap to open map settings)
+Settings persist under the app data directory: rest/fuel/vehicle via SQLite
+(UniFFI `load*` / `save*`); map HUD prefs (auto-zoom, 3D, tilt, break display)
+via `MapHudPrefs` SharedPreferences. **Save** on a sheet writes and dismisses;
+**Close** dismisses without requiring a save for controls that already apply
+immediately (map sheet toggles).
 
-| Control | Behaviour |
+### Map / display settings (tap top HUD)
+
+| Setting | What it does |
 |---|---|
-| **Collapsed strip** | Shows Map label, altitude, rotation hint; tap toggles map/display settings |
-| **Altitude** | DEM terrain height when a tile covers the fix; otherwise GPS altitude (`Alt --` until either is available). Emulator GNSS altitude is often wrong — that is the AVD, not the app (see note above) |
-| **Compass / Travel / N-up** | In map settings sheet: camera bearing from magnetic heading, GPS course, or north-up |
-| **Trip ETA** | In map settings: enables ETA line on the bottom bar |
-| **Breaks** | In map settings: enables/disables break-reminder text on the bottom bar |
-| **Auto-zoom** | In map settings: when on, snaps zoom to the configured level (−/+ 0.5 steps) |
+| **Compass** | Rotate the map from the magnetic / compass heading feed |
+| **Travel** | Rotate the map from GPS (or simulated) direction of travel |
+| **N-up** | Keep map north-up (bearing 0°) |
+| **Trip ETA** | Show remaining trip ETA on the bottom bar (pre-departure estimate until live progress updates it) |
+| **Breaks** | Show the break-reminder line on the bottom bar (`Break in …` / off). Does not change planned stop spacing by itself |
+| **Auto-zoom** | When on, snap camera zoom to the set level while moving |
+| **Auto-zoom − / +** | Change the target zoom in 0.5 steps (about z 3–20) |
+| **3D (experimental)** | Opt-in Mapterhorn DEM **hillshade** on the basemap (Vulkan-gated). Independent of camera tilt; see [`docs/map-styles.md`](docs/map-styles.md) |
+| **Map tilt** | Snap camera pitch to **0° / 35° / 45° / 65°** (Vulkan-gated; locked at 0° without Vulkan). Works with 3D on or off |
+| **Save / Close** | Persist map HUD prefs and close, or dismiss |
 
-**Pre-departure duration estimates** (shown before the vehicle/hiker/cyclist starts moving) are calculated estimates, not live measurements — based on posted `maxspeed` limits (with a highway-class fallback where the tag is missing) for Car/Motorcycle/Truck, and fixed average-pace figures (16 min/km hiking, ~4 min/km cycling on average terrain) for Hiking/Cycling. These are starting estimates only; actual travel time will vary with real conditions, traffic, weather, fitness, and terrain, and updates automatically once real movement/GPS speed data is available.
+**Pre-departure duration estimates** (before real movement) use posted `maxspeed`
+(with highway-class fallback) for motor profiles, and fixed pace (about 16 min/km
+hiking, ~4 min/km cycling) for Hiking/Cycling. They are starting estimates only;
+live progress updates once GPS / simulation speed is available.
 
-### Bottom HUD (collapsed — tap status area for drive settings)
+### Bottom HUD chrome
 
-| Control | Behaviour |
+| Control | What it does |
 |---|---|
-| **Zoom − / +** | Sole app-owned map zoom (AAOS climate − 63 + in system chrome is not zoom) |
-| **Break / ETA** | Time-to-break and trip ETA only (no turn stub — see approach-instructions) |
-| **Eco leaf** | Shown on this bar only when eco-mode is active for the profile (`leaf.svg` via icon rasterizer) |
-| **Tap status** | Opens drive / rest / fuel settings (no separate Settings link) |
+| **Zoom − / +** | App-owned map zoom (AAOS climate − 63 + in system chrome is not zoom) |
+| **Break / ETA lines** | Time (or distance) to next break, and trip ETA when enabled |
+| **Eco leaf** | Visible when eco mode is on for the active profile |
+| **Tap status area** | Opens drive / vehicle settings (not the zoom buttons) |
 
-### Drive settings sheet (bottom HUD tap — persisted)
+### Drive / vehicle settings (tap bottom HUD)
 
-| Field | Persisted as | Notes |
-|---|---|---|
-| Hours between breaks | Car **or** Truck rest defaults | Truck / TruckElectric use EC 561 `mandatory_break_after_hours`; Mobile home uses **car** rest (not EC 561) |
-| Rest time (minutes) | Car **or** Truck rest defaults | Truck continuous 45 (or 15+30 when split is on) |
-| Eco mode | Profile rest `ecoModeEnabled` | Leaf on bottom HUD when on |
-| Truck split break / +1 h exceptional | `TruckRestParams` | Truck / TruckElectric only; exceptional arm is explicit opt-in |
-| Units liters / gallons | `FuelConfig.prefer_liters` | Display preference; storage is always litres |
-| Tank capacity | `FuelConfig.tank_capacity_l` | Converted from gal→L on save when units are gallons |
-| Fuel added | `FuelConfig.fuel_added_l` | Feeds adaptive consumption when live ECU is absent |
+| Setting | What it does |
+|---|---|
+| **Travel mode** | **Car / Bicycle / Hiking / Motorcycle / Truck / Mobile home.** Selects the planner and rest pack. **Hiking must be selected for hiking routes** — otherwise planning uses the motor/road graph and fails or misroutes foot paths |
+| **Hours between breaks** | Soft car-style interval (or truck mandatory-break-after hours). Saved as profile defaults, not a one-trip override |
+| **Rest time (minutes)** | Suggested rest duration (truck: continuous break length) |
+| **Split break 15+30** | Truck only — prefer split break metadata instead of one continuous break |
+| **Arm +1 h exceptional** | Truck only — explicit opt-in for exceptional driving-time extension |
+| **Next break shown as Time / Distance** | Bottom-bar break line as minutes or as km/mi at an assumed cruise speed |
+| **Distance units km / miles** | When break-as-distance is on, choose metric or imperial for that line |
+| **Eco mode** | Terrain-aware energy costing; leaf on bottom HUD. Hiking/cycling lock eco on; motor profiles can toggle |
+| **Fuel units liters / gallons** | Display preference; stored values are litres |
+| **Fuel tank capacity** | Tank size for adaptive consumption heuristics |
+| **Fuel added** | Last fill amount for the same heuristics |
+| **Save / Close** | Write rest/fuel to SQLite and dismiss, or dismiss without that save |
 
-Auto-zoom level is edited in the **map settings** sheet (top bar), persisted via `MapHudPrefs`.
+### Route / tools panel (main chrome)
 
-### Profile / vehicle panel (tools UI — persisted)
-
-| Control | Persisted as | Notes |
-|---|---|---|
-| Travel profile chip | In-memory + rest load on change | Menu focus: Car, Cycling, Hiking, Motorcycle, Truck, Mobile home |
-| Eco toggle | With rest / profile defaults | Hiking & cycling lock eco on; motor profiles can toggle |
-| **Follow official hiking/cycling networks** | `prefer_official_networks` (default off) | Hiking / Cycling only — soft cost preference; gaps fall back to ordinary paths |
-| Avoid motorways / tolls / ferries | Passed into `plan_car_route` each plan | Changes the planned route (not report-only) |
-| Vehicle limits (axle / bogie / height / width / length / weight) | `VehicleLimits` | Applied on plan for motor profiles; violating OSM clearance edges are excluded and an alternate is sought |
+| Setting | What it does |
+|---|---|
+| **Follow official hiking/cycling networks** | Soft cost preference for marked networks (default off). Hiking/Cycling only |
+| **Avoid motorways / tolls / ferries** | Changes the next motor plan (not report-only) |
+| **Vehicle limits** | Height, width, length, axle/bogie/weight (and related). Motor plans exclude OSM edges that violate clearance |
 
 ### Tracks (APRS-style)
 
-| Setting | Limits | API |
-|---|---|---|
-| Display range | Clamped **50–150 km** (no unlimited global) | `TrackStore::set_range_km` / `visible` |
-| Station timeout | Max **3600 s** | `TrackStore::set_timeout_s` / `expire` |
+| Setting | What it does |
+|---|---|
+| **Display range** | Show stations within **50–150 km** (clamped; no unlimited global) |
+| **Station timeout** | Drop stale stations after at most **3600 s** |
 
-More detail: [`docs/architecture.md`](docs/architecture.md), [`docs/API.md`](docs/API.md),
-[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+More detail: [`docs/architecture.md`](docs/architecture.md),
+[`docs/codebase-map.md`](docs/codebase-map.md), [`docs/API.md`](docs/API.md),
+[`docs/hud-layout.md`](docs/hud-layout.md), [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 
 ## Working app (emulator screenshots)
 
@@ -291,6 +311,7 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | Document | Description |
 |---|---|
 | [`docs/architecture.md`](docs/architecture.md) | How the parts fit together (databases, threads, plugins) |
+| [`docs/codebase-map.md`](docs/codebase-map.md) | Contributor file map: where to fix bugs, zoom, approach, routing, HUD |
 | [`docs/pictures.md`](docs/pictures.md) | Emulator screenshot gallery |
 | [`docs/bilder.md`](docs/bilder.md) | Emulator screenshot gallery (Norwegian) |
 | [`docs/historical-background.md`](docs/historical-background.md) | Rast/vei basis for hiking & cycling rest-interval defaults |
@@ -308,8 +329,9 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Spec: allemannsretten / multi-country wild-camping suggestions (plugin, not core) |
 | [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Spec: fuel/water resupply lookahead, POI confidence, remote/arid buffers (plugin, not core) |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Spec: export nav state to clusters/AGL via VSS/Kuksa + JSON fallback (plugin, not core) |
+| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Spec: offline UI language packs (plugin; app UI is English-only today, no language toggle) |
 | [`docs/icons.md`](docs/icons.md) | Icon inventory; custom SVG icons (Inkscape / Synfig); Navit GPL-v2 |
-| [`docs/API.md`](docs/API.md) | UniFFI / host API overview |
+| [`docs/API.md`](docs/API.md) | UniFFI host API + plugin HostApi reference |
 | [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) | Wire protocol index (UniFFI, plugins, ECU/APRS/CAT) |
 | [`docs/ECU.md`](docs/ECU.md) | ECU protocols: OBD-II, J1939, MegaSquirt + EV SoC/power |
 | [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md) | Formulas: MAF/J1939/MegaSquirt fuel, range, eco segment energy |
@@ -439,6 +461,8 @@ work runs at lower OS priority than audio/UI.
 - `app/` — Android host (Kotlin/Compose) linking the core via UniFFI.
 - `plugin-host/` / `plugin-sdk/` / `plugins/` — sandboxed WASM host (content plugins deferred; see [`docs/plugins.md`](docs/plugins.md)).
 - How the parts fit together: [`docs/architecture.md`](docs/architecture.md).
+- Where to edit features / fix bugs: [`docs/codebase-map.md`](docs/codebase-map.md).
+- Callable APIs: [`docs/API.md`](docs/API.md).
 - [`docs/test-results.md`](docs/test-results.md) /
   [`docs/android-test-results.md`](docs/android-test-results.md) — integration reports.
 
@@ -494,9 +518,9 @@ road network (e.g. E6 west of Trondheim).
 
 - **Plugins (content):** the WASM host/sandbox is ready; shipping product plugins
   (APRS, weather, allemannsretten camping, resupply, instrument cluster/AGL,
-  ECU, marine, etc.) is intentionally deferred for independent contributors —
-  specs live under [`docs/plugins.md`](docs/plugins.md). Not a defect in the
-  navigation core.
+  UI translation, ECU, marine, etc.) is intentionally deferred for independent
+  contributors — specs live under [`docs/plugins.md`](docs/plugins.md). Not a
+  defect in the navigation core.
 - **GUI polish:** the Compose HUD / search / tools UI works but still needs visual
   and UX polishing (spacing, typography, density on Automotive screens). If you
   want to improve the look-and-feel, please do — contributions welcome.
