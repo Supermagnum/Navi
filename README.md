@@ -3,7 +3,7 @@
 # Testers wanted
 
 **Testers wanted** for testing on **actual hardware** (Android Automotive / head
-units). Development so far is emulator-only — real devices differ for GPS, MapLibre,
+units or tablets). Development so far is emulator-only — real devices differ for GPS, MapLibre,
 Vulkan/GLES, and performance. Checklist:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 
