@@ -236,6 +236,8 @@ impl RouteGraph {
                 .tags
                 .get("maxspeed")
                 .and_then(|v| crate::routing::eta::parse_maxspeed_kmh(v));
+            let name = way.tags.get("name").cloned();
+            let road_ref = way.tags.get("ref").cloned();
             let maxweight_t = way.tags.get("maxweight").and_then(|v| parse_metric(v));
             let maxaxleload_t = way.tags.get("maxaxleload").and_then(|v| parse_metric(v));
             let maxbogieweight_t = way
@@ -299,6 +301,8 @@ impl RouteGraph {
                     length_m,
                     highway.clone(),
                     maxspeed_kmh,
+                    name.clone(),
+                    road_ref.clone(),
                     maxweight_t,
                     maxaxleload_t,
                     maxbogieweight_t,
@@ -320,6 +324,8 @@ impl RouteGraph {
                         length_m,
                         highway.clone(),
                         maxspeed_kmh,
+                        name.clone(),
+                        road_ref.clone(),
                         maxweight_t,
                         maxaxleload_t,
                         maxbogieweight_t,
@@ -354,6 +360,8 @@ fn bbox_edge(
     length_m: f64,
     highway: Option<String>,
     maxspeed_kmh: Option<f64>,
+    name: Option<String>,
+    road_ref: Option<String>,
     maxweight_t: Option<f64>,
     maxaxleload_t: Option<f64>,
     maxbogieweight_t: Option<f64>,
@@ -376,6 +384,8 @@ fn bbox_edge(
         end_lon,
         highway,
         maxspeed_kmh,
+        name,
+        road_ref,
         maxweight_t,
         maxaxleload_t,
         maxbogieweight_t,

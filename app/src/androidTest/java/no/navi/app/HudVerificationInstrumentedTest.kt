@@ -574,6 +574,8 @@ class HudVerificationInstrumentedTest {
             poiIconKey = "fuel",
             breakPoisJson = "[]",
             daysJson = "[]",
+            simSamplesJson = "[]",
+            maneuversJson = "[]",
         )
         // Keep prior zoom; route apply would otherwise fit-bounds and break zoom checks.
         NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, zoomBeforeBreak)

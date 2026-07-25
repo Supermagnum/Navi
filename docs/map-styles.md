@@ -25,7 +25,7 @@ and insufficient-space failures with `available_bytes`.
 | Mode | Style | Tile schema | When used |
 |---|---|---|---|
 | **Online 2D (default)** | OpenFreeMap **Liberty** | OpenMapTiles | No local PMTiles covering the camera |
-| **Online 3D (opt-in)** | Liberty vector basemap + **Mapterhorn** `raster-dem` **hillshade** (+ mild camera tilt) | OpenMapTiles + Mapterhorn DEM | User enables “3D (experimental)” and Vulkan gate passes; network for live DEM |
+| **Online 3D (opt-in)** | Liberty vector basemap + **Mapterhorn** `raster-dem` **hillshade** | OpenMapTiles + Mapterhorn DEM | User enables “3D (experimental)” and Vulkan gate passes; network for live DEM |
 | **Offline 2D** | Bundled **Protomaps light** | Protomaps | Completed local extract covers camera center |
 | **Offline 3D (opt-in)** | Protomaps light + local `{region}_dem.pmtiles` hillshade | Protomaps + Mapterhorn DEM extract | Same as offline 2D, plus local DEM file beside the basemap |
 
@@ -54,7 +54,10 @@ Android/iOS Native). Navi therefore:
 1. Keeps the **existing vector basemap** (Liberty online / Protomaps offline).
 2. Adds Mapterhorn DEM sources (`terrainSource`, `hillshadeSource`) and a
    **hillshade** layer (`navi-hills`) via [MapterhornTerrain] when 3D is on.
-3. Applies a mild camera **tilt** (~50°) so shaded relief reads in perspective.
+3. Leaves **camera tilt independent** of the 3D toggle — map settings offer
+   snapped presets **0° / 35° / 45° / 65°** (Vulkan-gated; locked to 0° without
+   Vulkan, same discipline as other non-zero camera angles on the Automotive
+   emulator’s former GLES crash path).
 4. Does **not** set unsupported `terrain` / `sky` root properties (omitted on
    purpose — silent no-ops would be misleading).
 
@@ -134,8 +137,10 @@ Status toast stays `BottomEnd` so attribution is not covered.
 Never default. `MapHudPrefs.opt_in_3d` + Vulkan SDK gate. Online: Mapterhorn
 HTTP TileJSON. Offline: local `{region_key}_dem.pmtiles` beside the Protomaps
 extract (Ostlandet/Innlandet covered by `europe_norway_ostlandet_dem.pmtiles`).
-Turning 3D off, failing Vulkan, or failing hillshade attach resets tilt to 0 —
-never a blank map from the Kotlin attach path.
+Turning 3D off or failing hillshade attach strips DEM hillshade only — **camera
+tilt stays at the user’s map-tilt preset**. Without Vulkan, tilt is forced to
+0° (same gate as other non-zero camera angles on the former GLES crash path).
+Never a blank map from the Kotlin attach path.
 
 ## UniFFI
 

@@ -2293,7 +2293,17 @@ data class CorridorRouteResult (
      * profile, rest_kind, rest_hours, rest_label, overnight_name, overnight_found,
      * not_in_cab, compensation, is_final.
      */
-    var `daysJson`: kotlin.String
+    var `daysJson`: kotlin.String, 
+    /**
+     * Densified path samples for debug route simulation:
+     * `[{"lat","lon","cum_m","speed_kmh","highway","maxspeed_posted"}]`.
+     */
+    var `simSamplesJson`: kotlin.String, 
+    /**
+     * Turn / destination maneuvers along the path:
+     * `[{"lat","lon","cum_m","kind","street","roundabout_exit"}]`.
+     */
+    var `maneuversJson`: kotlin.String
 ) {
     
     companion object
@@ -2318,6 +2328,8 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -2334,7 +2346,9 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterString.allocationSize(value.`poiName`) +
             FfiConverterString.allocationSize(value.`poiIconKey`) +
             FfiConverterString.allocationSize(value.`breakPoisJson`) +
-            FfiConverterString.allocationSize(value.`daysJson`)
+            FfiConverterString.allocationSize(value.`daysJson`) +
+            FfiConverterString.allocationSize(value.`simSamplesJson`) +
+            FfiConverterString.allocationSize(value.`maneuversJson`)
     )
 
     override fun write(value: CorridorRouteResult, buf: ByteBuffer) {
@@ -2351,6 +2365,8 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterString.write(value.`poiIconKey`, buf)
             FfiConverterString.write(value.`breakPoisJson`, buf)
             FfiConverterString.write(value.`daysJson`, buf)
+            FfiConverterString.write(value.`simSamplesJson`, buf)
+            FfiConverterString.write(value.`maneuversJson`, buf)
     }
 }
 

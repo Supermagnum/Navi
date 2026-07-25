@@ -94,7 +94,8 @@ pub fn highway_fallback_kmh(highway: Option<&str>) -> f64 {
     }
 }
 
-fn edge_speed_kmh(edge: &GraphEdge) -> f64 {
+/// Effective motor speed (km/h): posted OSM `maxspeed` when present, else highway-class fallback.
+pub fn edge_speed_kmh(edge: &GraphEdge) -> f64 {
     edge.maxspeed_kmh
         .filter(|v| v.is_finite() && *v > 0.0)
         .unwrap_or_else(|| highway_fallback_kmh(edge.highway.as_deref()))
@@ -217,6 +218,8 @@ mod tests {
             end_lon: 10.1,
             highway: Some("primary".into()),
             maxspeed_kmh: None,
+            name: None,
+            road_ref: None,
             maxweight_t: None,
             maxaxleload_t: None,
             maxbogieweight_t: None,
@@ -265,6 +268,8 @@ mod tests {
             end_lon: 10.1,
             highway: Some("residential".into()), // fallback would be 40
             maxspeed_kmh: Some(100.0),
+            name: None,
+            road_ref: None,
             maxweight_t: None,
             maxaxleload_t: None,
             maxbogieweight_t: None,

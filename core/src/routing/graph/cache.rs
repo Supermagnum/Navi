@@ -13,7 +13,7 @@ use crate::routing::elevation::ElevationService;
 use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
 
 // Bump when on-disk graph topology / edge meta semantics change.
-const CACHE_MAGIC: &[u8; 8] = b"NAVIGPH4";
+const CACHE_MAGIC: &[u8; 8] = b"NAVIGPH5";
 
 /// Source PBF and eco inputs used to validate a cached reweighted graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -91,6 +91,10 @@ struct CachedGraphEdge {
     end_lon: f64,
     highway: Option<String>,
     maxspeed_kmh: Option<f64>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    road_ref: Option<String>,
     maxweight_t: Option<f64>,
     maxaxleload_t: Option<f64>,
     maxbogieweight_t: Option<f64>,
@@ -167,6 +171,8 @@ pub fn save_reweighted_graph(
                 end_lon: edge.end_lon,
                 highway: edge.highway.clone(),
                 maxspeed_kmh: edge.maxspeed_kmh,
+                name: edge.name.clone(),
+                road_ref: edge.road_ref.clone(),
                 maxweight_t: edge.maxweight_t,
                 maxaxleload_t: edge.maxaxleload_t,
                 maxbogieweight_t: edge.maxbogieweight_t,
@@ -316,6 +322,8 @@ fn reconstruct_graph(payload: CachedRouteGraph) -> RouteGraph {
             end_lon: edge.end_lon,
             highway: edge.highway,
             maxspeed_kmh: edge.maxspeed_kmh,
+            name: edge.name,
+            road_ref: edge.road_ref,
             maxweight_t: edge.maxweight_t,
             maxaxleload_t: edge.maxaxleload_t,
             maxbogieweight_t: edge.maxbogieweight_t,
@@ -368,6 +376,8 @@ mod tests {
             end_lon: 10.01,
             highway: Some("primary".to_string()),
             maxspeed_kmh: None,
+            name: None,
+            road_ref: None,
             maxweight_t: None,
             maxaxleload_t: None,
             maxbogieweight_t: None,

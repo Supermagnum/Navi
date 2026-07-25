@@ -4,6 +4,9 @@ Practical loops for host (Rust) and Android Automotive (Kotlin + `libnavi.so`).
 Build/install details: [`android-build.md`](android-build.md). Hardware checklist:
 [`real-hardware-testing.md`](real-hardware-testing.md).
 
+Debug route simulation (debuggable builds only; feeds the live `applyFix`
+pipeline at maxspeed / highway-fallback pace): [`route-simulation.md`](route-simulation.md).
+
 ## Quick orientation
 
 | Layer | What breaks | First tool |

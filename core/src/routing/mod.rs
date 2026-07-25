@@ -4,6 +4,7 @@ pub mod basemap;
 pub mod elevation;
 pub mod eta;
 pub mod graph;
+pub mod guidance_path;
 pub mod osm_update;
 pub mod region;
 pub mod rest;
@@ -17,8 +18,13 @@ pub use basemap::{
     PROTOMAPS_PLANET_FALLBACK_URL,
 };
 pub use eta::{
-    fixed_pace_minutes, motor_path_minutes, parse_maxspeed_kmh, predeparture_eta_minutes,
-    PreDeparturePace, CYCLING_MIN_PER_KM, HIKING_MIN_PER_KM,
+    edge_speed_kmh, fixed_pace_minutes, highway_fallback_kmh, motor_path_minutes,
+    parse_maxspeed_kmh, predeparture_eta_minutes, PreDeparturePace, CYCLING_MIN_PER_KM,
+    HIKING_MIN_PER_KM,
+};
+pub use guidance_path::{
+    build_maneuvers, build_sim_samples, maneuvers_to_json, samples_to_json, RouteManeuver,
+    SimSample,
 };
 pub use graph::{
     apply_official_network_preference, format_route_avoidance_report, GraphEdge, RouteGraph,

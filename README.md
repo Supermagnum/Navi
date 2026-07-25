@@ -274,6 +274,13 @@ AVD GNSS altitude is often wrong — see note above). One rest stop is visible:
 
 ![Helgøya to Atnbrua route](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
 
+Map camera tilt presets (0° / 35° / 45° / 65°) are independent of opt-in 3D
+hillshade. Hamar short-loop corridor at **45°** — flat 2D, then 3D on:
+
+![45° tilt, 3D off](docs/images/tilt45_3d_off.png)
+
+![45° tilt, 3D on](docs/images/tilt45_3d_on.png)
+
 All other screenshots (map zoom levels, route overlay, menus, settings
 overlays, eco leaf, rotation, bearing, moving icons):
 [`docs/pictures.md`](docs/pictures.md)

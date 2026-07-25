@@ -48,6 +48,8 @@ fn edge(
         end_lon,
         highway: Some(highway.into()),
         maxspeed_kmh: None,
+            name: None,
+            road_ref: None,
         maxweight_t: None,
         maxaxleload_t: None,
         maxbogieweight_t: None,

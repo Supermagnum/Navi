@@ -32,6 +32,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -63,6 +65,9 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
@@ -194,6 +199,10 @@ data class Waypoint(
     val name: String = "",
     val lat: Double = 0.0,
     val lon: Double = 0.0,
+    /** Street name without house number (optional). */
+    val street: String? = null,
+    val houseNumber: String? = null,
+    val postcode: String? = null,
 )
 
 private enum class SearchTarget { From, To, Via }
@@ -300,6 +309,21 @@ private fun NaviMapScreen() {
     var weeklyReminder by remember { mutableStateOf(false) }
     var pendingUpdatePlan by remember { mutableStateOf<String?>(null) }
     var updateReminderDue by remember { mutableStateOf(false) }
+    var routeSamples by remember { mutableStateOf<List<RouteSimSample>>(emptyList()) }
+    var routeManeuvers by remember { mutableStateOf<List<RouteManeuver>>(emptyList()) }
+    var simulating by remember { mutableStateOf(false) }
+    var routeSimulator by remember { mutableStateOf<RouteSimulator?>(null) }
+    val progressTrackerRef = remember {
+        java.util.concurrent.atomic.AtomicReference<RouteProgressTracker?>(null)
+    }
+    val simulatingRef = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
+    val applyFixRef = remember {
+        java.util.concurrent.atomic.AtomicReference<(android.location.Location) -> Unit>({})
+    }
+    val isDebuggable = remember {
+        (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    }
+    var lastViaToastIndex by remember { mutableIntStateOf(-1) }
     var driveHud by remember {
         mutableStateOf(
             DriveHudState(
@@ -308,6 +332,7 @@ private fun NaviMapScreen() {
                 breakAsDistance = MapHudPrefs.loadBreakAsDistance(context),
                 preferMetric = MapHudPrefs.loadPreferMetric(context),
                 optIn3d = MapHudPrefs.loadOptIn3d(context),
+                cameraTiltDeg = MapHudPrefs.loadCameraTiltDeg(context),
                 vulkanAvailable = MapHudPrefs.vulkanRendererAvailable(),
                 // Never seed a break countdown until a route is planned.
                 minutesToBreak = null,
@@ -315,6 +340,15 @@ private fun NaviMapScreen() {
         )
     }
     fun clearActiveRoute(message: String = "Route deleted") {
+        routeSimulator?.stop()
+        routeSimulator = null
+        simulating = false
+        simulatingRef.set(false)
+        NaviMapTestHooks.simulatingActive = false
+        progressTrackerRef.set(null)
+        routeSamples = emptyList()
+        routeManeuvers = emptyList()
+        lastViaToastIndex = -1
         mapState = mapState.copy(
             polyline = "",
             poiLat = 0.0,
@@ -340,7 +374,84 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastApproachPhase = ApproachUiPhase.Hidden
         NaviMapTestHooks.lastRoutePolylineChars = 0
         NaviMapTestHooks.lastBreakPoiCount = 0
+        NaviMapTestHooks.lastArrivedAtEnd = false
         status = message
+    }
+
+    fun stopRouteSimulation(message: String = "Simulation stopped") {
+        routeSimulator?.stop()
+        routeSimulator = null
+        simulating = false
+        simulatingRef.set(false)
+        NaviMapTestHooks.simulatingActive = false
+        status = message
+    }
+
+    fun startRouteSimulation() {
+        if (routeSamples.size < 2) {
+            status = "No simulation samples on route"
+            return
+        }
+        routeSimulator?.stop()
+        progressTrackerRef.get()?.reset()
+        lastViaToastIndex = -1
+        NaviMapTestHooks.lastArrivedAtEnd = false
+        simulating = true
+        simulatingRef.set(true)
+        NaviMapTestHooks.simulatingActive = true
+        val scale = NaviMapTestHooks.simulationTimeScale.coerceAtLeast(0.01)
+        val sim = RouteSimulator(
+            scope = scope,
+            samples = routeSamples,
+            onFix = { loc -> applyFixRef.get().invoke(loc) },
+            onSample = { s ->
+                NaviMapTestHooks.lastSimSpeedKmh = s.speedKmh
+                NaviMapTestHooks.lastSimHighway = s.highway
+                NaviMapTestHooks.lastSimMaxspeedPosted = s.maxspeedPosted
+            },
+            onFinished = {
+                simulating = false
+                simulatingRef.set(false)
+                NaviMapTestHooks.simulatingActive = false
+                status = "Simulation finished"
+            },
+        )
+        routeSimulator = sim
+        status = "SIMULATING"
+        sim.start(timeScale = scale)
+    }
+
+    fun prepareRouteSimulation() {
+        if (routeSamples.size < 2) return
+        routeSimulator?.stop()
+        simulating = false
+        simulatingRef.set(false)
+        NaviMapTestHooks.simulatingActive = false
+        progressTrackerRef.set(
+            RouteProgressTracker(
+                samples = routeSamples,
+                maneuvers = routeManeuvers,
+                viaPoints = viaPoints,
+                endPoint = Waypoint(
+                    mapState.endName.ifBlank { "End" },
+                    mapState.endLat,
+                    mapState.endLon,
+                ),
+            ),
+        )
+        lastViaToastIndex = -1
+        NaviMapTestHooks.lastArrivedAtEnd = false
+        routeSimulator = RouteSimulator(
+            scope = scope,
+            samples = routeSamples,
+            onFix = { loc -> applyFixRef.get().invoke(loc) },
+            onSample = { s ->
+                NaviMapTestHooks.lastSimSpeedKmh = s.speedKmh
+                NaviMapTestHooks.lastSimHighway = s.highway
+                NaviMapTestHooks.lastSimMaxspeedPosted = s.maxspeedPosted
+            },
+            onFinished = {},
+        )
     }
     var pmtilesBaseUrl by remember {
         mutableStateOf(
@@ -527,6 +638,8 @@ private fun NaviMapScreen() {
         }
         fun applyFix(loc: Location?) {
             if (loc == null) return
+            // While simulating, ignore real LocationManager fixes.
+            if (simulatingRef.get() && loc.provider != "navi-route-sim") return
             // Always update map GPS mark from a valid fix.
             if (loc.latitude != 0.0 || loc.longitude != 0.0) {
                 // Mirror into native so lastGpsFix() is never a demo stub.
@@ -547,6 +660,102 @@ private fun NaviMapScreen() {
                     )
                 } else if (acc != mapState.gpsAccuracyM) {
                     mapState = mapState.copy(gpsAccuracyM = acc)
+                }
+                // Live guidance from GPS / simulator along the planned route.
+                val tracker = progressTrackerRef.get()
+                if (tracker != null && mapState.polyline.isNotBlank()) {
+                    val snap = tracker.update(loc.latitude, loc.longitude)
+                    NaviMapTestHooks.lastSimAlongM = snap.alongM
+                    NaviMapTestHooks.lastDistanceToManeuverM = snap.distanceToManeuverM
+                    NaviMapTestHooks.lastViaIndex = snap.viaIndexReached
+                    if (snap.arrivedAtEnd) {
+                        NaviMapTestHooks.lastArrivedAtEnd = true
+                    }
+                    NaviMapTestHooks.lastManeuverKind = snap.maneuver?.kind
+                    snap.sample?.let { s ->
+                        if (!simulatingRef.get()) {
+                            NaviMapTestHooks.lastSimSpeedKmh = s.speedKmh
+                            NaviMapTestHooks.lastSimHighway = s.highway
+                            NaviMapTestHooks.lastSimMaxspeedPosted = s.maxspeedPosted
+                        }
+                    }
+                    if (loc.hasBearing()) {
+                        NaviMapTestHooks.gpsBearingDeg = loc.bearing.toDouble()
+                    } else if (snap.bearingDeg > 0.0) {
+                        NaviMapTestHooks.gpsBearingDeg = snap.bearingDeg
+                    }
+                    val man = snap.maneuver
+                    if (man != null && snap.distanceToManeuverM.isFinite()) {
+                        val endWp = toPoint
+                        val useEndAddr = man.kind == "destination"
+                        val (street, house, post) = parseAddressDisplayLines(
+                            street = if (useEndAddr) endWp.street else man.street,
+                            houseNumber = if (useEndAddr) endWp.houseNumber else man.houseNumber,
+                            postcode = if (useEndAddr) endWp.postcode else man.postcode,
+                            combined = if (useEndAddr && endWp.street == null) endWp.name else null,
+                        )
+                        approachGuidance = ApproachGuidanceState(
+                            active = true,
+                            distanceM = snap.distanceToManeuverM,
+                            iconKey = man.iconKey(),
+                            nextStreet = street ?: man.street,
+                            houseNumber = house,
+                            postcode = post,
+                            roundaboutExit = man.roundaboutExit,
+                            preferMetric = driveHud.preferMetric,
+                        )
+                        NaviMapTestHooks.lastApproachPhase = approachUiPhase(approachGuidance)
+                    } else {
+                        approachGuidance = ApproachGuidanceState()
+                        NaviMapTestHooks.lastApproachPhase = ApproachUiPhase.Hidden
+                    }
+                    if (snap.remainingEtaMinutes.isFinite()) {
+                        val intervalH = runCatching {
+                            breakIntervalHoursForProfile(dataDir.absolutePath, profile)
+                        }.getOrDefault(2.0)
+                        // Integrate planned segment times — not alongM / instantaneous speed
+                        // (that under-counts elapsed hours when current speed is above the
+                        // average so far, which inflates minutes-to-break).
+                        val drivenH = snap.elapsedDrivingHours.coerceAtLeast(0.0)
+                        drivingHoursSinceBreak = drivenH
+                        val minsLeft = ((intervalH - drivenH) * 60.0).coerceAtLeast(0.0)
+                        driveHud = driveHud.copy(
+                            tripEtaMinutes = snap.remainingEtaMinutes,
+                            minutesToBreak = if (driveHud.breakRemindersEnabled) minsLeft else null,
+                        )
+                        NaviMapTestHooks.lastMinutesToBreak = driveHud.minutesToBreak
+                        NaviMapTestHooks.lastElapsedDrivingHours = drivenH
+                    }
+                    if (snap.viaIndexReached > lastViaToastIndex) {
+                        lastViaToastIndex = snap.viaIndexReached
+                        val viaName = viaPoints.getOrNull(snap.viaIndexReached)?.name
+                            ?: "Via ${snap.viaIndexReached + 1}"
+                        status = "Passed $viaName — continuing"
+                    }
+                    if (snap.arrivedAtEnd) {
+                        if (simulatingRef.get()) {
+                            stopRouteSimulation("Arrived at destination")
+                        } else {
+                            status = "Arrived at destination"
+                        }
+                    }
+                    when (driveHud.rotationMode) {
+                        MapRotationMode.DirectionOfTravel -> {
+                            val br = NaviMapTestHooks.gpsBearingDeg
+                            if (br != null) {
+                                mapState = mapState.copy(cameraBearing = br)
+                                NaviMapTestHooks.lastCameraBearing = br
+                            }
+                        }
+                        MapRotationMode.Compass -> {
+                            val br = NaviMapTestHooks.magneticHeadingDeg
+                            if (br != null) {
+                                mapState = mapState.copy(cameraBearing = br)
+                                NaviMapTestHooks.lastCameraBearing = br
+                            }
+                        }
+                        MapRotationMode.NorthUp -> Unit
+                    }
                 }
             }
             // Test hook overrides live sensor in the poll loop.
@@ -572,6 +781,7 @@ private fun NaviMapScreen() {
             driveHud = driveHud.copy(altitudeM = alt)
             NaviMapTestHooks.lastHudAltitudeM = alt
         }
+        applyFixRef.set { loc -> applyFix(loc) }
         if (!locationPermGranted) {
             return@DisposableEffect onDispose { }
         }
@@ -640,6 +850,18 @@ private fun NaviMapScreen() {
                     val pending = NaviMapTestHooks.pendingRoute
                     if (pending != null) {
                         NaviMapTestHooks.pendingRoute = null
+                        NaviMapTestHooks.pendingFromPoint?.let {
+                            fromPoint = it
+                            NaviMapTestHooks.pendingFromPoint = null
+                        }
+                        NaviMapTestHooks.pendingViaPoints?.let {
+                            viaPoints = it
+                            NaviMapTestHooks.pendingViaPoints = null
+                        }
+                        NaviMapTestHooks.pendingToPoint?.let {
+                            toPoint = it
+                            NaviMapTestHooks.pendingToPoint = null
+                        }
                         val iconPng = NaviMapTestHooks.pendingIconPng
                         val pts = parsePolyline(pending.routePolyline)
                         val startPt = pts.firstOrNull()
@@ -698,6 +920,21 @@ private fun NaviMapScreen() {
                         )
                         NaviMapTestHooks.lastRoutePolylineChars = pending.routePolyline.length
                         NaviMapTestHooks.lastBreakPoiCount = breaks.size
+                        routeSamples = parseRouteSimSamples(
+                            runCatching { pending.simSamplesJson }.getOrDefault("[]"),
+                        )
+                        routeManeuvers = parseRouteManeuvers(
+                            runCatching { pending.maneuversJson }.getOrDefault("[]"),
+                        )
+                        progressTrackerRef.set(
+                            RouteProgressTracker(
+                                samples = routeSamples,
+                                maneuvers = routeManeuvers,
+                                viaPoints = viaPoints,
+                                endPoint = Waypoint(endLabel, endLatFix, endLonFix),
+                            ),
+                        )
+                        lastViaToastIndex = -1
                         status = userFacingStatus(
                             if (pending.distanceKm > 0.0) {
                                 "Route planned · ${"%.1f".format(pending.distanceKm)} km"
@@ -774,6 +1011,35 @@ private fun NaviMapScreen() {
                         approachGuidance = approach
                         NaviMapTestHooks.lastApproachPhase = approachUiPhase(approach)
                     }
+                    if (NaviMapTestHooks.requestStartRouteSimulation) {
+                        if (routeSamples.size >= 2) {
+                            NaviMapTestHooks.requestStartRouteSimulation = false
+                            startRouteSimulation()
+                        }
+                    }
+                    if (NaviMapTestHooks.requestStopRouteSimulation) {
+                        NaviMapTestHooks.requestStopRouteSimulation = false
+                        stopRouteSimulation()
+                    }
+                    if (NaviMapTestHooks.requestPrepareRouteSimulation) {
+                        NaviMapTestHooks.requestPrepareRouteSimulation = false
+                        prepareRouteSimulation()
+                    }
+                    // Always mirror sim flag into Compose state (hook/ref updates
+                    // alone do not invalidate composition).
+                    simulating = simulatingRef.get()
+                    val seekCum = NaviMapTestHooks.requestSimSeekCumM
+                    if (seekCum != null) {
+                        NaviMapTestHooks.requestSimSeekCumM = null
+                        if (routeSimulator == null) {
+                            prepareRouteSimulation()
+                        }
+                        // Mark as simulating so LM fixes stay suppressed during seeks.
+                        simulating = true
+                        simulatingRef.set(true)
+                        NaviMapTestHooks.simulatingActive = true
+                        routeSimulator?.seekToCumM(seekCum)
+                    }
                     val wantHideChrome = NaviMapTestHooks.hideUiChrome
                     if (wantHideChrome != lastHookHideChrome.get()) {
                         hideChrome = wantHideChrome
@@ -813,6 +1079,18 @@ private fun NaviMapScreen() {
                         NaviMapTestHooks.requestOptIn3d = null
                         driveHud = driveHud.copy(optIn3d = opt3dReq)
                         MapHudPrefs.saveOptIn3d(context, opt3dReq)
+                        styleEpoch += 1
+                    }
+                    val tiltReq = NaviMapTestHooks.requestCameraTiltDeg
+                    if (tiltReq != null) {
+                        NaviMapTestHooks.requestCameraTiltDeg = null
+                        val next = if (driveHud.vulkanAvailable) {
+                            MapHudPrefs.snapTilt(tiltReq)
+                        } else {
+                            0.0
+                        }
+                        driveHud = driveHud.copy(cameraTiltDeg = next)
+                        MapHudPrefs.saveCameraTiltDeg(context, next)
                         styleEpoch += 1
                     }
                     if (NaviMapTestHooks.requestClearSearch) {
@@ -924,17 +1202,65 @@ private fun NaviMapScreen() {
         }
     }
 
+    fun applyHit(hit: PlaceHit) {
+        val (street, house, post) = parseAddressDisplayLines(combined = hit.name)
+        val wp = Waypoint(
+            name = hit.name,
+            lat = hit.lat,
+            lon = hit.lon,
+            street = street,
+            houseNumber = house,
+            postcode = post,
+        )
+        when (searchTarget) {
+            SearchTarget.From -> fromPoint = wp
+            SearchTarget.To -> toPoint = wp
+            SearchTarget.Via -> viaPoints = viaPoints + wp
+        }
+        mapState = mapState.copy(
+            cameraLat = hit.lat,
+            cameraLon = hit.lon,
+            cameraZoom = 12.0,
+            poiLat = hit.lat,
+            poiLon = hit.lon,
+            poiName = hit.name,
+            layerEpoch = mapState.layerEpoch + 1,
+        )
+        query = hit.name
+        hits = emptyList()
+        status = userFacingStatus("Set ${searchTarget.name.lowercase()}: ${hit.name}")
+    }
+
     fun runSearch(q: String) {
         searchJob?.cancel()
-        if (q.trim().length < 2) {
+        val trimmed = q.trim()
+        if (trimmed.length < 2) {
             hits = emptyList()
+            return
+        }
+        // Accept WGS84 "lat, lon" for From / Via / To without place FTS.
+        parseLatLonQuery(trimmed)?.let { (lat, lon) ->
+            val name = formatCoordWaypointName(lat, lon)
+            hits = listOf(
+                PlaceHit(
+                    osmId = 0L,
+                    name = name,
+                    kind = "coordinate",
+                    lat = lat,
+                    lon = lon,
+                ),
+            )
+            NaviMapTestHooks.lastSearchHitCount = 1
+            NaviMapTestHooks.lastSearchQuery = trimmed
+            NaviMapTestHooks.lastSearchHitNames = listOf(name)
+            searchBusy = false
             return
         }
         searchBusy = true
         searchJob = scope.launch {
             delay(200)
             val list = withContext(Dispatchers.IO) {
-                searchPlaces(resolvePlaceIndexDb().absolutePath, q.trim(), 20u)
+                searchPlaces(resolvePlaceIndexDb().absolutePath, trimmed, 20u)
             }
             hits = when (searchMode) {
                 SearchMode.Place -> list.filter {
@@ -948,7 +1274,7 @@ private fun NaviMapScreen() {
                 }.ifEmpty { list }
             }
             NaviMapTestHooks.lastSearchHitCount = hits.size
-            NaviMapTestHooks.lastSearchQuery = q.trim()
+            NaviMapTestHooks.lastSearchQuery = trimmed
             NaviMapTestHooks.lastSearchHitNames = hits.map { it.name }
             searchBusy = false
         }
@@ -974,25 +1300,14 @@ private fun NaviMapScreen() {
         }
     }
 
-    fun applyHit(hit: PlaceHit) {
-        val wp = Waypoint(name = hit.name, lat = hit.lat, lon = hit.lon)
-        when (searchTarget) {
-            SearchTarget.From -> fromPoint = wp
-            SearchTarget.To -> toPoint = wp
-            SearchTarget.Via -> viaPoints = viaPoints + wp
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            val want = simulatingRef.get()
+            if (want != simulating) {
+                simulating = want
+            }
+            delay(100)
         }
-        mapState = mapState.copy(
-            cameraLat = hit.lat,
-            cameraLon = hit.lon,
-            cameraZoom = 12.0,
-            poiLat = hit.lat,
-            poiLon = hit.lon,
-            poiName = hit.name,
-            layerEpoch = mapState.layerEpoch + 1,
-        )
-        query = hit.name
-        hits = emptyList()
-        status = userFacingStatus("Set ${searchTarget.name.lowercase()}: ${hit.name}")
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -1000,6 +1315,7 @@ private fun NaviMapScreen() {
             state = mapState,
             dataDir = dataDir,
             prefer3d = driveHud.optIn3d,
+            cameraTiltDeg = driveHud.cameraTiltDeg,
             vulkanAvailable = driveHud.vulkanAvailable,
             styleEpoch = styleEpoch,
             modifier = Modifier.fillMaxSize(),
@@ -1013,6 +1329,14 @@ private fun NaviMapScreen() {
                 status = "3D unavailable on this device; using 2D Liberty"
                 styleEpoch += 1
             },
+        )
+
+        SimulatingBannerOverlay(
+            active = simulating,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .zIndex(6f)
+                .padding(top = 64.dp),
         )
 
         Column(
@@ -1130,11 +1454,17 @@ private fun NaviMapScreen() {
                             .fillMaxWidth()
                             .testTag("field_search"),
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                hits.firstOrNull()?.let { applyHit(it) }
+                            },
+                        ),
                         placeholder = {
                             Text(
                                 when (searchMode) {
-                                    SearchMode.Place -> "Search place, hut, amenity..."
-                                    SearchMode.Address -> "Search road or settlement..."
+                                    SearchMode.Place -> "Place, hut, or lat, lon"
+                                    SearchMode.Address -> "Road, settlement, or lat, lon"
                                 },
                             )
                         },
@@ -1242,6 +1572,8 @@ private fun NaviMapScreen() {
                                             poiIconKey = "cabin",
                                             breakPoisJson = breaks,
                                             daysJson = "[]",
+                                            simSamplesJson = "[]",
+                                            maneuversJson = "[]",
                                         )
                                     } else when (profile) {
                                         TravelProfile.HIKING -> {
@@ -1270,6 +1602,8 @@ private fun NaviMapScreen() {
                                             var dist = 0.0
                                             var etaSum = 0.0
                                             var last: uniffi.navi.CorridorRouteResult? = null
+                                            val legSamples = mutableListOf<List<RouteSimSample>>()
+                                            val legManeuvers = mutableListOf<List<RouteManeuver>>()
                                             val legTotal = pts.size - 1
                                             val graphTag = when (profile) {
                                                 TravelProfile.BICYCLE -> "bicycle"
@@ -1319,9 +1653,13 @@ private fun NaviMapScreen() {
                                                     poly + ";" + legRes.routePolyline
                                                         .substringAfter(';')
                                                 }
+                                                legSamples.add(parseRouteSimSamples(legRes.simSamplesJson))
+                                                legManeuvers.add(parseRouteManeuvers(legRes.maneuversJson))
                                                 last = legRes
                                             }
                                             val base = last!!
+                                            val mergedSamples = mergeSimSamples(legSamples)
+                                            val mergedManeuvers = mergeManeuvers(legManeuvers)
                                             uniffi.navi.CorridorRouteResult(
                                                 report = "TEST_KIND=PLAN_MULTI\nPASS\ndistance_km=$dist\n",
                                                 distanceKm = dist,
@@ -1336,6 +1674,28 @@ private fun NaviMapScreen() {
                                                 poiIconKey = base.poiIconKey,
                                                 breakPoisJson = base.breakPoisJson,
                                                 daysJson = base.daysJson,
+                                                simSamplesJson = org.json.JSONArray(
+                                                    mergedSamples.map { s ->
+                                                        org.json.JSONObject()
+                                                            .put("lat", s.lat)
+                                                            .put("lon", s.lon)
+                                                            .put("cum_m", s.cumM)
+                                                            .put("speed_kmh", s.speedKmh)
+                                                            .put("highway", s.highway)
+                                                            .put("maxspeed_posted", s.maxspeedPosted)
+                                                    },
+                                                ).toString(),
+                                                maneuversJson = org.json.JSONArray(
+                                                    mergedManeuvers.map { m ->
+                                                        org.json.JSONObject()
+                                                            .put("lat", m.lat)
+                                                            .put("lon", m.lon)
+                                                            .put("cum_m", m.cumM)
+                                                            .put("kind", m.kind)
+                                                            .put("street", m.street)
+                                                            .put("roundabout_exit", m.roundaboutExit)
+                                                    },
+                                                ).toString(),
                                             )
                                         }
                                     }
@@ -1355,6 +1715,8 @@ private fun NaviMapScreen() {
                                             poiIconKey = "",
                                             breakPoisJson = "[]",
                                             daysJson = "[]",
+                                            simSamplesJson = "[]",
+                                            maneuversJson = "[]",
                                         )
                                     }
                                     }
@@ -1439,24 +1801,30 @@ private fun NaviMapScreen() {
                             onClick = {
                                 val hasDeviceFix =
                                     mapState.gpsLat != 0.0 || mapState.gpsLon != 0.0
-                                if (hasDeviceFix) {
-                                    fromPoint = Waypoint(
-                                        "GPS",
-                                        mapState.gpsLat,
-                                        mapState.gpsLon,
-                                    )
-                                    mapState = mapState.copy(
-                                        cameraLat = mapState.gpsLat,
-                                        cameraLon = mapState.gpsLon,
-                                        cameraZoom = 12.0,
-                                        layerEpoch = mapState.layerEpoch + 1,
-                                    )
-                                    status = "Start from GPS"
-                                } else {
+                                if (!hasDeviceFix) {
                                     status = "GPS unavailable"
+                                    return@TextButton
                                 }
+                                val name = "GPS (${formatCoordWaypointName(mapState.gpsLat, mapState.gpsLon)})"
+                                val hit = PlaceHit(
+                                    osmId = 0L,
+                                    name = name,
+                                    kind = "gps",
+                                    lat = mapState.gpsLat,
+                                    lon = mapState.gpsLon,
+                                )
+                                applyHit(hit)
                             },
-                        ) { Text("Start from GPS") }
+                            modifier = Modifier.testTag("btn_use_gps"),
+                        ) {
+                            Text(
+                                when (searchTarget) {
+                                    SearchTarget.From -> "Use GPS as from"
+                                    SearchTarget.To -> "Use GPS as to"
+                                    SearchTarget.Via -> "Use GPS as via"
+                                },
+                            )
+                        }
                         TextButton(
                             onClick = {
                                 val last = savedRoutes.firstOrNull {
@@ -1477,6 +1845,18 @@ private fun NaviMapScreen() {
                                 }
                             },
                         ) { Text("Continue from last stop") }
+                    }
+                    if (isDebuggable && mapState.polyline.isNotBlank() && routeSamples.size >= 2) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(
+                                onClick = {
+                                    if (simulating) stopRouteSimulation() else startRouteSimulation()
+                                },
+                                modifier = Modifier.testTag("btn_simulate_route"),
+                            ) {
+                                Text(if (simulating) "Stop simulation" else "Simulate route")
+                            }
+                        }
                     }
                 }
             }
@@ -2452,6 +2832,17 @@ private fun NaviMapScreen() {
                         MapHudPrefs.saveOptIn3d(context, on)
                         styleEpoch += 1
                     },
+                    onCameraTiltChange = { deg ->
+                        val next = if (driveHud.vulkanAvailable) {
+                            MapHudPrefs.snapTilt(deg)
+                        } else {
+                            0.0
+                        }
+                        driveHud = driveHud.copy(cameraTiltDeg = next)
+                        MapHudPrefs.saveCameraTiltDeg(context, next)
+                        NaviMapTestHooks.lastCameraPitch = next
+                        styleEpoch += 1
+                    },
                     onSave = {
                         MapHudPrefs.saveAutoZoom(
                             context,
@@ -2459,6 +2850,7 @@ private fun NaviMapScreen() {
                             enabled = driveHud.autoZoomWhileMoving,
                         )
                         MapHudPrefs.saveOptIn3d(context, driveHud.optIn3d)
+                        MapHudPrefs.saveCameraTiltDeg(context, driveHud.cameraTiltDeg)
                         // Re-apply basemap so Save after toggling 3D always refreshes
                         // hillshade/tilt (toggle alone can race the style callback).
                         styleEpoch += 1
@@ -2548,12 +2940,45 @@ private fun NaviMapScreen() {
     }
 }
 
+@Composable
+private fun SimulatingBannerOverlay(
+    active: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    // Hook mirror covers seek/start races where Compose `simulating` lags one frame.
+    var hookActive by remember { mutableStateOf(NaviMapTestHooks.simulatingActive) }
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            val next = NaviMapTestHooks.simulatingActive
+            if (next != hookActive) hookActive = next
+            delay(50)
+        }
+    }
+    if (!active && !hookActive) return
+    Surface(
+        color = Color(0xFFB71C1C),
+        shape = RoundedCornerShape(6.dp),
+        shadowElevation = 6.dp,
+        modifier = modifier
+            .testTag("simulating_banner")
+            .semantics { contentDescription = "SIMULATING" },
+    ) {
+        Text(
+            "SIMULATING",
+            color = Color.White,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+    }
+}
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun CorridorMapView(
     state: MapRouteState,
     dataDir: java.io.File,
     prefer3d: Boolean,
+    cameraTiltDeg: Double,
     vulkanAvailable: Boolean,
     styleEpoch: Int,
     modifier: Modifier = Modifier,
@@ -2591,19 +3016,29 @@ private fun CorridorMapView(
     // always read the live 3D preference from these refs (not the Compose closure).
     val prefer3dRef = remember { java.util.concurrent.atomic.AtomicReference(prefer3d) }
     val vulkanRef = remember { java.util.concurrent.atomic.AtomicReference(vulkanAvailable) }
+    val tiltRef = remember { java.util.concurrent.atomic.AtomicReference(cameraTiltDeg) }
     prefer3dRef.set(prefer3d)
     vulkanRef.set(vulkanAvailable)
+    tiltRef.set(cameraTiltDeg)
 
-    fun flattenCamera(map: MapLibreMap) {
-        if (map.cameraPosition.tilt <= 0.05) {
-            NaviMapTestHooks.lastCameraPitch = map.cameraPosition.tilt
+    fun effectiveTiltDeg(): Double {
+        val liveVulkan = vulkanRef.get()
+        if (!liveVulkan) return 0.0
+        return MapHudPrefs.snapTilt(tiltRef.get())
+    }
+
+    fun applyCameraTilt(map: MapLibreMap, tiltDeg: Double = effectiveTiltDeg()) {
+        val target = if (vulkanRef.get()) MapHudPrefs.snapTilt(tiltDeg) else 0.0
+        val cur = map.cameraPosition.tilt
+        if (kotlin.math.abs(cur - target) < 0.25) {
+            NaviMapTestHooks.lastCameraPitch = cur
             return
         }
-        val flat = org.maplibre.android.camera.CameraPosition.Builder(map.cameraPosition)
-            .tilt(0.0)
+        val pos = org.maplibre.android.camera.CameraPosition.Builder(map.cameraPosition)
+            .tilt(target)
             .build()
-        map.moveCamera(CameraUpdateFactory.newCameraPosition(flat))
-        NaviMapTestHooks.lastCameraPitch = 0.0
+        map.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
+        NaviMapTestHooks.lastCameraPitch = map.cameraPosition.tilt
     }
 
     fun applyTerrainAndPitch(
@@ -2622,9 +3057,8 @@ private fun CorridorMapView(
                 MapterhornTerrain.attach(style, demUri)
             }
             if (!terrainOk) {
-                // Keep opt-in; still apply camera tilt below so 2D→3D is visible.
                 onStyleNote(
-                    "Mapterhorn hillshade unavailable; tilted view without DEM",
+                    "Mapterhorn hillshade unavailable; tilt still applied",
                 )
             }
         } else {
@@ -2635,18 +3069,10 @@ private fun CorridorMapView(
         }
         if (applyGen != styleApplyGen.get()) return
         NaviMapTestHooks.lastTerrainAttached = terrainOk
-        val builder = org.maplibre.android.camera.CameraPosition.Builder(map.cameraPosition)
-        // Tilt whenever 3D is resolved — do not require DEM attach success.
-        if (resolved.cameraPitch > 0.0) {
-            builder.tilt(resolved.cameraPitch)
-        } else {
-            builder.tilt(0.0)
-        }
-        map.moveCamera(CameraUpdateFactory.newCameraPosition(builder.build()))
+        applyCameraTilt(map)
         styleReady.value = true
         NaviMapTestHooks.styleReady = true
         NaviMapTestHooks.lastBasemapKind = currentStyleKind.value?.name ?: resolved.kind.name
-        NaviMapTestHooks.lastCameraPitch = map.cameraPosition.tilt
         map.triggerRepaint()
     }
 
@@ -2681,27 +3107,20 @@ private fun CorridorMapView(
                 if (style == null) return@getStyle
                 val attached = MapterhornTerrain.isAttached(style)
                 val tilt = map.cameraPosition.tilt
-                val tiltMatches = if (resolved.cameraPitch > 0.0) {
-                    tilt >= resolved.cameraPitch - 1.0
-                } else {
-                    tilt <= 0.5
-                }
+                val wantTilt = effectiveTiltDeg()
+                val tiltMatches = kotlin.math.abs(tilt - wantTilt) <= 1.0
                 val terrainMatches = attached == resolved.attachMapterhornTerrain
                 if (terrainMatches && tiltMatches) return@getStyle
                 val applyGen = styleApplyGen.incrementAndGet()
-                if (!want3d) {
-                    flattenCamera(map)
-                    NaviMapTestHooks.lastTerrainAttached = false
-                }
                 applyTerrainAndPitch(map, style, resolved, applyGen)
             }
             return
         }
 
         val applyGen = styleApplyGen.incrementAndGet()
-        // Flatten immediately (sync) so 3D-off is not left waiting on getStyle.
+        // Tilt is independent of hillshade 3D; apply preferred tilt (0 when no Vulkan).
+        applyCameraTilt(map)
         if (!want3d) {
-            flattenCamera(map)
             NaviMapTestHooks.lastTerrainAttached = false
         }
         styleReady.value = false
@@ -2981,26 +3400,25 @@ private fun CorridorMapView(
         }
     }
 
-    LaunchedEffect(styleEpoch, prefer3d, vulkanAvailable) {
+    LaunchedEffect(styleEpoch, prefer3d, vulkanAvailable, cameraTiltDeg) {
         val map = mapRef ?: return@LaunchedEffect
         applyResolvedStyle(map, force = true)
     }
 
-    LaunchedEffect(state.cameraLat, state.cameraLon, prefer3d) {
+    LaunchedEffect(state.cameraLat, state.cameraLon, prefer3d, cameraTiltDeg) {
         val map = mapRef ?: return@LaunchedEffect
         if (state.cameraLat != null && state.cameraLon != null) {
             applyResolvedStyle(map, force = false)
         }
     }
 
-    LaunchedEffect(state.layerEpoch, styleReady.value, prefer3d, vulkanAvailable) {
+    LaunchedEffect(state.layerEpoch, styleReady.value, prefer3d, vulkanAvailable, cameraTiltDeg) {
         if (!styleReady.value) return@LaunchedEffect
         val want3d = prefer3dRef.get() && vulkanRef.get()
+        val pitch = effectiveTiltDeg()
         mapView.getMapAsync { map ->
             mapRef = map
-            if (!want3d) {
-                flattenCamera(map)
-            }
+            applyCameraTilt(map, pitch)
             map.getStyle { style ->
                 val latest = stateRef.get()
                 if (!want3d) {
@@ -3012,17 +3430,12 @@ private fun CorridorMapView(
                 map.triggerRepaint()
                 onLayerCount(style.layers.size)
                 refreshTrackOverlay(map)
-                val pitch3d = if (want3d) {
-                    BasemapStyleResolver.TERRAIN_VIEW_TILT
-                } else {
-                    0.0
-                }
                 if (latest.cameraLat != null && latest.cameraLon != null) {
                     val pos = org.maplibre.android.camera.CameraPosition.Builder()
                         .target(LatLng(latest.cameraLat, latest.cameraLon))
                         .zoom(latest.cameraZoom ?: 12.0)
                         .bearing(latest.cameraBearing)
-                        .tilt(pitch3d)
+                        .tilt(pitch)
                         .build()
                     map.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
                 } else if (latest.polyline.isNotBlank()) {
@@ -3034,12 +3447,12 @@ private fun CorridorMapView(
                                 include(LatLng(latest.poiLat, latest.poiLon))
                             }
                         }.build()
-                        // Fit entire route; keep tilt when 3D so relief stays visible.
+                        // Fit entire route; keep user tilt so hillshade/perspective stay visible.
                         map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 120))
                         map.moveCamera(
                             CameraUpdateFactory.newCameraPosition(
                                 org.maplibre.android.camera.CameraPosition.Builder(map.cameraPosition)
-                                    .tilt(pitch3d)
+                                    .tilt(pitch)
                                     .build(),
                             ),
                         )
@@ -3057,7 +3470,7 @@ private fun CorridorMapView(
                         .target(LatLng(fallbackLat, fallbackLon))
                         .zoom(latest.cameraZoom ?: 6.5)
                         .bearing(latest.cameraBearing)
-                        .tilt(pitch3d)
+                        .tilt(pitch)
                         .build()
                     map.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
                 }

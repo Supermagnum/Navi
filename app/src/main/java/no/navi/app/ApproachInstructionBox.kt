@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uniffi.navi.FfiIconTheme
@@ -36,6 +37,11 @@ import uniffi.navi.rasterizeIconPng
 /**
  * Temporary approach-instruction overlay (docs/approach-instructions.md).
  * Informational only — no tap action. Eco stays on the bottom HUD bar.
+ *
+ * Address stack (top to bottom, each on its own line):
+ * 1. Street name — never mid-word wrapped
+ * 2. House number (omit if unknown)
+ * 3. Postcode (omit if unknown)
  */
 data class ApproachGuidanceState(
     val active: Boolean = false,
@@ -45,10 +51,49 @@ data class ApproachGuidanceState(
     val iconKey: String = "nav_straight",
     /** Next street (OSM name, else ref). Null/blank = omit line. */
     val nextStreet: String? = null,
+    /** House number on its own line under the street. */
+    val houseNumber: String? = null,
+    /** Postcode on its own line under the house number. */
+    val postcode: String? = null,
     /** Roundabout exit 1..=3 when applicable. */
     val roundaboutExit: Int? = null,
     val preferMetric: Boolean = true,
 )
+
+/**
+ * Split a freeform place/address label into street / house number / postcode lines.
+ * Does not invent values — only separates what is already present.
+ */
+fun parseAddressDisplayLines(
+    street: String? = null,
+    houseNumber: String? = null,
+    postcode: String? = null,
+    combined: String? = null,
+): Triple<String?, String?, String?> {
+    var s = street?.trim()?.takeIf { it.isNotEmpty() }
+    var hn = houseNumber?.trim()?.takeIf { it.isNotEmpty() }
+    var pc = postcode?.trim()?.takeIf { it.isNotEmpty() }
+    val raw = combined?.trim()?.takeIf { it.isNotEmpty() }
+    if (raw != null && s == null) {
+        // Trailing 4-digit Norwegian postcode: "Storgata 12 2312" or "2312".
+        val postMatch = Regex("""^(.*?)(?:\s+)(\d{4})$""").matchEntire(raw)
+        val withoutPost = if (postMatch != null && pc == null) {
+            pc = postMatch.groupValues[2]
+            postMatch.groupValues[1].trim()
+        } else {
+            raw
+        }
+        // Trailing housenumber: "Ommangsgutua 12" / "Ommangsgutua 12B".
+        val hnMatch = Regex("""^(.*?)(?:\s+)(\d+[A-Za-z]?)$""").matchEntire(withoutPost)
+        if (hnMatch != null && hn == null) {
+            s = hnMatch.groupValues[1].trim().takeIf { it.isNotEmpty() }
+            hn = hnMatch.groupValues[2]
+        } else {
+            s = withoutPost.takeIf { it.isNotEmpty() }
+        }
+    }
+    return Triple(s, hn, pc)
+}
 
 enum class ApproachUiPhase {
     Hidden,
@@ -99,11 +144,17 @@ fun ApproachInstructionBox(
     }
 
     // Compact left-aligned card: intrinsic width hugs icon + text (not fillMaxWidth).
+    // Wide enough that common Norwegian street names stay on one line.
     val fill = if (urgency) Color(0xFFE8E0F0) else Color(0xFFEDE8F5)
+    val (streetLine, houseLine, postLine) = parseAddressDisplayLines(
+        street = state.nextStreet,
+        houseNumber = state.houseNumber,
+        postcode = state.postcode,
+    )
     Box(
         modifier = modifier
             .width(IntrinsicSize.Max)
-            .widthIn(max = 240.dp)
+            .widthIn(max = 420.dp)
             .heightIn(min = if (urgency) 96.dp else 80.dp)
             .background(fill, RectangleShape)
             .border(1.dp, Color(0xFF9E9E9E), RectangleShape)
@@ -112,8 +163,16 @@ fun ApproachInstructionBox(
                 contentDescription = buildString {
                     append("Next maneuver. ")
                     append(dist)
-                    state.nextStreet?.takeIf { it.isNotBlank() }?.let {
+                    streetLine?.let {
                         append(". Onto ")
+                        append(it)
+                    }
+                    houseLine?.let {
+                        append(" ")
+                        append(it)
+                    }
+                    postLine?.let {
+                        append(". ")
                         append(it)
                     }
                     exitLabel?.let {
@@ -147,17 +206,38 @@ fun ApproachInstructionBox(
                     },
                     modifier = Modifier.testTag("approach_distance"),
                 )
-                val street = state.nextStreet?.takeIf { it.isNotBlank() }
-                if (street != null) {
+                if (streetLine != null) {
                     Text(
-                        text = street,
+                        text = streetLine,
                         style = if (urgency) {
                             MaterialTheme.typography.titleLarge
                         } else {
                             MaterialTheme.typography.titleMedium
                         },
-                        maxLines = 2,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.testTag("approach_street"),
+                    )
+                }
+                if (houseLine != null) {
+                    Text(
+                        text = houseLine,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag("approach_housenumber"),
+                    )
+                }
+                if (postLine != null) {
+                    Text(
+                        text = postLine,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag("approach_postcode"),
                     )
                 }
                 if (exitLabel != null) {

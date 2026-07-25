@@ -68,6 +68,8 @@ class MultiDayDayCardsScreenshotTest {
             poiIconKey = "fuel",
             breakPoisJson = """[{"name":"Services Minnesund","lat":60.8,"lon":11.2,"kind":"rest_area"}]""",
             daysJson = days,
+            simSamplesJson = "[]",
+            maneuversJson = "[]",
         )
     }
 
@@ -98,6 +100,8 @@ class MultiDayDayCardsScreenshotTest {
             poiIconKey = "cabin",
             breakPoisJson = """[{"name":"Jammerdalsbu","lat":61.2,"lon":10.1,"kind":"hut"}]""",
             daysJson = days,
+            simSamplesJson = "[]",
+            maneuversJson = "[]",
         )
     }
 

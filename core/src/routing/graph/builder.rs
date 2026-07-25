@@ -47,6 +47,10 @@ pub struct GraphEdge {
     pub highway: Option<String>,
     /// OSM `maxspeed` in km/h when parseable; `None` → highway-class fallback for ETA.
     pub maxspeed_kmh: Option<f64>,
+    /// OSM `name` (colloquial street name) when present.
+    pub name: Option<String>,
+    /// OSM `ref` (systematic route number) when present.
+    pub road_ref: Option<String>,
     pub maxweight_t: Option<f64>,
     pub maxaxleload_t: Option<f64>,
     pub maxbogieweight_t: Option<f64>,
@@ -83,6 +87,8 @@ impl RouteGraph {
         let (nodes, edges) = Reader::new()
             .read_tag("highway")
             .read_tag("maxspeed")
+            .read_tag("name")
+            .read_tag("ref")
             .read_tag("maxweight")
             .read_tag("maxaxleload")
             .read_tag("maxbogieweight")
@@ -306,6 +312,8 @@ pub fn format_route_avoidance_report(
 type EdgeMeta = (
     Option<String>,
     Option<f64>,
+    Option<String>,
+    Option<String>,
     Option<f64>,
     Option<f64>,
     Option<f64>,
@@ -322,6 +330,8 @@ fn edge_meta(edge: &Edge) -> EdgeMeta {
         .tags
         .get("maxspeed")
         .and_then(|s| crate::routing::eta::parse_maxspeed_kmh(s));
+    let name = edge.tags.get("name").cloned();
+    let road_ref = edge.tags.get("ref").cloned();
     let maxweight_t = edge.tags.get("maxweight").and_then(|s| parse_metric(s));
     let maxaxleload_t = edge.tags.get("maxaxleload").and_then(|s| parse_metric(s));
     let maxbogieweight_t = edge
@@ -338,6 +348,8 @@ fn edge_meta(edge: &Edge) -> EdgeMeta {
     (
         highway,
         maxspeed_kmh,
+        name,
+        road_ref,
         maxweight_t,
         maxaxleload_t,
         maxbogieweight_t,
@@ -382,14 +394,16 @@ fn push_directed_edge(
         end_lon,
         highway: meta.0.clone(),
         maxspeed_kmh: meta.1,
-        maxweight_t: meta.2,
-        maxaxleload_t: meta.3,
-        maxbogieweight_t: meta.4,
-        maxheight_m: meta.5,
-        maxwidth_m: meta.6,
-        maxlength_m: meta.7,
-        is_toll: meta.8,
-        is_ferry: meta.9,
+        name: meta.2.clone(),
+        road_ref: meta.3.clone(),
+        maxweight_t: meta.4,
+        maxaxleload_t: meta.5,
+        maxbogieweight_t: meta.6,
+        maxheight_m: meta.7,
+        maxwidth_m: meta.8,
+        maxlength_m: meta.9,
+        is_toll: meta.10,
+        is_ferry: meta.11,
     });
     graph.adjacency.entry(source).or_default().push(idx);
 }
@@ -615,6 +629,8 @@ mod tests {
             end_lon: lon1,
             highway: Some("secondary".into()),
             maxspeed_kmh: None,
+            name: None,
+            road_ref: None,
             maxweight_t: None,
             maxaxleload_t: None,
             maxbogieweight_t: None,
@@ -665,6 +681,8 @@ mod tests {
             end_lon: 0.0,
             highway: Some("primary".into()),
             maxspeed_kmh: None,
+            name: None,
+            road_ref: None,
             maxweight_t: None,
             maxaxleload_t: None,
             maxbogieweight_t: None,

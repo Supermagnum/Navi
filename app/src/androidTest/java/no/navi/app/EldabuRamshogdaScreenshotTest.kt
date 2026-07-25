@@ -143,6 +143,8 @@ class EldabuRamshogdaScreenshotTest {
             poiIconKey = "cabin",
             breakPoisJson = breaks,
             daysJson = "[]",
+            simSamplesJson = "[]",
+            maneuversJson = "[]",
         )
         NaviMapTestHooks.pendingRoute = route()
         val deadline = System.currentTimeMillis() + 60_000

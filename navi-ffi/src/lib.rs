@@ -34,6 +34,9 @@ use driver_break_core::routing::safety::{
 };
 use driver_break_core::routing::workers::WorkerPoolPlan;
 use driver_break_core::routing::{fixed_pace_minutes, motor_path_minutes, HIKING_MIN_PER_KM};
+use driver_break_core::routing::{
+    build_maneuvers, build_sim_samples, maneuvers_to_json, samples_to_json,
+};
 use osm4routing::NodeId;
 use serde::Deserialize;
 use serde_json::json;
@@ -301,6 +304,12 @@ pub struct CorridorRouteResult {
     /// profile, rest_kind, rest_hours, rest_label, overnight_name, overnight_found,
     /// not_in_cab, compensation, is_final.
     pub days_json: String,
+    /// Densified path samples for debug route simulation:
+    /// `[{"lat","lon","cum_m","speed_kmh","highway","maxspeed_posted"}]`.
+    pub sim_samples_json: String,
+    /// Turn / destination maneuvers along the path:
+    /// `[{"lat","lon","cum_m","kind","street","roundabout_exit"}]`.
+    pub maneuvers_json: String,
 }
 
 fn empty_corridor(msg: String) -> CorridorRouteResult {
@@ -318,6 +327,8 @@ fn empty_corridor(msg: String) -> CorridorRouteResult {
         poi_icon_key: String::new(),
         break_pois_json: String::from("[]"),
         days_json: String::from("[]"),
+        sim_samples_json: String::from("[]"),
+        maneuvers_json: String::from("[]"),
     }
 }
 
@@ -1267,6 +1278,8 @@ pub fn run_car_corridor_pipeline(
         poi_icon_key: poi_icon,
         break_pois_json,
         days_json: String::from("[]"),
+        sim_samples_json: String::from("[]"),
+        maneuvers_json: String::from("[]"),
     }
 }
 
@@ -1491,6 +1504,8 @@ fn plan_car_route_inner(
 
     let dist_km = distance_m / 1000.0;
     let eta_minutes = motor_path_minutes(&graph, &path);
+    let sim_samples_json = samples_to_json(&build_sim_samples(&graph, &path));
+    let maneuvers_json = maneuvers_to_json(&build_maneuvers(&graph, &path));
     let path_nodes = path.len();
     driver_break_core::download::progress::set(4, Some(5), "Planning route: break stops…");
     // Clip POI load to the same trip bbox (never a full Ostlandet POI scan).
@@ -1910,6 +1925,8 @@ fn plan_car_route_inner(
         poi_icon_key: String::from("fuel"),
         break_pois_json,
         days_json,
+        sim_samples_json,
+        maneuvers_json,
     }
 }
 
@@ -2237,6 +2254,8 @@ pub fn plan_hiking_route(
         poi_icon_key: String::from("cabin"),
         break_pois_json,
         days_json,
+        sim_samples_json: String::from("[]"),
+        maneuvers_json: String::from("[]"),
     }
 }
 

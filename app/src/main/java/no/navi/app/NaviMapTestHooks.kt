@@ -170,6 +170,10 @@ object NaviMapTestHooks {
     @Volatile
     var requestOptIn3d: Boolean? = null
 
+    /** Optional test injection for camera tilt degrees (null = no request). */
+    @Volatile
+    var requestCameraTiltDeg: Double? = null
+
     /** Optional test injection for Trip ETA toggle (null = no request). */
     @Volatile
     var requestShowTripEta: Boolean? = null
@@ -189,6 +193,10 @@ object NaviMapTestHooks {
     /** Mirror of minutes-to-break shown on the bottom HUD. */
     @Volatile
     var lastMinutesToBreak: Double? = null
+
+    /** Last integrated planned driving hours since route start (break countdown input). */
+    @Volatile
+    var lastElapsedDrivingHours: Double? = null
 
     /** True when the bottom HUD currently renders a break-info line. */
     @Volatile
@@ -295,4 +303,64 @@ object NaviMapTestHooks {
     /** Last approach phase applied (for assertions). */
     @Volatile
     var lastApproachPhase: ApproachUiPhase = ApproachUiPhase.Hidden
+
+    /** Request start of debug route simulation (consumed by MainActivity). */
+    @Volatile
+    var requestStartRouteSimulation: Boolean = false
+
+    /** Request stop of debug route simulation. */
+    @Volatile
+    var requestStopRouteSimulation: Boolean = false
+
+    /** Rebuild progress tracker and ensure a simulator instance exists (no auto-start). */
+    @Volatile
+    var requestPrepareRouteSimulation: Boolean = false
+
+    /** Optional From / Via / To injection before [pendingRoute] (test helper). */
+    @Volatile
+    var pendingFromPoint: Waypoint? = null
+
+    @Volatile
+    var pendingViaPoints: List<Waypoint>? = null
+
+    @Volatile
+    var pendingToPoint: Waypoint? = null
+
+    /**
+     * Wall-clock compression for simulation (1.0 = realtime). Speeds still follow
+     * maxspeed / highway fallback; only wait times shrink. Used by instrumented tests.
+     */
+    @Volatile
+    var simulationTimeScale: Double = 1.0
+
+    /** When set, simulator seeks to this cumulative metres then continues. */
+    @Volatile
+    var requestSimSeekCumM: Double? = null
+
+    @Volatile
+    var simulatingActive: Boolean = false
+
+    @Volatile
+    var lastSimSpeedKmh: Double? = null
+
+    @Volatile
+    var lastSimHighway: String? = null
+
+    @Volatile
+    var lastSimMaxspeedPosted: Boolean = false
+
+    @Volatile
+    var lastDistanceToManeuverM: Double? = null
+
+    @Volatile
+    var lastViaIndex: Int = -1
+
+    @Volatile
+    var lastSimAlongM: Double = 0.0
+
+    @Volatile
+    var lastArrivedAtEnd: Boolean = false
+
+    @Volatile
+    var lastManeuverKind: String? = null
 }

@@ -93,7 +93,9 @@ roundabout exit). Do not maintain a second independent distance clock.
 |---|---|---|
 | Maneuver icon | `nav_*` via usvg/resvg ([`icons.md`](icons.md)) | Day theme `_bk` by default |
 | Distance | Shared `distance_m` | e.g. `450 m` / `0.3 mi` |
-| Next street / road | OSM `name`, else `ref` | Omit line if unknown |
+| Next street / road | OSM `name`, else `ref` | **One line** (`maxLines=1`, no soft wrap). Omit if unknown |
+| House number | From place hit / address parse when known | Own line under street; omit if unknown |
+| Postcode | From place hit / address parse when known | Own line under house number; omit if unknown |
 | Roundabout exit | Exit index | Align with voice: first / second / third |
 | Current street | — | **Not shown** on this box in v1 (see Prior art) |
 
@@ -116,7 +118,7 @@ Do **not** put trip ETA, break countdown, altitude, or eco on this box.
 
 | Topic | Recommendation |
 |---|---|
-| Horizontal | **Compact, left-aligned, hug content** via `IntrinsicSize.Max` (not full width). Cap ~240.dp for long street names. Persistent HUD bars remain full width. |
+| Horizontal | **Compact, left-aligned, hug content** via `IntrinsicSize.Max` (not full width). Cap ~420.dp so long street names stay on **one line** (no mid-word wrap). House number and postcode each get their own line under the street. Persistent HUD bars remain full width. |
 | Vertical | Under top bar; never over bottom zoom −/+ |
 | Appear | ~14% screen height starting point for the card |
 | Urgency | Slightly taller / stronger type; still clear of bottom bar |

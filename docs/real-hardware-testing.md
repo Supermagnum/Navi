@@ -102,14 +102,19 @@ HUD verification screenshots from the emulator baseline live under
 
 - With real GPS and IMU present (not simulated/fed data, unlike the emulator
   rotation test), confirm:
-  - "Start from GPS" — uses Android `LocationManager` last known / live fixes for
-  the map puck and From waypoint. Native `lastGpsFix()` mirrors those pushes via
-  `updateGpsFix` (it is **not** a demo coordinate stub). Confirm the on-screen
-  coordinates match `adb shell dumpsys location` for the current user.
+  - "Use GPS as from / via / to" — applies Android `LocationManager` last known /
+  live fixes to the currently selected search target (From, Via, or To). Native
+  `lastGpsFix()` mirrors those pushes via `updateGpsFix` (it is **not** a demo
+  coordinate stub). Confirm the on-screen coordinates match
+  `adb shell dumpsys location` for the current user. Typed `lat, lon` in search
+  also sets Via or To when that chip is selected.
   - Compass and Direction-of-travel rotation modes respond correctly to real
     device movement/orientation, not just fed synthetic values.
 - Log: `adb logcat` for location/sensor provider tags during a short real walk
   or drive test.
+- Debug route simulation on a planned corridor (emulator / lab) exercises the
+  same `applyFix` pipeline — see [`route-simulation.md`](route-simulation.md).
+  It does **not** replace this real GPS/IMU checklist.
 
 ## 6. ECU / OBD (when a plugin or adapter is available)
 

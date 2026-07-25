@@ -109,6 +109,8 @@ class ApproachInstructionInstrumentedTest {
             poiIconKey = "fuel",
             breakPoisJson = "[]",
             daysJson = "[]",
+            simSamplesJson = "[]",
+            maneuversJson = "[]",
         )
         NaviMapTestHooks.pendingCamera = Triple(
             (START_LAT + END_LAT) / 2.0,
@@ -207,12 +209,23 @@ class ApproachInstructionInstrumentedTest {
             active = true,
             distanceM = 450.0,
             iconKey = "nav_right_1",
-            nextStreet = "Nysethvegen",
+            nextStreet = "Ommangsgutua",
+            houseNumber = "12",
+            postcode = "2312",
             preferMetric = true,
         )
         Thread.sleep(800)
         composeRule.onNodeWithTag("approach_instruction_box").assertIsDisplayed()
         composeRule.onNodeWithTag("approach_distance").assertIsDisplayed()
+        composeRule.onNodeWithTag("approach_street").assertIsDisplayed()
+        composeRule.onNodeWithTag("approach_housenumber").assertIsDisplayed()
+        composeRule.onNodeWithTag("approach_postcode").assertIsDisplayed()
+        val streetNode = composeRule.onNodeWithTag("approach_street").fetchSemanticsNode()
+        // Single-line street: height should stay near one text line, not two wrapped lines.
+        assertTrue(
+            "street name must stay on one line (height=${streetNode.size.height})",
+            streetNode.size.height < 80,
+        )
         assertEquals(ApproachUiPhase.Appear, NaviMapTestHooks.lastApproachPhase)
         val appearW = composeRule.onNodeWithTag("approach_instruction_box")
             .fetchSemanticsNode().size.width
@@ -220,7 +233,7 @@ class ApproachInstructionInstrumentedTest {
             .targetContext.resources.displayMetrics.widthPixels.toFloat()
         assertTrue(
             "approach box must be compact (was ${appearW}px of ${screenW}px screen)",
-            appearW < screenW * 0.28f,
+            appearW < screenW * 0.45f,
         )
         shot("approach_appear_450m")
 
@@ -228,7 +241,9 @@ class ApproachInstructionInstrumentedTest {
             active = true,
             distanceM = 120.0,
             iconKey = "nav_right_1",
-            nextStreet = "Nysethvegen",
+            nextStreet = "Ommangsgutua",
+            houseNumber = "12",
+            postcode = "2312",
             preferMetric = true,
         )
         Thread.sleep(800)

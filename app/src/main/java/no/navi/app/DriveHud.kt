@@ -18,6 +18,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -90,6 +91,8 @@ data class DriveHudState(
     val altitudeM: Double? = null,
     /** Opt-in Mapterhorn DEM hillshade 3D (online). Never default-on. */
     val optIn3d: Boolean = false,
+    /** Camera tilt in degrees; snapped to [MapHudPrefs.CAMERA_TILT_PRESETS]. */
+    val cameraTiltDeg: Double = MapHudPrefs.DEFAULT_CAMERA_TILT_DEG,
     /** Vulkan SDK linked — gate for offering 3D. */
     val vulkanAvailable: Boolean = true,
 )
@@ -192,6 +195,7 @@ fun MapSettingsSheet(
     onToggleAutoZoom: (Boolean) -> Unit,
     onAutoZoomLevelChange: (Double) -> Unit,
     onToggle3d: (Boolean) -> Unit = {},
+    onCameraTiltChange: (Double) -> Unit = {},
     onSave: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -207,7 +211,7 @@ fun MapSettingsSheet(
         Column(
             modifier = Modifier
                 .padding(12.dp)
-                .heightIn(max = 340.dp)
+                .heightIn(max = 420.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -310,6 +314,50 @@ fun MapSettingsSheet(
                 if (!state.vulkanAvailable) {
                     Text(
                         "Unavailable on this GPU path",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("map_tilt_control"),
+            ) {
+                val presets = MapHudPrefs.CAMERA_TILT_PRESETS
+                val tilt = MapHudPrefs.snapTilt(state.cameraTiltDeg)
+                val tiltIdx = presets.indexOfFirst { it == tilt }.coerceAtLeast(0)
+                Text(
+                    String.format("Map tilt %.0f deg", tilt),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("map_tilt_label"),
+                )
+                Slider(
+                    value = tiltIdx.toFloat(),
+                    onValueChange = { v ->
+                        val i = v.toInt().coerceIn(0, presets.lastIndex)
+                        onCameraTiltChange(presets[i])
+                    },
+                    valueRange = 0f..presets.lastIndex.toFloat(),
+                    steps = (presets.size - 2).coerceAtLeast(0),
+                    enabled = state.vulkanAvailable,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("map_tilt_slider"),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    for (p in presets) {
+                        Text(
+                            String.format("%.0f", p),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                }
+                if (!state.vulkanAvailable) {
+                    Text(
+                        "Tilt locked at 0 without Vulkan",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }

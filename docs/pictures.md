@@ -17,6 +17,8 @@ Idle HUD bars and the Helgøya → Atnbrua route capture live in the
 [README](../README.md#working-app-emulator-screenshots) only
 (`docs/images/hud/hud_idle_both_bars.png`,
 `docs/images/terrain/hike_eldabu_ramshogda_3d.png`).
+Map tilt at 45° (3D off / 3D on) is also shown there
+(`docs/images/tilt45_3d_off.png`, `docs/images/tilt45_3d_on.png`).
 
 Norwegian gallery: [`bilder.md`](bilder.md).
 
@@ -28,6 +30,8 @@ Norwegian gallery: [`bilder.md`](bilder.md).
 | Helgøya → Atnbrua (eco + 3D on, breaks visible) | ![Route overlay](images/route_map.png) |
 | Route from Gjendebu to Thonvollen, 3D map. | ![Gjendebu to Thonvollen 3D](images/gjendebu_thonvollen_3d.png) |
 | Gjendebu to Thonvollen, flat map. | ![Gjendebu to Thonvollen flat](images/gjendebu_thonvollen_flat.png) |
+| Hamar loop, 45° tilt, 3D off | ![45° tilt 3D off](images/tilt45_3d_off.png) |
+| Hamar loop, 45° tilt, 3D on | ![45° tilt 3D on](images/tilt45_3d_on.png) |
 
 Prefer `images/terrain/` and recent HUD shots when comparing route visuals.
 Older `route_map.png` copies were ~57% MapLibre empty background (`#f8f4f0`)
