@@ -866,6 +866,14 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -921,9 +929,13 @@ fun uniffi_navi_checksum_func_format_approach_distance(
 ): Short
 fun uniffi_navi_checksum_func_format_avoid_major_report(
 ): Short
+fun uniffi_navi_checksum_func_format_current_road_label(
+): Short
 fun uniffi_navi_checksum_func_format_route_avoidance_report(
 ): Short
 fun uniffi_navi_checksum_func_haversine_km(
+): Short
+fun uniffi_navi_checksum_func_highway_class_display_label(
 ): Short
 fun uniffi_navi_checksum_func_init_native_logging(
 ): Short
@@ -940,6 +952,8 @@ fun uniffi_navi_checksum_func_load_prefer_official_networks(
 fun uniffi_navi_checksum_func_load_truck_rest_settings(
 ): Short
 fun uniffi_navi_checksum_func_load_vehicle_limits(
+): Short
+fun uniffi_navi_checksum_func_nearby_places(
 ): Short
 fun uniffi_navi_checksum_func_offset_lat_lon_m(
 ): Short
@@ -986,6 +1000,8 @@ fun uniffi_navi_checksum_func_provision_region_data(
 fun uniffi_navi_checksum_func_rasterize_icon_check(
 ): Short
 fun uniffi_navi_checksum_func_rasterize_icon_png(
+): Short
+fun uniffi_navi_checksum_func_road_label_near(
 ): Short
 fun uniffi_navi_checksum_func_routing_worker_count(
 ): Short
@@ -1142,10 +1158,14 @@ fun uniffi_navi_fn_func_format_approach_distance(`distanceM`: Double,`preferMetr
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_format_avoid_major_report(`avoidMajor`: Byte,`priorityPathSharePct`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_format_current_road_label(`name`: RustBuffer.ByValue,`roadRef`: RustBuffer.ByValue,`highway`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_format_route_avoidance_report(`avoidMajor`: Byte,`avoidTolls`: Byte,`avoidFerries`: Byte,`priorityPathSharePct`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_haversine_km(`lat1`: Double,`lon1`: Double,`lat2`: Double,`lon2`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): Double
+fun uniffi_navi_fn_func_highway_class_display_label(`highway`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_init_native_logging(uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_navi_fn_func_last_gps_fix(uniffi_out_err: UniffiRustCallStatus, 
@@ -1161,6 +1181,8 @@ fun uniffi_navi_fn_func_load_prefer_official_networks(`dataDir`: RustBuffer.ByVa
 fun uniffi_navi_fn_func_load_truck_rest_settings(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_vehicle_limits(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_nearby_places(`indexDbPath`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_offset_lat_lon_m(`lat`: Double,`lon`: Double,`eastM`: Double,`northM`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1207,6 +1229,8 @@ fun uniffi_navi_fn_func_provision_region_data(`dataDir`: RustBuffer.ByValue,`pbf
 fun uniffi_navi_fn_func_rasterize_icon_check(`key`: RustBuffer.ByValue,`theme`: RustBuffer.ByValue,`width`: Int,`height`: Int,`bundledDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_rasterize_icon_png(`key`: RustBuffer.ByValue,`theme`: RustBuffer.ByValue,`width`: Int,`height`: Int,`bundledDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_road_label_near(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`profile`: RustBuffer.ByValue,`maxM`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_routing_worker_count(uniffi_out_err: UniffiRustCallStatus, 
 ): Int
@@ -1424,10 +1448,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_format_avoid_major_report() != 4139.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_format_current_road_label() != 3965.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_format_route_avoidance_report() != 54522.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_haversine_km() != 51239.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_highway_class_display_label() != 12499.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_init_native_logging() != 25400.toShort()) {
@@ -1452,6 +1482,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_load_vehicle_limits() != 31229.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_nearby_places() != 65514.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_offset_lat_lon_m() != 49727.toShort()) {
@@ -1521,6 +1554,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_rasterize_icon_png() != 19569.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_road_label_near() != 12920.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_routing_worker_count() != 4016.toShort()) {
@@ -2295,8 +2331,8 @@ data class CorridorRouteResult (
      */
     var `daysJson`: kotlin.String, 
     /**
-     * Densified path samples for debug route simulation:
-     * `[{"lat","lon","cum_m","speed_kmh","highway","maxspeed_posted"}]`.
+     * Densified path samples for debug route simulation / live snap:
+     * `[{"lat","lon","cum_m","speed_kmh","highway","maxspeed_posted","street"?}]`.
      */
     var `simSamplesJson`: kotlin.String, 
     /**
@@ -3540,6 +3576,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     
 
         /**
+         * Current-road HUD label: `name`, else `ref`, else highway-class display label.
+         */ fun `formatCurrentRoadLabel`(`name`: kotlin.String?, `roadRef`: kotlin.String?, `highway`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_format_current_road_label(
+        FfiConverterOptionalString.lower(`name`),FfiConverterOptionalString.lower(`roadRef`),FfiConverterOptionalString.lower(`highway`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Extended avoidance report (motorways + tolls + ferries). Defaults for toll/ferry: off.
          */ fun `formatRouteAvoidanceReport`(`avoidMajor`: kotlin.Boolean, `avoidTolls`: kotlin.Boolean, `avoidFerries`: kotlin.Boolean, `priorityPathSharePct`: kotlin.Double): kotlin.String {
             return FfiConverterString.lift(
@@ -3555,6 +3603,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_haversine_km(
         FfiConverterDouble.lower(`lat1`),FfiConverterDouble.lower(`lon1`),FfiConverterDouble.lower(`lat2`),FfiConverterDouble.lower(`lon2`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Human highway-class label when OSM name/ref are missing (never a raw tag).
+         */ fun `highwayClassDisplayLabel`(`highway`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_highway_class_display_label(
+        FfiConverterOptionalString.lower(`highway`),_status)
 }
     )
     }
@@ -3638,6 +3698,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_load_vehicle_limits(
         FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Place-index hits near a GPS fix (for idle “Currently on …” without a route).
+         */ fun `nearbyPlaces`(`indexDbPath`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double, `radiusM`: kotlin.Double, `limit`: kotlin.UInt): List<PlaceHit> {
+            return FfiConverterSequenceTypePlaceHit.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_nearby_places(
+        FfiConverterString.lower(`indexDbPath`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterDouble.lower(`radiusM`),FfiConverterUInt.lower(`limit`),_status)
 }
     )
     }
@@ -3886,6 +3958,23 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_rasterize_icon_png(
         FfiConverterString.lower(`key`),FfiConverterTypeFfiIconTheme.lower(`theme`),FfiConverterUInt.lower(`width`),FfiConverterUInt.lower(`height`),FfiConverterString.lower(`bundledDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Nearest OSM way label at `(lat, lon)` for idle GPS (no planned corridor).
+         *
+         * Loads a small bbox-clipped routing graph (cached under `cache_dir`), then
+         * snaps to the nearest edge within `max_m`. Prefer this over place-index
+         * address voting at junctions. Empty string when no edge is close enough or
+         * inputs are missing.
+         */ fun `roadLabelNear`(`pbfPath`: kotlin.String, `cacheDir`: kotlin.String, `elevDir`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double, `profile`: TravelProfile, `maxM`: kotlin.Double): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_road_label_near(
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`cacheDir`),FfiConverterString.lower(`elevDir`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterDouble.lower(`maxM`),_status)
 }
     )
     }

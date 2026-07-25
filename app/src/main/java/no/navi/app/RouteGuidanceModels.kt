@@ -9,6 +9,8 @@ data class RouteSimSample(
     val speedKmh: Double,
     val highway: String?,
     val maxspeedPosted: Boolean,
+    /** OSM name, else ref; null → UI uses [highwayClassDisplayLabel]. */
+    val street: String? = null,
 )
 
 data class RouteManeuver(
@@ -56,8 +58,13 @@ fun parseRouteSimSamples(json: String): List<RouteSimSample> {
                         lon = o.getDouble("lon"),
                         cumM = o.getDouble("cum_m"),
                         speedKmh = o.getDouble("speed_kmh"),
-                        highway = o.optString("highway", null)?.takeIf { it.isNotBlank() && it != "null" },
+                        highway = o.optString("highway").takeIf { it.isNotBlank() && it != "null" },
                         maxspeedPosted = o.optBoolean("maxspeed_posted", false),
+                        street = if (o.isNull("street")) {
+                            null
+                        } else {
+                            o.optString("street").takeIf { it.isNotBlank() && it != "null" }
+                        },
                     ),
                 )
             }
@@ -150,6 +157,93 @@ fun highwayFallbackKmh(highway: String?): Double {
         "tertiary", "unclassified" -> 50.0
         "residential", "living_street" -> 40.0
         "service", "track", "road" -> 20.0
+        "path", "footway", "cycleway", "bridleway", "steps" -> 10.0
         else -> 50.0
     }
+}
+
+/**
+ * Human highway-class label when name/ref are missing.
+ * Mirrors `driver_break_core::routing::eta::highway_class_display_label` — keep in sync.
+ */
+fun highwayClassDisplayLabel(highway: String?): String {
+    val h = highway?.trim()?.lowercase() ?: return "Road"
+    val base = h.removeSuffix("_link")
+    return when (base) {
+        "motorway" -> "Motorway"
+        "trunk" -> "Trunk road"
+        "primary" -> "Primary road"
+        "secondary" -> "Secondary road"
+        "tertiary" -> "Tertiary road"
+        "unclassified" -> "Unclassified road"
+        "residential" -> "Residential road"
+        "living_street" -> "Living street"
+        "service" -> "Service road"
+        "track" -> "Track"
+        "road" -> "Road"
+        "path" -> "Path"
+        "footway" -> "Footway"
+        "cycleway" -> "Cycleway"
+        "bridleway" -> "Bridleway"
+        "steps" -> "Steps"
+        "pedestrian" -> "Pedestrian street"
+        else -> "Road"
+    }
+}
+
+/**
+ * Bottom-HUD current-road label: sample street (name/ref), else highway-class words.
+ * Mirrors `driver_break_core::current_road_label`.
+ */
+fun formatCurrentRoadLabel(street: String?, highway: String?): String {
+    val s = street?.trim().orEmpty()
+    if (s.isNotEmpty()) return s
+    return highwayClassDisplayLabel(highway)
+}
+
+/**
+ * Fallback street label from nearby place-index hits when no region PBF / graph
+ * edge snap is available (idle GPS).
+ *
+ * Prefers `addr:*` entries. Uses the **most common** street name among nearby
+ * addresses (not only the single nearest house). Weaker than nearest OSM way
+ * at junctions — prefer `roadLabelNear` when a PBF is present.
+ */
+fun streetLabelFromNearbyPlaces(hits: List<uniffi.navi.PlaceHit>): String? {
+    if (hits.isEmpty()) return null
+    val addr = hits.filter {
+        val k = it.kind.lowercase()
+        k.contains("addr") || k.contains("housenumber")
+    }
+    val pool = addr.ifEmpty { hits }
+    val labels = pool.mapNotNull { hit ->
+        val (street, _, _) = parseAddressDisplayLines(combined = hit.name)
+        street?.trim()?.takeIf { it.isNotEmpty() }
+            ?: hit.name.trim().takeIf { it.isNotEmpty() }
+    }
+    if (labels.isEmpty()) return null
+    val counts = LinkedHashMap<String, Int>()
+    for (label in labels) {
+        counts[label] = (counts[label] ?: 0) + 1
+    }
+    return counts.entries
+        .sortedWith(
+            compareByDescending<Map.Entry<String, Int>> { it.value }
+                .thenBy { labels.indexOf(it.key) },
+        )
+        .first()
+        .key
+}
+
+/** Approximate great-circle distance in metres (HUD throttle helpers). */
+fun haversineMApprox(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val r = 6_378_100.0
+    val p1 = Math.toRadians(lat1)
+    val p2 = Math.toRadians(lat2)
+    val dp = Math.toRadians(lat2 - lat1)
+    val dl = Math.toRadians(lon2 - lon1)
+    val a = kotlin.math.sin(dp / 2) * kotlin.math.sin(dp / 2) +
+        kotlin.math.cos(p1) * kotlin.math.cos(p2) *
+        kotlin.math.sin(dl / 2) * kotlin.math.sin(dl / 2)
+    return 2 * r * kotlin.math.asin(kotlin.math.sqrt(a))
 }

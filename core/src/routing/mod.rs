@@ -18,7 +18,8 @@ pub use basemap::{
     PROTOMAPS_PLANET_FALLBACK_URL,
 };
 pub use eta::{
-    edge_speed_kmh, fixed_pace_minutes, highway_fallback_kmh, motor_path_minutes,
+    edge_speed_kmh, fixed_pace_minutes, highway_class_display_label, highway_fallback_kmh,
+    motor_path_minutes,
     parse_maxspeed_kmh, predeparture_eta_minutes, PreDeparturePace, CYCLING_MIN_PER_KM,
     HIKING_MIN_PER_KM,
 };

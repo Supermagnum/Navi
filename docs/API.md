@@ -77,6 +77,7 @@ used by truck / restriction costing (see record in `navi-ffi`).
 |---|---|
 | `ensure_place_index(pbf_path, index_db_path)` | Build or reuse FTS index; report string |
 | `search_places(index_db_path, query, limit)` | → `Vec<PlaceHit>` (`osm_id`, `name`, `kind`, `lat`, `lon`) |
+| `nearby_places(index_db_path, lat, lon, radius_m, limit)` | Place hits near a fix (idle current-street interim) |
 | `rasterize_icon_png(key, theme, …)` | PNG bytes for Navit-derived icon key |
 | `rasterize_icon_check(key, theme, …)` | Validation / smoke for icon key |
 
@@ -116,9 +117,13 @@ GPS slot is for native consumers and tests.
 | `approach_appear_m` / `approach_urgency_m` / `approach_hide_m` | Threshold metres (see `core/src/nav/mod.rs`) |
 | `approach_phase_for_distance(active, distance_m)` | Phase name string |
 | `format_approach_distance(distance_m, prefer_metric)` | HUD distance text |
+| `highway_class_display_label(highway?)` | Human class label when name/ref missing |
+| `format_current_road_label(name?, ref?, highway?)` | Bottom-HUD current-road string |
+| `road_label_near(pbf, cache_dir, elev_dir, lat, lon, profile, max_m)` | Idle-GPS nearest-edge street label (bbox graph) |
 | `format_avoid_major_report` / `format_route_avoidance_report` | Avoidance summary strings |
 
-Product rules: [`approach-instructions.md`](approach-instructions.md).
+Product rules: [`approach-instructions.md`](approach-instructions.md),
+[`current-street.md`](current-street.md).
 
 ### 1.7 OSM updates (opt-in)
 

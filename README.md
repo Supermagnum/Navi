@@ -321,7 +321,9 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/horse-profile.md`](docs/horse-profile.md) | Worked example: adding a Horse profile (doc only; not implemented) |
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Adjust size and placement of drive HUD bars and menus |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs offline Protomaps PMTiles; 3D gate |
-| [`docs/approach-instructions.md`](docs/approach-instructions.md) | Deferred: temporary maneuver approach box (icon + distance + name) |
+| [`docs/approach-instructions.md`](docs/approach-instructions.md) | Temporary maneuver approach box (icon + distance + name) |
+| [`docs/current-street.md`](docs/current-street.md) | Bottom-HUD “Currently on …” road name + no-route policy |
+| [`docs/unicode-road-names.md`](docs/unicode-road-names.md) | UTF-8 pipeline for æ/å/ø/ä/ü in names (OSM → FTS → UniFFI → Compose) |
 | [`docs/poi.md`](docs/poi.md) | Searchable POI categories (Fishing, RestArea, Lodging, …), OSM tag rules, how to add types |
 | [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md) | Suggested hut/trail POI search radii for hiking & cycling (DNT spacing) |
 | [`docs/osm-updates.md`](docs/osm-updates.md) | Opt-in Geofabrik check / `.osc.gz` / full re-download |
@@ -342,7 +344,6 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/android-build.md`](docs/android-build.md) | Compile native `libnavi.so`, UniFFI bindings, and Gradle APKs |
 | [`docs/build-linux.md`](docs/build-linux.md) | Linux: Rust core, integration tests, gpsd + IMU (no desktop map UI yet) |
 | [`docs/imu-calibration.md`](docs/imu-calibration.md) | Deferred: vehicle-mount IMU pitch/roll zeroing for eco elevation |
-| [`docs/approach-instructions.md`](docs/approach-instructions.md) | Approach-instruction box (Navit prior art + locked thresholds) |
 | [`docs/debugging.md`](docs/debugging.md) | Host + Android debug loops (logcat, Studio, instrumented tests) |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | **Required:** physical device checklist vs emulator baseline |
 | [`docs/test-results.md`](docs/test-results.md) | Host integration test notes |

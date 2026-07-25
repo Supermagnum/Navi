@@ -72,25 +72,62 @@ pub fn parse_maxspeed_kmh(raw: &str) -> Option<f64> {
     }
 }
 
+/// Normalize OSM `highway=*` for the shared class tables (strip `_link` suffix).
+pub fn highway_class_base(highway: Option<&str>) -> Option<String> {
+    let h = highway?.trim().to_ascii_lowercase();
+    if h.is_empty() {
+        return None;
+    }
+    Some(h.strip_suffix("_link").unwrap_or(h.as_str()).to_string())
+}
+
 /// Highway-class fallback speeds (km/h) when `maxspeed` is absent.
 ///
 /// Tuned as a general starting table; Norway corridors commonly post 80–110 on
 /// trunk/motorway and 50–70 on primary/secondary — adjust if reference corridors
 /// show systematic bias.
+///
+/// Class keys must stay aligned with [`highway_class_display_label`].
 pub fn highway_fallback_kmh(highway: Option<&str>) -> f64 {
-    let Some(h) = highway.map(|s| s.trim().to_ascii_lowercase()) else {
-        return DEFAULT_FALLBACK_KMH;
-    };
-    let base = h.strip_suffix("_link").unwrap_or(h.as_str());
-    match base {
-        "motorway" => 100.0,
-        "trunk" => 80.0,
-        "primary" => 70.0,
-        "secondary" => 60.0,
-        "tertiary" | "unclassified" => 50.0,
-        "residential" | "living_street" => 40.0,
-        "service" | "track" | "road" => 20.0,
+    match highway_class_base(highway).as_deref() {
+        Some("motorway") => 100.0,
+        Some("trunk") => 80.0,
+        Some("primary") => 70.0,
+        Some("secondary") => 60.0,
+        Some("tertiary") | Some("unclassified") => 50.0,
+        Some("residential") | Some("living_street") => 40.0,
+        Some("service") | Some("track") | Some("road") => 20.0,
+        Some("path") | Some("footway") | Some("cycleway") | Some("bridleway") | Some("steps") => {
+            10.0
+        }
         _ => DEFAULT_FALLBACK_KMH,
+    }
+}
+
+/// Human-readable highway-class label when OSM `name` / `ref` are missing.
+///
+/// Uses the **same** class keys as [`highway_fallback_kmh`] (plus common
+/// foot/cycle classes). Never returns a raw OSM tag; unknown → `"Road"`.
+pub fn highway_class_display_label(highway: Option<&str>) -> &'static str {
+    match highway_class_base(highway).as_deref() {
+        Some("motorway") => "Motorway",
+        Some("trunk") => "Trunk road",
+        Some("primary") => "Primary road",
+        Some("secondary") => "Secondary road",
+        Some("tertiary") => "Tertiary road",
+        Some("unclassified") => "Unclassified road",
+        Some("residential") => "Residential road",
+        Some("living_street") => "Living street",
+        Some("service") => "Service road",
+        Some("track") => "Track",
+        Some("road") => "Road",
+        Some("path") => "Path",
+        Some("footway") => "Footway",
+        Some("cycleway") => "Cycleway",
+        Some("bridleway") => "Bridleway",
+        Some("steps") => "Steps",
+        Some("pedestrian") => "Pedestrian street",
+        _ => "Road",
     }
 }
 
@@ -182,6 +219,23 @@ mod tests {
         assert_eq!(highway_fallback_kmh(Some("residential")), 40.0);
         assert_eq!(highway_fallback_kmh(Some("service")), 20.0);
         assert_eq!(highway_fallback_kmh(None), 50.0);
+    }
+
+    #[test]
+    fn highway_display_labels_align_with_fallback_classes() {
+        assert_eq!(highway_class_display_label(Some("motorway_link")), "Motorway");
+        assert_eq!(highway_class_display_label(Some("trunk")), "Trunk road");
+        assert_eq!(highway_class_display_label(Some("primary")), "Primary road");
+        assert_eq!(highway_class_display_label(Some("secondary")), "Secondary road");
+        assert_eq!(highway_class_display_label(Some("tertiary")), "Tertiary road");
+        assert_eq!(highway_class_display_label(Some("unclassified")), "Unclassified road");
+        assert_eq!(highway_class_display_label(Some("residential")), "Residential road");
+        assert_eq!(highway_class_display_label(Some("service")), "Service road");
+        assert_eq!(highway_class_display_label(Some("track")), "Track");
+        assert_eq!(highway_class_display_label(Some("path")), "Path");
+        assert_eq!(highway_class_display_label(None), "Road");
+        // Never echo raw OSM tags.
+        assert_ne!(highway_class_display_label(Some("foo_bar")), "foo_bar");
     }
 
     #[test]

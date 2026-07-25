@@ -37,11 +37,13 @@ display) is the direct prior art for this box:
    model and with map panning. Auto-hide on maneuver complete / reroute / cancel
    only. Do not add tap-to-dismiss without revisiting this reasoning.
 2. **Next-street only** on the approach box (the street after the maneuver).
-   Navit’s continuous “currently on …” line is **not** adopted here in v1 — it
-   would clutter the temporary overlay; current-road context can come later as a
-   separate low-weight HUD line if needed. Prefer OSM **`name`** over **`ref`**
-   when both exist (local name is more useful while driving); if only `ref` is
-   known, show that; if neither, omit the name line (do not invent).
+   Navit’s continuous “currently on …” line lives on the **bottom drive HUD**
+   instead ([`current-street.md`](current-street.md)) so the temporary overlay
+   stays uncluttered. Prefer OSM **`name`** over **`ref`** when both exist
+   (local name is more useful while driving); if only `ref` is known, show
+   that; if neither, omit the name line on the approach box (do not invent).
+   Current-street on the bottom bar falls back to a highway-class label when
+   name/ref are missing.
 
 Sources: [Navit OSD](https://navit.readthedocs.io/en/latest/user/configuration/OSD.html),
 [OSD layouts](https://navit.readthedocs.io/en/latest/user/configuration/OSD_Layouts.html).
@@ -53,7 +55,7 @@ Sources: [Navit OSD](https://navit.readthedocs.io/en/latest/user/configuration/O
 | Element | Role | Persistence |
 |---|---|---|
 | Top drive HUD (collapsed) | Altitude; tap → map/display settings | Always (chrome on) |
-| Bottom drive HUD (collapsed) | Zoom −/+, break time, trip ETA, eco leaf; tap → drive settings | Always (chrome on) |
+| Bottom drive HUD (collapsed) | Zoom −/+, **current street**, break time, trip ETA, eco leaf; tap → drive settings | Always (chrome on) |
 | **Approach-instruction box** | Next maneuver icon + distance + road name | **Only near a maneuver** |
 
 The approach box is an **additional** layer. It must not replace either bar, and
@@ -97,7 +99,7 @@ roundabout exit). Do not maintain a second independent distance clock.
 | House number | From place hit / address parse when known | Own line under street; omit if unknown |
 | Postcode | From place hit / address parse when known | Own line under house number; omit if unknown |
 | Roundabout exit | Exit index | Align with voice: first / second / third |
-| Current street | — | **Not shown** on this box in v1 (see Prior art) |
+| Current street | Bottom HUD only | See [`current-street.md`](current-street.md) |
 
 Do **not** put trip ETA, break countdown, altitude, or eco on this box.
 

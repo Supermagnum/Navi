@@ -5,6 +5,7 @@
 //! - [`run_car_corridor_pipeline`] — real parse/build/reweight/POI/route against on-device data.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
 use driver_break_core::config::{
@@ -17,7 +18,8 @@ use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
 use driver_break_core::routing::graph::{
     apply_official_network_preference, difficulty_notes_for_path, load_official_network_way_ids,
     load_or_build_reweighted, load_or_build_reweighted_bbox, load_way_difficulty_tags,
-    OfficialNetworkKind, RoadNodeIndex, RouteGraph, RouteOptions, RoutingProfile,
+    nearest_road_label, OfficialNetworkKind, RoadNodeIndex, RouteGraph, RouteOptions,
+    RoutingProfile,
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::{
@@ -304,8 +306,8 @@ pub struct CorridorRouteResult {
     /// profile, rest_kind, rest_hours, rest_label, overnight_name, overnight_found,
     /// not_in_cab, compensation, is_final.
     pub days_json: String,
-    /// Densified path samples for debug route simulation:
-    /// `[{"lat","lon","cum_m","speed_kmh","highway","maxspeed_posted"}]`.
+    /// Densified path samples for debug route simulation / live snap:
+    /// `[{"lat","lon","cum_m","speed_kmh","highway","maxspeed_posted","street"?}]`.
     pub sim_samples_json: String,
     /// Turn / destination maneuvers along the path:
     /// `[{"lat","lon","cum_m","kind","street","roundabout_exit"}]`.
@@ -2405,6 +2407,32 @@ pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<Pl
         .collect()
 }
 
+/// Place-index hits near a GPS fix (for idle “Currently on …” without a route).
+#[uniffi::export]
+pub fn nearby_places(
+    index_db_path: String,
+    lat: f64,
+    lon: f64,
+    radius_m: f64,
+    limit: u32,
+) -> Vec<PlaceHit> {
+    let Ok(idx) = driver_break_core::search::NameIndex::open(Path::new(&index_db_path)) else {
+        return Vec::new();
+    };
+    let Ok(hits) = idx.nearby(lat, lon, radius_m, limit as usize) else {
+        return Vec::new();
+    };
+    hits.into_iter()
+        .map(|h| PlaceHit {
+            osm_id: h.osm_id,
+            name: h.name,
+            kind: h.kind,
+            lat: h.lat,
+            lon: h.lon,
+        })
+        .collect()
+}
+
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TravelProfile {
     Car,
@@ -2978,6 +3006,116 @@ pub fn approach_hide_m() -> f64 {
     driver_break_core::APPROACH_HIDE_M
 }
 
+/// Human highway-class label when OSM name/ref are missing (never a raw tag).
+#[uniffi::export]
+pub fn highway_class_display_label(highway: Option<String>) -> String {
+    driver_break_core::routing::eta::highway_class_display_label(highway.as_deref()).to_string()
+}
+
+/// Current-road HUD label: `name`, else `ref`, else highway-class display label.
+#[uniffi::export]
+pub fn format_current_road_label(
+    name: Option<String>,
+    road_ref: Option<String>,
+    highway: Option<String>,
+) -> String {
+    driver_break_core::current_road_label(name.as_deref(), road_ref.as_deref(), highway.as_deref())
+}
+
+/// Grid cell size (degrees) for idle-GPS road-label graph caches (~5.5 km at mid-latitudes).
+const ROAD_LABEL_CELL_DEG: f64 = 0.05;
+/// Extra cells of pad around the GPS cell so edges near the border stay in-graph.
+const ROAD_LABEL_PAD_CELLS: f64 = 1.0;
+
+struct RoadLabelGraphCache {
+    key: String,
+    graph: RouteGraph,
+}
+
+static ROAD_LABEL_GRAPH: Mutex<Option<RoadLabelGraphCache>> = Mutex::new(None);
+
+fn road_label_bbox(lat: f64, lon: f64) -> [f64; 4] {
+    let cell = ROAD_LABEL_CELL_DEG;
+    let pad = ROAD_LABEL_PAD_CELLS * cell;
+    let i = (lat / cell).floor();
+    let j = (lon / cell).floor();
+    [
+        i * cell - pad,
+        j * cell - pad,
+        (i + 1.0) * cell + pad,
+        (j + 1.0) * cell + pad,
+    ]
+}
+
+fn road_label_cache_key(profile: RoutingProfile, bbox: [f64; 4]) -> String {
+    format!(
+        "{:?}_{:.2}_{:.2}_{:.2}_{:.2}",
+        profile, bbox[0], bbox[1], bbox[2], bbox[3]
+    )
+}
+
+/// Nearest OSM way label at `(lat, lon)` for idle GPS (no planned corridor).
+///
+/// Loads a small bbox-clipped routing graph (cached under `cache_dir`), then
+/// snaps to the nearest edge within `max_m`. Prefer this over place-index
+/// address voting at junctions. Empty string when no edge is close enough or
+/// inputs are missing.
+#[uniffi::export]
+pub fn road_label_near(
+    pbf_path: String,
+    cache_dir: String,
+    elev_dir: String,
+    lat: f64,
+    lon: f64,
+    profile: TravelProfile,
+    max_m: f64,
+) -> String {
+    if !lat.is_finite() || !lon.is_finite() {
+        return String::new();
+    }
+    let pbf = Path::new(pbf_path.trim());
+    if !pbf.is_file() {
+        return String::new();
+    }
+    let routing_profile = if profile == TravelProfile::Hiking {
+        RoutingProfile::Foot
+    } else {
+        RoutingProfile::from(profile.to_core())
+    };
+    let bbox = road_label_bbox(lat, lon);
+    let key = road_label_cache_key(routing_profile, bbox);
+    {
+        let guard = ROAD_LABEL_GRAPH.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(cached) = guard.as_ref() {
+            if cached.key == key {
+                return nearest_road_label(&cached.graph, lat, lon, max_m.max(1.0))
+                    .unwrap_or_default();
+            }
+        }
+    }
+    let elev = PathBuf::from(&elev_dir);
+    let cache = PathBuf::from(&cache_dir);
+    let _ = std::fs::create_dir_all(&cache);
+    let eco = eco_for_travel_profile(profile);
+    let elevation = ElevationService::new(ElevationCache::new(&elev));
+    let (graph, _) = match load_or_build_reweighted_bbox(
+        pbf,
+        &cache,
+        routing_profile,
+        &elevation,
+        &eco,
+        bbox,
+    ) {
+        Ok(v) => v,
+        Err(_) => return String::new(),
+    };
+    let label = nearest_road_label(&graph, lat, lon, max_m.max(1.0)).unwrap_or_default();
+    if let Ok(mut guard) = ROAD_LABEL_GRAPH.lock() {
+        *guard = Some(RoadLabelGraphCache { key, graph });
+    }
+    label
+}
+
 /// Bind a Geofabrik region to the local extract (required before update checks).
 #[uniffi::export]
 pub fn bind_geofabrik_region(
@@ -3184,7 +3322,6 @@ pub fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 // --- Offline PMTiles basemap downloads ---------------------------------------
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
 
 use driver_break_core::download::DownloadControl;
 use driver_break_core::routing::basemap::{

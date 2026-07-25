@@ -23,6 +23,10 @@ Idle HUD-linjer og Helgøya → Atnbrua-ruteopptaket ligger bare i
 `docs/images/terrain/hike_eldabu_ramshogda_3d.png`).
 Karttilt ved 45° (3D av / 3D på) vises også der
 (`docs/images/tilt45_3d_off.png`, `docs/images/tilt45_3d_on.png`).
+Nåværende gate UTF-8-bevis:
+`docs/images/hud/hud_current_street_mjosevegen.png` (ø),
+`hud_current_street_trollaas.png` (å),
+`hud_current_street_aevongsli.png` (Æ).
 
 ## Kart / ruting
 
@@ -34,6 +38,14 @@ Karttilt ved 45° (3D av / 3D på) vises også der
 | Gjendebu til Thonvollen, flatt kart. | ![Gjendebu til Thonvollen flat](images/gjendebu_thonvollen_flat.png) |
 | Hamar-løkke, 45° tilt, 3D av | ![45° tilt 3D av](images/tilt45_3d_off.png) |
 | Hamar-løkke, 45° tilt, 3D på | ![45° tilt 3D på](images/tilt45_3d_on.png) |
+
+## Nåværende gate (bunn-HUD)
+
+| Scene | Forhåndsvisning |
+|---|---|
+| Currently on Mjøsvegen (ø) | ![Mjøsvegen](images/hud/hud_current_street_mjosevegen.png) |
+| Currently on Trollåsveien (å) | ![Trollåsveien](images/hud/hud_current_street_trollaas.png) |
+| Currently on Ævongsli (Æ) | ![Ævongsli](images/hud/hud_current_street_aevongsli.png) |
 
 Foretrekk `images/terrain/` og nyere HUD-opptak når du sammenligner rutevisual.
 Eldre `route_map.png`-kopier var ~57 % MapLibre tom bakgrunn (`#f8f4f0`) fordi

@@ -163,6 +163,22 @@ pub fn prefer_street_label(name: Option<&str>, systematic_ref: Option<&str>) -> 
         .map(|s| s.to_string())
 }
 
+/// Label for the road the vehicle is **currently on**.
+///
+/// Order: OSM `name`, else `ref`, else human highway-class label (never a raw
+/// `highway=*` tag). Used by the bottom HUD “Currently on …” line — distinct
+/// from approach-box next-street (which omits when name/ref are unknown).
+pub fn current_road_label(
+    name: Option<&str>,
+    systematic_ref: Option<&str>,
+    highway: Option<&str>,
+) -> String {
+    if let Some(s) = prefer_street_label(name, systematic_ref) {
+        return s;
+    }
+    crate::routing::eta::highway_class_display_label(highway).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +217,39 @@ mod tests {
         assert_eq!(prefer_street_label(None, Some("E6")), Some("E6".into()));
         assert_eq!(prefer_street_label(Some("  "), Some("E6")), Some("E6".into()));
         assert_eq!(prefer_street_label(None, None), None);
+    }
+
+    #[test]
+    fn current_road_prefers_name_then_ref_then_class() {
+        assert_eq!(
+            current_road_label(Some("Storgata"), Some("Fv2"), Some("residential")),
+            "Storgata"
+        );
+        assert_eq!(
+            current_road_label(None, Some("E6"), Some("trunk")),
+            "E6"
+        );
+        assert_eq!(
+            current_road_label(None, None, Some("service")),
+            "Service road"
+        );
+        assert_eq!(
+            current_road_label(Some("  "), None, Some("path")),
+            "Path"
+        );
+    }
+
+    #[test]
+    fn current_road_preserves_norwegian_special_chars() {
+        let label = current_road_label(Some("Mjøsvegen"), None, Some("tertiary"));
+        assert_eq!(label, "Mjøsvegen");
+        assert!(label.contains('ø'));
+        let label2 = current_road_label(Some("Trollåsveien"), None, None);
+        assert!(label2.contains('å'));
+        let label3 = current_road_label(Some("Kjølberggata"), None, None);
+        assert!(label3.contains('ø'));
+        // æ in real Østlandet place data (Ævongsli / camping names).
+        let label4 = current_road_label(Some("Ævongsli"), None, Some("residential"));
+        assert!(label4.contains('Æ') || label4.contains('æ'));
     }
 }

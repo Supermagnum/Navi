@@ -50,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -131,11 +132,14 @@ import uniffi.navi.elevationAt
 import uniffi.navi.saveNamedRoute
 import uniffi.navi.saveVehicleLimits
 import uniffi.navi.searchPlaces
+import uniffi.navi.nearbyPlaces
+import uniffi.navi.roadLabelNear
 import uniffi.navi.setOsmWeeklyReminder
 import uniffi.navi.travelProfileMenuFocus
 import android.os.Handler
 import android.os.Looper
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -324,6 +328,10 @@ private fun NaviMapScreen() {
         (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
     }
     var lastViaToastIndex by remember { mutableIntStateOf(-1) }
+    var lastNearbyStreetAtMs by remember { mutableLongStateOf(0L) }
+    var lastNearbyStreetLat by remember { mutableDoubleStateOf(Double.NaN) }
+    var lastNearbyStreetLon by remember { mutableDoubleStateOf(Double.NaN) }
+    val nearbyStreetInFlight = remember { AtomicBoolean(false) }
     var driveHud by remember {
         mutableStateOf(
             DriveHudState(
@@ -369,12 +377,13 @@ private fun NaviMapScreen() {
             multiDayCards = emptyList(),
             layerEpoch = mapState.layerEpoch + 1,
         )
-        driveHud = driveHud.copy(minutesToBreak = null, tripEtaMinutes = null)
+        driveHud = driveHud.copy(minutesToBreak = null, tripEtaMinutes = null, currentStreet = null)
         approachGuidance = ApproachGuidanceState()
         NaviMapTestHooks.lastApproachPhase = ApproachUiPhase.Hidden
         NaviMapTestHooks.lastRoutePolylineChars = 0
         NaviMapTestHooks.lastBreakPoiCount = 0
         NaviMapTestHooks.lastArrivedAtEnd = false
+        NaviMapTestHooks.lastCurrentStreet = null
         status = message
     }
 
@@ -505,6 +514,27 @@ private fun NaviMapScreen() {
             return staged
         }
         return preferred
+    }
+    fun resolveRegionPbf(): File? {
+        val candidates = listOf(
+            File(dataDir, "ostlandet-latest.osm.pbf"),
+            File(dataDir, "oppland-latest.osm.pbf"),
+            File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
+            File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"),
+        )
+        return candidates.firstOrNull { it.isFile }
+    }
+    fun graphCacheDirForPbf(pbf: File): File {
+        val graphTag = when (profile) {
+            TravelProfile.BICYCLE -> "bicycle"
+            TravelProfile.HIKING -> "foot"
+            TravelProfile.TRUCK,
+            TravelProfile.TRUCK_ELECTRIC,
+            TravelProfile.MOBILE_HOME,
+            -> "truck"
+            else -> "car"
+        }
+        return File(dataDir, "graph-cache-${pbf.nameWithoutExtension}-$graphTag")
     }
     fun refreshRoutes() {
         savedRoutes = listSavedRoutes(dataDir.absolutePath)
@@ -663,6 +693,7 @@ private fun NaviMapScreen() {
                 }
                 // Live guidance from GPS / simulator along the planned route.
                 val tracker = progressTrackerRef.get()
+                var streetFromRoute = false
                 if (tracker != null && mapState.polyline.isNotBlank()) {
                     val snap = tracker.update(loc.latitude, loc.longitude)
                     NaviMapTestHooks.lastSimAlongM = snap.alongM
@@ -678,6 +709,12 @@ private fun NaviMapScreen() {
                             NaviMapTestHooks.lastSimHighway = s.highway
                             NaviMapTestHooks.lastSimMaxspeedPosted = s.maxspeedPosted
                         }
+                        val road = formatCurrentRoadLabel(s.street, s.highway)
+                        streetFromRoute = true
+                        if (driveHud.currentStreet != road) {
+                            driveHud = driveHud.copy(currentStreet = road)
+                        }
+                        NaviMapTestHooks.lastCurrentStreet = road
                     }
                     if (loc.hasBearing()) {
                         NaviMapTestHooks.gpsBearingDeg = loc.bearing.toDouble()
@@ -755,6 +792,77 @@ private fun NaviMapScreen() {
                             }
                         }
                         MapRotationMode.NorthUp -> Unit
+                    }
+                }
+                if (!streetFromRoute) {
+                    // Idle GPS: nearest OSM way (bbox graph), place-index only as fallback.
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    val movedM = if (
+                        lastNearbyStreetLat.isFinite() && lastNearbyStreetLon.isFinite()
+                    ) {
+                        haversineMApprox(
+                            lastNearbyStreetLat,
+                            lastNearbyStreetLon,
+                            loc.latitude,
+                            loc.longitude,
+                        )
+                    } else {
+                        Double.POSITIVE_INFINITY
+                    }
+                    val due = now - lastNearbyStreetAtMs >= 3_000L || movedM >= 30.0
+                    if (due && nearbyStreetInFlight.compareAndSet(false, true)) {
+                        lastNearbyStreetAtMs = now
+                        lastNearbyStreetLat = loc.latitude
+                        lastNearbyStreetLon = loc.longitude
+                        val fixLat = loc.latitude
+                        val fixLon = loc.longitude
+                        val prof = profile
+                        val clearIfFar = movedM > 150.0
+                        scope.launch {
+                            val interim = withContext(Dispatchers.IO) {
+                                val hits = runCatching {
+                                    nearbyPlaces(
+                                        resolvePlaceIndexDb().absolutePath,
+                                        fixLat,
+                                        fixLon,
+                                        200.0,
+                                        24u,
+                                    )
+                                }.getOrDefault(emptyList())
+                                streetLabelFromNearbyPlaces(hits)
+                            }
+                            if (interim != null && driveHud.currentStreet != interim) {
+                                driveHud = driveHud.copy(currentStreet = interim)
+                                NaviMapTestHooks.lastCurrentStreet = interim
+                            }
+                            val fromEdge = withContext(Dispatchers.IO) {
+                                val pbf = resolveRegionPbf() ?: return@withContext null
+                                runCatching {
+                                    roadLabelNear(
+                                        pbf.absolutePath,
+                                        graphCacheDirForPbf(pbf).absolutePath,
+                                        File(dataDir, "elevation").absolutePath,
+                                        fixLat,
+                                        fixLon,
+                                        prof,
+                                        80.0,
+                                    )
+                                }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+                            }
+                            nearbyStreetInFlight.set(false)
+                            when {
+                                fromEdge != null -> {
+                                    if (driveHud.currentStreet != fromEdge) {
+                                        driveHud = driveHud.copy(currentStreet = fromEdge)
+                                    }
+                                    NaviMapTestHooks.lastCurrentStreet = fromEdge
+                                }
+                                interim == null && clearIfFar && driveHud.currentStreet != null -> {
+                                    driveHud = driveHud.copy(currentStreet = null)
+                                    NaviMapTestHooks.lastCurrentStreet = null
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1157,6 +1265,11 @@ private fun NaviMapScreen() {
                     if (hookAlt != null && driveHud.altitudeM != hookAlt) {
                         driveHud = driveHud.copy(altitudeM = hookAlt)
                     }
+                    NaviMapTestHooks.pendingCurrentStreet?.let { street ->
+                        NaviMapTestHooks.pendingCurrentStreet = null
+                        driveHud = driveHud.copy(currentStreet = street)
+                        NaviMapTestHooks.lastCurrentStreet = street
+                    }
                     NaviMapTestHooks.lastReportedLayerCount = mapLayerCount
                     NaviMapTestHooks.driveSettingsOpen = showDriveSettings
                     NaviMapTestHooks.mapSettingsOpen = showMapSettings
@@ -1167,6 +1280,7 @@ private fun NaviMapScreen() {
                     NaviMapTestHooks.lastBreakRemindersEnabled = driveHud.breakRemindersEnabled
                     NaviMapTestHooks.lastShowTripEta = driveHud.showTripEta
                     NaviMapTestHooks.lastMinutesToBreak = driveHud.minutesToBreak
+                    NaviMapTestHooks.lastCurrentStreet = driveHud.currentStreet
                     NaviMapTestHooks.lastBreakHudVisible = formatBreakHudLine(
                         routePlanned = mapState.polyline.isNotBlank(),
                         breakRemindersEnabled = driveHud.breakRemindersEnabled,
@@ -1280,7 +1394,8 @@ private fun NaviMapScreen() {
         }
     }
 
-    // No planned corridor => clear approach + break countdown (no stale linger).
+    // No planned corridor => clear approach + break countdown.
+    // Current street may still update from GPS + place index (see docs/current-street.md).
     LaunchedEffect(mapState.polyline) {
         if (mapState.polyline.isBlank()) {
             if (approachGuidance.active) {

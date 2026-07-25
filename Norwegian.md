@@ -313,6 +313,8 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 | [`docs/hud-layout.md`](docs/hud-layout.md) | Størrelse og plassering av kjøre-HUD og menyer |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs frakoblet Protomaps PMTiles; 3D-port |
 | [`docs/approach-instructions.md`](docs/approach-instructions.md) | Midlertidig manøver-tilnærmingsboks |
+| [`docs/current-street.md`](docs/current-street.md) | Bunn-HUD «Currently on …» veinavn + policy uten rute |
+| [`docs/unicode-road-names.md`](docs/unicode-road-names.md) | UTF-8-pipeline for æ/å/ø/ä/ü i navn |
 | [`docs/poi.md`](docs/poi.md) | Søkbar POI-kategorier (Fishing, RestArea, Lodging, …), OSM-taggregler |
 | [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md) | Foreslåtte hytte-/løyperadius for fottur og sykling (DNT-avstand) |
 | [`docs/osm-updates.md`](docs/osm-updates.md) | Valgfri Geofabrik-sjekk / `.osc.gz` / full nedlasting |

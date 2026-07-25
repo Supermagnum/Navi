@@ -19,6 +19,10 @@ Idle HUD bars and the Helgøya → Atnbrua route capture live in the
 `docs/images/terrain/hike_eldabu_ramshogda_3d.png`).
 Map tilt at 45° (3D off / 3D on) is also shown there
 (`docs/images/tilt45_3d_off.png`, `docs/images/tilt45_3d_on.png`).
+Current-street UTF-8 evidence (fixture names from Ostlandet place index):
+`docs/images/hud/hud_current_street_mjosevegen.png` (ø),
+`hud_current_street_trollaas.png` (å),
+`hud_current_street_aevongsli.png` (Æ).
 
 Norwegian gallery: [`bilder.md`](bilder.md).
 
@@ -32,6 +36,18 @@ Norwegian gallery: [`bilder.md`](bilder.md).
 | Gjendebu to Thonvollen, flat map. | ![Gjendebu to Thonvollen flat](images/gjendebu_thonvollen_flat.png) |
 | Hamar loop, 45° tilt, 3D off | ![45° tilt 3D off](images/tilt45_3d_off.png) |
 | Hamar loop, 45° tilt, 3D on | ![45° tilt 3D on](images/tilt45_3d_on.png) |
+
+## Current street (bottom HUD)
+
+Real Østlandet fixture names via `CurrentStreetInstrumentedTest`. See
+[`current-street.md`](current-street.md) /
+[`unicode-road-names.md`](unicode-road-names.md).
+
+| Scene | Preview |
+|---|---|
+| Currently on Mjøsvegen (ø) | ![Mjøsvegen](images/hud/hud_current_street_mjosevegen.png) |
+| Currently on Trollåsveien (å) | ![Trollåsveien](images/hud/hud_current_street_trollaas.png) |
+| Currently on Ævongsli (Æ) | ![Ævongsli](images/hud/hud_current_street_aevongsli.png) |
 
 Prefer `images/terrain/` and recent HUD shots when comparing route visuals.
 Older `route_map.png` copies were ~57% MapLibre empty background (`#f8f4f0`)

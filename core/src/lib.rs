@@ -21,8 +21,8 @@ pub mod tracks;
 pub use download::DownloadControl;
 pub use config::{FuelConfig, Profile, RestConfig, SafetyConfig, VehicleLimits};
 pub use nav::{
-    format_distance_m, prefer_street_label, ApproachPhase, ManeuverKind, NavGuidance,
-    APPROACH_APPEAR_M, APPROACH_HIDE_M, APPROACH_URGENCY_M,
+    current_road_label, format_distance_m, prefer_street_label, ApproachPhase, ManeuverKind,
+    NavGuidance, APPROACH_APPEAR_M, APPROACH_HIDE_M, APPROACH_URGENCY_M,
 };
 pub use poi::{PoiCategory, PoiIndex, PoiRecord};
 pub use routing::elevation::{ElevationCache, ElevationDownloader, ElevationJob, ElevationService};

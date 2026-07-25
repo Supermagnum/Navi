@@ -118,6 +118,18 @@ next maneuver”).
 | Live distance + street | `RouteProgressTracker` + wiring in `MainActivity.kt` |
 | Maneuver list from planner | `CorridorRouteResult.maneuvers_json` ← `routing/guidance_path.rs` |
 
+### Current street (bottom bar)
+
+| What | Where |
+|---|---|
+| Product rules / no-route policy | [`current-street.md`](current-street.md) |
+| Sample `street` + highway | `guidance_path::build_sim_samples` |
+| Class fallback labels | `eta::highway_class_display_label` (aligned with `highway_fallback_kmh`) |
+| Idle GPS nearest edge | `graph/road_near.rs` (`nearest_road_label`) + UniFFI `road_label_near` |
+| Place-index interim | UniFFI `nearby_places` + `streetLabelFromNearbyPlaces` |
+| Bottom HUD line | `BottomDriveHud` / `DriveHudState.currentStreet` |
+| Unicode pipeline notes | [`unicode-road-names.md`](unicode-road-names.md) |
+
 ### Break countdown / trip ETA
 
 | What | Where |

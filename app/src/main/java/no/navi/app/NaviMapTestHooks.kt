@@ -349,6 +349,17 @@ object NaviMapTestHooks {
     @Volatile
     var lastSimMaxspeedPosted: Boolean = false
 
+    /** Last bottom-HUD current-street label (name/ref/class). */
+    @Volatile
+    var lastCurrentStreet: String? = null
+
+    /**
+     * When set, MainActivity applies this as [DriveHudState.currentStreet] once
+     * (instrumented UTF-8 / layout checks without a full corridor rebuild).
+     */
+    @Volatile
+    var pendingCurrentStreet: String? = null
+
     @Volatile
     var lastDistanceToManeuverM: Double? = null
 

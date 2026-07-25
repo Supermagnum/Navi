@@ -21,6 +21,9 @@ pub struct SimSample {
     pub highway: Option<String>,
     /// True when OSM `maxspeed` was present on the edge (not highway-class fallback).
     pub maxspeed_posted: bool,
+    /// Current-road label: OSM `name`, else `ref`, else null (UI applies highway-class label).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub street: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -157,6 +160,7 @@ pub fn build_sim_samples(graph: &RouteGraph, path: &[NodeId]) -> Vec<SimSample> 
             .maxspeed_kmh
             .filter(|v| v.is_finite() && *v > 0.0)
             .is_some();
+        let street = prefer_street_label(e.name.as_deref(), e.road_ref.as_deref());
         let steps = ((e.length_m / SAMPLE_STEP_M).ceil() as usize).max(1);
         for s in 0..steps {
             let t0 = s as f64 / steps as f64;
@@ -172,6 +176,7 @@ pub fn build_sim_samples(graph: &RouteGraph, path: &[NodeId]) -> Vec<SimSample> 
                 speed_kmh: speed,
                 highway: e.highway.clone(),
                 maxspeed_posted: posted,
+                street: street.clone(),
             });
         }
         cum += e.length_m;
@@ -191,6 +196,7 @@ pub fn build_sim_samples(graph: &RouteGraph, path: &[NodeId]) -> Vec<SimSample> 
                 .and_then(|e| e.maxspeed_kmh)
                 .filter(|v| v.is_finite() && *v > 0.0)
                 .is_some(),
+            street: e_last.and_then(|e| prefer_street_label(e.name.as_deref(), e.road_ref.as_deref())),
         });
     }
     out
@@ -267,6 +273,7 @@ pub fn expected_fallback_kmh(highway: Option<&str>) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::routing::graph::{GraphEdge, RouteGraph};
     use geo_types::Coord;
     use osm4routing::Node;
     use std::collections::HashMap;
@@ -347,9 +354,11 @@ mod tests {
         let res = samples.iter().find(|s| s.highway.as_deref() == Some("residential")).unwrap();
         assert!((res.speed_kmh - 40.0).abs() < 0.01);
         assert!(!res.maxspeed_posted);
+        assert_eq!(res.street.as_deref(), Some("Storgata"));
         let tert = samples.iter().find(|s| s.highway.as_deref() == Some("tertiary")).unwrap();
         assert!((tert.speed_kmh - 60.0).abs() < 0.01);
         assert!(tert.maxspeed_posted);
+        assert_eq!(tert.street.as_deref(), Some("Rv3"));
 
         let man = build_maneuvers(&graph, &path);
         assert!(man.iter().any(|m| m.kind == "destination"));
@@ -357,5 +366,43 @@ mod tests {
         assert!(man.iter().any(|m| m.kind.contains("left") || m.kind.contains("right")));
         let turn = man.iter().find(|m| m.kind != "destination").unwrap();
         assert_eq!(turn.street.as_deref(), Some("Rv3"));
+    }
+
+    #[test]
+    fn samples_preserve_norwegian_street_utf8() {
+        let mut nodes = HashMap::new();
+        nodes.insert(
+            NodeId(1),
+            Node {
+                id: NodeId(1),
+                coord: Coord { x: 11.0, y: 60.0 },
+                uses: 0,
+            },
+        );
+        nodes.insert(
+            NodeId(2),
+            Node {
+                id: NodeId(2),
+                coord: Coord { x: 11.002, y: 60.0 },
+                uses: 0,
+            },
+        );
+        let edges = vec![edge(
+            "a",
+            1,
+            2,
+            60.0,
+            11.0,
+            60.0,
+            11.002,
+            "tertiary",
+            Some(50.0),
+            Some("Mjøsvegen"),
+        )];
+        let graph = RouteGraph::from_parts(nodes, edges, crate::routing::graph::RoutingProfile::Car);
+        let samples = build_sim_samples(&graph, &[NodeId(1), NodeId(2)]);
+        let json = samples_to_json(&samples);
+        assert!(json.contains("Mjøsvegen"), "json lost ø: {json}");
+        assert_eq!(samples[0].street.as_deref(), Some("Mjøsvegen"));
     }
 }

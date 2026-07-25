@@ -95,6 +95,12 @@ data class DriveHudState(
     val cameraTiltDeg: Double = MapHudPrefs.DEFAULT_CAMERA_TILT_DEG,
     /** Vulkan SDK linked — gate for offering 3D. */
     val vulkanAvailable: Boolean = true,
+    /**
+     * Road the vehicle is currently on (bottom bar, low visual weight).
+     * Null/blank = omit the line. Updated from live route sample snap when a
+     * corridor is active; cleared when navigation ends (see docs/current-street.md).
+     */
+    val currentStreet: String? = null,
 )
 
 /**
@@ -377,10 +383,11 @@ fun MapSettingsSheet(
 }
 
 /**
- * Collapsed bottom drive HUD: the app's only map zoom −/+, break countdown, trip ETA,
- * and eco leaf when eco is active. Tap the status area (not zoom) to open drive settings.
+ * Collapsed bottom drive HUD: the app's only map zoom −/+, current street (low
+ * weight), break countdown, trip ETA, and eco leaf when eco is active. Tap the
+ * status area (not zoom) to open drive settings.
  *
- * Turn / maneuver stubs belong to the approach-instruction box (deferred) — not this bar.
+ * Turn / maneuver stubs belong to the approach-instruction box — not this bar.
  * AAOS system chrome may show separate − N + climate controls; those are not app zoom.
  *
  * Height is content-driven (~one compact row). A Garmin reference bottom strip was
@@ -450,6 +457,16 @@ fun BottomDriveHud(
                     .clickable(onClick = onOpenSettings)
                     .padding(horizontal = 4.dp),
             ) {
+                val street = state.currentStreet?.trim().orEmpty()
+                if (street.isNotEmpty()) {
+                    Text(
+                        "Currently on $street",
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.testTag("hud_current_street"),
+                    )
+                }
                 val breakTxt = formatBreakHudLine(
                     routePlanned = routePlanned,
                     breakRemindersEnabled = state.breakRemindersEnabled,
