@@ -83,7 +83,7 @@ yet ([`docs/plugins.md`](docs/plugins.md)).
 | **Offline route planning** | Download a map region once, plan on the device, and see the route line plus suggested stops on the map. | Done |
 | **Place search** | Search places and set From / Via / To ([`docs/poi.md`](docs/poi.md)). Includes fishing spots and hut search distance guidance ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Done |
 | **Rest & breaks** | Break reminders and suggested stops along the route. Hiking and cycling use traditional Scandinavian rest distances ([background](docs/historical-background.md)). **Truck** / **TruckElectric** resolve a jurisdiction pack at start: EU EC 561/2006 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) or US FMCSA property-carrying HOS ([`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md)); unknown jurisdictions decline legal tracking. Multi-day day cards and overnight pins are shown in the plan UI (live-verified on emulator GPS Norway Minnesund belt → Bodø; see [`docs/pictures.md`](docs/pictures.md)). **Car** / **motorcycle** / **cycle** / **mobile home** use soft multi-day overnight splitting when a trip exceeds a daily budget (8 h driving or 100 km cycling) with lodging/camping/rest-area suggestions ([`docs/poi.md`](docs/poi.md)). Hiking overnight pauses prefer huts/tents and keep a respectful distance from buildings and glaciers; day-by-day multi-day overnight is planned in `planHikingRoute`. Country/region rule packs: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). | Done |
-| **Drive bars** | Slim top bar (altitude; tap for map settings) and bottom bar (zoom, break time, trip ETA, eco leaf; tap for drive settings). | Done |
+| **Drive bars** | Slim top bar (altitude; tap for map settings) and bottom bar (zoom, break time, trip ETA,current road/street name, eco leaf; tap for drive settings). | Done |
 | **Map rotation** | Align the map with the compass, with your travel direction, or with north always up. | Done |
 | **Moving icons** | Show nearby tracked markers on the map (for example radio station symbols) within about 50–150 km. | **Partial** — drawing works; a live radio feed is not built in yet |
 | **Map data updates** | When you choose, check for OpenStreetMap updates and apply them, or download a fresh region ([`docs/osm-updates.md`](docs/osm-updates.md)). Never updates quietly in the background. | Done |
@@ -186,7 +186,7 @@ settings (Car vs Truck when a truck profile is selected).
 **Map and on-screen bars.** The map is drawn with MapLibre. The collapsed top
 bar shows altitude; tap it for map settings (rotation, trip ETA, breaks,
 auto-zoom, 3D hillshade, camera tilt). The collapsed bottom bar shows zoom,
-break time, trip ETA, and the eco leaf; tap it for travel mode, rest, and fuel
+break time, road/street name, trip ETA, and the eco leaf; tap it for travel mode, rest, and fuel
 settings. **Hiking routes require the Hiking travel mode** — planning with Car
 (or another motor profile) uses the road graph and will fail or produce a
 useless path for foot trails. Near a turn, a short instruction box shows the
