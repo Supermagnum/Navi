@@ -3,6 +3,7 @@
 How to find the right file when fixing a bug or changing behaviour (zoom,
 approach box, routing, rest, map styles, …). Pair with
 [`architecture.md`](architecture.md) (crate wiring / databases),
+[`rust-crates.md`](rust-crates.md) (created vs unaltered crates.io deps),
 [`API.md`](API.md) (callable surfaces), and [`debugging.md`](debugging.md)
 (logcat / tests).
 

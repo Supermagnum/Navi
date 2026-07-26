@@ -2,6 +2,8 @@
 
 File-level “where do I edit X?” map for contributors:
 [`codebase-map.md`](codebase-map.md). Callable APIs: [`API.md`](API.md).
+Which Rust crates are first-party vs crates.io (unaltered):
+[`rust-crates.md`](rust-crates.md).
 
 ## Layout
 

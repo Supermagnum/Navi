@@ -6,6 +6,7 @@
 units or tablets). Development so far is emulator-only — real devices differ for GPS, MapLibre,
 Vulkan/GLES, and performance. Checklist:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+How to contribute (testing and more): [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 # AI assistance
 
@@ -32,7 +33,8 @@ throughout.
 - [Host tests](#host-tests)
 - [Known issues](#known-issues)
 
-Further reading in-repo: how the pieces fit together in
+Further reading in-repo: how to contribute in
+[`CONTRIBUTING.md`](CONTRIBUTING.md); how the pieces fit together in
 [`docs/architecture.md`](docs/architecture.md); plugin ideas in
 [`docs/plugins.md`](docs/plugins.md); Android build steps in
 [`docs/android-build.md`](docs/android-build.md); Linux core build in
@@ -310,7 +312,9 @@ overlays, eco leaf, rotation, bearing, moving icons):
 
 | Document | Description |
 |---|---|
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to contribute (testing, plugins, jurisdictions, code expectations) |
 | [`docs/architecture.md`](docs/architecture.md) | How the parts fit together (databases, threads, plugins) |
+| [`docs/rust-crates.md`](docs/rust-crates.md) | Rust crates: first-party created vs crates.io used unaltered |
 | [`docs/codebase-map.md`](docs/codebase-map.md) | Contributor file map: where to fix bugs, zoom, approach, routing, HUD |
 | [`docs/pictures.md`](docs/pictures.md) | Emulator screenshot gallery |
 | [`docs/bilder.md`](docs/bilder.md) | Emulator screenshot gallery (Norwegian) |

@@ -6,6 +6,7 @@
 skjermenheter). Utviklingen så langt er kun på emulator — ekte enheter oppfører
 seg annerledes for GPS, MapLibre, Vulkan/GLES og ytelse. Sjekkliste:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+Hvordan bidra (testing og mer): [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 # AI-bistand
 
@@ -301,7 +302,9 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 
 | Dokument | Beskrivelse |
 |---|---|
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Hvordan bidra (testing, plugins, jurisdiksjoner, kodekrav; engelsk) |
 | [`docs/architecture.md`](docs/architecture.md) | Hvordan delene henger sammen (databaser, tråder, plugins) |
+| [`docs/rust-crates.md`](docs/rust-crates.md) | Rust-crates: egen kode vs uendrede crates.io-avhengigheter (engelsk) |
 | [`docs/codebase-map.md`](docs/codebase-map.md) | Bidragsyter-filkart: hvor feil fikses, zoom, tilnærming, ruting, HUD |
 | [`docs/bilder.md`](docs/bilder.md) | Emulatorskjermbildegalleri (norsk) |
 | [`docs/pictures.md`](docs/pictures.md) | Emulatorskjermbildegalleri (engelsk) |
