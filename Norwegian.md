@@ -328,6 +328,7 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 | [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Spesifikasjon: UI-språk/oversettelsespakker (plugin; appen er engelsk i dag) |
 | [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Spesifikasjon: animerte ikoner (Synfig → SVG-rammer; plugin) |
 | [`docs/icons.md`](docs/icons.md) | Ikonoversikt; egne statiske SVG (Inkscape); Navit GPL-v2 |
+| [Supermagnum/road-signs](https://github.com/Supermagnum/road-signs) | Norske trafikkskilt (NLOD; eget repo) |
 | [`docs/API.md`](docs/API.md) | UniFFI vert-API + plugin HostApi-referanse |
 | [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) | Protokollindeks |
 | [`docs/ECU.md`](docs/ECU.md) | ECU-protokoller: OBD-II, J1939, MegaSquirt + EV |
@@ -357,6 +358,10 @@ override-katalog eller `core/src/icons` — steg i
 [`docs/icons.md`](docs/icons.md#adding-custom-icons). Animasjoner i
 [Synfig Studio](https://www.synfig.org/) — se
 [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md).
+
+Relatert (ikke med i Navi): norske trafikkskilt fra offentlig database, utgitt
+under NLOD —
+[Supermagnum/road-signs](https://github.com/Supermagnum/road-signs).
 
 ## Bygge Android-pakker
 

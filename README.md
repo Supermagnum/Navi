@@ -338,6 +338,7 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Spec: offline UI language packs (plugin; app UI is English-only today, no language toggle) |
 | [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Spec: Synfig-authored animated icons / frame packs (plugin; static SVG stays in icons.md) |
 | [`docs/icons.md`](docs/icons.md) | Icon inventory; custom static SVG (Inkscape); Navit GPL-v2 |
+| [Supermagnum/road-signs](https://github.com/Supermagnum/road-signs) | Norwegian road-sign artwork (NLOD; separate repo) |
 | [`docs/API.md`](docs/API.md) | UniFFI host API + plugin HostApi reference |
 | [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) | Wire protocol index (UniFFI, plugins, ECU/APRS/CAT) |
 | [`docs/ECU.md`](docs/ECU.md) | ECU protocols: OBD-II, J1939, MegaSquirt + EV SoC/power |
@@ -366,6 +367,10 @@ them in the override directory or `core/src/icons` — step-by-step in
 [`docs/icons.md`](docs/icons.md#adding-custom-icons). Author animations in
 [Synfig Studio](https://www.synfig.org/) and export SVG / frames — see
 [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md).
+
+Related (not bundled in Navi): Norwegian road-sign artwork from the government
+database, released under NLOD —
+[Supermagnum/road-signs](https://github.com/Supermagnum/road-signs).
 
 ## Building Android packages
 
