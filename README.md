@@ -347,7 +347,7 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/CAT.md`](docs/CAT.md) | CAT VFO auto-tune from NFM repeaters (≤150 km); OSM network example |
 | [`docs/voice-guidance.md`](docs/voice-guidance.md) | Planned voice guidance plugin (recordings + optional Piper) |
 | [`docs/android-build.md`](docs/android-build.md) | Compile native `libnavi.so`, UniFFI bindings, and Gradle APKs |
-| [`docs/build-linux.md`](docs/build-linux.md) | Linux: Rust core, integration tests, gpsd + IMU (no desktop map UI yet) |
+| [`docs/build-linux.md`](docs/build-linux.md) | Linux: Rust core, `navi-desktop` map shell, integration tests, gpsd + IMU |
 | [`docs/imu-calibration.md`](docs/imu-calibration.md) | Deferred: vehicle-mount IMU pitch/roll zeroing for eco elevation |
 | [`docs/debugging.md`](docs/debugging.md) | Host + Android debug loops (logcat, Studio, instrumented tests) |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | **Required:** physical device checklist vs emulator baseline |

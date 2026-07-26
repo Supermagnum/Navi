@@ -26,7 +26,8 @@ differ from directory names.
 |---|---|---|---|
 | `core/` | `driver-break-core` | Trusted nav core: OSM graph / A*, eco reweight, elevation, POI, FTS search, rest/HOS, tracks, icons raster, SQLite, sensors helpers | **Created** — all modules under `core/src/` |
 | `navi-ffi/` | `navi-ffi` (lib name `navi`) | UniFFI CDYLIB / staticlib bridging core ↔ Android (and other hosts); bindgen helper bins | **Created** |
-| `navi-linux/` | `navi-linux` | Linux gpsd + IMU sensor-feed demo binary (no desktop map UI) | **Created** |
+| `navi-linux/` | `navi-linux` | Linux gpsd + IMU sensor-feed demo binary (no map UI) | **Created** |
+| `navi-desktop/` | `navi-desktop` | Linux desktop map shell (WebKitGTK + MapLibre GL JS) | **Created** |
 | `plugin-host/` | `navi-plugin-host` | Wasmtime host: fuel / wall-clock limits, capability gate | **Created** |
 | `plugin-sdk/` | `navi-plugin-sdk` | Guest-side wrappers for the HostApi ABI | **Created** |
 | `plugins/log-hello/` | `navi-plugin-log-hello` | Reference WASM guest | **Created** (example only) |

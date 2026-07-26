@@ -4,6 +4,7 @@ members = [
     "core",
     "navi-ffi",
     "navi-linux",
+    "navi-desktop",
     "plugin-host",
     "plugin-sdk",
     "plugins/log-hello",

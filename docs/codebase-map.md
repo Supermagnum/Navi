@@ -23,6 +23,7 @@ Kotlin UniFFI names are **camelCase** (`planCarRoute`); Rust exports are
 | `app/` | Kotlin / Compose Android Automotive UI + MapLibre |
 | `plugin-host/` / `plugin-sdk/` / `plugins/` | Sandboxed WASM host + example guests (no product plugins yet) |
 | `navi-linux/` | Linux host sketch (gpsd / IMU; no full map UI) |
+| `navi-desktop/` | Linux desktop map shell (WebKitGTK + MapLibre GL JS) |
 | `docs/` | Specs and how-tos (this file included) |
 | `scripts/` | Emulator / build helpers |
 

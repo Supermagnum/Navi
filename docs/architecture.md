@@ -11,6 +11,7 @@ Which Rust crates are first-party vs crates.io (unaltered):
 |---|---|
 | `core/` | `driver-break-core` — trusted Rust: elevation, routing, POI, search, rest/safety, icons, tracks, ECU hooks, SQLite |
 | `navi-ffi/` | UniFFI CDYLIB bridging core ↔ Android (and other hosts) |
+| `navi-desktop/` | Linux desktop map shell (WebKitGTK + MapLibre GL JS); see [`build-linux.md`](build-linux.md) |
 | `app/` | Kotlin/Compose Android Automotive UI + MapLibre |
 | `plugin-host/` | `navi-plugin-host` — wasmtime sandbox |
 | `plugin-sdk/` | Guest helpers for HostApi imports |

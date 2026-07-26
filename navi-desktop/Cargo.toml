@@ -1,0 +1,35 @@
+[package]
+name = "navi-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Linux desktop map shell: WebKitGTK + MapLibre GL JS over driver-break-core"
+publish = false
+
+[[bin]]
+name = "navi-desktop"
+path = "src/main.rs"
+
+[features]
+default = ["gpsd", "linux-imu", "embedded-webview"]
+gpsd = ["driver-break-core/gpsd"]
+linux-imu = ["driver-break-core/linux-imu"]
+## Embed MapLibre in a WebKitGTK window via wry (needs libwebkit2gtk-4.1-dev).
+embedded-webview = ["dep:wry", "dep:tao"]
+
+[dependencies]
+anyhow.workspace = true
+axum = { version = "0.8", features = ["http1", "tokio", "query", "json"] }
+driver-break-core = { path = "../core" }
+env_logger = "0.11"
+include_dir = "0.7"
+log.workspace = true
+navi = { path = "../navi-ffi", package = "navi-ffi" }
+png.workspace = true
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "fs", "io-util", "sync"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+tao = { version = "0.32", optional = true }
+wry = { version = "0.50", optional = true }

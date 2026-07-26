@@ -1,19 +1,19 @@
 # Building and running on Linux
 
-**There is currently no installable end-user Navi application for Linux.**
-This document covers building and testing the Rust **core** library, running the
-`navi-linux` gpsd/IMU **demo** binary, and developing **WASM plugins**. The
-interactive map UI today is the **Android Automotive** host (`app/`) — see the
-[What does not run on Linux desktop today](#what-does-not-run-on-linux-desktop-today)
-table near the end.
+**There is currently no packaged end-user Navi install (`.deb` / Flatpak) for
+Linux.** What *does* exist is a **desktop map shell** (`navi-desktop`) plus the
+Rust **core**, `navi-linux` gpsd/IMU demo, and WASM plugins. The richest
+Automotive UX remains the Android host (`app/`); the Linux shell is the
+developer / bring-up map UI.
 
 Navi’s navigation logic lives in Rust (`driver-break-core`). On Linux you compile
-and test that core (and plugins) with Cargo; there is **no** full desktop map
-shell in this repository yet.
+that core (and plugins) with Cargo, and optionally run **`navi-desktop`** for a
+real MapLibre map with route planning and live position.
 
 Android APK / UniFFI: [`android-build.md`](android-build.md).  
 Debugging loops: [`debugging.md`](debugging.md).  
 Plugin build details: [`plugins.md`](plugins.md).  
+Map styles / offline PMTiles: [`map-styles.md`](map-styles.md).  
 gpsd / IMU on Linux: see [Sensors](#sensors-on-linux-gpsd--imu) below and
 [`imu-calibration.md`](imu-calibration.md).
 
@@ -98,6 +98,33 @@ sudo dnf install pkgconf-pkg-config
 sudo pacman -S --needed base-devel pkgconf
 ```
 
+### WebKitGTK (for the embedded `navi-desktop` window)
+
+The desktop shell embeds MapLibre GL JS via **WebKitGTK** (`wry` on Linux).
+Install the development package so `cargo build -p navi-desktop` can link:
+
+**Debian / Ubuntu:**
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev
+```
+
+**Fedora:**
+
+```bash
+sudo dnf install webkit2gtk4.1-devel
+```
+
+**Arch Linux:**
+
+```bash
+sudo pacman -S webkit2gtk-4.1
+```
+
+Without those headers you can still build with
+`cargo build -p navi-desktop --no-default-features --features gpsd,linux-imu`
+and open the UI in a normal browser (`--no-webview` / `--browser`).
+
 ### System libraries
 
 | Library | Required? | Notes |
@@ -106,6 +133,7 @@ sudo pacman -S --needed base-devel pkgconf
 | **OpenSSL** | Usually not | `reqwest` uses **`rustls-tls`** |
 | **GDAL / GEOS** | Not used | Elevation via SRTM/Copernicus readers + geotiff, not GDAL |
 | **libgps** | Not used | Optional gpsd client is pure Rust (`gpsd_proto` over TCP/JSON) |
+| **WebKitGTK 4.1** | For embedded desktop window | See above; runtime + `-dev` for the default `embedded-webview` feature |
 
 SVG rasterization (`usvg` / `resvg`) and `flate2` / `png` are pure Rust crates —
 no extra system SVG libraries.
@@ -117,12 +145,72 @@ no extra system SVG libraries.
 | Crate | Role on Linux |
 |---|---|
 | `core` (`driver-break-core`) | Elevation, routing, POI, rest/safety, search, icons, tracks, sensors |
-| `navi-ffi` | UniFFI CDYLIB — mainly for Android; can still `cargo build -p navi-ffi` on Linux |
+| `navi-ffi` | UniFFI CDYLIB — Android ABI; also linked by `navi-desktop` for plan/search helpers |
+| `navi-desktop` | **Desktop map shell** (WebKitGTK + MapLibre GL JS) |
 | `plugin-host` / `plugin-sdk` / `plugins/*` | WASM sandbox; build/test on Linux |
-| `navi-linux` (optional binary) | gpsd + IMU demo / sensor feed for desktop/SBC testing |
+| `navi-linux` | gpsd + IMU console demo (no map UI) |
 
-There is **no** eframe/gtk MapLibre desktop UI crate. Map rendering remains Android
-MapLibre for now.
+---
+
+## Desktop map shell (`navi-desktop`)
+
+### Rendering choice (spike result)
+
+Two paths were considered:
+
+| Option | Stack | Result |
+|---|---|---|
+| **A** | `eframe`/`egui` + [`maplibre-rs`](https://github.com/maplibre/maplibre-rs) | **Rejected for this pass.** Upstream still describes itself as a **proof-of-concept** (crates.io ~`0.0.3`); missing labels/symbols/raster; **no clear Protomaps PMTiles offline path** matching Navi’s existing Android basemap work. |
+| **B** (chosen) | **WebKitGTK** (`wry`/`tao`) + **MapLibre GL JS** + local `axum` HTTP | **Selected.** Same MapLibre / OpenFreeMap / Protomaps ecosystem as Android; mature PMTiles protocol in JS; thin Rust server serves range requests against local `.pmtiles` and calls `driver-break-core` / `navi-ffi` for routing, search, and icons. Tradeoff: C WebKit dependency (documented above). |
+
+Basemap resolution order mirrors Android `BasemapStyleResolver`: completed local
+Protomaps PMTiles covering the camera when available, otherwise OpenFreeMap
+**Liberty** online (`--force-online` forces Liberty). 3D / Mapterhorn hillshade
+is out of scope for this shell. See [`map-styles.md`](map-styles.md).
+
+Sensors reuse the same `SensorBus` path as `navi-linux` (gpsd + optional
+`--demo-imu`). Routing uses `plan_car_route` from `navi-ffi`; icons use core
+`usvg`/`resvg` rasterization.
+
+### Build and run
+
+```bash
+# After WebKitGTK -dev is installed:
+cargo run -p navi-desktop -- --demo-imu
+
+# Or open the system browser instead of the embedded window:
+cargo run -p navi-desktop -- --demo-imu --no-webview
+```
+
+Useful flags:
+
+| Flag | Purpose |
+|---|---|
+| `--data-dir DIR` | Config / caches (default `~/.local/share/navi` or `$NAVI_DATA_DIR`) |
+| `--pbf PATH` | OSM extract for planning (defaults to Ostlandet under data-dir or `core/target/integration-fixtures/`) |
+| `--pmtiles PATH` | Force offline Protomaps basemap |
+| `--force-online` | Always use OpenFreeMap Liberty |
+| `--place-index PATH` | FTS5 DB for place search |
+| `--gpsd HOST:PORT` | gpsd address (default `127.0.0.1:2947`) |
+| `--demo-imu` | Synthetic IMU without hardware |
+| `--listen HOST:PORT` | Bind for the local HTTP UI (default `127.0.0.1:0`) |
+| `--no-webview` / `--browser` | Use `xdg-open` instead of embedded WebKit |
+
+Example with fixtures already on disk (see [fixtures](#ignored-integration-tests-and-fixtures) and [`map-styles.md`](map-styles.md)):
+
+```bash
+cargo run -p navi-desktop -- --demo-imu --no-webview \
+  --pbf core/target/integration-fixtures/oppland-latest.osm.pbf \
+  --pmtiles core/target/integration-fixtures/europe_norway_ostlandet.pmtiles \
+  --elev-dir core/target/integration-fixtures/elevation
+```
+
+Enter start/end as lat,lon (or use place search when `--place-index` is set).
+First graph build from a large PBF is slow — prefer a regional extract when
+possible.
+
+Packaging (`.deb` / Flatpak) is **out of scope** for this pass — `cargo run` is
+enough.
 
 ---
 
@@ -192,6 +280,7 @@ Several `--ignored` tests live under `core/tests/` and write under
 | `hedmark-latest.osm.pbf` | [OSM.fr](https://download.openstreetmap.fr/extracts/europe/norway/hedmark-latest.osm.pbf) (~90 MB) |
 | `oppland-latest.osm.pbf` | [OSM.fr](https://download.openstreetmap.fr/extracts/europe/norway/oppland-latest.osm.pbf) (~90 MB) |
 | DEM under `integration-fixtures/elevation/` | Downloaded by the test via core elevation jobs (corridor order ~100–200 MB once cached) |
+| `europe_norway_ostlandet.pmtiles` | Regional Protomaps extract (~180 MB) — for `navi-desktop` offline basemap; see [`map-styles.md`](map-styles.md) |
 
 **Disk space:** Plan on **about 1 GB free** for a first pass of the common
 ignored routing/hiking tests (OSM extracts + DEM). The fixtures directory can
@@ -286,7 +375,7 @@ Edit distro gpsd defaults (e.g. `/etc/default/gpsd` on Debian) so `DEVICES`
 lists your port when using the service. Default TCP port for clients:
 **`127.0.0.1:2947`**.
 
-### Verify gpsd before `navi-linux`
+### Verify gpsd before `navi-linux` / `navi-desktop`
 
 ```bash
 # JSON stream: a few TPV/SKY sentences then exit
@@ -308,21 +397,21 @@ quality). Feed samples into `sensors::PositionSample` / `SensorBus`.
 
 ### No GPS / IMU hardware yet (demo on-ramp)
 
-`navi-linux` defaults enable `gpsd` + `linux-imu`. For bring-up **without an IMU
-chip**, use **`--demo-imu`**: it publishes a rotating synthetic heading on
-`SensorBus` so you can confirm the IMU print path.
+`navi-linux` and `navi-desktop` enable `gpsd` + `linux-imu` by default. For
+bring-up **without an IMU chip**, use **`--demo-imu`**: it publishes a rotating
+synthetic heading on `SensorBus`.
 
 ```bash
-# No IMU hardware: synthetic heading. Still expects gpsd on 127.0.0.1:2947 for POS.
+# Console sensor demo
 cargo run -p navi-linux -- --demo-imu
 
-# Explicit gpsd address + demo IMU
-cargo run -p navi-linux -- --gpsd 127.0.0.1:2947 --demo-imu
+# Map shell with synthetic IMU
+cargo run -p navi-desktop -- --demo-imu --no-webview
 ```
 
 Without a receiver, start gpsd only when you have a device (or a gpsd-compatible
 simulator such as `gpsfake`); otherwise the gpsd thread may exit with an error
-while **`--demo-imu`** continues to print `IMU …` lines. That is the intended
+while **`--demo-imu`** continues to publish IMU samples. That is the intended
 **no-hardware** on-ramp for the IMU side.
 
 IMU is **not** provided by gpsd. On a Linux SBC with a real chip, use a board IMU
@@ -335,8 +424,8 @@ same rotation-mode wiring (`SensorBus` → host map bearing).
 Vehicle mounting pitch/roll zeroing for eco elevation correction is a **deferred**
 feature — see [`imu-calibration.md`](imu-calibration.md).
 
-With a live gpsd and optional `--demo-imu`, the console prints POS (course) and
-IMU (heading) lines — the data path used for Travel / Compass rotation.
+With a live gpsd and optional `--demo-imu`, `navi-linux` prints POS (course) and
+IMU (heading) lines — the same bus `navi-desktop` polls for the position marker.
 
 ---
 
@@ -344,15 +433,15 @@ IMU (heading) lines — the data path used for Travel / Compass rotation.
 
 | Feature | Status |
 |---|---|
-| MapLibre map UI | Android only |
+| MapLibre map + route planning shell | **`navi-desktop`** (this doc) — not pixel-parity with Android HUD |
 | UniFFI Kotlin bindings / Gradle APK | Android NDK build ([`android-build.md`](android-build.md)) |
-| Android `LocationManager` / Automotive sensors | Android only |
-| Compose HUD / approach box | Android only (logic/state can be shared via core) |
-| Full offline nav “app” UX | Use Android emulator or device |
-| Installable Linux desktop package | **None** — core / demo / plugins only (this doc) |
+| Android `LocationManager` / Automotive sensors | Android only (Linux uses gpsd / IMU) |
+| Compose HUD / approach-box animations / 3D terrain | Android only for now |
+| Full Automotive UX parity | Use Android emulator or device |
+| Installable Linux package (`.deb` / Flatpak) | **Not yet** — `cargo run -p navi-desktop` |
 
-Linux is the right place for **core algorithms, integrations, gpsd/IMU bring-up,
-and WASM plugins** before or alongside Automotive UI work.
+Linux is the right place for **core algorithms, the desktop map shell,
+integrations, gpsd/IMU bring-up, and WASM plugins** alongside Automotive UI work.
 
 ---
 
@@ -361,8 +450,10 @@ and WASM plugins** before or alongside Automotive UI work.
 | Symptom | Likely fix |
 |---|---|
 | `linker` / `cc` not found, or `error: linker \`cc\` not found` | Install the C toolchain ([System packages](#system-packages-c-linker--pkg-config): `build-essential` / `base-devel` / Development Tools). |
+| `navi-desktop` fails to find `webkit2gtk-4.1` | `sudo apt install libwebkit2gtk-4.1-dev` (or distro equivalent), or build with `--no-default-features --features gpsd,linux-imu` and `--no-webview`. |
 | Plugin or isolation test fails to compile for WASM | `rustup target add wasm32-unknown-unknown` (guests are **not** `wasm32-wasi`). See [`plugins.md`](plugins.md). |
-| `navi-linux`: gpsd loop ends immediately / no `POS` lines | Install and start gpsd; verify with `gpspipe -w -n 5`. Confirm device path and that something is listening on `127.0.0.1:2947`. Use `--demo-imu` to exercise IMU without a chip. |
+| `navi-linux` / desktop: gpsd loop ends / no `POS` | Install and start gpsd; verify with `gpspipe -w -n 5`. Use `--demo-imu` for IMU without a chip. |
 | Ignored integration test fails on missing PBF / HTTP error | Need network on first run, or prefetch extracts into `core/target/integration-fixtures/` ([fixtures](#ignored-integration-tests-and-fixtures)). Ensure ~1 GB free disk. |
+| First `api/plan` is very slow | Cold graph build from a large PBF; prefer a regional extract (e.g. Oppland) or wait for cache under `--cache-dir`. |
 | Odd compile errors after pulling `main` | `cargo clean` then rebuild; ensure rustup **stable** is current (`rustup update`). Do not hand-edit `Cargo.lock` unless resolving a deliberate pin — prefer `cargo update` / a clean tree from `main`. |
 | `pkg-config` errors from a transitive crate | Install `pkg-config` / `pkgconf` for your distro (see Prerequisites). |

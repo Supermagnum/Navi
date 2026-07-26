@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Navi — Linux desktop</title>
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <link href="/app.css" rel="stylesheet" />
+</head>
+<body>
+  <div id="app">
+    <aside id="panel">
+      <h1>Navi</h1>
+      <p class="muted">Linux desktop shell · MapLibre GL JS</p>
+
+      <label>Profile
+        <select id="profile">
+          <option value="car">Car</option>
+          <option value="car_electric">Car electric</option>
+          <option value="motorcycle">Motorcycle</option>
+          <option value="bicycle">Bicycle</option>
+          <option value="truck">Truck</option>
+        </select>
+      </label>
+      <label class="row"><input type="checkbox" id="eco" /> Eco routing</label>
+
+      <label>From (lat,lon)
+        <input id="start" type="text" value="" placeholder="60.56,11.26" />
+      </label>
+      <label>To (lat,lon)
+        <input id="end" type="text" value="" placeholder="61.85,10.23" />
+      </label>
+      <label>Search places
+        <input id="search" type="text" placeholder="Requires --place-index" />
+      </label>
+      <ul id="hits"></ul>
+      <button type="button" id="plan">Plan route</button>
+      <pre id="planLog"></pre>
+
+      <section id="hud">
+        <div><span class="k">Next</span> <span id="hudTurn">—</span></div>
+        <div><span class="k">Dist</span> <span id="hudDist">—</span></div>
+        <div><span class="k">Break</span> <span id="hudBreak">—</span></div>
+        <div><span class="k">Eco</span> <span id="hudEco">off</span></div>
+        <div><span class="k">ETA</span> <span id="hudEta">—</span></div>
+        <img id="hudIcon" alt="" width="48" height="48" />
+      </section>
+      <p id="basemapNote" class="muted"></p>
+    </aside>
+    <div id="map"></div>
+  </div>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.2.0/dist/pmtiles.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

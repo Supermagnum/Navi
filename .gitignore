@@ -3,6 +3,9 @@
 core/target/
 **/target/
 
+# Local non-root WebKitGTK headers (see docs/build-linux.md)
+.deps-prefix/
+
 # Android / Gradle
 .gradle/
 **/build/

@@ -1,0 +1,145 @@
+{
+  "version": 8,
+  "name": "Navi Protomaps Light (offline)",
+  "metadata": {
+    "navi:style": "protomaps-light",
+    "navi:note": "Placeholders __PMTILES_URL__, __SPRITE__, __GLYPHS__ are rewritten at runtime."
+  },
+  "sources": {
+    "protomaps": {
+      "type": "vector",
+      "url": "__PMTILES_URL__",
+      "attribution": "© OpenStreetMap © Protomaps"
+    }
+  },
+  "sprite": "__SPRITE__",
+  "glyphs": "__GLYPHS__/{fontstack}/{range}.pbf",
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": { "background-color": "#f8f4f0" }
+    },
+    {
+      "id": "earth",
+      "type": "fill",
+      "source": "protomaps",
+      "source-layer": "earth",
+      "paint": { "fill-color": "#f8f4f0" }
+    },
+    {
+      "id": "landcover",
+      "type": "fill",
+      "source": "protomaps",
+      "source-layer": "landcover",
+      "paint": {
+        "fill-color": [
+          "match",
+          ["get", "kind"],
+          "grassland", "#d8e8c8",
+          "barren", "#f0e8d8",
+          "urban_area", "#e8e0d8",
+          "farmland", "#e8f0d0",
+          "glacier", "#e8f0f8",
+          "#d8e8c8"
+        ],
+        "fill-opacity": 0.6
+      }
+    },
+    {
+      "id": "landuse",
+      "type": "fill",
+      "source": "protomaps",
+      "source-layer": "landuse",
+      "paint": {
+        "fill-color": [
+          "match",
+          ["get", "kind"],
+          "park", "#c8e0b0",
+          "forest", "#a8d090",
+          "cemetery", "#c8d8b8",
+          "hospital", "#f0d8d8",
+          "school", "#f0e8c8",
+          "industrial", "#d8d0c8",
+          "#e8e0d0"
+        ],
+        "fill-opacity": 0.5
+      }
+    },
+    {
+      "id": "water",
+      "type": "fill",
+      "source": "protomaps",
+      "source-layer": "water",
+      "paint": { "fill-color": "#80b0d0" }
+    },
+    {
+      "id": "waterway",
+      "type": "line",
+      "source": "protomaps",
+      "source-layer": "water",
+      "filter": ["==", ["geometry-type"], "LineString"],
+      "paint": {
+        "line-color": "#80b0d0",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 14, 2.5]
+      }
+    },
+    {
+      "id": "buildings",
+      "type": "fill",
+      "source": "protomaps",
+      "source-layer": "buildings",
+      "minzoom": 13,
+      "paint": { "fill-color": "#d8d0c8", "fill-opacity": 0.7 }
+    },
+    {
+      "id": "roads_minor",
+      "type": "line",
+      "source": "protomaps",
+      "source-layer": "roads",
+      "filter": ["in", ["get", "kind_detail"], ["literal", ["residential", "service", "unclassified", "living_street", "tertiary", "secondary"]]],
+      "paint": {
+        "line-color": "#ffffff",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 16, 4]
+      }
+    },
+    {
+      "id": "roads_major",
+      "type": "line",
+      "source": "protomaps",
+      "source-layer": "roads",
+      "filter": ["in", ["get", "kind_detail"], ["literal", ["primary", "trunk", "motorway", "motorway_link", "trunk_link", "primary_link"]]],
+      "paint": {
+        "line-color": "#f0d090",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 6, 1, 14, 6]
+      }
+    },
+    {
+      "id": "boundaries",
+      "type": "line",
+      "source": "protomaps",
+      "source-layer": "boundaries",
+      "paint": {
+        "line-color": "#a09080",
+        "line-width": 0.8,
+        "line-dasharray": [2, 1]
+      }
+    },
+    {
+      "id": "places",
+      "type": "symbol",
+      "source": "protomaps",
+      "source-layer": "places",
+      "layout": {
+        "text-field": ["get", "name"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 4, 10, 10, 14]
+      },
+      "paint": {
+        "text-color": "#403020",
+        "text-halo-color": "#f8f4f0",
+        "text-halo-width": 1.2
+      }
+    }
+  ]
+}

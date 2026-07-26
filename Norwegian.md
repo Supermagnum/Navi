@@ -337,7 +337,7 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 | [`docs/CAT.md`](docs/CAT.md) | CAT VFO auto-tune fra NFM-repeatere |
 | [`docs/voice-guidance.md`](docs/voice-guidance.md) | Planlagt stemmeveiledningsplugin |
 | [`docs/android-build.md`](docs/android-build.md) | Bygg native `libnavi.so`, UniFFI og Gradle-APK |
-| [`docs/build-linux.md`](docs/build-linux.md) | Linux: Rust-kjerne, integrasjonstester, gpsd + IMU |
+| [`docs/build-linux.md`](docs/build-linux.md) | Linux: Rust-kjerne, `navi-desktop` kartskall, integrasjonstester, gpsd + IMU |
 | [`docs/imu-calibration.md`](docs/imu-calibration.md) | Utsatt: IMU pitch/roll-nullstilling for øko-høyde |
 | [`docs/debugging.md`](docs/debugging.md) | Vert- + Android-feilsøkingsløkker |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | **Påkrevd:** sjekkliste for fysisk enhet vs emulator |
