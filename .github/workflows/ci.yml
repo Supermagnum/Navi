@@ -144,10 +144,6 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
-          # Gradle 8.11.1 wrapper JAR is not yet in the action checksum list; jar matches
-          # services.gradle.org distribution (local ./gradlew builds). Re-enable when upstream
-          # lists b5173cbc… or we pin an older wrapper they recognize.
-          validate-wrappers: false
 
       - name: ktlintCheck
         run: ./gradlew :app:ktlintCheck --no-daemon
@@ -177,7 +173,6 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
-          validate-wrappers: false
 
       - name: assembleDebug
         # Uses prebuilt jniLibs where present; does not rebuild Rust native in CI.

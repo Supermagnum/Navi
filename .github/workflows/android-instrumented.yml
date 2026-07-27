@@ -39,8 +39,6 @@ jobs:
 
       - name: Cache Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          validate-wrappers: false
 
       - name: Run instrumented tests (API 30 AOSP)
         uses: reactivecircus/android-emulator-runner@v2

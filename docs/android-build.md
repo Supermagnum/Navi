@@ -13,7 +13,19 @@ APKs.
 | **Android SDK** | API **35** (`compileSdk` / `targetSdk`); `minSdk` **26** |
 | **Android NDK** | LLVM toolchain (example in-tree: NDK **27.3.x**) |
 | **JDK 17** | For Gradle / Kotlin |
-| **Gradle wrapper** | `./gradlew` at repo root |
+| **Gradle wrapper** | `./gradlew` at repo root (Gradle **8.11.1**; see below) |
+
+Per-PR CI validates `gradle/wrapper/gradle-wrapper.jar` against the checksum list
+shipped with [`gradle/actions/setup-gradle`](https://github.com/gradle/actions).
+After bumping the Gradle version, regenerate the wrapper from the official
+distribution (do not copy a JAR from another repo):
+
+```bash
+./gradlew wrapper --gradle-version=8.11.1 --distribution-type=bin
+```
+
+Commit `gradle-wrapper.jar`, `gradle-wrapper.properties`, `gradlew`, and
+`gradlew.bat` together.
 
 Set (or export in your shell profile):
 
