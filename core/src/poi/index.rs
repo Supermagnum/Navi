@@ -128,52 +128,50 @@ impl PoiIndex {
         {
             let file = std::fs::File::open(path.as_ref())?;
             let reader = ElementReader::new(file);
-            reader.for_each(|element| {
-                match element {
-                    Element::Node(node) => {
-                        let lat = node.lat();
-                        let lon = node.lon();
-                        let id = node.id();
-                        if needed.contains(&id) {
-                            coords.insert(id, (lat, lon));
-                        }
-                        if !in_bbox(lat, lon) {
-                            return;
-                        }
-                        let tags: HashMap<String, String> = node
-                            .tags()
-                            .map(|(k, v)| (k.to_string(), v.to_string()))
-                            .collect();
-                        if collect_overnight_buildings
-                            && tags.get("building").is_some_and(|v| v != "no")
-                        {
-                            index.overnight_buildings.push((lat, lon));
-                        }
-                        index.insert_node(id, lat, lon, tags);
+            reader.for_each(|element| match element {
+                Element::Node(node) => {
+                    let lat = node.lat();
+                    let lon = node.lon();
+                    let id = node.id();
+                    if needed.contains(&id) {
+                        coords.insert(id, (lat, lon));
                     }
-                    Element::DenseNode(node) => {
-                        let lat = node.lat();
-                        let lon = node.lon();
-                        let id = node.id;
-                        if needed.contains(&id) {
-                            coords.insert(id, (lat, lon));
-                        }
-                        if !in_bbox(lat, lon) {
-                            return;
-                        }
-                        let tags: HashMap<String, String> = node
-                            .tags()
-                            .map(|(k, v)| (k.to_string(), v.to_string()))
-                            .collect();
-                        if collect_overnight_buildings
-                            && tags.get("building").is_some_and(|v| v != "no")
-                        {
-                            index.overnight_buildings.push((lat, lon));
-                        }
-                        index.insert_node(id, lat, lon, tags);
+                    if !in_bbox(lat, lon) {
+                        return;
                     }
-                    _ => {}
+                    let tags: HashMap<String, String> = node
+                        .tags()
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect();
+                    if collect_overnight_buildings
+                        && tags.get("building").is_some_and(|v| v != "no")
+                    {
+                        index.overnight_buildings.push((lat, lon));
+                    }
+                    index.insert_node(id, lat, lon, tags);
                 }
+                Element::DenseNode(node) => {
+                    let lat = node.lat();
+                    let lon = node.lon();
+                    let id = node.id;
+                    if needed.contains(&id) {
+                        coords.insert(id, (lat, lon));
+                    }
+                    if !in_bbox(lat, lon) {
+                        return;
+                    }
+                    let tags: HashMap<String, String> = node
+                        .tags()
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect();
+                    if collect_overnight_buildings
+                        && tags.get("building").is_some_and(|v| v != "no")
+                    {
+                        index.overnight_buildings.push((lat, lon));
+                    }
+                    index.insert_node(id, lat, lon, tags);
+                }
+                _ => {}
             })?;
         }
 
@@ -231,7 +229,13 @@ impl PoiIndex {
         self.tree.insert(PoiEntry { osm_id, lat, lon });
     }
 
-    pub fn query<'a>(&'a self, category: PoiCategory, lat: f64, lon: f64, radius_m: f64) -> PoiQuery<'a> {
+    pub fn query<'a>(
+        &'a self,
+        category: PoiCategory,
+        lat: f64,
+        lon: f64,
+        radius_m: f64,
+    ) -> PoiQuery<'a> {
         PoiQuery {
             category,
             lat,
@@ -241,7 +245,13 @@ impl PoiIndex {
         }
     }
 
-    pub fn nearest(&self, category: PoiCategory, lat: f64, lon: f64, radius_m: f64) -> Vec<&PoiRecord> {
+    pub fn nearest(
+        &self,
+        category: PoiCategory,
+        lat: f64,
+        lon: f64,
+        radius_m: f64,
+    ) -> Vec<&PoiRecord> {
         let delta_deg = radius_m / 111_000.0;
         let envelope = AABB::from_corners(
             [lon - delta_deg, lat - delta_deg],
@@ -253,9 +263,7 @@ impl PoiIndex {
             .locate_in_envelope_intersecting(&envelope)
             .filter_map(|entry| self.records.get(&entry.osm_id))
             .filter(|rec| rec.categories.contains(&category))
-            .filter(|rec| {
-                Haversine::distance(origin, Point::new(rec.lon, rec.lat)) <= radius_m
-            })
+            .filter(|rec| Haversine::distance(origin, Point::new(rec.lon, rec.lat)) <= radius_m)
             .collect();
         hits.sort_by(|a, b| {
             let da = Haversine::distance(origin, Point::new(a.lon, a.lat));
@@ -267,6 +275,10 @@ impl PoiIndex {
 
     pub fn len(&self) -> usize {
         self.records.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.records.is_empty()
     }
 }
 
@@ -310,12 +322,7 @@ mod tests {
             name: Some("Lervig Taproom".into()),
         });
 
-        let hits = index.nearest(
-            PoiCategory::CraftBrewery,
-            58.97,
-            5.73,
-            15_000.0,
-        );
+        let hits = index.nearest(PoiCategory::CraftBrewery, 58.97, 5.73, 15_000.0);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].name.as_deref(), Some("Lervig Taproom"));
     }

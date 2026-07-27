@@ -27,18 +27,22 @@ object NaviAppData {
         return internal
     }
 
-    private fun migrateLegacyExternal(context: Context, internal: File) {
+    private fun migrateLegacyExternal(
+        context: Context,
+        internal: File,
+    ) {
         val external = context.getExternalFilesDir(null) ?: return
         if (external.absolutePath == internal.absolutePath) return
-        val names = listOf(
-            "pmtiles",
-            "elevation",
-            "graph-cache",
-            "graph-cache-foot",
-            "navi.db",
-            "place_index.db",
-            "region_meta.json",
-        )
+        val names =
+            listOf(
+                "pmtiles",
+                "elevation",
+                "graph-cache",
+                "graph-cache-foot",
+                "navi.db",
+                "place_index.db",
+                "region_meta.json",
+            )
         for (name in names) {
             val src = File(external, name)
             if (!src.exists()) continue
@@ -50,34 +54,37 @@ object NaviAppData {
                 if (dstEmptyDir) dst.delete()
                 if (dstEmptyFile) dst.delete()
             }
-            val ok = runCatching {
-                if (src.isDirectory) {
-                    src.copyRecursively(dst, overwrite = false)
-                    // Leave external copy if delete fails (root-owned fixtures).
-                    runCatching { src.deleteRecursively() }
-                } else {
-                    if (!src.renameTo(dst)) {
-                        src.copyTo(dst, overwrite = false)
-                        runCatching { src.delete() }
+            val ok =
+                runCatching {
+                    if (src.isDirectory) {
+                        src.copyRecursively(dst, overwrite = false)
+                        // Leave external copy if delete fails (root-owned fixtures).
+                        runCatching { src.deleteRecursively() }
+                    } else {
+                        if (!src.renameTo(dst)) {
+                            src.copyTo(dst, overwrite = false)
+                            runCatching { src.delete() }
+                        }
                     }
-                }
-                true
-            }.getOrDefault(false)
+                    true
+                }.getOrDefault(false)
             Log.i(TAG, "migrate $name from ${src.absolutePath} -> ${dst.absolutePath} ok=$ok")
         }
         // Loose region extracts (*.osm.pbf) left on external.
-        external.listFiles()
+        external
+            .listFiles()
             ?.filter { it.isFile && it.name.endsWith(".osm.pbf") }
             ?.forEach { src ->
                 val dst = File(internal, src.name)
                 if (dst.exists()) return@forEach
-                val ok = runCatching {
-                    if (!src.renameTo(dst)) {
-                        src.copyTo(dst, overwrite = false)
-                        src.delete()
-                    }
-                    true
-                }.getOrDefault(false)
+                val ok =
+                    runCatching {
+                        if (!src.renameTo(dst)) {
+                            src.copyTo(dst, overwrite = false)
+                            src.delete()
+                        }
+                        true
+                    }.getOrDefault(false)
                 Log.i(TAG, "migrate ${src.name} ok=$ok")
             }
     }

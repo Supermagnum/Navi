@@ -52,8 +52,11 @@ object MapterhornTerrain {
      * Inject DEM sources + hillshade. [demSourceUri] is either the online TileJSON
      * URL or a local `pmtiles://file://…` URI. Idempotent.
      */
-    fun attach(style: Style, demSourceUri: String = TILEJSON_URL): Boolean {
-        return try {
+    fun attach(
+        style: Style,
+        demSourceUri: String = TILEJSON_URL,
+    ): Boolean =
+        try {
             detach(style)
             val useLocal = demSourceUri.startsWith("pmtiles://")
             if (useLocal) {
@@ -65,10 +68,11 @@ object MapterhornTerrain {
                 addOnlineDemSource(style, HILLSHADE_SOURCE_ID)
                 addOnlineDemSource(style, TERRAIN_SOURCE_ID)
             }
-            val hills = HillshadeLayer(HILLS_LAYER_ID, HILLSHADE_SOURCE_ID)
-                .withProperties(
-                    PropertyFactory.hillshadeShadowColor(Color.parseColor("#473B24")),
-                )
+            val hills =
+                HillshadeLayer(HILLS_LAYER_ID, HILLSHADE_SOURCE_ID)
+                    .withProperties(
+                        PropertyFactory.hillshadeShadowColor(Color.parseColor("#473B24")),
+                    )
             val belowId = style.layers.firstOrNull { it is SymbolLayer }?.id
             if (belowId != null) {
                 style.addLayerBelow(hills, belowId)
@@ -81,9 +85,11 @@ object MapterhornTerrain {
             runCatching { detach(style) }
             false
         }
-    }
 
-    private fun addOnlineDemSource(style: Style, id: String) {
+    private fun addOnlineDemSource(
+        style: Style,
+        id: String,
+    ) {
         try {
             val tileSet = TileSet("3.0.0", "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp")
             tileSet.encoding = "terrarium"
@@ -95,7 +101,11 @@ object MapterhornTerrain {
         }
     }
 
-    private fun addLocalDemSource(style: Style, id: String, pmtilesUri: String) {
+    private fun addLocalDemSource(
+        style: Style,
+        id: String,
+        pmtilesUri: String,
+    ) {
         try {
             val tileSet = TileSet("3.0.0", pmtilesUri)
             tileSet.encoding = "terrarium"
@@ -117,16 +127,20 @@ object MapterhornTerrain {
         style.getLayer(HILLS_LAYER_ID) != null &&
             style.getSource(HILLSHADE_SOURCE_ID) != null
 
-    fun augmentStyleJson(style: JSONObject, demSourceUri: String = TILEJSON_URL): JSONObject {
+    fun augmentStyleJson(
+        style: JSONObject,
+        demSourceUri: String = TILEJSON_URL,
+    ): JSONObject {
         val sources = style.getJSONObject("sources")
         // Prefer `tiles` + `encoding` over `url`. MapLibre Native historically
         // ignored style-level encoding when only a TileJSON/PMTiles `url` was set
         // (maplibre-native#3564); explicit tiles keep terrarium decoding correct.
-        val dem = JSONObject()
-            .put("type", "raster-dem")
-            .put("attribution", ATTRIBUTION)
-            .put("encoding", "terrarium")
-            .put("tileSize", 512)
+        val dem =
+            JSONObject()
+                .put("type", "raster-dem")
+                .put("attribution", ATTRIBUTION)
+                .put("encoding", "terrarium")
+                .put("tileSize", 512)
         if (demSourceUri.startsWith("pmtiles://")) {
             dem.put("tiles", JSONArray().put(demSourceUri))
         } else if (demSourceUri.contains("tilejson")) {
@@ -150,14 +164,15 @@ object MapterhornTerrain {
             }
         }
         if (!hasHills) {
-            val hills = JSONObject()
-                .put("id", HILLS_LAYER_ID)
-                .put("type", "hillshade")
-                .put("source", HILLSHADE_SOURCE_ID)
-                .put(
-                    "paint",
-                    JSONObject().put("hillshade-shadow-color", "#473B24"),
-                )
+            val hills =
+                JSONObject()
+                    .put("id", HILLS_LAYER_ID)
+                    .put("type", "hillshade")
+                    .put("source", HILLSHADE_SOURCE_ID)
+                    .put(
+                        "paint",
+                        JSONObject().put("hillshade-shadow-color", "#473B24"),
+                    )
             val insertAt = firstSymbolLayerIndex(layers)
             val rewritten = JSONArray()
             for (i in 0 until layers.length()) {

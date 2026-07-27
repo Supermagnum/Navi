@@ -109,7 +109,8 @@ impl<'a> ElevationJobStore<'a> {
             }
             Ok(())
         })?;
-        self.get_job(id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
+        self.get_job(id)?
+            .ok_or(rusqlite::Error::QueryReturnedNoRows)
     }
 
     pub fn get_job(&self, id: Uuid) -> SqlResult<Option<ElevationJobRecord>> {

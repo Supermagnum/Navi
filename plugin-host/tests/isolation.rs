@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use navi_plugin_host::{
-    CallOutcome, Capability, HostApi, PluginHost, PluginLimits, Position, PoiWrite,
+    CallOutcome, Capability, HostApi, PluginHost, PluginLimits, PoiWrite, Position,
 };
 
 struct MockApi {
@@ -59,7 +59,7 @@ fn build_plugin(crate_dir: &Path) -> PathBuf {
         .arg(crate_dir.join("Cargo.toml"))
         .status()
         .expect("spawn cargo build for plugin");
-    assert!(status.success(), "plugin build failed for {:?}", crate_dir);
+    assert!(status.success(), "plugin build failed for {crate_dir:?}");
 
     let name = crate_dir
         .file_name()
@@ -69,7 +69,11 @@ fn build_plugin(crate_dir: &Path) -> PathBuf {
     // crate navi-plugin-log-hello -> libnavi_plugin_log_hello.wasm
     let pkg = format!(
         "navi_plugin_{}",
-        crate_dir.file_name().unwrap().to_string_lossy().replace('-', "_")
+        crate_dir
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .replace('-', "_")
     );
     let release = cargo_target_dir().join("wasm32-unknown-unknown/release");
     let wasm = release.join(format!("lib{pkg}.wasm"));
@@ -84,10 +88,7 @@ fn build_plugin(crate_dir: &Path) -> PathBuf {
             return c.clone();
         }
     }
-    panic!(
-        "compiled wasm not found for {:?}; tried {:?}",
-        crate_dir, candidates
-    );
+    panic!("compiled wasm not found for {crate_dir:?}; tried {candidates:?}");
 }
 
 fn stage_plugin(plugin_dir_name: &str) -> PathBuf {

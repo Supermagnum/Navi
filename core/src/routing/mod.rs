@@ -26,17 +26,16 @@ pub use ebike_route::{
 };
 pub use eta::{
     edge_speed_kmh, fixed_pace_minutes, highway_class_display_label, highway_fallback_kmh,
-    motor_path_minutes,
-    parse_maxspeed_kmh, predeparture_eta_minutes, PreDeparturePace, CYCLING_MIN_PER_KM,
-    HIKING_MIN_PER_KM,
-};
-pub use guidance_path::{
-    build_maneuvers, build_sim_samples, maneuvers_to_json, samples_to_json, RouteManeuver,
-    SimSample,
+    motor_path_minutes, parse_maxspeed_kmh, predeparture_eta_minutes, PreDeparturePace,
+    CYCLING_MIN_PER_KM, HIKING_MIN_PER_KM,
 };
 pub use graph::{
     apply_official_network_preference, format_route_avoidance_report, GraphEdge, RouteGraph,
     RouteOptions, RoutingProfile, NON_NETWORK_PENALTY,
+};
+pub use guidance_path::{
+    build_maneuvers, build_sim_samples, maneuvers_to_json, samples_to_json, RouteManeuver,
+    SimSample,
 };
 pub use osm_update::{
     apply_pending_update, apply_update_plan, bind_geofabrik_extract, check_for_updates,
@@ -59,11 +58,11 @@ pub use rest::{
     truck_max_weekly_driving_hours, truck_required_breaks, uses_motor_multi_day, uses_truck_rest,
     BreakKind, HikingDaySegment, HikingMultiDayPlan, HikingOvernightStop, HikingRouteSample,
     MotorDailyBudget, MotorDaySegment, MotorMultiDayPlan, MotorOvernightCandidate,
-    MotorOvernightKind, MotorOvernightStop, TruckDaySegment, TruckDutyEvaluation, TruckMultiDayPlan,
-    TruckOvernightKind, TruckOvernightRest, TruckRestCandidate, TruckRestFacility,
-    OVERNIGHT_NEAR_HUT_MAX_M,
+    MotorOvernightKind, MotorOvernightStop, TruckDaySegment, TruckDutyEvaluation,
+    TruckMultiDayPlan, TruckOvernightKind, TruckOvernightRest, TruckRestCandidate,
+    TruckRestFacility, OVERNIGHT_NEAR_HUT_MAX_M,
 };
-pub use workers::WorkerPoolPlan;
 pub use safety::{
     check_overnight_candidate, DangerBarrierIndex, OvernightProximityIndex, OvernightRejectReason,
 };
+pub use workers::WorkerPoolPlan;

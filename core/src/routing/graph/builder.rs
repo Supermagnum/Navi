@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use osm4routing::{
-    CarAccessibility, Edge, FootAccessibility, BikeAccessibility, Node, NodeId, Reader,
+    BikeAccessibility, CarAccessibility, Edge, FootAccessibility, Node, NodeId, Reader,
 };
 use pathfinding::directed::astar::astar;
 use serde::{Deserialize, Serialize};
@@ -22,9 +22,10 @@ pub enum RoutingProfile {
 impl From<Profile> for RoutingProfile {
     fn from(value: Profile) -> Self {
         match value {
-            Profile::Car | Profile::CarElectric | Profile::Motorcycle | Profile::MotorcycleElectric => {
-                Self::Car
-            }
+            Profile::Car
+            | Profile::CarElectric
+            | Profile::Motorcycle
+            | Profile::MotorcycleElectric => Self::Car,
             Profile::Truck | Profile::TruckElectric | Profile::MobileHome => Self::Truck,
             Profile::Hiking => Self::Foot,
             Profile::Cycling => Self::Bicycle,
@@ -112,12 +113,14 @@ impl RouteGraph {
             profile,
         };
         for edge in filtered {
-            let start = graph.nodes.get(&edge.source).ok_or_else(|| {
-                anyhow::anyhow!("missing source node {}", edge.source.0)
-            })?;
-            let end = graph.nodes.get(&edge.target).ok_or_else(|| {
-                anyhow::anyhow!("missing target node {}", edge.target.0)
-            })?;
+            let start = graph
+                .nodes
+                .get(&edge.source)
+                .ok_or_else(|| anyhow::anyhow!("missing source node {}", edge.source.0))?;
+            let end = graph
+                .nodes
+                .get(&edge.target)
+                .ok_or_else(|| anyhow::anyhow!("missing target node {}", edge.target.0))?;
             let start_lat = start.coord.y;
             let start_lon = start.coord.x;
             let end_lat = end.coord.y;
@@ -198,11 +201,9 @@ impl RouteGraph {
 
     /// Fast edge lookup using adjacency (O(degree), not O(edges)).
     pub fn edge_index(&self, from: NodeId, to: NodeId) -> Option<usize> {
-        self.adjacency.get(&from).and_then(|idxs| {
-            idxs.iter()
-                .copied()
-                .find(|&i| self.edges[i].target == to)
-        })
+        self.adjacency
+            .get(&from)
+            .and_then(|idxs| idxs.iter().copied().find(|&i| self.edges[i].target == to))
     }
 
     /// True if this node has at least one outgoing edge for the active profile.
@@ -384,7 +385,11 @@ pub fn format_route_avoidance_report(
     let mut lines = Vec::new();
     lines.push(format!(
         "Avoid motorways/trunk/primary: {}",
-        if options.avoid_major_roads { "ON" } else { "OFF" }
+        if options.avoid_major_roads {
+            "ON"
+        } else {
+            "OFF"
+        }
     ));
     lines.push(format!(
         "Avoid toll roads: {}",
@@ -437,9 +442,21 @@ fn edge_meta(edge: &Edge) -> EdgeMeta {
     let maxheight_m = edge.tags.get("maxheight").and_then(|s| parse_metric(s));
     let maxwidth_m = edge.tags.get("maxwidth").and_then(|s| parse_metric(s));
     let maxlength_m = edge.tags.get("maxlength").and_then(|s| parse_metric(s));
-    let is_toll = edge.tags.get("toll").map(|s| is_truthy_tag(s)).unwrap_or(false);
-    let is_ferry = edge.tags.get("route").map(|s| s.eq_ignore_ascii_case("ferry")).unwrap_or(false)
-        || edge.tags.get("ferry").map(|s| is_truthy_tag(s)).unwrap_or(false)
+    let is_toll = edge
+        .tags
+        .get("toll")
+        .map(|s| is_truthy_tag(s))
+        .unwrap_or(false);
+    let is_ferry = edge
+        .tags
+        .get("route")
+        .map(|s| s.eq_ignore_ascii_case("ferry"))
+        .unwrap_or(false)
+        || edge
+            .tags
+            .get("ferry")
+            .map(|s| is_truthy_tag(s))
+            .unwrap_or(false)
         || highway.as_deref() == Some("ferry");
     (
         highway,
@@ -538,12 +555,7 @@ fn parse_metric(raw: &str) -> Option<f64> {
 fn is_major_highway(highway: &str) -> bool {
     matches!(
         highway,
-        "motorway"
-            | "motorway_link"
-            | "trunk"
-            | "trunk_link"
-            | "primary"
-            | "primary_link"
+        "motorway" | "motorway_link" | "trunk" | "trunk_link" | "primary" | "primary_link"
     )
 }
 
@@ -553,14 +565,8 @@ pub fn highway_is_major(highway: Option<&str>) -> bool {
 }
 
 fn edge_allowed_for_options(edge: &GraphEdge, options: &RouteOptions) -> bool {
-    if options.avoid_major_roads {
-        if edge
-            .highway
-            .as_deref()
-            .is_some_and(is_major_highway)
-        {
-            return false;
-        }
+    if options.avoid_major_roads && edge.highway.as_deref().is_some_and(is_major_highway) {
+        return false;
     }
     if options.avoid_tolls && edge.is_toll {
         return false;
@@ -636,8 +642,7 @@ fn haversine_m(a: &Node, b: &Node) -> f64 {
     let lat2 = b.coord.y.to_radians();
     let dlat = (b.coord.y - a.coord.y).to_radians();
     let dlon = (b.coord.x - a.coord.x).to_radians();
-    let h = (dlat / 2.0).sin().powi(2)
-        + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
+    let h = (dlat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
     2.0 * 6_378_100.0 * h.sqrt().asin()
 }
 
@@ -656,10 +661,7 @@ mod tests {
         edge.properties.car_forward = CarAccessibility::Trunk;
         edge.properties.car_backward = CarAccessibility::Forbidden;
         edge.properties.normalize();
-        assert_eq!(
-            directed_access(&edge, RoutingProfile::Car),
-            (true, false)
-        );
+        assert_eq!(directed_access(&edge, RoutingProfile::Car), (true, false));
     }
 
     #[test]
@@ -668,10 +670,7 @@ mod tests {
         edge.properties.car_forward = CarAccessibility::Trunk;
         // Unknown backward copies forward on normalize (two-way road).
         edge.properties.normalize();
-        assert_eq!(
-            directed_access(&edge, RoutingProfile::Car),
-            (true, true)
-        );
+        assert_eq!(directed_access(&edge, RoutingProfile::Car), (true, true));
     }
 
     #[test]

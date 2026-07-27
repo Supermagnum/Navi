@@ -133,13 +133,7 @@ pub fn parse_maneuver_kind(raw: &str) -> ManeuverKind {
     }
 }
 
-fn interpolate(
-    lat0: f64,
-    lon0: f64,
-    lat1: f64,
-    lon1: f64,
-    t: f64,
-) -> (f64, f64) {
+fn interpolate(lat0: f64, lon0: f64, lat1: f64, lon1: f64, t: f64) -> (f64, f64) {
     (lat0 + (lat1 - lat0) * t, lon0 + (lon1 - lon0) * t)
 }
 
@@ -175,13 +169,21 @@ pub fn build_sim_samples(graph: &RouteGraph, path: &[NodeId]) -> Vec<SimSample> 
             seg_lens.push(d);
             edge_len += d;
         }
-        let use_len = if edge_len > 1.0 { edge_len } else { e.length_m.max(1.0) };
+        let use_len = if edge_len > 1.0 {
+            edge_len
+        } else {
+            e.length_m.max(1.0)
+        };
         let steps = ((use_len / SAMPLE_STEP_M).ceil() as usize).max(1);
         for s in 0..steps {
             let along_edge = use_len * (s as f64 / steps as f64);
             let (lat, lon) = point_along_verts(&verts, &seg_lens, along_edge);
             let along = cum + along_edge;
-            if out.last().map(|p| (p.cum_m - along).abs() < 0.5).unwrap_or(false) {
+            if out
+                .last()
+                .map(|p| (p.cum_m - along).abs() < 0.5)
+                .unwrap_or(false)
+            {
                 continue;
             }
             out.push(SimSample {
@@ -205,13 +207,16 @@ pub fn build_sim_samples(graph: &RouteGraph, path: &[NodeId]) -> Vec<SimSample> 
             lat: last.coord.y,
             lon: last.coord.x,
             cum_m: cum,
-            speed_kmh: e_last.map(edge_speed_kmh).unwrap_or_else(|| highway_fallback_kmh(None)),
+            speed_kmh: e_last
+                .map(edge_speed_kmh)
+                .unwrap_or_else(|| highway_fallback_kmh(None)),
             highway: e_last.and_then(|e| e.highway.clone()),
             maxspeed_posted: e_last
                 .and_then(|e| e.maxspeed_kmh)
                 .filter(|v| v.is_finite() && *v > 0.0)
                 .is_some(),
-            street: e_last.and_then(|e| prefer_street_label(e.name.as_deref(), e.road_ref.as_deref())),
+            street: e_last
+                .and_then(|e| prefer_street_label(e.name.as_deref(), e.road_ref.as_deref())),
         });
     }
     out
@@ -222,16 +227,11 @@ fn haversine_m_local(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let lat2 = lat2.to_radians();
     let dlat = lat2 - lat1;
     let dlon = (lon2 - lon1).to_radians();
-    let a = (dlat / 2.0).sin().powi(2)
-        + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
+    let a = (dlat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
     2.0 * 6_378_100.0 * a.sqrt().asin()
 }
 
-fn point_along_verts(
-    verts: &[(f64, f64)],
-    seg_lens: &[f64],
-    along_m: f64,
-) -> (f64, f64) {
+fn point_along_verts(verts: &[(f64, f64)], seg_lens: &[f64], along_m: f64) -> (f64, f64) {
     if verts.is_empty() {
         return (0.0, 0.0);
     }
@@ -241,7 +241,11 @@ fn point_along_verts(
     let mut left = along_m.max(0.0);
     for (i, &len) in seg_lens.iter().enumerate() {
         if left <= len || i + 1 == seg_lens.len() {
-            let t = if len < 1e-6 { 0.0 } else { (left / len).clamp(0.0, 1.0) };
+            let t = if len < 1e-6 {
+                0.0
+            } else {
+                (left / len).clamp(0.0, 1.0)
+            };
             let (lat0, lon0) = verts[i];
             let (lat1, lon1) = verts[i + 1];
             return interpolate(lat0, lon0, lat1, lon1, t);
@@ -271,7 +275,12 @@ pub fn build_maneuvers(graph: &RouteGraph, path: &[NodeId]) -> Vec<RouteManeuver
         };
         cum += e_in.length_m;
         let in_b = bearing_deg(e_in.start_lat, e_in.start_lon, e_in.end_lat, e_in.end_lon);
-        let out_b = bearing_deg(e_out.start_lat, e_out.start_lon, e_out.end_lat, e_out.end_lon);
+        let out_b = bearing_deg(
+            e_out.start_lat,
+            e_out.start_lon,
+            e_out.end_lat,
+            e_out.end_lon,
+        );
         let delta = turn_delta_deg(in_b, out_b);
         let kind = classify_turn(delta);
         if kind == ManeuverKind::Straight {
@@ -292,7 +301,11 @@ pub fn build_maneuvers(graph: &RouteGraph, path: &[NodeId]) -> Vec<RouteManeuver
         let node = &graph.nodes[last];
         let total = path
             .windows(2)
-            .filter_map(|w| graph.edge_index(w[0], w[1]).map(|i| graph.edges[i].length_m))
+            .filter_map(|w| {
+                graph
+                    .edge_index(w[0], w[1])
+                    .map(|i| graph.edges[i].length_m)
+            })
             .sum::<f64>();
         out.push(RouteManeuver {
             lat: node.coord.y,
@@ -389,23 +402,55 @@ mod tests {
             NodeId(3),
             Node {
                 id: NodeId(3),
-                coord: Coord { x: 11.002, y: 60.002 },
+                coord: Coord {
+                    x: 11.002,
+                    y: 60.002,
+                },
                 uses: 0,
             },
         );
         let edges = vec![
-            edge("a", 1, 2, 60.0, 11.0, 60.0, 11.002, "residential", None, Some("Storgata")),
-            edge("b", 2, 3, 60.0, 11.002, 60.002, 11.002, "tertiary", Some(60.0), Some("Rv3")),
+            edge(
+                "a",
+                1,
+                2,
+                60.0,
+                11.0,
+                60.0,
+                11.002,
+                "residential",
+                None,
+                Some("Storgata"),
+            ),
+            edge(
+                "b",
+                2,
+                3,
+                60.0,
+                11.002,
+                60.002,
+                11.002,
+                "tertiary",
+                Some(60.0),
+                Some("Rv3"),
+            ),
         ];
-        let graph = RouteGraph::from_parts(nodes, edges, crate::routing::graph::RoutingProfile::Car);
+        let graph =
+            RouteGraph::from_parts(nodes, edges, crate::routing::graph::RoutingProfile::Car);
         let path = vec![NodeId(1), NodeId(2), NodeId(3)];
         let samples = build_sim_samples(&graph, &path);
         assert!(samples.len() > 2);
-        let res = samples.iter().find(|s| s.highway.as_deref() == Some("residential")).unwrap();
+        let res = samples
+            .iter()
+            .find(|s| s.highway.as_deref() == Some("residential"))
+            .unwrap();
         assert!((res.speed_kmh - 40.0).abs() < 0.01);
         assert!(!res.maxspeed_posted);
         assert_eq!(res.street.as_deref(), Some("Storgata"));
-        let tert = samples.iter().find(|s| s.highway.as_deref() == Some("tertiary")).unwrap();
+        let tert = samples
+            .iter()
+            .find(|s| s.highway.as_deref() == Some("tertiary"))
+            .unwrap();
         assert!((tert.speed_kmh - 60.0).abs() < 0.01);
         assert!(tert.maxspeed_posted);
         assert_eq!(tert.street.as_deref(), Some("Rv3"));
@@ -413,7 +458,9 @@ mod tests {
         let man = build_maneuvers(&graph, &path);
         assert!(man.iter().any(|m| m.kind == "destination"));
         // Right-ish turn at node 2 (east then north).
-        assert!(man.iter().any(|m| m.kind.contains("left") || m.kind.contains("right")));
+        assert!(man
+            .iter()
+            .any(|m| m.kind.contains("left") || m.kind.contains("right")));
         let turn = man.iter().find(|m| m.kind != "destination").unwrap();
         assert_eq!(turn.street.as_deref(), Some("Rv3"));
     }
@@ -449,7 +496,8 @@ mod tests {
             Some(50.0),
             Some("Mjøsvegen"),
         )];
-        let graph = RouteGraph::from_parts(nodes, edges, crate::routing::graph::RoutingProfile::Car);
+        let graph =
+            RouteGraph::from_parts(nodes, edges, crate::routing::graph::RoutingProfile::Car);
         let samples = build_sim_samples(&graph, &[NodeId(1), NodeId(2)]);
         let json = samples_to_json(&samples);
         assert!(json.contains("Mjøsvegen"), "json lost ø: {json}");

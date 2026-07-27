@@ -1,0 +1,8 @@
+# Pinned toolchain for local builds and CI (not floating "stable").
+# MSRV is also declared as workspace package rust-version in Cargo.toml.
+# Raised to 1.88 because current deps (osmpbf, pmtiles, time, home) require it.
+[toolchain]
+channel = "1.88.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

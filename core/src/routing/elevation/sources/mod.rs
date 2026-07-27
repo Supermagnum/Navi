@@ -22,8 +22,7 @@ impl DemSource {
         }
     }
 
-    pub const FALLBACK_CHAIN: [DemSource; 3] =
-        [Self::Copernicus, Self::Viewfinder, Self::Srtm];
+    pub const FALLBACK_CHAIN: [DemSource; 3] = [Self::Copernicus, Self::Viewfinder, Self::Srtm];
 }
 
 #[derive(Debug, Clone)]

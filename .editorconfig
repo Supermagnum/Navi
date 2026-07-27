@@ -1,0 +1,21 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+
+[*.{kt,kts}]
+ij_kotlin_allow_trailing_comma = true
+ij_kotlin_allow_trailing_comma_on_call_site = true
+# Compose uses PascalCase @Composable factories; disable standard naming.
+ktlint_standard_function-naming = disabled
+# Large Compose / report strings exceed 140 without harming readability.
+ktlint_standard_max-line-length = disabled
+# Chain if/else with end-of-block comments is common in large Compose trees.
+ktlint_standard_no-empty-first-line-in-class-body = disabled
+
+[*.md]
+max_line_length = off

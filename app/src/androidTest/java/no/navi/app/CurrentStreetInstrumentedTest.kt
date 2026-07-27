@@ -23,14 +23,15 @@ import java.io.File
  */
 @RunWith(AndroidJUnit4::class)
 class CurrentStreetInstrumentedTest {
-
     companion object {
         @JvmStatic
         @BeforeClass
         fun beforeClass() {
             val pkg = InstrumentationRegistry.getInstrumentation().targetContext.packageName
             runCatching {
-                InstrumentationRegistry.getInstrumentation().uiAutomation
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .uiAutomation
                     .grantRuntimePermission(pkg, android.Manifest.permission.ACCESS_FINE_LOCATION)
             }
             NaviMapTestHooks.hideUiChrome = false
@@ -61,17 +62,19 @@ class CurrentStreetInstrumentedTest {
     @Test
     fun bottomHud_showsCurrentlyOn_withOslashARingAndAsh() {
         // Real fixture names from docs/unicode-road-names.md / place index.
-        val cases = listOf(
-            "Mjøsvegen" to 'ø',
-            "Trollåsveien" to 'å',
-            "Ævongsli" to 'Æ',
-        )
+        val cases =
+            listOf(
+                "Mjøsvegen" to 'ø',
+                "Trollåsveien" to 'å',
+                "Ævongsli" to 'Æ',
+            )
         for ((name, ch) in cases) {
             NaviMapTestHooks.pendingCurrentStreet = name
             composeRule.waitUntil(timeoutMillis = 8_000) {
                 NaviMapTestHooks.lastCurrentStreet == name
             }
-            composeRule.onNodeWithTag("hud_current_street", useUnmergedTree = true)
+            composeRule
+                .onNodeWithTag("hud_current_street", useUnmergedTree = true)
                 .assertIsDisplayed()
                 .assertTextContains("Currently on $name", substring = true)
             assertTrue(
@@ -93,9 +96,11 @@ class CurrentStreetInstrumentedTest {
             shot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
         }
         val ua = InstrumentationRegistry.getInstrumentation().uiAutomation
-        ua.executeShellCommand("screencap -p /data/local/tmp/hud_current_street_mjosevegen.png")
+        ua
+            .executeShellCommand("screencap -p /data/local/tmp/hud_current_street_mjosevegen.png")
             .close()
-        ua.executeShellCommand("chmod 644 /data/local/tmp/hud_current_street_mjosevegen.png")
+        ua
+            .executeShellCommand("chmod 644 /data/local/tmp/hud_current_street_mjosevegen.png")
             .close()
         Thread.sleep(300)
         // Also inject å and æ cases briefly and capture combined evidence names.

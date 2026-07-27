@@ -59,22 +59,18 @@ impl NameIndex {
         let file = std::fs::File::open(path)?;
         let reader = ElementReader::new(file);
         let mut batch: Vec<(i64, String, String, f64, f64)> = Vec::new();
-        reader.for_each(|element| {
-            match element {
-                Element::Node(node) => {
-                    if let Some(hit) = classify_named(node.id(), node.lat(), node.lon(), node.tags()) {
-                        batch.push(hit);
-                    }
+        reader.for_each(|element| match element {
+            Element::Node(node) => {
+                if let Some(hit) = classify_named(node.id(), node.lat(), node.lon(), node.tags()) {
+                    batch.push(hit);
                 }
-                Element::DenseNode(node) => {
-                    if let Some(hit) =
-                        classify_named(node.id, node.lat(), node.lon(), node.tags())
-                    {
-                        batch.push(hit);
-                    }
-                }
-                _ => {}
             }
+            Element::DenseNode(node) => {
+                if let Some(hit) = classify_named(node.id, node.lat(), node.lon(), node.tags()) {
+                    batch.push(hit);
+                }
+            }
+            _ => {}
         })?;
 
         // Official hiking/cycling route relations (name/ref/operator) for To/Via search.
@@ -185,12 +181,7 @@ impl NameIndex {
             ",
         )?;
         let rows = stmt.query_map(
-            params![
-                lat - lat_pad,
-                lat + lat_pad,
-                lon - lon_pad,
-                lon + lon_pad
-            ],
+            params![lat - lat_pad, lat + lat_pad, lon - lon_pad, lon + lon_pad],
             |row| {
                 Ok(NameHit {
                     osm_id: row.get(0)?,
@@ -369,10 +360,22 @@ mod tests {
             .unwrap();
         idx.upsert_entry(2, "Trollåsveien".into(), "named".into(), 59.8, 10.8)
             .unwrap();
-        idx.upsert_entry(3, "Ævongsli 2".into(), "addr:housenumber".into(), 61.0, 11.2)
-            .unwrap();
-        idx.upsert_entry(4, "Bjørnhollia".into(), "tourism:alpine_hut".into(), 61.7, 10.0)
-            .unwrap();
+        idx.upsert_entry(
+            3,
+            "Ævongsli 2".into(),
+            "addr:housenumber".into(),
+            61.0,
+            11.2,
+        )
+        .unwrap();
+        idx.upsert_entry(
+            4,
+            "Bjørnhollia".into(),
+            "tourism:alpine_hut".into(),
+            61.7,
+            10.0,
+        )
+        .unwrap();
 
         let mjos = idx.search("Mjøs", 8).unwrap();
         assert!(
@@ -407,7 +410,10 @@ mod tests {
 
         // å / ü fold → ASCII keyboard can find them.
         assert!(
-            idx.search("Eldabu", 8).unwrap().iter().any(|h| h.name == "Eldåbu"),
+            idx.search("Eldabu", 8)
+                .unwrap()
+                .iter()
+                .any(|h| h.name == "Eldåbu"),
             "å should fold to a"
         );
         assert!(
@@ -451,9 +457,7 @@ mod tests {
             9.927864,
         )
         .unwrap();
-        let hits = idx
-            .nearby(61.419774, 9.927647, 120.0, 8)
-            .expect("nearby");
+        let hits = idx.nearby(61.419774, 9.927647, 120.0, 8).expect("nearby");
         assert!(!hits.is_empty());
         assert!(
             hits.iter().any(|h| h.name.starts_with("Peer Gyntvegen")),

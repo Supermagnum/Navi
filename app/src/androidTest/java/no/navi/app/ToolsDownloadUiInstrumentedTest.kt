@@ -69,20 +69,23 @@ class ToolsDownloadUiInstrumentedTest {
         waitForToolsButton()
         Thread.sleep(1_000)
 
-        composeRule.onNodeWithTag("btn_tools", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("btn_tools", useUnmergedTree = true)
             .performScrollTo()
             .performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("tools_menu", useUnmergedTree = true).assertIsDisplayed()
 
-        composeRule.onNodeWithTag("field_geofabrik_path", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("field_geofabrik_path", useUnmergedTree = true)
             .performScrollTo()
             .assertIsDisplayed()
 
         NaviMapTestHooks.pendingGeofabrikPath = "test/oslo"
         Thread.sleep(800)
 
-        composeRule.onNodeWithTag("btn_download_pmtiles", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("btn_download_pmtiles", useUnmergedTree = true)
             .performScrollTo()
             .performClick()
 
@@ -107,7 +110,8 @@ class ToolsDownloadUiInstrumentedTest {
         )
 
         // DEM button: queue via Tools UI, then cancel (full DEM extract is large).
-        composeRule.onNodeWithTag("btn_download_dem", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("btn_download_dem", useUnmergedTree = true)
             .performScrollTo()
             .assertIsDisplayed()
             .performClick()

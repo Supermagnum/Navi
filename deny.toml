@@ -1,0 +1,88 @@
+# cargo-deny policy for Navi (GPL-3.0-or-later app + permissive Rust deps).
+# Run locally: `cargo deny check`
+
+[graph]
+all-features = false
+no-default-features = false
+
+[advisories]
+# Advisories come from the RustSec DB via `cargo deny check advisories`
+# (and `cargo audit` in CI). Unmaintained crates are noisy; track workspace crates.
+unmaintained = "workspace"
+yanked = "warn"
+ignore = [
+    # Serialization used throughout core; no maintained drop-in with identical API yet.
+    { id = "RUSTSEC-2025-0141", reason = "bincode unmaintained; tracked for serde-compatible replacement" },
+    # Example WASM guests only (plugins/log-hello, plugins/busy-loop); not production host path.
+    { id = "RUSTSEC-2022-0054", reason = "wee_alloc only in example no_std guests; host does not use it" },
+    # Wasmtime 29.x advisories — API-stable upgrade to 40+/47 is a separate host migration.
+    # Guests are fuel/timeout sandboxed; WASI/component features we do not enable are in scope for several.
+    { id = "RUSTSEC-2025-0046", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2025-0118", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0006", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0020", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0021", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0085", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0086", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0087", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0088", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0089", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0091", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0092", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0093", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0094", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0095", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0096", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "MPL-2.0",
+    "OpenSSL",
+    "BSL-1.0",
+    # Transitive via osm4routing -> osmpbfreader (WTFPL is FSF Free/Libre).
+    "WTFPL",
+    # Transitive via reqwest/webpki-roots.
+    "CDLA-Permissive-2.0",
+    # Workspace / first-party crates
+    "GPL-3.0",
+    "GPL-3.0-or-later",
+    "GPL-2.0",
+    "GPL-2.0-or-later",
+    "LGPL-2.1",
+    "LGPL-2.1-or-later",
+    "LGPL-3.0",
+    "LGPL-3.0-or-later",
+]
+
+exceptions = []
+
+[[licenses.clarify]]
+name = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+deny = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

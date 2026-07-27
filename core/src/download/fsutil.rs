@@ -15,7 +15,7 @@ pub fn available_bytes(path: &Path) -> Option<u64> {
         if libc::statvfs(c_path.as_ptr(), &mut s) != 0 {
             return None;
         }
-        Some(s.f_bavail as u64 * s.f_frsize as u64)
+        Some(s.f_bavail * s.f_frsize)
     }
 }
 

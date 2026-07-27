@@ -30,9 +30,10 @@ pub fn run_gpsd_loop(addr: &str, bus: &SensorBus) -> anyhow::Result<()> {
         let msg = get_data(&mut reader).map_err(|e| anyhow::anyhow!("gpsd get_data: {e}"))?;
         match msg {
             ResponseData::Sky(sky) => {
-                sats = sky.satellites.as_ref().map(|list| {
-                    list.iter().filter(|s| s.used).count() as u32
-                });
+                sats = sky
+                    .satellites
+                    .as_ref()
+                    .map(|list| list.iter().filter(|s| s.used).count() as u32);
             }
             ResponseData::Tpv(t) => {
                 if matches!(t.mode, Mode::NoFix) {
@@ -42,8 +43,8 @@ pub fn run_gpsd_loop(addr: &str, bus: &SensorBus) -> anyhow::Result<()> {
                     continue;
                 };
                 let sample = PositionSample {
-                    lat: lat as f64,
-                    lon: lon as f64,
+                    lat,
+                    lon,
                     altitude_m: t.alt.map(|a| a as f64),
                     speed_m_s: t.speed.unwrap_or(0.0) as f64,
                     course_deg: t.track.unwrap_or(0.0) as f64,
@@ -88,7 +89,14 @@ mod tests {
 
     #[test]
     fn sample_from_tpv_fields() {
-        let s = sample_from_tpv(60.3913, 5.3221, Some(12.5), Some(45.0), Some(8.2), Some(4.0));
+        let s = sample_from_tpv(
+            60.3913,
+            5.3221,
+            Some(12.5),
+            Some(45.0),
+            Some(8.2),
+            Some(4.0),
+        );
         assert!((s.lat - 60.3913).abs() < 1e-6);
         assert!((s.course_deg - 45.0).abs() < 1e-6);
         assert_eq!(s.horizontal_accuracy_m, Some(4.0));

@@ -60,11 +60,7 @@ pub fn resolve(
 
     for candidate in heuristic_pmtiles(data_dir) {
         if candidate.is_file() {
-            return offline_from_path(
-                &candidate,
-                local_origin,
-                "heuristic local PMTiles file",
-            );
+            return offline_from_path(&candidate, local_origin, "heuristic local PMTiles file");
         }
     }
 
@@ -81,7 +77,11 @@ fn liberty(note: &str) -> ResolvedBasemap {
 }
 
 fn offline_from_job(job: &FfiPmtilesJob, local_origin: &str) -> ResolvedBasemap {
-    offline_from_path(Path::new(&job.local_path), local_origin, "completed covering PMTiles job")
+    offline_from_path(
+        Path::new(&job.local_path),
+        local_origin,
+        "completed covering PMTiles job",
+    )
 }
 
 fn offline_from_path(path: &Path, local_origin: &str, note: &str) -> ResolvedBasemap {

@@ -25,15 +25,16 @@ class BasemapStyleResolverInstrumentedTest {
     fun resolve_falls_back_to_liberty_without_pmtiles() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val dataDir = NaviAppData.resolve(context)
-        val resolved = BasemapStyleResolver.resolve(
-            context = context,
-            dataDir = dataDir,
-            lat = 69.65,
-            lon = 18.96,
-            prefer3d = false,
-            vulkanAvailable = true,
-            forceOnline2d = true,
-        )
+        val resolved =
+            BasemapStyleResolver.resolve(
+                context = context,
+                dataDir = dataDir,
+                lat = 69.65,
+                lon = 18.96,
+                prefer3d = false,
+                vulkanAvailable = true,
+                forceOnline2d = true,
+            )
         assertEquals(BasemapStyleResolver.StyleKind.OnlineLiberty, resolved.kind)
         assertEquals(BasemapStyleResolver.LIBERTY_URL, resolved.styleUri)
     }
@@ -74,14 +75,15 @@ class BasemapStyleResolverInstrumentedTest {
         val covering = pmtilesListCovering(dataDir.absolutePath, 59.91, 10.75)
         assertTrue(covering.any { it.id == done.id })
 
-        val resolved = BasemapStyleResolver.resolve(
-            context = context,
-            dataDir = dataDir,
-            lat = 59.91,
-            lon = 10.75,
-            prefer3d = false,
-            vulkanAvailable = true,
-        )
+        val resolved =
+            BasemapStyleResolver.resolve(
+                context = context,
+                dataDir = dataDir,
+                lat = 59.91,
+                lon = 10.75,
+                prefer3d = false,
+                vulkanAvailable = true,
+            )
         assertEquals(BasemapStyleResolver.StyleKind.OfflineProtomaps, resolved.kind)
         assertNotNull(resolved.coveringJob)
         assertTrue(resolved.styleUri.startsWith("file://"))
@@ -100,12 +102,13 @@ class BasemapStyleResolverInstrumentedTest {
 
     @Test
     fun mapterhorn_augment_style_json_adds_dem_and_hillshade() {
-        val base = org.json.JSONObject(
-            """
-            {"version":8,"sources":{"openmaptiles":{"type":"vector","url":"https://example/tiles.json"}},
-             "layers":[{"id":"bg","type":"background"},{"id":"place","type":"symbol","source":"openmaptiles"}]}
-            """.trimIndent(),
-        )
+        val base =
+            org.json.JSONObject(
+                """
+                {"version":8,"sources":{"openmaptiles":{"type":"vector","url":"https://example/tiles.json"}},
+                 "layers":[{"id":"bg","type":"background"},{"id":"place","type":"symbol","source":"openmaptiles"}]}
+                """.trimIndent(),
+            )
         val out = MapterhornTerrain.augmentStyleJson(base)
         val sources = out.getJSONObject("sources")
         assertTrue(sources.has(MapterhornTerrain.TERRAIN_SOURCE_ID))
@@ -143,29 +146,31 @@ class BasemapStyleResolverInstrumentedTest {
     fun three_d_requires_vulkan_else_liberty() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val dataDir = NaviAppData.resolve(context)
-        val noVulkan = BasemapStyleResolver.resolve(
-            context = context,
-            dataDir = dataDir,
-            lat = 59.33,
-            lon = 18.07,
-            prefer3d = true,
-            vulkanAvailable = false,
-            forceOnline2d = true,
-        )
+        val noVulkan =
+            BasemapStyleResolver.resolve(
+                context = context,
+                dataDir = dataDir,
+                lat = 59.33,
+                lon = 18.07,
+                prefer3d = true,
+                vulkanAvailable = false,
+                forceOnline2d = true,
+            )
         assertEquals(BasemapStyleResolver.StyleKind.OnlineLiberty, noVulkan.kind)
         assertEquals(BasemapStyleResolver.LIBERTY_URL, noVulkan.styleUri)
         assertEquals(0.0, noVulkan.cameraPitch, 0.01)
         assertNotNull(noVulkan.note)
 
-        val withVulkan = BasemapStyleResolver.resolve(
-            context = context,
-            dataDir = dataDir,
-            lat = 59.33,
-            lon = 18.07,
-            prefer3d = true,
-            vulkanAvailable = true,
-            forceOnline2d = true,
-        )
+        val withVulkan =
+            BasemapStyleResolver.resolve(
+                context = context,
+                dataDir = dataDir,
+                lat = 59.33,
+                lon = 18.07,
+                prefer3d = true,
+                vulkanAvailable = true,
+                forceOnline2d = true,
+            )
         // Online 3D = Liberty vector basemap + Mapterhorn DEM hillshade (Native has no mesh terrain).
         assertEquals(BasemapStyleResolver.StyleKind.Online3d, withVulkan.kind)
         assertEquals(BasemapStyleResolver.LIBERTY_URL, withVulkan.styleUri)

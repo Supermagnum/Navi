@@ -30,7 +30,6 @@ import java.util.concurrent.TimeUnit
  */
 @RunWith(AndroidJUnit4::class)
 class SimBannerBreakTiltInstrumentedTest {
-
     companion object {
         private val START = 60.8059250 to 11.3299030
         private val VIA1 = 60.8023620 to 11.3053691
@@ -49,30 +48,37 @@ class SimBannerBreakTiltInstrumentedTest {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
             val dataDir = NaviAppData.resolve(context).also { it.mkdirs() }
             OstlandetOfflineFixtures.ensureInstalled(dataDir)
-            val pbf = listOf(
-                File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
-                File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"),
-            ).firstOrNull { it.isFile && it.length() > 10_000_000L }
-                ?: error("missing Ostlandet/Oppland PBF under /data/local/tmp/navi_fixtures")
+            val pbf =
+                listOf(
+                    File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
+                    File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"),
+                ).firstOrNull { it.isFile && it.length() > 10_000_000L }
+                    ?: error("missing Ostlandet/Oppland PBF under /data/local/tmp/navi_fixtures")
 
             val elevDir = File(dataDir, "elevation").also { it.mkdirs() }
             val stagedTar = File("/data/local/tmp/navi_fixtures/elevation-corridor.tar")
             if (stagedTar.isFile && !File(elevDir, "copernicus").exists()) {
-                val tarProc = ProcessBuilder(
-                    "tar", "-xf", stagedTar.absolutePath, "-C", dataDir.absolutePath,
-                ).redirectErrorStream(true).start()
+                val tarProc =
+                    ProcessBuilder(
+                        "tar",
+                        "-xf",
+                        stagedTar.absolutePath,
+                        "-C",
+                        dataDir.absolutePath,
+                    ).redirectErrorStream(true).start()
                 tarProc.waitFor(120, TimeUnit.SECONDS)
             }
             val cacheDir = File(dataDir, "graph-cache-${pbf.nameWithoutExtension}-car-tilt")
             cacheDir.mkdirs()
-            val vehicle = FfiVehicleLimits(
-                axleWeightKg = null,
-                bogieWeightKg = null,
-                heightM = null,
-                widthM = null,
-                lengthM = null,
-                totalWeightKg = null,
-            )
+            val vehicle =
+                FfiVehicleLimits(
+                    axleWeightKg = null,
+                    bogieWeightKg = null,
+                    heightM = null,
+                    widthM = null,
+                    lengthM = null,
+                    totalWeightKg = null,
+                )
             val wps = listOf(START, VIA1, VIA2, END)
             val legSamples = mutableListOf<List<RouteSimSample>>()
             var poly = ""
@@ -82,67 +88,71 @@ class SimBannerBreakTiltInstrumentedTest {
             for (i in 0 until wps.lastIndex) {
                 val a = wps[i]
                 val b = wps[i + 1]
-                val leg = planCarRoute(
-                    pbfPath = pbf.absolutePath,
-                    elevDir = elevDir.absolutePath,
-                    cacheDir = cacheDir.absolutePath,
-                    startLat = a.first,
-                    startLon = a.second,
-                    endLat = b.first,
-                    endLon = b.second,
-                    useEco = false,
-                    profile = TravelProfile.CAR,
-                    avoidMajor = false,
-                    avoidTolls = false,
-                    avoidFerries = false,
-                    vehicle = vehicle,
-                    preferOfficialNetworks = false,
-                )
+                val leg =
+                    planCarRoute(
+                        pbfPath = pbf.absolutePath,
+                        elevDir = elevDir.absolutePath,
+                        cacheDir = cacheDir.absolutePath,
+                        startLat = a.first,
+                        startLon = a.second,
+                        endLat = b.first,
+                        endLon = b.second,
+                        useEco = false,
+                        profile = TravelProfile.CAR,
+                        avoidMajor = false,
+                        avoidTolls = false,
+                        avoidFerries = false,
+                        vehicle = vehicle,
+                        preferOfficialNetworks = false,
+                    )
                 assertTrue(
                     "leg ${i + 1} must PASS: ${leg.report.take(400)}",
                     leg.report.contains("PASS") && leg.routePolyline.isNotBlank(),
                 )
                 dist += leg.distanceKm
                 eta += leg.etaMinutes
-                poly = if (poly.isEmpty()) {
-                    leg.routePolyline
-                } else {
-                    poly + ";" + leg.routePolyline.substringAfter(';')
-                }
+                poly =
+                    if (poly.isEmpty()) {
+                        leg.routePolyline
+                    } else {
+                        poly + ";" + leg.routePolyline.substringAfter(';')
+                    }
                 legSamples.add(parseRouteSimSamples(leg.simSamplesJson))
                 last = leg
             }
             samples = mergeSimSamples(legSamples)
             assertTrue("expected simulation samples", samples.size >= 10)
             val base = last!!
-            planned = CorridorRouteResult(
-                report = "TEST_KIND=PLAN_MULTI\nPASS\ndistance_km=$dist\n",
-                distanceKm = dist,
-                etaMinutes = eta,
-                cacheHit = base.cacheHit,
-                coldBuildS = base.coldBuildS,
-                warmLoadS = base.warmLoadS,
-                routePolyline = poly,
-                poiLat = END.first,
-                poiLon = END.second,
-                poiName = "Loop end",
-                poiIconKey = base.poiIconKey,
-                breakPoisJson = "[]",
-                daysJson = "[]",
-                simSamplesJson = JSONArray(
-                    samples.map { s ->
-                        JSONObject()
-                            .put("lat", s.lat)
-                            .put("lon", s.lon)
-                            .put("cum_m", s.cumM)
-                            .put("speed_kmh", s.speedKmh)
-                            .put("highway", s.highway)
-                            .put("maxspeed_posted", s.maxspeedPosted)
-                    },
-                ).toString(),
-                maneuversJson = "[]",
-                priorityPathSharePct = base.priorityPathSharePct,
-            )
+            planned =
+                CorridorRouteResult(
+                    report = "TEST_KIND=PLAN_MULTI\nPASS\ndistance_km=$dist\n",
+                    distanceKm = dist,
+                    etaMinutes = eta,
+                    cacheHit = base.cacheHit,
+                    coldBuildS = base.coldBuildS,
+                    warmLoadS = base.warmLoadS,
+                    routePolyline = poly,
+                    poiLat = END.first,
+                    poiLon = END.second,
+                    poiName = "Loop end",
+                    poiIconKey = base.poiIconKey,
+                    breakPoisJson = "[]",
+                    daysJson = "[]",
+                    simSamplesJson =
+                        JSONArray(
+                            samples.map { s ->
+                                JSONObject()
+                                    .put("lat", s.lat)
+                                    .put("lon", s.lon)
+                                    .put("cum_m", s.cumM)
+                                    .put("speed_kmh", s.speedKmh)
+                                    .put("highway", s.highway)
+                                    .put("maxspeed_posted", s.maxspeedPosted)
+                            },
+                        ).toString(),
+                    maneuversJson = "[]",
+                    priorityPathSharePct = base.priorityPathSharePct,
+                )
         }
 
         private fun mergeSimSamples(legs: List<List<RouteSimSample>>): List<RouteSimSample> {
@@ -219,7 +229,11 @@ class SimBannerBreakTiltInstrumentedTest {
             "ONLY THIS TIME",
             "Only this time",
         )) {
-            val obj = device.findObject(androidx.test.uiautomator.By.text(label))
+            val obj =
+                device.findObject(
+                    androidx.test.uiautomator.By
+                        .text(label),
+                )
             if (obj != null) {
                 obj.click()
                 Thread.sleep(800)
@@ -265,7 +279,10 @@ class SimBannerBreakTiltInstrumentedTest {
         return hours
     }
 
-    private fun saveShot(dir: File, name: String) {
+    private fun saveShot(
+        dir: File,
+        name: String,
+    ) {
         Thread.sleep(1_200)
         val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
         assertNotNull(shot)
@@ -275,8 +292,11 @@ class SimBannerBreakTiltInstrumentedTest {
             shot.compress(Bitmap.CompressFormat.PNG, 100, it)
         }
         assertTrue(out.length() > 3_000)
-        val pfd = InstrumentationRegistry.getInstrumentation().uiAutomation
-            .executeShellCommand("su 0 cp ${out.absolutePath} /data/local/tmp/$name")
+        val pfd =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .uiAutomation
+                .executeShellCommand("su 0 cp ${out.absolutePath} /data/local/tmp/$name")
         java.io.FileInputStream(pfd.fileDescriptor).use { input ->
             val buf = ByteArray(4096)
             while (input.read(buf) >= 0) {
@@ -286,7 +306,10 @@ class SimBannerBreakTiltInstrumentedTest {
         android.util.Log.i("SimBannerBreakTilt", "SHOT ${out.absolutePath} bytes=${out.length()}")
     }
 
-    private fun awaitPitch(target: Double, timeoutMs: Long = 25_000) {
+    private fun awaitPitch(
+        target: Double,
+        timeoutMs: Long = 25_000,
+    ) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (kotlin.math.abs(NaviMapTestHooks.lastCameraPitch - target) <= 1.5) return
@@ -299,10 +322,11 @@ class SimBannerBreakTiltInstrumentedTest {
     fun banner_break_and_tilt45_shots() {
         waitStyle()
         NaviMapTestHooks.pendingFromPoint = Waypoint("Start", START.first, START.second)
-        NaviMapTestHooks.pendingViaPoints = listOf(
-            Waypoint("Via1", VIA1.first, VIA1.second),
-            Waypoint("Via2", VIA2.first, VIA2.second),
-        )
+        NaviMapTestHooks.pendingViaPoints =
+            listOf(
+                Waypoint("Via1", VIA1.first, VIA1.second),
+                Waypoint("Via2", VIA2.first, VIA2.second),
+            )
         NaviMapTestHooks.pendingToPoint = Waypoint("End", END.first, END.second)
         NaviMapTestHooks.pendingRoute = planned
         waitRouteOnMap()
@@ -331,10 +355,17 @@ class SimBannerBreakTiltInstrumentedTest {
         dismissPermissionIfPresent()
         Thread.sleep(1_000)
         dismissPermissionIfPresent()
-        val uiaText = device.hasObject(androidx.test.uiautomator.By.text("SIMULATING"))
+        val uiaText =
+            device.hasObject(
+                androidx.test.uiautomator.By
+                    .text("SIMULATING"),
+            )
         // adb screencap is the required manual evidence; do not overwrite with UiAutomation.
-        val pfdCap = InstrumentationRegistry.getInstrumentation().uiAutomation
-            .executeShellCommand("screencap -p /data/local/tmp/simulating_banner_manual.png")
+        val pfdCap =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .uiAutomation
+                .executeShellCommand("screencap -p /data/local/tmp/simulating_banner_manual.png")
         java.io.FileInputStream(pfdCap.fileDescriptor).use { input ->
             val buf = ByteArray(4096)
             while (input.read(buf) >= 0) {
@@ -424,11 +455,14 @@ class SimBannerBreakTiltInstrumentedTest {
         dismissPermissionIfPresent()
         saveShot(shotDir, "tilt45_3d_on.png")
         // Host pull target used by docs/README.
-        val pfdTilt = InstrumentationRegistry.getInstrumentation().uiAutomation
-            .executeShellCommand(
-                "su 0 cp ${File(shotDir, "tilt45_3d_on.png").absolutePath} " +
-                    "/data/local/tmp/tilt45_3d_on.png",
-            )
+        val pfdTilt =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .uiAutomation
+                .executeShellCommand(
+                    "su 0 cp ${File(shotDir, "tilt45_3d_on.png").absolutePath} " +
+                        "/data/local/tmp/tilt45_3d_on.png",
+                )
         java.io.FileInputStream(pfdTilt.fileDescriptor).use { input ->
             val buf = ByteArray(4096)
             while (input.read(buf) >= 0) {

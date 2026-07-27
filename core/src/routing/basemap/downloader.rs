@@ -165,8 +165,8 @@ impl PmtilesDownloader {
         let mut planet_url = job.url.clone();
         // Only auto-resolve Protomaps planet when the job was queued without a
         // concrete third-party URL (Mapterhorn DEM uses download.mapterhorn.com).
-        let is_fixed_third_party = planet_url.contains("mapterhorn.com")
-            || planet_url.contains("build.protomaps.com/");
+        let is_fixed_third_party =
+            planet_url.contains("mapterhorn.com") || planet_url.contains("build.protomaps.com/");
         if !is_fixed_third_party {
             if let Ok(resolved) = resolve_planet_url(&self.client).await {
                 planet_url = resolved;

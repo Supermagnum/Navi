@@ -2,6 +2,8 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jlleitschuh.gradle.ktlint")
+    id("io.gitlab.arturbosch.detekt")
 }
 
 android {
@@ -14,7 +16,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
     }
 
     buildTypes {
@@ -72,4 +74,37 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+ktlint {
+    version.set("1.5.0")
+    android.set(true)
+    ignoreFailures.set(false)
+    filter {
+        exclude("**/uniffi/**")
+        exclude("**/generated/**")
+    }
+}
+
+detekt {
+    buildUponDefaultConfig = true
+    allRules = false
+    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
+    source.setFrom(
+        "src/main/java",
+        "src/test/java",
+        "src/androidTest/java",
+    )
+}
+
+tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    exclude("**/uniffi/**")
+    exclude("**/generated/**")
+    reports {
+        html.required.set(true)
+        xml.required.set(false)
+        txt.required.set(false)
+        sarif.required.set(false)
+        md.required.set(false)
+    }
 }

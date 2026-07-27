@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::{
-    EcoConfig, EbikeConfig, EvCarConfig, FuelConfig, RestConfig, SafetyConfig,
-    TruckDrivingHistory, VehicleLimits,
+    EbikeConfig, EcoConfig, EvCarConfig, FuelConfig, RestConfig, SafetyConfig, TruckDrivingHistory,
+    VehicleLimits,
 };
 use crate::storage::Storage;
 
@@ -105,14 +105,16 @@ impl<'a> ConfigStore<'a> {
     where
         T: for<'de> Deserialize<'de>,
     {
-        self.storage.with_conn(|conn| load_json_conn(conn, key, default))
+        self.storage
+            .with_conn(|conn| load_json_conn(conn, key, default))
     }
 
     fn save_json<T>(&self, key: &str, value: &T) -> SqlResult<()>
     where
         T: Serialize,
     {
-        self.storage.with_conn(|conn| save_json_conn(conn, key, value))
+        self.storage
+            .with_conn(|conn| save_json_conn(conn, key, value))
     }
 }
 
@@ -135,9 +137,8 @@ fn save_json_conn<T>(conn: &Connection, key: &str, value: &T) -> SqlResult<()>
 where
     T: Serialize,
 {
-    let json = serde_json::to_string(value).map_err(|e| {
-        rusqlite::Error::ToSqlConversionFailure(Box::new(e))
-    })?;
+    let json = serde_json::to_string(value)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     let now = now_unix();
     conn.execute(
         "INSERT INTO app_config (key, value_json, updated_at) VALUES (?1, ?2, ?3)
@@ -166,7 +167,10 @@ mod tests {
         let config = RestConfig::default();
         store.save_rest_config(&config).unwrap();
         let loaded = store.load_rest_config().unwrap();
-        assert_eq!(loaded.hiking.main_break_distance_km, config.hiking.main_break_distance_km);
+        assert_eq!(
+            loaded.hiking.main_break_distance_km,
+            config.hiking.main_break_distance_km
+        );
     }
 
     #[test]

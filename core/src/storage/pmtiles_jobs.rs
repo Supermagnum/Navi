@@ -77,7 +77,8 @@ impl<'a> PmtilesJobStore<'a> {
             )?;
             Ok(())
         })?;
-        self.get_job(id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
+        self.get_job(id)?
+            .ok_or(rusqlite::Error::QueryReturnedNoRows)
     }
 
     pub fn get_job(&self, id: Uuid) -> SqlResult<Option<PmtilesJobRecord>> {
@@ -86,19 +87,17 @@ impl<'a> PmtilesJobStore<'a> {
 
     pub fn list_jobs(&self) -> SqlResult<Vec<PmtilesJobRecord>> {
         self.storage.with_conn(|conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id FROM pmtiles_jobs ORDER BY created_at DESC",
-            )?;
+            let mut stmt = conn.prepare("SELECT id FROM pmtiles_jobs ORDER BY created_at DESC")?;
             let ids: Vec<Uuid> = stmt
                 .query_map([], |row| {
                     let s: String = row.get(0)?;
-                    Ok(Uuid::parse_str(&s).map_err(|e| {
+                    Uuid::parse_str(&s).map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
                             0,
                             rusqlite::types::Type::Text,
                             Box::new(e),
                         )
-                    })?)
+                    })
                 })?
                 .collect::<SqlResult<Vec<_>>>()?;
             let mut out = Vec::with_capacity(ids.len());
@@ -117,20 +116,13 @@ impl<'a> PmtilesJobStore<'a> {
             .into_iter()
             .filter(|j| j.status == PmtilesJobStatus::Completed)
             .filter(|j| match (j.min_lat, j.min_lon, j.max_lat, j.max_lon) {
-                (Some(a), Some(b), Some(c), Some(d)) => {
-                    bbox_covers_point([a, b, c, d], lat, lon)
-                }
+                (Some(a), Some(b), Some(c), Some(d)) => bbox_covers_point([a, b, c, d], lat, lon),
                 _ => false,
             })
             .collect())
     }
 
-    pub fn set_status(
-        &self,
-        id: Uuid,
-        status: PmtilesJobStatus,
-        paused: bool,
-    ) -> SqlResult<()> {
+    pub fn set_status(&self, id: Uuid, status: PmtilesJobStatus, paused: bool) -> SqlResult<()> {
         let now = now_rfc3339();
         self.storage.with_conn(|conn| {
             conn.execute(
@@ -193,11 +185,7 @@ fn map_row(row: &rusqlite::Row<'_>) -> SqlResult<PmtilesJobRecord> {
     let status_s: String = row.get(6)?;
     Ok(PmtilesJobRecord {
         id: Uuid::parse_str(&id_s).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(
-                0,
-                rusqlite::types::Type::Text,
-                Box::new(e),
-            )
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
         })?,
         region_key: row.get(1)?,
         url: row.get(2)?,

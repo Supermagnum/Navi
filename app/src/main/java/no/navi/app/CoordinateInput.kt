@@ -15,10 +15,11 @@ fun parseLatLonQuery(raw: String): Pair<Double, Double>? {
     if (q.length < 3) return null
     // Reject obvious place names early (letters other than e/E in scientific notation).
     val normalized = q.replace(';', ',').replace('\t', ' ')
-    val parts = when {
-        normalized.contains(',') -> normalized.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-        else -> normalized.split(Regex("\\s+")).filter { it.isNotEmpty() }
-    }
+    val parts =
+        when {
+            normalized.contains(',') -> normalized.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            else -> normalized.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        }
     if (parts.size != 2) return null
     val lat = parts[0].toDoubleOrNull() ?: return null
     val lon = parts[1].toDoubleOrNull() ?: return null
@@ -29,5 +30,7 @@ fun parseLatLonQuery(raw: String): Pair<Double, Double>? {
     return lat to lon
 }
 
-fun formatCoordWaypointName(lat: Double, lon: Double): String =
-    "%.5f, %.5f".format(lat, lon)
+fun formatCoordWaypointName(
+    lat: Double,
+    lon: Double,
+): String = "%.5f, %.5f".format(lat, lon)

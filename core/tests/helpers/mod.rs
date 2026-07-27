@@ -1,3 +1,14 @@
+//! Shared helpers for fixture-heavy integration tests (`#[ignore]`).
+//!
+//! Many helpers are only referenced from ignored tests that Clippy still
+//! type-checks under `--all-targets`, so unused-item noise is expected.
+#![allow(
+    dead_code,
+    clippy::uninlined_format_args,
+    clippy::inherent_to_string,
+    clippy::redundant_closure
+)]
+
 pub mod hiking;
 
 use std::fs;
@@ -214,9 +225,7 @@ impl CombinedPoiIndex {
             .par_iter()
             .map(|p| PoiIndex::load_from_pbf(p))
             .collect();
-        Ok(Self {
-            indices: indices?,
-        })
+        Ok(Self { indices: indices? })
     }
 
     pub fn total_len(&self) -> usize {

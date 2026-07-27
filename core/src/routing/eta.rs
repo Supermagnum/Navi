@@ -223,13 +223,28 @@ mod tests {
 
     #[test]
     fn highway_display_labels_align_with_fallback_classes() {
-        assert_eq!(highway_class_display_label(Some("motorway_link")), "Motorway");
+        assert_eq!(
+            highway_class_display_label(Some("motorway_link")),
+            "Motorway"
+        );
         assert_eq!(highway_class_display_label(Some("trunk")), "Trunk road");
         assert_eq!(highway_class_display_label(Some("primary")), "Primary road");
-        assert_eq!(highway_class_display_label(Some("secondary")), "Secondary road");
-        assert_eq!(highway_class_display_label(Some("tertiary")), "Tertiary road");
-        assert_eq!(highway_class_display_label(Some("unclassified")), "Unclassified road");
-        assert_eq!(highway_class_display_label(Some("residential")), "Residential road");
+        assert_eq!(
+            highway_class_display_label(Some("secondary")),
+            "Secondary road"
+        );
+        assert_eq!(
+            highway_class_display_label(Some("tertiary")),
+            "Tertiary road"
+        );
+        assert_eq!(
+            highway_class_display_label(Some("unclassified")),
+            "Unclassified road"
+        );
+        assert_eq!(
+            highway_class_display_label(Some("residential")),
+            "Residential road"
+        );
         assert_eq!(highway_class_display_label(Some("service")), "Service road");
         assert_eq!(highway_class_display_label(Some("track")), "Track");
         assert_eq!(highway_class_display_label(Some("path")), "Path");

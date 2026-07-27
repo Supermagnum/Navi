@@ -49,14 +49,18 @@ class EldabuRamshogdaScreenshotTest {
             NaviMapTestHooks.hideUiChrome = false
             NaviMapTestHooks.hideSearchChrome = true
             runCatching {
-                InstrumentationRegistry.getInstrumentation().uiAutomation
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .uiAutomation
                     .grantRuntimePermission(
                         context.packageName,
                         android.Manifest.permission.ACCESS_FINE_LOCATION,
                     )
             }
             runCatching {
-                InstrumentationRegistry.getInstrumentation().uiAutomation
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .uiAutomation
                     .grantRuntimePermission(
                         context.packageName,
                         android.Manifest.permission.ACCESS_COARSE_LOCATION,
@@ -96,18 +100,19 @@ class EldabuRamshogdaScreenshotTest {
     private fun dismissPermissionDialogs() {
         val deadline = System.currentTimeMillis() + 12_000
         while (System.currentTimeMillis() < deadline) {
-            val allow = device.findObject(By.text("While using the app"))
-                ?: device.findObject(By.text("Allow"))
-                ?: device.findObject(By.text("ALLOW"))
-                ?: device.findObject(
-                    By.res("com.android.permissioncontroller", "permission_allow_button"),
-                )
-                ?: device.findObject(
-                    By.res(
-                        "com.android.permissioncontroller",
-                        "permission_allow_foreground_only_button",
-                    ),
-                )
+            val allow =
+                device.findObject(By.text("While using the app"))
+                    ?: device.findObject(By.text("Allow"))
+                    ?: device.findObject(By.text("ALLOW"))
+                    ?: device.findObject(
+                        By.res("com.android.permissioncontroller", "permission_allow_button"),
+                    )
+                    ?: device.findObject(
+                        By.res(
+                            "com.android.permissioncontroller",
+                            "permission_allow_foreground_only_button",
+                        ),
+                    )
             if (allow != null) {
                 allow.click()
                 Thread.sleep(700)
@@ -129,24 +134,26 @@ class EldabuRamshogdaScreenshotTest {
         NaviMapTestHooks.routeStartLabel = "Skolla"
         NaviMapTestHooks.routeEndLabel = "Rondvassbu"
         NaviMapTestHooks.routeViaLabel = "Harlandshytta, Eldåbu"
-        fun route() = uniffi.navi.CorridorRouteResult(
-            report = "PASS\ndistance_km=112.5\n",
-            distanceKm = 112.5,
-            etaMinutes = 1800.0,
-            cacheHit = true,
-            coldBuildS = 0.0,
-            warmLoadS = 0.0,
-            routePolyline = poly,
-            poiLat = 61.7562897,
-            poiLon = 9.9793564,
-            poiName = "Eldåbu",
-            poiIconKey = "cabin",
-            breakPoisJson = breaks,
-            daysJson = "[]",
-            simSamplesJson = "[]",
-            maneuversJson = "[]",
-            priorityPathSharePct = 0.0,
-        )
+
+        fun route() =
+            uniffi.navi.CorridorRouteResult(
+                report = "PASS\ndistance_km=112.5\n",
+                distanceKm = 112.5,
+                etaMinutes = 1800.0,
+                cacheHit = true,
+                coldBuildS = 0.0,
+                warmLoadS = 0.0,
+                routePolyline = poly,
+                poiLat = 61.7562897,
+                poiLon = 9.9793564,
+                poiName = "Eldåbu",
+                poiIconKey = "cabin",
+                breakPoisJson = breaks,
+                daysJson = "[]",
+                simSamplesJson = "[]",
+                maneuversJson = "[]",
+                priorityPathSharePct = 0.0,
+            )
         NaviMapTestHooks.pendingRoute = route()
         val deadline = System.currentTimeMillis() + 60_000
         while (System.currentTimeMillis() < deadline) {
@@ -162,17 +169,18 @@ class EldabuRamshogdaScreenshotTest {
     }
 
     private fun await3d(timeoutMs: Long = 120_000) {
+        NaviMapTestHooks.requestOptIn3d = true
+        NaviMapTestHooks.requestCameraTiltDeg = 45.0
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            if (NaviMapTestHooks.lastTerrainAttached &&
-                NaviMapTestHooks.lastCameraPitch >= 40.0
-            ) {
-                return
-            }
-            if (NaviMapTestHooks.lastBasemapKind == "Online3d" &&
-                NaviMapTestHooks.lastCameraPitch >= 40.0
-            ) {
-                return
+            // Opt-in 3D is hillshade attach; kind may be Online3d or OfflineProtomaps.
+            // Camera tilt is a separate user preset (no longer forced by 3D).
+            if (NaviMapTestHooks.lastTerrainAttached) {
+                if (NaviMapTestHooks.lastCameraPitch < 40.0) {
+                    NaviMapTestHooks.requestCameraTiltDeg = 45.0
+                } else {
+                    return
+                }
             }
             Thread.sleep(400)
         }

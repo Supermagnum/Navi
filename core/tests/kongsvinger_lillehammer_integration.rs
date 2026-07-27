@@ -127,14 +127,15 @@ fn ensure_dem_tiles(data_dir: &Path, storage: &Storage) -> anyhow::Result<f64> {
         "no tiles under {{data_dir}}/{{copernicus|viewfinder|srtm}}/"
     );
     let secs = t.elapsed().as_secs_f64();
-    println!("  [dem] job complete: {done}/{total} tiles, {found_on_disk} on-disk entries in {secs:.1}s");
+    println!(
+        "  [dem] job complete: {done}/{total} tiles, {found_on_disk} on-disk entries in {secs:.1}s"
+    );
     Ok(secs)
 }
 
 fn build_routing_graph(path: &Path) -> anyhow::Result<RouteGraph> {
-    RouteGraph::build_from_pbf(path, RoutingProfile::Car).map_err(|e| {
-        anyhow::anyhow!("graph build failed for {}: {e}", path.display())
-    })
+    RouteGraph::build_from_pbf(path, RoutingProfile::Car)
+        .map_err(|e| anyhow::anyhow!("graph build failed for {}: {e}", path.display()))
 }
 
 fn passat_eco_config() -> EcoConfig {
@@ -197,9 +198,9 @@ fn run_integration() -> anyhow::Result<()> {
     ));
     report.line(&format!(
         "Start snap: node {} at {:.0} m; goal snap: node {} at {:.0} m",
-        start.0.0,
+        start.0 .0,
         haversine_m(START_LAT, START_LON, start.1, start.2),
-        goal.0.0,
+        goal.0 .0,
         haversine_m(END_LAT, END_LON, goal.1, goal.2)
     ));
     assert!(
@@ -299,7 +300,10 @@ fn run_integration() -> anyhow::Result<()> {
         poi_paths.push(oppland.clone());
     }
     let poi_index = CombinedPoiIndex::load(&poi_paths)?;
-    report.line(&format!("POI index size: {} records", poi_index.total_len()));
+    report.line(&format!(
+        "POI index size: {} records",
+        poi_index.total_len()
+    ));
 
     let sample_pts = sample_route_points(&graph_elev, &path1.0, 10_000.0);
     assert!(!sample_pts.is_empty(), "no sample points along route");
@@ -341,11 +345,7 @@ fn run_integration() -> anyhow::Result<()> {
     for hit in all_hits.iter().take(15) {
         report.line(&format!(
             "  {:?} id={} {:?} {:.0}m — {}",
-            hit.category,
-            hit.osm_id,
-            hit.name,
-            hit.distance_from_sample_m,
-            hit.icon_key
+            hit.category, hit.osm_id, hit.name, hit.distance_from_sample_m, hit.icon_key
         ));
     }
     if all_hits.len() > 15 {
@@ -432,9 +432,7 @@ fn run_integration() -> anyhow::Result<()> {
     report.line(&format!(
         "Timing: download {download_s:.1}s | compute {compute_s:.1}s | wall {wall_s:.1}s"
     ));
-    println!(
-        "  [timing] download={download_s:.1}s compute={compute_s:.1}s wall={wall_s:.1}s"
-    );
+    println!("  [timing] download={download_s:.1}s compute={compute_s:.1}s wall={wall_s:.1}s");
 
     let report_path = fixtures.join("kongsvinger_lillehammer_report.md");
     report.write(&report_path)?;

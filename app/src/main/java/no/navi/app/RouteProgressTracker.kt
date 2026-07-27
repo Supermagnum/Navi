@@ -1,10 +1,10 @@
 package no.navi.app
 
+import uniffi.navi.approachHideM
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
-import uniffi.navi.approachHideM
 
 data class RouteProgressSnapshot(
     val alongM: Double,
@@ -50,7 +50,10 @@ class RouteProgressTracker(
         viaReached = -1
     }
 
-    fun update(lat: Double, lon: Double): RouteProgressSnapshot {
+    fun update(
+        lat: Double,
+        lon: Double,
+    ): RouteProgressSnapshot {
         if (samples.isEmpty()) {
             return RouteProgressSnapshot(
                 alongM = 0.0,
@@ -87,16 +90,18 @@ class RouteProgressTracker(
                 viaReached = i
             }
         }
-        val arrived = haversineM(lat, lon, endPoint.lat, endPoint.lon) <= endRadiusM ||
-            along >= (samples.last().cumM - endRadiusM)
+        val arrived =
+            haversineM(lat, lon, endPoint.lat, endPoint.lon) <= endRadiusM ||
+                along >= (samples.last().cumM - endRadiusM)
 
-        val bearing = if (nearest + 1 < samples.size) {
-            bearingDeg(sample.lat, sample.lon, samples[nearest + 1].lat, samples[nearest + 1].lon)
-        } else if (nearest > 0) {
-            bearingDeg(samples[nearest - 1].lat, samples[nearest - 1].lon, sample.lat, sample.lon)
-        } else {
-            0.0
-        }
+        val bearing =
+            if (nearest + 1 < samples.size) {
+                bearingDeg(sample.lat, sample.lon, samples[nearest + 1].lat, samples[nearest + 1].lon)
+            } else if (nearest > 0) {
+                bearingDeg(samples[nearest - 1].lat, samples[nearest - 1].lon, sample.lat, sample.lon)
+            } else {
+                0.0
+            }
 
         return RouteProgressSnapshot(
             alongM = along,
@@ -139,7 +144,10 @@ class RouteProgressTracker(
         return hours * 60.0
     }
 
-    private fun nearestSampleIndex(lat: Double, lon: Double): Int {
+    private fun nearestSampleIndex(
+        lat: Double,
+        lon: Double,
+    ): Int {
         var best = 0
         var bestD = Double.MAX_VALUE
         for (i in samples.indices) {
@@ -154,18 +162,29 @@ class RouteProgressTracker(
     }
 
     companion object {
-        fun haversineM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        fun haversineM(
+            lat1: Double,
+            lon1: Double,
+            lat2: Double,
+            lon2: Double,
+        ): Double {
             val r = 6_378_100.0
             val p1 = Math.toRadians(lat1)
             val p2 = Math.toRadians(lat2)
             val dp = Math.toRadians(lat2 - lat1)
             val dl = Math.toRadians(lon2 - lon1)
-            val h = sin(dp / 2) * sin(dp / 2) +
-                cos(p1) * cos(p2) * sin(dl / 2) * sin(dl / 2)
+            val h =
+                sin(dp / 2) * sin(dp / 2) +
+                    cos(p1) * cos(p2) * sin(dl / 2) * sin(dl / 2)
             return 2 * r * atan2(sqrt(h), sqrt(1 - h))
         }
 
-        fun bearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        fun bearingDeg(
+            lat1: Double,
+            lon1: Double,
+            lat2: Double,
+            lon2: Double,
+        ): Double {
             val p1 = Math.toRadians(lat1)
             val p2 = Math.toRadians(lat2)
             val dl = Math.toRadians(lon2 - lon1)

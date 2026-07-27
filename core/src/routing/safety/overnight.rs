@@ -39,8 +39,8 @@ impl OvernightProximityIndex {
         path: impl AsRef<std::path::Path>,
         bbox: [f64; 4],
     ) -> anyhow::Result<Self> {
-        use std::collections::HashMap;
         use osmpbf::{Element, ElementReader};
+        use std::collections::HashMap;
 
         let [min_lat, min_lon, max_lat, max_lon] = bbox;
         let in_bbox = |lat: f64, lon: f64| {
@@ -54,58 +54,56 @@ impl OvernightProximityIndex {
         {
             let file = std::fs::File::open(path.as_ref())?;
             let reader = ElementReader::new(file);
-            reader.for_each(|element| {
-                match element {
-                    Element::Node(n) => {
-                        let lat = n.lat();
-                        let lon = n.lon();
-                        if !in_bbox(lat, lon) {
-                            return;
+            reader.for_each(|element| match element {
+                Element::Node(n) => {
+                    let lat = n.lat();
+                    let lon = n.lon();
+                    if !in_bbox(lat, lon) {
+                        return;
+                    }
+                    node_coord.insert(n.id(), (lat, lon));
+                    let mut is_building = false;
+                    let mut is_glacier = false;
+                    for (k, v) in n.tags() {
+                        if k == "building" && v != "no" {
+                            is_building = true;
                         }
-                        node_coord.insert(n.id(), (lat, lon));
-                        let mut is_building = false;
-                        let mut is_glacier = false;
-                        for (k, v) in n.tags() {
-                            if k == "building" && v != "no" {
-                                is_building = true;
-                            }
-                            if k == "natural" && v == "glacier" {
-                                is_glacier = true;
-                            }
-                        }
-                        if is_building {
-                            buildings.push((lat, lon));
-                        }
-                        if is_glacier {
-                            glaciers.push((lat, lon));
+                        if k == "natural" && v == "glacier" {
+                            is_glacier = true;
                         }
                     }
-                    Element::DenseNode(n) => {
-                        let lat = n.lat();
-                        let lon = n.lon();
-                        if !in_bbox(lat, lon) {
-                            return;
-                        }
-                        node_coord.insert(n.id, (lat, lon));
-                        let mut is_building = false;
-                        let mut is_glacier = false;
-                        for (k, v) in n.tags() {
-                            if k == "building" && v != "no" {
-                                is_building = true;
-                            }
-                            if k == "natural" && v == "glacier" {
-                                is_glacier = true;
-                            }
-                        }
-                        if is_building {
-                            buildings.push((lat, lon));
-                        }
-                        if is_glacier {
-                            glaciers.push((lat, lon));
-                        }
+                    if is_building {
+                        buildings.push((lat, lon));
                     }
-                    _ => {}
+                    if is_glacier {
+                        glaciers.push((lat, lon));
+                    }
                 }
+                Element::DenseNode(n) => {
+                    let lat = n.lat();
+                    let lon = n.lon();
+                    if !in_bbox(lat, lon) {
+                        return;
+                    }
+                    node_coord.insert(n.id, (lat, lon));
+                    let mut is_building = false;
+                    let mut is_glacier = false;
+                    for (k, v) in n.tags() {
+                        if k == "building" && v != "no" {
+                            is_building = true;
+                        }
+                        if k == "natural" && v == "glacier" {
+                            is_glacier = true;
+                        }
+                    }
+                    if is_building {
+                        buildings.push((lat, lon));
+                    }
+                    if is_glacier {
+                        glaciers.push((lat, lon));
+                    }
+                }
+                _ => {}
             })?;
         }
 

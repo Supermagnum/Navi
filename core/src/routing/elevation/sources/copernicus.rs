@@ -1,10 +1,10 @@
 use std::io::Write;
 use std::path::Path;
 
-use reqwest::header::{RANGE, ETAG};
+use reqwest::header::{ETAG, RANGE};
 use reqwest::Client;
 
-use super::{DownloadResult, DemSource};
+use super::{DemSource, DownloadResult};
 use crate::routing::elevation::tile_id::HgtTileId;
 
 const COPERNICUS_BUCKET: &str = "https://copernicus-dem-30m.s3.eu-central-1.amazonaws.com";

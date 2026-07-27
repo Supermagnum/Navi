@@ -74,7 +74,12 @@ fn interpolate_at_km(samples: &[HikingRouteSample], target_km: f64) -> (f64, f64
     (last.lat, last.lon)
 }
 
-fn to_stop(p: &PoiRecord, dist_m: f64, is_network: bool, safety_rejected: bool) -> HikingOvernightStop {
+fn to_stop(
+    p: &PoiRecord,
+    dist_m: f64,
+    is_network: bool,
+    safety_rejected: bool,
+) -> HikingOvernightStop {
     HikingOvernightStop {
         lat: p.lat,
         lon: p.lon,
@@ -149,15 +154,9 @@ pub fn choose_hiking_overnight(
 
     let mut fallback: Option<(PoiRecord, f64, bool)> = None;
     for (p, d, is_net) in candidates {
-        let rejected = check_overnight_candidate(
-            p.lat,
-            p.lon,
-            safety,
-            &p,
-            &prox.buildings,
-            &prox.glaciers,
-        )
-        .is_some();
+        let rejected =
+            check_overnight_candidate(p.lat, p.lon, safety, &p, &prox.buildings, &prox.glaciers)
+                .is_some();
         if !rejected {
             return Some(to_stop(&p, d, is_net, false));
         }
@@ -221,29 +220,27 @@ pub fn plan_hiking_multi_day(
 
                         let take = match &best {
                             None => true,
-                            Some((prev_km, prev)) => {
-                                match (snapped.is_network, prev.is_network) {
-                                    (true, false) => true,
-                                    (false, true) => false,
-                                    _ => {
-                                        let much_closer = snapped.distance_from_target_m
-                                            + DETOUR_SLACK_M
-                                            < prev.distance_from_target_m;
-                                        let much_worse = snapped.distance_from_target_m
-                                            > prev.distance_from_target_m + DETOUR_SLACK_M;
-                                        if much_closer {
-                                            true
-                                        } else if much_worse {
-                                            false
-                                        } else {
-                                            hut_km > *prev_km
-                                                || ((hut_km - *prev_km).abs() < 1.0
-                                                    && snapped.distance_from_target_m
-                                                        < prev.distance_from_target_m)
-                                        }
+                            Some((prev_km, prev)) => match (snapped.is_network, prev.is_network) {
+                                (true, false) => true,
+                                (false, true) => false,
+                                _ => {
+                                    let much_closer = snapped.distance_from_target_m
+                                        + DETOUR_SLACK_M
+                                        < prev.distance_from_target_m;
+                                    let much_worse = snapped.distance_from_target_m
+                                        > prev.distance_from_target_m + DETOUR_SLACK_M;
+                                    if much_closer {
+                                        true
+                                    } else if much_worse {
+                                        false
+                                    } else {
+                                        hut_km > *prev_km
+                                            || ((hut_km - *prev_km).abs() < 1.0
+                                                && snapped.distance_from_target_m
+                                                    < prev.distance_from_target_m)
                                     }
                                 }
-                            }
+                            },
                         };
                         if take {
                             best = Some((hut_km, snapped));
@@ -257,17 +254,15 @@ pub fn plan_hiking_multi_day(
         let (end_km, overnight, overnight_gap) = if is_final {
             (total_km, None, false)
         } else if let Some((hut_km, choice)) = best {
-            let gap = choice.distance_from_target_m > OVERNIGHT_NEAR_HUT_MAX_M
-                || choice.safety_rejected;
+            let gap =
+                choice.distance_from_target_m > OVERNIGHT_NEAR_HUT_MAX_M || choice.safety_rejected;
             (hut_km, Some(choice), gap)
         } else {
             let (lat, lon) = interpolate_at_km(samples, window_end);
             let fallback = choose_hiking_overnight(poi, safety, prox, lat, lon);
             let gap = fallback
                 .as_ref()
-                .map(|o| {
-                    o.distance_from_target_m > OVERNIGHT_NEAR_HUT_MAX_M || o.safety_rejected
-                })
+                .map(|o| o.distance_from_target_m > OVERNIGHT_NEAR_HUT_MAX_M || o.safety_rejected)
                 .unwrap_or(true);
             (window_end, fallback, gap)
         };

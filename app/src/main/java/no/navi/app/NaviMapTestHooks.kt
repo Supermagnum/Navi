@@ -14,6 +14,15 @@ object NaviMapTestHooks {
     @Volatile
     var pendingRoute: uniffi.navi.CorridorRouteResult? = null
 
+    /**
+     * Direct apply callback registered by the live MainActivity composition.
+     * Instrumented tests should prefer this over [pendingRoute] when a system
+     * permission dialog has paused the activity (pendingRoute only consumes while
+     * RESUMED).
+     */
+    @Volatile
+    var applyRouteHandler: ((uniffi.navi.CorridorRouteResult) -> Unit)? = null
+
     @Volatile
     var pendingIconPng: ByteArray = ByteArray(0)
 
@@ -35,9 +44,26 @@ object NaviMapTestHooks {
     @Volatile
     var hideSearchChrome: Boolean = false
 
+    /** When true, MainActivity closes tools / route panels (test injection). */
+    @Volatile
+    var requestCloseTools: Boolean = false
+
     /** True after MapLibre style finished loading (basemap ready for overlays). */
     @Volatile
     var styleReady: Boolean = false
+
+    /**
+     * When true, [CorridorMapView] pauses/stops the MapView but skips `onDestroy`
+     * and retains the instance. Instrumented suites on the AAOS emulator otherwise
+     * SIGSEGV in `AndroidVulkanRendererBackend::~` on the FinalizerDaemon when
+     * ActivityTestRule tears down activities (MapLibre 11.8.8 Vulkan).
+     */
+    @Volatile
+    var deferMapViewDestroy: Boolean = false
+
+    /** Strong refs so deferred MapViews are not GC-finalized mid-suite. */
+    val retainedMapViews: MutableList<Any> =
+        java.util.Collections.synchronizedList(mutableListOf())
 
     /** Last basemap kind from [BasemapStyleResolver] (OnlineLiberty / Online3d / OfflineProtomaps). */
     @Volatile
@@ -76,7 +102,6 @@ object NaviMapTestHooks {
 
     @Volatile
     var routeEndLabel: String = ""
-
 
     /**
      * Synthetic magnetic heading (degrees clockwise from north). Used when rotation

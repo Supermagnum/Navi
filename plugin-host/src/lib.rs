@@ -8,6 +8,6 @@ mod abi;
 mod host;
 mod manifest;
 
-pub use abi::{Capability, HostApi, Position, PoiWrite};
+pub use abi::{Capability, HostApi, PoiWrite, Position};
 pub use host::{CallOutcome, PluginError, PluginHost, PluginLimits};
 pub use manifest::PluginManifest;

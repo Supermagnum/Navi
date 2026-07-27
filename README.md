@@ -35,7 +35,8 @@ throughout.
 
 Further reading in-repo: how to contribute in
 [`CONTRIBUTING.md`](CONTRIBUTING.md); how the pieces fit together in
-[`docs/architecture.md`](docs/architecture.md); plugin ideas in
+[`docs/architecture.md`](docs/architecture.md); Rust crates (first-party vs
+crates.io) in [`docs/rust-crates.md`](docs/rust-crates.md); plugin ideas in
 [`docs/plugins.md`](docs/plugins.md); Android build steps in
 [`docs/android-build.md`](docs/android-build.md); Linux core build in
 [`docs/build-linux.md`](docs/build-linux.md); debugging in
@@ -79,7 +80,7 @@ yet ([`docs/plugins.md`](docs/plugins.md)).
 |---|---|---|
 | **Travel modes** | Car, motorcycle, bicycle, **electric cycle**, hiking, truck, and motorhome. Electric car/truck/motorcycle variants exist in the enum for later use; the main chips are the everyday modes plus electric cycle. | Done |
 | **Vehicle size limits** | Save height, width, length, axle load, and similar limits. Routes skip roads the map says are too tight or too low for your vehicle. | Done |
-| **Electric cycle specs** | Battery Wh, motor torque (Nm), and wheel diameter (inches) persist like car fuel tank settings. Plan reports estimated % of battery used and climb-capability warnings when a segment exceeds torque/wheel-derived max grade. | Done |
+| **Electric cycle specs** | Battery Wh, motor torque (Nm), and wheel diameter (inches) persist like car fuel tank settings. Plan reports estimated % of battery used and climb-capability warnings when a segment exceeds torque/wheel-derived max grade. Live DIY wired telemetry (USB-serial `$NAVIPWR`) is specified for custom BMS/display builders — not implemented yet ([`docs/ebike-telemetry-diy.md`](docs/ebike-telemetry-diy.md)). | Done (physics); live telemetry deferred |
 | **Electric car pack** | Battery capacity (kWh, default 60) persists via `EvCarConfig`; plan reports estimated % of pack used (regen included). No climb-capability model for cars. | Done |
 | **Avoidances** | Turn on avoid motorways, tolls, or ferries and the planned path actually changes. | Done |
 | **Follow official networks** | For hiking and cycling, prefer marked long-distance trails and cycle routes when that option is on (off by default). Ordinary paths stay available so a gap in the marked network never strands you. Named trails are searchable. | Done |
@@ -292,6 +293,7 @@ that fits inside the planned duration/distance instead.
 | **Station timeout** | Drop stale stations after at most **3600 s** |
 
 More detail: [`docs/architecture.md`](docs/architecture.md),
+[`docs/rust-crates.md`](docs/rust-crates.md),
 [`docs/codebase-map.md`](docs/codebase-map.md), [`docs/API.md`](docs/API.md),
 [`docs/hud-layout.md`](docs/hud-layout.md), [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 
@@ -353,6 +355,7 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/API.md`](docs/API.md) | UniFFI host API + plugin HostApi reference |
 | [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) | Wire protocol index (UniFFI, plugins, ECU/APRS/CAT) |
 | [`docs/ECU.md`](docs/ECU.md) | ECU protocols: OBD-II, J1939, MegaSquirt + EV SoC/power |
+| [`docs/ebike-telemetry-diy.md`](docs/ebike-telemetry-diy.md) | Open wired DIY e-bike telemetry (`$NAVIPWR` over USB-serial; CAN optional) — spec only |
 | [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md) | Formulas: MAF/J1939/MegaSquirt fuel, range, eco segment energy |
 | [`docs/APRS.md`](docs/APRS.md) | APRS fields, TrackStore range filtering, moving icons |
 | [`docs/APRS-SDR.md`](docs/APRS-SDR.md) | APRS SDR DSP pipeline; RTL-SDR IF offset; planned `rtl-sdr-rs` |

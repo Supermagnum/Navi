@@ -54,7 +54,10 @@ pub struct ActiveRoute {
 pub async fn serve(state: AppState, addr: SocketAddr) -> anyhow::Result<SocketAddr> {
     let app = Router::new()
         .route("/", get(index_html))
-        .route("/app.js", get(|| async { asset("app.js", "application/javascript") }))
+        .route(
+            "/app.js",
+            get(|| async { asset("app.js", "application/javascript") }),
+        )
         .route("/app.css", get(|| async { asset("app.css", "text/css") }))
         .route("/api/status", get(api_status))
         .route("/api/basemap", get(api_basemap))
@@ -136,9 +139,7 @@ struct HudDto {
 async fn api_status(State(state): State<AppState>) -> Json<StatusResponse> {
     let pos = state.bus.latest_position();
     let imu = state.bus.latest_imu();
-    let (lat, lon) = pos
-        .map(|p| (p.lat, p.lon))
-        .unwrap_or((60.79, 10.68)); // Gjøvik-ish default for Ostlandet
+    let (lat, lon) = pos.map(|p| (p.lat, p.lon)).unwrap_or((60.79, 10.68)); // Gjøvik-ish default for Ostlandet
     let origin = state
         .local_origin
         .lock()
@@ -485,12 +486,9 @@ async fn api_icon(
         Ok(Ok(rgba)) => {
             // Encode raw RGBA via png crate already in workspace through core — use simple PNG encoder
             match rgba8_to_png(&rgba, 64, 64) {
-                Ok(bytes) => (
-                    StatusCode::OK,
-                    [(header::CONTENT_TYPE, "image/png")],
-                    bytes,
-                )
-                    .into_response(),
+                Ok(bytes) => {
+                    (StatusCode::OK, [(header::CONTENT_TYPE, "image/png")], bytes).into_response()
+                }
                 Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
             }
         }
@@ -594,10 +592,7 @@ async fn serve_pmtiles(
                     .status(StatusCode::PARTIAL_CONTENT)
                     .header(header::CONTENT_TYPE, "application/octet-stream")
                     .header(header::ACCEPT_RANGES, "bytes")
-                    .header(
-                        header::CONTENT_RANGE,
-                        format!("bytes {start}-{end}/{len}"),
-                    )
+                    .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{len}"))
                     .header(header::CONTENT_LENGTH, bytes.len().to_string())
                     .body(Body::from(bytes))
                     .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
@@ -652,7 +647,6 @@ pub fn default_pmtiles_dirs(data_dir: &Path) -> Vec<PathBuf> {
     vec![
         data_dir.join("pmtiles"),
         data_dir.to_path_buf(),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../core/target/integration-fixtures"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/target/integration-fixtures"),
     ]
 }

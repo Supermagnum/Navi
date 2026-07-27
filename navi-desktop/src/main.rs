@@ -52,11 +52,15 @@ fn main() -> anyhow::Result<()> {
             }
             "--cache-dir" => {
                 i += 1;
-                cache_dir = Some(PathBuf::from(args.get(i).context("--cache-dir needs path")?));
+                cache_dir = Some(PathBuf::from(
+                    args.get(i).context("--cache-dir needs path")?,
+                ));
             }
             "--place-index" => {
                 i += 1;
-                place_index = Some(PathBuf::from(args.get(i).context("--place-index needs path")?));
+                place_index = Some(PathBuf::from(
+                    args.get(i).context("--place-index needs path")?,
+                ));
             }
             "--pmtiles" => {
                 i += 1;
@@ -91,8 +95,8 @@ fn main() -> anyhow::Result<()> {
     }
 
     std::fs::create_dir_all(&data_dir)?;
-    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../core/target/integration-fixtures");
+    let fixtures =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/target/integration-fixtures");
     let pbf_path = pbf_path.unwrap_or_else(|| {
         let a = data_dir.join("ostlandet-latest.osm.pbf");
         if a.is_file() {
@@ -160,6 +164,7 @@ fn main() -> anyhow::Result<()> {
     #[cfg(feature = "embedded-webview")]
     {
         run_webview(&origin)?;
+        return Ok(());
     }
 
     #[cfg(not(feature = "embedded-webview"))]
@@ -170,8 +175,6 @@ fn main() -> anyhow::Result<()> {
             thread::sleep(Duration::from_secs(3600));
         }
     }
-
-    Ok(())
 }
 
 fn default_data_dir() -> PathBuf {
@@ -246,9 +249,7 @@ fn run_webview(url: &str) -> anyhow::Result<()> {
         .with_inner_size(tao::dpi::LogicalSize::new(1280.0, 800.0))
         .build(&event_loop)?;
 
-    let _webview = WebViewBuilder::new()
-        .with_url(url)
-        .build(&window)?;
+    let _webview = WebViewBuilder::new().with_url(url).build(&window)?;
 
     event_loop.run(move |event, _target, control_flow| {
         *control_flow = ControlFlow::Wait;

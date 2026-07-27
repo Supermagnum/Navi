@@ -28,14 +28,15 @@ import java.io.File
  */
 @RunWith(AndroidJUnit4::class)
 class TruckRestHudInstrumentedTest {
-
     companion object {
         @JvmStatic
         @BeforeClass
         fun beforeClass() {
             val pkg = InstrumentationRegistry.getInstrumentation().targetContext.packageName
             runCatching {
-                InstrumentationRegistry.getInstrumentation().uiAutomation
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .uiAutomation
                     .grantRuntimePermission(pkg, android.Manifest.permission.ACCESS_FINE_LOCATION)
             }
             NaviMapTestHooks.hideUiChrome = false
@@ -71,38 +72,40 @@ class TruckRestHudInstrumentedTest {
         Thread.sleep(500)
     }
 
-    private fun truckSettings(breakAfterH: Double) = FfiTruckRestSettings(
-        mandatoryBreakAfterHours = breakAfterH,
-        breakDurationMinutes = 45u,
-        preferSplitBreak = false,
-        maxDailyDrivingHours = 9.0,
-        maxDailyDrivingExtendedHours = 10.0,
-        maxDailyExtensionsPerWeek = 2u,
-        maxWeeklyDrivingHours = 56.0,
-        maxFortnightlyDrivingHours = 90.0,
-        exceptionalExtensionArmed = false,
-        ecoModeEnabled = false,
-    )
+    private fun truckSettings(breakAfterH: Double) =
+        FfiTruckRestSettings(
+            mandatoryBreakAfterHours = breakAfterH,
+            breakDurationMinutes = 45u,
+            preferSplitBreak = false,
+            maxDailyDrivingHours = 9.0,
+            maxDailyDrivingExtendedHours = 10.0,
+            maxDailyExtensionsPerWeek = 2u,
+            maxWeeklyDrivingHours = 56.0,
+            maxFortnightlyDrivingHours = 90.0,
+            exceptionalExtensionArmed = false,
+            ecoModeEnabled = false,
+        )
 
     private fun injectRoute() {
-        NaviMapTestHooks.pendingRoute = CorridorRouteResult(
-            report = "TEST_KIND=TRUCK_HUD\nPASS\n",
-            distanceKm = 50.0,
-            etaMinutes = 40.0,
-            cacheHit = false,
-            coldBuildS = 0.0,
-            warmLoadS = 0.0,
-            routePolyline = "10.0,60.0;10.1,60.1;10.2,60.2",
-            poiLat = 60.2,
-            poiLon = 10.2,
-            poiName = "Test",
-            poiIconKey = "fuel",
-            breakPoisJson = "[]",
-            daysJson = "[]",
-            simSamplesJson = "[]",
-            maneuversJson = "[]",
-            priorityPathSharePct = 0.0,
-        )
+        NaviMapTestHooks.pendingRoute =
+            CorridorRouteResult(
+                report = "TEST_KIND=TRUCK_HUD\nPASS\n",
+                distanceKm = 50.0,
+                etaMinutes = 40.0,
+                cacheHit = false,
+                coldBuildS = 0.0,
+                warmLoadS = 0.0,
+                routePolyline = "10.0,60.0;10.1,60.1;10.2,60.2",
+                poiLat = 60.2,
+                poiLon = 10.2,
+                poiName = "Test",
+                poiIconKey = "fuel",
+                breakPoisJson = "[]",
+                daysJson = "[]",
+                simSamplesJson = "[]",
+                maneuversJson = "[]",
+                priorityPathSharePct = 0.0,
+            )
         NaviMapTestHooks.requestBreakReminders = true
     }
 
@@ -142,14 +145,17 @@ class TruckRestHudInstrumentedTest {
             Thread.sleep(100)
         }
         assertTrue(NaviMapTestHooks.driveSettingsOpen)
-        composeRule.onNodeWithTag("drive_rest_profile_hint", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("drive_rest_profile_hint", useUnmergedTree = true)
             .assertIsDisplayed()
         assertTrue(
-            composeRule.onAllNodesWithText("Truck EC 561", substring = true, useUnmergedTree = true)
+            composeRule
+                .onAllNodesWithText("Truck EC 561", substring = true, useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .isNotEmpty(),
         )
-        composeRule.onNodeWithTag("btn_close_drive_settings", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("btn_close_drive_settings", useUnmergedTree = true)
             .performClick()
         val closeDeadline = System.currentTimeMillis() + 8_000
         while (System.currentTimeMillis() < closeDeadline && NaviMapTestHooks.driveSettingsOpen) {
@@ -180,12 +186,14 @@ class TruckRestHudInstrumentedTest {
             saw180,
         )
         assertTrue(
-            composeRule.onAllNodesWithText("Break in 180 min", useUnmergedTree = true)
+            composeRule
+                .onAllNodesWithText("Break in 180 min", useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .isNotEmpty(),
         )
         assertTrue(
-            composeRule.onAllNodesWithText("Break in 240 min", useUnmergedTree = true)
+            composeRule
+                .onAllNodesWithText("Break in 240 min", useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .isEmpty(),
         )

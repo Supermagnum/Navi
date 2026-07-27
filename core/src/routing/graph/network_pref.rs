@@ -49,8 +49,7 @@ impl OfficialNetworkKind {
 }
 
 fn tag_eq(tags: &HashMap<String, String>, key: &str, want: &str) -> bool {
-    tags.get(key)
-        .is_some_and(|v| v.eq_ignore_ascii_case(want))
+    tags.get(key).is_some_and(|v| v.eq_ignore_ascii_case(want))
 }
 
 fn tag_in(tags: &HashMap<String, String>, key: &str, allowed: &[&str]) -> bool {
@@ -59,7 +58,10 @@ fn tag_in(tags: &HashMap<String, String>, key: &str, allowed: &[&str]) -> bool {
 }
 
 /// True when relation tags match an official route network for `kind`.
-pub fn is_official_route_relation(tags: &HashMap<String, String>, kind: OfficialNetworkKind) -> bool {
+pub fn is_official_route_relation(
+    tags: &HashMap<String, String>,
+    kind: OfficialNetworkKind,
+) -> bool {
     if !tag_eq(tags, "type", "route") {
         return false;
     }
@@ -194,7 +196,7 @@ pub fn load_way_difficulty_tags(
             }
             let mut tags = HashMap::new();
             for (k, v) in way.tags() {
-                if DIFFICULTY_KEYS.iter().any(|dk| *dk == k) {
+                if DIFFICULTY_KEYS.contains(&k) {
                     tags.insert(k.to_string(), v.to_string());
                 }
             }
@@ -376,20 +378,18 @@ pub fn load_named_route_entries(path: impl AsRef<Path>) -> anyhow::Result<Vec<Na
     {
         let file = std::fs::File::open(path)?;
         let reader = ElementReader::new(file);
-        reader.for_each(|element| {
-            match element {
-                Element::Node(n) => {
-                    if needed_nodes.contains(&n.id()) {
-                        node_coord.insert(n.id(), (n.lat(), n.lon()));
-                    }
+        reader.for_each(|element| match element {
+            Element::Node(n) => {
+                if needed_nodes.contains(&n.id()) {
+                    node_coord.insert(n.id(), (n.lat(), n.lon()));
                 }
-                Element::DenseNode(n) => {
-                    if needed_nodes.contains(&n.id) {
-                        node_coord.insert(n.id, (n.lat(), n.lon()));
-                    }
-                }
-                _ => {}
             }
+            Element::DenseNode(n) => {
+                if needed_nodes.contains(&n.id) {
+                    node_coord.insert(n.id, (n.lat(), n.lon()));
+                }
+            }
+            _ => {}
         })?;
     }
 
@@ -543,8 +543,8 @@ mod tests {
                 shape: Vec::new(),
                 highway: Some("path".into()),
                 maxspeed_kmh: None,
-            name: None,
-            road_ref: None,
+                name: None,
+                road_ref: None,
                 maxweight_t: None,
                 maxaxleload_t: None,
                 maxbogieweight_t: None,
@@ -568,8 +568,8 @@ mod tests {
                 shape: Vec::new(),
                 highway: Some("path".into()),
                 maxspeed_kmh: None,
-            name: None,
-            road_ref: None,
+                name: None,
+                road_ref: None,
                 maxweight_t: None,
                 maxaxleload_t: None,
                 maxbogieweight_t: None,

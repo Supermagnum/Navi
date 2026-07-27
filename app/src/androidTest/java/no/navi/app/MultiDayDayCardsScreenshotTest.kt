@@ -23,7 +23,6 @@ import java.io.File
  */
 @RunWith(AndroidJUnit4::class)
 class MultiDayDayCardsScreenshotTest {
-
     @get:Rule
     val composeRule = createAndroidComposeRule<MainActivity>()
 
@@ -31,9 +30,11 @@ class MultiDayDayCardsScreenshotTest {
 
     @Before
     fun setUp() {
-        dataDir = NaviAppData.resolve(
-            InstrumentationRegistry.getInstrumentation().targetContext,
-        ).also { it.mkdirs() }
+        dataDir =
+            NaviAppData
+                .resolve(
+                    InstrumentationRegistry.getInstrumentation().targetContext,
+                ).also { it.mkdirs() }
         NaviMapTestHooks.hideUiChrome = false
         NaviMapTestHooks.hideSearchChrome = false
     }
@@ -42,7 +43,8 @@ class MultiDayDayCardsScreenshotTest {
         // Corridor labels match the live-GPS Minnesund→Bodø truck confirmation;
         // day metrics are representative multi-day EC 561 segments including a
         // reduced-weekly compensation ledger line on day 1.
-        val days = """
+        val days =
+            """
             [
               {"day_index":1,"date":"2026-07-24","start_km":0.0,"end_km":720.0,"distance_km":720.0,
                "driving_hours":9.0,"profile":"truck","rest_kind":"weekly_reduced","rest_hours":24.0,
@@ -53,9 +55,12 @@ class MultiDayDayCardsScreenshotTest {
                "rest_label":"","overnight_name":"","overnight_found":false,
                "not_in_cab":false,"compensation":"","is_final":true}
             ]
-        """.trimIndent()
+            """.trimIndent()
         return CorridorRouteResult(
-            report = "TEST_KIND=MULTI_DAY_CARDS\nhos_pack=ec561\ntruck_compensation: pending=true; shortfall_h=21; compensate_by=2026-08-16\nPASS\n",
+            report =
+                "TEST_KIND=MULTI_DAY_CARDS\nhos_pack=ec561\n" +
+                    "truck_compensation: pending=true; shortfall_h=21; " +
+                    "compensate_by=2026-08-16\nPASS\n",
             distanceKm = 1068.0,
             etaMinutes = 15.85 * 60.0,
             cacheHit = true,
@@ -75,7 +80,8 @@ class MultiDayDayCardsScreenshotTest {
     }
 
     private fun hikingMultiDayRoute(): CorridorRouteResult {
-        val days = """
+        val days =
+            """
             [
               {"day_index":1,"date":"","start_km":0.0,"end_km":38.5,"distance_km":38.5,
                "driving_hours":0.0,"profile":"hiking","rest_kind":"overnight_hut","rest_hours":0.0,
@@ -86,7 +92,7 @@ class MultiDayDayCardsScreenshotTest {
                "rest_label":"","overnight_name":"","overnight_found":false,
                "not_in_cab":false,"compensation":"","is_final":true}
             ]
-        """.trimIndent()
+            """.trimIndent()
         return CorridorRouteResult(
             report = "TEST_KIND=MULTI_DAY_HIKING_CARDS\nhiking_multi_day: days=2\nPASS\n",
             distanceKm = 78.0,
@@ -128,7 +134,8 @@ class MultiDayDayCardsScreenshotTest {
         while (System.currentTimeMillis() < deadline) {
             composeRule.waitForIdle()
             try {
-                composeRule.onNodeWithTag("multi_day_plan_cards", useUnmergedTree = true)
+                composeRule
+                    .onNodeWithTag("multi_day_plan_cards", useUnmergedTree = true)
                     .assertIsDisplayed()
                 cardsVisible = true
                 break
@@ -190,7 +197,8 @@ class MultiDayDayCardsScreenshotTest {
         while (System.currentTimeMillis() < deadline) {
             composeRule.waitForIdle()
             try {
-                composeRule.onNodeWithTag("multi_day_plan_cards", useUnmergedTree = true)
+                composeRule
+                    .onNodeWithTag("multi_day_plan_cards", useUnmergedTree = true)
                     .assertIsDisplayed()
                 cardsVisible = true
                 break
@@ -207,8 +215,11 @@ class MultiDayDayCardsScreenshotTest {
         val out = File(dataDir, "multi_day_day_cards_hiking.png")
         out.outputStream().use { shot!!.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
         assertTrue(out.length() > 5_000)
-        val pfd = InstrumentationRegistry.getInstrumentation().uiAutomation
-            .executeShellCommand("screencap -p /data/local/tmp/multi_day_day_cards_hiking.png")
+        val pfd =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .uiAutomation
+                .executeShellCommand("screencap -p /data/local/tmp/multi_day_day_cards_hiking.png")
         java.io.FileInputStream(pfd.fileDescriptor).use { input ->
             val buf = ByteArray(4096)
             while (input.read(buf) >= 0) {

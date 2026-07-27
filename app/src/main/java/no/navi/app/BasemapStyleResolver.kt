@@ -60,8 +60,9 @@ object BasemapStyleResolver {
     )
 
     fun hasNetwork(context: Context): Boolean {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            ?: return false
+        val cm =
+            context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                ?: return false
         val network = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(network) ?: return false
         // AAOS / emulator often reports Wi‑Fi without VALIDATED; INTERNET alone
@@ -93,10 +94,11 @@ object BasemapStyleResolver {
         forceOnline2d: Boolean = false,
     ): ResolvedStyle {
         if (!forceOnline2d) {
-            val covering = runCatching {
-                pmtilesListCovering(dataDir.absolutePath, lat, lon)
-            }.getOrDefault(emptyList())
-                .firstOrNull { File(it.localPath).isFile }
+            val covering =
+                runCatching {
+                    pmtilesListCovering(dataDir.absolutePath, lat, lon)
+                }.getOrDefault(emptyList())
+                    .firstOrNull { File(it.localPath).isFile }
 
             if (covering != null) {
                 val localDem = MapterhornTerrain.localDemBesideBasemap(covering.localPath)
@@ -105,29 +107,32 @@ object BasemapStyleResolver {
                 // Always attempt online Mapterhorn DEM when local extract is missing.
                 // Gating on hasNetwork left opt-in 3D looking like a no-op on AAOS.
                 val onlineDem3d = want3d && localDem == null
-                val uri = prepareOfflineStyle(
-                    context,
-                    covering.localPath,
-                    demFor3d = if (offline3d) localDem else null,
-                )
-                    ?: return fallbackOnline(context, prefer3d, vulkanAvailable, "offline style prepare failed")
+                val uri =
+                    prepareOfflineStyle(
+                        context,
+                        covering.localPath,
+                        demFor3d = if (offline3d) localDem else null,
+                    )
+                        ?: return fallbackOnline(context, prefer3d, vulkanAvailable, "offline style prepare failed")
                 return ResolvedStyle(
                     kind = StyleKind.OfflineProtomaps,
                     styleUri = uri,
                     coveringJob = covering,
-                    note = when {
-                        offline3d -> "Offline Protomaps + Mapterhorn DEM hillshade"
-                        onlineDem3d ->
-                            "Offline Protomaps + online Mapterhorn DEM (no local ${covering.regionKey}_dem.pmtiles)"
-                        else -> null
-                    },
+                    note =
+                        when {
+                            offline3d -> "Offline Protomaps + Mapterhorn DEM hillshade"
+                            onlineDem3d ->
+                                "Offline Protomaps + online Mapterhorn DEM (no local ${covering.regionKey}_dem.pmtiles)"
+                            else -> null
+                        },
                     cameraPitch = if (want3d) TERRAIN_VIEW_TILT else 0.0,
                     attachMapterhornTerrain = offline3d || onlineDem3d,
-                    demSourceUri = when {
-                        offline3d -> MapterhornTerrain.demPmtilesUri(localDem!!)
-                        onlineDem3d -> MapterhornTerrain.TILEJSON_URL
-                        else -> null
-                    },
+                    demSourceUri =
+                        when {
+                            offline3d -> MapterhornTerrain.demPmtilesUri(localDem!!)
+                            onlineDem3d -> MapterhornTerrain.TILEJSON_URL
+                            else -> null
+                        },
                 )
             }
         }
@@ -183,18 +188,21 @@ object BasemapStyleResolver {
             copyAssetTree(context, ASSET_STYLE_ROOT, outRoot)
         }
 
-        val template = context.assets.open("$ASSET_STYLE_ROOT/style.template.json")
-            .bufferedReader()
-            .use { it.readText() }
+        val template =
+            context.assets
+                .open("$ASSET_STYLE_ROOT/style.template.json")
+                .bufferedReader()
+                .use { it.readText() }
 
         val spriteBase = File(outRoot, "sprites/light").absolutePath
         val glyphsBase = File(outRoot, "fonts").absolutePath
         val pmtilesUrl = "pmtiles://file://${pmFile.absolutePath}"
 
-        val rewritten = template
-            .replace("__PMTILES_URL__", pmtilesUrl)
-            .replace("__SPRITE__", "file://$spriteBase")
-            .replace("__GLYPHS__", "file://$glyphsBase")
+        val rewritten =
+            template
+                .replace("__PMTILES_URL__", pmtilesUrl)
+                .replace("__SPRITE__", "file://$spriteBase")
+                .replace("__GLYPHS__", "file://$glyphsBase")
 
         // Ensure attribution survives any template edits.
         val json = JSONObject(rewritten)
@@ -217,7 +225,11 @@ object BasemapStyleResolver {
         return "file://${outStyle.absolutePath}"
     }
 
-    private fun copyAssetTree(context: Context, assetPath: String, destDir: File) {
+    private fun copyAssetTree(
+        context: Context,
+        assetPath: String,
+        destDir: File,
+    ) {
         destDir.mkdirs()
         val children = context.assets.list(assetPath) ?: return
         for (name in children) {

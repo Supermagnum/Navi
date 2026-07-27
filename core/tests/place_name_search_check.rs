@@ -70,7 +70,10 @@ fn car_and_hiking_name_search_samples() {
                 );
             }
             None => {
-                eprintln!("FAIL [{profile}] {q:?} -> zero results (index exists: {})", db.exists());
+                eprintln!(
+                    "FAIL [{profile}] {q:?} -> zero results (index exists: {})",
+                    db.exists()
+                );
                 failures.push(*q);
             }
         }

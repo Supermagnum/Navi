@@ -63,12 +63,20 @@ fn main() -> anyhow::Result<()> {
         eprintln!("Rebuild with --features gpsd to enable gpsd");
     }
 
-    println!("Polling SensorBus (Ctrl-C to stop). Compass uses IMU heading; Travel uses GPS course.");
+    println!(
+        "Polling SensorBus (Ctrl-C to stop). Compass uses IMU heading; Travel uses GPS course."
+    );
     loop {
         if let Some(p) = bus.latest_position() {
             println!(
                 "POS lat={:.5} lon={:.5} alt={:?} course={:.1}° speed={:.2} m/s sats={:?} eph={:?}",
-                p.lat, p.lon, p.altitude_m, p.course_deg, p.speed_m_s, p.satellites_used, p.horizontal_accuracy_m
+                p.lat,
+                p.lon,
+                p.altitude_m,
+                p.course_deg,
+                p.speed_m_s,
+                p.satellites_used,
+                p.horizontal_accuracy_m
             );
         }
         if let Some(imu) = bus.latest_imu() {

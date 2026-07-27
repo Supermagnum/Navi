@@ -3,7 +3,6 @@ package no.navi.app
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -23,17 +22,17 @@ import java.io.File
  */
 @RunWith(AndroidJUnit4::class)
 class AvoidMajorShareInstrumentedTest {
-
     @Test
     fun priorityShare_fromPlan_differsWithAvoidToggle_andIsNotDemoConstants() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val dataDir = NaviAppData.resolve(ctx)
-        val pbf = listOf(
-            File(dataDir, "ostlandet-latest.osm.pbf"),
-            File(dataDir, "oppland-latest.osm.pbf"),
-            File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
-            File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"),
-        ).firstOrNull { it.isFile }
+        val pbf =
+            listOf(
+                File(dataDir, "ostlandet-latest.osm.pbf"),
+                File(dataDir, "oppland-latest.osm.pbf"),
+                File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
+                File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"),
+            ).firstOrNull { it.isFile }
         assumeTrue("region PBF required", pbf != null)
 
         val startLat = 60.7163834
@@ -42,49 +41,52 @@ class AvoidMajorShareInstrumentedTest {
         val endLon = 10.635
         val elev = File(dataDir, "elevation").absolutePath
         val cache = File(dataDir, "graph-cache-avoid-share-test").absolutePath
-        val vehicle = FfiVehicleLimits(
-            axleWeightKg = null,
-            bogieWeightKg = null,
-            heightM = null,
-            widthM = null,
-            lengthM = null,
-            totalWeightKg = null,
-        )
+        val vehicle =
+            FfiVehicleLimits(
+                axleWeightKg = null,
+                bogieWeightKg = null,
+                heightM = null,
+                widthM = null,
+                lengthM = null,
+                totalWeightKg = null,
+            )
 
-        val off = planCarRoute(
-            pbf!!.absolutePath,
-            elev,
-            cache,
-            startLat,
-            startLon,
-            endLat,
-            endLon,
-            useEco = false,
-            profile = TravelProfile.CAR,
-            avoidMajor = false,
-            avoidTolls = false,
-            avoidFerries = false,
-            vehicle = vehicle,
-            preferOfficialNetworks = false,
-        )
+        val off =
+            planCarRoute(
+                pbf!!.absolutePath,
+                elev,
+                cache,
+                startLat,
+                startLon,
+                endLat,
+                endLon,
+                useEco = false,
+                profile = TravelProfile.CAR,
+                avoidMajor = false,
+                avoidTolls = false,
+                avoidFerries = false,
+                vehicle = vehicle,
+                preferOfficialNetworks = false,
+            )
         assertTrue("plan avoid=off must PASS: ${off.report}", off.report.contains("PASS"))
 
-        val on = planCarRoute(
-            pbf.absolutePath,
-            elev,
-            cache,
-            startLat,
-            startLon,
-            endLat,
-            endLon,
-            useEco = false,
-            profile = TravelProfile.CAR,
-            avoidMajor = true,
-            avoidTolls = false,
-            avoidFerries = false,
-            vehicle = vehicle,
-            preferOfficialNetworks = false,
-        )
+        val on =
+            planCarRoute(
+                pbf.absolutePath,
+                elev,
+                cache,
+                startLat,
+                startLon,
+                endLat,
+                endLon,
+                useEco = false,
+                profile = TravelProfile.CAR,
+                avoidMajor = true,
+                avoidTolls = false,
+                avoidFerries = false,
+                vehicle = vehicle,
+                preferOfficialNetworks = false,
+            )
         assertTrue("plan avoid=on must PASS: ${on.report}", on.report.contains("PASS"))
 
         val shareOff = off.priorityPathSharePct
@@ -102,38 +104,40 @@ class AvoidMajorShareInstrumentedTest {
         val hamarLon = 11.0680
         val lhLat = 61.1153
         val lhLon = 10.4662
-        val hwyOff = planCarRoute(
-            pbf.absolutePath,
-            elev,
-            cache,
-            hamarLat,
-            hamarLon,
-            lhLat,
-            lhLon,
-            useEco = false,
-            profile = TravelProfile.CAR,
-            avoidMajor = false,
-            avoidTolls = false,
-            avoidFerries = false,
-            vehicle = vehicle,
-            preferOfficialNetworks = false,
-        )
-        val hwyOn = planCarRoute(
-            pbf.absolutePath,
-            elev,
-            cache,
-            hamarLat,
-            hamarLon,
-            lhLat,
-            lhLon,
-            useEco = false,
-            profile = TravelProfile.CAR,
-            avoidMajor = true,
-            avoidTolls = false,
-            avoidFerries = false,
-            vehicle = vehicle,
-            preferOfficialNetworks = false,
-        )
+        val hwyOff =
+            planCarRoute(
+                pbf.absolutePath,
+                elev,
+                cache,
+                hamarLat,
+                hamarLon,
+                lhLat,
+                lhLon,
+                useEco = false,
+                profile = TravelProfile.CAR,
+                avoidMajor = false,
+                avoidTolls = false,
+                avoidFerries = false,
+                vehicle = vehicle,
+                preferOfficialNetworks = false,
+            )
+        val hwyOn =
+            planCarRoute(
+                pbf.absolutePath,
+                elev,
+                cache,
+                hamarLat,
+                hamarLon,
+                lhLat,
+                lhLon,
+                useEco = false,
+                profile = TravelProfile.CAR,
+                avoidMajor = true,
+                avoidTolls = false,
+                avoidFerries = false,
+                vehicle = vehicle,
+                preferOfficialNetworks = false,
+            )
         assumeTrue("Hamar–Lillehammer plan off PASS", hwyOff.report.contains("PASS"))
         assumeTrue("Hamar–Lillehammer plan on PASS", hwyOn.report.contains("PASS"))
         assertFalse(hwyOff.priorityPathSharePct == 72.5 || hwyOn.priorityPathSharePct == 72.5)

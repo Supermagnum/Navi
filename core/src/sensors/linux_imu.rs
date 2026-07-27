@@ -15,12 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use super::{ImuSample, SensorBus};
 
 /// Publish a fused heading/attitude sample onto the sensor bus.
-pub fn publish_imu(
-    bus: &SensorBus,
-    heading_deg: f64,
-    pitch_deg: f64,
-    roll_deg: f64,
-) {
+pub fn publish_imu(bus: &SensorBus, heading_deg: f64, pitch_deg: f64, roll_deg: f64) {
     let timestamp_unix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())

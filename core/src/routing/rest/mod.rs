@@ -8,15 +8,12 @@ mod truck_duty;
 mod truck_multi_day;
 
 use crate::config::{Profile, ProfileRestParams, RestConfig, TruckRestParams};
-use crate::config::{
-    TRUCK_SPLIT_BREAK_FIRST_MINUTES, TRUCK_SPLIT_BREAK_SECOND_MINUTES,
-};
+use crate::config::{TRUCK_SPLIT_BREAK_FIRST_MINUTES, TRUCK_SPLIT_BREAK_SECOND_MINUTES};
 
 pub use fmcsa_multi_day::{evaluate_fmcsa_trip, plan_fmcsa_multi_day};
 pub use hiking_multi_day::{
-    choose_hiking_overnight, hiking_samples_from_coords, plan_hiking_multi_day,
-    HikingDaySegment, HikingMultiDayPlan, HikingOvernightStop, HikingRouteSample,
-    OVERNIGHT_NEAR_HUT_MAX_M,
+    choose_hiking_overnight, hiking_samples_from_coords, plan_hiking_multi_day, HikingDaySegment,
+    HikingMultiDayPlan, HikingOvernightStop, HikingRouteSample, OVERNIGHT_NEAR_HUT_MAX_M,
 };
 pub use hos_jurisdiction::resolve_driving_hours_pack_at;
 pub use motor_multi_day::{
@@ -167,7 +164,11 @@ mod tests {
         let dist = 500.0;
         let eta_min = 6.25 * 60.0;
         let breaks = truck_break_distances_km(&truck, dist, eta_min);
-        assert_eq!(breaks.len(), 1, "expected one break under default 4.5 h: {breaks:?}");
+        assert_eq!(
+            breaks.len(),
+            1,
+            "expected one break under default 4.5 h: {breaks:?}"
+        );
         assert!(
             (breaks[0] - 360.0).abs() < 1.0,
             "break at {} km, want ~360",

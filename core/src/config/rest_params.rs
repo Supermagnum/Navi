@@ -4,23 +4,12 @@ use super::defaults::*;
 use super::Profile;
 
 /// Per-profile rest parameters persisted and editable via host UI.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RestConfig {
     pub car: CarRestParams,
     pub truck: TruckRestParams,
     pub hiking: HikingRestParams,
     pub cycling: CyclingRestParams,
-}
-
-impl Default for RestConfig {
-    fn default() -> Self {
-        Self {
-            car: CarRestParams::default(),
-            truck: TruckRestParams::default(),
-            hiking: HikingRestParams::default(),
-            cycling: CyclingRestParams::default(),
-        }
-    }
 }
 
 /// Car rest parameters (also used for motorcycle and mobilehome soft guidance).
@@ -211,9 +200,7 @@ impl RestConfig {
             | Profile::CarElectric
             | Profile::Motorcycle
             | Profile::MotorcycleElectric => ProfileRestParams::Car(&self.car),
-            Profile::Truck | Profile::TruckElectric => {
-                ProfileRestParams::Truck(&self.truck)
-            }
+            Profile::Truck | Profile::TruckElectric => ProfileRestParams::Truck(&self.truck),
             // MobileHome: private motorhome drivers are not under EC 561/2006.
             // Rest reminders use the same soft Car cadence (driver-chosen hours),
             // not commercial HGV legal tracking. Clearance limits still use the

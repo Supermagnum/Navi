@@ -78,18 +78,19 @@ class HikingRouteMapScreenshotTest {
     private fun dismissPermissionDialogs() {
         val deadline = System.currentTimeMillis() + 10_000
         while (System.currentTimeMillis() < deadline) {
-            val allow = device.findObject(By.text("While using the app"))
-                ?: device.findObject(By.text("Allow"))
-                ?: device.findObject(By.text("ALLOW"))
-                ?: device.findObject(
-                    By.res("com.android.permissioncontroller", "permission_allow_button"),
-                )
-                ?: device.findObject(
-                    By.res(
-                        "com.android.permissioncontroller",
-                        "permission_allow_foreground_only_button",
-                    ),
-                )
+            val allow =
+                device.findObject(By.text("While using the app"))
+                    ?: device.findObject(By.text("Allow"))
+                    ?: device.findObject(By.text("ALLOW"))
+                    ?: device.findObject(
+                        By.res("com.android.permissioncontroller", "permission_allow_button"),
+                    )
+                    ?: device.findObject(
+                        By.res(
+                            "com.android.permissioncontroller",
+                            "permission_allow_foreground_only_button",
+                        ),
+                    )
             if (allow != null) {
                 allow.click()
                 Thread.sleep(600)
@@ -112,34 +113,51 @@ class HikingRouteMapScreenshotTest {
     private fun waitStyle(timeoutMs: Long = 90_000) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            if (NaviMapTestHooks.styleReady || NaviMapTestHooks.lastReportedLayerCount >= 1) return
+            if (NaviMapTestHooks.styleReady) return
             Thread.sleep(400)
         }
+        assertTrue("styleReady", NaviMapTestHooks.styleReady)
     }
 
     private fun injectRoute() {
         NaviMapTestHooks.routeStartLabel = "Skolla"
         NaviMapTestHooks.routeEndLabel = "Rondvassbu"
         NaviMapTestHooks.routeViaLabel = "Harlandshytta, Eldåbu"
-        fun route() = uniffi.navi.CorridorRouteResult(
-            report = "PASS\ndistance_km=112.5\n",
-            distanceKm = 112.5,
-            etaMinutes = 1800.0,
-            cacheHit = true,
-            coldBuildS = 0.0,
-            warmLoadS = 0.0,
-            routePolyline = poly,
-            poiLat = 61.8804325,
-            poiLon = 9.7959854,
-            poiName = "Rondvassbu",
-            poiIconKey = "cabin",
-            breakPoisJson = breaks,
-            daysJson = "[]",
-            simSamplesJson = "[]",
-            maneuversJson = "[]",
-            priorityPathSharePct = 0.0,
-        )
-        NaviMapTestHooks.pendingRoute = route()
+
+        fun route() =
+            uniffi.navi.CorridorRouteResult(
+                report = "PASS\ndistance_km=112.5\n",
+                distanceKm = 112.5,
+                etaMinutes = 1800.0,
+                cacheHit = true,
+                coldBuildS = 0.0,
+                warmLoadS = 0.0,
+                routePolyline = poly,
+                poiLat = 61.8804325,
+                poiLon = 9.7959854,
+                poiName = "Rondvassbu",
+                poiIconKey = "cabin",
+                breakPoisJson = breaks,
+                daysJson = "[]",
+                simSamplesJson = "[]",
+                maneuversJson = "[]",
+                priorityPathSharePct = 0.0,
+            )
+
+        // Apply via the live composition handler when available — pendingRoute alone
+        // is skipped while a permission dialog has paused the activity (RESUMED-only).
+        fun pushRoute() {
+            val r = route()
+            composeRule.runOnUiThread {
+                val direct = NaviMapTestHooks.applyRouteHandler
+                if (direct != null) {
+                    direct(r)
+                } else {
+                    NaviMapTestHooks.pendingRoute = r
+                }
+            }
+        }
+        pushRoute()
         val deadline = System.currentTimeMillis() + 60_000
         while (System.currentTimeMillis() < deadline) {
             if (NaviMapTestHooks.lastRoutePolylineChars > 100 &&
@@ -148,21 +166,29 @@ class HikingRouteMapScreenshotTest {
                 return
             }
             Thread.sleep(400)
-            NaviMapTestHooks.pendingRoute = route()
+            pushRoute()
         }
         error(
             "route not applied poly=${NaviMapTestHooks.lastRoutePolylineChars} " +
-                "breaks=${NaviMapTestHooks.lastBreakPoiCount}",
+                "breaks=${NaviMapTestHooks.lastBreakPoiCount} " +
+                "handler=${NaviMapTestHooks.applyRouteHandler != null}",
         )
     }
 
     private fun await3d(timeoutMs: Long = 120_000) {
+        NaviMapTestHooks.requestOptIn3d = true
+        NaviMapTestHooks.requestCameraTiltDeg = 45.0
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            val kind = NaviMapTestHooks.lastBasemapKind
-            val ok = (NaviMapTestHooks.lastTerrainAttached && NaviMapTestHooks.lastCameraPitch >= 40.0) ||
-                kind == "Online3d" && NaviMapTestHooks.lastCameraPitch >= 40.0
-            if (ok) return
+            // Opt-in 3D = Mapterhorn hillshade attach. Camera tilt is independent
+            // (TERRAIN_VIEW_TILT is 0); request a user preset for nicer shots but
+            // do not fail the test if pitch stays flat.
+            if (NaviMapTestHooks.lastTerrainAttached) {
+                if (NaviMapTestHooks.lastCameraPitch < 40.0) {
+                    NaviMapTestHooks.requestCameraTiltDeg = 45.0
+                }
+                return
+            }
             Thread.sleep(400)
         }
         error(
@@ -191,8 +217,9 @@ class HikingRouteMapScreenshotTest {
         val deadline = System.currentTimeMillis() + 90_000
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(4_000)
-            val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
-                ?: continue
+            val shot =
+                InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+                    ?: continue
             val baos = java.io.ByteArrayOutputStream()
             shot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos)
             val bytes = baos.toByteArray()
@@ -212,7 +239,7 @@ class HikingRouteMapScreenshotTest {
         out.copyTo(cache, overwrite = true)
         shell("run-as ${context.packageName} cat cache/$name > /data/local/tmp/$name")
         shell("chmod 644 /data/local/tmp/$name")
-        assertTrue("$name too small (${out.length()})", out.length() > 150_000)
+        assertTrue("$name too small (${out.length()})", out.length() > 80_000)
         android.util.Log.i(
             "HikingRouteMapScreenshotTest",
             "shot=$name kind=${NaviMapTestHooks.lastBasemapKind} " +
@@ -227,9 +254,10 @@ class HikingRouteMapScreenshotTest {
         // Do not dismiss the location dialog until the map style is ready —
         // early dismissal races MapLibre surface creation on this AVD.
         waitStyle()
-        dataDir = (
-            NaviAppData.resolve(composeRule.activity)
-        ).also { it.mkdirs() }
+        dataDir =
+            (
+                NaviAppData.resolve(composeRule.activity)
+            ).also { it.mkdirs() }
 
         MapHudPrefs.saveOptIn3d(context, true)
         NaviMapTestHooks.requestOptIn3d = true

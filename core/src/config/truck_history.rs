@@ -90,11 +90,7 @@ pub fn record_truck_driving_hours(
 /// The fortnightly 90 h cap only sums the last ~14 days passed into
 /// [`crate::routing::rest::evaluate_truck_trip`]; this prune keeps the
 /// persisted blob from growing without bound.
-pub fn prune_truck_driving_history(
-    history: &mut TruckDrivingHistory,
-    today: &str,
-    keep_days: i64,
-) {
+pub fn prune_truck_driving_history(history: &mut TruckDrivingHistory, today: &str, keep_days: i64) {
     let Some(cutoff) = civil_date_add_days(today, -keep_days) else {
         return;
     };
@@ -165,8 +161,8 @@ pub fn try_repay_weekly_rest_compensation(
         return false;
     };
     let shortfall = history.weekly_rest_compensations[idx].shortfall_hours;
-    let can_repay = attached_rest_hours + 1e-6 >= 9.0 + shortfall
-        || attached_rest_hours + 1e-6 >= 45.0;
+    let can_repay =
+        attached_rest_hours + 1e-6 >= 9.0 + shortfall || attached_rest_hours + 1e-6 >= 45.0;
     if !can_repay {
         return false;
     }
@@ -267,10 +263,7 @@ mod tests {
     #[test]
     fn iso_week_monday_known_friday() {
         // 2026-07-24 is a Friday; ISO week Monday is 2026-07-20.
-        assert_eq!(
-            iso_week_monday("2026-07-24").as_deref(),
-            Some("2026-07-20")
-        );
+        assert_eq!(iso_week_monday("2026-07-24").as_deref(), Some("2026-07-20"));
     }
 
     #[test]

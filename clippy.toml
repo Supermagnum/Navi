@@ -1,0 +1,4 @@
+# Workspace Clippy policy for CI (`-D warnings`).
+# Routing / elevation / IMU APIs intentionally take many parameters; raise the
+# threshold rather than sprinkling allows or reshaping public call sites in CI.
+too-many-arguments-threshold = 24

@@ -50,8 +50,8 @@ fun parseDaysJson(raw: String): List<MultiDayCard> {
     }
 }
 
-private fun multiDayCardFromJson(o: JSONObject): MultiDayCard {
-    return MultiDayCard(
+private fun multiDayCardFromJson(o: JSONObject): MultiDayCard =
+    MultiDayCard(
         dayIndex = o.optInt("day_index", 0),
         date = o.optString("date").orEmpty(),
         startKm = o.optDouble("start_km", 0.0),
@@ -68,7 +68,6 @@ private fun multiDayCardFromJson(o: JSONObject): MultiDayCard {
         compensation = o.optString("compensation").orEmpty(),
         isFinal = o.optBoolean("is_final", false),
     )
-}
 
 /**
  * Day-by-day plan cards for multi-day corridors (truck / motor / hiking).
@@ -81,9 +80,10 @@ fun MultiDayPlanCards(
 ) {
     if (days.size <= 1) return
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("multi_day_plan_cards"),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .testTag("multi_day_plan_cards"),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
@@ -95,20 +95,22 @@ fun MultiDayPlanCards(
             Surface(
                 shape = RoundedCornerShape(10.dp),
                 tonalElevation = 3.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("multi_day_card_${day.dayIndex}"),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag("multi_day_card_${day.dayIndex}"),
             ) {
                 Column(modifier = Modifier.padding(10.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        val title = buildString {
-                            append("Day ${day.dayIndex}")
-                            if (day.date.isNotBlank()) append(" · ${day.date}")
-                            if (day.isFinal) append(" (arrival)")
-                        }
+                        val title =
+                            buildString {
+                                append("Day ${day.dayIndex}")
+                                if (day.date.isNotBlank()) append(" · ${day.date}")
+                                if (day.isFinal) append(" (arrival)")
+                            }
                         Text(title, style = MaterialTheme.typography.bodyLarge)
                         if (day.distanceKm > 0.0) {
                             Text(
@@ -117,33 +119,36 @@ fun MultiDayPlanCards(
                             )
                         }
                     }
-                    val driveLine = buildList {
-                        if (day.drivingHours > 0.0) {
-                            add("%.1f h driving".format(day.drivingHours))
-                        }
-                        if (day.startKm > 0.0 || day.endKm > 0.0) {
-                            add("%.0f–%.0f km".format(day.startKm, day.endKm))
-                        }
-                    }.joinToString(" · ")
+                    val driveLine =
+                        buildList {
+                            if (day.drivingHours > 0.0) {
+                                add("%.1f h driving".format(day.drivingHours))
+                            }
+                            if (day.startKm > 0.0 || day.endKm > 0.0) {
+                                add("%.0f–%.0f km".format(day.startKm, day.endKm))
+                            }
+                        }.joinToString(" · ")
                     if (driveLine.isNotBlank()) {
                         Text(driveLine, style = MaterialTheme.typography.bodySmall)
                     }
                     if (!day.isFinal) {
-                        val overnight = when {
-                            day.overnightFound && day.overnightName.isNotBlank() ->
-                                " @ ${day.overnightName}"
-                            day.overnightName.isNotBlank() ->
-                                " @ ${day.overnightName} (approx)"
-                            else ->
-                                " — no match found; plan continued"
-                        }
-                        val rest = day.restLabel.ifBlank {
-                            if (day.restHours > 0.0) {
-                                "%.0f h rest".format(day.restHours)
-                            } else {
-                                "Overnight"
+                        val overnight =
+                            when {
+                                day.overnightFound && day.overnightName.isNotBlank() ->
+                                    " @ ${day.overnightName}"
+                                day.overnightName.isNotBlank() ->
+                                    " @ ${day.overnightName} (approx)"
+                                else ->
+                                    " — no match found; plan continued"
                             }
-                        }
+                        val rest =
+                            day.restLabel.ifBlank {
+                                if (day.restHours > 0.0) {
+                                    "%.0f h rest".format(day.restHours)
+                                } else {
+                                    "Overnight"
+                                }
+                            }
                         val cab = if (day.notInCab) " — not in cab" else ""
                         Text(
                             "$rest$overnight$cab",

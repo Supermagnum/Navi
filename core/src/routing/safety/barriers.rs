@@ -105,10 +105,7 @@ impl DangerBarrierIndex {
             let Some(h) = e.highway.as_deref() else {
                 continue;
             };
-            if !matches!(
-                h,
-                "motorway" | "motorway_link" | "trunk" | "trunk_link"
-            ) {
+            if !matches!(h, "motorway" | "motorway_link" | "trunk" | "trunk_link") {
                 continue;
             }
             let Some(a) = graph.nodes.get(&e.source) else {
@@ -280,8 +277,7 @@ fn point_in_ring(p: [f64; 2], ring: &[[f64; 2]]) -> bool {
         let pi = ring[i];
         let pj = ring[j];
         let intersect = ((pi[1] > p[1]) != (pj[1] > p[1]))
-            && (p[0]
-                < (pj[0] - pi[0]) * (p[1] - pi[1]) / (pj[1] - pi[1] + f64::EPSILON) + pi[0]);
+            && (p[0] < (pj[0] - pi[0]) * (p[1] - pi[1]) / (pj[1] - pi[1] + f64::EPSILON) + pi[0]);
         if intersect {
             inside = !inside;
         }

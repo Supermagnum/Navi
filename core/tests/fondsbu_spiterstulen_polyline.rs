@@ -86,6 +86,7 @@ fn write_fondsbu_spiterstulen_polyline() {
         path.len(),
         polyline.len()
     );
-    let staging = PathBuf::from("core/target/integration-fixtures/fondsbu_spiterstulen.polyline.txt");
+    let staging =
+        PathBuf::from("core/target/integration-fixtures/fondsbu_spiterstulen.polyline.txt");
     let _ = fs::copy(&out, &staging);
 }

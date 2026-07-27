@@ -111,7 +111,11 @@ pub fn dist_point_to_segment_m(
 }
 
 fn edge_label(e: &GraphEdge) -> String {
-    current_road_label(e.name.as_deref(), e.road_ref.as_deref(), e.highway.as_deref())
+    current_road_label(
+        e.name.as_deref(),
+        e.road_ref.as_deref(),
+        e.highway.as_deref(),
+    )
 }
 
 fn edge_has_name_or_ref(e: &GraphEdge) -> bool {
@@ -207,7 +211,10 @@ mod tests {
             NodeId(1),
             Node {
                 id: NodeId(1),
-                coord: Coord { x: 9.9270, y: 61.4197 },
+                coord: Coord {
+                    x: 9.9270,
+                    y: 61.4197,
+                },
                 uses: 0,
             },
         );
@@ -215,7 +222,10 @@ mod tests {
             NodeId(2),
             Node {
                 id: NodeId(2),
-                coord: Coord { x: 9.9280, y: 61.4197 },
+                coord: Coord {
+                    x: 9.9280,
+                    y: 61.4197,
+                },
                 uses: 0,
             },
         );
@@ -223,7 +233,10 @@ mod tests {
             NodeId(3),
             Node {
                 id: NodeId(3),
-                coord: Coord { x: 9.9276, y: 61.4199 },
+                coord: Coord {
+                    x: 9.9276,
+                    y: 61.4199,
+                },
                 uses: 0,
             },
         );
@@ -241,15 +254,7 @@ mod tests {
                 Some("Peer Gyntvegen"),
             ),
             edge(
-                "stub",
-                1,
-                3,
-                61.4197,
-                9.9276,
-                61.4199,
-                9.9276,
-                "service",
-                None,
+                "stub", 1, 3, 61.4197, 9.9276, 61.4199, 9.9276, "service", None,
             ),
         ];
         let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
@@ -268,8 +273,8 @@ mod tests {
             return;
         }
         let bbox = [61.40, 9.90, 61.44, 9.96];
-        let graph = RouteGraph::build_from_pbf_bbox(pbf, RoutingProfile::Car, bbox)
-            .expect("bbox graph");
+        let graph =
+            RouteGraph::build_from_pbf_bbox(pbf, RoutingProfile::Car, bbox).expect("bbox graph");
         let label = nearest_road_label(&graph, 61.419774, 9.927647, 80.0);
         assert_eq!(
             label.as_deref(),

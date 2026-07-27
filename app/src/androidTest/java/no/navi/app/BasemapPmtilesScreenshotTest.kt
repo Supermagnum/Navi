@@ -40,6 +40,7 @@ class BasemapPmtilesScreenshotTest {
         assertTrue(File(done.localPath).length() > 1000)
 
         MapHudPrefs.saveOptIn3d(context, false)
+        MapHudPrefs.saveCameraTiltDeg(context, 0.0)
         // Keep drive HUD bars; only tuck search/tools panels.
         NaviMapTestHooks.hideUiChrome = false
         NaviMapTestHooks.hideSearchChrome = true
@@ -60,7 +61,12 @@ class BasemapPmtilesScreenshotTest {
             pfd.close()
         }
 
-        fun waitCamera(lat: Double, lon: Double, zoom: Double, timeoutMs: Long = 20_000) {
+        fun waitCamera(
+            lat: Double,
+            lon: Double,
+            zoom: Double,
+            timeoutMs: Long = 20_000,
+        ) {
             NaviMapTestHooks.pendingCamera = Triple(lat, lon, zoom)
             val deadline = System.currentTimeMillis() + timeoutMs
             while (System.currentTimeMillis() < deadline) {
@@ -76,7 +82,10 @@ class BasemapPmtilesScreenshotTest {
             }
         }
 
-        fun waitHudAltitude(expected: Double, timeoutMs: Long = 10_000) {
+        fun waitHudAltitude(
+            expected: Double,
+            timeoutMs: Long = 10_000,
+        ) {
             val deadline = System.currentTimeMillis() + timeoutMs
             while (System.currentTimeMillis() < deadline) {
                 val got = NaviMapTestHooks.lastHudAltitudeM
@@ -124,14 +133,15 @@ class BasemapPmtilesScreenshotTest {
                 NaviMapTestHooks.pendingCamera = Triple(osloLat, osloLon, 12.0)
             }
         }
-        val direct = BasemapStyleResolver.resolve(
-            context = context,
-            dataDir = dataDir,
-            lat = osloLat,
-            lon = osloLon,
-            prefer3d = false,
-            vulkanAvailable = true,
-        )
+        val direct =
+            BasemapStyleResolver.resolve(
+                context = context,
+                dataDir = dataDir,
+                lat = osloLat,
+                lon = osloLon,
+                prefer3d = false,
+                vulkanAvailable = true,
+            )
         assertEquals(BasemapStyleResolver.StyleKind.OfflineProtomaps, direct.kind)
         assertTrue("map never switched to OfflineProtomaps (was $kind)", kind == "OfflineProtomaps")
         capture("basemap_offline_protomaps.png")
@@ -152,16 +162,19 @@ class BasemapPmtilesScreenshotTest {
         capture("basemap_coverage_boundary_tromso.png")
 
         // Gjendebu (Jotunheimen) — DEM hillshade is visually obvious in the valley.
+        // Toggle 3D via hooks (no finishActivity/relaunch): destroying MapLibre's
+        // Vulkan MapRenderer from ActivityTestRule mid-suite has crashed the
+        // instrumentation process in AndroidVulkanRendererBackend::~… on the
+        // FinalizerDaemon.
         val gjendeLat = 61.493
         val gjendeLon = 8.351
-        MapHudPrefs.saveOptIn3d(context, true)
         NaviMapTestHooks.gpsAltitudeM = 1000.0
-        activityRule.finishActivity()
-        Thread.sleep(1_000)
-        activityRule.launchActivity(null)
-        Thread.sleep(5_000)
         waitHudAltitude(1000.0)
         waitCamera(gjendeLat, gjendeLon, 12.0)
+        // Opt-in hillshade is independent of camera tilt (TERRAIN_VIEW_TILT=0).
+        // Request a user tilt preset so the screenshot shows perspective + DEM.
+        NaviMapTestHooks.requestOptIn3d = true
+        NaviMapTestHooks.requestCameraTiltDeg = 45.0
         var kind3d = ""
         repeat(40) {
             Thread.sleep(500)
@@ -174,6 +187,8 @@ class BasemapPmtilesScreenshotTest {
             }
             if (it % 8 == 7) {
                 NaviMapTestHooks.pendingCamera = Triple(gjendeLat, gjendeLon, 12.0)
+                NaviMapTestHooks.requestOptIn3d = true
+                NaviMapTestHooks.requestCameraTiltDeg = 45.0
             }
         }
         assertEquals("Online3d", kind3d)
@@ -181,27 +196,27 @@ class BasemapPmtilesScreenshotTest {
             "Mapterhorn hillshade must attach (terrain=${NaviMapTestHooks.lastTerrainAttached})",
             NaviMapTestHooks.lastTerrainAttached,
         )
-        assertTrue(NaviMapTestHooks.lastCameraPitch >= 40.0)
+        assertTrue(
+            "user tilt preset should apply with Vulkan (pitch=${NaviMapTestHooks.lastCameraPitch})",
+            NaviMapTestHooks.lastCameraPitch >= 40.0,
+        )
         capture("basemap_3d_mapterhorn_hillshade.png")
 
-        MapHudPrefs.saveOptIn3d(context, false)
-        val fallback = BasemapStyleResolver.resolve(
-            context = context,
-            dataDir = dataDir,
-            lat = gjendeLat,
-            lon = gjendeLon,
-            prefer3d = true,
-            vulkanAvailable = false,
-            forceOnline2d = true,
-        )
+        val fallback =
+            BasemapStyleResolver.resolve(
+                context = context,
+                dataDir = dataDir,
+                lat = gjendeLat,
+                lon = gjendeLon,
+                prefer3d = true,
+                vulkanAvailable = false,
+                forceOnline2d = true,
+            )
         assertEquals(BasemapStyleResolver.StyleKind.OnlineLiberty, fallback.kind)
-        activityRule.finishActivity()
-        Thread.sleep(500)
-        activityRule.launchActivity(null)
-        Thread.sleep(4_000)
-        waitHudAltitude(1000.0)
+        NaviMapTestHooks.requestOptIn3d = false
+        NaviMapTestHooks.requestCameraTiltDeg = 0.0
         waitCamera(gjendeLat, gjendeLon, 12.0)
-        repeat(20) {
+        repeat(30) {
             Thread.sleep(400)
             if (NaviMapTestHooks.lastBasemapKind == "OnlineLiberty" &&
                 NaviMapTestHooks.lastCameraPitch < 5.0 &&
@@ -209,7 +224,16 @@ class BasemapPmtilesScreenshotTest {
             ) {
                 return@repeat
             }
+            if (it % 8 == 7) {
+                NaviMapTestHooks.requestOptIn3d = false
+                NaviMapTestHooks.requestCameraTiltDeg = 0.0
+            }
         }
+        assertEquals("OnlineLiberty", NaviMapTestHooks.lastBasemapKind)
+        assertTrue(
+            "terrain must detach when 3D off (terrain=${NaviMapTestHooks.lastTerrainAttached})",
+            !NaviMapTestHooks.lastTerrainAttached,
+        )
         capture("basemap_3d_fallback_liberty.png")
     }
 }

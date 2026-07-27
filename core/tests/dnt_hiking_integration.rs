@@ -222,7 +222,10 @@ fn run_integration() -> anyhow::Result<()> {
         ("End Rondvassbu", END_LAT, END_LON, goal),
     ] {
         let d = haversine_m(lat, lon, snap.1, snap.2);
-        report.line(&format!("{label} snap: {:.0} m to graph node {}", d, snap.0.0));
+        report.line(&format!(
+            "{label} snap: {:.0} m to graph node {}",
+            d, snap.0 .0
+        ));
         assert!(d < 500.0, "{label} snap too far: {d:.0} m");
     }
 
@@ -340,7 +343,11 @@ fn run_integration() -> anyhow::Result<()> {
         "sample cumulative ({sample_total_km:.3}) must match route_metrics ({total_km:.3})"
     );
     let days = plan_multi_day(&samples, &rest, &safety, &poi_index);
-    assert!(days.len() > 1, "expected multiple day segments, got {}", days.len());
+    assert!(
+        days.len() > 1,
+        "expected multiple day segments, got {}",
+        days.len()
+    );
     let day_sum_km: f64 = days.iter().map(|d| d.distance_km).sum();
     let day_sum_rel = if total_km > 0.0 {
         (day_sum_km - total_km).abs() / total_km
@@ -356,8 +363,12 @@ fn run_integration() -> anyhow::Result<()> {
         "sum(day distances) {day_sum_km:.2} km must be within 0.5% of route {total_km:.2} km (got {:.2}%)",
         day_sum_rel * 100.0
     );
-    report.line("| Day | Start km | End km | Distance km | Rest stops | Overnight | Hut dist m | Detour |");
-    report.line("|-----|----------|--------|-------------|------------|-----------|------------|--------|");
+    report.line(
+        "| Day | Start km | End km | Distance km | Rest stops | Overnight | Hut dist m | Detour |",
+    );
+    report.line(
+        "|-----|----------|--------|-------------|------------|-----------|------------|--------|",
+    );
 
     let max_daily = rest.hiking.max_daily_distance_km;
     let mut gap_days = 0u32;
@@ -474,12 +485,7 @@ fn run_integration() -> anyhow::Result<()> {
     report.section("5. Water POIs along corridor");
     // Separate indexing health from corridor sparsity: eco-shortened highland
     // paths can legitimately miss drinking_water/spring nodes within 2 km.
-    let trailhead_water = poi_index.nearest(
-        PoiCategory::Water,
-        START_LAT,
-        START_LON,
-        5_000.0,
-    );
+    let trailhead_water = poi_index.nearest(PoiCategory::Water, START_LAT, START_LON, 5_000.0);
     report.line(&format!(
         "Indexing check — water within 5 km of Aakersaetra: {}",
         trailhead_water.len()
@@ -527,9 +533,8 @@ fn run_integration() -> anyhow::Result<()> {
         search_radius,
         water_hits.len()
     ));
-    report.line(
-        "Note: natural/untreated sources should be treated before drinking (informational).",
-    );
+    report
+        .line("Note: natural/untreated sources should be treated before drinking (informational).");
     for (id, name, lat, lon) in water_hits.iter().take(20) {
         report.line(&format!("  id={id} name={name:?} ({lat:.5}, {lon:.5})"));
     }
@@ -569,7 +574,10 @@ fn run_integration() -> anyhow::Result<()> {
     let mut no_poi_alt = 0u32;
     let mut forced_main = 0u32;
     let mut other_alt = 0u32;
-    for r in all_rests.iter().filter(|r| matches!(r.kind, RestKind::Alternative)) {
+    for r in all_rests
+        .iter()
+        .filter(|r| matches!(r.kind, RestKind::Alternative))
+    {
         let reason = r.reason.as_deref().unwrap_or("");
         if reason.contains("alt POI found") {
             no_poi_alt += 1;
@@ -581,7 +589,11 @@ fn run_integration() -> anyhow::Result<()> {
         report.line(&format!(
             "  alt @ {:.2} km: {}",
             r.cumulative_km,
-            if reason.is_empty() { "(no reason)" } else { reason }
+            if reason.is_empty() {
+                "(no reason)"
+            } else {
+                reason
+            }
         ));
     }
     report.line(&format!(
@@ -589,7 +601,10 @@ fn run_integration() -> anyhow::Result<()> {
     ));
     // Cluster by ~25 km route buckets to spot terrain-local spikes.
     let mut buckets = std::collections::BTreeMap::<u32, u32>::new();
-    for r in all_rests.iter().filter(|r| matches!(r.kind, RestKind::Alternative)) {
+    for r in all_rests
+        .iter()
+        .filter(|r| matches!(r.kind, RestKind::Alternative))
+    {
         let bucket = (r.cumulative_km / 25.0).floor() as u32;
         *buckets.entry(bucket).or_default() += 1;
     }
@@ -635,9 +650,7 @@ fn run_integration() -> anyhow::Result<()> {
     report.line(&format!(
         "Timing: download {download_s:.1}s | compute {compute_s:.1}s | wall {wall_s:.1}s"
     ));
-    println!(
-        "  [timing] download={download_s:.1}s compute={compute_s:.1}s wall={wall_s:.1}s"
-    );
+    println!("  [timing] download={download_s:.1}s compute={compute_s:.1}s wall={wall_s:.1}s");
 
     let report_path = fixtures.join("dnt_hiking_report.md");
     report.write(&report_path)?;

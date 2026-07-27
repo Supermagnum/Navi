@@ -1,3 +1,6 @@
+//! Hiking / DNT fixture helpers for ignored integration tests.
+#![allow(dead_code, clippy::match_like_matches_macro)]
+
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -6,12 +9,20 @@ use driver_break_core::poi::{PoiCategory, PoiRecord};
 use driver_break_core::routing::graph::RouteGraph;
 use driver_break_core::routing::rest::{max_daily_distance_km, next_break_distance_km, BreakKind};
 use driver_break_core::routing::safety::check_overnight_candidate;
-use osmpbf::{Element, ElementReader, RelMemberType};
 use osm4routing::{NodeId, Reader};
+use osmpbf::{Element, ElementReader, RelMemberType};
 
 use super::{haversine_m, CombinedPoiIndex};
 
-const DNT_OPERATORS: &[&str] = &["DNT", "STF", "DAV", "SAC", "OeAV", "Metsähallitus", "Metsahallitus"];
+const DNT_OPERATORS: &[&str] = &[
+    "DNT",
+    "STF",
+    "DAV",
+    "SAC",
+    "OeAV",
+    "Metsähallitus",
+    "Metsahallitus",
+];
 const FORBIDDEN_HIGHWAYS: &[&str] = &["motorway", "trunk", "primary"];
 const PRIORITY_HIGHWAYS: &[&str] = &["footway", "path", "steps", "bridleway"];
 const NON_DNT_PENALTY: f64 = 2.5;
@@ -97,7 +108,10 @@ impl EdgeTagMap {
                 }
                 Ok::<_, anyhow::Error>(tags)
             });
-            (dnt_handle.join().expect("dnt thread"), tags_handle.join().expect("tags thread"))
+            (
+                dnt_handle.join().expect("dnt thread"),
+                tags_handle.join().expect("tags thread"),
+            )
         });
 
         Ok(Self {
@@ -163,7 +177,10 @@ impl RouteValidation {
 }
 
 pub fn is_dnt_tagged(tags: &HashMap<String, String>) -> bool {
-    if tags.get("network").is_some_and(|n| n.eq_ignore_ascii_case("lwn")) {
+    if tags
+        .get("network")
+        .is_some_and(|n| n.eq_ignore_ascii_case("lwn"))
+    {
         return true;
     }
     if tags
@@ -179,7 +196,9 @@ pub fn is_dnt_tagged(tags: &HashMap<String, String>) -> bool {
         return true;
     }
     tags.get("route") == Some(&"hiking".to_string())
-        && tags.get("network").is_some_and(|n| n.eq_ignore_ascii_case("lwn"))
+        && tags
+            .get("network")
+            .is_some_and(|n| n.eq_ignore_ascii_case("lwn"))
 }
 
 pub fn is_priority_path(tags: &HashMap<String, String>) -> bool {
@@ -364,10 +383,7 @@ pub fn interpolate_at_km(samples: &[RouteSample], target_km: f64) -> (f64, f64) 
             return (lat, lon);
         }
     }
-    samples
-        .last()
-        .map(|s| (s.lat, s.lon))
-        .unwrap_or((0.0, 0.0))
+    samples.last().map(|s| (s.lat, s.lon)).unwrap_or((0.0, 0.0))
 }
 
 #[derive(Debug, Clone)]
@@ -433,7 +449,11 @@ pub fn find_poi_by_name(
     radius_m: f64,
 ) -> Vec<PoiRecord> {
     let mut hits = Vec::new();
-    for cat in [PoiCategory::Cabin, PoiCategory::NetworkHut, PoiCategory::OvernightFacility] {
+    for cat in [
+        PoiCategory::Cabin,
+        PoiCategory::NetworkHut,
+        PoiCategory::OvernightFacility,
+    ] {
         for p in poi.nearest(cat, lat, lon, radius_m) {
             if p.name
                 .as_ref()
@@ -536,12 +556,7 @@ pub fn plan_rest_stops(
     while next_main < day_end_km - 0.01 {
         let (lat, lon) = interpolate_at_km(samples, next_main);
         let water_near = !poi
-            .nearest(
-                PoiCategory::Water,
-                lat,
-                lon,
-                safety.poi_radius_water_m,
-            )
+            .nearest(PoiCategory::Water, lat, lon, safety.poi_radius_water_m)
             .is_empty();
         let general_near = !poi
             .nearest(
@@ -706,8 +721,8 @@ pub fn plan_multi_day(
 
         let (end_km, overnight, overnight_gap) = if is_final {
             let (tlat, tlon) = interpolate_at_km(samples, total_km);
-            let overnight = choose_overnight(poi, safety, tlat, tlon)
-                .or_else(|| best.map(|(_, c, _)| c));
+            let overnight =
+                choose_overnight(poi, safety, tlat, tlon).or_else(|| best.map(|(_, c, _)| c));
             let gap = overnight
                 .as_ref()
                 .map(|o| o.distance_from_target_m > OVERNIGHT_NEAR_HUT_MAX_M)

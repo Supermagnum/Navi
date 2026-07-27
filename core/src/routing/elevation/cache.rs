@@ -32,7 +32,7 @@ impl ElevationCache {
     }
 
     pub fn tile_path(&self, tile: HgtTileId, source: &str) -> PathBuf {
-        self.data_dir.join(source).join(format!("{}.hgt", tile))
+        self.data_dir.join(source).join(format!("{tile}.hgt"))
     }
 
     pub fn copernicus_tile_dir(&self, tile: HgtTileId) -> PathBuf {

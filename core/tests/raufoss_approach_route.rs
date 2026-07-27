@@ -16,11 +16,7 @@ fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     2.0 * r * a.sqrt().asin()
 }
 
-fn nearest(
-    graph: &driver_break_core::RouteGraph,
-    lat: f64,
-    lon: f64,
-) -> NodeId {
+fn nearest(graph: &driver_break_core::RouteGraph, lat: f64, lon: f64) -> NodeId {
     graph
         .nodes
         .values()
@@ -58,9 +54,15 @@ fn plan_grimafeltet_to_nysethvegen() {
 
     let eco = EcoConfig::default();
     let elevation = ElevationService::new(ElevationCache::new(&elev));
-    let (graph, hit) = load_or_build_reweighted(&pbf, &cache, RoutingProfile::Car, &elevation, &eco)
-        .expect("graph");
-    eprintln!("pbf={} cache_hit={hit} nodes={} edges={}", pbf.display(), graph.nodes.len(), graph.edges.len());
+    let (graph, hit) =
+        load_or_build_reweighted(&pbf, &cache, RoutingProfile::Car, &elevation, &eco)
+            .expect("graph");
+    eprintln!(
+        "pbf={} cache_hit={hit} nodes={} edges={}",
+        pbf.display(),
+        graph.nodes.len(),
+        graph.edges.len()
+    );
 
     let s = nearest(&graph, start_lat, start_lon);
     let g = nearest(&graph, end_lat, end_lon);
@@ -83,8 +85,15 @@ fn plan_grimafeltet_to_nysethvegen() {
         polyline.push_str(&format!(";{},{}", n1.coord.x, n1.coord.y));
     }
     let dist_km = distance_m / 1000.0;
-    eprintln!("distance_km={dist_km:.3} path_nodes={} polyline_chars={}", path.len(), polyline.len());
-    assert!(dist_km > 0.3 && dist_km < 8.0, "unexpected distance {dist_km}");
+    eprintln!(
+        "distance_km={dist_km:.3} path_nodes={} polyline_chars={}",
+        path.len(),
+        polyline.len()
+    );
+    assert!(
+        dist_km > 0.3 && dist_km < 8.0,
+        "unexpected distance {dist_km}"
+    );
 
     let out = root.join("raufoss_grimafeltet_nysethvegen.polyline.txt");
     std::fs::write(&out, &polyline).expect("write polyline");

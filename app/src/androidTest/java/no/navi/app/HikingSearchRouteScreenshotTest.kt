@@ -3,7 +3,6 @@ package no.navi.app
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -63,11 +62,15 @@ class HikingSearchRouteScreenshotTest {
         NaviMapTestHooks.preferStagedHikingRoute = true
         MapHudPrefs.saveOptIn3d(context, false)
         runCatching {
-            InstrumentationRegistry.getInstrumentation().uiAutomation
+            InstrumentationRegistry
+                .getInstrumentation()
+                .uiAutomation
                 .grantRuntimePermission(context.packageName, android.Manifest.permission.ACCESS_FINE_LOCATION)
         }
         runCatching {
-            InstrumentationRegistry.getInstrumentation().uiAutomation
+            InstrumentationRegistry
+                .getInstrumentation()
+                .uiAutomation
                 .grantRuntimePermission(context.packageName, android.Manifest.permission.ACCESS_COARSE_LOCATION)
         }
         dismissPermissionDialogs()
@@ -86,18 +89,19 @@ class HikingSearchRouteScreenshotTest {
     private fun dismissPermissionDialogs() {
         val deadline = System.currentTimeMillis() + 8_000
         while (System.currentTimeMillis() < deadline) {
-            val allow = device.findObject(By.text("While using the app"))
-                ?: device.findObject(By.text("Allow"))
-                ?: device.findObject(By.text("ALLOW"))
-                ?: device.findObject(
-                    By.res("com.android.permissioncontroller", "permission_allow_button"),
-                )
-                ?: device.findObject(
-                    By.res(
-                        "com.android.permissioncontroller",
-                        "permission_allow_foreground_only_button",
-                    ),
-                )
+            val allow =
+                device.findObject(By.text("While using the app"))
+                    ?: device.findObject(By.text("Allow"))
+                    ?: device.findObject(By.text("ALLOW"))
+                    ?: device.findObject(
+                        By.res("com.android.permissioncontroller", "permission_allow_button"),
+                    )
+                    ?: device.findObject(
+                        By.res(
+                            "com.android.permissioncontroller",
+                            "permission_allow_foreground_only_button",
+                        ),
+                    )
             if (allow != null) {
                 allow.click()
                 Thread.sleep(500)
@@ -126,15 +130,19 @@ class HikingSearchRouteScreenshotTest {
 
     private fun hideIme() {
         runCatching {
-            val imm = composeRule.activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
-                as android.view.inputmethod.InputMethodManager
+            val imm =
+                composeRule.activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                    as android.view.inputmethod.InputMethodManager
             composeRule.activity.currentFocus?.let { imm.hideSoftInputFromWindow(it.windowToken, 0) }
                 ?: imm.hideSoftInputFromWindow(composeRule.activity.window.decorView.windowToken, 0)
         }
         Thread.sleep(250)
     }
 
-    private fun pickSearch(query: String, hitName: String) {
+    private fun pickSearch(
+        query: String,
+        hitName: String,
+    ) {
         NaviMapTestHooks.requestClearSearch = true
         val clearDeadline = System.currentTimeMillis() + 5_000
         while (System.currentTimeMillis() < clearDeadline && NaviMapTestHooks.requestClearSearch) {
@@ -145,7 +153,8 @@ class HikingSearchRouteScreenshotTest {
         NaviMapTestHooks.lastSearchQuery = ""
         NaviMapTestHooks.lastSearchHitNames = emptyList()
 
-        composeRule.onNodeWithTag("field_search", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("field_search", useUnmergedTree = true)
             .performScrollTo()
             .performClick()
         Thread.sleep(400)
@@ -164,12 +173,15 @@ class HikingSearchRouteScreenshotTest {
         while (System.currentTimeMillis() < deadline && !clicked) {
             composeRule.waitForIdle()
             val names = NaviMapTestHooks.lastSearchHitNames
-            val idx = names.indexOfFirst { it.equals(hitName, ignoreCase = true) }
-                .takeIf { it >= 0 }
-                ?: names.indexOfFirst { it.contains(hitName, ignoreCase = true) }
+            val idx =
+                names
+                    .indexOfFirst { it.equals(hitName, ignoreCase = true) }
+                    .takeIf { it >= 0 }
+                    ?: names.indexOfFirst { it.contains(hitName, ignoreCase = true) }
             if (idx in 0 until 8) {
                 try {
-                    composeRule.onNodeWithTag("search_hit_$idx", useUnmergedTree = true)
+                    composeRule
+                        .onNodeWithTag("search_hit_$idx", useUnmergedTree = true)
                         .performScrollTo()
                         .performClick()
                     clicked = true
@@ -182,13 +194,15 @@ class HikingSearchRouteScreenshotTest {
         if (!clicked) {
             // Hit-row clicks flake on AAOS after the first pick; query was still typed
             // via keyboard — apply the matching FTS hit through the test hook.
-            val hits = uniffi.navi.searchPlaces(
-                File(dataDir, "place_index.db").absolutePath,
-                query,
-                20u,
-            )
-            val hit = hits.firstOrNull { it.name.equals(hitName, ignoreCase = true) }
-                ?: hits.firstOrNull { it.name.contains(hitName, ignoreCase = true) }
+            val hits =
+                uniffi.navi.searchPlaces(
+                    File(dataDir, "place_index.db").absolutePath,
+                    query,
+                    20u,
+                )
+            val hit =
+                hits.firstOrNull { it.name.equals(hitName, ignoreCase = true) }
+                    ?: hits.firstOrNull { it.name.contains(hitName, ignoreCase = true) }
             assertTrue(
                 "no search hit for '$query' / '$hitName' " +
                     "(uiQ='${NaviMapTestHooks.lastSearchQuery}' uiNames=${NaviMapTestHooks.lastSearchHitNames} " +
@@ -226,24 +240,26 @@ class HikingSearchRouteScreenshotTest {
         NaviMapTestHooks.routeStartLabel = "Skolla"
         NaviMapTestHooks.routeEndLabel = "Rondvassbu"
         NaviMapTestHooks.routeViaLabel = "Harlandshytta, Eldåbu"
-        fun route() = uniffi.navi.CorridorRouteResult(
-            report = "PASS\ndistance_km=112.5\n",
-            distanceKm = 112.5,
-            etaMinutes = 1800.0,
-            cacheHit = true,
-            coldBuildS = 0.0,
-            warmLoadS = 0.0,
-            routePolyline = poly,
-            poiLat = 61.8804325,
-            poiLon = 9.7959854,
-            poiName = "Rondvassbu",
-            poiIconKey = "cabin",
-            breakPoisJson = breaks,
-            daysJson = "[]",
-            simSamplesJson = "[]",
-            maneuversJson = "[]",
-            priorityPathSharePct = 0.0,
-        )
+
+        fun route() =
+            uniffi.navi.CorridorRouteResult(
+                report = "PASS\ndistance_km=112.5\n",
+                distanceKm = 112.5,
+                etaMinutes = 1800.0,
+                cacheHit = true,
+                coldBuildS = 0.0,
+                warmLoadS = 0.0,
+                routePolyline = poly,
+                poiLat = 61.8804325,
+                poiLon = 9.7959854,
+                poiName = "Rondvassbu",
+                poiIconKey = "cabin",
+                breakPoisJson = breaks,
+                daysJson = "[]",
+                simSamplesJson = "[]",
+                maneuversJson = "[]",
+                priorityPathSharePct = 0.0,
+            )
         NaviMapTestHooks.pendingRoute = route()
         val deadline = System.currentTimeMillis() + 60_000
         while (System.currentTimeMillis() < deadline) {
@@ -262,24 +278,27 @@ class HikingSearchRouteScreenshotTest {
     fun search_keyboard_plan_hike_and_screenshots() {
         waitReady()
 
-        val activityDir = (
-            NaviAppData.resolve(composeRule.activity)
-        ).also { it.mkdirs() }
+        val activityDir =
+            (
+                NaviAppData.resolve(composeRule.activity)
+            ).also { it.mkdirs() }
         File("/data/local/tmp/navi_fixtures/place_index_search_check.db")
             .copyTo(File(activityDir, "place_index.db"), overwrite = true)
         dataDir = activityDir
 
-        val probe = uniffi.navi.searchPlaces(
-            File(dataDir, "place_index.db").absolutePath,
-            "Skolla",
-            5u,
-        )
+        val probe =
+            uniffi.navi.searchPlaces(
+                File(dataDir, "place_index.db").absolutePath,
+                "Skolla",
+                5u,
+            )
         assertTrue(
             "place index missing Skolla (hits=${probe.map { it.name }})",
             probe.any { it.name.contains("Skolla", ignoreCase = true) },
         )
 
-        composeRule.onNodeWithTag("chip_profile_hiking", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("chip_profile_hiking", useUnmergedTree = true)
             .performScrollTo()
             .performClick()
 
@@ -297,7 +316,8 @@ class HikingSearchRouteScreenshotTest {
         composeRule.onNodeWithTag("chip_to", useUnmergedTree = true).performClick()
         pickSearch("Rondvassbu", "Rondvassbu")
 
-        composeRule.onNodeWithTag("btn_plan_route", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("btn_plan_route", useUnmergedTree = true)
             .performScrollTo()
             .performClick()
 
@@ -333,8 +353,10 @@ class HikingSearchRouteScreenshotTest {
         Thread.sleep(4_000)
         capture("hike_eldabu_ramshogda_2d.png")
 
-        val toastNodes = composeRule.onAllNodesWithTag("status_toast", useUnmergedTree = true)
-            .fetchSemanticsNodes()
+        val toastNodes =
+            composeRule
+                .onAllNodesWithTag("status_toast", useUnmergedTree = true)
+                .fetchSemanticsNodes()
         for (n in toastNodes) {
             val text = n.config.toString()
             assertFalse(text.contains("TEST_KIND"))

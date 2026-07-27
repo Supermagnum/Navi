@@ -351,18 +351,12 @@ mod tests {
     fn synthetic_graph() -> RouteGraph {
         let n1 = Node {
             id: NodeId(1),
-            coord: Coord {
-                x: 10.0,
-                y: 60.0,
-            },
+            coord: Coord { x: 10.0, y: 60.0 },
             uses: 0,
         };
         let n2 = Node {
             id: NodeId(2),
-            coord: Coord {
-                x: 10.01,
-                y: 60.01,
-            },
+            coord: Coord { x: 10.01, y: 60.01 },
             uses: 0,
         };
         let mut nodes = HashMap::new();

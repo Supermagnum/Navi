@@ -34,14 +34,15 @@ import java.io.File
  */
 @RunWith(AndroidJUnit4::class)
 class HudVerificationInstrumentedTest {
-
     companion object {
         @JvmStatic
         @BeforeClass
         fun beforeClass() {
             val pkg = InstrumentationRegistry.getInstrumentation().targetContext.packageName
             runCatching {
-                InstrumentationRegistry.getInstrumentation().uiAutomation
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .uiAutomation
                     .grantRuntimePermission(pkg, android.Manifest.permission.ACCESS_FINE_LOCATION)
             }
             NaviMapTestHooks.hideUiChrome = false
@@ -93,7 +94,11 @@ class HudVerificationInstrumentedTest {
         Thread.sleep(3_000)
     }
 
-    private fun waitBearing(expected: Double, tol: Double = 0.5, timeoutMs: Long = 8_000) {
+    private fun waitBearing(
+        expected: Double,
+        tol: Double = 0.5,
+        timeoutMs: Long = 8_000,
+    ) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (kotlin.math.abs(NaviMapTestHooks.lastCameraBearing - expected) <= tol) return
@@ -107,7 +112,11 @@ class HudVerificationInstrumentedTest {
         )
     }
 
-    private fun waitZoom(expected: Double, tol: Double = 0.15, timeoutMs: Long = 8_000) {
+    private fun waitZoom(
+        expected: Double,
+        tol: Double = 0.15,
+        timeoutMs: Long = 8_000,
+    ) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (kotlin.math.abs(NaviMapTestHooks.lastCameraZoom - expected) <= tol) return
@@ -116,7 +125,10 @@ class HudVerificationInstrumentedTest {
         assertEquals("camera zoom", expected, NaviMapTestHooks.lastCameraZoom, tol)
     }
 
-    private fun waitSettingsOpen(open: Boolean, timeoutMs: Long = 6_000) {
+    private fun waitSettingsOpen(
+        open: Boolean,
+        timeoutMs: Long = 6_000,
+    ) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (NaviMapTestHooks.driveSettingsOpen == open) return
@@ -125,7 +137,10 @@ class HudVerificationInstrumentedTest {
         assertEquals("drive settings open", open, NaviMapTestHooks.driveSettingsOpen)
     }
 
-    private fun waitMapSettingsOpen(open: Boolean, timeoutMs: Long = 6_000) {
+    private fun waitMapSettingsOpen(
+        open: Boolean,
+        timeoutMs: Long = 6_000,
+    ) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (NaviMapTestHooks.mapSettingsOpen == open) return
@@ -136,9 +151,10 @@ class HudVerificationInstrumentedTest {
 
     private fun openDriveSettings() {
         if (NaviMapTestHooks.driveSettingsOpen) return
-        val nodes = composeRule
-            .onAllNodesWithTag("btn_open_drive_settings", useUnmergedTree = true)
-            .fetchSemanticsNodes()
+        val nodes =
+            composeRule
+                .onAllNodesWithTag("btn_open_drive_settings", useUnmergedTree = true)
+                .fetchSemanticsNodes()
         android.util.Log.i("HudVerification", "open settings nodes=${nodes.size}")
         if (nodes.isNotEmpty()) {
             clickTag("btn_open_drive_settings")
@@ -166,9 +182,10 @@ class HudVerificationInstrumentedTest {
 
     private fun closeMapSettings() {
         if (!NaviMapTestHooks.mapSettingsOpen) return
-        val closeNodes = composeRule
-            .onAllNodesWithTag("btn_close_map_settings", useUnmergedTree = true)
-            .fetchSemanticsNodes()
+        val closeNodes =
+            composeRule
+                .onAllNodesWithTag("btn_close_map_settings", useUnmergedTree = true)
+                .fetchSemanticsNodes()
         if (closeNodes.isNotEmpty()) {
             clickTag("btn_close_map_settings")
         } else {
@@ -177,7 +194,10 @@ class HudVerificationInstrumentedTest {
         waitMapSettingsOpen(false)
     }
 
-    private fun shot(name: String, pauseMap: Boolean = false): File {
+    private fun shot(
+        name: String,
+        pauseMap: Boolean = false,
+    ): File {
         composeRule.waitForIdle()
         if (pauseMap) {
             composeRule.runOnUiThread {
@@ -199,48 +219,57 @@ class HudVerificationInstrumentedTest {
         assertTrue("$name written", out.isFile && out.length() > 3_000)
         // Publish via MediaStore Downloads (readable without su after instrumentation).
         runCatching {
-            val values = android.content.ContentValues().apply {
-                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
-                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/png")
-                put(
-                    android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
-                    android.os.Environment.DIRECTORY_DOWNLOADS + "/navi_hud",
-                )
-                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
-            }
+            val values =
+                android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                    put(
+                        android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                        android.os.Environment.DIRECTORY_DOWNLOADS + "/navi_hud",
+                    )
+                    put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+                }
             val resolver = InstrumentationRegistry.getInstrumentation().targetContext.contentResolver
             val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
             if (uri != null) {
                 resolver.openOutputStream(uri)?.use { os ->
                     out.inputStream().use { it.copyTo(os) }
                 }
-                val done = android.content.ContentValues().apply {
-                    put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
-                }
+                val done =
+                    android.content.ContentValues().apply {
+                        put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+                    }
                 resolver.update(uri, done, null, null)
             }
         }
         // Mirror via root `cat >` so adb can pull after instrumentation exits.
-        val mirrored = runCatching {
-            val dest = "/data/local/tmp/navi_hud/$name"
-            InstrumentationRegistry.getInstrumentation().uiAutomation
-                .executeShellCommand("su 0 mkdir -p /data/local/tmp/navi_hud")
-                .close()
-            InstrumentationRegistry.getInstrumentation().uiAutomation
-                .executeShellCommand("su 0 sh -c 'cat > $dest'")
-                .use { pfd ->
-                    java.io.FileOutputStream(pfd.fileDescriptor).use { os ->
-                        out.inputStream().use { input -> input.copyTo(os) }
-                        os.flush()
+        val mirrored =
+            runCatching {
+                val dest = "/data/local/tmp/navi_hud/$name"
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .uiAutomation
+                    .executeShellCommand("su 0 mkdir -p /data/local/tmp/navi_hud")
+                    .close()
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .uiAutomation
+                    .executeShellCommand("su 0 sh -c 'cat > $dest'")
+                    .use { pfd ->
+                        java.io.FileOutputStream(pfd.fileDescriptor).use { os ->
+                            out.inputStream().use { input -> input.copyTo(os) }
+                            os.flush()
+                        }
                     }
-                }
-            InstrumentationRegistry.getInstrumentation().uiAutomation
-                .executeShellCommand("su 0 chmod 644 $dest")
-                .close()
-            true
-        }.onFailure {
-            android.util.Log.e("HudVerification", "tmp mirror failed for $name", it)
-        }.getOrDefault(false)
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .uiAutomation
+                    .executeShellCommand("su 0 chmod 644 $dest")
+                    .close()
+                true
+            }.onFailure {
+                android.util.Log.e("HudVerification", "tmp mirror failed for $name", it)
+            }.getOrDefault(false)
         android.util.Log.i(
             "HudVerification",
             "shot=$name bytes=${out.length()} mirrored=$mirrored path=${out.absolutePath}",
@@ -285,7 +314,10 @@ class HudVerificationInstrumentedTest {
         assertEquals("break reminders toggle", on, NaviMapTestHooks.lastBreakRemindersEnabled)
     }
 
-    private fun setField(tag: String, value: String) {
+    private fun setField(
+        tag: String,
+        value: String,
+    ) {
         val node = composeRule.onNodeWithTag(tag, useUnmergedTree = true)
         runCatching { node.performScrollTo() }
         node.performTextClearance()
@@ -306,7 +338,8 @@ class HudVerificationInstrumentedTest {
         // Top HUD + To/Via/Place/Address/Tools + bottom HUD (no scroll yet).
         shot("hud_upper_lower_bars_with_menus.png")
         // Profile chips sit further down the scrollable column.
-        composeRule.onNodeWithTag("profile_menu", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("profile_menu", useUnmergedTree = true)
             .performScrollTo()
             .assertIsDisplayed()
         shot("hud_profile_menu.png")
@@ -314,7 +347,8 @@ class HudVerificationInstrumentedTest {
         clickTag("btn_tools")
         composeRule.onNodeWithTag("tools_menu", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onNodeWithText("Region", useUnmergedTree = true).assertIsDisplayed()
-        composeRule.onNodeWithText("Download region + build place index", useUnmergedTree = true)
+        composeRule
+            .onNodeWithText("Download region + build place index", useUnmergedTree = true)
             .assertIsDisplayed()
         composeRule.onNodeWithText("Country", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onNodeWithText("Region in country", useUnmergedTree = true).assertIsDisplayed()
@@ -336,7 +370,8 @@ class HudVerificationInstrumentedTest {
             "map settings must be collapsed by default",
             NaviMapTestHooks.mapSettingsOpen,
         )
-        composeRule.onAllNodesWithTag("map_settings_sheet", useUnmergedTree = true)
+        composeRule
+            .onAllNodesWithTag("map_settings_sheet", useUnmergedTree = true)
             .fetchSemanticsNodes()
             .let { assertTrue("map sheet closed", it.isEmpty()) }
         val altDeadline = System.currentTimeMillis() + 5_000
@@ -354,8 +389,10 @@ class HudVerificationInstrumentedTest {
         composeRule.onNodeWithTag("zoom_out", useUnmergedTree = true).assertIsDisplayed()
         // No turn stub on collapsed bottom bar; break + ETA only.
         assertTrue(
-            composeRule.onAllNodesWithText("Turn --", useUnmergedTree = true)
-                .fetchSemanticsNodes().isEmpty(),
+            composeRule
+                .onAllNodesWithText("Turn --", useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .isEmpty(),
         )
         composeRule.onNodeWithText("ETA off", useUnmergedTree = true).assertIsDisplayed()
         // Eco on bottom bar — persist eco enabled, reopen sheet so host picks it up.
@@ -377,23 +414,36 @@ class HudVerificationInstrumentedTest {
         composeRule.onNodeWithTag("hud_eco_icon", useUnmergedTree = true).assertIsDisplayed()
         assertTrue(
             "eco must render as leaf icon, not ECO text",
-            composeRule.onAllNodesWithText("ECO", useUnmergedTree = true)
+            composeRule
+                .onAllNodesWithText("ECO", useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .isEmpty(),
         )
         assertEquals(412.0, NaviMapTestHooks.lastHudAltitudeM!!, 0.1)
         shot("hud_eco_leaf_on.png")
         // Tools must be closed for idle / map-only captures.
-        if (composeRule.onAllNodesWithTag("tools_menu", useUnmergedTree = true)
-            .fetchSemanticsNodes().isNotEmpty()
-        ) {
-            NaviMapTestHooks.hideSearchChrome = false
-            Thread.sleep(400)
-            clickTag("btn_tools")
+        repeat(12) {
+            NaviMapTestHooks.requestCloseTools = true
             NaviMapTestHooks.hideSearchChrome = true
-            Thread.sleep(500)
+            Thread.sleep(350)
+            val open =
+                composeRule
+                    .onAllNodesWithTag("tools_menu", useUnmergedTree = true)
+                    .fetchSemanticsNodes()
+            if (open.isEmpty()) return@repeat
+            // Toggle closed via the labeled button if the sheet is still up.
+            NaviMapTestHooks.hideSearchChrome = false
+            Thread.sleep(200)
+            runCatching {
+                composeRule.onNodeWithText("Hide tools", useUnmergedTree = true).performClick()
+            }
+            runCatching { clickTag("btn_tools") }
+            Thread.sleep(400)
+            NaviMapTestHooks.requestCloseTools = true
+            NaviMapTestHooks.hideSearchChrome = true
         }
-        composeRule.onAllNodesWithTag("tools_menu", useUnmergedTree = true)
+        composeRule
+            .onAllNodesWithTag("tools_menu", useUnmergedTree = true)
             .fetchSemanticsNodes()
             .let { assertTrue("tools menu must be closed for idle shots", it.isEmpty()) }
         val mapOnly = shot("hud_map_top_bottom_only.png")
@@ -402,13 +452,15 @@ class HudVerificationInstrumentedTest {
         assertTrue(idle.length() > 5_000)
         assertTrue(
             "idle HUD must not show break countdown without a planned route",
-            composeRule.onAllNodesWithText("Break in", substring = true, useUnmergedTree = true)
+            composeRule
+                .onAllNodesWithText("Break in", substring = true, useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .isEmpty(),
         )
         assertTrue(
             "idle HUD must not show break reminders line without a planned route",
-            composeRule.onAllNodesWithText("Break reminders off", useUnmergedTree = true)
+            composeRule
+                .onAllNodesWithText("Break reminders off", useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .isEmpty(),
         )
@@ -429,7 +481,8 @@ class HudVerificationInstrumentedTest {
         waitSettingsOpen(false)
         Thread.sleep(500)
         assertTrue(
-            composeRule.onAllNodesWithTag("hud_eco_icon", useUnmergedTree = true)
+            composeRule
+                .onAllNodesWithTag("hud_eco_icon", useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .isEmpty(),
         )
@@ -452,7 +505,8 @@ class HudVerificationInstrumentedTest {
 
         // --- 2. Bottom bar: tap opens drive settings overlay (above bars) ---
         openDriveSettings()
-        composeRule.onNodeWithTag("drive_settings_title", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("drive_settings_title", useUnmergedTree = true)
             .assertIsDisplayed()
         composeRule.onNodeWithTag("bottom_drive_hud", useUnmergedTree = true).assertIsDisplayed()
         shot("hud_settings_overlay.png")
@@ -522,10 +576,16 @@ class HudVerificationInstrumentedTest {
         openDriveSettings()
         clickTag("drive_chip_profile_bicycle_electric")
         composeRule.waitForIdle()
-        Thread.sleep(300)
+        Thread.sleep(500)
+        composeRule
+            .onNodeWithTag("field_ebike_battery_wh", useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
         setField("field_ebike_battery_wh", "750")
         setField("field_ebike_torque_nm", "90")
-        clickTag("chip_ebike_wheel_29_0")
+        // Diameter field is always visible under the presets (no clipped-chip click).
+        setField("field_ebike_wheel_in", "29")
+        composeRule.waitForIdle()
         clickTag("btn_save_drive_settings")
         waitSettingsOpen(false)
         Thread.sleep(400)
@@ -559,57 +619,66 @@ class HudVerificationInstrumentedTest {
         setTripEta(false)
         Thread.sleep(400)
         composeRule.onNodeWithText("ETA off", useUnmergedTree = true).assertIsDisplayed()
-        val etaStillVisible = composeRule
-            .onAllNodesWithText("ETA 95 min", useUnmergedTree = true)
-            .fetchSemanticsNodes()
-            .isNotEmpty()
+        val etaStillVisible =
+            composeRule
+                .onAllNodesWithText("ETA 95 min", useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
         assertFalse("Trip ETA value should hide when toggle off", etaStillVisible)
         shot("hud_trip_eta_off.png")
 
         // Break reminders — HUD countdown only with a **real** planned corridor
         // (Grimåsfeltet→Nysethvegen from ostlandet host plan). No synthetic polylines.
         val zoomBeforeBreak = NaviMapTestHooks.lastCameraZoom
-        val plannedPolyline = InstrumentationRegistry.getInstrumentation().context
-            .assets.open("raufoss_grimafeltet_nysethvegen.polyline.txt")
-            .bufferedReader()
-            .use { it.readText().trim() }
+        val plannedPolyline =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .context
+                .assets
+                .open("raufoss_grimafeltet_nysethvegen.polyline.txt")
+                .bufferedReader()
+                .use { it.readText().trim() }
         assertTrue("host-planned polyline required", plannedPolyline.contains(';'))
         assertTrue(
             "polyline must be a real multi-vertex plan, not a 2-point stub",
             plannedPolyline.count { it == ';' } >= 10,
         )
-        NaviMapTestHooks.pendingRoute = uniffi.navi.CorridorRouteResult(
-            report = "PLANNED Grimåsfeltet → Nysethvegen (Raufoss / Tollerud)",
-            distanceKm = 1.953,
-            etaMinutes = 1.953 / 50.0 * 60.0,
-            cacheHit = true,
-            coldBuildS = 0.0,
-            warmLoadS = 0.0,
-            routePolyline = plannedPolyline,
-            poiLat = 60.7278207,
-            poiLon = 10.6049538,
-            poiName = "Nysethvegen",
-            poiIconKey = "fuel",
-            breakPoisJson = "[]",
-            daysJson = "[]",
-            simSamplesJson = "[]",
-            maneuversJson = "[]",
-            priorityPathSharePct = 0.0,
-        )
+        NaviMapTestHooks.pendingRoute =
+            uniffi.navi.CorridorRouteResult(
+                report = "PLANNED Grimåsfeltet → Nysethvegen (Raufoss / Tollerud)",
+                distanceKm = 1.953,
+                etaMinutes = 1.953 / 50.0 * 60.0,
+                cacheHit = true,
+                coldBuildS = 0.0,
+                warmLoadS = 0.0,
+                routePolyline = plannedPolyline,
+                poiLat = 60.7278207,
+                poiLon = 10.6049538,
+                poiName = "Nysethvegen",
+                poiIconKey = "fuel",
+                breakPoisJson = "[]",
+                daysJson = "[]",
+                simSamplesJson = "[]",
+                maneuversJson = "[]",
+                priorityPathSharePct = 0.0,
+            )
         // Keep prior zoom; route apply would otherwise fit-bounds and break zoom checks.
         NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, zoomBeforeBreak)
         Thread.sleep(1_500)
         setBreakReminders(false)
-        composeRule.onNodeWithText("Break reminders off", useUnmergedTree = true)
+        composeRule
+            .onNodeWithText("Break reminders off", useUnmergedTree = true)
             .assertIsDisplayed()
         shot("hud_breaks_off.png")
         setBreakReminders(true)
-        val breakOffStill = composeRule
-            .onAllNodesWithText("Break reminders off", useUnmergedTree = true)
-            .fetchSemanticsNodes()
-            .isNotEmpty()
+        val breakOffStill =
+            composeRule
+                .onAllNodesWithText("Break reminders off", useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
         assertFalse("Break countdown / interval text should return", breakOffStill)
-        composeRule.onNodeWithTag("hud_break_countdown", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("hud_break_countdown", useUnmergedTree = true)
             .assertIsDisplayed()
         shot("hud_breaks_on.png")
         closeMapSettings()
@@ -652,25 +721,19 @@ class HudVerificationInstrumentedTest {
 
         // Auto-zoom level in map settings, then toggle snaps camera
         openMapSettings()
-        composeRule.onNodeWithTag("auto_zoom_level_label", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("auto_zoom_level_label", useUnmergedTree = true)
             .assertIsDisplayed()
         var steps = 0
-        while (
-            composeRule.onAllNodesWithText("z 15.5", useUnmergedTree = true)
-                .fetchSemanticsNodes().isEmpty() &&
-            steps < 20
-        ) {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        while (MapHudPrefs.loadAutoZoomLevel(ctx) > 15.5 + 0.01 && steps < 20) {
             clickTag("auto_zoom_level_out")
             steps++
         }
-        composeRule.onNodeWithText("z 15.5", useUnmergedTree = true).assertIsDisplayed()
-        assertEquals(
-            15.5,
-            MapHudPrefs.loadAutoZoomLevel(
-                InstrumentationRegistry.getInstrumentation().targetContext,
-            ),
-            0.01,
-        )
+        assertEquals(15.5, MapHudPrefs.loadAutoZoomLevel(ctx), 0.01)
+        composeRule
+            .onNodeWithTag("auto_zoom_level_label", useUnmergedTree = true)
+            .assertIsDisplayed()
         clickTag("toggle_auto_zoom")
         waitZoom(15.5)
         shot("hud_auto_zoom_preset.png")
@@ -850,12 +913,14 @@ class HudVerificationInstrumentedTest {
         assertFalse("map settings should be closed", NaviMapTestHooks.mapSettingsOpen)
         assertFalse("drive settings should be closed", NaviMapTestHooks.driveSettingsOpen)
         assertTrue(
-            composeRule.onAllNodesWithTag("map_settings_sheet", useUnmergedTree = true)
+            composeRule
+                .onAllNodesWithTag("map_settings_sheet", useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .isEmpty(),
         )
         assertTrue(
-            composeRule.onAllNodesWithTag("drive_settings_sheet", useUnmergedTree = true)
+            composeRule
+                .onAllNodesWithTag("drive_settings_sheet", useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .isEmpty(),
         )
@@ -863,16 +928,18 @@ class HudVerificationInstrumentedTest {
 
     /** Tap the map band between the top and bottom HUD (and clear of open sheets). */
     private fun tapMapAwayFromChrome() {
-        val device = androidx.test.uiautomator.UiDevice.getInstance(
-            InstrumentationRegistry.getInstrumentation(),
-        )
+        val device =
+            androidx.test.uiautomator.UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation(),
+            )
         val w = device.displayWidth
         val h = device.displayHeight
-        val y = when {
-            NaviMapTestHooks.mapSettingsOpen -> (h * 0.62).toInt()
-            NaviMapTestHooks.driveSettingsOpen -> (h * 0.30).toInt()
-            else -> (h * 0.45).toInt()
-        }
+        val y =
+            when {
+                NaviMapTestHooks.mapSettingsOpen -> (h * 0.62).toInt()
+                NaviMapTestHooks.driveSettingsOpen -> (h * 0.30).toInt()
+                else -> (h * 0.45).toInt()
+            }
         val x = w / 2
         android.util.Log.i("HudVerification", "tapMap x=$x y=$y w=$w h=$h")
         device.click(x, y)
@@ -880,9 +947,10 @@ class HudVerificationInstrumentedTest {
     }
 
     private fun panMapHorizontal() {
-        val device = androidx.test.uiautomator.UiDevice.getInstance(
-            InstrumentationRegistry.getInstrumentation(),
-        )
+        val device =
+            androidx.test.uiautomator.UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation(),
+            )
         val w = device.displayWidth
         val h = device.displayHeight
         val y = (h * 0.45).toInt()
@@ -890,7 +958,9 @@ class HudVerificationInstrumentedTest {
         val x1 = (w * 0.80).toInt()
         NaviMapTestHooks.mapGestureMoves = 0
         // Shell input is more reliable than UiDevice.swipe for MapLibre on this AVD.
-        InstrumentationRegistry.getInstrumentation().uiAutomation
+        InstrumentationRegistry
+            .getInstrumentation()
+            .uiAutomation
             .executeShellCommand("input swipe $x0 $y $x1 $y 400")
             .close()
         composeRule.waitForIdle()
@@ -903,16 +973,21 @@ class HudVerificationInstrumentedTest {
     }
 
     private fun doubleTapZoomMap() {
-        val device = androidx.test.uiautomator.UiDevice.getInstance(
-            InstrumentationRegistry.getInstrumentation(),
-        )
+        val device =
+            androidx.test.uiautomator.UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation(),
+            )
         val cx = device.displayWidth / 2
         val cy = (device.displayHeight * 0.45).toInt()
-        InstrumentationRegistry.getInstrumentation().uiAutomation
+        InstrumentationRegistry
+            .getInstrumentation()
+            .uiAutomation
             .executeShellCommand("input tap $cx $cy")
             .close()
         Thread.sleep(60)
-        InstrumentationRegistry.getInstrumentation().uiAutomation
+        InstrumentationRegistry
+            .getInstrumentation()
+            .uiAutomation
             .executeShellCommand("input tap $cx $cy")
             .close()
         composeRule.waitForIdle()
@@ -924,9 +999,10 @@ class HudVerificationInstrumentedTest {
     }
 
     private fun pinchZoomMap(zoomIn: Boolean) {
-        val device = androidx.test.uiautomator.UiDevice.getInstance(
-            InstrumentationRegistry.getInstrumentation(),
-        )
+        val device =
+            androidx.test.uiautomator.UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation(),
+            )
         val cx = device.displayWidth / 2
         val cy = (device.displayHeight * 0.45).toInt()
         val startSpan = if (zoomIn) 80 else 220
@@ -936,7 +1012,12 @@ class HudVerificationInstrumentedTest {
         Thread.sleep(800)
     }
 
-    private fun injectPinch(cx: Int, cy: Int, startSpan: Int, endSpan: Int) {
+    private fun injectPinch(
+        cx: Int,
+        cy: Int,
+        startSpan: Int,
+        endSpan: Int,
+    ) {
         val dispatch: (android.view.MotionEvent) -> Unit = { event ->
             var handled = false
             composeRule.runOnUiThread {
@@ -947,6 +1028,7 @@ class HudVerificationInstrumentedTest {
             }
         }
         val downTime = android.os.SystemClock.uptimeMillis()
+
         fun event(
             action: Int,
             t: Long,
@@ -998,16 +1080,17 @@ class HudVerificationInstrumentedTest {
         dispatch(e)
         e.recycle()
         t += 20
-        e = event(
-            android.view.MotionEvent.ACTION_POINTER_DOWN or
-                (1 shl android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT),
-            t,
-            cx.toFloat(),
-            y0s,
-            cx.toFloat(),
-            y1s,
-            2,
-        )
+        e =
+            event(
+                android.view.MotionEvent.ACTION_POINTER_DOWN or
+                    (1 shl android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                t,
+                cx.toFloat(),
+                y0s,
+                cx.toFloat(),
+                y1s,
+                2,
+            )
         dispatch(e)
         e.recycle()
         for (i in 1..steps) {
@@ -1016,31 +1099,33 @@ class HudVerificationInstrumentedTest {
             val span = startSpan + ((endSpan - startSpan) * frac).toInt()
             val ya = (cy - span / 2).toFloat()
             val yb = (cy + span / 2).toFloat()
-            e = event(
-                android.view.MotionEvent.ACTION_MOVE,
-                t,
-                cx.toFloat(),
-                ya,
-                cx.toFloat(),
-                yb,
-                2,
-            )
+            e =
+                event(
+                    android.view.MotionEvent.ACTION_MOVE,
+                    t,
+                    cx.toFloat(),
+                    ya,
+                    cx.toFloat(),
+                    yb,
+                    2,
+                )
             dispatch(e)
             e.recycle()
         }
         t += 20
         val y0e = (cy - endSpan / 2).toFloat()
         val y1e = (cy + endSpan / 2).toFloat()
-        e = event(
-            android.view.MotionEvent.ACTION_POINTER_UP or
-                (1 shl android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT),
-            t,
-            cx.toFloat(),
-            y0e,
-            cx.toFloat(),
-            y1e,
-            2,
-        )
+        e =
+            event(
+                android.view.MotionEvent.ACTION_POINTER_UP or
+                    (1 shl android.view.MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                t,
+                cx.toFloat(),
+                y0e,
+                cx.toFloat(),
+                y1e,
+                2,
+            )
         dispatch(e)
         e.recycle()
         t += 20
@@ -1055,13 +1140,16 @@ class HudVerificationInstrumentedTest {
 
     private fun fieldText(tag: String): String {
         val node = composeRule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode()
-        val editable = node.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.EditableText) {
-            androidx.compose.ui.text.AnnotatedString("")
-        }
+        val editable =
+            node.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.EditableText) {
+                androidx.compose.ui.text
+                    .AnnotatedString("")
+            }
         if (editable.text.isNotEmpty()) return editable.text
-        val textList = node.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Text) {
-            emptyList()
-        }
+        val textList =
+            node.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Text) {
+                emptyList()
+            }
         return textList.joinToString("") { it.text }
     }
 }

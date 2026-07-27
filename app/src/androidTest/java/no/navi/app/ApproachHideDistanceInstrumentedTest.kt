@@ -16,7 +16,6 @@ import uniffi.navi.approachPhaseForDistance
  */
 @RunWith(AndroidJUnit4::class)
 class ApproachHideDistanceInstrumentedTest {
-
     @Test
     fun approachHideM_defaultsTo25Metres() {
         assertEquals(25.0, approachHideM(), 0.0)
@@ -29,28 +28,31 @@ class ApproachHideDistanceInstrumentedTest {
         val hide = approachHideM()
         assertEquals(25.0, hide, 0.0)
 
-        val samples = listOf(
-            RouteSimSample(60.0, 11.0, 0.0, 50.0, null, false),
-            RouteSimSample(60.001, 11.0, 100.0, 50.0, null, false),
-        )
-        val maneuvers = listOf(
-            RouteManeuver(
-                lat = 60.001,
-                lon = 11.0,
-                cumM = 100.0,
-                kind = "right",
-                street = "Testvegen",
-                roundaboutExit = null,
-            ),
-        )
+        val samples =
+            listOf(
+                RouteSimSample(60.0, 11.0, 0.0, 50.0, null, false),
+                RouteSimSample(60.001, 11.0, 100.0, 50.0, null, false),
+            )
+        val maneuvers =
+            listOf(
+                RouteManeuver(
+                    lat = 60.001,
+                    lon = 11.0,
+                    cumM = 100.0,
+                    kind = "right",
+                    street = "Testvegen",
+                    roundaboutExit = null,
+                ),
+            )
         val end = Waypoint(name = "End", lat = 60.001, lon = 11.0)
-        val tracker = RouteProgressTracker(
-            samples = samples,
-            maneuvers = maneuvers,
-            viaPoints = emptyList(),
-            endPoint = end,
-            hideDistanceM = hide,
-        )
+        val tracker =
+            RouteProgressTracker(
+                samples = samples,
+                maneuvers = maneuvers,
+                viaPoints = emptyList(),
+                endPoint = end,
+                hideDistanceM = hide,
+            )
 
         val before = tracker.update(60.0, 11.0)
         assertEquals(0, before.maneuverIndex)

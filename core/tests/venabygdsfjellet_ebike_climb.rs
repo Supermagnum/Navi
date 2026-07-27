@@ -52,12 +52,7 @@ fn nearest(graph: &driver_break_core::RouteGraph, lat: f64, lon: f64) -> NodeId 
 }
 
 fn pad_bbox(min_lat: f64, min_lon: f64, max_lat: f64, max_lon: f64, pad: f64) -> [f64; 4] {
-    [
-        min_lat - pad,
-        min_lon - pad,
-        max_lat + pad,
-        max_lon + pad,
-    ]
+    [min_lat - pad, min_lon - pad, max_lat + pad, max_lon + pad]
 }
 
 #[test]
@@ -130,18 +125,24 @@ fn venabygdsfjellet_ebike_climb_and_ev_car_range() {
     }
     let dist_km = distance_m / 1000.0;
     report.section("Electric Cycle — default 800 Wh / 85 Nm / 27.5\"");
-    report.line(&format!("distance_km={dist_km:.3}; path_nodes={}", path.len()));
+    report.line(&format!(
+        "distance_km={dist_km:.3}; path_nodes={}",
+        path.len()
+    ));
 
     let path_max = path_max_climb_grade_pct(&graph_bike, &path, &elevation);
     report.line(&format!("path_max_climb_grade_pct={path_max:.2}"));
 
-    let dem_hits = path.windows(2).filter(|w| {
-        graph_bike.edge_index(w[0], w[1]).is_some_and(|i| {
-            let e = &graph_bike.edges[i];
-            elevation.get_elevation(e.start_lat, e.start_lon).is_some()
-                && elevation.get_elevation(e.end_lat, e.end_lon).is_some()
+    let dem_hits = path
+        .windows(2)
+        .filter(|w| {
+            graph_bike.edge_index(w[0], w[1]).is_some_and(|i| {
+                let e = &graph_bike.edges[i];
+                elevation.get_elevation(e.start_lat, e.start_lon).is_some()
+                    && elevation.get_elevation(e.end_lat, e.end_lon).is_some()
+            })
         })
-    }).count();
+        .count();
     report.line(&format!(
         "dem_covered_edges={dem_hits}/{}",
         path.len().saturating_sub(1)
@@ -219,7 +220,9 @@ fn venabygdsfjellet_ebike_climb_and_ev_car_range() {
     let j_regen = path_mechanical_energy_j(&graph_bike, &path, &elevation, &eco_bike);
     let j_no = path_mechanical_energy_j(&graph_bike, &path, &elevation, &eco_no_regen);
     report.section("Regen on real DEM profile");
-    report.line(&format!("mech_j_regen={j_regen:.0}; mech_j_no_regen={j_no:.0}"));
+    report.line(&format!(
+        "mech_j_regen={j_regen:.0}; mech_j_no_regen={j_no:.0}"
+    ));
     assert!(
         j_regen <= j_no + 1.0,
         "regen must not increase mechanical energy (regen={j_regen} no={j_no})"
@@ -245,15 +248,9 @@ fn venabygdsfjellet_ebike_climb_and_ev_car_range() {
             j_regen < j_no,
             "with {descent_m:.0} m descent, regen energy must be strictly lower"
         );
-        let pct_r = analyze_ebike_route(
-            &graph_bike,
-            &path,
-            &elevation,
-            &eco_bike,
-            &default_ebike,
-        )
-        .0
-        .pct_of_capacity;
+        let pct_r = analyze_ebike_route(&graph_bike, &path, &elevation, &eco_bike, &default_ebike)
+            .0
+            .pct_of_capacity;
         let pct_n = analyze_ebike_route(
             &graph_bike,
             &path,
@@ -263,7 +260,9 @@ fn venabygdsfjellet_ebike_climb_and_ev_car_range() {
         )
         .0
         .pct_of_capacity;
-        report.line(&format!("battery_pct_regen={pct_r:.1}; battery_pct_no_regen={pct_n:.1}"));
+        report.line(&format!(
+            "battery_pct_regen={pct_r:.1}; battery_pct_no_regen={pct_n:.1}"
+        ));
         assert!(pct_r < pct_n);
     }
 
@@ -314,7 +313,10 @@ fn venabygdsfjellet_ebike_climb_and_ev_car_range() {
         report.line(line);
     }
     assert!(ev_range.pct_of_capacity > 0.0);
-    assert!(ev_range.pct_of_capacity < 50.0, "short mountain hop should be << 50% of 60 kWh");
+    assert!(
+        ev_range.pct_of_capacity < 50.0,
+        "short mountain hop should be << 50% of 60 kWh"
+    );
 
     let out = root.join("venabygdsfjellet_ebike_climb_report.md");
     report.write(&out).expect("write report");

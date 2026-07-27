@@ -217,9 +217,7 @@ pub fn format_ev_car_route_report(range: &EbikeRangeEstimate) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{
-        climb_capability_for, ebike_eco_config, range_estimate, EbikeConfig,
-    };
+    use crate::config::{climb_capability_for, ebike_eco_config, range_estimate, EbikeConfig};
 
     #[test]
     fn regen_reduces_battery_draw_on_undulating_route() {
@@ -229,7 +227,8 @@ mod tests {
         assert_eq!(without.regen_efficiency, 0.0);
         let d = 1_000.0;
         let mech_regen = with.segment_energy_joules(d, 80.0) + with.segment_energy_joules(d, -80.0);
-        let mech_no = without.segment_energy_joules(d, 80.0) + without.segment_energy_joules(d, -80.0);
+        let mech_no =
+            without.segment_energy_joules(d, 80.0) + without.segment_energy_joules(d, -80.0);
         assert!(
             mech_regen < mech_no,
             "regen={mech_regen} should be < no-regen={mech_no}"

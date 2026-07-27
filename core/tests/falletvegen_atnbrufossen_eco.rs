@@ -87,11 +87,7 @@ fn nearest_routable(
     use rayon::prelude::*;
     use std::collections::HashSet;
     let allowed: HashSet<osm4routing::NodeId> = if require_outgoing {
-        graph
-            .edges
-            .iter()
-            .map(|e| e.source)
-            .collect()
+        graph.edges.iter().map(|e| e.source).collect()
     } else {
         let mut s = HashSet::new();
         for e in &graph.edges {
@@ -154,9 +150,7 @@ fn run() -> anyhow::Result<()> {
     report.line(&format!(
         "Start Falletvegen/Espa, Stange 2338: ({START_LAT:.7}, {START_LON:.7})"
     ));
-    report.line(
-        "Start is the known-good Falletvegen-corridor point (same as car corridor test).",
-    );
+    report.line("Start is the known-good Falletvegen-corridor point (same as car corridor test).");
     report.line(&format!("End Atnbrufossen: ({END_LAT:.7}, {END_LON:.7})"));
     report.line(&format!(
         "Atnosen (observation only, not a via): ({ATNOSEN_LAT:.7}, {ATNOSEN_LON:.7})"
@@ -352,8 +346,7 @@ fn run() -> anyhow::Result<()> {
             near_hw.sort();
             near_hw.dedup();
             report.line(&format!(
-                "Highway tags within 2 km of Atnosen on via-path: {:?}",
-                near_hw
+                "Highway tags within 2 km of Atnosen on via-path: {near_hw:?}"
             ));
         }
         _ => {

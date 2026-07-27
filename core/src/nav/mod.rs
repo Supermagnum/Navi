@@ -137,14 +137,14 @@ pub fn format_distance_m(distance_m: f64, prefer_metric: bool) -> String {
     }
     if prefer_metric {
         if distance_m < 1000.0 {
-            format!("{:.0} m", distance_m)
+            format!("{distance_m:.0} m")
         } else {
             format!("{:.1} km", distance_m / 1000.0)
         }
     } else {
         let feet = distance_m * 3.28084;
         if feet < 1000.0 {
-            format!("{:.0} ft", feet)
+            format!("{feet:.0} ft")
         } else {
             format!("{:.1} mi", distance_m / 1609.344)
         }
@@ -215,7 +215,10 @@ mod tests {
             Some("Kirkegata".into())
         );
         assert_eq!(prefer_street_label(None, Some("E6")), Some("E6".into()));
-        assert_eq!(prefer_street_label(Some("  "), Some("E6")), Some("E6".into()));
+        assert_eq!(
+            prefer_street_label(Some("  "), Some("E6")),
+            Some("E6".into())
+        );
         assert_eq!(prefer_street_label(None, None), None);
     }
 
@@ -225,18 +228,12 @@ mod tests {
             current_road_label(Some("Storgata"), Some("Fv2"), Some("residential")),
             "Storgata"
         );
-        assert_eq!(
-            current_road_label(None, Some("E6"), Some("trunk")),
-            "E6"
-        );
+        assert_eq!(current_road_label(None, Some("E6"), Some("trunk")), "E6");
         assert_eq!(
             current_road_label(None, None, Some("service")),
             "Service road"
         );
-        assert_eq!(
-            current_road_label(Some("  "), None, Some("path")),
-            "Path"
-        );
+        assert_eq!(current_road_label(Some("  "), None, Some("path")), "Path");
     }
 
     #[test]

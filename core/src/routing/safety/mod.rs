@@ -38,8 +38,7 @@ pub fn check_overnight_candidate(
 
     if !is_established {
         for &(glat, glon) in glacier_coords {
-            if distance_m(candidate_lat, candidate_lon, glat, glon)
-                < safety.min_glacier_distance_m
+            if distance_m(candidate_lat, candidate_lon, glat, glon) < safety.min_glacier_distance_m
             {
                 return Some(OvernightRejectReason::TooCloseToGlacier);
             }

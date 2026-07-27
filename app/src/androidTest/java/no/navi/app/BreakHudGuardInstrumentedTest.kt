@@ -2,11 +2,11 @@ package no.navi.app
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
@@ -26,14 +26,15 @@ import uniffi.navi.CorridorRouteResult
  */
 @RunWith(AndroidJUnit4::class)
 class BreakHudGuardInstrumentedTest {
-
     companion object {
         @JvmStatic
         @BeforeClass
         fun beforeClass() {
             val pkg = InstrumentationRegistry.getInstrumentation().targetContext.packageName
             runCatching {
-                InstrumentationRegistry.getInstrumentation().uiAutomation
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .uiAutomation
                     .grantRuntimePermission(pkg, android.Manifest.permission.ACCESS_FINE_LOCATION)
             }
             NaviMapTestHooks.hideUiChrome = false
@@ -72,7 +73,8 @@ class BreakHudGuardInstrumentedTest {
 
     private fun loadPlannedPolyline(): String {
         val ctx = InstrumentationRegistry.getInstrumentation().context
-        return ctx.assets.open("raufoss_grimafeltet_nysethvegen.polyline.txt")
+        return ctx.assets
+            .open("raufoss_grimafeltet_nysethvegen.polyline.txt")
             .bufferedReader()
             .use { it.readText().trim() }
             .also {
@@ -83,38 +85,42 @@ class BreakHudGuardInstrumentedTest {
 
     private fun injectRealRoute() {
         val polyline = loadPlannedPolyline()
-        NaviMapTestHooks.pendingRoute = CorridorRouteResult(
-            report = "PLANNED Grimåsfeltet → Nysethvegen (Raufoss / Tollerud)",
-            distanceKm = 1.953,
-            etaMinutes = 1.953 / 50.0 * 60.0,
-            cacheHit = true,
-            coldBuildS = 0.0,
-            warmLoadS = 0.0,
-            routePolyline = polyline,
-            poiLat = 60.7278207,
-            poiLon = 10.6049538,
-            poiName = "Nysethvegen",
-            poiIconKey = "fuel",
-            breakPoisJson = "[]",
-            daysJson = "[]",
-            simSamplesJson = "[]",
-            maneuversJson = "[]",
-            priorityPathSharePct = 0.0,
-        )
+        NaviMapTestHooks.pendingRoute =
+            CorridorRouteResult(
+                report = "PLANNED Grimåsfeltet → Nysethvegen (Raufoss / Tollerud)",
+                distanceKm = 1.953,
+                etaMinutes = 1.953 / 50.0 * 60.0,
+                cacheHit = true,
+                coldBuildS = 0.0,
+                warmLoadS = 0.0,
+                routePolyline = polyline,
+                poiLat = 60.7278207,
+                poiLon = 10.6049538,
+                poiName = "Nysethvegen",
+                poiIconKey = "fuel",
+                breakPoisJson = "[]",
+                daysJson = "[]",
+                simSamplesJson = "[]",
+                maneuversJson = "[]",
+                priorityPathSharePct = 0.0,
+            )
         NaviMapTestHooks.pendingCamera = Triple(60.722, 10.613, 13.0)
         Thread.sleep(1_800)
     }
 
     private fun assertNoBreakHud() {
-        composeRule.onAllNodesWithTag("hud_break_countdown", useUnmergedTree = true)
+        composeRule
+            .onAllNodesWithTag("hud_break_countdown", useUnmergedTree = true)
             .assertCountEquals(0)
         assertTrue(
-            composeRule.onAllNodesWithText("Break in", substring = true, useUnmergedTree = true)
+            composeRule
+                .onAllNodesWithText("Break in", substring = true, useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .isEmpty(),
         )
         assertTrue(
-            composeRule.onAllNodesWithText("Break reminders off", useUnmergedTree = true)
+            composeRule
+                .onAllNodesWithText("Break reminders off", useUnmergedTree = true)
                 .fetchSemanticsNodes()
                 .isEmpty(),
         )
@@ -172,7 +178,8 @@ class BreakHudGuardInstrumentedTest {
 
         // Plan a real route — break line must appear (time mode).
         injectRealRoute()
-        composeRule.onNodeWithTag("hud_break_countdown", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("hud_break_countdown", useUnmergedTree = true)
             .assertIsDisplayed()
         assertTrue(NaviMapTestHooks.lastBreakHudVisible)
         assertTrue(NaviMapTestHooks.lastMinutesToBreak != null)
@@ -201,12 +208,15 @@ class BreakHudGuardInstrumentedTest {
         injectRealRoute()
         NaviMapTestHooks.requestBreakAsDistance = true
         Thread.sleep(800)
-        composeRule.onNodeWithTag("hud_break_countdown", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("hud_break_countdown", useUnmergedTree = true)
             .assertIsDisplayed()
-        composeRule.onNodeWithText("Break in", substring = true, useUnmergedTree = true)
-            .assertIsDisplayed()
-        composeRule.onNodeWithText("km", substring = true, useUnmergedTree = true)
-            .assertIsDisplayed()
+        composeRule
+            .onNodeWithTag("hud_break_countdown", useUnmergedTree = true)
+            .assertTextContains("Break in", substring = true)
+        composeRule
+            .onNodeWithTag("hud_break_countdown", useUnmergedTree = true)
+            .assertTextContains("km", substring = true)
         NaviMapTestHooks.requestClearRoute = true
         Thread.sleep(1_000)
         assertNoBreakHud()

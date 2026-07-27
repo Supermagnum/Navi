@@ -4,9 +4,14 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/target/integration-fixtures");
-    let pbf = env::var("NAVI_PBF").map(PathBuf::from).unwrap_or_else(|_| root.join("ostlandet-latest.osm.pbf"));
-    let elev = env::var("NAVI_ELEV").map(PathBuf::from).unwrap_or_else(|_| root.join("elevation"));
+    let root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/target/integration-fixtures");
+    let pbf = env::var("NAVI_PBF")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| root.join("ostlandet-latest.osm.pbf"));
+    let elev = env::var("NAVI_ELEV")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| root.join("elevation"));
     let cache = env::var("NAVI_CACHE")
         .map(PathBuf::from)
         .unwrap_or_else(|_| root.join("graph-cache-foot-ostlandet"));
@@ -28,8 +33,14 @@ fn main() {
     if !r.report.contains("PASS") {
         std::process::exit(1);
     }
-    let _ = std::fs::write(root.join("skolla_rondvassbu.polyline.txt"), &r.route_polyline);
-    let _ = std::fs::write(root.join("skolla_rondvassbu.breaks.json"), &r.break_pois_json);
+    let _ = std::fs::write(
+        root.join("skolla_rondvassbu.polyline.txt"),
+        &r.route_polyline,
+    );
+    let _ = std::fs::write(
+        root.join("skolla_rondvassbu.breaks.json"),
+        &r.break_pois_json,
+    );
     eprintln!("distance_km={}", r.distance_km);
     eprintln!("breaks={}", r.break_pois_json);
 }

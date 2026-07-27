@@ -42,7 +42,10 @@ object OstlandetOfflineFixtures {
         }
     }
 
-    private fun copyIfNeeded(src: File, dst: File) {
+    private fun copyIfNeeded(
+        src: File,
+        dst: File,
+    ) {
         if (dst.isFile && dst.length() == src.length()) return
         src.copyTo(dst, overwrite = true)
     }

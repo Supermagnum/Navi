@@ -50,19 +50,19 @@ impl ElevationReader {
             .to_ascii_lowercase();
 
         if ext == "hgt" || key.to_ascii_lowercase().contains(".hgt") {
-            if !self.hgt_cache.contains_key(&key) {
+            if let std::collections::hash_map::Entry::Vacant(e) = self.hgt_cache.entry(key) {
                 let tile = Tile::from_file(path)
                     .map_err(|e| anyhow::anyhow!("failed to read hgt tile: {e:?}"))?;
-                self.hgt_cache.insert(key, tile);
+                e.insert(tile);
             }
             return Ok(());
         }
 
-        if !self.tiff_cache.contains_key(&key) {
+        if let std::collections::hash_map::Entry::Vacant(e) = self.tiff_cache.entry(key) {
             let file = File::open(path)?;
             let tiff = geotiff::GeoTiff::read(file)
                 .map_err(|e| anyhow::anyhow!("failed to read geotiff: {e:?}"))?;
-            self.tiff_cache.insert(key, tiff);
+            e.insert(tiff);
         }
         Ok(())
     }

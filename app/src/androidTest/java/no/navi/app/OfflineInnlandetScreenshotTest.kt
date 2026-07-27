@@ -49,18 +49,24 @@ class OfflineInnlandetScreenshotTest {
             val localPbf = File(dataDir, "espa-atnbrufossen-corridor.osm.pbf")
             pbf.copyTo(localPbf, overwrite = true)
             File(dataDir, "elevation").deleteRecursively()
-            val tarProc = ProcessBuilder(
-                "tar", "-xf", elevTar.absolutePath, "-C", dataDir.absolutePath,
-            ).redirectErrorStream(true).start()
+            val tarProc =
+                ProcessBuilder(
+                    "tar",
+                    "-xf",
+                    elevTar.absolutePath,
+                    "-C",
+                    dataDir.absolutePath,
+                ).redirectErrorStream(true).start()
             val tarOut = tarProc.inputStream.bufferedReader().readText()
             check(tarProc.waitFor() == 0) { "tar failed: $tarOut" }
 
-            carRoute = runCarCorridorPipeline(
-                pbfPath = localPbf.absolutePath,
-                elevDir = File(dataDir, "elevation").absolutePath,
-                cacheDir = File(dataDir, "graph-cache").absolutePath,
-                breakIntervalHours = 1.0,
-            )
+            carRoute =
+                runCarCorridorPipeline(
+                    pbfPath = localPbf.absolutePath,
+                    elevDir = File(dataDir, "elevation").absolutePath,
+                    cacheDir = File(dataDir, "graph-cache").absolutePath,
+                    breakIntervalHours = 1.0,
+                )
             check(carRoute.routePolyline.contains(';')) { carRoute.report }
             check(carRoute.distanceKm > 5.0) { "distance ${carRoute.distanceKm}" }
             check(carRoute.report.contains("PASS")) { carRoute.report }
@@ -191,7 +197,21 @@ class OfflineInnlandetScreenshotTest {
             "offline 3D hillshade must attach without network",
             NaviMapTestHooks.lastTerrainAttached,
         )
-        assertTrue(NaviMapTestHooks.lastCameraPitch >= 40.0)
+        // Opt-in 3D = hillshade attach only (TERRAIN_VIEW_TILT is 0). Camera tilt is
+        // a separate user preset — request 45° so the offline shot exercises pitch
+        // without treating flat hillshade as failure (same pattern as BasemapPmtiles).
+        NaviMapTestHooks.requestCameraTiltDeg = 45.0
+        val tiltDeadline = System.currentTimeMillis() + 30_000
+        while (System.currentTimeMillis() < tiltDeadline) {
+            if (NaviMapTestHooks.lastCameraPitch >= 40.0) break
+            Thread.sleep(400)
+            NaviMapTestHooks.requestCameraTiltDeg = 45.0
+        }
+        assertTrue(
+            "user tilt preset should apply with Vulkan " +
+                "(pitch=${NaviMapTestHooks.lastCameraPitch})",
+            NaviMapTestHooks.lastCameraPitch >= 40.0,
+        )
         assertTrue(
             "breaks must work offline",
             NaviMapTestHooks.lastBreakHudVisible,

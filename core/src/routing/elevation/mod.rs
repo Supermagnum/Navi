@@ -8,9 +8,9 @@ mod service;
 pub mod sources;
 pub mod tile_id;
 
+pub use crate::download::DownloadControl;
 pub use cache::ElevationCache;
 pub use country::lookup as country_lookup;
-pub use crate::download::DownloadControl;
 pub use downloader::{ElevationDownloader, ElevationJob};
 pub use reader::ElevationReader;
 pub use service::ElevationService;

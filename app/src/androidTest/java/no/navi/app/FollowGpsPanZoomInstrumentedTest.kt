@@ -30,7 +30,6 @@ import java.util.concurrent.TimeUnit
  */
 @RunWith(AndroidJUnit4::class)
 class FollowGpsPanZoomInstrumentedTest {
-
     @get:Rule
     val composeRule = createAndroidComposeRule<MainActivity>()
 
@@ -44,7 +43,9 @@ class FollowGpsPanZoomInstrumentedTest {
         fun beforeClass() {
             val pkg = InstrumentationRegistry.getInstrumentation().targetContext.packageName
             runCatching {
-                InstrumentationRegistry.getInstrumentation().uiAutomation
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .uiAutomation
                     .grantRuntimePermission(pkg, android.Manifest.permission.ACCESS_FINE_LOCATION)
             }
             NaviMapTestHooks.hideUiChrome = false
@@ -172,12 +173,13 @@ class FollowGpsPanZoomInstrumentedTest {
         waitUntil(5_000) { NaviMapTestHooks.followGps }
         Thread.sleep(700)
         assertTrue(NaviMapTestHooks.followGps)
-        val leftPan = haversineM(
-            panLat,
-            panLon,
-            NaviMapTestHooks.lastCameraLat,
-            NaviMapTestHooks.lastCameraLon,
-        )
+        val leftPan =
+            haversineM(
+                panLat,
+                panLon,
+                NaviMapTestHooks.lastCameraLat,
+                NaviMapTestHooks.lastCameraLon,
+            )
         assertTrue("recenter should leave the panned view (moved ${leftPan}m)", leftPan > 50.0)
         shot(shotDir, "05_after_recenter.png")
 
@@ -208,9 +210,10 @@ class FollowGpsPanZoomInstrumentedTest {
 
         // Pull shots to host docs if the instrumented process can see the path
         // (otherwise adb pull after the test).
-        val docs = File(
-            "/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi/docs/images/follow_gps",
-        )
+        val docs =
+            File(
+                "/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi/docs/images/follow_gps",
+            )
         runCatching {
             docs.mkdirs()
             shotDir.listFiles()?.filter { it.extension == "png" }?.forEach { f ->
@@ -224,21 +227,27 @@ class FollowGpsPanZoomInstrumentedTest {
     }
 
     private fun planShortHop(dataDir: File): CorridorRouteResult {
-        val pbf = listOf(
-            File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
-            File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"),
-            File("/data/local/tmp/navi_fixtures/espa-atnbrufossen-corridor.osm.pbf"),
-            File(dataDir, "ostlandet-latest.osm.pbf"),
-            File(dataDir, "espa-atnbrufossen-corridor.osm.pbf"),
-        ).firstOrNull { it.isFile && it.length() > 1_000_000L }
-            ?: error("missing Ostlandet/Oppland/Espa PBF under /data/local/tmp/navi_fixtures")
+        val pbf =
+            listOf(
+                File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
+                File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"),
+                File("/data/local/tmp/navi_fixtures/espa-atnbrufossen-corridor.osm.pbf"),
+                File(dataDir, "ostlandet-latest.osm.pbf"),
+                File(dataDir, "espa-atnbrufossen-corridor.osm.pbf"),
+            ).firstOrNull { it.isFile && it.length() > 1_000_000L }
+                ?: error("missing Ostlandet/Oppland/Espa PBF under /data/local/tmp/navi_fixtures")
 
         val elevDir = File(dataDir, "elevation").also { it.mkdirs() }
         val stagedTar = File("/data/local/tmp/navi_fixtures/elevation-corridor.tar")
         if (stagedTar.isFile && !File(elevDir, "copernicus").exists()) {
-            val tarProc = ProcessBuilder(
-                "tar", "-xf", stagedTar.absolutePath, "-C", dataDir.absolutePath,
-            ).redirectErrorStream(true).start()
+            val tarProc =
+                ProcessBuilder(
+                    "tar",
+                    "-xf",
+                    stagedTar.absolutePath,
+                    "-C",
+                    dataDir.absolutePath,
+                ).redirectErrorStream(true).start()
             tarProc.waitFor(120, TimeUnit.SECONDS)
         }
         val cache = File(dataDir, "graph-cache-follow-gps").also { it.mkdirs() }
@@ -255,14 +264,15 @@ class FollowGpsPanZoomInstrumentedTest {
             avoidMajor = false,
             avoidTolls = false,
             avoidFerries = false,
-            vehicle = FfiVehicleLimits(
-                axleWeightKg = null,
-                bogieWeightKg = null,
-                heightM = null,
-                widthM = null,
-                lengthM = null,
-                totalWeightKg = null,
-            ),
+            vehicle =
+                FfiVehicleLimits(
+                    axleWeightKg = null,
+                    bogieWeightKg = null,
+                    heightM = null,
+                    widthM = null,
+                    lengthM = null,
+                    totalWeightKg = null,
+                ),
             preferOfficialNetworks = false,
         )
     }
@@ -276,7 +286,10 @@ class FollowGpsPanZoomInstrumentedTest {
         composeRule.waitForIdle()
     }
 
-    private fun shot(dir: File, name: String) {
+    private fun shot(
+        dir: File,
+        name: String,
+    ) {
         val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
         assertNotNull("screenshot $name", shot)
         assertTrue(shot!!.width > 0)
@@ -285,8 +298,11 @@ class FollowGpsPanZoomInstrumentedTest {
             shot.compress(Bitmap.CompressFormat.PNG, 100, it)
         }
         assertTrue("$name too small", out.length() > 3_000)
-        val pfd = InstrumentationRegistry.getInstrumentation().uiAutomation
-            .executeShellCommand("su 0 cp ${out.absolutePath} /data/local/tmp/$name")
+        val pfd =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .uiAutomation
+                .executeShellCommand("su 0 cp ${out.absolutePath} /data/local/tmp/$name")
         java.io.FileInputStream(pfd.fileDescriptor).use { input ->
             val buf = ByteArray(4096)
             while (input.read(buf) >= 0) {
@@ -295,7 +311,10 @@ class FollowGpsPanZoomInstrumentedTest {
         pfd.close()
     }
 
-    private fun waitUntil(timeoutMs: Long, pred: () -> Boolean) {
+    private fun waitUntil(
+        timeoutMs: Long,
+        pred: () -> Boolean,
+    ) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (pred()) return
@@ -304,13 +323,19 @@ class FollowGpsPanZoomInstrumentedTest {
         assertTrue("timeout ${timeoutMs}ms", pred())
     }
 
-    private fun haversineM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    private fun haversineM(
+        lat1: Double,
+        lon1: Double,
+        lat2: Double,
+        lon2: Double,
+    ): Double {
         val r = 6_378_100.0
         val dLat = Math.toRadians(lat2 - lat1)
         val dLon = Math.toRadians(lon2 - lon1)
-        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2)
+        val a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2)
         return 2 * r * Math.asin(Math.sqrt(a))
     }
 }

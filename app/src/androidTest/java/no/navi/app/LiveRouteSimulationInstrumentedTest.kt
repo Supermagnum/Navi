@@ -1,7 +1,6 @@
 package no.navi.app
 
 import android.graphics.Bitmap
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -30,7 +29,6 @@ import java.util.concurrent.TimeUnit
  */
 @RunWith(AndroidJUnit4::class)
 class LiveRouteSimulationInstrumentedTest {
-
     @get:Rule
     val composeRule = createAndroidComposeRule<MainActivity>()
 
@@ -58,30 +56,37 @@ class LiveRouteSimulationInstrumentedTest {
         fun planShortLoop() {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
             val dataDir = NaviAppData.resolve(context).also { it.mkdirs() }
-            val pbf = listOf(
-                File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
-                File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"),
-            ).firstOrNull { it.isFile && it.length() > 10_000_000L }
-                ?: error("missing Ostlandet/Oppland PBF under /data/local/tmp/navi_fixtures")
+            val pbf =
+                listOf(
+                    File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
+                    File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"),
+                ).firstOrNull { it.isFile && it.length() > 10_000_000L }
+                    ?: error("missing Ostlandet/Oppland PBF under /data/local/tmp/navi_fixtures")
 
             val elevDir = File(dataDir, "elevation").also { it.mkdirs() }
             val stagedTar = File("/data/local/tmp/navi_fixtures/elevation-corridor.tar")
             if (stagedTar.isFile && !File(elevDir, "copernicus").exists()) {
-                val tarProc = ProcessBuilder(
-                    "tar", "-xf", stagedTar.absolutePath, "-C", dataDir.absolutePath,
-                ).redirectErrorStream(true).start()
+                val tarProc =
+                    ProcessBuilder(
+                        "tar",
+                        "-xf",
+                        stagedTar.absolutePath,
+                        "-C",
+                        dataDir.absolutePath,
+                    ).redirectErrorStream(true).start()
                 tarProc.waitFor(120, TimeUnit.SECONDS)
             }
             val cacheDir = File(dataDir, "graph-cache-${pbf.nameWithoutExtension}-car-sim")
             cacheDir.mkdirs()
-            val vehicle = FfiVehicleLimits(
-                axleWeightKg = null,
-                bogieWeightKg = null,
-                heightM = null,
-                widthM = null,
-                lengthM = null,
-                totalWeightKg = null,
-            )
+            val vehicle =
+                FfiVehicleLimits(
+                    axleWeightKg = null,
+                    bogieWeightKg = null,
+                    heightM = null,
+                    widthM = null,
+                    lengthM = null,
+                    totalWeightKg = null,
+                )
             val wps = listOf(START, VIA1, VIA2, END)
             val legSamples = mutableListOf<List<RouteSimSample>>()
             val legManeuvers = mutableListOf<List<RouteManeuver>>()
@@ -93,33 +98,35 @@ class LiveRouteSimulationInstrumentedTest {
             for (i in 0 until wps.lastIndex) {
                 val a = wps[i]
                 val b = wps[i + 1]
-                val leg = planCarRoute(
-                    pbfPath = pbf.absolutePath,
-                    elevDir = elevDir.absolutePath,
-                    cacheDir = cacheDir.absolutePath,
-                    startLat = a.first,
-                    startLon = a.second,
-                    endLat = b.first,
-                    endLon = b.second,
-                    useEco = false,
-                    profile = TravelProfile.CAR,
-                    avoidMajor = false,
-                    avoidTolls = false,
-                    avoidFerries = false,
-                    vehicle = vehicle,
-                    preferOfficialNetworks = false,
-                )
+                val leg =
+                    planCarRoute(
+                        pbfPath = pbf.absolutePath,
+                        elevDir = elevDir.absolutePath,
+                        cacheDir = cacheDir.absolutePath,
+                        startLat = a.first,
+                        startLon = a.second,
+                        endLat = b.first,
+                        endLon = b.second,
+                        useEco = false,
+                        profile = TravelProfile.CAR,
+                        avoidMajor = false,
+                        avoidTolls = false,
+                        avoidFerries = false,
+                        vehicle = vehicle,
+                        preferOfficialNetworks = false,
+                    )
                 assertTrue(
                     "leg ${i + 1} must PASS: ${leg.report.take(400)}",
                     leg.report.contains("PASS") && leg.routePolyline.isNotBlank(),
                 )
                 dist += leg.distanceKm
                 eta += leg.etaMinutes
-                poly = if (poly.isEmpty()) {
-                    leg.routePolyline
-                } else {
-                    poly + ";" + leg.routePolyline.substringAfter(';')
-                }
+                poly =
+                    if (poly.isEmpty()) {
+                        leg.routePolyline
+                    } else {
+                        poly + ";" + leg.routePolyline.substringAfter(';')
+                    }
                 legSamples.add(parseRouteSimSamples(leg.simSamplesJson))
                 legManeuvers.add(parseRouteManeuvers(leg.maneuversJson))
                 last = leg
@@ -130,44 +137,47 @@ class LiveRouteSimulationInstrumentedTest {
             assertTrue("expected simulation samples", samples.size >= 10)
             assertTrue("expected maneuvers including destination", maneuvers.isNotEmpty())
             val base = last!!
-            planned = CorridorRouteResult(
-                report = "TEST_KIND=PLAN_MULTI\nPASS\ndistance_km=$dist\n",
-                distanceKm = dist,
-                etaMinutes = eta,
-                cacheHit = base.cacheHit,
-                coldBuildS = base.coldBuildS,
-                warmLoadS = base.warmLoadS,
-                routePolyline = poly,
-                poiLat = END.first,
-                poiLon = END.second,
-                poiName = "Loop end",
-                poiIconKey = base.poiIconKey,
-                breakPoisJson = "[]",
-                daysJson = "[]",
-                simSamplesJson = JSONArray(
-                    samples.map { s ->
-                        JSONObject()
-                            .put("lat", s.lat)
-                            .put("lon", s.lon)
-                            .put("cum_m", s.cumM)
-                            .put("speed_kmh", s.speedKmh)
-                            .put("highway", s.highway)
-                            .put("maxspeed_posted", s.maxspeedPosted)
-                    },
-                ).toString(),
-                maneuversJson = JSONArray(
-                    maneuvers.map { m ->
-                        JSONObject()
-                            .put("lat", m.lat)
-                            .put("lon", m.lon)
-                            .put("cum_m", m.cumM)
-                            .put("kind", m.kind)
-                            .put("street", m.street)
-                            .put("roundabout_exit", m.roundaboutExit)
-                    },
-                ).toString(),
-                priorityPathSharePct = base.priorityPathSharePct,
-            )
+            planned =
+                CorridorRouteResult(
+                    report = "TEST_KIND=PLAN_MULTI\nPASS\ndistance_km=$dist\n",
+                    distanceKm = dist,
+                    etaMinutes = eta,
+                    cacheHit = base.cacheHit,
+                    coldBuildS = base.coldBuildS,
+                    warmLoadS = base.warmLoadS,
+                    routePolyline = poly,
+                    poiLat = END.first,
+                    poiLon = END.second,
+                    poiName = "Loop end",
+                    poiIconKey = base.poiIconKey,
+                    breakPoisJson = "[]",
+                    daysJson = "[]",
+                    simSamplesJson =
+                        JSONArray(
+                            samples.map { s ->
+                                JSONObject()
+                                    .put("lat", s.lat)
+                                    .put("lon", s.lon)
+                                    .put("cum_m", s.cumM)
+                                    .put("speed_kmh", s.speedKmh)
+                                    .put("highway", s.highway)
+                                    .put("maxspeed_posted", s.maxspeedPosted)
+                            },
+                        ).toString(),
+                    maneuversJson =
+                        JSONArray(
+                            maneuvers.map { m ->
+                                JSONObject()
+                                    .put("lat", m.lat)
+                                    .put("lon", m.lon)
+                                    .put("cum_m", m.cumM)
+                                    .put("kind", m.kind)
+                                    .put("street", m.street)
+                                    .put("roundabout_exit", m.roundaboutExit)
+                            },
+                        ).toString(),
+                    priorityPathSharePct = base.priorityPathSharePct,
+                )
             android.util.Log.i(
                 "LiveRouteSim",
                 "planned distance_km=$dist eta_min=$eta samples=${samples.size} " +
@@ -198,18 +208,20 @@ class LiveRouteSimulationInstrumentedTest {
         NaviMapTestHooks.routeViaLabel = "Via1, Via2"
         NaviMapTestHooks.routeEndLabel = "End"
         NaviMapTestHooks.pendingFromPoint = Waypoint("Start", START.first, START.second)
-        NaviMapTestHooks.pendingViaPoints = listOf(
-            Waypoint("Via1", VIA1.first, VIA1.second),
-            Waypoint("Via2", VIA2.first, VIA2.second),
-        )
+        NaviMapTestHooks.pendingViaPoints =
+            listOf(
+                Waypoint("Via1", VIA1.first, VIA1.second),
+                Waypoint("Via2", VIA2.first, VIA2.second),
+            )
         NaviMapTestHooks.pendingToPoint = Waypoint("End", END.first, END.second)
         NaviMapTestHooks.pendingRoute = planned
         waitRouteOnMap()
 
-        val shotDir = File(
-            NaviAppData.resolve(InstrumentationRegistry.getInstrumentation().targetContext),
-            "sim_loop_shots",
-        ).also { it.mkdirs() }
+        val shotDir =
+            File(
+                NaviAppData.resolve(InstrumentationRegistry.getInstrumentation().targetContext),
+                "sim_loop_shots",
+            ).also { it.mkdirs() }
 
         saveShot(shotDir, "sim_loop_route_planned.png")
         pullToDocs("sim_loop_route_planned.png", shotDir)
@@ -224,10 +236,15 @@ class LiveRouteSimulationInstrumentedTest {
         // Give the overlay a moment to poll simulatingActive and recompose.
         Thread.sleep(1_000)
         composeRule.waitForIdle()
-        val device = androidx.test.uiautomator.UiDevice.getInstance(
-            InstrumentationRegistry.getInstrumentation(),
-        )
-        val bannerVisible = device.hasObject(androidx.test.uiautomator.By.text("SIMULATING"))
+        val device =
+            androidx.test.uiautomator.UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation(),
+            )
+        val bannerVisible =
+            device.hasObject(
+                androidx.test.uiautomator.By
+                    .text("SIMULATING"),
+            )
         android.util.Log.i(
             "LiveRouteSim",
             "banner_visible=$bannerVisible simulatingActive=${NaviMapTestHooks.simulatingActive}",
@@ -285,8 +302,10 @@ class LiveRouteSimulationInstrumentedTest {
         Thread.sleep(500)
 
         // Per-turn 100 m / 50 m approach checkpoints via seek (same applyFix path).
-        val turns = maneuvers.filter { it.kind != "destination" && it.cumM > 120.0 }
-            .take(12)
+        val turns =
+            maneuvers
+                .filter { it.kind != "destination" && it.cumM > 120.0 }
+                .take(12)
         assertTrue("route should have real turns, got ${maneuvers.map { it.kind }}", turns.isNotEmpty())
         var viaSeen = false
         for ((idx, turn) in turns.withIndex()) {
@@ -317,7 +336,8 @@ class LiveRouteSimulationInstrumentedTest {
                 )
                 // Best-effort Compose visibility (SurfaceView may hide semantics).
                 runCatching {
-                    composeRule.onNodeWithTag("approach_instruction_box", useUnmergedTree = true)
+                    composeRule
+                        .onNodeWithTag("approach_instruction_box", useUnmergedTree = true)
                         .assertExists()
                 }
                 val name = "sim_loop_turn${idx}_${before.toInt()}m.png"
@@ -337,9 +357,10 @@ class LiveRouteSimulationInstrumentedTest {
         val endCum = samples.last().cumM
         // Seek near sample points closest to each via waypoint.
         for (via in listOf(VIA1, VIA2)) {
-            val nearest = samples.minByOrNull {
-                RouteProgressTracker.haversineM(it.lat, it.lon, via.first, via.second)
-            } ?: continue
+            val nearest =
+                samples.minByOrNull {
+                    RouteProgressTracker.haversineM(it.lat, it.lon, via.first, via.second)
+                } ?: continue
             NaviMapTestHooks.requestSimSeekCumM = nearest.cumM
             Thread.sleep(700)
             if (NaviMapTestHooks.lastViaIndex >= 0) viaSeen = true
@@ -385,7 +406,10 @@ class LiveRouteSimulationInstrumentedTest {
         error("route polyline not applied (${NaviMapTestHooks.lastRoutePolylineChars})")
     }
 
-    private fun saveShot(dir: File, name: String) {
+    private fun saveShot(
+        dir: File,
+        name: String,
+    ) {
         val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
         assertNotNull(shot)
         assertTrue(shot!!.width > 0)
@@ -394,14 +418,20 @@ class LiveRouteSimulationInstrumentedTest {
             shot.compress(Bitmap.CompressFormat.PNG, 100, it)
         }
         assertTrue(out.length() > 3_000)
-        val extDir = InstrumentationRegistry.getInstrumentation()
-            .targetContext.getExternalFilesDir(null)
+        val extDir =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .targetContext
+                .getExternalFilesDir(null)
         if (extDir != null) {
             out.copyTo(File(extDir, name), overwrite = true)
         }
         // Persist under /data/local/tmp via root so host adb pull survives app teardown.
-        val pfd = InstrumentationRegistry.getInstrumentation().uiAutomation
-            .executeShellCommand("su 0 cp ${out.absolutePath} /data/local/tmp/$name")
+        val pfd =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .uiAutomation
+                .executeShellCommand("su 0 cp ${out.absolutePath} /data/local/tmp/$name")
         java.io.FileInputStream(pfd.fileDescriptor).use { input ->
             val buf = ByteArray(4096)
             while (input.read(buf) >= 0) {
@@ -411,7 +441,10 @@ class LiveRouteSimulationInstrumentedTest {
         android.util.Log.i("LiveRouteSim", "SHOT ${out.absolutePath}")
     }
 
-    private fun pullToDocs(name: String, shotDir: File) {
+    private fun pullToDocs(
+        name: String,
+        shotDir: File,
+    ) {
         android.util.Log.i("LiveRouteSim", "SHOT_READY $name size=${File(shotDir, name).length()}")
     }
 }

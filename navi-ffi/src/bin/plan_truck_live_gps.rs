@@ -38,7 +38,8 @@ fn main() {
             std::process::exit(2);
         });
 
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/target/integration-fixtures");
+    let root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/target/integration-fixtures");
     let pbf = env::var("NAVI_PBF")
         .map(PathBuf::from)
         .unwrap_or_else(|_| root.join("ostlandet-latest.osm.pbf"));

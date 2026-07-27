@@ -34,8 +34,8 @@ fn overnight_proximity_no_redundant_pbf_scan() {
 
     // --- AFTER path: hiking POI load (includes buildings) + barriers (glaciers) ---
     let t_poi = Instant::now();
-    let poi = PoiIndex::load_from_pbf_bbox_with_overnight_buildings(&pbf, BBOX)
-        .expect("poi+buildings");
+    let poi =
+        PoiIndex::load_from_pbf_bbox_with_overnight_buildings(&pbf, BBOX).expect("poi+buildings");
     let poi_ms = t_poi.elapsed().as_secs_f64() * 1000.0;
 
     let t_poi_plain = Instant::now();

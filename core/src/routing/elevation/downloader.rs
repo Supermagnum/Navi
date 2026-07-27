@@ -51,12 +51,7 @@ impl ElevationDownloader {
             .ok_or_else(|| anyhow::anyhow!("unknown country code: {country_code}"))?;
         let tiles = bbox_to_tiles(bbox);
         let store = ElevationJobStore::new(&self.storage);
-        let record = store.create_job(
-            JobScope::Country,
-            Some(country_code),
-            bbox,
-            &tiles,
-        )?;
+        let record = store.create_job(JobScope::Country, Some(country_code), bbox, &tiles)?;
         Ok(ElevationJob {
             id: record.id,
             record,
@@ -96,9 +91,10 @@ impl ElevationDownloader {
             }
 
             let tile = pending[0].clone();
-            let tile_id: HgtTileId = tile.tile_id.parse().map_err(|_| {
-                anyhow::anyhow!("invalid tile id {}", tile.tile_id)
-            })?;
+            let tile_id: HgtTileId = tile
+                .tile_id
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid tile id {}", tile.tile_id))?;
 
             if self.cache.tile_exists(tile_id) {
                 if let Some(path) = self.cache.resolve_local_path(tile_id) {

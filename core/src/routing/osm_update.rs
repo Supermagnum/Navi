@@ -100,9 +100,7 @@ pub enum UpdatePlan {
         days_behind: Option<u64>,
     },
     /// No Geofabrik binding for this extract (e.g. custom corridor cut).
-    Unsupported {
-        reason: String,
-    },
+    Unsupported { reason: String },
 }
 
 const PENDING_PLAN_FILENAME: &str = "pending_osm_update.json";
@@ -214,7 +212,7 @@ fn http_get_text(url: &str) -> Result<String> {
         if !resp.status().is_success() {
             bail!("HTTP {} for {url}", resp.status());
         }
-        Ok(resp.text().await.context("read body")?)
+        resp.text().await.context("read body")
     })
 }
 
@@ -308,8 +306,7 @@ pub fn decide_update_plan(
         if days_behind >= STALENESS_FULL_REDOWNLOAD_DAYS {
             return UpdatePlan::FullRedownload {
                 reason: format!(
-                    "Local extract is {days_behind} days old (threshold {} days); diff-chaining skipped",
-                    STALENESS_FULL_REDOWNLOAD_DAYS
+                    "Local extract is {days_behind} days old (threshold {STALENESS_FULL_REDOWNLOAD_DAYS} days); diff-chaining skipped"
                 ),
                 latest_pbf_url: geofabrik_latest_pbf_url(geofabrik_region),
                 remote_timestamp: remote.timestamp.clone(),
@@ -335,8 +332,7 @@ pub fn decide_update_plan(
         }
         if !osmium {
             return UpdatePlan::FullRedownload {
-                reason: "osmium not available; skipping .osc.gz chain, full latest download"
-                    .into(),
+                reason: "osmium not available; skipping .osc.gz chain, full latest download".into(),
                 latest_pbf_url: geofabrik_latest_pbf_url(geofabrik_region),
                 remote_timestamp: remote.timestamp.clone(),
                 remote_sequence: remote.sequence_number,
@@ -363,8 +359,8 @@ pub fn decide_update_plan(
 
 /// Apply a previously computed plan. Caller must have shown the plan to the user.
 pub fn apply_update_plan(data_dir: &Path, plan: &UpdatePlan) -> Result<UpdateApplyResult> {
-    let meta = RegionExtractMeta::load(data_dir)?
-        .context("region_meta.json required to apply updates")?;
+    let meta =
+        RegionExtractMeta::load(data_dir)?.context("region_meta.json required to apply updates")?;
     let pbf_path = data_dir.join(&meta.pbf_filename);
     if !pbf_path.is_file() {
         bail!("local PBF missing: {}", pbf_path.display());
@@ -709,25 +705,13 @@ timestamp=2024-01-15T01\\:02\\:03Z
 
     #[test]
     fn plan_fresh_is_up_to_date() {
-        let plan = decide_update_plan(
-            "europe/norway/ostlandet",
-            Some(100),
-            3,
-            &remote(100),
-            true,
-        );
+        let plan = decide_update_plan("europe/norway/ostlandet", Some(100), 3, &remote(100), true);
         assert!(matches!(plan, UpdatePlan::UpToDate { .. }));
     }
 
     #[test]
     fn plan_diff_when_osmium_and_fresh_enough() {
-        let plan = decide_update_plan(
-            "europe/norway/ostlandet",
-            Some(100),
-            5,
-            &remote(103),
-            true,
-        );
+        let plan = decide_update_plan("europe/norway/ostlandet", Some(100), 5, &remote(103), true);
         match plan {
             UpdatePlan::DiffUpdate {
                 from_sequence,
@@ -746,13 +730,7 @@ timestamp=2024-01-15T01\\:02\\:03Z
 
     #[test]
     fn plan_full_when_osmium_unavailable_instead_of_diff() {
-        let plan = decide_update_plan(
-            "europe/norway/ostlandet",
-            Some(100),
-            5,
-            &remote(103),
-            false,
-        );
+        let plan = decide_update_plan("europe/norway/ostlandet", Some(100), 5, &remote(103), false);
         match plan {
             UpdatePlan::FullRedownload { reason, .. } => {
                 assert!(reason.contains("osmium not available"));
@@ -775,13 +753,7 @@ timestamp=2024-01-15T01\\:02\\:03Z
 
     #[test]
     fn plan_full_when_sequence_unknown() {
-        let plan = decide_update_plan(
-            "europe/norway/ostlandet",
-            None,
-            2,
-            &remote(50),
-            true,
-        );
+        let plan = decide_update_plan("europe/norway/ostlandet", None, 2, &remote(50), true);
         match plan {
             UpdatePlan::FullRedownload { reason, .. } => {
                 assert!(reason.contains("sequence unknown"));

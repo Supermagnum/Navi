@@ -57,6 +57,8 @@ pub enum CallOutcome {
 
 struct StoreData {
     api: Box<dyn HostApi>,
+    /// Capability set retained for future per-call enforcement audits.
+    #[allow(dead_code)]
     allowed: HashSet<Capability>,
 }
 
@@ -111,7 +113,7 @@ impl PluginHost {
         let mut config = Config::new();
         config.consume_fuel(true);
         config.epoch_interruption(true);
-        let engine = Engine::new(&config).map_err(|e| PluginError::Other(e.into()))?;
+        let engine = Engine::new(&config).map_err(PluginError::Other)?;
         let module = Module::from_file(&engine, &wasm_path)
             .with_context(|| format!("load wasm {}", wasm_path.display()))
             .map_err(PluginError::Other)?;
@@ -161,12 +163,12 @@ impl PluginHost {
         );
         store
             .set_fuel(self.limits.fuel)
-            .map_err(|e| PluginError::Other(e.into()))?;
+            .map_err(PluginError::Other)?;
         store.set_epoch_deadline(1);
 
         let instance = linker
             .instantiate(&mut store, &self.module)
-            .map_err(|e| PluginError::Other(e.into()))?;
+            .map_err(PluginError::Other)?;
 
         let entry_name = self.manifest.entry.as_str();
         let func = instance
@@ -276,8 +278,8 @@ fn install_imports(linker: &mut Linker<StoreData>, allowed: &HashSet<Capability>
             "poi_write",
             |mut caller: Caller<'_, StoreData>, ptr: u32, len: u32| -> Result<i32> {
                 let raw = read_guest_string(&mut caller, ptr, len)?;
-                let v: serde_json::Value = serde_json::from_str(&raw)
-                    .map_err(|e| anyhow!("poi_write json: {e}"))?;
+                let v: serde_json::Value =
+                    serde_json::from_str(&raw).map_err(|e| anyhow!("poi_write json: {e}"))?;
                 let poi = PoiWrite {
                     name: v
                         .get("name")

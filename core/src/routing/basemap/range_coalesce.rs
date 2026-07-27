@@ -3,13 +3,13 @@
 //! The `pmtiles` crate's `DirEntry` fields are `pub(crate)`, so we parse directories
 //! ourselves and merge nearby tile byte-ranges into fewer, larger Range GETs.
 
-use std::collections::{HashMap, HashSet};
-use std::io::Read;
 use anyhow::{anyhow, bail, Context};
 use bytes::Bytes;
 use flate2::read::GzDecoder;
 use futures_util::future::join_all;
 use pmtiles::{AsyncBackend, TileCoord, TileId};
+use std::collections::{HashMap, HashSet};
+use std::io::Read;
 
 use crate::download::progress as download_progress;
 use crate::download::DownloadControl;
@@ -217,8 +217,11 @@ pub async fn fetch_tiles_coalesced(
         }
         while control.is_paused() {
             if let Some((storage, job_id)) = store {
-                let _ = PmtilesJobStore::new(storage)
-                    .set_status(job_id, PmtilesJobStatus::Paused, true);
+                let _ = PmtilesJobStore::new(storage).set_status(
+                    job_id,
+                    PmtilesJobStatus::Paused,
+                    true,
+                );
             }
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
             if control.is_cancelled() {
@@ -226,8 +229,8 @@ pub async fn fetch_tiles_coalesced(
             }
         }
         if let Some((storage, job_id)) = store {
-            let _ = PmtilesJobStore::new(storage)
-                .set_status(job_id, PmtilesJobStatus::Running, false);
+            let _ =
+                PmtilesJobStore::new(storage).set_status(job_id, PmtilesJobStatus::Running, false);
         }
 
         let n = workers.min(chunk_queue.len());

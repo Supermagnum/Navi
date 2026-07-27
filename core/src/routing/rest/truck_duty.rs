@@ -1,8 +1,6 @@
 //! EC 561/2006 duty evaluation for truck profiles (daily / weekly / fortnightly).
 
-use crate::config::{
-    record_truck_driving_hours, TruckDrivingHistory, TruckRestParams,
-};
+use crate::config::{record_truck_driving_hours, TruckDrivingHistory, TruckRestParams};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TruckDutyEvaluation {
@@ -104,10 +102,8 @@ pub fn evaluate_truck_trip(
         ));
     }
 
-    let remaining_fortnightly = (truck.max_fortnightly_driving_hours
-        - fortnight_so_far
-        - planned_driving_hours)
-        .max(0.0);
+    let remaining_fortnightly =
+        (truck.max_fortnightly_driving_hours - fortnight_so_far - planned_driving_hours).max(0.0);
     let within_fortnightly =
         fortnight_so_far + planned_driving_hours <= truck.max_fortnightly_driving_hours + 1e-6;
     if !within_fortnightly {
@@ -118,8 +114,7 @@ pub fn evaluate_truck_trip(
         ));
     }
 
-    let weekly_rest_due =
-        history.consecutive_working_days >= truck.max_consecutive_working_days;
+    let weekly_rest_due = history.consecutive_working_days >= truck.max_consecutive_working_days;
     if weekly_rest_due {
         notes.push(format!(
             "weekly_rest_due: {} consecutive working days (max {})",

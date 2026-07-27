@@ -51,10 +51,7 @@ pub fn snapshot() -> Snapshot {
             ((done.saturating_mul(100)) / t).min(100) as u32
         }
     });
-    let label = label_lock()
-        .lock()
-        .map(|g| g.clone())
-        .unwrap_or_default();
+    let label = label_lock().lock().map(|g| g.clone()).unwrap_or_default();
     Snapshot {
         units_done: done,
         units_total: total,

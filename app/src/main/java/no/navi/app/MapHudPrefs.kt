@@ -47,31 +47,44 @@ object MapHudPrefs {
     }
 
     fun loadCameraTiltDeg(context: Context): Double {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getFloat(KEY_CAMERA_TILT, DEFAULT_CAMERA_TILT_DEG.toFloat())
-            .toDouble()
+        val raw =
+            context
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getFloat(KEY_CAMERA_TILT, DEFAULT_CAMERA_TILT_DEG.toFloat())
+                .toDouble()
         return snapTilt(raw)
     }
 
-    fun saveCameraTiltDeg(context: Context, deg: Double) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    fun saveCameraTiltDeg(
+        context: Context,
+        deg: Double,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putFloat(KEY_CAMERA_TILT, snapTilt(deg).toFloat())
             .apply()
     }
 
     fun loadAutoZoomLevel(context: Context): Double {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getFloat(KEY_AUTO_ZOOM_LEVEL, DEFAULT_AUTO_ZOOM_LEVEL.toFloat())
-            .toDouble()
+        val raw =
+            context
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getFloat(KEY_AUTO_ZOOM_LEVEL, DEFAULT_AUTO_ZOOM_LEVEL.toFloat())
+                .toDouble()
         return clampZoom(raw)
     }
 
     fun loadAutoZoomOn(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(KEY_AUTO_ZOOM_ON, false)
 
-    fun saveAutoZoom(context: Context, level: Double, enabled: Boolean? = null) {
+    fun saveAutoZoom(
+        context: Context,
+        level: Double,
+        enabled: Boolean? = null,
+    ) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
         prefs.putFloat(KEY_AUTO_ZOOM_LEVEL, clampZoom(level).toFloat())
         if (enabled != null) {
@@ -82,22 +95,32 @@ object MapHudPrefs {
 
     /** When true, bottom HUD shows break remaining as distance; otherwise as time. */
     fun loadBreakAsDistance(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(KEY_BREAK_AS_DISTANCE, false)
 
-    fun saveBreakAsDistance(context: Context, asDistance: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    fun saveBreakAsDistance(
+        context: Context,
+        asDistance: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_BREAK_AS_DISTANCE, asDistance)
             .apply()
     }
 
     fun loadPreferMetric(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(KEY_PREFER_METRIC, true)
 
-    fun savePreferMetric(context: Context, preferMetric: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    fun savePreferMetric(
+        context: Context,
+        preferMetric: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_PREFER_METRIC, preferMetric)
             .apply()
@@ -105,36 +128,51 @@ object MapHudPrefs {
 
     /** Opt-in experimental OpenFreeMap 3D (online only). Never the default. */
     fun loadOptIn3d(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(KEY_OPT_IN_3D, false)
 
-    fun saveOptIn3d(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    fun saveOptIn3d(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_OPT_IN_3D, enabled)
             .apply()
     }
 
     fun loadPmtilesBaseUrl(context: Context): String =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_PMTILES_BASE_URL, "")
             .orEmpty()
 
-    fun savePmtilesBaseUrl(context: Context, url: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    fun savePmtilesBaseUrl(
+        context: Context,
+        url: String,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_PMTILES_BASE_URL, url.trim())
             .apply()
     }
 
     fun loadGeofabrikPath(context: Context): String =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_GEOFABRIK_PATH, "europe/norway/ostlandet")
             .orEmpty()
             .ifBlank { "europe/norway/ostlandet" }
 
-    fun saveGeofabrikPath(context: Context, path: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    fun saveGeofabrikPath(
+        context: Context,
+        path: String,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_GEOFABRIK_PATH, path.trim().trim('/'))
             .apply()

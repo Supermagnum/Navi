@@ -18,19 +18,17 @@ pub mod sensors;
 pub mod storage;
 pub mod tracks;
 
-pub use download::DownloadControl;
 pub use config::{
     EbikeConfig, EvCarConfig, FuelConfig, Profile, RestConfig, SafetyConfig, VehicleLimits,
 };
+pub use download::DownloadControl;
 pub use nav::{
     current_road_label, format_distance_m, prefer_street_label, ApproachPhase, ManeuverKind,
     NavGuidance, APPROACH_APPEAR_M, APPROACH_HIDE_M, APPROACH_URGENCY_M,
 };
 pub use poi::{PoiCategory, PoiIndex, PoiRecord};
 pub use routing::elevation::{ElevationCache, ElevationDownloader, ElevationJob, ElevationService};
-pub use routing::graph::{
-    format_route_avoidance_report, RouteGraph, RouteOptions, RoutingProfile,
-};
+pub use routing::graph::{format_route_avoidance_report, RouteGraph, RouteOptions, RoutingProfile};
 pub use routing::workers::WorkerPoolPlan;
 pub use search::{NameHit, NameIndex, RouteStore, SavedRoute};
 pub use storage::Storage;

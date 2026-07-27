@@ -29,10 +29,16 @@ import java.util.regex.Pattern
  *
  * Destination (Bodø) is chosen only after the live start is known and requires
  * multi-day EC 561 segmentation on the Norway extract (~1068 km class).
+ *
+ * **Hardware:** This test calls [planCarRoute] directly on `norway-latest.osm.pbf`
+ * and deliberately bypasses the Tools UI country-download low-RAM warning. On
+ * ~4 GB Automotive AVDs that path is expected to OOM (see README / architecture
+ * country-scale constraint). The [BeforeClass] planner therefore assumes more
+ * than 5 GB total RAM and skips on constrained devices instead of crashing the
+ * instrumentation process.
  */
 @RunWith(AndroidJUnit4::class)
 class LiveMultiDayDayCardsInstrumentedTest {
-
     companion object {
         @JvmStatic
         lateinit var planned: CorridorRouteResult
@@ -46,19 +52,34 @@ class LiveMultiDayDayCardsInstrumentedTest {
         @JvmStatic
         var planElapsedMs: Long = 0L
 
+        /** Skip direct Norway-PBF planning below this total RAM (bytes). */
+        private const val MIN_TOTAL_RAM_FOR_NORWAY_PLAN = 5L * 1024L * 1024L * 1024L
+
         @JvmStatic
         @BeforeClass
         fun livePlanFromGpsAndPbf() {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val am = context.getSystemService(android.app.ActivityManager::class.java)
+            val mi = android.app.ActivityManager.MemoryInfo()
+            am.getMemoryInfo(mi)
+            org.junit.Assume.assumeTrue(
+                "Live Norway truck planCarRoute on norway-latest.osm.pbf needs >5 GB RAM; " +
+                    "this device reports totalMem=${mi.totalMem} (~${mi.totalMem / (1024 * 1024)} MiB). " +
+                    "Country-scale loads are opt-in with a Tools UI low-RAM warning; this test " +
+                    "exercises the unwarned direct UniFFI path and is skipped on constrained hardware.",
+                mi.totalMem > MIN_TOTAL_RAM_FOR_NORWAY_PLAN,
+            )
+
             val dataDir = NaviAppData.resolve(context).also { it.mkdirs() }
 
             // --- Live GPS from LocationManager dumpsys (device shell) ---
             val dumpsys = shellOutput("dumpsys location")
-            val fix = parseDumpsysGpsFix(dumpsys)
-                ?: error(
-                    "FATAL: no gps/fused last location in dumpsys — refuse hardcoded start\n" +
-                        dumpsys.take(2000),
-                )
+            val fix =
+                parseDumpsysGpsFix(dumpsys)
+                    ?: error(
+                        "FATAL: no gps/fused last location in dumpsys — refuse hardcoded start\n" +
+                            dumpsys.take(2000),
+                    )
             startLat = fix.first
             startLon = fix.second
             android.util.Log.i(
@@ -84,9 +105,14 @@ class LiveMultiDayDayCardsInstrumentedTest {
             val elevDir = File(dataDir, "elevation").also { it.mkdirs() }
             val stagedTar = File("/data/local/tmp/navi_fixtures/elevation-corridor.tar")
             if (stagedTar.isFile && !File(elevDir, "copernicus").exists()) {
-                val tarProc = ProcessBuilder(
-                    "tar", "-xf", stagedTar.absolutePath, "-C", dataDir.absolutePath,
-                ).redirectErrorStream(true).start()
+                val tarProc =
+                    ProcessBuilder(
+                        "tar",
+                        "-xf",
+                        stagedTar.absolutePath,
+                        "-C",
+                        dataDir.absolutePath,
+                    ).redirectErrorStream(true).start()
                 tarProc.waitFor(120, TimeUnit.SECONDS)
             }
 
@@ -103,32 +129,34 @@ class LiveMultiDayDayCardsInstrumentedTest {
                 }
             }
 
-            val vehicle = FfiVehicleLimits(
-                axleWeightKg = null,
-                bogieWeightKg = null,
-                heightM = null,
-                widthM = null,
-                lengthM = null,
-                totalWeightKg = null,
-            )
+            val vehicle =
+                FfiVehicleLimits(
+                    axleWeightKg = null,
+                    bogieWeightKg = null,
+                    heightM = null,
+                    widthM = null,
+                    lengthM = null,
+                    totalWeightKg = null,
+                )
 
             val t0 = System.currentTimeMillis()
-            planned = planCarRoute(
-                pbfPath = pbf.absolutePath,
-                elevDir = elevDir.absolutePath,
-                cacheDir = cacheDir.absolutePath,
-                startLat = startLat,
-                startLon = startLon,
-                endLat = endLat,
-                endLon = endLon,
-                useEco = false,
-                profile = TravelProfile.TRUCK,
-                avoidMajor = false,
-                avoidTolls = false,
-                avoidFerries = false,
-                vehicle = vehicle,
-                preferOfficialNetworks = false,
-            )
+            planned =
+                planCarRoute(
+                    pbfPath = pbf.absolutePath,
+                    elevDir = elevDir.absolutePath,
+                    cacheDir = cacheDir.absolutePath,
+                    startLat = startLat,
+                    startLon = startLon,
+                    endLat = endLat,
+                    endLon = endLon,
+                    useEco = false,
+                    profile = TravelProfile.TRUCK,
+                    avoidMajor = false,
+                    avoidTolls = false,
+                    avoidFerries = false,
+                    vehicle = vehicle,
+                    preferOfficialNetworks = false,
+                )
             planElapsedMs = System.currentTimeMillis() - t0
             android.util.Log.i(
                 "LiveMultiDayDayCards",
@@ -168,26 +196,32 @@ class LiveMultiDayDayCardsInstrumentedTest {
         }
 
         private fun shellOutput(cmd: String): String {
-            val pfd = InstrumentationRegistry.getInstrumentation()
-                .uiAutomation
-                .executeShellCommand(cmd)
-            return java.io.FileInputStream(pfd.fileDescriptor).bufferedReader().use { it.readText() }
+            val pfd =
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .uiAutomation
+                    .executeShellCommand(cmd)
+            return java.io
+                .FileInputStream(pfd.fileDescriptor)
+                .bufferedReader()
+                .use { it.readText() }
                 .also { pfd.close() }
         }
 
         /** Parse last gps or fused Location line from dumpsys location. */
         fun parseDumpsysGpsFix(dumpsys: String): Pair<Double, Double>? {
             // Examples: "last location=Location[gps 60.562480,11.256282 ...]"
-            val patterns = listOf(
-                Pattern.compile(
-                    """last location=Location\[(?:gps|fused)\s+(-?\d+\.\d+),(-?\d+\.\d+)""",
-                    Pattern.CASE_INSENSITIVE,
-                ),
-                Pattern.compile(
-                    """Location\[(?:gps|fused)\s+(-?\d+\.\d+),(-?\d+\.\d+)""",
-                    Pattern.CASE_INSENSITIVE,
-                ),
-            )
+            val patterns =
+                listOf(
+                    Pattern.compile(
+                        """last location=Location\[(?:gps|fused)\s+(-?\d+\.\d+),(-?\d+\.\d+)""",
+                        Pattern.CASE_INSENSITIVE,
+                    ),
+                    Pattern.compile(
+                        """Location\[(?:gps|fused)\s+(-?\d+\.\d+),(-?\d+\.\d+)""",
+                        Pattern.CASE_INSENSITIVE,
+                    ),
+                )
             for (p in patterns) {
                 val m = p.matcher(dumpsys)
                 var last: Pair<Double, Double>? = null
@@ -232,7 +266,8 @@ class LiveMultiDayDayCardsInstrumentedTest {
         while (System.currentTimeMillis() < deadline) {
             composeRule.waitForIdle()
             try {
-                composeRule.onNodeWithTag("multi_day_plan_cards", useUnmergedTree = true)
+                composeRule
+                    .onNodeWithTag("multi_day_plan_cards", useUnmergedTree = true)
                     .assertIsDisplayed()
                 cardsVisible = true
                 break
@@ -271,15 +306,19 @@ class LiveMultiDayDayCardsInstrumentedTest {
         val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
         assertTrue(shot != null)
         assertNotEquals(0, shot!!.width)
-        val dataDir = NaviAppData.resolve(
-            InstrumentationRegistry.getInstrumentation().targetContext,
-        )
+        val dataDir =
+            NaviAppData.resolve(
+                InstrumentationRegistry.getInstrumentation().targetContext,
+            )
         val out = File(dataDir, "multi_day_day_cards_live.png")
         out.outputStream().use { shot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
         assertTrue(out.length() > 5_000)
 
-        val pfd = InstrumentationRegistry.getInstrumentation().uiAutomation
-            .executeShellCommand("screencap -p /data/local/tmp/multi_day_day_cards_live.png")
+        val pfd =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .uiAutomation
+                .executeShellCommand("screencap -p /data/local/tmp/multi_day_day_cards_live.png")
         java.io.FileInputStream(pfd.fileDescriptor).use { input ->
             val buf = ByteArray(4096)
             while (input.read(buf) >= 0) {

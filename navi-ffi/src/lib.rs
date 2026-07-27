@@ -22,23 +22,23 @@ use driver_break_core::routing::graph::{
     RoutingProfile,
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
-use driver_break_core::routing::{
-    commit_truck_multi_day_plan, evaluate_fmcsa_trip, evaluate_truck_trip,
-    hiking_samples_from_coords, max_daily_distance_km, motor_break_interval_km,
-    motor_daily_budget, plan_fmcsa_multi_day, plan_hiking_multi_day, plan_motor_multi_day,
-    plan_truck_multi_day, resolve_driving_hours_pack_at, truck_effective_break_parts,
-    uses_motor_multi_day, uses_truck_rest, HikingMultiDayPlan, MotorMultiDayPlan,
-    MotorOvernightCandidate, MotorOvernightKind, TruckMultiDayPlan, TruckOvernightKind,
-    TruckOvernightRest, TruckRestCandidate, TruckRestFacility,
-};
 use driver_break_core::routing::safety::{
     check_overnight_candidate, DangerBarrierIndex, OvernightProximityIndex,
 };
 use driver_break_core::routing::workers::WorkerPoolPlan;
-use driver_break_core::routing::{fixed_pace_minutes, motor_path_minutes, HIKING_MIN_PER_KM};
 use driver_break_core::routing::{
     build_maneuvers, build_sim_samples, maneuvers_to_json, samples_to_json,
 };
+use driver_break_core::routing::{
+    commit_truck_multi_day_plan, evaluate_fmcsa_trip, evaluate_truck_trip,
+    hiking_samples_from_coords, max_daily_distance_km, motor_break_interval_km, motor_daily_budget,
+    plan_fmcsa_multi_day, plan_hiking_multi_day, plan_motor_multi_day, plan_truck_multi_day,
+    resolve_driving_hours_pack_at, truck_effective_break_parts, uses_motor_multi_day,
+    uses_truck_rest, HikingMultiDayPlan, MotorMultiDayPlan, MotorOvernightCandidate,
+    MotorOvernightKind, TruckMultiDayPlan, TruckOvernightKind, TruckOvernightRest,
+    TruckRestCandidate, TruckRestFacility,
+};
+use driver_break_core::routing::{fixed_pace_minutes, motor_path_minutes, HIKING_MIN_PER_KM};
 use osm4routing::NodeId;
 use serde::Deserialize;
 use serde_json::json;
@@ -194,9 +194,10 @@ fn eco_for_travel_profile(profile: TravelProfile) -> EcoConfig {
             eco.mass_kg = 1500.0;
         }
         TravelProfile::Bicycle | TravelProfile::BicycleElectric => {
-            let tuned = driver_break_core::config::ebike_eco_config(
-                matches!(profile, TravelProfile::BicycleElectric),
-            );
+            let tuned = driver_break_core::config::ebike_eco_config(matches!(
+                profile,
+                TravelProfile::BicycleElectric
+            ));
             eco.drag_coefficient = tuned.drag_coefficient;
             eco.frontal_area_m2 = tuned.frontal_area_m2;
             eco.mass_kg = tuned.mass_kg;
@@ -398,27 +399,34 @@ fn days_json_from_truck(plan: &TruckMultiDayPlan, profile: &str) -> String {
         .enumerate()
         .map(|(i, d)| {
             let is_final = i + 1 == n;
-            let (rest_kind, rest_hours, rest_label, overnight_name, overnight_found, not_in_cab, compensation) =
-                match &d.overnight {
-                    Some(o) => (
-                        truck_rest_kind_key(o.kind).to_string(),
-                        o.hours,
-                        truck_rest_label(o),
-                        o.name.clone().unwrap_or_default(),
-                        o.poi_found,
-                        o.not_in_cab,
-                        truck_compensation_note(o),
-                    ),
-                    None => (
-                        String::new(),
-                        0.0,
-                        String::new(),
-                        String::new(),
-                        false,
-                        false,
-                        String::new(),
-                    ),
-                };
+            let (
+                rest_kind,
+                rest_hours,
+                rest_label,
+                overnight_name,
+                overnight_found,
+                not_in_cab,
+                compensation,
+            ) = match &d.overnight {
+                Some(o) => (
+                    truck_rest_kind_key(o.kind).to_string(),
+                    o.hours,
+                    truck_rest_label(o),
+                    o.name.clone().unwrap_or_default(),
+                    o.poi_found,
+                    o.not_in_cab,
+                    truck_compensation_note(o),
+                ),
+                None => (
+                    String::new(),
+                    0.0,
+                    String::new(),
+                    String::new(),
+                    false,
+                    false,
+                    String::new(),
+                ),
+            };
             json!({
                 "day_index": d.day_index,
                 "date": d.date,
@@ -451,12 +459,7 @@ fn days_json_from_hiking(plan: &HikingMultiDayPlan) -> String {
             let is_final = i + 1 == n;
             let (rest_kind, rest_label, overnight_name, overnight_found) = match &d.overnight {
                 Some(o) => (
-                    if o.is_network {
-                        "network_hut"
-                    } else {
-                        "hut"
-                    }
-                    .to_string(),
+                    if o.is_network { "network_hut" } else { "hut" }.to_string(),
                     if o.is_network {
                         "Network hut overnight"
                     } else {
@@ -735,15 +738,8 @@ fn pick_hiking_pause_at(
         let Some((safety, prox)) = overnight else {
             return true;
         };
-        check_overnight_candidate(
-            p.lat,
-            p.lon,
-            safety,
-            p,
-            &prox.buildings,
-            &prox.glaciers,
-        )
-        .is_none()
+        check_overnight_candidate(p.lat, p.lon, safety, p, &prox.buildings, &prox.glaciers)
+            .is_none()
     };
     let pick_hut = |p: &PoiRecord| -> (String, f64, f64, String, String) {
         let name = p
@@ -801,10 +797,7 @@ fn pick_hiking_pause_at(
         .filter(|p| route_link.within_road_link(p.lat, p.lon) && overnight_ok(p))
         .collect();
     if let Some(p) = first_named(&linked) {
-        let name = p
-            .name
-            .clone()
-            .unwrap_or_else(|| "Tent site".into());
+        let name = p.name.clone().unwrap_or_else(|| "Tent site".into());
         return (name, p.lat, p.lon, "tent".into(), p.icon_key.clone());
     }
     let mut best_unnamed: Option<&PoiRecord> = None;
@@ -830,10 +823,7 @@ fn pick_hiking_pause_at(
         }
     }
     if let Some(p) = best_unnamed {
-        let name = p
-            .name
-            .clone()
-            .unwrap_or_else(|| "Tent site".into());
+        let name = p.name.clone().unwrap_or_else(|| "Tent site".into());
         return (name, p.lat, p.lon, "tent".into(), p.icon_key.clone());
     }
     // Synthetic corridor tent: reject if overnight filter forbids it at the sample.
@@ -1092,11 +1082,7 @@ pub fn run_car_corridor_pipeline(
         ));
         return empty(report);
     }
-    report.push_str(&format!(
-        "pbf={}; pbf_bytes={}\n",
-        pbf.display(),
-        pbf_len
-    ));
+    report.push_str(&format!("pbf={}; pbf_bytes={}\n", pbf.display(), pbf_len));
 
     let elev = PathBuf::from(&elev_dir);
     let cache = PathBuf::from(&cache_dir);
@@ -1119,19 +1105,14 @@ pub fn run_car_corridor_pipeline(
     }
 
     let t_cold = Instant::now();
-    let (mut graph, hit1) = match load_or_build_reweighted(
-        pbf,
-        &cache,
-        RoutingProfile::Car,
-        &elevation,
-        &eco,
-    ) {
-        Ok(v) => v,
-        Err(e) => {
-            report.push_str(&format!("FAIL: cold graph build: {e:#}\n"));
-            return empty(report);
-        }
-    };
+    let (mut graph, hit1) =
+        match load_or_build_reweighted(pbf, &cache, RoutingProfile::Car, &elevation, &eco) {
+            Ok(v) => v,
+            Err(e) => {
+                report.push_str(&format!("FAIL: cold graph build: {e:#}\n"));
+                return empty(report);
+            }
+        };
     let cold_s = t_cold.elapsed().as_secs_f64();
     if hit1 {
         report.push_str("WARN: unexpected cache hit on cold pass\n");
@@ -1147,19 +1128,14 @@ pub fn run_car_corridor_pipeline(
     }
 
     let t_warm = Instant::now();
-    let (graph2, hit2) = match load_or_build_reweighted(
-        pbf,
-        &cache,
-        RoutingProfile::Car,
-        &elevation,
-        &eco,
-    ) {
-        Ok(v) => v,
-        Err(e) => {
-            report.push_str(&format!("FAIL: warm graph load: {e:#}\n"));
-            return empty(report);
-        }
-    };
+    let (graph2, hit2) =
+        match load_or_build_reweighted(pbf, &cache, RoutingProfile::Car, &elevation, &eco) {
+            Ok(v) => v,
+            Err(e) => {
+                report.push_str(&format!("FAIL: warm graph load: {e:#}\n"));
+                return empty(report);
+            }
+        };
     let warm_s = t_warm.elapsed().as_secs_f64();
     report.push_str(&format!("warm_load_s={warm_s:.2}; cache_hit={hit2}\n"));
     if !hit2 {
@@ -1394,9 +1370,7 @@ fn plan_car_route_inner(
     let empty = empty_corridor;
 
     if profile == TravelProfile::Hiking {
-        return empty(
-            "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: use plan_hiking_route for hiking\n".into(),
-        );
+        return empty("TEST_KIND=PLAN_CAR_ROUTE\nFAIL: use plan_hiking_route for hiking\n".into());
     }
 
     let routing_profile = RoutingProfile::from(profile.to_core());
@@ -1461,25 +1435,15 @@ fn plan_car_route_inner(
         "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}\n",
         bbox[0], bbox[1], bbox[2], bbox[3]
     ));
-    driver_break_core::download::progress::set(
-        0,
-        Some(5),
-        "Planning route: building area graph…",
-    );
-    let (mut graph, cache_hit) = match load_or_build_reweighted_bbox(
-        pbf,
-        &cache,
-        routing_profile,
-        &elevation,
-        &eco,
-        bbox,
-    ) {
-        Ok(v) => v,
-        Err(e) => {
-            report.push_str(&format!("FAIL: graph build: {e:#}\n"));
-            return empty(report);
-        }
-    };
+    driver_break_core::download::progress::set(0, Some(5), "Planning route: building area graph…");
+    let (mut graph, cache_hit) =
+        match load_or_build_reweighted_bbox(pbf, &cache, routing_profile, &elevation, &eco, bbox) {
+            Ok(v) => v,
+            Err(e) => {
+                report.push_str(&format!("FAIL: graph build: {e:#}\n"));
+                return empty(report);
+            }
+        };
     if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
         && prefer_official_networks
     {
@@ -1543,8 +1507,7 @@ fn plan_car_route_inner(
     // MobileHome uses car soft break spacing (not commercial HGV legal tracking).
     let core_profile = profile.to_core();
     let mut rest = load_rest_config_near_cache(&cache);
-    let mut break_interval_km =
-        motor_break_interval_km(core_profile, &rest, dist_km, eta_minutes);
+    let mut break_interval_km = motor_break_interval_km(core_profile, &rest, dist_km, eta_minutes);
     let mut days_json = String::from("[]");
     let mut truck_overnight_pins: Vec<serde_json::Value> = Vec::new();
     if uses_truck_rest(core_profile) {
@@ -1571,8 +1534,7 @@ fn plan_car_route_inner(
                 if !seen_poi.insert(p.osm_id) {
                     continue;
                 }
-                let suitable_for_weekly =
-                    rest_area_suitable_for_weekly(&p.tags, &p.icon_key);
+                let suitable_for_weekly = rest_area_suitable_for_weekly(&p.tags, &p.icon_key);
                 let facility = match p.tags.get("highway").map(String::as_str) {
                     Some("services") => TruckRestFacility::Services,
                     Some("rest_area") => TruckRestFacility::RestArea,
@@ -1605,14 +1567,16 @@ fn plan_car_route_inner(
                     rest.truck.max_fortnightly_driving_hours,
                 ));
 
-                for d in driver_break_core::config::outstanding_weekly_rest_compensations(&history) {
+                for d in driver_break_core::config::outstanding_weekly_rest_compensations(&history)
+                {
                     report.push_str(&format!(
                         "truck_compensation: pending=true; reduced_on={}; shortfall_h={:.0}; compensate_by={}\n",
                         d.reduced_on_date, d.shortfall_hours, d.compensate_by_date
                     ));
                 }
                 let pending_n =
-                    driver_break_core::config::outstanding_weekly_rest_compensations(&history).len();
+                    driver_break_core::config::outstanding_weekly_rest_compensations(&history)
+                        .len();
                 if pending_n == 0 {
                     report.push_str("truck_compensation: pending=0\n");
                 } else {
@@ -1728,14 +1692,8 @@ fn plan_car_route_inner(
                     fmcsa.cycle_on_duty_hours,
                     fmcsa.cycle_days,
                 ));
-                let multi = plan_fmcsa_multi_day(
-                    &fmcsa,
-                    &history,
-                    driving_h,
-                    dist_km,
-                    &today,
-                    &candidates,
-                );
+                let multi =
+                    plan_fmcsa_multi_day(&fmcsa, &history, driving_h, dist_km, &today, &candidates);
                 days_json = days_json_from_truck(&multi, travel_profile_report_key(profile));
                 truck_overnight_pins = truck_overnight_break_pins(&multi);
                 if multi.multi_day {
@@ -1939,23 +1897,25 @@ fn plan_car_route_inner(
         let (range, climb, steep) = driver_break_core::routing::analyze_ebike_route(
             &graph, &path, &elevation, &eco, &ebike,
         );
-        let path_max = driver_break_core::routing::path_max_climb_grade_pct(
-            &graph, &path, &elevation,
+        let path_max =
+            driver_break_core::routing::path_max_climb_grade_pct(&graph, &path, &elevation);
+        report.push_str(
+            &driver_break_core::routing::format_ebike_route_report_with_path_grade(
+                &range,
+                &climb,
+                &steep,
+                Some(path_max),
+            ),
         );
-        report.push_str(&driver_break_core::routing::format_ebike_route_report_with_path_grade(
-            &range,
-            &climb,
-            &steep,
-            Some(path_max),
-        ));
     }
     if profile == TravelProfile::CarElectric {
         let eco = eco_for_travel_profile(profile);
         let ev = load_ev_car_config_near_cache(&cache);
-        let range = driver_break_core::routing::analyze_ev_car_route(
-            &graph, &path, &elevation, &eco, &ev,
-        );
-        report.push_str(&driver_break_core::routing::format_ev_car_route_report(&range));
+        let range =
+            driver_break_core::routing::analyze_ev_car_route(&graph, &path, &elevation, &eco, &ev);
+        report.push_str(&driver_break_core::routing::format_ev_car_route_report(
+            &range,
+        ));
     }
     let priority_path_share_pct = graph.non_major_highway_share_pct(&path);
     report.push_str(&format!(
@@ -2048,12 +2008,7 @@ pub fn plan_hiking_route(
     // (that OOMs 4GB Automotive AVDs during hiking plan). Same region .pbf.
     let span = (max_lat - min_lat).max(max_lon - min_lon);
     let pad = (span * 0.25).clamp(0.30, 0.55);
-    let bbox = [
-        min_lat - pad,
-        min_lon - pad,
-        max_lat + pad,
-        max_lon + pad,
-    ];
+    let bbox = [min_lat - pad, min_lon - pad, max_lat + pad, max_lon + pad];
     report.push_str(&format!(
         "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}\n",
         bbox[0], bbox[1], bbox[2], bbox[3]
@@ -2174,8 +2129,8 @@ pub fn plan_hiking_route(
     let overnight_ctx = (safety, overnight_prox);
     // Day-by-day multi-day overnight (mirrors truck/motor; same spirit as DNT helper).
     let rest = RestConfig::default();
-    let max_daily = max_daily_distance_km(&rest, driver_break_core::config::Profile::Hiking)
-        .unwrap_or(40.0);
+    let max_daily =
+        max_daily_distance_km(&rest, driver_break_core::config::Profile::Hiking).unwrap_or(40.0);
     let hike_coords = graph.path_coords_lat_lon(&full_path);
     let hike_samples = hiking_samples_from_coords(&hike_coords);
     let multi = plan_hiking_multi_day(
@@ -2318,8 +2273,13 @@ pub fn run_car_corridor_smoke_test(
         .map(|p| p.join("graph-cache"))
         .unwrap_or_else(|| PathBuf::from("graph-cache"));
     let _ = std::fs::create_dir_all(&cache);
-    run_car_corridor_pipeline(pbf_path, elev_dir, cache.display().to_string(), break_interval_hours)
-        .report
+    run_car_corridor_pipeline(
+        pbf_path,
+        elev_dir,
+        cache.display().to_string(),
+        break_interval_hours,
+    )
+    .report
 }
 
 #[derive(uniffi::Enum, Debug, Clone, Copy)]
@@ -2599,7 +2559,7 @@ fn routes_db(data_dir: &str) -> PathBuf {
 
 #[uniffi::export]
 pub fn list_saved_routes(data_dir: String) -> Vec<FfiSavedRoute> {
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return Vec::new();
     };
     let store = driver_break_core::search::RouteStore::new(&storage);
@@ -2626,7 +2586,7 @@ pub fn list_saved_routes(data_dir: String) -> Vec<FfiSavedRoute> {
 
 #[uniffi::export]
 pub fn delete_saved_route(data_dir: String, id: String) -> bool {
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return false;
     };
     driver_break_core::search::RouteStore::new(&storage)
@@ -2647,7 +2607,7 @@ pub fn save_named_route(
     profile: String,
     summary_json: String,
 ) -> String {
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return "FAIL: open db".into();
     };
     let id = uuid::Uuid::new_v4().to_string();
@@ -2685,7 +2645,7 @@ fn chrono_like_now() -> String {
 
 #[uniffi::export]
 pub fn load_vehicle_limits(data_dir: String) -> FfiVehicleLimits {
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return FfiVehicleLimits {
             axle_weight_kg: None,
             bogie_weight_kg: None,
@@ -2709,7 +2669,7 @@ pub fn load_vehicle_limits(data_dir: String) -> FfiVehicleLimits {
 
 #[uniffi::export]
 pub fn save_vehicle_limits(data_dir: String, limits: FfiVehicleLimits) -> bool {
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return false;
     };
     let store = driver_break_core::storage::ConfigStore::new(&storage);
@@ -2728,7 +2688,7 @@ pub fn save_vehicle_limits(data_dir: String, limits: FfiVehicleLimits) -> bool {
 /// Soft preference for official hiking/cycling route networks (default off).
 #[uniffi::export]
 pub fn load_prefer_official_networks(data_dir: String) -> bool {
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return false;
     };
     let store = driver_break_core::storage::ConfigStore::new(&storage);
@@ -2737,7 +2697,7 @@ pub fn load_prefer_official_networks(data_dir: String) -> bool {
 
 #[uniffi::export]
 pub fn save_prefer_official_networks(data_dir: String, prefer: bool) -> bool {
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return false;
     };
     let store = driver_break_core::storage::ConfigStore::new(&storage);
@@ -2752,7 +2712,7 @@ pub fn load_car_rest_settings(data_dir: String) -> FfiCarRestSettings {
         rest_duration_minutes: default.break_duration_min_minutes,
         eco_mode_enabled: default.eco_mode_enabled,
     };
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return fallback;
     };
     let store = driver_break_core::storage::ConfigStore::new(&storage);
@@ -2767,7 +2727,7 @@ pub fn load_car_rest_settings(data_dir: String) -> FfiCarRestSettings {
 /// Persist car break interval / rest duration as the default RestConfig (not a one-trip override).
 #[uniffi::export]
 pub fn save_car_rest_settings(data_dir: String, settings: FfiCarRestSettings) -> bool {
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return false;
     };
     let store = driver_break_core::storage::ConfigStore::new(&storage);
@@ -2797,7 +2757,9 @@ pub struct FfiTruckRestSettings {
     pub eco_mode_enabled: bool,
 }
 
-fn truck_settings_from_params(t: &driver_break_core::config::TruckRestParams) -> FfiTruckRestSettings {
+fn truck_settings_from_params(
+    t: &driver_break_core::config::TruckRestParams,
+) -> FfiTruckRestSettings {
     FfiTruckRestSettings {
         mandatory_break_after_hours: t.mandatory_break_after_hours,
         break_duration_minutes: t.break_duration_minutes,
@@ -2816,7 +2778,7 @@ fn truck_settings_from_params(t: &driver_break_core::config::TruckRestParams) ->
 pub fn load_truck_rest_settings(data_dir: String) -> FfiTruckRestSettings {
     let default = driver_break_core::config::TruckRestParams::default();
     let fallback = truck_settings_from_params(&default);
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return fallback;
     };
     let store = driver_break_core::storage::ConfigStore::new(&storage);
@@ -2826,7 +2788,7 @@ pub fn load_truck_rest_settings(data_dir: String) -> FfiTruckRestSettings {
 
 #[uniffi::export]
 pub fn save_truck_rest_settings(data_dir: String, settings: FfiTruckRestSettings) -> bool {
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return false;
     };
     let store = driver_break_core::storage::ConfigStore::new(&storage);
@@ -2849,7 +2811,7 @@ pub fn save_truck_rest_settings(data_dir: String, settings: FfiTruckRestSettings
 /// Arm / disarm the +1 h exceptional extension (explicit opt-in; not a silent default).
 #[uniffi::export]
 pub fn set_truck_exceptional_extension_armed(data_dir: String, armed: bool) -> bool {
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return false;
     };
     let store = driver_break_core::storage::ConfigStore::new(&storage);
@@ -2888,9 +2850,7 @@ fn load_ev_car_config_near_cache(cache: &Path) -> driver_break_core::config::EvC
         .unwrap_or_default()
 }
 
-fn load_truck_history_near_cache(
-    cache: &Path,
-) -> driver_break_core::config::TruckDrivingHistory {
+fn load_truck_history_near_cache(cache: &Path) -> driver_break_core::config::TruckDrivingHistory {
     let data_dir = cache.parent().unwrap_or(cache);
     let Ok(storage) = driver_break_core::storage::Storage::open(data_dir.join("navi.db")) else {
         return driver_break_core::config::TruckDrivingHistory::default();
@@ -2947,7 +2907,7 @@ fn iso_week_id_utc() -> String {
 
 #[uniffi::export]
 pub fn load_fuel_config(data_dir: String) -> FfiFuelConfig {
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return FfiFuelConfig {
             tank_capacity_l: None,
             fuel_added_l: None,
@@ -2965,7 +2925,7 @@ pub fn load_fuel_config(data_dir: String) -> FfiFuelConfig {
 
 #[uniffi::export]
 pub fn save_fuel_config(data_dir: String, config: FfiFuelConfig) -> bool {
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return false;
     };
     let store = driver_break_core::storage::ConfigStore::new(&storage);
@@ -2981,7 +2941,7 @@ pub fn save_fuel_config(data_dir: String, config: FfiFuelConfig) -> bool {
 #[uniffi::export]
 pub fn load_ebike_config(data_dir: String) -> FfiEbikeConfig {
     let defaults = driver_break_core::config::EbikeConfig::default();
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return FfiEbikeConfig {
             battery_capacity_wh: defaults.battery_capacity_wh,
             motor_torque_nm: defaults.motor_torque_nm,
@@ -2999,7 +2959,7 @@ pub fn load_ebike_config(data_dir: String) -> FfiEbikeConfig {
 
 #[uniffi::export]
 pub fn save_ebike_config(data_dir: String, config: FfiEbikeConfig) -> bool {
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return false;
     };
     let store = driver_break_core::storage::ConfigStore::new(&storage);
@@ -3015,7 +2975,7 @@ pub fn save_ebike_config(data_dir: String, config: FfiEbikeConfig) -> bool {
 #[uniffi::export]
 pub fn load_ev_car_config(data_dir: String) -> FfiEvCarConfig {
     let defaults = driver_break_core::config::EvCarConfig::default();
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return FfiEvCarConfig {
             battery_capacity_kwh: defaults.battery_capacity_kwh,
         };
@@ -3029,7 +2989,7 @@ pub fn load_ev_car_config(data_dir: String) -> FfiEvCarConfig {
 
 #[uniffi::export]
 pub fn save_ev_car_config(data_dir: String, config: FfiEvCarConfig) -> bool {
-    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return false;
     };
     let store = driver_break_core::storage::ConfigStore::new(&storage);
@@ -3243,17 +3203,11 @@ pub fn road_label_near(
     let _ = std::fs::create_dir_all(&cache);
     let eco = eco_for_travel_profile(profile);
     let elevation = ElevationService::new(ElevationCache::new(&elev));
-    let (graph, _) = match load_or_build_reweighted_bbox(
-        pbf,
-        &cache,
-        routing_profile,
-        &elevation,
-        &eco,
-        bbox,
-    ) {
-        Ok(v) => v,
-        Err(_) => return String::new(),
-    };
+    let (graph, _) =
+        match load_or_build_reweighted_bbox(pbf, &cache, routing_profile, &elevation, &eco, bbox) {
+            Ok(v) => v,
+            Err(_) => return String::new(),
+        };
     let label = nearest_road_label(&graph, lat, lon, max_m.max(1.0)).unwrap_or_default();
     if let Ok(mut guard) = ROAD_LABEL_GRAPH.lock() {
         *guard = Some(RoadLabelGraphCache { key, graph });
@@ -3313,8 +3267,7 @@ pub fn set_osm_weekly_reminder(data_dir: String, enabled: bool) -> bool {
 
 #[uniffi::export]
 pub fn osm_weekly_reminder_due(data_dir: String) -> bool {
-    let Ok(Some(meta)) =
-        driver_break_core::routing::RegionExtractMeta::load(Path::new(&data_dir))
+    let Ok(Some(meta)) = driver_break_core::routing::RegionExtractMeta::load(Path::new(&data_dir))
     else {
         return false;
     };
@@ -3384,7 +3337,10 @@ impl FfiTrackStore {
     }
 
     pub fn expire(&self, now_unix: u64) -> Vec<String> {
-        self.inner.lock().expect("track store lock").expire(now_unix)
+        self.inner
+            .lock()
+            .expect("track store lock")
+            .expire(now_unix)
     }
 
     pub fn visible(&self, center_lat: f64, center_lon: f64) -> Vec<FfiTrackStation> {
@@ -3425,6 +3381,7 @@ impl FfiTrackStore {
             .collect()
     }
 
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u32 {
         self.inner.lock().expect("track store lock").len() as u32
     }
@@ -3673,9 +3630,7 @@ pub fn pmtiles_run_job(data_dir: String, job_id: String) -> FfiPmtilesJob {
     let dl = PmtilesDownloader::new(storage, PathBuf::from(&data_dir));
     let control = {
         let mut map = pmtiles_controls().lock().expect("pmtiles controls");
-        map.entry(job_id.clone())
-            .or_insert_with(DownloadControl::default)
-            .clone()
+        map.entry(job_id.clone()).or_default().clone()
     };
     // Do not call control.reset() here: Resume must only clear the pause flag via
     // pmtiles_resume_job. Resetting would race a still-running extract and start a

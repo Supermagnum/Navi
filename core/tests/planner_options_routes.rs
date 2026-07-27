@@ -9,8 +9,8 @@ use driver_break_core::routing::graph::{
     NON_NETWORK_PENALTY,
 };
 use driver_break_core::routing::safety::check_overnight_candidate;
-use osm4routing::{Node, NodeId};
 use geo_types::Coord;
+use osm4routing::{Node, NodeId};
 
 fn node(id: i64, lat: f64, lon: f64) -> (NodeId, Node) {
     let nid = NodeId(id);
@@ -49,8 +49,8 @@ fn edge(
         shape: Vec::new(),
         highway: Some(highway.into()),
         maxspeed_kmh: None,
-            name: None,
-            road_ref: None,
+        name: None,
+        road_ref: None,
         maxweight_t: None,
         maxaxleload_t: None,
         maxbogieweight_t: None,
@@ -269,7 +269,8 @@ fn official_network_preference_changes_path_cost_and_choice() {
     let short = edge("99", 1, 2, 60.0, 10.0, 60.0, 10.02, 100.0, "path");
     let long_a = edge("10", 1, 3, 60.0, 10.0, 60.01, 10.01, 120.0, "path");
     let long_b = edge("11", 3, 2, 60.01, 10.01, 60.0, 10.02, 120.0, "path");
-    let mut graph = RouteGraph::from_parts(nodes, vec![short, long_a, long_b], RoutingProfile::Foot);
+    let mut graph =
+        RouteGraph::from_parts(nodes, vec![short, long_a, long_b], RoutingProfile::Foot);
 
     let before = graph.shortest_path(NodeId(1), NodeId(2), false).unwrap();
     assert!(
@@ -360,9 +361,8 @@ fn overnight_filter_excludes_tent_near_building_for_ffi_path() {
 #[test]
 fn fishing_category_surfaces_in_poi_query() {
     use driver_break_core::poi::{classify_tags, PoiIndex};
-    let tags: HashMap<String, String> = [("leisure".into(), "fishing".into())]
-        .into_iter()
-        .collect();
+    let tags: HashMap<String, String> =
+        [("leisure".into(), "fishing".into())].into_iter().collect();
     assert!(classify_tags(&tags).contains(&PoiCategory::Fishing));
 
     // Synthetic index insert via load path is PBF-only; assert radius default matches General.
@@ -395,11 +395,11 @@ fn fishing_found_in_region_pbf() {
 /// (not the car mid-route km heuristic).
 #[test]
 fn truck_rest_params_change_break_placement_along_route() {
+    use driver_break_core::config::Profile;
     use driver_break_core::config::{RestConfig, TruckRestParams};
     use driver_break_core::routing::{
         motor_break_interval_km, truck_break_distances_km, truck_required_breaks,
     };
-    use driver_break_core::config::Profile;
 
     // Synthetic long truck day: 520 km, ~6.5 h @ 80 km/h (> 4.5 h → needs a break).
     let dist_km = 520.0;
@@ -414,12 +414,13 @@ fn truck_rest_params_change_break_placement_along_route() {
     // 80 km/h * 4.5 h = 360 km.
     assert!(
         (default_breaks[0] - 360.0).abs() < 1.0,
-        "EC 561 default places break near 360 km, got {:?}",
-        default_breaks
+        "EC 561 default places break near 360 km, got {default_breaks:?}"
     );
 
-    let mut tight = TruckRestParams::default();
-    tight.mandatory_break_after_hours = 2.0;
+    let tight = TruckRestParams {
+        mandatory_break_after_hours: 2.0,
+        ..Default::default()
+    };
     let tight_breaks = truck_break_distances_km(&tight, dist_km, eta_min);
     assert!(
         tight_breaks.len() >= 2,
@@ -427,9 +428,7 @@ fn truck_rest_params_change_break_placement_along_route() {
     );
     assert!(
         tight_breaks[0] < default_breaks[0] - 100.0,
-        "edited TruckRestParams must move first break earlier: {:?} vs {:?}",
-        tight_breaks,
-        default_breaks
+        "edited TruckRestParams must move first break earlier: {tight_breaks:?} vs {default_breaks:?}"
     );
 
     // Car heuristic must not equal the truck EC spacing for the same trip.

@@ -44,11 +44,12 @@ class ZoomPoiScreenshotTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val dataDir = NaviAppData.resolve(context)
 
-        val zooms = listOf(
-            6.5 to "navi_zoom_6_5.png",
-            11.0 to "navi_zoom_11.png",
-            16.0 to "navi_zoom_16.png",
-        )
+        val zooms =
+            listOf(
+                6.5 to "navi_zoom_6_5.png",
+                11.0 to "navi_zoom_11.png",
+                16.0 to "navi_zoom_16.png",
+            )
 
         for ((zoom, deviceName) in zooms) {
             NaviMapTestHooks.hideUiChrome = true

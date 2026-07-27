@@ -41,10 +41,7 @@ pub fn default_ev_car_motor_efficiency() -> f64 {
 }
 
 /// Route range estimate for an EV car (same math as e-bike, capacity in Wh).
-pub fn ev_car_range_estimate(
-    mechanical_energy_j: f64,
-    config: &EvCarConfig,
-) -> EbikeRangeEstimate {
+pub fn ev_car_range_estimate(mechanical_energy_j: f64, config: &EvCarConfig) -> EbikeRangeEstimate {
     range_estimate(
         mechanical_energy_j,
         config.battery_wh_or_default(),

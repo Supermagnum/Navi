@@ -33,27 +33,28 @@ class RouteSimulator(
             return
         }
         val scale = max(timeScale, 0.01)
-        job = scope.launch {
-            var i = 0
-            while (isActive && i < samples.lastIndex) {
-                val a = samples[i]
-                val b = samples[i + 1]
-                onSample(a)
-                val loc = locationAt(a, b)
-                onFix(loc)
-                val distM = (b.cumM - a.cumM).coerceAtLeast(0.5)
-                val speedMs = (a.speedKmh.coerceAtLeast(1.0) / 3.6)
-                val waitMs = ((distM / speedMs) * 1000.0 / scale).toLong().coerceIn(15L, 60_000L)
-                delay(waitMs)
-                i++
+        job =
+            scope.launch {
+                var i = 0
+                while (isActive && i < samples.lastIndex) {
+                    val a = samples[i]
+                    val b = samples[i + 1]
+                    onSample(a)
+                    val loc = locationAt(a, b)
+                    onFix(loc)
+                    val distM = (b.cumM - a.cumM).coerceAtLeast(0.5)
+                    val speedMs = (a.speedKmh.coerceAtLeast(1.0) / 3.6)
+                    val waitMs = ((distM / speedMs) * 1000.0 / scale).toLong().coerceIn(15L, 60_000L)
+                    delay(waitMs)
+                    i++
+                }
+                if (isActive) {
+                    val last = samples.last()
+                    onSample(last)
+                    onFix(locationAt(last, last))
+                    onFinished()
+                }
             }
-            if (isActive) {
-                val last = samples.last()
-                onSample(last)
-                onFix(locationAt(last, last))
-                onFinished()
-            }
-        }
     }
 
     /** Jump to the sample nearest [targetCumM] (test checkpoints). */
@@ -71,7 +72,10 @@ class RouteSimulator(
         job = null
     }
 
-    private fun locationAt(a: RouteSimSample, b: RouteSimSample): Location {
+    private fun locationAt(
+        a: RouteSimSample,
+        b: RouteSimSample,
+    ): Location {
         val loc = Location("navi-route-sim")
         loc.latitude = a.lat
         loc.longitude = a.lon

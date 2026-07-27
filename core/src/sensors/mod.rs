@@ -3,7 +3,7 @@
 //! Android uses LocationManager / fused sensors. On Linux, optional `gpsd` and
 //! `linux-imu` features feed the same [`PositionSample`] / [`ImuSample`] types.
 
-use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 /// Position sample published by the T0 sensor thread.
@@ -78,11 +78,8 @@ pub fn sensor_channel<T>() -> (Sender<T>, Receiver<T>) {
 
 pub fn try_recv_latest<T>(rx: &Receiver<T>) -> Option<T> {
     let mut last = None;
-    loop {
-        match rx.try_recv() {
-            Ok(v) => last = Some(v),
-            Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
-        }
+    while let Ok(v) = rx.try_recv() {
+        last = Some(v);
     }
     last
 }

@@ -7,10 +7,10 @@ use anyhow::{bail, Context};
 use futures_util::StreamExt;
 use tokio::io::AsyncWriteExt;
 
-use crate::download::{available_bytes, enrich_io_error, progress as download_progress, DownloadControl};
-use crate::routing::elevation::{
-    bbox_to_tiles, ElevationCache, ElevationDownloader,
+use crate::download::{
+    available_bytes, enrich_io_error, progress as download_progress, DownloadControl,
 };
+use crate::routing::elevation::{bbox_to_tiles, ElevationCache, ElevationDownloader};
 use crate::storage::{ElevationJobStore, JobStatus, Storage};
 
 /// Espa -> Atnbrufossen corridor bbox [min_lat, min_lon, max_lat, max_lon].
@@ -173,7 +173,11 @@ pub fn ensure_corridor_dem(elev_dir: &Path, db_path: &Path) -> anyhow::Result<(u
     }
     let store = ElevationJobStore::new(&storage);
     let (done, total) = store.progress(job.id)?;
-    Ok((done as usize, total as usize, started.elapsed().as_secs_f64()))
+    Ok((
+        done as usize,
+        total as usize,
+        started.elapsed().as_secs_f64(),
+    ))
 }
 
 /// Result of provisioning a test/app region directory.
@@ -226,9 +230,7 @@ pub fn provision_region_with_elev_tar(
 
     if let Some(tar_url) = elevation_tar_url {
         let tar_path = data_dir.join("elevation-corridor.tar");
-        let need_tar = !elev_dir
-            .join("copernicus")
-            .is_dir()
+        let need_tar = !elev_dir.join("copernicus").is_dir()
             || fs::read_dir(elev_dir.join("copernicus"))
                 .map(|rd| rd.count() == 0)
                 .unwrap_or(true);

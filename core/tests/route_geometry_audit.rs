@@ -297,7 +297,10 @@ fn run() -> anyhow::Result<()> {
     let step = (via_coords.len() / 100).max(1);
     for p in via_coords.iter().step_by(step) {
         let mut best = f64::INFINITY;
-        for q in osrm_via_coords.iter().step_by(5.max(osrm_via_coords.len() / 500)) {
+        for q in osrm_via_coords
+            .iter()
+            .step_by(5.max(osrm_via_coords.len() / 500))
+        {
             best = best.min(haversine_m(p.0, p.1, q.0, q.1));
         }
         if best > 2_000.0 {
@@ -446,7 +449,10 @@ fn run() -> anyhow::Result<()> {
             (e.start_lon + e.end_lon) / 2.0,
         );
         let mut best = f64::INFINITY;
-        for q in osrm_via_coords.iter().step_by(5.max(osrm_via_coords.len() / 500)) {
+        for q in osrm_via_coords
+            .iter()
+            .step_by(5.max(osrm_via_coords.len() / 500))
+        {
             best = best.min(haversine_m(mid.0, mid.1, q.0, q.1));
         }
         if best <= 2_000.0 {
@@ -517,10 +523,7 @@ fn run() -> anyhow::Result<()> {
         ];
         for (lat, lon, label) in probes {
             let hits = poi.nearest(PoiCategory::Water, lat, lon, 5_000.0);
-            report.line(&format!(
-                "  Water within 5 km of {label}: {}",
-                hits.len()
-            ));
+            report.line(&format!("  Water within 5 km of {label}: {}", hits.len()));
         }
         // Also count water along current hiking-like eco path if we build foot graph later — skip here.
         let _ = sample_route_points;

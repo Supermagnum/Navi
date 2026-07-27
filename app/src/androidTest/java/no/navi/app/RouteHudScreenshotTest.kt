@@ -17,10 +17,10 @@ import org.junit.BeforeClass
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import uniffi.navi.CorridorRouteResult
 import uniffi.navi.FfiIconTheme
 import uniffi.navi.rasterizeIconPng
 import uniffi.navi.runCarCorridorPipeline
-import uniffi.navi.CorridorRouteResult
 import java.io.File
 
 /**
@@ -29,7 +29,6 @@ import java.io.File
  */
 @RunWith(AndroidJUnit4::class)
 class RouteHudScreenshotTest {
-
     companion object {
         @JvmStatic
         lateinit var planned: CorridorRouteResult
@@ -42,33 +41,40 @@ class RouteHudScreenshotTest {
         fun provisionRealCorridor() {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
             val dataDir = NaviAppData.resolve(context)
-            val iconsDir = File(context.filesDir, "icons").also { dest ->
-                dest.mkdirs()
-                fun copyAssetTree(assetPath: String, outDir: File) {
-                    outDir.mkdirs()
-                    val am = context.assets
-                    val children = am.list(assetPath) ?: return
-                    for (name in children) {
-                        val childAsset = if (assetPath.isEmpty()) name else "$assetPath/$name"
-                        val childOut = File(outDir, name)
-                        val sub = am.list(childAsset)
-                        if (sub != null && sub.isNotEmpty()) {
-                            copyAssetTree(childAsset, childOut)
-                        } else if (!childOut.exists()) {
-                            am.open(childAsset).use { input ->
-                                childOut.outputStream().use { output -> input.copyTo(output) }
+            val iconsDir =
+                File(context.filesDir, "icons").also { dest ->
+                    dest.mkdirs()
+
+                    fun copyAssetTree(
+                        assetPath: String,
+                        outDir: File,
+                    ) {
+                        outDir.mkdirs()
+                        val am = context.assets
+                        val children = am.list(assetPath) ?: return
+                        for (name in children) {
+                            val childAsset = if (assetPath.isEmpty()) name else "$assetPath/$name"
+                            val childOut = File(outDir, name)
+                            val sub = am.list(childAsset)
+                            if (sub != null && sub.isNotEmpty()) {
+                                copyAssetTree(childAsset, childOut)
+                            } else if (!childOut.exists()) {
+                                am.open(childAsset).use { input ->
+                                    childOut.outputStream().use { output -> input.copyTo(output) }
+                                }
                             }
                         }
                     }
+                    copyAssetTree("icons", dest)
                 }
-                copyAssetTree("icons", dest)
-            }
-            val url = System.getProperty("navi.fixture.pbf.url")
-                ?: InstrumentationRegistry.getArguments().getString("navi.fixture.pbf.url")
-                ?: "http://10.0.2.2:8765/espa-atnbrufossen-corridor.osm.pbf"
-            val elevTar = System.getProperty("navi.fixture.elev.url")
-                ?: InstrumentationRegistry.getArguments().getString("navi.fixture.elev.url")
-                ?: "http://10.0.2.2:8765/elevation-corridor.tar"
+            val url =
+                System.getProperty("navi.fixture.pbf.url")
+                    ?: InstrumentationRegistry.getArguments().getString("navi.fixture.pbf.url")
+                    ?: "http://10.0.2.2:8765/espa-atnbrufossen-corridor.osm.pbf"
+            val elevTar =
+                System.getProperty("navi.fixture.elev.url")
+                    ?: InstrumentationRegistry.getArguments().getString("navi.fixture.elev.url")
+                    ?: "http://10.0.2.2:8765/elevation-corridor.tar"
 
             val pbf = File(dataDir, "espa-atnbrufossen-corridor.osm.pbf")
             val stagedPbf = File("/data/local/tmp/navi_fixtures/espa-atnbrufossen-corridor.osm.pbf")
@@ -80,48 +86,54 @@ class RouteHudScreenshotTest {
             // Unpack DEM with app-uid `tar` into app files (shell cannot write user-10
             // app-specific storage; UiAutomation shell extract alone is not enough).
             File(dataDir, "elevation").deleteRecursively()
-            val tarProc = ProcessBuilder(
-                "tar",
-                "-xf",
-                stagedTar.absolutePath,
-                "-C",
-                dataDir.absolutePath,
-            ).redirectErrorStream(true).start()
+            val tarProc =
+                ProcessBuilder(
+                    "tar",
+                    "-xf",
+                    stagedTar.absolutePath,
+                    "-C",
+                    dataDir.absolutePath,
+                ).redirectErrorStream(true).start()
             val tarOut = tarProc.inputStream.bufferedReader().readText()
             val tarCode = tarProc.waitFor()
             check(tarCode == 0) { "app-uid tar failed ($tarCode): $tarOut" }
-            val demSample = File(
-                dataDir,
-                "elevation/copernicus/N60E010/Copernicus_DSM_COG_10_N60_00_E010_00_DEM.tif",
-            )
+            val demSample =
+                File(
+                    dataDir,
+                    "elevation/copernicus/N60E010/Copernicus_DSM_COG_10_N60_00_E010_00_DEM.tif",
+                )
             check(demSample.isFile) {
                 "DEM fixture missing after app-uid tar: ${demSample.absolutePath}"
             }
 
-            planned = runCarCorridorPipeline(
-                pbfPath = pbf.absolutePath,
-                elevDir = File(dataDir, "elevation").absolutePath,
-                cacheDir = File(dataDir, "graph-cache").absolutePath,
-                breakIntervalHours = 1.0,
-            )
+            planned =
+                runCarCorridorPipeline(
+                    pbfPath = pbf.absolutePath,
+                    elevDir = File(dataDir, "elevation").absolutePath,
+                    cacheDir = File(dataDir, "graph-cache").absolutePath,
+                    breakIntervalHours = 1.0,
+                )
             check(planned.report.contains("DATA_SOURCE=real_pbf")) { planned.report }
             check(planned.report.contains("PASS")) { planned.report }
             check(planned.distanceKm > 5.0) { "distance ${planned.distanceKm}" }
             check(planned.routePolyline.contains(';')) { "empty polyline" }
 
-            iconPng = rasterizeIconPng(
-                key = planned.poiIconKey.ifBlank { "fuel" },
-                theme = FfiIconTheme.DAY,
-                width = 64u,
-                height = 64u,
-                bundledDir = iconsDir.absolutePath,
-            )
+            iconPng =
+                rasterizeIconPng(
+                    key = planned.poiIconKey.ifBlank { "fuel" },
+                    theme = FfiIconTheme.DAY,
+                    width = 64u,
+                    height = 64u,
+                    bundledDir = iconsDir.absolutePath,
+                )
 
             NaviMapTestHooks.hideUiChrome = false
             NaviMapTestHooks.hideSearchChrome = true
             NaviMapTestHooks.gpsAltitudeM = 412.0
             runCatching {
-                InstrumentationRegistry.getInstrumentation().uiAutomation
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .uiAutomation
                     .grantRuntimePermission(
                         context.packageName,
                         android.Manifest.permission.ACCESS_FINE_LOCATION,
@@ -137,8 +149,9 @@ class RouteHudScreenshotTest {
 
     @Before
     fun setUp() {
-        dataDir = (
-            NaviAppData.resolve(InstrumentationRegistry.getInstrumentation().targetContext)
+        dataDir =
+            (
+                NaviAppData.resolve(InstrumentationRegistry.getInstrumentation().targetContext)
             ).also { it.mkdirs() }
         NaviMapTestHooks.hideUiChrome = false
         NaviMapTestHooks.hideSearchChrome = true
@@ -173,8 +186,9 @@ class RouteHudScreenshotTest {
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(500)
             layers = NaviMapTestHooks.lastReportedLayerCount
-            val altOk = NaviMapTestHooks.lastHudAltitudeM != null &&
-                kotlin.math.abs(NaviMapTestHooks.lastHudAltitudeM!! - 412.0) < 0.5
+            val altOk =
+                NaviMapTestHooks.lastHudAltitudeM != null &&
+                    kotlin.math.abs(NaviMapTestHooks.lastHudAltitudeM!! - 412.0) < 0.5
             if (altOk && NaviMapTestHooks.lastBreakHudVisible) break
             // Re-inject: the poll loop may consume pendingRoute before Compose is ready.
             NaviMapTestHooks.pendingRoute = planned
@@ -256,7 +270,8 @@ class RouteHudScreenshotTest {
         composeRule.onNodeWithTag("drive_settings_sheet", useUnmergedTree = true).assertIsDisplayed()
         assertTrue(NaviMapTestHooks.driveSettingsOpen)
         capture("route_drive_settings_menu.png")
-        composeRule.onNodeWithTag("btn_close_drive_settings", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("btn_close_drive_settings", useUnmergedTree = true)
             .performScrollTo()
             .performClick()
         composeRule.waitForIdle()
@@ -267,7 +282,8 @@ class RouteHudScreenshotTest {
         NaviMapTestHooks.hideSearchChrome = false
         Thread.sleep(1_000)
         composeRule.onNodeWithTag("search_chrome", useUnmergedTree = true).assertIsDisplayed()
-        composeRule.onNodeWithTag("btn_tools", useUnmergedTree = true)
+        composeRule
+            .onNodeWithTag("btn_tools", useUnmergedTree = true)
             .performScrollTo()
             .performClick()
         composeRule.waitForIdle()

@@ -77,12 +77,13 @@ fun parseAddressDisplayLines(
     if (raw != null && s == null) {
         // Trailing 4-digit Norwegian postcode: "Storgata 12 2312" or "2312".
         val postMatch = Regex("""^(.*?)(?:\s+)(\d{4})$""").matchEntire(raw)
-        val withoutPost = if (postMatch != null && pc == null) {
-            pc = postMatch.groupValues[2]
-            postMatch.groupValues[1].trim()
-        } else {
-            raw
-        }
+        val withoutPost =
+            if (postMatch != null && pc == null) {
+                pc = postMatch.groupValues[2]
+                postMatch.groupValues[1].trim()
+            } else {
+                raw
+            }
         // Trailing housenumber: "Ommangsgutua 12" / "Ommangsgutua 12B".
         val hnMatch = Regex("""^(.*?)(?:\s+)(\d+[A-Za-z]?)$""").matchEntire(withoutPost)
         if (hnMatch != null && hn == null) {
@@ -101,13 +102,12 @@ enum class ApproachUiPhase {
     Urgency,
 }
 
-fun approachUiPhase(state: ApproachGuidanceState): ApproachUiPhase {
-    return when (approachPhaseForDistance(state.active, state.distanceM)) {
+fun approachUiPhase(state: ApproachGuidanceState): ApproachUiPhase =
+    when (approachPhaseForDistance(state.active, state.distanceM)) {
         "appear" -> ApproachUiPhase.Appear
         "urgency" -> ApproachUiPhase.Urgency
         else -> ApproachUiPhase.Hidden
     }
-}
 
 @Composable
 fun ApproachInstructionBox(
@@ -122,65 +122,71 @@ fun ApproachInstructionBox(
 
     val urgency = phase == ApproachUiPhase.Urgency
     val dist = formatApproachDistance(state.distanceM, state.preferMetric)
-    val exitLabel = when (state.roundaboutExit) {
-        1 -> "first exit"
-        2 -> "second exit"
-        3 -> "third exit"
-        else -> null
-    }
-    val png = remember(state.iconKey, iconsDir) {
-        runCatching {
-            rasterizeIconPng(
-                key = state.iconKey,
-                theme = FfiIconTheme.DAY,
-                width = if (urgency) 96u else 72u,
-                height = if (urgency) 96u else 72u,
-                bundledDir = iconsDir,
-            )
-        }.getOrDefault(ByteArray(0))
-    }
-    val bmp = remember(png) {
-        if (png.isEmpty()) null else BitmapFactory.decodeByteArray(png, 0, png.size)
-    }
+    val exitLabel =
+        when (state.roundaboutExit) {
+            1 -> "first exit"
+            2 -> "second exit"
+            3 -> "third exit"
+            else -> null
+        }
+    val png =
+        remember(state.iconKey, iconsDir) {
+            runCatching {
+                rasterizeIconPng(
+                    key = state.iconKey,
+                    theme = FfiIconTheme.DAY,
+                    width = if (urgency) 96u else 72u,
+                    height = if (urgency) 96u else 72u,
+                    bundledDir = iconsDir,
+                )
+            }.getOrDefault(ByteArray(0))
+        }
+    val bmp =
+        remember(png) {
+            if (png.isEmpty()) null else BitmapFactory.decodeByteArray(png, 0, png.size)
+        }
 
     // Compact left-aligned card: intrinsic width hugs icon + text (not fillMaxWidth).
     // Wide enough that common Norwegian street names stay on one line.
     val fill = if (urgency) Color(0xFFE8E0F0) else Color(0xFFEDE8F5)
-    val (streetLine, houseLine, postLine) = parseAddressDisplayLines(
-        street = state.nextStreet,
-        houseNumber = state.houseNumber,
-        postcode = state.postcode,
-    )
+    val (streetLine, houseLine, postLine) =
+        parseAddressDisplayLines(
+            street = state.nextStreet,
+            houseNumber = state.houseNumber,
+            postcode = state.postcode,
+        )
     Box(
-        modifier = modifier
-            .width(IntrinsicSize.Max)
-            .widthIn(max = 420.dp)
-            .heightIn(min = if (urgency) 96.dp else 80.dp)
-            .background(fill, RectangleShape)
-            .border(1.dp, Color(0xFF9E9E9E), RectangleShape)
-            .testTag("approach_instruction_box")
-            .semantics {
-                contentDescription = buildString {
-                    append("Next maneuver. ")
-                    append(dist)
-                    streetLine?.let {
-                        append(". Onto ")
-                        append(it)
-                    }
-                    houseLine?.let {
-                        append(" ")
-                        append(it)
-                    }
-                    postLine?.let {
-                        append(". ")
-                        append(it)
-                    }
-                    exitLabel?.let {
-                        append(". ")
-                        append(it)
-                    }
-                }
-            },
+        modifier =
+            modifier
+                .width(IntrinsicSize.Max)
+                .widthIn(max = 420.dp)
+                .heightIn(min = if (urgency) 96.dp else 80.dp)
+                .background(fill, RectangleShape)
+                .border(1.dp, Color(0xFF9E9E9E), RectangleShape)
+                .testTag("approach_instruction_box")
+                .semantics {
+                    contentDescription =
+                        buildString {
+                            append("Next maneuver. ")
+                            append(dist)
+                            streetLine?.let {
+                                append(". Onto ")
+                                append(it)
+                            }
+                            houseLine?.let {
+                                append(" ")
+                                append(it)
+                            }
+                            postLine?.let {
+                                append(". ")
+                                append(it)
+                            }
+                            exitLabel?.let {
+                                append(". ")
+                                append(it)
+                            }
+                        }
+                },
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -191,29 +197,32 @@ fun ApproachInstructionBox(
                 Image(
                     bitmap = bmp.asImageBitmap(),
                     contentDescription = null,
-                    modifier = Modifier
-                        .size(if (urgency) 72.dp else 56.dp)
-                        .testTag("approach_maneuver_icon"),
+                    modifier =
+                        Modifier
+                            .size(if (urgency) 72.dp else 56.dp)
+                            .testTag("approach_maneuver_icon"),
                 )
             }
             Column {
                 Text(
                     text = dist,
-                    style = if (urgency) {
-                        MaterialTheme.typography.headlineMedium
-                    } else {
-                        MaterialTheme.typography.headlineSmall
-                    },
+                    style =
+                        if (urgency) {
+                            MaterialTheme.typography.headlineMedium
+                        } else {
+                            MaterialTheme.typography.headlineSmall
+                        },
                     modifier = Modifier.testTag("approach_distance"),
                 )
                 if (streetLine != null) {
                     Text(
                         text = streetLine,
-                        style = if (urgency) {
-                            MaterialTheme.typography.titleLarge
-                        } else {
-                            MaterialTheme.typography.titleMedium
-                        },
+                        style =
+                            if (urgency) {
+                                MaterialTheme.typography.titleLarge
+                            } else {
+                                MaterialTheme.typography.titleMedium
+                            },
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis,
@@ -243,9 +252,10 @@ fun ApproachInstructionBox(
                 if (exitLabel != null) {
                     Text(
                         text = exitLabel,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = if (urgency) 16.sp else 14.sp,
-                        ),
+                        style =
+                            MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = if (urgency) 16.sp else 14.sp,
+                            ),
                         modifier = Modifier.testTag("approach_roundabout_exit"),
                     )
                 }

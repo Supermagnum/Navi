@@ -3,6 +3,7 @@ package no.navi.app
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.ActivityTestRule
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -44,6 +45,17 @@ class BearingCrashIsolationTest {
         NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, zoom)
         // Compass + null magnetic: NorthUp would force bearing 0 every poll tick.
         NaviMapTestHooks.requestRotationMode = MapRotationMode.Compass
+    }
+
+    @After
+    fun tearDown() {
+        // Prefer Compose DisposableEffect onDestroy over relying on GC finalizers
+        // for MapLibre's Vulkan MapRenderer (FinalizerDaemon SIGSEGV on AAOS).
+        runCatching { activityRule.finishActivity() }
+        Thread.sleep(1_500)
+        NaviMapTestHooks.applyBearingToMap = false
+        NaviMapTestHooks.magneticHeadingDeg = null
+        NaviMapTestHooks.pendingBearing = null
     }
 
     private fun waitStyle() {

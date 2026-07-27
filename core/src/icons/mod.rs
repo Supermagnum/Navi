@@ -63,7 +63,9 @@ pub fn load_svg_bytes(path: &Path) -> Result<Vec<u8>> {
 pub fn rasterize_file(path: &Path, width: u32, height: u32) -> Result<Vec<u8>> {
     let svg_bytes = load_svg_bytes(path)?;
     let resources_dir = path.parent();
-    Ok(render_to_pixmap(&svg_bytes, resources_dir, width, height)?.data().to_vec())
+    Ok(render_to_pixmap(&svg_bytes, resources_dir, width, height)?
+        .data()
+        .to_vec())
 }
 
 /// Resolve semantic key then rasterize. `bundled_dir` is usually
@@ -97,9 +99,7 @@ fn rasterize_file_png(path: &Path, width: u32, height: u32) -> Result<Vec<u8>> {
     let svg_bytes = load_svg_bytes(path)?;
     let resources_dir = path.parent();
     let pixmap = render_to_pixmap(&svg_bytes, resources_dir, width, height)?;
-    pixmap
-        .encode_png()
-        .context("encode rasterized icon as PNG")
+    pixmap.encode_png().context("encode rasterized icon as PNG")
 }
 
 fn render_to_pixmap(
@@ -183,15 +183,9 @@ mod tests {
             !rgba.iter().all(|&b| b == 0),
             "expected at least one non-zero byte"
         );
-        let alpha_sum: u64 = rgba
-            .chunks_exact(4)
-            .map(|px| px[3] as u64)
-            .sum();
+        let alpha_sum: u64 = rgba.chunks_exact(4).map(|px| px[3] as u64).sum();
         assert!(alpha_sum > 0, "expected non-trivial alpha channel");
-        let alpha_pixels = rgba
-            .chunks_exact(4)
-            .filter(|px| px[3] > 0)
-            .count();
+        let alpha_pixels = rgba.chunks_exact(4).filter(|px| px[3] > 0).count();
         assert!(alpha_pixels > 0, "expected pixels with non-zero alpha");
     }
 

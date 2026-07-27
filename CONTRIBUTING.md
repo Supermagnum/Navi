@@ -160,3 +160,37 @@ a prior discussion — open a PR or issue directly.
 - Do not force-push to `main`; do not skip hooks unless the maintainer asks.
 - The maintainer may ask clarifying questions before merge — that is normal for
   a solo-maintained tree.
+
+### CI expectations (GitHub Actions)
+
+Every push/PR runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+
+| Job | What it checks |
+|---|---|
+| `rust-checks` | `cargo fmt --check`, Clippy (`-D warnings`), `cargo test --workspace` (default set only; excludes `navi-desktop` and wasm example guests), plugin-host `isolation` tests, `cargo deny`, `cargo audit` |
+| `linux-build` | Workspace `cargo build` on Linux (headless `navi-desktop` features; excludes WebKit and wasm guests) |
+| `kotlin-checks` | ktlint, detekt, `./gradlew :app:testDebugUnitTest` |
+| `android-build` | `./gradlew :app:assembleDebug` |
+
+**Not** in the per-PR gate (run locally or via the scheduled workflow):
+
+- Rust `#[ignore]` OSM/DEM integration tests (need fixtures under
+  `core/target/integration-fixtures` — see [`docs/build-linux.md`](docs/build-linux.md)).
+- Android instrumented tests — [`.github/workflows/android-instrumented.yml`](.github/workflows/android-instrumented.yml)
+  (nightly / `workflow_dispatch` with an emulator).
+
+Before opening a PR, prefer running at least:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets \
+  --exclude navi-plugin-log-hello --exclude navi-plugin-busy-loop --exclude navi-desktop \
+  -- -D warnings
+cargo test --workspace \
+  --exclude navi-desktop --exclude navi-plugin-log-hello --exclude navi-plugin-busy-loop
+cargo test -p navi-plugin-host --test isolation
+cargo deny check
+./gradlew :app:ktlintCheck :app:detekt :app:testDebugUnitTest :app:assembleDebug
+```
+
+Rust toolchain is pinned by `rust-toolchain.toml` (MSRV **1.88**).

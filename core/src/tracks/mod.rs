@@ -92,12 +92,15 @@ impl TrackStore {
     /// Insert or update a station by id. Never creates a second entry for the same id.
     pub fn upsert(&mut self, station: TrackStation) -> UpsertOutcome {
         let id = station.id.clone();
-        if self.stations.contains_key(&id) {
-            self.stations.insert(id, station);
-            UpsertOutcome::Updated
-        } else {
-            self.stations.insert(id, station);
-            UpsertOutcome::Created
+        match self.stations.entry(id) {
+            std::collections::hash_map::Entry::Occupied(mut e) => {
+                e.insert(station);
+                UpsertOutcome::Updated
+            }
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(station);
+                UpsertOutcome::Created
+            }
         }
     }
 
@@ -219,7 +222,7 @@ mod tests {
         store.upsert(st("OLD", 60.72, 10.61, "aprs_house", 100));
         store.upsert(st("NEW", 60.72, 10.61, "aprs_car", 200));
         let removed = store.expire(211); // OLD age=111 > 10; NEW age=11 > 10 both?
-        // NEW last_heard 200, now 211 → age 11 > 10 → both removed
+                                         // NEW last_heard 200, now 211 → age 11 > 10 → both removed
         assert!(removed.contains(&"OLD".to_string()));
         let mut store = TrackStore::new(10, 150.0);
         store.upsert(st("OLD", 60.72, 10.61, "aprs_house", 100));

@@ -17,8 +17,11 @@ import uniffi.navi.runCarCorridorPipeline
 import java.io.File
 
 /**
- * Espa→Atnbrufossen (car) with Mapterhorn hillshade 3D off (flat Liberty).
- * Entire route fitted in frame.
+ * Espa→Atnbrufossen (car) with opt-in 3D hillshade off.
+ *
+ * [OstlandetOfflineFixtures.ensureInstalled] installs Østlandet PMTiles into the
+ * app dataDir; offline-first resolution ([BasemapStyleResolver]) therefore
+ * selects OfflineProtomaps covering this corridor — not OnlineLiberty.
  */
 @RunWith(AndroidJUnit4::class)
 class TerrainRouteScreenshotTest {
@@ -41,18 +44,24 @@ class TerrainRouteScreenshotTest {
             val pbf = File(dataDir, "espa-atnbrufossen-corridor.osm.pbf")
             stagedPbf.copyTo(pbf, overwrite = true)
             File(dataDir, "elevation").deleteRecursively()
-            val tarProc = ProcessBuilder(
-                "tar", "-xf", stagedTar.absolutePath, "-C", dataDir.absolutePath,
-            ).redirectErrorStream(true).start()
+            val tarProc =
+                ProcessBuilder(
+                    "tar",
+                    "-xf",
+                    stagedTar.absolutePath,
+                    "-C",
+                    dataDir.absolutePath,
+                ).redirectErrorStream(true).start()
             val tarOut = tarProc.inputStream.bufferedReader().readText()
             check(tarProc.waitFor() == 0) { "tar failed: $tarOut" }
 
-            carRoute = runCarCorridorPipeline(
-                pbfPath = pbf.absolutePath,
-                elevDir = File(dataDir, "elevation").absolutePath,
-                cacheDir = File(dataDir, "graph-cache").absolutePath,
-                breakIntervalHours = 1.0,
-            )
+            carRoute =
+                runCarCorridorPipeline(
+                    pbfPath = pbf.absolutePath,
+                    elevDir = File(dataDir, "elevation").absolutePath,
+                    cacheDir = File(dataDir, "graph-cache").absolutePath,
+                    breakIntervalHours = 1.0,
+                )
             check(carRoute.routePolyline.contains(';')) { carRoute.report }
             check(carRoute.distanceKm > 5.0) { "car distance ${carRoute.distanceKm}" }
         }
@@ -128,7 +137,11 @@ class TerrainRouteScreenshotTest {
         }
     }
 
-    private fun awaitKind(kind: String, terrain: Boolean?, timeoutMs: Long = 45_000) {
+    private fun awaitKind(
+        kind: String,
+        terrain: Boolean?,
+        timeoutMs: Long = 45_000,
+    ) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             val okKind = NaviMapTestHooks.lastBasemapKind == kind
@@ -155,7 +168,9 @@ class TerrainRouteScreenshotTest {
         activityRule.launchActivity(null)
         waitStyle()
         injectRoute(carRoute)
-        awaitKind("OnlineLiberty", terrain = false)
+        // Offline-first: local Østlandet PMTiles cover Espa→Atnbrufossen.
+        // With opt-in 3D off, expect OfflineProtomaps without hillshade attach.
+        awaitKind("OfflineProtomaps", terrain = false)
         assertFalse(NaviMapTestHooks.lastTerrainAttached)
         capture("route_car_espa_atnbrufossen_3d_off.png")
     }

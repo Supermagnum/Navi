@@ -27,7 +27,11 @@ object RoutingPlanLog {
         progress(0, ecoEnabled, detail = "queued")
     }
 
-    fun progress(pct: Int, ecoEnabled: Boolean, detail: String = "") {
+    fun progress(
+        pct: Int,
+        ecoEnabled: Boolean,
+        detail: String = "",
+    ) {
         val clamped = pct.coerceIn(0, 100)
         val extra = if (detail.isBlank()) "" else " detail=$detail"
         Log.i(TAG, "planning_progress pct=$clamped eco=$ecoEnabled$extra")
@@ -48,7 +52,11 @@ object RoutingPlanLog {
         logPois(result.breakPoisJson)
     }
 
-    fun failed(ecoEnabled: Boolean, durationMs: Long, reason: String) {
+    fun failed(
+        ecoEnabled: Boolean,
+        durationMs: Long,
+        reason: String,
+    ) {
         Log.w(
             TAG,
             "planning_failed eco=$ecoEnabled duration_ms=$durationMs reason=$reason",

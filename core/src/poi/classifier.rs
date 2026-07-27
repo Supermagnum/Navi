@@ -47,9 +47,7 @@ pub fn classify_tags(tags: &HashMap<String, String>) -> Vec<PoiCategory> {
 
     // Named peaks / hills are terrain features — never pause labels.
     // Tent fallback uses tourism=camp_site / camp_pitch (and synthetic corridor points).
-    if matches!(tourism, Some("camp_site") | Some("camp_pitch"))
-        || amenity == Some("camping")
-    {
+    if matches!(tourism, Some("camp_site") | Some("camp_pitch")) || amenity == Some("camping") {
         out.push(PoiCategory::TentSite);
     }
 
@@ -162,15 +160,12 @@ mod tests {
 
     #[test]
     fn craft_brewery_matches_any_of_three_tag_styles() {
-        assert!(classify_tags(&tags(&[("microbrewery", "yes")]))
-            .contains(&PoiCategory::CraftBrewery));
+        assert!(
+            classify_tags(&tags(&[("microbrewery", "yes")])).contains(&PoiCategory::CraftBrewery)
+        );
         assert!(classify_tags(&tags(&[("shop", "alcohol")])).contains(&PoiCategory::CraftBrewery));
-        assert!(
-            classify_tags(&tags(&[("craft", "brewery")])).contains(&PoiCategory::CraftBrewery)
-        );
-        assert!(
-            !classify_tags(&tags(&[("shop", "bakery")])).contains(&PoiCategory::CraftBrewery)
-        );
+        assert!(classify_tags(&tags(&[("craft", "brewery")])).contains(&PoiCategory::CraftBrewery));
+        assert!(!classify_tags(&tags(&[("shop", "bakery")])).contains(&PoiCategory::CraftBrewery));
     }
 
     #[test]
@@ -194,11 +189,11 @@ mod tests {
     fn rest_area_matches_highway_or_hgv_parking() {
         assert!(classify_tags(&tags(&[("highway", "rest_area")])).contains(&PoiCategory::RestArea));
         assert!(classify_tags(&tags(&[("highway", "services")])).contains(&PoiCategory::RestArea));
-        assert!(classify_tags(&tags(&[("amenity", "parking"), ("hgv", "yes")]))
-            .contains(&PoiCategory::RestArea));
         assert!(
-            !classify_tags(&tags(&[("amenity", "parking")])).contains(&PoiCategory::RestArea)
+            classify_tags(&tags(&[("amenity", "parking"), ("hgv", "yes")]))
+                .contains(&PoiCategory::RestArea)
         );
+        assert!(!classify_tags(&tags(&[("amenity", "parking")])).contains(&PoiCategory::RestArea));
     }
 
     #[test]
@@ -213,19 +208,14 @@ mod tests {
         let rest = tags(&[("highway", "rest_area")]);
         assert!(!rest_area_suitable_for_weekly(&rest, &osm_icon_key(&rest)));
         let named = tags(&[("highway", "rest_area"), ("name", "North Services Plaza")]);
-        assert!(rest_area_suitable_for_weekly(
-            &named,
-            &osm_icon_key(&named)
-        ));
+        assert!(rest_area_suitable_for_weekly(&named, &osm_icon_key(&named)));
     }
 
     #[test]
     fn lodging_matches_hotel_motel_guest_house_or_hostel() {
         assert!(classify_tags(&tags(&[("tourism", "hotel")])).contains(&PoiCategory::Lodging));
         assert!(classify_tags(&tags(&[("tourism", "motel")])).contains(&PoiCategory::Lodging));
-        assert!(
-            classify_tags(&tags(&[("tourism", "guest_house")])).contains(&PoiCategory::Lodging)
-        );
+        assert!(classify_tags(&tags(&[("tourism", "guest_house")])).contains(&PoiCategory::Lodging));
         assert!(classify_tags(&tags(&[("tourism", "apartment")])).contains(&PoiCategory::Lodging));
         assert!(classify_tags(&tags(&[("tourism", "chalet")])).contains(&PoiCategory::Lodging));
         // Hostel is both Lodging and OvernightFacility.

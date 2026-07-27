@@ -156,6 +156,18 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | **Core effect** | `refine_energy_cost` / `LiveEnergyProvider` on T1 |
 | **Proposed caps** | `ecu_read` (new), `log` — no DTC clear / programming |
 
+### 5b. DIY wired e-bike telemetry (`ebike_telemetry`)
+
+| | |
+|---|---|
+| **Benefit** | Live assist power, pack SoC, regen, and DIY-computed remaining time/distance for Electric Cycle — supplements physics-based `EbikeConfig` estimates when a custom display/BMS is cabled in |
+| **Docs** | [`ebike-telemetry-diy.md`](ebike-telemetry-diy.md) — open `$NAVIPWR` ASCII over USB-serial (CAN optional); no open cross-vendor standard exists |
+| **Transport** | **Wired only** (USB-serial primary; CAN secondary). No Bluetooth/BLE in this path |
+| **Host duties** | Open UART/CAN; parse checksummed `$NAVIPWR`; expose latest snapshot (WASM cannot open serial) |
+| **Core effect** | Feed `LiveEnergySnapshot`-class SoC/power (+ optional remaining); physics climb/range stays default offline |
+| **Proposed caps** | `ebike_telemetry_read` (new) / host `read_ebike_serial_telemetry()`, `log` |
+| **Notes** | Spec only — not implemented. Distinct from reverse-engineering commercial Bosch/Bafang/STEPS buses (deferred, high maintenance). |
+
 ### 6. Voice guidance (`voice` / `voice_guidance`)
 
 | | |
@@ -232,6 +244,7 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | `repeater_query` | Nearest NFM repeaters from onboard DB (+ optional RepeaterBook sync) |
 | `cat_vfo_set` | Ask host to program VFO 1 (frequency, offset, tone) |
 | `ecu_read` | Latest `LiveEnergySnapshot` |
+| `ebike_telemetry_read` | Latest DIY `$NAVIPWR` / wired e-bike snapshot (host owns serial) |
 | `voice_speak` / `voice_pack_query` | Queue guidance utterance or list installed voice packs |
 | `route_read` | Active corridor samples / junction hints for camping or resupply plugins |
 | `safety_config_read` | `SafetyConfig` (e.g. `min_building_distance_m`) for shared overnight distance |

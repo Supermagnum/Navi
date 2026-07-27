@@ -1,0 +1,179 @@
+# Per-PR / push CI: Rust checks, Kotlin lint+unit tests, Android assemble, Linux build.
+# Fixture-heavy Rust integration tests (`#[ignore]`, e.g. venabygdsfjellet_ebike_climb,
+# dnt_hiking_integration) and Android instrumented suites are NOT run here — see
+# .github/workflows/android-instrumented.yml and docs/build-linux.md.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  rust-checks:
+    name: rust-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          # Matches rust-toolchain.toml / workspace rust-version (MSRV pin).
+          toolchain: "1.88.0"
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - name: System deps (pkg-config / OpenSSL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-checks
+          cache-targets: true
+
+      - name: Install cargo-deny + cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny@0.19.9,cargo-audit@0.22.2
+
+      - name: Format (cargo fmt --check)
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (-D warnings)
+        # Example wasm32 guests are no_std + panic=abort; clippy --all-targets on the
+        # host triple fails for those crates. Exclude them; isolation tests still
+        # compile them for wasm32 explicitly.
+        run: >
+          cargo clippy --workspace --all-targets
+          --exclude navi-plugin-log-hello
+          --exclude navi-plugin-busy-loop
+          --exclude navi-desktop
+          -- -D warnings
+
+      - name: Unit / default tests (excludes #[ignore] fixture integrations)
+        # Do NOT pass --ignored. OSM/DEM-heavy tests such as
+        # venabygdsfjellet_ebike_climb, dnt_hiking_integration,
+        # kongsvinger_lillehammer_integration, falletvegen_atnbrufossen_eco,
+        # route_geometry_audit, place_name_search_check, overnight_scan_bench,
+        # fondsbu_spiterstulen_polyline, planner_options_routes, raufoss_approach_route
+        # require large downloaded fixtures under core/target/integration-fixtures
+        # and are manual/local-only (cargo test -- --ignored).
+        # Exclude navi-desktop: default features need WebKitGTK (separate linux-build path).
+        # Exclude wasm32 no_std example guests: host-triple `cargo test` cannot build them
+        # (custom panic handler); they are exercised via plugin-host isolation tests.
+        run: >
+          cargo test --workspace
+          --exclude navi-desktop
+          --exclude navi-plugin-log-hello
+          --exclude navi-plugin-busy-loop
+
+      - name: Plugin host isolation tests (fuel/timeout sandbox)
+        run: cargo test -p navi-plugin-host --test isolation
+
+      - name: cargo deny check
+        run: cargo deny check
+
+      - name: cargo audit
+        run: cargo audit
+
+  linux-build:
+    name: linux-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88.0"
+          targets: wasm32-unknown-unknown
+
+      - name: System deps (linker / pkg-config)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-build
+
+      - name: cargo build (workspace minus WebKit desktop)
+        # Full `navi-desktop` with embedded-webview needs libwebkit2gtk-4.1-dev.
+        # CI builds the headless feature set documented in docs/build-linux.md
+        # (`--no-default-features --features gpsd,linux-imu`) plus the rest of
+        # the workspace without pulling WebKit.
+        # Wasm example guests are host-unbuildable (no_std panic=abort); isolation
+        # tests compile them for wasm32-unknown-unknown explicitly.
+        run: |
+          cargo build --workspace \
+            --exclude navi-desktop \
+            --exclude navi-plugin-log-hello \
+            --exclude navi-plugin-busy-loop
+          cargo build -p navi-desktop --no-default-features --features gpsd,linux-imu
+
+  kotlin-checks:
+    name: kotlin-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: ktlintCheck
+        run: ./gradlew :app:ktlintCheck --no-daemon
+
+      - name: detekt
+        run: ./gradlew :app:detekt --no-daemon
+
+      - name: JVM unit tests
+        run: ./gradlew :app:testDebugUnitTest --no-daemon
+
+  android-build:
+    name: android-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: assembleDebug
+        # Uses prebuilt jniLibs where present; does not rebuild Rust native in CI.
+        run: ./gradlew :app:assembleDebug --no-daemon

@@ -49,7 +49,7 @@ fn car_highway_ok(highway: &str) -> bool {
 }
 
 fn parse_metric(raw: &str) -> Option<f64> {
-    let cleaned = raw.trim().to_lowercase().replace('t', "").replace('m', "");
+    let cleaned = raw.trim().to_lowercase().replace(['t', 'm'], "");
     cleaned.trim().parse::<f64>().ok()
 }
 
@@ -213,10 +213,7 @@ impl RouteGraph {
                     NodeId(*id),
                     Node {
                         id: NodeId(*id),
-                        coord: Coord {
-                            x: *lon,
-                            y: *lat,
-                        },
+                        coord: Coord { x: *lon, y: *lat },
                         uses: uses[id] as i16,
                     },
                 );
@@ -241,16 +238,13 @@ impl RouteGraph {
             let road_ref = way.tags.get("ref").cloned();
             let maxweight_t = way.tags.get("maxweight").and_then(|v| parse_metric(v));
             let maxaxleload_t = way.tags.get("maxaxleload").and_then(|v| parse_metric(v));
-            let maxbogieweight_t = way
-                .tags
-                .get("maxbogieweight")
-                .and_then(|v| parse_metric(v));
+            let maxbogieweight_t = way.tags.get("maxbogieweight").and_then(|v| parse_metric(v));
             let maxheight_m = way.tags.get("maxheight").and_then(|v| parse_metric(v));
             let maxwidth_m = way.tags.get("maxwidth").and_then(|v| parse_metric(v));
             let maxlength_m = way.tags.get("maxlength").and_then(|v| parse_metric(v));
             let is_toll = way.tags.get("toll").is_some_and(|v| v == "yes");
             let is_ferry = way.tags.get("route").is_some_and(|v| v == "ferry")
-                || way.tags.get("ferry").is_some();
+                || way.tags.contains_key("ferry");
 
             for id in &way.nodes {
                 let Some(&(lat, lon)) = coords.get(id) else {
@@ -436,8 +430,8 @@ mod bbox_tests {
             start_lat.max(end_lat) + pad,
             start_lon.max(end_lon) + pad,
         ];
-        let g = RouteGraph::build_from_pbf_bbox(&pbf, RoutingProfile::Car, bbox)
-            .expect("bbox build");
+        let g =
+            RouteGraph::build_from_pbf_bbox(&pbf, RoutingProfile::Car, bbox).expect("bbox build");
         assert!(g.nodes.len() > 1000, "nodes={}", g.nodes.len());
         assert!(g.edges.len() > 1000, "edges={}", g.edges.len());
         eprintln!("bbox graph nodes={} edges={}", g.nodes.len(), g.edges.len());

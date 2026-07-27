@@ -17,25 +17,21 @@ use std::time::{Duration, Instant};
 
 use pmtiles::{PmTilesWriter, TileCoord, TileId};
 
-use crate::download::DownloadControl;
 use crate::download::progress as download_progress;
+use crate::download::DownloadControl;
 use crate::routing::basemap::http_backend::Reqwest012Backend;
-use crate::routing::basemap::range_coalesce::{
-    fetch_tiles_coalesced, DEFAULT_OVERFETCH,
-};
+use crate::routing::basemap::range_coalesce::{fetch_tiles_coalesced, DEFAULT_OVERFETCH};
 use crate::routing::workers::WorkerPoolPlan;
 use crate::storage::{PmtilesJobStatus, PmtilesJobStore, Storage};
 use uuid::Uuid;
 
 /// Metadata endpoint listing daily planet builds.
-pub const PROTOMAPS_BUILDS_METADATA_URL: &str =
-    "https://build-metadata.protomaps.dev/builds.json";
+pub const PROTOMAPS_BUILDS_METADATA_URL: &str = "https://build-metadata.protomaps.dev/builds.json";
 
 pub const PROTOMAPS_BUILD_BASE_URL: &str = "https://build.protomaps.com";
 
 /// Fallback dated build if metadata is unreachable.
-pub const PROTOMAPS_PLANET_FALLBACK_URL: &str =
-    "https://build.protomaps.com/20260722.pmtiles";
+pub const PROTOMAPS_PLANET_FALLBACK_URL: &str = "https://build.protomaps.com/20260722.pmtiles";
 
 /// Default max zoom for offline extracts (higher = larger downloads).
 pub const DEFAULT_EXTRACT_MAX_ZOOM: u8 = 12;
@@ -109,8 +105,11 @@ async fn wait_if_paused_or_cancelled(
         if control.is_cancelled() {
             let _ = fs::remove_file(partial);
             if let Some((storage, job_id)) = store {
-                PmtilesJobStore::new(storage)
-                    .set_status(job_id, PmtilesJobStatus::Cancelled, false)?;
+                PmtilesJobStore::new(storage).set_status(
+                    job_id,
+                    PmtilesJobStatus::Cancelled,
+                    false,
+                )?;
             }
             anyhow::bail!("cancelled");
         }
@@ -216,7 +215,11 @@ pub async fn extract_bbox_to_file(
             if let Some((storage, job_id)) = store {
                 PmtilesJobStore::new(storage).set_progress(job_id, done, Some(total))?;
             }
-            download_progress::set(done, Some(total.max(wrote_total)), "Downloading map tiles for region…");
+            download_progress::set(
+                done,
+                Some(total.max(wrote_total)),
+                "Downloading map tiles for region…",
+            );
         }
         if done % 256 == 0 || done == wrote_total {
             let pct = if total == 0 {
@@ -358,9 +361,7 @@ mod tests {
             .expect("extract");
         let secs = t0.elapsed().as_secs_f64();
         let rate = total as f64 / secs;
-        eprintln!(
-            "COMPLETE bytes={len} tiles={total} elapsed_s={secs:.1} tiles_per_s={rate:.2}"
-        );
+        eprintln!("COMPLETE bytes={len} tiles={total} elapsed_s={secs:.1} tiles_per_s={rate:.2}");
         assert!(dest.is_file());
         assert!(
             rate > 20.0,

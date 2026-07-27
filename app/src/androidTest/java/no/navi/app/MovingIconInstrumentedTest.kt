@@ -28,6 +28,7 @@ class MovingIconInstrumentedTest {
 
     private val centerLat = 60.722823
     private val centerLon = 10.613182
+
     // Same street-level zoom that ZoomPoiScreenshotTest proved renders tiles (z16).
     // 16.5 was in-range but early PixelCopy frames were often still black; z16 +
     // waiting for styleReady matches the working multi-zoom test path.
@@ -47,12 +48,13 @@ class MovingIconInstrumentedTest {
     )
 
     // Offsets stay well inside the 300 m radius so icons remain on-screen after chrome.
-    private val icons = listOf(
-        IconSpec("CAR-9", "aprs_car", "/", ">", -90.0, 70.0, 80.0, 90.0, 30.0, -100.0),
-        IconSpec("HUMAN-7", "aprs_human", "/", "[", 100.0, 50.0, -70.0, 110.0, -110.0, -30.0),
-        IconSpec("HOUSE-1", "aprs_house", "/", "-", -70.0, -80.0, 90.0, -60.0, -40.0, 95.0),
-        IconSpec("DIGI-0", "aprs_digi", "/", "#", 60.0, -95.0, -90.0, -70.0, 105.0, 40.0),
-    )
+    private val icons =
+        listOf(
+            IconSpec("CAR-9", "aprs_car", "/", ">", -90.0, 70.0, 80.0, 90.0, 30.0, -100.0),
+            IconSpec("HUMAN-7", "aprs_human", "/", "[", 100.0, 50.0, -70.0, 110.0, -110.0, -30.0),
+            IconSpec("HOUSE-1", "aprs_house", "/", "-", -70.0, -80.0, 90.0, -60.0, -40.0, 95.0),
+            IconSpec("DIGI-0", "aprs_digi", "/", "#", 60.0, -95.0, -90.0, -70.0, 105.0, 40.0),
+        )
 
     @Test
     fun movingIcons_updateInPlace_noDuplicates_timeoutExpires() {
@@ -103,15 +105,16 @@ class MovingIconInstrumentedTest {
 
         fun pushFromStore(epochWait: Int) {
             val snap = store.visible(centerLat, centerLon)
-            NaviMapTestHooks.pendingTracks = snap.map {
-                TrackMarker(
-                    id = it.id,
-                    lat = it.lat,
-                    lon = it.lon,
-                    symbolKey = it.symbolKey,
-                    label = it.id,
-                )
-            }
+            NaviMapTestHooks.pendingTracks =
+                snap.map {
+                    TrackMarker(
+                        id = it.id,
+                        lat = it.lat,
+                        lon = it.lon,
+                        symbolKey = it.symbolKey,
+                        label = it.id,
+                    )
+                }
             val deadline = System.currentTimeMillis() + 8_000
             while (System.currentTimeMillis() < deadline) {
                 if (NaviMapTestHooks.tracksEpoch >= epochWait) break
@@ -159,7 +162,10 @@ class MovingIconInstrumentedTest {
             Thread.sleep(1_500)
         }
 
-        fun pos(east: Double, north: Double): Pair<Double, Double> {
+        fun pos(
+            east: Double,
+            north: Double,
+        ): Pair<Double, Double> {
             val ll = offsetLatLonM(centerLat, centerLon, east, north)
             return ll[0] to ll[1]
         }
@@ -168,16 +174,17 @@ class MovingIconInstrumentedTest {
         var t = 1_000uL
         for (icon in icons) {
             val (lat, lon) = pos(icon.east0, icon.north0)
-            val outcome = store.upsert(
-                id = icon.id,
-                lat = lat,
-                lon = lon,
-                symbolTable = icon.table,
-                symbolCode = icon.code,
-                symbolKey = icon.symbolKey,
-                lastHeardUnix = t,
-                comment = "start",
-            )
+            val outcome =
+                store.upsert(
+                    id = icon.id,
+                    lat = lat,
+                    lon = lon,
+                    symbolTable = icon.table,
+                    symbolCode = icon.code,
+                    symbolKey = icon.symbolKey,
+                    lastHeardUnix = t,
+                    comment = "start",
+                )
             assertEquals("${icon.id} first upsert", "created", outcome)
         }
         assertEquals(4, store.len().toInt())
@@ -198,16 +205,17 @@ class MovingIconInstrumentedTest {
         t = 1_010uL
         for (icon in icons) {
             val (lat, lon) = pos(icon.east1, icon.north1)
-            val outcome = store.upsert(
-                id = icon.id,
-                lat = lat,
-                lon = lon,
-                symbolTable = icon.table,
-                symbolCode = icon.code,
-                symbolKey = icon.symbolKey,
-                lastHeardUnix = t,
-                comment = "move1",
-            )
+            val outcome =
+                store.upsert(
+                    id = icon.id,
+                    lat = lat,
+                    lon = lon,
+                    symbolTable = icon.table,
+                    symbolCode = icon.code,
+                    symbolKey = icon.symbolKey,
+                    lastHeardUnix = t,
+                    comment = "move1",
+                )
             assertEquals("${icon.id} must update not create", "updated", outcome)
         }
         assertEquals("still exactly 4 stations after update", 4, store.len().toInt())

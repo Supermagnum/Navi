@@ -30,7 +30,10 @@ impl WorkerPoolPlan {
             .map(NonZeroUsize::get)
             .unwrap_or(1)
             .max(1);
-        let reserved = ((detected + 3) / 4).max(1).min(detected.saturating_sub(1).max(1));
+        let reserved = detected
+            .div_ceil(4)
+            .max(1)
+            .min(detected.saturating_sub(1).max(1));
         let routing_workers = detected.saturating_sub(reserved).max(1);
         Self {
             detected_cores: detected,

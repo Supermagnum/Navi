@@ -1,0 +1,106 @@
+# Detekt baseline for Navi Android app.
+# Bootstrap thresholds: MainActivity / DriveHud / instrumented flows are large
+# Compose surfaces. Tighten selectively as files are split; do not fail CI on
+# structural debt that predates this gate.
+
+build:
+  maxIssues: 0
+  excludeCorrectable: false
+
+config:
+  validation: true
+
+complexity:
+  LongMethod:
+    active: false
+  LongParameterList:
+    active: true
+    functionThreshold: 24
+    constructorThreshold: 24
+    ignoreDefaultParameters: true
+  TooManyFunctions:
+    active: false
+  ComplexCondition:
+    active: true
+    threshold: 12
+  NestedBlockDepth:
+    active: true
+    threshold: 10
+  CyclomaticComplexMethod:
+    active: false
+  LargeClass:
+    active: false
+
+style:
+  MagicNumber:
+    active: false
+  WildcardImport:
+    active: true
+  MaxLineLength:
+    active: false
+  ReturnCount:
+    active: true
+    max: 12
+  ThrowsCount:
+    active: true
+    max: 8
+  UnusedPrivateMember:
+    active: false
+  UnusedPrivateProperty:
+    active: false
+  NewLineAtEndOfFile:
+    active: true
+  ForbiddenComment:
+    active: false
+  FunctionOnlyReturningConstant:
+    active: false
+  LoopWithTooManyJumpStatements:
+    active: false
+  UnusedParameter:
+    active: false
+
+naming:
+  FunctionNaming:
+    active: true
+    # Compose @Composable often uses PascalCase factory names; allow both styles.
+    functionPattern: "([a-z][a-zA-Z0-9]*)|([A-Z][a-zA-Z0-9]*)"
+  PackageNaming:
+    active: true
+  TopLevelPropertyNaming:
+    active: true
+  MatchingDeclarationName:
+    active: false
+
+coroutines:
+  GlobalCoroutineUsage:
+    active: true
+  RedundantSuspendModifier:
+    active: true
+
+potential-bugs:
+  UnsafeCallOnNullableType:
+    active: true
+  UnreachableCode:
+    active: true
+  UselessPostfixExpression:
+    active: true
+  ImplicitDefaultLocale:
+    active: false
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: false
+  SwallowedException:
+    active: false
+
+empty-blocks:
+  EmptyWhileBlock:
+    # Instrumented wait loops poll until timeout with an empty body.
+    active: false
+  EmptyFunctionBlock:
+    # MapLibre / GLES listener stubs are intentionally empty.
+    active: false
+
+performance:
+  SpreadOperator:
+    active: false

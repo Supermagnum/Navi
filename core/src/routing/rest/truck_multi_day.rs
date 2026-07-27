@@ -243,7 +243,8 @@ fn choose_weekly_overnight(
     }
     // Reduced 24 h every second week: if last weekly was Regular45, allow Reduced24 —
     // unless an unpaid compensation debt already exists (prefer regular to repay / avoid stacking).
-    let use_reduced = matches!(history.last_weekly_rest, TruckRestKind::Regular45) && pending.is_empty();
+    let use_reduced =
+        matches!(history.last_weekly_rest, TruckRestKind::Regular45) && pending.is_empty();
     let (kind, hours, not_in_cab) = if use_reduced {
         let shortfall = (truck.weekly_rest_hours - truck.weekly_rest_reduced_hours).max(0.0);
         notes.push(format!(
@@ -346,13 +347,7 @@ pub fn plan_truck_multi_day(
         } else {
             remaining
         };
-        let (cap, _) = truck_day_cap_hours(
-            truck,
-            &sim,
-            &date,
-            week_id,
-            need_for_cap.max(1e-9),
-        );
+        let (cap, _) = truck_day_cap_hours(truck, &sim, &date, week_id, need_for_cap.max(1e-9));
         let room = (cap - already).max(0.0);
 
         if room < 0.25 {
@@ -384,8 +379,7 @@ pub fn plan_truck_multi_day(
         }
 
         let overnight = if remaining > 1e-6 {
-            let weekly_due =
-                sim.consecutive_working_days >= truck.max_consecutive_working_days;
+            let weekly_due = sim.consecutive_working_days >= truck.max_consecutive_working_days;
             let rest = if weekly_due {
                 let w = choose_weekly_overnight(truck, &sim, candidates, end_km);
                 match w.kind {
@@ -396,7 +390,8 @@ pub fn plan_truck_multi_day(
                         sim.last_weekly_rest = TruckRestKind::Reduced24;
                     }
                     _ => {
-                        let _ = try_repay_weekly_rest_compensation(&mut sim, &driving_date, w.hours);
+                        let _ =
+                            try_repay_weekly_rest_compensation(&mut sim, &driving_date, w.hours);
                         sim.last_weekly_rest = TruckRestKind::Regular45;
                     }
                 }
@@ -447,12 +442,7 @@ pub fn commit_truck_multi_day_plan(
     week_id: &str,
 ) {
     for day in &plan.days {
-        crate::config::record_truck_driving_hours(
-            history,
-            &day.date,
-            day.driving_hours,
-            week_id,
-        );
+        crate::config::record_truck_driving_hours(history, &day.date, day.driving_hours, week_id);
         if day.used_daily_extension {
             if history.extension_week_id != week_id {
                 history.extension_week_id = week_id.to_string();
@@ -473,11 +463,7 @@ pub fn commit_truck_multi_day_plan(
                     history.last_weekly_rest = TruckRestKind::Regular45;
                     history.consecutive_working_days = 0;
                     history.reduced_daily_rests_since_weekly = 0;
-                    let _ = try_repay_weekly_rest_compensation(
-                        history,
-                        &day.date,
-                        rest.hours,
-                    );
+                    let _ = try_repay_weekly_rest_compensation(history, &day.date, rest.hours);
                 }
                 TruckOvernightKind::WeeklyReduced => {
                     history.last_weekly_rest = TruckRestKind::Reduced24;
@@ -489,11 +475,7 @@ pub fn commit_truck_multi_day_plan(
                 }
                 TruckOvernightKind::DailyRegular | TruckOvernightKind::DailySplit => {
                     // A long enough attached rest can repay (9 h + shortfall en bloc).
-                    let _ = try_repay_weekly_rest_compensation(
-                        history,
-                        &day.date,
-                        rest.hours,
-                    );
+                    let _ = try_repay_weekly_rest_compensation(history, &day.date, rest.hours);
                 }
             }
         }
@@ -554,10 +536,8 @@ mod tests {
         assert!((sum - 16.0).abs() < 1e-6, "sum={sum}");
         for d in &plan.days {
             assert!(
-                d.driving_hours <= truck.max_daily_driving_hours + 1e-6
-                    || d.used_daily_extension,
-                "day {:?} exceeds 9 h without extension",
-                d
+                d.driving_hours <= truck.max_daily_driving_hours + 1e-6 || d.used_daily_extension,
+                "day {d:?} exceeds 9 h without extension"
             );
         }
     }
@@ -583,8 +563,10 @@ mod tests {
 
     #[test]
     fn split_daily_rest_when_configured() {
-        let mut truck = TruckRestParams::default();
-        truck.prefer_split_daily_rest = true;
+        let truck = TruckRestParams {
+            prefer_split_daily_rest: true,
+            ..Default::default()
+        };
         let history = TruckDrivingHistory::default();
         let plan = plan_truck_multi_day(
             &truck,

@@ -92,10 +92,7 @@ fn pick_candidate_near(
     best
 }
 
-fn choose_overnight(
-    candidates: &[MotorOvernightCandidate],
-    at_km: f64,
-) -> MotorOvernightStop {
+fn choose_overnight(candidates: &[MotorOvernightCandidate], at_km: f64) -> MotorOvernightStop {
     let mut notes = Vec::new();
     let cand = pick_candidate_near(candidates, at_km, 25.0);
     if cand.is_none() {
@@ -153,10 +150,7 @@ pub fn motor_daily_budget(
     if !uses_motor_multi_day(profile) {
         return None;
     }
-    if matches!(
-        profile,
-        Profile::Cycling | Profile::CyclingElectric
-    ) {
+    if matches!(profile, Profile::Cycling | Profile::CyclingElectric) {
         Some(MotorDailyBudget::DistanceKm(cycling_daily_km(cycling)))
     } else {
         Some(MotorDailyBudget::Hours(car_style_daily_hours(car)))
@@ -276,7 +270,7 @@ mod tests {
         let sum_h: f64 = plan.days.iter().map(|d| d.driving_hours).sum();
         assert!((sum_h - 16.0).abs() < 1e-6, "sum_h={sum_h}");
         for d in &plan.days {
-            assert!(d.driving_hours <= 8.0 + 1e-6, "day {:?}", d);
+            assert!(d.driving_hours <= 8.0 + 1e-6, "day {d:?}");
         }
     }
 

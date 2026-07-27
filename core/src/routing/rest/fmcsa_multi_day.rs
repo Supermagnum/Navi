@@ -130,8 +130,7 @@ pub fn plan_fmcsa_multi_day(
         }
         let drive = remaining.min(room);
         // If this drive would blow the rolling cycle, insert restart first.
-        let cycle_after =
-            rolling_on_duty_hours(&sim, &date, params.cycle_days) + drive;
+        let cycle_after = rolling_on_duty_hours(&sim, &date, params.cycle_days) + drive;
         if cycle_after > params.cycle_on_duty_hours + 1e-6 && !days.is_empty() {
             // Attach restart to previous day's overnight if missing; otherwise advance.
             if let Some(prev) = days.last_mut() {

@@ -17,9 +17,7 @@ pub use ebike::{
     ebike_eco_config, range_estimate, EbikeClimbCapability, EbikeConfig, EbikeRangeEstimate,
 };
 pub use eco::EcoConfig;
-pub use ev_car::{
-    default_ev_car_motor_efficiency, ev_car_range_estimate, EvCarConfig,
-};
+pub use ev_car::{default_ev_car_motor_efficiency, ev_car_range_estimate, EvCarConfig};
 pub use fmcsa_params::FmcsaHosParams;
 pub use rest_params::{
     CarRestParams, CyclingRestParams, HikingRestParams, ProfileRestParams, RestConfig,
@@ -123,7 +121,7 @@ impl Profile {
 }
 
 /// Physical vehicle limits used to filter OSM tagged restrictions (EU 96/53/EC ranges as guidance).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct VehicleLimits {
     pub axle_weight_kg: Option<f64>,
     /// Max bogie (axle-group) weight — EU multi-axle truck / mobile-home rules.
@@ -135,19 +133,6 @@ pub struct VehicleLimits {
     #[serde(default)]
     pub length_m: Option<f64>,
     pub total_weight_kg: Option<f64>,
-}
-
-impl Default for VehicleLimits {
-    fn default() -> Self {
-        Self {
-            axle_weight_kg: None,
-            bogie_weight_kg: None,
-            height_m: None,
-            width_m: None,
-            length_m: None,
-            total_weight_kg: None,
-        }
-    }
 }
 
 /// Fuel tank / fill-up inputs for adaptive consumption learning (persisted).

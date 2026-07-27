@@ -16,15 +16,7 @@ fn empty_history_defaults_under_all_caps() {
     let today = "2026-07-24";
     let week = rolling_date_window(today, 7);
     let fortnight = rolling_date_window(today, 14);
-    let eval = evaluate_truck_trip(
-        &truck,
-        &history,
-        8.0,
-        today,
-        "2026-W30",
-        &week,
-        &fortnight,
-    );
+    let eval = evaluate_truck_trip(&truck, &history, 8.0, today, "2026-W30", &week, &fortnight);
     assert!(eval.within_daily, "fresh history: 8 h under 9 h daily");
     assert!(eval.within_weekly, "fresh history: under 56 h weekly");
     assert!(
@@ -50,7 +42,15 @@ fn accumulates_across_simulated_days_and_tracks_extensions() {
     commit_truck_trip(&mut truck, &mut history, &e1, d1, week_id);
     assert_eq!(history.extensions_used_this_week, 1);
     assert!(
-        (history.days.iter().find(|d| d.date == d1).unwrap().driving_hours - 9.5).abs() < 1e-9
+        (history
+            .days
+            .iter()
+            .find(|d| d.date == d1)
+            .unwrap()
+            .driving_hours
+            - 9.5)
+            .abs()
+            < 1e-9
     );
 
     // Day 2: another 9.5 h → second extension.
@@ -117,7 +117,10 @@ fn rolling_window_prunes_old_days_from_storage_and_counting() {
     // Explicit prune to 14-day keep (record already prunes at 21).
     prune_truck_driving_history(&mut history, today, 14);
     assert!(
-        history.days.iter().all(|d| d.date.as_str() >= civil_date_add_days(today, -14).unwrap().as_str()),
+        history
+            .days
+            .iter()
+            .all(|d| d.date.as_str() >= civil_date_add_days(today, -14).unwrap().as_str()),
         "after prune, no day older than 14 days: {:?}",
         history.days
     );
