@@ -10,7 +10,7 @@ How to contribute (testing and more): [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 # AI assistance
 
-This project was developed with AI assistance (Claude). The author has a
+This project was developed with AI assistance (Cursor). The author has a
 neurological condition related to dyscalculia that affects programming in a way
 analogous to how dyscalculia affects mathematical ability — AI assistance was
 used to help translate design intent into working code and documentation. Design
