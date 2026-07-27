@@ -78,17 +78,18 @@ yet ([`docs/plugins.md`](docs/plugins.md)).
 
 | Feature | What you get | Status |
 |---|---|---|
-| **Travel modes** | Car, motorcycle, bicycle, **electric cycle**, hiking, truck, and motorhome. Electric car/truck/motorcycle variants exist in the enum for later use; the main chips are the everyday modes plus electric cycle. | Done |
+| **Travel modes** | Car, bicycle, **electric cycle**, hiking, motorcycle, truck, and mobile home as primary chips. Electric car/truck/motorcycle variants exist in the enum for routing/rest; they are not primary menu chips today. | Done |
 | **Vehicle size limits** | Save height, width, length, axle load, and similar limits. Routes skip roads the map says are too tight or too low for your vehicle. | Done |
 | **Electric cycle specs** | Battery Wh, motor torque (Nm), and wheel diameter (inches) persist like car fuel tank settings. Plan reports estimated % of battery used and climb-capability warnings when a segment exceeds torque/wheel-derived max grade. Live DIY wired telemetry (USB-serial `$NAVIPWR`) is specified for custom BMS/display builders — not implemented yet ([`docs/ebike-telemetry-diy.md`](docs/ebike-telemetry-diy.md)). | Done (physics); live telemetry deferred |
-| **Electric car pack** | Battery capacity (kWh, default 60) persists via `EvCarConfig`; plan reports estimated % of pack used (regen included). No climb-capability model for cars. | Done |
+| **Electric car pack** | Battery capacity (kWh, default 60) persists via `EvCarConfig`; plan reports estimated % of pack used (regen included). No climb-capability model for cars. Primary UI chips do not include Electric car yet (enum / FFI ready). | Done (config); chip deferred |
 | **Avoidances** | Turn on avoid motorways, tolls, or ferries and the planned path actually changes. | Done |
 | **Follow official networks** | For hiking and cycling, prefer marked long-distance trails and cycle routes when that option is on (off by default). Ordinary paths stay available so a gap in the marked network never strands you. Named trails are searchable. | Done |
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. Electric modes get credit for downhill recovery. Formulas: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Done |
 | **Offline route planning** | Download a map region once, plan on the device, and see the route line plus suggested stops on the map. | Done |
 | **Place search** | Search places and set From / Via / To ([`docs/poi.md`](docs/poi.md)). Includes fishing spots and hut search distance guidance ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Done |
 | **Rest & breaks** | Break reminders and suggested stops along the route. Hiking and cycling use traditional Scandinavian rest distances ([background](docs/historical-background.md)). **Truck** / **TruckElectric** resolve a jurisdiction pack at start: EU EC 561/2006 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) or US FMCSA property-carrying HOS ([`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md)); unknown jurisdictions decline legal tracking. Multi-day day cards and overnight pins are shown in the plan UI (live-verified on emulator GPS Norway Minnesund belt → Bodø; see [`docs/pictures.md`](docs/pictures.md)). **Car** / **motorcycle** / **cycle** / **mobile home** use soft multi-day overnight splitting when a trip exceeds a daily budget (8 h driving or 100 km cycling) with lodging/camping/rest-area suggestions ([`docs/poi.md`](docs/poi.md)). Hiking overnight pauses prefer huts/tents and keep a respectful distance from buildings and glaciers; day-by-day multi-day overnight is planned in `planHikingRoute`. Country/region rule packs: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). | Done |
-| **Drive bars** | Slim top bar (altitude; tap for map settings) and bottom bar (zoom, break time, trip ETA,current road/street name, eco leaf; tap for drive settings). | Done |
+| **Drive bars** | Slim top bar (altitude; tap for map settings) and bottom bar (zoom, break time, trip ETA, current road/street name, eco leaf; tap for drive settings). | Done |
+| **GPS follow / recenter** | Map follows the GPS (or simulation) fix by default. Panning or pinching pauses follow; **Recenter** re-enables it. | Done |
 | **Map rotation** | Align the map with the compass, with your travel direction, or with north always up. | Done |
 | **Moving icons** | Show nearby tracked markers on the map (for example radio station symbols) within about 50–150 km. | **Partial** — drawing works; a live radio feed is not built in yet |
 | **Map data updates** | When you choose, check for OpenStreetMap updates and apply them, or download a fresh region ([`docs/osm-updates.md`](docs/osm-updates.md)). Never updates quietly in the background. | Done |
@@ -193,8 +194,9 @@ settings (Car vs Truck when a truck profile is selected).
 **Map and on-screen bars.** The map is drawn with MapLibre. The collapsed top
 bar shows altitude; tap it for map settings (rotation, trip ETA, breaks,
 auto-zoom, 3D hillshade, camera tilt). The collapsed bottom bar shows zoom,
-break time, road/street name, trip ETA, and the eco leaf; tap it for travel mode, rest, and fuel
-settings. **Hiking routes require the Hiking travel mode** — planning with Car
+**Recenter** (when follow is paused), break time, road/street name, trip ETA,
+and the eco leaf; tap the status area for travel mode, rest, fuel, and electric
+cycle settings. **Hiking routes require the Hiking travel mode** — planning with Car
 (or another motor profile) uses the road graph and will fail or produce a
 useless path for foot trails. Near a turn, a short instruction box shows the
 maneuver, distance, and next street
@@ -218,11 +220,17 @@ language-switching control** in map or drive settings. Parallel markdown
 system. A future UI translation plugin is specified in
 [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
 
-Settings persist under the app data directory: rest/fuel/vehicle via SQLite
-(UniFFI `load*` / `save*`); map HUD prefs (auto-zoom, 3D, tilt, break display)
-via `MapHudPrefs` SharedPreferences. **Save** on a sheet writes and dismisses;
+Settings persist under the app data directory: rest / fuel / e-bike / EV / vehicle
+/ network preference via SQLite (UniFFI `load*` / `save*`); map HUD prefs
+(auto-zoom, 3D, tilt, break display mode, Geofabrik path, PMTiles base URL) via
+`MapHudPrefs` SharedPreferences. **Save** on a sheet writes and dismisses;
 **Close** dismisses without requiring a save for controls that already apply
-immediately (map sheet toggles).
+immediately (map sheet toggles, many Tools fields).
+
+Primary travel-mode chips: **Car**, **Bicycle**, **Electric cycle**, **Hiking**,
+**Motorcycle**, **Truck**, **Mobile home**. `CarElectric` / `TruckElectric` /
+`MotorcycleElectric` exist in the enum for routing and rest packs but are **not**
+primary menu chips today.
 
 ### Map / display settings (tap top HUD)
 
@@ -234,41 +242,49 @@ immediately (map sheet toggles).
 | **Trip ETA** | Show remaining trip ETA on the bottom bar (pre-departure estimate until live progress updates it) |
 | **Breaks** | Show the break-reminder line on the bottom bar (`Break in …` / off). Does not change planned stop spacing by itself |
 | **Auto-zoom** | When on, snap camera zoom to the set level while moving |
-| **Auto-zoom − / +** | Change the target zoom in 0.5 steps (about z 3–20) |
+| **Auto-zoom − / +** | Change the target zoom in 0.5 steps (about z 3–20; default 16.5) |
 | **3D (experimental)** | Opt-in Mapterhorn DEM **hillshade** on the basemap (Vulkan-gated). Independent of camera tilt; see [`docs/map-styles.md`](docs/map-styles.md) |
 | **Map tilt** | Snap camera pitch to **0° / 35° / 45° / 65°** (Vulkan-gated; locked at 0° without Vulkan). Works with 3D on or off |
 | **Save / Close** | Persist map HUD prefs and close, or dismiss |
 
 **Pre-departure duration estimates** (before real movement) use posted `maxspeed`
 (with highway-class fallback) for motor profiles, and fixed pace (about 16 min/km
-hiking, ~4 min/km cycling) for Hiking/Cycling. They are starting estimates only;
-live progress updates once GPS / simulation speed is available.
+hiking, ~4 min/km cycling) for Hiking / Bicycle / Electric cycle. They are
+starting estimates only; live progress updates once GPS / simulation speed is
+available.
 
 ### Bottom HUD chrome
 
 | Control | What it does |
 |---|---|
-| **Zoom − / +** | App-owned map zoom (AAOS climate − 63 + in system chrome is not zoom) |
-| **Break / ETA lines** | Time (or distance) to next break, and trip ETA when enabled |
+| **Zoom − / +** | App-owned map zoom (AAOS climate − / + in system chrome is not zoom) |
+| **Recenter** | Shown after you pan or pinch away from GPS follow; re-enables follow and recenters on the fix |
+| **Currently on …** | Current road / street name when known ([`docs/current-street.md`](docs/current-street.md)) |
+| **Break / ETA lines** | Time (or distance) to next break when a route is planned, and trip ETA when enabled |
 | **Eco leaf** | Visible when eco mode is on for the active profile |
-| **Tap status area** | Opens drive / vehicle settings (not the zoom buttons) |
+| **Tap status area** | Opens drive / vehicle settings (not the zoom / Recenter buttons) |
+
+**GPS follow:** on by default while a fix exists. Manual pan or pinch pauses
+follow so you can look around; **Recenter** (or the test hook equivalent) turns
+it back on. Rotation modes (Compass / Travel / N-up) still apply while following.
 
 ### Drive / vehicle settings (tap bottom HUD)
 
 | Setting | What it does |
 |---|---|
-| **Travel mode** | **Car / Bicycle / Hiking / Motorcycle / Truck / Mobile home.** Selects the planner and rest pack. **Hiking must be selected for hiking routes** — otherwise planning uses the motor/road graph and fails or misroutes foot paths |
-| **Hours between breaks** | Soft car-style interval (or truck mandatory-break-after hours). Saved as profile defaults, not a one-trip override |
+| **Travel mode** | Primary chips above. Selects the planner and rest pack. **Hiking must be selected for hiking routes** — otherwise planning uses the motor/road graph and fails or misroutes foot paths |
+| **Hours between breaks** | Soft car-style interval (label: “Desired hours between breaks”), or truck **mandatory break after (hours)**. Saved as profile defaults, not a one-trip override |
 | **Rest time (minutes)** | Suggested rest duration (truck: continuous break length) |
-| **Split break 15+30** | Truck only — prefer split break metadata instead of one continuous break |
-| **Arm +1 h exceptional** | Truck only — explicit opt-in for exceptional driving-time extension |
-| **Next break shown as Time / Distance** | Bottom-bar break line as minutes or as km/mi at an assumed cruise speed |
+| **Split break 15+30 min** | Truck only — prefer split break metadata instead of one continuous break |
+| **Arm +1 h exceptional extension** | Truck only — explicit opt-in for exceptional driving-time extension |
+| **Next break shown as Time / Distance** | Bottom-bar break line as minutes or as km/mi at an assumed cruise speed (~80 km/h for display only) |
 | **Distance units km / miles** | When break-as-distance is on, choose metric or imperial for that line |
-| **Eco mode** | Terrain-aware energy costing; leaf on bottom HUD. Hiking/cycling lock eco on; motor profiles can toggle |
-| **Fuel units liters / gallons** | Display preference; stored values are litres |
+| **Eco mode** | Terrain-aware energy costing; leaf on bottom HUD. Hiking / Bicycle / Electric cycle lock eco on; motor profiles can toggle |
+| **Electric cycle specs** | Shown for **Electric cycle**: battery capacity (Wh), motor torque (Nm), wheel diameter inches (presets 20 / 26 / 27.5 / 29 or custom). Persist like fuel settings; used for plan % of capacity and climb-capability warnings |
+| **Fuel units liters / gallons** | Display preference for non-electric motor profiles; stored values are litres |
 | **Fuel tank capacity** | Tank size for adaptive consumption heuristics |
 | **Fuel added** | Last fill amount for the same heuristics |
-| **Save / Close** | Write rest/fuel to SQLite and dismiss, or dismiss without that save |
+| **Save / Close** | Write rest / fuel / e-bike (and EV pack when that profile is active) to SQLite and dismiss, or dismiss without that save |
 
 **Break interval vs trip ETA.** Set the time (or distance) to the next break so it
 does **not exceed the trip ETA** (or remaining trip distance). If the break
@@ -277,20 +293,57 @@ wonky. There is currently **no** control to auto-split a corridor into N equal
 parts (for example “cut this distance into 6 legs”); choose a break interval
 that fits inside the planned duration/distance instead.
 
-### Route / tools panel (main chrome)
+### Route planning chrome (search / Profile / Vehicle / Saved routes)
+
+Opened from the map when planning chrome is visible (**Route** reopens it if
+collapsed). Tools is a separate panel (below).
+
+| Control | What it does |
+|---|---|
+| **From / To / Via** | Search targets; Place vs Address mode chips |
+| **Use GPS** | Set From (or the active target) from the current GPS fix |
+| **Plan route / Delete route** | Run the planner for the active profile, or clear the planned corridor |
+| **Simulate route** | Drive the planned polyline with the in-app simulator (emulator-friendly) |
+| **Continue from last stop** | Resume planning from the last break / overnight when available |
+| **Profile → Eco routing** | Same eco on/off as drive settings (locked on for hiking/cycling) |
+| **Profile → Follow official hiking/cycling networks** | Soft cost preference for marked networks (default **off**). Hiking / Bicycle / Electric cycle only; persists via UniFFI |
+| **Profile → Avoid motorways/trunk/primary** | Changes the next motor plan (not report-only) |
+| **Profile → Avoid toll roads** | Same for tolls |
+| **Profile → Avoid ferries** | Same for ferries |
+| **Vehicle limits** | **Car:** height (m). **Truck / Mobile home:** axle weight (kg), max bogie weight (kg), height / width / length (m). Motor plans exclude OSM edges that violate clearance. (Total weight exists in the FFI model but has no UI field yet.) |
+| **Saved routes** | List / refresh / delete named saved corridors; save current plan |
+
+### Tools panel (main chrome → Tools)
+
+Region provision, basemap / DEM downloads, and opt-in OSM updates. See also
+[`docs/map-styles.md`](docs/map-styles.md) and [`docs/osm-updates.md`](docs/osm-updates.md).
 
 | Setting | What it does |
 |---|---|
-| **Follow official hiking/cycling networks** | Soft cost preference for marked networks (default off). Hiking/Cycling only |
-| **Avoid motorways / tolls / ferries** | Changes the next motor plan (not report-only) |
-| **Vehicle limits** | Height, width, length, axle/bogie/weight (and related). Motor plans exclude OSM edges that violate clearance |
+| **Download scope** | **Country** vs **Region in country** chips (Norway presets: Østlandet, Vestlandet, Trøndelag, Nord-Norge, Sørlandet). Country-scale warns about low-RAM devices |
+| **Geofabrik path** | Editable path (e.g. `europe/norway/ostlandet`); persisted in `MapHudPrefs` |
+| **Download region + build place index** | Fetch Geofabrik `.osm.pbf`, bind the region, build the place/FTS index |
+| **Planet PMTiles URL** | Optional Protomaps planet URL (blank = latest); persisted |
+| **Download basemap (PMTiles)** | Range-extract regional visual tiles for offline Protomaps style |
+| **Download terrain DEM (Mapterhorn)** | Optional `{region}_dem.pmtiles` for 3D hillshade |
+| **Pause / Resume / Cancel** | Control an in-flight PMTiles / DEM job |
+| **Check for OSM updates** | Opt-in Geofabrik freshness check — never downloads silently |
+| **Apply pending OSM update** | Apply the plan from a prior Check (user-confirmed) |
+| **Weekly update reminder** | Reminder only (no auto-download) |
+| **Save / Close** | Persist Geofabrik path + PMTiles URL, or dismiss |
 
 ### Tracks (APRS-style)
 
-| Setting | What it does |
+There is **no** dedicated in-app settings sheet for tracks yet. Runtime clamps
+are fixed in the track store API:
+
+| Limit | Value |
 |---|---|
 | **Display range** | Show stations within **50–150 km** (clamped; no unlimited global) |
 | **Station timeout** | Drop stale stations after at most **3600 s** |
+
+Live radio decoding is not built in; drawing of injected markers works (see
+Features). Details: [`docs/APRS.md`](docs/APRS.md).
 
 More detail: [`docs/architecture.md`](docs/architecture.md),
 [`docs/rust-crates.md`](docs/rust-crates.md),
@@ -315,6 +368,17 @@ hillshade. Løten short-loop corridor at **45°** — flat 2D, then 3D on:
 ![45° tilt, 3D off](docs/images/tilt45_3d_off.png)
 
 ![45° tilt, 3D on](docs/images/tilt45_3d_on.png)
+
+GPS follow: simulation while following, after pan / zoom (follow paused), then
+**Recenter**, and rotation-mode check:
+
+![Follow while simulating](docs/images/follow_gps/01_simulating_follow.png)
+
+![After pan](docs/images/follow_gps/02_after_pan.png)
+
+![After Recenter](docs/images/follow_gps/05_after_recenter.png)
+
+![Rotation modes](docs/images/follow_gps/06_rotation_modes_ok.png)
 
 All other screenshots (map zoom levels, route overlay, menus, settings
 overlays, eco leaf, rotation, bearing, moving icons):

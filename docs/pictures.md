@@ -19,6 +19,10 @@ Idle HUD bars and the Helgøya → Atnbrua route capture live in the
 `docs/images/terrain/hike_eldabu_ramshogda_3d.png`).
 Map tilt at 45° (3D off / 3D on) is also shown there
 (`docs/images/tilt45_3d_off.png`, `docs/images/tilt45_3d_on.png`).
+GPS follow / Recenter / rotation evidence:
+`docs/images/follow_gps/01_simulating_follow.png`,
+`02_after_pan.png`, `05_after_recenter.png`,
+`06_rotation_modes_ok.png`.
 Current-street UTF-8 evidence (fixture names from Ostlandet place index):
 `docs/images/hud/hud_current_street_mjosevegen.png` (ø),
 `hud_current_street_trollaas.png` (å),
@@ -48,6 +52,20 @@ Real Østlandet fixture names via `CurrentStreetInstrumentedTest`. See
 | Currently on Mjøsvegen (ø) | ![Mjøsvegen](images/hud/hud_current_street_mjosevegen.png) |
 | Currently on Trollåsveien (å) | ![Trollåsveien](images/hud/hud_current_street_trollaas.png) |
 | Currently on Ævongsli (Æ) | ![Ævongsli](images/hud/hud_current_street_aevongsli.png) |
+
+## GPS follow / Recenter / rotation
+
+Captured by `FollowGpsPanZoomInstrumentedTest` (and related HUD rotation
+checks). Shown in the README gallery as well.
+
+| Scene | Preview |
+|---|---|
+| Simulating while GPS follow is on | ![Follow while simulating](images/follow_gps/01_simulating_follow.png) |
+| After pan (follow paused) | ![After pan](images/follow_gps/02_after_pan.png) |
+| After zoom in | ![After zoom in](images/follow_gps/03_after_zoom_in.png) |
+| After zoom out | ![After zoom out](images/follow_gps/04_after_zoom_out.png) |
+| After Recenter | ![After Recenter](images/follow_gps/05_after_recenter.png) |
+| Rotation modes OK | ![Rotation modes](images/follow_gps/06_rotation_modes_ok.png) |
 
 Prefer `images/terrain/` and recent HUD shots when comparing route visuals.
 Older `route_map.png` copies were ~57% MapLibre empty background (`#f8f4f0`)
