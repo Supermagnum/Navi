@@ -23,6 +23,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.navi.FfiCarRestSettings
 import uniffi.navi.loadCarRestSettings
+import uniffi.navi.loadEbikeConfig
 import uniffi.navi.loadFuelConfig
 import uniffi.navi.saveCarRestSettings
 import java.io.File
@@ -516,6 +517,23 @@ class HudVerificationInstrumentedTest {
             (fuelAfterGal.fuelAddedL ?: 0.0) > 1.0,
         )
         shot("hud_after_fuel_units_apply.png")
+
+        // Electric cycle vehicle specs persist (battery / torque / wheel).
+        openDriveSettings()
+        clickTag("drive_chip_profile_bicycle_electric")
+        composeRule.waitForIdle()
+        Thread.sleep(300)
+        setField("field_ebike_battery_wh", "750")
+        setField("field_ebike_torque_nm", "90")
+        clickTag("chip_ebike_wheel_29_0")
+        clickTag("btn_save_drive_settings")
+        waitSettingsOpen(false)
+        Thread.sleep(400)
+        val ebike = loadEbikeConfig(dataDir.absolutePath)
+        assertEquals(750.0, ebike.batteryCapacityWh!!, 0.01)
+        assertEquals(90.0, ebike.motorTorqueNm!!, 0.01)
+        assertEquals(29.0, ebike.wheelDiameterIn!!, 0.01)
+        shot("hud_after_ebike_specs_apply.png")
 
         // --- Top bar: open map settings overlay ---
         openMapSettings()

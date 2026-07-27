@@ -19,7 +19,9 @@ pub mod storage;
 pub mod tracks;
 
 pub use download::DownloadControl;
-pub use config::{FuelConfig, Profile, RestConfig, SafetyConfig, VehicleLimits};
+pub use config::{
+    EbikeConfig, EvCarConfig, FuelConfig, Profile, RestConfig, SafetyConfig, VehicleLimits,
+};
 pub use nav::{
     current_road_label, format_distance_m, prefer_street_label, ApproachPhase, ManeuverKind,
     NavGuidance, APPROACH_APPEAR_M, APPROACH_HIDE_M, APPROACH_URGENCY_M,

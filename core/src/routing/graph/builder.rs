@@ -28,6 +28,7 @@ impl From<Profile> for RoutingProfile {
             Profile::Truck | Profile::TruckElectric | Profile::MobileHome => Self::Truck,
             Profile::Hiking => Self::Foot,
             Profile::Cycling => Self::Bicycle,
+            Profile::CyclingElectric => Self::Bicycle,
         }
     }
 }
@@ -44,6 +45,9 @@ pub struct GraphEdge {
     pub start_lon: f64,
     pub end_lat: f64,
     pub end_lon: f64,
+    /// Intermediate OSM shape points as `(lon, lat)`, excluding endpoints.
+    /// Empty when the edge is a straight junction-to-junction chord only.
+    pub shape: Vec<(f64, f64)>,
     pub highway: Option<String>,
     /// OSM `maxspeed` in km/h when parseable; `None` → highway-class fallback for ETA.
     pub maxspeed_kmh: Option<f64>,
@@ -122,6 +126,13 @@ impl RouteGraph {
             let meta = edge_meta(&edge);
             let (forward_ok, backward_ok) = directed_access(&edge, profile);
             if forward_ok {
+                let shape: Vec<(f64, f64)> = edge
+                    .geometry
+                    .iter()
+                    .skip(1)
+                    .take(edge.geometry.len().saturating_sub(2))
+                    .map(|c| (c.x, c.y))
+                    .collect();
                 push_directed_edge(
                     &mut graph,
                     edge.id.clone(),
@@ -132,10 +143,19 @@ impl RouteGraph {
                     end_lat,
                     end_lon,
                     length_m,
+                    shape,
                     &meta,
                 );
             }
             if backward_ok {
+                let shape: Vec<(f64, f64)> = edge
+                    .geometry
+                    .iter()
+                    .rev()
+                    .skip(1)
+                    .take(edge.geometry.len().saturating_sub(2))
+                    .map(|c| (c.x, c.y))
+                    .collect();
                 push_directed_edge(
                     &mut graph,
                     format!("{}-rev", edge.id),
@@ -146,6 +166,7 @@ impl RouteGraph {
                     start_lat,
                     start_lon,
                     length_m,
+                    shape,
                     &meta,
                 );
             }
@@ -198,6 +219,54 @@ impl RouteGraph {
             return true;
         }
         self.edges.iter().any(|e| e.target == id)
+    }
+
+    /// Map overlay polyline (`lon,lat;…`) following each edge’s OSM shape when present.
+    pub fn path_overlay_polyline(&self, path: &[NodeId]) -> String {
+        let mut out = String::new();
+        let mut last: Option<(f64, f64)> = None;
+        let mut push = |lon: f64, lat: f64| {
+            if last == Some((lon, lat)) {
+                return;
+            }
+            if out.is_empty() {
+                out.push_str(&format!("{lon},{lat}"));
+            } else {
+                out.push_str(&format!(";{lon},{lat}"));
+            }
+            last = Some((lon, lat));
+        };
+        for w in path.windows(2) {
+            let Some(idx) = self.edge_index(w[0], w[1]) else {
+                continue;
+            };
+            let e = &self.edges[idx];
+            push(e.start_lon, e.start_lat);
+            for &(lon, lat) in &e.shape {
+                push(lon, lat);
+            }
+            push(e.end_lon, e.end_lat);
+        }
+        out
+    }
+
+    /// `(lat, lon)` vertices along the path including edge shape (for overnight / samples).
+    pub fn path_coords_lat_lon(&self, path: &[NodeId]) -> Vec<(f64, f64)> {
+        let mut out = Vec::new();
+        for w in path.windows(2) {
+            let Some(idx) = self.edge_index(w[0], w[1]) else {
+                continue;
+            };
+            let e = &self.edges[idx];
+            if out.is_empty() {
+                out.push((e.start_lat, e.start_lon));
+            }
+            for &(lon, lat) in &e.shape {
+                out.push((lat, lon));
+            }
+            out.push((e.end_lat, e.end_lon));
+        }
+        out
     }
 
     pub fn apply_eco_reweighting(
@@ -405,6 +474,7 @@ fn push_directed_edge(
     end_lat: f64,
     end_lon: f64,
     length_m: f64,
+    shape: Vec<(f64, f64)>,
     meta: &EdgeMeta,
 ) {
     let idx = graph.edges.len();
@@ -419,6 +489,7 @@ fn push_directed_edge(
         start_lon,
         end_lat,
         end_lon,
+        shape,
         highway: meta.0.clone(),
         maxspeed_kmh: meta.1,
         name: meta.2.clone(),
@@ -659,6 +730,7 @@ mod tests {
             start_lon: lon0,
             end_lat: lat1,
             end_lon: lon1,
+            shape: Vec::new(),
             highway: Some("secondary".into()),
             maxspeed_kmh: None,
             name: None,
@@ -711,6 +783,7 @@ mod tests {
             start_lon: 0.0,
             end_lat: 0.0,
             end_lon: 0.0,
+            shape: Vec::new(),
             highway: Some("primary".into()),
             maxspeed_kmh: None,
             name: None,

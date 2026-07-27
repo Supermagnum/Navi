@@ -46,6 +46,7 @@ fn edge(
         start_lon,
         end_lat,
         end_lon,
+        shape: Vec::new(),
         highway: Some(highway.into()),
         maxspeed_kmh: None,
             name: None,

@@ -119,6 +119,17 @@ object NaviMapTestHooks {
     @Volatile
     var lastCameraLon: Double = 0.0
 
+    /**
+     * Whether the map camera is following live GPS (true) or the user has
+     * manually panned away (false). Mirrored from MainActivity for tests.
+     */
+    @Volatile
+    var followGps: Boolean = true
+
+    /** One-shot: re-enable GPS follow and recenter the camera (test helper). */
+    @Volatile
+    var requestRecenterGps: Boolean = false
+
     /** Last rotation mode selected in the HUD. */
     @Volatile
     var lastRotationMode: MapRotationMode = MapRotationMode.NorthUp

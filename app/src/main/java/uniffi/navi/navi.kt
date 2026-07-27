@@ -874,6 +874,14 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -945,6 +953,10 @@ fun uniffi_navi_checksum_func_list_saved_routes(
 ): Short
 fun uniffi_navi_checksum_func_load_car_rest_settings(
 ): Short
+fun uniffi_navi_checksum_func_load_ebike_config(
+): Short
+fun uniffi_navi_checksum_func_load_ev_car_config(
+): Short
 fun uniffi_navi_checksum_func_load_fuel_config(
 ): Short
 fun uniffi_navi_checksum_func_load_prefer_official_networks(
@@ -1010,6 +1022,10 @@ fun uniffi_navi_checksum_func_run_car_corridor_pipeline(
 fun uniffi_navi_checksum_func_run_car_corridor_smoke_test(
 ): Short
 fun uniffi_navi_checksum_func_save_car_rest_settings(
+): Short
+fun uniffi_navi_checksum_func_save_ebike_config(
+): Short
+fun uniffi_navi_checksum_func_save_ev_car_config(
 ): Short
 fun uniffi_navi_checksum_func_save_fuel_config(
 ): Short
@@ -1174,6 +1190,10 @@ fun uniffi_navi_fn_func_list_saved_routes(`dataDir`: RustBuffer.ByValue,uniffi_o
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_car_rest_settings(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_load_ebike_config(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_load_ev_car_config(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_fuel_config(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_prefer_official_networks(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1239,6 +1259,10 @@ fun uniffi_navi_fn_func_run_car_corridor_pipeline(`pbfPath`: RustBuffer.ByValue,
 fun uniffi_navi_fn_func_run_car_corridor_smoke_test(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`breakIntervalHours`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_save_car_rest_settings(`dataDir`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_navi_fn_func_save_ebike_config(`dataDir`: RustBuffer.ByValue,`config`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_navi_fn_func_save_ev_car_config(`dataDir`: RustBuffer.ByValue,`config`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_save_fuel_config(`dataDir`: RustBuffer.ByValue,`config`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
@@ -1472,6 +1496,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_load_car_rest_settings() != 14933.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_load_ebike_config() != 26065.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_load_ev_car_config() != 30142.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_load_fuel_config() != 47253.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1569,6 +1599,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_save_car_rest_settings() != 64488.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_save_ebike_config() != 7522.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_save_ev_car_config() != 15439.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_save_fuel_config() != 64541.toShort()) {
@@ -2502,6 +2538,79 @@ public object FfiConverterTypeFfiDownloadProgress: FfiConverterRustBuffer<FfiDow
 
 
 
+/**
+ * Electric Cycle (e-bike) vehicle specs. Legal assist caps are not enforced.
+ */
+data class FfiEbikeConfig (
+    var `batteryCapacityWh`: kotlin.Double?, 
+    var `motorTorqueNm`: kotlin.Double?, 
+    /**
+     * Wheel diameter in inches (20 / 26 / 27.5 / 29 or custom).
+     */
+    var `wheelDiameterIn`: kotlin.Double?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiEbikeConfig: FfiConverterRustBuffer<FfiEbikeConfig> {
+    override fun read(buf: ByteBuffer): FfiEbikeConfig {
+        return FfiEbikeConfig(
+            FfiConverterOptionalDouble.read(buf),
+            FfiConverterOptionalDouble.read(buf),
+            FfiConverterOptionalDouble.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiEbikeConfig) = (
+            FfiConverterOptionalDouble.allocationSize(value.`batteryCapacityWh`) +
+            FfiConverterOptionalDouble.allocationSize(value.`motorTorqueNm`) +
+            FfiConverterOptionalDouble.allocationSize(value.`wheelDiameterIn`)
+    )
+
+    override fun write(value: FfiEbikeConfig, buf: ByteBuffer) {
+            FfiConverterOptionalDouble.write(value.`batteryCapacityWh`, buf)
+            FfiConverterOptionalDouble.write(value.`motorTorqueNm`, buf)
+            FfiConverterOptionalDouble.write(value.`wheelDiameterIn`, buf)
+    }
+}
+
+
+
+/**
+ * Electric Car pack capacity (kWh). Climbing-capability is not modeled for cars.
+ */
+data class FfiEvCarConfig (
+    var `batteryCapacityKwh`: kotlin.Double?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiEvCarConfig: FfiConverterRustBuffer<FfiEvCarConfig> {
+    override fun read(buf: ByteBuffer): FfiEvCarConfig {
+        return FfiEvCarConfig(
+            FfiConverterOptionalDouble.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiEvCarConfig) = (
+            FfiConverterOptionalDouble.allocationSize(value.`batteryCapacityKwh`)
+    )
+
+    override fun write(value: FfiEvCarConfig, buf: ByteBuffer) {
+            FfiConverterOptionalDouble.write(value.`batteryCapacityKwh`, buf)
+    }
+}
+
+
+
 data class FfiFuelConfig (
     var `tankCapacityL`: kotlin.Double?, 
     var `fuelAddedL`: kotlin.Double?, 
@@ -2972,6 +3081,10 @@ enum class TravelProfile {
     TRUCK_ELECTRIC,
     MOBILE_HOME,
     BICYCLE,
+    /**
+     * Battery-assisted cycle / pedelec (primary chip; battery + climb specs).
+     */
+    BICYCLE_ELECTRIC,
     HIKING,
     MOTORCYCLE,
     MOTORCYCLE_ELECTRIC;
@@ -3672,6 +3785,24 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     )
     }
     
+ fun `loadEbikeConfig`(`dataDir`: kotlin.String): FfiEbikeConfig {
+            return FfiConverterTypeFfiEbikeConfig.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_load_ebike_config(
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+ fun `loadEvCarConfig`(`dataDir`: kotlin.String): FfiEvCarConfig {
+            return FfiConverterTypeFfiEvCarConfig.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_load_ev_car_config(
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
  fun `loadFuelConfig`(`dataDir`: kotlin.String): FfiFuelConfig {
             return FfiConverterTypeFfiFuelConfig.lift(
     uniffiRustCall() { _status ->
@@ -4036,6 +4167,24 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_save_car_rest_settings(
         FfiConverterString.lower(`dataDir`),FfiConverterTypeFfiCarRestSettings.lower(`settings`),_status)
+}
+    )
+    }
+    
+ fun `saveEbikeConfig`(`dataDir`: kotlin.String, `config`: FfiEbikeConfig): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_save_ebike_config(
+        FfiConverterString.lower(`dataDir`),FfiConverterTypeFfiEbikeConfig.lower(`config`),_status)
+}
+    )
+    }
+    
+ fun `saveEvCarConfig`(`dataDir`: kotlin.String, `config`: FfiEvCarConfig): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_save_ev_car_config(
+        FfiConverterString.lower(`dataDir`),FfiConverterTypeFfiEvCarConfig.lower(`config`),_status)
 }
     )
     }

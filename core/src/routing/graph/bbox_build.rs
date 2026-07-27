@@ -229,6 +229,7 @@ impl RouteGraph {
             let mut source: Option<i64> = None;
             let mut prev: Option<(i64, f64, f64)> = None;
             let mut length_m = 0.0;
+            let mut shape: Vec<(f64, f64)> = Vec::new();
             let mut seg = 0usize;
             let forward_only = oneway_forward_only(&way.tags);
             let highway = way.tags.get("highway").cloned();
@@ -265,10 +266,13 @@ impl RouteGraph {
                     if uses.get(id).copied().unwrap_or(0) > 1 {
                         source = Some(*id);
                         length_m = 0.0;
+                        shape.clear();
                     }
                     continue;
                 }
                 if !is_end {
+                    // Intermediate OSM node between junctions — keep for map overlay.
+                    shape.push((lon, lat));
                     continue;
                 }
                 let src = source.unwrap();
@@ -276,20 +280,26 @@ impl RouteGraph {
                 if src == tgt || length_m <= 0.0 {
                     source = Some(tgt);
                     length_m = 0.0;
+                    shape.clear();
                     continue;
                 }
                 let Some(sn) = nodes.get(&NodeId(src)).copied() else {
                     source = Some(tgt);
                     length_m = 0.0;
+                    shape.clear();
                     continue;
                 };
                 let Some(tn) = nodes.get(&NodeId(tgt)).copied() else {
                     source = Some(tgt);
                     length_m = 0.0;
+                    shape.clear();
                     continue;
                 };
                 let id_fwd = format!("{}-{}", way.id, seg);
                 seg += 1;
+                let shape_fwd = shape.clone();
+                let mut shape_rev = shape_fwd.clone();
+                shape_rev.reverse();
                 edges.push(bbox_edge(
                     id_fwd.clone(),
                     sn.id,
@@ -299,6 +309,7 @@ impl RouteGraph {
                     tn.coord.y,
                     tn.coord.x,
                     length_m,
+                    shape_fwd,
                     highway.clone(),
                     maxspeed_kmh,
                     name.clone(),
@@ -322,6 +333,7 @@ impl RouteGraph {
                         sn.coord.y,
                         sn.coord.x,
                         length_m,
+                        shape_rev,
                         highway.clone(),
                         maxspeed_kmh,
                         name.clone(),
@@ -338,6 +350,7 @@ impl RouteGraph {
                 }
                 source = Some(tgt);
                 length_m = 0.0;
+                shape.clear();
             }
         }
 
@@ -358,6 +371,7 @@ fn bbox_edge(
     end_lat: f64,
     end_lon: f64,
     length_m: f64,
+    shape: Vec<(f64, f64)>,
     highway: Option<String>,
     maxspeed_kmh: Option<f64>,
     name: Option<String>,
@@ -382,6 +396,7 @@ fn bbox_edge(
         start_lon,
         end_lat,
         end_lon,
+        shape,
         highway,
         maxspeed_kmh,
         name,

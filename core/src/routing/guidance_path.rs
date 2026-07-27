@@ -161,11 +161,26 @@ pub fn build_sim_samples(graph: &RouteGraph, path: &[NodeId]) -> Vec<SimSample> 
             .filter(|v| v.is_finite() && *v > 0.0)
             .is_some();
         let street = prefer_street_label(e.name.as_deref(), e.road_ref.as_deref());
-        let steps = ((e.length_m / SAMPLE_STEP_M).ceil() as usize).max(1);
+        // Follow OSM shape when present so samples stay on the road corridor.
+        let mut verts: Vec<(f64, f64)> = Vec::with_capacity(e.shape.len() + 2);
+        verts.push((e.start_lat, e.start_lon));
+        for &(lon, lat) in &e.shape {
+            verts.push((lat, lon));
+        }
+        verts.push((e.end_lat, e.end_lon));
+        let mut seg_lens = Vec::with_capacity(verts.len().saturating_sub(1));
+        let mut edge_len = 0.0;
+        for vw in verts.windows(2) {
+            let d = haversine_m_local(vw[0].0, vw[0].1, vw[1].0, vw[1].1);
+            seg_lens.push(d);
+            edge_len += d;
+        }
+        let use_len = if edge_len > 1.0 { edge_len } else { e.length_m.max(1.0) };
+        let steps = ((use_len / SAMPLE_STEP_M).ceil() as usize).max(1);
         for s in 0..steps {
-            let t0 = s as f64 / steps as f64;
-            let (lat, lon) = interpolate(e.start_lat, e.start_lon, e.end_lat, e.end_lon, t0);
-            let along = cum + e.length_m * t0;
+            let along_edge = use_len * (s as f64 / steps as f64);
+            let (lat, lon) = point_along_verts(&verts, &seg_lens, along_edge);
+            let along = cum + along_edge;
             if out.last().map(|p| (p.cum_m - along).abs() < 0.5).unwrap_or(false) {
                 continue;
             }
@@ -200,6 +215,40 @@ pub fn build_sim_samples(graph: &RouteGraph, path: &[NodeId]) -> Vec<SimSample> 
         });
     }
     out
+}
+
+fn haversine_m_local(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    let lat1 = lat1.to_radians();
+    let lat2 = lat2.to_radians();
+    let dlat = lat2 - lat1;
+    let dlon = (lon2 - lon1).to_radians();
+    let a = (dlat / 2.0).sin().powi(2)
+        + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
+    2.0 * 6_378_100.0 * a.sqrt().asin()
+}
+
+fn point_along_verts(
+    verts: &[(f64, f64)],
+    seg_lens: &[f64],
+    along_m: f64,
+) -> (f64, f64) {
+    if verts.is_empty() {
+        return (0.0, 0.0);
+    }
+    if verts.len() == 1 || seg_lens.is_empty() {
+        return verts[0];
+    }
+    let mut left = along_m.max(0.0);
+    for (i, &len) in seg_lens.iter().enumerate() {
+        if left <= len || i + 1 == seg_lens.len() {
+            let t = if len < 1e-6 { 0.0 } else { (left / len).clamp(0.0, 1.0) };
+            let (lat0, lon0) = verts[i];
+            let (lat1, lon1) = verts[i + 1];
+            return interpolate(lat0, lon0, lat1, lon1, t);
+        }
+        left -= len;
+    }
+    *verts.last().unwrap()
 }
 
 /// Geometric turn list + destination at the path end.
@@ -301,6 +350,7 @@ mod tests {
             start_lon: lon0,
             end_lat: lat1,
             end_lon: lon1,
+            shape: Vec::new(),
             highway: Some(highway.into()),
             maxspeed_kmh: maxspeed,
             name: name.map(|s| s.into()),

@@ -107,7 +107,7 @@ the default working set on ~4 GB devices.
 | Download terrain DEM | App Tools → `pmtilesQueueDemRegion` / `pmtilesRunJob` → `{dataDir}/pmtiles/{region}_dem.pmtiles` (Mapterhorn) |
 | Search place | App → `searchPlaces` → `NameIndex` FTS5 DB |
 | Route corridor | App → `runCarCorridorPipeline` → `RouteGraph` A* (+ eco weights) → polyline + POI back to MapLibre |
-| Save drive settings | App → `saveCarRestSettings` / `saveFuelConfig` → `ConfigStore` → `app_config` rows |
+| Save drive settings | App → `saveCarRestSettings` / `saveFuelConfig` / `saveEbikeConfig` / `saveEvCarConfig` → `ConfigStore` → `app_config` rows |
 | Moving icon | Test/host → `FfiTrackStore.upsert` → `TrackStore` → Compose overlay |
 | Future APRS SDR | Host + `rtl-sdr-rs` → DSP → upsert tracks (see [`docs/APRS-SDR.md`](docs/APRS-SDR.md)) |
 | Future CAT auto-tune | Host CAT + repeater DB → VFO 1 (see [`docs/CAT.md`](docs/CAT.md)) |
@@ -148,7 +148,7 @@ Opened via `driver_break_core::storage::Storage::open(path)`. Migration in
 | `routes` | Saved route endpoints, profile, via JSON, break/overnight hints |
 
 `ConfigStore` keys (JSON values): `rest_config`, `safety_config`, `eco_config`,
-`vehicle_limits`, `fuel_config`, `truck_driving_history` (EC 561 day rows /
+`vehicle_limits`, `fuel_config`, `ebike_config`, `ev_car_config`, `truck_driving_history` (EC 561 day rows /
 extensions — see [`ec-561-truck-rest.md`](ec-561-truck-rest.md)).
 
 Access is serialized with `Arc<Mutex<Connection>>` (T4). UniFFI load/save

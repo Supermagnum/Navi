@@ -41,14 +41,20 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import uniffi.navi.FfiCarRestSettings
+import uniffi.navi.FfiEbikeConfig
+import uniffi.navi.FfiEvCarConfig
 import uniffi.navi.FfiFuelConfig
 import uniffi.navi.FfiIconTheme
 import uniffi.navi.FfiTruckRestSettings
 import uniffi.navi.loadCarRestSettings
+import uniffi.navi.loadEbikeConfig
+import uniffi.navi.loadEvCarConfig
 import uniffi.navi.loadFuelConfig
 import uniffi.navi.loadTruckRestSettings
 import uniffi.navi.rasterizeIconPng
 import uniffi.navi.saveCarRestSettings
+import uniffi.navi.saveEbikeConfig
+import uniffi.navi.saveEvCarConfig
 import uniffi.navi.saveFuelConfig
 import uniffi.navi.saveTruckRestSettings
 
@@ -57,6 +63,27 @@ fun usesTruckRestSettings(profile: TravelProfile): Boolean =
     profile == TravelProfile.TRUCK ||
         profile == TravelProfile.TRUCK_ELECTRIC
 // Mobile home uses car-style soft break reminders — not EC 561 legal tracking.
+
+fun usesEbikeVehicleSpecs(profile: TravelProfile): Boolean =
+    profile == TravelProfile.BICYCLE_ELECTRIC
+
+fun usesEvCarBatterySpecs(profile: TravelProfile): Boolean =
+    profile == TravelProfile.CAR_ELECTRIC
+
+private val EBIKE_WHEEL_PRESETS_IN = listOf(20.0, 26.0, 27.5, 29.0)
+
+fun travelProfileChipLabel(profile: TravelProfile): String =
+    when (profile) {
+        TravelProfile.CAR -> "Car"
+        TravelProfile.CAR_ELECTRIC -> "Electric car"
+        TravelProfile.BICYCLE -> "Bicycle"
+        TravelProfile.BICYCLE_ELECTRIC -> "Electric cycle"
+        TravelProfile.HIKING -> "Hiking"
+        TravelProfile.MOTORCYCLE -> "Motorcycle"
+        TravelProfile.TRUCK -> "Truck"
+        TravelProfile.MOBILE_HOME -> "Mobile home"
+        else -> profile.name
+    }
 
 /** Hours until the next mandatory break for the active profile. */
 fun breakIntervalHoursForProfile(dataDir: String, profile: TravelProfile): Double =
@@ -383,9 +410,10 @@ fun MapSettingsSheet(
 }
 
 /**
- * Collapsed bottom drive HUD: the app's only map zoom −/+, current street (low
- * weight), break countdown, trip ETA, and eco leaf when eco is active. Tap the
- * status area (not zoom) to open drive settings.
+ * Collapsed bottom drive HUD: the app's only map zoom −/+, optional Recenter
+ * (after a manual pan away from GPS), current street (low weight), break
+ * countdown, trip ETA, and eco leaf when eco is active. Tap the status area
+ * (not zoom) to open drive settings.
  *
  * Turn / maneuver stubs belong to the approach-instruction box — not this bar.
  * AAOS system chrome may show separate − N + climate controls; those are not app zoom.
@@ -402,6 +430,9 @@ fun BottomDriveHud(
     onOpenSettings: () -> Unit,
     /** Break countdown only applies while a corridor/route is active. */
     routePlanned: Boolean = false,
+    /** Show a control to re-enable GPS camera follow after a manual pan. */
+    showRecenter: Boolean = false,
+    onRecenter: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var leafBmp by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
@@ -450,6 +481,12 @@ fun BottomDriveHud(
                 onClick = onZoomIn,
                 modifier = Modifier.testTag("zoom_in"),
             ) { Text("+") }
+            if (showRecenter) {
+                TextButton(
+                    onClick = onRecenter,
+                    modifier = Modifier.testTag("btn_recenter_gps"),
+                ) { Text("Recenter") }
+            }
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -535,10 +572,17 @@ fun DriveSettingsSheet(
     var tank by remember { mutableStateOf("") }
     var fuelAdded by remember { mutableStateOf("") }
     var preferLiters by remember { mutableStateOf(true) }
+    var batteryWh by remember { mutableStateOf("800") }
+    var motorTorqueNm by remember { mutableStateOf("85") }
+    var wheelDiameterIn by remember { mutableStateOf("27.5") }
+    var wheelCustom by remember { mutableStateOf(false) }
+    var evBatteryKwh by remember { mutableStateOf("60") }
     var status by remember { mutableStateOf("") }
     var asDistance by remember { mutableStateOf(breakAsDistance) }
     var metric by remember { mutableStateOf(preferMetric) }
     val truckRest = usesTruckRestSettings(travelProfile)
+    val ebikeSpecs = usesEbikeVehicleSpecs(travelProfile)
+    val evCarSpecs = usesEvCarBatterySpecs(travelProfile)
 
     LaunchedEffect(dataDir, travelProfile) {
         if (usesTruckRestSettings(travelProfile)) {
@@ -565,6 +609,18 @@ fun DriveSettingsSheet(
             tank = fuel.tankCapacityL?.toString().orEmpty()
             fuelAdded = fuel.fuelAddedL?.toString().orEmpty()
             preferLiters = fuel.preferLiters
+        }
+        val ebike = runCatching { loadEbikeConfig(dataDir) }.getOrNull()
+        if (ebike != null) {
+            batteryWh = ebike.batteryCapacityWh?.toString() ?: "800"
+            motorTorqueNm = ebike.motorTorqueNm?.toString() ?: "85"
+            val wd = ebike.wheelDiameterIn ?: 27.5
+            wheelDiameterIn = wd.toString()
+            wheelCustom = EBIKE_WHEEL_PRESETS_IN.none { kotlin.math.abs(it - wd) < 1e-6 }
+        }
+        val evCar = runCatching { loadEvCarConfig(dataDir) }.getOrNull()
+        if (evCar != null) {
+            evBatteryKwh = evCar.batteryCapacityKwh?.toString() ?: "60"
         }
         asDistance = breakAsDistance
         metric = preferMetric
@@ -607,23 +663,13 @@ fun DriveSettingsSheet(
                                 onEcoChange(ecoModeDefault(p))
                             }
                         },
-                        label = {
-                            Text(
-                                when (p) {
-                                    TravelProfile.CAR -> "Car"
-                                    TravelProfile.BICYCLE -> "Bicycle"
-                                    TravelProfile.HIKING -> "Hiking"
-                                    TravelProfile.MOTORCYCLE -> "Motorcycle"
-                                    TravelProfile.TRUCK -> "Truck"
-                                    TravelProfile.MOBILE_HOME -> "Mobile home"
-                                    else -> p.name
-                                },
-                            )
-                        },
+                        label = { Text(travelProfileChipLabel(p)) },
                         modifier = Modifier.testTag(
                             when (p) {
                                 TravelProfile.HIKING -> "drive_chip_profile_hiking"
                                 TravelProfile.CAR -> "drive_chip_profile_car"
+                                TravelProfile.BICYCLE_ELECTRIC ->
+                                    "drive_chip_profile_bicycle_electric"
                                 else -> "drive_chip_profile_${p.name.lowercase()}"
                             },
                         ),
@@ -724,33 +770,119 @@ fun DriveSettingsSheet(
                     modifier = Modifier.testTag("toggle_eco"),
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (preferLiters) "Units: liters" else "Units: gallons")
-                Switch(
-                    checked = preferLiters,
-                    onCheckedChange = { preferLiters = it },
-                    modifier = Modifier.testTag("toggle_fuel_units"),
+            if (ebikeSpecs) {
+                Text("Electric cycle specs", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    "Legal assist caps (EU pedelec ~250 W / 25 km/h; US Class 1–3 up to 750 W / 20–28 mph) are not enforced — enter your bike's real specs for planning only.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("ebike_legal_note"),
+                )
+                OutlinedTextField(
+                    value = batteryWh,
+                    onValueChange = { batteryWh = it },
+                    label = { Text("Battery capacity (Wh)") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("field_ebike_battery_wh"),
+                )
+                OutlinedTextField(
+                    value = motorTorqueNm,
+                    onValueChange = { motorTorqueNm = it },
+                    label = { Text("Motor torque (Nm)") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("field_ebike_torque_nm"),
+                )
+                Text("Wheel diameter (inches)", style = MaterialTheme.typography.bodySmall)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .testTag("ebike_wheel_presets"),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    EBIKE_WHEEL_PRESETS_IN.forEach { preset ->
+                        val selected = !wheelCustom &&
+                            wheelDiameterIn.toDoubleOrNull()?.let {
+                                kotlin.math.abs(it - preset) < 1e-6
+                            } == true
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                wheelCustom = false
+                                wheelDiameterIn = preset.toString()
+                            },
+                            label = { Text("${preset}\"") },
+                            modifier = Modifier.testTag(
+                                "chip_ebike_wheel_${preset.toString().replace('.', '_')}",
+                            ),
+                        )
+                    }
+                    FilterChip(
+                        selected = wheelCustom,
+                        onClick = { wheelCustom = true },
+                        label = { Text("Custom") },
+                        modifier = Modifier.testTag("chip_ebike_wheel_custom"),
+                    )
+                }
+                if (wheelCustom) {
+                    OutlinedTextField(
+                        value = wheelDiameterIn,
+                        onValueChange = { wheelDiameterIn = it },
+                        label = { Text("Wheel diameter (inches)") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("field_ebike_wheel_in"),
+                    )
+                }
+            } else if (evCarSpecs) {
+                Text("Electric car battery", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    "Example default 60 kWh (mid-size EV pack). Used for route range estimate only — not a measured SoC.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("ev_car_battery_note"),
+                )
+                OutlinedTextField(
+                    value = evBatteryKwh,
+                    onValueChange = { evBatteryKwh = it },
+                    label = { Text("Battery capacity (kWh)") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("field_ev_car_battery_kwh"),
+                )
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (preferLiters) "Units: liters" else "Units: gallons")
+                    Switch(
+                        checked = preferLiters,
+                        onCheckedChange = { preferLiters = it },
+                        modifier = Modifier.testTag("toggle_fuel_units"),
+                    )
+                }
+                val unit = if (preferLiters) "L" else "gal"
+                OutlinedTextField(
+                    value = tank,
+                    onValueChange = { tank = it },
+                    label = { Text("Fuel tank capacity ($unit)") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("field_tank"),
+                )
+                OutlinedTextField(
+                    value = fuelAdded,
+                    onValueChange = { fuelAdded = it },
+                    label = { Text("Fuel added ($unit)") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("field_fuel_added"),
                 )
             }
-            val unit = if (preferLiters) "L" else "gal"
-            OutlinedTextField(
-                value = tank,
-                onValueChange = { tank = it },
-                label = { Text("Fuel tank capacity ($unit)") },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("field_tank"),
-            )
-            OutlinedTextField(
-                value = fuelAdded,
-                onValueChange = { fuelAdded = it },
-                label = { Text("Fuel added ($unit)") },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("field_fuel_added"),
-            )
             if (status.isNotBlank()) {
                 Text(status, style = MaterialTheme.typography.bodySmall)
             }
@@ -763,9 +895,6 @@ fun DriveSettingsSheet(
                             status = "Enter valid break hours and rest minutes"
                             return@Button
                         }
-                        val toLiters = if (preferLiters) 1.0 else 3.785411784
-                        val tankL = tank.toDoubleOrNull()?.times(toLiters)
-                        val addedL = fuelAdded.toDoubleOrNull()?.times(toLiters)
                         val restOk = if (usesTruckRestSettings(travelProfile)) {
                             val prev = runCatching { loadTruckRestSettings(dataDir) }.getOrNull()
                             saveTruckRestSettings(
@@ -796,20 +925,53 @@ fun DriveSettingsSheet(
                                 ),
                             )
                         }
-                        val fuelOk = saveFuelConfig(
-                            dataDir,
-                            FfiFuelConfig(
-                                tankCapacityL = tankL,
-                                fuelAddedL = addedL,
-                                preferLiters = preferLiters,
-                            ),
-                        )
+                        val energyOk = if (ebikeSpecs) {
+                            val wh = batteryWh.toDoubleOrNull()
+                            val nm = motorTorqueNm.toDoubleOrNull()
+                            val wd = wheelDiameterIn.toDoubleOrNull()
+                            if (wh == null || wh <= 0.0 || nm == null || nm <= 0.0 ||
+                                wd == null || wd <= 0.0
+                            ) {
+                                status = "Enter valid battery Wh, torque Nm, and wheel inches"
+                                return@Button
+                            }
+                            saveEbikeConfig(
+                                dataDir,
+                                FfiEbikeConfig(
+                                    batteryCapacityWh = wh,
+                                    motorTorqueNm = nm,
+                                    wheelDiameterIn = wd,
+                                ),
+                            )
+                        } else if (evCarSpecs) {
+                            val kwh = evBatteryKwh.toDoubleOrNull()
+                            if (kwh == null || kwh <= 0.0) {
+                                status = "Enter valid battery capacity (kWh)"
+                                return@Button
+                            }
+                            saveEvCarConfig(
+                                dataDir,
+                                FfiEvCarConfig(batteryCapacityKwh = kwh),
+                            )
+                        } else {
+                            val toLiters = if (preferLiters) 1.0 else 3.785411784
+                            val tankL = tank.toDoubleOrNull()?.times(toLiters)
+                            val addedL = fuelAdded.toDoubleOrNull()?.times(toLiters)
+                            saveFuelConfig(
+                                dataDir,
+                                FfiFuelConfig(
+                                    tankCapacityL = tankL,
+                                    fuelAddedL = addedL,
+                                    preferLiters = preferLiters,
+                                ),
+                            )
+                        }
                         onBreakAsDistanceChange(asDistance)
                         onPreferMetricChange(metric)
-                        if (restOk && fuelOk) {
+                        if (restOk && energyOk) {
                             onApplied()
                         } else {
-                            status = "Save failed (rest=$restOk fuel=$fuelOk)"
+                            status = "Save failed (rest=$restOk energy=$energyOk)"
                         }
                         @Suppress("UNUSED_EXPRESSION")
                         iconDir

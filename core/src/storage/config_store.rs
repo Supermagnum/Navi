@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::{
-    EcoConfig, FuelConfig, RestConfig, SafetyConfig, TruckDrivingHistory, VehicleLimits,
+    EcoConfig, EbikeConfig, EvCarConfig, FuelConfig, RestConfig, SafetyConfig,
+    TruckDrivingHistory, VehicleLimits,
 };
 use crate::storage::Storage;
 
@@ -12,6 +13,8 @@ const SAFETY_CONFIG_KEY: &str = "safety_config";
 const ECO_CONFIG_KEY: &str = "eco_config";
 const VEHICLE_LIMITS_KEY: &str = "vehicle_limits";
 const FUEL_CONFIG_KEY: &str = "fuel_config";
+const EBIKE_CONFIG_KEY: &str = "ebike_config";
+const EV_CAR_CONFIG_KEY: &str = "ev_car_config";
 const PREFER_OFFICIAL_NETWORKS_KEY: &str = "prefer_official_networks";
 const TRUCK_DRIVING_HISTORY_KEY: &str = "truck_driving_history";
 
@@ -62,6 +65,22 @@ impl<'a> ConfigStore<'a> {
 
     pub fn save_fuel_config(&self, config: &FuelConfig) -> SqlResult<()> {
         self.save_json(FUEL_CONFIG_KEY, config)
+    }
+
+    pub fn load_ebike_config(&self) -> SqlResult<EbikeConfig> {
+        self.load_json(EBIKE_CONFIG_KEY, EbikeConfig::default)
+    }
+
+    pub fn save_ebike_config(&self, config: &EbikeConfig) -> SqlResult<()> {
+        self.save_json(EBIKE_CONFIG_KEY, config)
+    }
+
+    pub fn load_ev_car_config(&self) -> SqlResult<EvCarConfig> {
+        self.load_json(EV_CAR_CONFIG_KEY, EvCarConfig::default)
+    }
+
+    pub fn save_ev_car_config(&self, config: &EvCarConfig) -> SqlResult<()> {
+        self.save_json(EV_CAR_CONFIG_KEY, config)
     }
 
     /// Soft preference for official hiking/cycling networks (off by default).
@@ -148,5 +167,33 @@ mod tests {
         store.save_rest_config(&config).unwrap();
         let loaded = store.load_rest_config().unwrap();
         assert_eq!(loaded.hiking.main_break_distance_km, config.hiking.main_break_distance_km);
+    }
+
+    #[test]
+    fn round_trip_ebike_config() {
+        let storage = Storage::open_in_memory().unwrap();
+        let store = ConfigStore::new(&storage);
+        let config = EbikeConfig {
+            battery_capacity_wh: Some(600.0),
+            motor_torque_nm: Some(75.0),
+            wheel_diameter_in: Some(29.0),
+        };
+        store.save_ebike_config(&config).unwrap();
+        let loaded = store.load_ebike_config().unwrap();
+        assert_eq!(loaded.battery_capacity_wh, Some(600.0));
+        assert_eq!(loaded.motor_torque_nm, Some(75.0));
+        assert_eq!(loaded.wheel_diameter_in, Some(29.0));
+    }
+
+    #[test]
+    fn round_trip_ev_car_config() {
+        let storage = Storage::open_in_memory().unwrap();
+        let store = ConfigStore::new(&storage);
+        let config = EvCarConfig {
+            battery_capacity_kwh: Some(75.0),
+        };
+        store.save_ev_car_config(&config).unwrap();
+        let loaded = store.load_ev_car_config().unwrap();
+        assert_eq!(loaded.battery_capacity_kwh, Some(75.0));
     }
 }

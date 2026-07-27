@@ -193,6 +193,20 @@ fn eco_for_travel_profile(profile: TravelProfile) -> EcoConfig {
             eco.frontal_area_m2 = 2.2;
             eco.mass_kg = 1500.0;
         }
+        TravelProfile::Bicycle | TravelProfile::BicycleElectric => {
+            let tuned = driver_break_core::config::ebike_eco_config(
+                matches!(profile, TravelProfile::BicycleElectric),
+            );
+            eco.drag_coefficient = tuned.drag_coefficient;
+            eco.frontal_area_m2 = tuned.frontal_area_m2;
+            eco.mass_kg = tuned.mass_kg;
+            eco.rolling_resistance = tuned.rolling_resistance;
+            eco.cruise_speed_m_s = tuned.cruise_speed_m_s;
+            // Keep for_profile regen for BicycleElectric; plain Bicycle stays 0.
+            if matches!(profile, TravelProfile::BicycleElectric) {
+                eco.regen_efficiency = tuned.regen_efficiency;
+            }
+        }
         _ => {}
     }
     eco
@@ -580,6 +594,7 @@ fn travel_profile_report_key(profile: TravelProfile) -> &'static str {
         TravelProfile::Motorcycle => "motorcycle",
         TravelProfile::MotorcycleElectric => "motorcycle_electric",
         TravelProfile::Bicycle => "bicycle",
+        TravelProfile::BicycleElectric => "bicycle_electric",
         TravelProfile::Hiking => "hiking",
         TravelProfile::Truck => "truck",
         TravelProfile::TruckElectric => "truck_electric",
@@ -760,6 +775,9 @@ fn pick_hiking_pause_at(
             if route_link.within_road_link(p.lat, p.lon) {
                 continue;
             }
+            if route_link.distance_m(p.lat, p.lon) > 800.0 {
+                continue;
+            }
             if !reachable_without_barrier(graph, barriers, lat, lon, p.lat, p.lon) {
                 continue;
             }
@@ -795,6 +813,9 @@ fn pick_hiking_pause_at(
             continue;
         }
         if route_link.within_road_link(p.lat, p.lon) {
+            continue;
+        }
+        if route_link.distance_m(p.lat, p.lon) > 800.0 {
             continue;
         }
         if !reachable_without_barrier(graph, barriers, lat, lon, p.lat, p.lon) {
@@ -938,6 +959,11 @@ fn pick_motor_pause_at(
         if route_link.within_road_link(p.lat, p.lon) {
             continue;
         }
+        // Keep off-corridor fallbacks near the planned road — otherwise pins land
+        // kilometres away from both the route overlay and the real stop.
+        if route_link.distance_m(p.lat, p.lon) > 800.0 {
+            continue;
+        }
         if !reachable_without_barrier(graph, barriers, lat, lon, p.lat, p.lon) {
             continue;
         }
@@ -1004,7 +1030,7 @@ fn build_break_pois_json(
                 &route_link,
                 lat,
                 lon,
-                search_radius_m.min(5_000.0),
+                search_radius_m.min(2_000.0),
             )
         };
         // Avoid stacking duplicate names within ~2 km.
@@ -1176,15 +1202,19 @@ pub fn run_car_corridor_pipeline(
             polyline.push_str(&format!("{},{}", n.coord.x, n.coord.y));
         }
         let n1 = &graph.nodes[&w[1]];
-        // Decimate for MapLibre overlay (every ~20th node + ends).
-        if i % 20 == 0 || i + 1 == path.len().saturating_sub(1) {
-            polyline.push_str(&format!(";{},{}", n1.coord.x, n1.coord.y));
+        // Prefer full edge shape when present (junction-only path is a poor overlay).
+        if let Some(idx) = graph.edge_index(w[0], w[1]) {
+            for &(lon, lat) in &graph.edges[idx].shape {
+                polyline.push_str(&format!(";{lon},{lat}"));
+            }
         }
+        polyline.push_str(&format!(";{},{}", n1.coord.x, n1.coord.y));
     }
     if let Some(last) = path.last() {
         let n = &graph.nodes[last];
-        if !polyline.ends_with(&format!("{},{}", n.coord.x, n.coord.y)) {
-            polyline.push_str(&format!(";{},{}", n.coord.x, n.coord.y));
+        let tail = format!("{},{}", n.coord.x, n.coord.y);
+        if !polyline.ends_with(&tail) {
+            polyline.push_str(&format!(";{tail}"));
         }
     }
 
@@ -1450,7 +1480,9 @@ fn plan_car_route_inner(
             return empty(report);
         }
     };
-    if profile == TravelProfile::Bicycle && prefer_official_networks {
+    if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
+        && prefer_official_networks
+    {
         apply_network_pref_if_requested(
             &mut graph,
             pbf,
@@ -1489,31 +1521,13 @@ fn plan_car_route_inner(
     }
 
     let mut distance_m = 0.0;
-    let mut polyline = String::new();
-    // Keep denser geometry on short urban trips so MapLibre does not look like
-    // a single chord (corridor pipeline decimates every 20th node).
-    let stride = if path.len() < 80 { 1 } else { 5 };
-    for (i, w) in path.windows(2).enumerate() {
+    for w in path.windows(2) {
         if let Some(idx) = graph.edge_index(w[0], w[1]) {
             distance_m += graph.edges[idx].length_m;
         }
-        let n0 = &graph.nodes[&w[0]];
-        if i == 0 {
-            polyline.push_str(&format!("{},{}", n0.coord.x, n0.coord.y));
-        }
-        let n1 = &graph.nodes[&w[1]];
-        if i % stride == 0 || i + 1 == path.len().saturating_sub(1) {
-            polyline.push_str(&format!(";{},{}", n1.coord.x, n1.coord.y));
-        }
     }
-    if let Some(last) = path.last() {
-        let n = &graph.nodes[last];
-        let tail = format!("{},{}", n.coord.x, n.coord.y);
-        if !polyline.ends_with(&tail) {
-            polyline.push(';');
-            polyline.push_str(&tail);
-        }
-    }
+    // Full OSM edge shape (not junction chords) so MapLibre follows the road.
+    let polyline = graph.path_overlay_polyline(&path);
 
     let dist_km = distance_m / 1000.0;
     let eta_minutes = motor_path_minutes(&graph, &path);
@@ -1896,7 +1910,9 @@ fn plan_car_route_inner(
     merge_break_poi_pins(&mut break_pois_json, motor_overnight_pins);
     merge_break_poi_pins(&mut break_pois_json, truck_overnight_pins);
     // Difficulty metadata on cycling network ways (informational only).
-    if profile == TravelProfile::Bicycle && prefer_official_networks {
+    if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
+        && prefer_official_networks
+    {
         let way_ids: std::collections::HashSet<i64> = path
             .windows(2)
             .filter_map(|w| graph.edge_index(w[0], w[1]))
@@ -1916,6 +1932,30 @@ fn plan_car_route_inner(
                 report.push_str(&format!("route_metadata={}\n", notes.join("; ")));
             }
         }
+    }
+    if profile == TravelProfile::BicycleElectric {
+        let eco = eco_for_travel_profile(profile);
+        let ebike = load_ebike_config_near_cache(&cache);
+        let (range, climb, steep) = driver_break_core::routing::analyze_ebike_route(
+            &graph, &path, &elevation, &eco, &ebike,
+        );
+        let path_max = driver_break_core::routing::path_max_climb_grade_pct(
+            &graph, &path, &elevation,
+        );
+        report.push_str(&driver_break_core::routing::format_ebike_route_report_with_path_grade(
+            &range,
+            &climb,
+            &steep,
+            Some(path_max),
+        ));
+    }
+    if profile == TravelProfile::CarElectric {
+        let eco = eco_for_travel_profile(profile);
+        let ev = load_ev_car_config_near_cache(&cache);
+        let range = driver_break_core::routing::analyze_ev_car_route(
+            &graph, &path, &elevation, &eco, &ev,
+        );
+        report.push_str(&driver_break_core::routing::format_ev_car_route_report(&range));
     }
     let priority_path_share_pct = graph.non_major_highway_share_pct(&path);
     report.push_str(&format!(
@@ -2107,16 +2147,7 @@ pub fn plan_hiking_route(
         }
     }
 
-    let mut polyline = String::new();
-    let stride = if full_path.len() < 120 { 1 } else { 8 };
-    for (i, id) in full_path.iter().enumerate() {
-        let n = &graph.nodes[id];
-        if i == 0 {
-            polyline.push_str(&format!("{},{}", n.coord.x, n.coord.y));
-        } else if i % stride == 0 || i + 1 == full_path.len() {
-            polyline.push_str(&format!(";{},{}", n.coord.x, n.coord.y));
-        }
-    }
+    let polyline = graph.path_overlay_polyline(&full_path);
 
     let dist_km = distance_m / 1000.0;
     // Clip POI load to the same trip bbox (never a full Ostlandet POI scan).
@@ -2145,15 +2176,7 @@ pub fn plan_hiking_route(
     let rest = RestConfig::default();
     let max_daily = max_daily_distance_km(&rest, driver_break_core::config::Profile::Hiking)
         .unwrap_or(40.0);
-    let hike_coords: Vec<(f64, f64)> = full_path
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| *i % stride == 0 || *i + 1 == full_path.len())
-        .map(|(_, id)| {
-            let n = &graph.nodes[id];
-            (n.coord.y, n.coord.x)
-        })
-        .collect();
+    let hike_coords = graph.path_coords_lat_lon(&full_path);
     let hike_samples = hiking_samples_from_coords(&hike_coords);
     let multi = plan_hiking_multi_day(
         &hike_samples,
@@ -2463,6 +2486,8 @@ pub enum TravelProfile {
     TruckElectric,
     MobileHome,
     Bicycle,
+    /// Battery-assisted cycle / pedelec (primary chip; battery + climb specs).
+    BicycleElectric,
     Hiking,
     Motorcycle,
     MotorcycleElectric,
@@ -2477,6 +2502,7 @@ impl TravelProfile {
             Self::TruckElectric => driver_break_core::config::Profile::TruckElectric,
             Self::MobileHome => driver_break_core::config::Profile::MobileHome,
             Self::Bicycle => driver_break_core::config::Profile::Cycling,
+            Self::BicycleElectric => driver_break_core::config::Profile::CyclingElectric,
             Self::Hiking => driver_break_core::config::Profile::Hiking,
             Self::Motorcycle => driver_break_core::config::Profile::Motorcycle,
             Self::MotorcycleElectric => driver_break_core::config::Profile::MotorcycleElectric,
@@ -2543,6 +2569,21 @@ pub struct FfiFuelConfig {
     pub tank_capacity_l: Option<f64>,
     pub fuel_added_l: Option<f64>,
     pub prefer_liters: bool,
+}
+
+/// Electric Cycle (e-bike) vehicle specs. Legal assist caps are not enforced.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiEbikeConfig {
+    pub battery_capacity_wh: Option<f64>,
+    pub motor_torque_nm: Option<f64>,
+    /// Wheel diameter in inches (20 / 26 / 27.5 / 29 or custom).
+    pub wheel_diameter_in: Option<f64>,
+}
+
+/// Electric Car pack capacity (kWh). Climbing-capability is not modeled for cars.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiEvCarConfig {
+    pub battery_capacity_kwh: Option<f64>,
 }
 
 #[derive(uniffi::Record, Debug, Clone)]
@@ -2827,6 +2868,26 @@ fn load_rest_config_near_cache(cache: &Path) -> RestConfig {
         .unwrap_or_default()
 }
 
+fn load_ebike_config_near_cache(cache: &Path) -> driver_break_core::config::EbikeConfig {
+    let data_dir = cache.parent().unwrap_or(cache);
+    let Ok(storage) = driver_break_core::storage::Storage::open(data_dir.join("navi.db")) else {
+        return driver_break_core::config::EbikeConfig::default();
+    };
+    driver_break_core::storage::ConfigStore::new(&storage)
+        .load_ebike_config()
+        .unwrap_or_default()
+}
+
+fn load_ev_car_config_near_cache(cache: &Path) -> driver_break_core::config::EvCarConfig {
+    let data_dir = cache.parent().unwrap_or(cache);
+    let Ok(storage) = driver_break_core::storage::Storage::open(data_dir.join("navi.db")) else {
+        return driver_break_core::config::EvCarConfig::default();
+    };
+    driver_break_core::storage::ConfigStore::new(&storage)
+        .load_ev_car_config()
+        .unwrap_or_default()
+}
+
 fn load_truck_history_near_cache(
     cache: &Path,
 ) -> driver_break_core::config::TruckDrivingHistory {
@@ -2913,6 +2974,68 @@ pub fn save_fuel_config(data_dir: String, config: FfiFuelConfig) -> bool {
             tank_capacity_l: config.tank_capacity_l,
             fuel_added_l: config.fuel_added_l,
             prefer_liters: config.prefer_liters,
+        })
+        .is_ok()
+}
+
+#[uniffi::export]
+pub fn load_ebike_config(data_dir: String) -> FfiEbikeConfig {
+    let defaults = driver_break_core::config::EbikeConfig::default();
+    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+        return FfiEbikeConfig {
+            battery_capacity_wh: defaults.battery_capacity_wh,
+            motor_torque_nm: defaults.motor_torque_nm,
+            wheel_diameter_in: defaults.wheel_diameter_in,
+        };
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    let cfg = store.load_ebike_config().unwrap_or(defaults);
+    FfiEbikeConfig {
+        battery_capacity_wh: cfg.battery_capacity_wh,
+        motor_torque_nm: cfg.motor_torque_nm,
+        wheel_diameter_in: cfg.wheel_diameter_in,
+    }
+}
+
+#[uniffi::export]
+pub fn save_ebike_config(data_dir: String, config: FfiEbikeConfig) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store
+        .save_ebike_config(&driver_break_core::config::EbikeConfig {
+            battery_capacity_wh: config.battery_capacity_wh,
+            motor_torque_nm: config.motor_torque_nm,
+            wheel_diameter_in: config.wheel_diameter_in,
+        })
+        .is_ok()
+}
+
+#[uniffi::export]
+pub fn load_ev_car_config(data_dir: String) -> FfiEvCarConfig {
+    let defaults = driver_break_core::config::EvCarConfig::default();
+    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+        return FfiEvCarConfig {
+            battery_capacity_kwh: defaults.battery_capacity_kwh,
+        };
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    let cfg = store.load_ev_car_config().unwrap_or(defaults);
+    FfiEvCarConfig {
+        battery_capacity_kwh: cfg.battery_capacity_kwh,
+    }
+}
+
+#[uniffi::export]
+pub fn save_ev_car_config(data_dir: String, config: FfiEvCarConfig) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(&routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store
+        .save_ev_car_config(&driver_break_core::config::EvCarConfig {
+            battery_capacity_kwh: config.battery_capacity_kwh,
         })
         .is_ok()
 }

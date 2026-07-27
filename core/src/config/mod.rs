@@ -2,7 +2,9 @@
 
 mod defaults;
 mod driving_hours_pack;
+mod ebike;
 mod eco;
+mod ev_car;
 mod fmcsa_params;
 mod rest_params;
 mod safety;
@@ -10,7 +12,14 @@ mod truck_history;
 
 pub use defaults::*;
 pub use driving_hours_pack::JurisdictionDrivingHoursPack;
+pub use ebike::{
+    battery_draw_wh, climb_capability, climb_capability_for, default_motor_efficiency,
+    ebike_eco_config, range_estimate, EbikeClimbCapability, EbikeConfig, EbikeRangeEstimate,
+};
 pub use eco::EcoConfig;
+pub use ev_car::{
+    default_ev_car_motor_efficiency, ev_car_range_estimate, EvCarConfig,
+};
 pub use fmcsa_params::FmcsaHosParams;
 pub use rest_params::{
     CarRestParams, CyclingRestParams, HikingRestParams, ProfileRestParams, RestConfig,
@@ -40,6 +49,8 @@ pub enum Profile {
     MobileHome,
     Hiking,
     Cycling,
+    /// Battery-assisted cycle / pedelec (routing uses bicycle graph; battery + climb specs).
+    CyclingElectric,
     Motorcycle,
     /// Electric motorcycle / scooter class (enum present; not a primary menu chip).
     MotorcycleElectric,
@@ -53,7 +64,10 @@ impl Default for Profile {
 
 impl Profile {
     pub fn eco_mode_default(self) -> bool {
-        matches!(self, Profile::Hiking | Profile::Cycling)
+        matches!(
+            self,
+            Profile::Hiking | Profile::Cycling | Profile::CyclingElectric
+        )
     }
 
     /// Profiles that expose an eco-mode toggle in the UI (others lock eco on).
@@ -77,6 +91,7 @@ impl Profile {
             self,
             Profile::Car
                 | Profile::Cycling
+                | Profile::CyclingElectric
                 | Profile::Hiking
                 | Profile::Motorcycle
                 | Profile::Truck

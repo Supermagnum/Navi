@@ -220,7 +220,9 @@ impl RestConfig {
             // truck routing profile elsewhere.
             Profile::MobileHome => ProfileRestParams::Car(&self.car),
             Profile::Hiking => ProfileRestParams::Hiking(&self.hiking),
-            Profile::Cycling => ProfileRestParams::Cycling(&self.cycling),
+            Profile::Cycling | Profile::CyclingElectric => {
+                ProfileRestParams::Cycling(&self.cycling)
+            }
         }
     }
 
@@ -232,7 +234,7 @@ impl RestConfig {
             | Profile::MotorcycleElectric
             | Profile::MobileHome => self.car.eco_mode_enabled,
             Profile::Truck | Profile::TruckElectric => self.truck.eco_mode_enabled,
-            Profile::Hiking | Profile::Cycling => true,
+            Profile::Hiking | Profile::Cycling | Profile::CyclingElectric => true,
         }
     }
 }

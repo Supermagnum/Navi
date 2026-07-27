@@ -58,7 +58,8 @@ Detail: [`route-simulation.md`](route-simulation.md), rest docs under Documents 
 the README.
 
 **`TravelProfile` (enum):** `Car`, `CarElectric`, `Truck`, `TruckElectric`,
-`MobileHome`, `Bicycle`, `Hiking`, `Motorcycle`, `MotorcycleElectric`.
+`MobileHome`, `Bicycle`, `BicycleElectric`, `Hiking`, `Motorcycle`,
+`MotorcycleElectric`.
 
 Helpers:
 
@@ -93,7 +94,9 @@ used by truck / restriction costing (see record in `navi-ffi`).
 | `load_car_rest_settings` / `save_car_rest_settings` | `FfiCarRestSettings` |
 | `load_truck_rest_settings` / `save_truck_rest_settings` | `FfiTruckRestSettings` |
 | `set_truck_exceptional_extension_armed` | EC 561 exceptional extension arming |
-| `load_fuel_config` / `save_fuel_config` | `FfiFuelConfig` |
+| `load_fuel_config` / `save_fuel_config` | `FfiFuelConfig` (ICE tank; Car) |
+| `load_ebike_config` / `save_ebike_config` | `FfiEbikeConfig` (battery Wh, torque Nm, wheel inches; Electric Cycle) |
+| `load_ev_car_config` / `save_ev_car_config` | `FfiEvCarConfig` (battery kWh; Electric Car range check) |
 
 Truck / jurisdiction behaviour: [`ec-561-truck-rest.md`](ec-561-truck-rest.md),
 [`fmcsa-truck-rest.md`](fmcsa-truck-rest.md),

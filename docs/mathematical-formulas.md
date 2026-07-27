@@ -86,3 +86,51 @@ Temperature and elevation still adjust the coefficient inside each segment.
 Rolling resistance uses a fixed coefficient times weight in the model
 initializer. Live ECU fuel can be compared to energy predictions so
 lower-energy (and thus lower-fuel) routes are preferred.
+
+Electric profiles apply a descent regen credit
+\(\eta_{\text{regen}}\, m g \Delta h\) (negative) when \(\Delta h < 0\); ICE keeps
+\(\eta_{\text{regen}} = 0\).
+
+## Electric car — battery pack range
+
+Persisted pack capacity (default **60 kWh** example). Route mechanical energy
+\(E\) (J) from the eco formula (with regen on descent) becomes:
+
+$$
+E_{\text{kWh}} = \frac{E}{\eta_{\text{drv}} \times 3{,}600{,}000},\quad
+\%_{\text{capacity}} = 100 \times \frac{E_{\text{kWh}}}{C_{\text{kWh}}}
+$$
+
+with default \(\eta_{\text{drv}} = 0.85\) (estimate, not measured). Informational
+only. Climbing-capability (torque / wheel) is **not** applied to cars.
+
+## Electric cycle — battery range and climb capability
+
+Persisted specs (defaults): battery \(800\,\mathrm{Wh}\), motor torque
+\(85\,\mathrm{Nm}\), wheel diameter \(27.5''\). Legal assist caps (EU / US class
+limits) are **not** enforced.
+
+**Battery draw (estimate):** mechanical path energy \(E\) (J) from the eco
+formula above, then
+
+$$
+E_{\text{Wh}} = \frac{E}{\eta_{\text{motor}} \times 3600},\quad
+\%_{\text{capacity}} = 100 \times \frac{E_{\text{Wh}}}{C_{\text{Wh}}}
+$$
+
+with default \(\eta_{\text{motor}} = 0.80\) (not measured). Informational only —
+does not block planning.
+
+**Climb capability (simplified mid-drive):** treat rated torque as applied at a
+representative gear (not a full derailleur simulation):
+
+$$
+F_{\text{tractive}} = \frac{\tau}{r},\quad r = \frac{d_{\text{in}} \times 0.0254}{2}
+$$
+
+$$
+\text{grade} \approx \frac{F_{\text{tractive}}}{m g} - C_{rr}
+$$
+
+Segments steeper than this computed max grade are flagged as beyond motor-assist
+climb alone.

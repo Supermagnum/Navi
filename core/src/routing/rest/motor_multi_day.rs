@@ -140,6 +140,7 @@ pub fn uses_motor_multi_day(profile: Profile) -> bool {
             | Profile::MotorcycleElectric
             | Profile::MobileHome
             | Profile::Cycling
+            | Profile::CyclingElectric
     )
 }
 
@@ -152,7 +153,10 @@ pub fn motor_daily_budget(
     if !uses_motor_multi_day(profile) {
         return None;
     }
-    if matches!(profile, Profile::Cycling) {
+    if matches!(
+        profile,
+        Profile::Cycling | Profile::CyclingElectric
+    ) {
         Some(MotorDailyBudget::DistanceKm(cycling_daily_km(cycling)))
     } else {
         Some(MotorDailyBudget::Hours(car_style_daily_hours(car)))

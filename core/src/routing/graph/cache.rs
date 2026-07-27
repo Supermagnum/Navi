@@ -13,7 +13,7 @@ use crate::routing::elevation::ElevationService;
 use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
 
 // Bump when on-disk graph topology / edge meta semantics change.
-const CACHE_MAGIC: &[u8; 8] = b"NAVIGPH5";
+const CACHE_MAGIC: &[u8; 8] = b"NAVIGPH6";
 
 /// Source PBF and eco inputs used to validate a cached reweighted graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -89,6 +89,9 @@ struct CachedGraphEdge {
     start_lon: f64,
     end_lat: f64,
     end_lon: f64,
+    /// Intermediate `(lon, lat)` shape points; empty on older caches via default.
+    #[serde(default)]
+    shape: Vec<(f64, f64)>,
     highway: Option<String>,
     maxspeed_kmh: Option<f64>,
     #[serde(default)]
@@ -169,6 +172,7 @@ pub fn save_reweighted_graph(
                 start_lon: edge.start_lon,
                 end_lat: edge.end_lat,
                 end_lon: edge.end_lon,
+                shape: edge.shape.clone(),
                 highway: edge.highway.clone(),
                 maxspeed_kmh: edge.maxspeed_kmh,
                 name: edge.name.clone(),
@@ -320,6 +324,7 @@ fn reconstruct_graph(payload: CachedRouteGraph) -> RouteGraph {
             start_lon: edge.start_lon,
             end_lat: edge.end_lat,
             end_lon: edge.end_lon,
+            shape: edge.shape,
             highway: edge.highway,
             maxspeed_kmh: edge.maxspeed_kmh,
             name: edge.name,
@@ -374,6 +379,7 @@ mod tests {
             start_lon: 10.0,
             end_lat: 60.01,
             end_lon: 10.01,
+            shape: Vec::new(),
             highway: Some("primary".to_string()),
             maxspeed_kmh: None,
             name: None,

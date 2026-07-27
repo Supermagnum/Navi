@@ -143,3 +143,21 @@ pub const DEFAULT_REGEN_EFFICIENCY: f64 = 0.0;
 
 /// Default regen efficiency for battery-electric drivetrains (partial PE recovery on descent).
 pub const DEFAULT_EV_REGEN_EFFICIENCY: f64 = 0.4;
+
+/// Default e-bike battery capacity (Wh) — mid/high-end pack (typical market 400–800 Wh).
+pub const DEFAULT_EBIKE_BATTERY_WH: f64 = 800.0;
+
+/// Default mid-drive motor torque (Nm) — Bosch/Brose/Bafang class (often 65–90 Nm).
+pub const DEFAULT_EBIKE_TORQUE_NM: f64 = 85.0;
+
+/// Default e-bike wheel diameter (inches) — 27.5" / 650B common on e-MTB and hybrids.
+pub const DEFAULT_EBIKE_WHEEL_DIAMETER_IN: f64 = 27.5;
+
+/// Assumed motor + controller efficiency for battery draw estimates (not measured).
+pub const DEFAULT_EBIKE_MOTOR_EFFICIENCY: f64 = 0.80;
+
+/// Default mid-size EV usable pack (kWh) — example default, not a measured vehicle.
+pub const DEFAULT_EV_CAR_BATTERY_KWH: f64 = 60.0;
+
+/// Assumed EV car drivetrain efficiency for pack-draw estimates (not measured).
+pub const DEFAULT_EV_CAR_MOTOR_EFFICIENCY: f64 = 0.85;

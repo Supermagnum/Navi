@@ -1,6 +1,7 @@
 //! Offline routing: graph build, elevation reweighting, rest/safety helpers.
 
 pub mod basemap;
+pub mod ebike_route;
 pub mod elevation;
 pub mod eta;
 pub mod graph;
@@ -16,6 +17,12 @@ pub use basemap::{
     geofabrik_path_to_region_key, region_bbox, region_pmtiles_url, resolve_planet_url_blocking,
     PmtilesDownloader, PmtilesJob, DEFAULT_EXTRACT_MAX_ZOOM, DEFAULT_PMTILES_BASE_URL,
     PROTOMAPS_PLANET_FALLBACK_URL,
+};
+pub use ebike_route::{
+    analyze_ebike_route, analyze_ev_car_route, format_ebike_route_report,
+    format_ebike_route_report_with_path_grade, format_ev_car_route_report,
+    grade_exceeds_capability, path_max_climb_grade_pct, path_mechanical_energy_j,
+    steep_segments_over_capability,
 };
 pub use eta::{
     edge_speed_kmh, fixed_pace_minutes, highway_class_display_label, highway_fallback_kmh,

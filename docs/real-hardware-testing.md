@@ -6,7 +6,7 @@ Automotive / phone head-unit has been available. Emulator results are not a
 shipping substitute for device GPS/IMU, GPU drivers, audio, USB accessories, or
 4 GB RAM behaviour. Treat **8 cores (~2 GHz class) and 4 GB RAM** as the
 **minimum required** hardware for this product class; see
-[README performance constraints](../README.md#performance-constraints-minimum-8-core--2-ghz-4-gb-ram)
+[README minimum hardware and storage capacity](../README.md#minimum-hardware-and-storage-capacity)
 (including country disk budgets for Norway / Sweden / Germany / Russia / USA).
 
 If you have access to real hardware, this guide covers what to check and how to

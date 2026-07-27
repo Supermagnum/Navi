@@ -28,7 +28,7 @@ throughout.
 - [Documents](#documents)
 - [Icons (Navit)](#icons-navit)
 - [Building Android packages](#building-android-packages)
-- [Performance constraints](#performance-constraints-minimum-8-core--2-ghz-4-gb-ram)
+- [Minimum hardware and storage capacity](#minimum-hardware-and-storage-capacity)
 - [Workspace layout](#workspace-layout)
 - [Host tests](#host-tests)
 - [Known issues](#known-issues)
@@ -77,8 +77,10 @@ yet ([`docs/plugins.md`](docs/plugins.md)).
 
 | Feature | What you get | Status |
 |---|---|---|
-| **Travel modes** | Car, motorcycle, bicycle, hiking, truck, and motorhome. Electric versions exist for later use; the main buttons are the everyday modes. | Done |
+| **Travel modes** | Car, motorcycle, bicycle, **electric cycle**, hiking, truck, and motorhome. Electric car/truck/motorcycle variants exist in the enum for later use; the main chips are the everyday modes plus electric cycle. | Done |
 | **Vehicle size limits** | Save height, width, length, axle load, and similar limits. Routes skip roads the map says are too tight or too low for your vehicle. | Done |
+| **Electric cycle specs** | Battery Wh, motor torque (Nm), and wheel diameter (inches) persist like car fuel tank settings. Plan reports estimated % of battery used and climb-capability warnings when a segment exceeds torque/wheel-derived max grade. | Done |
+| **Electric car pack** | Battery capacity (kWh, default 60) persists via `EvCarConfig`; plan reports estimated % of pack used (regen included). No climb-capability model for cars. | Done |
 | **Avoidances** | Turn on avoid motorways, tolls, or ferries and the planned path actually changes. | Done |
 | **Follow official networks** | For hiking and cycling, prefer marked long-distance trails and cycle routes when that option is on (off by default). Ordinary paths stay available so a gap in the marked network never strands you. Named trails are searchable. | Done |
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. Electric modes get credit for downhill recovery. Formulas: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Done |
@@ -148,7 +150,9 @@ tank size and fuel added.
 described in [`docs/poi.md`](docs/poi.md). Suggested search distances for network
 huts and trails are in [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md).
 Search results set From / Via / To and move the map. The basemap shows its own
-labels; app markers use the bundled icons.
+labels; app markers use the bundled icons. **From must be set before Plan route
+works** — typically use **Use GPS as from** (current GPS position). With From
+unset, Plan shows “Set From and To first” and does not compute a corridor.
 
 **Rest and overnight.** Each travel mode has its own break defaults. Cars and
 motorcycles use hours between breaks; hiking and cycling use traditional
@@ -264,6 +268,13 @@ live progress updates once GPS / simulation speed is available.
 | **Fuel tank capacity** | Tank size for adaptive consumption heuristics |
 | **Fuel added** | Last fill amount for the same heuristics |
 | **Save / Close** | Write rest/fuel to SQLite and dismiss, or dismiss without that save |
+
+**Break interval vs trip ETA.** Set the time (or distance) to the next break so it
+does **not exceed the trip ETA** (or remaining trip distance). If the break
+interval is longer than the whole trip, reminders and suggested stops get
+wonky. There is currently **no** control to auto-split a corridor into N equal
+parts (for example “cut this distance into 6 legs”); choose a break interval
+that fits inside the planned duration/distance instead.
 
 ### Route / tools panel (main chrome)
 
@@ -394,7 +405,7 @@ export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
 Update `.cargo/config.toml` linker paths to your NDK before the first native
 build. `minSdk` 26, `compileSdk` / `targetSdk` 35, JDK 17.
 
-## Performance constraints (minimum: 8-core ~2 GHz, 4 GB RAM)
+## Minimum hardware and storage capacity
 
 **Minimum required hardware** for the intended Automotive / embedded class of
 device (not a “nice to have” desktop target):

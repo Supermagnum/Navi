@@ -372,6 +372,9 @@ fn parse_profile(s: &str) -> TravelProfile {
         "truck_electric" => TravelProfile::TruckElectric,
         "mobile_home" | "motorhome" => TravelProfile::MobileHome,
         "bicycle" | "bike" | "cycling" => TravelProfile::Bicycle,
+        "bicycle_electric" | "ebike" | "e_bike" | "cycling_electric" => {
+            TravelProfile::BicycleElectric
+        }
         "motorcycle" => TravelProfile::Motorcycle,
         "motorcycle_electric" => TravelProfile::MotorcycleElectric,
         _ => TravelProfile::Car,

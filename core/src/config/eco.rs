@@ -39,6 +39,7 @@ impl EcoConfig {
             crate::config::Profile::CarElectric
                 | crate::config::Profile::TruckElectric
                 | crate::config::Profile::MotorcycleElectric
+                | crate::config::Profile::CyclingElectric
         ) {
             cfg.regen_efficiency = DEFAULT_EV_REGEN_EFFICIENCY;
         }

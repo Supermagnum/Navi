@@ -30,12 +30,30 @@ impl RoadNodeIndex {
     }
 
     /// Index only nodes on a planned route (road / path / trail geometry).
+    /// Includes intermediate edge shape points so mid-edge rest stops still count
+    /// as “on the corridor”.
     pub fn from_path_nodes(graph: &RouteGraph, path: &[NodeId]) -> Self {
-        let pts: Vec<[f64; 2]> = path
-            .iter()
-            .filter_map(|id| graph.nodes.get(id))
-            .map(|n| [n.coord.x, n.coord.y])
-            .collect();
+        let mut pts: Vec<[f64; 2]> = Vec::new();
+        for w in path.windows(2) {
+            let Some(idx) = graph.edge_index(w[0], w[1]) else {
+                continue;
+            };
+            let e = &graph.edges[idx];
+            if pts.is_empty() {
+                pts.push([e.start_lon, e.start_lat]);
+            }
+            for &(lon, lat) in &e.shape {
+                pts.push([lon, lat]);
+            }
+            pts.push([e.end_lon, e.end_lat]);
+        }
+        if pts.is_empty() {
+            pts = path
+                .iter()
+                .filter_map(|id| graph.nodes.get(id))
+                .map(|n| [n.coord.x, n.coord.y])
+                .collect();
+        }
         Self {
             tree: RTree::bulk_load(pts),
         }
@@ -166,6 +184,7 @@ mod tests {
             start_lon: lon0,
             end_lat: lat1,
             end_lon: lon1,
+            shape: Vec::new(),
             highway: Some(highway.into()),
             maxspeed_kmh: None,
             name: name.map(|s| s.into()),

@@ -145,7 +145,9 @@ Uten det i dag kan appen lære av tankstørrelse og påfylt drivstoff.
 [`docs/poi.md`](docs/poi.md). Foreslåtte søkeavstander for nettverkshytter og
 løyper står i [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md).
 Søketreff setter Fra / Via / Til og flytter kartet. Grunnkartet viser egne
-etiketter; appmarkører bruker medfølgende ikoner.
+etiketter; appmarkører bruker medfølgende ikoner. **Fra må være satt før
+Planlegg rute virker** — vanligvis **Use GPS as from** (nåværende GPS-posisjon).
+Uten Fra viser Plan «Set From and To first» og beregner ingen korridor.
 
 **Hvile og overnatting.** Hver reisemåte har egne pausestandarder. Bil og
 motorsykkel bruker timer mellom pauser; fottur og sykling bruker tradisjonelle

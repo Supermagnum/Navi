@@ -270,6 +270,7 @@ mod tests {
             start_lon: 10.0,
             end_lat: 60.0,
             end_lon: 10.1,
+            shape: Vec::new(),
             highway: Some("primary".into()),
             maxspeed_kmh: None,
             name: None,
@@ -320,6 +321,7 @@ mod tests {
             start_lon: 10.0,
             end_lat: 60.0,
             end_lon: 10.1,
+            shape: Vec::new(),
             highway: Some("residential".into()), // fallback would be 40
             maxspeed_kmh: Some(100.0),
             name: None,
