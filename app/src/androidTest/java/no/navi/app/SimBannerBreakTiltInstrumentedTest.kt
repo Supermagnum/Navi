@@ -283,8 +283,11 @@ class SimBannerBreakTiltInstrumentedTest {
         dir: File,
         name: String,
     ) {
-        Thread.sleep(1_200)
-        val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+        assertTrue(
+            "map render did not settle before $name",
+            InstrumentedMapCapture.awaitRenderSettled(30_000),
+        )
+        val shot = InstrumentedMapCapture.takeScreenshotAfterSettle(5_000)
         assertNotNull(shot)
         assertTrue(shot!!.width > 0)
         val out = File(dir, name)

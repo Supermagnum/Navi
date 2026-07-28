@@ -102,21 +102,23 @@ class BasemapPmtilesScreenshotTest {
         fun capture(name: String) {
             NaviMapTestHooks.hideUiChrome = false
             NaviMapTestHooks.hideSearchChrome = true
-            Thread.sleep(2_500)
+            assertTrue(
+                "map render did not settle before $name",
+                InstrumentedMapCapture.awaitRenderSettled(30_000),
+            )
             assertNotNull("HUD altitude should be set before $name", NaviMapTestHooks.lastHudAltitudeM)
             assertTrue(
                 "altitude must not be the emulator 0 sentinel before $name " +
                     "(was ${NaviMapTestHooks.lastHudAltitudeM})",
                 kotlin.math.abs(NaviMapTestHooks.lastHudAltitudeM!!) > 0.5,
             )
-            val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            val shot = InstrumentedMapCapture.takeScreenshotAfterSettle(5_000)
             assertTrue("null shot $name", shot != null)
             assertNotEquals(0, shot!!.width)
             val out = File(dataDir, name)
             out.outputStream().use { shot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
             assertTrue("$name too small (${out.length()})", out.length() > 5_000)
-            shell("screencap -p /data/local/tmp/$name")
-            shell("chmod 644 /data/local/tmp/$name")
+            InstrumentedMapCapture.screencapAfterSettle("/data/local/tmp/$name", timeoutMs = 5_000)
             android.util.Log.i(
                 "BasemapPmtilesScreenshotTest",
                 "kind=${NaviMapTestHooks.lastBasemapKind} pitch=${NaviMapTestHooks.lastCameraPitch} " +

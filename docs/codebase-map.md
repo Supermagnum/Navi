@@ -165,7 +165,7 @@ profiles use the road graph.
 |---|---|
 | Liberty vs PMTiles | `BasemapStyleResolver.kt`, [`map-styles.md`](map-styles.md) |
 | 3D hillshade | `MapterhornTerrain.kt`, `MapHudPrefs` opt-in 3D |
-| Camera tilt presets | `MapHudPrefs.CAMERA_TILT_PRESETS` (0 / 35 / 45 / 65) |
+| Camera tilt presets | `MapHudPrefs.CAMERA_TILT_PRESETS` (0 / 35 / 45 / 60; MapLibre max) |
 | Route line above hillshade | `MainActivity` / terrain helpers (`ensureRouteAboveHillshade`-style re-apply after style reload) |
 
 ### Search / POI / icons

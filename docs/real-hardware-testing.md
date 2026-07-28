@@ -15,12 +15,13 @@ log results via `adb` so findings can be compared against the emulator baseline.
 The specific known open questions include: whether the MapLibre native
 `CircleLayer`/`SymbolLayer` rendering issue (moving icons not painting via the
 standard GL path — see `README.md` known issues) is **specific to the Android
-Automotive emulator**, or whether it also occurs on real hardware; and whether
-the residual **hydro soft-edge fringe** around lakes/rivers/creeks (partially
-mitigated by stacking `navi-hills` below water — see
-[`map-styles.md`](map-styles.md#hydro-soft-edge-fringe-known-limitation)) is
-emulator-only or also present on device GPUs (item 7). The current moving-icons
-fix uses a screen-space overlay workaround; if native layers *do*
+Automotive emulator**, or whether it also occurs on real hardware. The hydro
+soft-edge fringe previously listed here is **not** a live rendering open
+question anymore — on the Automotive emulator it appears only in instrumented
+screenshots, not during interactive use (see
+[`map-styles.md`](map-styles.md#hydro-soft-edge-fringe-screenshot-artifact);
+item 7 is only a capture-vs-live spot-check on device). The current
+moving-icons fix uses a screen-space overlay workaround; if native layers *do*
 paint correctly on real hardware, that is useful to know, since it may mean the
 overlay approach only needs to be the emulator-specific path rather than the
 permanent production path.
@@ -151,31 +152,27 @@ testing a prototype OBD-II / J1939 / MegaSquirt adapter against the
   leaving a stuck L/h value.
 - Log: full `adb logcat` for the ECU/plugin tag; do not log VIN by default.
 
-## 7. Hydro soft-edge fringe (emulator vs device)
+## 7. Hydro soft-edge fringe (capture vs live)
 
-Background and emulator findings:
-[`map-styles.md` — Hydro soft-edge fringe](map-styles.md#hydro-soft-edge-fringe-known-limitation).
-3D hillshade is already stacked **below** water on current builds; a residual
-soft rim around lakes / rivers / creeks remains on the Automotive emulator and
-is treated as **negligible / not urgent**. Emulator-only MapLibre artifacts have
-been wrong before (items 1 and 5 / GLES), so **do not close** this as a permanent
-engine limitation until checked on a real GPU.
+Background:
+[`map-styles.md` — Hydro soft-edge fringe](map-styles.md#hydro-soft-edge-fringe-screenshot-artifact).
+On the Automotive emulator the blue rim is a **screenshot-capture artifact**
+(not visible live). Spot-check on real hardware that **live** shorelines stay
+clean, and that any instrumented/`adb screencap` rim (if still present) is not
+misread as a device GPU defect. Hillshade must still sit under water (no
+darkened lake fill when 3D is on).
 
-- With opt-in **3D off** (2D): center on a lake shoreline (e.g. Mjøsa / Hamar),
-  a wide river (e.g. Glomma / Elverum), and a creek-scale waterway. Capture
-  screenshots at two zooms each (roughly z10–z13 for lakes, z14–z16 for
-  rivers/creeks). Repeat for **online Liberty** and **offline Protomaps** if
-  both are available on the unit.
-- With opt-in **3D on** (hillshade): same lake + river centers; confirm
-  hillshade does **not** darken the water fill and that any remaining fringe is
-  no worse than 2D.
-- **Roads contrast:** in the same frames, confirm road edges stay sharp (no
-  global soft-edge regression).
-- Report: **fringe absent / milder than emulator**, **matches emulator
-  (negligible)**, or **worse / blocking on device**. Screenshot paths and
-  device model/GPU notes matter more than metrics here.
-- Log: optional `adb logcat` around style load / 3D toggle; screenshots are the
-  primary evidence.
+- **Live (primary):** with 3D off and on, look at a lake shoreline, a wide
+  river, and a creek without taking a screenshot first — report whether any
+  soft blue rim is visible to the eye.
+- **Capture (secondary):** then take `adb exec-out screencap` at the same
+  views; note whether fringe appears only in the PNG (matches emulator capture
+  quirk) or also live.
+- **Roads contrast:** confirm road edges stay sharp in both live and capture.
+- Report: **live clean / capture-only fringe**, **live fringe on device**
+  (unexpected — escalate), or **capture clean after settle wait**.
+- Log: optional `adb logcat` around style load / 3D toggle; live observation
+  matters more than metrics here.
 
 ---
 

@@ -245,7 +245,7 @@ primary menu chips today.
 | **Auto-zoom** | When on, snap camera zoom to the set level while moving |
 | **Auto-zoom − / +** | Change the target zoom in 0.5 steps (about z 3–20; default 16.5) |
 | **3D (experimental)** | Opt-in Mapterhorn DEM **hillshade** on the basemap (Vulkan-gated). Independent of camera tilt; see [`docs/map-styles.md`](docs/map-styles.md) |
-| **Map tilt** | Snap camera pitch to **0° / 35° / 45° / 65°** (Vulkan-gated; locked at 0° without Vulkan). Works with 3D on or off |
+| **Map tilt** | Snap camera pitch to **0° / 35° / 45° / 60°** (Vulkan-gated; locked at 0° without Vulkan; 60° is MapLibre’s max). Works with 3D on or off |
 | **Save / Close** | Persist map HUD prefs and close, or dismiss |
 
 **Pre-departure duration estimates** (before real movement) use posted `maxspeed`
@@ -302,7 +302,7 @@ collapsed). Tools is a separate panel (below).
 | Control | What it does |
 |---|---|
 | **From / To / Via** | Search targets; Place vs Address mode chips |
-| **Use GPS** | Set From (or the active target) from the current GPS fix |
+| **Use GPS** | Set From (or the active target) from the current GPS fix. Resolves a nearby place/address or road name within **12 m** when the place index / region PBF can supply one; otherwise labels as `GPS (lat, lon)` |
 | **Plan route / Delete route** | Run the planner for the active profile, or clear the planned corridor |
 | **Simulate route** | Drive the planned polyline with the in-app simulator (emulator-friendly) |
 | **Continue from last stop** | Resume planning from the last break / overnight when available |
@@ -382,14 +382,15 @@ AVD GNSS altitude is often wrong — see note above). One rest stop is visible:
 
 ![Helgøya to Atnbrua route](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
 
-Map camera tilt presets (0° / 35° / 45° / 65°) are independent of opt-in 3D
-hillshade. Løten short-loop corridor at **45°** — flat 2D, then 3D on.
-These are tilt/3D demos, not clean shoreline references: river/lake edges may
-show the residual **hydro soft-edge fringe** (known limitation, negligible for
-usability, pending
-[real-hardware confirmation](docs/real-hardware-testing.md#7-hydro-soft-edge-fringe-emulator-vs-device);
-details in
-[`docs/map-styles.md`](docs/map-styles.md#hydro-soft-edge-fringe-known-limitation)):
+Map camera tilt presets (0° / 35° / 45° / 60°) are independent of opt-in 3D
+hillshade. Finstad → Søndre Ommang → Ådalsbruk motormuseum at **45°** — flat
+2D (N-up), then 3D on with Mapterhorn DEM hillshade.
+These shots demonstrate tilt/3D. Older captures in this gallery may show a blue
+hydro soft-edge fringe at river/lake edges; that fringe has been confirmed **not
+visible during live interactive use** and is treated as a
+[screenshot-capture artifact](docs/map-styles.md#hydro-soft-edge-fringe-screenshot-artifact)
+(instrumented `screencap` / UiAutomation timing), not a user-visible rendering
+limitation:
 
 ![45° tilt, 3D off](docs/images/tilt45_3d_off.png)
 
@@ -666,18 +667,20 @@ road network (e.g. E6 west of Trondheim).
   Same underlying emulator GLES instability class as the moving-icons native
   paint failure; Vulkan avoids the bad path. Verified Compass / bearing shots:
   [`docs/pictures.md`](docs/pictures.md).
-- **Hydro soft-edge fringe (lakes / rivers / creeks):** partially fixed.
-  `navi-hills` now inserts **below** hydro fill/line layers, which reduced 3D
-  lake fringe on the Automotive emulator (~47% fewer fringe pixels) and stopped
-  hillshade from darkening water. A residual soft rim remains in 2D and 3D on
-  both Liberty and Protomaps-light; style paint knobs (`fill-antialias`,
-  `fill-outline-color`, `line-blur`) were no-ops for that rim on MapLibre Native
-  Vulkan on the emulator. **Negligible** for usability — not urgent. Left open
-  pending real-hardware screenshots (do not assume permanent from emulator
-  alone). Details:
-  [`docs/map-styles.md`](docs/map-styles.md#hydro-soft-edge-fringe-known-limitation);
-  checklist item 7 in
-  [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md#7-hydro-soft-edge-fringe-emulator-vs-device).
+- **Hydro soft-edge fringe in screenshots (lakes / rivers / creeks):** not a
+  live user-visible rendering limitation. Direct comparison of the live app vs
+  instrumented captures on the Automotive emulator shows the blue rim **only in
+  screenshots** (`screencap` / UiAutomation), not during interactive use.
+  Instrumented helpers now wait for MapLibre fully-rendered + idle before
+  capture (`InstrumentedMapCapture` / `NaviMapTestHooks.renderSettleRequestId`) —
+  same hygiene class as the moving-icons `styleReady` wait — but
+  re-verification of the lake/river/creek matrix **still** shows the rim in
+  fresh captures, so settle-wait alone is incomplete. `navi-hills` still
+  inserts **below** hydro layers (real 3D stacking win: less hillshade-on-water
+  darkening; earlier ~47% fringe-pixel drop on old captures remains a valid
+  reorder benefit). Style paint experiments (`fill-antialias`, etc.) were
+  no-ops for the capture artifact. Details:
+  [`docs/map-styles.md`](docs/map-styles.md#hydro-soft-edge-fringe-screenshot-artifact).
 - **Nightly instrumented crash on phone AOSP (not Automotive):**
   [Android instrumented run 30334233545](https://github.com/Supermagnum/Navi/actions/runs/30334233545)
   (`api-level: 30`, `target: default` → `system-images;android-30;default;x86_64`,

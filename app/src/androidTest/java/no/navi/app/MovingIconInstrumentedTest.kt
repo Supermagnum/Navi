@@ -307,23 +307,16 @@ class MovingIconInstrumentedTest {
      * MapLibre PixelCopy/snapshot often returns a blank buffer on this Automotive emulator.
      */
     private fun mapSnapshot(name: String): File {
-        // Nudge the map idle/snapshot hooks, but do not trust tiny/blank hook PNGs.
+        assertTrue(
+            "map render did not settle before $name",
+            InstrumentedMapCapture.awaitRenderSettled(30_000),
+        )
+        // Nudge PixelCopy path as well; UiAutomation remains the gallery source of truth.
         val req = NaviMapTestHooks.snapshotRequestId + 1
         NaviMapTestHooks.lastSnapshotPng = null
         NaviMapTestHooks.snapshotRequestId = req
-        Thread.sleep(800)
 
-        fun shell(cmd: String) {
-            val pfd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(cmd)
-            java.io.FileInputStream(pfd.fileDescriptor).use { input ->
-                val buf = ByteArray(4096)
-                while (input.read(buf) >= 0) {
-                }
-            }
-            pfd.close()
-        }
-
-        val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+        val shot = InstrumentedMapCapture.takeScreenshotAfterSettle(5_000)
         assertTrue("UiAutomation screenshot null for $name", shot != null)
         val outStream = java.io.ByteArrayOutputStream()
         shot!!.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outStream)
@@ -353,8 +346,7 @@ class MovingIconInstrumentedTest {
         out.writeBytes(png)
         assertTrue("$name too small", out.length() > 20_000)
 
-        shell("screencap -p /data/local/tmp/$name")
-        shell("ls -la /data/local/tmp/$name")
+        InstrumentedMapCapture.screencapAfterSettle("/data/local/tmp/$name", timeoutMs = 5_000)
         android.util.Log.i(
             "MovingIconTest",
             "mapSnapshot $name bytes=${out.length()} path=${out.absolutePath} " +

@@ -591,38 +591,77 @@ private fun NaviMapScreen() {
             parseDaysJson(
                 runCatching { pending.daysJson }.getOrDefault("[]"),
             )
-        // Anchor labels to the chosen waypoints (search/GPS), not the
-        // decimated polyline tips — those can sit slightly off the hut.
-        val endLatFix =
-            toPoint.lat.takeIf { it != 0.0 }
-                ?: endPt?.latitude
-                ?: pending.poiLat
-        val endLonFix =
-            toPoint.lon.takeIf { it != 0.0 }
-                ?: endPt?.longitude
-                ?: pending.poiLon
-        val startLatFix =
-            fromPoint?.lat?.takeIf { it != 0.0 }
-                ?: startPt?.latitude
-                ?: 0.0
-        val startLonFix =
-            fromPoint?.lon?.takeIf { it != 0.0 }
-                ?: startPt?.longitude
-                ?: 0.0
+        // Pin start / end on the corridor tips (route From / To geometry). Pin vias
+        // on the nearest densified corridor point. Pins stay on the red line;
+        // WAYPOINT_ROUTE_PIN_MAX_M is the preferred budget vs the chosen place.
+        val polyPts = pts.map { it.latitude to it.longitude }
+
+        fun pinOnRoute(
+            label: String,
+            lat: Double,
+            lon: Double,
+            tip: LatLng?,
+        ): Pair<Double, Double> {
+            if (lat == 0.0 && lon == 0.0) {
+                return (tip?.latitude ?: 0.0) to (tip?.longitude ?: 0.0)
+            }
+            val snap =
+                if (tip != null) {
+                    RoutePinSnap(
+                        tip.latitude,
+                        tip.longitude,
+                        haversineMApprox(lat, lon, tip.latitude, tip.longitude),
+                    )
+                } else {
+                    snapWaypointToRoutePolyline(polyPts, lat, lon)
+                }
+            if (snap == null) return lat to lon
+            if (snap.distM > WAYPOINT_ROUTE_PIN_MAX_M) {
+                android.util.Log.w(
+                    "NaviRoute",
+                    "waypoint pin '$label' ${"%.0f".format(snap.distM)} m from place " +
+                        "(prefer <= ${WAYPOINT_ROUTE_PIN_MAX_M.toInt()} m); using corridor point",
+                )
+            }
+            return snap.lat to snap.lon
+        }
+        val (startLatFix, startLonFix) =
+            pinOnRoute(
+                startLabel,
+                fromPoint?.lat?.takeIf { it != 0.0 } ?: 0.0,
+                fromPoint?.lon?.takeIf { it != 0.0 } ?: 0.0,
+                startPt,
+            )
+        val (endLatFix, endLonFix) =
+            pinOnRoute(
+                endLabel,
+                toPoint.lat.takeIf { it != 0.0 } ?: 0.0,
+                toPoint.lon.takeIf { it != 0.0 } ?: 0.0,
+                endPt,
+            )
+        val snappedVias =
+            viaPoints.map { v ->
+                val (plat, plon) = pinOnRoute(v.name, v.lat, v.lon, null)
+                v.copy(lat = plat, lon = plon)
+            }
+        val viaLatFix = snappedVias.firstOrNull()?.lat ?: 0.0
+        val viaLonFix = snappedVias.firstOrNull()?.lon ?: 0.0
         mapState =
             MapRouteState(
                 polyline = pending.routePolyline,
-                poiLat = pending.poiLat,
-                poiLon = pending.poiLon,
-                poiName = pending.poiName,
+                // Keep destination POI marker on the same corridor pin as End
+                // (pending.poi* is often the place centroid off the road).
+                poiLat = endLatFix,
+                poiLon = endLonFix,
+                poiName = endLabel.ifBlank { pending.poiName },
                 poiIconPng = iconPng,
                 startName = startLabel,
                 startLat = startLatFix,
                 startLon = startLonFix,
                 viaName = viaLabel,
-                viaLat = viaPoints.firstOrNull()?.lat ?: 0.0,
-                viaLon = viaPoints.firstOrNull()?.lon ?: 0.0,
-                viaPoints = viaPoints,
+                viaLat = viaLatFix,
+                viaLon = viaLonFix,
+                viaPoints = snappedVias,
                 endName = endLabel,
                 endLat = endLatFix,
                 endLon = endLonFix,
@@ -657,7 +696,7 @@ private fun NaviMapScreen() {
             RouteProgressTracker(
                 samples = routeSamples,
                 maneuvers = routeManeuvers,
-                viaPoints = viaPoints,
+                viaPoints = snappedVias,
                 endPoint = Waypoint(endLabel, endLatFix, endLonFix),
             ),
         )
@@ -2269,16 +2308,53 @@ private fun NaviMapScreen() {
                                             status = "GPS unavailable"
                                             return@TextButton
                                         }
-                                        val name = "GPS (${formatCoordWaypointName(mapState.gpsLat, mapState.gpsLon)})"
-                                        val hit =
-                                            PlaceHit(
-                                                osmId = 0L,
-                                                name = name,
-                                                kind = "gps",
-                                                lat = mapState.gpsLat,
-                                                lon = mapState.gpsLon,
-                                            )
-                                        applyHit(hit)
+                                        val fixLat = mapState.gpsLat
+                                        val fixLon = mapState.gpsLon
+                                        // Resolve a nearby address/name within 12 m; else GPS coords.
+                                        scope.launch {
+                                            val resolved =
+                                                withContext(Dispatchers.IO) {
+                                                    val hits =
+                                                        runCatching {
+                                                            nearbyPlaces(
+                                                                resolvePlaceIndexDb().absolutePath,
+                                                                fixLat,
+                                                                fixLon,
+                                                                GPS_WAYPOINT_RESOLVE_RADIUS_M,
+                                                                16u,
+                                                            )
+                                                        }.getOrDefault(emptyList())
+                                                    pickNearbyPlaceNameForGpsWaypoint(hits)
+                                                        ?: runCatching {
+                                                            val pbf =
+                                                                resolveRegionPbf()
+                                                                    ?: return@runCatching null
+                                                            roadLabelNear(
+                                                                pbf.absolutePath,
+                                                                graphCacheDirForPbf(pbf).absolutePath,
+                                                                File(dataDir, "elevation").absolutePath,
+                                                                fixLat,
+                                                                fixLon,
+                                                                profile,
+                                                                GPS_WAYPOINT_RESOLVE_RADIUS_M,
+                                                            )
+                                                        }.getOrNull()
+                                                            ?.trim()
+                                                            ?.takeIf { it.isNotEmpty() }
+                                                }
+                                            val name =
+                                                resolved
+                                                    ?: formatGpsWaypointFallback(fixLat, fixLon)
+                                            val hit =
+                                                PlaceHit(
+                                                    osmId = 0L,
+                                                    name = name,
+                                                    kind = if (resolved != null) "gps-resolved" else "gps",
+                                                    lat = fixLat,
+                                                    lon = fixLon,
+                                                )
+                                            applyHit(hit)
+                                        }
                                     },
                                     modifier = Modifier.testTag("btn_use_gps"),
                                 ) {
@@ -3708,7 +3784,12 @@ private fun CorridorMapView(
         map: MapLibreMap,
         tiltDeg: Double = effectiveTiltDeg(),
     ) {
-        val target = if (vulkanRef.get()) MapHudPrefs.snapTilt(tiltDeg) else 0.0
+        val target =
+            if (vulkanRef.get()) {
+                MapHudPrefs.snapTilt(tiltDeg)
+            } else {
+                0.0
+            }
         val cur = map.cameraPosition.tilt
         if (kotlin.math.abs(cur - target) < 0.25) {
             NaviMapTestHooks.lastCameraPitch = cur
@@ -3720,6 +3801,7 @@ private fun CorridorMapView(
                 .tilt(target)
                 .build()
         map.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
+        // Prefer the engine's post-clamp pitch so hooks/UI stay truthful.
         NaviMapTestHooks.lastCameraPitch = map.cameraPosition.tilt
     }
 
@@ -3802,6 +3884,7 @@ private fun CorridorMapView(
                 if (style == null) return@getStyle
                 val attached = MapterhornTerrain.isAttached(style)
                 val tilt = map.cameraPosition.tilt
+                // Compare against the achievable tilt (MapLibre clamps at 60°).
                 val wantTilt = effectiveTiltDeg()
                 val tiltMatches = kotlin.math.abs(tilt - wantTilt) <= 1.0
                 val terrainMatches = attached == resolved.attachMapterhornTerrain
@@ -4283,6 +4366,68 @@ private fun CorridorMapView(
         }
     }
 
+    // Instrumented tests: wait for MapLibre fully-rendered + idle before screencap.
+    // styleReady alone is not enough — hydro fill/line AA can still be mid-composite
+    // while roads already look sharp (see map-styles.md hydro fringe note).
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(100)
+            val req = NaviMapTestHooks.renderSettleRequestId
+            if (req <= NaviMapTestHooks.lastRenderSettleId || !styleReady.value) continue
+
+            var done = false
+            var gotFully = false
+            var gotIdle = false
+            lateinit var idleListener: MapView.OnDidBecomeIdleListener
+            lateinit var frameListener: MapView.OnDidFinishRenderingFrameListener
+
+            fun maybeComplete() {
+                if (done || !gotFully || !gotIdle) return
+                done = true
+                mapView.removeOnDidBecomeIdleListener(idleListener)
+                mapView.removeOnDidFinishRenderingFrameListener(frameListener)
+                NaviMapTestHooks.lastRenderSettleId = req
+            }
+
+            idleListener =
+                object : MapView.OnDidBecomeIdleListener {
+                    override fun onDidBecomeIdle() {
+                        gotIdle = true
+                        maybeComplete()
+                    }
+                }
+            frameListener =
+                object : MapView.OnDidFinishRenderingFrameListener {
+                    override fun onDidFinishRenderingFrame(
+                        fully: Boolean,
+                        framingTime: Double,
+                        renderingTime: Double,
+                    ) {
+                        if (!fully) return
+                        gotFully = true
+                        maybeComplete()
+                    }
+                }
+            mapView.addOnDidBecomeIdleListener(idleListener)
+            mapView.addOnDidFinishRenderingFrameListener(frameListener)
+            mapView.getMapAsync { map -> map.triggerRepaint() }
+
+            val waitUntil = System.currentTimeMillis() + 12_000
+            while (
+                NaviMapTestHooks.lastRenderSettleId < req &&
+                System.currentTimeMillis() < waitUntil
+            ) {
+                kotlinx.coroutines.delay(50)
+            }
+            if (NaviMapTestHooks.lastRenderSettleId < req) {
+                mapView.removeOnDidBecomeIdleListener(idleListener)
+                mapView.removeOnDidFinishRenderingFrameListener(frameListener)
+                // Timeout: still publish so tests do not hang forever.
+                NaviMapTestHooks.lastRenderSettleId = req
+            }
+        }
+    }
+
     // Map framebuffer capture for instrumented tests.
     // map.snapshot() often returns a tiny blank PNG on this emulator; PixelCopy
     // of the MapView surface reliably includes basemap + track symbol/circle layers.
@@ -4506,7 +4651,13 @@ private fun applyRouteToStyle(
         waypointFeatures.add(f)
     }
     addWaypoint(state.startName, state.startLat, state.startLon, "start")
-    addWaypoint(state.viaName, state.viaLat, state.viaLon, "via")
+    if (state.viaPoints.isNotEmpty()) {
+        for (v in state.viaPoints) {
+            addWaypoint(v.name, v.lat, v.lon, "via")
+        }
+    } else {
+        addWaypoint(state.viaName, state.viaLat, state.viaLon, "via")
+    }
     addWaypoint(state.endName, state.endLat, state.endLon, "end")
     if (waypointFeatures.isNotEmpty()) {
         val collection = FeatureCollection.fromFeatures(waypointFeatures)

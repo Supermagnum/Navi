@@ -36,13 +36,13 @@ Nåværende gate UTF-8-bevis:
 | Helgøya → Atnbrua (øko + 3D på, pauser synlige) | ![Ruteoverlegg](images/route_map.png) |
 | Rute fra Gjendebu til Thonvollen, 3D-kart. | ![Gjendebu til Thonvollen 3D](images/gjendebu_thonvollen_3d.png) |
 | Gjendebu til Thonvollen, flatt kart. | ![Gjendebu til Thonvollen flat](images/gjendebu_thonvollen_flat.png) |
-| Hamar-løkke, 45° tilt, 3D av | ![45° tilt 3D av](images/tilt45_3d_off.png) |
-| Hamar-løkke, 45° tilt, 3D på | ![45° tilt 3D på](images/tilt45_3d_on.png) |
+| Finstad → Søndre Ommang → Ådalsbruk motormuseum, 45° tilt, 3D av | ![45° tilt 3D av](images/tilt45_3d_off.png) |
+| Finstad → Søndre Ommang → Ådalsbruk motormuseum, 45° tilt, 3D på | ![45° tilt 3D på](images/tilt45_3d_on.png) |
 
-Kun tilt/3D-demoer — ikke rene strandlinjereferanser. Residual hydro soft-edge
-fringe er en [kjent begrensning](map-styles.md#hydro-soft-edge-fringe-known-limitation)
-(ubetydelig; venter på
-[bekreftelse på ekte maskinvare](real-hardware-testing.md#7-hydro-soft-edge-fringe-emulator-vs-device)).
+Kun tilt/3D-demoer. Eldre galleri-PNG-er kan vise blå hydro soft-edge fringe;
+det er en
+[skjermbilde-fangstartefakt](map-styles.md#hydro-soft-edge-fringe-screenshot-artifact),
+ikke det brukere ser live (bekreftet på Automotive-emulatoren).
 
 ## Nåværende gate (bunn-HUD)
 

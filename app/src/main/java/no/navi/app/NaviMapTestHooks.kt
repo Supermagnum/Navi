@@ -317,6 +317,20 @@ object NaviMapTestHooks {
     @Volatile
     var lastSnapshotPng: ByteArray? = null
 
+    /**
+     * Bump to wait until MapLibre reports a fully rendered frame **and** becomes
+     * idle. Instrumented screenshot helpers must wait on [lastRenderSettleId]
+     * before UiAutomation / shell `screencap` — capturing on a fixed sleep after
+     * [styleReady] alone can freeze a mid-composite hydro soft edge that is not
+     * visible during live interactive use.
+     */
+    @Volatile
+    var renderSettleRequestId: Int = 0
+
+    /** Last completed [renderSettleRequestId]. */
+    @Volatile
+    var lastRenderSettleId: Int = 0
+
     /** How many track features were last written into tracks-src. */
     @Volatile
     var lastTrackFeatureCount: Int = 0

@@ -126,7 +126,10 @@ class LakeShorelineBleedScreenshotTest {
             NaviMapTestHooks.pendingCamera = Triple(lat, lon, zoom)
             Thread.sleep(400)
         }
-        Thread.sleep(3_500)
+        assertTrue(
+            "map render did not settle for $label",
+            InstrumentedMapCapture.awaitRenderSettled(30_000),
+        )
 
         val png = File(outDir, "$label.png")
         val req = NaviMapTestHooks.snapshotRequestId + 1
@@ -142,7 +145,7 @@ class LakeShorelineBleedScreenshotTest {
             Thread.sleep(250)
         }
         if (!png.isFile || png.length() < 1_000) {
-            shell("screencap -p ${png.absolutePath}")
+            InstrumentedMapCapture.screencapAfterSettle(png.absolutePath, timeoutMs = 5_000)
         }
         assertTrue(
             "missing $label kind=${NaviMapTestHooks.lastBasemapKind} " +
@@ -150,8 +153,10 @@ class LakeShorelineBleedScreenshotTest {
             png.isFile && png.length() > 1_000,
         )
         // Shell-owned path for host adb pull (app uid cannot write there directly).
-        shell("screencap -p /data/local/tmp/navi_lake_bleed/$label.png")
-        shell("chmod 644 /data/local/tmp/navi_lake_bleed/$label.png")
+        InstrumentedMapCapture.screencapAfterSettle(
+            "/data/local/tmp/navi_lake_bleed/$label.png",
+            timeoutMs = 5_000,
+        )
         android.util.Log.i(
             TAG,
             "LAKE_SHOT label=$label kind=${NaviMapTestHooks.lastBasemapKind} " +

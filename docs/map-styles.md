@@ -56,11 +56,12 @@ Android/iOS Native). Navi therefore:
    **hillshade** layer (`navi-hills`) via [MapterhornTerrain] when 3D is on.
    Hillshade is inserted **below** the first hydro fill/line layer (`water` /
    `waterway*`), not below the first symbol layer, so DEM shading does not
-   composite on top of water edges (see [Hydro soft-edge fringe](#hydro-soft-edge-fringe-known-limitation)).
+   darken water (see [Hydro soft-edge fringe](#hydro-soft-edge-fringe-screenshot-artifact)).
 3. Leaves **camera tilt independent** of the 3D toggle — map settings offer
-   snapped presets **0° / 35° / 45° / 65°** (Vulkan-gated; locked to 0° without
-   Vulkan, same discipline as other non-zero camera angles on the Automotive
-   emulator’s former GLES crash path).
+   snapped presets **0° / 35° / 45° / 60°** (Vulkan-gated; locked to 0° without
+   Vulkan; 60° is MapLibre Native’s maximum tilt). A former 65° preset could never
+   match the live camera (engine clamps at 60°), which made idle tilt re-apply
+   fight HUD zoom.
 4. Does **not** set unsupported `terrain` / `sky` root properties (omitted on
    purpose — silent no-ops would be misleading).
 
@@ -160,46 +161,72 @@ path (Ostlandet covers Innlandet; `test/oslo` is a fast smoke extract).
 argument. Cargo has no `--debug` flag; the script maps `debug` to the default
 profile (fixed; was a pre-existing footgun, not introduced by PMTiles).
 
-## Hydro soft-edge fringe (known limitation)
+## Hydro soft-edge fringe (screenshot artifact)
 
-**Status:** partially fixed; residual fringe open pending
-[real-hardware confirmation](real-hardware-testing.md#7-hydro-soft-edge-fringe-emulator-vs-device).
-Not blocking, not prioritized.
+**Status:** reclassified — **not** a live user-visible rendering-engine
+limitation. Confirmed by direct visual comparison of the live Automotive app
+against instrumented screenshot captures: the blue rim at lake / river / creek
+edges appears **only in captures** (`screencap` / UiAutomation), not during
+normal interactive use.
 
-### What was fixed (emulator)
+### Current best understanding
 
-When 3D hillshade was stacked **above** water (the old “below first symbol”
-insert), soft lake/river edges looked worse and hillshade darkened the water
-surface. `MapterhornTerrain` now inserts `navi-hills` **below** hydro fill/line
-layers. On the Automotive emulator that cut measured 3D lake fringe pixels by
-about **47%** and stopped hillshade from painting over water. Route / GPS /
-waypoint overlays are re-stacked on top of the full basemap so they are not
-trapped under water after the reorder.
+Direct observation: the blue rim does **not** appear during normal interactive
+use on the Automotive emulator; it appears in instrumented captures
+(`screencap` / UiAutomation). That is enough to withdraw the old
+“live rendering-engine limitation” framing.
 
-Evidence (investigation / verify shots): `docs/images/tmp/hydro_bleed_before/`,
-`docs/images/tmp/hydro_bleed_hills_below/`, side-by-side crops under
-`docs/images/tmp/hydro_bleed_compare/`.
+Capture helpers historically waited for `styleReady` (and/or a fixed sleep)
+then copied pixels immediately — the same class of prematurity as the
+moving-icons work before its `styleReady` wait. Shared helpers now also wait
+for MapLibre **fully-rendered + idle**
+(`NaviMapTestHooks.renderSettleRequestId` /
+`InstrumentedMapCapture.awaitRenderSettled`) before capturing. Roads stay sharp
+in the same frames where hydro can look soft, which still suggests hydro
+compositing/AA is special relative to other layers.
 
-### What remains
+**Re-verification (Automotive `xtrons`, after the settle wait):** the lake /
+river / creek matrix (`WaterHydroBleedScreenshotTest`) still shows a soft blue
+rim in fresh `screencap` PNGs (Liberty and Protomaps, 2D and 3D). So a missing
+fully-rendered+idle wait alone does **not** fully explain the capture artifact —
+timing hygiene is still correct to keep, but some other difference between the
+live present path and UiAutomation/`screencap` remains. Do not claim the settle
+wait “fixed” gallery fringes until a capture actually comes out clean.
 
-A residual soft blue rim still appears around **lakes (fill), rivers, and
-creeks (lines)** in **2D and 3D**, on **both** online Liberty and offline
-Protomaps-light. Style paint experiments on the emulator (`fill-antialias`,
-matching `fill-outline-color`, waterway `line-blur`) were **no-ops** for this
-fringe on MapLibre Native’s **Vulkan** path — the cause sits at
-rasterization/compositing below what style configuration can control. Roads
-and other non-hydro layers stay sharp (not a global AA regression).
+Do **not** over-read gallery PNGs that show the fringe: they remain valid
+evidence of the **capture-tooling quirk**, not of what end users see live.
 
-### Assessment
+### What the hillshade reorder still means
 
-Negligible practical impact on map usability/visibility at this time. Documented
-as a known limitation; left open until the same shoreline / river / creek
-checks are run on **real hardware** (emulator-only MapLibre issues have been
-wrong before — see moving-icons / GLES `SIGSEGV` notes in the README and
-[`real-hardware-testing.md`](real-hardware-testing.md)).
+When 3D hillshade was stacked **above** water (old “below first symbol”
+insert), DEM shading darkened water and made captured fringe look worse.
+`MapterhornTerrain` still inserts `navi-hills` **below** hydro fill/line
+layers — that remains a real stacking improvement (hillshade stays under water;
+earlier ~47% fringe-pixel reduction on old captures is still a valid measured
+benefit of the reorder). Route / GPS / waypoint overlays are re-stacked on top
+of the full basemap so they are not trapped under water after the reorder.
 
-### If revisited later
+### What the 2D paint experiments meant
 
-Options would be engine/MSAA-level MapLibre Native renderer configuration (larger
-than a style tweak) or a deliberate cosmetic coastline stroke to mask the rim.
-Neither is pursued in the current pass.
+Style paint experiments on the emulator (`fill-antialias`, matching
+`fill-outline-color`, waterway `line-blur`) were **no-ops** for the fringe in
+captures. That fits a capture-timing / compositor-present story better than a
+style-layer bug: roads and other non-hydro layers stayed sharp in the same
+frames.
+
+### Earlier framing (superseded)
+
+Docs previously called this a residual engine-level limitation “below what
+style configuration can control,” left open pending real-hardware confirmation.
+That framing is **withdrawn** for live interactive use. Real-hardware checks
+may still note whether any capture vs live discrepancy remains on device GPUs
+(see [`real-hardware-testing.md`](real-hardware-testing.md#7-hydro-soft-edge-fringe-capture-vs-live)),
+but the product issue is screenshot timing, not a permanent shoreline defect.
+
+### If a capture still shows fringe after the settle wait
+
+That is the current state after re-verification: settle wait alone is
+insufficient. Treat further work as investigating why UiAutomation/`screencap`
+differs from the live display for hydro edges (present path / buffer copy),
+not as re-opening a live user-visible shoreline defect. Do not force a pure
+timing explanation beyond what the evidence supports.

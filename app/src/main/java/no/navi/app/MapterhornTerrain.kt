@@ -74,7 +74,7 @@ object MapterhornTerrain {
                         PropertyFactory.hillshadeShadowColor(Color.parseColor("#473B24")),
                     )
             // Insert under the first hydro fill/line so hillshade does not
-            // composite on top of soft water edges (worsens shoreline bleed).
+            // darken water fill when 3D is on (keeps DEM shading under water).
             // Fall back to under labels if the style has no water layers yet.
             val belowId =
                 firstHydroLayerId(style) ?: style.layers.firstOrNull { it is SymbolLayer }?.id

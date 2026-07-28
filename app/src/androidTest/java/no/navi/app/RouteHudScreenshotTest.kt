@@ -227,15 +227,17 @@ class RouteHudScreenshotTest {
 
         fun capture(name: String) {
             NaviMapTestHooks.hideUiChrome = false
-            Thread.sleep(1_800)
-            val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            assertTrue(
+                "map render did not settle before $name",
+                InstrumentedMapCapture.awaitRenderSettled(30_000),
+            )
+            val shot = InstrumentedMapCapture.takeScreenshotAfterSettle(5_000)
             assertTrue("null shot $name", shot != null)
             assertNotEquals(0, shot!!.width)
             val out = File(dataDir, name)
             out.outputStream().use { shot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
             assertTrue("$name too small (${out.length()})", out.length() > 10_000)
-            shell("screencap -p /data/local/tmp/$name")
-            shell("chmod 644 /data/local/tmp/$name")
+            InstrumentedMapCapture.screencapAfterSettle("/data/local/tmp/$name", timeoutMs = 5_000)
             android.util.Log.i(
                 "RouteHudScreenshotTest",
                 "shot=$name alt=${NaviMapTestHooks.lastHudAltitudeM} " +

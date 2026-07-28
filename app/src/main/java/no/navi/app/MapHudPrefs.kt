@@ -21,8 +21,16 @@ object MapHudPrefs {
     /** Assumed cruise speed used only to present break time as distance. */
     const val BREAK_DISPLAY_SPEED_KMH = 80.0
 
+    /**
+     * MapLibre Native clamps camera tilt to
+     * `[0, MAPLIBRE_MAX_TILT_DEG]` (`CameraPosition.Builder.tilt`). Presets must
+     * stay inside that range — a preset above the clamp (e.g. former 65°) never
+     * matches the live camera, so idle style/tilt re-apply fights HUD zoom.
+     */
+    const val MAPLIBRE_MAX_TILT_DEG = 60.0
+
     /** Camera tilt presets (degrees). Slider snaps to these only. */
-    val CAMERA_TILT_PRESETS: DoubleArray = doubleArrayOf(0.0, 35.0, 45.0, 65.0)
+    val CAMERA_TILT_PRESETS: DoubleArray = doubleArrayOf(0.0, 35.0, 45.0, MAPLIBRE_MAX_TILT_DEG)
     const val DEFAULT_CAMERA_TILT_DEG = 0.0
 
     /**
@@ -33,12 +41,13 @@ object MapHudPrefs {
 
     fun clampZoom(level: Double): Double = level.coerceIn(MIN_ZOOM, MAX_ZOOM)
 
-    /** Snap to the nearest [CAMERA_TILT_PRESETS] value. */
+    /** Snap to the nearest [CAMERA_TILT_PRESETS] value (within MapLibre max). */
     fun snapTilt(deg: Double): Double {
+        val clamped = deg.coerceIn(0.0, MAPLIBRE_MAX_TILT_DEG)
         var best = CAMERA_TILT_PRESETS[0]
-        var bestD = kotlin.math.abs(deg - best)
+        var bestD = kotlin.math.abs(clamped - best)
         for (p in CAMERA_TILT_PRESETS) {
-            val d = kotlin.math.abs(deg - p)
+            val d = kotlin.math.abs(clamped - p)
             if (d < bestD) {
                 best = p
                 bestD = d

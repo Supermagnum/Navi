@@ -38,13 +38,13 @@ Norwegian gallery: [`bilder.md`](bilder.md).
 | Helgøya → Atnbrua (eco + 3D on, breaks visible) | ![Route overlay](images/route_map.png) |
 | Route from Gjendebu to Thonvollen, 3D map. | ![Gjendebu to Thonvollen 3D](images/gjendebu_thonvollen_3d.png) |
 | Gjendebu to Thonvollen, flat map. | ![Gjendebu to Thonvollen flat](images/gjendebu_thonvollen_flat.png) |
-| Hamar loop, 45° tilt, 3D off | ![45° tilt 3D off](images/tilt45_3d_off.png) |
-| Hamar loop, 45° tilt, 3D on | ![45° tilt 3D on](images/tilt45_3d_on.png) |
+| Finstad → Søndre Ommang → Ådalsbruk motormuseum, 45° tilt, 3D off | ![45° tilt 3D off](images/tilt45_3d_off.png) |
+| Finstad → Søndre Ommang → Ådalsbruk motormuseum, 45° tilt, 3D on | ![45° tilt 3D on](images/tilt45_3d_on.png) |
 
-Tilt/3D demos only — not clean shoreline references. Residual hydro soft-edge
-fringe is a [known limitation](map-styles.md#hydro-soft-edge-fringe-known-limitation)
-(negligible; pending
-[real-hardware confirmation](real-hardware-testing.md#7-hydro-soft-edge-fringe-emulator-vs-device)).
+Tilt/3D demos only. Older gallery PNGs may show a blue hydro soft-edge fringe;
+that is a
+[screenshot-capture artifact](map-styles.md#hydro-soft-edge-fringe-screenshot-artifact),
+not what users see live (confirmed on the Automotive emulator).
 
 ## Current street (bottom HUD)
 

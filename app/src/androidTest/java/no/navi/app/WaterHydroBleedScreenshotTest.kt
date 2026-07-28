@@ -195,10 +195,12 @@ class WaterHydroBleedScreenshotTest {
             Thread.sleep(350)
         }
         waitCamera(lat, lon, zoom)
-        Thread.sleep(2_500)
         NaviMapTestHooks.pendingCamera = Triple(lat, lon, zoom)
         waitCamera(lat, lon, zoom)
-        Thread.sleep(1_500)
+        assertTrue(
+            "map render did not settle for $label",
+            InstrumentedMapCapture.awaitRenderSettled(30_000),
+        )
 
         val png = File(cacheOut, "$label.png")
         val req = NaviMapTestHooks.snapshotRequestId + 1
@@ -213,15 +215,16 @@ class WaterHydroBleedScreenshotTest {
             }
             Thread.sleep(200)
         }
-        // Always also shell-screencap for host pull (camera + chrome as shown).
-        shell("screencap -p /data/local/tmp/navi_hydro_bleed/$label.png")
-        shell("chmod 644 /data/local/tmp/navi_hydro_bleed/$label.png")
+        // Host-pullable shell screencap after the same render-settle gate.
+        InstrumentedMapCapture.screencapAfterSettle(
+            "/data/local/tmp/navi_hydro_bleed/$label.png",
+        )
         android.util.Log.i(
             TAG,
             "HYDRO_SHOT label=$label kind=${NaviMapTestHooks.lastBasemapKind} " +
                 "terrain=${NaviMapTestHooks.lastTerrainAttached} zoom=$zoom " +
                 "cam=${NaviMapTestHooks.lastCameraLat},${NaviMapTestHooks.lastCameraLon}," +
-                "${NaviMapTestHooks.lastCameraZoom}",
+                "${NaviMapTestHooks.lastCameraZoom} settle=${NaviMapTestHooks.lastRenderSettleId}",
         )
         assertTrue(
             "missing screencap $label",

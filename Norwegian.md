@@ -224,7 +224,7 @@ kan allerede være lagret umiddelbart).
 | **Auto-zoom** | Når på, snapper zoom til satt nivå under bevegelse |
 | **Auto-zoom − / +** | Endrer måzoom i 0,5-steg (ca. z 3–20) |
 | **3D (experimental)** | Valgfri Mapterhorn DEM-**hillshade** (Vulkan-port). Uavhengig av kameratilt; se [`docs/map-styles.md`](docs/map-styles.md) |
-| **Map tilt** | Snapper kameravinkel til **0° / 35° / 45° / 65°** (Vulkan-port; låst til 0° uten Vulkan). Fungerer med 3D på eller av |
+| **Map tilt** | Snapper kameravinkel til **0° / 35° / 45° / 60°** (Vulkan-port; låst til 0° uten Vulkan; 60° er MapLibres maks). Fungerer med 3D på eller av |
 | **Save / Close** | Lagrer kart-HUD-preferanser og lukker, eller lukker |
 
 **Estimater før avreise** bruker skiltet `maxspeed` (med veiklasse-reserve) for
@@ -289,14 +289,15 @@ AVD GNSS-høyde er ofte feil — se merknad over). Én rast er synlig:
 
 ![Helgøya til Atnbrua-rute](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
 
-Kartkamera-tilt (0° / 35° / 45° / 65°) er uavhengig av valgfri 3D-hillshade.
-Hamar kort løkke ved **45°** — flat 2D, deretter 3D på.
-Dette er tilt/3D-demoer, ikke rene strandlinjereferanser: elve-/innsjøkanter kan
-vise den residuale **hydro soft-edge fringe** (kjent begrensning, ubetydelig for
-bruk, venter på
-[bekreftelse på ekte maskinvare](docs/real-hardware-testing.md#7-hydro-soft-edge-fringe-emulator-vs-device);
-detaljer i
-[`docs/map-styles.md`](docs/map-styles.md#hydro-soft-edge-fringe-known-limitation)):
+Kartkamera-tilt (0° / 35° / 45° / 60°) er uavhengig av valgfri 3D-hillshade.
+Finstad → Søndre Ommang → Ådalsbruk motormuseum ved **45°** — flat 2D (N-opp),
+deretter 3D på med Mapterhorn DEM-hillshade.
+Disse bildene viser tilt/3D. Eldre skjermbilder i galleriet kan ha en blå
+hydro soft-edge fringe ved elve-/innsjøkanter; den er bekreftet **ikke synlig
+under vanlig interaktiv bruk** og behandles som en
+[skjermbilde-fangstartefakt](docs/map-styles.md#hydro-soft-edge-fringe-screenshot-artifact)
+(instrumentert `screencap` / UiAutomation-timing), ikke en bruker-synlig
+tegningsbegrensning:
 
 ![45° tilt, 3D av](docs/images/tilt45_3d_off.png)
 
