@@ -695,10 +695,13 @@ road network (e.g. E6 west of Trondheim).
   ([30363333076](https://github.com/Supermagnum/Navi/actions/runs/30363333076)):
   the **process-crash abort did not recur** (suite continued after approach);
   approach instead failed a width-fraction assert on the default ~320px-wide
-  CI skin (`209px of 320px`). Nightly now uses `-skin 1920x1080` / `-memory 4096`,
-  the compact check follows the `420.dp` product cap (fraction only on wide
-  screens), and continuous logcat + reports upload on every run. Phone-AOSP
-  coverage remains an open, separate surface if we want broader CI later. See
+  CI skin (`209px of 320px`). Nightly now uses `-memory 4096`, sets
+  `wm size 1920x1080` after boot (do not use emulator `-skin` on this AVD),
+  runs evidence collection via `scripts/ci-connected-android-test.sh` (the
+  emulator-runner executes each script line as a separate `sh -c`), and the
+  compact check follows the `420.dp` product cap (fraction only on wide
+  screens). Phone-AOSP coverage remains an open, separate surface if we want
+  broader CI later. See
   [`docs/debugging.md`](docs/debugging.md#nightly-instrumented-phone-aosp-crash).
 - **TODO — optimize building load for hiking overnight-proximity check.** A
   single hiking plan currently takes ~177.6 s on a large corridor (measured:

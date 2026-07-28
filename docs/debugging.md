@@ -247,14 +247,17 @@ passed with no new tombstone (only Zygote `signal 9` after a clean
 `run finished: 3 tests, 0 failed`).
 
 Mitigation: nightly workflow retargeted to API 33 `android-automotive` with
-`-skin 1920x1080` / `-memory 4096`, continuous logcat during the suite, and
-upload of `instrumented-evidence/` (logcat, crash buffer, tombstones, Gradle
-reports, `wm size`) on every run. First Automotive confirmation
+`-memory 4096`, post-boot `wm size 1920x1080` (avoid emulator `-skin` on this
+AVD), and `scripts/ci-connected-android-test.sh` for continuous logcat + report
+upload (`instrumented-evidence/`). First Automotive confirmation
 ([30363333076](https://github.com/Supermagnum/Navi/actions/runs/30363333076)):
 process-crash abort **did not recur**; approach failed
 `approach box must be compact (was 209px of 320.0px screen)` on the default
 narrow skin instead — assertion now uses the `420.dp` product cap, with the
-45% width fraction only on screens ≥ 720px.
+45% width fraction only on screens ≥ 720px. Note: `android-emulator-runner`
+runs each YAML `script:` line as its own `sh -c`, so multi-line inline scripts
+cannot share variables (that broke evidence mkdir on
+[30364223279](https://github.com/Supermagnum/Navi/actions/runs/30364223279)).
 
 ---
 

@@ -266,8 +266,9 @@ class ApproachInstructionInstrumentedTest {
             appearDp <= 420.5f,
         )
         // On wide HUDs the card should stay a minority of the width. Default CI
-        // Automotive skins can be ~320px wide, where absolute chrome floors make
-        // a 45% fraction unrealistic — the dp cap is the meaningful check there.
+        // Automotive skins can be ~320px wide; nightly sets wm size 1920x1080
+        // after boot, and the dp cap remains the meaningful check on any
+        // residual narrow profile.
         if (screenW >= 720f) {
             assertTrue(
                 "approach box must be compact (was ${appearW}px of ${screenW}px screen)",
