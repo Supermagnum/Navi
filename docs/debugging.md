@@ -249,7 +249,10 @@ passed with no new tombstone (only Zygote `signal 9` after a clean
 Mitigation: nightly workflow retargeted to API 33 `android-automotive` with
 `-memory 4096`, post-boot `wm size 1920x1080` (avoid emulator `-skin` on this
 AVD), and `scripts/ci-connected-android-test.sh` for continuous logcat + report
-upload (`instrumented-evidence/`). First Automotive confirmation
+upload (`instrumented-evidence/`). Evidence steps use `if: always()` / an EXIT
+trap / host `runner/` fallbacks; `cancel-in-progress` is **false** so a
+diagnostic `workflow_dispatch` is not killed mid-suite by a later push.
+First Automotive confirmation
 ([30363333076](https://github.com/Supermagnum/Navi/actions/runs/30363333076)):
 process-crash abort **did not recur**; approach failed
 `approach box must be compact (was 209px of 320.0px screen)` on the default
@@ -258,6 +261,10 @@ narrow skin instead — assertion now uses the `420.dp` product cap, with the
 runs each YAML `script:` line as its own `sh -c`, so multi-line inline scripts
 cannot share variables (that broke evidence mkdir on
 [30364223279](https://github.com/Supermagnum/Navi/actions/runs/30364223279)).
+Cancelled mid-suite run
+[30364672472](https://github.com/Supermagnum/Navi/actions/runs/30364672472)
+still uploaded a 3.7 MB continuous logcat (approach passed after the assert
+fix; Basemap was in progress when concurrency cancelled the job).
 
 ---
 

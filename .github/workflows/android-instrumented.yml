@@ -10,6 +10,12 @@
 # previous API 30 `target: default` phone image is a distinct, untested class
 # that aborted the suite on ApproachInstructionInstrumentedTest (see README
 # known issues).
+#
+# Evidence: collected inside scripts/ci-connected-android-test.sh (EXIT trap) while
+# the emulator-runner still owns the AVD, then uploaded with if: always(). A
+# separate always() runner-diagnostics step captures host free/df/dmesg when the
+# device is already gone. cancel-in-progress is false so a manual diagnostic
+# dispatch is not killed by a later push/dispatch.
 
 name: Android instrumented
 
@@ -21,7 +27,7 @@ on:
 
 concurrency:
   group: android-instrumented-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   connected:
@@ -46,7 +52,11 @@ jobs:
       - name: Cache Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # continue-on-error: subsequent always() steps still run even if this action
+      # aborts hard; the script EXIT trap still collects device-side evidence first.
       - name: Run instrumented tests (API 33 Automotive)
+        id: instrumented
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 33
@@ -61,6 +71,37 @@ jobs:
           # Must be a single command: the action runs each script line as its own sh -c.
           script: bash scripts/ci-connected-android-test.sh
 
+      - name: Runner diagnostics when emulator is gone
+        if: always()
+        run: |
+          set +e
+          EVIDENCE="${GITHUB_WORKSPACE}/instrumented-evidence"
+          mkdir -p "${EVIDENCE}/runner"
+          {
+            echo "step=runner_diagnostics"
+            echo "utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "instrumented_outcome=${{ steps.instrumented.outcome }}"
+            echo "instrumented_conclusion=${{ steps.instrumented.conclusion }}"
+          } | tee "${EVIDENCE}/runner/step_meta.txt"
+          free -h | tee "${EVIDENCE}/runner/free.txt"
+          df -h | tee "${EVIDENCE}/runner/df.txt"
+          dmesg -T 2>/dev/null | tail -n 400 | tee "${EVIDENCE}/runner/dmesg_tail.txt" || true
+          journalctl -n 200 --no-pager 2>/dev/null | tee "${EVIDENCE}/runner/journal_tail.txt" || true
+          ps auxww | grep -E 'qemu|emulator|adb|gradle' | grep -v grep | tee "${EVIDENCE}/runner/ps_emu.txt" || true
+          adb devices -l 2>&1 | tee "${EVIDENCE}/runner/adb_devices_post_step.txt" || true
+          if [ ! -d "${EVIDENCE}" ] || [ ! -f "${EVIDENCE}/collection_started.txt" ]; then
+            echo "emulator-runner never wrote instrumented-evidence — host-only fallback" \
+              | tee "${EVIDENCE}/EMULATOR_GONE.txt"
+          elif [ ! -s "${EVIDENCE}/logcat.txt" ]; then
+            echo "logcat.txt missing or empty after instrumented step" \
+              | tee -a "${EVIDENCE}/EMULATOR_GONE.txt"
+          fi
+          ls -laR "${EVIDENCE}" | tee "${EVIDENCE}/runner/listing_after_diagnostics.txt"
+          # Fail this step only as a signal in logs; upload still runs (always()).
+          if [ ! -f "${EVIDENCE}/collection_started.txt" ]; then
+            echo "::warning::No evidence sentinel — instrumented script may not have started"
+          fi
+
       - name: Upload instrumented crash evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -69,3 +110,10 @@ jobs:
           path: instrumented-evidence
           if-no-files-found: warn
           retention-days: 14
+
+      # Surface the real test result as the job conclusion after evidence is saved.
+      - name: Fail job if instrumented tests failed
+        if: always() && steps.instrumented.outcome != 'success'
+        run: |
+          echo "Instrumented step outcome=${{ steps.instrumented.outcome }} conclusion=${{ steps.instrumented.conclusion }}"
+          exit 1
