@@ -177,8 +177,9 @@ object MapterhornTerrain {
                         "paint",
                         JSONObject().put("hillshade-shadow-color", "#473B24"),
                     )
-            val insertAt = firstHydroLayerIndex(layers).takeIf { it >= 0 }
-                ?: firstSymbolLayerIndex(layers)
+            val insertAt =
+                firstHydroLayerIndex(layers).takeIf { it >= 0 }
+                    ?: firstSymbolLayerIndex(layers)
             val rewritten = JSONArray()
             for (i in 0 until layers.length()) {
                 if (i == insertAt) rewritten.put(hills)
@@ -191,8 +192,7 @@ object MapterhornTerrain {
     }
 
     /** First water fill / waterway line id, if present. */
-    internal fun firstHydroLayerId(style: Style): String? =
-        style.layers.firstOrNull { isHydroLayerId(it.id) }?.id
+    internal fun firstHydroLayerId(style: Style): String? = style.layers.firstOrNull { isHydroLayerId(it.id) }?.id
 
     internal fun isHydroLayerId(id: String): Boolean {
         val lower = id.lowercase()

@@ -22,10 +22,11 @@ class DiagnosticLogTest {
 
     @Before
     fun setUp() {
-        root = File.createTempFile("navi_diag_", "").also {
-            it.delete()
-            it.mkdirs()
-        }
+        root =
+            File.createTempFile("navi_diag_", "").also {
+                it.delete()
+                it.mkdirs()
+            }
         filesDir = File(root, "files").also { it.mkdirs() }
         DiagnosticLog.setLogsDirForTest(File(filesDir, "diagnostic_logs"))
         DiagnosticLog.applyEnabled(filesDir, false)

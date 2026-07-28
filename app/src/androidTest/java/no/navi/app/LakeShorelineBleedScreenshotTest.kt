@@ -28,10 +28,11 @@ class LakeShorelineBleedScreenshotTest {
     fun setUp() {
         context = InstrumentationRegistry.getInstrumentation().targetContext
         dataDir = NaviAppData.resolve(context)
-        outDir = File(context.cacheDir, "navi_lake_bleed").also {
-            it.mkdirs()
-            it.listFiles()?.forEach { f -> f.delete() }
-        }
+        outDir =
+            File(context.cacheDir, "navi_lake_bleed").also {
+                it.mkdirs()
+                it.listFiles()?.forEach { f -> f.delete() }
+            }
         // Host-pullable mirror created via shell after each shot.
         shell("mkdir -p /data/local/tmp/navi_lake_bleed && chmod 777 /data/local/tmp/navi_lake_bleed")
         NaviMapTestHooks.hideUiChrome = true

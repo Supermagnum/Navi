@@ -323,7 +323,10 @@ object DiagnosticLog {
         )
     }
 
-    fun logInstructionCompleted(index: Int, of: Int) {
+    fun logInstructionCompleted(
+        index: Int,
+        of: Int,
+    ) {
         write(
             Category.INSTRUCTION,
             mapOf("status" to "completed", "index" to index, "of" to of),
@@ -359,7 +362,10 @@ object DiagnosticLog {
         }
     }
 
-    fun maybeLogSystem(filesDir: File, nowMs: Long = System.currentTimeMillis()) {
+    fun maybeLogSystem(
+        filesDir: File,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
         if (!enabled.get()) return
         if (nowMs - lastSystemMs < SYSTEM_INTERVAL_MS && lastSystemMs != 0L) return
         lastSystemMs = nowMs
@@ -498,7 +504,9 @@ object DiagnosticLog {
             k == "tent"
     }
 
-    fun logInstructionsIssued(@Suppress("UNUSED_PARAMETER") maneuversJson: String) {
+    fun logInstructionsIssued(
+        @Suppress("UNUSED_PARAMETER") maneuversJson: String,
+    ) {
         // Live issued/completed lines come from [onManeuverProgress] during navigation.
     }
 
@@ -570,7 +578,11 @@ object DiagnosticLog {
         key: String,
     ): Double? {
         val re = Regex("""(?:^|[;\s])$key=([-+0-9.eE]+)""")
-        return re.find(report)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+        return re
+            .find(report)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toDoubleOrNull()
     }
 
     private fun parseReportToken(

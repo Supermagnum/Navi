@@ -261,6 +261,7 @@ class DiagnosticLogOnDeviceInstrumentedTest {
         }
 
         val ecoLine = text.lines().first { it.contains("| ECO_CALC |") }
+
         fun field(name: String): Double {
             val re = Regex("""\b$name=([-+0-9.eE]+)""")
             val m = re.find(ecoLine) ?: error("missing $name in $ecoLine")

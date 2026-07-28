@@ -1919,12 +1919,10 @@ fn plan_car_route_inner(
     }
     if use_eco {
         let eco = eco_for_travel_profile(profile);
-        let breakdown = driver_break_core::routing::path_eco_energy_breakdown(
-            &graph, &path, &elevation, &eco,
-        );
-        report.push_str(&driver_break_core::routing::format_eco_energy_breakdown_report(
-            &breakdown,
-        ));
+        let breakdown =
+            driver_break_core::routing::path_eco_energy_breakdown(&graph, &path, &elevation, &eco);
+        report
+            .push_str(&driver_break_core::routing::format_eco_energy_breakdown_report(&breakdown));
     }
     let priority_path_share_pct = graph.non_major_highway_share_pct(&path);
     report.push_str(&format!(
@@ -2254,9 +2252,8 @@ pub fn plan_hiking_route(
         let breakdown = driver_break_core::routing::path_eco_energy_breakdown(
             &graph, &full_path, &elevation, &eco,
         );
-        report.push_str(&driver_break_core::routing::format_eco_energy_breakdown_report(
-            &breakdown,
-        ));
+        report
+            .push_str(&driver_break_core::routing::format_eco_energy_breakdown_report(&breakdown));
     }
     report.push_str("PASS\n");
 
