@@ -269,9 +269,9 @@ Complete evidence from
 [30369028382](https://github.com/Supermagnum/Navi/actions/runs/30369028382):
 Basemap dies on the **Mapterhorn 3D+tilt** segment under the **4 GB** CI AVD
 (guest overcommit; no tombstone); offline+boundary shots pass. CI keeps
-`-memory 4096` and skips that 3D segment in
-`BasemapPmtilesScreenshotTest` when `GITHUB_ACTIONS`/`CI` is set — full 3D
-remains local/hardware.
+`-memory 4096` and skips that 3D segment via instrumentation arg
+`navi.ci=true` (host `CI=` is invisible on-device) — full 3D remains
+local/hardware.
 
 ---
 

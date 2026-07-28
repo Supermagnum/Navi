@@ -20,8 +20,9 @@ import java.io.File
  * with drive HUD bars visible.
  *
  * On GitHub Actions (4 GB Automotive + SwiftShader) the Mapterhorn 3D+tilt segment
- * is skipped after offline+boundary shots — that path aborts the CI AVD. Run the
- * full method locally or on hardware for 3D evidence.
+ * is skipped after offline+boundary shots when instrumentation arg `navi.ci=true`
+ * is set (see scripts/ci-connected-android-test.sh). That path aborts the CI AVD.
+ * Run the full method locally or on hardware for 3D evidence.
  */
 @RunWith(AndroidJUnit4::class)
 class BasemapPmtilesScreenshotTest {
@@ -169,8 +170,11 @@ class BasemapPmtilesScreenshotTest {
         // aborts the emulator mid-suite: guest Committed_AS far exceeds RAM, logcat
         // cuts off with no tombstone, instrumentation reports an empty failure.
         // Keep CI at 4 GB (product target). Full 3D matrix stays local / hardware.
+        // Host GITHUB_ACTIONS/CI env is NOT visible inside the on-device process —
+        // CI passes -Pandroid.testInstrumentationRunnerArguments.navi.ci=true.
         val onCi =
-            System.getenv("GITHUB_ACTIONS") == "true" ||
+            InstrumentationRegistry.getArguments().getString("navi.ci") == "true" ||
+                System.getenv("GITHUB_ACTIONS") == "true" ||
                 System.getenv("CI") == "true"
         if (onCi) {
             android.util.Log.i(

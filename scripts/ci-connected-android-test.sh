@@ -118,7 +118,9 @@ timeout "${ADB_TIMEOUT_SEC}" adb logcat -c || true
 adb logcat -v threadtime > "${EVIDENCE}/logcat.txt" 2>&1 &
 LOGCAT_PID=$!
 
-./gradlew :app:connectedDebugAndroidTest --no-daemon
+# navi.ci reaches the on-device instrumentation process (host CI= env does not).
+./gradlew :app:connectedDebugAndroidTest --no-daemon \
+  -Pandroid.testInstrumentationRunnerArguments.navi.ci=true
 GRADLE_STATUS=$?
 
 collect_evidence "after_gradle"
