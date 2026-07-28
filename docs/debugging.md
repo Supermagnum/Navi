@@ -265,6 +265,13 @@ Cancelled mid-suite run
 [30364672472](https://github.com/Supermagnum/Navi/actions/runs/30364672472)
 still uploaded a 3.7 MB continuous logcat (approach passed after the assert
 fix; Basemap was in progress when concurrency cancelled the job).
+Complete evidence from
+[30369028382](https://github.com/Supermagnum/Navi/actions/runs/30369028382):
+Basemap dies on the **Mapterhorn 3D+tilt** segment under the **4 GB** CI AVD
+(guest overcommit; no tombstone); offline+boundary shots pass. CI keeps
+`-memory 4096` and skips that 3D segment in
+`BasemapPmtilesScreenshotTest` when `GITHUB_ACTIONS`/`CI` is set — full 3D
+remains local/hardware.
 
 ---
 
