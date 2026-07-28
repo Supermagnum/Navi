@@ -3,7 +3,10 @@
 # /data/local/tmp/navi_fixtures. Mirror of Rust's #[ignore] fixture integrations:
 # not part of the default PR gate.
 #
-# Trigger: nightly schedule or manual workflow_dispatch.
+# Trigger: manual workflow_dispatch only (no schedule). Not a required check.
+# Trusted instrumented results come from a local Automotive AVD matching the
+# validated profile, and from real hardware when available — see
+# docs/real-hardware-testing.md.
 #
 # Device profile: Android Automotive (not generic phone AOSP). MapLibre Vulkan /
 # hillshade / rotation fixes in this project were validated on AAOS AVDs; the
@@ -20,9 +23,6 @@
 name: Android instrumented
 
 on:
-  schedule:
-    # 04:00 UTC daily
-    - cron: "0 4 * * *"
   workflow_dispatch:
 
 concurrency:

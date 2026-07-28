@@ -172,12 +172,13 @@ Every push/PR runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 | `kotlin-checks` | ktlint, detekt, `./gradlew :app:testDebugUnitTest` |
 | `android-build` | `./gradlew :app:assembleDebug` |
 
-**Not** in the per-PR gate (run locally or via the scheduled workflow):
+**Not** in the per-PR gate (run locally or via manual workflow dispatch):
 
 - Rust `#[ignore]` OSM/DEM integration tests (need fixtures under
   `core/target/integration-fixtures` — see [`docs/build-linux.md`](docs/build-linux.md)).
 - Android instrumented tests — [`.github/workflows/android-instrumented.yml`](.github/workflows/android-instrumented.yml)
-  (nightly / `workflow_dispatch` with an emulator).
+  (`workflow_dispatch` only; not scheduled and not a required check — see
+  [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md#github-hosted-instrumented-ci)).
 
 Before opening a PR, prefer running at least:
 

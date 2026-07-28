@@ -35,6 +35,25 @@ decider for whether residual GLES-only builds would be safe.
 
 ---
 
+## GitHub-hosted instrumented CI
+
+The GitHub-hosted instrumented Android test workflow
+(`android-instrumented.yml`) runs on manual dispatch only, not automatically.
+Across repeated investigation, GitHub's runner renders through SwiftShader
+(software Vulkan/GL), which has produced multiple environment-specific artifacts
+(AVD profile mismatches, emulator memory overcommit under 3D rendering) rather
+than genuine app-level bugs. Local emulator testing against the project's
+validated Automotive AVD profile, and real-hardware testing once available, are
+the trusted sources for instrumented test results. This workflow remains
+available for deliberate manual runs (e.g. pre-release sanity checks) but is not
+a blocking gate and does not run unattended.
+
+Evidence collection, Automotive API 33 targeting, and the Basemap CI/local 3D
+split stay in place for those manual runs — they are not discarded just because
+the nightly schedule was removed.
+
+---
+
 ## General approach
 
 For each area below, run the described scenario on real hardware and capture:
