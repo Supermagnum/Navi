@@ -24,6 +24,7 @@ throughout.
   - [Where data comes from](#where-data-comes-from)
   - [How features work](#how-features-work)
   - [Settings](#settings)
+  - [Debugging](#debugging)
 - [Working app (emulator screenshots)](#working-app-emulator-screenshots)
 - [Documents](#documents)
 - [Icons (Navit)](#icons-navit)
@@ -222,10 +223,10 @@ system. A future UI translation plugin is specified in
 
 Settings persist under the app data directory: rest / fuel / e-bike / EV / vehicle
 / network preference via SQLite (UniFFI `load*` / `save*`); map HUD prefs
-(auto-zoom, 3D, tilt, break display mode, Geofabrik path, PMTiles base URL) via
-`MapHudPrefs` SharedPreferences. **Save** on a sheet writes and dismisses;
-**Close** dismisses without requiring a save for controls that already apply
-immediately (map sheet toggles, many Tools fields).
+(auto-zoom, 3D, tilt, break display mode, Geofabrik path, PMTiles base URL,
+diagnostic logging) via `MapHudPrefs` SharedPreferences. **Save** on a sheet
+writes and dismisses; **Close** dismisses without requiring a save for controls
+that already apply immediately (map sheet toggles, many Tools fields).
 
 Primary travel-mode chips: **Car**, **Bicycle**, **Electric cycle**, **Hiking**,
 **Motorcycle**, **Truck**, **Mobile home**. `CarElectric` / `TruckElectric` /
@@ -330,6 +331,8 @@ Region provision, basemap / DEM downloads, and opt-in OSM updates. See also
 | **Check for OSM updates** | Opt-in Geofabrik freshness check — never downloads silently |
 | **Apply pending OSM update** | Apply the plan from a prior Check (user-confirmed) |
 | **Weekly update reminder** | Reminder only (no auto-download) |
+| **Diagnostic logging** | Off by default. When on, writes a date-stamped session log under app-private storage (see [Debugging](#debugging)) |
+| **Export diagnostic log** | Share the latest session log via Android's share sheet |
 | **Save / Close** | Persist Geofabrik path + PMTiles URL, or dismiss |
 
 ### Tracks (APRS-style)
@@ -349,6 +352,23 @@ More detail: [`docs/architecture.md`](docs/architecture.md),
 [`docs/rust-crates.md`](docs/rust-crates.md),
 [`docs/codebase-map.md`](docs/codebase-map.md), [`docs/API.md`](docs/API.md),
 [`docs/hud-layout.md`](docs/hud-layout.md), [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+
+### Debugging
+
+**Diagnostic logging** (off by default, toggle in **Tools**) writes a structured,
+date-stamped log file to the device covering GPS status, settings changes, route
+planning, eco climb/descent energy (logged separately), POIs found, planned rest
+stops, turn-by-turn instruction events, fuel/battery updates, and basic system
+resource status. This is intended for debugging and troubleshooting — turn it on
+if you are reporting a bug and want to include real diagnostic evidence, or if
+you are testing the app yourself. It has no effect on navigation behavior and is
+not enabled by default.
+
+The log stays **local on the device** (app-private storage). Navi does not upload
+or transmit these session files anywhere by default. Use **Export diagnostic log**
+in Tools to share a file when you choose to, or pull it with adb (path documented
+in [`docs/debugging.md`](docs/debugging.md)). Older session files are rotated
+automatically (last 10 kept).
 
 ## Working app (emulator screenshots)
 
@@ -640,6 +660,18 @@ road network (e.g. E6 west of Trondheim).
   Same underlying emulator GLES instability class as the moving-icons native
   paint failure; Vulkan avoids the bad path. Verified Compass / bearing shots:
   [`docs/pictures.md`](docs/pictures.md).
+- **Hydro soft-edge fringe (lakes / rivers / creeks):** partially fixed.
+  `navi-hills` now inserts **below** hydro fill/line layers, which reduced 3D
+  lake fringe on the Automotive emulator (~47% fewer fringe pixels) and stopped
+  hillshade from darkening water. A residual soft rim remains in 2D and 3D on
+  both Liberty and Protomaps-light; style paint knobs (`fill-antialias`,
+  `fill-outline-color`, `line-blur`) were no-ops for that rim on MapLibre Native
+  Vulkan on the emulator. **Negligible** for usability — not urgent. Left open
+  pending real-hardware screenshots (do not assume permanent from emulator
+  alone). Details:
+  [`docs/map-styles.md`](docs/map-styles.md#hydro-soft-edge-fringe-known-limitation);
+  checklist item 7 in
+  [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md#7-hydro-soft-edge-fringe-emulator-vs-device).
 - **TODO — optimize building load for hiking overnight-proximity check.** A
   single hiking plan currently takes ~177.6 s on a large corridor (measured:
   DNT Åkersætra→Rondvassbu, Østlandet), driven almost entirely by loading all

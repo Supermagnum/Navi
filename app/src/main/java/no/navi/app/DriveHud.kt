@@ -951,7 +951,23 @@ fun DriveSettingsSheet(
                                         exceptionalExtensionArmed = exceptionalArmed,
                                         ecoModeEnabled = ecoActive,
                                     ),
-                                )
+                                ).also { ok ->
+                                    if (ok) {
+                                        DiagnosticLog.logSettingSaved(
+                                            "truck_mandatory_break_after_hours",
+                                            hours,
+                                        )
+                                        DiagnosticLog.logSettingSaved(
+                                            "truck_break_duration_minutes",
+                                            mins,
+                                        )
+                                        DiagnosticLog.logSettingSaved(
+                                            "truck_max_weekly_driving_hours",
+                                            prev?.maxWeeklyDrivingHours ?: 56.0,
+                                        )
+                                        DiagnosticLog.logToggle("eco_mode", ecoActive)
+                                    }
+                                }
                             } else {
                                 saveCarRestSettings(
                                     dataDir,
@@ -960,7 +976,19 @@ fun DriveSettingsSheet(
                                         restDurationMinutes = mins.toUInt(),
                                         ecoModeEnabled = ecoActive,
                                     ),
-                                )
+                                ).also { ok ->
+                                    if (ok) {
+                                        DiagnosticLog.logSettingSaved(
+                                            "car_break_interval_hours",
+                                            hours,
+                                        )
+                                        DiagnosticLog.logSettingSaved(
+                                            "car_rest_duration_minutes",
+                                            mins,
+                                        )
+                                        DiagnosticLog.logToggle("eco_mode", ecoActive)
+                                    }
+                                }
                             }
                         val energyOk =
                             if (ebikeSpecs) {
@@ -984,7 +1012,13 @@ fun DriveSettingsSheet(
                                         motorTorqueNm = nm,
                                         wheelDiameterIn = wd,
                                     ),
-                                )
+                                ).also { ok ->
+                                    if (ok) {
+                                        DiagnosticLog.logSettingSaved("ebike_battery_capacity_wh", wh)
+                                        DiagnosticLog.logSettingSaved("ebike_motor_torque_nm", nm)
+                                        DiagnosticLog.logSettingSaved("ebike_wheel_diameter_in", wd)
+                                    }
+                                }
                             } else if (evCarSpecs) {
                                 val kwh = evBatteryKwh.toDoubleOrNull()
                                 if (kwh == null || kwh <= 0.0) {
@@ -994,7 +1028,11 @@ fun DriveSettingsSheet(
                                 saveEvCarConfig(
                                     dataDir,
                                     FfiEvCarConfig(batteryCapacityKwh = kwh),
-                                )
+                                ).also { ok ->
+                                    if (ok) {
+                                        DiagnosticLog.logSettingSaved("ev_battery_capacity_kwh", kwh)
+                                    }
+                                }
                             } else {
                                 val toLiters = if (preferLiters) 1.0 else 3.785411784
                                 val tankL = tank.toDoubleOrNull()?.times(toLiters)
@@ -1006,7 +1044,27 @@ fun DriveSettingsSheet(
                                         fuelAddedL = addedL,
                                         preferLiters = preferLiters,
                                     ),
-                                )
+                                ).also { ok ->
+                                    if (ok) {
+                                        tankL?.let {
+                                            DiagnosticLog.logSettingSaved("fuel_tank_capacity_l", it)
+                                        }
+                                        DiagnosticLog.logSettingSaved("fuel_prefer_liters", preferLiters)
+                                        if (addedL != null && addedL > 0.0) {
+                                            val pct =
+                                                if (tankL != null && tankL > 0.0) {
+                                                    ((addedL / tankL) * 100.0).coerceIn(0.0, 100.0)
+                                                } else {
+                                                    null
+                                                }
+                                            DiagnosticLog.logFuelAdded(
+                                                amount = fuelAdded.toDoubleOrNull() ?: addedL,
+                                                unit = if (preferLiters) "liters" else "gallons",
+                                                tankPctAfter = pct,
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         onBreakAsDistanceChange(asDistance)
                         onPreferMetricChange(metric)

@@ -73,7 +73,11 @@ object MapterhornTerrain {
                     .withProperties(
                         PropertyFactory.hillshadeShadowColor(Color.parseColor("#473B24")),
                     )
-            val belowId = style.layers.firstOrNull { it is SymbolLayer }?.id
+            // Insert under the first hydro fill/line so hillshade does not
+            // composite on top of soft water edges (worsens shoreline bleed).
+            // Fall back to under labels if the style has no water layers yet.
+            val belowId =
+                firstHydroLayerId(style) ?: style.layers.firstOrNull { it is SymbolLayer }?.id
             if (belowId != null) {
                 style.addLayerBelow(hills, belowId)
             } else {
@@ -173,7 +177,8 @@ object MapterhornTerrain {
                         "paint",
                         JSONObject().put("hillshade-shadow-color", "#473B24"),
                     )
-            val insertAt = firstSymbolLayerIndex(layers)
+            val insertAt = firstHydroLayerIndex(layers).takeIf { it >= 0 }
+                ?: firstSymbolLayerIndex(layers)
             val rewritten = JSONArray()
             for (i in 0 until layers.length()) {
                 if (i == insertAt) rewritten.put(hills)
@@ -183,6 +188,25 @@ object MapterhornTerrain {
             style.put("layers", rewritten)
         }
         return style
+    }
+
+    /** First water fill / waterway line id, if present. */
+    internal fun firstHydroLayerId(style: Style): String? =
+        style.layers.firstOrNull { isHydroLayerId(it.id) }?.id
+
+    internal fun isHydroLayerId(id: String): Boolean {
+        val lower = id.lowercase()
+        return lower == "water" ||
+            lower.startsWith("water_") ||
+            lower.startsWith("waterway") ||
+            lower.contains("waterway")
+    }
+
+    private fun firstHydroLayerIndex(layers: JSONArray): Int {
+        for (i in 0 until layers.length()) {
+            if (isHydroLayerId(layers.getJSONObject(i).optString("id"))) return i
+        }
+        return -1
     }
 
     private fun firstSymbolLayerIndex(layers: JSONArray): Int {

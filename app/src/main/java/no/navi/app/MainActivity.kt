@@ -298,11 +298,16 @@ private fun NaviMapScreen() {
     var hits by remember { mutableStateOf<List<PlaceHit>>(emptyList()) }
     var searchBusy by remember { mutableStateOf(false) }
     var showTools by remember { mutableStateOf(false) }
+    var diagnosticLogging by remember {
+        mutableStateOf(MapHudPrefs.loadDiagnosticLogging(context))
+    }
     var downloadScopeCountry by remember { mutableStateOf(false) }
     var selectedGeofabrikPath by remember {
         mutableStateOf(MapHudPrefs.loadGeofabrikPath(context))
     }
     LaunchedEffect(Unit) {
+        DiagnosticLog.restoreFromPrefs(context)
+        diagnosticLogging = DiagnosticLog.isEnabled()
         while (true) {
             val pendingPath = NaviMapTestHooks.pendingGeofabrikPath
             if (pendingPath != null) {
@@ -757,6 +762,13 @@ private fun NaviMapScreen() {
                 totalWeightKg = null,
             )
         val ok = saveVehicleLimits(dataDir.absolutePath, limits)
+        if (ok) {
+            limits.axleWeightKg?.let { DiagnosticLog.logSettingSaved("vehicle_axle_weight_kg", it) }
+            limits.bogieWeightKg?.let { DiagnosticLog.logSettingSaved("vehicle_bogie_weight_kg", it) }
+            limits.heightM?.let { DiagnosticLog.logSettingSaved("vehicle_height_m", it) }
+            limits.widthM?.let { DiagnosticLog.logSettingSaved("vehicle_width_m", it) }
+            limits.lengthM?.let { DiagnosticLog.logSettingSaved("vehicle_length_m", it) }
+        }
         status = if (ok) "Vehicle limits saved" else "Failed to save vehicle limits"
     }
 
@@ -1008,6 +1020,16 @@ private fun NaviMapScreen() {
                             status = "Arrived at destination"
                         }
                     }
+                    DiagnosticLog.onManeuverProgress(
+                        index = snap.maneuverIndex,
+                        of = tracker.maneuverCount(),
+                        kind = snap.maneuver?.kind,
+                        street = snap.maneuver?.street,
+                        distanceM =
+                            snap.distanceToManeuverM.takeIf {
+                                it.isFinite() && it < Double.POSITIVE_INFINITY / 2
+                            },
+                    )
                     when (driveHud.rotationMode) {
                         MapRotationMode.DirectionOfTravel -> {
                             val br = NaviMapTestHooks.gpsBearingDeg
@@ -1101,6 +1123,34 @@ private fun NaviMapScreen() {
                         }
                     }
                 }
+            }
+            // Diagnostic GPS (rate-limited in DiagnosticLog). Log before altitude
+            // early-returns so a DEM/GPS alt skip does not skip the GPS line.
+            if (loc.latitude != 0.0 || loc.longitude != 0.0) {
+                val sats =
+                    loc.extras
+                        ?.getInt("satellites", -1)
+                        ?.takeIf { it >= 0 }
+                val fixType =
+                    when {
+                        loc.provider == "navi-route-sim" -> "sim"
+                        loc.hasAccuracy() && loc.accuracy <= 20f -> "3D"
+                        loc.hasAccuracy() -> "2D"
+                        else -> "fix"
+                    }
+                val altAsl =
+                    driveHud.altitudeM
+                        ?: NaviMapTestHooks.gpsAltitudeM
+                        ?: loc.takeIf { it.hasAltitude() }?.altitude
+                DiagnosticLog.logGps(
+                    lat = loc.latitude,
+                    lon = loc.longitude,
+                    altAslM = altAsl,
+                    accuracyM = if (loc.hasAccuracy()) loc.accuracy else null,
+                    satellites = sats,
+                    fixType = fixType,
+                )
+                DiagnosticLog.maybeLogSystem(context.filesDir)
             }
             // Test hook overrides live sensor in the poll loop.
             if (NaviMapTestHooks.gpsAltitudeM != null) return
@@ -1330,6 +1380,13 @@ private fun NaviMapScreen() {
                             NaviMapTestHooks.requestCloseTools = false
                             showTools = false
                         }
+                        if (NaviMapTestHooks.requestOpenTools) {
+                            NaviMapTestHooks.requestOpenTools = false
+                            showTools = true
+                            hideSearch = false
+                            hideChrome = false
+                        }
+                        NaviMapTestHooks.toolsOpen = showTools
                         if (NaviMapTestHooks.requestOpenDriveSettings) {
                             NaviMapTestHooks.requestOpenDriveSettings = false
                             showDriveSettings = true
@@ -1642,6 +1699,7 @@ private fun NaviMapScreen() {
                 if (mapState.followGps) {
                     mapState = mapState.copy(followGps = false)
                     NaviMapTestHooks.followGps = false
+                    DiagnosticLog.logToggle("follow_gps", false)
                 }
             },
             onCameraIdleTarget = { lat, lon, zoom ->
@@ -1887,6 +1945,10 @@ private fun NaviMapScreen() {
                                             ecoEnabled = ecoForPlan,
                                             legCount = (pts.size - 1).coerceAtLeast(1),
                                             waypointNames = pts.map { it.name },
+                                            startLat = pts.first().lat,
+                                            startLon = pts.first().lon,
+                                            endLat = pts.last().lat,
+                                            endLon = pts.last().lon,
                                         )
                                         downloadProgressClear()
                                         planningRoute = true
@@ -2336,6 +2398,11 @@ private fun NaviMapScreen() {
                                         onCheckedChange = { enabled ->
                                             if (ecoModeToggleable(profile)) {
                                                 ecoEnabled = enabled
+                                                DiagnosticLog.logToggle(
+                                                    "eco_mode",
+                                                    enabled,
+                                                    mapOf("profile" to profile.name),
+                                                )
                                             }
                                         },
                                         enabled = ecoModeToggleable(profile),
@@ -2359,6 +2426,15 @@ private fun NaviMapScreen() {
                                                     dataDir.absolutePath,
                                                     on,
                                                 )
+                                                DiagnosticLog.logToggle(
+                                                    "prefer_official_networks",
+                                                    on,
+                                                    mapOf("profile" to profile.name),
+                                                )
+                                                DiagnosticLog.logSettingSaved(
+                                                    "prefer_official_networks",
+                                                    on,
+                                                )
                                             },
                                         )
                                     }
@@ -2373,6 +2449,7 @@ private fun NaviMapScreen() {
                                         checked = avoidMajor,
                                         onCheckedChange = { on ->
                                             avoidMajor = on
+                                            DiagnosticLog.logToggle("avoid_majors", on)
                                             status =
                                                 formatRouteAvoidanceReport(
                                                     avoidMajor,
@@ -2393,6 +2470,7 @@ private fun NaviMapScreen() {
                                         checked = avoidTolls,
                                         onCheckedChange = { on ->
                                             avoidTolls = on
+                                            DiagnosticLog.logToggle("avoid_tolls", on)
                                             status =
                                                 formatRouteAvoidanceReport(
                                                     avoidMajor,
@@ -2421,6 +2499,7 @@ private fun NaviMapScreen() {
                                         checked = avoidFerries,
                                         onCheckedChange = { on ->
                                             avoidFerries = on
+                                            DiagnosticLog.logToggle("avoid_ferries", on)
                                             status =
                                                 formatRouteAvoidanceReport(
                                                     avoidMajor,
@@ -3119,12 +3198,60 @@ private fun NaviMapScreen() {
                             },
                         )
                     }
+                    Text("Diagnostics", style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text("Diagnostic logging")
+                        Switch(
+                            checked = diagnosticLogging,
+                            onCheckedChange = { on ->
+                                DiagnosticLog.setEnabled(context, on)
+                                diagnosticLogging = on
+                                if (on) {
+                                    DiagnosticLog.maybeLogSystem(context.filesDir, nowMs = 0L)
+                                    status = "Diagnostic logging on (session file started)"
+                                } else {
+                                    status = "Diagnostic logging off"
+                                }
+                            },
+                            modifier = Modifier.testTag("toggle_diagnostic_logging"),
+                        )
+                    }
+                    Text(
+                        "Writes a local session log under app files (GPS, toggles, " +
+                            "route plan, eco, POIs, pauses, instructions, fuel, system). " +
+                            "Off by default; not uploaded.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Button(
+                        onClick = {
+                            val ok = DiagnosticLog.shareLatest(context)
+                            status =
+                                if (ok) {
+                                    "Share sheet opened for diagnostic log"
+                                } else {
+                                    "No diagnostic log file yet — turn logging on first"
+                                }
+                        },
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .testTag("btn_export_diagnostic_log"),
+                        enabled = diagnosticLogging || DiagnosticLog.listSessionFiles(context.filesDir).isNotEmpty(),
+                    ) {
+                        Text("Export diagnostic log")
+                    }
                     Text(status, style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = {
                                 MapHudPrefs.savePmtilesBaseUrl(context, pmtilesBaseUrl)
                                 MapHudPrefs.saveGeofabrikPath(context, selectedGeofabrikPath)
+                                DiagnosticLog.logSettingSaved("pmtiles_base_url", pmtilesBaseUrl)
+                                DiagnosticLog.logSettingSaved("geofabrik_path", selectedGeofabrikPath)
                                 status = "Tools settings saved"
                             },
                             modifier = Modifier.testTag("btn_save_tools"),
@@ -3199,6 +3326,7 @@ private fun NaviMapScreen() {
                                 layerEpoch = mapState.layerEpoch + 1,
                             )
                         NaviMapTestHooks.followGps = true
+                        DiagnosticLog.logToggle("follow_gps", true)
                     },
                     onOpenSettings = {
                         showDriveSettings = !showDriveSettings
@@ -3229,6 +3357,7 @@ private fun NaviMapScreen() {
                 MapSettingsSheet(
                     state = driveHud.copy(ecoActive = ecoEnabled),
                     onRotation = { mode ->
+                        DiagnosticLog.logToggle("rotation_mode", mode.name)
                         driveHud = driveHud.copy(rotationMode = mode)
                         NaviMapTestHooks.lastRotationMode = mode
                         val bearing =
@@ -3245,6 +3374,7 @@ private fun NaviMapScreen() {
                         NaviMapTestHooks.lastCameraBearing = bearing
                     },
                     onToggleTripEta = { on ->
+                        DiagnosticLog.logToggle("trip_eta", on)
                         driveHud =
                             driveHud.copy(
                                 showTripEta = on,
@@ -3256,9 +3386,11 @@ private fun NaviMapScreen() {
                             )
                     },
                     onToggleBreakReminders = { on ->
+                        DiagnosticLog.logToggle("break_reminders", on)
                         driveHud = driveHud.copy(breakRemindersEnabled = on)
                     },
                     onToggleAutoZoom = { on ->
+                        DiagnosticLog.logToggle("auto_zoom", on)
                         driveHud = driveHud.copy(autoZoomWhileMoving = on)
                         MapHudPrefs.saveAutoZoom(
                             context,
@@ -3296,6 +3428,7 @@ private fun NaviMapScreen() {
                             status = "3D requires Vulkan renderer"
                             return@MapSettingsSheet
                         }
+                        DiagnosticLog.logToggle("opt_in_3d", on)
                         driveHud = driveHud.copy(optIn3d = on)
                         MapHudPrefs.saveOptIn3d(context, on)
                         styleEpoch += 1
@@ -3307,6 +3440,7 @@ private fun NaviMapScreen() {
                             } else {
                                 0.0
                             }
+                        DiagnosticLog.logToggle("camera_tilt_deg", next)
                         driveHud = driveHud.copy(cameraTiltDeg = next)
                         MapHudPrefs.saveCameraTiltDeg(context, next)
                         NaviMapTestHooks.lastCameraPitch = next
@@ -3320,6 +3454,9 @@ private fun NaviMapScreen() {
                         )
                         MapHudPrefs.saveOptIn3d(context, driveHud.optIn3d)
                         MapHudPrefs.saveCameraTiltDeg(context, driveHud.cameraTiltDeg)
+                        DiagnosticLog.logSettingSaved("map_hud_auto_zoom_level", driveHud.autoZoomLevel)
+                        DiagnosticLog.logSettingSaved("map_hud_opt_in_3d", driveHud.optIn3d)
+                        DiagnosticLog.logSettingSaved("map_hud_camera_tilt_deg", driveHud.cameraTiltDeg)
                         // Re-apply basemap so Save after toggling 3D always refreshes
                         // hillshade/tilt (toggle alone can race the style callback).
                         styleEpoch += 1
@@ -3354,16 +3491,25 @@ private fun NaviMapScreen() {
                     onEcoChange = {
                         ecoEnabled = it
                         driveHud = driveHud.copy(ecoActive = it)
+                        DiagnosticLog.logToggle(
+                            "eco_mode",
+                            it,
+                            mapOf("profile" to profile.name),
+                        )
                     },
                     breakAsDistance = driveHud.breakAsDistance,
                     onBreakAsDistanceChange = { on ->
                         MapHudPrefs.saveBreakAsDistance(context, on)
                         driveHud = driveHud.copy(breakAsDistance = on)
+                        DiagnosticLog.logToggle("break_as_distance", on)
+                        DiagnosticLog.logSettingSaved("break_as_distance", on)
                     },
                     preferMetric = driveHud.preferMetric,
                     onPreferMetricChange = { on ->
                         MapHudPrefs.savePreferMetric(context, on)
                         driveHud = driveHud.copy(preferMetric = on)
+                        DiagnosticLog.logToggle("prefer_metric", on)
+                        DiagnosticLog.logSettingSaved("prefer_metric", on)
                     },
                     onApplied = {
                         showDriveSettings = false
@@ -3644,6 +3790,7 @@ private fun CorridorMapView(
                 lon = lon,
                 prefer3d = livePrefer3d,
                 vulkanAvailable = liveVulkan,
+                forceOnline2d = NaviMapTestHooks.forceOnlineBasemap,
             )
         val sameUri = resolved.styleUri == currentStyleUri.value
         val sameKind = resolved.kind == currentStyleKind.value
@@ -4265,17 +4412,16 @@ private fun CorridorMapView(
 }
 
 private fun ensureRouteAboveHillshade(style: Style) {
-    val hillsId = MapterhornTerrain.HILLS_LAYER_ID
-    if (style.getLayer(hillsId) == null) return
+    // Hills now sit below water; overlays must stay on top of the full basemap
+    // stack (land + hills + water + roads), not merely above navi-hills.
     for (id in listOf("route-line", "waypoints-dots", "waypoints-layer", "gps-accuracy", "gps-dot")) {
         val layer = style.getLayer(id) ?: continue
         val moved =
             runCatching {
                 style.removeLayer(layer)
-                style.addLayerAbove(layer, hillsId)
+                style.addLayer(layer)
                 true
             }.getOrDefault(false)
-        // If remove succeeded but re-attach failed, put the layer back on top.
         if (!moved && style.getLayer(id) == null) {
             runCatching { style.addLayer(layer) }
         }

@@ -29,6 +29,10 @@ object NaviMapTestHooks {
     @Volatile
     var lastReportedLayerCount: Int = 0
 
+    /** When true, [BasemapStyleResolver.resolve] skips local PMTiles (Liberty online). */
+    @Volatile
+    var forceOnlineBasemap: Boolean = false
+
     /** Triple of lat, lon, zoom. Consumed by MainActivity. */
     @Volatile
     var pendingCamera: Triple<Double, Double, Double>? = null
@@ -47,6 +51,14 @@ object NaviMapTestHooks {
     /** When true, MainActivity closes tools / route panels (test injection). */
     @Volatile
     var requestCloseTools: Boolean = false
+
+    /** When true, MainActivity opens the Tools panel (test injection). */
+    @Volatile
+    var requestOpenTools: Boolean = false
+
+    /** Mirrored from MainActivity: Tools sheet currently visible. */
+    @Volatile
+    var toolsOpen: Boolean = false
 
     /** True after MapLibre style finished loading (basemap ready for overlays). */
     @Volatile

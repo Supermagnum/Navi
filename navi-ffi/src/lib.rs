@@ -1917,6 +1917,15 @@ fn plan_car_route_inner(
             &range,
         ));
     }
+    if use_eco {
+        let eco = eco_for_travel_profile(profile);
+        let breakdown = driver_break_core::routing::path_eco_energy_breakdown(
+            &graph, &path, &elevation, &eco,
+        );
+        report.push_str(&driver_break_core::routing::format_eco_energy_breakdown_report(
+            &breakdown,
+        ));
+    }
     let priority_path_share_pct = graph.non_major_highway_share_pct(&path);
     report.push_str(&format!(
         "priority_path_share_pct={priority_path_share_pct:.2}; major_highway_share_pct={:.2}\n",
@@ -1970,6 +1979,7 @@ pub fn plan_hiking_route(
     }
 
     let mut report = String::from("TEST_KIND=PLAN_HIKING_ROUTE\nDATA_SOURCE=real_pbf\n");
+    report.push_str("profile=Hiking; use_eco=true\n");
     report.push_str(&format!(
         "prefer_official_networks={prefer_official_networks}\n"
     ));
@@ -2237,9 +2247,18 @@ pub fn plan_hiking_route(
     // Hiking: fixed 16 min/km (no climb adjustment in this pass).
     let eta_minutes = fixed_pace_minutes(dist_km, HIKING_MIN_PER_KM);
     report.push_str(&format!(
-        "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={}; break_pois={break_pois_json}\nPASS\n",
+        "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={}; break_pois={break_pois_json}\n",
         full_path.len()
     ));
+    {
+        let breakdown = driver_break_core::routing::path_eco_energy_breakdown(
+            &graph, &full_path, &elevation, &eco,
+        );
+        report.push_str(&driver_break_core::routing::format_eco_energy_breakdown_report(
+            &breakdown,
+        ));
+    }
+    report.push_str("PASS\n");
 
     CorridorRouteResult {
         report,

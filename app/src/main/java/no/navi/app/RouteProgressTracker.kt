@@ -45,6 +45,8 @@ class RouteProgressTracker(
     private var maneuverCursor = 0
     private var viaReached = -1
 
+    fun maneuverCount(): Int = maneuvers.size
+
     fun reset() {
         maneuverCursor = 0
         viaReached = -1

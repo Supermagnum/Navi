@@ -12,11 +12,15 @@ shipping substitute for device GPS/IMU, GPU drivers, audio, USB accessories, or
 If you have access to real hardware, this guide covers what to check and how to
 log results via `adb` so findings can be compared against the emulator baseline.
 
-The specific known open question: whether the MapLibre native
+The specific known open questions include: whether the MapLibre native
 `CircleLayer`/`SymbolLayer` rendering issue (moving icons not painting via the
 standard GL path — see `README.md` known issues) is **specific to the Android
-Automotive emulator**, or whether it also occurs on real hardware. The current
-moving-icons fix uses a screen-space overlay workaround; if native layers *do*
+Automotive emulator**, or whether it also occurs on real hardware; and whether
+the residual **hydro soft-edge fringe** around lakes/rivers/creeks (partially
+mitigated by stacking `navi-hills` below water — see
+[`map-styles.md`](map-styles.md#hydro-soft-edge-fringe-known-limitation)) is
+emulator-only or also present on device GPUs (item 7). The current moving-icons
+fix uses a screen-space overlay workaround; if native layers *do*
 paint correctly on real hardware, that is useful to know, since it may mean the
 overlay approach only needs to be the emulator-specific path rather than the
 permanent production path.
@@ -128,6 +132,32 @@ testing a prototype OBD-II / J1939 / MegaSquirt adapter against the
   leaving a stuck L/h value.
 - Log: full `adb logcat` for the ECU/plugin tag; do not log VIN by default.
 
+## 7. Hydro soft-edge fringe (emulator vs device)
+
+Background and emulator findings:
+[`map-styles.md` — Hydro soft-edge fringe](map-styles.md#hydro-soft-edge-fringe-known-limitation).
+3D hillshade is already stacked **below** water on current builds; a residual
+soft rim around lakes / rivers / creeks remains on the Automotive emulator and
+is treated as **negligible / not urgent**. Emulator-only MapLibre artifacts have
+been wrong before (items 1 and 5 / GLES), so **do not close** this as a permanent
+engine limitation until checked on a real GPU.
+
+- With opt-in **3D off** (2D): center on a lake shoreline (e.g. Mjøsa / Hamar),
+  a wide river (e.g. Glomma / Elverum), and a creek-scale waterway. Capture
+  screenshots at two zooms each (roughly z10–z13 for lakes, z14–z16 for
+  rivers/creeks). Repeat for **online Liberty** and **offline Protomaps** if
+  both are available on the unit.
+- With opt-in **3D on** (hillshade): same lake + river centers; confirm
+  hillshade does **not** darken the water fill and that any remaining fringe is
+  no worse than 2D.
+- **Roads contrast:** in the same frames, confirm road edges stay sharp (no
+  global soft-edge regression).
+- Report: **fringe absent / milder than emulator**, **matches emulator
+  (negligible)**, or **worse / blocking on device**. Screenshot paths and
+  device model/GPU notes matter more than metrics here.
+- Log: optional `adb logcat` around style load / 3D toggle; screenshots are the
+  primary evidence.
+
 ---
 
 ## Output format
@@ -137,4 +167,4 @@ relevant logcat excerpt (full, not truncated), and any screenshots taken. If
 real hardware is Android Automotive specifically (not a phone/tablet running
 the app), note the exact device/head-unit model, since automotive-class
 hardware may have different GPU/driver behavior than typical phone hardware —
-directly relevant to item 1.
+directly relevant to items 1 and 7.

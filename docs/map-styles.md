@@ -54,6 +54,9 @@ Android/iOS Native). Navi therefore:
 1. Keeps the **existing vector basemap** (Liberty online / Protomaps offline).
 2. Adds Mapterhorn DEM sources (`terrainSource`, `hillshadeSource`) and a
    **hillshade** layer (`navi-hills`) via [MapterhornTerrain] when 3D is on.
+   Hillshade is inserted **below** the first hydro fill/line layer (`water` /
+   `waterway*`), not below the first symbol layer, so DEM shading does not
+   composite on top of water edges (see [Hydro soft-edge fringe](#hydro-soft-edge-fringe-known-limitation)).
 3. Leaves **camera tilt independent** of the 3D toggle — map settings offer
    snapped presets **0° / 35° / 45° / 65°** (Vulkan-gated; locked to 0° without
    Vulkan, same discipline as other non-zero camera angles on the Automotive
@@ -156,3 +159,47 @@ path (Ostlandet covers Innlandet; `test/oslo` is a fast smoke extract).
 `scripts/build-android-native.sh` accepts `debug` or `release` as the second
 argument. Cargo has no `--debug` flag; the script maps `debug` to the default
 profile (fixed; was a pre-existing footgun, not introduced by PMTiles).
+
+## Hydro soft-edge fringe (known limitation)
+
+**Status:** partially fixed; residual fringe open pending
+[real-hardware confirmation](real-hardware-testing.md#7-hydro-soft-edge-fringe-emulator-vs-device).
+Not blocking, not prioritized.
+
+### What was fixed (emulator)
+
+When 3D hillshade was stacked **above** water (the old “below first symbol”
+insert), soft lake/river edges looked worse and hillshade darkened the water
+surface. `MapterhornTerrain` now inserts `navi-hills` **below** hydro fill/line
+layers. On the Automotive emulator that cut measured 3D lake fringe pixels by
+about **47%** and stopped hillshade from painting over water. Route / GPS /
+waypoint overlays are re-stacked on top of the full basemap so they are not
+trapped under water after the reorder.
+
+Evidence (investigation / verify shots): `docs/images/tmp/hydro_bleed_before/`,
+`docs/images/tmp/hydro_bleed_hills_below/`, side-by-side crops under
+`docs/images/tmp/hydro_bleed_compare/`.
+
+### What remains
+
+A residual soft blue rim still appears around **lakes (fill), rivers, and
+creeks (lines)** in **2D and 3D**, on **both** online Liberty and offline
+Protomaps-light. Style paint experiments on the emulator (`fill-antialias`,
+matching `fill-outline-color`, waterway `line-blur`) were **no-ops** for this
+fringe on MapLibre Native’s **Vulkan** path — the cause sits at
+rasterization/compositing below what style configuration can control. Roads
+and other non-hydro layers stay sharp (not a global AA regression).
+
+### Assessment
+
+Negligible practical impact on map usability/visibility at this time. Documented
+as a known limitation; left open until the same shoreline / river / creek
+checks are run on **real hardware** (emulator-only MapLibre issues have been
+wrong before — see moving-icons / GLES `SIGSEGV` notes in the README and
+[`real-hardware-testing.md`](real-hardware-testing.md)).
+
+### If revisited later
+
+Options would be engine/MSAA-level MapLibre Native renderer configuration (larger
+than a style tweak) or a deliberate cosmetic coastline stroke to mask the rim.
+Neither is pursued in the current pass.

@@ -106,7 +106,12 @@ class BasemapStyleResolverInstrumentedTest {
             org.json.JSONObject(
                 """
                 {"version":8,"sources":{"openmaptiles":{"type":"vector","url":"https://example/tiles.json"}},
-                 "layers":[{"id":"bg","type":"background"},{"id":"place","type":"symbol","source":"openmaptiles"}]}
+                 "layers":[
+                   {"id":"bg","type":"background"},
+                   {"id":"water","type":"fill","source":"openmaptiles"},
+                   {"id":"waterway","type":"line","source":"openmaptiles"},
+                   {"id":"place","type":"symbol","source":"openmaptiles"}
+                 ]}
                 """.trimIndent(),
             )
         val out = MapterhornTerrain.augmentStyleJson(base)
@@ -129,14 +134,18 @@ class BasemapStyleResolverInstrumentedTest {
         )
         val layers = out.getJSONArray("layers")
         var hillsIdx = -1
+        var waterIdx = -1
         var symbolIdx = -1
         for (i in 0 until layers.length()) {
             val id = layers.getJSONObject(i).getString("id")
             if (id == MapterhornTerrain.HILLS_LAYER_ID) hillsIdx = i
+            if (id == "water") waterIdx = i
             if (id == "place") symbolIdx = i
         }
         assertTrue(hillsIdx >= 0)
+        assertTrue(waterIdx >= 0)
         assertTrue(symbolIdx >= 0)
+        assertTrue("hillshade must sit under water fill/lines", hillsIdx < waterIdx)
         assertTrue("hillshade must sit under labels", hillsIdx < symbolIdx)
         assertFalse(out.has("terrain"))
         assertFalse(out.has("sky"))

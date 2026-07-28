@@ -117,6 +117,35 @@ adb shell ps --user 10 | grep navi || true
 
 ---
 
+## 3b. Diagnostic session log (on-device file)
+
+When **Tools → Diagnostic logging** is on, Navi writes a pipe-delimited session
+file under app-private storage (same class as other persisted data —
+`context.filesDir`, not external/SD):
+
+```text
+/data/data/no.navi.app/files/diagnostic_logs/navi_session_YYYY-MM-DD_HH-mm-ss.log
+```
+
+On multi-user Automotive images the package path may be under a user id, e.g.
+`/data/user/10/no.navi.app/files/diagnostic_logs/`.
+
+Pull the latest file (adjust user if needed):
+
+```bash
+adb shell run-as no.navi.app ls files/diagnostic_logs
+adb exec-out run-as no.navi.app cat files/diagnostic_logs/navi_session_….log > navi_session.log
+```
+
+Or use **Tools → Export diagnostic log** (Android share sheet / FileProvider).
+
+Categories (only these; not a logcat mirror): `GPS`, `TOGGLE`, `SETTING_SAVED`,
+`ROUTE_PLAN`, `ECO_CALC`, `POI_FOUND`, `PAUSE_PLANNED`, `INSTRUCTION`,
+`FUEL_ADDED`, `SYSTEM`. GPS is rate-limited (about once per 3 s or 25 m move).
+Off by default; when off, no file is created.
+
+---
+
 ## 4. Android Studio / breakpoints
 
 1. Open the repo (or the `app` module) in **Android Studio**.

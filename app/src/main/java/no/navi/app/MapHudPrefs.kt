@@ -13,6 +13,7 @@ object MapHudPrefs {
     private const val KEY_CAMERA_TILT = "camera_tilt_deg"
     private const val KEY_PMTILES_BASE_URL = "pmtiles_base_url"
     private const val KEY_GEOFABRIK_PATH = "geofabrik_path"
+    private const val KEY_DIAGNOSTIC_LOGGING = "diagnostic_logging"
     const val DEFAULT_AUTO_ZOOM_LEVEL = 16.5
     const val MIN_ZOOM = 3.0
     const val MAX_ZOOM = 20.0
@@ -175,6 +176,26 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_GEOFABRIK_PATH, path.trim().trim('/'))
+            .apply()
+    }
+
+    /**
+     * Diagnostic session log toggle (default **off**). Persisted with other map HUD
+     * prefs so it survives restarts; [DiagnosticLog] is a no-op while false.
+     */
+    fun loadDiagnosticLogging(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_DIAGNOSTIC_LOGGING, false)
+
+    fun saveDiagnosticLogging(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_DIAGNOSTIC_LOGGING, enabled)
             .apply()
     }
 }

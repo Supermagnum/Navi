@@ -18,6 +18,10 @@ object RoutingPlanLog {
         ecoEnabled: Boolean,
         legCount: Int,
         waypointNames: List<String>,
+        startLat: Double = 0.0,
+        startLon: Double = 0.0,
+        endLat: Double = 0.0,
+        endLon: Double = 0.0,
     ) {
         Log.i(
             TAG,
@@ -25,6 +29,7 @@ object RoutingPlanLog {
                 "waypoints=${waypointNames.joinToString("|")}",
         )
         progress(0, ecoEnabled, detail = "queued")
+        DiagnosticLog.logRoutePlanStart(profile, startLat, startLon, endLat, endLon)
     }
 
     fun progress(
@@ -50,6 +55,7 @@ object RoutingPlanLog {
                 "polyline_chars=${result.routePolyline.length}",
         )
         logPois(result.breakPoisJson)
+        DiagnosticLog.logRoutePlanComplete(result)
     }
 
     fun failed(
@@ -61,6 +67,7 @@ object RoutingPlanLog {
             TAG,
             "planning_failed eco=$ecoEnabled duration_ms=$durationMs reason=$reason",
         )
+        DiagnosticLog.logRoutePlanFailed(reason)
     }
 
     fun logPois(breakPoisJson: String) {

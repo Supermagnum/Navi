@@ -9,6 +9,73 @@ use crate::config::{
 use crate::routing::elevation::ElevationService;
 use crate::routing::graph::RouteGraph;
 
+/// Climb / descent PE split used for eco diagnostics (separate halves, not net-only).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EcoEnergyBreakdown {
+    pub climb_m: f64,
+    pub descent_m: f64,
+    /// Sum of [EcoConfig::segment_energy_joules] on climb / level segments.
+    pub uphill_energy_j: f64,
+    /// Sum of segment energy on descent segments (flat + regen PE credit applied).
+    pub downhill_energy_j: f64,
+    /// Absolute PE recovered via regen: `regen_efficiency * m * g * descent_m`.
+    pub regen_credit_j: f64,
+    pub net_energy_j: f64,
+}
+
+/// Path eco energy with climb and descent halves separated (for diagnostic logs).
+pub fn path_eco_energy_breakdown(
+    graph: &RouteGraph,
+    path: &[NodeId],
+    elevation: &ElevationService,
+    eco: &EcoConfig,
+) -> EcoEnergyBreakdown {
+    let mut climb_m = 0.0;
+    let mut descent_m = 0.0;
+    let mut uphill_energy_j = 0.0;
+    let mut downhill_energy_j = 0.0;
+    for w in path.windows(2) {
+        let Some(idx) = graph.edge_index(w[0], w[1]) else {
+            continue;
+        };
+        let e = &graph.edges[idx];
+        let delta_h = match (
+            elevation.get_elevation(e.start_lat, e.start_lon),
+            elevation.get_elevation(e.end_lat, e.end_lon),
+        ) {
+            (Some(a), Some(b)) => b - a,
+            _ => 0.0,
+        };
+        let seg = eco.segment_energy_joules(e.length_m, delta_h);
+        if delta_h >= 0.0 {
+            climb_m += delta_h;
+            uphill_energy_j += seg;
+        } else {
+            descent_m += -delta_h;
+            downhill_energy_j += seg;
+        }
+    }
+    let regen_credit_j = eco.regen_efficiency.clamp(0.0, 1.0)
+        * eco.mass_kg
+        * crate::config::GRAVITY_M_S2
+        * descent_m;
+    EcoEnergyBreakdown {
+        climb_m,
+        descent_m,
+        uphill_energy_j,
+        downhill_energy_j,
+        regen_credit_j,
+        net_energy_j: uphill_energy_j + downhill_energy_j,
+    }
+}
+
+pub fn format_eco_energy_breakdown_report(b: &EcoEnergyBreakdown) -> String {
+    format!(
+        "eco_climb_m={:.1}; eco_descent_m={:.1}; eco_uphill_j={:.0}; eco_downhill_j={:.0}; eco_regen_credit_j={:.0}; eco_net_j={:.0}\n",
+        b.climb_m, b.descent_m, b.uphill_energy_j, b.downhill_energy_j, b.regen_credit_j, b.net_energy_j
+    )
+}
+
 /// Sum mechanical energy (J) along `path` using the same eco model as reweighting.
 pub fn path_mechanical_energy_j(
     graph: &RouteGraph,
@@ -299,5 +366,24 @@ mod tests {
         let s = format_ev_car_route_report(&range);
         assert!(s.contains("ev_battery_kwh=60.0"));
         assert!(s.contains("ev_pct_of_capacity="));
+    }
+
+    #[test]
+    fn eco_energy_breakdown_report_separates_climb_and_descent() {
+        let b = EcoEnergyBreakdown {
+            climb_m: 2011.0,
+            descent_m: 1476.0,
+            uphill_energy_j: 87_200_000.0,
+            downhill_energy_j: 7_738_589.0,
+            regen_credit_j: 0.0,
+            net_energy_j: 94_938_589.0,
+        };
+        let s = format_eco_energy_breakdown_report(&b);
+        assert!(s.contains("eco_climb_m=2011.0"));
+        assert!(s.contains("eco_descent_m=1476.0"));
+        assert!(s.contains("eco_uphill_j=87200000"));
+        assert!(s.contains("eco_downhill_j=7738589"));
+        assert!(s.contains("eco_regen_credit_j=0"));
+        assert!(s.contains("eco_net_j=94938589"));
     }
 }
