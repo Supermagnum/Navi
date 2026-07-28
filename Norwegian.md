@@ -290,7 +290,13 @@ AVD GNSS-høyde er ofte feil — se merknad over). Én rast er synlig:
 ![Helgøya til Atnbrua-rute](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
 
 Kartkamera-tilt (0° / 35° / 45° / 65°) er uavhengig av valgfri 3D-hillshade.
-Hamar kort løkke ved **45°** — flat 2D, deretter 3D på:
+Hamar kort løkke ved **45°** — flat 2D, deretter 3D på.
+Dette er tilt/3D-demoer, ikke rene strandlinjereferanser: elve-/innsjøkanter kan
+vise den residuale **hydro soft-edge fringe** (kjent begrensning, ubetydelig for
+bruk, venter på
+[bekreftelse på ekte maskinvare](docs/real-hardware-testing.md#7-hydro-soft-edge-fringe-emulator-vs-device);
+detaljer i
+[`docs/map-styles.md`](docs/map-styles.md#hydro-soft-edge-fringe-known-limitation)):
 
 ![45° tilt, 3D av](docs/images/tilt45_3d_off.png)
 

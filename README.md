@@ -383,7 +383,13 @@ AVD GNSS altitude is often wrong — see note above). One rest stop is visible:
 ![Helgøya to Atnbrua route](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
 
 Map camera tilt presets (0° / 35° / 45° / 65°) are independent of opt-in 3D
-hillshade. Løten short-loop corridor at **45°** — flat 2D, then 3D on:
+hillshade. Løten short-loop corridor at **45°** — flat 2D, then 3D on.
+These are tilt/3D demos, not clean shoreline references: river/lake edges may
+show the residual **hydro soft-edge fringe** (known limitation, negligible for
+usability, pending
+[real-hardware confirmation](docs/real-hardware-testing.md#7-hydro-soft-edge-fringe-emulator-vs-device);
+details in
+[`docs/map-styles.md`](docs/map-styles.md#hydro-soft-edge-fringe-known-limitation)):
 
 ![45° tilt, 3D off](docs/images/tilt45_3d_off.png)
 

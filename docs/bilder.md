@@ -39,6 +39,11 @@ Nåværende gate UTF-8-bevis:
 | Hamar-løkke, 45° tilt, 3D av | ![45° tilt 3D av](images/tilt45_3d_off.png) |
 | Hamar-løkke, 45° tilt, 3D på | ![45° tilt 3D på](images/tilt45_3d_on.png) |
 
+Kun tilt/3D-demoer — ikke rene strandlinjereferanser. Residual hydro soft-edge
+fringe er en [kjent begrensning](map-styles.md#hydro-soft-edge-fringe-known-limitation)
+(ubetydelig; venter på
+[bekreftelse på ekte maskinvare](real-hardware-testing.md#7-hydro-soft-edge-fringe-emulator-vs-device)).
+
 ## Nåværende gate (bunn-HUD)
 
 | Scene | Forhåndsvisning |
