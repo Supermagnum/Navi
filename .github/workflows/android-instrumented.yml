@@ -53,27 +53,45 @@ jobs:
           arch: x86_64
           target: android-automotive
           force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # Landscape HUD resolution + extra RAM: default Automotive CI skin can
+          # report ~320px width (breaks width-fraction asserts) and MapLibre
+          # suites have previously lost the emulator mid-run under memory pressure.
+          emulator-options: >-
+            -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+            -camera-back none -memory 4096 -skin 1920x1080
           disable-animations: true
           script: |
             set +e
+            EVIDENCE="${GITHUB_WORKSPACE}/instrumented-evidence"
+            mkdir -p "$EVIDENCE/tombstones"
+            echo "api=33 target=android-automotive skin=1920x1080 memory=4096" > "$EVIDENCE/env.txt"
+            adb devices -l > "$EVIDENCE/adb_devices_before.txt" 2>&1 || true
+            adb shell getprop ro.build.fingerprint > "$EVIDENCE/fingerprint.txt" 2>&1 || true
+            adb shell wm size > "$EVIDENCE/wm_size.txt" 2>&1 || true
+            adb shell wm density > "$EVIDENCE/wm_density.txt" 2>&1 || true
             adb logcat -c || true
+            # Continuous logcat survives emulator death better than a post-mortem dump.
+            adb logcat -v threadtime > "$EVIDENCE/logcat.txt" 2>&1 &
+            LOGCAT_PID=$!
             ./gradlew :app:connectedDebugAndroidTest --no-daemon
             status=$?
-            mkdir -p /tmp/navi_instrumented_evidence
-            adb logcat -d > /tmp/navi_instrumented_evidence/logcat.txt 2>/dev/null || true
-            adb logcat -b crash -d > /tmp/navi_instrumented_evidence/logcat_crash.txt 2>/dev/null || true
-            adb shell "ls -la /data/tombstones/" > /tmp/navi_instrumented_evidence/tombstones_ls.txt 2>/dev/null || true
-            mkdir -p /tmp/navi_instrumented_evidence/tombstones
-            adb pull /data/tombstones /tmp/navi_instrumented_evidence/tombstones 2>/dev/null || true
-            cp -a app/build/reports/androidTests/connected /tmp/navi_instrumented_evidence/reports 2>/dev/null || true
+            kill "$LOGCAT_PID" 2>/dev/null || true
+            wait "$LOGCAT_PID" 2>/dev/null || true
+            adb devices -l > "$EVIDENCE/adb_devices_after.txt" 2>&1 || true
+            adb logcat -b crash -d > "$EVIDENCE/logcat_crash.txt" 2>&1 || true
+            adb shell "ls -la /data/tombstones/" > "$EVIDENCE/tombstones_ls.txt" 2>&1 || true
+            adb pull /data/tombstones "$EVIDENCE/tombstones" 2>&1 | tee "$EVIDENCE/tombstones_pull.txt" || true
+            cp -a app/build/reports/androidTests/connected "$EVIDENCE/reports" 2>&1 || true
+            cp -a app/build/outputs/androidTest-results "$EVIDENCE/androidTest-results" 2>&1 || true
+            echo "gradle_exit=$status" > "$EVIDENCE/status.txt"
+            ls -laR "$EVIDENCE" > "$EVIDENCE/listing.txt" 2>&1 || true
             exit $status
 
       - name: Upload instrumented crash evidence
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: instrumented-crash-evidence
-          path: /tmp/navi_instrumented_evidence
+          path: instrumented-evidence
           if-no-files-found: warn
           retention-days: 14

@@ -246,9 +246,15 @@ not upload logcat/tombstones on that run; local AAOS reproduction of tests 1–3
 passed with no new tombstone (only Zygote `signal 9` after a clean
 `run finished: 3 tests, 0 failed`).
 
-Mitigation: nightly workflow retargeted to API 33 `android-automotive` and
-uploads `/tmp/navi_instrumented_evidence` (logcat, crash buffer, tombstones,
-Gradle reports) on failure.
+Mitigation: nightly workflow retargeted to API 33 `android-automotive` with
+`-skin 1920x1080` / `-memory 4096`, continuous logcat during the suite, and
+upload of `instrumented-evidence/` (logcat, crash buffer, tombstones, Gradle
+reports, `wm size`) on every run. First Automotive confirmation
+([30363333076](https://github.com/Supermagnum/Navi/actions/runs/30363333076)):
+process-crash abort **did not recur**; approach failed
+`approach box must be compact (was 209px of 320.0px screen)` on the default
+narrow skin instead — assertion now uses the `420.dp` product cap, with the
+45% width fraction only on screens ≥ 720px.
 
 ---
 

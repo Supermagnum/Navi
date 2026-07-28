@@ -690,9 +690,15 @@ road network (e.g. E6 west of Trondheim).
   normal instrumentation teardown). **Not classified as “flaky under full
   suite load”** — predecessors leave no GL/MapLibre state, and the CI crash is
   on a device class this project’s Vulkan/hillshade work never validated.
-  Nightly workflow now targets **API 33 `android-automotive`** and uploads
-  logcat + tombstones on failure; phone-AOSP coverage remains an open, separate
-  surface if we want broader CI later. See
+  Nightly was retargeted to **API 33 `android-automotive`**. First Automotive
+  confirmation run
+  ([30363333076](https://github.com/Supermagnum/Navi/actions/runs/30363333076)):
+  the **process-crash abort did not recur** (suite continued after approach);
+  approach instead failed a width-fraction assert on the default ~320px-wide
+  CI skin (`209px of 320px`). Nightly now uses `-skin 1920x1080` / `-memory 4096`,
+  the compact check follows the `420.dp` product cap (fraction only on wide
+  screens), and continuous logcat + reports upload on every run. Phone-AOSP
+  coverage remains an open, separate surface if we want broader CI later. See
   [`docs/debugging.md`](docs/debugging.md#nightly-instrumented-phone-aosp-crash).
 - **TODO — optimize building load for hiking overnight-proximity check.** A
   single hiking plan currently takes ~177.6 s on a large corridor (measured:
