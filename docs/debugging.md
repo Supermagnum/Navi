@@ -213,6 +213,43 @@ adb bugreport bugreport.zip   # heavy; use when filing hardware issues
 For hardware runs, attach full untruncated logcat as required by
 [`real-hardware-testing.md`](real-hardware-testing.md).
 
+### Nightly instrumented phone-AOSP crash
+
+Evidence from GitHub Actions run
+[30334233545](https://github.com/Supermagnum/Navi/actions/runs/30334233545)
+(commit `418f952`), job `connectedDebugAndroidTest`:
+
+| Fact | Value |
+|---|---|
+| AVD package | `system-images;android-30;default;x86_64` |
+| Profile | Generic phone AOSP (`target: default`), **not** Automotive |
+| GPU | `-gpu swiftshader_indirect` |
+| Fail point | `ApproachInstructionInstrumentedTest.approachAppearAndUrgencyScreenshots` at 3/50 |
+| Gradle report | Empty `<failure/>`; then `Process crashed` |
+| Emulator lines (untruncated excerpt) | See below |
+
+```text
+INFO | Created VkInstance:... for application:'maplibre-native' ...
+INFO | Created VkDevice:... for application:'maplibre-native' ...
+INFO | Destroyed VkDevice:...
+INFO | Destroyed VkInstance:... for application:'maplibre-native' ...
+no.navi.app.ApproachInstructionInstrumentedTest > approachAppearAndUrgencyScreenshots[...] FAILED
+emulator-5554 - 11 Tests 3/50 completed. (0 skipped) (1 failed)
+Test run failed to complete. Instrumentation run failed due to Process crashed.
+```
+
+Create→destroy of MapLibre Vulkan in about one second, before any meaningful
+approach screenshot work, points at a **native crash / aborted MapView** on that
+phone image — not a Java assertion with a missing stack, and not OOM from a
+long suite (positions 1–2 are HideDistance JNI checks with no MapLibre). CI did
+not upload logcat/tombstones on that run; local AAOS reproduction of tests 1–3
+passed with no new tombstone (only Zygote `signal 9` after a clean
+`run finished: 3 tests, 0 failed`).
+
+Mitigation: nightly workflow retargeted to API 33 `android-automotive` and
+uploads `/tmp/navi_instrumented_evidence` (logcat, crash buffer, tombstones,
+Gradle reports) on failure.
+
 ---
 
 ## 8. Minimal “something is wrong” loop

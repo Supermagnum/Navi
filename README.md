@@ -672,6 +672,28 @@ road network (e.g. E6 west of Trondheim).
   [`docs/map-styles.md`](docs/map-styles.md#hydro-soft-edge-fringe-known-limitation);
   checklist item 7 in
   [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md#7-hydro-soft-edge-fringe-emulator-vs-device).
+- **Nightly instrumented crash on phone AOSP (not Automotive):**
+  [Android instrumented run 30334233545](https://github.com/Supermagnum/Navi/actions/runs/30334233545)
+  (`api-level: 30`, `target: default` → `system-images;android-30;default;x86_64`,
+  SwiftShader) aborted at
+  `ApproachInstructionInstrumentedTest.approachAppearAndUrgencyScreenshots`
+  (position 3/50) with an empty `<failure/>` and
+  `Instrumentation run failed due to Process crashed`. Emulator log showed
+  MapLibre Vulkan `VkInstance`/`VkDevice` create then destroy within ~1 s
+  immediately before the failure — consistent with a **native MapLibre Vulkan
+  abort on that phone AOSP + SwiftShader profile**, not an empty-report-only
+  mystery. Suite order: (1–2)
+  `ApproachHideDistanceInstrumentedTest` (JNI / UniFFI only, no MapLibre), then
+  (3) this first MapLibre Compose test. Local AAOS: tests 1–3 in that order and
+  the full `ApproachInstructionInstrumentedTest` class **pass**; no fresh
+  `/data/tombstones` from the passing repro (post-run Zygote `signal 9` is
+  normal instrumentation teardown). **Not classified as “flaky under full
+  suite load”** — predecessors leave no GL/MapLibre state, and the CI crash is
+  on a device class this project’s Vulkan/hillshade work never validated.
+  Nightly workflow now targets **API 33 `android-automotive`** and uploads
+  logcat + tombstones on failure; phone-AOSP coverage remains an open, separate
+  surface if we want broader CI later. See
+  [`docs/debugging.md`](docs/debugging.md#nightly-instrumented-phone-aosp-crash).
 - **TODO — optimize building load for hiking overnight-proximity check.** A
   single hiking plan currently takes ~177.6 s on a large corridor (measured:
   DNT Åkersætra→Rondvassbu, Østlandet), driven almost entirely by loading all

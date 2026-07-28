@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -76,6 +77,15 @@ class ApproachInstructionInstrumentedTest {
                 (START_LON + END_LON) / 2.0,
                 13.5,
             )
+    }
+
+    @After
+    fun tearDown() {
+        NaviMapTestHooks.pendingApproachGuidance = null
+        NaviMapTestHooks.pendingRoute = null
+        NaviMapTestHooks.pendingCamera = null
+        NaviMapTestHooks.hideSearchChrome = false
+        NaviMapTestHooks.gpsAltitudeM = null
     }
 
     private fun waitStyle() {

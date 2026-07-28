@@ -4,6 +4,12 @@
 # not part of the default PR gate.
 #
 # Trigger: nightly schedule or manual workflow_dispatch.
+#
+# Device profile: Android Automotive (not generic phone AOSP). MapLibre Vulkan /
+# hillshade / rotation fixes in this project were validated on AAOS AVDs; the
+# previous API 30 `target: default` phone image is a distinct, untested class
+# that aborted the suite on ApproachInstructionInstrumentedTest (see README
+# known issues).
 
 name: Android instrumented
 
@@ -40,13 +46,34 @@ jobs:
       - name: Cache Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Run instrumented tests (API 30 AOSP)
+      - name: Run instrumented tests (API 33 Automotive)
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 30
+          api-level: 33
           arch: x86_64
-          target: default
+          target: android-automotive
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: ./gradlew :app:connectedDebugAndroidTest --no-daemon
+          script: |
+            set +e
+            adb logcat -c || true
+            ./gradlew :app:connectedDebugAndroidTest --no-daemon
+            status=$?
+            mkdir -p /tmp/navi_instrumented_evidence
+            adb logcat -d > /tmp/navi_instrumented_evidence/logcat.txt 2>/dev/null || true
+            adb logcat -b crash -d > /tmp/navi_instrumented_evidence/logcat_crash.txt 2>/dev/null || true
+            adb shell "ls -la /data/tombstones/" > /tmp/navi_instrumented_evidence/tombstones_ls.txt 2>/dev/null || true
+            mkdir -p /tmp/navi_instrumented_evidence/tombstones
+            adb pull /data/tombstones /tmp/navi_instrumented_evidence/tombstones 2>/dev/null || true
+            cp -a app/build/reports/androidTests/connected /tmp/navi_instrumented_evidence/reports 2>/dev/null || true
+            exit $status
+
+      - name: Upload instrumented crash evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instrumented-crash-evidence
+          path: /tmp/navi_instrumented_evidence
+          if-no-files-found: warn
+          retention-days: 14

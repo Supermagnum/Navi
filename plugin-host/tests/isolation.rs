@@ -95,10 +95,18 @@ fn stage_plugin(plugin_dir_name: &str) -> PathBuf {
     let root = workspace_root();
     let src = root.join("plugins").join(plugin_dir_name);
     let wasm_src = build_plugin(&src);
-    let stage = root
-        .join("target")
-        .join("plugin-fixtures")
-        .join(plugin_dir_name);
+    // Unique per call: isolation tests run in parallel and must not race on a
+    // shared plugin.json (empty partial write → "EOF while parsing a value").
+    let unique = format!(
+        "{}-{}-{}",
+        plugin_dir_name,
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    );
+    let stage = root.join("target").join("plugin-fixtures").join(unique);
     std::fs::create_dir_all(&stage).unwrap();
     std::fs::copy(src.join("plugin.json"), stage.join("plugin.json")).unwrap();
     std::fs::copy(&wasm_src, stage.join("plugin.wasm")).unwrap();
