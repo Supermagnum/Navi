@@ -1,7 +1,11 @@
-//! Approximate country bounding boxes for elevation country jobs.
+//! Approximate country bounding boxes for elevation country jobs, plus shared
+//! offline ISO point-in-polygon detection ([`iso_at`]).
 //!
-//! Host UI should prefer Geofabrik `.poly` boundaries when available; these boxes
-//! are a conservative fallback for tile enumeration.
+//! Host UI should prefer Geofabrik `.poly` / OSM admin boundaries when available
+//! for a bound extract; the rings in [`super::country_polys`] are the on-device
+//! fallback used by HOS jurisdiction resolution and available for other callers.
+
+pub use super::country_polys::iso_at;
 
 pub fn lookup(code: &str) -> Option<[f64; 4]> {
     let key = code.to_ascii_lowercase();
@@ -21,4 +25,13 @@ const COUNTRIES: &[(&str, [f64; 4])] = &[
     ("fr", [41.0, -5.5, 51.5, 10.0]),
     ("gb", [49.5, -8.5, 61.0, 2.0]),
     ("us", [24.0, -125.0, 50.0, -66.0]),
+    ("ie", [51.4, -10.5, 55.5, -5.9]),
+    ("is", [63.2, -24.6, 66.6, -13.4]),
+    ("be", [49.4, 2.5, 51.6, 6.5]),
+    ("nl", [50.7, 3.3, 53.6, 7.3]),
+    ("dk", [54.5, 8.0, 57.8, 12.8]),
+    ("pl", [49.0, 14.0, 54.9, 24.2]),
+    ("it", [36.6, 6.6, 47.1, 18.6]),
+    ("es", [35.9, -9.4, 43.8, 3.4]),
+    ("pt", [36.9, -9.6, 42.2, -6.1]),
 ];

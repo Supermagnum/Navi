@@ -131,10 +131,11 @@ the right-to-roam country table:
 
 Truck-style packs use the same idea. Today Navi resolves
 [`JurisdictionDrivingHoursPack`](../core/src/config/driving_hours_pack.rs) at the
-corridor start: **EC 561** (EEA-aligned country bboxes), **FMCSA** (US bbox —
+corridor start via shared offline ISO rings (`country_iso_at`): **EC 561** (EU
+family + NO/IS/LI/CH; **not** GB), **FMCSA** (US —
 [`fmcsa-truck-rest.md`](fmcsa-truck-rest.md)), or **Unknown** (decline legal
-tracking). Extending further (e.g. AETR) means **adding rows**, not forking
-unrelated one-off code paths.
+tracking, including UK until a dedicated pack exists). Extending further
+(e.g. AETR or UK) means **adding rows**, not forking unrelated one-off code paths.
 
 ### 2.3 Fallback / unknown jurisdiction (standing default)
 
@@ -199,8 +200,9 @@ explicitly when they are **not** regulation-derived (see
 
 Illustrative; **not implemented** in this pass:
 
-- **AETR / additional treaty packs** beyond the current EC 561 family bbox list
-  (structure parallels EC 561; add keyed rows rather than renaming defaults).
+- **AETR / UK assimilated EC 561 / additional treaty packs** beyond the current
+  EC 561 family ISO list (structure parallels EC 561; add keyed rows rather than
+  renaming defaults).
 - **National `maxspeed` fallback tables** — pre-departure ETA already uses
   highway-class fallbacks when OSM `maxspeed` is missing; per-country defaults
   (e.g. `NO:rural`) may need explicit tuning packs.

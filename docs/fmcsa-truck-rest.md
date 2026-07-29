@@ -2,8 +2,9 @@
 
 Navi’s **Truck** / **TruckElectric** profiles resolve a jurisdiction driving-hours
 pack at the corridor start (`resolve_driving_hours_pack_at`). When the start
-falls in the United States bbox, the planner uses **US FMCSA** property-carrying
-Hours of Service (49 CFR 395.3) instead of EU EC 561/2006.
+falls in the United States (offline ISO ring via `country_iso_at`), the planner
+uses **US FMCSA** property-carrying Hours of Service (49 CFR 395.3) instead of
+EU EC 561/2006.
 
 Official summary:
 [FMCSA Hours of Service](https://www.fmcsa.dot.gov/regulations/hours-service/summary-hours-service-regulations).
@@ -16,9 +17,15 @@ truck overnight POI tags — [`poi.md`](poi.md) (**RestArea**).
 
 | Pack | When | Planner |
 |---|---|---|
-| `ec561` | Start in EC 561 / EEA-aligned country bboxes (NO, SE, FI, DE, CH, AT, FR, GB, …) | Existing `TruckRestParams` / `plan_truck_multi_day` |
-| `fmcsa` | Start in US bbox | `FmcsaHosParams` / `plan_fmcsa_multi_day` |
-| `unknown` | Unmatched coordinates | **Decline** commercial legal tracking — report clearly; **no** duty history commit |
+| `ec561` | Start ISO in EC 561 family (EU rings present + NO/IS/LI/CH). **Not** GB — see below | Existing `TruckRestParams` / `plan_truck_multi_day` |
+| `fmcsa` | Start ISO `us` | `FmcsaHosParams` / `plan_fmcsa_multi_day` |
+| `unknown` | Unmatched coordinates, or detected ISO with no pack (including **`gb`**) | **Decline** commercial legal tracking — report clearly; **no** duty history commit |
+
+**United Kingdom (`gb`):** UK applies *assimilated* EC 561 with national
+derogations and a distinct AETR split for some journeys
+([GOV.UK guidance](https://www.gov.uk/guidance/drivers-hours-goods-vehicles/1-assimilated-and-aetr-rules-on-drivers-hours)).
+Navi does **not** silently apply the EU EC 561 pack; resolve → `unknown` until a
+dedicated UK pack exists.
 
 Report line: `hos_pack=ec561|fmcsa|unknown`.
 
@@ -49,7 +56,8 @@ Duty evaluation notes are report-only for now (no separate FMCSA history commit 
 
 - Params: `core/src/config/fmcsa_params.rs` (`FmcsaHosParams`).
 - Pack enum: `JurisdictionDrivingHoursPack::{Ec561, Fmcsa, Unknown}`.
-- Resolution: `resolve_driving_hours_pack_at` (offline country bboxes).
+- Resolution: `resolve_driving_hours_pack_at` (offline ISO rings via
+  `country_iso_at` / `core/src/routing/elevation/country_polys.rs`).
 - Planner: `plan_fmcsa_multi_day` / `evaluate_fmcsa_trip` in `core/src/routing/rest/fmcsa_multi_day.rs`.
 - FFI: `plan_car_route` branches on `hos_pack`; Android hosts render `daysJson` via `MultiDayPlanCards`.
 

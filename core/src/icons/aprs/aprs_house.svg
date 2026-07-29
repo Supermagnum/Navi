@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <!-- Navi original: simple house -->
+  <rect width="48" height="48" fill="none"/>
+  <polygon points="24,6 42,22 38,22 38,40 10,40 10,22 6,22" fill="#5d4037" stroke="#3e2723" stroke-width="1.2"/>
+  <rect x="19" y="26" width="10" height="14" fill="#ffe0b2" stroke="#3e2723" stroke-width="1"/>
+  <polygon points="24,6 42,22 6,22" fill="#c62828" stroke="#8e0000" stroke-width="1"/>
+</svg>

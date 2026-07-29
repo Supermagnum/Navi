@@ -230,3 +230,112 @@ insufficient. Treat further work as investigating why UiAutomation/`screencap`
 differs from the live display for hydro edges (present path / buffer copy),
 not as re-opening a live user-visible shoreline defect. Do not force a pure
 timing explanation beyond what the evidence supports.
+
+## Farm place labels (`place=farm`) — case study
+
+**Status:** closed (2026-07). Offline Protomaps: **working as designed** at
+zoom ≈ **13+**. Online Liberty: **out of scope** for style-only fixes.
+
+### Symptom
+
+Named OSM farms (e.g. Dystingbo near Ridabu / Hamar, `place=farm`) did not
+appear on the map after style-layer attempts (place-point filter, building-name
+labels). Easy to treat as another style filter miss.
+
+### What actually differed by basemap
+
+| Source | Schema | Tile contents at Dystingbo | Style can fix? |
+|---|---|---|---|
+| **Liberty (OpenMapTiles)** | `place.class` enumerates city/town/village/hamlet/…/`isolated_dwelling` — **no `farm`** | No Dystingbo; no `class=farm` in inspected z12/z14 tiles. Nearby `isolated_dwelling` is a **different** OSM tag, not a reclassification of farms. Building polygons often lack `name`. | **No.** Data never enters the tiles. |
+| **Offline Protomaps** (Ostlandet extract, **maxzoom 12**) | `places.kind_detail` includes **`farm`** ([Protomaps layers](https://docs.protomaps.com/basemaps/layers)) | z12 tile **contains** Dystingbo: `kind=locality`, `kind_detail=farm`, `name=Dystingbo`, feature `min_zoom: 13`. Farms are absent from z11 parent tiles. | Labels are already in the bundled `places` layer (`text-field: name`). |
+
+Lesson: **inspect the vector tile (and the schema) before editing style JSON.**
+Two failed style guesses were data/schema limits on Liberty, not wrong filters.
+
+### Offline render check (evidence)
+
+Instrumented ladder (`FarmLabelZoomScreenshotTest`) on offline Ostlandet
+PMTiles, camera on Dystingbo (`60.8022727, 11.1389560`), 3D off. Screenshots
+under `docs/images/tmp/farm_zoom/` (local evidence; not required in CI).
+
+| Camera zoom | “Dystingbo” visible? |
+|---|---|
+| 11 | No (farms not in z11 tiles) |
+| 12 | No for this farm (other farms e.g. Farmen can show; denser collision) |
+| **12.9 / 13 / 13.5 / 14 / 15** | **Yes** |
+
+Overzoom from extract maxzoom 12 works: camera ≥ 13 still labels from the z12
+parent tile. Glyphs for ASCII farm names are fine. Not a client overzoom or
+font bug.
+
+### Product floor (documented, not a bug)
+
+Farm names on offline Protomaps are expected around **zoom 13+** (aligned with
+Protomaps’ feature `min_zoom: 13`). Showing them earlier would need upstream
+tile encoding / a higher extract maxzoom / collision-priority changes — not
+another Liberty `class=farm` filter.
+
+**Liberty farm labels** need a **custom tile source** that preserves
+`place=farm` (same class of undertaking as other custom basemap work). Do not
+chase that with style JSON on OpenFreeMap Liberty.
+
+### If “a label just won’t show” again
+
+1. Pick a known OSM feature and decode the covering Liberty + Protomaps tiles
+   (`pmtiles tile`, `mapbox_vector_tile`, or equivalent).
+2. Confirm the schema’s supported classes (`farm` vs `isolated_dwelling`, etc.).
+3. Only then change style filters — or accept a schema / zoom-floor product
+   decision.
+
+## Offline Protomaps water shards (live rendering)
+
+**Status:** fixed in style (2026-07). Distinct from the
+[screenshot-only soft fringe](#hydro-soft-edge-fringe-screenshot-artifact).
+
+### Symptom (live app)
+
+On offline Protomaps (Ostlandet extract), Lake Mjøsa / Hamar at camera zoom
+~10–11 showed **malformed water**: triangular/trapezoidal blue shards across
+land, tile-aligned missing lake sections, and flooded inland areas. Online
+Liberty at the same coordinates looked correct. This was visible in settled
+framebuffer captures of the interactive map (`docs/images/tmp/water_live/`),
+not only mid-composite test artifacts.
+
+At zoom ~13 (overzoom from extract maxzoom 12) the lake outline was closer to
+correct; the catastrophic mid-zoom failure was the actionable bug.
+
+### Tile data (not an extract corruption)
+
+At `10/543/292` and neighbours, Protomaps `water` features are present
+(Polygon / MultiPolygon lakes, LineString rivers, Point labels). The Ostlandet
+extract tile matched the public planet build **byte-for-byte** for that z10
+tile. Point-in-polygon checks place Hamar on land and Mjøsa mid-lake in water.
+So this was **not** a range-fetch / missing-geometry data bug.
+
+### Style root cause
+
+Protomaps packs **mixed geometry** in one `water` source-layer (points, lines,
+polygons). Official Protomaps styles restrict the fill layer with
+`["==", "$type", "Polygon"]`. Navi’s `protomaps-light` fill had **no** geometry
+filter, so MapLibre Native’s fill path also saw Point/LineString features in the
+same layer — producing the shard / missing-fill failure on this SDK.
+
+### Fix
+
+In `app/src/main/assets/map-styles/protomaps-light/style.template.json`:
+
+- `water` fill: filter to `Polygon` + `MultiPolygon` only
+- `waterway` line: filter to `LineString` + `MultiLineString` (also picks up
+  multi-part rivers the old LineString-only filter skipped)
+
+After the filter, mid-zoom offline water matches lake shorelines again
+(`docs/images/tmp/water_live_after/`). Soft shoreline fringes in **captures**
+may still appear; treat those under the fringe section above, not as a
+regression of this fix.
+
+### Relation to the fringe investigation
+
+The earlier “screenshot-only fringe” conclusion remains for the soft AA rim that
+affects both styles in captures. The shard / missing-tile water failure was a
+**separate, live offline Protomaps style bug** and should not be folded into
+that fringe write-up.

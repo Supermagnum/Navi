@@ -1,6 +1,11 @@
 # Android + corridor test results (full on-device wiring)
 
-Date: 2026-07-21 (follow-up pass)
+Date: 2026-07-21 (follow-up pass); toast/attribution status reconciled 2026-07-29.
+
+**Canonical role:** chronological evidence log for Android instrumented /
+emulator runs. For “what is the current product status?”, start at
+[`status.md`](status.md) — do not treat older rows in this file as live truth
+when a later Item supersedes them.
 
 ## Environment
 
@@ -138,7 +143,7 @@ Status key: **fixed and visually confirmed** / **confirmed-broken** /
 | Tap top → map settings; tap bottom → drive settings; Apply/Close collapses | **fixed and visually confirmed** | [`hud_rot_mode_compass.png`](docs/images/hud/hud_rot_mode_compass.png), [`hud_settings_open.png`](docs/images/hud/hud_settings_open.png), [`hud_after_break_hours_apply.png`](docs/images/hud/hud_after_break_hours_apply.png) |
 | Tap map does nothing to sheets | **still-needs-testing** | No instrumented assert / no dedicated shot |
 | One app zoom −/+ on bottom bar; AAOS `- 63 +` is climate | **fixed and visually confirmed** | App −/+ on bottom HUD; climate `- 63 +` in system bar (distinct position/style) |
-| Toast vs MapLibre attribution | **confirmed-broken** | “Drive settings applied” covers attribution in `hud_map_top_bottom_only.png`, `hud_settings_open.png`, `hud_after_break_hours_apply.png` |
+| Toast vs MapLibre attribution | **fixed and visually confirmed** (Item 8) | Was broken when toast sat bottom-left over attribution. Fixed: shared `status_toast` at **BottomEnd**. Do not treat older Item 7 screenshots as current status — see Item 8 evidence. |
 | Auto-zoom −/+ enabled styling consistent | **confirmed-broken** | [`hud_auto_zoom_preset.png`](docs/images/hud/hud_auto_zoom_preset.png) — with auto-zoom on, `−` has pill background, `+` is plain |
 
 ### Collapsed bar heights vs Garmin reference

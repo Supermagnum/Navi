@@ -3231,6 +3231,20 @@ pub fn road_label_near(
     label
 }
 
+/// Canonical Geofabrik `-latest.osm.pbf` URL for a region path
+/// (e.g. `europe/norway/ostlandet`). Prefer this over host-side URL string
+/// interpolation so Android and core share one builder.
+#[uniffi::export]
+pub fn geofabrik_latest_pbf_url(geofabrik_region: String) -> String {
+    driver_break_core::routing::geofabrik_latest_pbf_url(geofabrik_region.trim().trim_matches('/'))
+}
+
+/// Canonical Geofabrik `{region}-updates` base URL (no trailing slash).
+#[uniffi::export]
+pub fn geofabrik_updates_base_url(geofabrik_region: String) -> String {
+    driver_break_core::routing::geofabrik_updates_base(geofabrik_region.trim().trim_matches('/'))
+}
+
 /// Bind a Geofabrik region to the local extract (required before update checks).
 #[uniffi::export]
 pub fn bind_geofabrik_region(

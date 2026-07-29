@@ -194,4 +194,33 @@ cargo deny check
 ./gradlew :app:ktlintCheck :app:detekt :app:testDebugUnitTest :app:assembleDebug
 ```
 
-Rust toolchain is pinned by `rust-toolchain.toml` (MSRV **1.88**).
+Rust toolchain is pinned by `rust-toolchain.toml` (**1.88** reproducibility
+pin — not a proven MSRV matrix; see [`docs/build-linux.md`](docs/build-linux.md)).
+
+## Dependency maintenance watch
+
+Run a short dependency freshness pass **at least once per quarter** (or before
+any release / store submission). Checklist:
+
+1. **Rust (crates.io)** — `cargo outdated -w` (or equivalent) on the workspace;
+   skim `cargo deny check` / `cargo audit` (already in CI).
+2. **Near-term flags** (called out by the 2026-07 future-proofing audit):
+   - `wee_alloc` (example WASM guests only; `RUSTSEC-2022-0054` allowed in
+     `deny.toml`) — **schedule replacement review** before shipping production
+     guests that need a custom allocator; host does not use it. Swap can wait
+     until a guest allocator is actually needed in a released plugin.
+   - `gpsd_proto` (`core` feature `gpsd`) — last-release age was notably stale at
+     audit time; **review for maintained fork / alternate** when next touching
+     Linux GPS wiring. Keep until a drop-in is validated (pure TCP/JSON, no
+     `libgps`).
+3. **Lower-priority periodic checks:** `osm4routing`, `geotiff` — low churn;
+   verify still compile and license-clean when bumping related map/DEM work.
+4. **Gradle / Android** — Compose BOM, AGP, Kotlin, MapLibre; see
+   [`docs/android-api36-plan.md`](docs/android-api36-plan.md) for the API 36 bump
+   plan. Prefer one coordinated bump PR over silent drift.
+5. Record the review date in the PR or in
+   [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md)
+   priority-6 notes when closing a watch cycle.
+
+This is a **process** deliverable: do not mass-upgrade dependencies in the same
+PR as unrelated features.

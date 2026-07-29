@@ -882,6 +882,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -940,6 +944,10 @@ fun uniffi_navi_checksum_func_format_avoid_major_report(
 fun uniffi_navi_checksum_func_format_current_road_label(
 ): Short
 fun uniffi_navi_checksum_func_format_route_avoidance_report(
+): Short
+fun uniffi_navi_checksum_func_geofabrik_latest_pbf_url(
+): Short
+fun uniffi_navi_checksum_func_geofabrik_updates_base_url(
 ): Short
 fun uniffi_navi_checksum_func_haversine_km(
 ): Short
@@ -1177,6 +1185,10 @@ fun uniffi_navi_fn_func_format_avoid_major_report(`avoidMajor`: Byte,`priorityPa
 fun uniffi_navi_fn_func_format_current_road_label(`name`: RustBuffer.ByValue,`roadRef`: RustBuffer.ByValue,`highway`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_format_route_avoidance_report(`avoidMajor`: Byte,`avoidTolls`: Byte,`avoidFerries`: Byte,`priorityPathSharePct`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_geofabrik_latest_pbf_url(`geofabrikRegion`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_geofabrik_updates_base_url(`geofabrikRegion`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_haversine_km(`lat1`: Double,`lon1`: Double,`lat2`: Double,`lon2`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): Double
@@ -1476,6 +1488,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_format_route_avoidance_report() != 54522.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_geofabrik_latest_pbf_url() != 13066.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_geofabrik_updates_base_url() != 24441.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_haversine_km() != 51239.toShort()) {
@@ -3716,6 +3734,32 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_format_route_avoidance_report(
         FfiConverterBoolean.lower(`avoidMajor`),FfiConverterBoolean.lower(`avoidTolls`),FfiConverterBoolean.lower(`avoidFerries`),FfiConverterDouble.lower(`priorityPathSharePct`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Canonical Geofabrik `-latest.osm.pbf` URL for a region path
+         * (e.g. `europe/norway/ostlandet`). Prefer this over host-side URL string
+         * interpolation so Android and core share one builder.
+         */ fun `geofabrikLatestPbfUrl`(`geofabrikRegion`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_geofabrik_latest_pbf_url(
+        FfiConverterString.lower(`geofabrikRegion`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Canonical Geofabrik `{region}-updates` base URL (no trailing slash).
+         */ fun `geofabrikUpdatesBaseUrl`(`geofabrikRegion`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_geofabrik_updates_base_url(
+        FfiConverterString.lower(`geofabrikRegion`),_status)
 }
     )
     }

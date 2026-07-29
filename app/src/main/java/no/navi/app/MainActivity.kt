@@ -111,6 +111,7 @@ import uniffi.navi.ecoModeToggleable
 import uniffi.navi.elevationAt
 import uniffi.navi.ensurePlaceIndex
 import uniffi.navi.formatRouteAvoidanceReport
+import uniffi.navi.geofabrikLatestPbfUrl
 import uniffi.navi.listSavedRoutes
 import uniffi.navi.loadCarRestSettings
 import uniffi.navi.loadTruckRestSettings
@@ -2989,7 +2990,7 @@ private fun NaviMapScreen() {
                                 }
                                 val leaf = path.substringAfterLast('/')
                                 val filename = "$leaf-latest.osm.pbf"
-                                val url = "https://download.geofabrik.de/$path-latest.osm.pbf"
+                                val url = geofabrikLatestPbfUrl(path)
                                 downloadProgressClear()
                                 regionDownloadProgress = "Downloading region… 0%"
                                 downloadPolling = true

@@ -15,8 +15,9 @@ default-members = ["core", "plugin-host"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-# Minimum Supported Rust Version — keep in sync with rust-toolchain.toml channel
-# when raising; CI installs that exact toolchain.
+# Pinned toolchain channel for reproducible builds (keep in sync with
+# rust-toolchain.toml). This is a reproducibility pin, not a proven lower bound:
+# CI builds the pinned 1.88 toolchain only — there is no MSRV matrix job yet.
 rust-version = "1.88"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Supermagnum/naw-app"

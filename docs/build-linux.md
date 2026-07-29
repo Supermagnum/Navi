@@ -57,11 +57,12 @@ Distro packages of Rust exist, but **rustup** is recommended so you can add
 Android and WASM targets cleanly (see [`android-build.md`](android-build.md) and
 below).
 
-**MSRV:** Workspace Minimum Supported Rust Version is **1.88**, pinned by
-[`rust-toolchain.toml`](../rust-toolchain.toml) and `workspace.package.rust-version`
-in the root `Cargo.toml`. CI installs that exact toolchain (not floating
-`stable`). The guest `plugin-sdk` package may declare its own `rust-version`
-for documentation. Edition is **2021**.
+**Toolchain pin:** Workspace `rust-version` / `rust-toolchain.toml` channel is
+**1.88**. That pin is for **build reproducibility** (CI and local rustup install
+the exact channel). It is **not** a formally verified minimum: there is no CI
+matrix job building an older claimed MSRV. Do not lower the pin without proving
+the dependency set still compiles; do not claim “MSRV verified” without adding
+that matrix.
 
 ### WASM target (plugins)
 

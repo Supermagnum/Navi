@@ -71,6 +71,13 @@
       "type": "fill",
       "source": "protomaps",
       "source-layer": "water",
+      "filter": [
+        "match",
+        ["geometry-type"],
+        ["Polygon", "MultiPolygon"],
+        true,
+        false
+      ],
       "paint": { "fill-color": "#80b0d0" }
     },
     {
@@ -78,7 +85,13 @@
       "type": "line",
       "source": "protomaps",
       "source-layer": "water",
-      "filter": ["==", ["geometry-type"], "LineString"],
+      "filter": [
+        "match",
+        ["geometry-type"],
+        ["LineString", "MultiLineString"],
+        true,
+        false
+      ],
       "paint": {
         "line-color": "#80b0d0",
         "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 14, 2.5]

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <!-- Navi original: digipeater-style star with D -->
+  <rect width="48" height="48" fill="none"/>
+  <polygon points="24,4 28,18 43,18 31,27 35,42 24,33 13,42 17,27 5,18 20,18" fill="#2e7d32" stroke="#1b5e20" stroke-width="1"/>
+  <circle cx="24" cy="24" r="9" fill="#e8f5e9"/>
+  <text x="24" y="28" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="700" fill="#1b5e20">D</text>
+</svg>

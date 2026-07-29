@@ -124,3 +124,18 @@ individually without upstream-compatible terms. The repository root `LICENSE`
 (GPL-3.0-or-later) applies to original Navi code; asset provenance remains as
 above. Custom overrides you add remain under whatever license you choose for
 those files — document that next to the override set.
+
+## APRS moving-icon assets (top-level licensing index)
+
+Bundled under `core/src/icons/aprs/` and `app/src/main/assets/icons/aprs/`.
+Per-file detail and research notes: `COPYRIGHT.md` in those directories.
+**Release rule:** no symbol with unresolved (“Unknown”) licensing may ship.
+
+| File | License | Notes |
+|---|---|---|
+| `aprs_car.png` | CC BY-SA 2.0 | Retained from hessu/aprs-symbols (*OH7LZB* original). |
+| `aprs_digi.png` / `.svg` | GPL-3.0-or-later | **Navi original** (2026-07-29). Replaced upstream VEC-OH7LZB / Unknown. |
+| `aprs_house.png` / `.svg` | GPL-3.0-or-later | **Navi original** (2026-07-29). Replaced upstream VEC-OH7LZB / Unknown. |
+| `aprs_human.png` / `.svg` | GPL-3.0-or-later | **Navi original** (2026-07-29). Replaced upstream VEC-OH7LZB / Unknown. |
+
+Last verified: **2026-07-29**.

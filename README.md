@@ -22,6 +22,7 @@ throughout.
 - [Navi](#navi)
   - [Features](#features)
   - [Where data comes from](#where-data-comes-from)
+  - [What you need to download](#what-you-need-to-download)
   - [How features work](#how-features-work)
   - [Settings](#settings)
   - [Debugging](#debugging)
@@ -125,6 +126,30 @@ tiles load offline. Optional terrain DEM is the same path with
 ([`docs/map-styles.md`](docs/map-styles.md)).
 Country/region PMTiles extracts can be prepared with
 [PMT-splitter](https://github.com/Supermagnum/PMT-splitter/tree/main).
+
+## What you need to download
+
+Nothing ships with a ready-to-route map region. Use **Tools** (map settings /
+tools sheet) on a network connection, then work offline. Prefer a **regional**
+Geofabrik path on low-RAM devices (see
+[Minimum hardware and storage capacity](#minimum-hardware-and-storage-capacity)).
+
+| Download | Required? | What it is | In-app action |
+|---|---|---|---|
+| **OSM region (`.osm.pbf`)** | **Yes** — for routing, place search, and POIs | OpenStreetMap extract from [Geofabrik](https://download.geofabrik.de/) (path like `europe/norway/ostlandet`) | Set **Geofabrik path** → **Download region + build place index** |
+| **Elevation (DEM) tiles** | **Strongly recommended** for eco / hill-aware costing; optional if you only need flat shortest-distance plans | Copernicus / SRTM / Viewfinder-style height tiles (often pulled with region provision, or seeded as an archive) | Included with region provision when available; otherwise seed DEM into the app data dir |
+| **Basemap (PMTiles)** | **Optional** while online (OpenFreeMap Liberty works); **needed for offline map graphics** | Regional Protomaps visual tiles | **Download basemap (PMTiles)** |
+| **Terrain DEM (Mapterhorn)** | **Optional** — only for 3D hillshade | `{region}_dem.pmtiles` | **Download terrain DEM (Mapterhorn)** |
+| **OSM updates** | **Optional** — only when you want fresher roads/POIs | Geofabrik diffs or a fresh `*-latest.osm.pbf` | **Check for OSM updates** / apply (never automatic) |
+
+**Minimum to plan a route:** one Geofabrik region download + place-index build.
+**Minimum for a usable offline map screen:** that plus a regional PMTiles
+basemap (or stay online for Liberty). **Eco routing:** also need DEM coverage
+for the area you drive.
+
+Sizes and free-space budgets: [Minimum free storage](#minimum-free-storage-sd-card--internal-drive).
+Update policy: [`docs/osm-updates.md`](docs/osm-updates.md). Basemap detail:
+[`docs/map-styles.md`](docs/map-styles.md).
 
 ## How features work
 
@@ -419,6 +444,8 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to contribute (testing, plugins, jurisdictions, code expectations) |
 | [`docs/architecture.md`](docs/architecture.md) | How the parts fit together (databases, threads, plugins) |
 | [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Canonical 2026-07 future-proofing findings + risk-prioritized follow-up list |
+| [`docs/status.md`](docs/status.md) | Which doc is canonical for live status vs historical evidence (anti-sprawl map) |
+| [`docs/android-api36-plan.md`](docs/android-api36-plan.md) | Plan to raise compileSdk/targetSdk to API 36 (not executed yet) |
 | [`docs/rust-crates.md`](docs/rust-crates.md) | Rust crates: first-party created vs crates.io used unaltered |
 | [`docs/codebase-map.md`](docs/codebase-map.md) | Contributor file map: where to fix bugs, zoom, approach, routing, HUD |
 | [`docs/pictures.md`](docs/pictures.md) | Emulator screenshot gallery |
@@ -458,8 +485,8 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/imu-calibration.md`](docs/imu-calibration.md) | Deferred: vehicle-mount IMU pitch/roll zeroing for eco elevation |
 | [`docs/debugging.md`](docs/debugging.md) | Host + Android debug loops (logcat, Studio, instrumented tests) |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | **Required:** physical device checklist vs emulator baseline |
-| [`docs/test-results.md`](docs/test-results.md) | Host integration test notes |
-| [`docs/android-test-results.md`](docs/android-test-results.md) | On-device / emulator results |
+| [`docs/test-results.md`](docs/test-results.md) | Host integration evidence (chronological; see [`status.md`](docs/status.md)) |
+| [`docs/android-test-results.md`](docs/android-test-results.md) | On-device / emulator evidence (chronological; see [`status.md`](docs/status.md)) |
 
 ## Icons (Navit)
 

@@ -19,6 +19,9 @@ local.properties
 # OS
 .DS_Store
 
+# Local machine-only debug snapshots (emulator GPU/context, etc.)
+/local/
+
 # Integration fixtures (large)
 core/target/integration-fixtures/*.pbf
 core/target/integration-fixtures/*.tar

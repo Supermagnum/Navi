@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <!-- Navi original: person silhouette -->
+  <rect width="48" height="48" fill="none"/>
+  <circle cx="24" cy="12" r="6" fill="#1565c0" stroke="#0d47a1" stroke-width="1"/>
+  <path d="M14 44 L14 28 C14 22 18 20 24 20 C30 20 34 22 34 28 L34 44 Z" fill="#1565c0" stroke="#0d47a1" stroke-width="1"/>
+  <path d="M10 26 L18 28 M38 26 L30 28" stroke="#0d47a1" stroke-width="3" stroke-linecap="round"/>
+</svg>

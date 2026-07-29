@@ -40,9 +40,9 @@ pub use guidance_path::{
 };
 pub use osm_update::{
     apply_pending_update, apply_update_plan, bind_geofabrik_extract, check_for_updates,
-    decide_update_plan, format_update_plan, set_weekly_reminder_opt_in, weekly_reminder_due,
-    GeofabrikState, RegionExtractMeta, UpdateApplyResult, UpdatePlan,
-    STALENESS_FULL_REDOWNLOAD_DAYS, WEEKLY_CHECK_REMINDER_DAYS,
+    decide_update_plan, format_update_plan, geofabrik_latest_pbf_url, geofabrik_updates_base,
+    set_weekly_reminder_opt_in, weekly_reminder_due, GeofabrikState, RegionExtractMeta,
+    UpdateApplyResult, UpdatePlan, STALENESS_FULL_REDOWNLOAD_DAYS, WEEKLY_CHECK_REMINDER_DAYS,
 };
 pub use region::{
     provision_region, provision_region_with_elev_tar, RegionProvision, CORRIDOR_BBOX,

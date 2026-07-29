@@ -1,53 +1,32 @@
 # APRS symbol icons — copyright
 
-Source: [hessu/aprs-symbols](https://github.com/hessu/aprs-symbols) (aprs.fi high-resolution symbol set).
+## Summary (release / legal index)
 
-This directory contains **individual** 48x48 PNG crops from the primary-table sprite sheet
-`png/aprs-symbols-48-0.png`. There are no per-symbol SVG exports in that repository (vector
-source is Adobe Illustrator `aprs-symbols.ai` only).
+| Local file | APRS code | Meaning | License | Provenance |
+|---|---|---|---|---|
+| `aprs_car.png` | `/>` | Car | **CC BY-SA 2.0** | Upstream [hessu/aprs-symbols](https://github.com/hessu/aprs-symbols) symbol marked *OH7LZB* (original vector by Heikki Hannikainen). |
+| `aprs_digi.png` (+ `aprs_digi.svg`) | `/#` | Digipeater | **GPL-3.0-or-later** (Navi original) | Custom Navi artwork. Replaces upstream *VEC-OH7LZB* crop whose license was **Unknown**. |
+| `aprs_house.png` (+ `aprs_house.svg`) | `/-` | House | **GPL-3.0-or-later** (Navi original) | Custom Navi artwork. Replaces upstream *VEC-OH7LZB* crop whose license was **Unknown**. |
+| `aprs_human.png` (+ `aprs_human.svg`) | `/[` | Human | **GPL-3.0-or-later** (Navi original) | Custom Navi artwork. Replaces upstream *VEC-OH7LZB* crop whose license was **Unknown**. |
 
-**Licensing is per-symbol.** Status below is copied from the upstream
-[COPYRIGHT.md](https://github.com/hessu/aprs-symbols/blob/master/COPYRIGHT.md).
-Upstream shorthand (quoted from that file):
+**No bundled symbol remains with Unknown licensing.** See also the top-level APRS section in [`docs/icons.md`](../../../../docs/icons.md).
 
-* *VEC-OH7LZB* - Vectorized by OH7LZB, based on original APRS symbol set
-  * Source of original bitmap: http://wa8lmf.net/aprs/APRS_symbols.htm
-  * Original designer of individual symbol unknown at this time, but one of:
-    * Roger Barker, G4IDE
-    * Steve Dimse, KH4G
-    * Stephen Smith, WA8LMF
-  * Vectorized versions are designed to look similar
-  * Licensing: Unknown
-* *OH7LZB* - Original vector design by Heikki Hannikainen, OH7LZB
-  * Different enough (by author's opinion) to make it a new original work,
-    instead of a copy of the old symbol
-  * License: CC BY-SA 2.0
-  * https://creativecommons.org/licenses/by-sa/2.0/
+## Upstream research (2026-07-29)
 
-## Symbols included here
+Source examined: [hessu/aprs-symbols COPYRIGHT.md](https://github.com/hessu/aprs-symbols/blob/master/COPYRIGHT.md).
 
-Exact upstream lines for each primary-table symbol:
+Upstream shorthand:
 
-* /# - Digipeater / Green star with D in middle
-  * VEC-OH7LZB
+- *VEC-OH7LZB* — vectorized by OH7LZB from the classic APRS bitmap set
+  (WA8LMF / G4IDE / KH4G lineage). **Licensing: Unknown** (original
+  designers not attributed with a redistributable license).
+- *OH7LZB* — original vector by Heikki Hannikainen. **License: CC BY-SA 2.0**.
 
-* /- - House
-  * VEC-OH7LZB
+For `/#`, `/-`, and `/[` the upstream file still lists *VEC-OH7LZB* /
+Unknown. No confident redistributable license was found in upstream history
+or the WA8LMF bitmap notes. Per Navi’s release policy those three crops were
+**removed** and replaced with original SVG → PNG artwork (same semantic keys
+the instrumented moving-icon tests use).
 
-* /> - Car
-  * OH7LZB
-
-* /[ - Human
-  * VEC-OH7LZB
-
-## Local file mapping
-
-| APRS code | Meaning     | Local file       | Upstream status |
-|-----------|-------------|------------------|-----------------|
-| /#        | Digipeater  | `aprs_digi.png`  | VEC-OH7LZB (Unknown) |
-| /-        | House       | `aprs_house.png` | VEC-OH7LZB (Unknown) |
-| />        | Car         | `aprs_car.png`   | OH7LZB (CC BY-SA 2.0) |
-| /[        | Human       | `aprs_human.png` | VEC-OH7LZB (Unknown) |
-
-If you use this symbol set, please provide a pointer to the source
-(http://github.com/hessu/aprs-symbols/), as requested upstream.
+Attribution for the retained car symbol: please keep a pointer to
+https://github.com/hessu/aprs-symbols/ as requested upstream.
