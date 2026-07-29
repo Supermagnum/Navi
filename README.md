@@ -418,6 +418,7 @@ overlays, eco leaf, rotation, bearing, moving icons):
 |---|---|
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to contribute (testing, plugins, jurisdictions, code expectations) |
 | [`docs/architecture.md`](docs/architecture.md) | How the parts fit together (databases, threads, plugins) |
+| [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Canonical 2026-07 future-proofing findings + risk-prioritized follow-up list |
 | [`docs/rust-crates.md`](docs/rust-crates.md) | Rust crates: first-party created vs crates.io used unaltered |
 | [`docs/codebase-map.md`](docs/codebase-map.md) | Contributor file map: where to fix bugs, zoom, approach, routing, HUD |
 | [`docs/pictures.md`](docs/pictures.md) | Emulator screenshot gallery |

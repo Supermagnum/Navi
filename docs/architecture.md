@@ -4,6 +4,8 @@ File-level “where do I edit X?” map for contributors:
 [`codebase-map.md`](codebase-map.md). Callable APIs: [`API.md`](API.md).
 Which Rust crates are first-party vs crates.io (unaltered):
 [`rust-crates.md`](rust-crates.md).
+Canonical future-proofing findings and tracked risk priorities:
+[`future-proofing-audit-2026-07.md`](future-proofing-audit-2026-07.md).
 
 ## Layout
 
