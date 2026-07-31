@@ -2931,7 +2931,9 @@ private fun NaviMapScreen() {
                         ) {
                             Text("Route")
                         }
-                        TextButton(
+                        // Same Material3 Button as Route (filled pill), not TextButton —
+                        // bare text had no container for shape/clip to show.
+                        Button(
                             onClick = { showTools = !showTools },
                             modifier = Modifier.testTag("btn_tools_collapsed"),
                         ) {
@@ -3396,7 +3398,9 @@ private fun NaviMapScreen() {
                                 diagnosticLogging = on
                                 if (on) {
                                     DiagnosticLog.maybeLogSystem(context.filesDir, nowMs = 0L)
-                                    status = "Diagnostic logging on (session file started)"
+                                    status =
+                                        "Diagnostic logging on — " +
+                                            DiagnosticLog.publicLocationDescription()
                                 } else {
                                     status = "Diagnostic logging off"
                                 }
@@ -3405,9 +3409,10 @@ private fun NaviMapScreen() {
                         )
                     }
                     Text(
-                        "Writes a local session log under app files (GPS, toggles, " +
-                            "route plan, eco, POIs, pauses, instructions, fuel, system). " +
-                            "Off by default; not uploaded.",
+                        "Writes a dated session log under Documents/debug " +
+                            "(USB/MTP: Internal storage → Documents → debug). " +
+                            "GPS, toggles, route plan, eco, POIs, pauses, instructions, " +
+                            "fuel, system. Off by default; not uploaded.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Button(
@@ -3424,7 +3429,9 @@ private fun NaviMapScreen() {
                             Modifier
                                 .fillMaxWidth()
                                 .testTag("btn_export_diagnostic_log"),
-                        enabled = diagnosticLogging || DiagnosticLog.listSessionFiles(context.filesDir).isNotEmpty(),
+                        enabled =
+                            diagnosticLogging ||
+                                DiagnosticLog.listSessionFiles(context).isNotEmpty(),
                     ) {
                         Text("Export diagnostic log")
                     }

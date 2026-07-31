@@ -2,6 +2,8 @@ package no.navi.app
 
 import android.content.Context
 import android.content.Intent
+import android.media.MediaScannerConnection
+import android.os.Environment
 import android.os.StatFs
 import android.util.Log
 import androidx.core.content.FileProvider
@@ -27,7 +29,13 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Session-scoped structured diagnostic log (app-private storage).
+ * Session-scoped structured diagnostic log.
+ *
+ * Writes under shared storage so a user can copy the file over a plain USB/MTP
+ * cable without adb: prefer Documents/debug (visible as Internal storage →
+ * Documents → debug). Top-level /debug is not creatable without
+ * MANAGE_EXTERNAL_STORAGE on modern Android. Basemap/DEM downloads stay in
+ * app-private storage — this class does not touch them.
  *
  * Deliberately narrow: only the categories listed in [Category]. When disabled,
  * every public write entry point is a genuine no-op (no file create, no I/O).
@@ -40,7 +48,7 @@ import kotlin.math.sqrt
  */
 object DiagnosticLog {
     private const val TAG = "NaviDiag"
-    private const val DIR_NAME = "diagnostic_logs"
+    private const val DIR_NAME = "debug"
     private const val MAX_SESSION_FILES = 10
 
     /** Min gap between GPS lines unless the fix moved meaningfully. */
@@ -76,6 +84,7 @@ object DiagnosticLog {
     private var lastSystemMs = 0L
     private var lastInstructionIndex = -1
     private var logsDirOverride: File? = null
+    private var appContext: Context? = null
 
     /** Test hook: redirect log dir (and skip Context). */
     fun setLogsDirForTest(dir: File?) {
@@ -93,6 +102,12 @@ object DiagnosticLog {
     fun isEnabled(): Boolean = enabled.get()
 
     /**
+     * Human-readable location for UI / docs (Documents/debug preferred).
+     * Does not create directories.
+     */
+    fun publicLocationDescription(): String = "Internal storage / Documents / debug"
+
+    /**
      * Enable/disable logging. Turning on opens a new date-stamped session file.
      * Turning off flushes and closes the current file. No file is created while off.
      */
@@ -101,17 +116,29 @@ object DiagnosticLog {
         on: Boolean,
     ) {
         MapHudPrefs.saveDiagnosticLogging(context, on)
-        applyEnabled(context.filesDir, on)
+        applyEnabled(context, on)
     }
 
     /** Restore persisted toggle without creating a file when off. */
     fun restoreFromPrefs(context: Context) {
         val on = MapHudPrefs.loadDiagnosticLogging(context)
-        applyEnabled(context.filesDir, on)
+        applyEnabled(context, on)
     }
 
     fun applyEnabled(
-        filesDir: File,
+        context: Context,
+        on: Boolean,
+    ) {
+        appContext = context.applicationContext
+        applyEnabled(resolveLogsDir(context), on)
+    }
+
+    /**
+     * Enable against an already-resolved directory (unit tests / callers that
+     * already hold a [File]). Prefer [applyEnabled] with [Context] on device.
+     */
+    fun applyEnabled(
+        logsDir: File,
         on: Boolean,
     ) {
         synchronized(lock) {
@@ -125,20 +152,69 @@ object DiagnosticLog {
                 return
             }
             enabled.set(true)
-            openNewSessionLocked(filesDir)
+            openNewSessionLocked(logsDirectory(logsDir))
         }
     }
 
+    /**
+     * Resolve the session-log directory.
+     *
+     * Order: test override → Documents/debug → Download/debug → app-private
+     * fallback (last resort only; not MTP-visible on Android 11+).
+     */
+    fun resolveLogsDir(context: Context): File {
+        logsDirOverride?.let { override ->
+            if (!override.exists()) override.mkdirs()
+            return override
+        }
+        val candidates =
+            listOf(
+                File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+                    DIR_NAME,
+                ),
+                File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                    DIR_NAME,
+                ),
+            )
+        for (dir in candidates) {
+            if (ensureWritableDir(dir)) {
+                Log.i(TAG, "diagnostic logs dir=${dir.absolutePath}")
+                return dir
+            }
+        }
+        val fallback = File(context.filesDir, "diagnostic_logs")
+        if (!fallback.exists()) fallback.mkdirs()
+        Log.w(
+            TAG,
+            "public Documents/Download debug dirs not writable; falling back to ${fallback.absolutePath}",
+        )
+        return fallback
+    }
+
+    /** @deprecated Prefer [resolveLogsDir]; kept for call sites that still pass filesDir. */
     fun logsDirectory(filesDir: File): File {
-        val base = logsDirOverride ?: File(filesDir, DIR_NAME)
-        if (!base.exists()) base.mkdirs()
-        return base
+        logsDirOverride?.let { override ->
+            if (!override.exists()) override.mkdirs()
+            return override
+        }
+        appContext?.let { return resolveLogsDir(it) }
+        val legacy = File(filesDir, "diagnostic_logs")
+        if (!legacy.exists()) legacy.mkdirs()
+        return legacy
     }
 
     fun currentSessionFile(): File? = sessionFile.get()
 
+    fun listSessionFiles(context: Context): List<File> =
+        listSessionFilesIn(resolveLogsDir(context))
+
     fun listSessionFiles(filesDir: File): List<File> =
-        logsDirectory(filesDir)
+        listSessionFilesIn(logsDirectory(filesDir))
+
+    private fun listSessionFilesIn(dir: File): List<File> =
+        dir
             .listFiles { f -> f.isFile && f.name.startsWith("navi_session_") && f.name.endsWith(".log") }
             ?.sortedByDescending { it.lastModified() }
             ?: emptyList()
@@ -146,7 +222,7 @@ object DiagnosticLog {
     fun shareLatest(
         context: Context,
     ): Boolean {
-        val file = currentSessionFile() ?: listSessionFiles(context.filesDir).firstOrNull() ?: return false
+        val file = currentSessionFile() ?: listSessionFiles(context).firstOrNull() ?: return false
         return shareFile(context, file)
     }
 
@@ -156,11 +232,15 @@ object DiagnosticLog {
     ): Boolean {
         if (!file.isFile) return false
         return runCatching {
+            // Prefer a cache copy so FileProvider stays under app-owned paths even
+            // when the live session file lives under Documents/debug.
+            val shareCopy = File(context.cacheDir, file.name)
+            file.copyTo(shareCopy, overwrite = true)
             val uri =
                 FileProvider.getUriForFile(
                     context,
                     "${context.packageName}.fileprovider",
-                    file,
+                    shareCopy,
                 )
             val intent =
                 Intent(Intent.ACTION_SEND).apply {
@@ -374,7 +454,8 @@ object DiagnosticLog {
         val totalMb = rt.maxMemory() / (1024.0 * 1024.0)
         val diskFreeMb =
             runCatching {
-                val s = StatFs(filesDir.absolutePath)
+                val path = sessionFile.get()?.parentFile?.absolutePath ?: filesDir.absolutePath
+                val s = StatFs(path)
                 s.availableBlocksLong * s.blockSizeLong / (1024.0 * 1024.0)
             }.getOrDefault(-1.0)
         val cores = runCatching { detectedParallelism().toInt() }.getOrDefault(rt.availableProcessors())
@@ -510,17 +591,28 @@ object DiagnosticLog {
         // Live issued/completed lines come from [onManeuverProgress] during navigation.
     }
 
-    private fun openNewSessionLocked(filesDir: File) {
+    private fun ensureWritableDir(dir: File): Boolean {
+        return runCatching {
+            if (!dir.exists() && !dir.mkdirs()) return false
+            if (!dir.isDirectory) return false
+            val probe = File(dir, ".navi_write_probe")
+            probe.writeText("ok")
+            probe.delete()
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun openNewSessionLocked(logsDir: File) {
         closeSessionLocked()
-        val dir = logsDirectory(filesDir)
-        rotateOldSessionsLocked(dir)
+        if (!logsDir.exists()) logsDir.mkdirs()
+        rotateOldSessionsLocked(logsDir)
         val name =
             "navi_session_" +
                 SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US)
                     .apply { timeZone = TimeZone.getDefault() }
                     .format(Date()) +
                 ".log"
-        val file = File(dir, name)
+        val file = File(logsDir, name)
         val bw =
             BufferedWriter(
                 OutputStreamWriter(FileOutputStream(file, true), StandardCharsets.UTF_8),
@@ -532,9 +624,11 @@ object DiagnosticLog {
         lastGpsLon = Double.NaN
         lastSystemMs = 0L
         lastInstructionIndex = -1
+        requestMediaScan(file)
     }
 
     private fun closeSessionLocked() {
+        val closed = sessionFile.get()
         writer.getAndSet(null)?.let { w ->
             runCatching {
                 w.flush()
@@ -542,6 +636,20 @@ object DiagnosticLog {
             }
         }
         sessionFile.set(null)
+        closed?.let { requestMediaScan(it) }
+    }
+
+    /** Nudge MTP / gallery indexes so USB browsers see the new/updated file. */
+    private fun requestMediaScan(file: File) {
+        val ctx = appContext ?: return
+        runCatching {
+            MediaScannerConnection.scanFile(
+                ctx,
+                arrayOf(file.absolutePath),
+                arrayOf("text/plain"),
+                null,
+            )
+        }
     }
 
     private fun rotateOldSessionsLocked(dir: File) {

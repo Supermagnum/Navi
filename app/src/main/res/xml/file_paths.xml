@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <files-path name="diagnostic_logs" path="diagnostic_logs/" />
+    <!-- Share-sheet copies land in cache; keep private fallback for older sessions. -->
+    <files-path name="diagnostic_logs_private" path="diagnostic_logs/" />
+    <cache-path name="diagnostic_share_cache" path="." />
+    <external-path name="documents_debug" path="Documents/debug/" />
+    <external-path name="download_debug" path="Download/debug/" />
 </paths>

@@ -51,6 +51,46 @@ Capabilities are validated **before** the module is instantiated. Unknown
 capability names reject the load. Requested capabilities must be a subset of the
 host policy set passed to `PluginHost::load_dir`.
 
+## Debug files (USB/MTP)
+
+On-device diagnostic and debug artifacts must be **USB/MTP-retrievable** without
+adb, under the same shared tree as the core diagnostic session log
+([`debugging.md`](debugging.md#3b-diagnostic-session-log-on-device-file)):
+
+| Writer | Path |
+|---|---|
+| **Core** (Tools → Diagnostic logging) | `Documents/debug/navi_session_YYYY-MM-DD_HH-mm-ss.log` |
+| **Plugin** | `Documents/debug/<plugin-name>/…` |
+
+Examples:
+
+```text
+Documents/debug/navi_session_2026-07-31_12-52-13.log
+Documents/debug/right-to-roam-camping/session_….log
+Documents/debug/safety-resupply/last_run.json
+```
+
+In a file browser / MTP mount:
+
+```text
+Internal storage → Documents → debug → <plugin-name> → …
+```
+
+Rules for plugin authors:
+
+1. Use a stable folder name matching the plugin manifest `name` (lowercase,
+   hyphen or underscore — same string users will see on USB).
+2. Prefer `Documents/debug/<plugin-name>/`. If the host falls back to
+   `Download/debug` for the core log, plugins must use that same root’s
+   `debug/<plugin-name>/` tree.
+3. Do **not** write plugin debug files into app-private storage only, into the
+   core `navi_session_*.log` file, or into a top-level `/debug` folder (not
+   creatable without `MANAGE_EXTERNAL_STORAGE`).
+4. The current `log` HostApi import goes to the host logger (logcat / host
+   process); durable USB-visible files need a future host capability (or
+   host-owned code writing into `Documents/debug/<plugin-name>/` on the
+   guest’s behalf). Specs that mention “diagnostics” should target this layout.
+
 ## Capabilities (HostApi) — implemented today
 
 | Capability | Import | Purpose |

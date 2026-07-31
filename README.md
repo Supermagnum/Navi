@@ -3,8 +3,9 @@
 # Testers wanted
 
 **Testers wanted** for testing on **actual hardware** (Android Automotive / head
-units or tablets). Development so far is emulator-only — real devices differ for GPS, MapLibre,
-Vulkan/GLES, and performance. Checklist:
+units or tablets). Development was long emulator-first; tablet checks on a
+Samsung Galaxy Tab S6 Lite have started, but head units and more devices still
+differ for GPS, MapLibre, Vulkan/GLES, and performance. Checklist:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 How to contribute (testing and more): [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
@@ -26,6 +27,7 @@ throughout.
   - [How features work](#how-features-work)
   - [Settings](#settings)
   - [Debugging](#debugging)
+- [Working app (real hardware)](#working-app-real-hardware)
 - [Working app (emulator screenshots)](#working-app-emulator-screenshots)
 - [Documents](#documents)
 - [Icons (Navit)](#icons-navit)
@@ -99,10 +101,11 @@ yet ([`docs/plugins.md`](docs/plugins.md)).
 | **Map data updates** | When you choose, check for OpenStreetMap updates and apply them, or download a fresh region ([`docs/osm-updates.md`](docs/osm-updates.md)). Never updates quietly in the background. | Done |
 | **Plugins** | Sandboxed WASM host is ready. Product plugins are not shipped yet on purpose; several are specified for contributors ([`docs/plugins.md`](docs/plugins.md) — camping, resupply, instrument cluster/AGL, UI translation, ECU, APRS, …). | Host ready; content deferred |
 
-**Real hardware:** So far the app has been developed and checked mainly on the
-Android Automotive **emulator**. It still **needs testing on real head units**
-before anyone treats it as ready to ship — GPS, sensors, graphics, and speed
-differ on real cars. Checklist:
+**Real hardware:** Development was long emulator-first. Offline Protomaps +
+opt-in 3D hillshade have been checked on a **Samsung Galaxy Tab S6 Lite**
+(see [Working app (real hardware)](#working-app-real-hardware)). It still
+**needs testing on real Automotive head units** before anyone treats it as ready
+to ship — GPS, sensors, graphics, and speed differ on real cars. Checklist:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 
 ## Where data comes from
@@ -358,7 +361,7 @@ Region provision, basemap / DEM downloads, and opt-in OSM updates. See also
 | **Check for OSM updates** | Opt-in Geofabrik freshness check — never downloads silently |
 | **Apply pending OSM update** | Apply the plan from a prior Check (user-confirmed) |
 | **Weekly update reminder** | Reminder only (no auto-download) |
-| **Diagnostic logging** | Off by default. When on, writes a date-stamped session log under app-private storage (see [Debugging](#debugging)) |
+| **Diagnostic logging** | Off by default. Session file: **Documents/debug/**`navi_session_….log` (USB/MTP; see [Debugging](#debugging)). Plugins use **Documents/debug/\<plugin-name\>/** |
 | **Export diagnostic log** | Share the latest session log via Android's share sheet |
 | **Save / Close** | Persist Geofabrik path + PMTiles URL, or dismiss |
 
@@ -391,11 +394,46 @@ if you are reporting a bug and want to include real diagnostic evidence, or if
 you are testing the app yourself. It has no effect on navigation behavior and is
 not enabled by default.
 
-The log stays **local on the device** (app-private storage). Navi does not upload
-or transmit these session files anywhere by default. Use **Export diagnostic log**
-in Tools to share a file when you choose to, or pull it with adb (path documented
-in [`docs/debugging.md`](docs/debugging.md)). Older session files are rotated
-automatically (last 10 kept).
+**Where to find the file (USB / MTP, no adb):**
+
+| | |
+|---|---|
+| **On the device** | `/storage/emulated/0/Documents/debug/navi_session_YYYY-MM-DD_HH-mm-ss.log` |
+| **In a file browser** | **Internal storage → Documents → debug →** `navi_session_….log` |
+| **Fallback** | `Documents/debug` unavailable → `Download/debug` (same file names) |
+
+Navi does not upload these session files. You can also use **Export diagnostic
+log** in Tools (share sheet). Older core sessions are rotated (last 10 kept).
+Full detail: [`docs/debugging.md`](docs/debugging.md).
+
+**Plugins** that write diagnostic or debug artifacts must use the same shared
+tree, under a per-plugin subfolder:
+
+```text
+Documents/debug/<plugin-name>/…
+```
+
+Example: a camping plugin would write under `Documents/debug/right-to-roam-camping/`
+(USB: Internal storage → Documents → debug → right-to-roam-camping). Do not
+scatter plugin logs under app-private storage or arbitrary top-level folders.
+Convention for authors: [`docs/plugins.md`](docs/plugins.md#debug-files-usbmtp).
+
+## Working app (real hardware)
+
+Captured on a physical **Samsung Galaxy Tab S6 Lite** (model **SM-P613**,
+Wi‑Fi / `gta4xlvewifi`), **Android 14**, Adreno 618 GPU. MapLibre GLES
+(`android-sdk` 11.13.5). Collapsed Route / Tools pills, drive HUD, and offline
+Ostlandet Protomaps (forest/wood landcover visible). Portrait, 3D off:
+
+![SM-P613 offline Protomaps 2D (portrait)](docs/images/Screenshot_20260731_123746.jpg)
+
+Landscape with opt-in **3D** (offline Protomaps + local Mapterhorn DEM
+hillshade):
+
+![SM-P613 offline Protomaps + Mapterhorn DEM hillshade (landscape)](docs/images/Screenshot_20260731_123844.jpg)
+
+Automotive head-unit testing is still open — see
+[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 
 ## Working app (emulator screenshots)
 
@@ -465,7 +503,7 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/poi.md`](docs/poi.md) | Searchable POI categories (Fishing, RestArea, Lodging, …), OSM tag rules, how to add types |
 | [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md) | Suggested hut/trail POI search radii for hiking & cycling (DNT spacing) |
 | [`docs/osm-updates.md`](docs/osm-updates.md) | Opt-in Geofabrik check / `.osc.gz` / full re-download |
-| [`docs/plugins.md`](docs/plugins.md) | Plugin **host** status (intentional: no content plugins yet) + HostApi, isolation, roadmap ideas |
+| [`docs/plugins.md`](docs/plugins.md) | Plugin **host** status (intentional: no content plugins yet) + HostApi, isolation, roadmap; debug files under `Documents/debug/<plugin-name>/` |
 | [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Spec: allemannsretten / multi-country wild-camping suggestions (plugin, not core) |
 | [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Spec: fuel/water resupply lookahead, POI confidence, remote/arid buffers (plugin, not core) |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Spec: export nav state to clusters/AGL via VSS/Kuksa + JSON fallback (plugin, not core) |

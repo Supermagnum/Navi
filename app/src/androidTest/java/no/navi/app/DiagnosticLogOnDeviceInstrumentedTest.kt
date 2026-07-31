@@ -26,8 +26,10 @@ import java.io.File
  * Enables logging via [DiagnosticLog.setEnabled] (same code path as
  * Tools → Diagnostic logging), plans eco Espa→Atnbrufossen, simulates along
  * the corridor, exercises the remaining categories, exports the session file
- * to `/data/local/tmp/navi_diag_session_on_device.log`, and asserts all eleven
- * categories with distinct non-zero eco uphill/downhill energy.
+ * to `/data/local/tmp/navi_diag_session_on_device.log`, asserts the live file
+ * lives under shared **Documents/debug** (or Download/debug fallback), and
+ * asserts all eleven categories with distinct non-zero eco uphill/downhill
+ * energy.
  */
 @RunWith(AndroidJUnit4::class)
 class DiagnosticLogOnDeviceInstrumentedTest {
@@ -41,7 +43,6 @@ class DiagnosticLogOnDeviceInstrumentedTest {
     fun setUp() {
         context = InstrumentationRegistry.getInstrumentation().targetContext
         dataDir = NaviAppData.resolve(context)
-        ensureCorridorFixtures()
     }
 
     private fun ensureCorridorFixtures() {
@@ -93,7 +94,36 @@ class DiagnosticLogOnDeviceInstrumentedTest {
     }
 
     @Test
+    fun diagnosticLog_writesUnderDocumentsDebug_forUsbMtp() {
+        // No corridor fixtures — only verifies public Documents/debug placement.
+        DiagnosticLog.setEnabled(context, false)
+        DiagnosticLog.setEnabled(context, true)
+        assertTrue(DiagnosticLog.isEnabled())
+        val session = DiagnosticLog.currentSessionFile()
+        assertNotNull(session)
+        val path = session!!.absolutePath
+        Log.i(TAG, "DIAG_PUBLIC_PATH=$path")
+        assertTrue(
+            "expected Documents/debug or Download/debug, got $path",
+            path.contains("/Documents/debug/") || path.contains("/Download/debug/"),
+        )
+        assertTrue(session.name.matches(Regex("""navi_session_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.log""")))
+        DiagnosticLog.logToggle("diagnostic_mtp_probe", true)
+        DiagnosticLog.logGps(60.617, 11.167, 189.0, 5f, 8, "3D")
+        DiagnosticLog.maybeLogSystem(context.filesDir, nowMs = 1L)
+        DiagnosticLog.setEnabled(context, false)
+        assertTrue(session.isFile)
+        val text = session.readText()
+        assertTrue(text.contains("| TOGGLE |"))
+        assertTrue(text.contains("| GPS |"))
+        assertTrue(text.contains("| SYSTEM |"))
+        // Host can browse the same file via MTP under Internal storage/Documents/debug.
+        Log.i(TAG, "DIAG_PUBLIC_BYTES=${session.length()} DIAG_PUBLIC_DONE=$path")
+    }
+
+    @Test
     fun diagnosticSession_ecoRoute_allElevenCategories() {
+        ensureCorridorFixtures()
         activityRule.launchActivity(null)
         Thread.sleep(3_000)
 
@@ -236,8 +266,17 @@ class DiagnosticLogOnDeviceInstrumentedTest {
 
         val session = DiagnosticLog.currentSessionFile()
         assertNotNull(session)
-        val text = session!!.readText()
-        Log.i(TAG, "DIAG_SESSION_FILE=${session.absolutePath}")
+        val path = session!!.absolutePath
+        Log.i(TAG, "DIAG_SESSION_FILE=$path")
+        assertTrue(
+            "session must be under Documents/debug or Download/debug (got $path)",
+            path.contains("/Documents/debug/") || path.contains("/Download/debug/"),
+        )
+        assertTrue(
+            "session name must be dated navi_session_….log (got ${session.name})",
+            session.name.startsWith("navi_session_") && session.name.endsWith(".log"),
+        )
+        val text = session.readText()
         for (line in text.lines()) {
             if (line.isNotBlank()) Log.i(TAG, line)
         }

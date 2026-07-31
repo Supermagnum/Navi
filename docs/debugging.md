@@ -120,29 +120,71 @@ adb shell ps --user 10 | grep navi || true
 ## 3b. Diagnostic session log (on-device file)
 
 When **Tools → Diagnostic logging** is on, Navi writes a pipe-delimited session
-file under app-private storage (same class as other persisted data —
-`context.filesDir`, not external/SD):
+file under **shared storage** so you can copy it with a plain USB cable (MTP) —
+no adb or developer tools required.
+
+Preferred path on the device:
 
 ```text
-/data/data/no.navi.app/files/diagnostic_logs/navi_session_YYYY-MM-DD_HH-mm-ss.log
+/storage/emulated/0/Documents/debug/navi_session_YYYY-MM-DD_HH-mm-ss.log
 ```
 
-On multi-user Automotive images the package path may be under a user id, e.g.
-`/data/user/10/no.navi.app/files/diagnostic_logs/`.
+In a file browser / MTP mount that usually appears as:
 
-Pull the latest file (adjust user if needed):
-
-```bash
-adb shell run-as no.navi.app ls files/diagnostic_logs
-adb exec-out run-as no.navi.app cat files/diagnostic_logs/navi_session_….log > navi_session.log
+```text
+Internal storage → Documents → debug → navi_session_….log
 ```
 
-Or use **Tools → Export diagnostic log** (Android share sheet / FileProvider).
+(Linux desktops may show a GVFS path such as
+`/run/user/…/gvfs/mtp:host=…/Intern lagring/Documents/debug/` — that is the
+desktop’s mount of the same folder, not something the app hardcodes.)
+
+Scoped storage on Android 10+ does **not** allow creating a new top-level
+`/debug` folder without `MANAGE_EXTERNAL_STORAGE` (avoided here). If
+`Documents/debug` is not writable, Navi falls back to `Download/debug`, then
+(only as a last resort) app-private storage.
+
+Basemap / DEM downloads stay in **app-private** storage; only diagnostic /
+plugin debug files use the shared Documents (or Download) `debug` tree.
+
+### Plugin debug files
+
+Product plugins (when shipped) and host-side plugin helpers that need on-device
+debug artifacts **must** write under the same shared `debug` folder, in a
+subfolder named after the plugin:
+
+```text
+/storage/emulated/0/Documents/debug/<plugin-name>/…
+```
+
+USB / MTP:
+
+```text
+Internal storage → Documents → debug → <plugin-name> → …
+```
+
+Use a stable plugin id matching the manifest `name` (e.g. `right-to-roam-camping`,
+`safety-resupply`). Core Navi sessions stay at the `debug/` root
+(`navi_session_….log`); do not mix plugin files into that root. See
+[`plugins.md`](plugins.md#debug-files-usbmtp).
+
+### Retrieve via USB (no adb)
+
+1. Enable **Tools → Diagnostic logging** and use the app so a session file is
+   written (or turn the toggle off to flush/close the current file).
+2. Connect the device with a USB cable and choose **File transfer / MTP**
+   (not “Charging only”).
+3. On the computer, open the device storage → **Documents** → **debug**.
+4. Copy `navi_session_….log` (and any `debug/<plugin-name>/` trees you need).
+
+**Tools → Export diagnostic log** still opens Android’s share sheet if you
+prefer email/Drive/etc.
 
 Categories (only these; not a logcat mirror): `GPS`, `TOGGLE`, `SETTING_SAVED`,
 `ROUTE_PLAN`, `ECO_CALC`, `POI_FOUND`, `PAUSE_PLANNED`, `INSTRUCTION`,
 `FUEL_ADDED`, `SYSTEM`. GPS is rate-limited (about once per 3 s or 25 m move).
-Off by default; when off, no file is created.
+Off by default; when off, no file is created. Older sessions are rotated
+(last 10 kept).
 
 ---
 
