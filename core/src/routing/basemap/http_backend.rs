@@ -96,12 +96,9 @@ impl Reqwest012Backend {
             );
         }
 
-        let mut file = tokio::fs::File::create(&partial_path).await.map_err(|e| {
-            anyhow::anyhow!(
-                "create chunk file {}: {e}",
-                partial_path.display()
-            )
-        })?;
+        let mut file = tokio::fs::File::create(&partial_path)
+            .await
+            .map_err(|e| anyhow::anyhow!("create chunk file {}: {e}", partial_path.display()))?;
         let mut stream = response.bytes_stream();
         let mut written: u64 = 0;
         while let Some(chunk) = stream.next().await {
@@ -122,14 +119,12 @@ impl Reqwest012Backend {
             written += chunk.len() as u64;
             if written > length as u64 {
                 let _ = std::fs::remove_file(&partial_path);
-                anyhow::bail!(
-                    "response body too long for {range}: got {written} > {length}"
-                );
+                anyhow::bail!("response body too long for {range}: got {written} > {length}");
             }
         }
-        file.flush().await.map_err(|e| {
-            anyhow::anyhow!("flush chunk file {}: {e}", partial_path.display())
-        })?;
+        file.flush()
+            .await
+            .map_err(|e| anyhow::anyhow!("flush chunk file {}: {e}", partial_path.display()))?;
         drop(file);
 
         if written != length as u64 {

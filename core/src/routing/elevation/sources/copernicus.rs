@@ -91,6 +91,10 @@ mod tests {
             .expect("download")
             .expect("tile present");
         assert!(result.local_path.is_file());
-        assert!(result.bytes > 1_000_000, "expected multi-MB COG, got {}", result.bytes);
+        assert!(
+            result.bytes > 1_000_000,
+            "expected multi-MB COG, got {}",
+            result.bytes
+        );
     }
 }

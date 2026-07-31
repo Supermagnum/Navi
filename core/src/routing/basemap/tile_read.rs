@@ -28,7 +28,9 @@ fn readers() -> &'static Mutex<HashMap<PathBuf, Reader>> {
 
 async fn open_reader(path: &Path) -> anyhow::Result<Reader> {
     let backend = MmapBackend::try_from(path).await?;
-    Ok(Arc::new(AsyncPmTilesReader::try_from_source(backend).await?))
+    Ok(Arc::new(
+        AsyncPmTilesReader::try_from_source(backend).await?,
+    ))
 }
 
 /// Fetch one tile (decompressed) from a local PMTiles file.

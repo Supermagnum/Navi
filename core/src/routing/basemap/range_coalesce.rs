@@ -315,7 +315,8 @@ pub async fn fetch_tiles_coalesced(
     if bytes_done > 0 {
         download_progress::set(bytes_done, Some(total_bytes), progress_label);
         if let Some((storage, job_id)) = store {
-            let _ = PmtilesJobStore::new(storage).set_progress(job_id, bytes_done, Some(total_bytes));
+            let _ =
+                PmtilesJobStore::new(storage).set_progress(job_id, bytes_done, Some(total_bytes));
         }
         log::info!(
             target: "NaviDownload",
@@ -330,9 +331,7 @@ pub async fn fetch_tiles_coalesced(
     let spawn_one = |chunk: OverfetchRange| {
         let backend = backend.clone();
         let staging_dir = staging_dir.to_path_buf();
-        async move {
-            download_chunk_with_retry(&backend, data_offset, chunk, &staging_dir).await
-        }
+        async move { download_chunk_with_retry(&backend, data_offset, chunk, &staging_dir).await }
     };
 
     async fn honour_pause(
@@ -377,7 +376,11 @@ pub async fn fetch_tiles_coalesced(
         bytes_done = completed.iter().map(|c| c.length).sum();
         let chunks_done = completed.len();
 
-        download_progress::set(bytes_done.min(total_bytes), Some(total_bytes), progress_label);
+        download_progress::set(
+            bytes_done.min(total_bytes),
+            Some(total_bytes),
+            progress_label,
+        );
         if let Some((storage, job_id)) = store {
             let _ = PmtilesJobStore::new(storage).set_progress(
                 job_id,
@@ -410,9 +413,10 @@ pub async fn fetch_tiles_coalesced(
         if !seen_ids.insert(id) {
             continue;
         }
-        let Some(chunk) = completed.iter().find(|c| {
-            off >= c.src_offset && off + u64::from(len) <= c.src_offset + c.length
-        }) else {
+        let Some(chunk) = completed
+            .iter()
+            .find(|c| off >= c.src_offset && off + u64::from(len) <= c.src_offset + c.length)
+        else {
             continue;
         };
         let tid = TileId::new(id).map_err(|e| anyhow!("tile id: {e}"))?;

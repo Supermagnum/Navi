@@ -102,7 +102,9 @@ pub async fn download_tile(
 
     Ok(Some(DownloadResult {
         local_path: dest.clone(),
-        bytes: std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(result.bytes),
+        bytes: std::fs::metadata(&dest)
+            .map(|m| m.len())
+            .unwrap_or(result.bytes),
         total_bytes: result.total_bytes,
         etag: result.etag,
     }))

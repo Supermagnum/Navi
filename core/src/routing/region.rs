@@ -31,8 +31,8 @@ pub fn download_file(url: &str, dest: &Path) -> anyhow::Result<u64> {
             "[NaviDownload] copy start src={path} dest={}",
             dest.display()
         );
-        let bytes = fs::copy(src, dest)
-            .map_err(|e| anyhow::anyhow!("copy {path} -> {dest:?}: {e}"))?;
+        let bytes =
+            fs::copy(src, dest).map_err(|e| anyhow::anyhow!("copy {path} -> {dest:?}: {e}"))?;
         log::info!(
             target: "NaviDownload",
             "[NaviDownload] copy complete dest={} bytes={bytes}",
@@ -48,8 +48,8 @@ pub fn download_file(url: &str, dest: &Path) -> anyhow::Result<u64> {
                 "[NaviDownload] copy start src={url} dest={}",
                 dest.display()
             );
-            let bytes = fs::copy(src, dest)
-                .map_err(|e| anyhow::anyhow!("copy {url} -> {dest:?}: {e}"))?;
+            let bytes =
+                fs::copy(src, dest).map_err(|e| anyhow::anyhow!("copy {url} -> {dest:?}: {e}"))?;
             log::info!(
                 target: "NaviDownload",
                 "[NaviDownload] copy complete dest={} bytes={bytes}",
