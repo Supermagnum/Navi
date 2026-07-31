@@ -42,7 +42,10 @@ import kotlin.math.sqrt
  *
  * GPS rate limit: at most one [Category.GPS] line every [GPS_MIN_INTERVAL_MS],
  * or sooner when the fix moves more than [GPS_MIN_MOVE_M] metres — not a raw
- * LocationListener firehose.
+ * LocationListener firehose. GPS lines include MapLibre `zoom` when known.
+ *
+ * CAMERA lines: on camera-idle when zoom moves by [CAMERA_ZOOM_DELTA] or every
+ * [CAMERA_MIN_INTERVAL_MS].
  *
  * SYSTEM snapshots: at most once every [SYSTEM_INTERVAL_MS] while enabled.
  */
@@ -60,8 +63,15 @@ object DiagnosticLog {
     /** Min gap between SYSTEM resource snapshots. */
     const val SYSTEM_INTERVAL_MS = 300_000L
 
+    /** Min zoom change that forces a CAMERA line before the interval elapses. */
+    const val CAMERA_ZOOM_DELTA = 0.15
+
+    /** Min gap between CAMERA lines when zoom is stable. */
+    const val CAMERA_MIN_INTERVAL_MS = 5_000L
+
     enum class Category {
         GPS,
+        CAMERA,
         TOGGLE,
         SETTING_SAVED,
         ROUTE_PLAN,
@@ -83,8 +93,15 @@ object DiagnosticLog {
     private var lastGpsLon = Double.NaN
     private var lastSystemMs = 0L
     private var lastInstructionIndex = -1
-    private var logsDirOverride: File? = null
+    private var lastCameraZoom = Double.NaN
+    private var lastCameraMs = 0L
     private var appContext: Context? = null
+    private var logsDirOverride: File? = null
+
+    /** Latest MapLibre camera zoom observed (NaN until first report). */
+    @Volatile
+    var lastReportedZoom: Double = Double.NaN
+        private set
 
     /** Test hook: redirect log dir (and skip Context). */
     fun setLogsDirForTest(dir: File?) {
@@ -96,6 +113,9 @@ object DiagnosticLog {
             lastGpsLon = Double.NaN
             lastSystemMs = 0L
             lastInstructionIndex = -1
+            lastCameraZoom = Double.NaN
+            lastCameraMs = 0L
+            lastReportedZoom = Double.NaN
         }
     }
 
@@ -315,6 +335,9 @@ object DiagnosticLog {
         accuracyM: Float?,
         satellites: Int?,
         fixType: String,
+        zoom: Double? = null,
+        pitchDeg: Double? = null,
+        bearingDeg: Double? = null,
         nowMs: Long = System.currentTimeMillis(),
     ) {
         if (!enabled.get()) return
@@ -329,6 +352,9 @@ object DiagnosticLog {
         lastGpsMs = nowMs
         lastGpsLat = lat
         lastGpsLon = lon
+        if (zoom != null && !zoom.isNaN()) {
+            lastReportedZoom = zoom
+        }
         write(
             Category.GPS,
             mapOf(
@@ -338,6 +364,41 @@ object DiagnosticLog {
                 "alt_asl_m" to altAslM,
                 "accuracy_m" to accuracyM?.toDouble(),
                 "satellites" to satellites,
+                "zoom" to zoom,
+                "pitch_deg" to pitchDeg,
+                "bearing_deg" to bearingDeg,
+            ).filterValues { it != null },
+        )
+    }
+
+    /**
+     * MapLibre camera idle: log zoom (and pitch/bearing) when zoom moves by
+     * ≥ [CAMERA_ZOOM_DELTA] or at least every [CAMERA_MIN_INTERVAL_MS].
+     */
+    fun logCamera(
+        zoom: Double,
+        lat: Double? = null,
+        lon: Double? = null,
+        pitchDeg: Double? = null,
+        bearingDeg: Double? = null,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
+        if (!enabled.get()) return
+        if (zoom.isNaN()) return
+        lastReportedZoom = zoom
+        val zoomMoved = lastCameraZoom.isNaN() || abs(zoom - lastCameraZoom) >= CAMERA_ZOOM_DELTA
+        val due = nowMs - lastCameraMs >= CAMERA_MIN_INTERVAL_MS
+        if (!zoomMoved && !due) return
+        lastCameraMs = nowMs
+        lastCameraZoom = zoom
+        write(
+            Category.CAMERA,
+            mapOf(
+                "zoom" to zoom,
+                "lat" to lat,
+                "lon" to lon,
+                "pitch_deg" to pitchDeg,
+                "bearing_deg" to bearingDeg,
             ).filterValues { it != null },
         )
     }

@@ -374,7 +374,7 @@ class GalleryDocsKeyboardCaptureTest {
         typeCoordAndPickHit("chip_via", LOTEN_VIA1.first, LOTEN_VIA1.second)
         typeCoordAndPickHit("chip_via", LOTEN_VIA2.first, LOTEN_VIA2.second)
         typeCoordAndPickHit("chip_to", LOTEN_END.first, LOTEN_END.second)
-        planAndWait(300_000)
+        planAndWait(900_000)
         startSimulation()
         closeChromeForMapShot()
         Thread.sleep(1_500)
@@ -395,6 +395,8 @@ class GalleryDocsKeyboardCaptureTest {
             want3d: Boolean,
             zooms: Int,
             online: Boolean = false,
+            /** Camera zoom after fly-to; basemap amenity/peak POIs need ≥16. */
+            targetZoom: Double? = null,
         ) {
             clearRouteUi()
             NaviMapTestHooks.forceOnlineBasemap = online
@@ -432,9 +434,26 @@ class GalleryDocsKeyboardCaptureTest {
                 MapHudPrefs.saveCameraTiltDeg(ctx, 0.0)
                 awaitPitch(0.0, timeoutMs = 15_000)
             }
-            repeat(zooms) {
-                runCatching { clickTag("zoom_in") }
-                Thread.sleep(700)
+            val zoomGoal = targetZoom
+            if (zoomGoal != null) {
+                NaviMapTestHooks.disableGpsFollow = true
+                NaviMapTestHooks.followGps = false
+                NaviMapTestHooks.pendingCamera = Triple(lat, lon, zoomGoal)
+                val camDeadline = System.currentTimeMillis() + 25_000
+                while (System.currentTimeMillis() < camDeadline) {
+                    if (kotlin.math.abs(NaviMapTestHooks.lastCameraZoom - zoomGoal) < 0.2) break
+                    NaviMapTestHooks.pendingCamera = Triple(lat, lon, zoomGoal)
+                    Thread.sleep(300)
+                }
+                assertTrue(
+                    "$name camera zoom want=$zoomGoal got=${NaviMapTestHooks.lastCameraZoom}",
+                    kotlin.math.abs(NaviMapTestHooks.lastCameraZoom - zoomGoal) < 0.35,
+                )
+            } else {
+                repeat(zooms) {
+                    runCatching { clickTag("zoom_in") }
+                    Thread.sleep(700)
+                }
             }
             if (want3d) {
                 NaviMapTestHooks.requestCameraTiltDeg = 45.0
@@ -450,6 +469,11 @@ class GalleryDocsKeyboardCaptureTest {
                     Thread.sleep(200)
                 }
                 awaitPitch(45.0, timeoutMs = 20_000)
+            }
+            // Re-pin framing after chrome close (search hit defaults to z12).
+            if (zoomGoal != null) {
+                NaviMapTestHooks.pendingCamera = Triple(lat, lon, zoomGoal)
+                Thread.sleep(800)
             }
             Thread.sleep(1_500)
             assertFalse(NaviMapTestHooks.followGps)
@@ -471,6 +495,7 @@ class GalleryDocsKeyboardCaptureTest {
             Log.i(
                 TAG,
                 "POI $name pitch=${NaviMapTestHooks.lastCameraPitch} " +
+                    "zoom=${NaviMapTestHooks.lastCameraZoom} " +
                     "terrain=${NaviMapTestHooks.lastTerrainAttached} kind=${NaviMapTestHooks.lastBasemapKind}",
             )
             shot(name)
@@ -495,7 +520,7 @@ class GalleryDocsKeyboardCaptureTest {
             zooms = 1,
             online = false,
         )
-        poiShot("poi_galdhopiggen_3d.png", GALDHOPIGGEN.first, GALDHOPIGGEN.second, want3d = true, zooms = 0)
+        poiShot("poi_galdhopiggen_3d.png", GALDHOPIGGEN.first, GALDHOPIGGEN.second, want3d = true, zooms = 0, targetZoom = 16.0)
         poiShot(
             "poi_galdhopiggen_online.png",
             GALDHOPIGGEN.first,
@@ -503,8 +528,16 @@ class GalleryDocsKeyboardCaptureTest {
             want3d = true,
             zooms = 0,
             online = true,
+            targetZoom = 16.0,
         )
-        poiShot("poi_elgpiggen.png", ELGPIGGEN.first, ELGPIGGEN.second, want3d = true, zooms = 0)
+        poiShot(
+            "poi_elgpiggen.png",
+            ELGPIGGEN.first,
+            ELGPIGGEN.second,
+            want3d = true,
+            zooms = 0,
+            targetZoom = 16.0,
+        )
         poiShot(
             "poi_elgpiggen_online.png",
             ELGPIGGEN.first,
@@ -512,6 +545,7 @@ class GalleryDocsKeyboardCaptureTest {
             want3d = true,
             zooms = 0,
             online = true,
+            targetZoom = 16.0,
         )
         poiShot(
             "poi_prekestolen.png",
@@ -520,6 +554,7 @@ class GalleryDocsKeyboardCaptureTest {
             want3d = true,
             zooms = 1,
             online = true,
+            targetZoom = 16.0,
         )
         // Preikestolen is outside Ostlandet PMTiles; offline attempt documents
         // coverage-boundary behaviour (empty tiles or live Liberty fallback).
@@ -531,6 +566,87 @@ class GalleryDocsKeyboardCaptureTest {
             zooms = 1,
             online = false,
         )
+    }
+
+    /**
+     * Retake only the peak gallery frames that must show basemap POIs at z16
+     * (Elgpiggen / Preikestolen / Galdhøpiggen online).
+     */
+    @Test
+    fun capture_requested_peak_pois_z16() {
+        waitStyle()
+        openRoutePanel()
+
+        fun peakShot(
+            name: String,
+            lat: Double,
+            lon: Double,
+            online: Boolean,
+        ) {
+            clearRouteUi()
+            NaviMapTestHooks.forceOnlineBasemap = online
+            if (online) {
+                setWifi(true)
+            } else {
+                setWifi(false)
+            }
+            NaviMapTestHooks.hideSearchChrome = false
+            openRoutePanel()
+            typeCoordAndPickHit("chip_from", lat, lon)
+            NaviMapTestHooks.disableGpsFollow = true
+            NaviMapTestHooks.followGps = false
+            val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+            NaviMapTestHooks.requestOptIn3d = true
+            MapHudPrefs.saveOptIn3d(ctx, true)
+            Thread.sleep(1_200)
+            NaviMapTestHooks.requestCameraTiltDeg = 45.0
+            MapHudPrefs.saveCameraTiltDeg(ctx, 45.0)
+            awaitPitch(45.0, timeoutMs = 45_000)
+            NaviMapTestHooks.pendingCamera = Triple(lat, lon, 16.0)
+            val camDeadline = System.currentTimeMillis() + 45_000
+            while (System.currentTimeMillis() < camDeadline) {
+                if (kotlin.math.abs(NaviMapTestHooks.lastCameraZoom - 16.0) < 0.35) break
+                NaviMapTestHooks.pendingCamera = Triple(lat, lon, 16.0)
+                // HUD zoom_in as fallback when pendingCamera races style reload.
+                if (NaviMapTestHooks.lastCameraZoom < 15.5) {
+                    runCatching { clickTag("zoom_in") }
+                }
+                Thread.sleep(400)
+            }
+            assertTrue(
+                "$name zoom=${NaviMapTestHooks.lastCameraZoom}",
+                NaviMapTestHooks.lastCameraZoom >= 15.5,
+            )
+            closeChromeForMapShot()
+            NaviMapTestHooks.requestOptIn3d = true
+            repeat(15) {
+                NaviMapTestHooks.requestCameraTiltDeg = 45.0
+                NaviMapTestHooks.pendingCamera = Triple(lat, lon, 16.0)
+                Thread.sleep(200)
+            }
+            awaitPitch(45.0, timeoutMs = 20_000)
+            NaviMapTestHooks.pendingCurrentStreet = ""
+            Thread.sleep(2_000)
+            Log.i(
+                TAG,
+                "PEAK $name zoom=${NaviMapTestHooks.lastCameraZoom} " +
+                    "pitch=${NaviMapTestHooks.lastCameraPitch} kind=${NaviMapTestHooks.lastBasemapKind}",
+            )
+            shot(name)
+            NaviMapTestHooks.forceOnlineBasemap = false
+            NaviMapTestHooks.hideSearchChrome = false
+        }
+
+        peakShot("poi_galdhopiggen_online.png", GALDHOPIGGEN.first, GALDHOPIGGEN.second, online = true)
+        peakShot("poi_elgpiggen.png", ELGPIGGEN.first, ELGPIGGEN.second, online = false)
+        peakShot("poi_elgpiggen_online.png", ELGPIGGEN.first, ELGPIGGEN.second, online = true)
+        peakShot("poi_prekestolen.png", PREKESTOLEN.first, PREKESTOLEN.second, online = true)
+        setWifi(true)
+    }
+
+    private fun setWifi(enabled: Boolean) {
+        shell(if (enabled) "svc wifi enable" else "svc wifi disable")
+        Thread.sleep(1_500)
     }
 
     @Test

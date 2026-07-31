@@ -166,6 +166,41 @@ class DiagnosticLogTest {
     }
 
     @Test
+    fun camera_logsZoom_onMeaningfulChange() {
+        DiagnosticLog.applyEnabled(filesDir, true)
+        DiagnosticLog.logCamera(zoom = 14.0, lat = 60.79, lon = 11.07, nowMs = 1_000L)
+        DiagnosticLog.logCamera(zoom = 14.05, lat = 60.79, lon = 11.07, nowMs = 1_200L)
+        val mid = DiagnosticLog.currentSessionFile()!!.readText()
+        assertEquals(1, mid.lines().count { it.contains("| CAMERA |") })
+        assertTrue(mid.contains("zoom=14"))
+
+        DiagnosticLog.logCamera(zoom = 15.2, lat = 60.79, lon = 11.07, nowMs = 1_500L)
+        val later = DiagnosticLog.currentSessionFile()!!.readText()
+        assertEquals(2, later.lines().count { it.contains("| CAMERA |") })
+        assertTrue(later.contains("zoom=15.2"))
+    }
+
+    @Test
+    fun gps_includesZoomWhenProvided() {
+        DiagnosticLog.applyEnabled(filesDir, true)
+        DiagnosticLog.logGps(
+            lat = 60.79,
+            lon = 11.07,
+            altAslM = 189.0,
+            accuracyM = 5f,
+            satellites = 8,
+            fixType = "3D",
+            zoom = 13.7,
+            pitchDeg = 0.0,
+            bearingDeg = 12.0,
+        )
+        val text = DiagnosticLog.currentSessionFile()!!.readText()
+        assertTrue(text.contains("| GPS |"))
+        assertTrue(text.contains("zoom=13.7"))
+        assertEquals(13.7, DiagnosticLog.lastReportedZoom, 1e-9)
+    }
+
+    @Test
     fun gps_rateLimited_notEveryCallback() {
         DiagnosticLog.applyEnabled(filesDir, true)
         DiagnosticLog.logGps(60.0, 11.0, 100.0, 5f, 8, "3D", nowMs = 1_000L)

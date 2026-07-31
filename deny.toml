@@ -33,6 +33,7 @@ ignore = [
     { id = "RUSTSEC-2026-0094", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
     { id = "RUSTSEC-2026-0095", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
     { id = "RUSTSEC-2026-0096", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    { id = "RUSTSEC-2026-0222", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
 ]
 
 [licenses]

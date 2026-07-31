@@ -227,8 +227,18 @@ object BasemapStyleResolver {
         if (!pmFile.isFile) return null
 
         val outRoot = File(context.filesDir, PREPARED_DIR)
-        if (!outRoot.exists()) {
+        val assetEpoch = "v5-poi-peaks"
+        val epochFile = File(outRoot, ".asset_epoch")
+        val needCopy =
+            !outRoot.exists() ||
+                !epochFile.isFile ||
+                epochFile.readText() != assetEpoch
+        if (needCopy) {
+            if (outRoot.exists()) {
+                outRoot.deleteRecursively()
+            }
             copyAssetTree(context, ASSET_STYLE_ROOT, outRoot)
+            epochFile.writeText(assetEpoch)
         }
 
         val template =
@@ -260,7 +270,7 @@ object BasemapStyleResolver {
             styleJson = MapterhornTerrain.augmentStyleJson(json, tileJsonUrl)
         }
 
-        val outName = "style.local.json"
+        val outName = "style.local.v3.json"
         val outStyle = File(outRoot, outName)
         outStyle.writeText(styleJson.toString())
         // MapLibre Native expects a URI scheme for local styles.

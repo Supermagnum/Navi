@@ -19,4 +19,5 @@ ignore = [
     "RUSTSEC-2026-0094",
     "RUSTSEC-2026-0095",
     "RUSTSEC-2026-0096",
+    "RUSTSEC-2026-0222",
 ]

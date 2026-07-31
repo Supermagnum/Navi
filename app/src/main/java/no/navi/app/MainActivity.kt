@@ -143,6 +143,37 @@ import android.graphics.Paint as AndroidPaint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // adb: am start -n no.navi.app/.MainActivity --ez navi_force_online_basemap true
+        if (intent?.getBooleanExtra("navi_force_online_basemap", false) == true) {
+            NaviMapTestHooks.forceOnlineBasemap = true
+        }
+        if (intent?.getBooleanExtra("navi_hide_chrome", false) == true) {
+            NaviMapTestHooks.hideUiChrome = true
+            NaviMapTestHooks.hideSearchChrome = true
+        }
+
+        // adb: am start -n no.navi.app/.MainActivity \
+        //   --ed navi_camera_lat 60.7897832 --ed navi_camera_lon 11.0920954 --ed navi_camera_zoom 16
+        fun intentDouble(key: String): Double {
+            val extras = intent?.extras ?: return Double.NaN
+            if (!extras.containsKey(key)) return Double.NaN
+            when (val v = extras.get(key)) {
+                is Double -> return v
+                is Float -> return v.toDouble()
+                is Int -> return v.toDouble()
+                is Long -> return v.toDouble()
+                is Number -> return v.toDouble()
+            }
+            return Double.NaN
+        }
+        val camLat = intentDouble("navi_camera_lat")
+        val camLon = intentDouble("navi_camera_lon")
+        val camZoom = intentDouble("navi_camera_zoom")
+        if (!camLat.isNaN() && !camLon.isNaN() && !camZoom.isNaN()) {
+            NaviMapTestHooks.disableGpsFollow = true
+            NaviMapTestHooks.followGps = false
+            NaviMapTestHooks.pendingCamera = Triple(camLat, camLon, camZoom)
+        }
         runCatching { uniffi.navi.initNativeLogging() }
         MapLibre.getInstance(this)
         setContent {
@@ -1224,6 +1255,16 @@ private fun NaviMapScreen() {
                     accuracyM = if (loc.hasAccuracy()) loc.accuracy else null,
                     satellites = sats,
                     fixType = fixType,
+                    zoom =
+                        NaviMapTestHooks.lastCameraZoom
+                            .takeIf { it.isFinite() && it > 0.0 }
+                            ?: mapState.cameraZoom,
+                    pitchDeg =
+                        NaviMapTestHooks.lastCameraPitch
+                            .takeIf { it.isFinite() },
+                    bearingDeg =
+                        NaviMapTestHooks.lastCameraBearing
+                            .takeIf { it.isFinite() },
                 )
                 DiagnosticLog.maybeLogSystem(context.filesDir)
             }
@@ -1354,9 +1395,7 @@ private fun NaviMapScreen() {
                         }
                         val cam = NaviMapTestHooks.pendingCamera
                         if (cam != null) {
-                            if (!NaviMapTestHooks.disableGpsFollow) {
-                                NaviMapTestHooks.pendingCamera = null
-                            }
+                            NaviMapTestHooks.pendingCamera = null
                             mapState =
                                 mapState.copy(
                                     followGps = false,
@@ -3985,6 +4024,7 @@ private fun CorridorMapView(
         // so the corridor is not missing while layerEpoch catches up.
         applyRouteToStyle(style, stateRef.get())
         applyTracksToStyle(style, stateRef.get().tracks, mapView.context)
+        BasemapLabelPolicy.apply(style)
         ensureRouteAboveHillshade(style)
         applyCameraTilt(map)
         styleReady.value = true
@@ -4243,7 +4283,18 @@ private fun CorridorMapView(
                                 target.longitude,
                                 pos.zoom,
                             )
-                        }
+                            DiagnosticLog.logCamera(
+                                zoom = pos.zoom,
+                                lat = target.latitude,
+                                lon = target.longitude,
+                                pitchDeg = pos.tilt,
+                                bearingDeg = pos.bearing,
+                            )
+                        } ?: DiagnosticLog.logCamera(
+                            zoom = pos.zoom,
+                            pitchDeg = pos.tilt,
+                            bearingDeg = pos.bearing,
+                        )
                         applyResolvedStyle(map, force = false)
                     }
                     map.addOnMoveListener(

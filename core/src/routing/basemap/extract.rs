@@ -37,7 +37,7 @@ pub const PROTOMAPS_BUILD_BASE_URL: &str = "https://build.protomaps.com";
 pub const PROTOMAPS_PLANET_FALLBACK_URL: &str = "https://build.protomaps.com/20260722.pmtiles";
 
 /// Default max zoom for offline extracts (higher = larger downloads).
-pub const DEFAULT_EXTRACT_MAX_ZOOM: u8 = 12;
+pub const DEFAULT_EXTRACT_MAX_ZOOM: u8 = 15;
 
 #[derive(Debug, serde::Deserialize)]
 struct BuildMeta {

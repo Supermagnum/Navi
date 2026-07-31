@@ -173,7 +173,7 @@ Host extract example:
 pmtiles extract https://download.mapterhorn.com/planet.pmtiles \
   europe_norway_ostlandet_dem.pmtiles --bbox=7.5,58.5,13.5,62.8 --maxzoom=12
 pmtiles extract https://build.protomaps.com/YYYYMMDD.pmtiles \
-  europe_norway_ostlandet.pmtiles --bbox=7.5,58.5,13.5,62.8 --maxzoom=12
+  europe_norway_ostlandet.pmtiles --bbox=7.5,58.5,13.5,62.8 --maxzoom=15
 ```
 
 Place both under the app `pmtiles/` dir and queue/run `europe/norway/ostlandet`
@@ -193,7 +193,7 @@ override field / fallback). Protomaps documents discourage indefinite hotlinking
 of full-planet downloads; Navi only range-fetches the tiles for the selected
 bbox (same idea as `pmtiles extract https://build.protomaps.com/….pmtiles out.pmtiles --bbox=…`).
 
-Default extract **maxzoom = 12** (region paths). Paths under `test/` use maxzoom
+Default extract **maxzoom = 15** (region paths). Paths under `test/` use maxzoom
 10 for fast e2e (e.g. Geofabrik path `test/oslo`).
 
 ## Region → bbox → local file
@@ -205,7 +205,32 @@ Style load uses `pmtiles://file://{absolute_path}` plus bundled sprites/glyphs.
 ## Style assets (bundled once)
 
 `app/src/main/assets/map-styles/protomaps-light/` — template JSON, sprites, latin
-glyph ranges. Copied into app files on first offline use.
+glyph ranges. Copied into app files on first offline use, and again when the
+prepared-style **asset epoch** changes (see `BasemapStyleResolver`), so sprite /
+template fixes ship without wiping user PMTiles. Runtime file is
+`style.local.v3.json` under the prepared directory.
+
+## Basemap road names and amenity POIs (zoom ladder)
+
+Distinct from Navi [`poi.md`](poi.md) rest/overnight **PoiIndex** categories.
+Applied at style load via `BasemapLabelPolicy` (Liberty) and baked into the
+offline Protomaps template (`roads_label_*`, `pois`):
+
+| Camera zoom | Road / shield labels | Basemap amenity / peak POIs |
+|---|---|---|
+| ≥ 13 | Motorways | Hidden |
+| ≥ 14 | + secondary | Hidden |
+| ≥ 15 | + other majors and minor streets | Hidden |
+| ≥ 16 | Same | Visible (schools, fuel, shops, peaks, …) |
+
+Offline Protomaps peaks live in the `pois` source-layer (`kind=peak` / `hill`),
+not only `places`. OpenFreeMap Liberty has **no** `mountain_peak` layer; some
+peaks appear only when present in OMT `poi` ranks (e.g. Galdhøpiggen) and may
+be missing online (e.g. Elgpiggen) even when offline Protomaps shows them.
+
+Sprites: kinds without a matching icon (e.g. `fuel`) fall back to `townspot`.
+Match filters must not duplicate labels (MapLibre rejects the layer with
+`Branch labels must be unique`).
 
 ## Coverage fallback
 
@@ -330,7 +355,7 @@ labels). Easy to treat as another style filter miss.
 | Source | Schema | Tile contents at Dystingbo | Style can fix? |
 |---|---|---|---|
 | **Liberty (OpenMapTiles)** | `place.class` enumerates city/town/village/hamlet/…/`isolated_dwelling` — **no `farm`** | No Dystingbo; no `class=farm` in inspected z12/z14 tiles. Nearby `isolated_dwelling` is a **different** OSM tag, not a reclassification of farms. Building polygons often lack `name`. | **No.** Data never enters the tiles. |
-| **Offline Protomaps** (Ostlandet extract, **maxzoom 12**) | `places.kind_detail` includes **`farm`** ([Protomaps layers](https://docs.protomaps.com/basemaps/layers)) | z12 tile **contains** Dystingbo: `kind=locality`, `kind_detail=farm`, `name=Dystingbo`, feature `min_zoom: 13`. Farms are absent from z11 parent tiles. | Labels are already in the bundled `places` layer (`text-field: name`). |
+| **Offline Protomaps** (Ostlandet extract, **maxzoom 15**) | `places.kind_detail` includes **`farm`** ([Protomaps layers](https://docs.protomaps.com/basemaps/layers)) | Farm labels appear from feature `min_zoom` (often 13) once the extract includes that zoom. | Labels are already in the bundled `places` layer (`text-field: name`). |
 
 Lesson: **inspect the vector tile (and the schema) before editing style JSON.**
 Two failed style guesses were data/schema limits on Liberty, not wrong filters.
@@ -347,16 +372,18 @@ under `docs/images/tmp/farm_zoom/` (local evidence; not required in CI).
 | 12 | No for this farm (other farms e.g. Farmen can show; denser collision) |
 | **12.9 / 13 / 13.5 / 14 / 15** | **Yes** |
 
-Overzoom from extract maxzoom 12 works: camera ≥ 13 still labels from the z12
-parent tile. Glyphs for ASCII farm names are fine. Not a client overzoom or
-font bug.
+That ladder was captured against an older extract **maxzoom 12**: camera ≥ 13
+still labeled from the z12 parent tile (overzoom). With the current default
+extract **maxzoom 15**, farms at feature `min_zoom` 13 are present in native
+z13–z15 tiles as well. Glyphs for ASCII farm names are fine. Not a client
+overzoom or font bug.
 
 ### Product floor (documented, not a bug)
 
 Farm names on offline Protomaps are expected around **zoom 13+** (aligned with
 Protomaps’ feature `min_zoom: 13`). Showing them earlier would need upstream
-tile encoding / a higher extract maxzoom / collision-priority changes — not
-another Liberty `class=farm` filter.
+tile encoding / collision-priority changes — not another Liberty `class=farm`
+filter.
 
 **Liberty farm labels** need a **custom tile source** that preserves
 `place=farm` (same class of undertaking as other custom basemap work). Do not
@@ -384,8 +411,9 @@ Liberty at the same coordinates looked correct. This was visible in settled
 framebuffer captures of the interactive map (`docs/images/tmp/water_live/`),
 not only mid-composite test artifacts.
 
-At zoom ~13 (overzoom from extract maxzoom 12) the lake outline was closer to
-correct; the catastrophic mid-zoom failure was the actionable bug.
+At zoom ~13 (historically overzoom from an extract maxzoom 12; native z13 with
+today’s default maxzoom 15) the lake outline was closer to correct; the
+catastrophic mid-zoom failure was the actionable bug.
 
 ### Tile data (not an extract corruption)
 

@@ -183,7 +183,9 @@ tank size and fuel added.
 described in [`docs/poi.md`](docs/poi.md). Suggested search distances for network
 huts and trails are in [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md).
 Search results set From / Via / To and move the map. The basemap shows its own
-labels; app markers use the bundled icons. **From must be set before Plan route
+labels (road names from zoom **13+**, everyday amenity / peak icons from zoom
+**16+** — see [`docs/map-styles.md`](docs/map-styles.md#basemap-road-names-and-amenity-pois-zoom-ladder)).
+App markers use the bundled icons. **From must be set before Plan route
 works** — typically use **Use GPS as from** (current GPS position). With From
 unset, Plan shows “Set From and To first” and does not compute a corridor.
 
@@ -631,8 +633,9 @@ Rust OSM-graph project parsing ~9M nodes / ~18M edges in ~30 s / &lt;5 GB on an
 Offline **routing** data (Geofabrik `.osm.pbf` + on-disk graph cache + place/FTS
 index + DEM tiles + scratch for updates). Does **not** include MapLibre basemap
 tiles unless you also download regional **PMTiles** (add roughly another
-**1–3×** a comparable Geofabrik extract for a clipped Protomaps region, plus
-bundled sprites/glyphs already in the APK). See [`docs/map-styles.md`](docs/map-styles.md).
+**1–3×** a comparable Geofabrik extract for a clipped Protomaps region at the
+default **maxzoom 15**, plus bundled sprites/glyphs already in the APK; Ostlandet
+basemap alone is on the order of **~1 GB**). See [`docs/map-styles.md`](docs/map-styles.md).
 
 Geofabrik `.osm.pbf` sizes (approx., mid-2026; they grow over time):
 

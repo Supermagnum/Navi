@@ -9,7 +9,13 @@ Rute-/posisjonsscener bruker innbakt **rutesimulator** (rød **SIMULATING**-fane
 langs en **ekte planleggingskjøring**. Galleri­rammer skal **ikke** avsløre
 testerens live GPS-posisjon.
 
-Koordinater ble tastet inn i Rute-søkefeltet som `lat, lon`.
+Koordinater ble tastet inn i Rute-søkefeltet som `lat, lon`. Topp-/POI-rammer
+som skal vise grunnkart-ikoner ved zoom ≥ **16** kan også bruke
+`pendingCamera` / `GalleryPeakPoiRetakeScreenshotTest`.
+
+Grunnkart-ameniteter/topper (ikke [`poi.md`](poi.md) PoiIndex) krever zoom ≥
+**16**. Liberty mangler `mountain_peak`; noen topper (f.eks. Elgpiggen) synes
+på frakoblet Protomaps men ikke online Liberty.
 
 ## GitHub-tillatelsesliste (plass)
 
@@ -73,7 +79,7 @@ faller tilbake til Liberty 3D (dokumentert fallback-rad).
 | Galdhøpiggen, frakoblet Protomaps 3D | ![Galdhøpiggen](images/poi_galdhopiggen_3d.png) |
 | Galdhøpiggen, online 3D | ![Galdhøpiggen online](images/poi_galdhopiggen_online.png) |
 | Elgpiggen, frakoblet Protomaps 3D | ![Elgpiggen](images/poi_elgpiggen.png) |
-| Elgpiggen, online 3D | ![Elgpiggen online](images/poi_elgpiggen_online.png) |
+| Elgpiggen, online Liberty 3D (topp ofte mangler i OMT; DEM-ramme) | ![Elgpiggen online](images/poi_elgpiggen_online.png) |
 | Preikestolen, online 3D | ![Preikestolen](images/poi_prekestolen.png) |
 | Preikestolen med frakoblet preferanse (ingen Ostlandet-PMTiles → Liberty 3D-fallback) | ![Preikestolen offline](images/poi_prekestolen_offline.png) |
 

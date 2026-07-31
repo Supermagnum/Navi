@@ -195,6 +195,41 @@ class HardwareGallerySimScreenshotTest {
     }
 
     @Test
+    fun capture_finnstad_docs_only() {
+        activityRule.launchActivity(null)
+        waitStyle()
+
+        NaviMapTestHooks.hideSearchChrome = true
+        NaviMapTestHooks.disableGpsFollow = true
+        NaviMapTestHooks.followGps = false
+        NaviMapTestHooks.requestOptIn3d = true
+        MapHudPrefs.saveOptIn3d(context, true)
+        NaviMapTestHooks.requestCameraTiltDeg = 0.0
+        NaviMapTestHooks.routeStartLabel = "Finnstad"
+        NaviMapTestHooks.routeViaLabel = "Søndre Ommang"
+        NaviMapTestHooks.routeEndLabel = "Rosenlund"
+        NaviMapTestHooks.pendingRoute = planned
+        waitUntil(60_000) { NaviMapTestHooks.lastRoutePolylineChars > 50 }
+        Thread.sleep(600)
+        startSimulationMidRoute()
+        NaviMapTestHooks.followGps = false
+        frameFullRoute(planned.routePolyline, pad = 1.45)
+        Thread.sleep(3_000)
+        assertSimulatingBannerVisible()
+        shot(SHOT_3D, requireSimulating = true, framePad = 1.45)
+
+        NaviMapTestHooks.requestOptIn3d = false
+        MapHudPrefs.saveOptIn3d(context, false)
+        frameFullRoute(planned.routePolyline, pad = 1.45)
+        Thread.sleep(2_500)
+        assertSimulatingBannerVisible()
+        shot(SHOT_FLAT, requireSimulating = true, framePad = 1.45)
+
+        NaviMapTestHooks.requestStopRouteSimulation = true
+        Log.i(TAG, "finnstad docs done")
+    }
+
+    @Test
     fun capture_follow_gps_tilt_route_idle_with_simulating_where_required() {
         activityRule.launchActivity(null)
         waitStyle()

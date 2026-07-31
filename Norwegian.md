@@ -145,7 +145,9 @@ Uten det i dag kan appen lære av tankstørrelse og påfylt drivstoff.
 [`docs/poi.md`](docs/poi.md). Foreslåtte søkeavstander for nettverkshytter og
 løyper står i [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md).
 Søketreff setter Fra / Via / Til og flytter kartet. Grunnkartet viser egne
-etiketter; appmarkører bruker medfølgende ikoner. **Fra må være satt før
+etiketter (veinavn fra zoom **13+**, hverdags-ameniteter/topper fra zoom
+**16+** — se [`docs/map-styles.md`](docs/map-styles.md#basemap-road-names-and-amenity-pois-zoom-ladder)).
+Appmarkører bruker medfølgende ikoner. **Fra må være satt før
 Planlegg rute virker** — vanligvis **Use GPS as from** (nåværende GPS-posisjon).
 Uten Fra viser Plan «Set From and To first» og beregner ingen korridor.
 
@@ -427,7 +429,9 @@ Estimater nedenfor er ikke målt på den enhetsklassen ennå.
 
 Frakoblet **rutingsdata** (Geofabrik `.osm.pbf` + grafbuffer + sted/FTS + DEM +
 scratch for oppdateringer). Omfatter **ikke** MapLibre-grunnkartfliser med mindre
-du også laster regionale **PMTiles**. Se [`docs/map-styles.md`](docs/map-styles.md).
+du også laster regionale **PMTiles** (typisk ytterligere **1–3×** et
+sammenlignbart Geofabrik-uttrekk ved standard **maxzoom 15**; Ostlandet-grunnkart
+alene er i størrelsesorden **~1 GB**). Se [`docs/map-styles.md`](docs/map-styles.md).
 
 Geofabrik `.osm.pbf`-størrelser (ca., midten av 2026):
 

@@ -160,6 +160,227 @@
         "text-halo-color": "#f8f4f0",
         "text-halo-width": 1.2
       }
+    },
+    {
+      "id": "roads_label_motorway",
+      "type": "symbol",
+      "source": "protomaps",
+      "source-layer": "roads",
+      "minzoom": 13,
+      "filter": [
+        "all",
+        ["match", ["get", "kind_detail"], ["motorway", "motorway_link"], true, false],
+        ["any", ["has", "name"], ["has", "ref"]]
+      ],
+      "layout": {
+        "symbol-placement": "line",
+        "text-field": ["coalesce", ["get", "name"], ["get", "ref"]],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": 12,
+        "text-max-angle": 30
+      },
+      "paint": {
+        "text-color": "#303030",
+        "text-halo-color": "#f8f4f0",
+        "text-halo-width": 1.2
+      }
+    },
+    {
+      "id": "roads_label_secondary",
+      "type": "symbol",
+      "source": "protomaps",
+      "source-layer": "roads",
+      "minzoom": 14,
+      "filter": [
+        "all",
+        ["has", "name"],
+        ["match", ["get", "kind_detail"], ["secondary", "secondary_link"], true, false]
+      ],
+      "layout": {
+        "symbol-placement": "line",
+        "text-field": ["get", "name"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": 12,
+        "text-max-angle": 30
+      },
+      "paint": {
+        "text-color": "#403020",
+        "text-halo-color": "#f8f4f0",
+        "text-halo-width": 1.2
+      }
+    },
+    {
+      "id": "roads_label_major",
+      "type": "symbol",
+      "source": "protomaps",
+      "source-layer": "roads",
+      "minzoom": 15,
+      "filter": [
+        "all",
+        ["has", "name"],
+        [
+          "match",
+          ["get", "kind_detail"],
+          ["primary", "primary_link", "tertiary", "tertiary_link", "trunk", "trunk_link"],
+          true,
+          false
+        ]
+      ],
+      "layout": {
+        "symbol-placement": "line",
+        "text-field": ["get", "name"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": 12,
+        "text-max-angle": 30
+      },
+      "paint": {
+        "text-color": "#403020",
+        "text-halo-color": "#f8f4f0",
+        "text-halo-width": 1.2
+      }
+    },
+    {
+      "id": "roads_label_minor",
+      "type": "symbol",
+      "source": "protomaps",
+      "source-layer": "roads",
+      "minzoom": 15,
+      "filter": [
+        "all",
+        ["has", "name"],
+        [
+          "match",
+          ["get", "kind_detail"],
+          [
+            "residential",
+            "unclassified",
+            "service",
+            "living_street",
+            "road",
+            "pedestrian",
+            "track",
+            "path",
+            "cycleway",
+            "footway"
+          ],
+          true,
+          false
+        ]
+      ],
+      "layout": {
+        "symbol-placement": "line",
+        "text-field": ["get", "name"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": 11,
+        "text-max-angle": 30
+      },
+      "paint": {
+        "text-color": "#504030",
+        "text-halo-color": "#f8f4f0",
+        "text-halo-width": 1.0
+      }
+    },
+    {
+      "id": "pois",
+      "type": "symbol",
+      "source": "protomaps",
+      "source-layer": "pois",
+      "minzoom": 16,
+      "filter": [
+        "all",
+        [">=", ["zoom"], ["coalesce", ["get", "min_zoom"], 0]],
+        [
+          "match",
+          ["get", "kind"],
+          [
+            "school",
+            "university",
+            "college",
+            "kindergarten",
+            "fuel",
+            "charging_station",
+            "convenience",
+            "supermarket",
+            "grocery",
+            "bus_stop",
+            "parking",
+            "attraction",
+            "museum",
+            "cafe",
+            "restaurant",
+            "fast_food",
+            "hospital",
+            "pharmacy",
+            "library",
+            "post_office",
+            "toilets",
+            "drinking_water",
+            "bench",
+            "playground",
+            "park",
+            "zoo",
+            "theatre",
+            "cinema",
+            "hotel",
+            "peak",
+            "hill"
+          ],
+          true,
+          false
+        ]
+      ],
+      "layout": {
+        "icon-image": [
+          "match",
+          ["get", "kind"],
+          "school", "school",
+          "university", "university",
+          "college", "university",
+          "kindergarten", "school",
+          "cafe", "cafe",
+          "restaurant", "restaurant",
+          "fast_food", "fast_food",
+          "bus_stop", "bus_stop",
+          "convenience", "convenience",
+          "supermarket", "supermarket",
+          "grocery", "supermarket",
+          "attraction", "attraction",
+          "museum", "museum",
+          "library", "library",
+          "post_office", "post_office",
+          "toilets", "toilets",
+          "drinking_water", "drinking_water",
+          "bench", "bench",
+          "park", "park",
+          "playground", "park",
+          "zoo", "zoo",
+          "theatre", "theatre",
+          "cinema", "theatre",
+          "peak", "peak",
+          "hill", "peak",
+          "fuel", "townspot",
+          "charging_station", "townspot",
+          "parking", "townspot",
+          "hospital", "townspot",
+          "pharmacy", "townspot",
+          "hotel", "townspot",
+          "townspot"
+        ],
+        "icon-size": 1.0,
+        "icon-allow-overlap": true,
+        "text-field": ["get", "name"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": 11,
+        "text-optional": true,
+        "text-allow-overlap": false,
+        "text-offset": [0, 1.1],
+        "text-anchor": "top"
+      },
+      "paint": {
+        "text-color": "#303030",
+        "text-halo-color": "#f8f4f0",
+        "text-halo-width": 1.0
+      }
     }
   ]
 }

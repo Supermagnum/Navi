@@ -8,8 +8,14 @@ Route-following / current-position scenes use the in-app **route simulator**
 frames must **not** reveal the tester’s live GPS position (no live GPS follow
 at the physical device location; `disableGpsFollow` for static POI frames).
 
-Coordinates for the captures below were entered via the Route search keyboard
-as `lat, lon` (not map-tap, not camera-hook injection).
+Coordinates for most captures below were entered via the Route search keyboard
+as `lat, lon` (not map-tap). Peak frames that must show basemap amenity/peak
+icons at zoom ≥ **16** may also use `NaviMapTestHooks.pendingCamera` /
+`GalleryPeakPoiRetakeScreenshotTest` so framing is reliable on hardware.
+
+Basemap amenity / peak icons (not [`poi.md`](poi.md) PoiIndex) need camera
+zoom ≥ **16**. OpenFreeMap Liberty has no `mountain_peak` layer — some peaks
+(e.g. Elgpiggen) show on offline Protomaps but not on Liberty online.
 
 ## GitHub allowlist (space)
 
@@ -91,7 +97,7 @@ Confirm tiles loaded (not beige empty-tile failure mode).
 | Galdhøpiggen peak, offline Protomaps 3D (61.6364721, 8.3124426) | ![Galdhøpiggen](images/poi_galdhopiggen_3d.png) |
 | Galdhøpiggen peak, online 3D | ![Galdhøpiggen online](images/poi_galdhopiggen_online.png) |
 | Elgpiggen peak, offline Protomaps 3D (62.1592913, 11.3584086) | ![Elgpiggen](images/poi_elgpiggen.png) |
-| Elgpiggen peak, online 3D | ![Elgpiggen online](images/poi_elgpiggen_online.png) |
+| Elgpiggen peak, online Liberty 3D (peak often absent from OMT; DEM framing) | ![Elgpiggen online](images/poi_elgpiggen_online.png) |
 | Preikestolen / Pulpit Rock, online 3D (58.9870777, 6.1887732) | ![Preikestolen](images/poi_prekestolen.png) |
 | Preikestolen with offline preferred (no Ostlandet PMTiles → Liberty 3D fallback) | ![Preikestolen offline](images/poi_prekestolen_offline.png) |
 
