@@ -65,7 +65,11 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("net.java.dev.jna:jna:5.15.0@aar")
-    implementation("org.maplibre.gl:android-sdk-vulkan:11.8.8")
+    // Default (finalized): MapLibre GLES android-sdk. Prefer 11.13.5 over 11.8.8
+    // (Maven has GLES 11.13.5 — keep version, change renderer from android-sdk-vulkan).
+    // Evidence 2026-07-31: AAOS BearingCrashIsolationTest PASS (no SIGSEGV);
+    // SM-P613 online/offline 3D wash cleared (demHitsOk>=1).
+    implementation("org.maplibre.gl:android-sdk:11.13.5")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")

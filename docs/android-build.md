@@ -140,9 +140,10 @@ adb devices
 That script starts `no.navi.app/.MainActivity` and works around the yellow
 display-compat “bordering activity” wrapper on some AAOS images.
 
-MapLibre uses the **Vulkan** SDK artifact (`android-sdk-vulkan`); prefer an AVD
-with working Vulkan/ranchu graphics. See README known issues for the GLES
-rotation crash that Vulkan avoids.
+MapLibre uses the **GLES** SDK artifact (`org.maplibre.gl:android-sdk:11.13.5`).
+Vulkan (`android-sdk-vulkan`) was the prior default to avoid an older AAOS
+emulator bearing SIGSEGV; GLES 11.13.5 re-validated on `emulator-5554` + SM-P613
+(see README known issues / `docs/map-styles.md`).
 
 ---
 
@@ -185,7 +186,7 @@ under `jniLibs/` before `assemble*`.
 | Linker / clang not found | Update `.cargo/config.toml` linker paths to your NDK |
 | `UnsatisfiedLinkError` / missing `libnavi` | Re-run native script for the device ABI; confirm `jniLibs/<abi>/libnavi.so` exists |
 | Kotlin UniFFI types missing | Re-run native script (bindgen step) |
-| Map crash on rotate (OpenGL) | Ensure dependency is `android-sdk-vulkan` (already in `app/build.gradle.kts`) |
+| Map crash on rotate (historical GLES) | Prefer current `android-sdk:11.13.5` GLES; re-run `BearingCrashIsolationTest` on AAOS AVD if suspecting regression |
 | Wrong app / yellow border UI | `./scripts/launch-navi-emulator.sh` |
 
 ---

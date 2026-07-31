@@ -223,6 +223,10 @@ Mic-E / compressed ─ dense encoding of lat/lon (+ course/speed ± altitude)
 - App: screen-space Compose overlay (native MapLibre Circle/Symbol layers do not
   paint reliably on the Automotive emulator GLES path; see README known issues).
   Test hooks push a full track snapshot after each upsert batch.
+  Instrumented coverage waits on `lastOverlayScreenFingerprint` (sorted
+  `id:x:y`) so UiAutomation screencap does not race Compose redraw — GLES
+  before/after byte-identical flakes were that race, not native-layer
+  resurfacing.
 - Symbols for tests: hessu/aprs-symbols crops under `core/src/icons/aprs/` (see
   that directory’s `COPYRIGHT.md` — licensing is **per symbol**).
 

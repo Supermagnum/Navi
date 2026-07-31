@@ -1,10 +1,10 @@
-use std::io::Write;
 use std::path::Path;
 
-use reqwest::header::{ETAG, RANGE};
+use reqwest::header::HeaderMap;
 use reqwest::Client;
 
 use super::{DemSource, DownloadResult};
+use crate::download::{stream_get_to_file, StreamDownloadOpts, DEFAULT_RETRIES};
 use crate::routing::elevation::tile_id::HgtTileId;
 
 const COPERNICUS_BUCKET: &str = "https://copernicus-dem-30m.s3.eu-central-1.amazonaws.com";
@@ -40,45 +40,57 @@ pub async fn download_tile(
         }));
     }
 
-    let mut request = client.get(&url);
-    if resume_from > 0 {
-        request = request.header(RANGE, format!("bytes={resume_from}-"));
-    }
-
-    let response = request.send().await?;
-    if response.status() == reqwest::StatusCode::NOT_FOUND {
+    let Some(result) = stream_get_to_file(
+        client,
+        StreamDownloadOpts {
+            url: &url,
+            dest: &dest,
+            headers: HeaderMap::new(),
+            resume_from,
+            expected_bytes: None,
+            retries: DEFAULT_RETRIES,
+            progress_label: "Downloading elevation…",
+            allow_not_found: true,
+        },
+    )
+    .await?
+    else {
         return Ok(None);
-    }
-    if !response.status().is_success() {
-        anyhow::bail!("copernicus HTTP {}", response.status());
-    }
-
-    let etag = response
-        .headers()
-        .get(ETAG)
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string);
-    let bytes_body = response.bytes().await?;
-
-    if resume_from > 0 {
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&dest)?;
-        file.write_all(&bytes_body)?;
-    } else {
-        std::fs::write(&dest, &bytes_body)?;
-    }
+    };
 
     Ok(Some(DownloadResult {
-        local_path: dest.clone(),
-        bytes: std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0),
-        total_bytes: None,
-        etag,
+        local_path: dest,
+        bytes: result.bytes,
+        total_bytes: result.total_bytes,
+        etag: result.etag,
     }))
 }
 
 #[allow(dead_code)]
 pub fn source_label() -> &'static str {
     DemSource::Copernicus.label()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::download::http_client;
+    use crate::routing::elevation::tile_id::HgtTileId;
+
+    #[tokio::test]
+    #[ignore = "network: live Copernicus COG stream-to-disk"]
+    async fn streams_one_copernicus_tile() {
+        let dir = tempfile::tempdir().unwrap();
+        let tile = HgtTileId {
+            lat_floor: 59,
+            lon_floor: 10,
+        };
+        let client = http_client().unwrap();
+        let result = download_tile(&client, tile, dir.path(), 0)
+            .await
+            .expect("download")
+            .expect("tile present");
+        assert!(result.local_path.is_file());
+        assert!(result.bytes > 1_000_000, "expected multi-MB COG, got {}", result.bytes);
+    }
 }

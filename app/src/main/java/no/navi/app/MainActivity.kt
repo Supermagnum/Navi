@@ -427,6 +427,9 @@ private fun NaviMapScreen() {
         approachGuidance = ApproachGuidanceState()
         NaviMapTestHooks.lastApproachPhase = ApproachUiPhase.Hidden
         NaviMapTestHooks.lastRoutePolylineChars = 0
+        NaviMapTestHooks.lastPlanReport = ""
+        NaviMapTestHooks.lastPlanDistanceKm = 0.0
+        NaviMapTestHooks.lastRoutePolyline = ""
         NaviMapTestHooks.lastBreakPoiCount = 0
         NaviMapTestHooks.lastArrivedAtEnd = false
         NaviMapTestHooks.lastCurrentStreet = null
@@ -547,6 +550,24 @@ private fun NaviMapScreen() {
         remember {
             NaviAppData.resolve(context)
         }
+    var offlineIntegrity by remember {
+        mutableStateOf(OfflineDataIntegrity.inspect(context, dataDir))
+    }
+    LaunchedEffect(Unit) {
+        val report =
+            withContext(Dispatchers.IO) {
+                OfflineDataIntegrity.inspect(context, dataDir)
+            }
+        offlineIntegrity = report
+        report.userMessage()?.let { msg ->
+            if (status.isBlank() ||
+                status.startsWith("Liberty") ||
+                status.startsWith("Offline")
+            ) {
+                status = msg
+            }
+        }
+    }
 
     /**
      * Apply a planned corridor onto the live map. Used by the Plan button and by
@@ -684,6 +705,9 @@ private fun NaviMapScreen() {
             )
         NaviMapTestHooks.followGps = false
         NaviMapTestHooks.lastRoutePolylineChars = pending.routePolyline.length
+        NaviMapTestHooks.lastPlanReport = pending.report
+        NaviMapTestHooks.lastPlanDistanceKm = pending.distanceKm
+        NaviMapTestHooks.lastRoutePolyline = pending.routePolyline
         NaviMapTestHooks.lastBreakPoiCount = breaks.size
         routeSamples =
             parseRouteSimSamples(
@@ -950,7 +974,15 @@ private fun NaviMapScreen() {
                     ) > 1e-6
                 if (moved || mapState.gpsLat == 0.0) {
                     mapState =
-                        if (mapState.followGps) {
+                        if (NaviMapTestHooks.disableGpsFollow) {
+                            mapState.copy(
+                                gpsLat = loc.latitude,
+                                gpsLon = loc.longitude,
+                                gpsAccuracyM = acc,
+                                followGps = false,
+                                layerEpoch = mapState.layerEpoch + 1,
+                            )
+                        } else if (mapState.followGps) {
                             mapState.copy(
                                 gpsLat = loc.latitude,
                                 gpsLon = loc.longitude,
@@ -967,6 +999,9 @@ private fun NaviMapScreen() {
                                 layerEpoch = mapState.layerEpoch + 1,
                             )
                         }
+                    if (NaviMapTestHooks.disableGpsFollow) {
+                        NaviMapTestHooks.followGps = false
+                    }
                 } else if (acc != mapState.gpsAccuracyM) {
                     mapState = mapState.copy(gpsAccuracyM = acc)
                 }
@@ -1319,7 +1354,9 @@ private fun NaviMapScreen() {
                         }
                         val cam = NaviMapTestHooks.pendingCamera
                         if (cam != null) {
-                            NaviMapTestHooks.pendingCamera = null
+                            if (!NaviMapTestHooks.disableGpsFollow) {
+                                NaviMapTestHooks.pendingCamera = null
+                            }
                             mapState =
                                 mapState.copy(
                                     followGps = false,
@@ -1330,7 +1367,7 @@ private fun NaviMapScreen() {
                                 )
                             NaviMapTestHooks.followGps = false
                         }
-                        if (NaviMapTestHooks.requestRecenterGps) {
+                        if (NaviMapTestHooks.requestRecenterGps && !NaviMapTestHooks.disableGpsFollow) {
                             NaviMapTestHooks.requestRecenterGps = false
                             if (mapState.gpsLat != 0.0 || mapState.gpsLon != 0.0) {
                                 mapState =
@@ -2069,6 +2106,7 @@ private fun NaviMapScreen() {
                                                                     var last: uniffi.navi.CorridorRouteResult? = null
                                                                     val legSamples = mutableListOf<List<RouteSimSample>>()
                                                                     val legManeuvers = mutableListOf<List<RouteManeuver>>()
+                                                                    val vehicleAvoidanceLines = linkedSetOf<String>()
                                                                     val legTotal = pts.size - 1
                                                                     val graphTag =
                                                                         when (profile) {
@@ -2115,6 +2153,15 @@ private fun NaviMapScreen() {
                                                                         if (!legRes.report.contains("PASS")) {
                                                                             return@runCatching legRes
                                                                         }
+                                                                        legRes.report.lineSequence().forEach { line ->
+                                                                            if (line.contains(
+                                                                                    "weight/height/width/length-restricted",
+                                                                                    ignoreCase = true,
+                                                                                )
+                                                                            ) {
+                                                                                vehicleAvoidanceLines += line.trim()
+                                                                            }
+                                                                        }
                                                                         dist += legRes.distanceKm
                                                                         etaSum += legRes.etaMinutes
                                                                         shareWeighted += legRes.priorityPathSharePct * legRes.distanceKm
@@ -2139,8 +2186,16 @@ private fun NaviMapScreen() {
                                                                         } else {
                                                                             base.priorityPathSharePct
                                                                         }
+                                                                    val multiReport =
+                                                                        buildString {
+                                                                            appendLine("TEST_KIND=PLAN_MULTI")
+                                                                            appendLine("PASS")
+                                                                            appendLine("distance_km=$dist")
+                                                                            appendLine("priority_path_share_pct=$mergedShare")
+                                                                            vehicleAvoidanceLines.forEach { appendLine(it) }
+                                                                        }
                                                                     uniffi.navi.CorridorRouteResult(
-                                                                        report = "TEST_KIND=PLAN_MULTI\nPASS\ndistance_km=$dist\npriority_path_share_pct=$mergedShare\n",
+                                                                        report = multiReport,
                                                                         distanceKm = dist,
                                                                         etaMinutes = etaSum,
                                                                         cacheHit = base.cacheHit,
@@ -2698,7 +2753,10 @@ private fun NaviMapScreen() {
                                             onValueChange = { heightM = it },
                                             label = { Text("Height (m)") },
                                             singleLine = true,
-                                            modifier = Modifier.fillMaxWidth(),
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .testTag("field_vehicle_height"),
                                         )
                                     }
                                     if (showVehicleClearance) {
@@ -3068,6 +3126,41 @@ private fun NaviMapScreen() {
                                 .fillMaxWidth()
                                 .testTag("field_pmtiles_base_url"),
                     )
+                    if (offlineIntegrity.canRestoreFromStaging) {
+                        Text(
+                            offlineIntegrity.userMessage()
+                                ?: "Staged offline map files are available to restore.",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("offline_data_mismatch_msg"),
+                        )
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    status = "Restoring staged offline maps…"
+                                    val report =
+                                        withContext(Dispatchers.IO) {
+                                            OfflinePmtilesBootstrap.restoreOstlandetFromStaging(dataDir)
+                                        }
+                                    status = report
+                                    if (report.startsWith("OK:")) {
+                                        MapHudPrefs.rememberDownloadedPmtilesRegion(
+                                            context,
+                                            "europe_norway_ostlandet",
+                                        )
+                                        offlineIntegrity =
+                                            OfflineDataIntegrity.inspect(context, dataDir)
+                                        styleEpoch += 1
+                                    }
+                                }
+                            },
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag("btn_restore_staged_pmtiles"),
+                        ) {
+                            Text("Restore staged offline maps")
+                        }
+                    }
                     Button(
                         onClick = {
                             scope.launch {
@@ -3108,6 +3201,13 @@ private fun NaviMapScreen() {
                                     )
                                 status = "PMTiles ${done.status}: ${done.localPath}"
                                 if (done.status == "completed") {
+                                    MapHudPrefs.rememberDownloadedPmtilesRegion(
+                                        context,
+                                        done.regionKey.ifBlank {
+                                            File(done.localPath).nameWithoutExtension
+                                        },
+                                    )
+                                    offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
                                     styleEpoch += 1
                                 }
                             }
@@ -3156,6 +3256,13 @@ private fun NaviMapScreen() {
                                     )
                                 status = "DEM ${done.status}: ${done.localPath}"
                                 if (done.status == "completed") {
+                                    MapHudPrefs.rememberDownloadedPmtilesRegion(
+                                        context,
+                                        done.regionKey.ifBlank {
+                                            File(done.localPath).nameWithoutExtension
+                                        },
+                                    )
+                                    offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
                                     styleEpoch += 1
                                 }
                             }
@@ -3520,7 +3627,7 @@ private fun NaviMapScreen() {
                         DiagnosticLog.logToggle("camera_tilt_deg", next)
                         driveHud = driveHud.copy(cameraTiltDeg = next)
                         MapHudPrefs.saveCameraTiltDeg(context, next)
-                        NaviMapTestHooks.lastCameraPitch = next
+                        // Do not write lastCameraPitch here — only MapLibre camera state may.
                         styleEpoch += 1
                     },
                     onSave = {
@@ -3791,6 +3898,12 @@ private fun CorridorMapView(
             } else {
                 0.0
             }
+        // Keep MapLibre's clamp aligned with our presets (default is already 60,
+        // but re-assert in case a style/options path lowered it).
+        runCatching {
+            map.setMinPitchPreference(0.0)
+            map.setMaxPitchPreference(MapHudPrefs.MAPLIBRE_MAX_TILT_DEG)
+        }
         val cur = map.cameraPosition.tilt
         if (kotlin.math.abs(cur - target) < 0.25) {
             NaviMapTestHooks.lastCameraPitch = cur
@@ -3798,9 +3911,14 @@ private fun CorridorMapView(
         }
         val pos =
             org.maplibre.android.camera.CameraPosition
-                .Builder(map.cameraPosition)
+                .Builder()
+                .target(map.cameraPosition.target)
+                .zoom(map.cameraPosition.zoom)
+                .bearing(map.cameraPosition.bearing)
                 .tilt(target)
+                .padding(map.cameraPosition.padding)
                 .build()
+        runCatching { map.cancelTransitions() }
         map.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
         // Prefer the engine's post-clamp pitch so hooks/UI stay truthful.
         NaviMapTestHooks.lastCameraPitch = map.cameraPosition.tilt
@@ -3816,19 +3934,30 @@ private fun CorridorMapView(
         var terrainOk = false
         if (resolved.attachMapterhornTerrain) {
             val demUri = resolved.demSourceUri ?: MapterhornTerrain.TILEJSON_URL
-            terrainOk =
-                if (MapterhornTerrain.isAttached(style)) {
-                    true
-                } else {
-                    MapterhornTerrain.attach(style, demUri)
-                }
+            terrainOk = MapterhornTerrain.attach(style, demUri)
             if (!terrainOk) {
                 onStyleNote(
                     "Mapterhorn hillshade unavailable; tilt still applied",
                 )
             }
+        } else if (MapterhornTerrain.usesBakedOfflineHillshade(resolved)) {
+            resolved.coveringJob?.localPath?.let { basemapPath ->
+                MapterhornTerrain.localDemBesideBasemap(basemapPath)?.let { dem ->
+                    MapterhornTerrain.ensureLocalDemTileJsonUrl(dem)
+                }
+            }
+            val demUri = resolved.demSourceUri
+            terrainOk =
+                if (demUri != null) {
+                    MapterhornTerrain.attach(style, demUri)
+                } else {
+                    MapterhornTerrain.isAttached(style)
+                }
+            if (!terrainOk) {
+                onStyleNote("Offline hillshade missing from prepared style")
+            }
         } else {
-            // Always strip hillshade when 3D is off — setStyle(same Liberty URL)
+            // Strip hillshade when 3D is off — setStyle(same Liberty URL)
             // may no-op and leave a previous attach in place.
             MapterhornTerrain.detach(style)
             terrainOk = false
@@ -3888,7 +4017,8 @@ private fun CorridorMapView(
                 // Compare against the achievable tilt (MapLibre clamps at 60°).
                 val wantTilt = effectiveTiltDeg()
                 val tiltMatches = kotlin.math.abs(tilt - wantTilt) <= 1.0
-                val terrainMatches = attached == resolved.attachMapterhornTerrain
+                val wantTerrain = MapterhornTerrain.wantHillshadeAttached(resolved)
+                val terrainMatches = attached == wantTerrain
                 if (terrainMatches && tiltMatches) return@getStyle
                 val applyGen = styleApplyGen.incrementAndGet()
                 applyTerrainAndPitch(map, style, resolved, applyGen)
@@ -3905,7 +4035,9 @@ private fun CorridorMapView(
         styleReady.value = false
         NaviMapTestHooks.styleReady = false
         onStyleNote(resolved.note)
-        if (resolved.kind == BasemapStyleResolver.StyleKind.OfflineProtomaps) {
+        if (resolved.kind == BasemapStyleResolver.StyleKind.OfflineProtomaps &&
+            resolved.note.isNullOrBlank()
+        ) {
             onStyleNote("Offline basemap (Protomaps)")
         }
 
@@ -3990,6 +4122,12 @@ private fun CorridorMapView(
         NaviMapTestHooks.lastTrackOverlayCount = marks.size
         NaviMapTestHooks.lastTrackFeatureCount = latest.tracks.size
         NaviMapTestHooks.lastTrackImagesReady = marks.count { it.icon != null }
+        NaviMapTestHooks.lastOverlayScreenFingerprint =
+            marks
+                .map { mark ->
+                    "${mark.track.id}:${mark.x.toInt()}:${mark.y.toInt()}"
+                }.sorted()
+                .joinToString("|")
 
         // Compose-drawn start/via/end labels (reliable when SymbolLayer glyphs fail).
         val wps = mutableListOf<WaypointOverlayMark>()
@@ -4075,6 +4213,11 @@ private fun CorridorMapView(
                         NaviMapTestHooks.lastCameraZoom = pos.zoom
                         NaviMapTestHooks.lastCameraBearing = pos.bearing
                         NaviMapTestHooks.lastCameraPitch = pos.tilt
+                        // Re-assert preferred tilt if a concurrent camera update raced us.
+                        val wantTilt = effectiveTiltDeg()
+                        if (kotlin.math.abs(pos.tilt - wantTilt) > 1.0) {
+                            applyCameraTilt(map, wantTilt)
+                        }
                         pos.target?.let { target ->
                             NaviMapTestHooks.lastCameraLat = target.latitude
                             NaviMapTestHooks.lastCameraLon = target.longitude
@@ -4110,6 +4253,11 @@ private fun CorridorMapView(
                         },
                     )
                     map.uiSettings.setAllGesturesEnabled(true)
+                    map.uiSettings.isTiltGesturesEnabled = true
+                    runCatching {
+                        map.setMinPitchPreference(0.0)
+                        map.setMaxPitchPreference(MapHudPrefs.MAPLIBRE_MAX_TILT_DEG)
+                    }
                     applyResolvedStyle(map, force = true)
                 }
             },
@@ -4323,15 +4471,20 @@ private fun CorridorMapView(
         val bearing = stateRef.get().cameraBearing
         mapView.getMapAsync { map ->
             try {
+                val pitch = effectiveTiltDeg()
                 map.moveCamera(
                     CameraUpdateFactory.newCameraPosition(
                         org.maplibre.android.camera.CameraPosition
                             .Builder(map.cameraPosition)
                             .bearing(bearing)
+                            // Pin tilt: async bearing updates otherwise race a just-applied
+                            // pitch and freeze the camera at 0° (prefs correct, view flat).
+                            .tilt(pitch)
                             .build(),
                     ),
                 )
                 NaviMapTestHooks.lastCameraBearing = bearing
+                NaviMapTestHooks.lastCameraPitch = map.cameraPosition.tilt
             } catch (e: Exception) {
                 android.util.Log.e("HudVerification", "bearing update failed", e)
             }
@@ -4346,12 +4499,16 @@ private fun CorridorMapView(
         val zoom = latest.cameraZoom ?: return@LaunchedEffect
         mapView.getMapAsync { map ->
             try {
+                val pitch = effectiveTiltDeg()
                 val builder =
                     org.maplibre.android.camera.CameraPosition
                         .Builder(map.cameraPosition)
                         .zoom(zoom)
+                        .tilt(pitch)
                 when {
-                    latest.followGps && (latest.gpsLat != 0.0 || latest.gpsLon != 0.0) -> {
+                    !NaviMapTestHooks.disableGpsFollow &&
+                        latest.followGps &&
+                        (latest.gpsLat != 0.0 || latest.gpsLon != 0.0) -> {
                         builder.target(LatLng(latest.gpsLat, latest.gpsLon))
                     }
                     latest.cameraLat != null && latest.cameraLon != null -> {
@@ -4361,6 +4518,7 @@ private fun CorridorMapView(
                 }
                 map.moveCamera(CameraUpdateFactory.newCameraPosition(builder.build()))
                 NaviMapTestHooks.lastCameraZoom = zoom
+                NaviMapTestHooks.lastCameraPitch = map.cameraPosition.tilt
             } catch (e: Exception) {
                 android.util.Log.e("HudVerification", "zoom update failed", e)
             }

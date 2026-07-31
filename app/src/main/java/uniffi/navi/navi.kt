@@ -886,6 +886,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -994,6 +996,8 @@ fun uniffi_navi_checksum_func_pmtiles_delete_job(
 fun uniffi_navi_checksum_func_pmtiles_fallback_planet_url(
 ): Short
 fun uniffi_navi_checksum_func_pmtiles_get_job(
+): Short
+fun uniffi_navi_checksum_func_pmtiles_get_tile(
 ): Short
 fun uniffi_navi_checksum_func_pmtiles_list_covering(
 ): Short
@@ -1235,6 +1239,8 @@ fun uniffi_navi_fn_func_pmtiles_delete_job(`dataDir`: RustBuffer.ByValue,`jobId`
 fun uniffi_navi_fn_func_pmtiles_fallback_planet_url(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_pmtiles_get_job(`dataDir`: RustBuffer.ByValue,`jobId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_pmtiles_get_tile(`path`: RustBuffer.ByValue,`z`: Byte,`x`: Int,`y`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_pmtiles_list_covering(`dataDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1565,6 +1571,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_pmtiles_get_job() != 36047.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_pmtiles_get_tile() != 33016.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_pmtiles_list_covering() != 55459.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1823,6 +1832,29 @@ private class JavaLangRefCleanable(
     val cleanable: java.lang.ref.Cleaner.Cleanable
 ) : UniffiCleaner.Cleanable {
     override fun clean() = cleanable.clean()
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterUByte: FfiConverter<UByte, Byte> {
+    override fun lift(value: Byte): UByte {
+        return value.toUByte()
+    }
+
+    override fun read(buf: ByteBuffer): UByte {
+        return lift(buf.get())
+    }
+
+    override fun lower(value: UByte): Byte {
+        return value.toByte()
+    }
+
+    override fun allocationSize(value: UByte) = 1UL
+
+    override fun write(value: UByte, buf: ByteBuffer) {
+        buf.put(value.toByte())
+    }
 }
 
 /**
@@ -3263,6 +3295,38 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
 /**
  * @suppress
  */
+public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteArray?> {
+    override fun read(buf: ByteBuffer): kotlin.ByteArray? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterByteArray.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.ByteArray?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterByteArray.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.ByteArray?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterByteArray.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeFfiPmtilesJob: FfiConverterRustBuffer<FfiPmtilesJob?> {
     override fun read(buf: ByteBuffer): FfiPmtilesJob? {
         if (buf.get().toInt() == 0) {
@@ -3999,6 +4063,20 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_get_job(
         FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`jobId`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Read one tile from a local PMTiles archive (raw bytes, decompressed).
+         * Used by the in-app DEM HTTP loopback so MapLibre can apply terrarium encoding
+         * via `tiles` + TileSet (PMTiles `url` sources still drop style encoding on Native).
+         */ fun `pmtilesGetTile`(`path`: kotlin.String, `z`: kotlin.UByte, `x`: kotlin.UInt, `y`: kotlin.UInt): kotlin.ByteArray? {
+            return FfiConverterOptionalByteArray.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_get_tile(
+        FfiConverterString.lower(`path`),FfiConverterUByte.lower(`z`),FfiConverterUInt.lower(`x`),FfiConverterUInt.lower(`y`),_status)
 }
     )
     }

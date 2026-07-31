@@ -3,12 +3,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context};
-use futures_util::StreamExt;
-use tokio::io::AsyncWriteExt;
+use anyhow::bail;
+use reqwest::header::HeaderMap;
 
 use crate::download::{
-    available_bytes, enrich_io_error, progress as download_progress, DownloadControl,
+    stream_get_to_file_blocking, DownloadControl, StreamDownloadOpts, DEFAULT_RETRIES,
 };
 use crate::routing::elevation::{bbox_to_tiles, ElevationCache, ElevationDownloader};
 use crate::storage::{ElevationJobStore, JobStatus, Storage};
@@ -16,13 +15,10 @@ use crate::storage::{ElevationJobStore, JobStatus, Storage};
 /// Espa -> Atnbrufossen corridor bbox [min_lat, min_lon, max_lat, max_lon].
 pub const CORRIDOR_BBOX: [f64; 4] = [60.40, 10.00, 62.00, 11.50];
 
-const PROGRESS_LOG_EVERY_BYTES: u64 = 5 * 1024 * 1024;
-
 /// Download a file from `url` to `dest`, creating parent directories.
 ///
-/// Streams in bounded chunks (never buffers the whole body in RAM). Used by the
-/// in-app "download region" flow and by instrumented tests (emulator reaches the
-/// host via `http://10.0.2.2:...`).
+/// Streams in bounded chunks (never buffers the whole body in RAM), retries
+/// transient failures, and resumes from a sibling `.partial` when present.
 pub fn download_file(url: &str, dest: &Path) -> anyhow::Result<u64> {
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)?;
@@ -35,7 +31,8 @@ pub fn download_file(url: &str, dest: &Path) -> anyhow::Result<u64> {
             "[NaviDownload] copy start src={path} dest={}",
             dest.display()
         );
-        let bytes = fs::copy(src, dest).with_context(|| format!("copy {path} -> {dest:?}"))?;
+        let bytes = fs::copy(src, dest)
+            .map_err(|e| anyhow::anyhow!("copy {path} -> {dest:?}: {e}"))?;
         log::info!(
             target: "NaviDownload",
             "[NaviDownload] copy complete dest={} bytes={bytes}",
@@ -51,7 +48,8 @@ pub fn download_file(url: &str, dest: &Path) -> anyhow::Result<u64> {
                 "[NaviDownload] copy start src={url} dest={}",
                 dest.display()
             );
-            let bytes = fs::copy(src, dest).with_context(|| format!("copy {url} -> {dest:?}"))?;
+            let bytes = fs::copy(src, dest)
+                .map_err(|e| anyhow::anyhow!("copy {url} -> {dest:?}: {e}"))?;
             log::info!(
                 target: "NaviDownload",
                 "[NaviDownload] copy complete dest={} bytes={bytes}",
@@ -60,93 +58,19 @@ pub fn download_file(url: &str, dest: &Path) -> anyhow::Result<u64> {
             return Ok(bytes);
         }
     }
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-    rt.block_on(async {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(600))
-            .build()?;
-        let resp = client.get(url).send().await.context("HTTP GET")?;
-        if !resp.status().is_success() {
-            bail!("HTTP {} for {url}", resp.status());
-        }
-        let expected = resp.content_length();
-        let avail = available_bytes(dest);
-        log::info!(
-            target: "NaviDownload",
-            "[NaviDownload] start url={url} dest={} expected_bytes={:?} available_bytes={:?}",
-            dest.display(),
-            expected,
-            avail
-        );
-        if let (Some(need), Some(free)) = (expected, avail) {
-            if free < need {
-                bail!(
-                    "insufficient space for download: need {need} bytes, available {free} bytes at {}",
-                    dest.display()
-                );
-            }
-        }
 
-        let mut partial = dest.as_os_str().to_owned();
-        partial.push(".partial");
-        let partial_path = PathBuf::from(partial);
-        let _ = fs::remove_file(&partial_path);
-
-        let mut file = tokio::fs::File::create(&partial_path)
-            .await
-            .map_err(|e| enrich_io_error(e, &partial_path))?;
-        let mut stream = resp.bytes_stream();
-        let mut written: u64 = 0;
-        let mut last_logged: u64 = 0;
-        let mut last_ui: u64 = 0;
-        download_progress::set(0, expected, "Downloading region…");
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.context("stream chunk")?;
-            if let Err(e) = file.write_all(&chunk).await {
-                let _ = fs::remove_file(&partial_path);
-                return Err(enrich_io_error(e, &partial_path));
-            }
-            written += chunk.len() as u64;
-            if written - last_ui >= 256 * 1024 || expected.is_some_and(|t| written >= t) {
-                download_progress::set(written, expected, "Downloading region…");
-                last_ui = written;
-            }
-            if written - last_logged >= PROGRESS_LOG_EVERY_BYTES
-                || expected.is_some_and(|t| written >= t)
-            {
-                let pct = expected.map(|t| {
-                    if t == 0 {
-                        100
-                    } else {
-                        (written.saturating_mul(100) / t).min(100)
-                    }
-                });
-                log::info!(
-                    target: "NaviDownload",
-                    "progress dest={} written={written} expected={:?} pct={:?} available_bytes={:?}",
-                    dest.display(),
-                    expected,
-                    pct,
-                    available_bytes(dest)
-                );
-                last_logged = written;
-            }
-        }
-        file.flush()
-            .await
-            .map_err(|e| enrich_io_error(e, &partial_path))?;
-        drop(file);
-        fs::rename(&partial_path, dest).map_err(|e| enrich_io_error(e, dest))?;
-        download_progress::set(written, Some(written), "Downloading region…");
-        log::info!(
-            target: "NaviDownload",
-            "[NaviDownload] complete dest={} bytes={written}",
-            dest.display()
-        );
-        Ok(written)
-    })
+    let result = stream_get_to_file_blocking(StreamDownloadOpts {
+        url,
+        dest,
+        headers: HeaderMap::new(),
+        resume_from: 0,
+        expected_bytes: None,
+        retries: DEFAULT_RETRIES,
+        progress_label: "Downloading region…",
+        allow_not_found: false,
+    })?
+    .ok_or_else(|| anyhow::anyhow!("download returned empty for {url}"))?;
+    Ok(result.bytes)
 }
 
 /// Ensure corridor DEM tiles exist under `elev_dir`, downloading any missing ones.

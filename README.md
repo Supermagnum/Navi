@@ -54,9 +54,11 @@ crates.io) in [`docs/rust-crates.md`](docs/rust-crates.md); plugin ideas in
 
 Offline navigation core (Rust) and Android Automotive host (Kotlin/Compose) for
 route planning with terrain-aware (eco) costing, POI awareness, rest/overnight
-planning, and profile-based routing. Map rendering uses MapLibre (Vulkan SDK)
-over an OpenFreeMap liberty basemap. The core stays offline once a region
-extract and DEM tiles are on disk; network is opt-in for downloads and updates.
+planning, and profile-based routing. Map rendering uses MapLibre
+(`org.maplibre.gl:android-sdk` **11.13.5** GLES default; previously
+`android-sdk-vulkan`) over an OpenFreeMap liberty basemap. The core stays
+offline once a region extract and DEM tiles are on disk; network is opt-in for
+downloads and updates.
 
 License of this repository: see `LICENSE` (GPL-3.0-or-later unless otherwise
 noted). Icon assets under `core/src/icons` are Navit-derived (**GPL v2**); see
@@ -114,7 +116,7 @@ live basemap tiles while online).
 | **Road / POI extract** | [OpenStreetMap](https://www.openstreetmap.org/) via [Geofabrik](https://download.geofabrik.de/) regional `.osm.pbf` (or a custom corridor cut) | Graph for routing; FTS place/address index; POI categories |
 | **OSM updates** | Geofabrik `state.txt` + `.osc.gz` diffs or full `*-latest.osm.pbf` | Opt-in check/apply only — never silent ([`docs/osm-updates.md`](docs/osm-updates.md)) |
 | **Elevation (DEM)** | Copernicus DSM / SRTM / Viewfinder-style tiles (downloaded or seeded as archives) | Eco-route energy costs and related terrain logic |
-| **Basemap (visual)** | Online: [OpenFreeMap](https://openfreemap.org/) Liberty (MapLibre). Offline: regional **Protomaps PMTiles** + bundled Protomaps light style ([`docs/map-styles.md`](docs/map-styles.md)). Optional opt-in **3D**: Mapterhorn DEM hillshade (online TileJSON or local `{region}_dem.pmtiles`; Vulkan-gated) | On-screen map; not the routing graph |
+| **Basemap (visual)** | Online: [OpenFreeMap](https://openfreemap.org/) Liberty (MapLibre). Offline: regional **Protomaps PMTiles** + bundled Protomaps light style ([`docs/map-styles.md`](docs/map-styles.md)). Optional opt-in **3D**: Mapterhorn DEM hillshade (online TileJSON or local `{region}_dem.pmtiles`; `vulkanRendererAvailable()` still returns true under GLES) | On-screen map; not the routing graph |
 | **Position / heading** | Device GPS (Android) or **gpsd** + IMU on Linux | Live location, altitude HUD, Compass / direction-of-travel |
 | **Icons** | Bundled Navit-derived SVG under `core/src/icons` | Maneuver / POI / eco leaf rasterization |
 
@@ -509,23 +511,55 @@ database, released under NLOD —
 
 Full guide: [`docs/android-build.md`](docs/android-build.md).
 
+### Emulator (x86_64)
+
 ```bash
-# 1) Rust CDYLIB + UniFFI Kotlin (emulator ABI)
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
-./scripts/build-android-native.sh x86_64-linux-android release
+# Once per machine (if not already installed):
+rustup target add x86_64-linux-android
 
-# 2) APK
+./scripts/build-android-native.sh x86_64-linux-android release   # or debug
 ./gradlew :app:assembleDebug          # → app/build/outputs/apk/debug/
-./gradlew :app:installDebug           # install on adb device
+./gradlew :app:installDebug           # install on connected adb device
+./scripts/launch-navi-emulator.sh     # start MainActivity on AAOS AVD
+```
 
-# Device / AAOS arm64 instead of emulator:
-# ./scripts/build-android-native.sh aarch64-linux-android release
+### Physical device / tablet (arm64)
 
-./scripts/launch-navi-emulator.sh      # start MainActivity on AAOS AVD
+Most phones and tablets (including Samsung Galaxy Tab) need the **arm64**
+native library. An x86_64-only build installs but crashes with
+`UnsatisfiedLinkError` for `libnavi`.
+
+```bash
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
+export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
+
+# Once per machine:
+rustup target add aarch64-linux-android
+
+# USB debugging on, "Transfer files" selected, accept the RSA prompt:
+adb devices   # expect: <serial>  device
+
+# 1) Rust CDYLIB + UniFFI Kotlin → app/src/main/jniLibs/arm64-v8a/libnavi.so
+./scripts/build-android-native.sh aarch64-linux-android debug    # or release
+
+# 2) APK and install on the tablet (use -s when several devices are attached)
+./gradlew :app:assembleDebug
+adb -s <serial> install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s <serial> shell am start -n no.navi.app/.MainActivity
+```
+
+Confirm the APK embeds the arm64 library:
+
+```bash
+unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'lib/arm64-v8a/libnavi.so'
 ```
 
 Update `.cargo/config.toml` linker paths to your NDK before the first native
-build. `minSdk` 26, `compileSdk` / `targetSdk` 35, JDK 17.
+build (both `x86_64-linux-android` and `aarch64-linux-android` entries — see
+[`docs/android-build.md`](docs/android-build.md)). `minSdk` 26, `compileSdk` /
+`targetSdk` 35, JDK 17.
 
 ## Minimum hardware and storage capacity
 
@@ -679,22 +713,36 @@ road network (e.g. E6 west of Trondheim).
   understood on-device. See
   [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) for how to
   check whether the native-layer failure is emulator-only.
+  **GLES flake (2026-07-31):** before/after UiAutomation PNGs that were
+  byte-identical were a **screencap race** (capture before Compose overlay
+  redraw after a track move), not a resurfacing of the historical Circle/Symbol
+  GLES-translator paint bug. Overlay remains the primary paint path; the test
+  waits for `NaviMapTestHooks.lastOverlayScreenFingerprint` to change before
+  settle + snapshot.
   **Note:** corridor / approach **route `LineLayer`** is a different path — it
   paints under the Vulkan SDK (no screen-space workaround). Missing route lines
   in early approach shots were empty polyline injection in the test, not this
   Circle/Symbol GLES issue ([`docs/approach-instructions.md`](docs/approach-instructions.md)).
-- **Map rotation SIGSEGV (emulator GLES):** fixed by switching the app dependency
-  from `org.maplibre.gl:android-sdk` (OpenGL ES) to
+- **Map rotation SIGSEGV (emulator GLES):** historically fixed by switching from
+  `org.maplibre.gl:android-sdk` (OpenGL ES) to
   `org.maplibre.gl:android-sdk-vulkan` 11.8.8. On the Automotive AVD
-  (`ro.hardware.egl=emulation`), any non-zero camera bearing under OpenGL crashed
-  MapLibre's RenderThread (`SIGSEGV` / fault `0x30` in
+  (`ro.hardware.egl=emulation`), any non-zero camera bearing under older OpenGL
+  crashed MapLibre's RenderThread (`SIGSEGV` / fault `0x30` in
   `libGLESv2_enc.so` `GL2Encoder::s_glDrawElements` → `MapRenderer::render`).
   Crash is **bearing-change alone** (no screenshot required), including small
   angles (10°). Matches upstream
   [maplibre-native#2371](https://github.com/maplibre/maplibre-native/issues/2371).
   Same underlying emulator GLES instability class as the moving-icons native
-  paint failure; Vulkan avoids the bad path. Verified Compass / bearing shots:
-  [`docs/pictures.md`](docs/pictures.md).
+  paint failure; Vulkan avoided the bad path at the time. Verified Compass /
+  bearing shots: [`docs/pictures.md`](docs/pictures.md).
+  **Default (finalized 2026-07-31):** `org.maplibre.gl:android-sdk:11.13.5`
+  GLES (Maven HTTP 200; preferred over 11.8.8 — keep version, change renderer).
+  History: Vulkan avoided AAOS emulator bearing SIGSEGV; GLES cleared SM-P613
+  hillshade wash (Vulkan washFrac≈0.999). AAOS re-check on `emulator-5554`
+  (`xtrons`): `BearingCrashIsolationTest` **PASS** — no MapLibre
+  SIGSEGV/FATAL/RenderThread tombstone (GPU: Emulator OpenGL ES Translator).
+  SM-P613 online + offline wash cleared under GLES (see
+  [`docs/map-styles.md`](docs/map-styles.md)).
 - **Hydro soft-edge fringe in screenshots (lakes / rivers / creeks):** not a
   live user-visible rendering limitation. Direct comparison of the live app vs
   instrumented captures on the Automotive emulator shows the blue rim **only in

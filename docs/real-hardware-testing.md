@@ -26,13 +26,14 @@ paint correctly on real hardware, that is useful to know, since it may mean the
 overlay approach only needs to be the emulator-specific path rather than the
 permanent production path.
 
-**Related (fixed on emulator via Vulkan):** Map camera rotation under the OpenGL
-MapLibre SDK crashed this Automotive AVD (`SIGSEGV` fault `0x30` in
-`libGLESv2_enc.so` during `MapRenderer::render`) on any non-zero bearing, without
-needing a screenshot. The app now depends on `android-sdk-vulkan`. Still confirm
-Compass / DoT rotation on real hardware GPU drivers (item 5) — shipping risk is
-low if device Vulkan/GLES is healthy, but real-device confirmation remains the
-decider for whether residual GLES-only builds would be safe.
+**Related (historical emulator GLES SIGSEGV; default now GLES again):** Map camera
+rotation under older OpenGL MapLibre SDK crashed this Automotive AVD (`SIGSEGV`
+fault `0x30` in `libGLESv2_enc.so` during `MapRenderer::render`) on any non-zero
+bearing, without needing a screenshot. The app briefly depended on
+`android-sdk-vulkan`; as of 2026-07-31 it **finalizes** `android-sdk:11.13.5`
+GLES after `BearingCrashIsolationTest` **PASS** on `emulator-5554` (no MapLibre
+SIGSEGV; SM-P613 wash also cleared under GLES). Still confirm Compass / DoT
+rotation on real hardware GPU drivers (item 5).
 
 ---
 

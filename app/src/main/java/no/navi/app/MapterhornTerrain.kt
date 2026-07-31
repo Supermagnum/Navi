@@ -38,6 +38,21 @@ object MapterhornTerrain {
 
     private const val TAG = "MapterhornTerrain"
 
+    private const val HILLSHADE_EXAGGERATION = 0.5f
+    private const val HILLSHADE_SHADOW_COLOR = "#473B24"
+    private const val HILLSHADE_HIGHLIGHT_COLOR = "#FFFFFF"
+    private const val HILLSHADE_ILLUMINATION_DEG = 335f
+
+    private fun hillshadeExaggeration(): Float =
+        NaviMapTestHooks.hillshadeExaggerationOverride ?: HILLSHADE_EXAGGERATION
+
+    private fun hillshadePaintJson(): JSONObject =
+        JSONObject()
+            .put("hillshade-exaggeration", hillshadeExaggeration().toDouble())
+            .put("hillshade-shadow-color", HILLSHADE_SHADOW_COLOR)
+            .put("hillshade-highlight-color", HILLSHADE_HIGHLIGHT_COLOR)
+            .put("hillshade-illumination-direction", HILLSHADE_ILLUMINATION_DEG.toDouble())
+
     /** Local DEM beside a completed basemap PMTiles path, if present. */
     fun localDemBesideBasemap(basemapPmtilesPath: String): File? {
         val base = File(basemapPmtilesPath)
@@ -49,8 +64,23 @@ object MapterhornTerrain {
     fun demPmtilesUri(demFile: File): String = "pmtiles://file://${demFile.absolutePath}"
 
     /**
-     * Inject DEM sources + hillshade. [demSourceUri] is either the online TileJSON
-     * URL or a local `pmtiles://file://…` URI. Idempotent.
+     * Start loopback DEM tiles and return the local TileJSON URL (matches online Mapterhorn).
+     */
+    fun ensureLocalDemTileJsonUrl(demFile: File): String {
+        LocalDemTileServer.ensureServing(demFile)
+        return LocalDemTileServer.tileJsonUrl()
+            ?: error("LocalDemTileServer not bound for ${demFile.absolutePath}")
+    }
+
+    /**
+     * Serve [demFile] over loopback HTTP as Mapbox Terrain-RGB PNG tiles
+     * (terrarium decoded from PMTiles, re-encoded for MapLibre `encoding: mapbox`).
+     */
+    fun ensureLocalDemTilesUrl(demFile: File): String = ensureLocalDemTileJsonUrl(demFile)
+
+    /**
+     * Inject DEM sources + hillshade. [demSourceUri] is the online TileJSON URL,
+     * a loopback Mapbox `{z}/{x}/{y}.png` template, or (legacy) `pmtiles://`.
      */
     fun attach(
         style: Style,
@@ -58,20 +88,29 @@ object MapterhornTerrain {
     ): Boolean =
         try {
             detach(style)
-            val useLocal = demSourceUri.startsWith("pmtiles://")
-            if (useLocal) {
-                addLocalDemSource(style, HILLSHADE_SOURCE_ID, demSourceUri)
-                addLocalDemSource(style, TERRAIN_SOURCE_ID, demSourceUri)
-            } else {
-                // Explicit terrarium TileSet — TileJSON URL alone often fails to
-                // configure encoding/tileSize on MapLibre Native after a live attach.
-                addOnlineDemSource(style, HILLSHADE_SOURCE_ID)
-                addOnlineDemSource(style, TERRAIN_SOURCE_ID)
+            when {
+                demSourceUri.startsWith("pmtiles://") -> {
+                    addLocalDemSource(style, HILLSHADE_SOURCE_ID, demSourceUri)
+                }
+                demSourceUri.contains("tilejson") || demSourceUri == TILEJSON_URL -> {
+                    if (demSourceUri.contains("127.0.0.1")) {
+                        addLocalTileJsonDemSource(style, HILLSHADE_SOURCE_ID, demSourceUri)
+                    } else {
+                        addOnlineDemSource(style, HILLSHADE_SOURCE_ID)
+                    }
+                }
+                else -> {
+                    // Loopback Mapbox Terrain-RGB PNG template (legacy baked styles).
+                    addHttpDemSource(style, HILLSHADE_SOURCE_ID, demSourceUri)
+                }
             }
             val hills =
                 HillshadeLayer(HILLS_LAYER_ID, HILLSHADE_SOURCE_ID)
                     .withProperties(
-                        PropertyFactory.hillshadeShadowColor(Color.parseColor("#473B24")),
+                        PropertyFactory.hillshadeExaggeration(hillshadeExaggeration()),
+                        PropertyFactory.hillshadeShadowColor(Color.parseColor(HILLSHADE_SHADOW_COLOR)),
+                        PropertyFactory.hillshadeHighlightColor(Color.parseColor(HILLSHADE_HIGHLIGHT_COLOR)),
+                        PropertyFactory.hillshadeIlluminationDirection(HILLSHADE_ILLUMINATION_DEG),
                     )
             // Insert under the first hydro fill/line so hillshade does not
             // darken water fill when 3D is on (keeps DEM shading under water).
@@ -121,6 +160,53 @@ object MapterhornTerrain {
         }
     }
 
+    private fun addTileJsonDemSource(
+        style: Style,
+        id: String,
+        tilejsonUri: String,
+    ) {
+        style.addSource(RasterDemSource(id, tilejsonUri, 512))
+    }
+
+    /** Loopback TileJSON with style-level mapbox encoding override (#3570). */
+    private fun addLocalTileJsonDemSource(
+        style: Style,
+        id: String,
+        tilejsonUri: String,
+    ) {
+        val template = LocalDemTileServer.activeTileTemplate()
+        if (template != null) {
+            addHttpDemSource(style, id, template)
+            return
+        }
+        try {
+            addTileJsonDemSource(style, id, tilejsonUri)
+        } catch (e: Exception) {
+            Log.w(TAG, "TileJSON local dem attach failed, retrying explicit tiles", e)
+            val port =
+                Regex("""127\.0\.0\.1:(\d+)""")
+                    .find(tilejsonUri)
+                    ?.groupValues
+                    ?.get(1)
+                    ?: throw e
+            val fallback = "http://127.0.0.1:$port/{z}/{x}/{y}.png"
+            addHttpDemSource(style, id, fallback)
+        }
+    }
+
+    /** Local loopback DEM: raw terrarium WebP (same encoding as online Mapterhorn). */
+    private fun addHttpDemSource(
+        style: Style,
+        id: String,
+        tileTemplate: String,
+    ) {
+        val tileSet = TileSet("3.0.0", tileTemplate)
+        tileSet.encoding = "terrarium"
+        tileSet.attribution = ATTRIBUTION
+        tileSet.maxZoom = 12f
+        style.addSource(RasterDemSource(id, tileSet, 512))
+    }
+
     fun detach(style: Style) {
         runCatching { style.removeLayer(HILLS_LAYER_ID) }
         runCatching { style.removeSource(HILLSHADE_SOURCE_ID) }
@@ -130,6 +216,14 @@ object MapterhornTerrain {
     fun isAttached(style: Style): Boolean =
         style.getLayer(HILLS_LAYER_ID) != null &&
             style.getSource(HILLSHADE_SOURCE_ID) != null
+
+    /** Offline 3D: DEM hillshade baked in style JSON; loopback URI for diagnostics. */
+    fun usesBakedOfflineHillshade(resolved: BasemapStyleResolver.ResolvedStyle): Boolean =
+        !resolved.attachMapterhornTerrain &&
+            resolved.demSourceUri?.startsWith("http://127.0.0.1") == true
+
+    fun wantHillshadeAttached(resolved: BasemapStyleResolver.ResolvedStyle): Boolean =
+        resolved.attachMapterhornTerrain || usesBakedOfflineHillshade(resolved)
 
     fun augmentStyleJson(
         style: JSONObject,
@@ -143,20 +237,28 @@ object MapterhornTerrain {
             JSONObject()
                 .put("type", "raster-dem")
                 .put("attribution", ATTRIBUTION)
-                .put("encoding", "terrarium")
                 .put("tileSize", 512)
+                .put("maxzoom", 12)
         if (demSourceUri.startsWith("pmtiles://")) {
+            dem.put("encoding", "terrarium")
+            dem.put("url", demSourceUri)
+        } else if (demSourceUri.contains("127.0.0.1") && demSourceUri.contains("tilejson")) {
+            dem.put("url", demSourceUri)
+            dem.put("encoding", "terrarium")
+            LocalDemTileServer.activeTileTemplate()?.let { template ->
+                dem.put("tiles", JSONArray().put(template))
+            }
+        } else if (demSourceUri.contains("tilejson") || demSourceUri == TILEJSON_URL) {
+            dem.put("url", demSourceUri)
+        } else if (demSourceUri.contains("127.0.0.1")) {
+            dem.put("encoding", "terrarium")
             dem.put("tiles", JSONArray().put(demSourceUri))
-        } else if (demSourceUri.contains("tilejson")) {
-            dem.put("tiles", JSONArray().put("https://tiles.mapterhorn.com/{z}/{x}/{y}.webp"))
         } else {
+            dem.put("encoding", "terrarium")
             dem.put("tiles", JSONArray().put(demSourceUri))
-        }
-        if (!sources.has(TERRAIN_SOURCE_ID)) {
-            sources.put(TERRAIN_SOURCE_ID, JSONObject(dem.toString()))
         }
         if (!sources.has(HILLSHADE_SOURCE_ID)) {
-            sources.put(HILLSHADE_SOURCE_ID, JSONObject(dem.toString()))
+            sources.put(HILLSHADE_SOURCE_ID, dem)
         }
 
         val layers = style.getJSONArray("layers")
@@ -173,10 +275,7 @@ object MapterhornTerrain {
                     .put("id", HILLS_LAYER_ID)
                     .put("type", "hillshade")
                     .put("source", HILLSHADE_SOURCE_ID)
-                    .put(
-                        "paint",
-                        JSONObject().put("hillshade-shadow-color", "#473B24"),
-                    )
+                    .put("paint", hillshadePaintJson())
             val insertAt =
                 firstHydroLayerIndex(layers).takeIf { it >= 0 }
                     ?: firstSymbolLayerIndex(layers)

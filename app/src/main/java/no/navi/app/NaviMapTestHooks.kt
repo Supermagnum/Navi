@@ -11,6 +11,25 @@ data class TrackMarker(
 
 /** Hooks so instrumented tests can push a computed route / camera / tracks onto the live map UI. */
 object NaviMapTestHooks {
+    /** Optional instrumented-test override for hillshade-exaggeration. */
+    @Volatile
+    var hillshadeExaggerationOverride: Float? = null
+
+    /**
+     * When true, [LocalDemTileServer] re-encodes terrarium as Mapbox Terrain-RGB PNG
+     * (legacy path). Default offline serving is raw terrarium WebP.
+     */
+    @Volatile
+    var localDemMapboxConversion: Boolean = false
+
+    /** @deprecated use [localDemMapboxConversion] inverted */
+    @Deprecated("Use localDemMapboxConversion", ReplaceWith("!localDemMapboxConversion"))
+    var localDemRawTerrarium: Boolean
+        get() = !localDemMapboxConversion
+        set(value) {
+            localDemMapboxConversion = !value
+        }
+
     @Volatile
     var pendingRoute: uniffi.navi.CorridorRouteResult? = null
 
@@ -29,6 +48,13 @@ object NaviMapTestHooks {
     @Volatile
     var lastReportedLayerCount: Int = 0
 
+    /** Loopback DEM tile fetches (mirrored from [LocalDemTileServer] for instrumented tests). */
+    @Volatile
+    var localDemHitsOk: Long = 0
+
+    @Volatile
+    var localDemHitsMiss: Long = 0
+
     /** When true, [BasemapStyleResolver.resolve] skips local PMTiles (Liberty online). */
     @Volatile
     var forceOnlineBasemap: Boolean = false
@@ -36,6 +62,13 @@ object NaviMapTestHooks {
     /** Triple of lat, lon, zoom. Consumed by MainActivity. */
     @Volatile
     var pendingCamera: Triple<Double, Double, Double>? = null
+
+    /**
+     * When true, live GPS never enables follow mode or retargets the map camera
+     * (instrumented screenshots at a fixed [pendingCamera]).
+     */
+    @Volatile
+    var disableGpsFollow: Boolean = false
 
     /** When true, MainActivity hides chrome so basemap/POI screenshots are unobstructed. */
     @Volatile
@@ -173,6 +206,17 @@ object NaviMapTestHooks {
 
     @Volatile
     var lastRoutePolylineChars: Int = 0
+
+    /** Last successful plan report text (vehicle-limits avoidance lines, etc.). */
+    @Volatile
+    var lastPlanReport: String = ""
+
+    @Volatile
+    var lastPlanDistanceKm: Double = 0.0
+
+    /** Full overlay polyline from the last planned / injected route. */
+    @Volatile
+    var lastRoutePolyline: String = ""
 
     @Volatile
     var lastBreakPoiCount: Int = 0
@@ -342,6 +386,14 @@ object NaviMapTestHooks {
     /** Screen-space Compose overlay mark count (visible moving icons). */
     @Volatile
     var lastTrackOverlayCount: Int = 0
+
+    /**
+     * Sorted "id:x:y" fingerprint of screen-space overlay marks (coords rounded
+     * to int). Instrumented tests wait for this to change after a track push so
+     * UiAutomation screencap does not race Compose redraw.
+     */
+    @Volatile
+    var lastOverlayScreenFingerprint: String = ""
 
     /** Count of MapLibre move-gesture begins (pan). */
     @Volatile

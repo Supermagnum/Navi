@@ -3754,3 +3754,17 @@ pub fn pmtiles_delete_job(data_dir: String, job_id: String) -> bool {
     let dl = PmtilesDownloader::new(storage, PathBuf::from(&data_dir));
     dl.delete_job(uuid).is_ok()
 }
+
+/// Read one tile from a local PMTiles archive (raw bytes, decompressed).
+/// Used by the in-app DEM HTTP loopback so MapLibre can apply terrarium encoding
+/// via `tiles` + TileSet (PMTiles `url` sources still drop style encoding on Native).
+#[uniffi::export]
+pub fn pmtiles_get_tile(path: String, z: u8, x: u32, y: u32) -> Option<Vec<u8>> {
+    match driver_break_core::routing::basemap::read_pmtiles_tile(Path::new(&path), z, x, y) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            log::warn!("pmtiles_get_tile({path}, {z}/{x}/{y}): {e:#}");
+            None
+        }
+    }
+}

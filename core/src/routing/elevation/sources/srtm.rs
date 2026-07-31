@@ -1,10 +1,10 @@
-use std::io::{Cursor, Read, Write};
+use std::io::Read;
 use std::path::Path;
 
-use reqwest::header::{AUTHORIZATION, RANGE};
 use reqwest::Client;
 
 use super::DownloadResult;
+use crate::download::{bearer_headers, stream_get_to_file, StreamDownloadOpts, DEFAULT_RETRIES};
 use crate::routing::elevation::tile_id::HgtTileId;
 
 const CMR_SEARCH: &str = "https://cmr.earthdata.nasa.gov/search/granules.json";
@@ -66,47 +66,57 @@ pub async fn download_tile(
         return Ok(None);
     };
     let url = url.to_string();
+    let headers = bearer_headers(token)?;
 
-    let mut request = client
-        .get(&url)
-        .header(AUTHORIZATION, format!("Bearer {token}"));
-    if resume_from > 0 {
-        request = request.header(RANGE, format!("bytes={resume_from}-"));
-    }
-    let response = request.send().await?;
-    if !response.status().is_success() {
-        return Ok(None);
-    }
-
-    let bytes = response.bytes().await?;
-    if url.ends_with(".zip") {
-        extract_hgt_from_zip(&bytes, &dest)?;
-    } else if resume_from > 0 {
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&dest)?;
-        file.write_all(&bytes)?;
+    let is_zip = url.ends_with(".zip");
+    let fetch_dest = if is_zip {
+        let mut p = dest.as_os_str().to_owned();
+        p.push(".zip");
+        std::path::PathBuf::from(p)
     } else {
-        std::fs::write(&dest, &bytes)?;
+        dest.clone()
+    };
+
+    let Some(result) = stream_get_to_file(
+        client,
+        StreamDownloadOpts {
+            url: &url,
+            dest: &fetch_dest,
+            headers,
+            resume_from,
+            expected_bytes: None,
+            retries: DEFAULT_RETRIES,
+            progress_label: "Downloading elevation…",
+            allow_not_found: true,
+        },
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    if is_zip {
+        extract_hgt_from_zip_file(&fetch_dest, &dest)?;
+        let _ = std::fs::remove_file(&fetch_dest);
     }
 
     Ok(Some(DownloadResult {
         local_path: dest.clone(),
-        bytes: std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0),
-        total_bytes: None,
-        etag: None,
+        bytes: std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(result.bytes),
+        total_bytes: result.total_bytes,
+        etag: result.etag,
     }))
 }
 
-fn extract_hgt_from_zip(bytes: &[u8], dest: &Path) -> anyhow::Result<()> {
+fn extract_hgt_from_zip_file(zip_path: &Path, dest: &Path) -> anyhow::Result<()> {
     use zip::ZipArchive;
-    let mut archive = ZipArchive::new(Cursor::new(bytes))?;
+    let file = std::fs::File::open(zip_path)?;
+    let mut archive = ZipArchive::new(file)?;
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
-        if file.name().ends_with(".hgt") {
+        let mut zf = archive.by_index(i)?;
+        if zf.name().ends_with(".hgt") {
             let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer)?;
+            zf.read_to_end(&mut buffer)?;
             std::fs::write(dest, buffer)?;
             return Ok(());
         }

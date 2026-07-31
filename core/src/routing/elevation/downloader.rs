@@ -26,7 +26,7 @@ impl ElevationDownloader {
         Self {
             storage,
             cache,
-            client: Client::new(),
+            client: crate::download::http_client().unwrap_or_else(|_| Client::new()),
             earthdata_token: None,
         }
     }

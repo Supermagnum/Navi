@@ -81,8 +81,9 @@ object BasemapStyleResolver {
 
     /**
      * Prefer local PMTiles when a completed job covers [lat]/[lon].
-     * 3D hillshade: online Mapterhorn TileJSON when networked, or local
-     * `{region}_dem.pmtiles` beside the offline basemap when present.
+     * Opt-in 3D with a local `{region}_dem.pmtiles` beside the basemap uses
+     * **downloaded Protomaps + Mapterhorn DEM hillshade** (no network).
+     * Without a local DEM, networked 3D falls through to Liberty + TileJSON.
      */
     fun resolve(
         context: Context,
@@ -93,27 +94,47 @@ object BasemapStyleResolver {
         vulkanAvailable: Boolean,
         forceOnline2d: Boolean = false,
     ): ResolvedStyle {
+        val want3d = prefer3d && vulkanAvailable
+
         if (!forceOnline2d) {
-            val covering =
+            val coveringJobs =
                 runCatching {
                     pmtilesListCovering(dataDir.absolutePath, lat, lon)
                 }.getOrDefault(emptyList())
-                    .firstOrNull { File(it.localPath).isFile }
+            val covering = coveringJobs.firstOrNull { File(it.localPath).isFile }
+            val missingCovering =
+                coveringJobs.filter { it.localPath.isNotBlank() && !File(it.localPath).isFile }
 
             if (covering != null) {
                 val localDem = MapterhornTerrain.localDemBesideBasemap(covering.localPath)
-                val want3d = prefer3d && vulkanAvailable
+                // Downloaded-only 3D: Protomaps vectors + local Mapterhorn DEM.
                 val offline3d = want3d && localDem != null
-                // Always attempt online Mapterhorn DEM when local extract is missing.
-                // Gating on hasNetwork left opt-in 3D looking like a no-op on AAOS.
-                val onlineDem3d = want3d && localDem == null
+                if (want3d && localDem == null) {
+                    // No local DEM — do not stay on flat Protomaps pretending to be 3D.
+                    return fallbackOnline(
+                        context,
+                        dataDir,
+                        prefer3d = true,
+                        vulkanAvailable = true,
+                        note = "No local ${File(covering.localPath).nameWithoutExtension}_dem.pmtiles; using Liberty + Mapterhorn",
+                    )
+                }
                 val uri =
                     prepareOfflineStyle(
                         context,
                         covering.localPath,
+                        // Terrarium encoding must be in style JSON — Android
+                        // RasterDemSource cannot set encoding programmatically
+                        // (maplibre-native#3564 / MapLibre Android PMTiles notes).
                         demFor3d = if (offline3d) localDem else null,
                     )
-                        ?: return fallbackOnline(context, prefer3d, vulkanAvailable, "offline style prepare failed")
+                        ?: return fallbackOnline(
+                            context,
+                            dataDir,
+                            prefer3d,
+                            vulkanAvailable,
+                            "offline style prepare failed",
+                        )
                 return ResolvedStyle(
                     kind = StyleKind.OfflineProtomaps,
                     styleUri = uri,
@@ -121,36 +142,58 @@ object BasemapStyleResolver {
                     note =
                         when {
                             offline3d -> "Offline Protomaps + Mapterhorn DEM hillshade"
-                            onlineDem3d ->
-                                "Offline Protomaps + online Mapterhorn DEM (no local ${covering.regionKey}_dem.pmtiles)"
                             else -> null
                         },
                     cameraPitch = if (want3d) TERRAIN_VIEW_TILT else 0.0,
-                    attachMapterhornTerrain = offline3d || onlineDem3d,
+                    // Baked into style.local.json; runtime attach would detach/readd.
+                    attachMapterhornTerrain = false,
                     demSourceUri =
-                        when {
-                            offline3d -> MapterhornTerrain.demPmtilesUri(localDem!!)
-                            onlineDem3d -> MapterhornTerrain.TILEJSON_URL
-                            else -> null
+                        if (offline3d) {
+                            MapterhornTerrain.ensureLocalDemTileJsonUrl(localDem!!)
+                        } else {
+                            null
                         },
+                )
+            }
+
+            if (missingCovering.isNotEmpty()) {
+                val region =
+                    missingCovering.first().regionKey.ifBlank {
+                        File(missingCovering.first().localPath).nameWithoutExtension
+                    }
+                return fallbackOnline(
+                    context,
+                    dataDir,
+                    prefer3d,
+                    vulkanAvailable,
+                    note =
+                        "Offline data for $region was previously downloaded but is no longer " +
+                            "available — open Tools to re-download",
                 )
             }
         }
 
-        return fallbackOnline(context, prefer3d, vulkanAvailable, note = null)
+        return fallbackOnline(context, dataDir, prefer3d, vulkanAvailable, note = null)
     }
 
     private fun fallbackOnline(
         context: Context,
+        dataDir: File,
         prefer3d: Boolean,
         vulkanAvailable: Boolean,
         note: String?,
     ): ResolvedStyle {
+        val integrityNote =
+            runCatching { OfflineDataIntegrity.inspect(context, dataDir).userMessage() }
+                .getOrNull()
         if (prefer3d && vulkanAvailable) {
             return ResolvedStyle(
                 kind = StyleKind.Online3d,
                 styleUri = LIBERTY_URL,
-                note = note ?: "Liberty + Mapterhorn DEM hillshade",
+                note =
+                    integrityNote
+                        ?: note
+                        ?: "Liberty + Mapterhorn DEM hillshade",
                 cameraPitch = TERRAIN_VIEW_TILT,
                 attachMapterhornTerrain = true,
                 demSourceUri = MapterhornTerrain.TILEJSON_URL,
@@ -160,13 +203,13 @@ object BasemapStyleResolver {
             return ResolvedStyle(
                 kind = StyleKind.OnlineLiberty,
                 styleUri = LIBERTY_URL,
-                note = note ?: "3D unavailable without Vulkan; using 2D Liberty",
+                note = integrityNote ?: note ?: "3D unavailable without Vulkan; using 2D Liberty",
             )
         }
         return ResolvedStyle(
             kind = StyleKind.OnlineLiberty,
             styleUri = LIBERTY_URL,
-            note = note,
+            note = integrityNote ?: note,
         )
     }
 
@@ -211,16 +254,15 @@ object BasemapStyleResolver {
         if (!pm.has("attribution")) {
             pm.put("attribution", "© OpenStreetMap © Protomaps")
         }
+        var styleJson = json
         if (demFor3d != null && demFor3d.isFile) {
-            MapterhornTerrain.augmentStyleJson(
-                json,
-                MapterhornTerrain.demPmtilesUri(demFor3d),
-            )
+            val tileJsonUrl = MapterhornTerrain.ensureLocalDemTileJsonUrl(demFor3d)
+            styleJson = MapterhornTerrain.augmentStyleJson(json, tileJsonUrl)
         }
 
-        val outName = if (demFor3d != null) "style.local.3d.json" else "style.local.json"
+        val outName = "style.local.json"
         val outStyle = File(outRoot, outName)
-        outStyle.writeText(json.toString())
+        outStyle.writeText(styleJson.toString())
         // MapLibre Native expects a URI scheme for local styles.
         return "file://${outStyle.absolutePath}"
     }

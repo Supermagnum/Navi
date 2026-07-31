@@ -1,11 +1,12 @@
 use std::io::Read;
 use std::path::Path;
 
-use reqwest::header::RANGE;
+use reqwest::header::HeaderMap;
 use reqwest::Client;
 use zip::ZipArchive;
 
 use super::DownloadResult;
+use crate::download::{stream_get_to_file, StreamDownloadOpts, DEFAULT_RETRIES};
 use crate::routing::elevation::tile_id::HgtTileId;
 
 const INDEX_BASE: &str = "https://viewfinderpanoramas.org/dem3";
@@ -28,26 +29,39 @@ pub async fn download_tile(
     }
 
     let index_url = format!("{INDEX_BASE}/{stem}.hgt.zip");
-    let mut request = client.get(&index_url);
-    if resume_from > 0 {
-        request = request.header(RANGE, format!("bytes={resume_from}-"));
-    }
-    let response = request.send().await?;
-    if response.status() == reqwest::StatusCode::NOT_FOUND {
-        return Ok(None);
-    }
-    if !response.status().is_success() {
-        anyhow::bail!("viewfinder HTTP {}", response.status());
-    }
+    let zip_dest = {
+        let mut p = dest.as_os_str().to_owned();
+        p.push(".zip");
+        std::path::PathBuf::from(p)
+    };
 
-    let zip_bytes = response.bytes().await?;
-    let mut archive = ZipArchive::new(std::io::Cursor::new(zip_bytes.as_ref()))?;
+    let Some(_) = stream_get_to_file(
+        client,
+        StreamDownloadOpts {
+            url: &index_url,
+            dest: &zip_dest,
+            headers: HeaderMap::new(),
+            resume_from,
+            expected_bytes: None,
+            retries: DEFAULT_RETRIES,
+            progress_label: "Downloading elevation…",
+            allow_not_found: true,
+        },
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    let file = std::fs::File::open(&zip_dest)?;
+    let mut archive = ZipArchive::new(file)?;
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
-        if file.name().ends_with(".hgt") {
+        let mut zf = archive.by_index(i)?;
+        if zf.name().ends_with(".hgt") {
             let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer)?;
+            zf.read_to_end(&mut buffer)?;
             std::fs::write(&dest, &buffer)?;
+            let _ = std::fs::remove_file(&zip_dest);
             return Ok(Some(DownloadResult {
                 local_path: dest,
                 bytes: buffer.len() as u64,
@@ -56,5 +70,6 @@ pub async fn download_tile(
             }));
         }
     }
+    let _ = std::fs::remove_file(&zip_dest);
     Ok(None)
 }

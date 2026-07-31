@@ -31,3 +31,5 @@ core/target/integration-fixtures/elevation/
 !docs/images/
 !docs/images/**/
 !docs/images/**/*.png
+
+diff-repport.md

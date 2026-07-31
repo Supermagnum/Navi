@@ -1,7 +1,15 @@
 # Map styles (online Liberty, offline Protomaps PMTiles, Mapterhorn hillshade 3D)
 
-Navi uses MapLibre Native (`org.maplibre.gl:android-sdk-vulkan` **11.8.8**, which
-includes `pmtiles://` support added in 11.7.0).
+Navi uses MapLibre Native (`org.maplibre.gl:android-sdk` **11.13.5** GLES —
+**default, finalized 2026-07-31**; previously `android-sdk-vulkan`). Maven has
+GLES 11.13.5 (HTTP 200), so the tree keeps **11.13.5** and switches renderer
+artifact rather than falling back to 11.8.8. History: Vulkan worked around an
+AAOS emulator bearing SIGSEGV; GLES clears SM-P613 hillshade wash; AAOS
+`BearingCrashIsolationTest` re-check **PASS** under GLES (no SIGSEGV). The GLES
+artifact includes `pmtiles://` support added in 11.7.0 and the style.json DEM
+`encoding` override from [#3570](https://github.com/maplibre/maplibre-native/pull/3570) /
+[#3564](https://github.com/maplibre/maplibre-native/issues/3564) shipped in
+**11.13.1**.
 
 ## On-device storage (large downloads)
 
@@ -25,7 +33,7 @@ and insufficient-space failures with `available_bytes`.
 | Mode | Style | Tile schema | When used |
 |---|---|---|---|
 | **Online 2D (default)** | OpenFreeMap **Liberty** | OpenMapTiles | No local PMTiles covering the camera |
-| **Online 3D (opt-in)** | Liberty vector basemap + **Mapterhorn** `raster-dem` **hillshade** | OpenMapTiles + Mapterhorn DEM | User enables “3D (experimental)” and Vulkan gate passes; network for live DEM |
+| **Online 3D (opt-in)** | Liberty vector basemap + **Mapterhorn** `raster-dem` **hillshade** | OpenMapTiles + Mapterhorn DEM | User enables “3D (experimental)” (`vulkanRendererAvailable()` still returns true under GLES); network for live DEM |
 | **Offline 2D** | Bundled **Protomaps light** | Protomaps | Completed local extract covers camera center |
 | **Offline 3D (opt-in)** | Protomaps light + local `{region}_dem.pmtiles` hillshade | Protomaps + Mapterhorn DEM extract | Same as offline 2D, plus local DEM file beside the basemap |
 
@@ -52,16 +60,18 @@ still open as of mid-2026; style-spec SDK support tables mark both ❌ for
 Android/iOS Native). Navi therefore:
 
 1. Keeps the **existing vector basemap** (Liberty online / Protomaps offline).
-2. Adds Mapterhorn DEM sources (`terrainSource`, `hillshadeSource`) and a
+2. Adds Mapterhorn DEM sources (`hillshadeSource` only; no duplicate
+   `terrainSource`) and a
    **hillshade** layer (`navi-hills`) via [MapterhornTerrain] when 3D is on.
    Hillshade is inserted **below** the first hydro fill/line layer (`water` /
    `waterway*`), not below the first symbol layer, so DEM shading does not
    darken water (see [Hydro soft-edge fringe](#hydro-soft-edge-fringe-screenshot-artifact)).
 3. Leaves **camera tilt independent** of the 3D toggle — map settings offer
-   snapped presets **0° / 35° / 45° / 60°** (Vulkan-gated; locked to 0° without
-   Vulkan; 60° is MapLibre Native’s maximum tilt). A former 65° preset could never
-   match the live camera (engine clamps at 60°), which made idle tilt re-apply
-   fight HUD zoom.
+   snapped presets **0° / 35° / 45° / 60°** (gated by
+   `vulkanRendererAvailable()`, which still returns true under GLES; 60° is
+   MapLibre Native’s maximum tilt). A former 65° preset could never match the
+   live camera (engine clamps at 60°), which made idle tilt re-apply fight HUD
+   zoom.
 4. Does **not** set unsupported `terrain` / `sky` root properties (omitted on
    purpose — silent no-ops would be misleading).
 
@@ -80,9 +90,82 @@ vector basemap into `{dataDir}/pmtiles/{region_key}_dem.pmtiles` (e.g.
 `europe_norway_ostlandet_dem.pmtiles`).
 
 When that file sits beside a completed Protomaps extract and the user opts into
-3D (Vulkan gate), offline mode loads **Protomaps light + local DEM hillshade**
-with no network. Higher zooms than 12 need Mapterhorn’s sharded `6-*-*.pmtiles`
-archives (not wired yet).
+3D (`vulkanRendererAvailable()`), offline mode loads **Protomaps light + local
+DEM hillshade** with no network. Higher zooms than 12 need Mapterhorn’s sharded
+`6-*-*.pmtiles` archives (not wired yet).
+
+### Offline DEM encoding (olive wash) — 2026-07
+
+**Symptom:** Opt-in 3D tints most land olive ~RGB(88,80,60) or a flat dark slab;
+water and labels can look fine. With 3D off, Protomaps land is cream `#f8f4f0`.
+Not wrong `earth`/`landcover` paint in `style.template.json`.
+
+**Status on SM-P613 + `android-sdk` 11.13.5 GLES (default, finalized):** online
+Liberty + remote Mapterhorn at Gjendebu **no longer washes**
+(`OnlineGjendebu3dHillshadeDiagnosticTest` 2026-07-31 finalize run:
+washFrac≈0.090, creamFrac≈0.144, lum_std≈41.0, mode 116,108,92, GPU Adreno
+618). Offline Protomaps + local DEM also **PASS**
+(`OfflineDownloaded3dScreenshotTest`: demHitsOk=**18**, washFrac≈0.002,
+creamFrac≈0.70, lum_std≈16.3, elev sane, 512×512). Confirming shots:
+`docs/images/tmp/online_gjendebu_3d_gles_11135.png`,
+`docs/images/tmp/offline_downloaded_3d_gjendebu_gles_11135.png`. Prior **Vulkan**
+on the same device was **wash outstanding** (washFrac≈0.999).
+
+**Regression bisect:** **Earliest working Mapterhorn 3D** (adds
+[MapterhornTerrain.kt], opt-in toggle + hillshade attach): **`6327e8f`** (*Fix
+opt-in 3D basemap toggle…*, MapLibre **`android-sdk-vulkan` 11.8.8**). Checked
+out in worktree `/tmp/navi-first-3d` (main WIP untouched). SM-P613 online
+Liberty + remote TileJSON at Gjendebu (61.493, 8.351, z12, pitch 50°, airplane
+off): **wash from day one** —
+`docs/images/tmp/sm_p613_first_3d_6327e8f_online_3d.png`, washFrac≈**0.999**,
+creamFrac≈**0**, mode **88,80,60**, lum_std≈**3.1**, terrain attached. **Do
+not** bisect **`6327e8f..03a3fc3`** for SM-P613 wash; treat as **device /
+Vulkan hillshade** (or upstream), not a Navi regression since first 3D.
+
+Gallery baseline **7c50728** is also **not** good on SM-P613 (online wash at
+**11.8.8**). Emulator-good tip **`03a3fc3`** on SM-P613 already washes
+(`docs/images/tmp/sm_p613_base_03a3fc3_online_3d.png`, washFrac≈0.998). WIP
+diff vs **`03a3fc3`** is **not** the SM-P613 hillshade root cause.
+
+**GLES A/B (commit `6327e8f`, SM-P613, airplane off):** Throwaway worktree
+`/tmp/navi-gles-ab` — dependency only: `org.maplibre.gl:android-sdk:11.8.8`
+(GLES) instead of `android-sdk-vulkan:11.8.8`; no other app init changes
+(`MapLibre.getInstance` unchanged). Online Liberty + remote Mapterhorn at
+Gjendebu (61.493, 8.351, z12, pitch ~50°, 3D on):
+`docs/images/tmp/sm_p613_gles_6327e8f_online_3d.png` — washFrac≈**0.09**,
+creamFrac≈**0.15**, mode **116,108,92**, lum_std≈**41.3**, terrain attached.
+Same scene on **Vulkan** at this commit:
+`docs/images/tmp/sm_p613_first_3d_6327e8f_online_3d.png` — washFrac≈**0.999**,
+creamFrac≈**0**, mode **88,80,60**, lum_std≈**3.1**. **Render stability (GLES on
+SM-P613):** ~2 min instrumented stress (bearing 0–315°, 3D on/off cycles,
+`BearingCrashIsolationTest`) — **no** FATAL, SIGSEGV, or RenderThread tombstone;
+Mbgl logs `GPU Identifier: Adreno (TM) 618`. **Default (finalized 2026-07-31):** main tree links `android-sdk:11.13.5` GLES
+(Maven HTTP 200; keep 11.13.5, switch renderer — preferred over falling back to
+11.8.8). On AAOS AVD `xtrons` / `emulator-5554`, `BearingCrashIsolationTest`
+**PASS** under GLES 11.13.5 (no MapLibre SIGSEGV / FATAL / RenderThread
+tombstone; GPU Identifier: Emulator OpenGL ES Translator). SM-P613 online +
+offline wash cleared under GLES (see status above). **Recommendation:** Treat
+SM-P613 hillshade wash as a **Vulkan backend issue on this GPU**; ship GLES as
+default.
+
+| Step | Result |
+|---|---|
+| **1 — SDK bump** | **Skipped.** [#3564](https://github.com/maplibre/maplibre-native/issues/3564) fixed in **11.13.1** (we ship **11.13.5**). [#3565](https://github.com/maplibre/maplibre-native/issues/3565) still open. No evidence a newer release fixes hillshade wash; 12.x/13.x adds Vulkan regression risk. |
+| **2 — terrarium→Mapbox conversion** | **Attempted;** Norway elev sane, **512×512**, round-trip **~0.1 m** — screenshot **still washed**. |
+
+**Why conversion did not explain it alone**
+
+1. **Mapbox path with wrong decode:** terrarium bytes treated as Mapbox → classic olive (~88,80,60).
+2. **Corrected Mapbox/WebP path:** math verified, wash persisted (dark slab / olive tiles).
+3. **Online control:** Liberty + **remote** terrarium TileJSON on the same device **also washes** → not only offline loopback or PMTiles encoding.
+
+**Exp 1:** `hillshade-exaggeration` **0** → **cream** land (`creamFrac≈0.9`) while DEM tiles still load → wash is **hillshade paint**, not missing basemap vectors. Custom shadow/highlight paint is restored for the intended Navi look but is **not** the sole root cause.
+
+**Default offline path (uncommitted tree):** [LocalDemTileServer] reads **terrarium WebP** from PMTiles and serves **terrarium-encoded** 512×512 tiles on loopback as **lossless PNG** (Native on SM-P613 did not fetch loopback WebP DEM). **`/tilejson.json`** mirrors CDN metadata. Baked `style.local.json`: `hillshadeSource.url` + inline `tiles` + `"encoding":"terrarium"`; **`attachMapterhornTerrain = false`**, but after load MainActivity **re-attaches** hillshade with an explicit loopback `TileSet` so raster-dem requests hit the server. Mapbox re-encode: `NaviMapTestHooks.localDemMapboxConversion` only.
+
+**Hillshade paint:** shadow **#473B24**, highlight **#FFFFFF**, illumination **335°**, exaggeration **0.5** ([MapterhornTerrain]; tests may override exag).
+
+**Tests:** [OfflineDownloaded3dScreenshotTest] — `disableGpsFollow`, camera at Gjendebu, **no airplane mode** (SM-P613 skips loopback DEM fetches in airplane). Gates: `demHitsOk >= 1`, elev sanity, **512×512**, no olive/dark **wash** (`washFrac < 0.45`), Protomaps **cream** (`creamFrac >= 0.12`), relief spread (`lum_std >= 10`). Under GLES 11.13.5 these gates **PASS** on SM-P613; must **not** pass with `demHitsOk=0`. Diagnostic: `OnlineGjendebu3dHillshadeDiagnosticTest` (online only, metrics-only).
 
 Host extract example:
 

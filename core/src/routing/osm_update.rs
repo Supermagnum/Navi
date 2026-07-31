@@ -206,7 +206,7 @@ fn http_get_text(url: &str) -> Result<String> {
         .build()?;
     rt.block_on(async {
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(900))
             .build()?;
         let resp = client.get(url).send().await.context("HTTP GET")?;
         if !resp.status().is_success() {

@@ -1,25 +1,69 @@
 //! HTTP range coalescing for remote PMTiles extracts (go-pmtiles-style overfetch).
 //!
 //! The `pmtiles` crate's `DirEntry` fields are `pub(crate)`, so we parse directories
-//! ourselves and merge nearby tile byte-ranges into fewer, larger Range GETs.
+//! ourselves and merge nearby tile byte-ranges into fewer Range GETs. Tile bodies are
+//! streamed to on-disk chunk files (not fully buffered in RAM) so large DEM extracts
+//! stay within mobile memory limits and can resume after a failed chunk.
 
 use anyhow::{anyhow, bail, Context};
-use bytes::Bytes;
 use flate2::read::GzDecoder;
-use futures_util::future::join_all;
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use pmtiles::{AsyncBackend, TileCoord, TileId};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::download::progress as download_progress;
-use crate::download::DownloadControl;
+use crate::download::{timeout_for_bytes, DownloadControl};
 use crate::routing::basemap::http_backend::Reqwest012Backend;
+use crate::routing::workers::WorkerPoolPlan;
 use crate::storage::{PmtilesJobStatus, PmtilesJobStore, Storage};
 use uuid::Uuid;
 
 const HEADER_SIZE: usize = 127;
 /// Match go-pmtiles default: allow ~5% extra transfer to collapse nearby ranges.
 pub const DEFAULT_OVERFETCH: f32 = 0.05;
+/// Cap coalesced HTTP GETs so a single request fits realistic mobile Wi‑Fi + timeout.
+pub const MAX_HTTP_CHUNK_BYTES: u64 = 8 * 1024 * 1024;
+const CHUNK_RETRIES: u32 = 3;
+
+/// Concurrent download workers sized from [`WorkerPoolPlan`] and planned transfer size.
+pub fn pmtiles_download_workers_for_bytes(planned_download_bytes: u64) -> usize {
+    let plan = WorkerPoolPlan::detect();
+    let base = (plan.routing_workers.saturating_mul(2)).clamp(2, 8);
+    let by_size = if planned_download_bytes >= 1_000_000_000 {
+        2
+    } else if planned_download_bytes >= 250_000_000 {
+        3
+    } else if planned_download_bytes >= 80_000_000 {
+        4
+    } else {
+        base
+    };
+    let by_mem = match available_ram_bytes() {
+        Some(m) if m < 2 * 1024 * 1024 * 1024 => 2,
+        Some(m) if m < 4 * 1024 * 1024 * 1024 => by_size.min(3),
+        _ => by_size,
+    };
+    by_size.min(by_mem).clamp(1, 8)
+}
+
+/// Per-chunk HTTP timeout (delegates to shared download helper).
+pub fn timeout_for_chunk_bytes(len: u64) -> Duration {
+    timeout_for_bytes(len)
+}
+
+fn available_ram_bytes() -> Option<u64> {
+    let s = std::fs::read_to_string("/proc/meminfo").ok()?;
+    for line in s.lines() {
+        if let Some(rest) = line.strip_prefix("MemAvailable:") {
+            let kb: u64 = rest.split_whitespace().next()?.parse().ok()?;
+            return Some(kb.saturating_mul(1024));
+        }
+    }
+    None
+}
 
 #[derive(Clone, Copy, Debug)]
 struct HeaderOffsets {
@@ -34,12 +78,33 @@ struct HeaderOffsets {
     max_zoom: u8,
 }
 
+/// One tile whose payload lives inside a staged chunk file (not held in RAM).
+#[derive(Clone, Debug)]
+pub struct StagedTile {
+    pub coord: TileCoord,
+    pub chunk_path: PathBuf,
+    /// Byte offset of this tile within `chunk_path`.
+    pub offset_in_chunk: u64,
+    pub length: u32,
+}
+
+impl StagedTile {
+    pub fn read_bytes(&self) -> std::io::Result<Vec<u8>> {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut f = std::fs::File::open(&self.chunk_path)?;
+        f.seek(SeekFrom::Start(self.offset_in_chunk))?;
+        let mut buf = vec![0u8; self.length as usize];
+        f.read_exact(&mut buf)?;
+        Ok(buf)
+    }
+}
+
 /// Archive tile encoding + tiles fetched via coalesced range GETs.
 pub struct CoalescedTiles {
     pub tile_type: pmtiles::TileType,
     pub tile_compression: pmtiles::Compression,
     pub header_max_zoom: u8,
-    pub tiles: Vec<(TileCoord, Bytes)>,
+    pub tiles: Vec<StagedTile>,
 }
 
 #[derive(Clone, Debug)]
@@ -75,18 +140,27 @@ struct OverfetchRange {
     copy_discards: Vec<CopyDiscard>,
 }
 
+#[derive(Clone, Debug)]
+struct ChunkOnDisk {
+    src_offset: u64,
+    length: u64,
+    path: PathBuf,
+}
+
+fn chunk_path(staging_dir: &Path, src_offset: u64, length: u64) -> PathBuf {
+    staging_dir.join(format!("c_{src_offset:016x}_{length:016x}.bin"))
+}
+
 /// Resolve directory + tile byte ranges for `coords`, coalesce with overfetch,
-/// download in parallel, return Hilbert-ordered `(TileCoord, Bytes)` pairs.
-///
-/// HTTP request counts are recorded by [`Reqwest012Backend`]'s optional counter.
+/// download in parallel to disk, return Hilbert-ordered staged tile refs.
 pub async fn fetch_tiles_coalesced(
     backend: &Reqwest012Backend,
     coords: &[TileCoord],
-    workers: usize,
     overfetch: f32,
     control: &DownloadControl,
     store: Option<(&Storage, Uuid)>,
-    planned_tiles: u64,
+    staging_dir: &Path,
+    progress_label: &str,
 ) -> anyhow::Result<CoalescedTiles> {
     let wanted: HashSet<u64> = coords.iter().map(|c| TileId::from(*c).value()).collect();
     if wanted.is_empty() {
@@ -98,6 +172,7 @@ pub async fn fetch_tiles_coalesced(
         });
     }
     let max_tile_id = *wanted.iter().max().unwrap();
+    std::fs::create_dir_all(staging_dir)?;
 
     let header_bytes = backend
         .read(0, HEADER_SIZE)
@@ -133,7 +208,7 @@ pub async fn fetch_tiles_coalesced(
             length: u64::from(e.length),
         })
         .collect();
-    let leaf_chunks = merge_ranges(&leaf_ranges, overfetch);
+    let leaf_chunks = merge_ranges(&leaf_ranges, overfetch, MAX_HTTP_CHUNK_BYTES);
     for chunk in leaf_chunks {
         let blob = backend
             .read(chunk.src_offset as usize, chunk.length as usize)
@@ -181,11 +256,14 @@ pub async fn fetch_tiles_coalesced(
         .collect();
     content_ranges.sort_by_key(|r| r.src_offset);
 
-    // Collapse already-adjacent contents (zero gap) before overfetch merging.
+    // Collapse already-adjacent contents (zero gap) before overfetch merging,
+    // but never grow a single HTTP range past MAX_HTTP_CHUNK_BYTES.
     let mut adjacent: Vec<SrcRange> = Vec::new();
     for r in content_ranges {
         if let Some(last) = adjacent.last_mut() {
-            if last.src_offset + last.length == r.src_offset {
+            if last.src_offset + last.length == r.src_offset
+                && last.length.saturating_add(r.length) <= MAX_HTTP_CHUNK_BYTES
+            {
                 last.length += r.length;
                 continue;
             }
@@ -193,25 +271,74 @@ pub async fn fetch_tiles_coalesced(
         adjacent.push(r);
     }
 
-    let mut chunk_queue = merge_ranges(&adjacent, overfetch);
-    let workers = workers.max(1);
+    let chunk_queue = merge_ranges(&adjacent, overfetch, MAX_HTTP_CHUNK_BYTES);
+    let total_bytes: u64 = chunk_queue.iter().map(|c| c.length).sum();
+    let workers = pmtiles_download_workers_for_bytes(total_bytes).max(1);
+    let total_chunks = chunk_queue.len().max(1);
     log::info!(
         target: "NaviDownload",
-        "[NaviDownload] pmtiles coalesce plan tiles={} entries={} content_ranges={} http_chunks={} workers={} overfetch={overfetch}",
+        "[NaviDownload] pmtiles coalesce plan tiles={} entries={} content_ranges={} http_chunks={} \
+         total_bytes={total_bytes} workers={workers} overfetch={overfetch} max_chunk={MAX_HTTP_CHUNK_BYTES} \
+         order=smallest_first staging={}",
         wanted.len(),
         tile_entries.len(),
         adjacent.len(),
         chunk_queue.len(),
-        workers
+        staging_dir.display()
     );
 
-    let data_offset = header.data_offset;
-    let mut content_by_offset: HashMap<u64, Bytes> = HashMap::new();
+    if let Some((storage, job_id)) = store {
+        let _ = PmtilesJobStore::new(storage).set_progress(job_id, 0, Some(total_bytes));
+    }
+    download_progress::set(0, Some(total_bytes), progress_label);
 
-    let total_chunks = chunk_queue.len().max(1);
-    let mut chunks_done = 0usize;
-    while !chunk_queue.is_empty() {
-        // Honour pause/cancel between HTTP batches (coalesce phase is the long wait).
+    let data_offset = header.data_offset;
+    let mut completed: Vec<ChunkOnDisk> = Vec::with_capacity(chunk_queue.len());
+    let mut pending: Vec<OverfetchRange> = Vec::with_capacity(chunk_queue.len());
+    for chunk in chunk_queue {
+        let path = chunk_path(staging_dir, chunk.src_offset, chunk.length);
+        if path.is_file() {
+            if let Ok(meta) = std::fs::metadata(&path) {
+                if meta.len() == chunk.length {
+                    completed.push(ChunkOnDisk {
+                        src_offset: chunk.src_offset,
+                        length: chunk.length,
+                        path,
+                    });
+                    continue;
+                }
+            }
+        }
+        pending.push(chunk);
+    }
+    let mut bytes_done: u64 = completed.iter().map(|c| c.length).sum();
+    if bytes_done > 0 {
+        download_progress::set(bytes_done, Some(total_bytes), progress_label);
+        if let Some((storage, job_id)) = store {
+            let _ = PmtilesJobStore::new(storage).set_progress(job_id, bytes_done, Some(total_bytes));
+        }
+        log::info!(
+            target: "NaviDownload",
+            "[NaviDownload] pmtiles coalesce resume chunks_ready={} bytes_already={bytes_done}/{total_bytes}",
+            completed.len()
+        );
+    }
+
+    let mut in_flight = FuturesUnordered::new();
+    let mut queue_iter = pending.into_iter();
+
+    let spawn_one = |chunk: OverfetchRange| {
+        let backend = backend.clone();
+        let staging_dir = staging_dir.to_path_buf();
+        async move {
+            download_chunk_with_retry(&backend, data_offset, chunk, &staging_dir).await
+        }
+    };
+
+    async fn honour_pause(
+        control: &DownloadControl,
+        store: Option<(&Storage, Uuid)>,
+    ) -> anyhow::Result<()> {
         if control.is_cancelled() {
             bail!("cancelled");
         }
@@ -223,7 +350,7 @@ pub async fn fetch_tiles_coalesced(
                     true,
                 );
             }
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
             if control.is_cancelled() {
                 bail!("cancelled");
             }
@@ -232,87 +359,142 @@ pub async fn fetch_tiles_coalesced(
             let _ =
                 PmtilesJobStore::new(storage).set_status(job_id, PmtilesJobStatus::Running, false);
         }
+        Ok(())
+    }
 
-        let n = workers.min(chunk_queue.len());
-        let batch: Vec<OverfetchRange> = chunk_queue.drain(..n).collect();
-        let futs = batch.into_iter().map(|chunk| {
-            let backend = backend.clone();
-            async move {
-                let abs = data_offset + chunk.src_offset;
-                let resp = backend
-                    .read(abs as usize, chunk.length as usize)
-                    .await
-                    .map_err(|e| anyhow!("tile chunk read: {e}"))?;
-                Ok::<_, anyhow::Error>((chunk, resp.bytes))
-            }
-        });
-        for res in join_all(futs).await {
-            let (chunk, blob) = res?;
-            chunks_done += 1;
-            let approx = ((chunks_done as u64).saturating_mul(planned_tiles)) / total_chunks as u64;
-            download_progress::set(
-                approx.min(planned_tiles),
-                Some(planned_tiles),
-                "Downloading map tiles for region…",
+    // Fill the worker pool.
+    while in_flight.len() < workers {
+        honour_pause(control, store).await?;
+        match queue_iter.next() {
+            Some(chunk) => in_flight.push(spawn_one(chunk)),
+            None => break,
+        }
+    }
+
+    while let Some(res) = in_flight.next().await {
+        let disk = res?;
+        completed.push(disk);
+        bytes_done = completed.iter().map(|c| c.length).sum();
+        let chunks_done = completed.len();
+
+        download_progress::set(bytes_done.min(total_bytes), Some(total_bytes), progress_label);
+        if let Some((storage, job_id)) = store {
+            let _ = PmtilesJobStore::new(storage).set_progress(
+                job_id,
+                bytes_done.min(total_bytes),
+                Some(total_bytes),
             );
-            if let Some((storage, job_id)) = store {
-                let _ = PmtilesJobStore::new(storage).set_progress(
-                    job_id,
-                    approx.min(planned_tiles),
-                    Some(planned_tiles),
-                );
-            }
-            if chunks_done == total_chunks || chunks_done % workers.max(1) == 0 {
-                log::info!(
-                    target: "NaviDownload",
-                    "[NaviDownload] pmtiles coalesce download chunks={chunks_done}/{total_chunks}"
-                );
-            }
-            let mut cursor = 0usize;
-            let mut pos = chunk.src_offset;
-            for cd in &chunk.copy_discards {
-                let end = cursor + cd.wanted as usize;
-                let slice = blob
-                    .get(cursor..end)
-                    .ok_or_else(|| anyhow!("tile chunk short wanted"))?;
-                let span_start = pos;
-                let span_end = pos + cd.wanted;
-                for &(_tid, off, len) in &tile_blobs {
-                    if off >= span_start && off + u64::from(len) <= span_end {
-                        let local = (off - span_start) as usize;
-                        let piece = slice
-                            .get(local..local + len as usize)
-                            .ok_or_else(|| anyhow!("tile slice OOB"))?;
-                        content_by_offset
-                            .entry(off)
-                            .or_insert_with(|| Bytes::copy_from_slice(piece));
-                    }
-                }
-                cursor = end + cd.discard as usize;
-                pos = span_end + cd.discard;
+        }
+        if chunks_done == total_chunks || chunks_done % workers.max(1) == 0 {
+            log::info!(
+                target: "NaviDownload",
+                "[NaviDownload] pmtiles coalesce download chunks={chunks_done}/{total_chunks} \
+                 bytes={bytes_done}/{total_bytes}"
+            );
+        }
+
+        honour_pause(control, store).await?;
+        while in_flight.len() < workers {
+            match queue_iter.next() {
+                Some(chunk) => in_flight.push(spawn_one(chunk)),
+                None => break,
             }
         }
     }
 
-    tile_blobs.sort_by_key(|(id, _, _)| *id);
-    let mut out = Vec::with_capacity(tile_blobs.len());
+    // Map each tile blob offset to its staging chunk.
+    let mut staged = Vec::with_capacity(tile_blobs.len());
     let mut seen_ids = HashSet::new();
-    for (id, off, _len) in tile_blobs {
+    tile_blobs.sort_by_key(|(id, _, _)| *id);
+    for (id, off, len) in tile_blobs {
         if !seen_ids.insert(id) {
             continue;
         }
-        let Some(bytes) = content_by_offset.get(&off).cloned() else {
+        let Some(chunk) = completed.iter().find(|c| {
+            off >= c.src_offset && off + u64::from(len) <= c.src_offset + c.length
+        }) else {
             continue;
         };
         let tid = TileId::new(id).map_err(|e| anyhow!("tile id: {e}"))?;
-        out.push((TileCoord::from(tid), bytes));
+        staged.push(StagedTile {
+            coord: TileCoord::from(tid),
+            chunk_path: chunk.path.clone(),
+            offset_in_chunk: off - chunk.src_offset,
+            length: len,
+        });
     }
+
     Ok(CoalescedTiles {
         tile_type,
         tile_compression,
         header_max_zoom: header.max_zoom,
-        tiles: out,
+        tiles: staged,
     })
+}
+
+async fn download_chunk_with_retry(
+    backend: &Reqwest012Backend,
+    data_offset: u64,
+    chunk: OverfetchRange,
+    staging_dir: &Path,
+) -> anyhow::Result<ChunkOnDisk> {
+    let path = chunk_path(staging_dir, chunk.src_offset, chunk.length);
+    let abs = data_offset + chunk.src_offset;
+    let timeout = timeout_for_chunk_bytes(chunk.length);
+    let mut last_err = None;
+    for attempt in 1..=CHUNK_RETRIES {
+        // Drop incomplete sibling before retry.
+        let mut partial = path.as_os_str().to_owned();
+        partial.push(".partial");
+        let _ = std::fs::remove_file(std::path::Path::new(&partial));
+
+        match backend
+            .read_range_to_path(abs as usize, chunk.length as usize, &path, timeout)
+            .await
+        {
+            Ok(_) => {
+                if attempt > 1 {
+                    log::info!(
+                        target: "NaviDownload",
+                        "[NaviDownload] pmtiles chunk ok after retry attempt={attempt} \
+                         offset={} len={} path={}",
+                        chunk.src_offset,
+                        chunk.length,
+                        path.display()
+                    );
+                }
+                return Ok(ChunkOnDisk {
+                    src_offset: chunk.src_offset,
+                    length: chunk.length,
+                    path,
+                });
+            }
+            Err(e) => {
+                log::warn!(
+                    target: "NaviDownload",
+                    "[NaviDownload] pmtiles chunk failed attempt={attempt}/{CHUNK_RETRIES} \
+                     offset={} len={} abs={abs} timeout_s={} err={e}",
+                    chunk.src_offset,
+                    chunk.length,
+                    timeout.as_secs()
+                );
+                let _ = std::fs::remove_file(&path);
+                last_err = Some(e);
+                if attempt < CHUNK_RETRIES {
+                    let backoff_ms = 500u64 * 3u64.pow(attempt - 1);
+                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                }
+            }
+        }
+    }
+    Err(anyhow!(
+        "tile chunk read failed after {CHUNK_RETRIES} attempts offset={} len={} abs={abs}: {}",
+        chunk.src_offset,
+        chunk.length,
+        last_err
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| "unknown".into())
+    ))
 }
 
 fn parse_header(bytes: &[u8]) -> anyhow::Result<HeaderOffsets> {
@@ -474,7 +656,10 @@ fn relevant_entries(
 }
 
 /// Merge nearby ranges until the overfetch budget is exhausted (go-pmtiles algorithm).
-fn merge_ranges(ranges: &[SrcRange], overfetch: f32) -> Vec<OverfetchRange> {
+///
+/// Result is ordered **smallest-first** so mobile downloads get early durable progress
+/// before tackling the largest ranges. Merges that would exceed `max_chunk` are skipped.
+fn merge_ranges(ranges: &[SrcRange], overfetch: f32, max_chunk: u64) -> Vec<OverfetchRange> {
     if ranges.is_empty() {
         return Vec::new();
     }
@@ -522,6 +707,12 @@ fn merge_ranges(ranges: &[SrcRange], overfetch: f32) -> Vec<OverfetchRange> {
         if gap == u64::MAX || budget < gap as i64 {
             break;
         }
+        let merged_len = items[best].rng.length + gap + items[best + 1].rng.length;
+        if max_chunk > 0 && merged_len > max_chunk {
+            // Never merge this pair; look for another candidate.
+            items[best].bytes_to_next = u64::MAX;
+            continue;
+        }
 
         let next = items[best + 1].clone();
         let cur = &mut items[best];
@@ -544,7 +735,8 @@ fn merge_ranges(ranges: &[SrcRange], overfetch: f32) -> Vec<OverfetchRange> {
         budget -= gap as i64;
     }
 
-    items.sort_by(|a, b| b.rng.length.cmp(&a.rng.length));
+    // Smallest first: early progress + avoid front-loading the riskiest GETs.
+    items.sort_by(|a, b| a.rng.length.cmp(&b.rng.length));
     items
         .into_iter()
         .map(|it| OverfetchRange {
@@ -571,7 +763,7 @@ mod tests {
                 length: 100,
             },
         ];
-        let merged = merge_ranges(&ranges, 0.05);
+        let merged = merge_ranges(&ranges, 0.05, MAX_HTTP_CHUNK_BYTES);
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].length, 205);
         assert_eq!(merged[0].copy_discards.len(), 2);
@@ -590,7 +782,46 @@ mod tests {
                 length: 100,
             },
         ];
-        let merged = merge_ranges(&ranges, 0.0);
+        let merged = merge_ranges(&ranges, 0.0, MAX_HTTP_CHUNK_BYTES);
         assert_eq!(merged.len(), 2);
+    }
+
+    #[test]
+    fn merge_respects_max_chunk() {
+        let ranges = vec![
+            SrcRange {
+                src_offset: 0,
+                length: 6 * 1024 * 1024,
+            },
+            SrcRange {
+                src_offset: 6 * 1024 * 1024 + 10,
+                length: 6 * 1024 * 1024,
+            },
+        ];
+        let merged = merge_ranges(&ranges, 1.0, 8 * 1024 * 1024);
+        assert_eq!(merged.len(), 2, "must not merge past max_chunk");
+    }
+
+    #[test]
+    fn merge_orders_smallest_first() {
+        let ranges = vec![
+            SrcRange {
+                src_offset: 0,
+                length: 5000,
+            },
+            SrcRange {
+                src_offset: 10_000,
+                length: 100,
+            },
+            SrcRange {
+                src_offset: 20_000,
+                length: 1000,
+            },
+        ];
+        let merged = merge_ranges(&ranges, 0.0, MAX_HTTP_CHUNK_BYTES);
+        assert_eq!(merged.len(), 3);
+        assert_eq!(merged[0].length, 100);
+        assert_eq!(merged[1].length, 1000);
+        assert_eq!(merged[2].length, 5000);
     }
 }

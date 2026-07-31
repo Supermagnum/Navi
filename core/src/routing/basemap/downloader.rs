@@ -35,7 +35,7 @@ impl PmtilesDownloader {
             storage,
             data_dir: data_dir.into(),
             client: Client::builder()
-                .timeout(Duration::from_secs(120))
+                .timeout(Duration::from_secs(900))
                 .build()
                 .unwrap_or_else(|_| Client::new()),
             max_zoom: DEFAULT_EXTRACT_MAX_ZOOM,
@@ -120,6 +120,8 @@ impl PmtilesDownloader {
             let mut partial = path.as_os_str().to_owned();
             partial.push(".partial");
             let _ = fs::remove_file(Path::new(&partial));
+            let staging = crate::routing::basemap::extract::chunk_staging_dir(&path);
+            let _ = fs::remove_dir_all(&staging);
         }
         store.delete_job(job_id)?;
         Ok(())

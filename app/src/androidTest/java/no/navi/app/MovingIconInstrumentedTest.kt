@@ -78,6 +78,8 @@ class MovingIconInstrumentedTest {
         NaviMapTestHooks.lastTrackIds = emptyList()
         NaviMapTestHooks.lastTrackFeatureCount = 0
         NaviMapTestHooks.lastTrackImagesReady = 0
+        NaviMapTestHooks.lastTrackOverlayCount = 0
+        NaviMapTestHooks.lastOverlayScreenFingerprint = ""
         NaviMapTestHooks.snapshotRequestId = 0
         NaviMapTestHooks.lastSnapshotId = 0
         NaviMapTestHooks.lastSnapshotPng = null
@@ -104,6 +106,9 @@ class MovingIconInstrumentedTest {
         assertEquals(150.0, store.rangeKm(), 0.001)
 
         fun pushFromStore(epochWait: Int) {
+            // Capture before push so we can wait for Compose overlay screen positions
+            // to change (UiAutomation screencap otherwise races redraw under GLES).
+            val prevFingerprint = NaviMapTestHooks.lastOverlayScreenFingerprint
             val snap = store.visible(centerLat, centerLon)
             NaviMapTestHooks.pendingTracks =
                 snap.map {
@@ -157,6 +162,16 @@ class MovingIconInstrumentedTest {
             assertTrue(
                 "track icons not registered (${NaviMapTestHooks.lastTrackImagesReady}/${snap.size})",
                 NaviMapTestHooks.lastTrackImagesReady >= snap.size,
+            )
+            val fpDeadline = System.currentTimeMillis() + 8_000
+            while (System.currentTimeMillis() < fpDeadline) {
+                if (NaviMapTestHooks.lastOverlayScreenFingerprint != prevFingerprint) break
+                Thread.sleep(100)
+            }
+            assertTrue(
+                "overlay fingerprint did not change after push " +
+                    "(prev='$prevFingerprint' now='${NaviMapTestHooks.lastOverlayScreenFingerprint}')",
+                NaviMapTestHooks.lastOverlayScreenFingerprint != prevFingerprint,
             )
             // Let the GL thread paint symbols after geojson/image registration.
             Thread.sleep(1_500)
@@ -351,7 +366,8 @@ class MovingIconInstrumentedTest {
             "MovingIconTest",
             "mapSnapshot $name bytes=${out.length()} path=${out.absolutePath} " +
                 "features=${NaviMapTestHooks.lastTrackFeatureCount} " +
-                "images=${NaviMapTestHooks.lastTrackImagesReady}",
+                "images=${NaviMapTestHooks.lastTrackImagesReady} " +
+                "fingerprint=${NaviMapTestHooks.lastOverlayScreenFingerprint}",
         )
         return out
     }

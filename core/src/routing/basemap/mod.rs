@@ -5,6 +5,7 @@ mod extract;
 mod http_backend;
 mod range_coalesce;
 mod regions;
+mod tile_read;
 
 pub use downloader::{PmtilesDownloader, PmtilesJob};
 pub use extract::{
@@ -16,3 +17,4 @@ pub use regions::{
     geofabrik_path_to_region_key, region_bbox, region_pmtiles_url, sanitize_region_key,
     DEFAULT_PMTILES_BASE_URL,
 };
+pub use tile_read::read_pmtiles_tile;

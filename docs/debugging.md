@@ -193,7 +193,7 @@ for tests — useful when reproducing HUD/map issues without manual UI.
 |---|---|
 | Yellow “bordering activity” screen | `./scripts/launch-navi-emulator.sh` (disables display-compat wrapper) |
 | App missing / wrong UI on AAOS | Launch with `--user 10` (driver); reinstall for that user |
-| MapLibre SIGSEGV on bearing (old GLES SDK) | App should use **Vulkan** MapLibre; see README known issues |
+| MapLibre SIGSEGV on bearing (old GLES SDK) | Default is GLES `android-sdk:11.13.5` after AAOS re-check PASS; if regression, re-run `BearingCrashIsolationTest` — see README known issues |
 | Gestures / pan seem dead | Overlay must forward touches (see map Canvas `pointerInteropFilter`); confirm in logcat / HUD map-tap test |
 | Icons show fallback / no eco leaf | Clear app `files/icons` and relaunch so `ensureIconsCopied` refreshes `leaf.svg` |
 

@@ -7,10 +7,12 @@
 //!   progress was ~0.87–0.92 tiles/s (~100× below the go-pmtiles reference of
 //!   ~99 tiles/s with 4 download threads + range overfetch).
 //! - This module uses go-pmtiles-style **range coalescing** (default 5% overfetch)
-//!   plus a concurrent download pool sized from [`WorkerPoolPlan`].
+//!   plus a concurrent download pool sized from [`WorkerPoolPlan`], with chunk
+//!   bodies streamed to disk (not fully buffered) so large DEM extracts fit on
+//!   mobile devices.
 
 use std::fs::{self, File};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -20,8 +22,9 @@ use pmtiles::{PmTilesWriter, TileCoord, TileId};
 use crate::download::progress as download_progress;
 use crate::download::DownloadControl;
 use crate::routing::basemap::http_backend::Reqwest012Backend;
-use crate::routing::basemap::range_coalesce::{fetch_tiles_coalesced, DEFAULT_OVERFETCH};
-use crate::routing::workers::WorkerPoolPlan;
+use crate::routing::basemap::range_coalesce::{
+    fetch_tiles_coalesced, pmtiles_download_workers_for_bytes, DEFAULT_OVERFETCH,
+};
 use crate::storage::{PmtilesJobStatus, PmtilesJobStore, Storage};
 use uuid::Uuid;
 
@@ -76,22 +79,28 @@ pub fn resolve_planet_url_blocking() -> String {
         .unwrap_or_else(|_| PROTOMAPS_PLANET_FALLBACK_URL.to_string())
 }
 
-/// Concurrent download workers for PMTiles tile fetches (I/O-bound).
-///
-/// Sized from [`WorkerPoolPlan`] (same autodetection as routing), then boosted
-/// for network concurrency and capped near the go-pmtiles reference of 4–8.
+/// Staging directory for coalesced chunk files beside `dest`.
+pub fn chunk_staging_dir(dest: &Path) -> PathBuf {
+    let mut p = dest.as_os_str().to_owned();
+    p.push(".chunks");
+    PathBuf::from(p)
+}
+
+/// Concurrent download workers (legacy entry point; prefers size-aware sizing).
+#[allow(dead_code)]
 pub fn pmtiles_download_workers() -> usize {
-    let plan = WorkerPoolPlan::detect();
-    (plan.routing_workers.saturating_mul(2)).clamp(2, 8)
+    pmtiles_download_workers_for_bytes(0)
 }
 
 async fn wait_if_paused_or_cancelled(
     control: &DownloadControl,
     store: Option<(&Storage, Uuid)>,
     partial: &Path,
+    staging: &Path,
 ) -> anyhow::Result<()> {
     if control.is_cancelled() {
         let _ = fs::remove_file(partial);
+        let _ = fs::remove_dir_all(staging);
         if let Some((storage, job_id)) = store {
             PmtilesJobStore::new(storage).set_status(job_id, PmtilesJobStatus::Cancelled, false)?;
         }
@@ -104,6 +113,7 @@ async fn wait_if_paused_or_cancelled(
         tokio::time::sleep(Duration::from_millis(200)).await;
         if control.is_cancelled() {
             let _ = fs::remove_file(partial);
+            let _ = fs::remove_dir_all(staging);
             if let Some((storage, job_id)) = store {
                 PmtilesJobStore::new(storage).set_status(
                     job_id,
@@ -136,18 +146,21 @@ pub async fn extract_bbox_to_file(
     let partial = {
         let mut p = dest.as_os_str().to_owned();
         p.push(".partial");
-        std::path::PathBuf::from(p)
+        PathBuf::from(p)
     };
+    let staging = chunk_staging_dir(dest);
+    // Keep staging across retries so completed chunks are not re-fetched.
     let _ = fs::remove_file(&partial);
     let _ = fs::remove_file(dest);
+    fs::create_dir_all(&staging)?;
 
-    wait_if_paused_or_cancelled(control, store, &partial).await?;
+    wait_if_paused_or_cancelled(control, store, &partial, &staging).await?;
 
     let http_requests = Arc::new(AtomicU64::new(0));
-    let workers = pmtiles_download_workers();
+    // Ceiling timeout; each range GET also sets a size-scaled per-request timeout.
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .pool_max_idle_per_host(workers)
+        .timeout(Duration::from_secs(900))
+        .pool_max_idle_per_host(8)
         .pool_idle_timeout(Duration::from_secs(90))
         .tcp_keepalive(Duration::from_secs(30))
         .build()?;
@@ -160,41 +173,58 @@ pub async fn extract_bbox_to_file(
     let total = coords.len() as u64;
     let avail = crate::download::available_bytes(dest);
     let started = Instant::now();
+    let progress_label = if dest
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.contains("_dem"))
+    {
+        "Downloading terrain DEM…"
+    } else {
+        "Downloading map tiles for region…"
+    };
     log::info!(
         target: "NaviDownload",
         "[NaviDownload] pmtiles extract start url={planet_url} dest={} tiles={total} max_z={max_zoom} \
-         download_workers={workers} coalesce=1 overfetch={DEFAULT_OVERFETCH} available_bytes={:?}",
+         coalesce=1 overfetch={DEFAULT_OVERFETCH} staging={} available_bytes={:?}",
         dest.display(),
+        staging.display(),
         avail
     );
     if let Some((storage, job_id)) = store {
         let s = PmtilesJobStore::new(storage);
-        s.set_progress(job_id, 0, Some(total))?;
+        s.set_progress(job_id, 0, None)?;
         s.set_status(job_id, PmtilesJobStatus::Running, false)?;
     }
 
-    wait_if_paused_or_cancelled(control, store, &partial).await?;
+    wait_if_paused_or_cancelled(control, store, &partial, &staging).await?;
 
-    download_progress::set(0, Some(total), "Downloading map tiles for region…");
+    download_progress::set(0, None, progress_label);
     let fetched = fetch_tiles_coalesced(
         &backend,
         &coords,
-        workers,
         DEFAULT_OVERFETCH,
         control,
         store,
-        total,
+        &staging,
+        progress_label,
     )
-    .await?;
+    .await
+    .map_err(|e| {
+        log::error!(
+            target: "NaviDownload",
+            "[NaviDownload] pmtiles coalesce failed dest={} err={e:#}",
+            dest.display()
+        );
+        e
+    })?;
     let max_z = max_zoom.min(fetched.header_max_zoom);
-    // Drop coords beyond archive max zoom (rare; usually max_zoom already capped).
     let tiles: Vec<_> = fetched
         .tiles
         .into_iter()
-        .filter(|(c, _)| c.z() <= max_z)
+        .filter(|t| t.coord.z() <= max_z)
         .collect();
 
-    wait_if_paused_or_cancelled(control, store, &partial).await?;
+    wait_if_paused_or_cancelled(control, store, &partial, &staging).await?;
 
     let file = File::create(&partial).map_err(|e| crate::download::enrich_io_error(e, &partial))?;
     let mut writer = PmTilesWriter::new(fetched.tile_type)
@@ -206,20 +236,25 @@ pub async fn extract_bbox_to_file(
 
     let mut done: u64 = 0;
     let wrote_total = tiles.len() as u64;
-    for (coord, bytes) in tiles {
+    download_progress::set(0, Some(wrote_total), "Writing map archive…");
+    for staged in tiles {
+        let bytes = staged.read_bytes().map_err(|e| {
+            anyhow::anyhow!("read staged tile {}: {e}", staged.chunk_path.display())
+        })?;
         writer
-            .add_raw_tile(coord, &bytes)
+            .add_raw_tile(staged.coord, &bytes)
             .map_err(|e| anyhow::anyhow!("add tile: {e}"))?;
         done += 1;
         if done % 32 == 0 || done == wrote_total {
             if let Some((storage, job_id)) = store {
-                PmtilesJobStore::new(storage).set_progress(job_id, done, Some(total))?;
+                // Keep download-byte total if set; surface write progress via UI label.
+                PmtilesJobStore::new(storage).set_progress(
+                    job_id,
+                    done,
+                    Some(wrote_total.max(total)),
+                )?;
             }
-            download_progress::set(
-                done,
-                Some(total.max(wrote_total)),
-                "Downloading map tiles for region…",
-            );
+            download_progress::set(done, Some(wrote_total.max(total)), "Writing map archive…");
         }
         if done % 256 == 0 || done == wrote_total {
             let pct = if total == 0 {
@@ -233,14 +268,13 @@ pub async fn extract_bbox_to_file(
             log::info!(
                 target: "NaviDownload",
                 "[NaviDownload] pmtiles extract progress dest={} tiles={done}/{total} pct={pct} \
-                 tiles_per_s={tiles_per_s:.2} http_requests={reqs} download_workers={workers} \
-                 available_bytes={:?}",
+                 tiles_per_s={tiles_per_s:.2} http_requests={reqs} available_bytes={:?}",
                 dest.display(),
                 crate::download::available_bytes(dest)
             );
         }
         if done % 512 == 0 {
-            wait_if_paused_or_cancelled(control, store, &partial).await?;
+            wait_if_paused_or_cancelled(control, store, &partial, &staging).await?;
         }
     }
 
@@ -252,6 +286,7 @@ pub async fn extract_bbox_to_file(
         anyhow::bail!("extract produced no file");
     }
     fs::rename(&partial, dest).map_err(|e| crate::download::enrich_io_error(e, dest))?;
+    let _ = fs::remove_dir_all(&staging);
     let len = fs::metadata(dest)?.len();
     if let Some((storage, job_id)) = store {
         let s = PmtilesJobStore::new(storage);
@@ -264,8 +299,7 @@ pub async fn extract_bbox_to_file(
     log::info!(
         target: "NaviDownload",
         "[NaviDownload] pmtiles extract complete dest={} bytes={len} tiles={total} wrote={done} \
-         elapsed_s={elapsed:.1} tiles_per_s={tiles_per_s:.2} http_requests={reqs} \
-         download_workers={workers}",
+         elapsed_s={elapsed:.1} tiles_per_s={tiles_per_s:.2} http_requests={reqs}",
         dest.display()
     );
     Ok(len)
@@ -311,6 +345,9 @@ fn lat_to_y(lat: f64, z: u8) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::routing::basemap::range_coalesce::{
+        pmtiles_download_workers_for_bytes, timeout_for_chunk_bytes, MAX_HTTP_CHUNK_BYTES,
+    };
 
     #[test]
     fn oslo_tile_count_z3_small() {
@@ -323,7 +360,26 @@ mod tests {
     #[test]
     fn download_workers_in_range() {
         let w = pmtiles_download_workers();
-        assert!((2..=8).contains(&w));
+        assert!((1..=8).contains(&w));
+        assert!(pmtiles_download_workers_for_bytes(2_000_000_000) <= 2);
+        assert!(pmtiles_download_workers_for_bytes(300_000_000) <= 3);
+    }
+
+    #[test]
+    fn timeout_scales_with_chunk_size() {
+        let small = timeout_for_chunk_bytes(1024);
+        let large = timeout_for_chunk_bytes(MAX_HTTP_CHUNK_BYTES);
+        assert!(small.as_secs() >= 90);
+        assert!(large.as_secs() >= small.as_secs());
+        assert!(large.as_secs() <= 900);
+    }
+
+    #[test]
+    fn staging_dir_suffix() {
+        let p = PathBuf::from("/data/files/pmtiles/region_dem.pmtiles");
+        assert!(chunk_staging_dir(&p)
+            .to_string_lossy()
+            .ends_with("region_dem.pmtiles.chunks"));
     }
 
     #[tokio::test]
@@ -341,6 +397,25 @@ mod tests {
             .unwrap();
         assert!(dest.is_file());
         assert!(len > 1000);
+    }
+
+    #[tokio::test]
+    #[ignore = "network: real Mapterhorn DEM range extract"]
+    async fn extract_tiny_oslo_dem_from_mapterhorn() {
+        let url = "https://download.mapterhorn.com/planet.pmtiles";
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("oslo_dem.pmtiles");
+        let control = DownloadControl::default();
+        let bbox = [59.90, 10.70, 59.93, 10.75];
+        let len = extract_bbox_to_file(url, &dest, bbox, 10, &control, None)
+            .await
+            .expect("mapterhorn extract");
+        assert!(dest.is_file());
+        assert!(len > 100, "expected DEM bytes, got {len}");
+        assert!(
+            !chunk_staging_dir(&dest).exists(),
+            "staging should be removed after success"
+        );
     }
 
     #[tokio::test]

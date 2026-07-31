@@ -14,6 +14,7 @@ object MapHudPrefs {
     private const val KEY_PMTILES_BASE_URL = "pmtiles_base_url"
     private const val KEY_GEOFABRIK_PATH = "geofabrik_path"
     private const val KEY_DIAGNOSTIC_LOGGING = "diagnostic_logging"
+    private const val KEY_DOWNLOADED_PMTILES_REGIONS = "downloaded_pmtiles_regions"
     const val DEFAULT_AUTO_ZOOM_LEVEL = 16.5
     const val MIN_ZOOM = 3.0
     const val MAX_ZOOM = 20.0
@@ -34,8 +35,9 @@ object MapHudPrefs {
     const val DEFAULT_CAMERA_TILT_DEG = 0.0
 
     /**
-     * This APK links `android-sdk-vulkan`. Treat Vulkan as available for the 3D
-     * style gate; GLES-only builds would return false.
+     * 3D / tilt gate. Name retained for less churn: APK now links GLES
+     * (`android-sdk`), not `android-sdk-vulkan`. Still returns true so 3D is
+     * not gated on the SDK artifact.
      */
     fun vulkanRendererAvailable(): Boolean = true
 
@@ -206,5 +208,29 @@ object MapHudPrefs {
             .edit()
             .putBoolean(KEY_DIAGNOSTIC_LOGGING, enabled)
             .apply()
+    }
+
+    /**
+     * Region keys for basemap PMTiles the user successfully downloaded.
+     * Survives `install -r` (same UID); wiped on uninstall — pair with
+     * [OfflineDataIntegrity] staging detection for full reinstall cases.
+     */
+    fun loadDownloadedPmtilesRegions(context: Context): Set<String> =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getStringSet(KEY_DOWNLOADED_PMTILES_REGIONS, emptySet())
+            ?.toSet()
+            .orEmpty()
+
+    fun rememberDownloadedPmtilesRegion(
+        context: Context,
+        regionKey: String,
+    ) {
+        val key = regionKey.trim()
+        if (key.isEmpty()) return
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val next = prefs.getStringSet(KEY_DOWNLOADED_PMTILES_REGIONS, emptySet())!!.toMutableSet()
+        next.add(key)
+        prefs.edit().putStringSet(KEY_DOWNLOADED_PMTILES_REGIONS, next).apply()
     }
 }
