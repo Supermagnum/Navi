@@ -132,6 +132,7 @@ object NaviMapTestHooks {
 
     /**
      * When true, Plan route (Hiking) may load a host-staged polyline + breaks
+     * (+ optional `skolla_rondvassbu.sim_samples.json` for debug simulation)
      * from `/data/local/tmp/navi_fixtures/skolla_rondvassbu.*` so instrumented
      * tests exercise search/keyboard without rebuilding the Ostlandet foot graph.
      */

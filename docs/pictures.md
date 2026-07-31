@@ -1,7 +1,15 @@
 # Pictures
 
-Emulator screenshots for Navi (MapLibre + OpenFreeMap liberty on Android
-Automotive).
+Screenshots for Navi. **Real hardware only** (Samsung Galaxy Tab S6 Lite
+SM-P613). Do **not** use the emulator for gallery captures.
+
+Route-following / current-position scenes use the in-app **route simulator**
+(red **SIMULATING** banner) along a **real planner-run** corridor. Gallery
+frames must **not** reveal the tester’s live GPS position (no live GPS follow
+at the physical device location; `disableGpsFollow` for static POI frames).
+
+Coordinates for the captures below were entered via the Route search keyboard
+as `lat, lon` (not map-tap, not camera-hook injection).
 
 ## GitHub allowlist (space)
 
@@ -11,40 +19,81 @@ added to the repo.
 
 Do **not** use synthetic (hand-drawn / 2-point stub) routes in tests or in any
 screenshot that documents routing — corridor geometry must come from a real
-planner run (host `raufoss_approach_route`, in-app corridor pipeline, etc.).
+planner run.
 
-Idle HUD bars and the Helgøya → Atnbrua route capture live in the
-[README](../README.md#working-app-emulator-screenshots) only
+Idle HUD bars and the Skolla → Rondvassbu hike overview also appear in the
+[README](../README.md#working-app-emulator-screenshots) /
+[real hardware](../README.md#working-app-real-hardware) sections
 (`docs/images/hud/hud_idle_both_bars.png`,
 `docs/images/terrain/hike_eldabu_ramshogda_3d.png`).
-Map tilt at 45° (3D off / 3D on) is also shown there
-(`docs/images/tilt45_3d_off.png`, `docs/images/tilt45_3d_on.png`).
-GPS follow / Recenter / rotation evidence:
-`docs/images/follow_gps/01_simulating_follow.png`,
-`02_after_pan.png`, `05_after_recenter.png`,
+Map tilt at 45° (3D off / 3D on) on the Ådalsbruk / Løten loop:
+`docs/images/tilt45_3d_off.png`, `docs/images/tilt45_3d_on.png`.
+GPS follow / Recenter / rotation evidence (all with **SIMULATING** on the Løten
+loop): `docs/images/follow_gps/01_simulating_follow.png` …
 `06_rotation_modes_ok.png`.
-Current-street UTF-8 evidence (fixture names from Ostlandet place index):
+Current-street UTF-8 evidence:
 `docs/images/hud/hud_current_street_mjosevegen.png` (ø),
 `hud_current_street_trollaas.png` (å),
 `hud_current_street_aevongsli.png` (Æ).
 
 Norwegian gallery: [`bilder.md`](bilder.md).
 
-## Map / routing
+Capture harness: `GalleryDocsKeyboardCaptureTest` (SM-P613). Pull:
+`adb pull /data/local/tmp/navi_gallery_docs/ docs/images/`.
+
+POI online/offline pairs under `docs/images/`:
+`poi_jutulhogget.png` / `poi_jutulhogget_offline.png`,
+`poi_galdhopiggen_3d.png` / `poi_galdhopiggen_online.png`,
+`poi_elgpiggen.png` / `poi_elgpiggen_online.png`,
+`poi_prekestolen.png` / `poi_prekestolen_offline.png`.
+
+## Map / routing (documented corridors)
+
+All route-overlay rows were captured on **SM-P613** with **SIMULATING** where a
+position marker is shown (except idle HUD / static POI rows). Route-planner
+chrome is closed for map-heavy shots (Løten loop, Espa corridor, hiking /
+e-bike overlays) so the corridor is visible.
 
 | Scene | Preview |
 |---|---|
-| Prekestolen base camp, POI's visible. | ![Prekestolen POIs](images/zoom_z16.png) |
-| Helgøya → Atnbrua (eco + 3D on, breaks visible) | ![Route overlay](images/route_map.png) |
-| Route from Gjendebu to Thonvollen, 3D map. | ![Gjendebu to Thonvollen 3D](images/gjendebu_thonvollen_3d.png) |
-| Gjendebu to Thonvollen, flat map. | ![Gjendebu to Thonvollen flat](images/gjendebu_thonvollen_flat.png) |
-| Finstad → Søndre Ommang → Ådalsbruk motormuseum, 45° tilt, 3D off | ![45° tilt 3D off](images/tilt45_3d_off.png) |
-| Finstad → Søndre Ommang → Ådalsbruk motormuseum, 45° tilt, 3D on | ![45° tilt 3D on](images/tilt45_3d_on.png) |
+| Espa → Atnbrufossen (eco / primary corridor), simulating | ![Espa–Atnbrufossen](images/route_espa_atnbrufossen.png) |
+| Åkersætra → Jammerdalsbu → Rondvassbu (DNT hiking), simulating | ![Hiking corridor](images/route_akersaetra_rondvassbu_hiking.png) |
+| Ringebu / Venabygdsfjellet (electric cycle climb), simulating | ![E-cycle climb](images/route_venabygdsfjellet_ebike.png) |
+| Ådalsbruk / Løten loop (simulator + turn instructions), simulating | ![Løten loop](images/route_adalsbruk_loten_loop.png) |
+| Same Løten loop (legacy `route_map.png` slot) | ![Route overlay](images/route_map.png) |
+| Finnstad → Søndre Ommang → Rosenlund, 3D on, simulating | ![Route 3D](images/finnstad_sondre_ommang_3d.png) |
+| Finnstad → Søndre Ommang → Rosenlund, flat, simulating | ![Route flat](images/finnstad_sondre_ommang_flat.png) |
+| 45° tilt, 3D off, simulating (Løten loop) | ![45° tilt 3D off](images/tilt45_3d_off.png) |
+| 45° tilt, 3D on, simulating (Løten loop) | ![45° tilt 3D on](images/tilt45_3d_on.png) |
 
-Tilt/3D demos only. Older gallery PNGs may show a blue hydro soft-edge fringe;
+Tilt/3D demos. Older gallery PNGs may show a blue hydro soft-edge fringe;
 that is a
 [screenshot-capture artifact](map-styles.md#hydro-soft-edge-fringe-screenshot-artifact),
-not what users see live (confirmed on the Automotive emulator).
+not what users see live.
+
+## Single points (keyboard fly-to)
+
+Static map frames after typing WGS84 coordinates into Route search (no live GPS
+follow; Route chrome closed before screencap). Opt-in 3D with **45°** camera
+tilt and Mapterhorn hillshade where available.
+
+Each landmark has an **online** (Liberty + remote DEM) and **offline**
+(Ostlandet Protomaps PMTiles + local DEM) pair when the point falls inside the
+installed extract. Preikestolen is outside Ostlandet coverage: preferring
+offline still resolves to Liberty 3D (documented fallback row).
+
+Confirm tiles loaded (not beige empty-tile failure mode).
+
+| Scene | Preview |
+|---|---|
+| Jutulhogget canyon, online 3D (61.9968774, 10.8888101) | ![Jutulhogget online](images/poi_jutulhogget.png) |
+| Jutulhogget canyon, offline Protomaps 3D | ![Jutulhogget offline](images/poi_jutulhogget_offline.png) |
+| Galdhøpiggen peak, offline Protomaps 3D (61.6364721, 8.3124426) | ![Galdhøpiggen](images/poi_galdhopiggen_3d.png) |
+| Galdhøpiggen peak, online 3D | ![Galdhøpiggen online](images/poi_galdhopiggen_online.png) |
+| Elgpiggen peak, offline Protomaps 3D (62.1592913, 11.3584086) | ![Elgpiggen](images/poi_elgpiggen.png) |
+| Elgpiggen peak, online 3D | ![Elgpiggen online](images/poi_elgpiggen_online.png) |
+| Preikestolen / Pulpit Rock, online 3D (58.9870777, 6.1887732) | ![Preikestolen](images/poi_prekestolen.png) |
+| Preikestolen with offline preferred (no Ostlandet PMTiles → Liberty 3D fallback) | ![Preikestolen offline](images/poi_prekestolen_offline.png) |
 
 ## Current street (bottom HUD)
 
@@ -60,8 +109,9 @@ Real Østlandet fixture names via `CurrentStreetInstrumentedTest`. See
 
 ## GPS follow / Recenter / rotation
 
-Captured by `FollowGpsPanZoomInstrumentedTest` (and related HUD rotation
-checks). Shown in the README gallery as well.
+Captured on **SM-P613** during **route simulation** on the Ådalsbruk / Løten
+loop (`HardwareGallerySimScreenshotTest` / gallery keyboard harness). Every
+frame below must show **SIMULATING** (not live GPS at the tester’s location).
 
 | Scene | Preview |
 |---|---|
@@ -71,18 +121,6 @@ checks). Shown in the README gallery as well.
 | After zoom out | ![After zoom out](images/follow_gps/04_after_zoom_out.png) |
 | After Recenter | ![After Recenter](images/follow_gps/05_after_recenter.png) |
 | Rotation modes OK | ![Rotation modes](images/follow_gps/06_rotation_modes_ok.png) |
-
-Prefer `images/terrain/` and recent HUD shots when comparing route visuals.
-Older `route_map.png` copies were ~57% MapLibre empty background (`#f8f4f0`)
-because tiles never loaded — that is the “beige outdated” failure mode.
-Regenerated shots (allowlisted) show Liberty/Protomaps tiles plus start/end
-labels. Pale land fill in Liberty/Protomaps light styles is normal and is not
-the same as empty-map beige.
-
-Start / via / end **place names** are drawn as a Compose map overlay (and a
-MapLibre waypoints layer). Screenshot tests set
-`NaviMapTestHooks.routeStartLabel` / `routeEndLabel` because search chrome is
-often hidden with `hideSearchChrome=true`.
 
 ## Moving icons (APRS-style)
 
@@ -95,8 +133,8 @@ often hidden with `hideSearchChrome=true`.
 ## Offline PMTiles basemap / 3D
 
 Evidence for [`map-styles.md`](map-styles.md). Captured by
-`BasemapPmtilesScreenshotTest` on the Automotive emulator (kind + terrain
-attach + camera logged). Drive HUD bars kept visible (`hideUiChrome=false`).
+`BasemapPmtilesScreenshotTest` / SM-P613 offline 3D tests. Drive HUD bars kept
+visible (`hideUiChrome=false`).
 
 | Scene | Preview |
 |---|---|
@@ -107,11 +145,13 @@ attach + camera logged). Drive HUD bars kept visible (`hideUiChrome=false`).
 
 ## Multi-day day cards
 
-Captured by `MultiDayDayCardsScreenshotTest` (route tools sheet day list).
-Live truck corridor (emulator GPS → Bodø) by `LiveMultiDayDayCardsInstrumentedTest`.
+Refreshed on **SM-P613**. Hiking cards come from a **keyboard-entered** real
+plan Åkersætra → Jammerdalsbu → Rondvassbu (`GalleryDocsKeyboardCaptureTest`).
+Truck cards come from a keyboard-entered Espa → Atnbrufossen truck plan with a
+tight daily driving cap so the planner emits real `daysJson` cards (no live-GPS
+Bodø start — privacy).
 
 | Scene | Preview |
 |---|---|
-| Truck multi-day day cards | ![Truck day cards](images/multi_day_day_cards.png) |
-| Hiking multi-day day cards | ![Hiking day cards](images/multi_day_day_cards_hiking.png) |
-| Truck live multi-day day cards (GPS → Bodø) | ![Live truck day cards](images/multi_day_day_cards_live.png) |
+| Truck multi-day day cards (Espa → Atnbrufossen, finished plan) | ![Truck day cards](images/multi_day_day_cards.png) |
+| Hiking multi-day day cards (Åkersætra → Rondvassbu) | ![Hiking day cards](images/multi_day_day_cards_hiking.png) |

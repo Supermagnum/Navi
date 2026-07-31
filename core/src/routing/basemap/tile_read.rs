@@ -40,25 +40,23 @@ pub fn read_pmtiles_tile(path: &Path, z: u8, x: u32, y: u32) -> anyhow::Result<O
     let path_buf = path.to_path_buf();
     let coord = TileCoord::new(z, x, y).map_err(|e| anyhow::anyhow!("bad tile coord: {e}"))?;
     runtime().block_on(async {
-        let reader = {
+        let existing = {
             let guard = readers()
                 .lock()
                 .map_err(|_| anyhow::anyhow!("pmtiles reader lock poisoned"))?;
-            if let Some(existing) = guard.get(&path_buf) {
-                existing.clone()
-            } else {
-                // Release lock before open? open is async; keep critical section short
-                // by opening then inserting (double-checked under lock).
-                drop(guard);
-                let opened = open_reader(&path_buf).await?;
-                let mut guard = readers()
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("pmtiles reader lock poisoned"))?;
-                guard
-                    .entry(path_buf.clone())
-                    .or_insert_with(|| opened.clone())
-                    .clone()
-            }
+            guard.get(&path_buf).cloned()
+        };
+        let reader = if let Some(existing) = existing {
+            existing
+        } else {
+            let opened = open_reader(&path_buf).await?;
+            let mut guard = readers()
+                .lock()
+                .map_err(|_| anyhow::anyhow!("pmtiles reader lock poisoned"))?;
+            guard
+                .entry(path_buf.clone())
+                .or_insert_with(|| opened.clone())
+                .clone()
         };
         Ok(reader
             .get_tile_decompressed(coord)

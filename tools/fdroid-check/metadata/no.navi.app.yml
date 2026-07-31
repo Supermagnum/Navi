@@ -1,0 +1,69 @@
+License: GPL-3.0-or-later
+AuthorName: Navi contributors
+WebSite: https://github.com/Supermagnum/Navi
+SourceCode: https://github.com/Supermagnum/Navi
+IssueTracker: https://github.com/Supermagnum/Navi/issues
+
+AutoName: Navi
+
+RepoType: git
+Repo: https://github.com/Supermagnum/Navi.git
+
+Builds:
+  - versionName: 0.1.0
+    versionCode: 1
+    commit: PLACEHOLDER_COMMIT
+    timeout: 14400
+    subdir: app
+    sudo:
+      - apt-get update
+      - apt-get install -y --no-install-recommends
+        build-essential
+        curl
+        ca-certificates
+        openjdk-17-jdk-headless
+        python3
+        pkg-config
+        libssl-dev
+      - update-java-alternatives -a || true
+      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs
+        | bash -s -- -y --default-toolchain stable
+      - bash -lc 'source "$HOME/.cargo/env" && rustup toolchain install 1.88.0 --profile minimal && rustup default 1.88.0 && rustup target add aarch64-linux-android x86_64-linux-android'
+    prebuild:
+      - |
+        export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${CARGO_HOME:-$HOME/.cargo}/bin:${PATH:-}"
+        . "${CARGO_HOME:-$HOME/.cargo}/env" 2>/dev/null || true
+        NDK="$$NDK$$"
+        test -n "$NDK" && test -d "$NDK"
+        CLANG_PRE="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+        mkdir -p ../.cargo
+        printf '%s\n' \
+          '[target.x86_64-linux-android]' \
+          "linker = \"$CLANG_PRE/x86_64-linux-android34-clang\"" \
+          'rustflags = ["-C", "link-arg=-lc++_shared"]' \
+          '' \
+          '[target.aarch64-linux-android]' \
+          "linker = \"$CLANG_PRE/aarch64-linux-android34-clang\"" \
+          'rustflags = ["-C", "link-arg=-lc++_shared"]' \
+          > ../.cargo/config.toml
+        rm -f ../app/src/main/jniLibs/*/libnavi.so
+        printf 'sdk.dir=%s\nndk.dir=%s\n' "$$SDK$$" "$$NDK$$" > ../local.properties
+    build:
+      - |
+        export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${CARGO_HOME:-$HOME/.cargo}/bin:${PATH:-}"
+        . "${CARGO_HOME:-$HOME/.cargo}/env" 2>/dev/null || true
+        export ANDROID_NDK_HOME="$$NDK$$"
+        export ANDROID_HOME="$$SDK$$"
+        ../scripts/build-android-native.sh aarch64-linux-android release
+        ../scripts/build-android-native.sh x86_64-linux-android release
+        gradle assembleRelease
+    ndk: r27c
+    gradle:
+      - yes
+
+MaintainerNotes: |
+  Local F-Droid buildability check metadata (not yet submitted to fdroiddata).
+  Rust via rustup in sudo:; .cargo/config.toml rewritten from $$NDK$$ in prebuild.
+  dependenciesInfo.includeInApk/Bundle are false in app/build.gradle.kts.
+
+ArchivePolicy: 0 versions

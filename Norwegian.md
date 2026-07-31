@@ -290,7 +290,7 @@ AVD GNSS-høyde er ofte feil — se merknad over). Én rast er synlig:
 ![Helgøya til Atnbrua-rute](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
 
 Kartkamera-tilt (0° / 35° / 45° / 60°) er uavhengig av valgfri 3D-hillshade.
-Finstad → Søndre Ommang → Ådalsbruk motormuseum ved **45°** — flat 2D (N-opp),
+Finnstad → Søndre Ommang → Rosenlund ved **45°** — flat 2D (N-opp),
 deretter 3D på med Mapterhorn DEM-hillshade.
 Disse bildene viser tilt/3D. Eldre skjermbilder i galleriet kan ha en blå
 hydro soft-edge fringe ved elve-/innsjøkanter; den er bekreftet **ikke synlig
@@ -303,8 +303,9 @@ tegningsbegrensning:
 
 ![45° tilt, 3D på](docs/images/tilt45_3d_on.png)
 
-Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
-øko-blad, rotasjon, kurs, bevegelige ikoner):
+Alle andre skjermbilder (kartzoom, ruteoverlegg, enkeltpunkt online /
+frakoblet 3D-POI, menyer, innstillinger, øko-blad, rotasjon, kurs, bevegelige
+ikoner):
 [`docs/bilder.md`](docs/bilder.md).
 
 ## Dokumenter
@@ -315,8 +316,8 @@ Alle andre skjermbilder (kartzoom, ruteoverlegg, menyer, innstillinger,
 | [`docs/architecture.md`](docs/architecture.md) | Hvordan delene henger sammen (databaser, tråder, plugins) |
 | [`docs/rust-crates.md`](docs/rust-crates.md) | Rust-crates: egen kode vs uendrede crates.io-avhengigheter (engelsk) |
 | [`docs/codebase-map.md`](docs/codebase-map.md) | Bidragsyter-filkart: hvor feil fikses, zoom, tilnærming, ruting, HUD |
-| [`docs/bilder.md`](docs/bilder.md) | Emulatorskjermbildegalleri (norsk) |
-| [`docs/pictures.md`](docs/pictures.md) | Emulatorskjermbildegalleri (engelsk) |
+| [`docs/bilder.md`](docs/bilder.md) | Maskinvareskjermbildegalleri (norsk, SM-P613) |
+| [`docs/pictures.md`](docs/pictures.md) | Maskinvareskjermbildegalleri (engelsk, SM-P613) |
 | [`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md) | Rast/vei-grunnlag for standard pauseintervaller (fottur og sykling); [engelsk](docs/historical-background.md) |
 | [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Lastebil EU kjøre-/hviletid: duty-tak, flerdagers hvile, kompensasjonsbok, overnattingsskåring |
 | [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | Lastebil US FMCSA HOS (11 t / 14 t / 8 t pause / 70 t-syklus) |
@@ -392,7 +393,7 @@ export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
 ```
 
 Oppdater `.cargo/config.toml` linker-stier til NDK før første native bygg.
-`minSdk` 26, `compileSdk` / `targetSdk` 35, JDK 17.
+`minSdk` 26, `compileSdk` / `targetSdk` 36, JDK 17.
 
 ## Ytelseskrav (minimum: 8 kjerner ~2 GHz, 4 GB RAM)
 

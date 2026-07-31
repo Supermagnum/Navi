@@ -8,15 +8,48 @@ plugins {
 
 android {
     namespace = "no.navi.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "no.navi.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
+    }
+
+    // Omit Google Play dependency metadata from APK/AAB (F-Droid / reproducible
+    // builds stay simpler; Play App Signing still works without it).
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
+    signingConfigs {
+        // Local upload key for AAB smoke tests (not for Play production).
+        // Generated under app/keystore/ (gitignored) by scripts/make-upload-keystore.sh.
+        create("upload") {
+            val store = file("keystore/navi-upload.jks")
+            if (store.isFile) {
+                storeFile = store
+                storePassword =
+                    providers
+                        .gradleProperty("navi.upload.storePassword")
+                        .orElse("navi-upload-local")
+                        .get()
+                keyAlias =
+                    providers
+                        .gradleProperty("navi.upload.keyAlias")
+                        .orElse("navi-upload")
+                        .get()
+                keyPassword =
+                    providers
+                        .gradleProperty("navi.upload.keyPassword")
+                        .orElse("navi-upload-local")
+                        .get()
+            }
+        }
     }
 
     buildTypes {
@@ -26,6 +59,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            val upload = signingConfigs.findByName("upload")
+            if (upload?.storeFile?.isFile == true) {
+                signingConfig = upload
+            }
         }
     }
 

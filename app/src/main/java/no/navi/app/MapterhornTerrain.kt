@@ -43,8 +43,7 @@ object MapterhornTerrain {
     private const val HILLSHADE_HIGHLIGHT_COLOR = "#FFFFFF"
     private const val HILLSHADE_ILLUMINATION_DEG = 335f
 
-    private fun hillshadeExaggeration(): Float =
-        NaviMapTestHooks.hillshadeExaggerationOverride ?: HILLSHADE_EXAGGERATION
+    private fun hillshadeExaggeration(): Float = NaviMapTestHooks.hillshadeExaggerationOverride ?: HILLSHADE_EXAGGERATION
 
     private fun hillshadePaintJson(): JSONObject =
         JSONObject()
@@ -222,8 +221,7 @@ object MapterhornTerrain {
         !resolved.attachMapterhornTerrain &&
             resolved.demSourceUri?.startsWith("http://127.0.0.1") == true
 
-    fun wantHillshadeAttached(resolved: BasemapStyleResolver.ResolvedStyle): Boolean =
-        resolved.attachMapterhornTerrain || usesBakedOfflineHillshade(resolved)
+    fun wantHillshadeAttached(resolved: BasemapStyleResolver.ResolvedStyle): Boolean = resolved.attachMapterhornTerrain || usesBakedOfflineHillshade(resolved)
 
     fun augmentStyleJson(
         style: JSONObject,

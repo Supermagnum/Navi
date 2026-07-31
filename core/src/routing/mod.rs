@@ -35,8 +35,8 @@ pub use graph::{
     RouteOptions, RoutingProfile, NON_NETWORK_PENALTY,
 };
 pub use guidance_path::{
-    build_maneuvers, build_sim_samples, maneuvers_to_json, samples_to_json, RouteManeuver,
-    SimSample,
+    build_maneuvers, build_sim_samples, build_sim_samples_from_lat_lon, maneuvers_to_json,
+    samples_to_json, RouteManeuver, SimSample,
 };
 pub use osm_update::{
     apply_pending_update, apply_update_plan, bind_geofabrik_extract, check_for_updates,

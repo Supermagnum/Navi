@@ -15,6 +15,14 @@ local.properties
 .idea/
 *.apk
 *.aab
+app/keystore/
+*.jks
+*.keystore
+
+# Local F-Droid buildability check workspace (not for commit)
+tools/fdroid-check/work/
+tools/fdroid-check/logs/
+tools/fdroid-check/fdroidserver/
 
 # OS
 .DS_Store
@@ -31,5 +39,10 @@ core/target/integration-fixtures/elevation/
 !docs/images/
 !docs/images/**/
 !docs/images/**/*.png
+
+# Scratch / intermediate screencaps (do not publish)
+docs/images/tmp/
+docs/images/tmp_*.png
+.git-status-report.txt
 
 diff-repport.md

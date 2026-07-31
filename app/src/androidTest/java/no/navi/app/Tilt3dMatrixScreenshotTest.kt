@@ -119,7 +119,7 @@ class Tilt3dMatrixScreenshotTest {
         val shot = InstrumentedMapCapture.takeScreenshotAfterSettle(8_000)
         assertTrue("null shot $label", shot != null)
         assertNotEquals(0, shot!!.width)
-        val name = "tilt3d_${label}.png"
+        val name = "tilt3d_$label.png"
         val out = File(dataDir, name)
         out.outputStream().use { shot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
         assertTrue("$name too small", out.length() > 5_000)

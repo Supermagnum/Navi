@@ -20,10 +20,8 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class EldabuRamshogdaScreenshotTest {
     companion object {
-        // Camera near Eldåbu (61.756, 9.979); terrain toward Store Ramshøgda stays unlabeled.
-        private const val CAM_LAT = 61.7525
-        private const val CAM_LON = 10.0538
-        private const val CAM_ZOOM = 12.0
+        // Full Skolla→Rondvassbu corridor framed (not a local Eldåbu crop).
+        private const val CAM_TILT = 0.0
 
         @JvmStatic
         lateinit var poly: String
@@ -32,13 +30,22 @@ class EldabuRamshogdaScreenshotTest {
         lateinit var breaks: String
 
         @JvmStatic
+        lateinit var simSamples: String
+
+        @JvmStatic
+        lateinit var fitCamera: Triple<Double, Double, Double>
+
+        @JvmStatic
         @BeforeClass
         fun loadFixtures() {
             val staged = File("/data/local/tmp/navi_fixtures")
             poly = File(staged, "skolla_rondvassbu.polyline.txt").readText().trim()
             breaks = File(staged, "skolla_rondvassbu.breaks.json").readText().trim()
+            simSamples = File(staged, "skolla_rondvassbu.sim_samples.json").readText().trim()
+            fitCamera = RouteCameraFit.fromPolyline(poly, pad = 1.5)
             check(poly.contains(';'))
             check(breaks.contains("Eldåbu"))
+            check(simSamples.length > 100) { "missing densified sim samples" }
             check(!breaks.contains("Store Ramshøgda")) {
                 "Store Ramshøgda must not be a labeled pause stop"
             }
@@ -150,7 +157,7 @@ class EldabuRamshogdaScreenshotTest {
                 poiIconKey = "cabin",
                 breakPoisJson = breaks,
                 daysJson = "[]",
-                simSamplesJson = "[]",
+                simSamplesJson = simSamples,
                 maneuversJson = "[]",
                 priorityPathSharePct = 0.0,
             )
@@ -168,19 +175,36 @@ class EldabuRamshogdaScreenshotTest {
         error("route not applied")
     }
 
+    /** Seek near Eldåbu (~76 km) so SIMULATING stays visible for the gallery shot. */
+    private fun startSimulationNearEldabu() {
+        NaviMapTestHooks.followGps = true
+        NaviMapTestHooks.simulationTimeScale = 0.25
+        NaviMapTestHooks.requestPrepareRouteSimulation = true
+        Thread.sleep(800)
+        // Overlay polyline cum near Eldåbu hut.
+        NaviMapTestHooks.requestSimSeekCumM = 76_300.0
+        val deadline = System.currentTimeMillis() + 20_000
+        while (System.currentTimeMillis() < deadline) {
+            if (NaviMapTestHooks.simulatingActive && NaviMapTestHooks.lastSimAlongM > 1_000.0) {
+                break
+            }
+            Thread.sleep(150)
+        }
+        assertTrue(
+            "simulatingActive near Eldåbu (along=${NaviMapTestHooks.lastSimAlongM})",
+            NaviMapTestHooks.simulatingActive,
+        )
+        NaviMapTestHooks.simulationTimeScale = 0.15
+        Thread.sleep(400)
+    }
+
     private fun await3d(timeoutMs: Long = 120_000) {
         NaviMapTestHooks.requestOptIn3d = true
-        NaviMapTestHooks.requestCameraTiltDeg = 45.0
+        NaviMapTestHooks.requestCameraTiltDeg = CAM_TILT
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            // Opt-in 3D is hillshade attach; kind may be Online3d or OfflineProtomaps.
-            // Camera tilt is a separate user preset (no longer forced by 3D).
             if (NaviMapTestHooks.lastTerrainAttached) {
-                if (NaviMapTestHooks.lastCameraPitch < 40.0) {
-                    NaviMapTestHooks.requestCameraTiltDeg = 45.0
-                } else {
-                    return
-                }
+                return
             }
             Thread.sleep(400)
         }
@@ -191,12 +215,20 @@ class EldabuRamshogdaScreenshotTest {
         )
     }
 
+    private fun frameFullRoute() {
+        NaviMapTestHooks.disableGpsFollow = true
+        NaviMapTestHooks.followGps = false
+        NaviMapTestHooks.pendingCamera = fitCamera
+        Thread.sleep(300)
+        NaviMapTestHooks.pendingCamera = fitCamera
+    }
+
     private fun captureClean(name: String) {
         dismissPermissionDialogs()
         NaviMapTestHooks.hideSearchChrome = true
-        // Keep re-centering while tiles settle.
+        // Keep re-framing the full corridor while tiles settle.
         repeat(8) {
-            NaviMapTestHooks.pendingCamera = Triple(CAM_LAT, CAM_LON, CAM_ZOOM)
+            frameFullRoute()
             Thread.sleep(2_500)
             dismissPermissionDialogs()
         }
@@ -210,11 +242,13 @@ class EldabuRamshogdaScreenshotTest {
         shell("chmod 644 /data/local/tmp/$name")
         // Reject permission-dialog composites (~90–100KB purple/empty or dialog-heavy).
         assertTrue("$name too small (${out.length()})", out.length() > 180_000)
+        shell("screencap -p /data/local/tmp/$name")
+        shell("chmod 644 /data/local/tmp/$name")
         android.util.Log.i(
             "EldabuRamshogdaScreenshotTest",
             "shot=$name bytes=${out.length()} kind=${NaviMapTestHooks.lastBasemapKind} " +
                 "terrain=${NaviMapTestHooks.lastTerrainAttached} pitch=${NaviMapTestHooks.lastCameraPitch} " +
-                "breaks=${NaviMapTestHooks.lastBreakPoiCount}",
+                "breaks=${NaviMapTestHooks.lastBreakPoiCount} fit=$fitCamera",
         )
     }
 
@@ -228,9 +262,15 @@ class EldabuRamshogdaScreenshotTest {
         NaviMapTestHooks.requestOptIn3d = true
         Thread.sleep(2_000)
         injectRoute()
-        NaviMapTestHooks.pendingCamera = Triple(CAM_LAT, CAM_LON, CAM_ZOOM)
+        startSimulationNearEldabu()
+        frameFullRoute()
         await3d()
         Thread.sleep(8_000)
         captureClean("hike_eldabu_ramshogda_3d.png")
+        assertTrue(
+            "gallery hike shot must keep SIMULATING",
+            NaviMapTestHooks.simulatingActive ||
+                device.hasObject(By.text("SIMULATING")),
+        )
     }
 }

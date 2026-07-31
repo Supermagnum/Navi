@@ -29,6 +29,9 @@ class HikingRouteMapScreenshotTest {
         lateinit var breaks: String
 
         @JvmStatic
+        lateinit var simSamples: String
+
+        @JvmStatic
         @BeforeClass
         fun loadFixtures() {
             NaviMapTestHooks.hideUiChrome = false
@@ -47,8 +50,10 @@ class HikingRouteMapScreenshotTest {
             val staged = File("/data/local/tmp/navi_fixtures")
             poly = File(staged, "skolla_rondvassbu.polyline.txt").readText().trim()
             breaks = File(staged, "skolla_rondvassbu.breaks.json").readText().trim()
+            simSamples = File(staged, "skolla_rondvassbu.sim_samples.json").readText().trim()
             check(poly.contains(';'))
             check(breaks.contains("Eldåbu"))
+            check(simSamples.length > 100) { "missing densified sim samples" }
             check(!breaks.contains("Store Ramshøgda")) {
                 "Store Ramshøgda must not be a labeled pause stop"
             }
@@ -139,7 +144,7 @@ class HikingRouteMapScreenshotTest {
                 poiIconKey = "cabin",
                 breakPoisJson = breaks,
                 daysJson = "[]",
-                simSamplesJson = "[]",
+                simSamplesJson = simSamples,
                 maneuversJson = "[]",
                 priorityPathSharePct = 0.0,
             )

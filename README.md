@@ -437,32 +437,27 @@ Automotive head-unit testing is still open — see
 
 ## Working app (emulator screenshots)
 
-Captured on Android Automotive emulator with MapLibre + OpenFreeMap liberty
-basemap. Collapsed top/bottom drive HUD (search chrome hidden):
+Many of these filenames were **re-shot on SM-P613** (real hardware) with route
+**simulation** — look for the red **SIMULATING** banner. See
+[`docs/pictures.md`](docs/pictures.md). Idle HUD (no active simulation):
 
 ![Idle both bars](docs/images/hud/hud_idle_both_bars.png)
 
-Car route Helgøya → Atnbrua on the Automotive emulator (HUD shows altitude;
-AVD GNSS altitude is often wrong — see note above). One rest stop is visible:
+Hiking corridor Skolla → Rondvassbu (full route in frame, SM-P613, **SIMULATING**
+via staged `skolla_rondvassbu.sim_samples.json`):
 
-![Helgøya to Atnbrua route](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
+![Skolla to Rondvassbu hike](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
 
 Map camera tilt presets (0° / 35° / 45° / 60°) are independent of opt-in 3D
-hillshade. Finstad → Søndre Ommang → Ådalsbruk motormuseum at **45°** — flat
-2D (N-up), then 3D on with Mapterhorn DEM hillshade.
-These shots demonstrate tilt/3D. Older captures in this gallery may show a blue
-hydro soft-edge fringe at river/lake edges; that fringe has been confirmed **not
-visible during live interactive use** and is treated as a
-[screenshot-capture artifact](docs/map-styles.md#hydro-soft-edge-fringe-screenshot-artifact)
-(instrumented `screencap` / UiAutomation timing), not a user-visible rendering
-limitation:
+hillshade. **45°** with **SIMULATING** (SM-P613) — Finnstad → Søndre Ommang →
+Rosenlund — 3D off, then 3D on:
 
 ![45° tilt, 3D off](docs/images/tilt45_3d_off.png)
 
 ![45° tilt, 3D on](docs/images/tilt45_3d_on.png)
 
-GPS follow: simulation while following, after pan / zoom (follow paused), then
-**Recenter**, and rotation-mode check:
+GPS follow during **route simulation** (SIMULATING banner), after pan / zoom
+(follow paused), then **Recenter**, and rotation-mode check:
 
 ![Follow while simulating](docs/images/follow_gps/01_simulating_follow.png)
 
@@ -472,8 +467,9 @@ GPS follow: simulation while following, after pan / zoom (follow paused), then
 
 ![Rotation modes](docs/images/follow_gps/06_rotation_modes_ok.png)
 
-All other screenshots (map zoom levels, route overlay, menus, settings
-overlays, eco leaf, rotation, bearing, moving icons):
+All other screenshots (map zoom levels, route overlay, single-point online /
+offline 3D POIs, menus, settings overlays, eco leaf, rotation, bearing, moving
+icons):
 [`docs/pictures.md`](docs/pictures.md)
 (Norwegian gallery: [`docs/bilder.md`](docs/bilder.md)).
 
@@ -485,11 +481,11 @@ overlays, eco leaf, rotation, bearing, moving icons):
 | [`docs/architecture.md`](docs/architecture.md) | How the parts fit together (databases, threads, plugins) |
 | [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Canonical 2026-07 future-proofing findings + risk-prioritized follow-up list |
 | [`docs/status.md`](docs/status.md) | Which doc is canonical for live status vs historical evidence (anti-sprawl map) |
-| [`docs/android-api36-plan.md`](docs/android-api36-plan.md) | Plan to raise compileSdk/targetSdk to API 36 (not executed yet) |
+| [`docs/android-api36-plan.md`](docs/android-api36-plan.md) | API 36 baseline (compileSdk/targetSdk 36; AGP 8.9.1) |
 | [`docs/rust-crates.md`](docs/rust-crates.md) | Rust crates: first-party created vs crates.io used unaltered |
 | [`docs/codebase-map.md`](docs/codebase-map.md) | Contributor file map: where to fix bugs, zoom, approach, routing, HUD |
-| [`docs/pictures.md`](docs/pictures.md) | Emulator screenshot gallery |
-| [`docs/bilder.md`](docs/bilder.md) | Emulator screenshot gallery (Norwegian) |
+| [`docs/pictures.md`](docs/pictures.md) | Hardware screenshot gallery (SM-P613) |
+| [`docs/bilder.md`](docs/bilder.md) | Hardware screenshot gallery (Norwegian) |
 | [`docs/historical-background.md`](docs/historical-background.md) | Rast/vei basis for hiking & cycling rest-interval defaults |
 | [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Truck EC 561/2006: duty caps, multi-day rest, compensation ledger, overnight scoring |
 | [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | Truck US FMCSA property-carrying HOS pack (11 h / 14 h / 8 h break / 70 h cycle) |
@@ -597,7 +593,7 @@ unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'lib/arm64-v8a/libnavi
 Update `.cargo/config.toml` linker paths to your NDK before the first native
 build (both `x86_64-linux-android` and `aarch64-linux-android` entries — see
 [`docs/android-build.md`](docs/android-build.md)). `minSdk` 26, `compileSdk` /
-`targetSdk` 35, JDK 17.
+`targetSdk` 36, JDK 17, AGP 8.9.1.
 
 ## Minimum hardware and storage capacity
 

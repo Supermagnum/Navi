@@ -2056,6 +2056,16 @@ private fun NaviMapScreen() {
                                                                 } else {
                                                                     "[]"
                                                                 }
+                                                            val stagedSamples =
+                                                                File(
+                                                                    "/data/local/tmp/navi_fixtures/skolla_rondvassbu.sim_samples.json",
+                                                                )
+                                                            val samplesJson =
+                                                                if (stagedSamples.isFile) {
+                                                                    stagedSamples.readText().trim()
+                                                                } else {
+                                                                    "[]"
+                                                                }
                                                             uniffi.navi.CorridorRouteResult(
                                                                 report = "TEST_KIND=STAGED_HIKE\nPASS\ndistance_km=112.5\n",
                                                                 distanceKm = 112.5,
@@ -2070,7 +2080,7 @@ private fun NaviMapScreen() {
                                                                 poiIconKey = "cabin",
                                                                 breakPoisJson = breaks,
                                                                 daysJson = "[]",
-                                                                simSamplesJson = "[]",
+                                                                simSamplesJson = samplesJson,
                                                                 maneuversJson = "[]",
                                                                 priorityPathSharePct = 0.0,
                                                             )
@@ -3400,7 +3410,7 @@ private fun NaviMapScreen() {
                                     DiagnosticLog.maybeLogSystem(context.filesDir, nowMs = 0L)
                                     status =
                                         "Diagnostic logging on — " +
-                                            DiagnosticLog.publicLocationDescription()
+                                        DiagnosticLog.publicLocationDescription()
                                 } else {
                                     status = "Diagnostic logging off"
                                 }

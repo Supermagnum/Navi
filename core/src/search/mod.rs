@@ -56,26 +56,100 @@ impl NameIndex {
 
     pub fn load_from_pbf(&mut self, path: impl AsRef<Path>) -> anyhow::Result<usize> {
         let path = path.as_ref();
-        let file = std::fs::File::open(path)?;
-        let reader = ElementReader::new(file);
         let mut batch: Vec<(i64, String, String, f64, f64)> = Vec::new();
-        reader.for_each(|element| match element {
-            Element::Node(node) => {
-                if let Some(hit) = classify_named(node.id(), node.lat(), node.lon(), node.tags()) {
-                    batch.push(hit);
+
+        // Pass 1: collect named closed/open ways that need node centroids
+        // (tourism=zoo, amenity areas, etc. are often ways, not nodes).
+        let mut way_jobs: Vec<(i64, String, String, Vec<i64>)> = Vec::new();
+        let mut needed_nodes: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        {
+            let file = std::fs::File::open(path)?;
+            let reader = ElementReader::new(file);
+            reader.for_each(|element| {
+                let Element::Way(way) = element else {
+                    return;
+                };
+                let tags: Vec<(String, String)> = way
+                    .tags()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect();
+                let Some((_, name, kind, _, _)) = classify_named(
+                    way.id(),
+                    0.0,
+                    0.0,
+                    tags.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+                ) else {
+                    return;
+                };
+                // Skip unnamed highway geometries — those flood the index; keep
+                // amenity/tourism/place/leisure/shop and other classified POIs.
+                if kind.starts_with("highway:") {
+                    return;
+                }
+                let refs: Vec<i64> = way.refs().collect();
+                if refs.is_empty() {
+                    return;
+                }
+                for id in &refs {
+                    needed_nodes.insert(*id);
+                }
+                way_jobs.push((way.id(), name, kind, refs));
+            })?;
+        }
+
+        // Pass 2: nodes (search hits) + coords for way centroids.
+        let mut node_coords: std::collections::HashMap<i64, (f64, f64)> =
+            std::collections::HashMap::with_capacity(needed_nodes.len());
+        {
+            let file = std::fs::File::open(path)?;
+            let reader = ElementReader::new(file);
+            reader.for_each(|element| match element {
+                Element::Node(node) => {
+                    let id = node.id();
+                    let lat = node.lat();
+                    let lon = node.lon();
+                    if needed_nodes.contains(&id) {
+                        node_coords.insert(id, (lat, lon));
+                    }
+                    if let Some(hit) = classify_named(id, lat, lon, node.tags()) {
+                        batch.push(hit);
+                    }
+                }
+                Element::DenseNode(node) => {
+                    let id = node.id;
+                    let lat = node.lat();
+                    let lon = node.lon();
+                    if needed_nodes.contains(&id) {
+                        node_coords.insert(id, (lat, lon));
+                    }
+                    if let Some(hit) = classify_named(id, lat, lon, node.tags()) {
+                        batch.push(hit);
+                    }
+                }
+                _ => {}
+            })?;
+        }
+
+        for (way_id, name, kind, refs) in way_jobs {
+            let mut sum_lat = 0.0;
+            let mut sum_lon = 0.0;
+            let mut n = 0usize;
+            for id in refs {
+                if let Some((lat, lon)) = node_coords.get(&id) {
+                    sum_lat += lat;
+                    sum_lon += lon;
+                    n += 1;
                 }
             }
-            Element::DenseNode(node) => {
-                if let Some(hit) = classify_named(node.id, node.lat(), node.lon(), node.tags()) {
-                    batch.push(hit);
-                }
+            if n == 0 {
+                continue;
             }
-            _ => {}
-        })?;
+            batch.push((way_id, name, kind, sum_lat / n as f64, sum_lon / n as f64));
+        }
 
         // Official hiking/cycling route relations (name/ref/operator) for To/Via search.
-        // Uses negative osm_id space offset is unnecessary — relation ids are distinct
-        // from node ids in OSM, but we store relation id as-is (FTS rowid = osm_id).
+        // Relation ids are distinct from node ids in OSM; store relation id as-is
+        // (FTS rowid = osm_id).
         match crate::routing::graph::load_named_route_entries(path) {
             Ok(routes) => {
                 for r in routes {
@@ -133,6 +207,9 @@ impl NameIndex {
             return Ok(Vec::new());
         }
         let prefix = format!("{}*", q.replace('"', ""));
+        // Over-fetch then rank: FTS order is not ideal when many addr:* rows share
+        // a street-name prefix with a settlement (e.g. "Nordre Ott*" → Ottvegen).
+        let fetch = (limit.saturating_mul(8)).clamp(40, 200);
         let mut stmt = self.conn.prepare(
             "
             SELECT e.osm_id, e.name, e.kind, e.lat, e.lon
@@ -142,7 +219,7 @@ impl NameIndex {
             LIMIT ?2
             ",
         )?;
-        let rows = stmt.query_map(params![prefix, limit as i64], |row| {
+        let rows = stmt.query_map(params![prefix, fetch as i64], |row| {
             Ok(NameHit {
                 osm_id: row.get(0)?,
                 name: row.get(1)?,
@@ -155,6 +232,29 @@ impl NameIndex {
         for r in rows {
             out.push(r?);
         }
+        let q_lower = q.to_lowercase();
+        out.sort_by(|a, b| {
+            let score = |h: &NameHit| -> (i32, i32, usize) {
+                let name_l = h.name.to_lowercase();
+                let starts = if name_l.starts_with(&q_lower) { 0 } else { 1 };
+                let kind_rank = if h.kind.starts_with("place:") {
+                    0
+                } else if h.kind.starts_with("tourism:")
+                    || h.kind.starts_with("amenity:")
+                    || h.kind.starts_with("leisure:")
+                    || h.kind.starts_with("natural:")
+                {
+                    1
+                } else if h.kind.starts_with("addr:") {
+                    3
+                } else {
+                    2
+                };
+                (starts, kind_rank, h.name.len())
+            };
+            score(a).cmp(&score(b))
+        });
+        out.truncate(limit);
         Ok(out)
     }
 
@@ -222,9 +322,11 @@ fn classify_named<'a>(
             "addr:housenumber" => addr_housenumber = Some(v.to_string()),
             "place" => kind = format!("place:{v}"),
             "tourism" => kind = format!("tourism:{v}"),
+            "leisure" => kind = format!("leisure:{v}"),
             "natural" if v == "peak" => kind = "natural:peak".into(),
             "highway" => kind = format!("highway:{v}"),
             "amenity" => kind = format!("amenity:{v}"),
+            "shop" => kind = format!("shop:{v}"),
             _ => {}
         }
     }

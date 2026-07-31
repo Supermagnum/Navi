@@ -69,9 +69,11 @@ class PmtilesPauseResumeInstrumentedTest {
     private fun shell(cmd: String): String {
         val pfd =
             InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(cmd)
-        return java.io.FileInputStream(pfd.fileDescriptor).use { input ->
-            input.readBytes().toString(Charsets.UTF_8)
-        }.also { pfd.close() }
+        return java.io
+            .FileInputStream(pfd.fileDescriptor)
+            .use { input ->
+                input.readBytes().toString(Charsets.UTF_8)
+            }.also { pfd.close() }
     }
 
     private fun localPausedMarker(): File = File(dataDir, "navi_paused_pmtiles_job.txt")
@@ -393,7 +395,8 @@ class PmtilesPauseResumeInstrumentedTest {
     fun render_offline_and_online_after_pmtiles() {
         // Prefer existing completed Oslo extract; otherwise download once.
         val covering =
-            uniffi.navi.pmtilesListCovering(dataDir.absolutePath, OSLO_LAT, OSLO_LON)
+            uniffi.navi
+                .pmtilesListCovering(dataDir.absolutePath, OSLO_LAT, OSLO_LON)
                 .firstOrNull { it.status == "completed" && File(it.localPath).length() > 1000 }
         if (covering == null) {
             cleanOsloBasemapArtifacts()

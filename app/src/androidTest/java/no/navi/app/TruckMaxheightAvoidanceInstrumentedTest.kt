@@ -171,7 +171,10 @@ class TruckMaxheightAvoidanceInstrumentedTest {
                 "dumpsys location",
             )
         val text =
-            java.io.FileInputStream(pfd.fileDescriptor).bufferedReader().use { it.readText() }
+            java.io
+                .FileInputStream(pfd.fileDescriptor)
+                .bufferedReader()
+                .use { it.readText() }
         pfd.close()
         val gps =
             Regex("""Location\[gps ([+-]?\d+\.\d+),([+-]?\d+\.\d+)""")
@@ -219,7 +222,10 @@ class TruckMaxheightAvoidanceInstrumentedTest {
         }
     }
 
-    private fun routeNearRestricted(poly: String, thresholdM: Double = 25.0): Boolean {
+    private fun routeNearRestricted(
+        poly: String,
+        thresholdM: Double = 25.0,
+    ): Boolean {
         val pts = decodePolyline(poly)
         if (pts.isEmpty()) return false
         for ((rlat, rlon) in restrictedSamples) {

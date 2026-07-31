@@ -27,7 +27,8 @@ use driver_break_core::routing::safety::{
 };
 use driver_break_core::routing::workers::WorkerPoolPlan;
 use driver_break_core::routing::{
-    build_maneuvers, build_sim_samples, maneuvers_to_json, samples_to_json,
+    build_maneuvers, build_sim_samples, build_sim_samples_from_lat_lon, maneuvers_to_json,
+    samples_to_json,
 };
 use driver_break_core::routing::{
     commit_truck_multi_day_plan, evaluate_fmcsa_trip, evaluate_truck_trip,
@@ -2257,6 +2258,17 @@ pub fn plan_hiking_route(
     }
     report.push_str("PASS\n");
 
+    // Prefer graph densification; fall back to hiking-pace samples on the overlay
+    // polyline so staged / coarse geometry still drives debug simulation.
+    let mut sim_samples = build_sim_samples(&graph, &full_path);
+    if sim_samples.len() < 2 {
+        let hike_speed_kmh = 60.0 / HIKING_MIN_PER_KM;
+        sim_samples = build_sim_samples_from_lat_lon(&hike_coords, hike_speed_kmh, Some("path"));
+    }
+    let sim_samples_json = samples_to_json(&sim_samples);
+    let maneuvers_json = maneuvers_to_json(&build_maneuvers(&graph, &full_path));
+    report.push_str(&format!("sim_samples={}\n", sim_samples.len()));
+
     CorridorRouteResult {
         report,
         distance_km: dist_km,
@@ -2271,8 +2283,8 @@ pub fn plan_hiking_route(
         poi_icon_key: String::from("cabin"),
         break_pois_json,
         days_json,
-        sim_samples_json: String::from("[]"),
-        maneuvers_json: String::from("[]"),
+        sim_samples_json,
+        maneuvers_json,
         priority_path_share_pct,
     }
 }

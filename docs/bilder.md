@@ -2,47 +2,80 @@
 
 **[English pictures gallery](pictures.md)** · **[Norsk README](../Norwegian.md)**
 
-Emulatorskjermbilder for Navi (MapLibre + OpenFreeMap liberty på Android
-Automotive).
+Skjermbilder for Navi. **Bare ekte maskinvare** (Samsung Galaxy Tab S6 Lite
+SM-P613). Ikke bruk emulator for galleriopptak.
+
+Rute-/posisjonsscener bruker innbakt **rutesimulator** (rød **SIMULATING**-fane)
+langs en **ekte planleggingskjøring**. Galleri­rammer skal **ikke** avsløre
+testerens live GPS-posisjon.
+
+Koordinater ble tastet inn i Rute-søkefeltet som `lat, lon`.
 
 ## GitHub-tillatelsesliste (plass)
 
 **Bare** filene listet nedenfor kan committes under `docs/images/`.
-Ekstra instrumenterte testopptak blir på enheten / lokal disk og skal ikke
-legges til i depotet.
+Ekstra instrumenterte testopptak blir på enheten / lokal disk.
 
-Bruk **ikke** syntetiske (håndtegnede / 2-punkts stubb) ruter i tester eller i
-skjermbilder som dokumenterer ruting — korridorgeometri må komme fra en ekte
-planleggingskjøring (vert `raufoss_approach_route`, in-app korridorpipeline,
-osv.).
+Bruk **ikke** syntetiske (håndtegnede / 2-punkts stubb) ruter.
 
-Idle HUD-linjer og Helgøya → Atnbrua-ruteopptaket ligger bare i
-[Norwegian README](../Norwegian.md#fungerende-app-emulatorskjermbilder) /
-[engelsk README](../README.md#working-app-emulator-screenshots)
+Idle HUD og Skolla → Rondvassbu-oversikt også i
+[Norwegian README](../Norwegian.md) / [engelsk README](../README.md)
 (`docs/images/hud/hud_idle_both_bars.png`,
 `docs/images/terrain/hike_eldabu_ramshogda_3d.png`).
-Karttilt ved 45° (3D av / 3D på) vises også der
-(`docs/images/tilt45_3d_off.png`, `docs/images/tilt45_3d_on.png`).
-Nåværende gate UTF-8-bevis:
-`docs/images/hud/hud_current_street_mjosevegen.png` (ø),
-`hud_current_street_trollaas.png` (å),
+45° tilt (Løten-løkke): `tilt45_3d_off.png`, `tilt45_3d_on.png`.
+GPS follow / Recenter (alle med **SIMULATING**): `follow_gps/01` … `06`.
+Nåværende gate UTF-8:
+`hud_current_street_mjosevegen.png` (ø), `hud_current_street_trollaas.png` (å),
 `hud_current_street_aevongsli.png` (Æ).
 
-## Kart / ruting
+Opptakssele: `GalleryDocsKeyboardCaptureTest` (SM-P613). Hent:
+`adb pull /data/local/tmp/navi_gallery_docs/ docs/images/`.
+
+POI online/frakoblet-par under `docs/images/`:
+`poi_jutulhogget.png` / `poi_jutulhogget_offline.png`,
+`poi_galdhopiggen_3d.png` / `poi_galdhopiggen_online.png`,
+`poi_elgpiggen.png` / `poi_elgpiggen_online.png`,
+`poi_prekestolen.png` / `poi_prekestolen_offline.png`.
+
+## Kart / ruting (dokumenterte korridorer)
+
+Ruteoverlegg tatt på **SM-P613** med **SIMULATING** der posisjonsmarkør vises.
+Ruteplanlegger-chrome er lukket for karttunge bilder (Løten-løkke, Espa,
+fot / elsykkel) slik at korridoren synes.
 
 | Scene | Forhåndsvisning |
 |---|---|
-| Prekestolen basecamp, POI synlige. | ![Prekestolen POI](images/zoom_z16.png) |
-| Helgøya → Atnbrua (øko + 3D på, pauser synlige) | ![Ruteoverlegg](images/route_map.png) |
-| Rute fra Gjendebu til Thonvollen, 3D-kart. | ![Gjendebu til Thonvollen 3D](images/gjendebu_thonvollen_3d.png) |
-| Gjendebu til Thonvollen, flatt kart. | ![Gjendebu til Thonvollen flat](images/gjendebu_thonvollen_flat.png) |
-| Finstad → Søndre Ommang → Ådalsbruk motormuseum, 45° tilt, 3D av | ![45° tilt 3D av](images/tilt45_3d_off.png) |
-| Finstad → Søndre Ommang → Ådalsbruk motormuseum, 45° tilt, 3D på | ![45° tilt 3D på](images/tilt45_3d_on.png) |
+| Espa → Atnbrufossen (øko / hovedkorridor), SIMULATING | ![Espa–Atnbrufossen](images/route_espa_atnbrufossen.png) |
+| Åkersætra → Jammerdalsbu → Rondvassbu (DNT-fot), SIMULATING | ![Fotkorridor](images/route_akersaetra_rondvassbu_hiking.png) |
+| Ringebu / Venabygdsfjellet (elsykkel-stigning), SIMULATING | ![Elsykkel](images/route_venabygdsfjellet_ebike.png) |
+| Ådalsbruk / Løten-løkke (simulator + svinginstruks), SIMULATING | ![Løten](images/route_adalsbruk_loten_loop.png) |
+| Samme Løten-løkke (eldre `route_map.png`-plass) | ![Ruteoverlegg](images/route_map.png) |
+| Finnstad → Søndre Ommang → Rosenlund, 3D på, SIMULATING | ![Rute 3D](images/finnstad_sondre_ommang_3d.png) |
+| Finnstad → Søndre Ommang → Rosenlund, flatt, SIMULATING | ![Rute flat](images/finnstad_sondre_ommang_flat.png) |
+| 45° tilt, 3D av, SIMULATING (Løten) | ![45° tilt 3D av](images/tilt45_3d_off.png) |
+| 45° tilt, 3D på, SIMULATING (Løten) | ![45° tilt 3D på](images/tilt45_3d_on.png) |
 
-Kun tilt/3D-demoer. Eldre galleri-PNG-er kan vise blå hydro soft-edge fringe;
-det er en
-[skjermbilde-fangstartefakt](map-styles.md#hydro-soft-edge-fringe-screenshot-artifact),
-ikke det brukere ser live (bekreftet på Automotive-emulatoren).
+## Enkeltpunkter (tastatur fly-til)
+
+Statiske kartrammer etter at WGS84-koordinater er tastet inn i Rute-søk
+(ingen live GPS-følg; Rute-chrome lukket før screencap). Opt-in 3D med **45°**
+kameratilt og Mapterhorn-hillshade der det finnes.
+
+Hvert landemerke har **online** (Liberty + fjern-DEM) og **frakoblet**
+(Ostlandet Protomaps PMTiles + lokal DEM) når punktet ligger inne i installert
+extract. Preikestolen ligger utenfor Ostlandet-dekning: frakoblet preferanse
+faller tilbake til Liberty 3D (dokumentert fallback-rad).
+
+| Scene | Forhåndsvisning |
+|---|---|
+| Jutulhogget canyon, online 3D | ![Jutulhogget online](images/poi_jutulhogget.png) |
+| Jutulhogget canyon, frakoblet Protomaps 3D | ![Jutulhogget offline](images/poi_jutulhogget_offline.png) |
+| Galdhøpiggen, frakoblet Protomaps 3D | ![Galdhøpiggen](images/poi_galdhopiggen_3d.png) |
+| Galdhøpiggen, online 3D | ![Galdhøpiggen online](images/poi_galdhopiggen_online.png) |
+| Elgpiggen, frakoblet Protomaps 3D | ![Elgpiggen](images/poi_elgpiggen.png) |
+| Elgpiggen, online 3D | ![Elgpiggen online](images/poi_elgpiggen_online.png) |
+| Preikestolen, online 3D | ![Preikestolen](images/poi_prekestolen.png) |
+| Preikestolen med frakoblet preferanse (ingen Ostlandet-PMTiles → Liberty 3D-fallback) | ![Preikestolen offline](images/poi_prekestolen_offline.png) |
 
 ## Nåværende gate (bunn-HUD)
 
@@ -52,18 +85,6 @@ ikke det brukere ser live (bekreftet på Automotive-emulatoren).
 | Currently on Trollåsveien (å) | ![Trollåsveien](images/hud/hud_current_street_trollaas.png) |
 | Currently on Ævongsli (Æ) | ![Ævongsli](images/hud/hud_current_street_aevongsli.png) |
 
-Foretrekk `images/terrain/` og nyere HUD-opptak når du sammenligner rutevisual.
-Eldre `route_map.png`-kopier var ~57 % MapLibre tom bakgrunn (`#f8f4f0`) fordi
-fliser aldri lastet — det er «beige utdatert»-feilmodusen. Regenererte opptak
-(tillatelsesliste) viser Liberty/Protomaps-fliser pluss start-/sluttetiketter.
-Bleik landfylling i Liberty/Protomaps light-stiler er normalt og er ikke det
-samme som tomt-kart-beige.
-
-Start- / via- / slutt**stedsnavn** tegnes som Compose-kartoverlegg (og et
-MapLibre waypoints-lag). Skjermbildeteser setter
-`NaviMapTestHooks.routeStartLabel` / `routeEndLabel` fordi søkekrom ofte er
-skjult med `hideSearchChrome=true`.
-
 ## Bevegelige ikoner (APRS-stil)
 
 | Scene | Forhåndsvisning |
@@ -72,15 +93,34 @@ skjult med `hideSearchChrome=true`.
 | Etter flytting | ![Bevegelse etter](images/navi_moving_after.png) |
 | Etter flytting (2) | ![Bevegelse etter 2](images/navi_moving_after2.png) |
 
-## Frakoblet PMTiles-grunnkart / 3D
+## GPS follow / Recenter / rotasjon
 
-Dokumentasjon for [`map-styles.md`](map-styles.md). Tatt med
-`BasemapPmtilesScreenshotTest` på Automotive-emulatoren (type + terrengfeste +
-kamera logget). Kjøre-HUD synlig (`hideUiChrome=false`).
+Alle med **SIMULATING** på Løten-løkka (ikke live GPS).
+
+| Scene | Forhåndsvisning |
+|---|---|
+| Simulering med GPS-følg | ![Følg](images/follow_gps/01_simulating_follow.png) |
+| Etter pan | ![Pan](images/follow_gps/02_after_pan.png) |
+| Etter Recenter | ![Recenter](images/follow_gps/05_after_recenter.png) |
+| Rotasjonsmoduser OK | ![Rotasjon](images/follow_gps/06_rotation_modes_ok.png) |
+
+## Frakoblet PMTiles-grunnkart / 3D
 
 | Scene | Forhåndsvisning |
 |---|---|
 | Frakoblet Protomaps (Kløfta, 3D av) | ![Frakoblet Protomaps](images/basemap/basemap_offline_protomaps.png) |
 | Dekningsgrense → live Liberty (Tromsø) | ![Grense Liberty](images/basemap/basemap_coverage_boundary_tromso.png) |
-| Online 3D (Mapterhorn DEM hillshade, Gjendebu, Jotunheimen) | ![3D hillshade](images/basemap/basemap_3d_mapterhorn_hillshade.png) |
-| Flatt kart, Gjendebu, Jotunheimen | ![Flatt kart](images/basemap/basemap_3d_fallback_liberty.png) |
+| Online 3D (Mapterhorn DEM hillshade, Gjendebu) | ![3D hillshade](images/basemap/basemap_3d_mapterhorn_hillshade.png) |
+| Flatt kart, Gjendebu | ![Flatt kart](images/basemap/basemap_3d_fallback_liberty.png) |
+
+## Flerdagers dagkort
+
+Oppdatert på **SM-P613**. Fot-kort fra tastaturplan Åkersætra → Jammerdalsbu →
+Rondvassbu (`GalleryDocsKeyboardCaptureTest`). Lastebil-kort fra tastaturplan
+Espa → Atnbrufossen med stram daglig kjøretid slik at planleggeren emitterer
+ekte `daysJson`-kort (ikke live-GPS Bodø — personvern).
+
+| Scene | Forhåndsvisning |
+|---|---|
+| Lastebil flerdagers dagkort (Espa → Atnbrufossen, ferdig plan) | ![Lastebil dagkort](images/multi_day_day_cards.png) |
+| Fot flerdagers dagkort (Åkersætra → Rondvassbu) | ![Fot dagkort](images/multi_day_day_cards_hiking.png) |

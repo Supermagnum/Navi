@@ -41,6 +41,40 @@ fn main() {
         root.join("skolla_rondvassbu.breaks.json"),
         &r.break_pois_json,
     );
+    let samples = if r.sim_samples_json.len() > 2 {
+        r.sim_samples_json.clone()
+    } else {
+        // Staged overlay polyline densified at hiking pace when planner returned none.
+        densify_overlay_sim_samples(&r.route_polyline)
+    };
+    let _ = std::fs::write(root.join("skolla_rondvassbu.sim_samples.json"), &samples);
     eprintln!("distance_km={}", r.distance_km);
     eprintln!("breaks={}", r.break_pois_json);
+    eprintln!("sim_samples_bytes={}", samples.len());
+}
+
+fn densify_overlay_sim_samples(polyline: &str) -> String {
+    use driver_break_core::routing::{
+        build_sim_samples_from_lat_lon, samples_to_json, HIKING_MIN_PER_KM,
+    };
+    let mut coords: Vec<(f64, f64)> = Vec::new();
+    for part in polyline.split(';') {
+        let mut it = part.split(',');
+        let (Some(lon_s), Some(lat_s)) = (it.next(), it.next()) else {
+            continue;
+        };
+        let Ok(lon) = lon_s.trim().parse::<f64>() else {
+            continue;
+        };
+        let Ok(lat) = lat_s.trim().parse::<f64>() else {
+            continue;
+        };
+        coords.push((lat, lon));
+    }
+    let speed = 60.0 / HIKING_MIN_PER_KM;
+    samples_to_json(&build_sim_samples_from_lat_lon(
+        &coords,
+        speed,
+        Some("path"),
+    ))
 }

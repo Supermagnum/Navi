@@ -244,13 +244,12 @@ object LocalDemTileServer {
                         runCatching { rawTerrariumPngTile(terrarium) }
                     } else {
                         runCatching { terrariumWebpToMapboxPng(terrarium) }
+                    }.getOrElse {
+                        Log.w(TAG, "convert failed z=$z x=$x y=$y: ${it.message}")
+                        hitsMiss++
+                        writeResponse(out, 500, "text/plain", "convert failed".toByteArray())
+                        return
                     }
-                        .getOrElse {
-                            Log.w(TAG, "convert failed z=$z x=$x y=$y: ${it.message}")
-                            hitsMiss++
-                            writeResponse(out, 500, "text/plain", "convert failed".toByteArray())
-                            return
-                        }
                 synchronized(tileCache) {
                     if (tileCache.size >= CACHE_MAX) {
                         tileCache.keys.firstOrNull()?.let { tileCache.remove(it) }
@@ -277,7 +276,7 @@ object LocalDemTileServer {
                     Log.i(
                         TAG,
                         "tile ok z=$z x=$x y=$y bytes=${converted.bytes.size} " +
-                            "elevMin=${lastElevMin} elevMax=${lastElevMax} " +
+                            "elevMin=$lastElevMin elevMax=$lastElevMax " +
                             "hitsOk=$hitsOk hitsMiss=$hitsMiss",
                     )
                 }

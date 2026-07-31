@@ -10,10 +10,10 @@ APKs.
 |---|---|
 | **Rust** (rustup) | Stable toolchain |
 | Android targets | `rustup target add x86_64-linux-android aarch64-linux-android` |
-| **Android SDK** | API **35** (`compileSdk` / `targetSdk`); `minSdk` **26** |
+| **Android SDK** | API **36** (`compileSdk` / `targetSdk`); `minSdk` **26** |
 | **Android NDK** | LLVM toolchain (example in-tree: NDK **27.3.x**) |
 | **JDK 17** | For Gradle / Kotlin |
-| **Gradle wrapper** | `./gradlew` at repo root (Gradle **8.11.1**; see below) |
+| **Gradle wrapper** | `./gradlew` at repo root (Gradle **8.11.1**; AGP **8.9.1**) |
 
 Per-PR CI validates `gradle/wrapper/gradle-wrapper.jar` against the checksum list
 shipped with [`gradle/actions/setup-gradle`](https://github.com/gradle/actions).
@@ -109,14 +109,26 @@ Debug APK path (typical):
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Release:
+# Release:
 
 ```text
-app/build/outputs/apk/release/app-release-unsigned.apk
+app/build/outputs/apk/release/app-release.apk
+app/build/outputs/bundle/release/app-release.aab
 ```
 
-Signing a release for distribution is not configured in-repo yet — use your own
-keystore / Play App Signing flow before shipping.
+Signed release AAB (local upload keystore for smoke tests):
+
+```bash
+./scripts/make-upload-keystore.sh
+./gradlew :app:bundleRelease
+```
+
+See [`android-api36-plan.md`](android-api36-plan.md) for API 36 / Play AAB notes.
+F-Droid Podman buildability: [`tools/fdroid-check/README.md`](../tools/fdroid-check/README.md).
+
+Signing a **production** Play release uses your Play App Signing / upload key —
+the gitignored `app/keystore/navi-upload.jks` is for local `bundletool` checks
+only.
 
 Install a built APK with adb:
 

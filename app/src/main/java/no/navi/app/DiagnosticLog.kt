@@ -207,11 +207,9 @@ object DiagnosticLog {
 
     fun currentSessionFile(): File? = sessionFile.get()
 
-    fun listSessionFiles(context: Context): List<File> =
-        listSessionFilesIn(resolveLogsDir(context))
+    fun listSessionFiles(context: Context): List<File> = listSessionFilesIn(resolveLogsDir(context))
 
-    fun listSessionFiles(filesDir: File): List<File> =
-        listSessionFilesIn(logsDirectory(filesDir))
+    fun listSessionFiles(filesDir: File): List<File> = listSessionFilesIn(logsDirectory(filesDir))
 
     private fun listSessionFilesIn(dir: File): List<File> =
         dir

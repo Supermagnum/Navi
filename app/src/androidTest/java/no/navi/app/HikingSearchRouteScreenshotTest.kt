@@ -38,6 +38,9 @@ class HikingSearchRouteScreenshotTest {
             check(File(staged, "place_index_search_check.db").isFile)
             check(File(staged, "skolla_rondvassbu.polyline.txt").isFile)
             check(File(staged, "skolla_rondvassbu.breaks.json").isFile)
+            check(File(staged, "skolla_rondvassbu.sim_samples.json").isFile) {
+                "push densified skolla_rondvassbu.sim_samples.json for SIMULATING"
+            }
             val context = InstrumentationRegistry.getInstrumentation().targetContext
             val dataDir = NaviAppData.resolve(context)
             OstlandetOfflineFixtures.ensureInstalled(dataDir)
@@ -237,6 +240,9 @@ class HikingSearchRouteScreenshotTest {
     private fun injectStagedRoute() {
         val poly = File("/data/local/tmp/navi_fixtures/skolla_rondvassbu.polyline.txt").readText().trim()
         val breaks = File("/data/local/tmp/navi_fixtures/skolla_rondvassbu.breaks.json").readText().trim()
+        val simSamples =
+            File("/data/local/tmp/navi_fixtures/skolla_rondvassbu.sim_samples.json").readText().trim()
+        check(simSamples.length > 100) { "missing densified sim samples" }
         NaviMapTestHooks.routeStartLabel = "Skolla"
         NaviMapTestHooks.routeEndLabel = "Rondvassbu"
         NaviMapTestHooks.routeViaLabel = "Harlandshytta, Eldåbu"
@@ -256,7 +262,7 @@ class HikingSearchRouteScreenshotTest {
                 poiIconKey = "cabin",
                 breakPoisJson = breaks,
                 daysJson = "[]",
-                simSamplesJson = "[]",
+                simSamplesJson = simSamples,
                 maneuversJson = "[]",
                 priorityPathSharePct = 0.0,
             )

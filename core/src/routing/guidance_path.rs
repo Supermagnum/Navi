@@ -138,6 +138,65 @@ fn interpolate(lat0: f64, lon0: f64, lat1: f64, lon1: f64, t: f64) -> (f64, f64)
 }
 
 /// Densify the A* node path into speed-tagged samples for debug playback.
+/// Densify a lat/lon polyline into simulation samples at [SAMPLE_STEP_M] spacing.
+///
+/// Used for staged overlay polylines (no graph edges) and hiking fixtures that
+/// only ship a simplified corridor polyline.
+pub fn build_sim_samples_from_lat_lon(
+    coords_lat_lon: &[(f64, f64)],
+    speed_kmh: f64,
+    highway: Option<&str>,
+) -> Vec<SimSample> {
+    let speed = speed_kmh.max(1.0);
+    let hwy = highway.map(|s| s.to_string());
+    let mut out = Vec::new();
+    if coords_lat_lon.len() < 2 {
+        return out;
+    }
+    let mut seg_lens = Vec::with_capacity(coords_lat_lon.len() - 1);
+    let mut total = 0.0;
+    for w in coords_lat_lon.windows(2) {
+        let d = haversine_m_local(w[0].0, w[0].1, w[1].0, w[1].1);
+        seg_lens.push(d);
+        total += d;
+    }
+    if total < 1.0 {
+        let (lat, lon) = coords_lat_lon[0];
+        out.push(SimSample {
+            lat,
+            lon,
+            cum_m: 0.0,
+            speed_kmh: speed,
+            highway: hwy.clone(),
+            maxspeed_posted: false,
+            street: None,
+        });
+        return out;
+    }
+    let steps = ((total / SAMPLE_STEP_M).ceil() as usize).max(1);
+    for s in 0..=steps {
+        let along = (total * (s as f64 / steps as f64)).min(total);
+        let (lat, lon) = point_along_verts(coords_lat_lon, &seg_lens, along);
+        if out
+            .last()
+            .map(|p| (p.cum_m - along).abs() < 0.5)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        out.push(SimSample {
+            lat,
+            lon,
+            cum_m: along,
+            speed_kmh: speed,
+            highway: hwy.clone(),
+            maxspeed_posted: false,
+            street: None,
+        });
+    }
+    out
+}
+
 pub fn build_sim_samples(graph: &RouteGraph, path: &[NodeId]) -> Vec<SimSample> {
     let mut out = Vec::new();
     if path.len() < 2 {
@@ -502,5 +561,20 @@ mod tests {
         let json = samples_to_json(&samples);
         assert!(json.contains("Mjøsvegen"), "json lost ø: {json}");
         assert_eq!(samples[0].street.as_deref(), Some("Mjøsvegen"));
+    }
+
+    #[test]
+    fn densify_lat_lon_polyline_has_spacing_and_cum() {
+        let coords = vec![(60.0, 11.0), (60.0, 11.01), (60.01, 11.01)];
+        let samples = build_sim_samples_from_lat_lon(&coords, 3.75, Some("path"));
+        assert!(
+            samples.len() > 10,
+            "expected densified samples, got {}",
+            samples.len()
+        );
+        assert!((samples[0].cum_m - 0.0).abs() < 1e-6);
+        assert!(samples.last().unwrap().cum_m > 1_000.0);
+        assert!((samples[0].speed_kmh - 3.75).abs() < 1e-9);
+        assert_eq!(samples[0].highway.as_deref(), Some("path"));
     }
 }
