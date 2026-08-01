@@ -33,6 +33,74 @@ fn main() {
     if !r.report.contains("PASS") {
         std::process::exit(1);
     }
+    // Rast-hut auto-vias: expect at least one named hut promoted on this corridor.
+    if !r.report.contains("auto_vias=") {
+        eprintln!("FAIL: missing auto_vias= in report");
+        std::process::exit(1);
+    }
+    if r.report.contains("auto_vias=0") {
+        eprintln!("WARN: auto_vias=0 (unexpected on Skolla→Rondvassbu with hut-rich extract)");
+    } else {
+        eprintln!("auto_vias_ok=true");
+        // Path should pass near each accepted auto-via hut listed in breaks.
+        if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&r.break_pois_json) {
+            let names_line = r
+                .report
+                .lines()
+                .find(|l| l.starts_with("auto_vias="))
+                .unwrap_or("");
+            let Some(names_part) = names_line.split("names=").nth(1) else {
+                eprintln!("FAIL: auto_vias line missing names=");
+                std::process::exit(1);
+            };
+            for name in names_part.split('|') {
+                let name = name.trim();
+                if name.is_empty() {
+                    continue;
+                }
+                let hut = arr.iter().find(|s| {
+                    s["name"]
+                        .as_str()
+                        .map(|n| n.eq_ignore_ascii_case(name))
+                        .unwrap_or(false)
+                });
+                let Some(h) = hut else {
+                    eprintln!("WARN: auto-via {name} not in break_pois_json");
+                    continue;
+                };
+                let hut_lat = h["lat"].as_f64().unwrap_or(0.0);
+                let hut_lon = h["lon"].as_f64().unwrap_or(0.0);
+                let mut best = f64::INFINITY;
+                for part in r.route_polyline.split(';') {
+                    let mut it = part.split(',');
+                    let (Some(lon_s), Some(lat_s)) = (it.next(), it.next()) else {
+                        continue;
+                    };
+                    let Ok(lon) = lon_s.trim().parse::<f64>() else {
+                        continue;
+                    };
+                    let Ok(lat) = lat_s.trim().parse::<f64>() else {
+                        continue;
+                    };
+                    let d = haversine_m(hut_lat, hut_lon, lat, lon);
+                    if d < best {
+                        best = d;
+                    }
+                }
+                eprintln!("auto_via_path_nearest_m name={name} m={best:.0}");
+                if best > 1_200.0 {
+                    eprintln!("FAIL: auto-via {name} accepted but path stays {best:.0} m away");
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+    // Veslefjellbua appears on some device extracts / basemap labels; optional soft check.
+    if r.break_pois_json.to_lowercase().contains("veslefjell")
+        || r.report.to_lowercase().contains("veslefjell")
+    {
+        eprintln!("veslefjellbua_ok=true");
+    }
     let _ = std::fs::write(
         root.join("skolla_rondvassbu.polyline.txt"),
         &r.route_polyline,
@@ -51,6 +119,15 @@ fn main() {
     eprintln!("distance_km={}", r.distance_km);
     eprintln!("breaks={}", r.break_pois_json);
     eprintln!("sim_samples_bytes={}", samples.len());
+}
+
+fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    let r = 6_378_100.0;
+    let dlat = (lat2 - lat1).to_radians();
+    let dlon = (lon2 - lon1).to_radians();
+    let a = (dlat / 2.0).sin().powi(2)
+        + lat1.to_radians().cos() * lat2.to_radians().cos() * (dlon / 2.0).sin().powi(2);
+    2.0 * r * a.sqrt().asin()
 }
 
 fn densify_overlay_sim_samples(polyline: &str) -> String {

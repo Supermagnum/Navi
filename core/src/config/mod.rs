@@ -6,6 +6,7 @@ mod ebike;
 mod eco;
 mod ev_car;
 mod fmcsa_params;
+mod poi_radii;
 mod rest_params;
 mod safety;
 mod truck_history;
@@ -19,6 +20,7 @@ pub use ebike::{
 pub use eco::EcoConfig;
 pub use ev_car::{default_ev_car_motor_efficiency, ev_car_range_estimate, EvCarConfig};
 pub use fmcsa_params::FmcsaHosParams;
+pub use poi_radii::{ProfilePoiRadii, ProfilePoiRadiiTable};
 pub use rest_params::{
     CarRestParams, CyclingRestParams, HikingRestParams, ProfileRestParams, RestConfig,
     TruckRestParams,

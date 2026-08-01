@@ -888,6 +888,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -971,6 +975,8 @@ fun uniffi_navi_checksum_func_load_fuel_config(
 ): Short
 fun uniffi_navi_checksum_func_load_prefer_official_networks(
 ): Short
+fun uniffi_navi_checksum_func_load_profile_poi_radii(
+): Short
 fun uniffi_navi_checksum_func_load_truck_rest_settings(
 ): Short
 fun uniffi_navi_checksum_func_load_vehicle_limits(
@@ -1044,6 +1050,8 @@ fun uniffi_navi_checksum_func_save_fuel_config(
 fun uniffi_navi_checksum_func_save_named_route(
 ): Short
 fun uniffi_navi_checksum_func_save_prefer_official_networks(
+): Short
+fun uniffi_navi_checksum_func_save_profile_poi_radii(
 ): Short
 fun uniffi_navi_checksum_func_save_truck_rest_settings(
 ): Short
@@ -1214,6 +1222,8 @@ fun uniffi_navi_fn_func_load_fuel_config(`dataDir`: RustBuffer.ByValue,uniffi_ou
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_prefer_official_networks(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_load_profile_poi_radii(`dataDir`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_truck_rest_settings(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_vehicle_limits(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1287,6 +1297,8 @@ fun uniffi_navi_fn_func_save_fuel_config(`dataDir`: RustBuffer.ByValue,`config`:
 fun uniffi_navi_fn_func_save_named_route(`dataDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`startName`: RustBuffer.ByValue,`endLat`: Double,`endLon`: Double,`endName`: RustBuffer.ByValue,`viaJson`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`summaryJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_save_prefer_official_networks(`dataDir`: RustBuffer.ByValue,`prefer`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_navi_fn_func_save_profile_poi_radii(`dataDir`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_save_truck_rest_settings(`dataDir`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
@@ -1532,6 +1544,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_load_prefer_official_networks() != 40384.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_load_profile_poi_radii() != 23658.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_load_truck_rest_settings() != 11002.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1553,7 +1568,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_plan_car_route() != 63162.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_plan_hiking_route() != 37044.toShort()) {
+    if (lib.uniffi_navi_checksum_func_plan_hiking_route() != 34841.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_pmtiles_cancel_job() != 53964.toShort()) {
@@ -1641,6 +1656,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_save_prefer_official_networks() != 11384.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_save_profile_poi_radii() != 26840.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_save_truck_rest_settings() != 32221.toShort()) {
@@ -2805,6 +2823,56 @@ public object FfiConverterTypeFfiPmtilesJob: FfiConverterRustBuffer<FfiPmtilesJo
 
 
 
+/**
+ * Per-profile POI search radii (metres) and road-link policy.
+ */
+data class FfiProfilePoiRadii (
+    var `searchRadiusM`: kotlin.Double, 
+    var `cabinRadiusM`: kotlin.Double, 
+    var `networkHutRadiusM`: kotlin.Double, 
+    var `networkHutPreferenceRadiusM`: kotlin.Double, 
+    /**
+     * When true, pause / overnight POIs must be linked to the road network.
+     */
+    var `requireRoadLink`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiProfilePoiRadii: FfiConverterRustBuffer<FfiProfilePoiRadii> {
+    override fun read(buf: ByteBuffer): FfiProfilePoiRadii {
+        return FfiProfilePoiRadii(
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiProfilePoiRadii) = (
+            FfiConverterDouble.allocationSize(value.`searchRadiusM`) +
+            FfiConverterDouble.allocationSize(value.`cabinRadiusM`) +
+            FfiConverterDouble.allocationSize(value.`networkHutRadiusM`) +
+            FfiConverterDouble.allocationSize(value.`networkHutPreferenceRadiusM`) +
+            FfiConverterBoolean.allocationSize(value.`requireRoadLink`)
+    )
+
+    override fun write(value: FfiProfilePoiRadii, buf: ByteBuffer) {
+            FfiConverterDouble.write(value.`searchRadiusM`, buf)
+            FfiConverterDouble.write(value.`cabinRadiusM`, buf)
+            FfiConverterDouble.write(value.`networkHutRadiusM`, buf)
+            FfiConverterDouble.write(value.`networkHutPreferenceRadiusM`, buf)
+            FfiConverterBoolean.write(value.`requireRoadLink`, buf)
+    }
+}
+
+
+
 data class FfiSavedRoute (
     var `id`: kotlin.String, 
     var `startName`: kotlin.String, 
@@ -3932,6 +4000,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     )
     }
     
+
+        /**
+         * Load POI search radii for the active travel profile (persisted per profile).
+         */ fun `loadProfilePoiRadii`(`dataDir`: kotlin.String, `profile`: TravelProfile): FfiProfilePoiRadii {
+            return FfiConverterTypeFfiProfilePoiRadii.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_load_profile_poi_radii(
+        FfiConverterString.lower(`dataDir`),FfiConverterTypeTravelProfile.lower(`profile`),_status)
+}
+    )
+    }
+    
  fun `loadTruckRestSettings`(`dataDir`: kotlin.String): FfiTruckRestSettings {
             return FfiConverterTypeFfiTruckRestSettings.lift(
     uniffiRustCall() { _status ->
@@ -4012,8 +4092,10 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
          * Plan a hiking (foot) route through ordered waypoints.
          *
          * `waypoints_json` is `[{"name","lat","lon"}, ...]` with at least two points
-         * (start … vias … end). Pause stops prefer huts/cabins; otherwise camp pitches
-         * or a synthetic corridor tent (never mountain peak names).
+         * (start … vias … end). After a draft corridor, named rast-interval huts near
+         * the path (same filters as pause pins) are promoted to vias and the path is
+         * replanned once when the detour stays small. Pause stops prefer huts/cabins;
+         * otherwise camp pitches or a synthetic corridor tent (never mountain peak names).
          */ fun `planHikingRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `waypointsJson`: kotlin.String, `preferOfficialNetworks`: kotlin.Boolean): CorridorRouteResult {
             return FfiConverterTypeCorridorRouteResult.lift(
     uniffiRustCall() { _status ->
@@ -4334,6 +4416,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_save_prefer_official_networks(
         FfiConverterString.lower(`dataDir`),FfiConverterBoolean.lower(`prefer`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Save POI search radii for the active travel profile.
+         */ fun `saveProfilePoiRadii`(`dataDir`: kotlin.String, `profile`: TravelProfile, `settings`: FfiProfilePoiRadii): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_save_profile_poi_radii(
+        FfiConverterString.lower(`dataDir`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterTypeFfiProfilePoiRadii.lower(`settings`),_status)
 }
     )
     }

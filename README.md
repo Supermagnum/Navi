@@ -93,7 +93,7 @@ yet ([`docs/plugins.md`](docs/plugins.md)).
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. Electric modes get credit for downhill recovery. Formulas: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Done |
 | **Offline route planning** | Download a map region once, plan on the device, and see the route line plus suggested stops on the map. | Done |
 | **Place search** | Search places and set From / Via / To ([`docs/poi.md`](docs/poi.md)). Includes fishing spots and hut search distance guidance ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Done |
-| **Rest & breaks** | Break reminders and suggested stops along the route. Hiking and cycling use traditional Scandinavian rest distances ([background](docs/historical-background.md)). **Truck** / **TruckElectric** resolve a jurisdiction pack at start: EU EC 561/2006 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) or US FMCSA property-carrying HOS ([`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md)); unknown jurisdictions decline legal tracking. Multi-day day cards and overnight pins are shown in the plan UI (live-verified on emulator GPS Norway Minnesund belt → Bodø; see [`docs/pictures.md`](docs/pictures.md)). **Car** / **motorcycle** / **cycle** / **mobile home** use soft multi-day overnight splitting when a trip exceeds a daily budget (8 h driving or 100 km cycling) with lodging/camping/rest-area suggestions ([`docs/poi.md`](docs/poi.md)). Hiking overnight pauses prefer huts/tents and keep a respectful distance from buildings and glaciers; day-by-day multi-day overnight is planned in `planHikingRoute`. Country/region rule packs: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). | Done |
+| **Rest & breaks** | Break reminders and suggested stops along the route. Hiking and cycling use traditional Scandinavian rest distances ([background](docs/historical-background.md)). **Truck** / **TruckElectric** resolve a jurisdiction pack at start: EU EC 561/2006 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) or US FMCSA property-carrying HOS ([`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md)); unknown jurisdictions decline legal tracking. Multi-day day cards and overnight pins are shown in the plan UI (live-verified on emulator GPS Norway Minnesund belt → Bodø; see [`docs/pictures.md`](docs/pictures.md)). **Car** / **motorcycle** / **cycle** / **mobile home** use soft multi-day overnight splitting when a trip exceeds a daily budget (8 h driving or 100 km cycling) with lodging/camping/rest-area suggestions ([`docs/poi.md`](docs/poi.md)). Hiking overnight pauses prefer huts/tents and keep a respectful distance from buildings and glaciers; rast-interval named huts near the corridor are auto-inserted as vias (then replanned) in `planHikingRoute`; day-by-day multi-day overnight is planned there too. Country/region rule packs: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). | Done |
 | **Drive bars** | Slim top bar (altitude; tap for map settings) and bottom bar (zoom, break time, trip ETA, current road/street name, eco leaf; tap for drive settings). | Done |
 | **GPS follow / recenter** | Map follows the GPS (or simulation) fix by default. Panning or pinching pauses follow; **Recenter** re-enables it. | Done |
 | **Map rotation** | Align the map with the compass, with your travel direction, or with north always up. | Done |
@@ -212,7 +212,9 @@ car / motorcycle / mobilehome / cycle trip exceeds the soft daily budget
 and suggests overnight lodging, camping, or rest-area stops near day boundaries
 (informational if no POI is nearby — see [`docs/poi.md`](docs/poi.md)
 **Lodging** / **RestArea**). For hiking, `planHikingRoute` places hut/tent
-pauses along rast intervals, rejects overnight candidates too close to
+pauses along rast intervals, **promotes near-corridor named rast huts to vias**
+and replans once when the detour fits the Drive **POI radius** slider (so the
+path visits cabins such as Veslefjellbua instead of only labeling them), rejects overnight candidates too close to
 buildings or glaciers, and when the trip exceeds the daily distance budget
 (default **40 km**) splits into days with overnight hut pins near day
 boundaries (`plan_hiking_multi_day` in core; same scoring spirit as the DNT
@@ -317,7 +319,46 @@ it back on. Rotation modes (Compass / Travel / N-up) still apply while following
 | **Fuel units liters / gallons** | Display preference for non-electric motor profiles; stored values are litres |
 | **Fuel tank capacity** | Tank size for adaptive consumption heuristics |
 | **Fuel added** | Last fill amount for the same heuristics |
-| **Save / Close** | Write rest / fuel / e-bike (and EV pack when that profile is active) to SQLite and dismiss, or dismiss without that save |
+| **POI search radius** | Per active travel profile. **Hiking:** slider **10.5–20 km**. **Bicycle / Electric cycle:** **10.5–28 km**. **Car / motorcycle / mobile home / truck:** **2–4 hours** of driving at ~80 km/h (converted to metres for the planner). For hiking, the same cabin/search radius also sets the **auto-via detour guard** (lateral offset + absolute extra path; also 15% of the user leg). Truck HOS clocks (EC 561 / FMCSA) stay jurisdiction-locked and are not this slider. Motor profiles require road-linked pause/overnight POIs. Hiking / cycling can optionally require path/trail link. Tuning background: [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md) |
+| **Save / Close** | Write rest / fuel / e-bike / POI radii (and EV pack when that profile is active) to SQLite and dismiss, or dismiss without that save |
+
+**POI / cabin search radius (hiking & cycling).** Networked cabin nearest-neighbor
+spacing is a practical guide when setting the slider (use typical-to-max for the
+region; at least ~10–12 km so nearby huts are found; raise toward the max in
+remote areas):
+
+| Region | Sample | Avg | Median | Max |
+|---|---:|---:|---:|---:|
+| Norway (DNT, OSM relation 1110420) | 449 | 10.56 km | 8.83 km | 100.45 km |
+| Sweden (Overpass wilderness/alpine hut) | 439 | 12.31 km | 8.24 km | 83.85 km |
+| Sweden STF only | 42 | 14.47 km | 11.50 km | 83.85 km |
+| Finland (Overpass wilderness/alpine hut) | 324 | 11.72 km | 6.68 km | 64.32 km |
+| Finland Metsähallitus only | 108 | 16.05 km | 5.31 km | 247 km (remote) |
+| Germany (Overpass wilderness/alpine hut) | 261 | 12.98 km | 9.72 km | 119.76 km |
+| Switzerland (Overpass wilderness/alpine hut) | 328 | 4.40 km | 3.82 km | 23.70 km |
+| Austria (Overpass wilderness/alpine hut) | 330 | 5.30 km | 3.56 km | 102.51 km |
+
+Network operator samples without full nearest-neighbor stats in the same pull:
+Germany DAV ~22 huts; Switzerland SAC/CAS ~66 huts (denser Alps);
+Austria OeAV ~22 huts (denser Alps).
+
+Open / non-networked huts (same Overpass tags; exclude DNT/STF/DAV/SAC/OeAV/Metsähallitus etc.):
+
+| Region | Sample | Avg | Median | Max |
+|---|---:|---:|---:|---:|
+| Germany | 235 | 14.29 km | 10.22 km | 119.76 km |
+| Switzerland | 261 | 4.93 km | 4.03 km | 23.70 km |
+| Austria | 287 | 5.71 km | 3.65 km | 102.51 km |
+| Sweden | 395 | 12.45 km | 7.85 km | 64.86 km |
+| Finland | 206 | 17.00 km | 12.33 km | 75.75 km |
+
+Practical ranges: about **5–15 km** in denser Alpine networks; about **10–20 km**
+in Scandinavia / Germany / Finland for open huts. Use at least typical spacing
+(~10–12 km) so nearby huts are found; raise toward the max in remote areas.
+In-app sliders: hiking **10.5–20 km**; bicycle / electric cycle **10.5–28 km**;
+car / motorcycle / motorhome / truck **2–4 h** (~80 km/h; truck legal HOS
+unchanged). Full notes:
+[`docs/poi-search-defaults.md`](docs/poi-search-defaults.md).
 
 **Break interval vs trip ETA.** Set the time (or distance) to the next break so it
 does **not exceed the trip ETA** (or remaining trip distance). If the break
@@ -446,7 +487,8 @@ Many of these filenames were **re-shot on SM-P613** (real hardware) with route
 ![Idle both bars](docs/images/hud/hud_idle_both_bars.png)
 
 Hiking corridor Skolla → Rondvassbu (full route in frame, SM-P613, **SIMULATING**
-via staged `skolla_rondvassbu.sim_samples.json`):
+via staged `skolla_rondvassbu.sim_samples.json`; rast huts including
+**Veslefjellbua** promoted to vias when the POI radius allows the detour):
 
 ![Skolla to Rondvassbu hike](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
 

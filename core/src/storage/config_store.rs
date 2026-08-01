@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::{
-    EbikeConfig, EcoConfig, EvCarConfig, FuelConfig, RestConfig, SafetyConfig, TruckDrivingHistory,
-    VehicleLimits,
+    EbikeConfig, EcoConfig, EvCarConfig, FuelConfig, ProfilePoiRadiiTable, RestConfig,
+    SafetyConfig, TruckDrivingHistory, VehicleLimits,
 };
 use crate::storage::Storage;
 
@@ -17,6 +17,7 @@ const EBIKE_CONFIG_KEY: &str = "ebike_config";
 const EV_CAR_CONFIG_KEY: &str = "ev_car_config";
 const PREFER_OFFICIAL_NETWORKS_KEY: &str = "prefer_official_networks";
 const TRUCK_DRIVING_HISTORY_KEY: &str = "truck_driving_history";
+const PROFILE_POI_RADII_KEY: &str = "profile_poi_radii";
 
 pub struct ConfigStore<'a> {
     storage: &'a Storage,
@@ -99,6 +100,14 @@ impl<'a> ConfigStore<'a> {
 
     pub fn save_truck_driving_history(&self, history: &TruckDrivingHistory) -> SqlResult<()> {
         self.save_json(TRUCK_DRIVING_HISTORY_KEY, history)
+    }
+
+    pub fn load_profile_poi_radii(&self) -> SqlResult<ProfilePoiRadiiTable> {
+        self.load_json(PROFILE_POI_RADII_KEY, ProfilePoiRadiiTable::default)
+    }
+
+    pub fn save_profile_poi_radii(&self, table: &ProfilePoiRadiiTable) -> SqlResult<()> {
+        self.save_json(PROFILE_POI_RADII_KEY, table)
     }
 
     fn load_json<T>(&self, key: &str, default: fn() -> T) -> SqlResult<T>
@@ -199,5 +208,18 @@ mod tests {
         store.save_ev_car_config(&config).unwrap();
         let loaded = store.load_ev_car_config().unwrap();
         assert_eq!(loaded.battery_capacity_kwh, Some(75.0));
+    }
+
+    #[test]
+    fn round_trip_profile_poi_radii() {
+        let storage = Storage::open_in_memory().unwrap();
+        let store = ConfigStore::new(&storage);
+        let mut table = ProfilePoiRadiiTable::default();
+        table.hiking.search_radius_m = 12_000.0;
+        table.car.require_road_link = true;
+        store.save_profile_poi_radii(&table).unwrap();
+        let loaded = store.load_profile_poi_radii().unwrap();
+        assert_eq!(loaded.hiking.search_radius_m, 12_000.0);
+        assert!(loaded.car.require_road_link);
     }
 }

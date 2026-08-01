@@ -37,7 +37,7 @@ Package / module: `uniffi.navi` on Android.
 | `run_car_corridor_pipeline(pbf, elev, cache, break_interval_hours)` | `runCarCorridorPipeline` | Fixture / smoke corridor → `CorridorRouteResult` |
 | `run_car_corridor_smoke_test(...)` | `runCarCorridorSmokeTest` | Same pipeline; returns `report` only |
 | `plan_car_route(pbf, elev, cache, start_lat/lon, end_lat/lon, use_eco, profile, avoid_*, vehicle, prefer_official_networks)` | `planCarRoute` | Motor / cycle corridor plan. **Rejects** `TravelProfile::Hiking` |
-| `plan_hiking_route(pbf, elev, cache, waypoints_json, prefer_official_networks)` | `planHikingRoute` | Multi-waypoint hiking; `waypoints_json` is `[{"name","lat","lon"}, …]` (≥ 2) |
+| `plan_hiking_route(pbf, elev, cache, waypoints_json, prefer_official_networks)` | `planHikingRoute` | Multi-waypoint hiking; `waypoints_json` is `[{"name","lat","lon"}, …]` (≥ 2). Promotes near-corridor named rast huts to vias when the detour fits Drive **POI cabin radius**, then replans once |
 
 **`CorridorRouteResult` (record)** — shared plan output:
 
@@ -97,6 +97,7 @@ used by truck / restriction costing (see record in `navi-ffi`).
 | `load_fuel_config` / `save_fuel_config` | `FfiFuelConfig` (ICE tank; Car) |
 | `load_ebike_config` / `save_ebike_config` | `FfiEbikeConfig` (battery Wh, torque Nm, wheel inches; Electric Cycle) |
 | `load_ev_car_config` / `save_ev_car_config` | `FfiEvCarConfig` (battery kWh; Electric Car range check) |
+| `load_profile_poi_radii` / `save_profile_poi_radii` | `FfiProfilePoiRadii` per travel profile (search/cabin/network radii + road-link flag; hiking cabin radius also sets auto-via detour) |
 
 Truck / jurisdiction behaviour: [`ec-561-truck-rest.md`](ec-561-truck-rest.md),
 [`fmcsa-truck-rest.md`](fmcsa-truck-rest.md),

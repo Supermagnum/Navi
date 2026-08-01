@@ -4,12 +4,32 @@ Suggested defaults for **Hiking** and **Cycling** profiles when searching for
 huts and when preferring official trails. Radii tune optional network-hut
 preference and related POI search; they are not hard routing limits.
 
-Code constants today (`core/src/config/defaults.rs` / `SafetyConfig`):
+Legacy compile-time constants (`core/src/config/defaults.rs`) still exist for
+`SafetyConfig` fallbacks; Drive settings persist per-profile
+`ProfilePoiRadii` (defaults below match the slider floors / mid-band):
 
-| Setting | Default |
+| Setting | Default (persisted table before first Drive save) |
 |---|---|
-| Network hut search radius (`POI_RADIUS_NETWORK_HUT_M`) | 25 km |
-| Network hut preference radius (`POI_NETWORK_HUT_PREFERENCE_RADIUS_M`) | 11 km |
+| Hiking / bicycle / electric cycle search & cabin | 10.5 km |
+| Hiking / bicycle network hut (table default) | 25 km |
+| After Drive slider save (hike/cycle) | search = cabin = network = preference = slider km |
+| Car / motorcycle / truck / mobile home search | 3 h × 80 km/h = 240 km |
+| Motor cabin / preference (until slider save) | legacy cabin / preference constants |
+
+Each menu travel profile (Car, Motorcycle, Truck, Mobile home, Bicycle,
+Electric cycle, Hiking) stores its own radii via UniFFI
+`loadProfilePoiRadii` / `saveProfilePoiRadii`. Drive-settings slider ranges:
+
+| Profile | Slider | Notes |
+|---|---|---|
+| Hiking | **10.5–20 km** | Cabin / pause search; also auto-via lateral + detour floor |
+| Bicycle / Electric cycle | **10.5–28 km** | Cabin / pause search |
+| Car / motorcycle / mobile home / truck | **2–4 hours** | Converted at ~80 km/h to metres for the planner; truck HOS clocks stay jurisdiction-locked |
+
+**Car, motorcycle, truck, and mobile home** always require POIs to be linked to
+the road network (or the planned corridor within ~1 km). Hiking and cycling
+prefer path/trail-linked stops but may allow a short off-path fallback unless
+“Require path / trail link” is enabled.
 
 Category rules (which OSM tags count as NetworkHut vs Cabin): [`poi.md`](poi.md).
 
@@ -33,6 +53,9 @@ tuning):
 | Switzerland (wilderness/alpine hut) | 328 | 4.40 km | 3.82 km | 23.70 km |
 | Austria (wilderness/alpine hut) | 330 | 5.30 km | 3.56 km | 102.51 km |
 
+Operator samples (size only): Germany DAV ~22; Switzerland SAC/CAS ~66
+(denser Alps); Austria OeAV ~22 (denser Alps).
+
 Open / non-networked huts (no network tag; not DNT/STF/DAV/SAC/OeAV/Metsähallitus
 etc.):
 
@@ -52,3 +75,11 @@ Scandinavia/Germany/Finland for open huts. Use at least typical spacing
 
 Optional preference for official hiking and pilgrimage routes when validating
 or suggesting stops.
+
+## Path / road connectivity
+
+Prefer POIs that are connected to paths, trails, tracks, or small roads in the
+routing graph. Motor profiles (car, motorcycle, truck, mobile home) **require**
+road-linked pause and overnight candidates. Hiking and cycling prefer
+path-linked huts; a configurable “require path / trail link” switch can harden
+that for the active profile.

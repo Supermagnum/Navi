@@ -41,6 +41,7 @@ import uniffi.navi.FfiEbikeConfig
 import uniffi.navi.FfiEvCarConfig
 import uniffi.navi.FfiFuelConfig
 import uniffi.navi.FfiIconTheme
+import uniffi.navi.FfiProfilePoiRadii
 import uniffi.navi.FfiTruckRestSettings
 import uniffi.navi.TravelProfile
 import uniffi.navi.ecoModeDefault
@@ -49,12 +50,14 @@ import uniffi.navi.loadCarRestSettings
 import uniffi.navi.loadEbikeConfig
 import uniffi.navi.loadEvCarConfig
 import uniffi.navi.loadFuelConfig
+import uniffi.navi.loadProfilePoiRadii
 import uniffi.navi.loadTruckRestSettings
 import uniffi.navi.rasterizeIconPng
 import uniffi.navi.saveCarRestSettings
 import uniffi.navi.saveEbikeConfig
 import uniffi.navi.saveEvCarConfig
 import uniffi.navi.saveFuelConfig
+import uniffi.navi.saveProfilePoiRadii
 import uniffi.navi.saveTruckRestSettings
 import uniffi.navi.travelProfileMenuFocus
 
@@ -67,6 +70,94 @@ fun usesTruckRestSettings(profile: TravelProfile): Boolean =
 fun usesEbikeVehicleSpecs(profile: TravelProfile): Boolean = profile == TravelProfile.BICYCLE_ELECTRIC
 
 fun usesEvCarBatterySpecs(profile: TravelProfile): Boolean = profile == TravelProfile.CAR_ELECTRIC
+
+/** Car / motorcycle / truck / mobile home: POIs must be road-linked. */
+fun usesMotorRoadLinkedPois(profile: TravelProfile): Boolean =
+    when (profile) {
+        TravelProfile.CAR,
+        TravelProfile.CAR_ELECTRIC,
+        TravelProfile.MOTORCYCLE,
+        TravelProfile.MOTORCYCLE_ELECTRIC,
+        TravelProfile.TRUCK,
+        TravelProfile.TRUCK_ELECTRIC,
+        TravelProfile.MOBILE_HOME,
+        -> true
+        else -> false
+    }
+
+/** Hiking / cycling: cabin and network-hut radii apply (km slider). */
+fun usesHutPoiRadii(profile: TravelProfile): Boolean =
+    profile == TravelProfile.HIKING ||
+        profile == TravelProfile.BICYCLE ||
+        profile == TravelProfile.BICYCLE_ELECTRIC
+
+/** Assumed cruise for converting motor POI search hours → metres. */
+private const val POI_MOTOR_CRUISE_KMH = 80.0
+
+private data class PoiRadiusSliderSpec(
+    val min: Float,
+    val max: Float,
+    /** When true, slider unit is hours (motor); otherwise kilometres. */
+    val hours: Boolean,
+)
+
+private fun poiRadiusSliderSpec(profile: TravelProfile): PoiRadiusSliderSpec =
+    when (profile) {
+        TravelProfile.HIKING -> PoiRadiusSliderSpec(min = 10.5f, max = 20f, hours = false)
+        TravelProfile.BICYCLE,
+        TravelProfile.BICYCLE_ELECTRIC,
+        -> PoiRadiusSliderSpec(min = 10.5f, max = 28f, hours = false)
+        TravelProfile.CAR,
+        TravelProfile.CAR_ELECTRIC,
+        TravelProfile.MOTORCYCLE,
+        TravelProfile.MOTORCYCLE_ELECTRIC,
+        TravelProfile.MOBILE_HOME,
+        TravelProfile.TRUCK,
+        TravelProfile.TRUCK_ELECTRIC,
+        -> PoiRadiusSliderSpec(min = 2f, max = 4f, hours = true)
+    }
+
+private fun poiSliderValueFromRadii(
+    profile: TravelProfile,
+    radii: FfiProfilePoiRadii,
+): Float {
+    val spec = poiRadiusSliderSpec(profile)
+    val raw =
+        if (spec.hours) {
+            (radii.searchRadiusM / 1000.0 / POI_MOTOR_CRUISE_KMH).toFloat()
+        } else {
+            (radii.cabinRadiusM / 1000.0).toFloat()
+        }
+    return raw.coerceIn(spec.min, spec.max)
+}
+
+private fun radiiFromPoiSlider(
+    profile: TravelProfile,
+    slider: Float,
+    requireRoadLink: Boolean,
+): FfiProfilePoiRadii {
+    val spec = poiRadiusSliderSpec(profile)
+    val v = slider.coerceIn(spec.min, spec.max)
+    val searchM =
+        if (spec.hours) {
+            v.toDouble() * POI_MOTOR_CRUISE_KMH * 1000.0
+        } else {
+            v.toDouble() * 1000.0
+        }
+    val cabinM = if (spec.hours) searchM.coerceAtMost(20_000.0) else searchM
+    return FfiProfilePoiRadii(
+        searchRadiusM = searchM,
+        cabinRadiusM = cabinM,
+        networkHutRadiusM = searchM.coerceAtLeast(cabinM),
+        networkHutPreferenceRadiusM = cabinM,
+        requireRoadLink =
+            if (usesMotorRoadLinkedPois(profile)) {
+                true
+            } else {
+                requireRoadLink
+            },
+    )
+}
 
 private val EBIKE_WHEEL_PRESETS_IN = listOf(20.0, 26.0, 27.5, 29.0)
 
@@ -591,12 +682,17 @@ fun DriveSettingsSheet(
     var wheelDiameterIn by remember { mutableStateOf("27.5") }
     var wheelCustom by remember { mutableStateOf(false) }
     var evBatteryKwh by remember { mutableStateOf("60") }
+    var poiSlider by remember { mutableStateOf(10.5f) }
+    var poiRequireRoadLink by remember { mutableStateOf(true) }
     var status by remember { mutableStateOf("") }
     var asDistance by remember { mutableStateOf(breakAsDistance) }
     var metric by remember { mutableStateOf(preferMetric) }
     val truckRest = usesTruckRestSettings(travelProfile)
     val ebikeSpecs = usesEbikeVehicleSpecs(travelProfile)
     val evCarSpecs = usesEvCarBatterySpecs(travelProfile)
+    val motorRoadPois = usesMotorRoadLinkedPois(travelProfile)
+    val hutRadii = usesHutPoiRadii(travelProfile)
+    val poiSpec = poiRadiusSliderSpec(travelProfile)
 
     LaunchedEffect(dataDir, travelProfile) {
         if (usesTruckRestSettings(travelProfile)) {
@@ -635,6 +731,20 @@ fun DriveSettingsSheet(
         val evCar = runCatching { loadEvCarConfig(dataDir) }.getOrNull()
         if (evCar != null) {
             evBatteryKwh = evCar.batteryCapacityKwh?.toString() ?: "60"
+        }
+        val radii = runCatching { loadProfilePoiRadii(dataDir, travelProfile) }.getOrNull()
+        val spec = poiRadiusSliderSpec(travelProfile)
+        if (radii != null) {
+            poiSlider = poiSliderValueFromRadii(travelProfile, radii)
+            poiRequireRoadLink =
+                if (usesMotorRoadLinkedPois(travelProfile)) {
+                    true
+                } else {
+                    radii.requireRoadLink
+                }
+        } else {
+            poiSlider = spec.min
+            poiRequireRoadLink = usesMotorRoadLinkedPois(travelProfile)
         }
         asDistance = breakAsDistance
         metric = preferMetric
@@ -919,6 +1029,54 @@ fun DriveSettingsSheet(
                             .testTag("field_fuel_added"),
                 )
             }
+            Text("POI search radius (active profile)", style = MaterialTheme.typography.labelLarge)
+            Text(
+                if (poiSpec.hours) {
+                    "Look ahead ${"%.1f".format(poiSlider)} h (~${"%.0f".format(poiSlider * POI_MOTOR_CRUISE_KMH)} km at $POI_MOTOR_CRUISE_KMH km/h). Pause and overnight stops must be on a road."
+                } else if (motorRoadPois) {
+                    "Pause and overnight stops must be connected to a road for this profile."
+                } else if (travelProfile == TravelProfile.HIKING) {
+                    "Cabin / hut search ${"%.1f".format(poiSlider)} km (slider ${poiSpec.min}–${poiSpec.max} km). Also sets hiking auto-via lateral offset and detour allowance (plus 15% of the user leg)."
+                } else {
+                    "Cabin / hut search ${"%.1f".format(poiSlider)} km (slider ${poiSpec.min}–${poiSpec.max} km). Prefer path-linked stops when possible."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("poi_radii_hint"),
+            )
+            Text(
+                if (poiSpec.hours) {
+                    "POI search: ${"%.1f".format(poiSlider)} h"
+                } else {
+                    "POI / cabin search: ${"%.1f".format(poiSlider)} km"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.testTag("poi_radius_value"),
+            )
+            Slider(
+                value = poiSlider.coerceIn(poiSpec.min, poiSpec.max),
+                onValueChange = { poiSlider = it.coerceIn(poiSpec.min, poiSpec.max) },
+                valueRange = poiSpec.min..poiSpec.max,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag("slider_poi_search_radius"),
+            )
+            if (hutRadii) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Require path / trail link")
+                    Switch(
+                        checked = poiRequireRoadLink,
+                        onCheckedChange = { poiRequireRoadLink = it },
+                        modifier = Modifier.testTag("toggle_poi_require_road_link"),
+                    )
+                }
+            } else {
+                Text(
+                    "Road link required: on",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("poi_road_link_locked"),
+                )
+            }
             if (status.isNotBlank()) {
                 Text(status, style = MaterialTheme.typography.bodySmall)
             }
@@ -931,6 +1089,21 @@ fun DriveSettingsSheet(
                             status = "Enter valid break hours and rest minutes"
                             return@Button
                         }
+                        val radiiSettings =
+                            radiiFromPoiSlider(travelProfile, poiSlider, poiRequireRoadLink)
+                        val radiiOk =
+                            saveProfilePoiRadii(
+                                dataDir,
+                                travelProfile,
+                                radiiSettings,
+                            ).also { ok ->
+                                if (ok) {
+                                    DiagnosticLog.logSettingSaved(
+                                        "poi_search_radius_m",
+                                        radiiSettings.searchRadiusM,
+                                    )
+                                }
+                            }
                         val restOk =
                             if (usesTruckRestSettings(travelProfile)) {
                                 val prev = runCatching { loadTruckRestSettings(dataDir) }.getOrNull()
@@ -1068,10 +1241,11 @@ fun DriveSettingsSheet(
                             }
                         onBreakAsDistanceChange(asDistance)
                         onPreferMetricChange(metric)
-                        if (restOk && energyOk) {
+                        if (restOk && energyOk && radiiOk) {
                             onApplied()
                         } else {
-                            status = "Save failed (rest=$restOk energy=$energyOk)"
+                            status =
+                                "Save failed (rest=$restOk energy=$energyOk radii=$radiiOk)"
                         }
                         @Suppress("UNUSED_EXPRESSION")
                         iconDir

@@ -9,17 +9,23 @@ Overnight POI use: truck EC 561 multi-day rests — [`ec-561-truck-rest.md`](ec-
 README “Rest and overnight” (**Lodging**, camping tags, **RestArea** fallback).
 Jurisdiction scope for legal packs: [`jurisdiction-rules.md`](jurisdiction-rules.md).
 
-Default search radii come from `SafetyConfig` / `defaults.rs` (CraftBrewery uses
-the General radius of **15 km**).
+Default search radii come from `SafetyConfig` / `defaults.rs` (**compile-time
+fallbacks** in the table below) and are overridden **per travel profile** in
+Drive settings (`ProfilePoiRadii`; UniFFI `loadProfilePoiRadii` /
+`saveProfilePoiRadii`). Hiking / cycling Drive defaults start at **10.5 km**
+for cabin and general search; that cabin radius also sets the hiking
+**auto-via** lateral and detour floor (see below). CraftBrewery uses the
+General radius. Motor profiles require road-linked POIs; see
+[`poi-search-defaults.md`](poi-search-defaults.md).
 
-| Category | Default radius | OSM match rules (any listed condition) |
+| Category | Compile-time default radius | OSM match rules (any listed condition) |
 |---|---|---|
 | **Water** | 2 km | `amenity` = drinking_water, fountain, or water_point; **or** `natural=spring` |
 | **Restroom** | General (or safety override) | `amenity=toilets` |
-| **Cabin** | 5 km | `tourism` ∈ wilderness_hut, alpine_hut, hostel, camp_site, camp_pitch; **or** `amenity=shelter` |
-| **OvernightFacility** | 5 km (same as Cabin) | Assigned together with Cabin for the same overnight tags |
-| **NetworkHut** | 25 km | wilderness_hut / alpine_hut **and** `operator` or `network` contains DNT, STF, DAV, SAC, OeAV, or Metsähallitus |
-| **General** | 15 km | `amenity` ∈ cafe, restaurant, fast_food, museum, gallery, zoo, aquarium, viewpoint, picnic_site; **or** `tourism` ∈ viewpoint, attraction, museum |
+| **Cabin** | 5 km (Drive hike/cycle: 10.5 km+) | `tourism` ∈ wilderness_hut, alpine_hut, hostel, camp_site, camp_pitch; **or** `amenity=shelter` |
+| **OvernightFacility** | same as Cabin | Assigned together with Cabin for the same overnight tags |
+| **NetworkHut** | 25 km (Drive save may set to slider km) | wilderness_hut / alpine_hut **and** `operator` or `network` contains DNT, STF, DAV, SAC, OeAV, or Metsähallitus |
+| **General** | 15 km (Drive hike/cycle: 10.5 km+) | `amenity` ∈ cafe, restaurant, fast_food, museum, gallery, zoo, aquarium, viewpoint, picnic_site; **or** `tourism` ∈ viewpoint, attraction, museum |
 | **CraftBrewery** | 15 km (General) | **OR** of: `microbrewery=yes`, `shop=alcohol`, `craft=brewery` |
 | **TentSite** | Cabin radius | `tourism` ∈ camp_site, camp_pitch; **or** `amenity=camping` |
 | **Fishing** | 15 km (General) | **OR** of: `leisure=fishing`, `leisure=fishing_pier`, `sport=fishing`, `shop=fishing` — icon: Navit-derived `fish.svg` as `leisure-fishing` ([`icons.md`](icons.md)) |
@@ -28,6 +34,19 @@ the General radius of **15 km**).
 
 Suggested preference radii and regional nearest-neighbor spacing (for tuning
 hiking/cycling search): [`poi-search-defaults.md`](poi-search-defaults.md).
+
+## Hiking rast huts as auto-vias
+
+`planHikingRoute` first builds a draft foot corridor through the user’s
+From / Via / To points. At each hiking rast interval (~11.3 km) it picks a
+named cabin / network hut with the same near-corridor preference as pause pins
+(path-linked or ≤ ~800 m preferred; otherwise up to the Drive **POI cabin /
+search radius** slider for lateral offset). Detour allowance is
+max(cabin radius, 15% of the containing user leg). Those huts are merged as
+intermediate vias and the corridor is **replanned once**. Tent / synthetic
+pause markers and multi-day overnight pins are not promoted to vias.
+(Overnight building-distance rejection is not applied when choosing auto-vias,
+because cabins are buildings.)
 
 ## Place / address FTS search
 

@@ -83,7 +83,7 @@ WASM-pluginvert for fremtidige plugins; plugins er ikke laget ennå
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Elektriske modus får kreditt for energi tilbake i nedoverbakke. Formler: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Ferdig |
 | **Frakoblet ruteplan** | Last ned en kartregion én gang, planlegg på enheten, og se ruten pluss foreslåtte stopp på kartet. | Ferdig |
 | **Stedssøk** | Søk steder og sett Fra / Via / Til ([`docs/poi.md`](docs/poi.md)). Inkluderer fiskeplasser og veiledning for hytteradius ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Ferdig |
-| **Hvile og pauser** | Pausepåminnelser og foreslåtte stopp langs ruten. Fottur og sykling bruker tradisjonelle skandinaviske rasteavstander ([bakgrunn](docs/historisk-bakgrunn.md)). **Lastebil** / **lastebil elektrisk** velger jurisdiksjonspakke ved start: EU EC 561/2006 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) eller US FMCSA ([`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md)); ukjent jurisdiksjon avslår juridisk sporing. Flerdagers dagskort vises i plan-UI. **Bil** / **motorsykkel** / **sykkel** / **bobil** bruker myk flerdagers overnatting når turen overstiger et daglig budsjett (8 t kjøring eller 100 km sykling) med hotell/camping/rasteplass-forslag ([`docs/poi.md`](docs/poi.md)). Fottur-pausestopp prefererer hytter/telt og holder avstand til hus og isbreer; dag-for-dag flerdagers overnatting planlegges i `planHikingRoute`. Land-/regionpakker: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). | Ferdig |
+| **Hvile og pauser** | Pausepåminnelser og foreslåtte stopp langs ruten. Fottur og sykling bruker tradisjonelle skandinaviske rasteavstander ([bakgrunn](docs/historisk-bakgrunn.md)). **Lastebil** / **lastebil elektrisk** velger jurisdiksjonspakke ved start: EU EC 561/2006 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) eller US FMCSA ([`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md)); ukjent jurisdiksjon avslår juridisk sporing. Flerdagers dagskort vises i plan-UI. **Bil** / **motorsykkel** / **sykkel** / **bobil** bruker myk flerdagers overnatting når turen overstiger et daglig budsjett (8 t kjøring eller 100 km sykling) med hotell/camping/rasteplass-forslag ([`docs/poi.md`](docs/poi.md)). Fottur-pausestopp prefererer hytter/telt og holder avstand til hus og isbreer; navngitte rasthytter nær korridoren løftes til via og rutes på nytt i `planHikingRoute`; dag-for-dag flerdagers overnatting planlegges der også. Land-/regionpakker: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). | Ferdig |
 | **Kjørefelt (HUD)** | Slim toppstripe (høyde; trykk for kartinnstillinger) og bunnstripe (zoom, pausetid, tur-ETA, økoblad; trykk for kjøreinnstillinger). | Ferdig |
 | **Kartrotasjon** | Rett kartet etter kompass, etter kjøreretning, eller med nord alltid opp. | Ferdig |
 | **Bevegelige ikoner** | Vis nærliggende spormarkører på kartet (for eksempel radiostasjoner) innen ca. 50–150 km. | **Delvis** — tegning virker; live radiomating er ikke innebygd ennå |
@@ -168,7 +168,10 @@ Når bil / motorsykkel / bobil / sykkeltur overstiger det myke daglige budsjette
 dager og foreslår overnatting ved hotell, camping eller rasteplass nær
 dagsgrensen (informativt hvis ingen POI finnes — se [`docs/poi.md`](docs/poi.md)
 **Lodging** / **RestArea**). For fottur plasserer `planHikingRoute`
-hytte-/teltpauser langs rastintervaller, avviser overnattingskandidater for
+hytte-/teltpauser langs rastintervaller, **løfter nærliggende navngitte
+rasthytter til via-punkter** og planlegger på nytt én gang når omveien
+passer POI-glideren i Kjøre-innstillinger (slik at stien går innom hytter som
+Veslefjellbua i stedet for bare å merke dem), avviser overnattingskandidater for
 nær hus eller isbreer, og når turen overstiger daglig distansebudsjett
 (standard **40 km**) deler den i dager med overnattingshytter nær
 dagsgrensen (`plan_hiking_multi_day` i core; samme skåringsånd som
@@ -258,7 +261,8 @@ simulering gir hastighet.
 | **Fuel units liters / gallons** | Visningspreferanse; lagring er liter |
 | **Fuel tank capacity** | Tankstørrelse for adaptive forbruksheuristikker |
 | **Fuel added** | Siste påfylling for samme heuristikker |
-| **Save / Close** | Skriv hvile/drivstoff til SQLite og lukk, eller lukk uten den lagringen |
+| **POI-søkeradius** | Per aktiv reisemodus. **Fottur:** glider **10,5–20 km** (styrer også auto-via omvei / lateral). **Sykkel / elsykkel:** **10,5–28 km**. **Bil / motorsykkel / bobil / lastebil:** **2–4 timer** kjøring (~80 km/t omregnet til meter; lastebil EC 561 / FMCSA-klokker er uavhengige). Motorprofiler krever veitilknyttede pause-/overnattings-POI-er. Bakgrunn: [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md) |
+| **Save / Close** | Skriv hvile/drivstoff/POI-radius til SQLite og lukk, eller lukk uten den lagringen |
 
 ### Rute- / verktøypanel (hovedkrom)
 
@@ -286,10 +290,10 @@ Kollapset topp-/bunn-kjøre-HUD (søk skjult):
 
 ![Idle begge linjer](docs/images/hud/hud_idle_both_bars.png)
 
-Bilrute Helgøya → Atnbrua på Automotive-emulatoren (HUD viser høyde;
-AVD GNSS-høyde er ofte feil — se merknad over). Én rast er synlig:
+Fotturkorridor Skolla → Rondvassbu (SM-P613, **SIMULATING**; rasthytter
+inkludert Veslefjellbua løftet til via når POI-radius tillater omveien):
 
-![Helgøya til Atnbrua-rute](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
+![Skolla til Rondvassbu](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
 
 Kartkamera-tilt (0° / 35° / 45° / 60°) er uavhengig av valgfri 3D-hillshade.
 Finnstad → Søndre Ommang → Rosenlund ved **45°** — flat 2D (N-opp),
