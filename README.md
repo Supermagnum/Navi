@@ -425,10 +425,11 @@ Country/region visual extracts can also be prepared with
 - **Hiking plan speed on huge areas (addressed):** overnight buildings use a
   1.5 km corridor pre-filter and a single PBF scan for POI + buildings (exact
   150 m allemannsretten check unchanged). Measured on DNT Åkersætra→Rondvassbu
-  (`overnight_scan_bench`, debug): bbox-all **102 556 buildings / ~180.7 s**
-  load → corridor **487 buildings / ~83.1 s** load (was ~177.6 s for a full
-  plan when the bbox-all set fed overnight checks). Remaining cost is mostly
-  mandatory full-extract decode plus other plan-time PBF scans.
+  (~**139.9 km** corridor; `overnight_scan_bench`, debug): bbox-all
+  **102 556 buildings / ~180.7 s** load → corridor **487 buildings / ~83.1 s**
+  load (was ~177.6 s for a full plan when the bbox-all set fed overnight
+  checks). Remaining cost is mostly mandatory full-extract decode plus other
+  plan-time PBF scans.
 - **Break timer ≠ trip ETA:** by design — see
   [Break timer vs trip ETA](#break-timer-vs-trip-eta).
 - **Not implemented yet:** saving of a destination or a start point; touch-and-hold
