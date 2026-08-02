@@ -427,9 +427,14 @@ Land-/regionvisuelle uttrekk kan også lages med
 - **Bare-i-skjermbilde innsjøkant:** en myk blå kant rundt vann kan dukke opp i
   skjermbilder, men ikke under vanlig bruk — se
   [`docs/map-styles.md`](docs/map-styles.md).
-- **Treg fotturplan på store områder:** å laste alle bygninger i en stor boks for
-  overnattingsavstandssjekker kan gjøre lange fotturplaner trege; et strammere
-  korridorfilter er en kjent oppfølging.
+- **Treg fotturplan på store områder (løst):** overnattingsbygninger bruker et
+  1,5 km korridorfilter og én PBF-skanning for POI + bygninger (nøyaktig 150 m
+  allemannsretten-sjekk uendret). Målt på DNT Åkersætra→Rondvassbu
+  (`overnight_scan_bench`, debug): bbox-alle **102 556 bygninger / ~180,7 s**
+  lasting → korridor **487 bygninger / ~83,1 s** lasting (tidligere ~177,6 s
+  for en hel plan når bbox-alle matet overnattingssjekker). Gjenværende kostnad
+  er mest obligatorisk full-extract-dekoding pluss andre PBF-skanninger under
+  planlegging.
 - **Pauseteller ≠ tur-ETA:** med vilje — se
   [Pauseteller vs tur-ETA](#pauseteller-vs-tur-eta).
 - **Ikke implementert ennå:** lagring av destinasjon eller startpunkt;
