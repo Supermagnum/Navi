@@ -85,12 +85,9 @@ Confirm tiles loaded (not beige empty-tile failure mode).
 
 | Scene | Preview |
 |---|---|
-| Jutulhogget canyon, online 3D (61.9968774, 10.8888101) | ![Jutulhogget online](images/poi_jutulhogget.png) |
 | Jutulhogget canyon, offline Protomaps 3D | ![Jutulhogget offline](images/poi_jutulhogget_offline.png) |
 | Galdhøpiggen peak, offline Protomaps 3D (61.6364721, 8.3124426) | ![Galdhøpiggen](images/poi_galdhopiggen_3d.png) |
-| Galdhøpiggen peak, online 3D | ![Galdhøpiggen online](images/poi_galdhopiggen_online.png) |
 | Elgpiggen peak, offline Protomaps 3D (62.1592913, 11.3584086) | ![Elgpiggen](images/poi_elgpiggen.png) |
-| Elgpiggen peak, online Liberty 3D (peak often absent from OMT; DEM framing) | ![Elgpiggen online](images/poi_elgpiggen_online.png) |
 | Preikestolen / Pulpit Rock, online 3D (58.9870777, 6.1887732) | ![Preikestolen](images/poi_prekestolen.png) |
 | Preikestolen with offline preferred (no Ostlandet PMTiles → Liberty 3D fallback) | ![Preikestolen offline](images/poi_prekestolen_offline.png) |
 
