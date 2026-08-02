@@ -22,6 +22,7 @@ fn main() {
       {"name":"Rondvassbu","lat":61.8804325,"lon":9.7959854}
     ]"#;
     eprintln!("planning on {} …", pbf.display());
+    navi::set_route_plan_timing_enabled(true);
     let r = navi::plan_hiking_route(
         pbf.display().to_string(),
         elev.display().to_string(),

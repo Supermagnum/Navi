@@ -5,6 +5,7 @@
 //! - [`run_car_corridor_pipeline`] — real parse/build/reweight/POI/route against on-device data.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
@@ -183,17 +184,18 @@ fn passat_eco() -> EcoConfig {
 }
 
 /// Profile-scoped eco physics for planning. Electric profiles get regen credit from
-/// [`EcoConfig::for_profile`]; car-like masses keep the Passat Cd/area/mass baseline.
+/// [`EcoConfig::for_profile`]; Car/CarElectric keep the Passat Cd/area/mass baseline.
+/// Motorcycle uses [`motorcycle_eco_config`] (not the Passat overlay).
 fn eco_for_travel_profile(profile: TravelProfile) -> EcoConfig {
     let mut eco = EcoConfig::for_profile(profile.to_core());
     match profile {
-        TravelProfile::Car
-        | TravelProfile::CarElectric
-        | TravelProfile::Motorcycle
-        | TravelProfile::MotorcycleElectric => {
+        TravelProfile::Car | TravelProfile::CarElectric => {
             eco.drag_coefficient = 0.28;
             eco.frontal_area_m2 = 2.2;
             eco.mass_kg = 1500.0;
+        }
+        TravelProfile::Motorcycle | TravelProfile::MotorcycleElectric => {
+            // Already motorcycle-specific from for_profile; do not apply Passat.
         }
         TravelProfile::Bicycle | TravelProfile::BicycleElectric => {
             let tuned = driver_break_core::config::ebike_eco_config(matches!(
@@ -390,6 +392,76 @@ fn empty_corridor(msg: String) -> CorridorRouteResult {
         route_segments_json: String::from("[]"),
         off_trail_advisory: String::new(),
     }
+}
+
+/// When false (default), planners skip stage Instant samples and do not emit
+/// `plan_duration_ms` / `ROUTE_PLAN_STAGES` into the report. Hosts turn this on
+/// with the Diagnostic logging toggle ([`set_route_plan_timing_enabled`]).
+static ROUTE_PLAN_TIMING_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Gate per-stage route-plan timing (matches Android Diagnostic logging toggle).
+#[uniffi::export]
+pub fn set_route_plan_timing_enabled(enabled: bool) {
+    ROUTE_PLAN_TIMING_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+#[uniffi::export]
+pub fn route_plan_timing_enabled() -> bool {
+    ROUTE_PLAN_TIMING_ENABLED.load(Ordering::Relaxed)
+}
+
+/// Wall-clock stage timer for greppable `ROUTE_PLAN_STAGES` lines. No-op when
+/// timing is disabled (no Instant samples, zero cost beyond one atomic load).
+struct PlanStageTimer {
+    enabled: bool,
+    t0: Option<Instant>,
+    mark: Option<Instant>,
+}
+
+impl PlanStageTimer {
+    fn start() -> Self {
+        let enabled = ROUTE_PLAN_TIMING_ENABLED.load(Ordering::Relaxed);
+        if enabled {
+            let now = Instant::now();
+            Self {
+                enabled: true,
+                t0: Some(now),
+                mark: Some(now),
+            }
+        } else {
+            Self {
+                enabled: false,
+                t0: None,
+                mark: None,
+            }
+        }
+    }
+
+    fn lap_ms(&mut self) -> u64 {
+        if !self.enabled {
+            return 0;
+        }
+        let mark = self.mark.expect("timer enabled");
+        let ms = mark.elapsed().as_millis() as u64;
+        self.mark = Some(Instant::now());
+        ms
+    }
+
+    fn total_ms(&self) -> u64 {
+        self.t0.map(|t| t.elapsed().as_millis() as u64).unwrap_or(0)
+    }
+}
+
+fn append_route_plan_timing(report: &mut String, total_ms: u64, stages: &[(&str, u64)]) {
+    if !ROUTE_PLAN_TIMING_ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    report.push_str(&format!("plan_duration_ms={total_ms}\n"));
+    report.push_str("ROUTE_PLAN_STAGES |");
+    for (k, v) in stages {
+        report.push_str(&format!(" {k}={v}"));
+    }
+    report.push('\n');
 }
 
 fn truck_rest_kind_key(kind: TruckOvernightKind) -> &'static str {
@@ -1816,6 +1888,8 @@ fn plan_car_route_inner(
         return empty("TEST_KIND=PLAN_CAR_ROUTE\nFAIL: use plan_hiking_route for hiking\n".into());
     }
 
+    let mut timer = PlanStageTimer::start();
+
     let routing_profile = RoutingProfile::from(profile.to_core());
     let plan = WorkerPoolPlan::detect();
     WorkerPoolPlan::lower_current_thread_priority();
@@ -1871,7 +1945,6 @@ fn plan_car_route_inner(
         start_lon.max(end_lon) + 0.05,
     ]);
 
-    let t0 = Instant::now();
     // Clip to the trip bbox so we never load a full country graph into RAM
     // (that OOMs 4GB Automotive AVDs). Still reads the same region .pbf.
     // Pad scales with corridor span: a fixed 0.35° is enough for Ostlandet-scale
@@ -1889,7 +1962,10 @@ fn plan_car_route_inner(
         "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}\n",
         bbox[0], bbox[1], bbox[2], bbox[3]
     ));
+    let profile_map_ms = timer.lap_ms();
+
     driver_break_core::download::progress::set(0, Some(5), "Planning route: building area graph…");
+    let t_graph = Instant::now();
     let (mut graph, cache_hit) =
         match load_or_build_reweighted_bbox(pbf, &cache, routing_profile, &elevation, &eco, bbox) {
             Ok(v) => v,
@@ -1898,6 +1974,8 @@ fn plan_car_route_inner(
                 return empty(report);
             }
         };
+    let build_s = t_graph.elapsed().as_secs_f64();
+    let graph_build_ms = timer.lap_ms();
     if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
         && prefer_official_networks
     {
@@ -1909,7 +1987,7 @@ fn plan_car_route_inner(
             &mut report,
         );
     }
-    let build_s = t0.elapsed().as_secs_f64();
+    let network_pref_ms = timer.lap_ms();
     report.push_str(&format!(
         "build_s={build_s:.2}; cache_hit={cache_hit}; nodes={}; edges={}\n",
         graph.nodes.len(),
@@ -1957,6 +2035,7 @@ fn plan_car_route_inner(
         report.push_str("FAIL: zero-length route\n");
         return empty(report);
     }
+    let astar_ms = timer.lap_ms();
 
     let mut distance_m = 0.0;
     for w in path.windows(2) {
@@ -1972,10 +2051,12 @@ fn plan_car_route_inner(
     let sim_samples_json = samples_to_json(&build_sim_samples(&graph, &path));
     let maneuvers_json = maneuvers_to_json(&build_maneuvers(&graph, &path));
     let path_nodes = path.len();
+    let polyline_ms = timer.lap_ms();
     driver_break_core::download::progress::set(4, Some(5), "Planning route: break stops…");
     // Clip POI load to the same trip bbox (never a full Ostlandet POI scan).
     let poi_index = PoiIndex::load_from_pbf_bbox(pbf, bbox).unwrap_or_else(|_| PoiIndex::new());
     let barriers = load_break_barriers(&graph, pbf, bbox);
+    let poi_barrier_ms = timer.lap_ms();
 
     // Truck / TruckElectric: jurisdiction-keyed HOS (EC 561 or FMCSA).
     // MobileHome uses car soft break spacing (not commercial HGV legal tracking).
@@ -2220,9 +2301,10 @@ fn plan_car_route_inner(
         }
     } else {
         report.push_str(&format!(
-            "motor_break_interval_km={break_interval_km:.1} (legacy / car-style heuristic)\n"
+            "motor_break_interval_km={break_interval_km:.1} (soft rest-interval hours → km via trip speed)\n"
         ));
     }
+    let rest_branch_ms = timer.lap_ms();
 
     // Soft multi-day overnight for car / motorcycle / cycle / mobilehome (not truck).
     let mut motor_overnight_pins: Vec<serde_json::Value> = Vec::new();
@@ -2337,6 +2419,7 @@ fn plan_car_route_inner(
             }
         }
     }
+    let multiday_ms = timer.lap_ms();
 
     // Prefer stops on the planned road; fall back if reachable without danger barriers
     // unless the active profile requires road-linked POIs.
@@ -2354,6 +2437,7 @@ fn plan_car_route_inner(
     );
     merge_break_poi_pins(&mut break_pois_json, motor_overnight_pins);
     merge_break_poi_pins(&mut break_pois_json, truck_overnight_pins);
+    let pause_pins_ms = timer.lap_ms();
     // Difficulty metadata on cycling network ways (informational only).
     if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
         && prefer_official_networks
@@ -2416,6 +2500,24 @@ fn plan_car_route_inner(
         "priority_path_share_pct={priority_path_share_pct:.2}; motorway_share_pct={:.2}\n",
         graph.motorway_share_pct(&path)
     ));
+    let report_addons_ms = timer.lap_ms();
+    let plan_duration_ms = timer.total_ms();
+    append_route_plan_timing(
+        &mut report,
+        plan_duration_ms,
+        &[
+            ("profile_map_ms", profile_map_ms),
+            ("graph_build_ms", graph_build_ms),
+            ("network_pref_ms", network_pref_ms),
+            ("astar_ms", astar_ms),
+            ("polyline_ms", polyline_ms),
+            ("poi_barrier_ms", poi_barrier_ms),
+            ("rest_branch_ms", rest_branch_ms),
+            ("multiday_ms", multiday_ms),
+            ("pause_pins_ms", pause_pins_ms),
+            ("report_addons_ms", report_addons_ms),
+        ],
+    );
     report.push_str(&format!(
         "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={path_nodes}; path_cost={cost:.0}; polyline_chars={}; break_pois={}\nPASS\n",
         polyline.len(),
@@ -2470,6 +2572,7 @@ pub fn plan_hiking_route(
         lon: f64,
     }
 
+    let mut timer = PlanStageTimer::start();
     let mut report = String::from("TEST_KIND=PLAN_HIKING_ROUTE\nDATA_SOURCE=real_pbf\n");
     report.push_str("profile=Hiking; use_eco=true\n");
     report.push_str(&format!(
@@ -2540,13 +2643,14 @@ pub fn plan_hiking_route(
         bbox[0], bbox[1], bbox[2], bbox[3]
     ));
     let _ = elevation.warm_bbox(bbox);
+    let profile_map_ms = timer.lap_ms();
 
-    let t0 = Instant::now();
     driver_break_core::download::progress::set(
         0,
         Some(5),
         "Planning route: building hiking area graph…",
     );
+    let t_graph = Instant::now();
     let (mut graph, cache_hit) = match load_or_build_reweighted_bbox(
         pbf,
         &cache,
@@ -2561,6 +2665,8 @@ pub fn plan_hiking_route(
             return empty_corridor(report);
         }
     };
+    let build_s = t_graph.elapsed().as_secs_f64();
+    let graph_build_ms = timer.lap_ms();
     apply_route_prefs_if_requested(
         &mut graph,
         pbf,
@@ -2569,7 +2675,7 @@ pub fn plan_hiking_route(
         prefer_pilgrim_routes,
         &mut report,
     );
-    let build_s = t0.elapsed().as_secs_f64();
+    let network_pref_ms = timer.lap_ms();
     report.push_str(&format!(
         "build_s={build_s:.2}; cache_hit={cache_hit}; nodes={}; edges={}\n",
         graph.nodes.len(),
@@ -2611,6 +2717,7 @@ pub fn plan_hiking_route(
         wet_stats.hard_removed,
         wet_stats.boardwalk_kept
     ));
+    let wetland_ms = timer.lap_ms();
 
     let mut hybrid = match plan_hybrid_hiking_path(
         &graph,
@@ -2634,6 +2741,7 @@ pub fn plan_hiking_route(
         hybrid.route_mode(),
         hybrid.off_trail_m
     ));
+    let hybrid_path_ms = timer.lap_ms();
 
     // Clip POI load to the trip bbox, then overnight buildings to a corridor band
     // around the planned path (pre-filter before the exact 150 m check).
@@ -2665,6 +2773,7 @@ pub fn plan_hiking_route(
         overnight_prox.glaciers.len()
     ));
     let overnight_ctx = (safety, overnight_prox);
+    let poi_barrier_ms = timer.lap_ms();
 
     // Promote rast-interval named huts to vias and replan once so the corridor visits them.
     // Cabin / search radii from Drive POI slider set lateral + detour allowance.
@@ -2716,6 +2825,7 @@ pub fn plan_hiking_route(
             }
         }
     };
+    let hut_via_ms = timer.lap_ms();
     let dist_km = distance_m / 1000.0;
     let route_segments_json = hybrid.segments_json();
     let off_trail_advisory = if hybrid.off_trail_m > 1.0 {
@@ -2797,6 +2907,7 @@ pub fn plan_hiking_route(
     } else {
         report.push_str("hiking_multi_day: days=1; multi_day=false\n");
     }
+    let multiday_ms = timer.lap_ms();
     // Hiking rast interval (~11.3 km); prefer path-linked huts, else reachable fallback.
     let mut break_pois_json = build_break_pois_json(
         &poi_index,
@@ -2846,6 +2957,7 @@ pub fn plan_hiking_route(
         arr.extend(hiking_overnight_pins);
         break_pois_json = serde_json::to_string(&arr).unwrap_or(break_pois_json);
     }
+    let pause_pins_ms = timer.lap_ms();
 
     let priority_path_share_pct = graph.non_motorway_share_pct(&full_path);
     report.push_str(&format!(
@@ -2865,7 +2977,6 @@ pub fn plan_hiking_route(
         report
             .push_str(&driver_break_core::routing::format_eco_energy_breakdown_report(&breakdown));
     }
-    report.push_str("PASS\n");
 
     // Prefer graph densification; fall back to hiking-pace samples on the overlay
     // polyline so staged / coarse geometry still drives debug simulation.
@@ -2877,6 +2988,25 @@ pub fn plan_hiking_route(
     let sim_samples_json = samples_to_json(&sim_samples);
     let maneuvers_json = maneuvers_to_json(&build_maneuvers(&graph, &full_path));
     report.push_str(&format!("sim_samples={}\n", sim_samples.len()));
+    let report_addons_ms = timer.lap_ms();
+    let plan_duration_ms = timer.total_ms();
+    append_route_plan_timing(
+        &mut report,
+        plan_duration_ms,
+        &[
+            ("profile_map_ms", profile_map_ms),
+            ("graph_build_ms", graph_build_ms),
+            ("network_pref_ms", network_pref_ms),
+            ("wetland_ms", wetland_ms),
+            ("hybrid_path_ms", hybrid_path_ms),
+            ("poi_barrier_ms", poi_barrier_ms),
+            ("hut_via_ms", hut_via_ms),
+            ("multiday_ms", multiday_ms),
+            ("pause_pins_ms", pause_pins_ms),
+            ("report_addons_ms", report_addons_ms),
+        ],
+    );
+    report.push_str("PASS\n");
 
     CorridorRouteResult {
         report,

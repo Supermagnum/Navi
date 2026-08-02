@@ -479,6 +479,60 @@ object NaviMapTestHooks {
     @Volatile
     var requestSimSeekCumM: Double? = null
 
+    /**
+     * One-shot GPS-style fix for instrumented tests (lat, lon). Consumed by
+     * MainActivity → [applyFix]. Used to probe off-route behaviour — the
+     * built-in simulator has no deviation-injection mode.
+     */
+    @Volatile
+    var pendingInjectFixLatLon: Pair<Double, Double>? = null
+
+    /**
+     * When true, ignore LocationManager / other non-test providers so a real
+     * device GPS fix cannot overwrite [pendingInjectFixLatLon] / sim positions
+     * during off-route instrumented tests.
+     */
+    @Volatile
+    var ignoreLiveGpsFixes: Boolean = false
+
+    /** Last map GPS mark (after applyFix); for off-route assertions. */
+    @Volatile
+    var lastGpsLat: Double = Double.NaN
+
+    @Volatile
+    var lastGpsLon: Double = Double.NaN
+
+    @Volatile
+    var lastOffRoute: Boolean = false
+
+    @Volatile
+    var lastCrossTrackM: Double = 0.0
+
+    @Volatile
+    var reroutingActive: Boolean = false
+
+    @Volatile
+    var hikingReroutePromptVisible: Boolean = false
+
+    /** Override debounce (ms) for instrumented tests; null = production default. */
+    @Volatile
+    var offRouteConfirmMsOverride: Long? = null
+
+    /** Optional forced PBF path for [RouteReplan]. */
+    @Volatile
+    var forcePlanPbfPath: String? = null
+
+    /** When set, [RouteReplan] returns this instead of calling native plan. */
+    @Volatile
+    var rerouteResultOverride: uniffi.navi.CorridorRouteResult? = null
+
+    /** true = accept hiking prompt; false = decline; null = no request. */
+    @Volatile
+    var requestHikingRerouteAnswer: Boolean? = null
+
+    @Volatile
+    var autoRerouteTriggeredCount: Int = 0
+
     @Volatile
     var simulatingActive: Boolean = false
 

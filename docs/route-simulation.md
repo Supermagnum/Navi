@@ -39,13 +39,31 @@ still follows the table above.
 
 `RouteProgressTracker` snaps each fix onto the sample chain and publishes:
 
-- Approach-instruction box (750 m / 150 m / 25 m thresholds)
-- Remaining trip ETA from remaining sample segment times
+- Approach-instruction box (750 m / 150 m / 25 m thresholds), or an explicit
+  **Off route** label when cross-track distance exceeds the profile threshold
+  (motor ~75 m, hiking ~100 m) — corridor-derived turn distances are suppressed
+  in that state so a winding polyline cannot show confidently-wrong guidance
+- Remaining trip ETA from remaining sample segment times (frozen while off-route)
 - Break countdown from **integrated** planned driving hours along the sample
   chain (same segment-speed method as ETA) — not `along_m / instantaneous_speed`,
   which under-counts elapsed hours and inflates minutes-to-break
 - Direction-of-travel camera bearing from sample course
 - Via geofence (~40 m) continue; end geofence (~40 m) stop / arrive
+
+**Off-route / reroute:** sustained deviation (default **5 s**, debounce) triggers
+recalculation via the same UniFFI planning pipeline as Plan:
+
+| Profile | Policy |
+|---|---|
+| Motor (Car, Truck, …) | Automatic replan from current GPS to remaining vias + destination |
+| Hiking | Prompt first (Recalculate / Keep route) — trail departures are often intentional |
+
+A **Recalculating route…** banner (Cancel available) covers the multi-second
+wait; see README known issues on planning / reroute latency. Declining or
+cancelling suppresses further auto-prompts until the fix returns on-route.
+
+Simulator playback stays on-corridor only (`seekToCumM`); instrumented tests
+inject off-route fixes via `NaviMapTestHooks.pendingInjectFixLatLon`.
 
 Plan results expose `simSamplesJson` and `maneuversJson` on
 `CorridorRouteResult` (also merged across multi-via legs on the Android host).

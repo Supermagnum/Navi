@@ -9,6 +9,8 @@ today (`OfficialNetworkKind` only lists hiking/foot and bicycle/mtb).
 Related:
 
 - Jurisdiction pack pattern: [`jurisdiction-rules.md`](jurisdiction-rules.md)
+- Horse-trekking plugin idea (water, parks, vet/farrier, plants):
+  [`plugins/horse-trekking-spec.md`](plugins/horse-trekking-spec.md)
 - Icons: [`icons.md`](icons.md)
 - Profile / rest overview: [`../README.md`](../README.md)
 

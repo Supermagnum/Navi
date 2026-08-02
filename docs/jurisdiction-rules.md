@@ -19,6 +19,8 @@ Related:
   [`#mobilehome-private-motorhome--deliberate-separation`](ec-561-truck-rest.md#mobilehome-private-motorhome--deliberate-separation))
 - Right-to-roam camping (plugin spec): [`plugins/right-to-roam-camping-spec.md`](plugins/right-to-roam-camping-spec.md)
 - Horse profile worked example (doc only): [`horse-profile.md`](horse-profile.md)
+- Horse-trekking plugin idea (doc only):
+  [`plugins/horse-trekking-spec.md`](plugins/horse-trekking-spec.md)
 - Plugin host / capabilities: [`plugins.md`](plugins.md)
 - POI overnight categories: [`poi.md`](poi.md) (**RestArea**, **Lodging**)
 - Profile / rest overview: [`../README.md`](../README.md)

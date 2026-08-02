@@ -100,7 +100,14 @@ class DiagnosticLogTest {
                 "distance_km" to 190.73,
                 "eta_min" to 127.0,
                 "breaks" to 0,
+                "plan_duration_ms" to 2234,
             ),
+        )
+        DiagnosticLog.logRoutePlanStagesFromReport(
+            "plan_duration_ms=2234\n" +
+                "ROUTE_PLAN_STAGES | profile_map_ms=2 graph_build_ms=1840 network_pref_ms=15 " +
+                "astar_ms=340 polyline_ms=8 poi_barrier_ms=95 rest_branch_ms=12 " +
+                "multiday_ms=0 pause_pins_ms=6 report_addons_ms=4\n",
         )
         DiagnosticLog.logEcoCalc(
             profile = "Car",
@@ -142,6 +149,7 @@ class DiagnosticLogTest {
                 "TOGGLE",
                 "SETTING_SAVED",
                 "ROUTE_PLAN",
+                "ROUTE_PLAN_STAGES",
                 "ECO_CALC",
                 "POI_FOUND",
                 "PAUSE_PLANNED",
@@ -152,6 +160,8 @@ class DiagnosticLogTest {
         for (c in cats) {
             assertTrue("missing $c in:\n$text", text.contains("| $c |"))
         }
+        assertTrue(text.contains("plan_duration_ms=2234"))
+        assertTrue(text.contains("graph_build_ms=1840"))
         assertTrue(text.contains("uphill_energy_j="))
         assertTrue(text.contains("downhill_energy_j="))
         assertTrue(text.contains("regen_credit_j="))

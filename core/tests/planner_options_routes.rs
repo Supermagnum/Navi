@@ -472,12 +472,26 @@ fn truck_rest_params_change_break_placement_along_route() {
         "edited TruckRestParams must move first break earlier: {tight_breaks:?} vs {default_breaks:?}"
     );
 
-    // Car heuristic must not equal the truck EC spacing for the same trip.
+    // Car soft spacing uses CarRestParams hours × trip speed (not truck EC hours).
     let rest = RestConfig::default();
     let car_iv = motor_break_interval_km(Profile::Car, &rest, dist_km, eta_min);
     let truck_iv = motor_break_interval_km(Profile::Truck, &rest, dist_km, eta_min);
+    // 520 km / 6.5 h = 80 km/h; car default max 4.5 h → 360 km (same speed product as
+    // truck's 4.5 h default, but sourced from CarRestParams — tighten car to diverge).
     assert!(
-        (truck_iv - 360.0).abs() < 1.0 && (car_iv - 40.0).abs() < 1.0,
-        "truck uses hour-derived km ({truck_iv}), car keeps heuristic ({car_iv})"
+        (truck_iv - 360.0).abs() < 1.0,
+        "truck uses hour-derived km ({truck_iv})"
+    );
+    let mut rest_tight_car = RestConfig::default();
+    rest_tight_car.car.break_interval_min_hours = 2.0;
+    rest_tight_car.car.break_interval_max_hours = 2.0;
+    let car_tight = motor_break_interval_km(Profile::Car, &rest_tight_car, dist_km, eta_min);
+    assert!(
+        (car_tight - 160.0).abs() < 1.0,
+        "configured 2 h car interval @ 80 km/h → 160 km, got {car_tight} (default car was {car_iv})"
+    );
+    assert!(
+        (truck_iv - car_tight).abs() > 100.0,
+        "truck EC spacing must stay independent of car soft hours"
     );
 }

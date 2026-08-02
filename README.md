@@ -212,6 +212,13 @@ Navi helps you plan; it does not replace judgement, local law, or trail
 conditions.
 
 - Hiking and off-trail segments may need care — use your eyes and local advice.
+- **Leaving the planned route** (wrong turn, road closure, intentional detour)
+  is detected via cross-track distance. The approach box shows **Off route**
+  instead of turn distances that would be wrong. Motor profiles auto-replan
+  after a short sustained debounce; **Hiking asks first** (trail wander is often
+  intentional). Recalculation uses the same planner as Plan and can take many
+  seconds — see [Known issues](#known-issues) and
+  [`docs/route-simulation.md`](docs/route-simulation.md#guidance).
 - Wild-camping distance defaults follow a Norway-oriented “right to roam” idea
   and **may not apply in other countries**.
 - Truck rest packs only apply where the app can recognise the jurisdiction;
@@ -235,6 +242,12 @@ Mitigations already in the design: regional downloads by default, cached graphs,
 background builds, and worker pools that leave room for the UI. Details:
 historically under “Minimum hardware and storage capacity” in older README
 revisions and in [`docs/architecture.md`](docs/architecture.md).
+
+**Planning latency note:** on low-RAM devices in particular, route planning time
+is dominated by sequential `.osm.pbf` loads (graph build + POI/barrier), not by
+A* itself — see [Known issues](#known-issues) and reproduce with
+[Tools → Diagnostic logging](docs/debugging.md#3b-diagnostic-session-log-on-device-file)
+(`ROUTE_PLAN` / `ROUTE_PLAN_STAGES`).
 
 # Screenshots
 
@@ -422,6 +435,35 @@ Country/region visual extracts can also be prepared with
 - **Screenshot-only lake fringe:** a soft blue rim around water can appear in
   captures but not while using the app live — see
   [`docs/map-styles.md`](docs/map-styles.md).
+- **Route planning is data-loading-bound, not pathfinding-bound — worse on
+  low-RAM devices.** Per-stage timing (Diagnostic logging → `ROUTE_PLAN` /
+  `ROUTE_PLAN_STAGES`; see
+  [`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file))
+  shows A* itself is typically sub-second; wall-clock cost is dominated by two
+  largely independent sequential scans of the OSM `.pbf` — `graph_build` and
+  `poi_barrier`. Measured on-device Car Espa→Atnbrufossen (SM-P613 session):
+  `plan_duration_ms=26835` with `graph_build_ms=17571`, `poi_barrier_ms=8045`,
+  `astar_ms=378` (stage sum ≈ total). This is a structural limit of
+  `.osm.pbf`: `osmpbf` has no spatial index, so a bbox query still walks the
+  relevant file portion. Low-RAM devices suffer more because there is less
+  headroom to keep decoded blocks cached, which increases re-reads from
+  storage. Cross-ref: [Minimum hardware and storage](#minimum-hardware-and-storage).
+  Not-yet-implemented mitigations: (1) merge graph-build and POI/barrier into
+  one shared multi-consumer parse (the architecture already calls for “one
+  shared `osmpbf` pass,” but this pair does not yet); (2) audit that the
+  reweighted graph cache is actually hit on repeat plans in the same region,
+  not silently rebuilt every time.
+- **Rerouting after a detour is not instant.** When the app detects you have
+  left the planned route (cross-track beyond ~75 m motor / ~100 m hiking) and
+  computes a new one, it reuses the same planning pipeline above — expect a
+  real delay (often many seconds on low-RAM devices, matching the measured
+  `graph_build` / `poi_barrier` costs) before an adjusted route appears. While
+  off-route, the approach box shows **Off route** rather than corridor turn
+  distances. A **Recalculating route…** banner is shown during the wait (with
+  Cancel). This is an expected wait, not a hang. Motor profiles auto-reroute
+  after a short sustained debounce (~5 s); **Hiking prompts** first (leaving a
+  trail is often intentional). See
+  [`docs/route-simulation.md`](docs/route-simulation.md#guidance).
 - **Hiking plan speed on huge areas (addressed):** overnight buildings use a
   1.5 km corridor pre-filter and a single PBF scan for POI + buildings (exact
   150 m allemannsretten check unchanged). Measured on DNT Åkersætra→Rondvassbu

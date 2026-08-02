@@ -22,6 +22,13 @@ data class RouteProgressSnapshot(
     val viaIndexReached: Int,
     val arrivedAtEnd: Boolean,
     val bearingDeg: Double,
+    /** Metres from GPS to the nearest planned sample. */
+    val crossTrackM: Double = 0.0,
+    /**
+     * True when [crossTrackM] exceeds the off-route threshold — guidance must
+     * not treat the nearest-sample snap as trustworthy corridor progress.
+     */
+    val offRoute: Boolean = false,
 )
 
 /**
@@ -32,6 +39,10 @@ data class RouteProgressSnapshot(
  * box hide). Default is UniFFI [approachHideM] — same value as Rust
  * `APPROACH_HIDE_M` / docs/approach-instructions.md (25 m). Do not hardcode
  * a second magic number here.
+ *
+ * [offRouteThresholdM]: when GPS is farther than this from the nearest sample,
+ * [RouteProgressSnapshot.offRoute] is set and maneuver guidance is suppressed
+ * (avoids confidently-wrong approach distances on winding corridors).
  */
 class RouteProgressTracker(
     private val samples: List<RouteSimSample>,
@@ -41,15 +52,22 @@ class RouteProgressTracker(
     private val viaRadiusM: Double = 80.0,
     private val endRadiusM: Double = 60.0,
     private val hideDistanceM: Double = approachHideM(),
+    private val offRouteThresholdM: Double = OFF_ROUTE_CROSS_TRACK_MOTOR_M,
 ) {
     private var maneuverCursor = 0
     private var viaReached = -1
+
+    /** Last along-route progress while on-route (frozen while off-route). */
+    private var lastOnRouteAlongM = 0.0
+    private var lastOnRouteSampleIdx = 0
 
     fun maneuverCount(): Int = maneuvers.size
 
     fun reset() {
         maneuverCursor = 0
         viaReached = -1
+        lastOnRouteAlongM = 0.0
+        lastOnRouteSampleIdx = 0
     }
 
     fun update(
@@ -68,11 +86,46 @@ class RouteProgressTracker(
                 viaIndexReached = viaReached,
                 arrivedAtEnd = false,
                 bearingDeg = 0.0,
+                crossTrackM = Double.POSITIVE_INFINITY,
+                offRoute = true,
             )
         }
         val nearest = nearestSampleIndex(lat, lon)
         val sample = samples[nearest]
+        val crossTrack = haversineM(lat, lon, sample.lat, sample.lon)
+        val offRoute = crossTrack > offRouteThresholdM
+
+        // Via / end geofences still use the raw GPS fix (physical proximity).
+        for (i in viaPoints.indices) {
+            if (i <= viaReached) continue
+            val v = viaPoints[i]
+            if (haversineM(lat, lon, v.lat, v.lon) <= viaRadiusM) {
+                viaReached = i
+            }
+        }
+        val arrivedAtEnd =
+            haversineM(lat, lon, endPoint.lat, endPoint.lon) <= endRadiusM
+
+        if (offRoute) {
+            return RouteProgressSnapshot(
+                alongM = lastOnRouteAlongM,
+                distanceToManeuverM = Double.POSITIVE_INFINITY,
+                maneuverIndex = maneuverCursor,
+                maneuver = null,
+                sample = sample,
+                remainingEtaMinutes = remainingEtaMinutes(lastOnRouteSampleIdx),
+                elapsedDrivingHours = elapsedDrivingHours(lastOnRouteSampleIdx),
+                viaIndexReached = viaReached,
+                arrivedAtEnd = arrivedAtEnd,
+                bearingDeg = 0.0,
+                crossTrackM = crossTrack,
+                offRoute = true,
+            )
+        }
+
         val along = sample.cumM
+        lastOnRouteAlongM = along
+        lastOnRouteSampleIdx = nearest
         // Advance past maneuvers within hide distance (metres).
         while (maneuverCursor < maneuvers.size) {
             val m = maneuvers[maneuverCursor]
@@ -85,16 +138,8 @@ class RouteProgressTracker(
         val man = maneuvers.getOrNull(maneuverCursor)
         val distToMan = if (man != null) (man.cumM - along).coerceAtLeast(0.0) else Double.POSITIVE_INFINITY
 
-        for (i in viaPoints.indices) {
-            if (i <= viaReached) continue
-            val v = viaPoints[i]
-            if (haversineM(lat, lon, v.lat, v.lon) <= viaRadiusM) {
-                viaReached = i
-            }
-        }
         val arrived =
-            haversineM(lat, lon, endPoint.lat, endPoint.lon) <= endRadiusM ||
-                along >= (samples.last().cumM - endRadiusM)
+            arrivedAtEnd || along >= (samples.last().cumM - endRadiusM)
 
         val bearing =
             if (nearest + 1 < samples.size) {
@@ -116,6 +161,8 @@ class RouteProgressTracker(
             viaIndexReached = viaReached,
             arrivedAtEnd = arrived,
             bearingDeg = bearing,
+            crossTrackM = crossTrack,
+            offRoute = false,
         )
     }
 
@@ -164,6 +211,15 @@ class RouteProgressTracker(
     }
 
     companion object {
+        /** Motor profiles: beyond this, treat as off the planned road. */
+        const val OFF_ROUTE_CROSS_TRACK_MOTOR_M = 75.0
+
+        /** Hiking: slightly looser (trail wander / GPS under canopy). */
+        const val OFF_ROUTE_CROSS_TRACK_HIKING_M = 100.0
+
+        /** Sustained off-route before auto-reroute / hiking prompt. */
+        const val OFF_ROUTE_CONFIRM_MS = 5_000L
+
         fun haversineM(
             lat1: Double,
             lon1: Double,

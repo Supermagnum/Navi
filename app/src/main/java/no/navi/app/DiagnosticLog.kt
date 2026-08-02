@@ -11,6 +11,7 @@ import org.json.JSONArray
 import uniffi.navi.CorridorRouteResult
 import uniffi.navi.detectedParallelism
 import uniffi.navi.routingWorkerCount
+import uniffi.navi.setRoutePlanTimingEnabled
 import java.io.BufferedWriter
 import java.io.File
 import java.io.FileOutputStream
@@ -75,6 +76,7 @@ object DiagnosticLog {
         TOGGLE,
         SETTING_SAVED,
         ROUTE_PLAN,
+        ROUTE_PLAN_STAGES,
         ECO_CALC,
         POI_FOUND,
         PAUSE_PLANNED,
@@ -164,16 +166,25 @@ object DiagnosticLog {
         synchronized(lock) {
             if (on == enabled.get() && (!on || writer.get() != null)) {
                 enabled.set(on)
+                syncNativeTimingLocked(on)
                 return
             }
             if (!on) {
                 enabled.set(false)
+                syncNativeTimingLocked(false)
                 closeSessionLocked()
                 return
             }
             enabled.set(true)
+            syncNativeTimingLocked(true)
             openNewSessionLocked(logsDirectory(logsDir))
         }
+    }
+
+    /** Mirror the Diagnostic toggle into native per-stage plan timing. */
+    private fun syncNativeTimingLocked(on: Boolean) {
+        // Silent on JVM unit tests (no libnavi / Log mock). Device failures are rare.
+        runCatching { setRoutePlanTimingEnabled(on) }
     }
 
     /**
@@ -427,6 +438,7 @@ object DiagnosticLog {
             runCatching {
                 JSONArray(result.breakPoisJson.ifBlank { "[]" }).length()
             }.getOrDefault(0)
+        val planMs = parseReportDouble(result.report, "plan_duration_ms")
         write(
             Category.ROUTE_PLAN,
             mapOf(
@@ -434,13 +446,53 @@ object DiagnosticLog {
                 "distance_km" to result.distanceKm,
                 "eta_min" to result.etaMinutes,
                 "breaks" to breaks,
-            ),
+                "plan_duration_ms" to planMs,
+            ).filterValues { it != null },
         )
+        logRoutePlanStagesFromReport(result.report)
         logEcoFromReport(result.report)
         logPoisFromJson(result.breakPoisJson)
         logPausesFromDaysJson(result.daysJson)
         logPausesFromBreakPois(result.breakPoisJson)
         logInstructionsIssued(result.maneuversJson)
+    }
+
+    /**
+     * Emit one greppable [Category.ROUTE_PLAN_STAGES] line from a native plan
+     * report (`ROUTE_PLAN_STAGES | key=ms …`). No-op when logging is off or the
+     * report has no stage line.
+     */
+    fun logRoutePlanStagesFromReport(report: String) {
+        if (!enabled.get()) return
+        val raw =
+            report.lineSequence().firstOrNull { line ->
+                line.trimStart().startsWith("ROUTE_PLAN_STAGES")
+            } ?: return
+        val body =
+            raw
+                .substringAfter('|', missingDelimiterValue = "")
+                .trim()
+                .ifEmpty {
+                    raw
+                        .trimStart()
+                        .removePrefix("ROUTE_PLAN_STAGES")
+                        .trim()
+                        .trimStart('|')
+                        .trim()
+                }
+        if (body.isEmpty()) return
+        val fields = linkedMapOf<String, Any?>()
+        for (part in body.split(Regex("\\s+"))) {
+            if (part.isEmpty()) continue
+            val eq = part.indexOf('=')
+            if (eq <= 0) continue
+            val key = part.substring(0, eq)
+            val value = part.substring(eq + 1)
+            fields[key] = value.toLongOrNull() ?: value.toDoubleOrNull() ?: value
+        }
+        if (fields.isNotEmpty()) {
+            write(Category.ROUTE_PLAN_STAGES, fields)
+        }
     }
 
     fun logRoutePlanFailed(reason: String) {

@@ -29,21 +29,38 @@ impl Default for EcoConfig {
     }
 }
 
+/// Eco physics for a mid-size motorcycle (+ rider). Distinct from the car Passat
+/// baseline — illustrative starting defaults, not a surveyed vehicle.
+pub fn motorcycle_eco_config(regen: bool) -> EcoConfig {
+    EcoConfig {
+        drag_coefficient: MOTORCYCLE_DRAG_COEFFICIENT,
+        frontal_area_m2: MOTORCYCLE_FRONTAL_AREA_M2,
+        mass_kg: MOTORCYCLE_MASS_KG,
+        rolling_resistance: DEFAULT_ROLLING_RESISTANCE,
+        cruise_speed_m_s: DEFAULT_CRUISE_SPEED_M_S,
+        regen_efficiency: if regen {
+            DEFAULT_EV_REGEN_EFFICIENCY
+        } else {
+            0.0
+        },
+    }
+}
+
 impl EcoConfig {
     /// Profile-scoped defaults: combustion/ICE keep regen at 0; electric drivetrains
     /// get [`DEFAULT_EV_REGEN_EFFICIENCY`] so descent recovers a fraction of PE.
+    /// Motorcycle / MotorcycleElectric use [`motorcycle_eco_config`], not car mass/Cd.
     pub fn for_profile(profile: crate::config::Profile) -> Self {
-        let mut cfg = Self::default();
-        if matches!(
-            profile,
-            crate::config::Profile::CarElectric
-                | crate::config::Profile::TruckElectric
-                | crate::config::Profile::MotorcycleElectric
-                | crate::config::Profile::CyclingElectric
-        ) {
-            cfg.regen_efficiency = DEFAULT_EV_REGEN_EFFICIENCY;
+        use crate::config::Profile;
+        match profile {
+            Profile::Motorcycle => motorcycle_eco_config(false),
+            Profile::MotorcycleElectric => motorcycle_eco_config(true),
+            Profile::CarElectric | Profile::TruckElectric | Profile::CyclingElectric => EcoConfig {
+                regen_efficiency: DEFAULT_EV_REGEN_EFFICIENCY,
+                ..Self::default()
+            },
+            _ => Self::default(),
         }
-        cfg
     }
 
     /// Flat (rolling + aerodynamic) energy for a level segment, joules.

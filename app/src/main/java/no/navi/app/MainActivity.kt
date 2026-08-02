@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
@@ -437,6 +438,10 @@ private fun NaviMapScreen() {
     var downloadPolling by remember { mutableStateOf(false) }
     var planningRoute by remember { mutableStateOf(false) }
     var routePlanProgress by remember { mutableStateOf("") }
+    var recalculatingRoute by remember { mutableStateOf(false) }
+    var showHikingReroutePrompt by remember { mutableStateOf(false) }
+    var rerouteJob by remember { mutableStateOf<Job?>(null) }
+    val offRouteCoordinator = remember { OffRouteCoordinator() }
     var routePlanPct by remember { mutableIntStateOf(-1) }
     var weeklyReminder by remember { mutableStateOf(false) }
     var pendingUpdatePlan by remember { mutableStateOf<String?>(null) }
@@ -591,6 +596,12 @@ private fun NaviMapScreen() {
                         mapState.endLat,
                         mapState.endLon,
                     ),
+                offRouteThresholdM =
+                    if (profile == TravelProfile.HIKING) {
+                        RouteProgressTracker.OFF_ROUTE_CROSS_TRACK_HIKING_M
+                    } else {
+                        RouteProgressTracker.OFF_ROUTE_CROSS_TRACK_MOTOR_M
+                    },
             ),
         )
         lastViaToastIndex = -1
@@ -818,8 +829,20 @@ private fun NaviMapScreen() {
                 maneuvers = routeManeuvers,
                 viaPoints = snappedVias,
                 endPoint = Waypoint(endLabel, endLatFix, endLonFix),
+                offRouteThresholdM =
+                    if (profile == TravelProfile.HIKING) {
+                        RouteProgressTracker.OFF_ROUTE_CROSS_TRACK_HIKING_M
+                    } else {
+                        RouteProgressTracker.OFF_ROUTE_CROSS_TRACK_MOTOR_M
+                    },
             ),
         )
+        offRouteCoordinator.reset()
+        showHikingReroutePrompt = false
+        recalculatingRoute = false
+        NaviMapTestHooks.reroutingActive = false
+        NaviMapTestHooks.hikingReroutePromptVisible = false
+        NaviMapTestHooks.lastOffRoute = false
         lastViaToastIndex = -1
         status =
             userFacingStatus(
@@ -850,6 +873,95 @@ private fun NaviMapScreen() {
             driveHud = driveHud.copy(minutesToBreak = null, tripEtaMinutes = null)
         }
     }
+
+    /**
+     * Recompute from current GPS to remaining vias + destination after a
+     * confirmed off-route. Uses [RouteReplan] (same UniFFI pipeline as Plan).
+     */
+    fun startRerouteFromCurrent(
+        lat: Double,
+        lon: Double,
+    ) {
+        if (recalculatingRoute || planningRoute) return
+        if (toPoint.name.isBlank() && mapState.endName.isBlank()) return
+        val dest =
+            if (toPoint.lat != 0.0 || toPoint.lon != 0.0) {
+                toPoint
+            } else {
+                Waypoint(mapState.endName.ifBlank { "End" }, mapState.endLat, mapState.endLon)
+            }
+        val remainingVias =
+            viaPoints.filterIndexed { idx, _ ->
+                idx > NaviMapTestHooks.lastViaIndex
+            }
+        val pts =
+            buildList {
+                add(Waypoint("Here", lat, lon))
+                addAll(remainingVias)
+                add(dest)
+            }
+        rerouteJob?.cancel()
+        rerouteJob =
+            scope.launch {
+                recalculatingRoute = true
+                planningRoute = true
+                NaviMapTestHooks.reroutingActive = true
+                NaviMapTestHooks.autoRerouteTriggeredCount += 1
+                routePlanProgress = "Recalculating route…"
+                routePlanPct = 0
+                status = "Recalculating route… (may take several seconds)"
+                val ecoForPlan = if (ecoModeToggleable(profile)) ecoEnabled else true
+                val vehicle =
+                    runCatching { loadVehicleLimits(dataDir.absolutePath) }
+                        .getOrElse {
+                            FfiVehicleLimits(null, null, null, null, null, null)
+                        }
+                val result =
+                    runCatching {
+                        RouteReplan.plan(
+                            dataDir = dataDir,
+                            profile = profile,
+                            waypoints = pts,
+                            useEco = ecoForPlan,
+                            avoidMotorways = avoidMotorways,
+                            avoidTolls = avoidTolls,
+                            avoidFerries = avoidFerries,
+                            vehicle = vehicle,
+                            preferOfficialNetworks = preferOfficialNetworks,
+                            preferPilgrimRoutes = preferPilgrimRoutes,
+                            onProgress = { pct, detail ->
+                                routePlanPct = pct
+                                routePlanProgress = "Recalculating route… $detail"
+                            },
+                        )
+                    }.getOrElse { e ->
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        status = "Reroute failed: ${e.message}"
+                        recalculatingRoute = false
+                        planningRoute = false
+                        NaviMapTestHooks.reroutingActive = false
+                        routePlanProgress = ""
+                        offRouteCoordinator.suppressUntilOnRoute()
+                        return@launch
+                    }
+                if (!isActive) return@launch
+                recalculatingRoute = false
+                planningRoute = false
+                NaviMapTestHooks.reroutingActive = false
+                routePlanProgress = ""
+                if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
+                    status = userFacingStatus(result.report).ifBlank { "Reroute failed" }
+                    offRouteCoordinator.suppressUntilOnRoute()
+                    return@launch
+                }
+                fromPoint = Waypoint("Here", lat, lon)
+                applyPlannedRoute(result)
+                status =
+                    "Route updated · ${"%.1f".format(result.distanceKm)} km " +
+                    "(recalculated after detour)"
+            }
+    }
+
     LaunchedEffect(dataDir) {
         preferOfficialNetworks = uniffi.navi.loadPreferOfficialNetworks(dataDir.absolutePath)
         preferPilgrimRoutes = uniffi.navi.loadPreferPilgrimRoutes(dataDir.absolutePath)
@@ -1114,8 +1226,13 @@ private fun NaviMapScreen() {
 
         fun applyFix(loc: Location?) {
             if (loc == null) return
+            val provider = loc.provider.orEmpty()
+            val testOrSim =
+                provider == "navi-route-sim" || provider == "navi-test-inject"
             // While simulating, ignore real LocationManager fixes.
-            if (simulatingRef.get() && loc.provider != "navi-route-sim") return
+            if (simulatingRef.get() && !testOrSim) return
+            // Instrumented off-route injects: keep live GPS from clobbering.
+            if (NaviMapTestHooks.ignoreLiveGpsFixes && !testOrSim) return
             // Always update map GPS mark from a valid fix.
             if (loc.latitude != 0.0 || loc.longitude != 0.0) {
                 // Mirror into native so lastGpsFix() is never a demo stub.
@@ -1129,6 +1246,8 @@ private fun NaviMapScreen() {
                         loc.longitude - mapState.gpsLon,
                     ) > 1e-6
                 if (moved || mapState.gpsLat == 0.0) {
+                    NaviMapTestHooks.lastGpsLat = loc.latitude
+                    NaviMapTestHooks.lastGpsLon = loc.longitude
                     mapState =
                         if (NaviMapTestHooks.disableGpsFollow) {
                             mapState.copy(
@@ -1192,7 +1311,17 @@ private fun NaviMapScreen() {
                         NaviMapTestHooks.gpsBearingDeg = snap.bearingDeg
                     }
                     val man = snap.maneuver
-                    if (man != null && snap.distanceToManeuverM.isFinite()) {
+                    NaviMapTestHooks.lastOffRoute = snap.offRoute
+                    NaviMapTestHooks.lastCrossTrackM = snap.crossTrackM
+                    if (snap.offRoute) {
+                        approachGuidance =
+                            ApproachGuidanceState(
+                                active = true,
+                                offRoute = true,
+                                preferMetric = driveHud.preferMetric,
+                            )
+                        NaviMapTestHooks.lastApproachPhase = approachUiPhase(approachGuidance)
+                    } else if (man != null && snap.distanceToManeuverM.isFinite()) {
                         val endWp = toPoint
                         val useEndAddr = man.kind == "destination"
                         val (street, house, post) =
@@ -1212,13 +1341,34 @@ private fun NaviMapScreen() {
                                 postcode = post,
                                 roundaboutExit = man.roundaboutExit,
                                 preferMetric = driveHud.preferMetric,
+                                offRoute = false,
                             )
                         NaviMapTestHooks.lastApproachPhase = approachUiPhase(approachGuidance)
                     } else {
                         approachGuidance = ApproachGuidanceState()
                         NaviMapTestHooks.lastApproachPhase = ApproachUiPhase.Hidden
                     }
-                    if (snap.remainingEtaMinutes.isFinite()) {
+                    val offAction =
+                        offRouteCoordinator.onFix(
+                            offRoute = snap.offRoute,
+                            hiking = profile == TravelProfile.HIKING,
+                            busy = recalculatingRoute || planningRoute || showHikingReroutePrompt,
+                            confirmMs =
+                                NaviMapTestHooks.offRouteConfirmMsOverride
+                                    ?: RouteProgressTracker.OFF_ROUTE_CONFIRM_MS,
+                        )
+                    when (offAction) {
+                        OffRouteCoordinator.Action.AutoReroute -> {
+                            startRerouteFromCurrent(loc.latitude, loc.longitude)
+                        }
+                        OffRouteCoordinator.Action.PromptHikingReroute -> {
+                            showHikingReroutePrompt = true
+                            NaviMapTestHooks.hikingReroutePromptVisible = true
+                            status = "Off trail — recalculate route?"
+                        }
+                        else -> Unit
+                    }
+                    if (snap.remainingEtaMinutes.isFinite() && !snap.offRoute) {
                         val intervalH =
                             runCatching {
                                 breakIntervalHoursForProfile(dataDir.absolutePath, profile)
@@ -1604,9 +1754,42 @@ private fun NaviMapScreen() {
                             NaviMapTestHooks.requestPrepareRouteSimulation = false
                             prepareRouteSimulation()
                         }
+                        val inject = NaviMapTestHooks.pendingInjectFixLatLon
+                        if (inject != null) {
+                            NaviMapTestHooks.pendingInjectFixLatLon = null
+                            // Stop corridor playback so the off-route fix is not
+                            // overwritten by the next on-route sample tick.
+                            if (simulatingRef.get()) {
+                                stopRouteSimulation()
+                            }
+                            // Keep device GPS from immediately undoing the inject.
+                            NaviMapTestHooks.ignoreLiveGpsFixes = true
+                            val loc =
+                                android.location.Location("navi-test-inject").apply {
+                                    latitude = inject.first
+                                    longitude = inject.second
+                                    time = System.currentTimeMillis()
+                                    accuracy = 5f
+                                }
+                            applyFixRef.get().invoke(loc)
+                        }
+                        val hikeAns = NaviMapTestHooks.requestHikingRerouteAnswer
+                        if (hikeAns != null && showHikingReroutePrompt) {
+                            NaviMapTestHooks.requestHikingRerouteAnswer = null
+                            showHikingReroutePrompt = false
+                            NaviMapTestHooks.hikingReroutePromptVisible = false
+                            if (hikeAns) {
+                                startRerouteFromCurrent(mapState.gpsLat, mapState.gpsLon)
+                            } else {
+                                offRouteCoordinator.suppressUntilOnRoute()
+                                status = "Kept original route"
+                            }
+                        }
                         // Always mirror sim flag into Compose state (hook/ref updates
                         // alone do not invalidate composition).
                         simulating = simulatingRef.get()
+                        NaviMapTestHooks.reroutingActive = recalculatingRoute
+                        NaviMapTestHooks.hikingReroutePromptVisible = showHikingReroutePrompt
                         val seekCum = NaviMapTestHooks.requestSimSeekCumM
                         if (seekCum != null) {
                             NaviMapTestHooks.requestSimSeekCumM = null
@@ -2028,6 +2211,64 @@ private fun NaviMapScreen() {
                     .zIndex(6f)
                     .padding(top = 64.dp),
         )
+        RecalculatingRouteBanner(
+            active = recalculatingRoute,
+            onCancel = {
+                // Cancel mid-recompute: keep original plan, suppress until back on route.
+                // Native plan may still finish on a worker; ignore result via Job cancel.
+                rerouteJob?.cancel()
+                rerouteJob = null
+                recalculatingRoute = false
+                planningRoute = false
+                NaviMapTestHooks.reroutingActive = false
+                routePlanProgress = ""
+                offRouteCoordinator.suppressUntilOnRoute()
+                status = "Kept original route"
+            },
+            modifier =
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .zIndex(7f)
+                    .padding(top = if (simulating) 108.dp else 64.dp),
+        )
+        if (showHikingReroutePrompt) {
+            AlertDialog(
+                onDismissRequest = {
+                    showHikingReroutePrompt = false
+                    NaviMapTestHooks.hikingReroutePromptVisible = false
+                    offRouteCoordinator.suppressUntilOnRoute()
+                    status = "Kept original route"
+                },
+                title = { Text("Off trail") },
+                text = {
+                    Text(
+                        "You left the planned path. Recalculate from here? " +
+                            "This can take several seconds on this device.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showHikingReroutePrompt = false
+                            NaviMapTestHooks.hikingReroutePromptVisible = false
+                            startRerouteFromCurrent(mapState.gpsLat, mapState.gpsLon)
+                        },
+                        modifier = Modifier.testTag("btn_hiking_reroute_yes"),
+                    ) { Text("Recalculate") }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showHikingReroutePrompt = false
+                            NaviMapTestHooks.hikingReroutePromptVisible = false
+                            offRouteCoordinator.suppressUntilOnRoute()
+                            status = "Kept original route"
+                        },
+                        modifier = Modifier.testTag("btn_hiking_reroute_no"),
+                    ) { Text("Keep route") }
+                },
+            )
+        }
 
         Column(
             modifier =
@@ -4059,6 +4300,47 @@ private fun SimulatingBannerOverlay(
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         )
+    }
+}
+
+@Composable
+private fun RecalculatingRouteBanner(
+    active: Boolean,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var hookActive by remember { mutableStateOf(NaviMapTestHooks.reroutingActive) }
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            val next = NaviMapTestHooks.reroutingActive
+            if (next != hookActive) hookActive = next
+            delay(50)
+        }
+    }
+    if (!active && !hookActive) return
+    Surface(
+        color = Color(0xFFE65100),
+        shape = RoundedCornerShape(6.dp),
+        shadowElevation = 6.dp,
+        modifier =
+            modifier
+                .testTag("rerouting_banner")
+                .semantics { contentDescription = "Recalculating route" },
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Text(
+                "Recalculating route…",
+                color = Color.White,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(end = 8.dp),
+            )
+            TextButton(onClick = onCancel, modifier = Modifier.testTag("btn_cancel_reroute")) {
+                Text("Cancel", color = Color.White)
+            }
+        }
     }
 }
 

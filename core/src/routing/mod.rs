@@ -61,6 +61,7 @@ pub use rest::{
     evaluate_fmcsa_trip, evaluate_truck_trip, hiking_samples_from_coords, max_daily_distance_km,
     motor_break_interval_km, motor_daily_budget, plan_fmcsa_multi_day, plan_hiking_multi_day,
     plan_motor_multi_day, plan_truck_multi_day, resolve_driving_hours_pack_at,
+    soft_break_distances_km, soft_break_interval_km_fallback, soft_car_break_interval_hours,
     truck_break_distances_km, truck_break_duration_minutes, truck_break_interval_km,
     truck_day_cap_hours, truck_effective_break_parts, truck_mandatory_break_after_hours,
     truck_max_daily_driving_hours, truck_max_fortnightly_driving_hours,

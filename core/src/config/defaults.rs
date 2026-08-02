@@ -146,6 +146,16 @@ pub const DEFAULT_VEHICLE_MASS_KG: f64 = 1_500.0;
 /// Default cruise speed (m/s) used when estimating drag force along an edge.
 pub const DEFAULT_CRUISE_SPEED_M_S: f64 = 25.0;
 
+/// Illustrative mid-size motorcycle Cd (naked/unfaired bikes often higher Cd
+/// than a car; absolute drag still lower due to frontal area). Starting default.
+pub const MOTORCYCLE_DRAG_COEFFICIENT: f64 = 0.65;
+
+/// Illustrative motorcycle + rider frontal area (m²); cars are ~2.2 m².
+pub const MOTORCYCLE_FRONTAL_AREA_M2: f64 = 0.60;
+
+/// Illustrative motorcycle + rider mass (kg); mid-size bike class ~150–250 kg.
+pub const MOTORCYCLE_MASS_KG: f64 = 220.0;
+
 /// Default regenerative-braking efficiency on descent (0 = no recovery; diesel/ICE default).
 pub const DEFAULT_REGEN_EFFICIENCY: f64 = 0.0;
 

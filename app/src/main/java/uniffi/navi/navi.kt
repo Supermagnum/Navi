@@ -896,6 +896,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1039,6 +1043,8 @@ fun uniffi_navi_checksum_func_rasterize_icon_png(
 ): Short
 fun uniffi_navi_checksum_func_road_label_near(
 ): Short
+fun uniffi_navi_checksum_func_route_plan_timing_enabled(
+): Short
 fun uniffi_navi_checksum_func_routing_worker_count(
 ): Short
 fun uniffi_navi_checksum_func_run_car_corridor_pipeline(
@@ -1068,6 +1074,8 @@ fun uniffi_navi_checksum_func_save_vehicle_limits(
 fun uniffi_navi_checksum_func_search_places(
 ): Short
 fun uniffi_navi_checksum_func_set_osm_weekly_reminder(
+): Short
+fun uniffi_navi_checksum_func_set_route_plan_timing_enabled(
 ): Short
 fun uniffi_navi_checksum_func_set_truck_exceptional_extension_armed(
 ): Short
@@ -1290,6 +1298,8 @@ fun uniffi_navi_fn_func_rasterize_icon_png(`key`: RustBuffer.ByValue,`theme`: Ru
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_road_label_near(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`profile`: RustBuffer.ByValue,`maxM`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_route_plan_timing_enabled(uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_routing_worker_count(uniffi_out_err: UniffiRustCallStatus, 
 ): Int
 fun uniffi_navi_fn_func_run_car_corridor_pipeline(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`breakIntervalHours`: Double,uniffi_out_err: UniffiRustCallStatus, 
@@ -1320,6 +1330,8 @@ fun uniffi_navi_fn_func_search_places(`indexDbPath`: RustBuffer.ByValue,`query`:
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_set_osm_weekly_reminder(`dataDir`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_set_route_plan_timing_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_navi_fn_func_set_truck_exceptional_extension_armed(`dataDir`: RustBuffer.ByValue,`armed`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_station_timeout_max_s(uniffi_out_err: UniffiRustCallStatus, 
@@ -1646,6 +1658,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_road_label_near() != 12920.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_route_plan_timing_enabled() != 55311.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_routing_worker_count() != 4016.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1689,6 +1704,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_set_osm_weekly_reminder() != 51186.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_set_route_plan_timing_enabled() != 49821.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_set_truck_exceptional_extension_armed() != 17978.toShort()) {
@@ -4370,6 +4388,15 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     )
     }
     
+ fun `routePlanTimingEnabled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_route_plan_timing_enabled(
+        _status)
+}
+    )
+    }
+    
 
         /**
          * Routing-tier worker count after reserving UI/audio headroom.
@@ -4529,6 +4556,17 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
 }
     )
     }
+    
+
+        /**
+         * Gate per-stage route-plan timing (matches Android Diagnostic logging toggle).
+         */ fun `setRoutePlanTimingEnabled`(`enabled`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_set_route_plan_timing_enabled(
+        FfiConverterBoolean.lower(`enabled`),_status)
+}
+    
     
 
         /**

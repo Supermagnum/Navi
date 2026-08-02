@@ -17,7 +17,7 @@ pub use ebike::{
     battery_draw_wh, climb_capability, climb_capability_for, default_motor_efficiency,
     ebike_eco_config, range_estimate, EbikeClimbCapability, EbikeConfig, EbikeRangeEstimate,
 };
-pub use eco::EcoConfig;
+pub use eco::{motorcycle_eco_config, EcoConfig};
 pub use ev_car::{default_ev_car_motor_efficiency, ev_car_range_estimate, EvCarConfig};
 pub use fmcsa_params::FmcsaHosParams;
 pub use poi_radii::{ProfilePoiRadii, ProfilePoiRadiiTable};

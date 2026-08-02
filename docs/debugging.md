@@ -180,11 +180,18 @@ Use a stable plugin id matching the manifest `name` (e.g. `right-to-roam-camping
 **Tools → Export diagnostic log** still opens Android’s share sheet if you
 prefer email/Drive/etc.
 
-Categories (only these; not a logcat mirror): `GPS`, `TOGGLE`, `SETTING_SAVED`,
-`ROUTE_PLAN`, `ECO_CALC`, `POI_FOUND`, `PAUSE_PLANNED`, `INSTRUCTION`,
-`FUEL_ADDED`, `SYSTEM`. GPS is rate-limited (about once per 3 s or 25 m move).
-Off by default; when off, no file is created. Older sessions are rotated
+Categories (only these; not a logcat mirror): `GPS`, `CAMERA`, `TOGGLE`,
+`SETTING_SAVED`, `ROUTE_PLAN`, `ROUTE_PLAN_STAGES`, `ECO_CALC`, `POI_FOUND`,
+`PAUSE_PLANNED`, `INSTRUCTION`, `FUEL_ADDED`, `SYSTEM`. GPS is rate-limited
+(about once per 3 s or 25 m move). Off by default; when off, no file is created
+and native per-stage plan timing is also gated off. Older sessions are rotated
 (last 10 kept).
+
+**Route-plan timing:** with logging on, a completed plan writes
+`status=complete … distance_km=… plan_duration_ms=…` on `ROUTE_PLAN`, plus one
+`ROUTE_PLAN_STAGES` line of per-stage milliseconds (motor vs hiking use
+different stage keys). Useful to confirm planning is PBF-load-bound rather than
+A*-bound — see README [Known issues](../README.md#known-issues).
 
 ---
 

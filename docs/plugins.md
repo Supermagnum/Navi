@@ -274,6 +274,17 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | **Proposed caps** | `icon_anim_query`, `icon_anim_frame`, `plugin_kv` / `storage`, `log` |
 | **Notes** | Spec only — not implemented. Core still renders one SVG per `rasterize_key` call. |
 
+### 12. Horse trekking (`horse_trekking` / `horse_trek`)
+
+| | |
+|---|---|
+| **Benefit** | Horse-scale water and support-service lookahead, per-protected-area access guidance, and field notes for equestrian trekking — while core Horse routing preference stays a soft cost model (prefer unpaved / bridleway / `route=horse`, town-bypass penalty) |
+| **Docs** | [`plugins/horse-trekking-spec.md`](plugins/horse-trekking-spec.md) — BRouter-informed cost preference (reuse network-pref shape), horse daily water volumes, Norwegian *verneforskrift* per-area rules, vet/farrier/stable POIs, Tysbast informational note; core profile walkthrough [`horse-profile.md`](horse-profile.md) |
+| **Host duties** | Corridor POI scan, protected-area queries, jurisdiction packs; render advisory cards + disclaimer; optional soft-pref weights when Horse profile exists |
+| **Guest duties** | Water-gap / support-service lookahead, protected-area pack lookup (decline if unknown), static toxic-plant content |
+| **Proposed caps** | `position_read`, `poi_query`, `route_read`, `admin_region_read`, `protected_area_query` (new), `plugin_kv` / `storage`, `log` |
+| **Notes** | Spec only — not implemented. **Hiking remains the accepted interim stopgap** and does not apply horse-specific access, pace, water, or park rules. |
+
 ### Capability sketch (not in ABI yet)
 
 | Proposed | Purpose |
@@ -299,6 +310,7 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | `i18n_locale_get` / `i18n_locale_set` | Read/write persisted UI locale preference |
 | `icon_anim_query` | List installed animated-icon packs (key, fps, frames) |
 | `icon_anim_frame` | Resolve SVG bytes/path for `key` + frame index |
+| `protected_area_query` | Protected-area polygons / ids crossed by corridor (horse *verneforskrift* packs) |
 
 Add a capability to `plugin-host` `Capability` enum + HostApi **before** shipping
 any guest that needs it. Until then, host-native services may write into core

@@ -58,6 +58,11 @@ data class ApproachGuidanceState(
     /** Roundabout exit 1..=3 when applicable. */
     val roundaboutExit: Int? = null,
     val preferMetric: Boolean = true,
+    /**
+     * When true, show an explicit Off route label instead of a (likely wrong)
+     * distance / maneuver from global nearest-sample snap.
+     */
+    val offRoute: Boolean = false,
 )
 
 /**
@@ -102,12 +107,14 @@ enum class ApproachUiPhase {
     Urgency,
 }
 
-fun approachUiPhase(state: ApproachGuidanceState): ApproachUiPhase =
-    when (approachPhaseForDistance(state.active, state.distanceM)) {
+fun approachUiPhase(state: ApproachGuidanceState): ApproachUiPhase {
+    if (state.offRoute && state.active) return ApproachUiPhase.Appear
+    return when (approachPhaseForDistance(state.active, state.distanceM)) {
         "appear" -> ApproachUiPhase.Appear
         "urgency" -> ApproachUiPhase.Urgency
         else -> ApproachUiPhase.Hidden
     }
+}
 
 @Composable
 fun ApproachInstructionBox(
@@ -119,6 +126,38 @@ fun ApproachInstructionBox(
 ) {
     val phase = approachUiPhase(state)
     if (!routePlanned || phase == ApproachUiPhase.Hidden) return
+
+    if (state.offRoute) {
+        Box(
+            modifier =
+                modifier
+                    .width(IntrinsicSize.Max)
+                    .widthIn(min = 160.dp, max = 280.dp)
+                    .background(Color(0xFFFFF3E0), RectangleShape)
+                    .border(2.dp, Color(0xFFE65100), RectangleShape)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                    .testTag("approach_instruction_box")
+                    .semantics {
+                        contentDescription = "Off route"
+                    },
+        ) {
+            Column {
+                Text(
+                    text = "Off route",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color(0xFFE65100),
+                    modifier = Modifier.testTag("approach_off_route"),
+                )
+                Text(
+                    text = "Recalculating may take several seconds",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF5D4037),
+                    modifier = Modifier.testTag("approach_off_route_hint"),
+                )
+            }
+        }
+        return
+    }
 
     val urgency = phase == ApproachUiPhase.Urgency
     val dist = formatApproachDistance(state.distanceM, state.preferMetric)

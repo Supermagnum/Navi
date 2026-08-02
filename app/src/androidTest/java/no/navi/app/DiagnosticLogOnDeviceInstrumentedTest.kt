@@ -288,6 +288,7 @@ class DiagnosticLogOnDeviceInstrumentedTest {
                 "TOGGLE",
                 "SETTING_SAVED",
                 "ROUTE_PLAN",
+                "ROUTE_PLAN_STAGES",
                 "ECO_CALC",
                 "POI_FOUND",
                 "PAUSE_PLANNED",
@@ -298,6 +299,22 @@ class DiagnosticLogOnDeviceInstrumentedTest {
         for (c in cats) {
             assertTrue("missing category $c in:\n$text", text.contains("| $c |"))
         }
+        assertTrue(
+            "ROUTE_PLAN complete must include plan_duration_ms:\n$text",
+            text.lines().any {
+                it.contains("| ROUTE_PLAN |") &&
+                    it.contains("status=complete") &&
+                    it.contains("plan_duration_ms=") &&
+                    it.contains("distance_km=")
+            },
+        )
+        val stagesLine = text.lines().first { it.contains("| ROUTE_PLAN_STAGES |") }
+        assertTrue("motor stages need graph_build_ms: $stagesLine", stagesLine.contains("graph_build_ms="))
+        assertTrue("motor stages need astar_ms: $stagesLine", stagesLine.contains("astar_ms="))
+        assertFalse(
+            "motor plan must not use hiking-only hybrid_path_ms: $stagesLine",
+            stagesLine.contains("hybrid_path_ms="),
+        )
 
         val ecoLine = text.lines().first { it.contains("| ECO_CALC |") }
 

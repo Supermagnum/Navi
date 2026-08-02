@@ -67,6 +67,7 @@ fn main() {
     };
     println!("profile={profile:?}");
 
+    navi::set_route_plan_timing_enabled(true);
     let r = navi::plan_car_route(
         pbf.display().to_string(),
         elev.display().to_string(),
