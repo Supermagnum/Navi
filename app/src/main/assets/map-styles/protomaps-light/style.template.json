@@ -135,6 +135,24 @@
       }
     },
     {
+      "id": "roads_other",
+      "type": "line",
+      "source": "protomaps",
+      "source-layer": "roads",
+      "minzoom": 14,
+      "filter": [
+        "all",
+        ["match", ["geometry-type"], ["LineString", "MultiLineString"], true, false],
+        ["in", ["get", "kind"], ["literal", ["other", "path"]]],
+        ["!=", ["get", "kind_detail"], "pier"]
+      ],
+      "paint": {
+        "line-color": "#7a4a28",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 14, 0.9, 16, 1.6, 18, 2.4],
+        "line-dasharray": [1.5, 1]
+      }
+    },
+    {
       "id": "boundaries",
       "type": "line",
       "source": "protomaps",

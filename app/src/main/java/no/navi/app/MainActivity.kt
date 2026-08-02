@@ -4025,6 +4025,7 @@ private fun CorridorMapView(
         applyRouteToStyle(style, stateRef.get())
         applyTracksToStyle(style, stateRef.get().tracks, mapView.context)
         BasemapLabelPolicy.apply(style)
+        BasemapPathPaint.apply(style)
         ensureRouteAboveHillshade(style)
         applyCameraTilt(map)
         styleReady.value = true
