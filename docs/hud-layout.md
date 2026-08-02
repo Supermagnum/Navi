@@ -6,7 +6,7 @@ there is no runtime “theme size” setting yet — edit the Kotlin sources and
 rebuild the APK.
 
 Reference screenshot (map + bars only): see the
-[README working-app section](../README.md#working-app-emulator-screenshots)
+[README Screenshots section](../README.md#screenshots)
 (`docs/images/hud/hud_idle_both_bars.png`).
 
 ## Collapsed vs expanded (default behaviour)

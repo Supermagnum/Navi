@@ -28,10 +28,12 @@ screenshot that documents routing — corridor geometry must come from a real
 planner run.
 
 Idle HUD bars and the Skolla → Rondvassbu hike overview also appear in the
-[README](../README.md#working-app-emulator-screenshots) /
-[real hardware](../README.md#working-app-real-hardware) sections
+[README Screenshots](../README.md#screenshots) section
 (`docs/images/hud/hud_idle_both_bars.png`,
 `docs/images/terrain/hike_eldabu_ramshogda_3d.png`).
+Cold-start splash (red open-app mark, Splash Screen API):
+`docs/images/splash_open_app.png` (SM-P613; hold with
+`am start … --ez navi_keep_splash true`).
 Map tilt at 45° (3D off / 3D on) on the Ådalsbruk / Løten loop:
 `docs/images/tilt45_3d_off.png`, `docs/images/tilt45_3d_on.png`.
 GPS follow / Recenter / rotation evidence (all with **SIMULATING** on the Løten

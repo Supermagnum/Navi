@@ -1,14 +1,5 @@
 **[Dokument på Norsk](Norwegian.md)**
 
-# Testers wanted
-
-**Testers wanted** for testing on **actual hardware** (Android Automotive / head
-units or tablets). Development was long emulator-first; tablet checks on a
-Samsung Galaxy Tab S6 Lite have started, but head units and more devices still
-differ for GPS, MapLibre, Vulkan/GLES, and performance. Checklist:
-[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
-How to contribute (testing and more): [`CONTRIBUTING.md`](CONTRIBUTING.md).
-
 # AI assistance
 
 This project was developed with AI assistance (Cursor). The author has a
@@ -18,24 +9,35 @@ used to help translate design intent into working code and documentation. Design
 decisions, requirements, and testing were directed and reviewed by the author
 throughout.
 
+# Testers wanted
+
+**Testers wanted** for testing on **actual hardware** (Android Automotive / head
+units or tablets). Development was long emulator-first; tablet checks on a
+Samsung Galaxy Tab S6 Lite have started, but head units and more devices still
+differ for GPS, MapLibre, Vulkan/GLES, and performance. Checklist:
+[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+How to contribute (testing and more): [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## Table of contents
 
-- [Navi](#navi)
-  - [Features](#features)
-  - [Where data comes from](#where-data-comes-from)
-  - [What you need to download](#what-you-need-to-download)
-  - [How features work](#how-features-work)
-  - [Settings](#settings)
-  - [Debugging](#debugging)
-- [Working app (real hardware)](#working-app-real-hardware)
-- [Working app (emulator screenshots)](#working-app-emulator-screenshots)
-- [Documents](#documents)
-- [Icons (Navit)](#icons-navit)
-- [Building Android packages](#building-android-packages)
-- [Minimum hardware and storage capacity](#minimum-hardware-and-storage-capacity)
-- [Workspace layout](#workspace-layout)
-- [Host tests](#host-tests)
-- [Known issues](#known-issues)
+1. [What this is](#what-this-is)
+2. [Features](#features)
+   - [What you need to download](#what-you-need-to-download)
+   - [How features work](#how-features-work)
+3. [Settings](#settings)
+   - [Debugging](#debugging)
+4. [Routing safety](#routing-safety)
+5. [Minimum hardware and storage capacity](#minimum-hardware-and-storage-capacity)
+6. [Screenshots](#screenshots)
+7. [Documents](#documents)
+8. [Plugins](#plugins)
+   - [Icons (Navit)](#icons-navit)
+9. [Coding standards and contributing](#coding-standards-and-contributing)
+10. [Building and installing](#building-and-installing)
+    - [Workspace layout](#workspace-layout)
+    - [Host tests](#host-tests)
+11. [Origin of data](#origin-of-data)
+12. [Known issues](#known-issues)
 
 Further reading in-repo: how to contribute in
 [`CONTRIBUTING.md`](CONTRIBUTING.md); how the pieces fit together in
@@ -52,7 +54,7 @@ crates.io) in [`docs/rust-crates.md`](docs/rust-crates.md); plugin ideas in
 [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md); IMU mount calibration (deferred) in
 [`docs/imu-calibration.md`](docs/imu-calibration.md).
 
-# Navi
+# What this is
 
 Offline navigation core (Rust) and Android Automotive host (Kotlin/Compose) for
 route planning with terrain-aware (eco) costing, POI awareness, rest/overnight
@@ -80,7 +82,7 @@ duty day. It includes an in-memory moving-icon store (`TrackStore`) and a
 sandboxed WASM plugin host for future plugins; product plugins are not shipped
 yet ([`docs/plugins.md`](docs/plugins.md)).
 
-## Features
+# Features
 
 | Feature | What you get | Status |
 |---|---|---|
@@ -99,44 +101,26 @@ yet ([`docs/plugins.md`](docs/plugins.md)).
 | **Map rotation** | Align the map with the compass, with your travel direction, or with north always up. | Done |
 | **Moving icons** | Show nearby tracked markers on the map (for example radio station symbols) within about 50–150 km. | **Partial** — drawing works; a live radio feed is not built in yet |
 | **Map data updates** | When you choose, check for OpenStreetMap updates and apply them, or download a fresh region ([`docs/osm-updates.md`](docs/osm-updates.md)). Never updates quietly in the background. | Done |
-| **Plugins** | Sandboxed WASM host is ready. Product plugins are not shipped yet on purpose; several are specified for contributors ([`docs/plugins.md`](docs/plugins.md) — camping, resupply, instrument cluster/AGL, UI translation, ECU, APRS, …). | Host ready; content deferred |
+| **Plugins** | Sandboxed WASM host is ready; product plugins are not shipped yet. See [Plugins](#plugins) and [`docs/plugins.md`](docs/plugins.md). | Host ready; content deferred |
 
 **Real hardware:** Development was long emulator-first. Offline Protomaps +
 opt-in 3D hillshade have been checked on a **Samsung Galaxy Tab S6 Lite**
-(see [Working app (real hardware)](#working-app-real-hardware)). It still
+(see [Screenshots](#screenshots)). It still
 **needs testing on real Automotive head units** before anyone treats it as ready
 to ship — GPS, sensors, graphics, and speed differ on real cars. Checklist:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 
-## Where data comes from
-
-Navi is **offline-first**: routing, search, and eco costing run from files on
-disk. Network is used only when you opt in (provision, update check/apply, or
-live basemap tiles while online).
-
-| Data | Source | How it is used |
-|---|---|---|
-| **Road / POI extract** | [OpenStreetMap](https://www.openstreetmap.org/) via [Geofabrik](https://download.geofabrik.de/) regional `.osm.pbf` (or a custom corridor cut) | Graph for routing; FTS place/address index; POI categories |
-| **OSM updates** | Geofabrik `state.txt` + `.osc.gz` diffs or full `*-latest.osm.pbf` | Opt-in check/apply only — never silent ([`docs/osm-updates.md`](docs/osm-updates.md)) |
-| **Elevation (DEM)** | Copernicus DSM / SRTM / Viewfinder-style tiles (downloaded or seeded as archives) | Eco-route energy costs and related terrain logic |
-| **Basemap (visual)** | Online: [OpenFreeMap](https://openfreemap.org/) Liberty (MapLibre). Offline: regional **Protomaps PMTiles** + bundled Protomaps light style ([`docs/map-styles.md`](docs/map-styles.md)). Optional opt-in **3D**: Mapterhorn DEM hillshade (online TileJSON or local `{region}_dem.pmtiles`; `vulkanRendererAvailable()` still returns true under GLES) | On-screen map; not the routing graph |
-| **Position / heading** | Device GPS (Android) or **gpsd** + IMU on Linux | Live location, altitude HUD, Compass / direction-of-travel |
-| **Icons** | Bundled Navit-derived SVG under `core/src/icons` | Maneuver / POI / eco leaf rasterization |
-
-Once a region extract and DEM tiles are on the device, core navigation does not
-need the network. The visual basemap uses live OpenFreeMap Liberty until a
-regional PMTiles file is downloaded (Tools → Download basemap); then Protomaps
-tiles load offline. Optional terrain DEM is the same path with
-**Download terrain DEM (Mapterhorn)** (`{region}_dem.pmtiles`).
-([`docs/map-styles.md`](docs/map-styles.md)).
-Country/region PMTiles extracts can be prepared with
-[PMT-splitter](https://github.com/Supermagnum/PMT-splitter/tree/main).
+Static POI / maneuver / status icons (Navit-derived SVG) are documented under
+[Icons (Navit)](#icons-navit) and [`docs/icons.md`](docs/icons.md).
 
 ## What you need to download
 
-Nothing ships with a ready-to-route map region. Use **Tools** (map settings /
-tools sheet) on a network connection, then work offline. Prefer a **regional**
-Geofabrik path on low-RAM devices (see
+Nothing ships with a ready-to-route map region. All downloads happen **inside
+the app** via the built-in **Tools** panel (map settings / tools sheet) on a
+network connection; then you can work offline. There is no separate
+external/manual download workflow for normal use — see the Tools panel table
+under [Settings](#tools-panel-main-chrome--tools) for each in-app action.
+Prefer a **regional** Geofabrik path on low-RAM devices (see
 [Minimum hardware and storage capacity](#minimum-hardware-and-storage-capacity)).
 
 | Download | Required? | What it is | In-app action |
@@ -164,12 +148,12 @@ still use ordinary paths so a missing stretch of trail never blocks the whole
 route. Trail difficulty notes may appear as extra info on the plan. Named
 official routes are included in place search. Not yet: preferring higher-tier
 networks over local ones, and some special “node network” styles used in parts
-of Europe.
+of Europe. Safety-focused summary: [Routing safety](#routing-safety).
 
-**How a route is planned.** You download a regional OpenStreetMap extract once.
-Navi builds a road network from it. With eco mode on, hills change how
-“expensive” each road segment is, and that result is cached so the next plan is
-faster. The app finds a path and draws it on the map with the destination and
+**How a route is planned.** You download a regional OpenStreetMap extract once
+(via Tools). Navi builds a road network from it. With eco mode on, hills change
+how “expensive” each road segment is, and that result is cached so the next plan
+is faster. The app finds a path and draws it on the map with the destination and
 any suggested breaks.
 
 **Eco vs shortest.** Shortest distance ignores hills. Eco prefers less energy
@@ -224,7 +208,8 @@ distance from houses and cultivated land. That is a Norway-oriented default and
 **may not apply elsewhere** — local camping law can be stricter; country packs
 follow [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). The “Breaks”
 toggle only controls whether the reminder is shown; edit times in Drive
-settings (Car vs Truck when a truck profile is selected).
+settings (Car vs Truck when a truck profile is selected). Safety overview:
+[Routing safety](#routing-safety).
 
 **Map and on-screen bars.** The map is drawn with MapLibre. The collapsed top
 bar shows altitude; tap it for map settings (rotation, trip ETA, breaks,
@@ -247,7 +232,7 @@ GPS height can still be used when those files are missing.
 when stale ([`docs/APRS.md`](docs/APRS.md)). Live radio decoding is not included
 yet; USB SDR support is planned ([`docs/APRS-SDR.md`](docs/APRS-SDR.md)).
 
-## Settings
+# Settings
 
 **UI language:** the in-app chrome is **English only** today. There is **no
 language-switching control** in map or drive settings. Parallel markdown
@@ -461,185 +446,56 @@ Example: a camping plugin would write under `Documents/debug/right-to-roam-campi
 scatter plugin logs under app-private storage or arbitrary top-level folders.
 Convention for authors: [`docs/plugins.md`](docs/plugins.md#debug-files-usbmtp).
 
-## Working app (real hardware)
+# Routing safety
 
-Captured on a physical **Samsung Galaxy Tab S6 Lite** (model **SM-P613**,
-Wi‑Fi / `gta4xlvewifi`), **Android 14**, Adreno 618 GPU. MapLibre GLES
-(`android-sdk` 11.13.5). Collapsed Route / Tools pills, drive HUD, and offline
-Ostlandet Protomaps (forest/wood landcover visible). Portrait, 3D off:
+Safety-related routing behaviour in one place. Each item is a short overview;
+settings UI detail stays under [Settings](#settings), and fuller write-ups live
+in the linked docs (or implementation notes where no dedicated doc exists yet).
 
-![SM-P613 offline Protomaps 2D (portrait)](docs/images/Screenshot_20260731_123746.jpg)
+- **Vehicle clearance limits.** Height, width, length, axle load, and bogie
+  weight (truck / mobile home) exclude OSM edges the map marks as too tight or
+  too low. Car UI exposes height; truck / mobile home expose the fuller set.
+  Configure under Profile → Vehicle limits in [Settings](#settings).
 
-Landscape with opt-in **3D** (offline Protomaps + local Mapterhorn DEM
-hillshade):
+- **Wetland hazard classification.** Soft-avoid (`bog` / `string_bog` / `fen`)
+  penalizes edges and off-trail terrain cells without blocking them. Hard-avoid
+  (`swamp` / `reedbed`) excludes crossings by default. Boardwalk carve-out:
+  graph edges tagged `bridge=boardwalk` or `surface=wood` remain usable even
+  when crossing hard wetlands (off-trail terrain cells have no carve-out).
+  Shared by on-trail graph weighting and hybrid hiking terrain fill —
+  implementation: [`core/src/routing/wetland.rs`](core/src/routing/wetland.rs).
 
-![SM-P613 offline Protomaps + Mapterhorn DEM hillshade (landscape)](docs/images/Screenshot_20260731_123844.jpg)
+- **Allemannsretten building / glacier overnight distance.** Hiking overnight
+  candidates too close to buildings or glaciers are rejected. The
+  building-distance idea follows Norwegian right to roam (*allemannsretten*) as
+  a Norway-oriented default and **may not apply elsewhere**. Country packs:
+  [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md); camping as a future
+  plugin: [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md).
 
-Automotive head-unit testing is still open — see
-[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+- **Avoid motorways / tolls / ferries.** Profile toggles change the next motor
+  plan (not report-only). See Profile avoidances under [Settings](#settings).
 
-## Working app (emulator screenshots)
+- **Follow official hiking / cycling networks.** Soft cost preference for marked
+  networks (default **off**). Ordinary paths stay available so a gap never
+  strands the plan. Hiking / Bicycle / Electric cycle only.
 
-Many of these filenames were **re-shot on SM-P613** (real hardware) with route
-**simulation** — look for the red **SIMULATING** banner. See
-[`docs/pictures.md`](docs/pictures.md). Idle HUD (no active simulation):
+- **Truck EC 561/2006 and FMCSA rest-rule enforcement.** **Truck** /
+  **TruckElectric** resolve a jurisdiction pack at corridor start: EU
+  EC 561/2006 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) or US
+  FMCSA property-carrying HOS ([`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md)).
+  Unrecognized jurisdictions **decline** commercial legal tracking rather than
+  guessing. Pack pattern: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md).
 
-![Idle both bars](docs/images/hud/hud_idle_both_bars.png)
+- **Bounded waypoint snap distance.** Waypoints must snap to the nearest linked
+  graph node within a per-profile maximum (hiking / cycling 500 m, car 750 m,
+  truck / motorhome 1000 m). Beyond that bound the plan fails cleanly (`FAIL`)
+  instead of silently accepting an absurd snap (for example open ocean /
+  far-off terrain). Constants: `*_MAX_WAYPOINT_SNAP_M` in
+  [`core/src/config/defaults.rs`](core/src/config/defaults.rs);
+  enforcement via `max_waypoint_snap_m` in
+  [`core/src/routing/graph/builder.rs`](core/src/routing/graph/builder.rs).
 
-Hiking corridor Skolla → Rondvassbu (full route in frame, SM-P613, **SIMULATING**
-via staged `skolla_rondvassbu.sim_samples.json`; rast huts including
-**Veslefjellbua** promoted to vias when the POI radius allows the detour):
-
-![Skolla to Rondvassbu hike](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
-
-Map camera tilt presets (0° / 35° / 45° / 60°) are independent of opt-in 3D
-hillshade. **45°** with **SIMULATING** (SM-P613) — Finnstad → Søndre Ommang →
-Rosenlund — 3D off, then 3D on:
-
-![45° tilt, 3D off](docs/images/tilt45_3d_off.png)
-
-![45° tilt, 3D on](docs/images/tilt45_3d_on.png)
-
-GPS follow during **route simulation** (SIMULATING banner), after pan / zoom
-(follow paused), then **Recenter**, and rotation-mode check:
-
-![Follow while simulating](docs/images/follow_gps/01_simulating_follow.png)
-
-![After pan](docs/images/follow_gps/02_after_pan.png)
-
-![After Recenter](docs/images/follow_gps/05_after_recenter.png)
-
-![Rotation modes](docs/images/follow_gps/06_rotation_modes_ok.png)
-
-All other screenshots (map zoom levels, route overlay, single-point online /
-offline 3D POIs, menus, settings overlays, eco leaf, rotation, bearing, moving
-icons):
-[`docs/pictures.md`](docs/pictures.md)
-(Norwegian gallery: [`docs/bilder.md`](docs/bilder.md)).
-
-## Documents
-
-| Document | Description |
-|---|---|
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to contribute (testing, plugins, jurisdictions, code expectations) |
-| [`docs/architecture.md`](docs/architecture.md) | How the parts fit together (databases, threads, plugins) |
-| [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Canonical 2026-07 future-proofing findings + risk-prioritized follow-up list |
-| [`docs/status.md`](docs/status.md) | Which doc is canonical for live status vs historical evidence (anti-sprawl map) |
-| [`docs/android-api36-plan.md`](docs/android-api36-plan.md) | API 36 baseline (compileSdk/targetSdk 36; AGP 8.9.1) |
-| [`docs/rust-crates.md`](docs/rust-crates.md) | Rust crates: first-party created vs crates.io used unaltered |
-| [`docs/codebase-map.md`](docs/codebase-map.md) | Contributor file map: where to fix bugs, zoom, approach, routing, HUD |
-| [`docs/pictures.md`](docs/pictures.md) | Hardware screenshot gallery (SM-P613) |
-| [`docs/bilder.md`](docs/bilder.md) | Hardware screenshot gallery (Norwegian) |
-| [`docs/historical-background.md`](docs/historical-background.md) | Rast/vei basis for hiking & cycling rest-interval defaults |
-| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Truck EC 561/2006: duty caps, multi-day rest, compensation ledger, overnight scoring |
-| [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | Truck US FMCSA property-carrying HOS pack (11 h / 14 h / 8 h break / 70 h cycle) |
-| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Pattern for country/region-dependent rules (EC 561 + FMCSA + right-to-roam precedents) |
-| [`docs/horse-profile.md`](docs/horse-profile.md) | Worked example: adding a Horse profile (doc only; not implemented) |
-| [`docs/hud-layout.md`](docs/hud-layout.md) | Adjust size and placement of drive HUD bars and menus |
-| [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs offline Protomaps PMTiles; 3D gate |
-| [`docs/approach-instructions.md`](docs/approach-instructions.md) | Temporary maneuver approach box (icon + distance + name) |
-| [`docs/current-street.md`](docs/current-street.md) | Bottom-HUD “Currently on …” road name + no-route policy |
-| [`docs/unicode-road-names.md`](docs/unicode-road-names.md) | UTF-8 pipeline for æ/å/ø/ä/ü in names (OSM → FTS → UniFFI → Compose) |
-| [`docs/poi.md`](docs/poi.md) | Searchable POI categories (Fishing, RestArea, Lodging, …), OSM tag rules, how to add types |
-| [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md) | Suggested hut/trail POI search radii for hiking & cycling (DNT spacing) |
-| [`docs/osm-updates.md`](docs/osm-updates.md) | Opt-in Geofabrik check / `.osc.gz` / full re-download |
-| [`docs/plugins.md`](docs/plugins.md) | Plugin **host** status (intentional: no content plugins yet) + HostApi, isolation, roadmap; debug files under `Documents/debug/<plugin-name>/` |
-| [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Spec: allemannsretten / multi-country wild-camping suggestions (plugin, not core) |
-| [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Spec: fuel/water resupply lookahead, POI confidence, remote/arid buffers (plugin, not core) |
-| [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Spec: export nav state to clusters/AGL via VSS/Kuksa + JSON fallback (plugin, not core) |
-| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Spec: offline UI language packs (plugin; app UI is English-only today, no language toggle) |
-| [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Spec: Synfig-authored animated icons / frame packs (plugin; static SVG stays in icons.md) |
-| [`docs/icons.md`](docs/icons.md) | Icon inventory; custom static SVG (Inkscape); Navit GPL-v2 |
-| [Supermagnum/road-signs](https://github.com/Supermagnum/road-signs) | Norwegian road-sign artwork (NLOD; separate repo) |
-| [`docs/API.md`](docs/API.md) | UniFFI host API + plugin HostApi reference |
-| [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) | Wire protocol index (UniFFI, plugins, ECU/APRS/CAT) |
-| [`docs/ECU.md`](docs/ECU.md) | ECU protocols: OBD-II, J1939, MegaSquirt + EV SoC/power |
-| [`docs/ebike-telemetry-diy.md`](docs/ebike-telemetry-diy.md) | Open wired DIY e-bike telemetry (`$NAVIPWR` over USB-serial; CAN optional) — spec only |
-| [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md) | Formulas: MAF/J1939/MegaSquirt fuel, range, eco segment energy |
-| [`docs/APRS.md`](docs/APRS.md) | APRS fields, TrackStore range filtering, moving icons |
-| [`docs/APRS-SDR.md`](docs/APRS-SDR.md) | APRS SDR DSP pipeline; RTL-SDR IF offset; planned `rtl-sdr-rs` |
-| [`docs/CAT.md`](docs/CAT.md) | CAT VFO auto-tune from NFM repeaters (≤150 km); OSM network example |
-| [`docs/voice-guidance.md`](docs/voice-guidance.md) | Planned voice guidance plugin (recordings + optional Piper) |
-| [`docs/android-build.md`](docs/android-build.md) | Compile native `libnavi.so`, UniFFI bindings, and Gradle APKs |
-| [`docs/build-linux.md`](docs/build-linux.md) | Linux: Rust core, `navi-desktop` map shell, integration tests, gpsd + IMU |
-| [`docs/imu-calibration.md`](docs/imu-calibration.md) | Deferred: vehicle-mount IMU pitch/roll zeroing for eco elevation |
-| [`docs/debugging.md`](docs/debugging.md) | Host + Android debug loops (logcat, Studio, instrumented tests) |
-| [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | **Required:** physical device checklist vs emulator baseline |
-| [`docs/test-results.md`](docs/test-results.md) | Host integration evidence (chronological; see [`status.md`](docs/status.md)) |
-| [`docs/android-test-results.md`](docs/android-test-results.md) | On-device / emulator evidence (chronological; see [`status.md`](docs/status.md)) |
-
-## Icons (Navit)
-
-See [`docs/icons.md`](docs/icons.md) for the full icon system notes. Summary:
-POI/maneuver/status icons under `core/src/icons` are Navit-derived (**GPL v2**).
-Resolution prefers user overrides, then the bundled set, then `unknown.svg`.
-
-**Custom icons:** use **SVG** (or `.svgz`). Author static art in
-[Inkscape](https://inkscape.org/); name files after the semantic key and place
-them in the override directory or `core/src/icons` — step-by-step in
-[`docs/icons.md`](docs/icons.md#adding-custom-icons). Author animations in
-[Synfig Studio](https://www.synfig.org/) and export SVG / frames — see
-[`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md).
-
-Related (not bundled in Navi): Norwegian road-sign artwork from the government
-database, released under NLOD —
-[Supermagnum/road-signs](https://github.com/Supermagnum/road-signs).
-
-## Building Android packages
-
-Full guide: [`docs/android-build.md`](docs/android-build.md).
-
-### Emulator (x86_64)
-
-```bash
-export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
-# Once per machine (if not already installed):
-rustup target add x86_64-linux-android
-
-./scripts/build-android-native.sh x86_64-linux-android release   # or debug
-./gradlew :app:assembleDebug          # → app/build/outputs/apk/debug/
-./gradlew :app:installDebug           # install on connected adb device
-./scripts/launch-navi-emulator.sh     # start MainActivity on AAOS AVD
-```
-
-### Physical device / tablet (arm64)
-
-Most phones and tablets (including Samsung Galaxy Tab) need the **arm64**
-native library. An x86_64-only build installs but crashes with
-`UnsatisfiedLinkError` for `libnavi`.
-
-```bash
-export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
-export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
-export PATH="$ANDROID_HOME/platform-tools:$PATH"
-
-# Once per machine:
-rustup target add aarch64-linux-android
-
-# USB debugging on, "Transfer files" selected, accept the RSA prompt:
-adb devices   # expect: <serial>  device
-
-# 1) Rust CDYLIB + UniFFI Kotlin → app/src/main/jniLibs/arm64-v8a/libnavi.so
-./scripts/build-android-native.sh aarch64-linux-android debug    # or release
-
-# 2) APK and install on the tablet (use -s when several devices are attached)
-./gradlew :app:assembleDebug
-adb -s <serial> install -r app/build/outputs/apk/debug/app-debug.apk
-adb -s <serial> shell am start -n no.navi.app/.MainActivity
-```
-
-Confirm the APK embeds the arm64 library:
-
-```bash
-unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'lib/arm64-v8a/libnavi.so'
-```
-
-Update `.cargo/config.toml` linker paths to your NDK before the first native
-build (both `x86_64-linux-android` and `aarch64-linux-android` entries — see
-[`docs/android-build.md`](docs/android-build.md)). `minSdk` 26, `compileSdk` /
-`targetSdk` 36, JDK 17, AGP 8.9.1.
-
-## Minimum hardware and storage capacity
+# Minimum hardware and storage capacity
 
 **Minimum required hardware** for the intended Automotive / embedded class of
 device (not a “nice to have” desktop target):
@@ -712,6 +568,242 @@ Worker pools must use `std::thread::available_parallelism()` (or equivalent) and
 leave headroom for audio/UI (do not saturate every detected core). Routing-tier
 work runs at lower OS priority than audio/UI.
 
+# Screenshots
+
+Lead examples (real-hardware SM-P613 and route simulation):
+
+Landscape with opt-in **3D** (offline Protomaps + local Mapterhorn DEM
+hillshade) on a physical **Samsung Galaxy Tab S6 Lite** (model **SM-P613**,
+Wi‑Fi / `gta4xlvewifi`), **Android 14**, Adreno 618 GPU. MapLibre GLES
+(`android-sdk` 11.13.5):
+
+![SM-P613 offline Protomaps + Mapterhorn DEM hillshade (landscape)](docs/images/Screenshot_20260731_123844.jpg)
+
+Hiking corridor Skolla → Rondvassbu (full route in frame, SM-P613, **SIMULATING**
+via staged `skolla_rondvassbu.sim_samples.json`; rast huts including
+**Veslefjellbua** promoted to vias when the POI radius allows the detour):
+
+![Skolla to Rondvassbu hike](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
+
+GPS follow during **route simulation** (red **SIMULATING** banner):
+
+![Follow while simulating](docs/images/follow_gps/01_simulating_follow.png)
+
+### Real hardware (SM-P613)
+
+Captured on a physical **Samsung Galaxy Tab S6 Lite** (model **SM-P613**,
+Wi‑Fi / `gta4xlvewifi`), **Android 14**, Adreno 618 GPU. MapLibre GLES
+(`android-sdk` 11.13.5). Collapsed Route / Tools pills, drive HUD, and offline
+Ostlandet Protomaps (forest/wood landcover visible). Portrait, 3D off:
+
+![SM-P613 offline Protomaps 2D (portrait)](docs/images/Screenshot_20260731_123746.jpg)
+
+Automotive head-unit testing is still open — see
+[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+
+### Emulator and simulation captures
+
+Many of these filenames were **re-shot on SM-P613** (real hardware) with route
+**simulation** — look for the red **SIMULATING** banner. See
+[`docs/pictures.md`](docs/pictures.md). Idle HUD (no active simulation):
+
+![Idle both bars](docs/images/hud/hud_idle_both_bars.png)
+
+Cold-start splash (red open-app mark, Splash Screen API — SM-P613):
+
+![Splash open-app](docs/images/splash_open_app.png)
+
+Map camera tilt presets (0° / 35° / 45° / 60°) are independent of opt-in 3D
+hillshade. **45°** with **SIMULATING** (SM-P613) — Finnstad → Søndre Ommang →
+Rosenlund — 3D off, then 3D on:
+
+![45° tilt, 3D off](docs/images/tilt45_3d_off.png)
+
+![45° tilt, 3D on](docs/images/tilt45_3d_on.png)
+
+GPS follow during **route simulation** (SIMULATING banner), after pan / zoom
+(follow paused), then **Recenter**, and rotation-mode check:
+
+![Follow while simulating](docs/images/follow_gps/01_simulating_follow.png)
+
+![After pan](docs/images/follow_gps/02_after_pan.png)
+
+![After Recenter](docs/images/follow_gps/05_after_recenter.png)
+
+![Rotation modes](docs/images/follow_gps/06_rotation_modes_ok.png)
+
+All other screenshots (map zoom levels, route overlay, single-point online /
+offline 3D POIs, menus, settings overlays, eco leaf, rotation, bearing, moving
+icons):
+[`docs/pictures.md`](docs/pictures.md)
+(Norwegian gallery: [`docs/bilder.md`](docs/bilder.md)).
+
+# Documents
+
+| Document | Description |
+|---|---|
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to contribute (testing, plugins, jurisdictions, code expectations) |
+| [`docs/architecture.md`](docs/architecture.md) | How the parts fit together (databases, threads, plugins) |
+| [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Canonical 2026-07 future-proofing findings + risk-prioritized follow-up list |
+| [`docs/status.md`](docs/status.md) | Which doc is canonical for live status vs historical evidence (anti-sprawl map) |
+| [`docs/android-api36-plan.md`](docs/android-api36-plan.md) | API 36 baseline (compileSdk/targetSdk 36; AGP 8.9.1) |
+| [`docs/rust-crates.md`](docs/rust-crates.md) | Rust crates: first-party created vs crates.io used unaltered |
+| [`docs/codebase-map.md`](docs/codebase-map.md) | Contributor file map: where to fix bugs, zoom, approach, routing, HUD |
+| [`docs/pictures.md`](docs/pictures.md) | Hardware screenshot gallery (SM-P613) |
+| [`docs/bilder.md`](docs/bilder.md) | Hardware screenshot gallery (Norwegian) |
+| [`docs/historical-background.md`](docs/historical-background.md) | Rast/vei basis for hiking & cycling rest-interval defaults |
+| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Truck EC 561/2006: duty caps, multi-day rest, compensation ledger, overnight scoring |
+| [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | Truck US FMCSA property-carrying HOS pack (11 h / 14 h / 8 h break / 70 h cycle) |
+| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Pattern for country/region-dependent rules (EC 561 + FMCSA + right-to-roam precedents) |
+| [`docs/horse-profile.md`](docs/horse-profile.md) | Worked example: adding a Horse profile (doc only; not implemented) |
+| [`docs/hud-layout.md`](docs/hud-layout.md) | Adjust size and placement of drive HUD bars and menus |
+| [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs offline Protomaps PMTiles; 3D gate |
+| [`docs/approach-instructions.md`](docs/approach-instructions.md) | Temporary maneuver approach box (icon + distance + name) |
+| [`docs/current-street.md`](docs/current-street.md) | Bottom-HUD “Currently on …” road name + no-route policy |
+| [`docs/unicode-road-names.md`](docs/unicode-road-names.md) | UTF-8 pipeline for æ/å/ø/ä/ü in names (OSM → FTS → UniFFI → Compose) |
+| [`docs/poi.md`](docs/poi.md) | Searchable POI categories (Fishing, RestArea, Lodging, …), OSM tag rules, how to add types |
+| [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md) | Suggested hut/trail POI search radii for hiking & cycling (DNT spacing) |
+| [`docs/osm-updates.md`](docs/osm-updates.md) | Opt-in Geofabrik check / `.osc.gz` / full re-download |
+| [`docs/icons.md`](docs/icons.md) | Icon inventory; custom static SVG (Inkscape); Navit GPL-v2 |
+| [Supermagnum/road-signs](https://github.com/Supermagnum/road-signs) | Norwegian road-sign artwork (NLOD; separate repo) |
+| [`docs/API.md`](docs/API.md) | UniFFI host API + plugin HostApi reference |
+| [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) | Wire protocol index (UniFFI, plugins, ECU/APRS/CAT) |
+| [`docs/ECU.md`](docs/ECU.md) | ECU protocols: OBD-II, J1939, MegaSquirt + EV SoC/power |
+| [`docs/ebike-telemetry-diy.md`](docs/ebike-telemetry-diy.md) | Open wired DIY e-bike telemetry (`$NAVIPWR` over USB-serial; CAN optional) — spec only |
+| [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md) | Formulas: MAF/J1939/MegaSquirt fuel, range, eco segment energy |
+| [`docs/APRS.md`](docs/APRS.md) | APRS fields, TrackStore range filtering, moving icons |
+| [`docs/APRS-SDR.md`](docs/APRS-SDR.md) | APRS SDR DSP pipeline; RTL-SDR IF offset; planned `rtl-sdr-rs` |
+| [`docs/CAT.md`](docs/CAT.md) | CAT VFO auto-tune from NFM repeaters (≤150 km); OSM network example |
+| [`docs/voice-guidance.md`](docs/voice-guidance.md) | Planned voice guidance plugin (recordings + optional Piper) |
+| [`docs/android-build.md`](docs/android-build.md) | Compile native `libnavi.so`, UniFFI bindings, and Gradle APKs |
+| [`docs/build-linux.md`](docs/build-linux.md) | Linux: Rust core, `navi-desktop` map shell, integration tests, gpsd + IMU |
+| [`docs/imu-calibration.md`](docs/imu-calibration.md) | Deferred: vehicle-mount IMU pitch/roll zeroing for eco elevation |
+| [`docs/debugging.md`](docs/debugging.md) | Host + Android debug loops (logcat, Studio, instrumented tests) |
+| [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | **Required:** physical device checklist vs emulator baseline |
+| [`docs/test-results.md`](docs/test-results.md) | Host integration evidence (chronological; see [`status.md`](docs/status.md)) |
+| [`docs/android-test-results.md`](docs/android-test-results.md) | On-device / emulator evidence (chronological; see [`status.md`](docs/status.md)) |
+
+Plugin host status and specified-but-unbuilt plugin specs are under
+[Plugins](#plugins) (not duplicated in this table).
+
+# Plugins
+
+The sandboxed **WASM plugin host** is ready and isolation-tested. **Product
+content plugins are not shipped yet on purpose** — that is intentional, not a
+defect in the navigation core. Full picture (HostApi, isolation, roadmap, debug
+file convention under `Documents/debug/<plugin-name>/`):
+[`docs/plugins.md`](docs/plugins.md).
+
+Specified-but-unbuilt plugin docs for contributors:
+
+| Spec | Description |
+|---|---|
+| [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Allemannsretten / multi-country wild-camping suggestions (plugin, not core) |
+| [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Fuel/water resupply lookahead, POI confidence, remote/arid buffers (plugin, not core) |
+| [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state to clusters/AGL via VSS/Kuksa + JSON fallback (plugin, not core) |
+| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Offline UI language packs (plugin; app UI is English-only today, no language toggle) |
+| [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Synfig-authored animated icons / frame packs (plugin; static SVG stays in [`docs/icons.md`](docs/icons.md)) |
+
+Other planned / deferred plugin surfaces (voice, APRS/CAT, ECU, marine, …) are
+listed in [`docs/plugins.md`](docs/plugins.md).
+
+## Icons (Navit)
+
+See [`docs/icons.md`](docs/icons.md) for the full icon system notes. Summary:
+POI/maneuver/status icons under `core/src/icons` are Navit-derived (**GPL v2**).
+Resolution prefers user overrides, then the bundled set, then `unknown.svg`.
+
+**Custom icons:** use **SVG** (or `.svgz`). Author static art in
+[Inkscape](https://inkscape.org/); name files after the semantic key and place
+them in the override directory or `core/src/icons` — step-by-step in
+[`docs/icons.md`](docs/icons.md#adding-custom-icons). Author animations in
+[Synfig Studio](https://www.synfig.org/) and export SVG / frames — see
+[`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md).
+
+Related (not bundled in Navi): Norwegian road-sign artwork from the government
+database, released under NLOD —
+[Supermagnum/road-signs](https://github.com/Supermagnum/road-signs).
+
+# Coding standards and contributing
+
+How to contribute (testing, plugins, jurisdictions, code, and more):
+**[`CONTRIBUTING.md`](CONTRIBUTING.md)**.
+
+Summary of CI / tooling standards (full detail and local pre-PR commands in
+[`CONTRIBUTING.md`](CONTRIBUTING.md#ci-expectations-github-actions)):
+
+| Area | Expectation |
+|---|---|
+| Rust format | `cargo fmt --check` / `rustfmt` |
+| Rust lints | Clippy with `-D warnings` |
+| Rust deps | `cargo deny` and `cargo audit` in CI |
+| Kotlin | ktlint, detekt, unit tests via Gradle |
+| Android build | `./gradlew :app:assembleDebug` in CI |
+
+Evidence over claims, honest limitation docs, and matching nearby style are
+project norms — see **Code contribution expectations** in
+[`CONTRIBUTING.md`](CONTRIBUTING.md#code-contribution-expectations).
+
+# Building and installing
+
+Full guides: [`docs/android-build.md`](docs/android-build.md) (native
+`libnavi.so`, UniFFI, Gradle APKs) and [`docs/build-linux.md`](docs/build-linux.md)
+(Rust core, `navi-desktop`, integration tests, gpsd + IMU).
+
+## Building Android packages
+
+Full guide: [`docs/android-build.md`](docs/android-build.md).
+
+### Emulator (x86_64)
+
+```bash
+export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
+# Once per machine (if not already installed):
+rustup target add x86_64-linux-android
+
+./scripts/build-android-native.sh x86_64-linux-android release   # or debug
+./gradlew :app:assembleDebug          # → app/build/outputs/apk/debug/
+./gradlew :app:installDebug           # install on connected adb device
+./scripts/launch-navi-emulator.sh     # start MainActivity on AAOS AVD
+```
+
+### Physical device / tablet (arm64)
+
+Most phones and tablets (including Samsung Galaxy Tab) need the **arm64**
+native library. An x86_64-only build installs but crashes with
+`UnsatisfiedLinkError` for `libnavi`.
+
+```bash
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
+export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
+
+# Once per machine:
+rustup target add aarch64-linux-android
+
+# USB debugging on, "Transfer files" selected, accept the RSA prompt:
+adb devices   # expect: <serial>  device
+
+# 1) Rust CDYLIB + UniFFI Kotlin → app/src/main/jniLibs/arm64-v8a/libnavi.so
+./scripts/build-android-native.sh aarch64-linux-android debug    # or release
+
+# 2) APK and install on the tablet (use -s when several devices are attached)
+./gradlew :app:assembleDebug
+adb -s <serial> install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s <serial> shell am start -n no.navi.app/.MainActivity
+```
+
+Confirm the APK embeds the arm64 library:
+
+```bash
+unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'lib/arm64-v8a/libnavi.so'
+```
+
+Update `.cargo/config.toml` linker paths to your NDK before the first native
+build (both `x86_64-linux-android` and `aarch64-linux-android` entries — see
+[`docs/android-build.md`](docs/android-build.md)). `minSdk` 26, `compileSdk` /
+`targetSdk` 36, JDK 17, AGP 8.9.1.
+
 ## Workspace layout
 
 - `core/` (`driver-break-core`) — elevation, routing, POI, rest/safety, search, icons, tracks, SQLite.
@@ -772,13 +864,34 @@ read/write were confirmed on a live-GPS Norway run (Minnesund belt → Bodø,
 corridors use span-scaled trip bbox padding so the graph clip does not cut the
 road network (e.g. E6 west of Trondheim).
 
-## Known issues
+# Origin of data
 
-- **Plugins (content):** the WASM host/sandbox is ready; shipping product plugins
-  (APRS, weather, allemannsretten camping, resupply, instrument cluster/AGL,
-  UI translation, ECU, marine, etc.) is intentionally deferred for independent
-  contributors — specs live under [`docs/plugins.md`](docs/plugins.md). Not a
-  defect in the navigation core.
+Navi is **offline-first**: routing, search, and eco costing run from files on
+disk. Network is used only when you opt in (provision, update check/apply, or
+live basemap tiles while online).
+
+| Data | Source | How it is used |
+|---|---|---|
+| **Road / POI extract** | [OpenStreetMap](https://www.openstreetmap.org/) via [Geofabrik](https://download.geofabrik.de/) regional `.osm.pbf` (or a custom corridor cut) | Graph for routing; FTS place/address index; POI categories |
+| **OSM updates** | Geofabrik `state.txt` + `.osc.gz` diffs or full `*-latest.osm.pbf` | Opt-in check/apply only — never silent ([`docs/osm-updates.md`](docs/osm-updates.md)) |
+| **Elevation (DEM)** | Copernicus DSM / SRTM / Viewfinder-style tiles (downloaded or seeded as archives) | Eco-route energy costs and related terrain logic |
+| **Basemap (visual)** | Online: [OpenFreeMap](https://openfreemap.org/) Liberty (MapLibre). Offline: regional **Protomaps PMTiles** + bundled Protomaps light style ([`docs/map-styles.md`](docs/map-styles.md)). Optional opt-in **3D**: Mapterhorn DEM hillshade (online TileJSON or local `{region}_dem.pmtiles`; `vulkanRendererAvailable()` still returns true under GLES) | On-screen map; not the routing graph |
+| **Position / heading** | Device GPS (Android) or **gpsd** + IMU on Linux | Live location, altitude HUD, Compass / direction-of-travel |
+| **Icons** | Bundled Navit-derived SVG under `core/src/icons` | Maneuver / POI / eco leaf rasterization |
+
+Once a region extract and DEM tiles are on the device, core navigation does not
+need the network. The visual basemap uses live OpenFreeMap Liberty until a
+regional PMTiles file is downloaded (Tools → Download basemap); then Protomaps
+tiles load offline. Optional terrain DEM is the same path with
+**Download terrain DEM (Mapterhorn)** (`{region}_dem.pmtiles`).
+([`docs/map-styles.md`](docs/map-styles.md)).
+Country/region PMTiles extracts can be prepared with
+[PMT-splitter](https://github.com/Supermagnum/PMT-splitter/tree/main).
+
+# Known issues
+
+- **Plugins (content):** intentional deferral — see [Plugins](#plugins) and
+  [`docs/plugins.md`](docs/plugins.md). Not a defect in the navigation core.
 - **GUI polish:** the Compose HUD / search / tools UI works but still needs visual
   and UX polishing (spacing, typography, density on Automotive screens). If you
   want to improve the look-and-feel, please do — contributions welcome.

@@ -9,6 +9,26 @@ before a public release.
 The Android launcher icon (adaptive mipmaps under `app/src/main/res/mipmap-*`)
 is a separate Navi brand asset (Norway silhouette on red) and is not from Navit.
 
+Android also keeps three **separate** icon roles (do not conflate them):
+
+| Role | Resource | Notes |
+|---|---|---|
+| **Launcher** | `@mipmap/ic_launcher` (+ round / adaptive) | Home-screen / app drawer |
+| **Splash** | `@drawable/ic_splash` (from `ic_splash_foreground`) | Cold-start Splash Screen API mark |
+| **Notification** | `ic_notify` (when added) | Status-bar / notification small icon; not the splash mark |
+
+## Splash / open-app brand mark
+
+| File | Role | Origin / license |
+|---|---|---|
+| `docs/icons/open-app.svg` | Design source (Inkscape) | **Navi original** — compass + “NAVI” lettering drawn for this project (added in commit `c2938c7`; not from Navit). Relicensed/kept with the app under repository **GPL-3.0-or-later**. |
+| `app/src/main/res/drawable/ic_splash_foreground.xml` | Android `VectorDrawable` | Converted from `open-app.svg`; fill **`#C62828`** (brand red — matches map route/pin accent; launcher background samples ~`#C62A2A`) |
+| `app/src/main/res/drawable/ic_splash.xml` | Splash Screen API icon | Inset wrapper (~18%) around the foreground for the system splash mask |
+
+Splash theme: `Theme.Navi.Splash` (`values/themes.xml`) with white
+`splash_background` and `androidx.core:core-splashscreen` via
+`installSplashScreen()` in `MainActivity` (covers pre-API-31).
+
 ## Resolution order
 
 `driver_break_core::icons::resolve_icon`:

@@ -290,6 +290,10 @@ Kollapset topp-/bunn-kjøre-HUD (søk skjult):
 
 ![Idle begge linjer](docs/images/hud/hud_idle_both_bars.png)
 
+Kaldstart-splash (rødt open-app-merke, Splash Screen API — SM-P613):
+
+![Splash open-app](docs/images/splash_open_app.png)
+
 Fotturkorridor Skolla → Rondvassbu (SM-P613, **SIMULATING**; rasthytter
 inkludert Veslefjellbua løftet til via når POI-radius tillater omveien):
 

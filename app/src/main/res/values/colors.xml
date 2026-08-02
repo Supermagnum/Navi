@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launcher / brand red (~#C62A2A sampled from mipmap background; route overlays use same). -->
+    <color name="navi_brand_red">#C62828</color>
+    <!-- High-contrast splash field for the red open-app mark. -->
+    <color name="splash_background">#FFFFFF</color>
+</resources>

@@ -28,6 +28,7 @@ Idle HUD og Skolla → Rondvassbu-oversikt også i
 [Norwegian README](../Norwegian.md) / [engelsk README](../README.md)
 (`docs/images/hud/hud_idle_both_bars.png`,
 `docs/images/terrain/hike_eldabu_ramshogda_3d.png`).
+Kaldstart-splash (rødt open-app-merke): `docs/images/splash_open_app.png`.
 45° tilt (Løten-løkke): `tilt45_3d_off.png`, `tilt45_3d_on.png`.
 GPS follow / Recenter (alle med **SIMULATING**): `follow_gps/01` … `06`.
 Nåværende gate UTF-8:
