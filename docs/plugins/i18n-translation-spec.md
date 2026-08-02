@@ -11,6 +11,25 @@ Working title / id suggestion: `i18n` / `ui_translation`.
 
 ---
 
+## Translator working tables (source English)
+
+Human-editable catalogs for filling translations live next to this spec:
+
+| File | Format |
+|---|---|
+| [`translations.xlsx`](translations.xlsx) | Excel |
+| [`translations.ods`](translations.ods) | LibreOffice / OpenDocument |
+
+Columns: **Language** is only a header placeholder (leave cells blank — it
+marks that language columns follow). **English** holds source UI wording from
+the current app: both **individual words** (e.g. Apply, Norway, Ostlandet, ETA,
+Basemap) and **full phrases** / status lines. Words are listed first, then
+phrases. **Norwegian (Norsk)** and **Swedish (Svenska)** stay blank until a
+translator fills them. These tables are the working source for a future
+`messages.json` pack; they are **not** loaded by the app today.
+
+---
+
 ## Current product state (do not invent a toggle)
 
 As of this writing:

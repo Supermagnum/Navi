@@ -1,525 +1,434 @@
 **[English README](README.md)**
 
-# Testere ønskes
-
-**Testere ønskes** for testing på **ekte maskinvare** (Android Automotive /
-skjermenheter). Utviklingen så langt er kun på emulator — ekte enheter oppfører
-seg annerledes for GPS, MapLibre, Vulkan/GLES og ytelse. Sjekkliste:
-[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
-Hvordan bidra (testing og mer): [`CONTRIBUTING.md`](CONTRIBUTING.md).
-
 # AI-bistand
 
-Dette prosjektet er utviklet med AI-bistand (Claude). Forfatteren har en
-nevrologisk tilstand knyttet til dyskalkuli som påvirker programmering på en
-måte som tilsvarer hvordan dyskalkuli påvirker matematiske evner — AI-bistand
-ble brukt for å omsette designintensjon til fungerende kode og dokumentasjon.
-Designvalg, krav og testing er styrt og gjennomgått av forfatteren underveis.
+Dette prosjektet er laget med hjelp fra AI-verktøy (Cursor). Forfatteren har en
+nevrologisk tilstand knyttet til dyskalkuli som gjør programmering vanskeligere
+på en måte som ligner hvordan dyskalkuli gjør matematikk vanskeligere. AI ble
+brukt til å omsette designidéer til fungerende kode og dokumentasjon.
+Forfatteren har likevel valgt produktreglene, gjennomgått arbeidet og styrt
+testen.
+
+# Testere ønskes
+
+Vi trenger folk som prøver Navi på **ekte enheter** — bilskjermer og nettbrett.
+En Samsung Galaxy Tab S6 Lite er brukt til sjekker, men biler og andre enheter
+oppfører seg fortsatt annerledes for GPS, kart og ytelse. Sjekkliste:
+[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+Hvordan bidra: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Innhold
 
-- [Navi](#navi)
-  - [Funksjoner](#funksjoner)
-  - [Hvor data kommer fra](#hvor-data-kommer-fra)
-  - [Slik fungerer funksjonene](#slik-fungerer-funksjonene)
-  - [Innstillinger](#innstillinger)
-- [Fungerende app (emulatorskjermbilder)](#fungerende-app-emulatorskjermbilder)
-- [Dokumenter](#dokumenter)
-- [Ikoner (Navit)](#ikoner-navit)
-- [Bygge Android-pakker](#bygge-android-pakker)
-- [Ytelseskrav](#ytelseskrav-minimum-8-kjerner--2-ghz-4-gb-ram)
-- [Arbeidsområdets struktur](#arbeidsområdets-struktur)
-- [Vertstester](#vertstester)
-- [Kjente problemer](#kjente-problemer)
+1. [Hva dette er](#hva-dette-er)
+2. [Funksjoner](#funksjoner)
+   - [Hva du må laste ned](#hva-du-må-laste-ned)
+   - [Slik fungerer funksjonene](#slik-fungerer-funksjonene)
+3. [Innstillinger](#innstillinger)
+4. [Pauseteller vs tur-ETA](#pauseteller-vs-tur-eta)
+5. [Ruting og sikkerhet](#ruting-og-sikkerhet)
+6. [Minimum maskinvare og lagring](#minimum-maskinvare-og-lagring)
+7. [Skjermbilder](#skjermbilder)
+8. [Dokumenter](#dokumenter)
+9. [Plugins](#plugins)
+10. [Kodestandarder og bidrag](#kodestandarder-og-bidrag)
+11. [Bygge og installere](#bygge-og-installere)
+12. [Hvor kartdataene kommer fra](#hvor-kartdataene-kommer-fra)
+13. [Kjente problemer](#kjente-problemer)
 
-Mer å lese i depotet: hvordan delene henger sammen i
-[`docs/architecture.md`](docs/architecture.md); plugin-idéer i
-[`docs/plugins.md`](docs/plugins.md); Android-byggesteg i
-[`docs/android-build.md`](docs/android-build.md); Linux-kjernebygg i
-[`docs/build-linux.md`](docs/build-linux.md); feilsøking i
-[`docs/debugging.md`](docs/debugging.md); HUD-layout i
-[`docs/hud-layout.md`](docs/hud-layout.md); kartstiler / frakoblede kart / 3D i
-[`docs/map-styles.md`](docs/map-styles.md); lastebil kjøre-/hviletidsregler i
-[`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md); US FMCSA i
-[`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md); land-/regionregelpakker i
-[`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md); IMU-monteringskalibrering (utsatt) i
-[`docs/imu-calibration.md`](docs/imu-calibration.md).
+Mer detalj ligger i lenkede dokumenter (arkitektur, lastebilhvile, kartstiler,
+feilsøking osv.). Start med [`CONTRIBUTING.md`](CONTRIBUTING.md) hvis du vil
+bidra.
 
-# Navi
+# Hva dette er
 
-Frakoblet navigasjonskjerne (Rust) og Android Automotive-vert (Kotlin/Compose)
-for ruteplanlegging med terrengbevisst (øko) kostnadsberegning, POI-støtte,
-hvile/overnatting og profilbasert ruting. Karttegning bruker MapLibre
-(Vulkan SDK) over OpenFreeMap liberty-grunnkart. Kjernen forblir frakoblet når
-et regionsuttrekk og DEM-fliser ligger på disk; nettverk er valgfritt for
-nedlastinger og oppdateringer.
+**Navi** er en navigasjonsapp som er laget for **å fungere uten nett** når
+kartfilene først er lastet ned. Du laster ned kartdata én gang, og planlegger
+deretter ruter på enheten uten å trenge internett for hver tur.
 
-Lisens for dette depotet: se `LICENSE` (GPL-3.0-or-later med mindre annet er
-angitt). Ikonressurser under `core/src/icons` er Navit-avledet (**GPL v2**); se
-[`docs/icons.md`](docs/icons.md).
+Den kan:
 
-Navigasjonsappen har valgfri bevissthet om terrenghelning: med økomodus på
-forsøker den å finne ruten som bruker minst energi (personbil-baseline;
-elektriske profiler får regen-kreditt via `EcoConfig::for_profile`). Når
-økomodus er på, vises et lite bladikon nederst til høyre. Den kan foreslå
-pausestopp langs planlagt rute (fasiliteter / hytter / telt / hotell /
-rasteplass avhengig av profil), anvende kjøretøygrenser og unngå
-hovedvei/bom/ferge ved planlegging, og valgfritt **følge offisielle
-tur-/sykkelnettverk** (myk preferanse, av som standard). Du kan sette
-bil-pauseintervaller. Lastebilprofiler bruker EC 561/2006 kjøre-/hviletidsregler
-med flerdagers døgn-/ukeshvile når turen varer lenger enn én pliktdag. Den har
-et minnebasert bevegelig-ikon-lager (`TrackStore`) og en sandkasse
-WASM-pluginvert for fremtidige plugins; plugins er ikke laget ennå
-([`docs/plugins.md`](docs/plugins.md)).
+- Planlegge ruter for bil, sykkel, elsykkel, fottur, motorsykkel, lastebil og bobil
+- Foretrekke veier som bruker mindre energi når **økomodus** er på (bakker teller)
+- Foreslå rastestopp og overnatting på lengre turer
+- Respektere lastebilers kjøre-/hviletidsregler der den kjenner landets regler
+- Vise et enkelt kart med rute, svinger og stedsnavn
 
-## Funksjoner
+Kartbildet på skjermen tegnes med MapLibre. På nett kan det bruke OpenFreeMap
+Liberty-fliser; frakoblet brukes en nedlastet regional kartfil (Protomaps).
+Selve ruting bruker et eget OpenStreetMap-uttrekk du laster ned under
+**Tools** — det er «hjernen» som finner veier og stier, ikke bare det pene
+kartet.
 
-| Funksjon | Hva du får | Status |
+Lisens: se `LICENSE` (GPL-3.0-or-later med mindre annet er angitt). Mange små
+ikoner kommer fra Navit (**GPL v2**); se [`docs/icons.md`](docs/icons.md).
+
+# Funksjoner
+
+| Funksjon | På vanlig norsk | Status |
 |---|---|---|
-| **Reisemåter** | Bil, motorsykkel, sykkel, fottur, lastebil og bobil. Elektriske varianter finnes til senere bruk; hovedknappene er hverdagsmodusene. | Ferdig |
-| **Kjøretøystørrelse** | Lagre høyde, bredde, lengde, aksellast og lignende. Ruter unngår veier kartet sier er for trange eller for lave for kjøretøyet ditt. | Ferdig |
-| **Unngåelser** | Slå på unngå motorvei, bom eller ferge — den planlagte ruten endres faktisk. | Ferdig |
-| **Følg offisielle nettverk** | For fottur og sykling: foretrekk merkede langturer og sykkelruter når valget er på (av som standard). Vanlige stier forblir tilgjengelige, så et hull i merket nett aldri stopper hele turen. Navngitte ruter er søkbare. | Ferdig |
-| **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Elektriske modus får kreditt for energi tilbake i nedoverbakke. Formler: [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md). | Ferdig |
-| **Frakoblet ruteplan** | Last ned en kartregion én gang, planlegg på enheten, og se ruten pluss foreslåtte stopp på kartet. | Ferdig |
-| **Stedssøk** | Søk steder og sett Fra / Via / Til ([`docs/poi.md`](docs/poi.md)). Inkluderer fiskeplasser og veiledning for hytteradius ([`docs/poi-search-defaults.md`](docs/poi-search-defaults.md)). | Ferdig |
-| **Hvile og pauser** | Pausepåminnelser og foreslåtte stopp langs ruten. Fottur og sykling bruker tradisjonelle skandinaviske rasteavstander ([bakgrunn](docs/historisk-bakgrunn.md)). **Lastebil** / **lastebil elektrisk** velger jurisdiksjonspakke ved start: EU EC 561/2006 ([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)) eller US FMCSA ([`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md)); ukjent jurisdiksjon avslår juridisk sporing. Flerdagers dagskort vises i plan-UI. **Bil** / **motorsykkel** / **sykkel** / **bobil** bruker myk flerdagers overnatting når turen overstiger et daglig budsjett (8 t kjøring eller 100 km sykling) med hotell/camping/rasteplass-forslag ([`docs/poi.md`](docs/poi.md)). Fottur-pausestopp prefererer hytter/telt og holder avstand til hus og isbreer; navngitte rasthytter nær korridoren løftes til via og rutes på nytt i `planHikingRoute`; dag-for-dag flerdagers overnatting planlegges der også. Land-/regionpakker: [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). | Ferdig |
-| **Kjørefelt (HUD)** | Slim toppstripe (høyde; trykk for kartinnstillinger) og bunnstripe (zoom, pausetid, tur-ETA, økoblad; trykk for kjøreinnstillinger). | Ferdig |
-| **Kartrotasjon** | Rett kartet etter kompass, etter kjøreretning, eller med nord alltid opp. | Ferdig |
-| **Bevegelige ikoner** | Vis nærliggende spormarkører på kartet (for eksempel radiostasjoner) innen ca. 50–150 km. | **Delvis** — tegning virker; live radiomating er ikke innebygd ennå |
-| **Kartoppdateringer** | Når du velger det: sjekk OpenStreetMap-oppdateringer og bruk dem, eller last en fersk region ([`docs/osm-updates.md`](docs/osm-updates.md)). Aldri stille i bakgrunnen. | Ferdig |
-| **Plugins** | Sandkasse-WASM-vert er klar. Produktplugins er ikke levert ennå med vilje; flere er spesifisert for bidragsytere ([`docs/plugins.md`](docs/plugins.md) — camping, forsyning, instrumentcluster/AGL, UI-oversettelse, ECU, APRS, …). | Vert klar; innhold utsatt |
+| **Reisemåter** | Velg bil, sykkel, elsykkel, fottur, motorsykkel, lastebil eller bobil. | Ferdig |
+| **Kjøretøystørrelse** | Lagre høyde/bredde/lengde/vektgrenser så ruten unngår veier som er for trange. | Ferdig |
+| **Elsykkel-data** | Batteristørrelse, motormoment og hjulstørrelse hjelper til å anslå batteribruk og bratte bakker. Live kabel-telemetri er planlagt senere. | Ferdig (planlegging); live data senere |
+| **Unngåelser** | Du kan be om å unngå motorvei, bom eller ferge. | Ferdig |
+| **Offisielle løyper** | For fottur/sykling kan du valgfritt foretrekke merkede langturer (av som standard). Vanlige stier fungerer fortsatt hvis merket løype har hull. | Ferdig |
+| **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Et lite bladikon vises når øko er på. | Ferdig |
+| **Frakoblet planlegging** | Last ned en region én gang, planlegg og se ruten på enheten. | Ferdig |
+| **Stedssøk** | Søk steder og sett Fra / Via / Til. | Ferdig |
+| **Pauser og hvile** | Påminner når pause er «forfalt» og kan foreslå stopp. Bil bruker timer mellom pauser; fottur/sykling bruker rasteavstander; lastebil bruker juridiske kjøretidsregler der de er kjent. | Ferdig |
+| **Kjørefelt** | Tynn toppstripe (høyde) og bunnstripe (zoom, pauseteller, tur-ETA, veinavn, økoblad). | Ferdig |
+| **GPS-følge** | Kartet følger deg som standard. Panorer bort, trykk deretter **Recenter**. | Ferdig |
+| **Kartrotasjon** | Nord opp, kompass eller kjøreretning. | Ferdig |
+| **Bevegelige ikoner** | Kan tegne nærliggende spormarkører på kartet. Live radiomating er ikke innebygd ennå. | Delvis |
+| **Kartoppdateringer** | Bare når du ber om det — sjekk OpenStreetMap-oppdateringer eller last en fersk region. Aldri i det stille. | Ferdig |
+| **Plugins** | En trygg sandkasse for fremtidige tillegg finnes; produktplugins er ikke levert ennå. | Vert klar |
 
-**Ekte maskinvare:** Så langt er appen utviklet og sjekket hovedsakelig på Android
-Automotive-**emulatoren**. Den **må fortsatt testes på ekte bilskjermer** før
-noen behandler den som klar til levering — GPS, sensorer, grafikk og hastighet
-skiller seg på ekte biler. Sjekkliste:
+**Maskinvare:** Nettbrettsjekker er startet (Samsung Galaxy Tab S6 Lite).
+Bilskjermer trenger fortsatt mer testing i virkeligheten før dette behandles som
+klart til levering. Se [Skjermbilder](#skjermbilder) og
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 
-## Hvor data kommer fra
+## Hva du må laste ned
 
-Navi er **frakoblet først**: ruting, søk og økokostnader kjører fra filer på
-disk. Nettverk brukes bare når du velger det (klargjøring, oppdatering, eller
-live grunnkartfliser mens du er online).
+Ingenting nyttig ligger ferdig i appen. Bruk **Tools** (med internett), deretter
+kan du gå frakoblet.
 
-| Data | Kilde | Bruk |
-|---|---|---|
-| **Vei- / POI-uttrekk** | [OpenStreetMap](https://www.openstreetmap.org/) via [Geofabrik](https://download.geofabrik.de/) regional `.osm.pbf` (eller egen korridor) | Graf for ruting; FTS sted/adresse; POI-kategorier |
-| **OSM-oppdateringer** | Geofabrik `state.txt` + `.osc.gz` eller full `*-latest.osm.pbf` | Valgfri sjekk/anvendelse — aldri stille ([`docs/osm-updates.md`](docs/osm-updates.md)) |
-| **Høyde (DEM)** | Copernicus DSM / SRTM / Viewfinder-lignende fliser | Økorute-energikostnader og terrenglogikk |
-| **Grunnkart (visuelt)** | Online: [OpenFreeMap](https://openfreemap.org/) Liberty (MapLibre). Frakoblet: regional **Protomaps PMTiles** + medfølgende Protomaps light-stil ([`docs/map-styles.md`](docs/map-styles.md)). Valgfri **3D**: Mapterhorn DEM hillshade | Kart på skjermen; ikke rutingsgrafen |
-| **Posisjon / kurs** | Enhets-GPS (Android) eller **gpsd** + IMU på Linux | Live posisjon, høyde-HUD, kompass / kjøreretning |
-| **Ikoner** | Medfølgende Navit-avledet SVG under `core/src/icons` | Manøver / POI / øko-blad |
+| Nedlasting | Trengs? | Hva det er | Knapp i Tools |
+|---|---|---|---|
+| **Kartregion (veier og steder)** | **Ja** for ruting og søk | OpenStreetMap-uttrekk fra [Geofabrik](https://download.geofabrik.de/) (eksempel: `europe/norway/ostlandet`) | **Download region + build place index** |
+| **Høyde** | Sterkt anbefalt for øko / bakker | Høydedata for området | Følger vanligvis med regionsnedlasting |
+| **Frakoblet grunnkart** | Trengs for kartgrafikk uten nett | Visuelle kartfliser (Protomaps) | **Download basemap (PMTiles)** |
+| **3D-terreng** | Valgfritt | Ekstra høydefliser for skyggelegging | **Download terrain DEM (Mapterhorn)** |
+| **OSM-oppdateringer** | Valgfritt | Ferskere veier/POI-er | **Check for OSM updates** (aldri automatisk) |
 
-Når regionsuttrekk og DEM-fliser ligger på enheten, trenger kjernenettet ikke
-nettverk. Det visuelle grunnkartet bruker live OpenFreeMap Liberty til en
-regional PMTiles-fil er lastet ned (Verktøy → Last ned grunnkart); deretter
-lastes Protomaps frakoblet. Valgfri terreng-DEM er samme sti med
-**Last ned terreng-DEM (Mapterhorn)** (`{region}_dem.pmtiles`).
-([`docs/map-styles.md`](docs/map-styles.md)).
-Land-/regionsuttrekk av PMTiles kan forberedes med
-[PMT-splitter](https://github.com/Supermagnum/PMT-splitter).
+**Minimum for å planlegge rute:** regionsnedlasting + stedsindeks.  
+**Minimum for et brukbart frakoblet kartbilde:** det samme pluss basemap-PMTiles
+(eller bli på nett med Liberty).  
+Foretrekk en **region** (ikke et helt stort land) på nettbrett med begrenset
+RAM — se [Minimum maskinvare og lagring](#minimum-maskinvare-og-lagring).
 
 ## Slik fungerer funksjonene
 
-**Følg offisielle nettverk (fottur / sykling).** Av som standard. Når på, foretrekker
-planleggeren merkede tur- og sykkelnett der de finnes, men kan fortsatt bruke
-vanlige stier, så et manglende stykke merket løype aldri stopper hele turen.
-Vanskelighetsmerknader kan komme som ekstra info på planen. Navngitte offisielle
-ruter er med i stedssøk. Ikke ennå: å foretrekke høyere nettverksnivå over lokale,
-og enkelte «nodenett»-stiler brukt i deler av Europa.
+**Planlegge rute.** Sett **From** og **To** (og valgfrie via-punkter), velg
+reisemåte, deretter **Plan route**. From settes ofte med **Use GPS**.
+Fotstier krever **Hiking**-modus — planlegging med Car bruker veinettet og
+følger ikke stier skikkelig.
 
-**Slik planlegges en rute.** Du laster ned et regionalt OpenStreetMap-uttrekk én
-gang. Navi bygger et veinett fra det. Med øko på endrer bakker hvor «dyrt» hvert
-veistykke er, og resultatet bufres så neste plan går raskere. Appen finner en
-vei og tegner den på kartet med destinasjon og eventuelle foreslåtte pauser.
+**Øko vs kortest.** Kortest ignorerer bakker. Øko gjør bratte stigninger
+«dyrere». Elektriske modi får noe kreditt for energi tilbake i nedoverbakke.
 
-**Øko vs kortest.** Korteste vei ignorerer bakker. Øko foretrekker lavere
-energibruk, så bratte stigninger koster mer. Bensin- og dieselmodus behandler
-ikke nedoverbakke som «gratis»; elektriske modus får delvis kreditt for energi
-gjenvunnet i nedoverbakke. Hvis en bilcomputer (OBD / lignende) kobles til
-senere, kan live drivstofforbruk forbedre dette ([`docs/ECU.md`](docs/ECU.md)).
-Uten det i dag kan appen lære av tankstørrelse og påfylt drivstoff.
+**Offisielle nettverk.** Valgfri myk preferanse for merkede tur-/sykkelruter.
+Vanlige stier forblir tilgjengelige, så et hull aldri stenger hele turen.
 
-**Steder og søk.** Hva som teller som kafe, hytte, fiskeplass og så videre står i
-[`docs/poi.md`](docs/poi.md). Foreslåtte søkeavstander for nettverkshytter og
-løyper står i [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md).
-Søketreff setter Fra / Via / Til og flytter kartet. Grunnkartet viser egne
-etiketter (veinavn fra zoom **13+**, hverdags-ameniteter/topper fra zoom
-**16+** — se [`docs/map-styles.md`](docs/map-styles.md#basemap-road-names-and-amenity-pois-zoom-ladder)).
-Appmarkører bruker medfølgende ikoner. **Fra må være satt før
-Planlegg rute virker** — vanligvis **Use GPS as from** (nåværende GPS-posisjon).
-Uten Fra viser Plan «Set From and To first» og beregner ingen korridor.
+**Steder.** Søk fyller Fra / Via / Til. Hva som teller som hytte, rasteplass
+osv. er beskrevet i [`docs/poi.md`](docs/poi.md).
 
-**Hvile og overnatting.** Hver reisemåte har egne pausestandarder. Bil og
-motorsykkel bruker timer mellom pauser; fottur og sykling bruker tradisjonelle
-skandinaviske rasteavstander
-([`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md));
-**lastebil** / **lastebil elektrisk** følger EU EC 561/2006
-([`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md)), inkludert flerdagers
-døgnhvile (11 t / redusert 9 t / delt 3+9), ukeshvile etter høyst seks
-påfølgende arbeidsdager når turen ikke får plass i gjenværende dagsbudsjett,
-**kompensasjonsbok** etter redusert ukeshvile (Art. 8-shortfall + frist,
-synlig i planrapporten), og **omvei-/anleggsbasert** overnattingsskåring
-(`highway=services` foretrekkes fremfor bare rasteplasser innenfor lignende
-omvei). **Bobil** beholder bil-lignende myke påminnelser (ikke HGV-juridisk sporing).
-Når bil / motorsykkel / bobil / sykkeltur overstiger det myke daglige budsjettet
-(standard **8 t** kjøring eller **100 km** sykling), deler planleggeren turen i
-dager og foreslår overnatting ved hotell, camping eller rasteplass nær
-dagsgrensen (informativt hvis ingen POI finnes — se [`docs/poi.md`](docs/poi.md)
-**Lodging** / **RestArea**). For fottur plasserer `planHikingRoute`
-hytte-/teltpauser langs rastintervaller, **løfter nærliggende navngitte
-rasthytter til via-punkter** og planlegger på nytt én gang når omveien
-passer POI-glideren i Kjøre-innstillinger (slik at stien går innom hytter som
-Veslefjellbua i stedet for bare å merke dem), avviser overnattingskandidater for
-nær hus eller isbreer, og når turen overstiger daglig distansebudsjett
-(standard **40 km**) deler den i dager med overnattingshytter nær
-dagsgrensen (`plan_hiking_multi_day` i core; samme skåringsånd som
-DNT-integrasjonshjelperen).
-Bygningsavstanden følger norsk **allemannsrett**: villcamping er vanligvis lov
-når du holder respektfull avstand til hus og dyrket mark. Det er en
-Norge-orientert standard og **gjelder ikke nødvendigvis andre steder** — lokal
-campinglov kan være strengere; landpakker følger
-[`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). Bryteren «Pauser»
-styrer bare om påminnelsen vises; rediger tider i kjøreinnstillinger (bil vs
-lastebil når lastebilprofil er valgt).
+**Hvile og overnatting.** Hver modus har egne standarder. Lange lastebilturer
+kan deles i dager med juridiske hvileregler (EU- eller US-pakker der de er
+kjent). Lange bil-/sykkel-/fotturer kan foreslå overnatting. Bryteren
+**Breaks** i bunnstripen viser eller skjuler bare påminnelsen — den lager ikke
+ny hvilelov.
 
-**Kart og skjermstriper.** Kartet tegnes med MapLibre. Kollapset toppstripe viser
-høyde; trykk for kartinnstillinger (rotasjon, tur-ETA, pauser, auto-zoom,
-3D-hillshade, kameratilt). Kollapset bunnstripe viser zoom, pausetid, navnet på veien eller gaten du er på, tur-ETA og
-økoblad; trykk for reisemodus, hvile og drivstoff. **Fotturruter krever at
-reisemodus Hiking/Fottur er valgt** — planlegging med bil (eller annen
-motorprofil) bruker veinettet og vil feile eller gi ubrukelig sti for fotstier.
-Nær en sving viser en kort instruksjonsboks manøver, avstand og neste gate
-([`docs/approach-instructions.md`](docs/approach-instructions.md)).
+**Kartstriper.** Trykk toppstripen for kart-/skjerminnstillinger. Trykk
+bunnstatusen for kjøre-/kjøretøyinnstillinger (modus, pauseintervall, drivstoff,
+elsykkel osv.).
 
-**Høyde på emulatoren.** Automotive-emulatorens GPS-høyde er ofte feil (for
-eksempel 0 m eller et stort avvik på et kjent sted). Det er en
-**emulatorbegrensning**, ikke en appfeil. Høydevisningen foretrekker
-terrenghøyde fra nedlastede høydefiler når de finnes; på ekte enhet kan
-GPS-høyde brukes når slike filer mangler.
+# Innstillinger
 
-**Bevegelige markører.** Nærliggende sporstasjoner kan vises på kartet og
-forsvinne når de er utdaterte ([`docs/APRS.md`](docs/APRS.md)). Live
-radiodekoding er ikke med ennå; USB-SDR er planlagt
-([`docs/APRS-SDR.md`](docs/APRS-SDR.md)).
-
-## Innstillinger
-
-**Språk i appen:** brukergrensesnittet er foreløpig **kun engelsk**. Det finnes
-**ingen språkbryter** i kart- eller kjøreinnstillinger. Norsk tekst her og i
-andre markdown-filer er **dokumentasjon**, ikke oversatte appstrenger. En
-fremtidig UI-oversettelsesplugin er spesifisert i
+**Språk:** appens menyer er **bare engelsk** i dag. Det finnes ingen
+språkmeny ennå. Denne filen (`Norwegian.md`) er dokumentasjon, ikke en
+språkpakke i appen. En fremtidig oversettelsesplugin er beskrevet i
 [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
+Arbeidsark for oversettere ligger ved siden av den spesifikasjonen:
+[`docs/plugins/translations.xlsx`](docs/plugins/translations.xlsx) og
+[`docs/plugins/translations.ods`](docs/plugins/translations.ods).
 
-Innstillinger lagres under appens datakatalog: hvile/drivstoff/kjøretøy via
-SQLite (UniFFI `load*` / `save*`); kart-HUD (auto-zoom, 3D, tilt, pausevisning)
-via `MapHudPrefs`. **Save** skriver og lukker; **Close** lukker (kartbrytere
-kan allerede være lagret umiddelbart).
+Innstillinger lagres på enheten (hvile/drivstoff/kjøretøy i en liten database;
+kartvisning i app-preferanser).
 
-### Kart- / visningsinnstillinger (trykk topp-HUD)
+### Kart / skjerm (trykk toppstripe)
 
-| Innstilling | Hva den gjør |
+| Innstilling | Enkel forklaring |
 |---|---|
-| **Compass** | Roterer kartet etter magnetisk / kompasskurs |
-| **Travel** | Roterer kartet etter GPS- (eller simulert) kjøreretning |
-| **N-up** | Holder kartet med nord opp (bearing 0°) |
-| **Trip ETA** | Viser gjenstående tur-ETA på bunnlinjen |
-| **Breaks** | Viser pausepåminnelsen på bunnlinjen (`Break in …` / av). Endrer ikke planlagt stoppavstand alene |
-| **Auto-zoom** | Når på, snapper zoom til satt nivå under bevegelse |
-| **Auto-zoom − / +** | Endrer måzoom i 0,5-steg (ca. z 3–20) |
-| **3D (experimental)** | Valgfri Mapterhorn DEM-**hillshade** (Vulkan-port). Uavhengig av kameratilt; se [`docs/map-styles.md`](docs/map-styles.md) |
-| **Map tilt** | Snapper kameravinkel til **0° / 35° / 45° / 60°** (Vulkan-port; låst til 0° uten Vulkan; 60° er MapLibres maks). Fungerer med 3D på eller av |
-| **Save / Close** | Lagrer kart-HUD-preferanser og lukker, eller lukker |
+| **Compass / Travel / N-up** | Hvordan kartet roterer |
+| **Trip ETA** | Vis tid igjen til målet i bunnstripen |
+| **Breaks** | Vis linjen «Break in …» (endrer ikke hvordan stopp planlegges) |
+| **Auto-zoom** | Hold valgt zoom mens du beveger deg |
+| **3D (experimental)** | Valgfri bakkeskygge på kartet |
+| **Map tilt** | Tippe kameraet (0° / 35° / 45° / 60°) |
 
-**Estimater før avreise** bruker skiltet `maxspeed` (med veiklasse-reserve) for
-motorprofiler, og fast tempo (ca. 16 min/km fottur, ~4 min/km sykling) for
-fottur/sykling. De er startestimater; live fremdrift oppdaterer når GPS /
-simulering gir hastighet.
+### Kjøring / kjøretøy (trykk bunnstatus)
 
-### Bunn-HUD
-
-| Kontroll | Hva den gjør |
+| Innstilling | Enkel forklaring |
 |---|---|
-| **Zoom − / +** | Appens egen kartzoom (AAOS klima − 63 + er ikke zoom) |
-| **Pause- / ETA-linjer** | Tid (eller avstand) til neste pause, og tur-ETA når aktivert |
-| **Øko-blad** | Synlig når økomodus er på for aktiv profil |
-| **Trykk statusområdet** | Åpner kjøre- / kjøretøyinnstillinger (ikke zoom-knappene) |
+| **Travel mode** | Bil, sykkel, fottur, lastebil, … |
+| **Hours between breaks** | Hvor ofte du *ønsker* pause (bil), eller lastebilens pålagte pause-etter-tid |
+| **Rest time** | Hvor lenge pausen bør vare (forslag / lastebil sammenhengende pause) |
+| **Next break as Time / Distance** | Vis nedtelling i minutter, eller som km/mi ved antatt cruisehastighet |
+| **Eco mode** | Energikost med bakker (låst på for fottur/sykling) |
+| **POI search radius** | Hvor langt til siden planleggeren kan lete etter hytter / stopp |
+| **Vehicle limits** | Høyde/bredde/lengde/aksellast for frihøyde |
 
-### Kjøre- / kjøretøyinnstillinger (trykk bunn-HUD)
+Ruteplanlegging (**Route**): From / To / Via, Plan, Simulate, unngåelser,
+lagrede ruter. **Tools**: last ned region, grunnkart, DEM, OSM-oppdateringssjekk.
 
-| Innstilling | Hva den gjør |
+Lengre kontrollister og lastebil-/jurisdiksjonsdetaljer ligger i dokumentene
+under [Dokumenter](#dokumenter).
+
+# Pauseteller vs tur-ETA
+
+Disse to tallene i bunnstripen svarer på **ulike spørsmål**. De er ikke ment å
+være like hele tiden.
+
+| Linje | Hva den betyr |
 |---|---|
-| **Travel mode** | **Car / Bicycle / Hiking / Motorcycle / Truck / Mobile home.** Velger planlegger og hvilepakke. **Hiking må være valgt for fotturruter** — ellers brukes veinettet og planlegging feiler eller misrouter stier |
-| **Hours between breaks** | Mykt bilintervall (eller lastebilens «pause etter X timer»). Lagres som profilstandard, ikke engangsoverstyring |
-| **Rest time (minutes)** | Foreslått hvilengde (lastebil: sammenhengende pauselengde) |
-| **Split break 15+30** | Bare lastebil — foretrekk delt pause i stedet for én sammenhengende |
-| **Arm +1 h exceptional** | Bare lastebil — eksplisitt valg for eksepsjonell forlengelse |
-| **Next break shown as Time / Distance** | Bunnlinjens pause som minutter eller km/mi ved antatt cruisehastighet |
-| **Distance units km / miles** | Når pause-som-avstand er på, metrisk eller imperial |
-| **Eco mode** | Terrengbevisst energikost; blad på bunn-HUD. Fottur/sykling låser øko på; motorprofiler kan veksle |
-| **Fuel units liters / gallons** | Visningspreferanse; lagring er liter |
-| **Fuel tank capacity** | Tankstørrelse for adaptive forbruksheuristikker |
-| **Fuel added** | Siste påfylling for samme heuristikker |
-| **POI-søkeradius** | Per aktiv reisemodus. **Fottur:** glider **10,5–20 km** (styrer også auto-via omvei / lateral). **Sykkel / elsykkel:** **10,5–28 km**. **Bil / motorsykkel / bobil / lastebil:** **2–4 timer** kjøring (~80 km/t omregnet til meter; lastebil EC 561 / FMCSA-klokker er uavhengige). Motorprofiler krever veitilknyttede pause-/overnattings-POI-er. Bakgrunn: [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md) |
-| **Save / Close** | Skriv hvile/drivstoff/POI-radius til SQLite og lukk, eller lukk uten den lagringen |
+| **Break in XXX min** (eller km/mi) | «Når er *neste planlagte pause forfalt*?» — basert på pause**intervallet** ditt (for eksempel hver 2. time) minus hvor lenge du allerede har kjørt siden forrige pause. |
+| **ETA XXX min** | «Når forventer vi å *være framme*?» — basert på gjenværende rute. |
 
-### Rute- / verktøypanel (hovedkrom)
+Hvis turen bare er **45 minutter**, men pauser er satt til hver **2. time**,
+kan du se noe som **Break in 120 min** ved siden av **ETA 45 min**. Det er
+forventet: pausepåminnelsen følger intervallet du har satt, ikke slutten av
+turen. På en kort tur kan du være framme før pausen er «forfalt».
 
-| Innstilling | Hva den gjør |
+Andre vanlige grunner til at de skiller lag:
+
+1. **Intervallet er lengre enn turen** — sett kortere «timer mellom pauser»
+   (eller godta at midtveis-pause ikke trengs).
+2. **Du er et stykke ute på ruten** — pausetiden teller ned fra intervallet;
+   ETA teller ned gjenværende vei.
+3. **Pause vist som avstand** — minutter omregnes til km/mi med en fast antatt
+   cruisehastighet (~80 km/t bare for visning). Det er ikke din live GPS-fart,
+   så avstandslinjen er bare et grovt anslag.
+4. **Lastebil-juridiske klokker** — i lastebilmodus kan intervallet følge
+   kjøretidsregler (for eksempel pause etter 4,5 t kjøring), som fortsatt ikke
+   er det samme som «tid til målet».
+5. **Før du begynner å bevege deg** — begge linjene bruker plananslag
+   (skiltet fart eller fast gange-/sykkelfart). De oppdateres fra faktisk
+   fremdrift når GPS eller simulering er i gang.
+
+**Tips:** velg et pauseintervall som passer inn i en typisk kjøredag for turen
+din. Det finnes foreløpig ingen knapp for «del denne turen i N like etapper» —
+bruk intervallet (og foreslåtte stopp) i stedet.
+
+# Ruting og sikkerhet
+
+Navi hjelper deg å planlegge; den erstatter ikke skjønn, lokal lov eller
+forholdene langs stien.
+
+- Fottur og partier utenfor sti kan kreve forsiktighet — bruk øynene og lokal
+  kunnskap.
+- Standardavstander for villcamping følger en Norge-orientert
+  allemannsrettstanke og **gjelder ikke nødvendigvis i andre land**.
+- Lastebilhvilepakker gjelder bare der appen kjenner igjen jurisdiksjonen;
+  ellers later den ikke som den er et juridisk fartsskriver.
+- Behandle kartdata (OpenStreetMap) som muligens ufullstendige eller utdaterte
+  til du selv oppdaterer dem.
+
+# Minimum maskinvare og lagring
+
+Grov veiledning for nettbrett / bilskjermer:
+
+| Del | Praktisk råd |
 |---|---|
-| **Follow official hiking/cycling networks** | Myk preferanse for merkede nettverk (av som standard). Bare fottur/sykling |
-| **Avoid motorways / tolls / ferries** | Endrer neste motorplan (ikke bare rapporttekst) |
-| **Vehicle limits** | Høyde, bredde, lengde, aksel/boggi/vekt m.m. Motorplaner utelukker OSM-kanter som bryter frihøyde |
+| **RAM** | Foretrekk **regionale** uttrekk på ca. 4 GB-enheter. Hele store land i ett jafs er ofte for tungt. |
+| **Lagring** | La det være plass til regionsfil, stedsindeks, frakoblet grunnkart og valgfri DEM — ofte flere GB for en region. |
+| **GPU** | MapLibre GLES er standardstien brukt på det testede nettbrettet. |
 
-### Spor (APRS-stil)
+Tiltak i designet: regionale nedlastinger som standard, bufrede grafer,
+bygging i bakgrunnen, og arbeidspooler som lar UI få plass. Mer:
+[`docs/architecture.md`](docs/architecture.md).
 
-| Innstilling | Hva den gjør |
-|---|---|
-| **Display range** | Vis stasjoner innen **50–150 km** (begrenset; ingen ubegrenset global) |
-| **Station timeout** | Fjern utdaterte stasjoner etter maks **3600 s** |
+# Skjermbilder
 
-Mer detalj: [`docs/architecture.md`](docs/architecture.md),
-[`docs/codebase-map.md`](docs/codebase-map.md), [`docs/API.md`](docs/API.md),
-[`docs/hud-layout.md`](docs/hud-layout.md), [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+Hovedeksempler (Samsung Galaxy Tab S6 Lite **SM-P613** og rutesimulering):
 
-## Fungerende app (emulatorskjermbilder)
+Landskap med valgfri **3D**-skygge (frakoblet Protomaps + lokalt terreng):
 
-Tatt på Android Automotive-emulator med MapLibre + OpenFreeMap liberty.
-Kollapset topp-/bunn-kjøre-HUD (søk skjult):
+![SM-P613 frakoblet Protomaps + Mapterhorn DEM-hillshade (landskap)](docs/images/Screenshot_20260731_123844.jpg)
 
-![Idle begge linjer](docs/images/hud/hud_idle_both_bars.png)
-
-Kaldstart-splash (rødt open-app-merke, Splash Screen API — SM-P613):
-
-![Splash open-app](docs/images/splash_open_app.png)
-
-Fotturkorridor Skolla → Rondvassbu (SM-P613, **SIMULATING**; rasthytter
-inkludert Veslefjellbua løftet til via når POI-radius tillater omveien):
+Fotturkorridor Skolla → Rondvassbu (**SIMULATING**):
 
 ![Skolla til Rondvassbu](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
 
-Kartkamera-tilt (0° / 35° / 45° / 60°) er uavhengig av valgfri 3D-hillshade.
-Finnstad → Søndre Ommang → Rosenlund ved **45°** — flat 2D (N-opp),
-deretter 3D på med Mapterhorn DEM-hillshade.
-Disse bildene viser tilt/3D. Eldre skjermbilder i galleriet kan ha en blå
-hydro soft-edge fringe ved elve-/innsjøkanter; den er bekreftet **ikke synlig
-under vanlig interaktiv bruk** og behandles som en
-[skjermbilde-fangstartefakt](docs/map-styles.md#hydro-soft-edge-fringe-screenshot-artifact)
-(instrumentert `screencap` / UiAutomation-timing), ikke en bruker-synlig
-tegningsbegrensning:
+GPS-følge under simulering:
+
+![Følge under simulering](docs/images/follow_gps/01_simulating_follow.png)
+
+### Ekte maskinvare (SM-P613)
+
+Portrett, frakoblet Østlandet-Protomaps, 3D av:
+
+![SM-P613 frakoblet Protomaps 2D (portrett)](docs/images/Screenshot_20260731_123746.jpg)
+
+Testing på bilskjerm er fortsatt åpen —
+[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+
+### Flere bilder
+
+Idle HUD:
+
+![Idle begge linjer](docs/images/hud/hud_idle_both_bars.png)
+
+Kaldstart-splash:
+
+![Splash open-app](docs/images/splash_open_app.png)
+
+Karttilt 45° (3D av / på):
 
 ![45° tilt, 3D av](docs/images/tilt45_3d_off.png)
 
 ![45° tilt, 3D på](docs/images/tilt45_3d_on.png)
 
-Alle andre skjermbilder (kartzoom, ruteoverlegg, enkeltpunkt online /
-frakoblet 3D-POI, menyer, innstillinger, øko-blad, rotasjon, kurs, bevegelige
-ikoner):
-[`docs/bilder.md`](docs/bilder.md).
+Følge / pan / Recenter / rotasjon:
 
-## Dokumenter
+![Følge under simulering](docs/images/follow_gps/01_simulating_follow.png)
 
-| Dokument | Beskrivelse |
+![Etter pan](docs/images/follow_gps/02_after_pan.png)
+
+![Etter Recenter](docs/images/follow_gps/05_after_recenter.png)
+
+![Rotasjonsmodi](docs/images/follow_gps/06_rotation_modes_ok.png)
+
+Fullt galleri: [`docs/bilder.md`](docs/bilder.md) (engelsk:
+[`docs/pictures.md`](docs/pictures.md)).
+
+# Dokumenter
+
+| Dokument | Hva det er til |
 |---|---|
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Hvordan bidra (testing, plugins, jurisdiksjoner, kodekrav; engelsk) |
-| [`docs/architecture.md`](docs/architecture.md) | Hvordan delene henger sammen (databaser, tråder, plugins) |
-| [`docs/rust-crates.md`](docs/rust-crates.md) | Rust-crates: egen kode vs uendrede crates.io-avhengigheter (engelsk) |
-| [`docs/codebase-map.md`](docs/codebase-map.md) | Bidragsyter-filkart: hvor feil fikses, zoom, tilnærming, ruting, HUD |
-| [`docs/bilder.md`](docs/bilder.md) | Maskinvareskjermbildegalleri (norsk, SM-P613) |
-| [`docs/pictures.md`](docs/pictures.md) | Maskinvareskjermbildegalleri (engelsk, SM-P613) |
-| [`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md) | Rast/vei-grunnlag for standard pauseintervaller (fottur og sykling); [engelsk](docs/historical-background.md) |
-| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | Lastebil EU kjøre-/hviletid: duty-tak, flerdagers hvile, kompensasjonsbok, overnattingsskåring |
-| [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | Lastebil US FMCSA HOS (11 t / 14 t / 8 t pause / 70 t-syklus) |
-| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Mønster for land-/regionavhengige regler (EC 561 + FMCSA + allemannsrett) |
-| [`docs/horse-profile.md`](docs/horse-profile.md) | Arbeidseksempel: legge til Horse-profil (kun dokumentert; ikke implementert) |
-| [`docs/hud-layout.md`](docs/hud-layout.md) | Størrelse og plassering av kjøre-HUD og menyer |
-| [`docs/map-styles.md`](docs/map-styles.md) | Online Liberty vs frakoblet Protomaps PMTiles; 3D-port |
-| [`docs/approach-instructions.md`](docs/approach-instructions.md) | Midlertidig manøver-tilnærmingsboks |
-| [`docs/current-street.md`](docs/current-street.md) | Bunn-HUD «Currently on …» veinavn + policy uten rute |
-| [`docs/unicode-road-names.md`](docs/unicode-road-names.md) | UTF-8-pipeline for æ/å/ø/ä/ü i navn |
-| [`docs/poi.md`](docs/poi.md) | Søkbar POI-kategorier (Fishing, RestArea, Lodging, …), OSM-taggregler |
-| [`docs/poi-search-defaults.md`](docs/poi-search-defaults.md) | Foreslåtte hytte-/løyperadius for fottur og sykling (DNT-avstand) |
-| [`docs/osm-updates.md`](docs/osm-updates.md) | Valgfri Geofabrik-sjekk / `.osc.gz` / full nedlasting |
-| [`docs/plugins.md`](docs/plugins.md) | Plugin-vert-status (bevisst: ingen innholdsplugins ennå) + HostApi, isolasjon, veikart |
-| [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Spesifikasjon: allemannsrett / flerland villcamping (plugin) |
-| [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Spesifikasjon: drivstoff-/vannforsyning langs rute (plugin) |
-| [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Spesifikasjon: eksport av nav-tilstand til cluster/AGL (plugin) |
-| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Spesifikasjon: UI-språk/oversettelsespakker (plugin; appen er engelsk i dag) |
-| [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Spesifikasjon: animerte ikoner (Synfig → SVG-rammer; plugin) |
-| [`docs/icons.md`](docs/icons.md) | Ikonoversikt; egne statiske SVG (Inkscape); Navit GPL-v2 |
-| [Supermagnum/road-signs](https://github.com/Supermagnum/road-signs) | Norske trafikkskilt (NLOD; eget repo) |
-| [`docs/API.md`](docs/API.md) | UniFFI vert-API + plugin HostApi-referanse |
-| [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md) | Protokollindeks |
-| [`docs/ECU.md`](docs/ECU.md) | ECU-protokoller: OBD-II, J1939, MegaSquirt + EV |
-| [`docs/mathematical-formulas.md`](docs/mathematical-formulas.md) | Formler: MAF/J1939/MegaSquirt-drivstoff, rekkevidde, øko-segmentenergi |
-| [`docs/APRS.md`](docs/APRS.md) | APRS-felter, TrackStore-filtrering, bevegelige ikoner |
-| [`docs/APRS-SDR.md`](docs/APRS-SDR.md) | APRS SDR DSP; RTL-SDR; planlagt `rtl-sdr-rs` |
-| [`docs/CAT.md`](docs/CAT.md) | CAT VFO auto-tune fra NFM-repeatere |
-| [`docs/voice-guidance.md`](docs/voice-guidance.md) | Planlagt stemmeveiledningsplugin |
-| [`docs/android-build.md`](docs/android-build.md) | Bygg native `libnavi.so`, UniFFI og Gradle-APK |
-| [`docs/build-linux.md`](docs/build-linux.md) | Linux: Rust-kjerne, `navi-desktop` kartskall, integrasjonstester, gpsd + IMU |
-| [`docs/imu-calibration.md`](docs/imu-calibration.md) | Utsatt: IMU pitch/roll-nullstilling for øko-høyde |
-| [`docs/debugging.md`](docs/debugging.md) | Vert- + Android-feilsøkingsløkker |
-| [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | **Påkrevd:** sjekkliste for fysisk enhet vs emulator |
-| [`docs/test-results.md`](docs/test-results.md) | Vert-integrasjonstestnotater |
-| [`docs/android-test-results.md`](docs/android-test-results.md) | Resultater på enhet / emulator |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Hvordan bidra (engelsk) |
+| [`docs/architecture.md`](docs/architecture.md) | Hvordan delene henger sammen |
+| [`docs/codebase-map.md`](docs/codebase-map.md) | Hvor man endrer kode for en gitt funksjon |
+| [`docs/bilder.md`](docs/bilder.md) / [`docs/pictures.md`](docs/pictures.md) | Skjermbildegallerier |
+| [`docs/map-styles.md`](docs/map-styles.md) | Online vs frakoblet kartutseende; 3D |
+| [`docs/poi.md`](docs/poi.md) | Stedstyper og søk |
+| [`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md) | Rast/vei-grunnlag for pauseintervaller (fottur/sykling) |
+| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | EU lastebil kjøre-/hviletid |
+| [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | US lastebil kjøre-/hviletid |
+| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Land-/regionregelpakker |
+| [`docs/osm-updates.md`](docs/osm-updates.md) | Valgfrie kartoppdateringer |
+| [`docs/android-build.md`](docs/android-build.md) | Bygge Android-appen |
+| [`docs/build-linux.md`](docs/build-linux.md) | Linux- / skrivebordsbygg |
+| [`docs/debugging.md`](docs/debugging.md) | Feilsøking |
+| [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | Sjekkliste for fysisk enhet |
+| [`docs/plugins.md`](docs/plugins.md) | Plugin-vert og veikart |
+
+Se `docs/`-mappen for mer spesialiserte emner (stemme, APRS, ECU, formler osv.).
+
+# Plugins
+
+En sandkasse for plugins finnes, så fremtidige tillegg kan kjøre trygt.
+**Ingen produktplugins leveres i appen ennå** — det er med vilje. Oversikt:
+[`docs/plugins.md`](docs/plugins.md).
+
+| Spesifikasjon | Emne |
+|---|---|
+| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Fremtidige UI-språk (bare engelsk i dag). Oversetterark: [`translations.xlsx`](docs/plugins/translations.xlsx), [`translations.ods`](docs/plugins/translations.ods) |
+| [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Villcamping-forslag (plugin, ikke kjerne) |
+| [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Drivstoff-/vannforsyning |
+| [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Eksportere nav-tilstand til instrumentcluster |
+| [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Animerte ikoner |
 
 ## Ikoner (Navit)
 
-Se [`docs/icons.md`](docs/icons.md) for full ikonsystembeskrivelse. Kort:
-POI-/manøver-/statusikoner under `core/src/icons` er Navit-avledet (**GPL v2**).
-Oppløsning foretrekker brukeroverskrivninger, deretter medfølgende sett, deretter
-`unknown.svg`.
+POI- / sving- / statusikoner under `core/src/icons` kommer fra Navit
+(**GPL v2**). Hvordan legge til egne SVG-ikoner: [`docs/icons.md`](docs/icons.md).
 
-**Egne ikoner:** bruk **SVG** (eller `.svgz`). Statisk kunst i
-[Inkscape](https://inkscape.org/); navngi etter semantisk nøkkel og legg i
-override-katalog eller `core/src/icons` — steg i
-[`docs/icons.md`](docs/icons.md#adding-custom-icons). Animasjoner i
-[Synfig Studio](https://www.synfig.org/) — se
-[`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md).
+# Kodestandarder og bidrag
 
-Relatert (ikke med i Navi): norske trafikkskilt fra offentlig database, utgitt
-under NLOD —
-[Supermagnum/road-signs](https://github.com/Supermagnum/road-signs).
+Les **[`CONTRIBUTING.md`](CONTRIBUTING.md)** (engelsk).
 
-## Bygge Android-pakker
+Kortversjon av CI-forventninger:
 
-Full guide: [`docs/android-build.md`](docs/android-build.md).
+| Område | Forventning |
+|---|---|
+| Rust | `cargo fmt`, Clippy uten advarsler, tester |
+| Kotlin | ktlint, detekt, enhetstester |
+| Android | `./gradlew :app:assembleDebug` |
+
+# Bygge og installere
+
+Fullstendige guider: [`docs/android-build.md`](docs/android-build.md) og
+[`docs/build-linux.md`](docs/build-linux.md).
+
+### Emulator (x86_64)
 
 ```bash
-# 1) Rust CDYLIB + UniFFI Kotlin (emulator-ABI)
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
+rustup target add x86_64-linux-android   # én gang
 ./scripts/build-android-native.sh x86_64-linux-android release
-
-# 2) APK
-./gradlew :app:assembleDebug          # → app/build/outputs/apk/debug/
-./gradlew :app:installDebug           # installer på adb-enhet
-
-# Enhet / AAOS arm64 i stedet for emulator:
-# ./scripts/build-android-native.sh aarch64-linux-android release
-
-./scripts/launch-navi-emulator.sh      # start MainActivity på AAOS AVD
+./gradlew :app:assembleDebug
+./gradlew :app:installDebug
+./scripts/launch-navi-emulator.sh
 ```
 
-Oppdater `.cargo/config.toml` linker-stier til NDK før første native bygg.
-`minSdk` 26, `compileSdk` / `targetSdk` 36, JDK 17.
+### Nettbrett / telefon (arm64)
 
-## Ytelseskrav (minimum: 8 kjerner ~2 GHz, 4 GB RAM)
+```bash
+rustup target add aarch64-linux-android   # én gang
+./scripts/build-android-native.sh aarch64-linux-android release
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n no.navi.app/.MainActivity
+```
 
-**Minimum maskinvare** for tiltenkt Automotive- / innebygd klasse:
+Bekreft at APK-en inneholder arm64-biblioteket:
 
-| Ressurs | Minimum |
-|---|---|
-| CPU | **8 kjerner**, ca. **2 GHz**-klasse |
-| RAM | **4 GB** |
+```bash
+unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'lib/arm64-v8a/libnavi.so'
+```
 
-Estimater nedenfor er ikke målt på den enhetsklassen ennå.
+### Arbeidsområdets struktur
 
-| Oppgave | Dataskala | Estimert tid | Merknad |
-|---|---|---|---|
-| OSM `.pbf` parse + grafbygg | ~1,5M noder / ~1,26M kanter | ~30–90 s | Hovedsakelig enkeltpass CPU + I/O |
-| POI R-tre | Få tusen POI | &lt; 1 s | Nesten lineær bulk lasting |
-| Øko-omvekt (høyde) | ~1,26M kanter, ~9 DEM-fliser | ~10–60 s, én gang per region | Bufre dekomprimerte fliser |
-| A* én rute | ~1,26M kanter | &lt; 1 s (ofte 100–300 ms) | |
-| Flere dager + hyttevalg | Regional graf | 1–3 s | På allerede lastet graf |
+- `core/` — ruting, steder, hvileregler, ikoner (Rust)
+- `navi-ffi/` — bro til Android og andre verter
+- `app/` — Android-UI (Kotlin)
+- `plugin-host/` / `plugin-sdk/` / `plugins/` — fremtidige plugins
+- [`docs/architecture.md`](docs/architecture.md) — hvordan det henger sammen
 
-### Hard begrensning: RAM
-
-- **4 GB er den bindende grensen**, ikke CPU-frekvens.
-- Standard arbeidssett: **fylkes-/regionsuttrekk** (~1,5M noder).
-- Landsskala for store land risikerer OOM på 4 GB — behandle som valgfritt med
-  advarsel i appen.
-- 9M-noders referanse krevde under 5 GB på desktop; den skalaen er ikke en trygg
-  minnestandard på denne enhetsklassen.
-
-### Minimum ledig lagring (SD-kort / intern)
-
-Frakoblet **rutingsdata** (Geofabrik `.osm.pbf` + grafbuffer + sted/FTS + DEM +
-scratch for oppdateringer). Omfatter **ikke** MapLibre-grunnkartfliser med mindre
-du også laster regionale **PMTiles** (typisk ytterligere **1–3×** et
-sammenlignbart Geofabrik-uttrekk ved standard **maxzoom 15**; Ostlandet-grunnkart
-alene er i størrelsesorden **~1 GB**). Se [`docs/map-styles.md`](docs/map-styles.md).
-
-Geofabrik `.osm.pbf`-størrelser (ca., midten av 2026):
-
-| Land / uttrekk | Bare `.osm.pbf` | **Minimum ledig plass å budsjettere** |
-|---|---|---|
-| **Sverige** | ~0,8 GB | **~3–5 GB** |
-| **Norge** | ~1,3 GB | **~4–6 GB** |
-| **Russland** | ~4,1 GB | **~12–16 GB** |
-| **Tyskland** | ~4,8 GB | **~14–18 GB** |
-| **USA** | ~12 GB | **~36–48 GB** |
-
-Tommelfingerregel: hold ca. **3–4×** `.osm.pbf` ledig. Foretrekk **regionalt**
-uttrekk (f.eks. Østlandet ~0,4 GB PBF) på 4 GB RAM-enheter.
-
-### Påkrevde tiltak
-
-1. Begrens standard last til regionale uttrekk; landsskala er valgfritt + advarsel.
-2. Lagre omvektet graf etter øko-omvekt — ikke beregn på nytt ved hver oppstart.
-3. Strøm/flis DEM-oppslag via LRU-flisbuffer.
-4. Kjør grafparse/bygg på bakgrunnstråd (ruting-nivå) med fremdrifts-UI.
-
-Arbeiderpooler må bruke `std::thread::available_parallelism()` (eller tilsvarende)
-og la det være rom for lyd/UI. Rutingarbeid kjører med lavere OS-prioritet enn
-lyd/UI.
-
-## Arbeidsområdets struktur
-
-- `core/` (`driver-break-core`) — høyde, ruting, POI, hvile/sikkerhet, søk, ikoner, spor, SQLite.
-- `navi-ffi/` — UniFFI CDYLIB for Android og andre verter.
-- `app/` — Android-vert (Kotlin/Compose) som kobler til kjernen via UniFFI.
-- `plugin-host/` / `plugin-sdk/` / `plugins/` — sandkasse WASM-vert (innholdsplugins utsatt; se [`docs/plugins.md`](docs/plugins.md)).
-- Hvordan delene henger sammen: [`docs/architecture.md`](docs/architecture.md).
-- Hvor funksjoner endres / feil fikses: [`docs/codebase-map.md`](docs/codebase-map.md).
-- Kallbare API-er: [`docs/API.md`](docs/API.md).
-- [`docs/test-results.md`](docs/test-results.md) /
-  [`docs/android-test-results.md`](docs/android-test-results.md) — integrasjonsrapporter.
-
-## Vertstester
+### Vertstester (eksempler)
 
 ```bash
 cargo test -p driver-break-core --test planner_options_routes
-cargo test -p driver-break-core --test truck_driving_history -- --nocapture
-cargo test -p driver-break-core truck_multi_day -- --nocapture
-cargo test -p driver-break-core motor_multi_day -- --nocapture
-cargo test -p driver-break-core rest_area -- --nocapture
-cargo test -p driver-break-core lodging -- --nocapture
-cargo test --test kongsvinger_lillehammer_integration -- --nocapture --ignored
-cargo test --test dnt_hiking_integration -- --nocapture --ignored
 cargo test -p navi-plugin-host --test isolation -- --nocapture
-cargo test -p driver-break-core fishing -- --nocapture
-cargo test -p driver-break-core osm_update::
 ```
 
-**Live-GPS lastebilplan (vert):** startkoordinater må komme fra
-`adb shell dumpsys location` (ingen hardkodede korridorstarter). Sett
-`NAVI_START_LAT` / `NAVI_START_LON` fra den fiksasjonen, velg destinasjon først
-etter at start er kjent, deretter:
+Store kartfil-integrasjonstester er vanligvis merket `#[ignore]` og trenger
+fiksturer under `core/target/integration-fixtures`. Se
+[`docs/test-results.md`](docs/test-results.md).
 
-```bash
-cargo run -p navi-ffi --bin plan-truck-live-gps --release
-```
+# Hvor kartdataene kommer fra
 
-Se `navi-ffi/src/bin/plan_truck_live_gps.rs`. Flerdagers døgnhvile og
-historikk les/skriv er bekreftet på en live-GPS Norge-tur (Minnesund-beltet →
-Bodø).
+Navi er **offline-first**. Nett brukes bare når du selv velger å laste ned
+eller oppdatere.
 
-## Kjente problemer
+| Data | Kilde | Brukes til |
+|---|---|---|
+| Veier og steder | OpenStreetMap via Geofabrik `.osm.pbf` | Ruting og søk |
+| Kartoppdateringer | Geofabrik-diff / ferskt uttrekk | Bare valgfri oppdatering |
+| Høyde | Offentlige DEM-fliser | Øko / bakker |
+| Kartbilde | OpenFreeMap Liberty (online) eller Protomaps PMTiles (frakoblet) | Det du ser på skjermen |
+| Posisjon | Enhetens GPS (eller gpsd på Linux) | Hvor du er |
+| Ikoner | Medfølgende Navit-avledet SVG | Markører og svinger |
 
-- **Plugins (innhold):** WASM-vert/sandkasse er klar; produktplugins er bevisst
-  utsatt for uavhengige bidragsytere (camping, forsyning, instrumentcluster/AGL,
-  UI-oversettelse, ECU, APRS, …) — se [`docs/plugins.md`](docs/plugins.md).
-  Ikke en feil i navigasjonskjernen.
-- **GUI-puss:** Compose HUD / søk / verktøy fungerer, men trenger fortsatt
-  visuelt og UX-puss (avstand, typografi, tetthet på Automotive-skjermer).
-  Bidrag er velkomne.
-- **Bevegelige ikoner (APRS):** fikset. Instrumentert test
-  `MovingIconInstrumentedTest` består. Markører tegnes via Compose
-  skjermplass-overlegg. Se [`docs/bilder.md`](docs/bilder.md) og
-  [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
-- **Kartrotasjon SIGSEGV (emulator GLES):** fikset ved bytte til
-  `org.maplibre.gl:android-sdk-vulkan` 11.8.8. Se
-  [maplibre-native#2371](https://github.com/maplibre/maplibre-native/issues/2371).
-  Verifisert i [`docs/bilder.md`](docs/bilder.md).
+Land-/regionvisuelle uttrekk kan også lages med
+[PMT-splitter](https://github.com/Supermagnum/PMT-splitter/tree/main).
+
+# Kjente problemer
+
+- **Plugins:** innholdstillegg er bevisst ikke levert ennå.
+- **UI-finish:** skjermene fungerer, men trenger fortsatt visuell opprydding på
+  bilskjermer.
+- **Bevegelige ikoner:** tegnes med Compose-overlegg i dag; native
+  kartsymbol-lag er ikke hovedstien ennå.
+- **Kart / GPU-særheter:** noen emulator- og telefon-GPU-oppsett har historisk
+  krasjet eller vasket ut bakkeskygge; prosjektet gikk over til MapLibre GLES
+  etter nettbrettsjekker. Detaljer i [`docs/map-styles.md`](docs/map-styles.md)
+  og [`docs/debugging.md`](docs/debugging.md).
+- **Bare-i-skjermbilde innsjøkant:** en myk blå kant rundt vann kan dukke opp i
+  skjermbilder, men ikke under vanlig bruk — se
+  [`docs/map-styles.md`](docs/map-styles.md#hydro-soft-edge-fringe-screenshot-artifact).
+- **Treg fotturplan på store områder:** å laste alle bygninger i en stor boks
+  for overnattingsavstandssjekk kan gjøre lange fotturplaner trege; en trangere
+  korridorfilter er kjent oppfølging.
+- **Pauseteller ≠ tur-ETA:** med vilje — se
+  [Pauseteller vs tur-ETA](#pauseteller-vs-tur-eta).
