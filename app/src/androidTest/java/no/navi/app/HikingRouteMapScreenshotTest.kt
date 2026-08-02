@@ -147,6 +147,8 @@ class HikingRouteMapScreenshotTest {
                 simSamplesJson = simSamples,
                 maneuversJson = "[]",
                 priorityPathSharePct = 0.0,
+                routeSegmentsJson = "[]",
+                offTrailAdvisory = "",
             )
 
         // Apply via the live composition handler when available — pendingRoute alone

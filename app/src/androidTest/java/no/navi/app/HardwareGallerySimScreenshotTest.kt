@@ -169,6 +169,8 @@ class HardwareGallerySimScreenshotTest {
                             ).toString(),
                     maneuversJson = "[]",
                     priorityPathSharePct = base.priorityPathSharePct,
+                    routeSegmentsJson = "[]",
+                    offTrailAdvisory = "",
                 )
             check(planned.routePolyline.isNotBlank()) { "empty polyline" }
             check(planned.simSamplesJson.length > 10) { "no sim samples" }

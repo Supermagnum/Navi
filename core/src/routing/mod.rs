@@ -6,10 +6,13 @@ pub mod elevation;
 pub mod eta;
 pub mod graph;
 pub mod guidance_path;
+pub mod hiking_hybrid;
 pub mod osm_update;
 pub mod region;
 pub mod rest;
 pub mod safety;
+pub mod terrain;
+pub mod wetland;
 pub mod workers;
 
 pub use basemap::{
@@ -31,12 +34,17 @@ pub use eta::{
     CYCLING_MIN_PER_KM, HIKING_MIN_PER_KM,
 };
 pub use graph::{
-    apply_official_network_preference, format_route_avoidance_report, GraphEdge, RouteGraph,
-    RouteOptions, RoutingProfile, NON_NETWORK_PENALTY,
+    apply_official_network_preference, format_route_avoidance_report, max_waypoint_snap_m,
+    GraphEdge, RouteGraph, RouteOptions, RoutingProfile, SnapTooFar, WetlandApplyStats,
+    NON_NETWORK_PENALTY,
 };
 pub use guidance_path::{
     build_maneuvers, build_sim_samples, build_sim_samples_from_lat_lon, maneuvers_to_json,
     samples_to_json, RouteManeuver, SimSample,
+};
+pub use hiking_hybrid::{
+    plan_hybrid_hiking_path, HikingWaypoint, HybridHikingPath, RouteSegment, SegmentKind,
+    OFF_TRAIL_ADVISORY,
 };
 pub use osm_update::{
     apply_pending_update, apply_update_plan, bind_geofabrik_extract, check_for_updates,
@@ -65,5 +73,10 @@ pub use rest::{
 };
 pub use safety::{
     check_overnight_candidate, DangerBarrierIndex, OvernightProximityIndex, OvernightRejectReason,
+};
+pub use terrain::{least_cost_path, TerrainPath, TERRAIN_CELL_M, TERRAIN_MAX_GAP_M};
+pub use wetland::{
+    classify_wetland_value, tags_indicate_boardwalk, WetlandClass, WetlandIndex,
+    WETLAND_SOFT_COST_MULT,
 };
 pub use workers::WorkerPoolPlan;

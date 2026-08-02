@@ -161,3 +161,21 @@ pub const DEFAULT_EV_CAR_BATTERY_KWH: f64 = 60.0;
 
 /// Assumed EV car drivetrain efficiency for pack-draw estimates (not measured).
 pub const DEFAULT_EV_CAR_MOTOR_EFFICIENCY: f64 = 0.85;
+
+/// Max distance (m) from a hiking waypoint to the nearest linked foot-graph node.
+///
+/// Normal search-result snaps are typically tens of metres (corridor tests often
+/// log ~5–45 m). The DNT hiking integration already treats >500 m as too far.
+/// Bound must stay well below silent ocean/open-terrain substitutions.
+pub const HIKING_MAX_WAYPOINT_SNAP_M: f64 = 500.0;
+
+/// Max distance (m) from a cycling waypoint to the nearest linked bike-graph node.
+pub const CYCLING_MAX_WAYPOINT_SNAP_M: f64 = 500.0;
+
+/// Max distance (m) from a car/motorcycle waypoint to the nearest linked road node.
+/// Slightly looser than foot: parking / driveway offset from the carriageway.
+pub const CAR_MAX_WAYPOINT_SNAP_M: f64 = 750.0;
+
+/// Max distance (m) from a truck/motorhome waypoint to the nearest linked road node.
+/// Truck stops and industrial access can sit farther from the highway graph.
+pub const TRUCK_MAX_WAYPOINT_SNAP_M: f64 = 1_000.0;

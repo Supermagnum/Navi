@@ -20,8 +20,8 @@ mod reweight;
 mod road_near;
 
 pub use builder::{
-    format_route_avoidance_report, highway_is_major, GraphEdge, RouteGraph, RouteOptions,
-    RoutingProfile,
+    format_route_avoidance_report, highway_is_major, max_waypoint_snap_m, GraphEdge, RouteGraph,
+    RouteOptions, RoutingProfile, SnapTooFar, WetlandApplyStats,
 };
 pub use cache::{
     graph_cache_path, load_or_build_reweighted, load_or_build_reweighted_bbox,

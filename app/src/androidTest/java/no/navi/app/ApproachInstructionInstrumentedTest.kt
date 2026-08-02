@@ -127,6 +127,8 @@ class ApproachInstructionInstrumentedTest {
                 simSamplesJson = "[]",
                 maneuversJson = "[]",
                 priorityPathSharePct = 0.0,
+                routeSegmentsJson = "[]",
+                offTrailAdvisory = "",
             )
         NaviMapTestHooks.pendingCamera =
             Triple(

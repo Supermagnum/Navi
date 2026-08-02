@@ -553,6 +553,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                is_boardwalk_crossing: false,
             },
             GraphEdge {
                 id: "20".into(),
@@ -578,6 +579,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                is_boardwalk_crossing: false,
             },
         ];
         let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot);

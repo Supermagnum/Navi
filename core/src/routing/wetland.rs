@@ -1,0 +1,320 @@
+//! Wetland hazard classification shared by on-trail graph weighting and
+//! off-trail terrain cost surfaces.
+//!
+//! Soft-avoid (`bog` / `string_bog` / `fen`): penalize, do not block.
+//! Hard-avoid (`swamp` / `reedbed`): exclude by default.
+//! Boardwalk carve-out: graph edges tagged `bridge=boardwalk` or `surface=wood`
+//! remain usable even when crossing hard wetlands. Terrain cells have no
+//! carve-out (no built infrastructure outside the OSM way graph).
+
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+
+use osmpbf::{Element, ElementReader, RelMemberType};
+
+/// Soft-avoid cost multiplier applied to graph edges and terrain cells.
+pub const WETLAND_SOFT_COST_MULT: f64 = 5.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WetlandClass {
+    SoftAvoid,
+    HardAvoid,
+}
+
+/// Classify an OSM `wetland=*` value (or equivalent).
+pub fn classify_wetland_value(raw: &str) -> Option<WetlandClass> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "bog" | "string_bog" | "fen" => Some(WetlandClass::SoftAvoid),
+        "swamp" | "reedbed" => Some(WetlandClass::HardAvoid),
+        _ => None,
+    }
+}
+
+/// True when OSM tags indicate a built boardwalk / wooden crossing.
+pub fn tags_indicate_boardwalk(bridge: Option<&str>, surface: Option<&str>) -> bool {
+    let bridge_ok = bridge
+        .map(|v| v.trim().eq_ignore_ascii_case("boardwalk"))
+        .unwrap_or(false);
+    let surface_ok = surface
+        .map(|v| v.trim().eq_ignore_ascii_case("wood"))
+        .unwrap_or(false);
+    bridge_ok || surface_ok
+}
+
+/// Convenience for tag maps (PBF / osm4routing).
+pub fn tags_map_indicate_boardwalk(tags: &HashMap<String, String>) -> bool {
+    tags_indicate_boardwalk(
+        tags.get("bridge").map(String::as_str),
+        tags.get("surface").map(String::as_str),
+    )
+}
+
+fn classify_tags(tags: &HashMap<String, String>) -> Option<WetlandClass> {
+    if let Some(w) = tags.get("wetland") {
+        if let Some(c) = classify_wetland_value(w) {
+            return Some(c);
+        }
+    }
+    // natural=wetland without subtype: treat as soft-avoid (common bog/mire mapping).
+    if tags
+        .get("natural")
+        .is_some_and(|v| v.eq_ignore_ascii_case("wetland"))
+    {
+        return Some(WetlandClass::SoftAvoid);
+    }
+    None
+}
+
+#[derive(Debug, Clone)]
+struct WetlandRing {
+    class: WetlandClass,
+    /// Closed ring as `[lon, lat]`.
+    ring: Vec<[f64; 2]>,
+}
+
+/// Spatial index of wetland polygons for point queries.
+#[derive(Debug, Default, Clone)]
+pub struct WetlandIndex {
+    rings: Vec<WetlandRing>,
+}
+
+impl WetlandIndex {
+    pub fn is_empty(&self) -> bool {
+        self.rings.is_empty()
+    }
+
+    pub fn ring_count(&self) -> usize {
+        self.rings.len()
+    }
+
+    pub fn class_at(&self, lat: f64, lon: f64) -> Option<WetlandClass> {
+        let p = [lon, lat];
+        let mut best: Option<WetlandClass> = None;
+        for r in &self.rings {
+            if point_in_ring(p, &r.ring) {
+                match (best, r.class) {
+                    (None, c) => best = Some(c),
+                    (Some(WetlandClass::SoftAvoid), WetlandClass::HardAvoid) => {
+                        best = Some(WetlandClass::HardAvoid);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        best
+    }
+
+    /// Load closed wetland ways (and multipolygon outers) that touch `bbox`.
+    pub fn load_from_pbf_bbox(path: impl AsRef<Path>, bbox: [f64; 4]) -> anyhow::Result<Self> {
+        let path = path.as_ref();
+        let mut ways: Vec<(Vec<i64>, WetlandClass)> = Vec::new();
+        let mut needed: HashSet<i64> = HashSet::new();
+        let mut rel_outers: Vec<(WetlandClass, Vec<i64>)> = Vec::new();
+        let mut outer_way_ids: HashSet<i64> = HashSet::new();
+
+        {
+            let file = std::fs::File::open(path)?;
+            let reader = ElementReader::new(file);
+            reader.for_each(|element| match element {
+                Element::Way(way) => {
+                    let tags: HashMap<String, String> = way
+                        .tags()
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect();
+                    let Some(class) = classify_tags(&tags) else {
+                        return;
+                    };
+                    let refs: Vec<i64> = way.refs().collect();
+                    if refs.len() < 3 {
+                        return;
+                    }
+                    for id in &refs {
+                        needed.insert(*id);
+                    }
+                    ways.push((refs, class));
+                }
+                Element::Relation(rel) => {
+                    let tags: HashMap<String, String> = rel
+                        .tags()
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect();
+                    let Some(class) = classify_tags(&tags) else {
+                        return;
+                    };
+                    let mut outers = Vec::new();
+                    for m in rel.members() {
+                        let role = m.role().unwrap_or("");
+                        if m.member_type == RelMemberType::Way && role.eq_ignore_ascii_case("outer")
+                        {
+                            outers.push(m.member_id);
+                            outer_way_ids.insert(m.member_id);
+                        }
+                    }
+                    if !outers.is_empty() {
+                        rel_outers.push((class, outers));
+                    }
+                }
+                _ => {}
+            })?;
+        }
+
+        let mut way_nodes: HashMap<i64, Vec<i64>> = HashMap::new();
+        if !outer_way_ids.is_empty() {
+            let file = std::fs::File::open(path)?;
+            let reader = ElementReader::new(file);
+            reader.for_each(|element| {
+                let Element::Way(way) = element else {
+                    return;
+                };
+                if !outer_way_ids.contains(&way.id()) {
+                    return;
+                }
+                let refs: Vec<i64> = way.refs().collect();
+                if refs.len() < 3 {
+                    return;
+                }
+                for id in &refs {
+                    needed.insert(*id);
+                }
+                way_nodes.insert(way.id(), refs);
+            })?;
+        }
+
+        let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
+        {
+            let file = std::fs::File::open(path)?;
+            let reader = ElementReader::new(file);
+            reader.for_each(|element| match element {
+                Element::Node(n) => {
+                    if needed.contains(&n.id()) {
+                        coords.insert(n.id(), (n.lat(), n.lon()));
+                    }
+                }
+                Element::DenseNode(n) => {
+                    if needed.contains(&n.id()) {
+                        coords.insert(n.id(), (n.lat(), n.lon()));
+                    }
+                }
+                _ => {}
+            })?;
+        }
+
+        let mut rings = Vec::new();
+        for (refs, class) in ways {
+            if let Some(ring) = ring_from_refs(&refs, &coords, bbox) {
+                rings.push(WetlandRing { class, ring });
+            }
+        }
+        for (class, outers) in rel_outers {
+            for wid in outers {
+                let Some(refs) = way_nodes.get(&wid) else {
+                    continue;
+                };
+                if let Some(ring) = ring_from_refs(refs, &coords, bbox) {
+                    rings.push(WetlandRing { class, ring });
+                }
+            }
+        }
+
+        Ok(Self { rings })
+    }
+}
+
+fn ring_from_refs(
+    refs: &[i64],
+    coords: &HashMap<i64, (f64, f64)>,
+    bbox: [f64; 4],
+) -> Option<Vec<[f64; 2]>> {
+    let mut ring: Vec<[f64; 2]> = Vec::with_capacity(refs.len());
+    let mut any_in = false;
+    for id in refs {
+        let &(lat, lon) = coords.get(id)?;
+        if in_bbox(lat, lon, bbox) {
+            any_in = true;
+        }
+        ring.push([lon, lat]);
+    }
+    if !any_in || ring.len() < 3 {
+        return None;
+    }
+    let first = ring[0];
+    let last = *ring.last().unwrap();
+    if first != last {
+        ring.push(first);
+    }
+    Some(ring)
+}
+
+fn in_bbox(lat: f64, lon: f64, bbox: [f64; 4]) -> bool {
+    lat >= bbox[0] && lat <= bbox[2] && lon >= bbox[1] && lon <= bbox[3]
+}
+
+fn point_in_ring(p: [f64; 2], ring: &[[f64; 2]]) -> bool {
+    if ring.len() < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = ring.len() - 1;
+    for i in 0..ring.len() {
+        let pi = ring[i];
+        let pj = ring[j];
+        let intersect = ((pi[1] > p[1]) != (pj[1] > p[1]))
+            && (p[0] < (pj[0] - pi[0]) * (p[1] - pi[1]) / (pj[1] - pi[1] + f64::EPSILON) + pi[0]);
+        if intersect {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classifies_soft_and_hard() {
+        assert_eq!(classify_wetland_value("bog"), Some(WetlandClass::SoftAvoid));
+        assert_eq!(
+            classify_wetland_value("string_bog"),
+            Some(WetlandClass::SoftAvoid)
+        );
+        assert_eq!(classify_wetland_value("fen"), Some(WetlandClass::SoftAvoid));
+        assert_eq!(
+            classify_wetland_value("swamp"),
+            Some(WetlandClass::HardAvoid)
+        );
+        assert_eq!(
+            classify_wetland_value("reedbed"),
+            Some(WetlandClass::HardAvoid)
+        );
+        assert_eq!(classify_wetland_value("marsh"), None);
+    }
+
+    #[test]
+    fn boardwalk_carve_out_tags() {
+        assert!(tags_indicate_boardwalk(Some("boardwalk"), None));
+        assert!(tags_indicate_boardwalk(None, Some("wood")));
+        assert!(tags_indicate_boardwalk(Some("Boardwalk"), Some("asphalt")));
+        assert!(!tags_indicate_boardwalk(Some("yes"), None));
+        assert!(!tags_indicate_boardwalk(None, Some("gravel")));
+    }
+
+    #[test]
+    fn point_in_wetland_ring() {
+        let idx = WetlandIndex {
+            rings: vec![WetlandRing {
+                class: WetlandClass::HardAvoid,
+                ring: vec![
+                    [10.0, 60.0],
+                    [10.2, 60.0],
+                    [10.2, 60.2],
+                    [10.0, 60.2],
+                    [10.0, 60.0],
+                ],
+            }],
+        };
+        assert_eq!(idx.class_at(60.1, 10.1), Some(WetlandClass::HardAvoid));
+        assert_eq!(idx.class_at(60.5, 10.5), None);
+    }
+}

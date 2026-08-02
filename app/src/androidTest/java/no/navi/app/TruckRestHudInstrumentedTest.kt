@@ -105,6 +105,8 @@ class TruckRestHudInstrumentedTest {
                 simSamplesJson = "[]",
                 maneuversJson = "[]",
                 priorityPathSharePct = 0.0,
+                routeSegmentsJson = "[]",
+                offTrailAdvisory = "",
             )
         NaviMapTestHooks.requestBreakReminders = true
     }

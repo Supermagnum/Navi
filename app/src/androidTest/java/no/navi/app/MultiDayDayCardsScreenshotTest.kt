@@ -76,6 +76,8 @@ class MultiDayDayCardsScreenshotTest {
             simSamplesJson = "[]",
             maneuversJson = "[]",
             priorityPathSharePct = 0.0,
+            routeSegmentsJson = "[]",
+            offTrailAdvisory = "",
         )
     }
 
@@ -110,6 +112,8 @@ class MultiDayDayCardsScreenshotTest {
             simSamplesJson = "[]",
             maneuversJson = "[]",
             priorityPathSharePct = 0.0,
+            routeSegmentsJson = "[]",
+            offTrailAdvisory = "",
         )
     }
 

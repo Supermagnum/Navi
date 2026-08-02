@@ -106,6 +106,8 @@ struct CachedGraphEdge {
     maxlength_m: Option<f64>,
     is_toll: bool,
     is_ferry: bool,
+    #[serde(default)]
+    is_boardwalk_crossing: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -185,6 +187,7 @@ pub fn save_reweighted_graph(
                 maxlength_m: edge.maxlength_m,
                 is_toll: edge.is_toll,
                 is_ferry: edge.is_ferry,
+                is_boardwalk_crossing: edge.is_boardwalk_crossing,
             })
             .collect(),
     };
@@ -337,6 +340,7 @@ fn reconstruct_graph(payload: CachedRouteGraph) -> RouteGraph {
             maxlength_m: edge.maxlength_m,
             is_toll: edge.is_toll,
             is_ferry: edge.is_ferry,
+            is_boardwalk_crossing: edge.is_boardwalk_crossing,
         })
         .collect();
 
@@ -386,6 +390,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            is_boardwalk_crossing: false,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
     }

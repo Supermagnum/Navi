@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -142,6 +143,13 @@ import android.graphics.Paint as AndroidPaint
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Splash Screen API (androidx.core:core-splashscreen) for API 26–30 compat
+        // and native API 31+. Activity theme is Theme.Navi.Splash; post-splash
+        // switches to Theme.Navi. Distinct from launcher mipmaps and any notify icon.
+        // adb hold for capture: --ez navi_keep_splash true
+        val keepSplashForCapture =
+            AtomicBoolean(intent?.getBooleanExtra("navi_keep_splash", false) == true)
+        installSplashScreen().setKeepOnScreenCondition { keepSplashForCapture.get() }
         super.onCreate(savedInstanceState)
         // adb: am start -n no.navi.app/.MainActivity --ez navi_force_online_basemap true
         if (intent?.getBooleanExtra("navi_force_online_basemap", false) == true) {
@@ -195,6 +203,8 @@ data class BreakPoiMark(
 
 data class MapRouteState(
     val polyline: String = "",
+    /** Segment JSON from plan (`on_trail` / `off_trail` polylines); empty = solid only. */
+    val routeSegmentsJson: String = "[]",
     val poiLat: Double = 0.0,
     val poiLon: Double = 0.0,
     val poiName: String = "",
@@ -702,6 +712,7 @@ private fun NaviMapScreen() {
         mapState =
             MapRouteState(
                 polyline = pending.routePolyline,
+                routeSegmentsJson = pending.routeSegmentsJson,
                 // Keep destination POI marker on the same corridor pin as End
                 // (pending.poi* is often the place centroid off the road).
                 poiLat = endLatFix,
@@ -2122,6 +2133,8 @@ private fun NaviMapScreen() {
                                                                 simSamplesJson = samplesJson,
                                                                 maneuversJson = "[]",
                                                                 priorityPathSharePct = 0.0,
+                                                                routeSegmentsJson = "[]",
+                                                                offTrailAdvisory = "",
                                                             )
                                                         } else {
                                                             when (profile) {
@@ -2286,6 +2299,8 @@ private fun NaviMapScreen() {
                                                                                     },
                                                                                 ).toString(),
                                                                         priorityPathSharePct = mergedShare,
+                                                                        routeSegmentsJson = "[]",
+                                                                        offTrailAdvisory = "",
                                                                     )
                                                                 }
                                                             }
@@ -2309,6 +2324,8 @@ private fun NaviMapScreen() {
                                                             simSamplesJson = "[]",
                                                             maneuversJson = "[]",
                                                             priorityPathSharePct = 0.0,
+                                                            routeSegmentsJson = "[]",
+                                                            offTrailAdvisory = "",
                                                         )
                                                     }
                                                 }
@@ -2329,6 +2346,12 @@ private fun NaviMapScreen() {
                                             return@launch
                                         }
                                         RoutingPlanLog.complete(result, ecoForPlan, durationMs)
+                                        if (result.offTrailAdvisory.isNotBlank()) {
+                                            status =
+                                                userFacingStatus(result.report)
+                                                    .ifBlank { "Route planned" } +
+                                                " · Off-trail: use judgment (terrain advisory)"
+                                        }
                                         NaviMapTestHooks.routeStartLabel = start.name
                                         NaviMapTestHooks.routeEndLabel = toPoint.name
                                         NaviMapTestHooks.routeViaLabel =
@@ -4787,7 +4810,14 @@ private fun CorridorMapView(
 private fun ensureRouteAboveHillshade(style: Style) {
     // Hills now sit below water; overlays must stay on top of the full basemap
     // stack (land + hills + water + roads), not merely above navi-hills.
-    for (id in listOf("route-line", "waypoints-dots", "waypoints-layer", "gps-accuracy", "gps-dot")) {
+    for (id in listOf(
+        "route-line",
+        "route-off-trail-line",
+        "waypoints-dots",
+        "waypoints-layer",
+        "gps-accuracy",
+        "gps-dot",
+    )) {
         val layer = style.getLayer(id) ?: continue
         val moved =
             runCatching {
@@ -4805,31 +4835,66 @@ private fun applyRouteToStyle(
     style: Style,
     state: MapRouteState,
 ) {
-    if (state.polyline.isNotBlank()) {
-        val pts = parsePolyline(state.polyline).map { Point.fromLngLat(it.longitude, it.latitude) }
-        if (pts.size >= 2) {
-            val line = LineString.fromLngLats(pts)
-            if (style.getSource("route-src") == null) {
-                style.addSource(GeoJsonSource("route-src", line))
+    val (onTrailPoly, offTrailPoly) = splitRouteSegmentPolylines(state.routeSegmentsJson)
+    val onTrailPts =
+        when {
+            onTrailPoly.isNotBlank() -> parsePolyline(onTrailPoly)
+            state.polyline.isNotBlank() && offTrailPoly.isBlank() -> parsePolyline(state.polyline)
+            state.polyline.isNotBlank() && onTrailPoly.isBlank() && offTrailPoly.isNotBlank() ->
+                emptyList()
+            else -> parsePolyline(state.polyline)
+        }
+    val offTrailPts = if (offTrailPoly.isNotBlank()) parsePolyline(offTrailPoly) else emptyList()
+
+    fun upsertLine(
+        sourceId: String,
+        layerId: String,
+        pts: List<LatLng>,
+        color: String,
+        dashed: Boolean,
+    ) {
+        if (pts.size < 2) {
+            if (style.getLayer(layerId) != null) style.removeLayer(layerId)
+            if (style.getSource(sourceId) != null) style.removeSource(sourceId)
+            return
+        }
+        val line = LineString.fromLngLats(pts.map { Point.fromLngLat(it.longitude, it.latitude) })
+        if (style.getSource(sourceId) == null) {
+            style.addSource(GeoJsonSource(sourceId, line))
+        } else {
+            (style.getSource(sourceId) as? GeoJsonSource)?.setGeoJson(line)
+        }
+        if (style.getLayer(layerId) == null) {
+            val layer = LineLayer(layerId, sourceId)
+            if (dashed) {
+                layer.withProperties(
+                    PropertyFactory.lineColor(color),
+                    PropertyFactory.lineWidth(6f),
+                    PropertyFactory.lineCap("round"),
+                    PropertyFactory.lineJoin("round"),
+                    PropertyFactory.lineDasharray(arrayOf(2f, 2f)),
+                )
             } else {
-                (style.getSource("route-src") as? GeoJsonSource)?.setGeoJson(line)
-            }
-            // Recreate the paint layer if ensureRouteAboveHillshade removed it
-            // and failed to re-attach, or after a partial style mutation.
-            if (style.getLayer("route-line") == null) {
-                style.addLayer(
-                    LineLayer("route-line", "route-src").withProperties(
-                        PropertyFactory.lineColor("#C62828"),
-                        PropertyFactory.lineWidth(6f),
-                        PropertyFactory.lineCap("round"),
-                        PropertyFactory.lineJoin("round"),
-                    ),
+                layer.withProperties(
+                    PropertyFactory.lineColor(color),
+                    PropertyFactory.lineWidth(6f),
+                    PropertyFactory.lineCap("round"),
+                    PropertyFactory.lineJoin("round"),
                 )
             }
+            style.addLayer(layer)
         }
+    }
+
+    if (onTrailPts.size >= 2 || offTrailPts.size >= 2) {
+        upsertLine("route-src", "route-line", onTrailPts, "#C62828", dashed = false)
+        upsertLine("route-off-trail-src", "route-off-trail-line", offTrailPts, "#6D4C41", dashed = true)
+    } else if (state.polyline.isNotBlank()) {
+        upsertLine("route-src", "route-line", parsePolyline(state.polyline), "#C62828", dashed = false)
+        upsertLine("route-off-trail-src", "route-off-trail-line", emptyList(), "#6D4C41", dashed = true)
     } else {
-        if (style.getLayer("route-line") != null) style.removeLayer("route-line")
-        if (style.getSource("route-src") != null) style.removeSource("route-src")
+        upsertLine("route-src", "route-line", emptyList(), "#C62828", dashed = false)
+        upsertLine("route-off-trail-src", "route-off-trail-line", emptyList(), "#6D4C41", dashed = true)
     }
 
     if (state.poiLat != 0.0 || state.poiLon != 0.0) {
@@ -5101,6 +5166,32 @@ private fun parseBreakPoisJson(raw: String): List<BreakPoiMark> {
         }
     } catch (_: Exception) {
         emptyList()
+    }
+}
+
+/** Split `route_segments_json` into concatenated on-trail / off-trail polylines. */
+private fun splitRouteSegmentPolylines(raw: String): Pair<String, String> {
+    if (raw.isBlank() || raw == "[]") return "" to ""
+    return try {
+        val arr = org.json.JSONArray(raw)
+        val on = StringBuilder()
+        val off = StringBuilder()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val kind = o.optString("kind")
+            val poly = o.optString("polyline").trim()
+            if (poly.isEmpty()) continue
+            val dest =
+                when (kind) {
+                    "off_trail" -> off
+                    else -> on
+                }
+            if (dest.isNotEmpty()) dest.append(';')
+            dest.append(poly)
+        }
+        on.toString() to off.toString()
+    } catch (_: Exception) {
+        "" to ""
     }
 }
 

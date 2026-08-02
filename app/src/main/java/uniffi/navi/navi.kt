@@ -1568,7 +1568,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_plan_car_route() != 63162.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_plan_hiking_route() != 34841.toShort()) {
+    if (lib.uniffi_navi_checksum_func_plan_hiking_route() != 50086.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_pmtiles_cancel_job() != 53964.toShort()) {
@@ -2449,7 +2449,16 @@ data class CorridorRouteResult (
      * motorway/trunk/primary distance. Used by the avoid-majors report; 0 when
      * no path was planned.
      */
-    var `priorityPathSharePct`: kotlin.Double
+    var `priorityPathSharePct`: kotlin.Double, 
+    /**
+     * JSON array of route segments for map styling:
+     * `[{"kind":"on_trail"|"off_trail","polyline":"lon,lat;…","length_m":…}]`.
+     */
+    var `routeSegmentsJson`: kotlin.String, 
+    /**
+     * Non-empty when the route includes an off-trail terrain segment (advisory).
+     */
+    var `offTrailAdvisory`: kotlin.String
 ) {
     
     companion object
@@ -2477,6 +2486,8 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterDouble.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -2496,7 +2507,9 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterString.allocationSize(value.`daysJson`) +
             FfiConverterString.allocationSize(value.`simSamplesJson`) +
             FfiConverterString.allocationSize(value.`maneuversJson`) +
-            FfiConverterDouble.allocationSize(value.`priorityPathSharePct`)
+            FfiConverterDouble.allocationSize(value.`priorityPathSharePct`) +
+            FfiConverterString.allocationSize(value.`routeSegmentsJson`) +
+            FfiConverterString.allocationSize(value.`offTrailAdvisory`)
     )
 
     override fun write(value: CorridorRouteResult, buf: ByteBuffer) {
@@ -2516,6 +2529,8 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterString.write(value.`simSamplesJson`, buf)
             FfiConverterString.write(value.`maneuversJson`, buf)
             FfiConverterDouble.write(value.`priorityPathSharePct`, buf)
+            FfiConverterString.write(value.`routeSegmentsJson`, buf)
+            FfiConverterString.write(value.`offTrailAdvisory`, buf)
     }
 }
 
@@ -4094,8 +4109,10 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
          * `waypoints_json` is `[{"name","lat","lon"}, ...]` with at least two points
          * (start … vias … end). After a draft corridor, named rast-interval huts near
          * the path (same filters as pause pins) are promoted to vias and the path is
-         * replanned once when the detour stays small. Pause stops prefer huts/cabins;
-         * otherwise camp pitches or a synthetic corridor tent (never mountain peak names).
+         * replanned once when the detour fits the Drive POI cabin-radius slider
+         * (lateral + absolute extra path; also 15% of the containing user leg). Pause
+         * stops prefer huts/cabins; otherwise camp pitches or a synthetic corridor
+         * tent (never mountain peak names).
          */ fun `planHikingRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `waypointsJson`: kotlin.String, `preferOfficialNetworks`: kotlin.Boolean): CorridorRouteResult {
             return FfiConverterTypeCorridorRouteResult.lift(
     uniffiRustCall() { _status ->

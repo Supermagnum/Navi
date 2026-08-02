@@ -177,6 +177,8 @@ class LiveRouteSimulationInstrumentedTest {
                             },
                         ).toString(),
                     priorityPathSharePct = base.priorityPathSharePct,
+                    routeSegmentsJson = "[]",
+                    offTrailAdvisory = "",
                 )
             android.util.Log.i(
                 "LiveRouteSim",

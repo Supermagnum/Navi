@@ -103,6 +103,8 @@ class BreakHudGuardInstrumentedTest {
                 simSamplesJson = "[]",
                 maneuversJson = "[]",
                 priorityPathSharePct = 0.0,
+                routeSegmentsJson = "[]",
+                offTrailAdvisory = "",
             )
         NaviMapTestHooks.pendingCamera = Triple(60.722, 10.613, 13.0)
         Thread.sleep(1_800)

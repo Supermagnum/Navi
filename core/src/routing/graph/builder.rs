@@ -7,8 +7,14 @@ use osm4routing::{
 use pathfinding::directed::astar::astar;
 use serde::{Deserialize, Serialize};
 
-use crate::config::Profile;
+use crate::config::{
+    Profile, CAR_MAX_WAYPOINT_SNAP_M, CYCLING_MAX_WAYPOINT_SNAP_M, HIKING_MAX_WAYPOINT_SNAP_M,
+    TRUCK_MAX_WAYPOINT_SNAP_M,
+};
 use crate::routing::elevation::ElevationService;
+use crate::routing::wetland::{
+    tags_indicate_boardwalk, WetlandClass, WetlandIndex, WETLAND_SOFT_COST_MULT,
+};
 
 /// Routing profile derived from travel mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -17,6 +23,31 @@ pub enum RoutingProfile {
     Truck,
     Foot,
     Bicycle,
+}
+
+/// Profile-specific maximum waypoint snap distance (metres).
+pub fn max_waypoint_snap_m(profile: RoutingProfile) -> f64 {
+    match profile {
+        RoutingProfile::Foot => HIKING_MAX_WAYPOINT_SNAP_M,
+        RoutingProfile::Bicycle => CYCLING_MAX_WAYPOINT_SNAP_M,
+        RoutingProfile::Car => CAR_MAX_WAYPOINT_SNAP_M,
+        RoutingProfile::Truck => TRUCK_MAX_WAYPOINT_SNAP_M,
+    }
+}
+
+/// Nearest linked node exceeded [`max_waypoint_snap_m`] for the graph profile.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SnapTooFar {
+    pub nearest_m: f64,
+    pub max_m: f64,
+}
+
+/// Counters from [`RouteGraph::apply_wetland_hazards`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WetlandApplyStats {
+    pub soft_penalized: usize,
+    pub hard_removed: usize,
+    pub boardwalk_kept: usize,
 }
 
 impl From<Profile> for RoutingProfile {
@@ -64,6 +95,8 @@ pub struct GraphEdge {
     pub maxlength_m: Option<f64>,
     pub is_toll: bool,
     pub is_ferry: bool,
+    /// OSM `bridge=boardwalk` or `surface=wood` — carve-out for hard wetlands.
+    pub is_boardwalk_crossing: bool,
 }
 
 /// Per-query routing filters (sightseeing avoid-majors, tolls/ferries, vehicle limits).
@@ -103,6 +136,8 @@ impl RouteGraph {
             .read_tag("toll")
             .read_tag("route")
             .read_tag("ferry")
+            .read_tag("bridge")
+            .read_tag("surface")
             .read(path.as_ref())
             .map_err(|e| anyhow::anyhow!("osm4routing: {e}"))?;
         let filtered = filter_edges(edges, profile);
@@ -220,6 +255,113 @@ impl RouteGraph {
             return true;
         }
         self.edges.iter().any(|e| e.target == id)
+    }
+
+    /// Nearest linked graph node within the profile snap budget.
+    ///
+    /// Prefer linked nodes (same as historical FFI snap). Returns
+    /// [`SnapTooFar`] when the closest candidate exceeds
+    /// [`max_waypoint_snap_m`] — callers must treat that as unreachable, not
+    /// silently substitute a distant network node.
+    pub fn nearest_routable(&self, lat: f64, lon: f64) -> Result<(NodeId, f64), SnapTooFar> {
+        let max_m = max_waypoint_snap_m(self.profile);
+        let linked = self.nodes.values().filter(|n| self.is_linked(n.id));
+        let pool: Vec<&Node> = {
+            let v: Vec<_> = linked.collect();
+            if v.is_empty() {
+                self.nodes.values().collect()
+            } else {
+                v
+            }
+        };
+        let Some(best) = pool.into_iter().min_by(|a, b| {
+            let da = haversine_point_m(lat, lon, a);
+            let db = haversine_point_m(lat, lon, b);
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        }) else {
+            return Err(SnapTooFar {
+                nearest_m: f64::INFINITY,
+                max_m,
+            });
+        };
+        let dist = haversine_point_m(lat, lon, best);
+        if dist > max_m {
+            return Err(SnapTooFar {
+                nearest_m: dist,
+                max_m,
+            });
+        }
+        Ok((best.id, dist))
+    }
+
+    /// Nearest linked node with **no** snap-distance budget (trailhead for gap-fill).
+    pub fn nearest_linked_unbounded(&self, lat: f64, lon: f64) -> Option<(NodeId, f64)> {
+        let linked = self.nodes.values().filter(|n| self.is_linked(n.id));
+        let pool: Vec<&Node> = {
+            let v: Vec<_> = linked.collect();
+            if v.is_empty() {
+                self.nodes.values().collect()
+            } else {
+                v
+            }
+        };
+        let best = pool.into_iter().min_by(|a, b| {
+            let da = haversine_point_m(lat, lon, a);
+            let db = haversine_point_m(lat, lon, b);
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        })?;
+        Some((best.id, haversine_point_m(lat, lon, best)))
+    }
+
+    /// Soft-penalize / hard-exclude edges from wetland polygons.
+    ///
+    /// Hard wetlands exclude the edge unless [`GraphEdge::is_boardwalk_crossing`].
+    /// Soft wetlands multiply weights by [`WETLAND_SOFT_COST_MULT`].
+    pub fn apply_wetland_hazards(&mut self, wetlands: &WetlandIndex) -> WetlandApplyStats {
+        if wetlands.is_empty() {
+            return WetlandApplyStats::default();
+        }
+        let mut soft = 0usize;
+        let mut hard_removed = 0usize;
+        let mut boardwalk_kept = 0usize;
+        let mut kept = Vec::with_capacity(self.edges.len());
+        for mut edge in self.edges.drain(..) {
+            let mid_lat = (edge.start_lat + edge.end_lat) * 0.5;
+            let mid_lon = (edge.start_lon + edge.end_lon) * 0.5;
+            match wetlands.class_at(mid_lat, mid_lon) {
+                Some(WetlandClass::HardAvoid) => {
+                    if edge.is_boardwalk_crossing {
+                        boardwalk_kept += 1;
+                        kept.push(edge);
+                    } else {
+                        hard_removed += 1;
+                    }
+                }
+                Some(WetlandClass::SoftAvoid) => {
+                    soft += 1;
+                    edge.base_weight *= WETLAND_SOFT_COST_MULT;
+                    if let Some(w) = edge.eco_weight.as_mut() {
+                        *w *= WETLAND_SOFT_COST_MULT;
+                    }
+                    kept.push(edge);
+                }
+                None => kept.push(edge),
+            }
+        }
+        self.edges = kept;
+        self.rebuild_adjacency();
+        WetlandApplyStats {
+            soft_penalized: soft,
+            hard_removed,
+            boardwalk_kept,
+        }
+    }
+
+    fn rebuild_adjacency(&mut self) {
+        self.adjacency.clear();
+        for (idx, edge) in self.edges.iter().enumerate() {
+            self.adjacency.entry(edge.source).or_default().push(idx);
+        }
     }
 
     /// Map overlay polyline (`lon,lat;…`) following each edge’s OSM shape when present.
@@ -423,6 +565,7 @@ type EdgeMeta = (
     Option<f64>,
     bool,
     bool,
+    bool,
 );
 
 fn edge_meta(edge: &Edge) -> EdgeMeta {
@@ -458,6 +601,10 @@ fn edge_meta(edge: &Edge) -> EdgeMeta {
             .map(|s| is_truthy_tag(s))
             .unwrap_or(false)
         || highway.as_deref() == Some("ferry");
+    let is_boardwalk_crossing = tags_indicate_boardwalk(
+        edge.tags.get("bridge").map(String::as_str),
+        edge.tags.get("surface").map(String::as_str),
+    );
     (
         highway,
         maxspeed_kmh,
@@ -471,6 +618,7 @@ fn edge_meta(edge: &Edge) -> EdgeMeta {
         maxlength_m,
         is_toll,
         is_ferry,
+        is_boardwalk_crossing,
     )
 }
 
@@ -519,6 +667,7 @@ fn push_directed_edge(
         maxlength_m: meta.9,
         is_toll: meta.10,
         is_ferry: meta.11,
+        is_boardwalk_crossing: meta.12,
     });
     graph.adjacency.entry(source).or_default().push(idx);
 }
@@ -638,21 +787,100 @@ fn edge_allowed(edge: &Edge, profile: RoutingProfile) -> bool {
 }
 
 fn haversine_m(a: &Node, b: &Node) -> f64 {
-    let lat1 = a.coord.y.to_radians();
-    let lat2 = b.coord.y.to_radians();
-    let dlat = (b.coord.y - a.coord.y).to_radians();
-    let dlon = (b.coord.x - a.coord.x).to_radians();
-    let h = (dlat / 2.0).sin().powi(2) + lat1.cos() * lat2.cos() * (dlon / 2.0).sin().powi(2);
+    haversine_latlon_m(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
+}
+
+fn haversine_point_m(lat: f64, lon: f64, n: &Node) -> f64 {
+    haversine_latlon_m(lat, lon, n.coord.y, n.coord.x)
+}
+
+fn haversine_latlon_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    let rlat1 = lat1.to_radians();
+    let rlat2 = lat2.to_radians();
+    let dlat = (lat2 - lat1).to_radians();
+    let dlon = (lon2 - lon1).to_radians();
+    let h = (dlat / 2.0).sin().powi(2) + rlat1.cos() * rlat2.cos() * (dlon / 2.0).sin().powi(2);
     2.0 * 6_378_100.0 * h.sqrt().asin()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::HIKING_MAX_WAYPOINT_SNAP_M;
 
     #[test]
     fn profile_mapping() {
         assert_eq!(RoutingProfile::from(Profile::Hiking), RoutingProfile::Foot);
+    }
+
+    fn two_node_foot_graph() -> RouteGraph {
+        use geo_types::Coord;
+        use std::collections::HashMap;
+
+        let n_a = Node {
+            id: NodeId(1),
+            coord: Coord { x: 10.0, y: 60.0 },
+            uses: 0,
+        };
+        let n_b = Node {
+            id: NodeId(2),
+            coord: Coord { x: 10.01, y: 60.0 },
+            uses: 0,
+        };
+        let mut nodes = HashMap::new();
+        nodes.insert(n_a.id, n_a);
+        nodes.insert(n_b.id, n_b);
+        let edges = vec![GraphEdge {
+            id: "ab".into(),
+            source: NodeId(1),
+            target: NodeId(2),
+            length_m: 500.0,
+            base_weight: 500.0,
+            eco_weight: None,
+            start_lat: 60.0,
+            start_lon: 10.0,
+            end_lat: 60.0,
+            end_lon: 10.01,
+            shape: Vec::new(),
+            highway: Some("path".into()),
+            maxspeed_kmh: None,
+            name: None,
+            road_ref: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            is_boardwalk_crossing: false,
+        }];
+        RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot)
+    }
+
+    #[test]
+    fn nearest_routable_accepts_inside_hiking_snap_budget() {
+        let graph = two_node_foot_graph();
+        // ~400 m north of node A (1° lat ≈ 111_320 m).
+        let lat = 60.0 + (400.0 / 111_320.0);
+        let (id, dist) = graph
+            .nearest_routable(lat, 10.0)
+            .expect("within 500 m budget");
+        assert_eq!(id, NodeId(1));
+        assert!(dist < HIKING_MAX_WAYPOINT_SNAP_M);
+        assert!(dist > 350.0);
+    }
+
+    #[test]
+    fn nearest_routable_rejects_outside_hiking_snap_budget() {
+        let graph = two_node_foot_graph();
+        let lat = 60.0 + (600.0 / 111_320.0);
+        let err = graph
+            .nearest_routable(lat, 10.0)
+            .expect_err("600 m exceeds 500 m hiking budget");
+        assert!(err.nearest_m > HIKING_MAX_WAYPOINT_SNAP_M);
+        assert_eq!(err.max_m, HIKING_MAX_WAYPOINT_SNAP_M);
     }
 
     #[test]
@@ -742,6 +970,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            is_boardwalk_crossing: false,
         };
         let edges = vec![
             edge("low", 1, 2, 60.0, 10.0, 60.0, 10.01, Some(3.0)),
@@ -795,6 +1024,7 @@ mod tests {
             maxlength_m: None,
             is_toll: true,
             is_ferry: false,
+            is_boardwalk_crossing: false,
         };
         assert!(!edge_allowed_for_options(
             &edge,

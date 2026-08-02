@@ -160,6 +160,8 @@ class EldabuRamshogdaScreenshotTest {
                 simSamplesJson = simSamples,
                 maneuversJson = "[]",
                 priorityPathSharePct = 0.0,
+                routeSegmentsJson = "[]",
+                offTrailAdvisory = "",
             )
         NaviMapTestHooks.pendingRoute = route()
         val deadline = System.currentTimeMillis() + 60_000

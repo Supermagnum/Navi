@@ -18,8 +18,8 @@ use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
 use driver_break_core::routing::graph::{
     apply_official_network_preference, difficulty_notes_for_path, load_official_network_way_ids,
     load_or_build_reweighted, load_or_build_reweighted_bbox, load_way_difficulty_tags,
-    nearest_road_label, OfficialNetworkKind, RoadNodeIndex, RouteGraph, RouteOptions,
-    RoutingProfile,
+    max_waypoint_snap_m, nearest_road_label, OfficialNetworkKind, RoadNodeIndex, RouteGraph,
+    RouteOptions, RoutingProfile, SnapTooFar,
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::safety::{
@@ -28,7 +28,7 @@ use driver_break_core::routing::safety::{
 use driver_break_core::routing::workers::WorkerPoolPlan;
 use driver_break_core::routing::{
     build_maneuvers, build_sim_samples, build_sim_samples_from_lat_lon, maneuvers_to_json,
-    samples_to_json,
+    plan_hybrid_hiking_path, samples_to_json, HikingWaypoint, WetlandIndex, OFF_TRAIL_ADVISORY,
 };
 use driver_break_core::routing::{
     commit_truck_multi_day_plan, evaluate_fmcsa_trip, evaluate_truck_trip,
@@ -131,26 +131,26 @@ fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     2.0 * r * a.sqrt().asin()
 }
 
-fn nearest(graph: &RouteGraph, lat: f64, lon: f64) -> NodeId {
-    // Prefer nodes that participate in the routing graph. Snapping to an
-    // isolated POI/stub node yields "no route between snapped nodes".
-    let linked = graph.nodes.values().filter(|n| graph.is_linked(n.id));
-    let pool = {
-        let v: Vec<_> = linked.collect();
-        if v.is_empty() {
-            graph.nodes.values().collect()
-        } else {
-            v
-        }
-    };
-    pool.into_iter()
-        .min_by(|a, b| {
-            let da = haversine_m(lat, lon, a.coord.y, a.coord.x);
-            let db = haversine_m(lat, lon, b.coord.y, b.coord.x);
-            da.partial_cmp(&db).unwrap()
-        })
-        .map(|n| n.id)
-        .expect("empty graph")
+/// Snap `(lat,lon)` to a linked graph node within the profile snap budget.
+fn nearest(graph: &RouteGraph, lat: f64, lon: f64) -> Result<(NodeId, f64), SnapTooFar> {
+    graph.nearest_routable(lat, lon)
+}
+
+fn snap_network_noun(profile: RoutingProfile) -> &'static str {
+    match profile {
+        RoutingProfile::Foot => "walkable path",
+        RoutingProfile::Bicycle => "cycle path",
+        RoutingProfile::Car | RoutingProfile::Truck => "routable road",
+    }
+}
+
+fn format_snap_too_far(label: &str, err: SnapTooFar, profile: RoutingProfile) -> String {
+    format!(
+        "{label} too far from any {} ({:.0} m > {:.0} m)",
+        snap_network_noun(profile),
+        err.nearest_m,
+        err.max_m
+    )
 }
 
 fn load_break_barriers(graph: &RouteGraph, pbf: &Path, bbox: [f64; 4]) -> DangerBarrierIndex {
@@ -332,6 +332,11 @@ pub struct CorridorRouteResult {
     /// motorway/trunk/primary distance. Used by the avoid-majors report; 0 when
     /// no path was planned.
     pub priority_path_share_pct: f64,
+    /// JSON array of route segments for map styling:
+    /// `[{"kind":"on_trail"|"off_trail","polyline":"lon,lat;…","length_m":…}]`.
+    pub route_segments_json: String,
+    /// Non-empty when the route includes an off-trail terrain segment (advisory).
+    pub off_trail_advisory: String,
 }
 
 fn empty_corridor(msg: String) -> CorridorRouteResult {
@@ -352,6 +357,8 @@ fn empty_corridor(msg: String) -> CorridorRouteResult {
         sim_samples_json: String::from("[]"),
         maneuvers_json: String::from("[]"),
         priority_path_share_pct: 0.0,
+        route_segments_json: String::from("[]"),
+        off_trail_advisory: String::new(),
     }
 }
 
@@ -690,8 +697,12 @@ fn reachable_without_barrier(
     if barriers.blocks_access(from_lat, from_lon, to_lat, to_lon) {
         return false;
     }
-    let start = nearest(graph, from_lat, from_lon);
-    let goal = nearest(graph, to_lat, to_lon);
+    let Ok((start, _)) = nearest(graph, from_lat, from_lon) else {
+        return false;
+    };
+    let Ok((goal, _)) = nearest(graph, to_lat, to_lon) else {
+        return false;
+    };
     if start == goal {
         return true;
     }
@@ -1114,8 +1125,8 @@ fn snapped_path_length_m(
     b_lat: f64,
     b_lon: f64,
 ) -> Option<f64> {
-    let s = nearest(graph, a_lat, a_lon);
-    let g = nearest(graph, b_lat, b_lon);
+    let (s, _) = nearest(graph, a_lat, a_lon).ok()?;
+    let (g, _) = nearest(graph, b_lat, b_lon).ok()?;
     let (path, _) = graph.shortest_path(s, g, false)?;
     if path.len() < 2 {
         return Some(0.0);
@@ -1123,8 +1134,7 @@ fn snapped_path_length_m(
     Some(path_length_m(graph, &path))
 }
 
-/// Build a concatenated foot path through ordered waypoints.
-/// Returns `(path_nodes, distance_m, cumulative_km_at_each_waypoint)`.
+/// On-trail-only path through waypoints (snap-bounded graph A*; no terrain).
 fn hike_path_through_waypoints(
     graph: &RouteGraph,
     wps: &[HikingWp],
@@ -1135,9 +1145,14 @@ fn hike_path_through_waypoints(
     let mut full_path: Vec<NodeId> = Vec::new();
     let mut distance_m = 0.0;
     let mut cum_km = vec![0.0];
+    let profile = graph.profile();
     for pair in wps.windows(2) {
-        let s = nearest(graph, pair[0].lat, pair[0].lon);
-        let g = nearest(graph, pair[1].lat, pair[1].lon);
+        let (s, _) = nearest(graph, pair[0].lat, pair[0].lon).map_err(|e| {
+            format_snap_too_far(&format!("waypoint \"{}\"", pair[0].name), e, profile)
+        })?;
+        let (g, _) = nearest(graph, pair[1].lat, pair[1].lon).map_err(|e| {
+            format_snap_too_far(&format!("waypoint \"{}\"", pair[1].name), e, profile)
+        })?;
         let Some((path, _cost)) = graph.shortest_path(s, g, false) else {
             return Err(format!(
                 "no foot route {} -> {}",
@@ -1165,6 +1180,49 @@ fn hike_path_through_waypoints(
         }
     }
     Ok((full_path, distance_m, cum_km))
+}
+
+fn to_hiking_waypoints(wps: &[HikingWp]) -> Vec<HikingWaypoint> {
+    wps.iter()
+        .map(|w| HikingWaypoint {
+            name: w.name.clone(),
+            lat: w.lat,
+            lon: w.lon,
+        })
+        .collect()
+}
+
+fn user_cum_km_from_hybrid(
+    hybrid: &driver_break_core::routing::HybridHikingPath,
+    wps: &[HikingWp],
+) -> Vec<f64> {
+    let mut cum = vec![0.0];
+    if wps.len() < 2 {
+        return cum;
+    }
+    let coords = hybrid.full_coords();
+    if coords.is_empty() {
+        return vec![0.0; wps.len()];
+    }
+    let mut along = 0.0;
+    let mut ci = 0usize;
+    for wp in wps.iter().skip(1) {
+        let mut best_i = ci;
+        let mut best_d = f64::INFINITY;
+        for (i, &(lat, lon)) in coords.iter().enumerate().skip(ci) {
+            let d = haversine_m(wp.lat, wp.lon, lat, lon);
+            if d < best_d {
+                best_d = d;
+                best_i = i;
+            }
+        }
+        for w in coords[ci..=best_i].windows(2) {
+            along += haversine_m(w[0].0, w[0].1, w[1].0, w[1].1);
+        }
+        ci = best_i;
+        cum.push(along / 1000.0);
+    }
+    cum
 }
 
 fn waypoint_dupes_auto_via(wps: &[HikingWp], name: &str, lat: f64, lon: f64) -> bool {
@@ -1486,8 +1544,30 @@ pub fn run_car_corridor_pipeline(
     let end_lat = 61.851_250_0;
     let end_lon = 10.233_842_0;
 
-    let s = nearest(&graph, start_lat, start_lon);
-    let g = nearest(&graph, end_lat, end_lon);
+    let (s, snap_start_m) = match nearest(&graph, start_lat, start_lon) {
+        Ok(v) => v,
+        Err(e) => {
+            report.push_str(&format!(
+                "FAIL: {}\n",
+                format_snap_too_far("start", e, graph.profile())
+            ));
+            return empty(report);
+        }
+    };
+    let (g, snap_end_m) = match nearest(&graph, end_lat, end_lon) {
+        Ok(v) => v,
+        Err(e) => {
+            report.push_str(&format!(
+                "FAIL: {}\n",
+                format_snap_too_far("destination", e, graph.profile())
+            ));
+            return empty(report);
+        }
+    };
+    report.push_str(&format!(
+        "snap_start_m={snap_start_m:.0}; snap_end_m={snap_end_m:.0}; snap_max_m={:.0}\n",
+        max_waypoint_snap_m(graph.profile())
+    ));
     let Some((path, cost)) = graph.shortest_path(s, g, true) else {
         report.push_str("FAIL: no route\n");
         return empty(report);
@@ -1630,6 +1710,8 @@ pub fn run_car_corridor_pipeline(
         sim_samples_json: String::from("[]"),
         maneuvers_json: String::from("[]"),
         priority_path_share_pct,
+        route_segments_json: String::from("[]"),
+        off_trail_advisory: String::new(),
     }
 }
 
@@ -1805,16 +1887,36 @@ fn plan_car_route_inner(
     ));
 
     driver_break_core::download::progress::set(3, Some(5), "Planning route: finding path…");
-    let s = nearest(&graph, start_lat, start_lon);
-    let g = nearest(&graph, end_lat, end_lon);
+    let (s, snap_start_m) = match nearest(&graph, start_lat, start_lon) {
+        Ok(v) => v,
+        Err(e) => {
+            report.push_str(&format!(
+                "FAIL: {}\n",
+                format_snap_too_far("start", e, graph.profile())
+            ));
+            return empty(report);
+        }
+    };
+    let (g, snap_end_m) = match nearest(&graph, end_lat, end_lon) {
+        Ok(v) => v,
+        Err(e) => {
+            report.push_str(&format!(
+                "FAIL: {}\n",
+                format_snap_too_far("destination", e, graph.profile())
+            ));
+            return empty(report);
+        }
+    };
     {
         let sn = &graph.nodes[&s];
         let gn = &graph.nodes[&g];
-        let snap_start_m = haversine_m(start_lat, start_lon, sn.coord.y, sn.coord.x);
-        let snap_end_m = haversine_m(end_lat, end_lon, gn.coord.y, gn.coord.x);
         report.push_str(&format!(
-            "snap_start={:.6},{:.6} dist_m={snap_start_m:.0}; snap_end={:.6},{:.6} dist_m={snap_end_m:.0}\n",
-            sn.coord.y, sn.coord.x, gn.coord.y, gn.coord.x
+            "snap_start={:.6},{:.6} dist_m={snap_start_m:.0}; snap_end={:.6},{:.6} dist_m={snap_end_m:.0}; snap_max_m={:.0}\n",
+            sn.coord.y,
+            sn.coord.x,
+            gn.coord.y,
+            gn.coord.x,
+            max_waypoint_snap_m(graph.profile())
         ));
     }
     let Some((path, cost)) = graph.shortest_path_with_options(s, g, use_eco, &route_opts) else {
@@ -2308,6 +2410,8 @@ fn plan_car_route_inner(
         sim_samples_json,
         maneuvers_json,
         priority_path_share_pct,
+        route_segments_json: String::from("[]"),
+        off_trail_advisory: String::new(),
     }
 }
 
@@ -2440,15 +2544,64 @@ pub fn plan_hiking_route(
         graph.edges.len()
     ));
 
-    let (mut full_path, mut distance_m, user_cum_km) =
-        match hike_path_through_waypoints(&graph, &user_wps) {
-            Ok(v) => v,
-            Err(e) => {
-                report.push_str(&format!("FAIL: {e}\n"));
+    // Prefer graph-first: if every leg snaps and connects on-trail, we still apply
+    // wetlands then replan. If graph fails, refuse absurd crow-flies gaps before the
+    // expensive wetland PBF scan (e.g. destination in open ocean).
+    let graph_only_ok = hike_path_through_waypoints(&graph, &user_wps).is_ok();
+    if !graph_only_ok {
+        for pair in user_wps.windows(2) {
+            let crow = haversine_m(pair[0].lat, pair[0].lon, pair[1].lat, pair[1].lon);
+            if crow > driver_break_core::routing::TERRAIN_MAX_GAP_M {
+                report.push_str(&format!(
+                    "FAIL: no foot route {} -> {} (gap {:.0} m exceeds terrain limit {:.0} m)\n",
+                    pair[0].name,
+                    pair[1].name,
+                    crow,
+                    driver_break_core::routing::TERRAIN_MAX_GAP_M
+                ));
                 return empty_corridor(report);
             }
-        };
-    let mut polyline = graph.path_overlay_polyline(&full_path);
+        }
+    }
+
+    let wetlands = match WetlandIndex::load_from_pbf_bbox(pbf, bbox) {
+        Ok(w) => w,
+        Err(e) => {
+            report.push_str(&format!("WARN: wetland index: {e:#}\n"));
+            WetlandIndex::default()
+        }
+    };
+    let wet_stats = graph.apply_wetland_hazards(&wetlands);
+    report.push_str(&format!(
+        "wetland_rings={}; wetland_soft_edges={}; wetland_hard_removed={}; wetland_boardwalk_kept={}\n",
+        wetlands.ring_count(),
+        wet_stats.soft_penalized,
+        wet_stats.hard_removed,
+        wet_stats.boardwalk_kept
+    ));
+
+    let mut hybrid = match plan_hybrid_hiking_path(
+        &graph,
+        &elevation,
+        &wetlands,
+        &eco,
+        &to_hiking_waypoints(&user_wps),
+    ) {
+        Ok(h) => h,
+        Err(e) => {
+            report.push_str(&format!("FAIL: {e}\n"));
+            return empty_corridor(report);
+        }
+    };
+    let mut full_path = hybrid.path_nodes.clone();
+    let mut distance_m = hybrid.distance_m;
+    let user_cum_km = user_cum_km_from_hybrid(&hybrid, &user_wps);
+    let mut polyline = hybrid.polyline_lon_lat();
+    report.push_str(&format!(
+        "route_mode={}; off_trail_m={:.0}\n",
+        hybrid.route_mode(),
+        hybrid.off_trail_m
+    ));
 
     // Clip POI load to the same trip bbox (never a full Ostlandet POI scan).
     let poi_index = match PoiIndex::load_from_pbf_bbox_with_overnight_buildings(pbf, bbox) {
@@ -2476,18 +2629,23 @@ pub fn plan_hiking_route(
 
     // Promote rast-interval named huts to vias and replan once so the corridor visits them.
     // Cabin / search radii from Drive POI slider set lateral + detour allowance.
-    let autos = collect_hiking_auto_vias(
-        &poi_index,
-        &graph,
-        &barriers,
-        &full_path,
-        &polyline,
-        &user_wps,
-        &user_cum_km,
-        poi_radii.cabin_radius_m,
-        poi_radii.search_radius_m,
-        &mut report,
-    );
+    // Auto-vias require an on-trail draft path (skip when pure off-trail).
+    let autos = if full_path.len() >= 2 {
+        collect_hiking_auto_vias(
+            &poi_index,
+            &graph,
+            &barriers,
+            &full_path,
+            &polyline,
+            &user_wps,
+            &user_cum_km,
+            poi_radii.cabin_radius_m,
+            poi_radii.search_radius_m,
+            &mut report,
+        )
+    } else {
+        Vec::new()
+    };
     let wps = if autos.is_empty() {
         report.push_str("auto_vias=0\n");
         user_wps.clone()
@@ -2499,11 +2657,18 @@ pub fn plan_hiking_route(
             names.join("|")
         ));
         let merged = merge_hiking_waypoints_with_auto_vias(&user_wps, &user_cum_km, &autos);
-        match hike_path_through_waypoints(&graph, &merged) {
-            Ok((path, dist, _)) => {
-                full_path = path;
-                distance_m = dist;
-                polyline = graph.path_overlay_polyline(&full_path);
+        match plan_hybrid_hiking_path(
+            &graph,
+            &elevation,
+            &wetlands,
+            &eco,
+            &to_hiking_waypoints(&merged),
+        ) {
+            Ok(h) => {
+                full_path = h.path_nodes.clone();
+                distance_m = h.distance_m;
+                polyline = h.polyline_lon_lat();
+                hybrid = h;
                 merged
             }
             Err(e) => {
@@ -2513,6 +2678,13 @@ pub fn plan_hiking_route(
         }
     };
     let dist_km = distance_m / 1000.0;
+    let route_segments_json = hybrid.segments_json();
+    let off_trail_advisory = if hybrid.off_trail_m > 1.0 {
+        report.push_str(&format!("ADVISORY: {OFF_TRAIL_ADVISORY}\n"));
+        OFF_TRAIL_ADVISORY.to_string()
+    } else {
+        String::new()
+    };
 
     if prefer_official_networks {
         let way_ids: std::collections::HashSet<i64> = full_path
@@ -2540,7 +2712,11 @@ pub fn plan_hiking_route(
     let rest = RestConfig::default();
     let max_daily =
         max_daily_distance_km(&rest, driver_break_core::config::Profile::Hiking).unwrap_or(40.0);
-    let hike_coords = graph.path_coords_lat_lon(&full_path);
+    let hike_coords = if full_path.len() >= 2 {
+        graph.path_coords_lat_lon(&full_path)
+    } else {
+        hybrid.full_coords()
+    };
     let hike_samples = hiking_samples_from_coords(&hike_coords);
     let multi = plan_hiking_multi_day(
         &hike_samples,
@@ -2680,6 +2856,8 @@ pub fn plan_hiking_route(
         sim_samples_json,
         maneuvers_json,
         priority_path_share_pct,
+        route_segments_json,
+        off_trail_advisory,
     }
 }
 

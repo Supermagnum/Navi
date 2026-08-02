@@ -298,6 +298,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            is_boardwalk_crossing: false,
         }];
         let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
         let mins = motor_path_minutes(&graph, &[NodeId(1), NodeId(2)]);
@@ -349,6 +350,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            is_boardwalk_crossing: false,
         }];
         let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
         let mins = motor_path_minutes(&graph, &[NodeId(1), NodeId(2)]);

@@ -13,6 +13,7 @@ use osm4routing::{Node, NodeId};
 use osmpbf::{Element, ElementReader};
 
 use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
+use crate::routing::wetland::tags_map_indicate_boardwalk;
 
 #[derive(Clone)]
 struct RawWay {
@@ -245,6 +246,7 @@ impl RouteGraph {
             let is_toll = way.tags.get("toll").is_some_and(|v| v == "yes");
             let is_ferry = way.tags.get("route").is_some_and(|v| v == "ferry")
                 || way.tags.contains_key("ferry");
+            let is_boardwalk_crossing = tags_map_indicate_boardwalk(&way.tags);
 
             for id in &way.nodes {
                 let Some(&(lat, lon)) = coords.get(id) else {
@@ -316,6 +318,7 @@ impl RouteGraph {
                     maxlength_m,
                     is_toll,
                     is_ferry,
+                    is_boardwalk_crossing,
                 ));
                 if !forward_only {
                     edges.push(bbox_edge(
@@ -340,6 +343,7 @@ impl RouteGraph {
                         maxlength_m,
                         is_toll,
                         is_ferry,
+                        is_boardwalk_crossing,
                     ));
                 }
                 source = Some(tgt);
@@ -378,6 +382,7 @@ fn bbox_edge(
     maxlength_m: Option<f64>,
     is_toll: bool,
     is_ferry: bool,
+    is_boardwalk_crossing: bool,
 ) -> GraphEdge {
     GraphEdge {
         id,
@@ -403,6 +408,7 @@ fn bbox_edge(
         maxlength_m,
         is_toll,
         is_ferry,
+        is_boardwalk_crossing,
     }
 }
 
