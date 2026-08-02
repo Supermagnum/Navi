@@ -1,6 +1,7 @@
 package no.navi.app
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -151,37 +152,7 @@ class MainActivity : ComponentActivity() {
             AtomicBoolean(intent?.getBooleanExtra("navi_keep_splash", false) == true)
         installSplashScreen().setKeepOnScreenCondition { keepSplashForCapture.get() }
         super.onCreate(savedInstanceState)
-        // adb: am start -n no.navi.app/.MainActivity --ez navi_force_online_basemap true
-        if (intent?.getBooleanExtra("navi_force_online_basemap", false) == true) {
-            NaviMapTestHooks.forceOnlineBasemap = true
-        }
-        if (intent?.getBooleanExtra("navi_hide_chrome", false) == true) {
-            NaviMapTestHooks.hideUiChrome = true
-            NaviMapTestHooks.hideSearchChrome = true
-        }
-
-        // adb: am start -n no.navi.app/.MainActivity \
-        //   --ed navi_camera_lat 60.7897832 --ed navi_camera_lon 11.0920954 --ed navi_camera_zoom 16
-        fun intentDouble(key: String): Double {
-            val extras = intent?.extras ?: return Double.NaN
-            if (!extras.containsKey(key)) return Double.NaN
-            when (val v = extras.get(key)) {
-                is Double -> return v
-                is Float -> return v.toDouble()
-                is Int -> return v.toDouble()
-                is Long -> return v.toDouble()
-                is Number -> return v.toDouble()
-            }
-            return Double.NaN
-        }
-        val camLat = intentDouble("navi_camera_lat")
-        val camLon = intentDouble("navi_camera_lon")
-        val camZoom = intentDouble("navi_camera_zoom")
-        if (!camLat.isNaN() && !camLon.isNaN() && !camZoom.isNaN()) {
-            NaviMapTestHooks.disableGpsFollow = true
-            NaviMapTestHooks.followGps = false
-            NaviMapTestHooks.pendingCamera = Triple(camLat, camLon, camZoom)
-        }
+        applyNaviLaunchExtras(intent)
         runCatching { uniffi.navi.initNativeLogging() }
         MapLibre.getInstance(this)
         setContent {
@@ -191,6 +162,63 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // singleTask: am start with camera extras must apply without process restart.
+        applyNaviLaunchExtras(intent)
+    }
+
+    /**
+     * adb camera framing:
+     *   am start -n no.navi.app/.MainActivity \
+     *     --ed navi_camera_lat 62.1592913 --ed navi_camera_lon 11.3584086 --ed navi_camera_zoom 16
+     * Also accepts --ef / --es for the same keys.
+     */
+    private fun applyNaviLaunchExtras(intent: Intent?) {
+        if (intent == null) return
+        if (intent.getBooleanExtra("navi_force_online_basemap", false)) {
+            NaviMapTestHooks.forceOnlineBasemap = true
+        }
+        if (intent.getBooleanExtra("navi_hide_chrome", false)) {
+            NaviMapTestHooks.hideUiChrome = true
+            NaviMapTestHooks.hideSearchChrome = true
+        }
+        val camLat = intentDoubleExtra(intent, "navi_camera_lat")
+        val camLon = intentDoubleExtra(intent, "navi_camera_lon")
+        val camZoom = intentDoubleExtra(intent, "navi_camera_zoom")
+        if (!camLat.isNaN() && !camLon.isNaN() && !camZoom.isNaN()) {
+            android.util.Log.i(
+                "NaviCamera",
+                "pendingCamera lat=$camLat lon=$camLon zoom=$camZoom",
+            )
+            NaviMapTestHooks.disableGpsFollow = true
+            NaviMapTestHooks.followGps = false
+            NaviMapTestHooks.pendingCamera = Triple(camLat, camLon, camZoom)
+        }
+    }
+
+    private fun intentDoubleExtra(
+        intent: Intent,
+        key: String,
+    ): Double {
+        val extras = intent.extras ?: return Double.NaN
+        if (!extras.containsKey(key)) return Double.NaN
+        when (val v = extras.get(key)) {
+            is Double -> return v
+            is Float -> return v.toDouble()
+            is Int -> return v.toDouble()
+            is Long -> return v.toDouble()
+            is String -> return v.toDoubleOrNull() ?: Double.NaN
+            is Number -> return v.toDouble()
+        }
+        val asDouble = extras.getDouble(key, Double.NaN)
+        if (!asDouble.isNaN()) return asDouble
+        val asFloat = extras.getFloat(key, Float.NaN)
+        if (!asFloat.isNaN()) return asFloat.toDouble()
+        return Double.NaN
     }
 }
 
@@ -330,7 +358,22 @@ private fun NaviMapScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf("Ready") }
-    var mapState by remember { mutableStateOf(MapRouteState()) }
+    var mapState by remember {
+        mutableStateOf(
+            NaviMapTestHooks.pendingCamera?.let { cam ->
+                NaviMapTestHooks.pendingCamera = null
+                NaviMapTestHooks.disableGpsFollow = true
+                NaviMapTestHooks.followGps = false
+                MapRouteState(
+                    followGps = false,
+                    cameraLat = cam.first,
+                    cameraLon = cam.second,
+                    cameraZoom = cam.third,
+                    layerEpoch = 1,
+                )
+            } ?: MapRouteState(),
+        )
+    }
     var mapLayerCount by remember { mutableIntStateOf(0) }
     var profile by remember { mutableStateOf(TravelProfile.CAR) }
     var ecoEnabled by remember { mutableStateOf(ecoModeDefault(TravelProfile.CAR)) }
