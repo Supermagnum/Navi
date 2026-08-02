@@ -17,15 +17,6 @@ Basemap amenity / peak icons (not [`poi.md`](poi.md) PoiIndex) need camera
 zoom ≥ **16**. OpenFreeMap Liberty has no `mountain_peak` layer — some peaks
 (e.g. Elgpiggen) show on offline Protomaps but not on Liberty online.
 
-## GitHub allowlist (space)
-
-**Only** the files listed below may be committed under `docs/images/`.
-Extra instrumented-test captures stay on the device / local disk and must not be
-added to the repo.
-
-Do **not** use synthetic (hand-drawn / 2-point stub) routes in tests or in any
-screenshot that documents routing — corridor geometry must come from a real
-planner run.
 
 Idle HUD bars and the Skolla → Rondvassbu hike overview also appear in the
 [README Screenshots](../README.md#screenshots) section
@@ -65,8 +56,7 @@ e-bike overlays) so the corridor is visible.
 | Scene | Preview |
 |---|---|
 | Espa → Atnbrufossen (eco / primary corridor), simulating | ![Espa–Atnbrufossen](images/route_espa_atnbrufossen.png) |
-| Åkersætra → Jammerdalsbu → Rondvassbu (DNT hiking), simulating | ![Hiking corridor](images/route_akersaetra_rondvassbu_hiking.png) |
-| Ringebu / Venabygdsfjellet (electric cycle climb), simulating | ![E-cycle climb](images/route_venabygdsfjellet_ebike.png) |
+
 | Ådalsbruk / Løten loop (simulator + turn instructions), simulating | ![Løten loop](images/route_adalsbruk_loten_loop.png) |
 | Same Løten loop (legacy `route_map.png` slot) | ![Route overlay](images/route_map.png) |
 | Finnstad → Søndre Ommang → Rosenlund, 3D on, simulating | ![Route 3D](images/finnstad_sondre_ommang_3d.png) |
@@ -94,14 +84,8 @@ Confirm tiles loaded (not beige empty-tile failure mode).
 
 | Scene | Preview |
 |---|---|
-| Jutulhogget canyon, online 3D (61.9968774, 10.8888101) | ![Jutulhogget online](images/poi_jutulhogget.png) |
 | Jutulhogget canyon, offline Protomaps 3D | ![Jutulhogget offline](images/poi_jutulhogget_offline.png) |
 | Galdhøpiggen peak, offline Protomaps 3D (61.6364721, 8.3124426) | ![Galdhøpiggen](images/poi_galdhopiggen_3d.png) |
-| Galdhøpiggen peak, online 3D | ![Galdhøpiggen online](images/poi_galdhopiggen_online.png) |
-| Elgpiggen peak, offline Protomaps 3D (62.1592913, 11.3584086) | ![Elgpiggen](images/poi_elgpiggen.png) |
-| Elgpiggen peak, online Liberty 3D (peak often absent from OMT; DEM framing) | ![Elgpiggen online](images/poi_elgpiggen_online.png) |
-| Preikestolen / Pulpit Rock, online 3D (58.9870777, 6.1887732) | ![Preikestolen](images/poi_prekestolen.png) |
-| Preikestolen with offline preferred (no Ostlandet PMTiles → Liberty 3D fallback) | ![Preikestolen offline](images/poi_prekestolen_offline.png) |
 
 ## Current street (bottom HUD)
 
@@ -138,28 +122,3 @@ frame below must show **SIMULATING** (not live GPS at the tester’s location).
 | After move | ![Moving after](images/navi_moving_after.png) |
 | After move (2) | ![Moving after 2](images/navi_moving_after2.png) |
 
-## Offline PMTiles basemap / 3D
-
-Evidence for [`map-styles.md`](map-styles.md). Captured by
-`BasemapPmtilesScreenshotTest` / SM-P613 offline 3D tests. Drive HUD bars kept
-visible (`hideUiChrome=false`).
-
-| Scene | Preview |
-|---|---|
-| Offline Protomaps (Kløfta, 3D off) | ![Offline Protomaps](images/basemap/basemap_offline_protomaps.png) |
-| Coverage boundary → live Liberty (Tromsø) | ![Boundary Liberty](images/basemap/basemap_coverage_boundary_tromso.png) |
-| Online 3D (Mapterhorn DEM hillshade, Gjendebu, Jotunheimen) | ![3D hillshade](images/basemap/basemap_3d_mapterhorn_hillshade.png) |
-| Flat map, Gjendebu, Jotunheimen | ![Flat map](images/basemap/basemap_3d_fallback_liberty.png) |
-
-## Multi-day day cards
-
-Refreshed on **SM-P613**. Hiking cards come from a **keyboard-entered** real
-plan Åkersætra → Jammerdalsbu → Rondvassbu (`GalleryDocsKeyboardCaptureTest`).
-Truck cards come from a keyboard-entered Espa → Atnbrufossen truck plan with a
-tight daily driving cap so the planner emits real `daysJson` cards (no live-GPS
-Bodø start — privacy).
-
-| Scene | Preview |
-|---|---|
-| Truck multi-day day cards (Espa → Atnbrufossen, finished plan) | ![Truck day cards](images/multi_day_day_cards.png) |
-| Hiking multi-day day cards (Åkersætra → Rondvassbu) | ![Hiking day cards](images/multi_day_day_cards_hiking.png) |
