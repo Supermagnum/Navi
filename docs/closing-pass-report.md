@@ -23,7 +23,7 @@ Verified against `MainActivity.kt` Compose UI (reachable controls), not planning
 | Route list (visible + deletable) | **present and working** | Scrollable Saved routes panel with Refresh/Delete + save current To/Via. |
 | Start from GPS | **present and working** | Android `LocationManager` feeds `mapState.gpsLat/Lon` and mirrors each fix via UniFFI `updateGpsFix` so `lastGpsFix()` is never a demo stub (unavailable until the first push). Confirmed on live emulator GPS: `LiveMultiDayDayCardsInstrumentedTest` refuses a hardcoded start and parses `adb shell dumpsys location` (gps/fused); truck corridor Minnesund belt → Bodø is on record in [`pictures.md`](pictures.md) / README rest table. |
 | Continue from last stop | **present and working** | Uses saved-route `last_break_*` when set; otherwise falls back to Via. |
-| Avoid motorways/trunk/primary | **present and working** | Switch feeds `planCarRoute`. Report shows **plan-derived** non-major road share (`CorridorRouteResult.priorityPathSharePct` = 100% minus motorway/trunk/primary length). Toggle no longer invents 72.5 / 41.0. |
+| Avoid motorways | **present and working** | Switch feeds `planCarRoute`. Report shows **plan-derived** non-motorway road share (`CorridorRouteResult.priorityPathSharePct` = 100% minus motorway length). Toggle no longer invents 72.5 / 41.0. Trunk/primary are not excluded. |
 | Vehicle dimension/weight inputs | **present and working** | Axle / height / width fields; persist via `saveVehicleLimits` / load on start (below fold — scroll the overlay). |
 
 UniFFI regenerate (original pass): `./scripts/build-android-native.sh` exit 0; Kotlin binding includes `travelProfileMenuFocus` (and related eco helpers). Approach thresholds remain UniFFI `approachAppearM` / `approachUrgencyM` / `approachHideM` (metres).
@@ -89,7 +89,7 @@ Chrome hidden during capture (`NaviMapTestHooks.hideUiChrome`) so OpenFreeMap li
 | Item | Was | Now |
 |---|---|---|
 | Start from GPS | “broken” / stub `lastGpsFix` | Working; LocationManager + `updateGpsFix` mirror; live Minnesund→Bodø evidence |
-| Avoid majors | “broken” / then “incomplete” (demo %) | Plan switch + **real** non-major share from path edges |
+| Avoid motorways | “broken” / then “incomplete” (demo %) | Plan switch + **real** non-motorway share from path edges |
 | Header | Undated “current” implication | Explicit point-in-time + last-verified commit |
 | Plugin section | Host-only | Noted product plugins still deferred |
 | Doc inventory | 2026-07-21 set only | Noted later docs (`current-street`, plugin specs) |

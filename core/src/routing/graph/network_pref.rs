@@ -1,15 +1,14 @@
-//! Soft preference for official hiking / cycling route-network ways.
+//! Soft preference for official hiking / cycling route-network ways, and for
+//! pilgrim routes (optional, same soft-penalty architecture).
 //!
 //! Preferring network membership is a **cost multiplier**, not a hard filter:
 //! when a relation does not fully connect A→B, A* still falls back through
 //! ordinary foot/cycle ways (same discipline as the DNT integration preference).
 //!
-//! Matching is tag-generic (`type=route` + `route=*` + `network=*`), not a
-//! hardcoded list of named trails. Superroute membership is resolved one level
-//! deep when straightforward; recursive resolution and Benelux-style node
-//! networks (`network:type=node_network`) are out of scope for this pass.
-//! Tier weighting (e.g. preferring `nwn` over `lwn`) is a possible future
-//! refinement — all listed tiers are treated equally here.
+//! Official matching is tag-generic (`type=route` + `route=*` + `network=*`).
+//! Pilgrim matching uses `route=pilgrimage` and name/operator heuristics on
+//! `route=hiking`/`foot` relations. Superroute membership is resolved one level
+//! deep when straightforward.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -66,6 +65,47 @@ pub fn is_official_route_relation(
         return false;
     }
     tag_in(tags, "route", kind.route_values()) && tag_in(tags, "network", kind.network_values())
+}
+
+/// Name / operator substrings that mark a hiking relation as a pilgrim route
+/// when `route=pilgrimage` is missing (common on Pilegrimsleden, Camino, etc.).
+const PILGRIM_NAME_HINTS: &[&str] = &[
+    "pilegrimsled",
+    "pilegrim",
+    "pilgrim",
+    "camino",
+    "way of st. james",
+    "way of saint james",
+    "via francigena",
+    "jakobswege",
+    "jakobsweg",
+    "st olav",
+    "st. olav",
+    "olavsleden",
+];
+
+fn text_has_pilgrim_hint(s: &str) -> bool {
+    let lower = s.to_lowercase();
+    PILGRIM_NAME_HINTS.iter().any(|h| lower.contains(h))
+}
+
+/// True when relation tags describe a pilgrim route (soft preference only).
+pub fn is_pilgrim_route_relation(tags: &HashMap<String, String>) -> bool {
+    if !tag_eq(tags, "type", "route") {
+        return false;
+    }
+    if tag_eq(tags, "route", "pilgrimage") {
+        return true;
+    }
+    if !tag_in(tags, "route", &["hiking", "foot"]) {
+        return false;
+    }
+    for key in ["name", "name:en", "name:nb", "name:no", "operator", "ref"] {
+        if tags.get(key).is_some_and(|v| text_has_pilgrim_hint(v)) {
+            return true;
+        }
+    }
+    false
 }
 
 fn is_superroute(tags: &HashMap<String, String>) -> bool {
@@ -138,6 +178,66 @@ pub fn load_official_network_way_ids(
             continue;
         };
         if is_official_route_relation(tags, kind) || route_rel_ids.contains(&child_id) {
+            if let Some(ways) = rel_to_ways.get(&child_id) {
+                for &w in ways {
+                    route_way_ids.insert(w);
+                }
+            }
+        }
+    }
+
+    Ok(route_way_ids)
+}
+
+/// Way IDs on pilgrim route relations (`route=pilgrimage` or pilgrim-named hiking).
+pub fn load_pilgrim_route_way_ids(path: impl AsRef<Path>) -> anyhow::Result<HashSet<i64>> {
+    let file = std::fs::File::open(path.as_ref())?;
+    let reader = ElementReader::new(file);
+
+    let mut route_way_ids: HashSet<i64> = HashSet::new();
+    let mut route_rel_ids: HashSet<i64> = HashSet::new();
+    let mut super_child_rel_ids: HashSet<i64> = HashSet::new();
+    let mut rel_to_ways: HashMap<i64, Vec<i64>> = HashMap::new();
+    let mut rel_tags: HashMap<i64, HashMap<String, String>> = HashMap::new();
+
+    reader.for_each(|element| {
+        if let Element::Relation(rel) = element {
+            let id = rel.id();
+            let tags: HashMap<String, String> = rel
+                .tags()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            let mut ways = Vec::new();
+            let mut child_rels = Vec::new();
+            for member in rel.members() {
+                match member.member_type {
+                    RelMemberType::Way => ways.push(member.member_id),
+                    RelMemberType::Relation => child_rels.push(member.member_id),
+                    RelMemberType::Node => {}
+                }
+            }
+            rel_to_ways.insert(id, ways.clone());
+            rel_tags.insert(id, tags.clone());
+
+            if is_pilgrim_route_relation(&tags) {
+                route_rel_ids.insert(id);
+                for w in ways {
+                    route_way_ids.insert(w);
+                }
+            }
+            if is_superroute(&tags) {
+                for c in child_rels {
+                    super_child_rel_ids.insert(c);
+                }
+            }
+        }
+    })?;
+
+    for child_id in super_child_rel_ids {
+        let Some(tags) = rel_tags.get(&child_id) else {
+            continue;
+        };
+        if is_pilgrim_route_relation(tags) || route_rel_ids.contains(&child_id) {
             if let Some(ways) = rel_to_ways.get(&child_id) {
                 for &w in ways {
                     route_way_ids.insert(w);
@@ -338,6 +438,7 @@ pub fn load_named_route_entries(path: impl AsRef<Path>) -> anyhow::Result<Vec<Na
         .filter(|(_, info)| {
             is_official_route_relation(&info.tags, OfficialNetworkKind::Hiking)
                 || is_official_route_relation(&info.tags, OfficialNetworkKind::Cycling)
+                || is_pilgrim_route_relation(&info.tags)
                 || is_superroute(&info.tags)
         })
         .map(|(id, _)| *id)
@@ -400,8 +501,9 @@ pub fn load_named_route_entries(path: impl AsRef<Path>) -> anyhow::Result<Vec<Na
         };
         let is_hike = is_official_route_relation(&info.tags, OfficialNetworkKind::Hiking);
         let is_cycle = is_official_route_relation(&info.tags, OfficialNetworkKind::Cycling);
+        let is_pilgrim = is_pilgrim_route_relation(&info.tags);
         let is_super = is_superroute(&info.tags);
-        if !is_hike && !is_cycle && !is_super {
+        if !is_hike && !is_cycle && !is_pilgrim && !is_super {
             continue;
         }
 
@@ -437,7 +539,9 @@ pub fn load_named_route_entries(path: impl AsRef<Path>) -> anyhow::Result<Vec<Na
             continue;
         };
 
-        let kind = if is_hike {
+        let kind = if is_pilgrim {
+            "route:pilgrimage".into()
+        } else if is_hike {
             format!(
                 "route:hiking:{}",
                 info.tags.get("network").map(String::as_str).unwrap_or("?")
@@ -523,6 +627,32 @@ mod tests {
     }
 
     #[test]
+    fn pilgrim_route_tag_and_name_hints_match() {
+        assert!(is_pilgrim_route_relation(&tags(&[
+            ("type", "route"),
+            ("route", "pilgrimage"),
+            ("name", "Somewhere"),
+        ])));
+        assert!(is_pilgrim_route_relation(&tags(&[
+            ("type", "route"),
+            ("route", "hiking"),
+            ("name", "Pilegrimsleden"),
+            ("network", "nwn"),
+        ])));
+        assert!(is_pilgrim_route_relation(&tags(&[
+            ("type", "route"),
+            ("route", "hiking"),
+            ("name", "Camino Frances"),
+        ])));
+        assert!(!is_pilgrim_route_relation(&tags(&[
+            ("type", "route"),
+            ("route", "hiking"),
+            ("name", "Ordinary local path"),
+            ("network", "lwn"),
+        ])));
+    }
+
+    #[test]
     fn soft_preference_raises_non_network_cost() {
         use super::super::builder::{GraphEdge, RoutingProfile};
 
@@ -588,5 +718,210 @@ mod tests {
         apply_official_network_preference(&mut graph, &net);
         assert!((graph.edges[0].base_weight - 100.0).abs() < 1e-9);
         assert!((graph.edges[1].base_weight - 100.0 * NON_NETWORK_PENALTY).abs() < 1e-9);
+    }
+
+    #[test]
+    #[ignore = "needs ostlandet fixture under core/target/integration-fixtures"]
+    fn ostlandet_has_pilgrim_routes_when_fixture_present() {
+        let pbf = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target/integration-fixtures/ostlandet-latest.osm.pbf");
+        assert!(pbf.is_file(), "missing {}", pbf.display());
+        let ways = load_pilgrim_route_way_ids(&pbf).expect("pilgrim ways");
+        let named = load_named_route_entries(&pbf).expect("named");
+        let pilgrim_named: Vec<_> = named
+            .iter()
+            .filter(|n| n.kind == "route:pilgrimage")
+            .collect();
+        eprintln!(
+            "PILGRIM_OSTLANDET ways={} named_pilgrim={}",
+            ways.len(),
+            pilgrim_named.len()
+        );
+        for n in pilgrim_named.iter().take(8) {
+            eprintln!("  named {} kind={} @ {},{}", n.name, n.kind, n.lat, n.lon);
+        }
+        assert!(
+            !ways.is_empty() || !pilgrim_named.is_empty(),
+            "expected pilgrim tagging in Ostlandet extract"
+        );
+    }
+
+    #[test]
+    fn pilgrim_soft_pref_still_allows_non_network_path() {
+        use super::super::builder::{GraphEdge, RoutingProfile};
+        use osm4routing::NodeId;
+
+        // 1 --pilgrim--> 2 --gap ordinary--> 3 ; parallel long pilgrim-only detour absent.
+        // Soft pref raises cost on ordinary edge but path 1→2→3 must still exist.
+        let nodes = HashMap::new();
+        // nodes unused by from_parts routing if edges carry coords — keep empty like sibling test.
+        let edges = vec![
+            GraphEdge {
+                id: "100".into(),
+                source: NodeId(1),
+                target: NodeId(2),
+                length_m: 100.0,
+                base_weight: 100.0,
+                eco_weight: Some(100.0),
+                start_lat: 60.0,
+                start_lon: 10.0,
+                end_lat: 60.001,
+                end_lon: 10.0,
+                shape: Vec::new(),
+                highway: Some("path".into()),
+                maxspeed_kmh: None,
+                name: Some("Pilegrimsleden".into()),
+                road_ref: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_boardwalk_crossing: false,
+            },
+            GraphEdge {
+                id: "200".into(),
+                source: NodeId(2),
+                target: NodeId(3),
+                length_m: 100.0,
+                base_weight: 100.0,
+                eco_weight: Some(100.0),
+                start_lat: 60.001,
+                start_lon: 10.0,
+                end_lat: 60.002,
+                end_lon: 10.0,
+                shape: Vec::new(),
+                highway: Some("path".into()),
+                maxspeed_kmh: None,
+                name: Some("ordinary".into()),
+                road_ref: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_boardwalk_crossing: false,
+            },
+        ];
+        let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot);
+        let mut pilgrim = HashSet::new();
+        pilgrim.insert(100);
+        apply_official_network_preference(&mut graph, &pilgrim);
+        assert!((graph.edges[0].base_weight - 100.0).abs() < 1e-9);
+        assert!(graph.edges[1].base_weight > 100.0);
+        let (path, _cost) = graph
+            .shortest_path(NodeId(1), NodeId(3), false)
+            .expect("soft pref must not block gap on ordinary path");
+        assert!(path.len() >= 2);
+    }
+
+    #[test]
+    fn pilgrim_pref_chooses_pilgrim_over_shorter_parallel() {
+        use super::super::builder::{GraphEdge, RoutingProfile};
+        use osm4routing::NodeId;
+
+        // Short ordinary 1→3 vs longer pilgrim 1→2→3. Without pref A* takes ordinary;
+        // with soft pref the ordinary edge is ×NON_NETWORK_PENALTY and pilgrim wins.
+        let edges = vec![
+            GraphEdge {
+                id: "10".into(),
+                source: NodeId(1),
+                target: NodeId(3),
+                length_m: 100.0,
+                base_weight: 100.0,
+                eco_weight: Some(100.0),
+                start_lat: 60.0,
+                start_lon: 10.0,
+                end_lat: 60.002,
+                end_lon: 10.0,
+                shape: Vec::new(),
+                highway: Some("path".into()),
+                maxspeed_kmh: None,
+                name: Some("shortcut".into()),
+                road_ref: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_boardwalk_crossing: false,
+            },
+            GraphEdge {
+                id: "20".into(),
+                source: NodeId(1),
+                target: NodeId(2),
+                length_m: 120.0,
+                base_weight: 120.0,
+                eco_weight: Some(120.0),
+                start_lat: 60.0,
+                start_lon: 10.0,
+                end_lat: 60.001,
+                end_lon: 10.001,
+                shape: Vec::new(),
+                highway: Some("path".into()),
+                maxspeed_kmh: None,
+                name: Some("Pilegrimsleden".into()),
+                road_ref: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_boardwalk_crossing: false,
+            },
+            GraphEdge {
+                id: "21".into(),
+                source: NodeId(2),
+                target: NodeId(3),
+                length_m: 120.0,
+                base_weight: 120.0,
+                eco_weight: Some(120.0),
+                start_lat: 60.001,
+                start_lon: 10.001,
+                end_lat: 60.002,
+                end_lon: 10.0,
+                shape: Vec::new(),
+                highway: Some("path".into()),
+                maxspeed_kmh: None,
+                name: Some("Pilegrimsleden".into()),
+                road_ref: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_boardwalk_crossing: false,
+            },
+        ];
+        let plain = RouteGraph::from_parts(HashMap::new(), edges.clone(), RoutingProfile::Foot);
+        let (path_plain, _) = plain
+            .shortest_path(NodeId(1), NodeId(3), false)
+            .expect("plain");
+        assert_eq!(path_plain, vec![NodeId(1), NodeId(3)]);
+
+        let mut preferred = RouteGraph::from_parts(HashMap::new(), edges, RoutingProfile::Foot);
+        let mut pilgrim = HashSet::new();
+        pilgrim.insert(20);
+        pilgrim.insert(21);
+        apply_official_network_preference(&mut preferred, &pilgrim);
+        let (path_pref, _) = preferred
+            .shortest_path(NodeId(1), NodeId(3), false)
+            .expect("preferred");
+        assert_eq!(path_pref, vec![NodeId(1), NodeId(2), NodeId(3)]);
     }
 }

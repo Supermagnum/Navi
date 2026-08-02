@@ -205,6 +205,33 @@ object NaviMapTestHooks {
     @Volatile
     var lastRotationMode: MapRotationMode = MapRotationMode.NorthUp
 
+    /** Persisted "Snap rotation back to mode" preference (mirrored for tests). */
+    @Volatile
+    var lastSnapRotationBack: Boolean = true
+
+    /**
+     * True while a manual rotate is sticky (snap-back off) or during the brief
+     * pause before snap-back reasserts the mode bearing.
+     */
+    @Volatile
+    var manualRotationOverrideActive: Boolean = false
+
+    /**
+     * One-shot: simulate end of a user rotate gesture at this bearing (degrees).
+     * MainActivity applies it to MapLibre without updating mode state, then runs
+     * the same override / snap-back path as a real rotate gesture.
+     */
+    @Volatile
+    var requestSimulateManualRotateDeg: Double? = null
+
+    /** Count of rotate-gesture begins. */
+    @Volatile
+    var mapGestureRotates: Int = 0
+
+    /** One-shot: set snap-rotation-back preference from tests. */
+    @Volatile
+    var requestSnapRotationBack: Boolean? = null
+
     @Volatile
     var lastRoutePolylineChars: Int = 0
 

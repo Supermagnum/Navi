@@ -151,7 +151,7 @@ class LiveMultiDayDayCardsInstrumentedTest {
                     endLon = endLon,
                     useEco = false,
                     profile = TravelProfile.TRUCK,
-                    avoidMajor = false,
+                    avoidMotorways = false,
                     avoidTolls = false,
                     avoidFerries = false,
                     vehicle = vehicle,

@@ -261,7 +261,7 @@ class FollowGpsPanZoomInstrumentedTest {
             endLon = END.second,
             useEco = false,
             profile = TravelProfile.CAR,
-            avoidMajor = false,
+            avoidMotorways = false,
             avoidTolls = false,
             avoidFerries = false,
             vehicle =

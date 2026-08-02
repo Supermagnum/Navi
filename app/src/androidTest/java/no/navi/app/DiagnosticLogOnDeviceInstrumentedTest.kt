@@ -145,7 +145,7 @@ class DiagnosticLogOnDeviceInstrumentedTest {
         NaviMapTestHooks.requestCloseTools = true
 
         DiagnosticLog.logToggle("eco_mode", true, mapOf("profile" to "Car"))
-        DiagnosticLog.logToggle("avoid_majors", true)
+        DiagnosticLog.logToggle("avoid_motorways", true)
         DiagnosticLog.logSettingSaved("truck_max_weekly_driving_hours", 56.0)
 
         val fuelOk =
@@ -176,7 +176,7 @@ class DiagnosticLogOnDeviceInstrumentedTest {
                 endLon = 10.2338420,
                 useEco = true,
                 profile = TravelProfile.CAR,
-                avoidMajor = false,
+                avoidMotorways = false,
                 avoidTolls = false,
                 avoidFerries = false,
                 vehicle = FfiVehicleLimits(null, null, null, null, null, null),

@@ -27,7 +27,8 @@ fn main() {
         elev.display().to_string(),
         cache.display().to_string(),
         wps.to_string(),
-        true, // prefer official hiking networks for this corridor helper
+        true,  // prefer official hiking networks for this corridor helper
+        false, // pilgrim soft-pref off for this helper
     );
     print!("{}", r.report);
     if !r.report.contains("PASS") {

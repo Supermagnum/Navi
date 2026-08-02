@@ -66,7 +66,7 @@ from Navit (**GPL v2**); see [`docs/icons.md`](docs/icons.md).
 | **Travel modes** | Choose car, bike, e-bike, hiking, motorcycle, truck, or motorhome. | Done |
 | **Vehicle size** | Save height/width/length/weight limits so the route skips roads that are too tight. | Done |
 | **E-bike specs** | Battery size, motor torque, and wheel size help estimate battery use and steep climbs. Live cable telemetry is planned later. | Done (planning); live data later |
-| **Avoidances** | You can ask to avoid motorways, tolls, or ferries. | Done |
+| **Avoidances** | You can ask to avoid motorways (not trunk/primary), tolls, or ferries. | Done |
 | **Official trails** | For hiking/cycling, optionally prefer marked long-distance trails (off by default). Normal paths still work if the marked trail has a gap. | Done |
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. A small leaf icon shows when eco is on. | Done |
 | **Offline planning** | Download a region once, then plan and see the route on the device. | Done |
@@ -133,9 +133,8 @@ area for drive/vehicle settings (mode, break interval, fuel, e-bike, and so on).
 menu yet. Docs may exist in Norwegian (`Norwegian.md`); that is documentation,
 not an in-app language pack. A future translation plugin is described in
 [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
-Working spreadsheets for translators live next to that spec:
-[`docs/plugins/translations.xlsx`](docs/plugins/translations.xlsx) and
-[`docs/plugins/translations.ods`](docs/plugins/translations.ods).
+A working CSV for translators lives next to that spec:
+[`docs/plugins/translations.csv`](docs/plugins/translations.csv).
 
 Settings are saved on the device (rest/fuel/vehicle in a small database; map
 display choices in app preferences).
@@ -145,6 +144,7 @@ display choices in app preferences).
 | Setting | Plain meaning |
 |---|---|
 | **Compass / Travel / N-up** | How the map rotates |
+| **Snap rotation back to mode** | After a manual rotate, return to the selected mode (on by default) |
 | **Trip ETA** | Show time left to the destination on the bottom bar |
 | **Breaks** | Show the “Break in …” reminder line (does not change how stops are planned) |
 | **Auto-zoom** | Keep a chosen zoom while moving |
@@ -156,6 +156,7 @@ display choices in app preferences).
 | Setting | Plain meaning |
 |---|---|
 | **Travel mode** | Car, bike, hiking, truck, … |
+| **Follow pilgrim routes** | Hiking only; soft preference (off by default), falls back to normal hiking |
 | **Hours between breaks** | How often you *want* a break (cars), or truck mandatory break-after time |
 | **Rest time** | How long a break should last (suggestion / truck continuous break) |
 | **Next break as Time / Distance** | Show break countdown in minutes, or as km/mi at an assumed cruising speed |
@@ -163,7 +164,8 @@ display choices in app preferences).
 | **POI search radius** | How far aside the planner may look for huts / stops |
 | **Vehicle limits** | Height/width/length/axle weight for clearance |
 
-Route planning chrome (**Route**): From / To / Via, Plan, Simulate, avoidances,
+Route planning chrome (**Route**): From / To / Via, Plan, Simulate, avoidances
+(**Avoid motorways** excludes `highway=motorway` / `motorway_link` only),
 saved routes. **Tools**: download region, basemap, DEM, OSM update check.
 
 Full control lists and truck/jurisdiction detail stay in the older deep docs
@@ -219,11 +221,13 @@ conditions.
 
 # Minimum hardware and storage
 
-Rough guide for tablets / head units:
+**Minimum required hardware** for the intended Automotive / embedded class of
+device:
 
-| Piece | Practical note |
+| Piece | Minimum / practical note |
 |---|---|
-| **RAM** | Prefer **regional** extracts on ~4 GB devices. Whole large countries in one go are often too heavy. |
+| **CPU** | **8 cores**, about **2 GHz** class |
+| **RAM** | **4 GB**. Prefer **regional** extracts on that class; whole large countries in one go are often too heavy. |
 | **Storage** | Leave room for the region file, place index, offline basemap, and optional DEM — often several GB for a region. |
 | **GPU** | MapLibre GLES is the default path used on the tested tablet. |
 
@@ -262,10 +266,6 @@ Car head-unit testing is still open —
 Idle HUD:
 
 ![Idle both bars](docs/images/hud/hud_idle_both_bars.png)
-
-Cold-start splash:
-
-![Splash open-app](docs/images/splash_open_app.png)
 
 Map tilt 45° (3D off / on):
 
@@ -317,7 +317,7 @@ plugins ship in the app yet** — that is intentional. Overview:
 
 | Spec | Topic |
 |---|---|
-| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Future UI languages (English-only today). Translator tables: [`translations.xlsx`](docs/plugins/translations.xlsx), [`translations.ods`](docs/plugins/translations.ods) |
+| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Future UI languages (English-only today). Translator table: [`translations.csv`](docs/plugins/translations.csv) |
 | [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Wild-camping suggestions (plugin, not core) |
 | [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Fuel/water resupply ideas |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state to instrument clusters |
@@ -410,7 +410,8 @@ Country/region visual extracts can also be prepared with
 
 # Known issues
 
-- **Plugins:** content add-ons are intentionally not shipped yet.
+- **Plugins:** content add-ons are intentionally not shipped yet, as they have
+  not been made.
 - **UI polish:** the screens work but still need visual tidy-up on car displays.
 - **Moving icons:** drawn with a Compose overlay today; native map symbol layers
   are not the primary path yet.
@@ -420,9 +421,12 @@ Country/region visual extracts can also be prepared with
   [`docs/debugging.md`](docs/debugging.md).
 - **Screenshot-only lake fringe:** a soft blue rim around water can appear in
   captures but not while using the app live — see
-  [`docs/map-styles.md`](docs/map-styles.md#hydro-soft-edge-fringe-screenshot-artifact).
+  [`docs/map-styles.md`](docs/map-styles.md).
 - **Hiking plan speed on huge areas:** loading every building in a large box for
   overnight distance checks can make long hiking plans slow; a tighter corridor
   filter is a known follow-up.
 - **Break timer ≠ trip ETA:** by design — see
   [Break timer vs trip ETA](#break-timer-vs-trip-eta).
+- **Not implemented yet:** saving of a destination or a start point; touch-and-hold
+  to mark a place on the map as a destination or a via point; checking whether
+  the code can be optimised for rendering.

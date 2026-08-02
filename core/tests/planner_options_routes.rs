@@ -63,9 +63,9 @@ fn edge(
     }
 }
 
-/// Diamond: A→B→C short major road; A→D→C longer secondary. Avoid-major must take ADC.
+/// Diamond: A→B→C short motorway; A→D→C longer secondary. Avoid-motorways must take ADC.
 #[test]
-fn avoid_major_changes_planned_route() {
+fn avoid_motorways_changes_planned_route() {
     let mut nodes = HashMap::new();
     for (id, n) in [
         node(1, 60.0, 10.0),
@@ -98,32 +98,72 @@ fn avoid_major_changes_planned_route() {
             NodeId(3),
             false,
             &RouteOptions {
-                avoid_major_roads: true,
+                avoid_motorways: true,
                 ..Default::default()
             },
         )
-        .expect("avoid-major path");
+        .expect("avoid-motorways path");
     assert!(
         !avoided.0.contains(&NodeId(2)),
-        "avoid major must not use B: {:?}",
+        "avoid motorways must not use B: {:?}",
         avoided.0
     );
     assert!(avoided.0.contains(&NodeId(4)));
     assert_ne!(direct.0, avoided.0);
 
-    let share_direct = graph.non_major_highway_share_pct(&direct.0);
-    let share_avoided = graph.non_major_highway_share_pct(&avoided.0);
+    let share_direct = graph.non_motorway_share_pct(&direct.0);
+    let share_avoided = graph.non_motorway_share_pct(&avoided.0);
     assert!(
         (share_direct - 0.0).abs() < 0.01,
-        "default motorway path should be 0% non-major, got {share_direct}"
+        "default motorway path should be 0% non-motorway, got {share_direct}"
     );
     assert!(
         (share_avoided - 100.0).abs() < 0.01,
-        "avoid-major secondary path should be 100% non-major, got {share_avoided}"
+        "avoid-motorways secondary path should be 100% non-motorway, got {share_avoided}"
     );
     assert_ne!(
         share_direct, share_avoided,
         "priority-path share must be derived from the plan, not a constant"
+    );
+}
+
+/// Short trunk vs longer secondary: avoid-motorways must still be allowed to use trunk.
+#[test]
+fn avoid_motorways_allows_trunk_and_primary() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "trunk");
+    let bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "primary");
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 200.0, "secondary");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 200.0, "secondary");
+    let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Car);
+
+    let avoided = graph
+        .shortest_path_with_options(
+            NodeId(1),
+            NodeId(3),
+            false,
+            &RouteOptions {
+                avoid_motorways: true,
+                ..Default::default()
+            },
+        )
+        .expect("path with trunk/primary under avoid-motorways");
+    assert!(
+        avoided.0.contains(&NodeId(2)),
+        "trunk/primary short path must remain usable: {:?}",
+        avoided.0
+    );
+    assert!(
+        (graph.non_motorway_share_pct(&avoided.0) - 100.0).abs() < 0.01,
+        "trunk/primary count as non-motorway for priority share"
     );
 }
 

@@ -11,15 +11,16 @@ use std::time::Instant;
 use driver_break_core::config::{
     EcoConfig, FmcsaHosParams, JurisdictionDrivingHoursPack, ProfilePoiRadii, ProfilePoiRadiiTable,
     RestConfig, SafetyConfig, VehicleLimits, HIKING_MAIN_BREAK_DISTANCE_KM,
+    OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M,
 };
 use driver_break_core::icons::{self, IconTheme};
 use driver_break_core::poi::{rest_area_suitable_for_weekly, PoiCategory, PoiIndex, PoiRecord};
 use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
 use driver_break_core::routing::graph::{
     apply_official_network_preference, difficulty_notes_for_path, load_official_network_way_ids,
-    load_or_build_reweighted, load_or_build_reweighted_bbox, load_way_difficulty_tags,
-    max_waypoint_snap_m, nearest_road_label, OfficialNetworkKind, RoadNodeIndex, RouteGraph,
-    RouteOptions, RoutingProfile, SnapTooFar,
+    load_or_build_reweighted, load_or_build_reweighted_bbox, load_pilgrim_route_way_ids,
+    load_way_difficulty_tags, max_waypoint_snap_m, nearest_road_label, OfficialNetworkKind,
+    RoadNodeIndex, RouteGraph, RouteOptions, RoutingProfile, SnapTooFar,
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::safety::{
@@ -241,21 +242,50 @@ fn apply_network_pref_if_requested(
     prefer: bool,
     report: &mut String,
 ) {
-    if !prefer {
+    apply_route_prefs_if_requested(graph, pbf, kind, prefer, false, report);
+}
+
+fn apply_route_prefs_if_requested(
+    graph: &mut RouteGraph,
+    pbf: &Path,
+    kind: OfficialNetworkKind,
+    prefer_official: bool,
+    prefer_pilgrim: bool,
+    report: &mut String,
+) {
+    if !prefer_official && !prefer_pilgrim {
         return;
     }
-    match load_official_network_way_ids(pbf, kind) {
-        Ok(ways) => {
-            report.push_str(&format!(
-                "official_network_ways={}; prefer_official_networks=true\n",
-                ways.len()
-            ));
-            apply_official_network_preference(graph, &ways);
-        }
-        Err(e) => {
-            report.push_str(&format!("WARN: official network load failed: {e:#}\n"));
+    let mut ways = std::collections::HashSet::new();
+    if prefer_official {
+        match load_official_network_way_ids(pbf, kind) {
+            Ok(w) => {
+                report.push_str(&format!(
+                    "official_network_ways={}; prefer_official_networks=true\n",
+                    w.len()
+                ));
+                ways.extend(w);
+            }
+            Err(e) => {
+                report.push_str(&format!("WARN: official network load failed: {e:#}\n"));
+            }
         }
     }
+    if prefer_pilgrim {
+        match load_pilgrim_route_way_ids(pbf) {
+            Ok(w) => {
+                report.push_str(&format!(
+                    "pilgrim_route_ways={}; prefer_pilgrim_routes=true\n",
+                    w.len()
+                ));
+                ways.extend(w);
+            }
+            Err(e) => {
+                report.push_str(&format!("WARN: pilgrim route load failed: {e:#}\n"));
+            }
+        }
+    }
+    apply_official_network_preference(graph, &ways);
 }
 
 /// Download / ensure region data under `data_dir` via the in-app provisioner.
@@ -328,9 +358,9 @@ pub struct CorridorRouteResult {
     /// Turn / destination maneuvers along the path:
     /// `[{"lat","lon","cum_m","kind","street","roundabout_exit"}]`.
     pub maneuvers_json: String,
-    /// Non-major highway share of planned path length (0–100). Motor: 100% minus
-    /// motorway/trunk/primary distance. Used by the avoid-majors report; 0 when
-    /// no path was planned.
+    /// Non-motorway share of planned path length (0–100). Motor: 100% minus
+    /// motorway / motorway_link distance. Used by the avoid-motorways report; 0
+    /// when no path was planned.
     pub priority_path_share_pct: f64,
     /// JSON array of route segments for map styling:
     /// `[{"kind":"on_trail"|"off_trail","polyline":"lon,lat;…","length_m":…}]`.
@@ -708,8 +738,8 @@ fn reachable_without_barrier(
     }
     let opts = RouteOptions {
         avoid_ferries: true,
-        // Hiking: do not treat major-road walking as safe access to a break POI.
-        avoid_major_roads: matches!(graph.profile(), RoutingProfile::Foot),
+        // Hiking: do not treat motorway walking as safe access to a break POI.
+        avoid_motorways: matches!(graph.profile(), RoutingProfile::Foot),
         ..RouteOptions::default()
     };
     let Some((path, _)) = graph.shortest_path_with_options(start, goal, false, &opts) else {
@@ -1688,9 +1718,9 @@ pub fn run_car_corridor_pipeline(
     }
 
     report.push_str("PASS\n");
-    let priority_path_share_pct = graph.non_major_highway_share_pct(&path);
+    let priority_path_share_pct = graph.non_motorway_share_pct(&path);
     report.push_str(&format!(
-        "priority_path_share_pct={priority_path_share_pct:.2}; major_highway_share_pct={:.2}\n",
+        "priority_path_share_pct={priority_path_share_pct:.2}; motorway_share_pct={:.2}\n",
         100.0 - priority_path_share_pct
     ));
     CorridorRouteResult {
@@ -1733,7 +1763,7 @@ pub fn plan_car_route(
     end_lon: f64,
     use_eco: bool,
     profile: TravelProfile,
-    avoid_major: bool,
+    avoid_motorways: bool,
     avoid_tolls: bool,
     avoid_ferries: bool,
     vehicle: FfiVehicleLimits,
@@ -1750,7 +1780,7 @@ pub fn plan_car_route(
             end_lon,
             use_eco,
             profile,
-            avoid_major,
+            avoid_motorways,
             avoid_tolls,
             avoid_ferries,
             vehicle,
@@ -1774,7 +1804,7 @@ fn plan_car_route_inner(
     end_lon: f64,
     use_eco: bool,
     profile: TravelProfile,
-    avoid_major: bool,
+    avoid_motorways: bool,
     avoid_tolls: bool,
     avoid_ferries: bool,
     vehicle: FfiVehicleLimits,
@@ -1793,7 +1823,7 @@ fn plan_car_route_inner(
 
     let vehicle_limits = ffi_vehicle_to_limits(&vehicle);
     let route_opts = RouteOptions {
-        avoid_major_roads: avoid_major,
+        avoid_motorways,
         avoid_tolls,
         avoid_ferries,
         vehicle: vehicle_limits.clone(),
@@ -1805,7 +1835,7 @@ fn plan_car_route_inner(
         "profile={profile:?}; routing={routing_profile:?}; start={start_lat:.6},{start_lon:.6}; end={end_lat:.6},{end_lon:.6}; use_eco={use_eco}\n"
     ));
     report.push_str(&format!(
-        "avoid_major={avoid_major}; avoid_tolls={avoid_tolls}; avoid_ferries={avoid_ferries}; vehicle_limits={}\n",
+        "avoid_motorways={avoid_motorways}; avoid_tolls={avoid_tolls}; avoid_ferries={avoid_ferries}; vehicle_limits={}\n",
         vehicle_limits.is_some()
     ));
     report.push_str(&format!(
@@ -2381,10 +2411,10 @@ fn plan_car_route_inner(
         report
             .push_str(&driver_break_core::routing::format_eco_energy_breakdown_report(&breakdown));
     }
-    let priority_path_share_pct = graph.non_major_highway_share_pct(&path);
+    let priority_path_share_pct = graph.non_motorway_share_pct(&path);
     report.push_str(&format!(
-        "priority_path_share_pct={priority_path_share_pct:.2}; major_highway_share_pct={:.2}\n",
-        graph.major_highway_share_pct(&path)
+        "priority_path_share_pct={priority_path_share_pct:.2}; motorway_share_pct={:.2}\n",
+        graph.motorway_share_pct(&path)
     ));
     report.push_str(&format!(
         "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={path_nodes}; path_cost={cost:.0}; polyline_chars={}; break_pois={}\nPASS\n",
@@ -2431,6 +2461,7 @@ pub fn plan_hiking_route(
     cache_dir: String,
     waypoints_json: String,
     prefer_official_networks: bool,
+    prefer_pilgrim_routes: bool,
 ) -> CorridorRouteResult {
     #[derive(Deserialize)]
     struct Wp {
@@ -2442,7 +2473,7 @@ pub fn plan_hiking_route(
     let mut report = String::from("TEST_KIND=PLAN_HIKING_ROUTE\nDATA_SOURCE=real_pbf\n");
     report.push_str("profile=Hiking; use_eco=true\n");
     report.push_str(&format!(
-        "prefer_official_networks={prefer_official_networks}\n"
+        "prefer_official_networks={prefer_official_networks}; prefer_pilgrim_routes={prefer_pilgrim_routes}\n"
     ));
     let user_wps: Vec<HikingWp> = match serde_json::from_str::<Vec<Wp>>(&waypoints_json) {
         Ok(v) => v
@@ -2530,11 +2561,12 @@ pub fn plan_hiking_route(
             return empty_corridor(report);
         }
     };
-    apply_network_pref_if_requested(
+    apply_route_prefs_if_requested(
         &mut graph,
         pbf,
         OfficialNetworkKind::Hiking,
         prefer_official_networks,
+        prefer_pilgrim_routes,
         &mut report,
     );
     let build_s = t0.elapsed().as_secs_f64();
@@ -2603,8 +2635,15 @@ pub fn plan_hiking_route(
         hybrid.off_trail_m
     ));
 
-    // Clip POI load to the same trip bbox (never a full Ostlandet POI scan).
-    let poi_index = match PoiIndex::load_from_pbf_bbox_with_overnight_buildings(pbf, bbox) {
+    // Clip POI load to the trip bbox, then overnight buildings to a corridor band
+    // around the planned path (pre-filter before the exact 150 m check).
+    let corridor_lat_lon = hybrid.full_coords();
+    let poi_index = match PoiIndex::load_from_pbf_bbox_with_overnight_buildings_near_corridor(
+        pbf,
+        bbox,
+        &corridor_lat_lon,
+        OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M,
+    ) {
         Ok(i) => i,
         Err(e) => {
             report.push_str(&format!("FAIL: POI index: {e:#}\n"));
@@ -2614,14 +2653,14 @@ pub fn plan_hiking_route(
     let barriers = load_break_barriers(&graph, pbf, bbox);
     let mut safety = SafetyConfig::default();
     poi_radii.apply_to_safety(&mut safety);
-    // Buildings from the POI load; glaciers from the barrier index already built
-    // for break access — no extra overnight PBF scan.
+    // Buildings from the corridor-filtered POI load; glaciers from the barrier
+    // index already built for break access — no extra overnight PBF scan.
     let overnight_prox = OvernightProximityIndex::from_poi_buildings_and_barriers(
         poi_index.overnight_buildings().to_vec(),
         &barriers,
     );
     report.push_str(&format!(
-        "overnight_buildings={}; overnight_glaciers={}; overnight_source=poi+barriers\n",
+        "overnight_buildings={}; overnight_glaciers={}; overnight_source=poi+barriers; overnight_corridor_margin_m={OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M:.0}\n",
         overnight_prox.buildings.len(),
         overnight_prox.glaciers.len()
     ));
@@ -2808,7 +2847,7 @@ pub fn plan_hiking_route(
         break_pois_json = serde_json::to_string(&arr).unwrap_or(break_pois_json);
     }
 
-    let priority_path_share_pct = graph.non_major_highway_share_pct(&full_path);
+    let priority_path_share_pct = graph.non_motorway_share_pct(&full_path);
     report.push_str(&format!(
         "priority_path_share_pct={priority_path_share_pct:.2}\n"
     ));
@@ -3315,6 +3354,25 @@ pub fn save_prefer_official_networks(data_dir: String, prefer: bool) -> bool {
     store.save_prefer_official_networks(prefer).is_ok()
 }
 
+/// Soft preference for pilgrim routes (default off).
+#[uniffi::export]
+pub fn load_prefer_pilgrim_routes(data_dir: String) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.load_prefer_pilgrim_routes().unwrap_or(false)
+}
+
+#[uniffi::export]
+pub fn save_prefer_pilgrim_routes(data_dir: String, prefer: bool) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.save_prefer_pilgrim_routes(prefer).is_ok()
+}
+
 fn ffi_from_poi_radii(r: &ProfilePoiRadii) -> FfiProfilePoiRadii {
     FfiProfilePoiRadii {
         search_radius_m: r.search_radius_m,
@@ -3717,22 +3775,25 @@ pub fn last_gps_fix() -> FfiGpsFix {
         })
 }
 
-/// Format a short validation blurb for avoid-major / toll / ferry preferences.
+/// Format a short validation blurb for avoid-motorways / toll / ferry preferences.
 #[uniffi::export]
-pub fn format_avoid_major_report(avoid_major: bool, priority_path_share_pct: f64) -> String {
-    format_route_avoidance_report(avoid_major, false, false, priority_path_share_pct)
+pub fn format_avoid_motorways_report(
+    avoid_motorways: bool,
+    priority_path_share_pct: f64,
+) -> String {
+    format_route_avoidance_report(avoid_motorways, false, false, priority_path_share_pct)
 }
 
 /// Extended avoidance report (motorways + tolls + ferries). Defaults for toll/ferry: off.
 #[uniffi::export]
 pub fn format_route_avoidance_report(
-    avoid_major: bool,
+    avoid_motorways: bool,
     avoid_tolls: bool,
     avoid_ferries: bool,
     priority_path_share_pct: f64,
 ) -> String {
     let opts = driver_break_core::RouteOptions {
-        avoid_major_roads: avoid_major,
+        avoid_motorways,
         avoid_tolls,
         avoid_ferries,
         vehicle: None,

@@ -16,6 +16,7 @@ const FUEL_CONFIG_KEY: &str = "fuel_config";
 const EBIKE_CONFIG_KEY: &str = "ebike_config";
 const EV_CAR_CONFIG_KEY: &str = "ev_car_config";
 const PREFER_OFFICIAL_NETWORKS_KEY: &str = "prefer_official_networks";
+const PREFER_PILGRIM_ROUTES_KEY: &str = "prefer_pilgrim_routes";
 const TRUCK_DRIVING_HISTORY_KEY: &str = "truck_driving_history";
 const PROFILE_POI_RADII_KEY: &str = "profile_poi_radii";
 
@@ -91,6 +92,15 @@ impl<'a> ConfigStore<'a> {
 
     pub fn save_prefer_official_networks(&self, prefer: bool) -> SqlResult<()> {
         self.save_json(PREFER_OFFICIAL_NETWORKS_KEY, &prefer)
+    }
+
+    /// Soft preference for pilgrim routes (off by default).
+    pub fn load_prefer_pilgrim_routes(&self) -> SqlResult<bool> {
+        self.load_json(PREFER_PILGRIM_ROUTES_KEY, || false)
+    }
+
+    pub fn save_prefer_pilgrim_routes(&self, prefer: bool) -> SqlResult<()> {
+        self.save_json(PREFER_PILGRIM_ROUTES_KEY, &prefer)
     }
 
     /// Rolling truck duty history for EC 561 weekly / fortnightly caps.

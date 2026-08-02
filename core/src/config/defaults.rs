@@ -111,6 +111,14 @@ pub const POI_NETWORK_HUT_PREFERENCE_RADIUS_M: f64 = 11_000.0;
 /// Minimum overnight distance from buildings (metres), allemannsretten compliance.
 pub const SAFETY_MIN_BUILDING_DISTANCE_M: f64 = 150.0;
 
+/// Corridor pre-filter margin (metres) when loading overnight building samples.
+///
+/// Buildings farther than this from the planned route path are dropped before
+/// the exact [`SAFETY_MIN_BUILDING_DISTANCE_M`] check. Chosen in the 1–2 km
+/// band so the real 150 m threshold cannot false-exclude, while still cutting
+/// the rectangular-bbox candidate set on long corridors.
+pub const OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M: f64 = 1_500.0;
+
 /// Minimum overnight distance from glaciers (metres) unless at established facility.
 pub const SAFETY_MIN_GLACIER_DISTANCE_M: f64 = 1_000.0;
 

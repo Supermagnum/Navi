@@ -124,7 +124,7 @@ GPS slot is for native consumers and tests.
 | `highway_class_display_label(highway?)` | Human class label when name/ref missing |
 | `format_current_road_label(name?, ref?, highway?)` | Bottom-HUD current-road string |
 | `road_label_near(pbf, cache_dir, elev_dir, lat, lon, profile, max_m)` | Idle-GPS nearest-edge street label (bbox graph) |
-| `format_avoid_major_report` / `format_route_avoidance_report` | Avoidance summary strings |
+| `format_avoid_motorways_report` / `format_route_avoidance_report` | Avoidance summary strings |
 
 Product rules: [`approach-instructions.md`](approach-instructions.md),
 [`current-street.md`](current-street.md).

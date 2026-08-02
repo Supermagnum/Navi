@@ -15,6 +15,7 @@ object MapHudPrefs {
     private const val KEY_GEOFABRIK_PATH = "geofabrik_path"
     private const val KEY_DIAGNOSTIC_LOGGING = "diagnostic_logging"
     private const val KEY_DOWNLOADED_PMTILES_REGIONS = "downloaded_pmtiles_regions"
+    private const val KEY_SNAP_ROTATION_BACK = "snap_rotation_back"
     const val DEFAULT_AUTO_ZOOM_LEVEL = 16.5
     const val MIN_ZOOM = 3.0
     const val MAX_ZOOM = 20.0
@@ -221,6 +222,27 @@ object MapHudPrefs {
             .getStringSet(KEY_DOWNLOADED_PMTILES_REGIONS, emptySet())
             ?.toSet()
             .orEmpty()
+
+    /**
+     * When true (default), a manual rotate gesture is temporary: after a short
+     * pause the active Compass/Travel/N-up mode reasserts its bearing. When
+     * false, manual bearing persists until the user picks a rotation mode chip.
+     */
+    fun loadSnapRotationBack(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_SNAP_ROTATION_BACK, true)
+
+    fun saveSnapRotationBack(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_SNAP_ROTATION_BACK, enabled)
+            .apply()
+    }
 
     fun rememberDownloadedPmtilesRegion(
         context: Context,

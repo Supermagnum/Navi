@@ -99,13 +99,14 @@ pub struct GraphEdge {
     pub is_boardwalk_crossing: bool,
 }
 
-/// Per-query routing filters (sightseeing avoid-majors, tolls/ferries, vehicle limits).
+/// Per-query routing filters (avoid motorways, tolls/ferries, vehicle limits).
 ///
 /// Clearance: violating edges are **excluded** from A*; the router searches an
 /// alternate path rather than failing hard when any restricted edge exists.
 #[derive(Debug, Clone, Default)]
 pub struct RouteOptions {
-    pub avoid_major_roads: bool,
+    /// Exclude OSM `highway=motorway` / `motorway_link` only (not trunk/primary).
+    pub avoid_motorways: bool,
     /// Exclude OSM toll roads (`toll=yes` and related). Default off.
     pub avoid_tolls: bool,
     /// Exclude ferry connections. Default off.
@@ -479,10 +480,10 @@ impl RouteGraph {
             .count()
     }
 
-    /// Distance-weighted share (%) of path length on motorway/trunk/primary.
-    pub fn major_highway_share_pct(&self, path: &[NodeId]) -> f64 {
+    /// Distance-weighted share (%) of path length on motorway / motorway_link.
+    pub fn motorway_share_pct(&self, path: &[NodeId]) -> f64 {
         let mut total_m = 0.0;
-        let mut major_m = 0.0;
+        let mut motorway_m = 0.0;
         for w in path.windows(2) {
             let Some(idx) = self.edge_index(w[0], w[1]) else {
                 continue;
@@ -490,20 +491,20 @@ impl RouteGraph {
             let e = &self.edges[idx];
             let len = e.length_m.max(0.0);
             total_m += len;
-            if highway_is_major(e.highway.as_deref()) {
-                major_m += len;
+            if highway_is_motorway(e.highway.as_deref()) {
+                motorway_m += len;
             }
         }
         if total_m <= 0.0 {
             return 0.0;
         }
-        100.0 * major_m / total_m
+        100.0 * motorway_m / total_m
     }
 
-    /// Share (%) of path length **not** on major highways (sightseeing / avoid-major
-    /// “priority-path” metric for motor profiles — higher when majors are avoided).
-    pub fn non_major_highway_share_pct(&self, path: &[NodeId]) -> f64 {
-        (100.0 - self.major_highway_share_pct(path)).clamp(0.0, 100.0)
+    /// Share (%) of path length **not** on motorways (avoid-motorways “priority-path”
+    /// metric for motor profiles — higher when motorways are avoided).
+    pub fn non_motorway_share_pct(&self, path: &[NodeId]) -> f64 {
+        (100.0 - self.motorway_share_pct(path)).clamp(0.0, 100.0)
     }
 
     /// Human-readable summary of what a route avoided / how many restricted segments.
@@ -526,12 +527,8 @@ pub fn format_route_avoidance_report(
 ) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
-        "Avoid motorways/trunk/primary: {}",
-        if options.avoid_major_roads {
-            "ON"
-        } else {
-            "OFF"
-        }
+        "Avoid motorways: {}",
+        if options.avoid_motorways { "ON" } else { "OFF" }
     ));
     lines.push(format!(
         "Avoid toll roads: {}",
@@ -547,7 +544,7 @@ pub fn format_route_avoidance_report(
         ));
     }
     lines.push(format!(
-        "Non-major road share on last plan: {priority_path_share_pct_hint:.1}% (100% minus motorway/trunk/primary length)"
+        "Non-motorway road share on last plan: {priority_path_share_pct_hint:.1}% (100% minus motorway length)"
     ));
     lines.join("\n")
 }
@@ -701,20 +698,17 @@ fn parse_metric(raw: &str) -> Option<f64> {
     cleaned.trim().parse::<f64>().ok()
 }
 
-fn is_major_highway(highway: &str) -> bool {
-    matches!(
-        highway,
-        "motorway" | "motorway_link" | "trunk" | "trunk_link" | "primary" | "primary_link"
-    )
+fn is_motorway_highway(highway: &str) -> bool {
+    matches!(highway, "motorway" | "motorway_link")
 }
 
-/// True when OSM `highway` is motorway / trunk / primary (incl. `*_link`).
-pub fn highway_is_major(highway: Option<&str>) -> bool {
-    highway.is_some_and(is_major_highway)
+/// True when OSM `highway` is motorway or motorway_link.
+pub fn highway_is_motorway(highway: Option<&str>) -> bool {
+    highway.is_some_and(is_motorway_highway)
 }
 
 fn edge_allowed_for_options(edge: &GraphEdge, options: &RouteOptions) -> bool {
-    if options.avoid_major_roads && edge.highway.as_deref().is_some_and(is_major_highway) {
+    if options.avoid_motorways && edge.highway.as_deref().is_some_and(is_motorway_highway) {
         return false;
     }
     if options.avoid_tolls && edge.is_toll {

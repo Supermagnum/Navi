@@ -20,7 +20,7 @@ mod reweight;
 mod road_near;
 
 pub use builder::{
-    format_route_avoidance_report, highway_is_major, max_waypoint_snap_m, GraphEdge, RouteGraph,
+    format_route_avoidance_report, highway_is_motorway, max_waypoint_snap_m, GraphEdge, RouteGraph,
     RouteOptions, RoutingProfile, SnapTooFar, WetlandApplyStats,
 };
 pub use cache::{
@@ -29,8 +29,9 @@ pub use cache::{
 };
 pub use network_pref::{
     apply_official_network_preference, difficulty_notes_for_path, is_official_route_relation,
-    load_named_route_entries, load_official_network_way_ids, load_way_difficulty_tags,
-    NamedRouteEntry, OfficialNetworkKind, NON_NETWORK_PENALTY,
+    is_pilgrim_route_relation, load_named_route_entries, load_official_network_way_ids,
+    load_pilgrim_route_way_ids, load_way_difficulty_tags, NamedRouteEntry, OfficialNetworkKind,
+    NON_NETWORK_PENALTY,
 };
 pub use reweight::reweight_graph_for_eco;
 pub use road_near::{nearest_road_label, RoadNodeIndex};

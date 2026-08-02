@@ -69,7 +69,7 @@ ikoner kommer fra Navit (**GPL v2**); se [`docs/icons.md`](docs/icons.md).
 | **Reisemåter** | Velg bil, sykkel, elsykkel, fottur, motorsykkel, lastebil eller bobil. | Ferdig |
 | **Kjøretøystørrelse** | Lagre høyde/bredde/lengde/vektgrenser så ruten unngår veier som er for trange. | Ferdig |
 | **Elsykkel-data** | Batteristørrelse, motormoment og hjulstørrelse hjelper til å anslå batteribruk og bratte bakker. Live kabel-telemetri er planlagt senere. | Ferdig (planlegging); live data senere |
-| **Unngåelser** | Du kan be om å unngå motorvei, bom eller ferge. | Ferdig |
+| **Unngåelser** | Du kan be om å unngå motorvei (ikke trunk/primary), bom eller ferge. | Ferdig |
 | **Offisielle løyper** | For fottur/sykling kan du valgfritt foretrekke merkede langturer (av som standard). Vanlige stier fungerer fortsatt hvis merket løype har hull. | Ferdig |
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Et lite bladikon vises når øko er på. | Ferdig |
 | **Frakoblet planlegging** | Last ned en region én gang, planlegg og se ruten på enheten. | Ferdig |
@@ -138,9 +138,8 @@ elsykkel osv.).
 språkmeny ennå. Denne filen (`Norwegian.md`) er dokumentasjon, ikke en
 språkpakke i appen. En fremtidig oversettelsesplugin er beskrevet i
 [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
-Arbeidsark for oversettere ligger ved siden av den spesifikasjonen:
-[`docs/plugins/translations.xlsx`](docs/plugins/translations.xlsx) og
-[`docs/plugins/translations.ods`](docs/plugins/translations.ods).
+En arbeids-CSV for oversettere ligger ved siden av den spesifikasjonen:
+[`docs/plugins/translations.csv`](docs/plugins/translations.csv).
 
 Innstillinger lagres på enheten (hvile/drivstoff/kjøretøy i en liten database;
 kartvisning i app-preferanser).
@@ -150,6 +149,7 @@ kartvisning i app-preferanser).
 | Innstilling | Enkel forklaring |
 |---|---|
 | **Compass / Travel / N-up** | Hvordan kartet roterer |
+| **Snap rotation back to mode** | Etter manuell rotasjon, gå tilbake til valgt modus (på som standard) |
 | **Trip ETA** | Vis tid igjen til målet i bunnstripen |
 | **Breaks** | Vis linjen «Break in …» (endrer ikke hvordan stopp planlegges) |
 | **Auto-zoom** | Hold valgt zoom mens du beveger deg |
@@ -161,6 +161,7 @@ kartvisning i app-preferanser).
 | Innstilling | Enkel forklaring |
 |---|---|
 | **Travel mode** | Bil, sykkel, fottur, lastebil, … |
+| **Follow pilgrim routes** | Bare fottur; myk preferanse (av som standard), faller tilbake til vanlig fottur |
 | **Hours between breaks** | Hvor ofte du *ønsker* pause (bil), eller lastebilens pålagte pause-etter-tid |
 | **Rest time** | Hvor lenge pausen bør vare (forslag / lastebil sammenhengende pause) |
 | **Next break as Time / Distance** | Vis nedtelling i minutter, eller som km/mi ved antatt cruisehastighet |
@@ -168,7 +169,8 @@ kartvisning i app-preferanser).
 | **POI search radius** | Hvor langt til siden planleggeren kan lete etter hytter / stopp |
 | **Vehicle limits** | Høyde/bredde/lengde/aksellast for frihøyde |
 
-Ruteplanlegging (**Route**): From / To / Via, Plan, Simulate, unngåelser,
+Ruteplanlegging (**Route**): From / To / Via, Plan, Simulate, unngåelser
+(**Avoid motorways** ekskluderer bare `highway=motorway` / `motorway_link`),
 lagrede ruter. **Tools**: last ned region, grunnkart, DEM, OSM-oppdateringssjekk.
 
 Lengre kontrollister og lastebil-/jurisdiksjonsdetaljer ligger i dokumentene
@@ -225,11 +227,12 @@ forholdene langs stien.
 
 # Minimum maskinvare og lagring
 
-Grov veiledning for nettbrett / bilskjermer:
+**Minimum påkrevd maskinvare** for tiltenkt Automotive- / innebygd klasse:
 
-| Del | Praktisk råd |
+| Del | Minimum / praktisk råd |
 |---|---|
-| **RAM** | Foretrekk **regionale** uttrekk på ca. 4 GB-enheter. Hele store land i ett jafs er ofte for tungt. |
+| **CPU** | **8 kjerner**, ca. **2 GHz**-klasse |
+| **RAM** | **4 GB**. Foretrekk **regionale** uttrekk på den klassen; hele store land i ett jafs er ofte for tungt. |
 | **Lagring** | La det være plass til regionsfil, stedsindeks, frakoblet grunnkart og valgfri DEM — ofte flere GB for en region. |
 | **GPU** | MapLibre GLES er standardstien brukt på det testede nettbrettet. |
 
@@ -267,10 +270,6 @@ Testing på bilskjerm er fortsatt åpen —
 Idle HUD:
 
 ![Idle begge linjer](docs/images/hud/hud_idle_both_bars.png)
-
-Kaldstart-splash:
-
-![Splash open-app](docs/images/splash_open_app.png)
 
 Karttilt 45° (3D av / på):
 
@@ -322,7 +321,7 @@ En sandkasse for plugins finnes, så fremtidige tillegg kan kjøre trygt.
 
 | Spesifikasjon | Emne |
 |---|---|
-| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Fremtidige UI-språk (bare engelsk i dag). Oversetterark: [`translations.xlsx`](docs/plugins/translations.xlsx), [`translations.ods`](docs/plugins/translations.ods) |
+| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Fremtidige UI-språk (bare engelsk i dag). Oversettertabell: [`translations.csv`](docs/plugins/translations.csv) |
 | [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Villcamping-forslag (plugin, ikke kjerne) |
 | [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Drivstoff-/vannforsyning |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Eksportere nav-tilstand til instrumentcluster |
@@ -415,7 +414,8 @@ Land-/regionvisuelle uttrekk kan også lages med
 
 # Kjente problemer
 
-- **Plugins:** innholdstillegg er bevisst ikke levert ennå.
+- **Plugins:** innholdstillegg er bevisst ikke levert ennå, fordi de ikke er
+  laget ennå.
 - **UI-finish:** skjermene fungerer, men trenger fortsatt visuell opprydding på
   bilskjermer.
 - **Bevegelige ikoner:** tegnes med Compose-overlegg i dag; native
@@ -426,9 +426,12 @@ Land-/regionvisuelle uttrekk kan også lages med
   og [`docs/debugging.md`](docs/debugging.md).
 - **Bare-i-skjermbilde innsjøkant:** en myk blå kant rundt vann kan dukke opp i
   skjermbilder, men ikke under vanlig bruk — se
-  [`docs/map-styles.md`](docs/map-styles.md#hydro-soft-edge-fringe-screenshot-artifact).
-- **Treg fotturplan på store områder:** å laste alle bygninger i en stor boks
-  for overnattingsavstandssjekk kan gjøre lange fotturplaner trege; en trangere
-  korridorfilter er kjent oppfølging.
+  [`docs/map-styles.md`](docs/map-styles.md).
+- **Treg fotturplan på store områder:** å laste alle bygninger i en stor boks for
+  overnattingsavstandssjekker kan gjøre lange fotturplaner trege; et strammere
+  korridorfilter er en kjent oppfølging.
 - **Pauseteller ≠ tur-ETA:** med vilje — se
   [Pauseteller vs tur-ETA](#pauseteller-vs-tur-eta).
+- **Ikke implementert ennå:** lagring av destinasjon eller startpunkt;
+  trykk-og-hold for å merke et sted på kartet som destinasjon eller via-punkt;
+  sjekk av om koden kan optimaliseres for tegning/rendering.

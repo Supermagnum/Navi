@@ -204,6 +204,8 @@ data class DriveHudState(
     val breakAsDistance: Boolean = false,
     val preferMetric: Boolean = true,
     val rotationMode: MapRotationMode = MapRotationMode.NorthUp,
+    /** When true, manual rotate snaps back to [rotationMode] after a short pause. */
+    val snapRotationBackToMode: Boolean = true,
     val autoZoomWhileMoving: Boolean = false,
     val autoZoomLevel: Double = 16.5,
     /** Terrain / GPS altitude in meters; null when unknown. Prefer DEM when present. */
@@ -318,6 +320,7 @@ fun TopDriveHud(
 fun MapSettingsSheet(
     state: DriveHudState,
     onRotation: (MapRotationMode) -> Unit,
+    onToggleSnapRotationBack: (Boolean) -> Unit = {},
     onToggleTripEta: (Boolean) -> Unit,
     onToggleBreakReminders: (Boolean) -> Unit,
     onToggleAutoZoom: (Boolean) -> Unit,
@@ -372,6 +375,18 @@ fun MapSettingsSheet(
                     onClick = { onRotation(MapRotationMode.NorthUp) },
                     label = { Text("N-up") },
                     modifier = Modifier.testTag("rot_north_up"),
+                )
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Snap rotation back to mode", style = MaterialTheme.typography.bodySmall)
+                Switch(
+                    checked = state.snapRotationBackToMode,
+                    onCheckedChange = onToggleSnapRotationBack,
+                    modifier = Modifier.testTag("toggle_snap_rotation_back"),
                 )
             }
             Row(

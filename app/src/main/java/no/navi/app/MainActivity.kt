@@ -364,10 +364,19 @@ private fun NaviMapScreen() {
     var toPoint by remember { mutableStateOf(Waypoint()) }
     var viaPoints by remember { mutableStateOf<List<Waypoint>>(emptyList()) }
     var fromPoint by remember { mutableStateOf<Waypoint?>(null) }
-    var avoidMajor by remember { mutableStateOf(false) }
+    var avoidMotorways by remember { mutableStateOf(false) }
     var avoidTolls by remember { mutableStateOf(false) }
     var avoidFerries by remember { mutableStateOf(false) }
     var preferOfficialNetworks by remember { mutableStateOf(false) }
+    var preferPilgrimRoutes by remember { mutableStateOf(false) }
+
+    /** Sticky manual bearing when snap-back is off; cleared by mode chip. */
+    var manualRotationSticky by remember { mutableStateOf(false) }
+
+    /** Bumped to force MapLibre bearing re-apply even when degrees unchanged. */
+    var bearingApplyEpoch by remember { mutableIntStateOf(0) }
+    val rotationSnapHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
+    var pendingRotationSnap by remember { mutableStateOf<Runnable?>(null) }
     var prioritySharePct by remember { mutableDoubleStateOf(0.0) }
     var savedRoutes by remember { mutableStateOf<List<FfiSavedRoute>>(emptyList()) }
     var axleKg by remember { mutableStateOf("") }
@@ -426,6 +435,7 @@ private fun NaviMapScreen() {
                 preferMetric = MapHudPrefs.loadPreferMetric(context),
                 optIn3d = MapHudPrefs.loadOptIn3d(context),
                 cameraTiltDeg = MapHudPrefs.loadCameraTiltDeg(context),
+                snapRotationBackToMode = MapHudPrefs.loadSnapRotationBack(context),
                 vulkanAvailable = MapHudPrefs.vulkanRendererAvailable(),
                 // Never seed a break countdown until a route is planned.
                 minutesToBreak = null,
@@ -799,6 +809,8 @@ private fun NaviMapScreen() {
     }
     LaunchedEffect(dataDir) {
         preferOfficialNetworks = uniffi.navi.loadPreferOfficialNetworks(dataDir.absolutePath)
+        preferPilgrimRoutes = uniffi.navi.loadPreferPilgrimRoutes(dataDir.absolutePath)
+        NaviMapTestHooks.lastSnapRotationBack = driveHud.snapRotationBackToMode
     }
     val iconsDir =
         remember {
@@ -977,6 +989,65 @@ private fun NaviMapScreen() {
         // Continuous hook poll via Handler so it survives Compose LaunchedEffect
         // cancellation that was observed mid-instrumented-test (after several screenshots).
     }
+
+    fun modeTargetBearing(): Double? =
+        when (driveHud.rotationMode) {
+            MapRotationMode.NorthUp -> 0.0
+            MapRotationMode.Compass -> NaviMapTestHooks.magneticHeadingDeg
+            MapRotationMode.DirectionOfTravel -> NaviMapTestHooks.gpsBearingDeg
+        }
+
+    fun cancelPendingRotationSnap() {
+        pendingRotationSnap?.let { rotationSnapHandler.removeCallbacks(it) }
+        pendingRotationSnap = null
+    }
+
+    fun reassertModeBearing(force: Boolean = false) {
+        if (manualRotationSticky && !driveHud.snapRotationBackToMode) {
+            NaviMapTestHooks.manualRotationOverrideActive = true
+            return
+        }
+        val target = modeTargetBearing() ?: return
+        val cur = mapState.cameraBearing
+        val mapBr = NaviMapTestHooks.lastCameraBearing
+        val diverged =
+            kotlin.math.abs(cur - target) > 0.05 || kotlin.math.abs(mapBr - target) > 0.05
+        if (!force && !diverged) {
+            NaviMapTestHooks.manualRotationOverrideActive = false
+            return
+        }
+        manualRotationSticky = false
+        NaviMapTestHooks.manualRotationOverrideActive = false
+        if (NaviMapTestHooks.applyBearingToMap) {
+            mapState = mapState.copy(cameraBearing = target)
+            bearingApplyEpoch += 1
+        }
+        NaviMapTestHooks.lastCameraBearing = target
+    }
+
+    fun onManualRotateEnded(bearingDeg: Double) {
+        // Keep Compose cameraBearing aligned with the MapLibre gesture result so
+        // the HUD poll cannot overwrite lastCameraBearing back to the old mode
+        // target while the override / snap-back window is active.
+        mapState = mapState.copy(cameraBearing = bearingDeg)
+        NaviMapTestHooks.lastCameraBearing = bearingDeg
+        cancelPendingRotationSnap()
+        if (!driveHud.snapRotationBackToMode) {
+            manualRotationSticky = true
+            NaviMapTestHooks.manualRotationOverrideActive = true
+            return
+        }
+        manualRotationSticky = false
+        NaviMapTestHooks.manualRotationOverrideActive = true
+        val snap =
+            Runnable {
+                pendingRotationSnap = null
+                reassertModeBearing(force = true)
+            }
+        pendingRotationSnap = snap
+        rotationSnapHandler.postDelayed(snap, 1_000L)
+    }
+
     DisposableEffect(locationPermGranted) {
         val lm = context.getSystemService(LocationManager::class.java)
 
@@ -1147,22 +1218,32 @@ private fun NaviMapScreen() {
                                 it.isFinite() && it < Double.POSITIVE_INFINITY / 2
                             },
                     )
-                    when (driveHud.rotationMode) {
-                        MapRotationMode.DirectionOfTravel -> {
-                            val br = NaviMapTestHooks.gpsBearingDeg
-                            if (br != null) {
-                                mapState = mapState.copy(cameraBearing = br)
-                                NaviMapTestHooks.lastCameraBearing = br
+                    if (!(manualRotationSticky && !driveHud.snapRotationBackToMode) &&
+                        pendingRotationSnap == null
+                    ) {
+                        when (driveHud.rotationMode) {
+                            MapRotationMode.DirectionOfTravel -> {
+                                val br = NaviMapTestHooks.gpsBearingDeg
+                                if (br != null) {
+                                    mapState = mapState.copy(cameraBearing = br)
+                                    NaviMapTestHooks.lastCameraBearing = br
+                                }
+                            }
+                            MapRotationMode.Compass -> {
+                                val br = NaviMapTestHooks.magneticHeadingDeg
+                                if (br != null) {
+                                    mapState = mapState.copy(cameraBearing = br)
+                                    NaviMapTestHooks.lastCameraBearing = br
+                                }
+                            }
+                            MapRotationMode.NorthUp -> {
+                                if (kotlin.math.abs(mapState.cameraBearing) > 0.05 ||
+                                    kotlin.math.abs(NaviMapTestHooks.lastCameraBearing) > 0.05
+                                ) {
+                                    reassertModeBearing(force = true)
+                                }
                             }
                         }
-                        MapRotationMode.Compass -> {
-                            val br = NaviMapTestHooks.magneticHeadingDeg
-                            if (br != null) {
-                                mapState = mapState.copy(cameraBearing = br)
-                                NaviMapTestHooks.lastCameraBearing = br
-                            }
-                        }
-                        MapRotationMode.NorthUp -> Unit
                     }
                 }
                 if (!streetFromRoute) {
@@ -1433,14 +1514,19 @@ private fun NaviMapScreen() {
                         val rotReq = NaviMapTestHooks.requestRotationMode
                         if (rotReq != null) {
                             NaviMapTestHooks.requestRotationMode = null
+                            cancelPendingRotationSnap()
+                            manualRotationSticky = false
+                            NaviMapTestHooks.manualRotationOverrideActive = false
                             driveHud = driveHud.copy(rotationMode = rotReq)
                             NaviMapTestHooks.lastRotationMode = rotReq
+                            reassertModeBearing(force = true)
                         }
                         val pendingBearing = NaviMapTestHooks.pendingBearing
                         if (pendingBearing != null) {
                             NaviMapTestHooks.pendingBearing = null
                             if (NaviMapTestHooks.applyBearingToMap) {
                                 mapState = mapState.copy(cameraBearing = pendingBearing)
+                                bearingApplyEpoch += 1
                             }
                             NaviMapTestHooks.lastCameraBearing = pendingBearing
                         }
@@ -1643,7 +1729,11 @@ private fun NaviMapScreen() {
                         NaviMapTestHooks.lastRotationMode = driveHud.rotationMode
                         // Do not overwrite lastCameraZoom / lat / lon from Compose state here —
                         // MapLibre camera-idle is the source of truth (user pan/pinch/double-tap).
-                        NaviMapTestHooks.lastCameraBearing = mapState.cameraBearing
+                        // Same for bearing while a manual-rotate override/snap window is active:
+                        // camera-idle (and onManualRotateEnded) own lastCameraBearing then.
+                        if (!(manualRotationSticky || pendingRotationSnap != null)) {
+                            NaviMapTestHooks.lastCameraBearing = mapState.cameraBearing
+                        }
                         NaviMapTestHooks.lastBreakRemindersEnabled = driveHud.breakRemindersEnabled
                         NaviMapTestHooks.lastShowTripEta = driveHud.showTripEta
                         NaviMapTestHooks.lastMinutesToBreak = driveHud.minutesToBreak
@@ -1657,21 +1747,47 @@ private fun NaviMapScreen() {
                         ) != null
                         NaviMapTestHooks.lastHudAltitudeM = driveHud.altitudeM
 
-                        val targetBearing =
-                            when (driveHud.rotationMode) {
-                                MapRotationMode.NorthUp -> 0.0
-                                MapRotationMode.Compass -> NaviMapTestHooks.magneticHeadingDeg
-                                MapRotationMode.DirectionOfTravel -> NaviMapTestHooks.gpsBearingDeg
-                            }
-                        if (targetBearing != null) {
-                            val cur = mapState.cameraBearing
-                            if (kotlin.math.abs(cur - targetBearing) > 0.05) {
-                                if (NaviMapTestHooks.applyBearingToMap) {
-                                    mapState = mapState.copy(cameraBearing = targetBearing)
-                                }
-                                NaviMapTestHooks.lastCameraBearing = targetBearing
+                        val snapReq = NaviMapTestHooks.requestSnapRotationBack
+                        if (snapReq != null) {
+                            NaviMapTestHooks.requestSnapRotationBack = null
+                            driveHud = driveHud.copy(snapRotationBackToMode = snapReq)
+                            MapHudPrefs.saveSnapRotationBack(context, snapReq)
+                            NaviMapTestHooks.lastSnapRotationBack = snapReq
+                            if (snapReq) {
+                                manualRotationSticky = false
+                                reassertModeBearing(force = true)
                             }
                         }
+                        val simRot = NaviMapTestHooks.requestSimulateManualRotateDeg
+                        if (simRot != null) {
+                            NaviMapTestHooks.requestSimulateManualRotateDeg = null
+                            // Apply via the same path as a real rotate-gesture end so the
+                            // pending-snap / sticky flags are set before the next poll can
+                            // reassert the mode bearing and erase the simulated override.
+                            if (NaviMapTestHooks.applyBearingToMap) {
+                                mapState = mapState.copy(cameraBearing = simRot)
+                                bearingApplyEpoch += 1
+                            }
+                            onManualRotateEnded(simRot)
+                        }
+                        if (!(manualRotationSticky && !driveHud.snapRotationBackToMode) &&
+                            pendingRotationSnap == null
+                        ) {
+                            val targetBearing = modeTargetBearing()
+                            if (targetBearing != null) {
+                                val cur = mapState.cameraBearing
+                                val mapBr = NaviMapTestHooks.lastCameraBearing
+                                if (kotlin.math.abs(cur - targetBearing) > 0.05 ||
+                                    kotlin.math.abs(mapBr - targetBearing) > 0.05
+                                ) {
+                                    reassertModeBearing(force = true)
+                                }
+                            }
+                        }
+                        NaviMapTestHooks.lastSnapRotationBack = driveHud.snapRotationBackToMode
+                        NaviMapTestHooks.manualRotationOverrideActive =
+                            manualRotationSticky ||
+                            pendingRotationSnap != null
                     } catch (e: Exception) {
                         android.util.Log.e("HudVerification", "hook poll error", e)
                     }
@@ -1820,6 +1936,7 @@ private fun NaviMapScreen() {
             cameraTiltDeg = driveHud.cameraTiltDeg,
             vulkanAvailable = driveHud.vulkanAvailable,
             styleEpoch = styleEpoch,
+            bearingEpoch = bearingApplyEpoch,
             modifier = Modifier.fillMaxSize(),
             onLayerCount = { mapLayerCount = it },
             onUserPan = {
@@ -1829,6 +1946,7 @@ private fun NaviMapScreen() {
                     DiagnosticLog.logToggle("follow_gps", false)
                 }
             },
+            onUserRotate = { bearing -> onManualRotateEnded(bearing) },
             onCameraIdleTarget = { lat, lon, zoom ->
                 NaviMapTestHooks.lastCameraLat = lat
                 NaviMapTestHooks.lastCameraLon = lon
@@ -2151,6 +2269,7 @@ private fun NaviMapScreen() {
                                                                             File(dataDir, "graph-cache-foot").absolutePath,
                                                                             wpsJson,
                                                                             preferOfficialNetworks,
+                                                                            preferPilgrimRoutes,
                                                                         )
                                                                     RoutingPlanLog.progress(
                                                                         90,
@@ -2206,7 +2325,7 @@ private fun NaviMapScreen() {
                                                                                 b.lon,
                                                                                 ecoForPlan,
                                                                                 profile,
-                                                                                avoidMajor,
+                                                                                avoidMotorways,
                                                                                 avoidTolls,
                                                                                 avoidFerries,
                                                                                 loadVehicleLimits(dataDir.absolutePath),
@@ -2364,7 +2483,7 @@ private fun NaviMapScreen() {
                                         status = formatEbikePlanStatus(result.report, result.distanceKm)
                                             ?: (
                                                 formatRouteAvoidanceReport(
-                                                    avoidMajor,
+                                                    avoidMotorways,
                                                     avoidTolls,
                                                     avoidFerries,
                                                     prioritySharePct,
@@ -2643,20 +2762,49 @@ private fun NaviMapScreen() {
                                         )
                                     }
                                 }
+                                if (profile == TravelProfile.HIKING) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text("Follow pilgrim routes")
+                                        Switch(
+                                            checked = preferPilgrimRoutes,
+                                            onCheckedChange = { on ->
+                                                preferPilgrimRoutes = on
+                                                uniffi.navi.savePreferPilgrimRoutes(
+                                                    dataDir.absolutePath,
+                                                    on,
+                                                )
+                                                DiagnosticLog.logToggle(
+                                                    "prefer_pilgrim_routes",
+                                                    on,
+                                                    mapOf("profile" to profile.name),
+                                                )
+                                                DiagnosticLog.logSettingSaved(
+                                                    "prefer_pilgrim_routes",
+                                                    on,
+                                                )
+                                            },
+                                            modifier = Modifier.testTag("toggle_prefer_pilgrim_routes"),
+                                        )
+                                    }
+                                }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text("Avoid motorways/trunk/primary")
+                                    Text("Avoid motorways")
                                     Switch(
-                                        checked = avoidMajor,
+                                        checked = avoidMotorways,
                                         onCheckedChange = { on ->
-                                            avoidMajor = on
-                                            DiagnosticLog.logToggle("avoid_majors", on)
+                                            avoidMotorways = on
+                                            DiagnosticLog.logToggle("avoid_motorways", on)
                                             status =
                                                 formatRouteAvoidanceReport(
-                                                    avoidMajor,
+                                                    avoidMotorways,
                                                     avoidTolls,
                                                     avoidFerries,
                                                     prioritySharePct,
@@ -2677,7 +2825,7 @@ private fun NaviMapScreen() {
                                             DiagnosticLog.logToggle("avoid_tolls", on)
                                             status =
                                                 formatRouteAvoidanceReport(
-                                                    avoidMajor,
+                                                    avoidMotorways,
                                                     avoidTolls,
                                                     avoidFerries,
                                                     prioritySharePct,
@@ -2706,7 +2854,7 @@ private fun NaviMapScreen() {
                                             DiagnosticLog.logToggle("avoid_ferries", on)
                                             status =
                                                 formatRouteAvoidanceReport(
-                                                    avoidMajor,
+                                                    avoidMotorways,
                                                     avoidTolls,
                                                     avoidFerries,
                                                     prioritySharePct,
@@ -2724,7 +2872,7 @@ private fun NaviMapScreen() {
                                 }
                                 Text(
                                     formatRouteAvoidanceReport(
-                                        avoidMajor,
+                                        avoidMotorways,
                                         avoidTolls,
                                         avoidFerries,
                                         prioritySharePct,
@@ -2959,7 +3107,7 @@ private fun NaviMapScreen() {
                                                 endName = toPoint.name,
                                                 viaJson = viaJson,
                                                 profile = profile.name.lowercase(),
-                                                summaryJson = """{"avoid_major":$avoidMajor,"avoid_tolls":$avoidTolls,"avoid_ferries":$avoidFerries,"priority_share_pct":$prioritySharePct}""",
+                                                summaryJson = """{"avoid_motorways":$avoidMotorways,"avoid_tolls":$avoidTolls,"avoid_ferries":$avoidFerries,"priority_share_pct":$prioritySharePct}""",
                                             )
                                         refreshRoutes()
                                         status = report
@@ -3621,6 +3769,9 @@ private fun NaviMapScreen() {
                     state = driveHud.copy(ecoActive = ecoEnabled),
                     onRotation = { mode ->
                         DiagnosticLog.logToggle("rotation_mode", mode.name)
+                        cancelPendingRotationSnap()
+                        manualRotationSticky = false
+                        NaviMapTestHooks.manualRotationOverrideActive = false
                         driveHud = driveHud.copy(rotationMode = mode)
                         NaviMapTestHooks.lastRotationMode = mode
                         val bearing =
@@ -3633,8 +3784,19 @@ private fun NaviMapScreen() {
                             }
                         if (NaviMapTestHooks.applyBearingToMap) {
                             mapState = mapState.copy(cameraBearing = bearing)
+                            bearingApplyEpoch += 1
                         }
                         NaviMapTestHooks.lastCameraBearing = bearing
+                    },
+                    onToggleSnapRotationBack = { on ->
+                        DiagnosticLog.logToggle("snap_rotation_back", on)
+                        driveHud = driveHud.copy(snapRotationBackToMode = on)
+                        MapHudPrefs.saveSnapRotationBack(context, on)
+                        NaviMapTestHooks.lastSnapRotationBack = on
+                        if (on) {
+                            manualRotationSticky = false
+                            reassertModeBearing(force = true)
+                        }
                     },
                     onToggleTripEta = { on ->
                         DiagnosticLog.logToggle("trip_eta", on)
@@ -3866,9 +4028,11 @@ private fun CorridorMapView(
     cameraTiltDeg: Double,
     vulkanAvailable: Boolean,
     styleEpoch: Int,
+    bearingEpoch: Int = 0,
     modifier: Modifier = Modifier,
     onLayerCount: (Int) -> Unit,
     onUserPan: () -> Unit = {},
+    onUserRotate: (bearingDeg: Double) -> Unit = {},
     onCameraIdleTarget: (lat: Double, lon: Double, zoom: Double) -> Unit = { _, _, _ -> },
     onStyleNote: (String?) -> Unit = {},
     on3dFailed: () -> Unit = {},
@@ -3934,6 +4098,12 @@ private fun CorridorMapView(
                 .AtomicReference(onUserPan)
         }
     onUserPanRef.set(onUserPan)
+    val onUserRotateRef =
+        remember {
+            java.util.concurrent.atomic
+                .AtomicReference(onUserRotate)
+        }
+    onUserRotateRef.set(onUserRotate)
     val onCameraIdleRef =
         remember {
             java.util.concurrent.atomic
@@ -4344,6 +4514,25 @@ private fun CorridorMapView(
                             override fun onScaleEnd(detector: org.maplibre.android.gestures.StandardScaleGestureDetector) {}
                         },
                     )
+                    map.addOnRotateListener(
+                        object : org.maplibre.android.maps.MapLibreMap.OnRotateListener {
+                            override fun onRotateBegin(
+                                detector: org.maplibre.android.gestures.RotateGestureDetector,
+                            ) {
+                                NaviMapTestHooks.mapGestureRotates += 1
+                            }
+
+                            override fun onRotate(
+                                detector: org.maplibre.android.gestures.RotateGestureDetector,
+                            ) {}
+
+                            override fun onRotateEnd(
+                                detector: org.maplibre.android.gestures.RotateGestureDetector,
+                            ) {
+                                onUserRotateRef.get().invoke(map.cameraPosition.bearing)
+                            }
+                        },
+                    )
                     map.uiSettings.setAllGesturesEnabled(true)
                     map.uiSettings.isTiltGesturesEnabled = true
                     runCatching {
@@ -4554,7 +4743,7 @@ private fun CorridorMapView(
     }
 
     // Bearing-only updates must not re-apply Compose zoom (that undoes user pinch / double-tap).
-    LaunchedEffect(state.cameraBearing, styleReady.value) {
+    LaunchedEffect(state.cameraBearing, bearingEpoch, styleReady.value) {
         if (!styleReady.value) return@LaunchedEffect
         if (!NaviMapTestHooks.applyBearingToMap) {
             NaviMapTestHooks.lastCameraBearing = state.cameraBearing
