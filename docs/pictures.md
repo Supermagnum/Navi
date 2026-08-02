@@ -17,15 +17,6 @@ Basemap amenity / peak icons (not [`poi.md`](poi.md) PoiIndex) need camera
 zoom ≥ **16**. OpenFreeMap Liberty has no `mountain_peak` layer — some peaks
 (e.g. Elgpiggen) show on offline Protomaps but not on Liberty online.
 
-## GitHub allowlist (space)
-
-**Only** the files listed below may be committed under `docs/images/`.
-Extra instrumented-test captures stay on the device / local disk and must not be
-added to the repo.
-
-Do **not** use synthetic (hand-drawn / 2-point stub) routes in tests or in any
-screenshot that documents routing — corridor geometry must come from a real
-planner run.
 
 Idle HUD bars and the Skolla → Rondvassbu hike overview also appear in the
 [README Screenshots](../README.md#screenshots) section
