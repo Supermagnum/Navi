@@ -13,7 +13,7 @@ use crate::routing::elevation::ElevationService;
 use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
 
 // Bump when on-disk graph topology / edge meta semantics change.
-const CACHE_MAGIC: &[u8; 8] = b"NAVIGPH6";
+const CACHE_MAGIC: &[u8; 8] = b"NAVIGPH7";
 
 /// Source PBF and eco inputs used to validate a cached reweighted graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -108,6 +108,8 @@ struct CachedGraphEdge {
     is_ferry: bool,
     #[serde(default)]
     is_boardwalk_crossing: bool,
+    #[serde(default)]
+    is_roundabout: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -188,6 +190,7 @@ pub fn save_reweighted_graph(
                 is_toll: edge.is_toll,
                 is_ferry: edge.is_ferry,
                 is_boardwalk_crossing: edge.is_boardwalk_crossing,
+                is_roundabout: edge.is_roundabout,
             })
             .collect(),
     };
@@ -341,6 +344,7 @@ fn reconstruct_graph(payload: CachedRouteGraph) -> RouteGraph {
             is_toll: edge.is_toll,
             is_ferry: edge.is_ferry,
             is_boardwalk_crossing: edge.is_boardwalk_crossing,
+            is_roundabout: edge.is_roundabout,
         })
         .collect();
 
@@ -391,6 +395,7 @@ mod tests {
             is_toll: false,
             is_ferry: false,
             is_boardwalk_crossing: false,
+            is_roundabout: false,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
     }

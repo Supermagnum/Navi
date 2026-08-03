@@ -242,6 +242,10 @@ object NaviMapTestHooks {
     @Volatile
     var lastPlanDistanceKm: Double = 0.0
 
+    /** Last planned maneuvers JSON (same payload as UniFFI `maneuversJson`). */
+    @Volatile
+    var lastManeuversJson: String = "[]"
+
     /** Full overlay polyline from the last planned / injected route. */
     @Volatile
     var lastRoutePolyline: String = ""
@@ -570,4 +574,8 @@ object NaviMapTestHooks {
 
     @Volatile
     var lastManeuverKind: String? = null
+
+    /** Approach box icon key stem last applied (e.g. nav_right_1). */
+    @Volatile
+    var lastApproachIconKey: String? = null
 }

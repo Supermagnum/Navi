@@ -815,6 +815,8 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastPlanDistanceKm = pending.distanceKm
         NaviMapTestHooks.lastRoutePolyline = pending.routePolyline
         NaviMapTestHooks.lastBreakPoiCount = breaks.size
+        NaviMapTestHooks.lastManeuversJson =
+            runCatching { pending.maneuversJson }.getOrDefault("[]")
         routeSamples =
             parseRouteSimSamples(
                 runCatching { pending.simSamplesJson }.getOrDefault("[]"),
@@ -1321,6 +1323,7 @@ private fun NaviMapScreen() {
                                 preferMetric = driveHud.preferMetric,
                             )
                         NaviMapTestHooks.lastApproachPhase = approachUiPhase(approachGuidance)
+                        NaviMapTestHooks.lastApproachIconKey = null
                     } else if (man != null && snap.distanceToManeuverM.isFinite()) {
                         val endWp = toPoint
                         val useEndAddr = man.kind == "destination"
@@ -1331,11 +1334,12 @@ private fun NaviMapScreen() {
                                 postcode = if (useEndAddr) endWp.postcode else man.postcode,
                                 combined = if (useEndAddr && endWp.street == null) endWp.name else null,
                             )
+                        val icon = man.iconKey()
                         approachGuidance =
                             ApproachGuidanceState(
                                 active = true,
                                 distanceM = snap.distanceToManeuverM,
-                                iconKey = man.iconKey(),
+                                iconKey = icon,
                                 nextStreet = street ?: man.street,
                                 houseNumber = house,
                                 postcode = post,
@@ -1344,9 +1348,11 @@ private fun NaviMapScreen() {
                                 offRoute = false,
                             )
                         NaviMapTestHooks.lastApproachPhase = approachUiPhase(approachGuidance)
+                        NaviMapTestHooks.lastApproachIconKey = icon
                     } else {
                         approachGuidance = ApproachGuidanceState()
                         NaviMapTestHooks.lastApproachPhase = ApproachUiPhase.Hidden
+                        NaviMapTestHooks.lastApproachIconKey = null
                     }
                     val offAction =
                         offRouteCoordinator.onFix(

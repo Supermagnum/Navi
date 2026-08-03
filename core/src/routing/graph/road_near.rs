@@ -202,6 +202,7 @@ mod tests {
             is_toll: false,
             is_ferry: false,
             is_boardwalk_crossing: false,
+            is_roundabout: false,
         }
     }
 

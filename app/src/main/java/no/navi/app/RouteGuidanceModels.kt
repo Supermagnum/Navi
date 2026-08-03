@@ -25,9 +25,11 @@ data class RouteManeuver(
 ) {
     fun iconKey(): String =
         when (kind) {
-            "left", "slight_left" -> "nav_left_1"
+            "slight_left" -> "nav_left_1"
+            "left" -> "nav_left_2"
             "sharp_left" -> "nav_left_3"
-            "right", "slight_right" -> "nav_right_1"
+            "slight_right" -> "nav_right_1"
+            "right" -> "nav_right_2"
             "sharp_right" -> "nav_right_3"
             "u_turn" -> "nav_turnaround_left"
             "destination" -> "nav_destination"

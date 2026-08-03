@@ -315,11 +315,17 @@ fn point_along_verts(verts: &[(f64, f64)], seg_lens: &[f64], along_m: f64) -> (f
 }
 
 /// Geometric turn list + destination at the path end.
+///
+/// Roundabout ring edges (`GraphEdge::is_roundabout`) produce a single
+/// [`ManeuverKind::Roundabout`] at entry with a computed exit number; angle
+/// changes along the ring (and the leave turn) are not emitted as separate
+/// left/right maneuvers.
 pub fn build_maneuvers(graph: &RouteGraph, path: &[NodeId]) -> Vec<RouteManeuver> {
     let mut out = Vec::new();
     if path.len() < 2 {
         return out;
     }
+    let spans = find_roundabout_spans(graph, path);
     let mut cum = 0.0;
     for i in 0..path.len().saturating_sub(2) {
         let n0 = path[i];
@@ -333,6 +339,33 @@ pub fn build_maneuvers(graph: &RouteGraph, path: &[NodeId]) -> Vec<RouteManeuver
             continue;
         };
         cum += e_in.length_m;
+        let turn_node_idx = i + 1;
+
+        if let Some(span) = spans.iter().find(|s| s.entry_idx == turn_node_idx) {
+            let leave_edge = graph
+                .edge_index(path[span.leave_idx], path[span.leave_idx + 1])
+                .map(|idx| &graph.edges[idx]);
+            let street = leave_edge
+                .and_then(|e| prefer_street_label(e.name.as_deref(), e.road_ref.as_deref()));
+            let node = &graph.nodes[&n1];
+            out.push(RouteManeuver {
+                lat: node.coord.y,
+                lon: node.coord.x,
+                cum_m: cum,
+                kind: kind_key(ManeuverKind::Roundabout).to_string(),
+                street,
+                roundabout_exit: Some(span.exit_number),
+            });
+            continue;
+        }
+        if spans
+            .iter()
+            .any(|s| turn_node_idx > s.entry_idx && turn_node_idx <= s.leave_idx)
+        {
+            // Internal ring vertices and the leave turn — covered by entry maneuver.
+            continue;
+        }
+
         let in_b = bearing_deg(e_in.start_lat, e_in.start_lon, e_in.end_lat, e_in.end_lon);
         let out_b = bearing_deg(
             e_out.start_lat,
@@ -378,6 +411,123 @@ pub fn build_maneuvers(graph: &RouteGraph, path: &[NodeId]) -> Vec<RouteManeuver
     out
 }
 
+#[derive(Debug, Clone, Copy)]
+struct RoundaboutSpan {
+    /// Path index of the node where the route enters the ring.
+    entry_idx: usize,
+    /// Path index of the node where the route leaves the ring.
+    leave_idx: usize,
+    /// 1-based exit number (clamped to 1..=8 for icon range).
+    exit_number: u8,
+}
+
+fn edge_is_roundabout(graph: &RouteGraph, from: NodeId, to: NodeId) -> bool {
+    graph
+        .edge_index(from, to)
+        .map(|i| graph.edges[i].is_roundabout)
+        .unwrap_or(false)
+}
+
+fn find_roundabout_spans(graph: &RouteGraph, path: &[NodeId]) -> Vec<RoundaboutSpan> {
+    let mut spans = Vec::new();
+    let mut i = 0usize;
+    while i + 1 < path.len() {
+        if !edge_is_roundabout(graph, path[i], path[i + 1]) {
+            i += 1;
+            continue;
+        }
+        let entered_from_outside =
+            i == 0 || !edge_is_roundabout(graph, path[i.saturating_sub(1)], path[i]);
+        if !entered_from_outside {
+            i += 1;
+            continue;
+        }
+        let entry_idx = i;
+        let mut leave_idx = i + 1;
+        while leave_idx + 1 < path.len()
+            && edge_is_roundabout(graph, path[leave_idx], path[leave_idx + 1])
+        {
+            leave_idx += 1;
+        }
+        // leave_idx is the last path node still arrived-at via a roundabout edge.
+        // If path continues, path[leave_idx] -> path[leave_idx+1] leaves the ring.
+        if leave_idx + 1 >= path.len() {
+            // Route ends on the ring — still emit an entry with best-effort exit.
+            let exit_number = count_roundabout_exit(graph, path, entry_idx, leave_idx);
+            spans.push(RoundaboutSpan {
+                entry_idx,
+                leave_idx,
+                exit_number,
+            });
+            break;
+        }
+        let exit_number = count_roundabout_exit(graph, path, entry_idx, leave_idx);
+        spans.push(RoundaboutSpan {
+            entry_idx,
+            leave_idx,
+            exit_number,
+        });
+        i = leave_idx;
+        if i == entry_idx {
+            i += 1;
+        }
+    }
+    spans
+}
+
+/// Count genuine leave-roads from after entry through the taken exit (inclusive).
+fn count_roundabout_exit(
+    graph: &RouteGraph,
+    path: &[NodeId],
+    entry_idx: usize,
+    leave_idx: usize,
+) -> u8 {
+    let mut n = 0u8;
+    for i in (entry_idx + 1)..=leave_idx {
+        let node = path[i];
+        let prev = path[i - 1];
+        let Some(prev_n) = graph.nodes.get(&prev) else {
+            continue;
+        };
+        let Some(node_n) = graph.nodes.get(&node) else {
+            continue;
+        };
+        let in_brng = bearing_deg(
+            prev_n.coord.y,
+            prev_n.coord.x,
+            node_n.coord.y,
+            node_n.coord.x,
+        );
+
+        let mut exits: Vec<(f64, NodeId)> = Vec::new();
+        for &ei in graph.outgoing_edge_indices(node) {
+            let e = &graph.edges[ei];
+            if e.is_roundabout {
+                continue;
+            }
+            if e.target == prev {
+                continue;
+            }
+            let Some(tn) = graph.nodes.get(&e.target) else {
+                continue;
+            };
+            let out_b = bearing_deg(node_n.coord.y, node_n.coord.x, tn.coord.y, tn.coord.x);
+            let delta = turn_delta_deg(in_brng, out_b);
+            exits.push((delta, e.target));
+        }
+        // Right-hand traffic: count exits from rightmost (largest +delta) toward left.
+        exits.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        for &(_, target) in &exits {
+            n = n.saturating_add(1);
+            if i == leave_idx && i + 1 < path.len() && target == path[i + 1] {
+                return n.clamp(1, 8);
+            }
+        }
+    }
+    n.clamp(1, 8)
+}
+
 pub fn samples_to_json(samples: &[SimSample]) -> String {
     serde_json::to_string(samples).unwrap_or_else(|_| "[]".into())
 }
@@ -410,6 +560,7 @@ mod tests {
         highway: &str,
         maxspeed: Option<f64>,
         name: Option<&str>,
+        is_roundabout: bool,
     ) -> GraphEdge {
         GraphEdge {
             id: id.into(),
@@ -436,6 +587,7 @@ mod tests {
             is_toll: false,
             is_ferry: false,
             is_boardwalk_crossing: false,
+            is_roundabout,
         }
     }
 
@@ -481,6 +633,7 @@ mod tests {
                 "residential",
                 None,
                 Some("Storgata"),
+                false,
             ),
             edge(
                 "b",
@@ -493,6 +646,7 @@ mod tests {
                 "tertiary",
                 Some(60.0),
                 Some("Rv3"),
+                false,
             ),
         ];
         let graph =
@@ -555,6 +709,7 @@ mod tests {
             "tertiary",
             Some(50.0),
             Some("Mjøsvegen"),
+            false,
         )];
         let graph =
             RouteGraph::from_parts(nodes, edges, crate::routing::graph::RoutingProfile::Car);
@@ -562,6 +717,195 @@ mod tests {
         let json = samples_to_json(&samples);
         assert!(json.contains("Mjøsvegen"), "json lost ø: {json}");
         assert_eq!(samples[0].street.as_deref(), Some("Mjøsvegen"));
+    }
+
+    #[test]
+    fn roundabout_emits_kind_with_exit_number_not_ring_turns() {
+        // Approach A → ring R0→R1→R2 → leave to X2.
+        // Side exit X1 at R1 is passed but not taken → exit number 2 at X2.
+        //
+        // Coordinates (lon/lat as x/y): A south of R0; ring CCW; X1 east of R1; X2 north of R2.
+        let mut nodes = HashMap::new();
+        let pts = [
+            (1, 10.000, 60.000), // A approach
+            (2, 10.000, 60.001), // R0 entry
+            (3, 10.001, 60.001), // R1
+            (4, 10.001, 60.002), // R2 leave
+            (5, 10.002, 60.001), // X1 side exit (not taken)
+            (6, 10.001, 60.003), // X2 taken exit
+        ];
+        for &(id, lon, lat) in &pts {
+            nodes.insert(
+                NodeId(id),
+                Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let edges = vec![
+            edge(
+                "appr",
+                1,
+                2,
+                60.000,
+                10.000,
+                60.001,
+                10.000,
+                "secondary",
+                None,
+                None,
+                false,
+            ),
+            edge(
+                "r01",
+                2,
+                3,
+                60.001,
+                10.000,
+                60.001,
+                10.001,
+                "secondary",
+                None,
+                Some("ring"),
+                true,
+            ),
+            edge(
+                "r12",
+                3,
+                4,
+                60.001,
+                10.001,
+                60.002,
+                10.001,
+                "secondary",
+                None,
+                Some("ring"),
+                true,
+            ),
+            edge(
+                "x1",
+                3,
+                5,
+                60.001,
+                10.001,
+                60.001,
+                10.002,
+                "residential",
+                None,
+                Some("Sidevegen"),
+                false,
+            ),
+            edge(
+                "x2",
+                4,
+                6,
+                60.002,
+                10.001,
+                60.003,
+                10.001,
+                "residential",
+                None,
+                Some("Utgangen"),
+                false,
+            ),
+        ];
+        let graph =
+            RouteGraph::from_parts(nodes, edges, crate::routing::graph::RoutingProfile::Car);
+        let path = vec![NodeId(1), NodeId(2), NodeId(3), NodeId(4), NodeId(6)];
+        let mans = build_maneuvers(&graph, &path);
+        let ra: Vec<_> = mans.iter().filter(|m| m.kind == "roundabout").collect();
+        assert_eq!(
+            ra.len(),
+            1,
+            "expected one roundabout maneuver, got {mans:?}"
+        );
+        assert_eq!(ra[0].roundabout_exit, Some(2));
+        assert_eq!(ra[0].street.as_deref(), Some("Utgangen"));
+        // No geometric left/right for ring vertices or leave turn.
+        assert!(
+            mans.iter()
+                .all(|m| m.kind == "roundabout" || m.kind == "destination"),
+            "unexpected geometric turns inside roundabout: {mans:?}"
+        );
+        assert_eq!(
+            crate::nav::ManeuverKind::roundabout_icon_key(ra[0].roundabout_exit),
+            "nav_roundabout_r2"
+        );
+    }
+
+    #[test]
+    fn roundabout_first_exit_is_one() {
+        // A → R0 → R1 → X1 (leave at first opportunity).
+        let mut nodes = HashMap::new();
+        let pts = [
+            (1, 10.000, 60.000),
+            (2, 10.000, 60.001),
+            (3, 10.001, 60.001),
+            (4, 10.002, 60.001),
+        ];
+        for &(id, lon, lat) in &pts {
+            nodes.insert(
+                NodeId(id),
+                Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let edges = vec![
+            edge(
+                "appr",
+                1,
+                2,
+                60.000,
+                10.000,
+                60.001,
+                10.000,
+                "secondary",
+                None,
+                None,
+                false,
+            ),
+            edge(
+                "r01",
+                2,
+                3,
+                60.001,
+                10.000,
+                60.001,
+                10.001,
+                "secondary",
+                None,
+                None,
+                true,
+            ),
+            edge(
+                "x1",
+                3,
+                4,
+                60.001,
+                10.001,
+                60.001,
+                10.002,
+                "residential",
+                None,
+                Some("Første"),
+                false,
+            ),
+        ];
+        let graph =
+            RouteGraph::from_parts(nodes, edges, crate::routing::graph::RoutingProfile::Car);
+        let path = vec![NodeId(1), NodeId(2), NodeId(3), NodeId(4)];
+        let mans = build_maneuvers(&graph, &path);
+        let ra = mans.iter().find(|m| m.kind == "roundabout").expect("ra");
+        assert_eq!(ra.roundabout_exit, Some(1));
+        assert_eq!(
+            crate::nav::ManeuverKind::roundabout_icon_key(ra.roundabout_exit),
+            "nav_roundabout_r1"
+        );
     }
 
     #[test]

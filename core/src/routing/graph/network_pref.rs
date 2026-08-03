@@ -684,6 +684,7 @@ mod tests {
                 is_toll: false,
                 is_ferry: false,
                 is_boardwalk_crossing: false,
+                is_roundabout: false,
             },
             GraphEdge {
                 id: "20".into(),
@@ -710,6 +711,7 @@ mod tests {
                 is_toll: false,
                 is_ferry: false,
                 is_boardwalk_crossing: false,
+                is_roundabout: false,
             },
         ];
         let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot);
@@ -781,6 +783,7 @@ mod tests {
                 is_toll: false,
                 is_ferry: false,
                 is_boardwalk_crossing: false,
+                is_roundabout: false,
             },
             GraphEdge {
                 id: "200".into(),
@@ -807,6 +810,7 @@ mod tests {
                 is_toll: false,
                 is_ferry: false,
                 is_boardwalk_crossing: false,
+                is_roundabout: false,
             },
         ];
         let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot);
@@ -854,6 +858,7 @@ mod tests {
                 is_toll: false,
                 is_ferry: false,
                 is_boardwalk_crossing: false,
+                is_roundabout: false,
             },
             GraphEdge {
                 id: "20".into(),
@@ -880,6 +885,7 @@ mod tests {
                 is_toll: false,
                 is_ferry: false,
                 is_boardwalk_crossing: false,
+                is_roundabout: false,
             },
             GraphEdge {
                 id: "21".into(),
@@ -906,6 +912,7 @@ mod tests {
                 is_toll: false,
                 is_ferry: false,
                 is_boardwalk_crossing: false,
+                is_roundabout: false,
             },
         ];
         let plain = RouteGraph::from_parts(HashMap::new(), edges.clone(), RoutingProfile::Foot);

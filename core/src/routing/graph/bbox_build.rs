@@ -247,6 +247,7 @@ impl RouteGraph {
             let is_ferry = way.tags.get("route").is_some_and(|v| v == "ferry")
                 || way.tags.contains_key("ferry");
             let is_boardwalk_crossing = tags_map_indicate_boardwalk(&way.tags);
+            let is_roundabout = way.tags.get("junction").is_some_and(|v| v == "roundabout");
 
             for id in &way.nodes {
                 let Some(&(lat, lon)) = coords.get(id) else {
@@ -319,6 +320,7 @@ impl RouteGraph {
                     is_toll,
                     is_ferry,
                     is_boardwalk_crossing,
+                    is_roundabout,
                 ));
                 if !forward_only {
                     edges.push(bbox_edge(
@@ -344,6 +346,7 @@ impl RouteGraph {
                         is_toll,
                         is_ferry,
                         is_boardwalk_crossing,
+                        is_roundabout,
                     ));
                 }
                 source = Some(tgt);
@@ -383,6 +386,7 @@ fn bbox_edge(
     is_toll: bool,
     is_ferry: bool,
     is_boardwalk_crossing: bool,
+    is_roundabout: bool,
 ) -> GraphEdge {
     GraphEdge {
         id,
@@ -409,6 +413,7 @@ fn bbox_edge(
         is_toll,
         is_ferry,
         is_boardwalk_crossing,
+        is_roundabout,
     }
 }
 

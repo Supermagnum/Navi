@@ -37,9 +37,11 @@ impl ManeuverKind {
     /// Icon key stem for the Navit `nav_*` set (without `_bk` / `_wh`).
     pub fn icon_key(self) -> &'static str {
         match self {
-            Self::Left | Self::SlightLeft => "nav_left_1",
+            Self::SlightLeft => "nav_left_1",
+            Self::Left => "nav_left_2",
             Self::SharpLeft => "nav_left_3",
-            Self::Right | Self::SlightRight => "nav_right_1",
+            Self::SlightRight => "nav_right_1",
+            Self::Right => "nav_right_2",
             Self::SharpRight => "nav_right_3",
             Self::Straight => "nav_straight",
             Self::Roundabout => "nav_roundabout_r1",
@@ -182,6 +184,35 @@ pub fn current_road_label(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn turn_tier_icon_key_full_table() {
+        // Navit convention: _1 slight, _2 normal (~90°), _3 sharp.
+        assert_eq!(ManeuverKind::SlightLeft.icon_key(), "nav_left_1");
+        assert_eq!(ManeuverKind::Left.icon_key(), "nav_left_2");
+        assert_eq!(ManeuverKind::SharpLeft.icon_key(), "nav_left_3");
+        assert_eq!(ManeuverKind::SlightRight.icon_key(), "nav_right_1");
+        assert_eq!(ManeuverKind::Right.icon_key(), "nav_right_2");
+        assert_eq!(ManeuverKind::SharpRight.icon_key(), "nav_right_3");
+        // Non-tier kinds still have explicit arms (not silent fallthrough).
+        assert_eq!(ManeuverKind::UTurn.icon_key(), "nav_turnaround_left");
+        assert_eq!(ManeuverKind::Straight.icon_key(), "nav_straight");
+        assert_eq!(ManeuverKind::Destination.icon_key(), "nav_destination");
+        assert_eq!(ManeuverKind::KeepLeft.icon_key(), "nav_keep_left");
+        assert_eq!(ManeuverKind::KeepRight.icon_key(), "nav_keep_right");
+        assert_eq!(ManeuverKind::ExitLeft.icon_key(), "nav_exit_left");
+        assert_eq!(ManeuverKind::ExitRight.icon_key(), "nav_exit_right");
+        assert_eq!(ManeuverKind::MergeLeft.icon_key(), "nav_merge_left");
+        assert_eq!(ManeuverKind::MergeRight.icon_key(), "nav_merge_right");
+        assert_eq!(ManeuverKind::Unknown.icon_key(), "nav_straight");
+    }
+
+    #[test]
+    fn investigation_route_turn_icons_use_normal_tier() {
+        // Captured kinds from Route 1 #2 and Route 2 #2/#3 (icon-mapping audit).
+        assert_eq!(ManeuverKind::Right.icon_key(), "nav_right_2");
+        assert_eq!(ManeuverKind::Left.icon_key(), "nav_left_2");
+    }
 
     #[test]
     fn phases_match_locked_thresholds() {

@@ -97,6 +97,8 @@ pub struct GraphEdge {
     pub is_ferry: bool,
     /// OSM `bridge=boardwalk` or `surface=wood` — carve-out for hard wetlands.
     pub is_boardwalk_crossing: bool,
+    /// OSM `junction=roundabout` — ring edges for guidance (not routing weight).
+    pub is_roundabout: bool,
 }
 
 /// Per-query routing filters (avoid motorways, tolls/ferries, vehicle limits).
@@ -139,6 +141,7 @@ impl RouteGraph {
             .read_tag("ferry")
             .read_tag("bridge")
             .read_tag("surface")
+            .read_tag("junction")
             .read(path.as_ref())
             .map_err(|e| anyhow::anyhow!("osm4routing: {e}"))?;
         let filtered = filter_edges(edges, profile);
@@ -248,6 +251,14 @@ impl RouteGraph {
             .get(&id)
             .map(|v| !v.is_empty())
             .unwrap_or(false)
+    }
+
+    /// Outgoing edges from `from` (profile-directed adjacency).
+    pub fn outgoing_edge_indices(&self, from: NodeId) -> &[usize] {
+        self.adjacency
+            .get(&from)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     /// True if the node is incident to any profile edge (source or target).
@@ -563,6 +574,7 @@ type EdgeMeta = (
     bool,
     bool,
     bool,
+    bool,
 );
 
 fn edge_meta(edge: &Edge) -> EdgeMeta {
@@ -602,6 +614,11 @@ fn edge_meta(edge: &Edge) -> EdgeMeta {
         edge.tags.get("bridge").map(String::as_str),
         edge.tags.get("surface").map(String::as_str),
     );
+    let is_roundabout = edge
+        .tags
+        .get("junction")
+        .map(|s| s.eq_ignore_ascii_case("roundabout"))
+        .unwrap_or(false);
     (
         highway,
         maxspeed_kmh,
@@ -616,6 +633,7 @@ fn edge_meta(edge: &Edge) -> EdgeMeta {
         is_toll,
         is_ferry,
         is_boardwalk_crossing,
+        is_roundabout,
     )
 }
 
@@ -665,6 +683,7 @@ fn push_directed_edge(
         is_toll: meta.10,
         is_ferry: meta.11,
         is_boardwalk_crossing: meta.12,
+        is_roundabout: meta.13,
     });
     graph.adjacency.entry(source).or_default().push(idx);
 }
@@ -849,6 +868,7 @@ mod tests {
             is_toll: false,
             is_ferry: false,
             is_boardwalk_crossing: false,
+            is_roundabout: false,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot)
     }
@@ -965,6 +985,7 @@ mod tests {
             is_toll: false,
             is_ferry: false,
             is_boardwalk_crossing: false,
+            is_roundabout: false,
         };
         let edges = vec![
             edge("low", 1, 2, 60.0, 10.0, 60.0, 10.01, Some(3.0)),
@@ -1019,6 +1040,7 @@ mod tests {
             is_toll: true,
             is_ferry: false,
             is_boardwalk_crossing: false,
+            is_roundabout: false,
         };
         assert!(!edge_allowed_for_options(
             &edge,
