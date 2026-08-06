@@ -15,9 +15,9 @@ Related:
 |---|---|
 | Opened | 2026-08-06 |
 | Owner track | Routing / plan-time I/O |
-| Current phase | **Phase 1 open** — 1a done; **1b untested** |
-| Next | Phase **1b**: first-load PoC with a real prebuilt index (not warm `.navigph`) |
-| Last updated | 2026-08-06 |
+| Current phase | **Phase 1 closed as NO-GO for this PoC class** — 1a met; **1b NO-GO** |
+| Next | Redesign first-load path (tile/block loads without full in-memory graph rebuild); do **not** start Phase 2 on R*Tree→`RouteGraph` materialization |
+| Last updated | 2026-08-07 |
 
 ## Phase status
 
@@ -25,8 +25,8 @@ Related:
 |---|---|---|---|
 | 0 | Decision framework + targets | **Done** | N/A (defines bars) |
 | 1a | Confirm ≤2 s / ≥10× is achievable when a graph artifact is already on disk | **Done** | **Met** (warm `.navigph` — see honesty note) |
-| 1b | Graph-only PoC: **first** plan of a never-before-indexed bbox/region via a prebuilt spatial index | **Not done** | **Open** — this is the real Phase 1 question |
-| 2 | Extend PoC to POI/barrier | Not started | Requires **Phase 1b GO** |
+| 1b | Graph-only PoC: **first** plan of a never-before-indexed bbox/region via a prebuilt spatial index | **Done** | **NO-GO** — SQLite R*Tree PoC on SM-P613 (see evidence) |
+| 2 | Extend PoC to POI/barrier | Not started | Blocked — needs a **different** first-load design that clears Phase 0, not this PoC |
 | 3 | Real format + migration design | Not started | Requires Phase 2 GO |
 | 4 | Full implementation | Not started | Requires Phase 3 plan **approval** |
 
@@ -119,50 +119,67 @@ already stores multiple distinct trip-bbox `.navigph` files under
 **1a result:** **Met** — target numbers are not fantasy for “artifact already
 on disk.”
 
-### Phase 1b — Real open question (untested)
+### Phase 1b — First-load SQLite R*Tree PoC (done; NO-GO)
 
-**Claim still untested:** “Does a **prebuilt spatial / indexed** graph pack
-make **first-time** loading of a **never-before-planned** bbox (or new region)
-fast — i.e. avoid the cold PBF scan entirely at plan time?”
+**Claim tested:** “Does a **prebuilt spatial / indexed** graph pack make
+**first-time** loading of a **never-before-planned** region fast enough to clear
+Phase 0 (≤2.0 s and ≥10× vs cold PBF)?”
 
-That is the OsmAnd/Navit comparison point. Warm `.navigph` does **not** answer
-it: a fresh bbox still costs ~5.7 s (corridor) to ~17–27 s (Ostlandet-class)
-on first visit.
+**Method (throwaway tool):** `navi-ffi` binary `indexed-rtree-poc`
+(`navi-ffi/src/bin/indexed_rtree_poc.rs`). Offline `build` parses a region PBF
+once into SQLite nodes/edges + R*Tree; plan-time `bench` loads a trip bbox from
+that DB into an in-memory `RouteGraph` (no `.navigph`, no cold PBF scan on the
+indexed path).
 
-**What a genuine 1b PoC must do (throwaway OK):**
+**Region discipline:** Geofabrik/OSM.fr **`hedmark-latest.osm.pbf`** (~90 MiB).
+Confirmed on SM-P613: app files had **no** `*hedmark*` cache / `.navigph`; only
+`ostlandet-latest` trip-bbox caches. PoC ran under
+`/data/local/tmp/navi_rtree_poc/` (not the app graph-cache). Test OD: Esso
+Myklegård → Atnbrufossen.
 
-1. Offline (or provision-time): build an index covering the test extract
-   **without** counting that work as plan-time `graph_build_ms`.
-2. Plan an OD whose trip bbox has **no** existing `.navigph` (or wipe all
-   trip-bbox caches first).
-3. Plan path must load from the **new** index, not call
-   `build_from_pbf_bbox`.
-4. Compare `graph_build_ms` (or renamed load stage) to cold PBF on the same OD.
-5. GO only if ≥10× and ≤2 s on that **first** plan.
+**SM-P613 evidence (2026-08-07, authoritative for 1b):**
 
-Minimal approaches for 1b (pick one when scheduled): region-wide `.navigph`
-built once for the whole extract + load subset; or a throwaway `rstar`-keyed
-edge pack; or a Navit-like tile set. Do not mark 1b GO on warm-cache numbers.
+| Path | Time |
+|---|---|
+| Cold `build_from_pbf_bbox` | **16196 ms** |
+| Prebuilt SQLite R*Tree → `RouteGraph` load | **2881 ms** |
+| Speedup | **5.6×** |
+| ≤2.0 s absolute | **Fail** (2.88 s) |
+| ≥10× | **Fail** |
+| **PHASE1B** | **NO-GO** |
 
-### Phase 1 overall decision (2026-08-06)
+Host sanity (same OD/DB): cold **5654 ms**, indexed **2126 ms**, **2.7×** — also
+NO-GO. Routes agree (~162.5 km).
 
-**Not a clean Phase 1 GO.**
+**Interpretation:** R*Tree query still **materializes ~90k nodes / ~195k edges**
+into a full in-memory `RouteGraph`. That helps vs raw PBF (~5–6× on device) but
+does **not** clear Phase 0. OsmAnd/Navit-class first-load needs tile/block loads
+**without** rebuilding the whole trip graph in RAM at plan time.
+
+**1b result:** Phase 1’s open question is **answered** for this PoC class —
+first-time region loads improve, but **not enough**. Do **not** treat this as a
+GO to Phase 2; redesign the load model first (or revisit with a different
+artifact).
+
+### Phase 1 overall decision (2026-08-07)
 
 | Sub-phase | Verdict |
 |---|---|
-| 1a warm-cache target check | **Met** — proceed knowing the ≤2 s bar is reachable when data is pre-materialized |
-| 1b first-load indexed PoC | **Open** — still required before Phase 2 |
-| Phase 1 as written in the original plan | **Incomplete** |
+| 1a warm-cache target check | **Met** — ≤2 s / ≥10× reachable when a trip graph is already on disk |
+| 1b first-load SQLite R*Tree PoC | **NO-GO** on SM-P613 (5.6×, 2.88 s) |
+| Phase 1 as a path to Phase 2 via this PoC | **Closed — do not advance** |
 
-Do **not** schedule Phase 2 until 1b GO. Optional interim: shared-parse remains
-available if indexed-format work stalls.
+Optional interim: shared-parse remains available. Next indexed-format work must
+target a load path that can clear ≤2 s / ≥10× on first use of a new region
+without full trip-graph materialization from SQLite rows.
 
 ---
 
-## Phase 2 — POI/barrier indexed PoC (blocked on 1b GO)
+## Phase 2 — POI/barrier indexed PoC (blocked — redesign first-load first)
 
 Pre-committed bar: full first-load `plan_duration_ms` ≤ 3.0 s with prebuilt
-graph+POI+barrier on Espa corridor, ≥10× vs cold full plan.
+graph+POI+barrier on Espa corridor, ≥10× vs cold full plan. Not scheduled while
+graph-only first-load still fails Phase 0 under the current PoC class.
 
 ## Phase 3 — Real format + migration (blocked on Phase 2 GO)
 
@@ -184,3 +201,5 @@ Starts only after **explicit approval** of the Phase 3 plan.
 | 2026-08-06 | Host Ostlandet cold/warm | Warm graph 371 ms; first-load still PBF-bound |
 | 2026-08-06 | Device README baseline | Cold `graph_build_ms=17571` |
 | 2026-08-06 | Status correction | Phase 1 **not** clean GO; **1b open** |
+| 2026-08-07 | SM-P613 hedmark first-load SQLite R*Tree PoC | Cold **16196 ms** vs indexed **2881 ms** (5.6×); **1b NO-GO** |
+| 2026-08-07 | Host hedmark same PoC | Cold **5654 ms** vs indexed **2126 ms** (2.7×); confirms NO-GO |

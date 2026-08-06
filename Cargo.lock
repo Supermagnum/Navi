@@ -2736,8 +2736,10 @@ version = "0.1.0"
 dependencies = [
  "android_logger",
  "driver-break-core",
+ "geo-types",
  "log",
  "osm4routing",
+ "rusqlite",
  "serde",
  "serde_json",
  "uniffi",

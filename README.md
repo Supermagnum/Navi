@@ -455,9 +455,10 @@ Country/region visual extracts can also be prepared with
   (OsmAnd `.obf` / Navit binfile class) — live phased evaluation in
   [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md)
   (**Phase 1a**: warm `.navigph` already clears ≤2 s / ≥10× when that bbox was
-  cached before — same mechanism as the graph-cache audit; **Phase 1b open**:
-  first-load of a never-indexed bbox via a real prebuilt index is still
-  untested; Phase 2 blocked on 1b); (2) optional shared multi-consumer
+  cached before — same mechanism as the graph-cache audit; **Phase 1b NO-GO**
+  for SQLite R*Tree→full in-memory `RouteGraph` on SM-P613 hedmark first-load:
+  16.2 s cold vs 2.88 s indexed, 5.6× — fails ≤2 s / ≥10×; Phase 2 blocked until
+  a different first-load design); (2) optional shared multi-consumer
   `osmpbf` parse as an interim I/O consolidation if the indexed format stalls.
   Graph-cache audit: cache **works** for identical OD/bbox; new trip bboxes
   still pay full cold PBF `graph_build` once. See also

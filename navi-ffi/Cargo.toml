@@ -18,6 +18,8 @@ uuid = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
+rusqlite = { workspace = true }
+geo-types = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.14"
@@ -33,3 +35,7 @@ path = "src/bin/plan_skolla_rondvassbu.rs"
 [[bin]]
 name = "plan-truck-live-gps"
 path = "src/bin/plan_truck_live_gps.rs"
+
+[[bin]]
+name = "indexed-rtree-poc"
+path = "src/bin/indexed_rtree_poc.rs"
