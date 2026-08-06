@@ -82,16 +82,17 @@ class TurnIconRoundaboutInstrumentedTest {
         typeCoordAndPickHit("chip_to", PRIMARY_END.first, PRIMARY_END.second)
         val result = planMultiVia(listOf(PRIMARY_START, PRIMARY_VIA, PRIMARY_END))
         pushRoute(result, "Primary start", "Primary end")
-        // Device-computed Navit clock-face icons (explicit `icon` in maneuvers JSON).
-        // Note: host debug audit previously reported RA[4] as r6 at the same lat/lon;
-        // release/device path yields r5 — sector boundary, not JSON→UI wiring.
+        // Product path = UniFFI planCarRoute bbox graphs. RA[4] Minnesundvegen
+        // has roundabout_delta≈-48.2° → r5. A full-country host graph yields a
+        // different leave node (delta≈-79.9° → r6) — bearing-input mismatch from
+        // graph scope, not sector-formula FP and not JSON→UI wiring.
         val expectedRaIcons =
             listOf(
                 "nav_roundabout_r2", // exit 1
                 "nav_roundabout_r4", // exit 1
                 "nav_roundabout_r5", // exit 2
                 "nav_roundabout_r4", // exit 2
-                "nav_roundabout_r5", // exit 2 (host debug had r6)
+                "nav_roundabout_r5", // exit 2 Minnesundvegen (bbox delta≈-48°)
                 "nav_roundabout_r5", // exit 3
             )
         auditRoute(
@@ -436,12 +437,11 @@ class TurnIconRoundaboutInstrumentedTest {
             }
             val name =
                 when {
-                    prefix == "primary" && m.kind == "roundabout" -> {
+                    prefix == "primary" && m.kind == "roundabout" ->
                         "primary_ra${raShot}_${wantIcon}_exit${m.roundaboutExit}.png".also {
                             raShot++
                         }
-                    }
-                    else -> "${prefix}_m${idx}_${m.kind}_${wantIcon}.png"
+                    else -> "${prefix}_m${idx}_${m.kind}_$wantIcon.png"
                 }
             saveShot(name)
             pullShot(name)

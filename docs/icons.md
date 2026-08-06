@@ -29,6 +29,19 @@ Splash theme: `Theme.Navi.Splash` (`values/themes.xml`) with white
 `splash_background` and `androidx.core:core-splashscreen` via
 `installSplashScreen()` in `MainActivity` (covers pre-API-31).
 
+## Android lean pack (release-path)
+
+`app/src/main/assets/icons` is a **size-trimmed subset** of `core/src/icons`.
+It is copied from `src/main/assets` into **every** Android build type (debug and
+release). There are **no** product flavors that swap a fuller pack — what is
+missing here is missing on Google Play / F-Droid release builds too.
+
+Maneuver / approach UI keys (`nav_left_*`, `nav_right_*`, `nav_keep_*`,
+`nav_roundabout_{r|l}{1..8}`, `nav_destination`, `nav_exit_*`, `nav_merge_*`,
+`nav_turnaround_*`) **must** be present in the lean pack. Coverage is enforced by
+`core/tests/maneuver_icon_assets.rs`. POI and APRS icons may remain lean; missing
+keys still fall back to `unknown.svg` at runtime.
+
 ## Resolution order
 
 `driver_break_core::icons::resolve_icon`:

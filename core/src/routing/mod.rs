@@ -40,7 +40,8 @@ pub use graph::{
 };
 pub use guidance_path::{
     build_maneuvers, build_sim_samples, build_sim_samples_from_lat_lon, maneuvers_to_json,
-    samples_to_json, RouteManeuver, SimSample,
+    navit_roundabout_icon, navit_roundabout_sector, probe_roundabout_icon, probe_roundabout_spans,
+    samples_to_json, RoundaboutIconProbe, RoundaboutSpan, RouteManeuver, SimSample,
 };
 pub use hiking_hybrid::{
     plan_hybrid_hiking_path, HikingWaypoint, HybridHikingPath, RouteSegment, SegmentKind,

@@ -221,9 +221,7 @@ fn maybe_keep_left_right(
     let mut right_closest = f64::INFINITY;
     let mut has_left = false;
     let mut has_right = false;
-    let Some(node_n) = graph.nodes.get(&turn_node) else {
-        return None;
-    };
+    let node_n = graph.nodes.get(&turn_node)?;
     for &ei in graph.outgoing_edge_indices(turn_node) {
         let e = &graph.edges[ei];
         if e.target == route_target || e.target == inbound_from {
@@ -285,17 +283,15 @@ fn maybe_merge_or_exit(
 
 /// Navit roundabout icon from entry→exit bearing change (`navigation_analyze_roundabout`).
 ///
-/// Maps `roundabout_delta` via `((180+22) - delta) / 45` to sectors 1..=8, then picks
+/// Maps `roundabout_delta` via Navit's integer formula
+/// `((180 + 22) - delta_i) / 45` (C truncating division) to sectors 0..=8, then picks
 /// `nav_roundabout_r*` vs `nav_roundabout_l*` from leave vs stay-in-ring deltas.
-fn navit_roundabout_icon(roundabout_delta: f64, leave_delta: f64, dtsir: f64) -> &'static str {
-    // Mirror C integer division toward zero for the positive dividend case.
-    let mut sector = ((180.0 + 22.0 - roundabout_delta) / 45.0).trunc() as i32;
-    if sector < 0 {
-        sector = 0;
-    }
-    if sector > 8 {
-        sector = 8;
-    }
+///
+/// `roundabout_delta` is rounded to the nearest whole degree first — Navit stores
+/// approach angles as ints, so a raw f64 trunc of `((202 - delta) / 45)` is
+/// unstable on sector boundaries (notably the r5/r6 edge at delta ≈ −68°).
+pub fn navit_roundabout_icon(roundabout_delta: f64, leave_delta: f64, dtsir: f64) -> &'static str {
+    let sector = navit_roundabout_sector(roundabout_delta);
     let use_left = leave_delta < dtsir;
     let (r, l): (&str, &str) = match sector {
         0 | 1 => ("nav_roundabout_r1", "nav_roundabout_l7"),
@@ -312,6 +308,67 @@ fn navit_roundabout_icon(roundabout_delta: f64, leave_delta: f64, dtsir: f64) ->
     } else {
         r
     }
+}
+
+/// Navit clock-face sector index 0..=8 from entry→exit `roundabout_delta` (degrees).
+///
+/// Round to nearest integer degree, then apply C-style integer division
+/// `((180 + 22) - delta_i) / 45`, matching `navigation.c`.
+pub fn navit_roundabout_sector(roundabout_delta: f64) -> i32 {
+    let delta_i = roundabout_delta.round() as i32;
+    let sector = ((180 + 22) - delta_i) / 45;
+    sector.clamp(0, 8)
+}
+
+/// Diagnostic snapshot for one roundabout span (host/device boundary audits).
+#[derive(Debug, Clone, Copy)]
+pub struct RoundaboutIconProbe {
+    pub entry_in_brng: f64,
+    pub leave_out_brng: f64,
+    pub leave_delta: f64,
+    pub dtsir: f64,
+    pub delta2: f64,
+    pub roundabout_delta: f64,
+    pub sector: i32,
+    pub icon: &'static str,
+}
+
+pub fn probe_roundabout_icon(
+    graph: &RouteGraph,
+    path: &[NodeId],
+    entry_idx: usize,
+    leave_idx: usize,
+) -> RoundaboutIconProbe {
+    let (entry_in_brng, leave_out_brng, leave_delta, dtsir) =
+        roundabout_bearings(graph, path, entry_idx, leave_idx);
+    let delta2 = turn_delta_deg(entry_in_brng, leave_out_brng);
+    let roundabout_delta = adjust_delta_navit(delta2, leave_delta);
+    let sector = navit_roundabout_sector(roundabout_delta);
+    let icon = navit_roundabout_icon(roundabout_delta, leave_delta, dtsir);
+    RoundaboutIconProbe {
+        entry_in_brng,
+        leave_out_brng,
+        leave_delta,
+        dtsir,
+        delta2,
+        roundabout_delta,
+        sector,
+        icon,
+    }
+}
+
+/// Probe every roundabout span on `path` (icon / sector / bearings).
+pub fn probe_roundabout_spans(
+    graph: &RouteGraph,
+    path: &[NodeId],
+) -> Vec<(RoundaboutSpan, RoundaboutIconProbe)> {
+    find_roundabout_spans(graph, path)
+        .into_iter()
+        .map(|span| {
+            let probe = probe_roundabout_icon(graph, path, span.entry_idx, span.leave_idx);
+            (span, probe)
+        })
+        .collect()
 }
 
 fn adjust_delta_navit(delta: f64, reference: f64) -> f64 {
@@ -664,15 +721,15 @@ pub fn build_maneuvers(graph: &RouteGraph, path: &[NodeId]) -> Vec<RouteManeuver
 }
 
 #[derive(Debug, Clone, Copy)]
-struct RoundaboutSpan {
+pub struct RoundaboutSpan {
     /// Path index of the node where the route enters the ring.
-    entry_idx: usize,
+    pub entry_idx: usize,
     /// Path index of the node where the route leaves the ring.
-    leave_idx: usize,
+    pub leave_idx: usize,
     /// 1-based ordinal exit (speech / HUD count), Navit `count_roundabout`.
-    exit_number: u8,
+    pub exit_number: u8,
     /// Navit clock-face icon stem from entry→exit bearing (`nav_roundabout_{r|l}{1..8}`).
-    icon_key: &'static str,
+    pub icon_key: &'static str,
 }
 
 fn edge_is_roundabout(graph: &RouteGraph, from: NodeId, to: NodeId) -> bool {
@@ -1143,7 +1200,10 @@ mod tests {
                 .all(|m| m.kind == "roundabout" || m.kind == "destination"),
             "unexpected geometric turns inside roundabout: {mans:?}"
         );
-        let icon = ra[0].icon.as_deref().expect("explicit Navit roundabout icon");
+        let icon = ra[0]
+            .icon
+            .as_deref()
+            .expect("explicit Navit roundabout icon");
         assert!(
             icon.starts_with("nav_roundabout_r") || icon.starts_with("nav_roundabout_l"),
             "unexpected icon {icon}"
@@ -1255,6 +1315,59 @@ mod tests {
         assert_eq!(navit_roundabout_icon(0.0, -10.0, 0.0), "nav_roundabout_l4");
         // ~90° right (delta ≈ 90) → sector 2 → r2.
         assert_eq!(navit_roundabout_icon(90.0, 90.0, 0.0), "nav_roundabout_r2");
+    }
+
+    #[test]
+    fn navit_roundabout_r5_r6_sector_boundary() {
+        // Exact Navit integer boundary: delta_i = -68 → (202 - (-68)) / 45 = 6 → r6.
+        // delta_i = -67 → (202 - (-67)) / 45 = 5 → r5.
+        assert_eq!(navit_roundabout_sector(-68.0), 6);
+        assert_eq!(navit_roundabout_sector(-67.0), 5);
+        assert_eq!(navit_roundabout_icon(-68.0, 90.0, 0.0), "nav_roundabout_r6");
+        assert_eq!(navit_roundabout_icon(-67.0, 90.0, 0.0), "nav_roundabout_r5");
+
+        // Floating values that formerly trunc'd to the wrong sector without
+        // nearest-degree rounding (primary RA[4] class of gap):
+        // -67.4 → round to -67 → r5; -67.6 → round to -68 → r6.
+        assert_eq!(navit_roundabout_sector(-67.4), 5);
+        assert_eq!(navit_roundabout_sector(-67.6), 6);
+        assert_eq!(navit_roundabout_icon(-67.4, 90.0, 0.0), "nav_roundabout_r5");
+        assert_eq!(navit_roundabout_icon(-67.6, 90.0, 0.0), "nav_roundabout_r6");
+
+        // Half-away from .5: -67.5 rounds to even (-68) in IEEE default...
+        // Rust f64::round is round-ties-away-from-zero for .5? Actually Rust
+        // uses round half away from 0: -67.5 → -68.
+        assert_eq!((-67.5_f64).round() as i32, -68);
+        assert_eq!(navit_roundabout_sector(-67.5), 6);
+    }
+
+    #[test]
+    fn primary_ra4_deltas_map_consistently_through_sector_math() {
+        // Product path (plan_car_route bbox graph): leave node ≈60.78557/10.69366,
+        // roundabout_delta≈-48.19° → sector 5 → r5 (matches SM-P613).
+        let bbox_delta = -48.1945;
+        assert_eq!(navit_roundabout_sector(bbox_delta), 5);
+        assert_eq!(
+            navit_roundabout_icon(bbox_delta, 36.0, -52.0),
+            "nav_roundabout_r5"
+        );
+
+        // Full-country host audit graph uses a different leave node on the same
+        // ring (≈60.78579/10.69375), delta≈-79.86° → sector 6 → r6. Same formula,
+        // different bearings — not an FP sector-boundary tip.
+        let full_delta = -79.861958;
+        assert_eq!(navit_roundabout_sector(full_delta), 6);
+        assert_eq!(
+            navit_roundabout_icon(full_delta, 36.2345, -52.0468),
+            "nav_roundabout_r6"
+        );
+
+        // Near the true r5/r6 integer boundary (−68°), nearest-degree rounding
+        // diverges from raw f64 trunc — lock that behaviour explicitly.
+        assert_ne!(
+            ((180.0_f64 + 22.0 - (-67.6)) / 45.0).trunc() as i32,
+            navit_roundabout_sector(-67.6)
+        );
     }
 
     #[test]

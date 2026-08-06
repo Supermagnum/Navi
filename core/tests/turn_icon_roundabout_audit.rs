@@ -7,8 +7,12 @@ use std::path::{Path, PathBuf};
 use driver_break_core::config::EcoConfig;
 use driver_break_core::nav::ManeuverKind;
 use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
-use driver_break_core::routing::graph::{load_or_build_reweighted, RoutingProfile};
-use driver_break_core::routing::guidance_path::{build_maneuvers, parse_maneuver_kind};
+use driver_break_core::routing::graph::{
+    load_or_build_reweighted, load_or_build_reweighted_bbox, RoutingProfile,
+};
+use driver_break_core::routing::guidance_path::{
+    build_maneuvers, parse_maneuver_kind, probe_roundabout_spans,
+};
 use osm4routing::NodeId;
 use osmpbf::{Element, ElementReader};
 
@@ -516,9 +520,8 @@ fn audit_route1_and_route2_turn_icons() {
     );
     let mut primary_touches = 0usize;
     for (id, name, coords) in &ras_p {
-        let near =
-            path_near_roundabout(&graph, &leg_pa, coords, 40.0)
-                || path_near_roundabout(&graph, &leg_pb, coords, 40.0);
+        let near = path_near_roundabout(&graph, &leg_pa, coords, 40.0)
+            || path_near_roundabout(&graph, &leg_pb, coords, 40.0);
         if near {
             primary_touches += 1;
             eprintln!("PRIMARY PATH TOUCHES roundabout way {id} '{name}'");
@@ -539,12 +542,36 @@ fn audit_route1_and_route2_turn_icons() {
         "PRIMARY roundabouts emitted={} (OSM touches={primary_touches})",
         primary_ra.len()
     );
-    for (i, m) in primary_ra.iter().enumerate() {
+    // Probe bearings/sectors on each primary leg (host vs device boundary audits).
+    let probes: Vec<_> = probe_roundabout_spans(&graph, &leg_pa)
+        .into_iter()
+        .chain(probe_roundabout_spans(&graph, &leg_pb))
+        .collect();
+    assert_eq!(
+        probes.len(),
+        primary_ra.len(),
+        "probe span count vs emitted roundabouts"
+    );
+    for (i, (m, (span, probe))) in primary_ra.iter().zip(probes.iter()).enumerate() {
         let icon = android_icon_key(&m.kind, m.roundabout_exit, m.icon.as_deref());
         eprintln!(
-            "  PRIMARY RA[{i}] exit={:?} icon={icon} street={:?} lat={:.6} lon={:.6}",
-            m.roundabout_exit, m.street, m.lat, m.lon
+            "  PRIMARY RA[{i}] exit={:?} icon={icon} street={:?} lat={:.6} lon={:.6} entry_brng={:.4} leave_brng={:.4} delta2={:.4} roundabout_delta={:.4} delta_i={} sector={} leave_delta={:.4} dtsir={:.4} probe_icon={}",
+            m.roundabout_exit,
+            m.street,
+            m.lat,
+            m.lon,
+            probe.entry_in_brng,
+            probe.leave_out_brng,
+            probe.delta2,
+            probe.roundabout_delta,
+            probe.roundabout_delta.round() as i32,
+            probe.sector,
+            probe.leave_delta,
+            probe.dtsir,
+            probe.icon,
         );
+        assert_eq!(icon, probe.icon, "emitted icon vs probe icon for RA[{i}]");
+        assert_eq!(span.icon_key, probe.icon);
         assert!(
             m.roundabout_exit.is_some_and(|e| (1..=8).contains(&e)),
             "primary RA exit out of range"
@@ -553,7 +580,6 @@ fn audit_route1_and_route2_turn_icons() {
             icon.starts_with("nav_roundabout_"),
             "primary RA icon must be Navit clock-face stem, got {icon}"
         );
-        // Bundled set has l1..l8 and r1..r8.
         let stem = icon.strip_prefix("nav_roundabout_").unwrap_or("");
         assert!(
             (stem.starts_with('r') || stem.starts_with('l'))
@@ -561,6 +587,23 @@ fn audit_route1_and_route2_turn_icons() {
                 && stem.chars().nth(1).unwrap().is_ascii_digit(),
             "unexpected roundabout icon stem {icon}"
         );
+        // Primary RA[4] (Minnesundvegen, ~60.785785/10.693751): lock the r5/r6
+        // sector-boundary case that previously disagreed between host traces.
+        if (m.lat - 60.785785).abs() < 1e-4 && (m.lon - 10.693751).abs() < 1e-4 {
+            eprintln!(
+                "  PRIMARY RA[4] BOUNDARY CASE roundabout_delta={:.6} delta_i={} sector={}",
+                probe.roundabout_delta,
+                probe.roundabout_delta.round() as i32,
+                probe.sector
+            );
+            // Full-country graph often leaves via a different ring node than the
+            // product bbox planner (see primary_ra4_bbox_matches_plan_car_route).
+            // Record the delta; do not treat full-graph r6 as the product lock.
+            eprintln!(
+                "  FULL-GRAPH RA[4] note: icon={icon} delta={:.6} (product bbox path locks r5)",
+                probe.roundabout_delta
+            );
+        }
     }
     assert!(
         primary_touches >= 2,
@@ -675,21 +718,17 @@ fn probe_merge_exit_sharp_on_nearby_corridors() {
     let cache = root.join("graph-cache-turn-audit");
     let eco = EcoConfig::default();
     let elevation = ElevationService::new(ElevationCache::new(&elev));
-    let (graph, _) =
-        load_or_build_reweighted(&pbf, &cache, RoutingProfile::Car, &elevation, &eco)
-            .expect("graph");
+    let (graph, _) = load_or_build_reweighted(&pbf, &cache, RoutingProfile::Car, &elevation, &eco)
+        .expect("graph");
 
-    let corridors: &[(&str, (f64, f64), (f64, f64))] = &[
+    type Corridor = (&'static str, (f64, f64), (f64, f64));
+    let corridors: &[Corridor] = &[
         (
             "E6_Moelv_southboundish",
             (60.9200, 10.7000),
             (60.8500, 10.7000),
         ),
-        (
-            "Rv4_Gjovik_trunk",
-            (60.8000, 10.6900),
-            (60.7700, 10.6900),
-        ),
+        ("Rv4_Gjovik_trunk", (60.8000, 10.6900), (60.7700, 10.6900)),
     ];
     let mut saw_merge_or_exit = false;
     let mut saw_sharp_or_uturn = false;
@@ -724,4 +763,94 @@ fn probe_merge_exit_sharp_on_nearby_corridors() {
     assert!(saw_merge_or_exit, "expected merge or exit on E6 corridor");
     assert!(saw_sharp_or_uturn, "expected sharp turn on Gjøvik corridor");
     assert!(saw_keep, "expected keep left/right on probed corridors");
+}
+
+#[test]
+#[ignore = "needs ostlandet PBF under integration-fixtures"]
+fn primary_ra4_bbox_matches_plan_car_route() {
+    // Mirror navi-ffi plan_car_route bbox pad + per-leg graphs so host icons
+    // match the on-device UniFFI planner (not a full-country graph).
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/integration-fixtures");
+    let pbf = root.join("ostlandet-latest.osm.pbf");
+    assert!(pbf.is_file(), "missing {}", pbf.display());
+    let elev = root.join("elevation");
+    let cache = root.join("graph-cache-primary-bbox-ra4");
+    let _ = std::fs::create_dir_all(&elev);
+    let _ = std::fs::remove_dir_all(&cache);
+    let _ = std::fs::create_dir_all(&cache);
+
+    let eco = EcoConfig::default();
+    let elevation = ElevationService::new(ElevationCache::new(&elev));
+
+    let start = (60.799_849_9, 10.694_432_8);
+    let via = (60.783_961_5, 10.694_175_9);
+    let end = (60.772_902_7, 10.713_608_9);
+
+    fn trip_bbox(a: (f64, f64), b: (f64, f64)) -> [f64; 4] {
+        let lat_span = (a.0 - b.0).abs();
+        let lon_span = (a.1 - b.1).abs();
+        let pad = (lat_span.max(lon_span) * 0.35).clamp(0.35, 2.5);
+        [
+            a.0.min(b.0) - pad,
+            a.1.min(b.1) - pad,
+            a.0.max(b.0) + pad,
+            a.1.max(b.1) + pad,
+        ]
+    }
+
+    let mut all_ra = Vec::new();
+    for (label, a, b) in [("start→via", start, via), ("via→end", via, end)] {
+        let bbox = trip_bbox(a, b);
+        let (graph, hit) = load_or_build_reweighted_bbox(
+            &pbf,
+            &cache.join(label.replace('→', "_")),
+            RoutingProfile::Car,
+            &elevation,
+            &eco,
+            bbox,
+        )
+        .expect("bbox graph");
+        eprintln!(
+            "{label} cache_hit={hit} nodes={} edges={}",
+            graph.nodes.len(),
+            graph.edges.len()
+        );
+        let (path, _d) = plan_leg(&graph, a, b);
+        for (span, probe) in probe_roundabout_spans(&graph, &path) {
+            let node = &graph.nodes[&path[span.leave_idx]];
+            eprintln!(
+                "  {label} RA exit={} icon={} lat={:.6} lon={:.6} delta={:.4} delta_i={} sector={}",
+                span.exit_number,
+                probe.icon,
+                node.coord.y,
+                node.coord.x,
+                probe.roundabout_delta,
+                probe.roundabout_delta.round() as i32,
+                probe.sector,
+            );
+            all_ra.push((
+                node.coord.y,
+                node.coord.x,
+                probe.icon,
+                probe.roundabout_delta,
+            ));
+        }
+    }
+
+    assert!(all_ra.len() >= 6, "expected >=6 RAs, got {}", all_ra.len());
+    // Leave-node coords differ slightly between full-graph and bbox paths; match by area.
+    let ra4 = all_ra
+        .iter()
+        .find(|(lat, lon, _, _)| (*lat - 60.7856).abs() < 5e-4 && (*lon - 10.6937).abs() < 5e-4)
+        .expect("RA[4] Minnesundvegen missing from bbox paths");
+    eprintln!(
+        "BBOX RA4 lock icon={} delta={:.6} lat={:.6} lon={:.6}",
+        ra4.2, ra4.3, ra4.0, ra4.1
+    );
+    assert_eq!(ra4.2, "nav_roundabout_r5");
+    assert!(
+        (ra4.3 + 48.19).abs() < 1.0,
+        "bbox RA4 roundabout_delta drifted ({:.6})",
+        ra4.3
+    );
 }
