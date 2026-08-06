@@ -7,8 +7,14 @@ use crate::nav::{prefer_street_label, ManeuverKind};
 use crate::routing::eta::{edge_speed_kmh, highway_fallback_kmh};
 use crate::routing::graph::RouteGraph;
 
-/// Minimum absolute turn angle (degrees) to emit a maneuver (skip gentle bends).
+/// Minimum absolute delta for a turn (Navit `min_turn_limit`).
 const MIN_TURN_DEG: f64 = 25.0;
+/// Below this → "easily" (_1) when alternatives exist (Navit `turn_2_limit`).
+const TURN_2_LIMIT_DEG: f64 = 45.0;
+/// At/above this → sharp (_3) (Navit `sharp_turn_limit`).
+const SHARP_TURN_LIMIT_DEG: f64 = 110.0;
+/// At/above this → U-turn when strongest of several options (Navit `u_turn_limit`).
+const U_TURN_LIMIT_DEG: f64 = 165.0;
 /// Sample spacing along each edge for speed-limit playback (metres).
 const SAMPLE_STEP_M: f64 = 20.0;
 
@@ -34,6 +40,9 @@ pub struct RouteManeuver {
     pub kind: String,
     pub street: Option<String>,
     pub roundabout_exit: Option<u8>,
+    /// Explicit Navit icon stem (e.g. `nav_roundabout_r3`) when set; overrides kind mapping.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 fn bearing_deg(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
@@ -60,32 +69,258 @@ fn turn_delta_deg(in_brng: f64, out_brng: f64) -> f64 {
     d
 }
 
-fn classify_turn(delta_deg: f64) -> ManeuverKind {
-    let a = delta_deg.abs();
-    if a < MIN_TURN_DEG {
+/// Navit `command_new` turn-strength logic (`navigation.c`).
+///
+/// Thresholds use Navit's strict inequalities (`delta < -sharp` → `_3`; at exactly
+/// ±110° → normal `_2`). `more_ways_same_dir`: other outs turning the same way
+/// beyond [`MIN_TURN_DEG`]. `turn_no_of_route`: how many of those are sharper than
+/// the route (0 = gentlest).
+fn classify_turn_navit(
+    delta_deg: f64,
+    more_ways_same_dir: usize,
+    turn_no_of_route: usize,
+) -> ManeuverKind {
+    // Mirror Navit's signed comparisons rather than abs()+branch.
+    if delta_deg.abs() < MIN_TURN_DEG {
         return ManeuverKind::Straight;
     }
-    let left = delta_deg < 0.0;
-    if a < 45.0 {
-        if left {
-            ManeuverKind::SlightLeft
-        } else {
-            ManeuverKind::SlightRight
+    match more_ways_same_dir {
+        0 => {
+            // Isolated turn: only normal (_2) or sharp (_3) — never "easily" (_1).
+            if delta_deg < -SHARP_TURN_LIMIT_DEG {
+                ManeuverKind::SharpLeft
+            } else if delta_deg <= 0.0 {
+                ManeuverKind::Left
+            } else if delta_deg <= SHARP_TURN_LIMIT_DEG {
+                ManeuverKind::Right
+            } else {
+                ManeuverKind::SharpRight
+            }
         }
-    } else if a < 135.0 {
-        if left {
-            ManeuverKind::Left
-        } else {
-            ManeuverKind::Right
+        1 => {
+            if turn_no_of_route == 0 {
+                // Gentlest of two → easily (_1) within turn_2_limit, else normal.
+                if delta_deg < -TURN_2_LIMIT_DEG {
+                    ManeuverKind::Left
+                } else if delta_deg <= 0.0 {
+                    ManeuverKind::SlightLeft
+                } else if delta_deg <= TURN_2_LIMIT_DEG {
+                    ManeuverKind::SlightRight
+                } else {
+                    ManeuverKind::Right
+                }
+            } else if delta_deg < -SHARP_TURN_LIMIT_DEG {
+                ManeuverKind::SharpLeft
+            } else if delta_deg <= 0.0 {
+                ManeuverKind::Left
+            } else if delta_deg <= SHARP_TURN_LIMIT_DEG {
+                ManeuverKind::Right
+            } else {
+                ManeuverKind::SharpRight
+            }
         }
-    } else if a < 160.0 {
-        if left {
-            ManeuverKind::SharpLeft
-        } else {
-            ManeuverKind::SharpRight
+        _ => {
+            if turn_no_of_route == 0 {
+                if delta_deg < -TURN_2_LIMIT_DEG {
+                    ManeuverKind::Left
+                } else if delta_deg <= 0.0 {
+                    ManeuverKind::SlightLeft
+                } else if delta_deg <= TURN_2_LIMIT_DEG {
+                    ManeuverKind::SlightRight
+                } else {
+                    ManeuverKind::Right
+                }
+            } else if turn_no_of_route == 1 {
+                if delta_deg < -SHARP_TURN_LIMIT_DEG {
+                    ManeuverKind::SharpLeft
+                } else if delta_deg <= 0.0 {
+                    ManeuverKind::Left
+                } else if delta_deg <= SHARP_TURN_LIMIT_DEG {
+                    ManeuverKind::Right
+                } else {
+                    ManeuverKind::SharpRight
+                }
+            } else if delta_deg < -U_TURN_LIMIT_DEG {
+                ManeuverKind::UTurn
+            } else if delta_deg < -SHARP_TURN_LIMIT_DEG {
+                ManeuverKind::SharpLeft
+            } else if delta_deg <= 0.0 {
+                ManeuverKind::Left
+            } else if delta_deg <= SHARP_TURN_LIMIT_DEG {
+                ManeuverKind::Right
+            } else if delta_deg <= U_TURN_LIMIT_DEG {
+                ManeuverKind::SharpRight
+            } else {
+                // Navit `type_nav_turnaround_right` — same kind, right icon via `icon`.
+                ManeuverKind::UTurn
+            }
         }
+    }
+}
+
+fn icon_for_kind(kind: ManeuverKind, delta_deg: f64) -> String {
+    if kind == ManeuverKind::UTurn && delta_deg > 0.0 {
+        "nav_turnaround_right".to_string()
     } else {
-        ManeuverKind::UTurn
+        kind.icon_key().to_string()
+    }
+}
+
+/// Count same-direction alternatives at a junction (Navit strengthening criterion).
+fn count_same_dir_alternatives(
+    graph: &RouteGraph,
+    turn_node: NodeId,
+    in_bearing: f64,
+    route_delta: f64,
+    route_target: NodeId,
+    inbound_from: NodeId,
+) -> (usize, usize) {
+    let mut more_ways = 0usize;
+    let mut turn_no = 0usize;
+    let route_left = route_delta < 0.0;
+    let Some(node_n) = graph.nodes.get(&turn_node) else {
+        return (0, 0);
+    };
+    for &ei in graph.outgoing_edge_indices(turn_node) {
+        let e = &graph.edges[ei];
+        if e.target == route_target || e.target == inbound_from {
+            continue;
+        }
+        let Some(tn) = graph.nodes.get(&e.target) else {
+            continue;
+        };
+        let out_b = bearing_deg(node_n.coord.y, node_n.coord.x, tn.coord.y, tn.coord.x);
+        let dw = turn_delta_deg(in_bearing, out_b);
+        if route_left {
+            if dw < -MIN_TURN_DEG {
+                more_ways += 1;
+                if dw < route_delta {
+                    turn_no += 1;
+                }
+            }
+        } else if dw > MIN_TURN_DEG {
+            more_ways += 1;
+            if dw > route_delta {
+                turn_no += 1;
+            }
+        }
+    }
+    (more_ways, turn_no)
+}
+
+fn maybe_keep_left_right(
+    graph: &RouteGraph,
+    turn_node: NodeId,
+    in_bearing: f64,
+    route_delta: f64,
+    route_target: NodeId,
+    inbound_from: NodeId,
+) -> Option<ManeuverKind> {
+    // Navit: when |delta| < min_turn but a neighbour fork exists on one side only → keep.
+    let mut left_closest = f64::NEG_INFINITY; // least-negative left delta (closest to 0 from left)
+    let mut right_closest = f64::INFINITY;
+    let mut has_left = false;
+    let mut has_right = false;
+    let Some(node_n) = graph.nodes.get(&turn_node) else {
+        return None;
+    };
+    for &ei in graph.outgoing_edge_indices(turn_node) {
+        let e = &graph.edges[ei];
+        if e.target == route_target || e.target == inbound_from {
+            continue;
+        }
+        let Some(tn) = graph.nodes.get(&e.target) else {
+            continue;
+        };
+        let out_b = bearing_deg(node_n.coord.y, node_n.coord.x, tn.coord.y, tn.coord.x);
+        let dw = turn_delta_deg(in_bearing, out_b);
+        if dw < 0.0 {
+            has_left = true;
+            left_closest = left_closest.max(dw);
+        } else if dw > 0.0 {
+            has_right = true;
+            right_closest = right_closest.min(dw);
+        }
+    }
+    // Navit: left neighbor only → keep right (and vice versa) — logical XOR of sides.
+    let has_left_neighbor = has_left && (left_closest - route_delta > 2.0 * -MIN_TURN_DEG);
+    let has_right_neighbor = has_right && (right_closest - route_delta < 2.0 * MIN_TURN_DEG);
+    match (has_left_neighbor, has_right_neighbor) {
+        (true, false) => Some(ManeuverKind::KeepRight),
+        (false, true) => Some(ManeuverKind::KeepLeft),
+        _ => None,
+    }
+}
+
+fn maybe_merge_or_exit(
+    e_in: &crate::routing::graph::GraphEdge,
+    e_out: &crate::routing::graph::GraphEdge,
+    delta: f64,
+) -> Option<ManeuverKind> {
+    let in_h = e_in.highway.as_deref().unwrap_or("");
+    let out_h = e_out.highway.as_deref().unwrap_or("");
+    let in_mw = matches!(in_h, "motorway" | "motorway_link" | "trunk" | "trunk_link");
+    let out_mw = matches!(out_h, "motorway" | "motorway_link" | "trunk" | "trunk_link");
+    let in_ramp = matches!(in_h, "motorway_link" | "trunk_link");
+    let out_ramp = matches!(out_h, "motorway_link" | "trunk_link");
+    let left = delta < 0.0;
+    // Exit: motorway/trunk → link.
+    if in_mw && !in_ramp && out_ramp {
+        return Some(if left {
+            ManeuverKind::ExitLeft
+        } else {
+            ManeuverKind::ExitRight
+        });
+    }
+    // Merge: link → motorway/trunk through.
+    if in_ramp && out_mw && !out_ramp {
+        return Some(if left {
+            ManeuverKind::MergeLeft
+        } else {
+            ManeuverKind::MergeRight
+        });
+    }
+    None
+}
+
+/// Navit roundabout icon from entry→exit bearing change (`navigation_analyze_roundabout`).
+///
+/// Maps `roundabout_delta` via `((180+22) - delta) / 45` to sectors 1..=8, then picks
+/// `nav_roundabout_r*` vs `nav_roundabout_l*` from leave vs stay-in-ring deltas.
+fn navit_roundabout_icon(roundabout_delta: f64, leave_delta: f64, dtsir: f64) -> &'static str {
+    // Mirror C integer division toward zero for the positive dividend case.
+    let mut sector = ((180.0 + 22.0 - roundabout_delta) / 45.0).trunc() as i32;
+    if sector < 0 {
+        sector = 0;
+    }
+    if sector > 8 {
+        sector = 8;
+    }
+    let use_left = leave_delta < dtsir;
+    let (r, l): (&str, &str) = match sector {
+        0 | 1 => ("nav_roundabout_r1", "nav_roundabout_l7"),
+        2 => ("nav_roundabout_r2", "nav_roundabout_l6"),
+        3 => ("nav_roundabout_r3", "nav_roundabout_l5"),
+        4 => ("nav_roundabout_r4", "nav_roundabout_l4"),
+        5 => ("nav_roundabout_r5", "nav_roundabout_l3"),
+        6 => ("nav_roundabout_r6", "nav_roundabout_l2"),
+        7 => ("nav_roundabout_r7", "nav_roundabout_l1"),
+        _ => ("nav_roundabout_r8", "nav_roundabout_l8"),
+    };
+    if use_left {
+        l
+    } else {
+        r
+    }
+}
+
+fn adjust_delta_navit(delta: f64, reference: f64) -> f64 {
+    if delta >= 0.0 && (delta - reference) > 180.0 {
+        delta - 360.0
+    } else if delta <= 0.0 && (reference - delta) > 180.0 {
+        delta + 360.0
+    } else {
+        delta
     }
 }
 
@@ -342,11 +577,14 @@ pub fn build_maneuvers(graph: &RouteGraph, path: &[NodeId]) -> Vec<RouteManeuver
         let turn_node_idx = i + 1;
 
         if let Some(span) = spans.iter().find(|s| s.entry_idx == turn_node_idx) {
-            let leave_edge = graph
-                .edge_index(path[span.leave_idx], path[span.leave_idx + 1])
-                .map(|idx| &graph.edges[idx]);
-            let street = leave_edge
-                .and_then(|e| prefer_street_label(e.name.as_deref(), e.road_ref.as_deref()));
+            let street = if span.leave_idx + 1 < path.len() {
+                graph
+                    .edge_index(path[span.leave_idx], path[span.leave_idx + 1])
+                    .map(|idx| &graph.edges[idx])
+                    .and_then(|e| prefer_street_label(e.name.as_deref(), e.road_ref.as_deref()))
+            } else {
+                None
+            };
             let node = &graph.nodes[&n1];
             out.push(RouteManeuver {
                 lat: node.coord.y,
@@ -355,6 +593,7 @@ pub fn build_maneuvers(graph: &RouteGraph, path: &[NodeId]) -> Vec<RouteManeuver
                 kind: kind_key(ManeuverKind::Roundabout).to_string(),
                 street,
                 roundabout_exit: Some(span.exit_number),
+                icon: Some(span.icon_key.to_string()),
             });
             continue;
         }
@@ -374,7 +613,18 @@ pub fn build_maneuvers(graph: &RouteGraph, path: &[NodeId]) -> Vec<RouteManeuver
             e_out.end_lon,
         );
         let delta = turn_delta_deg(in_b, out_b);
-        let kind = classify_turn(delta);
+
+        let kind = if let Some(k) = maybe_merge_or_exit(e_in, e_out, delta) {
+            k
+        } else if delta.abs() < MIN_TURN_DEG {
+            match maybe_keep_left_right(graph, n1, in_b, delta, n2, n0) {
+                Some(k) => k,
+                None => ManeuverKind::Straight,
+            }
+        } else {
+            let (more, turn_no) = count_same_dir_alternatives(graph, n1, in_b, delta, n2, n0);
+            classify_turn_navit(delta, more, turn_no)
+        };
         if kind == ManeuverKind::Straight {
             continue;
         }
@@ -386,6 +636,7 @@ pub fn build_maneuvers(graph: &RouteGraph, path: &[NodeId]) -> Vec<RouteManeuver
             kind: kind_key(kind).to_string(),
             street: prefer_street_label(e_out.name.as_deref(), e_out.road_ref.as_deref()),
             roundabout_exit: None,
+            icon: Some(icon_for_kind(kind, delta)),
         });
     }
     // Destination at end.
@@ -406,6 +657,7 @@ pub fn build_maneuvers(graph: &RouteGraph, path: &[NodeId]) -> Vec<RouteManeuver
             kind: kind_key(ManeuverKind::Destination).to_string(),
             street: None,
             roundabout_exit: None,
+            icon: Some(ManeuverKind::Destination.icon_key().to_string()),
         });
     }
     out
@@ -417,8 +669,10 @@ struct RoundaboutSpan {
     entry_idx: usize,
     /// Path index of the node where the route leaves the ring.
     leave_idx: usize,
-    /// 1-based exit number (clamped to 1..=8 for icon range).
+    /// 1-based ordinal exit (speech / HUD count), Navit `count_roundabout`.
     exit_number: u8,
+    /// Navit clock-face icon stem from entry→exit bearing (`nav_roundabout_{r|l}{1..8}`).
+    icon_key: &'static str,
 }
 
 fn edge_is_roundabout(graph: &RouteGraph, from: NodeId, to: NodeId) -> bool {
@@ -426,6 +680,73 @@ fn edge_is_roundabout(graph: &RouteGraph, from: NodeId, to: NodeId) -> bool {
         .edge_index(from, to)
         .map(|i| graph.edges[i].is_roundabout)
         .unwrap_or(false)
+}
+
+fn roundabout_icon_for_span(
+    graph: &RouteGraph,
+    path: &[NodeId],
+    entry_idx: usize,
+    leave_idx: usize,
+) -> &'static str {
+    // Simplified Navit delta2: bearing change from approach into entry to leave road.
+    let (entry_in_brng, leave_out_brng, leave_delta, dtsir) =
+        roundabout_bearings(graph, path, entry_idx, leave_idx);
+    let delta2 = turn_delta_deg(entry_in_brng, leave_out_brng);
+    let roundabout_delta = adjust_delta_navit(delta2, leave_delta);
+    navit_roundabout_icon(roundabout_delta, leave_delta, dtsir)
+}
+
+fn roundabout_bearings(
+    graph: &RouteGraph,
+    path: &[NodeId],
+    entry_idx: usize,
+    leave_idx: usize,
+) -> (f64, f64, f64, f64) {
+    let entry_node = path[entry_idx];
+    let leave_node = path[leave_idx];
+    let entry_in_brng = if entry_idx > 0 {
+        let a = &graph.nodes[&path[entry_idx - 1]];
+        let b = &graph.nodes[&entry_node];
+        bearing_deg(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
+    } else {
+        let a = &graph.nodes[&entry_node];
+        let b = &graph.nodes[&path[entry_idx + 1]];
+        bearing_deg(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
+    };
+    let leave_out_brng = if leave_idx + 1 < path.len() {
+        let a = &graph.nodes[&leave_node];
+        let b = &graph.nodes[&path[leave_idx + 1]];
+        bearing_deg(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
+    } else {
+        let a = &graph.nodes[&path[leave_idx - 1]];
+        let b = &graph.nodes[&leave_node];
+        bearing_deg(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
+    };
+    let leave_in_brng = {
+        let a = &graph.nodes[&path[leave_idx.saturating_sub(1)]];
+        let b = &graph.nodes[&leave_node];
+        bearing_deg(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
+    };
+    let leave_delta = turn_delta_deg(leave_in_brng, leave_out_brng);
+    // Delta to stay in roundabout: continue on any RA out at leave node.
+    let mut dtsir = 0.0_f64;
+    let leave_n = &graph.nodes[&leave_node];
+    for &ei in graph.outgoing_edge_indices(leave_node) {
+        let e = &graph.edges[ei];
+        if !e.is_roundabout {
+            continue;
+        }
+        if leave_idx > 0 && e.target == path[leave_idx - 1] {
+            continue;
+        }
+        let Some(tn) = graph.nodes.get(&e.target) else {
+            continue;
+        };
+        let out_b = bearing_deg(leave_n.coord.y, leave_n.coord.x, tn.coord.y, tn.coord.x);
+        dtsir = turn_delta_deg(leave_in_brng, out_b);
+        break;
+    }
+    (entry_in_brng, leave_out_brng, leave_delta, dtsir)
 }
 
 fn find_roundabout_spans(graph: &RouteGraph, path: &[NodeId]) -> Vec<RoundaboutSpan> {
@@ -449,24 +770,17 @@ fn find_roundabout_spans(graph: &RouteGraph, path: &[NodeId]) -> Vec<RoundaboutS
         {
             leave_idx += 1;
         }
-        // leave_idx is the last path node still arrived-at via a roundabout edge.
-        // If path continues, path[leave_idx] -> path[leave_idx+1] leaves the ring.
-        if leave_idx + 1 >= path.len() {
-            // Route ends on the ring — still emit an entry with best-effort exit.
-            let exit_number = count_roundabout_exit(graph, path, entry_idx, leave_idx);
-            spans.push(RoundaboutSpan {
-                entry_idx,
-                leave_idx,
-                exit_number,
-            });
-            break;
-        }
         let exit_number = count_roundabout_exit(graph, path, entry_idx, leave_idx);
+        let icon_key = roundabout_icon_for_span(graph, path, entry_idx, leave_idx);
         spans.push(RoundaboutSpan {
             entry_idx,
             leave_idx,
             exit_number,
+            icon_key,
         });
+        if leave_idx + 1 >= path.len() {
+            break;
+        }
         i = leave_idx;
         if i == entry_idx {
             i += 1;
@@ -829,9 +1143,14 @@ mod tests {
                 .all(|m| m.kind == "roundabout" || m.kind == "destination"),
             "unexpected geometric turns inside roundabout: {mans:?}"
         );
-        assert_eq!(
-            crate::nav::ManeuverKind::roundabout_icon_key(ra[0].roundabout_exit),
-            "nav_roundabout_r2"
+        let icon = ra[0].icon.as_deref().expect("explicit Navit roundabout icon");
+        assert!(
+            icon.starts_with("nav_roundabout_r") || icon.starts_with("nav_roundabout_l"),
+            "unexpected icon {icon}"
+        );
+        assert!(
+            icon.chars().last().unwrap().is_ascii_digit(),
+            "icon must end with sector digit: {icon}"
         );
     }
 
@@ -902,10 +1221,40 @@ mod tests {
         let mans = build_maneuvers(&graph, &path);
         let ra = mans.iter().find(|m| m.kind == "roundabout").expect("ra");
         assert_eq!(ra.roundabout_exit, Some(1));
-        assert_eq!(
-            crate::nav::ManeuverKind::roundabout_icon_key(ra.roundabout_exit),
-            "nav_roundabout_r1"
+        let icon = ra.icon.as_deref().expect("icon");
+        assert!(
+            icon.starts_with("nav_roundabout_"),
+            "expected Navit clock-face icon, got {icon}"
         );
+    }
+
+    #[test]
+    fn navit_isolated_turn_never_uses_slight_tier() {
+        // Isolated ~30° turn → normal (_2), not easily (_1).
+        assert_eq!(classify_turn_navit(-30.0, 0, 0), ManeuverKind::Left);
+        assert_eq!(classify_turn_navit(30.0, 0, 0), ManeuverKind::Right);
+        // Exactly ±110° is still normal (Navit uses strict < for sharp).
+        assert_eq!(classify_turn_navit(-110.0, 0, 0), ManeuverKind::Left);
+        assert_eq!(classify_turn_navit(110.0, 0, 0), ManeuverKind::Right);
+        assert_eq!(classify_turn_navit(-111.0, 0, 0), ManeuverKind::SharpLeft);
+        assert_eq!(classify_turn_navit(111.0, 0, 0), ManeuverKind::SharpRight);
+    }
+
+    #[test]
+    fn navit_easily_tier_requires_same_dir_alternative() {
+        assert_eq!(classify_turn_navit(-30.0, 1, 0), ManeuverKind::SlightLeft);
+        assert_eq!(classify_turn_navit(30.0, 1, 0), ManeuverKind::SlightRight);
+        assert_eq!(classify_turn_navit(-50.0, 1, 0), ManeuverKind::Left);
+        assert_eq!(classify_turn_navit(50.0, 1, 0), ManeuverKind::Right);
+    }
+
+    #[test]
+    fn navit_roundabout_icon_sectors() {
+        // Straight-ish exit (delta ≈ 0) → sector ((180+22)-0)/45 = 4 → r4 / l4.
+        assert_eq!(navit_roundabout_icon(0.0, 90.0, 0.0), "nav_roundabout_r4");
+        assert_eq!(navit_roundabout_icon(0.0, -10.0, 0.0), "nav_roundabout_l4");
+        // ~90° right (delta ≈ 90) → sector 2 → r2.
+        assert_eq!(navit_roundabout_icon(90.0, 90.0, 0.0), "nav_roundabout_r2");
     }
 
     #[test]

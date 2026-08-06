@@ -1745,6 +1745,7 @@ private fun NaviMapScreen() {
                             NaviMapTestHooks.pendingApproachGuidance = null
                             approachGuidance = approach
                             NaviMapTestHooks.lastApproachPhase = approachUiPhase(approach)
+                            NaviMapTestHooks.lastApproachIconKey = approach.iconKey
                         }
                         if (NaviMapTestHooks.requestStartRouteSimulation) {
                             if (routeSamples.size >= 2) {
@@ -1820,6 +1821,11 @@ private fun NaviMapScreen() {
                             if (wantHideSearch) {
                                 showTools = false
                             }
+                        }
+                        // Continuous enforce: chip typing can reopen search after an edge hide.
+                        if (wantHideSearch && !hideSearch) {
+                            hideSearch = true
+                            showTools = false
                         }
                         if (NaviMapTestHooks.requestCloseTools) {
                             NaviMapTestHooks.requestCloseTools = false
@@ -2705,6 +2711,11 @@ private fun NaviMapScreen() {
                                                                                             .put("kind", m.kind)
                                                                                             .put("street", m.street)
                                                                                             .put("roundabout_exit", m.roundaboutExit)
+                                                                                            .also { jo ->
+                                                                                                if (m.icon != null) {
+                                                                                                    jo.put("icon", m.icon)
+                                                                                                }
+                                                                                            }
                                                                                     },
                                                                                 ).toString(),
                                                                         priorityPathSharePct = mergedShare,

@@ -161,7 +161,9 @@ object RouteReplan {
             val street = m.street?.let { org.json.JSONObject.quote(it) } ?: "null"
             val exit = m.roundaboutExit?.toString() ?: "null"
             """{"lat":${m.lat},"lon":${m.lon},"cum_m":${m.cumM},"kind":${org.json.JSONObject.quote(m.kind)},""" +
-                """"street":$street,"roundabout_exit":$exit}"""
+                """"street":$street,"roundabout_exit":$exit""" +
+                (m.icon?.let { ""","icon":${org.json.JSONObject.quote(it)}""" } ?: "") +
+                "}"
         }
     }
 }

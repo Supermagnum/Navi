@@ -22,9 +22,12 @@ data class RouteManeuver(
     val houseNumber: String? = null,
     val postcode: String? = null,
     val roundaboutExit: Int?,
+    /** Explicit Navit icon stem from Rust when present; preferred over [kind] mapping. */
+    val icon: String? = null,
 ) {
-    fun iconKey(): String =
-        when (kind) {
+    fun iconKey(): String {
+        icon?.takeIf { it.isNotBlank() }?.let { return it }
+        return when (kind) {
             "slight_left" -> "nav_left_1"
             "left" -> "nav_left_2"
             "sharp_left" -> "nav_left_3"
@@ -35,8 +38,14 @@ data class RouteManeuver(
             "destination" -> "nav_destination"
             "roundabout" ->
                 when (roundaboutExit) {
+                    1 -> "nav_roundabout_r1"
                     2 -> "nav_roundabout_r2"
                     3 -> "nav_roundabout_r3"
+                    4 -> "nav_roundabout_r4"
+                    5 -> "nav_roundabout_r5"
+                    6 -> "nav_roundabout_r6"
+                    7 -> "nav_roundabout_r7"
+                    8 -> "nav_roundabout_r8"
                     else -> "nav_roundabout_r1"
                 }
             "keep_left" -> "nav_keep_left"
@@ -47,6 +56,7 @@ data class RouteManeuver(
             "merge_right" -> "nav_merge_right"
             else -> "nav_straight"
         }
+    }
 }
 
 fun parseRouteSimSamples(json: String): List<RouteSimSample> {
@@ -111,6 +121,12 @@ fun parseRouteManeuvers(json: String): List<RouteManeuver> {
                         postcode = postRaw,
                     )
                 val exit = if (o.isNull("roundabout_exit")) null else o.optInt("roundabout_exit")
+                val iconRaw =
+                    if (o.isNull("icon")) {
+                        null
+                    } else {
+                        o.optString("icon").takeIf { it.isNotBlank() && it != "null" }
+                    }
                 add(
                     RouteManeuver(
                         lat = o.getDouble("lat"),
@@ -121,6 +137,7 @@ fun parseRouteManeuvers(json: String): List<RouteManeuver> {
                         houseNumber = house ?: houseRaw,
                         postcode = post ?: postRaw,
                         roundaboutExit = exit,
+                        icon = iconRaw,
                     ),
                 )
             }

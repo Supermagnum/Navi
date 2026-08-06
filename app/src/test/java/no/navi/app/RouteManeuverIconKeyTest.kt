@@ -45,6 +45,22 @@ class RouteManeuverIconKeyTest {
         assertEquals("nav_roundabout_r1", man("roundabout", exit = null).iconKey())
         assertEquals("nav_roundabout_r2", man("roundabout", exit = 2).iconKey())
         assertEquals("nav_roundabout_r3", man("roundabout", exit = 3).iconKey())
+        assertEquals("nav_roundabout_r5", man("roundabout", exit = 5).iconKey())
+    }
+
+    @Test
+    fun explicitIcon_overridesKindMapping() {
+        val m =
+            RouteManeuver(
+                lat = 0.0,
+                lon = 0.0,
+                cumM = 0.0,
+                kind = "roundabout",
+                street = null,
+                roundaboutExit = 2,
+                icon = "nav_roundabout_l3",
+            )
+        assertEquals("nav_roundabout_l3", m.iconKey())
     }
 
     @Test

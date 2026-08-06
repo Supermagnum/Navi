@@ -57,12 +57,18 @@ impl ManeuverKind {
         }
     }
 
-    /// Roundabout icon for exit 1..=3 (first/second/third), else generic.
+    /// Fallback roundabout icon from ordinal exit when no explicit Navit clock-face
+    /// stem is available. Prefer `RouteManeuver.icon` from `build_maneuvers`.
     pub fn roundabout_icon_key(exit: Option<u8>) -> &'static str {
         match exit {
             Some(1) => "nav_roundabout_r1",
             Some(2) => "nav_roundabout_r2",
             Some(3) => "nav_roundabout_r3",
+            Some(4) => "nav_roundabout_r4",
+            Some(5) => "nav_roundabout_r5",
+            Some(6) => "nav_roundabout_r6",
+            Some(7) => "nav_roundabout_r7",
+            Some(8) => "nav_roundabout_r8",
             _ => "nav_roundabout_r1",
         }
     }

@@ -58,8 +58,11 @@ fn turn_delta_deg(in_brng: f64, out_brng: f64) -> f64 {
     d
 }
 
-/// Mirror of Android `RouteManeuver.iconKey()` / `ManeuverKind::icon_key`.
-fn android_icon_key(kind: &str, exit: Option<u8>) -> String {
+/// Mirror of Android `RouteManeuver.iconKey()` fallback (when no explicit `icon`).
+fn android_icon_key(kind: &str, exit: Option<u8>, explicit: Option<&str>) -> String {
+    if let Some(i) = explicit.filter(|s| !s.is_empty()) {
+        return i.to_string();
+    }
     match kind {
         "slight_left" => "nav_left_1".into(),
         "left" => "nav_left_2".into(),
@@ -70,8 +73,14 @@ fn android_icon_key(kind: &str, exit: Option<u8>) -> String {
         "u_turn" => "nav_turnaround_left".into(),
         "destination" => "nav_destination".into(),
         "roundabout" => match exit {
+            Some(1) => "nav_roundabout_r1".into(),
             Some(2) => "nav_roundabout_r2".into(),
             Some(3) => "nav_roundabout_r3".into(),
+            Some(4) => "nav_roundabout_r4".into(),
+            Some(5) => "nav_roundabout_r5".into(),
+            Some(6) => "nav_roundabout_r6".into(),
+            Some(7) => "nav_roundabout_r7".into(),
+            Some(8) => "nav_roundabout_r8".into(),
             _ => "nav_roundabout_r1".into(),
         },
         "keep_left" => "nav_keep_left".into(),
@@ -124,7 +133,7 @@ fn audit_path(label: &str, graph: &driver_break_core::RouteGraph, path: &[NodeId
     let mans = build_maneuvers(graph, path);
     eprintln!("maneuver_count={} (incl destination)", mans.len());
     for (i, m) in mans.iter().enumerate() {
-        let icon = android_icon_key(&m.kind, m.roundabout_exit);
+        let icon = android_icon_key(&m.kind, m.roundabout_exit, m.icon.as_deref());
         let expect = expected_tier_icon(&m.kind);
         let mismatch = expect.map(|e| e != icon.as_str()).unwrap_or(false);
         eprintln!(
@@ -475,6 +484,94 @@ fn audit_route1_and_route2_turn_icons() {
         eprintln!("WARN: probe path missed 266162214 — skip second-RA assert");
     }
 
+    // ---- Primary multi-roundabout route (Navit port verification) ----
+    let p_start: (f64, f64) = (60.799_849_9, 10.694_432_8);
+    let p_via: (f64, f64) = (60.783_961_5, 10.694_175_9);
+    let p_end: (f64, f64) = (60.772_902_7, 10.713_608_9);
+    let bbox_p = [
+        p_start.0.min(p_via.0).min(p_end.0) - 0.008,
+        p_start.1.min(p_via.1).min(p_end.1) - 0.008,
+        p_start.0.max(p_via.0).max(p_end.0) + 0.008,
+        p_start.1.max(p_via.1).max(p_end.1) + 0.008,
+    ];
+    eprintln!("\n######## PRIMARY multi-RA bbox={bbox_p:?} ########");
+    let ras_p = roundabouts_near_bbox(&pbf, bbox_p);
+    eprintln!("OSM roundabouts in primary bbox: {}", ras_p.len());
+    for (id, name, coords) in &ras_p {
+        let lat = coords.iter().map(|c| c.0).sum::<f64>() / coords.len() as f64;
+        let lon = coords.iter().map(|c| c.1).sum::<f64>() / coords.len() as f64;
+        eprintln!(
+            "  way {id} name='{name}' center={lat:.6},{lon:.6} nodes={}",
+            coords.len()
+        );
+    }
+    let (leg_pa, d_pa) = plan_leg(&graph, p_start, p_via);
+    let (leg_pb, d_pb) = plan_leg(&graph, p_via, p_end);
+    eprintln!(
+        "primary legA={:.0}m nodes={} legB={:.0}m nodes={}",
+        d_pa,
+        leg_pa.len(),
+        d_pb,
+        leg_pb.len()
+    );
+    let mut primary_touches = 0usize;
+    for (id, name, coords) in &ras_p {
+        let near =
+            path_near_roundabout(&graph, &leg_pa, coords, 40.0)
+                || path_near_roundabout(&graph, &leg_pb, coords, 40.0);
+        if near {
+            primary_touches += 1;
+            eprintln!("PRIMARY PATH TOUCHES roundabout way {id} '{name}'");
+        }
+    }
+    eprintln!("primary_path_touches_roundabout_count={primary_touches}");
+    audit_path("PRIMARY start→via", &graph, &leg_pa, 0.0);
+    audit_path("PRIMARY via→end", &graph, &leg_pb, d_pa);
+    let primary_mans: Vec<_> = build_maneuvers(&graph, &leg_pa)
+        .into_iter()
+        .chain(build_maneuvers(&graph, &leg_pb))
+        .collect();
+    let primary_ra: Vec<_> = primary_mans
+        .iter()
+        .filter(|m| m.kind == "roundabout")
+        .collect();
+    eprintln!(
+        "PRIMARY roundabouts emitted={} (OSM touches={primary_touches})",
+        primary_ra.len()
+    );
+    for (i, m) in primary_ra.iter().enumerate() {
+        let icon = android_icon_key(&m.kind, m.roundabout_exit, m.icon.as_deref());
+        eprintln!(
+            "  PRIMARY RA[{i}] exit={:?} icon={icon} street={:?} lat={:.6} lon={:.6}",
+            m.roundabout_exit, m.street, m.lat, m.lon
+        );
+        assert!(
+            m.roundabout_exit.is_some_and(|e| (1..=8).contains(&e)),
+            "primary RA exit out of range"
+        );
+        assert!(
+            icon.starts_with("nav_roundabout_"),
+            "primary RA icon must be Navit clock-face stem, got {icon}"
+        );
+        // Bundled set has l1..l8 and r1..r8.
+        let stem = icon.strip_prefix("nav_roundabout_").unwrap_or("");
+        assert!(
+            (stem.starts_with('r') || stem.starts_with('l'))
+                && stem.len() == 2
+                && stem.chars().nth(1).unwrap().is_ascii_digit(),
+            "unexpected roundabout icon stem {icon}"
+        );
+    }
+    assert!(
+        primary_touches >= 2,
+        "primary route expected several OSM roundabouts on path; touches={primary_touches}"
+    );
+    assert!(
+        primary_ra.len() >= 2,
+        "primary route must emit several roundabout maneuvers; got {}",
+        primary_ra.len()
+    );
+
     // Route 1 must emit a roundabout (way 839797309 on corridor); Route 2 must not.
     assert!(
         path_touches_ra,
@@ -500,10 +597,10 @@ fn audit_route1_and_route2_turn_icons() {
             "roundabout_exit out of icon range: {:?}",
             m.roundabout_exit
         );
-        let icon = android_icon_key("roundabout", m.roundabout_exit);
+        let icon = android_icon_key("roundabout", m.roundabout_exit, m.icon.as_deref());
         eprintln!(
-            "R1 roundabout exit={:?} icon={icon} street={:?}",
-            m.roundabout_exit, m.street
+            "R1 roundabout exit={:?} icon={icon} street={:?} explicit={:?}",
+            m.roundabout_exit, m.street, m.icon
         );
     }
     let left_or_right = all_kinds
@@ -512,7 +609,7 @@ fn audit_route1_and_route2_turn_icons() {
         .any(|k| k == "left" || k == "right");
     if left_or_right {
         for kind in ["left", "right"] {
-            let icon = android_icon_key(kind, None);
+            let icon = android_icon_key(kind, None, None);
             let expect = expected_tier_icon(kind).expect("tier");
             assert_eq!(
                 icon, expect,
@@ -566,4 +663,65 @@ fn resolve_vardebergvegen_225(root: &Path) -> Option<(f64, f64)> {
     }
     eprintln!("WARN: could not resolve Vardebergvegen 225 from place_index; using fallback coord");
     None
+}
+
+#[test]
+#[ignore = "needs ostlandet PBF under integration-fixtures"]
+fn probe_merge_exit_sharp_on_nearby_corridors() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/integration-fixtures");
+    let pbf = root.join("ostlandet-latest.osm.pbf");
+    assert!(pbf.is_file(), "missing {}", pbf.display());
+    let elev = root.join("elevation");
+    let cache = root.join("graph-cache-turn-audit");
+    let eco = EcoConfig::default();
+    let elevation = ElevationService::new(ElevationCache::new(&elev));
+    let (graph, _) =
+        load_or_build_reweighted(&pbf, &cache, RoutingProfile::Car, &elevation, &eco)
+            .expect("graph");
+
+    let corridors: &[(&str, (f64, f64), (f64, f64))] = &[
+        (
+            "E6_Moelv_southboundish",
+            (60.9200, 10.7000),
+            (60.8500, 10.7000),
+        ),
+        (
+            "Rv4_Gjovik_trunk",
+            (60.8000, 10.6900),
+            (60.7700, 10.6900),
+        ),
+    ];
+    let mut saw_merge_or_exit = false;
+    let mut saw_sharp_or_uturn = false;
+    let mut saw_keep = false;
+    for (label, a, b) in corridors {
+        let (path, dist) = plan_leg(&graph, *a, *b);
+        let mans = build_maneuvers(&graph, &path);
+        eprintln!("\n### probe {label} dist={dist:.0}m mans={}", mans.len());
+        for (i, m) in mans.iter().enumerate() {
+            if m.kind == "destination" {
+                continue;
+            }
+            let icon = android_icon_key(&m.kind, m.roundabout_exit, m.icon.as_deref());
+            eprintln!(
+                "  [{i}] kind={:<14} icon={icon} street={:?} exit={:?}",
+                m.kind, m.street, m.roundabout_exit
+            );
+            if m.kind.contains("merge") || m.kind.contains("exit_") {
+                saw_merge_or_exit = true;
+            }
+            if m.kind.contains("sharp") || m.kind == "u_turn" {
+                saw_sharp_or_uturn = true;
+            }
+            if m.kind.contains("keep") {
+                saw_keep = true;
+            }
+        }
+    }
+    eprintln!(
+        "SUMMARY saw_merge_or_exit={saw_merge_or_exit} saw_sharp_or_uturn={saw_sharp_or_uturn} saw_keep={saw_keep}"
+    );
+    assert!(saw_merge_or_exit, "expected merge or exit on E6 corridor");
+    assert!(saw_sharp_or_uturn, "expected sharp turn on Gjøvik corridor");
+    assert!(saw_keep, "expected keep left/right on probed corridors");
 }

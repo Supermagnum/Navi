@@ -209,10 +209,12 @@ fn build_hud(
                 } else {
                     format!("{kind:?} · {street}")
                 };
-                next_icon = if kind == ManeuverKind::Roundabout {
-                    ManeuverKind::roundabout_icon_key(m.roundabout_exit).to_string()
-                } else {
-                    kind.icon_key().to_string()
+                next_icon = match m.icon.as_deref().filter(|s| !s.is_empty()) {
+                    Some(icon) => icon.to_string(),
+                    None if kind == ManeuverKind::Roundabout => {
+                        ManeuverKind::roundabout_icon_key(m.roundabout_exit).to_string()
+                    }
+                    None => kind.icon_key().to_string(),
                 };
                 dist_turn = format_distance_m(dist_m, true);
             }
@@ -238,6 +240,8 @@ struct ManDto {
     kind: String,
     street: Option<String>,
     roundabout_exit: Option<u8>,
+    #[serde(default)]
+    icon: Option<String>,
 }
 
 #[derive(Deserialize)]

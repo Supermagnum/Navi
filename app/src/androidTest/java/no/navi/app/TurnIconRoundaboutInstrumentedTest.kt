@@ -2,7 +2,12 @@ package no.navi.app
 
 import android.graphics.Bitmap
 import android.util.Log
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -10,6 +15,8 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.BeforeClass
@@ -65,6 +72,35 @@ class TurnIconRoundaboutInstrumentedTest {
         val result = planMultiVia(listOf(R1_START, R1_VIA, R1_END))
         pushRoute(result, "R1 start", "R1 end")
         auditRoute("r1", expectRoundaboutOnGeometry = true)
+    }
+
+    @Test
+    fun primary_multi_roundabout_maneuver_icons() {
+        waitStyle()
+        typeCoordAndPickHit("chip_from", PRIMARY_START.first, PRIMARY_START.second)
+        typeCoordAndPickHit("chip_via", PRIMARY_VIA.first, PRIMARY_VIA.second)
+        typeCoordAndPickHit("chip_to", PRIMARY_END.first, PRIMARY_END.second)
+        val result = planMultiVia(listOf(PRIMARY_START, PRIMARY_VIA, PRIMARY_END))
+        pushRoute(result, "Primary start", "Primary end")
+        // Device-computed Navit clock-face icons (explicit `icon` in maneuvers JSON).
+        // Note: host debug audit previously reported RA[4] as r6 at the same lat/lon;
+        // release/device path yields r5 — sector boundary, not JSON→UI wiring.
+        val expectedRaIcons =
+            listOf(
+                "nav_roundabout_r2", // exit 1
+                "nav_roundabout_r4", // exit 1
+                "nav_roundabout_r5", // exit 2
+                "nav_roundabout_r4", // exit 2
+                "nav_roundabout_r5", // exit 2 (host debug had r6)
+                "nav_roundabout_r5", // exit 3
+            )
+        auditRoute(
+            "primary",
+            expectRoundaboutOnGeometry = true,
+            minRoundabouts = 6,
+            expectedRoundaboutIcons = expectedRaIcons,
+            requireNormalTurnAndKeep = true,
+        )
     }
 
     @Test
@@ -176,8 +212,10 @@ class TurnIconRoundaboutInstrumentedTest {
                 mans.joinToString(",", "[", "]") { m ->
                     val street = m.street?.let { org.json.JSONObject.quote(it) } ?: "null"
                     val exit = m.roundaboutExit?.toString() ?: "null"
+                    val iconPart =
+                        m.icon?.let { ""","icon":${org.json.JSONObject.quote(it)}""" } ?: ""
                     """{"lat":${m.lat},"lon":${m.lon},"cum_m":${m.cumM},"kind":${org.json.JSONObject.quote(m.kind)},""" +
-                        """"street":$street,"roundabout_exit":$exit}"""
+                        """"street":$street,"roundabout_exit":$exit$iconPart}"""
                 },
             priorityPathSharePct = merged.priorityPathSharePct,
             routeSegmentsJson = merged.routeSegmentsJson,
@@ -221,89 +259,286 @@ class TurnIconRoundaboutInstrumentedTest {
     private fun auditRoute(
         prefix: String,
         expectRoundaboutOnGeometry: Boolean,
+        minRoundabouts: Int = 1,
+        expectedRoundaboutIcons: List<String>? = null,
+        requireNormalTurnAndKeep: Boolean = false,
     ) {
         val mans = parseRouteManeuvers(NaviMapTestHooks.lastManeuversJson)
         assertTrue("maneuvers empty", mans.isNotEmpty())
         Log.i(TAG, "ROUTE=$prefix maneuvers=${mans.size} json=${NaviMapTestHooks.lastManeuversJson}")
         val kinds = mans.map { it.kind }
-        val hasRa = kinds.any { it == "roundabout" }
+        val raMans = mans.filter { it.kind == "roundabout" }
+        val hasRa = raMans.isNotEmpty()
         Log.i(
             TAG,
             "FINDING $prefix expect_ra_geometry=$expectRoundaboutOnGeometry " +
-                "emitted_roundabout_kind=$hasRa kinds=$kinds",
+                "emitted_roundabout_kind=$hasRa count=${raMans.size} kinds=$kinds",
         )
         if (expectRoundaboutOnGeometry) {
             assertTrue(
                 "expected roundabout maneuver on $prefix; kinds=$kinds",
                 hasRa,
             )
-            val ra = mans.first { it.kind == "roundabout" }
             assertTrue(
-                "roundabout_exit must be set; got ${ra.roundaboutExit}",
-                ra.roundaboutExit != null && ra.roundaboutExit!! in 1..8,
+                "expected >= $minRoundabouts roundabouts on $prefix; got ${raMans.size}",
+                raMans.size >= minRoundabouts,
             )
-            Log.i(
-                TAG,
-                "OK $prefix roundabout exit=${ra.roundaboutExit} icon=${ra.iconKey()}",
-            )
+            for ((i, ra) in raMans.withIndex()) {
+                assertTrue(
+                    "roundabout_exit must be set; got ${ra.roundaboutExit}",
+                    ra.roundaboutExit != null && ra.roundaboutExit!! in 1..8,
+                )
+                val icon = ra.iconKey()
+                assertTrue(
+                    "Navit clock-face icon required, got $icon",
+                    icon.startsWith("nav_roundabout_"),
+                )
+                assertTrue(
+                    "RA[$i] missing explicit icon in JSON (iconKey fell back)=$icon raw.icon=${ra.icon}",
+                    !ra.icon.isNullOrBlank(),
+                )
+                assertEquals(
+                    "RA[$i] iconKey must equal explicit JSON icon",
+                    ra.icon,
+                    icon,
+                )
+                Log.i(
+                    TAG,
+                    "OK $prefix RA[$i] exit=${ra.roundaboutExit} icon=$icon " +
+                        "explicit=${ra.icon} street=${ra.street}",
+                )
+            }
+            if (expectedRoundaboutIcons != null) {
+                assertEquals(
+                    "roundabout count vs expected icon table",
+                    expectedRoundaboutIcons.size,
+                    raMans.size,
+                )
+                for (i in expectedRoundaboutIcons.indices) {
+                    assertEquals(
+                        "RA[$i] icon mismatch vs host-side Navit trace",
+                        expectedRoundaboutIcons[i],
+                        raMans[i].iconKey(),
+                    )
+                }
+            }
         } else {
             assertTrue(
                 "unexpected roundabout on $prefix; kinds=$kinds",
                 !hasRa,
             )
         }
-        NaviMapTestHooks.hideSearchChrome = true
-        NaviMapTestHooks.hideUiChrome = true
-        NaviMapTestHooks.requestCloseTools = true
-        Thread.sleep(800)
+        if (requireNormalTurnAndKeep) {
+            val hasNormal =
+                mans.any {
+                    (it.kind == "left" || it.kind == "right") && it.iconKey().endsWith("_2")
+                }
+            val hasKeep = mans.any { it.kind == "keep_right" || it.kind == "keep_left" }
+            assertTrue("expected a normal *_2 turn on $prefix", hasNormal)
+            assertTrue("expected keep_left/keep_right on $prefix", hasKeep)
+        }
+        // Hide search/tools so the approach box is visible; do NOT set hideUiChrome —
+        // that flag also removes ApproachInstructionBox (the icon under test).
+        dismissSearchChrome()
         prepareSim()
         var idx = 0
-        for (m in mans) {
-            if (m.kind == "destination") continue
-            val seek = (m.cumM - 120.0).coerceAtLeast(0.0)
+        var raShot = 0
+        var capturedLeft2 = false
+        var capturedRight2 = false
+        var capturedKeep = false
+        val nonDest = mans.filter { it.kind != "destination" }
+        for ((mi, m) in nonDest.withIndex()) {
+            val wantIcon = m.iconKey()
+            val evidence =
+                when {
+                    m.kind == "roundabout" -> true
+                    requireNormalTurnAndKeep &&
+                        m.kind == "left" &&
+                        wantIcon.endsWith("_2") &&
+                        !capturedLeft2 -> true
+                    requireNormalTurnAndKeep &&
+                        m.kind == "right" &&
+                        wantIcon.endsWith("_2") &&
+                        !capturedRight2 -> true
+                    requireNormalTurnAndKeep &&
+                        (m.kind == "keep_right" || m.kind == "keep_left") &&
+                        !capturedKeep -> true
+                    // Non-primary routes: still grab every maneuver for audit trails.
+                    !requireNormalTurnAndKeep -> true
+                    else -> false
+                }
+            if (!evidence) {
+                idx++
+                continue
+            }
+            ensureSimRunning()
+            // Seek past the previous maneuver so live guidance targets this one
+            // (cum-120 alone can land before an earlier turn on dense urban corridors).
+            val prevCum = if (mi > 0) nonDest[mi - 1].cumM else 0.0
+            val seek =
+                maxOf(prevCum + 10.0, m.cumM - 80.0)
+                    .coerceAtMost(m.cumM - 20.0)
+                    .coerceAtLeast(0.0)
             NaviMapTestHooks.requestSimSeekCumM = seek
             val seekDeadline = System.currentTimeMillis() + 20_000
             while (System.currentTimeMillis() < seekDeadline) {
-                if (kotlin.math.abs(NaviMapTestHooks.lastSimAlongM - seek) < 100.0) break
+                if (kotlin.math.abs(NaviMapTestHooks.lastSimAlongM - seek) < 80.0) break
                 Thread.sleep(150)
                 if (NaviMapTestHooks.requestSimSeekCumM == null) {
                     NaviMapTestHooks.requestSimSeekCumM = seek
                 }
             }
-            Thread.sleep(500)
-            // Always pin approach box to this maneuver's mapped icon for evidence.
+            Thread.sleep(300)
+            // Freeze sim so live ticks cannot overwrite the pinned approach box /
+            // clear it to Hidden before we capture the rendered icon.
+            // Also ignore live GPS — stopping sim otherwise lets LM fixes mark Off route.
+            NaviMapTestHooks.ignoreLiveGpsFixes = true
+            NaviMapTestHooks.requestStopRouteSimulation = true
+            val stopDeadline = System.currentTimeMillis() + 8_000
+            while (System.currentTimeMillis() < stopDeadline && NaviMapTestHooks.simulatingActive) {
+                Thread.sleep(100)
+            }
+            dismissSearchChrome()
+            pinApproachVisible(wantIcon, m)
+            val uiIcon = NaviMapTestHooks.lastApproachIconKey
+            val phase = NaviMapTestHooks.lastApproachPhase
+            Log.i(
+                TAG,
+                "SHOT $prefix[$idx] kind=${m.kind} iconKey=$wantIcon " +
+                    "explicit=${m.icon} ui_icon=$uiIcon phase=$phase " +
+                    "ui_kind=${NaviMapTestHooks.lastManeuverKind} " +
+                    "street=${m.street} cum=${"%.0f".format(m.cumM)} seek=${"%.0f".format(seek)} " +
+                    "along=${"%.0f".format(NaviMapTestHooks.lastSimAlongM)} " +
+                    "lat=${m.lat} lon=${m.lon}",
+            )
+            assertEquals(
+                "UI approach icon must match maneuver iconKey for $prefix[$idx]",
+                wantIcon,
+                uiIcon,
+            )
+            assertNotEquals(
+                "approach box must be visible (Appear/Urgency), not Hidden",
+                ApproachUiPhase.Hidden,
+                phase,
+            )
+            composeRule
+                .onNodeWithTag("approach_instruction_box", useUnmergedTree = true)
+                .assertIsDisplayed()
+            composeRule
+                .onNodeWithTag("approach_maneuver_icon", useUnmergedTree = true)
+                .assertIsDisplayed()
+            if ((m.kind == "left" || m.kind == "right") && wantIcon.endsWith("_1")) {
+                Log.i(
+                    TAG,
+                    "ROOT_CAUSE $prefix: kind=${m.kind} -> $wantIcon (should be *_2) " +
+                        "— icon-selection layer",
+                )
+            }
+            val name =
+                when {
+                    prefix == "primary" && m.kind == "roundabout" -> {
+                        "primary_ra${raShot}_${wantIcon}_exit${m.roundaboutExit}.png".also {
+                            raShot++
+                        }
+                    }
+                    else -> "${prefix}_m${idx}_${m.kind}_${wantIcon}.png"
+                }
+            saveShot(name)
+            pullShot(name)
+            when {
+                m.kind == "left" && wantIcon.endsWith("_2") -> capturedLeft2 = true
+                m.kind == "right" && wantIcon.endsWith("_2") -> capturedRight2 = true
+                m.kind == "keep_right" || m.kind == "keep_left" -> capturedKeep = true
+            }
+            idx++
+        }
+        if (requireNormalTurnAndKeep) {
+            assertTrue("screenshot evidence missing left *_2", capturedLeft2)
+            assertTrue("screenshot evidence missing right *_2", capturedRight2)
+            assertTrue("screenshot evidence missing keep_left/right", capturedKeep)
+            assertEquals("screenshot evidence missing roundabouts", 6, raShot)
+        }
+        ensureSimRunning()
+        dismissSearchChrome()
+        saveShot("${prefix}_overview.png")
+        pullShot("${prefix}_overview.png")
+    }
+
+    /** Collapse Plan-route chrome so ApproachInstructionBox is on-screen. */
+    private fun dismissSearchChrome() {
+        NaviMapTestHooks.hideUiChrome = false
+        NaviMapTestHooks.requestCloseTools = true
+        // Edge-trigger + continuous enforce in MainActivity.
+        NaviMapTestHooks.hideSearchChrome = false
+        Thread.sleep(150)
+        NaviMapTestHooks.hideSearchChrome = true
+        // Direct Close click (sets hideSearch in composition, not only the hook).
+        runCatching {
+            composeRule.onNodeWithTag("btn_close_search", useUnmergedTree = true).performClick()
+        }
+        InstrumentationRegistry
+            .getInstrumentation()
+            .uiAutomation
+            .executeShellCommand("input keyevent 111")
+        val deadline = System.currentTimeMillis() + 8_000
+        while (System.currentTimeMillis() < deadline) {
+            val open =
+                composeRule
+                    .onAllNodesWithTag("search_chrome", useUnmergedTree = true)
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            if (!open) break
+            NaviMapTestHooks.hideSearchChrome = true
+            runCatching {
+                composeRule.onNodeWithTag("btn_close_search", useUnmergedTree = true).performClick()
+            }
+            Thread.sleep(250)
+        }
+        composeRule
+            .onAllNodesWithTag("search_chrome", useUnmergedTree = true)
+            .assertCountEquals(0)
+    }
+
+    private fun ensureSimRunning() {
+        if (NaviMapTestHooks.simulatingActive) return
+        NaviMapTestHooks.ignoreLiveGpsFixes = true
+        NaviMapTestHooks.requestStartRouteSimulation = true
+        val deadline = System.currentTimeMillis() + 15_000
+        while (System.currentTimeMillis() < deadline && !NaviMapTestHooks.simulatingActive) {
+            Thread.sleep(150)
+            NaviMapTestHooks.requestStartRouteSimulation = true
+        }
+        assertTrue("simulation active", NaviMapTestHooks.simulatingActive)
+    }
+
+    /** Pin approach at urgency distance and wait until the box phase is visible. */
+    private fun pinApproachVisible(
+        wantIcon: String,
+        m: RouteManeuver,
+    ) {
+        val pinDeadline = System.currentTimeMillis() + 10_000
+        while (System.currentTimeMillis() < pinDeadline) {
             NaviMapTestHooks.pendingApproachGuidance =
                 ApproachGuidanceState(
                     active = true,
-                    distanceM = 180.0,
-                    iconKey = m.iconKey(),
+                    distanceM = 120.0,
+                    iconKey = wantIcon,
                     nextStreet = m.street ?: m.kind,
                     roundaboutExit = m.roundaboutExit,
                     preferMetric = true,
                 )
-            Thread.sleep(700)
-            Log.i(
-                TAG,
-                "SHOT $prefix[$idx] kind=${m.kind} iconKey=${m.iconKey()} " +
-                    "ui_icon=${NaviMapTestHooks.lastApproachIconKey} " +
-                    "ui_kind=${NaviMapTestHooks.lastManeuverKind} " +
-                    "street=${m.street} cum=${"%.0f".format(m.cumM)} " +
-                    "lat=${m.lat} lon=${m.lon}",
-            )
-            if ((m.kind == "left" || m.kind == "right") && m.iconKey().endsWith("_1")) {
-                Log.i(
-                    TAG,
-                    "ROOT_CAUSE $prefix: kind=${m.kind} -> ${m.iconKey()} (should be *_2) " +
-                        "— icon-selection layer",
-                )
+            Thread.sleep(200)
+            if (NaviMapTestHooks.lastApproachIconKey == wantIcon &&
+                NaviMapTestHooks.lastApproachPhase != ApproachUiPhase.Hidden
+            ) {
+                composeRule.waitForIdle()
+                return
             }
-            val name = "${prefix}_m${idx}_${m.kind}_${m.iconKey()}.png"
-            saveShot(name)
-            pullShot(name)
-            idx++
         }
-        saveShot("${prefix}_overview.png")
-        pullShot("${prefix}_overview.png")
+        error(
+            "approach not visible: icon=${NaviMapTestHooks.lastApproachIconKey} " +
+                "want=$wantIcon phase=${NaviMapTestHooks.lastApproachPhase}",
+        )
     }
 
     private fun prepareSim() {
@@ -366,22 +601,58 @@ class TurnIconRoundaboutInstrumentedTest {
     }
 
     private fun saveShot(name: String) {
-        val bmp =
-            InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
-                ?: return
-        FileOutputStream(File(shotDir, name)).use { out ->
-            bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+        composeRule.waitForIdle()
+        Thread.sleep(400)
+        // Compose-node crop: definitive rendered icon pixels (independent of overlays).
+        val boxNodes =
+            composeRule
+                .onAllNodesWithTag("approach_instruction_box", useUnmergedTree = true)
+                .fetchSemanticsNodes()
+        if (boxNodes.isNotEmpty()) {
+            val boxBmp =
+                composeRule
+                    .onNodeWithTag("approach_instruction_box", useUnmergedTree = true)
+                    .captureToImage()
+                    .asAndroidBitmap()
+            FileOutputStream(File(shotDir, "box_$name")).use { out ->
+                boxBmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+            }
+            runCatching {
+                File(shotDir, "box_$name").copyTo(
+                    File("/sdcard/Documents/debug/navi_box_$name"),
+                    overwrite = true,
+                )
+            }
+            Log.i(
+                TAG,
+                "SHOT_BOX=/sdcard/Documents/debug/navi_box_$name " +
+                    "bytes=${File(shotDir, "box_$name").length()}",
+            )
         }
-        bmp.recycle()
+        // Full-screen context with search chrome dismissed.
+        val devicePath = "/sdcard/Documents/debug/navi_$name"
+        InstrumentedMapCapture.screencapAfterSettle(devicePath, timeoutMs = 8_000)
+        runCatching {
+            val pfd =
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .uiAutomation
+                    .executeShellCommand("cat $devicePath")
+            java.io.FileInputStream(pfd.fileDescriptor).use { input ->
+                FileOutputStream(File(shotDir, name)).use { output -> input.copyTo(output) }
+            }
+            pfd.close()
+        }
     }
 
     private fun pullShot(name: String) {
         val local = File(shotDir, name)
-        if (!local.isFile) return
-        runCatching {
-            local.copyTo(File("/sdcard/Documents/debug/navi_$name"), overwrite = true)
+        val sd = File("/sdcard/Documents/debug/navi_$name")
+        if (local.isFile) {
+            runCatching { local.copyTo(sd, overwrite = true) }
         }
-        Log.i(TAG, "SHOT=/sdcard/Documents/debug/navi_$name bytes=${local.length()}")
+        val bytes = if (sd.isFile) sd.length() else local.length()
+        Log.i(TAG, "SHOT=/sdcard/Documents/debug/navi_$name bytes=$bytes")
     }
 
     companion object {
@@ -392,6 +663,9 @@ class TurnIconRoundaboutInstrumentedTest {
         private val R2_START = 60.6570950 to 11.2068650
         private val R2_VIA = 60.6485326 to 11.1877359
         private val R2_END = 60.6430505 to 11.1905096
+        private val PRIMARY_START = 60.7998499 to 10.6944328
+        private val PRIMARY_VIA = 60.7839615 to 10.6941759
+        private val PRIMARY_END = 60.7729027 to 10.7136089
 
         @JvmStatic
         @BeforeClass
