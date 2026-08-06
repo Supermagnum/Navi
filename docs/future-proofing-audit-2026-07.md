@@ -127,3 +127,11 @@ Still **Action required** from categories 1/3 (not blocking this fix pass):
 - Vendor acquisition path concentration (Geofabrik / Mapterhorn / OpenFreeMap / Earthdata).
 - Missing local rationale comments on some Gradle pin sites.
 - API 36 **execution** (plan exists; bump not done).
+
+### Routing plan-time I/O (opened 2026-08-06)
+
+| Priority | Action | Blocking | Status | Last verified / touched | Notes |
+|---|---|---|---|---|---|
+| — | Evaluate preprocess-once indexed map format (OsmAnd/Navit-class) via phased plan | No | **Phase 1a met; 1b open** | 2026-08-06 | Live: [`indexed-map-format-plan.md`](indexed-map-format-plan.md). Warm `.navigph` proves ≤2 s bar in principle; first-load indexed PoC still required before Phase 2. |
+| — | Shared multi-consumer PBF parse (graph + poi_barrier) | No | Deferred / subsumable | 2026-08-06 | Interim only if indexed format stalls; else folds into converter. |
+| — | Graph cache “silent rebuild” audit | No | **Closed** | 2026-08-06 | Cache works for identical OD/bbox; misses on new bbox by design. |

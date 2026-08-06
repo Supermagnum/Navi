@@ -317,6 +317,9 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/build-linux.md`](docs/build-linux.md) | Linux / desktop build |
 | [`docs/debugging.md`](docs/debugging.md) | Debugging |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | Physical device checklist |
+| [`docs/status.md`](docs/status.md) | Which docs are live status vs historical evidence |
+| [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Tracked future-proofing / open risk items |
+| [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md) | Phased evaluation of preprocess-once indexed routing maps |
 | [`docs/plugins.md`](docs/plugins.md) | Plugin host and roadmap |
 
 See the `docs/` folder for more specialised topics (voice, APRS, ECU, formulas,
@@ -448,11 +451,18 @@ Country/region visual extracts can also be prepared with
   relevant file portion. Low-RAM devices suffer more because there is less
   headroom to keep decoded blocks cached, which increases re-reads from
   storage. Cross-ref: [Minimum hardware and storage](#minimum-hardware-and-storage).
-  Not-yet-implemented mitigations: (1) merge graph-build and POI/barrier into
-  one shared multi-consumer parse (the architecture already calls for “one
-  shared `osmpbf` pass,” but this pair does not yet); (2) audit that the
-  reweighted graph cache is actually hit on repeat plans in the same region,
-  not silently rebuilt every time.
+  Not-yet-implemented mitigations: (1) **preprocess-once indexed map format**
+  (OsmAnd `.obf` / Navit binfile class) — live phased evaluation in
+  [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md)
+  (**Phase 1a**: warm `.navigph` already clears ≤2 s / ≥10× when that bbox was
+  cached before — same mechanism as the graph-cache audit; **Phase 1b open**:
+  first-load of a never-indexed bbox via a real prebuilt index is still
+  untested; Phase 2 blocked on 1b); (2) optional shared multi-consumer
+  `osmpbf` parse as an interim I/O consolidation if the indexed format stalls.
+  Graph-cache audit: cache **works** for identical OD/bbox; new trip bboxes
+  still pay full cold PBF `graph_build` once. See also
+  [`docs/status.md`](docs/status.md) and
+  [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md).
 - **Rerouting after a detour is not instant.** When the app detects you have
   left the planned route (cross-track beyond ~75 m motor / ~100 m hiking) and
   computes a new one, it reuses the same planning pipeline above — expect a
