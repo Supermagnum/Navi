@@ -130,7 +130,12 @@ Signing a **production** Play release uses your Play App Signing / upload key �
 the gitignored `app/keystore/navi-upload.jks` is for local `bundletool` checks
 only.
 
-Install a built APK with adb:
+Install a built APK with adb (install the client itself:
+Linux [`build-linux.md` — adb](build-linux.md#android-debug-bridge-adb),
+macOS [`build-macos.md` — adb](build-macos.md#android-debug-bridge-adb),
+Windows [`build-windows.md` — adb](build-windows.md#android-debug-bridge-adb)).
+On the device, enable **Developer options** (tap **Build number** seven times
+under About phone/tablet) and turn on **USB debugging** before connecting.
 
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk

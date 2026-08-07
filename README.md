@@ -330,7 +330,9 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Country/region rule packs |
 | [`docs/osm-updates.md`](docs/osm-updates.md) | Opt-in map updates |
 | [`docs/android-build.md`](docs/android-build.md) | Build the Android app |
-| [`docs/build-linux.md`](docs/build-linux.md) | Linux / desktop build |
+| [`docs/build-linux.md`](docs/build-linux.md) | Linux / desktop build (tools, gpsd, adb) |
+| [`docs/build-macos.md`](docs/build-macos.md) | macOS build (tools, Android NDK, adb) |
+| [`docs/build-windows.md`](docs/build-windows.md) | Windows build (MSVC, tools, Android NDK, adb) |
 | [`docs/debugging.md`](docs/debugging.md) | Debugging |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | Physical device checklist |
 | [`docs/status.md`](docs/status.md) | Which docs are live status vs historical evidence |
@@ -374,8 +376,12 @@ Short version of CI expectations:
 
 # Building and installing
 
-Full guides: [`docs/android-build.md`](docs/android-build.md) and
-[`docs/build-linux.md`](docs/build-linux.md).
+Full guides:
+
+- Android APK: [`docs/android-build.md`](docs/android-build.md)
+- Linux (core, `navi-desktop`, gpsd, adb): [`docs/build-linux.md`](docs/build-linux.md)
+- macOS (tools, NDK, adb): [`docs/build-macos.md`](docs/build-macos.md)
+- Windows (MSVC, tools, NDK, adb): [`docs/build-windows.md`](docs/build-windows.md)
 
 ### Emulator (x86_64)
 

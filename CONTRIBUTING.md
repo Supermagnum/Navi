@@ -83,7 +83,9 @@ Do not duplicate long build recipes here — use the maintained guides:
 
 | Goal | Doc |
 |---|---|
-| Rust core, host integration tests, optional gpsd/IMU | [`docs/build-linux.md`](docs/build-linux.md) |
+| Rust core, host integration tests, optional gpsd/IMU (Linux) | [`docs/build-linux.md`](docs/build-linux.md) |
+| macOS build host (tools, Android NDK, adb) | [`docs/build-macos.md`](docs/build-macos.md) |
+| Windows build host (MSVC, tools, Android NDK, adb) | [`docs/build-windows.md`](docs/build-windows.md) |
 | Native `libnavi.so`, UniFFI Kotlin, Gradle APK, AAOS emulator | [`docs/android-build.md`](docs/android-build.md) |
 | Host + Android debug loops | [`docs/debugging.md`](docs/debugging.md) |
 | Launch / install on emulator | `./scripts/launch-navi-emulator.sh` (see Android build doc) |

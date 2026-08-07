@@ -22,6 +22,7 @@ Hvordan bidra: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 1. [Hva dette er](#hva-dette-er)
 2. [Funksjoner](#funksjoner)
    - [Hva du må laste ned](#hva-du-må-laste-ned)
+   - [Slik bruker du](#slik-bruker-du)
    - [Slik fungerer funksjonene](#slik-fungerer-funksjonene)
 3. [Innstillinger](#innstillinger)
 4. [Pauseteller vs tur-ETA](#pauseteller-vs-tur-eta)
@@ -106,6 +107,12 @@ kan du gå frakoblet.
 (eller bli på nett med Liberty).  
 Foretrekk en **region** (ikke et helt stort land) på nettbrett med begrenset
 RAM — se [Minimum maskinvare og lagring](#minimum-maskinvare-og-lagring).
+
+## Slik bruker du
+
+Steg-for-steg brukerveiledning (planlegging, Tools, pauser, lagrede steder/ruter,
+per-modus valg, pilegrim):
+**[How to use Navi](docs/how-to-use.md)** (engelsk).
 
 ## Slik fungerer funksjonene
 
@@ -308,16 +315,22 @@ Fullt galleri: [`docs/bilder.md`](docs/bilder.md) (engelsk:
 | [`docs/bilder.md`](docs/bilder.md) / [`docs/pictures.md`](docs/pictures.md) | Skjermbildegallerier |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online vs frakoblet kartutseende; 3D |
 | [`docs/poi.md`](docs/poi.md) | Stedstyper og søk |
-| [`docs/kartmerking-lagrede-steder.md`](docs/kartmerking-lagrede-steder.md) | **Slik bruker du** trykk-og-hold (4 s) og lagrede steder (engelsk: [`map-marking-saved-places.md`](docs/map-marking-saved-places.md)) |
+| [How to use Navi](docs/how-to-use.md) | Brukerveiledning (planlegging, Tools, pauser, lagrede steder/ruter, profiler) — engelsk |
+| [`docs/kartmerking-lagrede-steder.md`](docs/kartmerking-lagrede-steder.md) | Trykk-og-hold (4 s) og lagrede steder (engelsk: [`map-marking-saved-places.md`](docs/map-marking-saved-places.md)) |
 | [`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md) | Rast/vei-grunnlag for pauseintervaller (fottur/sykling) |
 | [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | EU lastebil kjøre-/hviletid |
 | [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | US lastebil kjøre-/hviletid |
 | [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Land-/regionregelpakker |
 | [`docs/osm-updates.md`](docs/osm-updates.md) | Valgfrie kartoppdateringer |
 | [`docs/android-build.md`](docs/android-build.md) | Bygge Android-appen |
-| [`docs/build-linux.md`](docs/build-linux.md) | Linux- / skrivebordsbygg |
+| [`docs/build-linux.md`](docs/build-linux.md) | Linux- / skrivebordsbygg (verktøy, gpsd, adb) |
+| [`docs/build-macos.md`](docs/build-macos.md) | macOS-bygg (verktøy, Android NDK, adb) |
+| [`docs/build-windows.md`](docs/build-windows.md) | Windows-bygg (MSVC, verktøy, Android NDK, adb) |
 | [`docs/debugging.md`](docs/debugging.md) | Feilsøking |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | Sjekkliste for fysisk enhet |
+| [`docs/status.md`](docs/status.md) | Hvilke dokumenter er live status vs historikk |
+| [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Fremtidssikring / åpne risikoer |
+| [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md) | Indekserte rutingkart (fased evaluering) |
 | [`docs/plugins.md`](docs/plugins.md) | Plugin-vert og veikart |
 
 Se `docs/`-mappen for mer spesialiserte emner (stemme, APRS, ECU, formler osv.).
@@ -355,8 +368,12 @@ Kortversjon av CI-forventninger:
 
 # Bygge og installere
 
-Fullstendige guider: [`docs/android-build.md`](docs/android-build.md) og
-[`docs/build-linux.md`](docs/build-linux.md).
+Fullstendige guider:
+
+- Android-APK: [`docs/android-build.md`](docs/android-build.md)
+- Linux (kjerne, `navi-desktop`, gpsd, adb): [`docs/build-linux.md`](docs/build-linux.md)
+- macOS (verktøy, NDK, adb): [`docs/build-macos.md`](docs/build-macos.md)
+- Windows (MSVC, verktøy, NDK, adb): [`docs/build-windows.md`](docs/build-windows.md)
 
 ### Emulator (x86_64)
 

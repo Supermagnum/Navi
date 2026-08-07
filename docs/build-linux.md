@@ -15,7 +15,10 @@ Debugging loops: [`debugging.md`](debugging.md).
 Plugin build details: [`plugins.md`](plugins.md).  
 Map styles / offline PMTiles: [`map-styles.md`](map-styles.md).  
 gpsd / IMU on Linux: see [Sensors](#sensors-on-linux-gpsd--imu) below and
-[`imu-calibration.md`](imu-calibration.md).
+[`imu-calibration.md`](imu-calibration.md).  
+ADB / device install from Linux: [Android Debug Bridge (adb)](#android-debug-bridge-adb).  
+macOS host: [`build-macos.md`](build-macos.md).  
+Windows host: [`build-windows.md`](build-windows.md).
 
 ---
 
@@ -125,6 +128,105 @@ sudo pacman -S webkit2gtk-4.1
 Without those headers you can still build with
 `cargo build -p navi-desktop --no-default-features --features gpsd,linux-imu`
 and open the UI in a normal browser (`--no-webview` / `--browser`).
+
+### Android Debug Bridge (adb)
+
+`adb` is **not** required for `navi-desktop` or Cargo core tests. Install it
+when you talk to a phone/tablet/emulator from this Linux host — install APKs,
+`adb devices`, `adb logcat`, push fixtures, or run Gradle
+`:app:installDebug`. Full Android/NDK build steps:
+[`android-build.md`](android-build.md).
+
+**Option A — distro package (fastest for adb alone)**
+
+**Debian / Ubuntu:**
+
+```bash
+sudo apt update
+sudo apt install adb android-sdk-platform-tools-common
+```
+
+(`android-sdk-platform-tools-common` ships udev rules so USB devices show up
+without running adb as root.)
+
+**Fedora:**
+
+```bash
+sudo dnf install android-tools
+```
+
+**Arch Linux:**
+
+```bash
+sudo pacman -S --needed android-tools
+```
+
+Confirm:
+
+```bash
+adb version
+adb devices
+```
+
+**Option B — Google platform-tools (matches Android Studio / SDK)**
+
+If you already use the Android SDK (needed to *build* the APK anyway):
+
+```bash
+# Typical SDK location after Android Studio or cmdline-tools:
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
+```
+
+Install or refresh **platform-tools** with `sdkmanager` (or Android Studio →
+SDK Manager → SDK Tools → Android SDK Platform-Tools):
+
+```bash
+# Example with cmdline-tools already under $ANDROID_HOME:
+yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools"
+```
+
+Or download the standalone zip from
+[Google’s platform-tools page](https://developer.android.com/tools/releases/platform-tools),
+unpack it, and put that `platform-tools/` directory on your `PATH`.
+
+**USB device access**
+
+1. On the Android device, enable **Developer options** (hidden by default):
+   - Open **Settings → About phone** (or **About tablet** / **About device**).
+   - Find **Build number** (sometimes under **Software information**).
+   - Tap **Build number** seven times until the device reports that you are a
+     developer (you may need to unlock with PIN/pattern).
+   - Go back to **Settings → System → Developer options** (on some Samsung
+     devices: **Settings → Developer options**).
+2. In **Developer options**, turn on **USB debugging**.
+   Optionally also enable **Wireless debugging** (Android 11+) if you will use
+   `adb` over Wi‑Fi.
+3. Plug in USB; unlock the device and accept the **Allow USB debugging?** RSA
+   fingerprint prompt (check **Always allow from this computer** if you trust
+   this host).
+4. On Linux, if `adb devices` shows `unauthorized` or an empty list while the
+   cable is connected, install the udev package above (Debian/Ubuntu) or copy
+   rules from
+   [android-udev-rules](https://github.com/M0Rf30/android-udev-rules), then
+   replug and run `adb kill-server && adb start-server && adb devices`.
+
+Expect a line like `<serial>    device` (not `offline` / `unauthorized`).
+
+**Wireless debugging (optional)**
+
+On Android 11+ you can pair over Wi‑Fi (**Developer options → Wireless
+debugging**) and use `adb pair <ip>:<port>` then `adb connect <ip>:<port>`.
+Prefer USB for first-time installs and large `adb push` transfers.
+
+**Smoke-check against Navi**
+
+```bash
+adb devices
+# After building a debug APK (see android-build.md):
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n no.navi.app/.MainActivity
+```
 
 ### System libraries
 
@@ -458,3 +560,5 @@ integrations, gpsd/IMU bring-up, and WASM plugins** alongside Automotive UI work
 | First `api/plan` is very slow | Cold graph build from a large PBF; prefer a regional extract (e.g. Oppland) or wait for cache under `--cache-dir`. |
 | Odd compile errors after pulling `main` | `cargo clean` then rebuild; ensure rustup **stable** is current (`rustup update`). Do not hand-edit `Cargo.lock` unless resolving a deliberate pin — prefer `cargo update` / a clean tree from `main`. |
 | `pkg-config` errors from a transitive crate | Install `pkg-config` / `pkgconf` for your distro (see Prerequisites). |
+| `adb: command not found` | Install adb ([Android Debug Bridge](#android-debug-bridge-adb)): distro `adb` / `android-tools`, or `$ANDROID_HOME/platform-tools` on `PATH`. |
+| `adb devices` empty / `unauthorized` | Enable Developer options (tap **Build number** seven times under About phone/tablet), turn on **USB debugging**, accept the RSA prompt; install udev rules (`android-sdk-platform-tools-common` or equivalent); `adb kill-server && adb start-server`. |
