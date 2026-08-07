@@ -10,7 +10,57 @@ shipping substitute for device GPS/IMU, GPU drivers, audio, USB accessories, or
 (including country disk budgets for Norway / Sweden / Germany / Russia / USA).
 
 If you have access to real hardware, this guide covers what to check and how to
-log results via `adb` so findings can be compared against the emulator baseline.
+capture evidence so findings can be compared against the emulator baseline.
+
+## Diagnostic logging (preferred — no adb required)
+
+You do **not** need `adb logcat` for most hardware reports. Prefer the in-app
+**Tools → Diagnostic logging** toggle:
+
+1. Open **Tools** in the planning panel.
+2. Turn on **Diagnostic logging**.
+3. Reproduce the scenario (plan, drive/simulate, change settings, etc.).
+4. Turn logging off when finished (optional), or leave it on for the whole
+   session.
+5. Copy the session file from the device over a plain USB cable (MTP / file
+   browser) — **developer options and adb are not required** for this path.
+
+**Where the files are**
+
+| Location | Path |
+|---|---|
+| Preferred (USB/MTP) | **Internal storage → Documents → debug** |
+| On-device filesystem | `/storage/emulated/0/Documents/debug/navi_session_YYYY-MM-DD_HH-mm-ss.log` |
+| Fallback if Documents is not writable | `Download/debug/` (same `navi_session_*.log` names) |
+| Last resort | App-private storage (harder to browse without adb) |
+
+**Tools → Export diagnostic log** opens Android’s share sheet if that is easier
+than copying via MTP.
+
+**What the session log contains** (pipe-delimited lines, categories from
+`DiagnosticLog`):
+
+| Category | Typical content |
+|---|---|
+| `GPS` | Position / accuracy / satellites (rate-limited; not a raw firehose) |
+| `CAMERA` | Map camera zoom / idle changes |
+| `TOGGLE` | UI toggles (eco, avoidances, follow, rotation, breaks, 3D, …) |
+| `SETTING_SAVED` | Persisted settings (vehicle limits, rest fields, paths, …) |
+| `ROUTE_PLAN` | Plan outcome summary |
+| `ROUTE_PLAN_STAGES` | Per-stage plan timings (graph build, POI/barrier, A*, …) |
+| `ECO_CALC` | Eco / energy-related plan notes |
+| `POI_FOUND` | Break / overnight POI hits |
+| `PAUSE_PLANNED` | Planned break / rest / overnight stops |
+| `INSTRUCTION` | Maneuver progress / completed instructions |
+| `FUEL_ADDED` | Fuel fill events when recorded |
+| `SYSTEM` | Occasional resource snapshots while logging is on |
+
+More detail: [`debugging.md`](debugging.md#3b-diagnostic-session-log-on-device-file)
+and the end-user note in [`how-to-use.md`](how-to-use.md).
+
+`adb logcat` and `adb screencap` remain useful for crashes, native GLES/Vulkan
+faults, and when you already have a developer cable set up — they are
+**optional**, not the default evidence path for testers.
 
 The specific known open questions include: whether the MapLibre native
 `CircleLayer`/`SymbolLayer` rendering issue (moving icons not painting via the
@@ -60,10 +110,14 @@ the nightly schedule was removed.
 
 For each area below, run the described scenario on real hardware and capture:
 
-- `adb logcat` output for the relevant tag(s), full and untruncated (no
-  `tail`/`head` — per this project's existing logging convention).
-- A screenshot (`adb exec-out screencap -p > name.png`) at key states.
+- **Preferred:** a **Tools → Diagnostic logging** session file from
+  **Documents/debug** (see above) — no adb required.
+- A screenshot at key states (device screenshot share, or optional
+  `adb exec-out screencap -p > name.png` if you already use adb).
 - A plain description of what was observed vs. expected.
+- **Optional (developers):** `adb logcat` for the relevant tag(s), full and
+  untruncated (no `tail`/`head` — per this project's existing logging
+  convention), especially for native crashes.
 
 Report findings as: **matches emulator behavior**, **differs from emulator**
 (describe how), or **new issue not seen on emulator at all**.
@@ -84,8 +138,9 @@ Report findings as: **matches emulator behavior**, **differs from emulator**
 - If the same failure occurs on real hardware, the overlay approach is confirmed
   necessary in production, not just for testing — also valuable, but changes how
   that workaround should be treated going forward.
-- Log: `adb logcat` filtered for MapLibre/GL-related tags during marker
-  registration and the first position update.
+- Log: prefer Diagnostic logging (`GPS` / `CAMERA` / `TOGGLE` lines). Optional:
+  `adb logcat` filtered for MapLibre/GL-related tags during marker registration
+  and the first position update.
 
 ## 2. Menu behavior
 
@@ -95,8 +150,9 @@ Report findings as: **matches emulator behavior**, **differs from emulator**
   interval, rest time, fuel tank capacity, fuel added).
 - For each: does it open/apply/auto-close correctly? Any lag, visual glitch, or
   crash not seen on the emulator?
-- Log: `adb logcat` during each menu interaction; screenshot before/after each
-  apply action.
+- Log: prefer **Tools → Diagnostic logging** session file under Documents/debug
+  (TOGGLE / SETTING_SAVED lines cover menu applies). Optional: `adb logcat`
+  during each menu interaction; screenshot before/after each apply action.
 
 HUD verification screenshots from the emulator baseline live under
 `docs/images/hud/`. The instrumented test is
@@ -111,17 +167,17 @@ HUD verification screenshots from the emulator baseline live under
 - Check whether RAM constraints (4 GB target) actually bind on real hardware the
   way planned — does a regional-scale graph load without issue? Does a larger
   load degrade gracefully or crash?
-- Log: `adb logcat` during graph parse/build/reweight; note wall-clock timing
-  for each stage if visible in logs.
+- Log: prefer Diagnostic logging (`ROUTE_PLAN` / `ROUTE_PLAN_STAGES` for
+  wall-clock stages). Optional: `adb logcat` during graph parse/build/reweight.
 
 ## 4. Settings persistence
 
 - Set values in each settings area (vehicle limits, fuel config, rest config,
   rotation mode, unit preference) and confirm they persist correctly across an
   app restart on real hardware.
-- Log: confirm via `adb logcat` or a settings-dump mechanism if available,
-  rather than just visual confirmation, so persistence is verifiable in the log
-  record.
+- Log: confirm via Diagnostic logging (`SETTING_SAVED` / `TOGGLE`) or optional
+  `adb logcat` / a settings-dump mechanism if available, rather than just visual
+  confirmation, so persistence is verifiable in the log record.
 
 ## 5. Sensor input (GPS/IMU)
 
@@ -135,7 +191,8 @@ HUD verification screenshots from the emulator baseline live under
   also sets Via or To when that chip is selected.
   - Compass and Direction-of-travel rotation modes respond correctly to real
     device movement/orientation, not just fed synthetic values.
-- Log: `adb logcat` for location/sensor provider tags during a short real walk
+- Log: prefer Diagnostic logging (`GPS` lines while walking/driving). Optional:
+  `adb logcat` for location/sensor provider tags during a short real walk
   or drive test.
 - Debug route simulation on a planned corridor (emulator / lab) exercises the
   same `applyFix` pipeline — see [`route-simulation.md`](route-simulation.md).
@@ -151,7 +208,9 @@ testing a prototype OBD-II / J1939 / MegaSquirt adapter against the
 - Confirm eco reweight / live cost uses the snapshot (not stale zeros).
 - Confirm ignition-off or adapter disconnect clears live energy rather than
   leaving a stuck L/h value.
-- Log: full `adb logcat` for the ECU/plugin tag; do not log VIN by default.
+- Log: prefer Diagnostic logging when the plugin writes under
+  Documents/debug; optional full `adb logcat` for the ECU/plugin tag; do not
+  log VIN by default.
 
 ## 7. Hydro soft-edge fringe (capture vs live)
 

@@ -79,6 +79,7 @@ from Navit (**GPL v2**); see [`docs/icons.md`](docs/icons.md).
 | **Map rotation** | North-up, compass, or direction of travel. | Done |
 | **Moving icons** | Can draw nearby tracked markers on the map. A live radio feed is not built in yet. | Partial |
 | **Map updates** | Only when you ask — check for OpenStreetMap updates or download a fresh region. Never silent. | Done |
+| **Diagnostic logging** | Tools toggle writes a session log (GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system) you can copy over USB/MTP — no adb required. Files: **Internal storage → Documents → debug** (`navi_session_*.log`). | Done |
 | **Plugins** | A safe sandbox for future add-ons exists; product plugins are not shipped yet. | Host ready |
 
 **Hardware note:** Tablet checks have started (Samsung Galaxy Tab S6 Lite). Car

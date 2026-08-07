@@ -82,6 +82,7 @@ ikoner kommer fra Navit (**GPL v2**); se [`docs/icons.md`](docs/icons.md).
 | **Kartrotasjon** | Nord opp, kompass eller kjøreretning. | Ferdig |
 | **Bevegelige ikoner** | Kan tegne nærliggende spormarkører på kartet. Live radiomating er ikke innebygd ennå. | Delvis |
 | **Kartoppdateringer** | Bare når du ber om det — sjekk OpenStreetMap-oppdateringer eller last en fersk region. Aldri i det stille. | Ferdig |
+| **Diagnostisk logging** | Bryter under Tools skriver en øktlogg (GPS, kamera, brytere, ruteplan/trinn, øko, POI, pauser, instruksjoner, drivstoff, system) du kan kopiere over USB/MTP — adb trengs ikke. Filer: **Intern lagring → Documents → debug** (`navi_session_*.log`). | Ferdig |
 | **Plugins** | En trygg sandkasse for fremtidige tillegg finnes; produktplugins er ikke levert ennå. | Vert klar |
 
 **Maskinvare:** Nettbrettsjekker er startet (Samsung Galaxy Tab S6 Lite).
