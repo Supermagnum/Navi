@@ -30,7 +30,7 @@ pub use poi::{CorridorBand, PoiCategory, PoiIndex, PoiRecord};
 pub use routing::elevation::{ElevationCache, ElevationDownloader, ElevationJob, ElevationService};
 pub use routing::graph::{format_route_avoidance_report, RouteGraph, RouteOptions, RoutingProfile};
 pub use routing::workers::WorkerPoolPlan;
-pub use search::{NameHit, NameIndex, RouteStore, SavedRoute};
+pub use search::{NameHit, NameIndex, PlaceStore, RouteStore, SavedPlace, SavedRoute};
 pub use storage::Storage;
 pub use tracks::{
     clamp_range, clamp_timeout, haversine_km, offset_lat_lon, TrackStation, TrackStore,

@@ -451,6 +451,86 @@ impl<'a> RouteStore<'a> {
     }
 }
 
+/// Named single-coordinate place (distinct from a full saved route corridor).
+#[derive(Debug, Clone)]
+pub struct SavedPlace {
+    pub id: String,
+    pub name: String,
+    pub lat: f64,
+    pub lon: f64,
+    pub kind: String,
+    pub created_at: String,
+}
+
+pub struct PlaceStore<'a> {
+    storage: &'a Storage,
+}
+
+impl<'a> PlaceStore<'a> {
+    pub fn new(storage: &'a Storage) -> Self {
+        Self { storage }
+    }
+
+    pub fn insert(&self, place: &SavedPlace) -> SqlResult<()> {
+        self.storage.with_conn(|conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO saved_places(id, name, lat, lon, kind, created_at)
+                 VALUES (?1,?2,?3,?4,?5,?6)",
+                params![
+                    place.id,
+                    place.name,
+                    place.lat,
+                    place.lon,
+                    place.kind,
+                    place.created_at,
+                ],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn rename(&self, id: &str, name: &str) -> SqlResult<bool> {
+        self.storage.with_conn(|conn| {
+            let n = conn.execute(
+                "UPDATE saved_places SET name = ?1 WHERE id = ?2",
+                params![name, id],
+            )?;
+            Ok(n > 0)
+        })
+    }
+
+    pub fn delete(&self, id: &str) -> SqlResult<()> {
+        self.storage.with_conn(|conn| {
+            conn.execute("DELETE FROM saved_places WHERE id = ?1", params![id])?;
+            Ok(())
+        })
+    }
+
+    pub fn list(&self) -> SqlResult<Vec<SavedPlace>> {
+        self.storage.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, lat, lon, kind, created_at
+                 FROM saved_places ORDER BY created_at DESC",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok(SavedPlace {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    lat: row.get(2)?,
+                    lon: row.get(3)?,
+                    kind: row.get(4)?,
+                    created_at: row.get(5)?,
+                })
+            })?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r?);
+            }
+            Ok(out)
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -565,5 +645,30 @@ mod tests {
             hits.iter().any(|h| h.name.starts_with("Peer Gyntvegen")),
             "expected Peer Gyntvegen near fix, got {hits:?}"
         );
+    }
+
+    #[test]
+    fn place_store_insert_list_rename_delete() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("navi.db");
+        let storage = crate::storage::Storage::open(&db).expect("open");
+        let store = PlaceStore::new(&storage);
+        store
+            .insert(&SavedPlace {
+                id: "p1".into(),
+                name: "Cabin ridge".into(),
+                lat: 61.85,
+                lon: 10.23,
+                kind: "map-mark".into(),
+                created_at: "100".into(),
+            })
+            .unwrap();
+        let listed = store.list().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].name, "Cabin ridge");
+        assert!(store.rename("p1", "Atnbrufossen lookout").unwrap());
+        assert_eq!(store.list().unwrap()[0].name, "Atnbrufossen lookout");
+        store.delete("p1").unwrap();
+        assert!(store.list().unwrap().is_empty());
     }
 }

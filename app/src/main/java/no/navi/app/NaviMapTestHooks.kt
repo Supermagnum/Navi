@@ -228,6 +228,16 @@ object NaviMapTestHooks {
     @Volatile
     var mapGestureRotates: Int = 0
 
+    /** Completed 4 s map long-press events (map-mark menu). */
+    @Volatile
+    var mapLongPressCount: Int = 0
+
+    @Volatile
+    var lastMapLongPressLat: Double = Double.NaN
+
+    @Volatile
+    var lastMapLongPressLon: Double = Double.NaN
+
     /** One-shot: set snap-rotation-back preference from tests. */
     @Volatile
     var requestSnapRotationBack: Boolean? = null

@@ -27,14 +27,19 @@ non-zero reading.
 
 Sheets close on Save/Close, or by tapping the same bar again. Tapping the
 map does not open or close either sheet. Every menu (Map settings, Drive
-settings, Tools, Profile, Vehicle, Saved routes) exposes **Save** and **Close**.
+settings, Tools, Profile, Vehicle, Saved routes, Saved places) exposes **Save**
+and **Close** where applicable.
 **Delete route** clears the active planned corridor from the Route panel (when a
 polyline is on the map) and removes a stored entry from **Saved routes**
 (per-row **Delete route**). Saved routes also offer **Delete planned route**
 while a corridor is active on the map.
-**Close** on Profile / Vehicle / Saved routes, or the **Close** next to Tools in
-the planning chrome, dismisses the whole route-planning panel so the map is
-usable; reopen with the **Route** button under the top Map bar.
+**Saved places** (sibling panel under Saved routes) stores named single
+coordinates; row actions set **From** / **Via** / **To**, or Rename / Delete.
+Map long-press (~4 s) opens a mark sheet — see
+[`map-marking-saved-places.md`](map-marking-saved-places.md).
+**Close** on Profile / Vehicle / Saved routes / Saved places, or the **Close**
+next to Tools in the planning chrome, dismisses the whole route-planning panel
+so the map is usable; reopen with the **Route** button under the top Map bar.
 
 Route planning progress is visible in logcat:
 

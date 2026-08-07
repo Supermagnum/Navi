@@ -20,6 +20,10 @@ serde_json = { workspace = true }
 log = { workspace = true }
 rusqlite = { workspace = true }
 geo-types = { workspace = true }
+rkyv = { workspace = true }
+memmap2 = { workspace = true }
+pathfinding = { workspace = true }
+osmpbf = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.14"
@@ -39,3 +43,27 @@ path = "src/bin/plan_truck_live_gps.rs"
 [[bin]]
 name = "indexed-rtree-poc"
 path = "src/bin/indexed_rtree_poc.rs"
+
+[[bin]]
+name = "rkyv-mmap-graph-poc"
+path = "src/bin/rkyv_mmap_graph_poc.rs"
+
+[[bin]]
+name = "rkyv-mmap-poi-barrier-poc"
+path = "src/bin/rkyv_mmap_poi_barrier_poc.rs"
+
+[[bin]]
+name = "navi-indexed-convert"
+path = "src/bin/navi_indexed_convert.rs"
+
+[[bin]]
+name = "navi-indexed-bench"
+path = "src/bin/navi_indexed_bench.rs"
+
+[[bin]]
+name = "navi-indexed-plan-bench"
+path = "src/bin/navi_indexed_plan_bench.rs"
+
+[[bin]]
+name = "navi-wetland-bench"
+path = "src/bin/navi_wetland_bench.rs"

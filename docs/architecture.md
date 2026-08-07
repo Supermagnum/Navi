@@ -197,9 +197,13 @@ navi.db (Storage)
 places.db (NameIndex)   ← FTS search (path chosen by host)
 └── name_entries + name_fts
 
-*.navigph / cache file  ← reweighted RouteGraph
+*.navi-graph-*.rkyv / *.navi-poi-barrier.rkyv / *.navi-manifest.json
+                        ← indexed region packs (plan fast path; M5+)
 elevation/              ← tile files
 ```
+
+`.navigph` trip-bbox caches are **deprecated** (M5): planners no longer read or
+write them; missing packs fall back to a cold PBF rebuild.
 
 Exact filenames are host-chosen under the Android app data directory; UniFFI
 APIs take `dataDir` / explicit paths.

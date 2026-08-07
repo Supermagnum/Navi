@@ -1581,34 +1581,31 @@ pub fn run_car_corridor_pipeline(
     let elevation = ElevationService::new(ElevationCache::new(&elev));
     let _ = elevation.warm_bbox([60.35, 9.95, 62.05, 11.65]);
 
-    // Cold path: remove any prior cache entry for this fingerprint by wiping cache dir contents
-    // that match this run's stem — simpler: delete cache_dir files then build.
-    if cache.is_dir() {
-        if let Ok(rd) = std::fs::read_dir(&cache) {
-            for e in rd.flatten() {
-                let p = e.path();
-                if p.extension().and_then(|s| s.to_str()) == Some("navigph") {
-                    let _ = std::fs::remove_file(&p);
+    // Phase 4 M5: `.navigph` removed. Warm path is indexed packs when present.
+    let data_dir = pbf
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let t_cold = Instant::now();
+    let (mut graph, pack_hit) = match driver_break_core::routing::indexed::try_load_graph_for_plan(
+        &data_dir,
+        pbf,
+        RoutingProfile::Car,
+    ) {
+        Ok(g) => (g, true),
+        Err(_) => {
+            match load_or_build_reweighted(pbf, &cache, RoutingProfile::Car, &elevation, &eco) {
+                Ok((g, _)) => (g, false),
+                Err(e) => {
+                    report.push_str(&format!("FAIL: cold graph build: {e:#}\n"));
+                    return empty(report);
                 }
             }
         }
-    }
-
-    let t_cold = Instant::now();
-    let (mut graph, hit1) =
-        match load_or_build_reweighted(pbf, &cache, RoutingProfile::Car, &elevation, &eco) {
-            Ok(v) => v,
-            Err(e) => {
-                report.push_str(&format!("FAIL: cold graph build: {e:#}\n"));
-                return empty(report);
-            }
-        };
+    };
     let cold_s = t_cold.elapsed().as_secs_f64();
-    if hit1 {
-        report.push_str("WARN: unexpected cache hit on cold pass\n");
-    }
     report.push_str(&format!(
-        "cold_build_s={cold_s:.2}; cache_hit={hit1}; nodes={}; edges={}\n",
+        "cold_build_s={cold_s:.2}; pack_hit={pack_hit}; nodes={}; edges={}\n",
         graph.nodes.len(),
         graph.edges.len()
     ));
@@ -1618,28 +1615,39 @@ pub fn run_car_corridor_pipeline(
     }
 
     let t_warm = Instant::now();
-    let (graph2, hit2) =
-        match load_or_build_reweighted(pbf, &cache, RoutingProfile::Car, &elevation, &eco) {
-            Ok(v) => v,
-            Err(e) => {
-                report.push_str(&format!("FAIL: warm graph load: {e:#}\n"));
-                return empty(report);
+    let (graph2, pack_hit2) = match driver_break_core::routing::indexed::try_load_graph_for_plan(
+        &data_dir,
+        pbf,
+        RoutingProfile::Car,
+    ) {
+        Ok(g) => (g, true),
+        Err(_) => {
+            match load_or_build_reweighted(pbf, &cache, RoutingProfile::Car, &elevation, &eco) {
+                Ok((g, _)) => (g, false),
+                Err(e) => {
+                    report.push_str(&format!("FAIL: warm graph load: {e:#}\n"));
+                    return empty(report);
+                }
             }
-        };
+        }
+    };
     let warm_s = t_warm.elapsed().as_secs_f64();
-    report.push_str(&format!("warm_load_s={warm_s:.2}; cache_hit={hit2}\n"));
-    if !hit2 {
-        report.push_str("FAIL: expected cache hit on second load_or_build_reweighted\n");
-        return empty(report);
+    report.push_str(&format!("warm_load_s={warm_s:.2}; pack_hit={pack_hit2}\n"));
+    if pack_hit && pack_hit2 {
+        if warm_s >= cold_s * 0.85 && cold_s > 2.0 {
+            report.push_str(&format!(
+                "FAIL: warm pack load ({warm_s:.1}s) not meaningfully faster than cold ({cold_s:.1}s)\n"
+            ));
+            return empty(report);
+        }
+    } else if !pack_hit {
+        report.push_str(
+            "NOTE: no indexed packs; `.navigph` deprecated — both passes rebuild from PBF\n",
+        );
     }
-    if warm_s >= cold_s * 0.85 && cold_s > 2.0 {
-        report.push_str(&format!(
-            "FAIL: warm load ({warm_s:.1}s) not meaningfully faster than cold ({cold_s:.1}s)\n"
-        ));
-        return empty(report);
-    }
-    // Prefer the warm-loaded graph for routing (proves cache usable).
+    // Prefer the second load for routing.
     graph = graph2;
+    let hit2 = pack_hit2;
 
     let start_lat = 60.562_191_4;
     let start_lon = 11.256_123_9;
@@ -1966,14 +1974,37 @@ fn plan_car_route_inner(
 
     driver_break_core::download::progress::set(0, Some(5), "Planning route: building area graph…");
     let t_graph = Instant::now();
-    let (mut graph, cache_hit) =
-        match load_or_build_reweighted_bbox(pbf, &cache, routing_profile, &elevation, &eco, bbox) {
-            Ok(v) => v,
-            Err(e) => {
-                report.push_str(&format!("FAIL: graph build: {e:#}\n"));
-                return empty(report);
-            }
+    let data_dir = pbf
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let (mut graph, cache_hit, pack_hit) =
+        match driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
+            &data_dir,
+            pbf,
+            routing_profile,
+            Some(bbox),
+        ) {
+            Ok(g) => (g, false, true),
+            Err(_) => match load_or_build_reweighted_bbox(
+                pbf,
+                &cache,
+                routing_profile,
+                &elevation,
+                &eco,
+                bbox,
+            ) {
+                Ok((g, hit)) => (g, hit, false),
+                Err(e) => {
+                    report.push_str(&format!("FAIL: graph build: {e:#}\n"));
+                    return empty(report);
+                }
+            },
         };
+    // Pack path skips load_or_build eco; apply DEM reweight when eco is on.
+    if pack_hit && use_eco {
+        graph.apply_eco_reweighting(&elevation, &eco);
+    }
     let build_s = t_graph.elapsed().as_secs_f64();
     let graph_build_ms = timer.lap_ms();
     if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
@@ -1989,7 +2020,7 @@ fn plan_car_route_inner(
     }
     let network_pref_ms = timer.lap_ms();
     report.push_str(&format!(
-        "build_s={build_s:.2}; cache_hit={cache_hit}; nodes={}; edges={}\n",
+        "build_s={build_s:.2}; cache_hit={cache_hit}; pack_hit={pack_hit}; nodes={}; edges={}\n",
         graph.nodes.len(),
         graph.edges.len()
     ));
@@ -2054,9 +2085,21 @@ fn plan_car_route_inner(
     let polyline_ms = timer.lap_ms();
     driver_break_core::download::progress::set(4, Some(5), "Planning route: break stops…");
     // Clip POI load to the same trip bbox (never a full Ostlandet POI scan).
-    let poi_index = PoiIndex::load_from_pbf_bbox(pbf, bbox).unwrap_or_else(|_| PoiIndex::new());
-    let barriers = load_break_barriers(&graph, pbf, bbox);
+    let (poi_index, barriers, poi_pack_hit) =
+        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan(&data_dir, pbf) {
+            Ok((poi, barriers)) => {
+                // Pack is region-wide; nearest queries already radius-limited.
+                (poi, barriers, true)
+            }
+            Err(_) => {
+                let poi_index =
+                    PoiIndex::load_from_pbf_bbox(pbf, bbox).unwrap_or_else(|_| PoiIndex::new());
+                let barriers = load_break_barriers(&graph, pbf, bbox);
+                (poi_index, barriers, false)
+            }
+        };
     let poi_barrier_ms = timer.lap_ms();
+    report.push_str(&format!("poi_pack_hit={poi_pack_hit}\n"));
 
     // Truck / TruckElectric: jurisdiction-keyed HOS (EC 561 or FMCSA).
     // MobileHome uses car soft break spacing (not commercial HGV legal tracking).
@@ -2651,20 +2694,33 @@ pub fn plan_hiking_route(
         "Planning route: building hiking area graph…",
     );
     let t_graph = Instant::now();
-    let (mut graph, cache_hit) = match load_or_build_reweighted_bbox(
-        pbf,
-        &cache,
-        RoutingProfile::Foot,
-        &elevation,
-        &eco,
-        bbox,
-    ) {
-        Ok(v) => v,
-        Err(e) => {
-            report.push_str(&format!("FAIL: foot graph build: {e:#}\n"));
-            return empty_corridor(report);
-        }
-    };
+    let data_dir = pbf
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let (mut graph, cache_hit, pack_hit) =
+        match driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
+            &data_dir,
+            pbf,
+            RoutingProfile::Foot,
+            Some(bbox),
+        ) {
+            Ok(g) => (g, false, true),
+            Err(_) => match load_or_build_reweighted_bbox(
+                pbf,
+                &cache,
+                RoutingProfile::Foot,
+                &elevation,
+                &eco,
+                bbox,
+            ) {
+                Ok((g, hit)) => (g, hit, false),
+                Err(e) => {
+                    report.push_str(&format!("FAIL: foot graph build: {e:#}\n"));
+                    return empty_corridor(report);
+                }
+            },
+        };
     let build_s = t_graph.elapsed().as_secs_f64();
     let graph_build_ms = timer.lap_ms();
     apply_route_prefs_if_requested(
@@ -2677,7 +2733,7 @@ pub fn plan_hiking_route(
     );
     let network_pref_ms = timer.lap_ms();
     report.push_str(&format!(
-        "build_s={build_s:.2}; cache_hit={cache_hit}; nodes={}; edges={}\n",
+        "build_s={build_s:.2}; cache_hit={cache_hit}; pack_hit={pack_hit}; nodes={}; edges={}\n",
         graph.nodes.len(),
         graph.edges.len()
     ));
@@ -2702,16 +2758,24 @@ pub fn plan_hiking_route(
         }
     }
 
-    let wetlands = match WetlandIndex::load_from_pbf_bbox(pbf, bbox) {
-        Ok(w) => w,
-        Err(e) => {
-            report.push_str(&format!("WARN: wetland index: {e:#}\n"));
-            WetlandIndex::default()
-        }
-    };
+    let (wetlands, wetland_pack_hit) =
+        match driver_break_core::routing::indexed::try_load_wetland_for_plan(
+            &data_dir,
+            pbf,
+            Some(bbox),
+        ) {
+            Ok(w) => (w, true),
+            Err(_) => match WetlandIndex::load_from_pbf_bbox(pbf, bbox) {
+                Ok(w) => (w, false),
+                Err(e) => {
+                    report.push_str(&format!("WARN: wetland index: {e:#}\n"));
+                    (WetlandIndex::default(), false)
+                }
+            },
+        };
     let wet_stats = graph.apply_wetland_hazards(&wetlands);
     report.push_str(&format!(
-        "wetland_rings={}; wetland_soft_edges={}; wetland_hard_removed={}; wetland_boardwalk_kept={}\n",
+        "wetland_rings={}; wetland_soft_edges={}; wetland_hard_removed={}; wetland_boardwalk_kept={}; wetland_pack_hit={wetland_pack_hit}\n",
         wetlands.ring_count(),
         wet_stats.soft_penalized,
         wet_stats.hard_removed,
@@ -3161,6 +3225,118 @@ pub fn ensure_place_index(pbf_path: String, index_db_path: String) -> String {
     }
 }
 
+/// Build preprocess-once indexed map packs next to a region PBF (graph + POI/barrier).
+///
+/// Writes `{stem}.navi-graph-*.rkyv`, `{stem}.navi-poi-barrier.rkyv`, and
+/// `{stem}.navi-manifest.json` under `data_dir` (defaults to the PBF parent).
+/// Safe to call after download / for migration rebuild from local PBF.
+#[uniffi::export]
+pub fn ensure_indexed_maps(pbf_path: String, data_dir: String, elev_dir: Option<String>) -> String {
+    use driver_break_core::routing::graph::RoutingProfile;
+    use driver_break_core::routing::indexed::{
+        convert_region_packs, manifest_path, ConvertOptions, NaviManifest, PackStatus,
+        WETLAND_FORMAT_VERSION,
+    };
+
+    let pbf = PathBuf::from(&pbf_path);
+    if !pbf.is_file() {
+        return format!("FAIL: PBF missing: {pbf_path}\n");
+    }
+    let data = if data_dir.is_empty() {
+        pbf.parent()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."))
+    } else {
+        PathBuf::from(&data_dir)
+    };
+    let _ = std::fs::create_dir_all(&data);
+
+    let stem = pbf
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|name| {
+            name.strip_suffix(".osm.pbf")
+                .or_else(|| name.strip_suffix(".pbf"))
+                .unwrap_or(name)
+                .to_string()
+        })
+        .unwrap_or_else(|| "region".into());
+    let man_path = manifest_path(&data, &stem);
+    if man_path.is_file() {
+        if let Ok(man) = NaviManifest::load(&man_path) {
+            let wetland_ok = man
+                .wetland_file
+                .as_ref()
+                .is_some_and(|f| data.join(f).is_file())
+                && man.wetland_format_version == WETLAND_FORMAT_VERSION;
+            if man.status_for_pbf(&data, &pbf) == PackStatus::Ready && wetland_ok {
+                return format!("PASS\ncache_hit=true\nmanifest={}\n", man_path.display());
+            }
+        }
+    }
+
+    let mut opts = ConvertOptions::new(&data, &pbf);
+    opts.elev_dir = elev_dir.map(PathBuf::from);
+    // Motor + hiking covers the shared planning profiles for v1.
+    opts.profiles = vec![
+        RoutingProfile::Car,
+        RoutingProfile::Truck,
+        RoutingProfile::Foot,
+        RoutingProfile::Bicycle,
+    ];
+    match convert_region_packs(&opts) {
+        Ok(r) => format!(
+            "PASS\ncache_hit=false\nconvert_ms={:.1}\nnodes={}\nedges={}\npois={}\nbarrier_segs={}\nwetland_rings={}\nmanifest={}\n",
+            r.convert_ms,
+            r.nodes,
+            r.edges,
+            r.pois,
+            r.barrier_segs,
+            r.wetland_rings,
+            r.manifest_file
+        ),
+        Err(e) => format!("FAIL: indexed convert: {e:#}\n"),
+    }
+}
+
+/// Whether region indexed packs are ready for `pbf_path` under `data_dir`.
+#[uniffi::export]
+pub fn indexed_maps_status(pbf_path: String, data_dir: String) -> String {
+    use driver_break_core::routing::indexed::{manifest_path, NaviManifest, PackStatus};
+
+    let pbf = PathBuf::from(&pbf_path);
+    let data = if data_dir.is_empty() {
+        pbf.parent()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."))
+    } else {
+        PathBuf::from(data_dir)
+    };
+    let stem = pbf
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|name| {
+            name.strip_suffix(".osm.pbf")
+                .or_else(|| name.strip_suffix(".pbf"))
+                .unwrap_or(name)
+                .to_string()
+        })
+        .unwrap_or_else(|| "region".into());
+    let man_path = manifest_path(&data, &stem);
+    if !man_path.is_file() {
+        return "missing\n".into();
+    }
+    match NaviManifest::load(&man_path) {
+        Ok(man) => match man.status_for_pbf(&data, &pbf) {
+            PackStatus::Ready => "ready\n".into(),
+            PackStatus::Missing => "missing\n".into(),
+            PackStatus::StalePbf => "stale_pbf\n".into(),
+            PackStatus::VersionMismatch => "version_mismatch\n".into(),
+        },
+        Err(e) => format!("error: {e:#}\n"),
+    }
+}
+
 /// Offline place / address-style name search (FTS5 prefix).
 #[uniffi::export]
 pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<PlaceHit> {
@@ -3413,6 +3589,91 @@ pub fn save_named_route(
         Ok(()) => format!("PASS\nid={id}\n"),
         Err(e) => format!("FAIL: {e}"),
     }
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiSavedPlace {
+    pub id: String,
+    pub name: String,
+    pub lat: f64,
+    pub lon: f64,
+    pub kind: String,
+    pub created_at: String,
+}
+
+#[uniffi::export]
+pub fn list_saved_places(data_dir: String) -> Vec<FfiSavedPlace> {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return Vec::new();
+    };
+    let store = driver_break_core::search::PlaceStore::new(&storage);
+    let Ok(rows) = store.list() else {
+        return Vec::new();
+    };
+    rows.into_iter()
+        .map(|p| FfiSavedPlace {
+            id: p.id,
+            name: p.name,
+            lat: p.lat,
+            lon: p.lon,
+            kind: p.kind,
+            created_at: p.created_at,
+        })
+        .collect()
+}
+
+#[uniffi::export]
+pub fn save_named_place(
+    data_dir: String,
+    name: String,
+    lat: f64,
+    lon: f64,
+    kind: String,
+) -> String {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return "FAIL: open db".into();
+    };
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return "FAIL: empty name".into();
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let place = driver_break_core::search::SavedPlace {
+        id: id.clone(),
+        name: trimmed.to_string(),
+        lat,
+        lon,
+        kind,
+        created_at: chrono_like_now(),
+    };
+    match driver_break_core::search::PlaceStore::new(&storage).insert(&place) {
+        Ok(()) => format!("PASS\nid={id}\n"),
+        Err(e) => format!("FAIL: {e}"),
+    }
+}
+
+#[uniffi::export]
+pub fn rename_saved_place(data_dir: String, id: String, name: String) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    driver_break_core::search::PlaceStore::new(&storage)
+        .rename(&id, trimmed)
+        .unwrap_or(false)
+}
+
+#[uniffi::export]
+pub fn delete_saved_place(data_dir: String, id: String) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    driver_break_core::search::PlaceStore::new(&storage)
+        .delete(&id)
+        .is_ok()
 }
 
 fn chrono_like_now() -> String {
@@ -4062,11 +4323,29 @@ pub fn road_label_near(
     let _ = std::fs::create_dir_all(&cache);
     let eco = eco_for_travel_profile(profile);
     let elevation = ElevationService::new(ElevationCache::new(&elev));
-    let (graph, _) =
-        match load_or_build_reweighted_bbox(pbf, &cache, routing_profile, &elevation, &eco, bbox) {
+    let data_dir = pbf
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let (graph, _) = match driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
+        &data_dir,
+        pbf,
+        routing_profile,
+        Some(bbox),
+    ) {
+        Ok(g) => (g, true),
+        Err(_) => match load_or_build_reweighted_bbox(
+            pbf,
+            &cache,
+            routing_profile,
+            &elevation,
+            &eco,
+            bbox,
+        ) {
             Ok(v) => v,
             Err(_) => return String::new(),
-        };
+        },
+    };
     let label = nearest_road_label(&graph, lat, lon, max_m.max(1.0)).unwrap_or_default();
     if let Ok(mut guard) = ROAD_LABEL_GRAPH.lock() {
         *guard = Some(RoadLabelGraphCache { key, graph });

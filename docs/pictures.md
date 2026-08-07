@@ -114,6 +114,19 @@ frame below must show **SIMULATING** (not live GPS at the tester’s location).
 | After Recenter | ![After Recenter](images/follow_gps/05_after_recenter.png) |
 | Rotation modes OK | ![Rotation modes](images/follow_gps/06_rotation_modes_ok.png) |
 
+## Map long-press and saved places
+
+How-to: [`map-marking-saved-places.md`](map-marking-saved-places.md). Captured on
+**SM-P613** (real touch-and-hold, not emulator).
+
+| Scene | Preview |
+|---|---|
+| Hold progress ring (~4 s) | ![Hold ring](images/map-long-press/hold_ring.png) |
+| Marked location action sheet | ![Action menu](images/map-long-press/action_menu.png) |
+| Save place name dialog | ![Save dialog](images/map-long-press/save_place_dialog.png) |
+| Saved places list (beside Saved routes) | ![Saved places](images/map-long-press/saved_places_list.png) |
+| Saved place applied as To | ![As To](images/map-long-press/saved_place_as_to.png) |
+
 ## Moving icons (APRS-style)
 
 | Scene | Preview |

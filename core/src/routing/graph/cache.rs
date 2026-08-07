@@ -12,7 +12,9 @@ use crate::routing::elevation::ElevationService;
 
 use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
 
-// Bump when on-disk graph topology / edge meta semantics change.
+// Deprecated trip-bbox cache format (NAVIGPH7 + bincode). Planning no longer
+// reads or writes these files (M5, 2026-08); indexed region packs replace them.
+// Helpers below remain for unit tests / forensic load of old artifacts.
 const CACHE_MAGIC: &[u8; 8] = b"NAVIGPH7";
 
 /// Source PBF and eco inputs used to validate a cached reweighted graph.
@@ -235,17 +237,12 @@ pub fn load_or_build_reweighted(
     elevation: &ElevationService,
     eco: &EcoConfig,
 ) -> anyhow::Result<(RouteGraph, bool)> {
-    std::fs::create_dir_all(cache_dir)?;
-    let expected = GraphCacheFingerprint::from_pbf(pbf, profile, Some(eco))?;
-    let cache_path = graph_cache_path(cache_dir, pbf, profile);
-
-    if let Some(graph) = load_reweighted_graph(&cache_path, &expected)? {
-        return Ok((graph, true));
-    }
-
+    let _ = (cache_dir,);
+    // M5 (2026-08): `.navigph` trip-bbox cache deprecated. Indexed region packs
+    // (`*.navi-graph-*.rkyv`) are the durable fast path; callers that still hit
+    // this helper are on the PBF fallback and must rebuild.
     let mut graph = RouteGraph::build_from_pbf(pbf, profile)?;
     graph.apply_eco_reweighting(elevation, eco);
-    save_reweighted_graph(&graph, &cache_path, &expected)?;
     Ok((graph, false))
 }
 
@@ -260,23 +257,16 @@ pub fn load_or_build_reweighted_bbox(
     eco: &EcoConfig,
     bbox: [f64; 4],
 ) -> anyhow::Result<(RouteGraph, bool)> {
-    std::fs::create_dir_all(cache_dir)?;
-    let expected = GraphCacheFingerprint::from_pbf(pbf, profile, Some(eco))?;
-    let cache_path = graph_cache_path_bbox(cache_dir, pbf, profile, bbox);
-
-    if let Some(graph) = load_reweighted_graph(&cache_path, &expected)? {
-        crate::download::progress::set(3, Some(4), "Planning route: cached graph ready");
-        return Ok((graph, true));
-    }
-
+    let _ = cache_dir;
+    // M5: do not read or write `.navigph` (see [`load_or_build_reweighted`]).
     let mut graph = RouteGraph::build_from_pbf_bbox(pbf, profile, bbox)?;
     graph.apply_eco_reweighting(elevation, eco);
-    crate::download::progress::set(3, Some(4), "Planning route: saving graph cache…");
-    save_reweighted_graph(&graph, &cache_path, &expected)?;
+    crate::download::progress::set(3, Some(4), "Planning route: graph ready");
     Ok((graph, false))
 }
 
-/// Cache file for a bbox-clipped reweighted graph.
+/// Cache file for a bbox-clipped reweighted graph (deprecated; unused by planners).
+#[allow(dead_code)]
 pub fn graph_cache_path_bbox(
     cache_dir: &Path,
     pbf_path: &Path,

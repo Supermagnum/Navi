@@ -49,6 +49,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -98,6 +99,7 @@ import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 import uniffi.navi.FfiCarRestSettings
+import uniffi.navi.FfiSavedPlace
 import uniffi.navi.FfiSavedRoute
 import uniffi.navi.FfiTruckRestSettings
 import uniffi.navi.FfiVehicleLimits
@@ -106,15 +108,19 @@ import uniffi.navi.TravelProfile
 import uniffi.navi.applyOsmUpdate
 import uniffi.navi.bindGeofabrikRegion
 import uniffi.navi.checkOsmUpdates
+import uniffi.navi.deleteSavedPlace
 import uniffi.navi.deleteSavedRoute
 import uniffi.navi.downloadProgressClear
 import uniffi.navi.downloadProgressSnapshot
 import uniffi.navi.ecoModeDefault
 import uniffi.navi.ecoModeToggleable
 import uniffi.navi.elevationAt
+import uniffi.navi.ensureIndexedMaps
 import uniffi.navi.ensurePlaceIndex
 import uniffi.navi.formatRouteAvoidanceReport
 import uniffi.navi.geofabrikLatestPbfUrl
+import uniffi.navi.indexedMapsStatus
+import uniffi.navi.listSavedPlaces
 import uniffi.navi.listSavedRoutes
 import uniffi.navi.loadCarRestSettings
 import uniffi.navi.loadTruckRestSettings
@@ -129,8 +135,10 @@ import uniffi.navi.pmtilesQueueRegion
 import uniffi.navi.pmtilesResumeJob
 import uniffi.navi.pmtilesRunJob
 import uniffi.navi.provisionRegionData
+import uniffi.navi.renameSavedPlace
 import uniffi.navi.roadLabelNear
 import uniffi.navi.saveCarRestSettings
+import uniffi.navi.saveNamedPlace
 import uniffi.navi.saveNamedRoute
 import uniffi.navi.saveTruckRestSettings
 import uniffi.navi.saveVehicleLimits
@@ -431,6 +439,13 @@ private fun NaviMapScreen() {
     var showProfilePanel by remember { mutableStateOf(true) }
     var showVehiclePanel by remember { mutableStateOf(true) }
     var showRoutesPanel by remember { mutableStateOf(true) }
+    var showPlacesPanel by remember { mutableStateOf(true) }
+    var savedPlaces by remember { mutableStateOf<List<FfiSavedPlace>>(emptyList()) }
+    var mapMarkPending by remember { mutableStateOf<MapMarkPending?>(null) }
+    var savePlaceDraftName by remember { mutableStateOf("") }
+    var showSavePlaceDialog by remember { mutableStateOf(false) }
+    var renamePlaceId by remember { mutableStateOf<String?>(null) }
+    var renamePlaceDraft by remember { mutableStateOf("") }
     var approachGuidance by remember { mutableStateOf(ApproachGuidanceState()) }
     var hideChrome by remember { mutableStateOf(false) }
     var hideSearch by remember { mutableStateOf(false) }
@@ -1017,6 +1032,47 @@ private fun NaviMapScreen() {
         savedRoutes = listSavedRoutes(dataDir.absolutePath)
     }
 
+    fun refreshPlaces() {
+        savedPlaces = listSavedPlaces(dataDir.absolutePath)
+    }
+
+    suspend fun resolveLabelAt(
+        lat: Double,
+        lon: Double,
+    ): Pair<String, String> {
+        val resolved =
+            withContext(Dispatchers.IO) {
+                val hits =
+                    runCatching {
+                        nearbyPlaces(
+                            resolvePlaceIndexDb().absolutePath,
+                            lat,
+                            lon,
+                            GPS_WAYPOINT_RESOLVE_RADIUS_M,
+                            16u,
+                        )
+                    }.getOrDefault(emptyList())
+                pickNearbyPlaceNameForGpsWaypoint(hits)
+                    ?: runCatching {
+                        val pbf = resolveRegionPbf() ?: return@runCatching null
+                        roadLabelNear(
+                            pbf.absolutePath,
+                            graphCacheDirForPbf(pbf).absolutePath,
+                            File(dataDir, "elevation").absolutePath,
+                            lat,
+                            lon,
+                            profile,
+                            GPS_WAYPOINT_RESOLVE_RADIUS_M,
+                        )
+                    }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+            }
+        return if (resolved != null) {
+            resolved to "map-resolved"
+        } else {
+            formatMapMarkFallback(lat, lon) to "map-mark"
+        }
+    }
+
     val showVehicleClearance =
         profile == TravelProfile.TRUCK ||
             profile == TravelProfile.TRUCK_ELECTRIC ||
@@ -1116,6 +1172,7 @@ private fun NaviMapScreen() {
         widthM = limits.widthM?.toString().orEmpty()
         lengthM = limits.lengthM?.toString().orEmpty()
         refreshRoutes()
+        refreshPlaces()
         updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
         runCatching {
             ecoEnabled = if (usesTruckRestSettings(profile)) {
@@ -2074,6 +2131,23 @@ private fun NaviMapScreen() {
         status = userFacingStatus("Set ${searchTarget.name.lowercase()}: ${hit.name}")
     }
 
+    fun applyMarkAs(
+        target: SearchTarget,
+        pending: MapMarkPending,
+    ) {
+        searchTarget = target
+        applyHit(
+            PlaceHit(
+                osmId = 0L,
+                name = pending.suggestedName,
+                kind = pending.kind,
+                lat = pending.lat,
+                lon = pending.lon,
+            ),
+        )
+        mapMarkPending = null
+    }
+
     fun runSearch(q: String) {
         searchJob?.cancel()
         val trimmed = q.trim()
@@ -2184,6 +2258,33 @@ private fun NaviMapScreen() {
                     DiagnosticLog.logToggle("follow_gps", false)
                 }
             },
+            onMapLongPress = { lat, lon ->
+                scope.launch {
+                    val (name, kind) = resolveLabelAt(lat, lon)
+                    mapMarkPending =
+                        MapMarkPending(
+                            lat = lat,
+                            lon = lon,
+                            suggestedName = name,
+                            kind = kind,
+                        )
+                    mapState =
+                        mapState.copy(
+                            followGps = false,
+                            cameraLat = lat,
+                            cameraLon = lon,
+                            poiLat = lat,
+                            poiLon = lon,
+                            poiName = name,
+                            layerEpoch = mapState.layerEpoch + 1,
+                        )
+                    NaviMapTestHooks.followGps = false
+                    NaviMapTestHooks.lastMapLongPressLat = lat
+                    NaviMapTestHooks.lastMapLongPressLon = lon
+                    NaviMapTestHooks.mapLongPressCount += 1
+                    status = "Marked: $name"
+                }
+            },
             onUserRotate = { bearing -> onManualRotateEnded(bearing) },
             onCameraIdleTarget = { lat, lon, zoom ->
                 NaviMapTestHooks.lastCameraLat = lat
@@ -2214,6 +2315,70 @@ private fun NaviMapScreen() {
                 styleEpoch += 1
             },
         )
+
+        mapMarkPending?.let { pending ->
+            if (!showSavePlaceDialog) {
+                MapMarkActionSheet(
+                    pending = pending,
+                    onSetFrom = { applyMarkAs(SearchTarget.From, pending) },
+                    onSetVia = { applyMarkAs(SearchTarget.Via, pending) },
+                    onSetTo = { applyMarkAs(SearchTarget.To, pending) },
+                    onSavePlace = {
+                        savePlaceDraftName = pending.suggestedName
+                        showSavePlaceDialog = true
+                    },
+                    onCancel = { mapMarkPending = null },
+                )
+            }
+        }
+        if (showSavePlaceDialog) {
+            val pending = mapMarkPending
+            SavePlaceNameDialog(
+                name = savePlaceDraftName,
+                onNameChange = { savePlaceDraftName = it },
+                onConfirm = {
+                    val p = pending
+                    if (p == null) {
+                        showSavePlaceDialog = false
+                        return@SavePlaceNameDialog
+                    }
+                    val report =
+                        saveNamedPlace(
+                            dataDir.absolutePath,
+                            savePlaceDraftName.trim(),
+                            p.lat,
+                            p.lon,
+                            p.kind,
+                        )
+                    refreshPlaces()
+                    showSavePlaceDialog = false
+                    mapMarkPending = null
+                    status =
+                        if (report.startsWith("PASS")) {
+                            "Saved place: ${savePlaceDraftName.trim()}"
+                        } else {
+                            report
+                        }
+                    showPlacesPanel = true
+                    hideSearch = false
+                },
+                onCancel = { showSavePlaceDialog = false },
+            )
+        }
+        if (renamePlaceId != null) {
+            SavePlaceNameDialog(
+                name = renamePlaceDraft,
+                onNameChange = { renamePlaceDraft = it },
+                onConfirm = {
+                    val id = renamePlaceId ?: return@SavePlaceNameDialog
+                    val ok = renameSavedPlace(dataDir.absolutePath, id, renamePlaceDraft.trim())
+                    refreshPlaces()
+                    renamePlaceId = null
+                    status = if (ok) "Renamed saved place" else "Could not rename place"
+                },
+                onCancel = { renamePlaceId = null },
+            )
+        }
 
         SimulatingBannerOverlay(
             active = simulating,
@@ -2860,48 +3025,28 @@ private fun NaviMapScreen() {
                                         val fixLon = mapState.gpsLon
                                         // Resolve a nearby address/name within 12 m; else GPS coords.
                                         scope.launch {
-                                            val resolved =
-                                                withContext(Dispatchers.IO) {
-                                                    val hits =
-                                                        runCatching {
-                                                            nearbyPlaces(
-                                                                resolvePlaceIndexDb().absolutePath,
-                                                                fixLat,
-                                                                fixLon,
-                                                                GPS_WAYPOINT_RESOLVE_RADIUS_M,
-                                                                16u,
-                                                            )
-                                                        }.getOrDefault(emptyList())
-                                                    pickNearbyPlaceNameForGpsWaypoint(hits)
-                                                        ?: runCatching {
-                                                            val pbf =
-                                                                resolveRegionPbf()
-                                                                    ?: return@runCatching null
-                                                            roadLabelNear(
-                                                                pbf.absolutePath,
-                                                                graphCacheDirForPbf(pbf).absolutePath,
-                                                                File(dataDir, "elevation").absolutePath,
-                                                                fixLat,
-                                                                fixLon,
-                                                                profile,
-                                                                GPS_WAYPOINT_RESOLVE_RADIUS_M,
-                                                            )
-                                                        }.getOrNull()
-                                                            ?.trim()
-                                                            ?.takeIf { it.isNotEmpty() }
+                                            val (name, kind) = resolveLabelAt(fixLat, fixLon)
+                                            val hitKind =
+                                                when (kind) {
+                                                    "map-resolved" -> "gps-resolved"
+                                                    "map-mark" -> "gps"
+                                                    else -> kind
                                                 }
-                                            val name =
-                                                resolved
-                                                    ?: formatGpsWaypointFallback(fixLat, fixLon)
-                                            val hit =
+                                            val label =
+                                                if (hitKind == "gps") {
+                                                    formatGpsWaypointFallback(fixLat, fixLon)
+                                                } else {
+                                                    name
+                                                }
+                                            applyHit(
                                                 PlaceHit(
                                                     osmId = 0L,
-                                                    name = name,
-                                                    kind = if (resolved != null) "gps-resolved" else "gps",
+                                                    name = label,
+                                                    kind = hitKind,
                                                     lat = fixLat,
                                                     lon = fixLon,
-                                                )
-                                            applyHit(hit)
+                                                ),
+                                            )
                                         }
                                     },
                                     modifier = Modifier.testTag("btn_use_gps"),
@@ -3432,6 +3577,144 @@ private fun NaviMapScreen() {
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        tonalElevation = 3.dp,
+                        modifier = Modifier.fillMaxWidth().testTag("saved_places_panel"),
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            if (!showPlacesPanel) {
+                                TextButton(
+                                    onClick = {
+                                        showPlacesPanel = true
+                                        refreshPlaces()
+                                    },
+                                    modifier = Modifier.testTag("btn_open_places"),
+                                ) { Text("Saved places") }
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text("Saved places", style = MaterialTheme.typography.labelLarge)
+                                    TextButton(
+                                        onClick = { refreshPlaces() },
+                                        modifier = Modifier.testTag("btn_refresh_places"),
+                                    ) { Text("Refresh") }
+                                }
+                                Text(
+                                    "Named points for From / Via / To (not full routes).",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                if (savedPlaces.isEmpty()) {
+                                    Text(
+                                        "No saved places",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.testTag("saved_places_empty"),
+                                    )
+                                } else {
+                                    savedPlaces.forEach { place ->
+                                        Column(
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 4.dp)
+                                                    .testTag("saved_place_row"),
+                                        ) {
+                                            Text(
+                                                place.name,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                            )
+                                            Text(
+                                                formatCoordWaypointName(place.lat, place.lon),
+                                                style = MaterialTheme.typography.bodySmall,
+                                            )
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            ) {
+                                                TextButton(
+                                                    onClick = {
+                                                        searchTarget = SearchTarget.From
+                                                        applyHit(
+                                                            PlaceHit(
+                                                                osmId = 0L,
+                                                                name = place.name,
+                                                                kind = place.kind.ifBlank { "saved-place" },
+                                                                lat = place.lat,
+                                                                lon = place.lon,
+                                                            ),
+                                                        )
+                                                    },
+                                                    modifier = Modifier.testTag("btn_place_as_from"),
+                                                ) { Text("From") }
+                                                TextButton(
+                                                    onClick = {
+                                                        searchTarget = SearchTarget.Via
+                                                        applyHit(
+                                                            PlaceHit(
+                                                                osmId = 0L,
+                                                                name = place.name,
+                                                                kind = place.kind.ifBlank { "saved-place" },
+                                                                lat = place.lat,
+                                                                lon = place.lon,
+                                                            ),
+                                                        )
+                                                    },
+                                                    modifier = Modifier.testTag("btn_place_as_via"),
+                                                ) { Text("Via") }
+                                                TextButton(
+                                                    onClick = {
+                                                        searchTarget = SearchTarget.To
+                                                        applyHit(
+                                                            PlaceHit(
+                                                                osmId = 0L,
+                                                                name = place.name,
+                                                                kind = place.kind.ifBlank { "saved-place" },
+                                                                lat = place.lat,
+                                                                lon = place.lon,
+                                                            ),
+                                                        )
+                                                    },
+                                                    modifier = Modifier.testTag("btn_place_as_to"),
+                                                ) { Text("To") }
+                                                TextButton(
+                                                    onClick = {
+                                                        renamePlaceId = place.id
+                                                        renamePlaceDraft = place.name
+                                                    },
+                                                    modifier = Modifier.testTag("btn_rename_saved_place"),
+                                                ) { Text("Rename") }
+                                                TextButton(
+                                                    onClick = {
+                                                        if (deleteSavedPlace(dataDir.absolutePath, place.id)) {
+                                                            refreshPlaces()
+                                                            status = "Deleted saved place"
+                                                        } else {
+                                                            status = "Could not delete place"
+                                                        }
+                                                    },
+                                                    modifier = Modifier.testTag("btn_delete_saved_place"),
+                                                ) { Text("Delete") }
+                                            }
+                                        }
+                                    }
+                                }
+                                TextButton(
+                                    onClick = {
+                                        showPlacesPanel = false
+                                        hideSearch = true
+                                        showTools = false
+                                        status = "Route planning closed"
+                                    },
+                                    modifier = Modifier.testTag("btn_close_places"),
+                                ) { Text("Close") }
+                            }
+                        }
+                    }
                 } else if (!hideChrome) {
                     // Compact reopen when planning chrome is dismissed.
                     Row(
@@ -3447,6 +3730,8 @@ private fun NaviMapScreen() {
                                 showProfilePanel = true
                                 showVehiclePanel = true
                                 showRoutesPanel = true
+                                showPlacesPanel = true
+                                refreshPlaces()
                             },
                             modifier = Modifier.testTag("btn_open_search"),
                         ) {
@@ -3614,7 +3899,21 @@ private fun NaviMapScreen() {
                                         } else {
                                             "PBF missing after download"
                                         }
-                                    status = "$report | $bind | $indexReport"
+                                    val elevDir = File(dataDir, "elevation").takeIf { it.isDirectory }
+                                    val indexedReport =
+                                        if (pbf.isFile) {
+                                            withContext(Dispatchers.IO) {
+                                                status = "Building indexed maps…"
+                                                ensureIndexedMaps(
+                                                    pbf.absolutePath,
+                                                    dataDir.absolutePath,
+                                                    elevDir?.absolutePath,
+                                                )
+                                            }
+                                        } else {
+                                            "skip indexed maps"
+                                        }
+                                    status = "$report | $bind | $indexReport | $indexedReport"
                                 }
                             }
                         },
@@ -3624,6 +3923,47 @@ private fun NaviMapScreen() {
                                 .testTag("btn_download_region"),
                     ) {
                         Text("Download region + build place index")
+                    }
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                val pbf =
+                                    dataDir.listFiles()?.firstOrNull {
+                                        it.isFile && it.name.endsWith(".osm.pbf")
+                                    }
+                                if (pbf == null) {
+                                    status = "No local region PBF to rebuild indexed maps from"
+                                    return@launch
+                                }
+                                status = "Rebuild indexed maps from local ${pbf.name}…"
+                                val elevDir =
+                                    File(dataDir, "elevation").takeIf { it.isDirectory }
+                                val before =
+                                    withContext(Dispatchers.IO) {
+                                        indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath)
+                                    }
+                                val report =
+                                    withContext(Dispatchers.IO) {
+                                        ensureIndexedMaps(
+                                            pbf.absolutePath,
+                                            dataDir.absolutePath,
+                                            elevDir?.absolutePath,
+                                        )
+                                    }
+                                val after =
+                                    withContext(Dispatchers.IO) {
+                                        indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath)
+                                    }
+                                status =
+                                    "indexed before=$before | $report | after=$after"
+                            }
+                        },
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .testTag("btn_rebuild_indexed_maps"),
+                    ) {
+                        Text("Rebuild indexed maps (local PBF)")
                     }
                     if (regionDownloadProgress.isNotBlank()) {
                         Text(
@@ -4374,6 +4714,7 @@ private fun CorridorMapView(
     modifier: Modifier = Modifier,
     onLayerCount: (Int) -> Unit,
     onUserPan: () -> Unit = {},
+    onMapLongPress: (lat: Double, lon: Double) -> Unit = { _, _ -> },
     onUserRotate: (bearingDeg: Double) -> Unit = {},
     onCameraIdleTarget: (lat: Double, lon: Double, zoom: Double) -> Unit = { _, _, _ -> },
     onStyleNote: (String?) -> Unit = {},
@@ -4440,6 +4781,18 @@ private fun CorridorMapView(
                 .AtomicReference(onUserPan)
         }
     onUserPanRef.set(onUserPan)
+    val onMapLongPressRef =
+        remember {
+            java.util.concurrent.atomic
+                .AtomicReference(onMapLongPress)
+        }
+    onMapLongPressRef.set(onMapLongPress)
+    val mapScope = rememberCoroutineScope()
+    var holdJob by remember { mutableStateOf<Job?>(null) }
+    var holdProgress by remember { mutableFloatStateOf(0f) }
+    var holdScreenX by remember { mutableFloatStateOf(0f) }
+    var holdScreenY by remember { mutableFloatStateOf(0f) }
+    var holdActive by remember { mutableStateOf(false) }
     val onUserRotateRef =
         remember {
             java.util.concurrent.atomic
@@ -4561,6 +4914,7 @@ private fun CorridorMapView(
         applyTracksToStyle(style, stateRef.get().tracks, mapView.context)
         BasemapLabelPolicy.apply(style)
         BasemapPathPaint.apply(style)
+        BasemapProtectedAreaStyle.apply(style)
         ensureRouteAboveHillshade(style)
         applyCameraTilt(map)
         styleReady.value = true
@@ -4887,14 +5241,141 @@ private fun CorridorMapView(
         )
 
         // Forward touches so the marker overlay Canvas does not block MapLibre pan/pinch.
+        // A 4 s stationary hold opens the map-mark menu (cancelled by pan/pinch/short release).
         Canvas(
             modifier =
                 Modifier
                     .fillMaxSize()
                     .pointerInteropFilter { event ->
-                        mapView.dispatchTouchEvent(event)
+                        val action = event.actionMasked
+                        when (action) {
+                            android.view.MotionEvent.ACTION_DOWN -> {
+                                holdJob?.cancel()
+                                holdActive = true
+                                holdScreenX = event.x
+                                holdScreenY = event.y
+                                holdProgress = 0f
+                                val sx = event.x
+                                val sy = event.y
+                                holdJob =
+                                    mapScope.launch {
+                                        val startMs = android.os.SystemClock.uptimeMillis()
+                                        while (isActive) {
+                                            val elapsed =
+                                                android.os.SystemClock.uptimeMillis() - startMs
+                                            holdProgress =
+                                                (elapsed.toFloat() / MAP_LONG_PRESS_HOLD_MS.toFloat())
+                                                    .coerceIn(0f, 1f)
+                                            if (elapsed >= MAP_LONG_PRESS_HOLD_MS) {
+                                                val map = mapRef
+                                                val ll =
+                                                    map
+                                                        ?.projection
+                                                        ?.fromScreenLocation(
+                                                            android.graphics.PointF(sx, sy),
+                                                        )
+                                                if (ll != null) {
+                                                    onMapLongPressRef.get().invoke(
+                                                        ll.latitude,
+                                                        ll.longitude,
+                                                    )
+                                                }
+                                                val now = android.os.SystemClock.uptimeMillis()
+                                                val cancel =
+                                                    android.view.MotionEvent.obtain(
+                                                        now,
+                                                        now,
+                                                        android.view.MotionEvent.ACTION_CANCEL,
+                                                        sx,
+                                                        sy,
+                                                        0,
+                                                    )
+                                                mapView.dispatchTouchEvent(cancel)
+                                                cancel.recycle()
+                                                holdActive = false
+                                                holdProgress = 0f
+                                                holdJob = null
+                                                break
+                                            }
+                                            delay(16)
+                                        }
+                                    }
+                                mapView.dispatchTouchEvent(event)
+                                true
+                            }
+                            android.view.MotionEvent.ACTION_POINTER_DOWN,
+                            android.view.MotionEvent.ACTION_POINTER_UP,
+                            -> {
+                                holdJob?.cancel()
+                                holdJob = null
+                                holdActive = false
+                                holdProgress = 0f
+                                mapView.dispatchTouchEvent(event)
+                                true
+                            }
+                            android.view.MotionEvent.ACTION_MOVE -> {
+                                if (holdActive && holdJob != null) {
+                                    val dx = event.x - holdScreenX
+                                    val dy = event.y - holdScreenY
+                                    val dist = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+                                    if (dist > MAP_LONG_PRESS_MOVE_SLOP_PX) {
+                                        holdJob?.cancel()
+                                        holdJob = null
+                                        holdActive = false
+                                        holdProgress = 0f
+                                        mapView.dispatchTouchEvent(event)
+                                    }
+                                    // Within slop: swallow MOVE so MapLibre does not pan mid-hold.
+                                    true
+                                } else {
+                                    mapView.dispatchTouchEvent(event)
+                                    true
+                                }
+                            }
+                            android.view.MotionEvent.ACTION_UP,
+                            android.view.MotionEvent.ACTION_CANCEL,
+                            -> {
+                                holdJob?.cancel()
+                                holdJob = null
+                                holdActive = false
+                                holdProgress = 0f
+                                mapView.dispatchTouchEvent(event)
+                                true
+                            }
+                            else -> {
+                                mapView.dispatchTouchEvent(event)
+                                true
+                            }
+                        }
                     },
         ) {
+            if (holdProgress > 0f) {
+                val center = Offset(holdScreenX, holdScreenY)
+                val radius = 42f
+                drawCircle(Color(0x55000000), radius = radius + 8f, center = center)
+                drawCircle(
+                    Color(0x88FFFFFF),
+                    radius = radius,
+                    center = center,
+                    style = Stroke(width = 6f),
+                )
+                drawArc(
+                    color = Color(0xFF1565C0),
+                    startAngle = -90f,
+                    sweepAngle = 360f * holdProgress.coerceIn(0f, 1f),
+                    useCenter = false,
+                    topLeft = Offset(center.x - radius, center.y - radius),
+                    size =
+                        androidx.compose.ui.geometry
+                            .Size(radius * 2f, radius * 2f),
+                    style =
+                        Stroke(
+                            width = 8f,
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                        ),
+                )
+                drawCircle(Color(0xFF1565C0), radius = 8f, center = center)
+            }
             val labelPaint =
                 AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
                     color = android.graphics.Color.BLACK

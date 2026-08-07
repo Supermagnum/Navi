@@ -71,6 +71,7 @@ from Navit (**GPL v2**); see [`docs/icons.md`](docs/icons.md).
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. A small leaf icon shows when eco is on. | Done |
 | **Offline planning** | Download a region once, then plan and see the route on the device. | Done |
 | **Place search** | Search places and set From / Via / To. | Done |
+| **Map mark & saved places** | Hold on the map ~4 s to mark a point; set From / Via / To or save a named place (separate from Saved routes). | Done |
 | **Breaks & rest** | Reminds you when a break is due and can suggest stops. Cars use hours between breaks; hiking/cycling use rest distances; trucks use legal driving-time rules where known. | Done |
 | **Drive bars** | Slim top bar (altitude) and bottom bar (zoom, break timer, trip ETA, road name, eco leaf). | Done |
 | **GPS follow** | Map follows you by default. Pan away, then tap **Recenter**. | Done |
@@ -105,6 +106,9 @@ see [Minimum hardware and storage](#minimum-hardware-and-storage).
 
 ## How features work
 
+Full step-by-step (planning, Tools, saved places/routes, per-mode options,
+pilgrim coverage): **[`docs/how-to-use.md`](docs/how-to-use.md)**.
+
 **Planning a route.** Set **From** and **To** (and optional vias), pick a travel
 mode, then **Plan route**. From is often set with **Use GPS**. Hiking paths
 need the **Hiking** mode — planning with Car uses the road network and will not
@@ -118,6 +122,12 @@ Ordinary paths remain available so a gap never traps you.
 
 **Places.** Search fills From / Via / To. What counts as a hut, rest area, and so
 on is documented in [`docs/poi.md`](docs/poi.md).
+
+**Map long-press and saved places.** Hold one finger on the map for about
+**4 seconds** to mark a point, then set it as From / Via / To or save it under
+**Saved places** (a single named coordinate — not a full **Saved route**).
+How-to: [`docs/map-marking-saved-places.md`](docs/map-marking-saved-places.md)
+(Norwegian: [`docs/kartmerking-lagrede-steder.md`](docs/kartmerking-lagrede-steder.md)).
 
 **Rest and overnight.** Each mode has its own defaults. Long truck trips can
 split into days with legal rest rules (EU or US packs where known). Long
@@ -309,6 +319,8 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/pictures.md`](docs/pictures.md) / [`docs/bilder.md`](docs/bilder.md) | Screenshot galleries |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online vs offline map look; 3D |
 | [`docs/poi.md`](docs/poi.md) | Place types and search |
+| [`docs/how-to-use.md`](docs/how-to-use.md) | **End-user how-to** (planning, Tools, breaks, saved places/routes, profiles) |
+| [`docs/map-marking-saved-places.md`](docs/map-marking-saved-places.md) | Map long-press (4 s) and Saved places detail (Norwegian: [`kartmerking-lagrede-steder.md`](docs/kartmerking-lagrede-steder.md)) |
 | [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | EU truck driving-time rules |
 | [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | US truck hours-of-service |
 | [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Country/region rule packs |
@@ -442,26 +454,18 @@ Country/region visual extracts can also be prepared with
   low-RAM devices.** Per-stage timing (Diagnostic logging → `ROUTE_PLAN` /
   `ROUTE_PLAN_STAGES`; see
   [`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file))
-  shows A* itself is typically sub-second; wall-clock cost is dominated by two
-  largely independent sequential scans of the OSM `.pbf` — `graph_build` and
-  `poi_barrier`. Measured on-device Car Espa→Atnbrufossen (SM-P613 session):
+  shows A* itself is typically sub-second; wall-clock cost was dominated by
+  sequential OSM `.pbf` scans — `graph_build`, `poi_barrier`, and (for Hiking)
+  wetland classification. Historical on-device Car Espa→Atnbrufossen (SM-P613):
   `plan_duration_ms=26835` with `graph_build_ms=17571`, `poi_barrier_ms=8045`,
-  `astar_ms=378` (stage sum ≈ total). This is a structural limit of
-  `.osm.pbf`: `osmpbf` has no spatial index, so a bbox query still walks the
-  relevant file portion. Low-RAM devices suffer more because there is less
-  headroom to keep decoded blocks cached, which increases re-reads from
-  storage. Cross-ref: [Minimum hardware and storage](#minimum-hardware-and-storage).
-  Not-yet-implemented mitigations: (1) **preprocess-once indexed map format**
-  (OsmAnd `.obf` / Navit binfile class) — live phased evaluation in
+  `astar_ms=378`. **Mitigation shipped:** preprocess-once indexed packs
+  (`rkyv`+`memmap2`) — live status in
   [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md)
-  (**Phase 1a**: warm `.navigph` already clears ≤2 s / ≥10× when that bbox was
-  cached before — same mechanism as the graph-cache audit; **Phase 1b NO-GO**
-  for SQLite R*Tree→full in-memory `RouteGraph` on SM-P613 hedmark first-load:
-  16.2 s cold vs 2.88 s indexed, 5.6× — fails ≤2 s / ≥10×; Phase 2 blocked until
-  a different first-load design); (2) optional shared multi-consumer
-  `osmpbf` parse as an interim I/O consolidation if the indexed format stalls.
-  Graph-cache audit: cache **works** for identical OD/bbox; new trip bboxes
-  still pay full cold PBF `graph_build` once. See also
+  (**Phase 4 + 4b complete**): motor pack-hit ~1.5–1.8 s vs cold missing-pack
+  ~31 s on Hedmark 162 km; wetland load **18.6 s → 93 ms** (~199×) on SM-P613;
+  long Hiking OD that previously aborted ~6 min now completes (~61 s) with
+  `wetland_pack_hit`. `.navigph` deprecated. Residual Hiking wall time can still
+  include overnight/POI PBF work. See also
   [`docs/status.md`](docs/status.md) and
   [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md).
 - **Rerouting after a detour is not instant.** When the app detects you have
@@ -485,6 +489,5 @@ Country/region visual extracts can also be prepared with
   plan-time PBF scans.
 - **Break timer ≠ trip ETA:** by design — see
   [Break timer vs trip ETA](#break-timer-vs-trip-eta).
-- **Not implemented yet:** saving of a destination or a start point; touch-and-hold
-  to mark a place on the map as a destination or a via point; checking whether
-  the code can be optimised for rendering.
+- **Not implemented yet:** checking whether the code can be optimised for
+  rendering.

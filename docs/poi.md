@@ -167,6 +167,24 @@ On device: provision a region that contains fishing tags, then confirm
   is named; a category is only required for typed “find fishing near me / on
   route” logic.
 
+## Pilgrim lodgings and stamp centers (investigated, not a new category)
+
+Checked against `classify_tags`, the Ostlandet extract, Nominatim, and sample
+international objects (2026-08):
+
+| Need | OSM reality | Navi today |
+|---|---|---|
+| Pilgrim **lodging** (albergue / herberge / ostello) | Usually `tourism=hostel` or `guest_house` | Already **Lodging** (+ hostels also **Cabin** / **OvernightFacility**) |
+| Pilgrim **stamp / info centers** | No stable dedicated tag. Mix of `tourism=information`+`information=office`, bare `building=office`, guideposts, or (Camino) `office=company` | **Not** a dedicated category. Named objects remain searchable via the place index when present. |
+
+**Decision:** do **not** add a `PilgrimCenter` (or similar) category until OSM
+has a consistent, non-ambiguous tagging pattern. A name-only matcher would
+mostly hit guideposts; `information=office` without name filters would pull
+generic tourist offices. Prefer improving OSM tags for official centers, then
+revisit.
+
+End-user summary: [`how-to-use.md`](how-to-use.md#pilgrim-stops-and-stamp-centers-poi-coverage).
+
 ## Code
 
 - `core/src/poi/categories.rs` — enum + radii

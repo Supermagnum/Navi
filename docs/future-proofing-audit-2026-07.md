@@ -132,6 +132,6 @@ Still **Action required** from categories 1/3 (not blocking this fix pass):
 
 | Priority | Action | Blocking | Status | Last verified / touched | Notes |
 |---|---|---|---|---|---|
-| — | Evaluate preprocess-once indexed map format (OsmAnd/Navit-class) via phased plan | No | **Phase 1a met; 1b NO-GO** (R*Tree→full `RouteGraph`) | 2026-08-07 | Live: [`indexed-map-format-plan.md`](indexed-map-format-plan.md). SM-P613 hedmark first-load: cold 16.2 s vs indexed 2.88 s (5.6×) — fails ≤2 s / ≥10×. Redesign load model before Phase 2. |
-| — | Shared multi-consumer PBF parse (graph + poi_barrier) | No | Deferred / subsumable | 2026-08-06 | Interim only if indexed format stalls; else folds into converter. |
+| — | Evaluate preprocess-once indexed map format (OsmAnd/Navit-class) via phased plan | No | **Phase 4+4b complete** | 2026-08-07 | Live: [`indexed-map-format-plan.md`](indexed-map-format-plan.md). Packs for graph/POI/barrier/wetland; SM-P613 wetland 18.6 s → 93 ms; `.navigph` deprecated. |
+| — | Shared multi-consumer PBF parse (graph + poi_barrier) | No | **Folds into Phase 4 converter** | 2026-08-07 | Not a separate track; provision-time pack generation consolidates PBF passes (see indexed-map-format-plan §3.4). |
 | — | Graph cache “silent rebuild” audit | No | **Closed** | 2026-08-06 | Cache works for identical OD/bbox; misses on new bbox by design. |

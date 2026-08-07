@@ -52,7 +52,7 @@ tests=4 failures=0 errors=0 skipped=0 time≈35.8s
 ## Item 2 — Reweighted graph cache
 
 - `core/src/routing/graph/cache.rs` (`NAVIGPH1` + bincode)
-- Pipeline runs cold wipe → build/save → warm `load_or_build_reweighted` and asserts `cache_hit=true` and warm << cold (when cold > 2 s)
+- Pipeline cold wipe → plan: with indexed packs, report `pack_hit=true` and warm pack load << cold; without packs, note `.navigph` deprecated and both passes rebuild from PBF (`cache_hit` on `.navigph` is no longer expected)
 
 ## Item 3 — Icon rasterization
 

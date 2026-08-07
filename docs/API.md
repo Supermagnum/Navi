@@ -84,11 +84,12 @@ used by truck / restriction costing (see record in `navi-ffi`).
 
 `FfiIconTheme`: `Day` | `Night`. See [`icons.md`](icons.md), [`poi.md`](poi.md).
 
-### 1.4 Saved routes and drive config (SQLite via `data_dir`)
+### 1.4 Saved routes, saved places, and drive config (SQLite via `data_dir`)
 
 | Rust | Purpose |
 |---|---|
 | `list_saved_routes` / `save_named_route` / `delete_saved_route` | Named corridors |
+| `list_saved_places` / `save_named_place` / `rename_saved_place` / `delete_saved_place` | Named single coordinates (`FfiSavedPlace`) — distinct from routes |
 | `load_vehicle_limits` / `save_vehicle_limits` | `FfiVehicleLimits` |
 | `load_prefer_official_networks` / `save_prefer_official_networks` | Hiking/cycle network preference |
 | `load_car_rest_settings` / `save_car_rest_settings` | `FfiCarRestSettings` |
@@ -102,6 +103,9 @@ used by truck / restriction costing (see record in `navi-ffi`).
 Truck / jurisdiction behaviour: [`ec-561-truck-rest.md`](ec-561-truck-rest.md),
 [`fmcsa-truck-rest.md`](fmcsa-truck-rest.md),
 [`jurisdiction-rules.md`](jurisdiction-rules.md).
+
+How to use map mark + saved places:
+[`map-marking-saved-places.md`](map-marking-saved-places.md).
 
 ### 1.5 Elevation and GPS slot
 

@@ -70,6 +70,24 @@ struct WetlandRing {
     class: WetlandClass,
     /// Closed ring as `[lon, lat]`.
     ring: Vec<[f64; 2]>,
+    min_lon: f64,
+    max_lon: f64,
+    min_lat: f64,
+    max_lat: f64,
+}
+
+fn ring_bounds(ring: &[[f64; 2]]) -> (f64, f64, f64, f64) {
+    let mut min_lon = f64::INFINITY;
+    let mut max_lon = f64::NEG_INFINITY;
+    let mut min_lat = f64::INFINITY;
+    let mut max_lat = f64::NEG_INFINITY;
+    for p in ring {
+        min_lon = min_lon.min(p[0]);
+        max_lon = max_lon.max(p[0]);
+        min_lat = min_lat.min(p[1]);
+        max_lat = max_lat.max(p[1]);
+    }
+    (min_lon, max_lon, min_lat, max_lat)
 }
 
 /// Spatial index of wetland polygons for point queries.
@@ -87,10 +105,43 @@ impl WetlandIndex {
         self.rings.len()
     }
 
+    /// Build from owned `(class, closed ring [lon,lat])` parts (indexed-pack path).
+    pub fn from_parts(parts: Vec<(WetlandClass, Vec<[f64; 2]>)>) -> Self {
+        Self {
+            rings: parts
+                .into_iter()
+                .filter(|(_, ring)| ring.len() >= 3)
+                .map(|(class, ring)| {
+                    let (min_lon, max_lon, min_lat, max_lat) = ring_bounds(&ring);
+                    WetlandRing {
+                        class,
+                        ring,
+                        min_lon,
+                        max_lon,
+                        min_lat,
+                        max_lat,
+                    }
+                })
+                .collect(),
+        }
+    }
+
+    /// Export rings for archive serialization.
+    pub fn rings_as_parts(&self) -> Vec<(WetlandClass, Vec<[f64; 2]>)> {
+        self.rings
+            .iter()
+            .map(|r| (r.class, r.ring.clone()))
+            .collect()
+    }
+
     pub fn class_at(&self, lat: f64, lon: f64) -> Option<WetlandClass> {
         let p = [lon, lat];
         let mut best: Option<WetlandClass> = None;
         for r in &self.rings {
+            // AABB reject before expensive point-in-polygon.
+            if lon < r.min_lon || lon > r.max_lon || lat < r.min_lat || lat > r.max_lat {
+                continue;
+            }
             if point_in_ring(p, &r.ring) {
                 match (best, r.class) {
                     (None, c) => best = Some(c),
@@ -202,7 +253,15 @@ impl WetlandIndex {
         let mut rings = Vec::new();
         for (refs, class) in ways {
             if let Some(ring) = ring_from_refs(&refs, &coords, bbox) {
-                rings.push(WetlandRing { class, ring });
+                let (min_lon, max_lon, min_lat, max_lat) = ring_bounds(&ring);
+                rings.push(WetlandRing {
+                    class,
+                    ring,
+                    min_lon,
+                    max_lon,
+                    min_lat,
+                    max_lat,
+                });
             }
         }
         for (class, outers) in rel_outers {
@@ -211,12 +270,26 @@ impl WetlandIndex {
                     continue;
                 };
                 if let Some(ring) = ring_from_refs(refs, &coords, bbox) {
-                    rings.push(WetlandRing { class, ring });
+                    let (min_lon, max_lon, min_lat, max_lat) = ring_bounds(&ring);
+                    rings.push(WetlandRing {
+                        class,
+                        ring,
+                        min_lon,
+                        max_lon,
+                        min_lat,
+                        max_lat,
+                    });
                 }
             }
         }
 
         Ok(Self { rings })
+    }
+
+    /// Region-wide load (full extract extents). Used by the indexed converter.
+    pub fn load_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        // Wide bbox: accept every ring that has at least one resolved node.
+        Self::load_from_pbf_bbox(path, [-90.0, -180.0, 90.0, 180.0])
     }
 }
 
@@ -302,18 +375,16 @@ mod tests {
 
     #[test]
     fn point_in_wetland_ring() {
-        let idx = WetlandIndex {
-            rings: vec![WetlandRing {
-                class: WetlandClass::HardAvoid,
-                ring: vec![
-                    [10.0, 60.0],
-                    [10.2, 60.0],
-                    [10.2, 60.2],
-                    [10.0, 60.2],
-                    [10.0, 60.0],
-                ],
-            }],
-        };
+        let idx = WetlandIndex::from_parts(vec![(
+            WetlandClass::HardAvoid,
+            vec![
+                [10.0, 60.0],
+                [10.2, 60.0],
+                [10.2, 60.2],
+                [10.0, 60.2],
+                [10.0, 60.0],
+            ],
+        )]);
         assert_eq!(idx.class_at(60.1, 10.1), Some(WetlandClass::HardAvoid));
         assert_eq!(idx.class_at(60.5, 10.5), None);
     }

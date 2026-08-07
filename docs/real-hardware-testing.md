@@ -175,6 +175,18 @@ darkened lake fill when 3D is on).
 - Log: optional `adb logcat` around style load / 3D toggle; live observation
   matters more than metrics here.
 
+## 8. Map long-press and saved places
+
+Product how-to: [`map-marking-saved-places.md`](map-marking-saved-places.md).
+
+- Hold **~4 s** on a clear map area (not the planning chrome): confirm the
+  fill ring, then the **Marked location** sheet.
+- Short press (~1–2 s) and pan/drag must **not** open the sheet.
+- **Set as From / Via / To** fills the corresponding field; **Save this place**
+  appears under **Saved places** (distinct from **Saved routes**).
+- Select a saved place later as From / Via / To; Rename / Delete work.
+- Screenshot evidence may live under `docs/images/map-long-press/`.
+
 ---
 
 ## Output format

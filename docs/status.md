@@ -1,6 +1,6 @@
 # Documentation status map (canonical sources)
 
-Last updated: 2026-08-06.
+Last updated: 2026-08-07.
 
 Readers should not need to cross-reference half a dozen overlapping “status”
 documents. Use this map. Point-in-time reports stay as historical evidence;
@@ -11,6 +11,7 @@ they are **not** the live product status.
 | Question | Canonical doc | Notes |
 |---|---|---|
 | What is the current product / feature status? | [`../README.md`](../README.md) Features table + Known issues | Single live summary. Update here when status changes. |
+| How do I mark a map point / use Saved places? | [`map-marking-saved-places.md`](map-marking-saved-places.md) | User how-to (NO: [`kartmerking-lagrede-steder.md`](kartmerking-lagrede-steder.md)). |
 | How do the parts fit together? | [`architecture.md`](architecture.md) | Design intent, not a rolling QA log. |
 | Where do I edit code for X? | [`codebase-map.md`](codebase-map.md) | Contributor file map. |
 | Host (Rust) integration evidence | [`test-results.md`](test-results.md) | Chronological evidence; supersede with newer dated sections. |

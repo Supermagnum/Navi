@@ -900,6 +900,18 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -929,6 +941,8 @@ fun uniffi_navi_checksum_func_bind_geofabrik_region(
 ): Short
 fun uniffi_navi_checksum_func_check_osm_updates(
 ): Short
+fun uniffi_navi_checksum_func_delete_saved_place(
+): Short
 fun uniffi_navi_checksum_func_delete_saved_route(
 ): Short
 fun uniffi_navi_checksum_func_detected_parallelism(
@@ -946,6 +960,8 @@ fun uniffi_navi_checksum_func_eco_mode_default(
 fun uniffi_navi_checksum_func_eco_mode_toggleable(
 ): Short
 fun uniffi_navi_checksum_func_elevation_at(
+): Short
+fun uniffi_navi_checksum_func_ensure_indexed_maps(
 ): Short
 fun uniffi_navi_checksum_func_ensure_place_index(
 ): Short
@@ -967,9 +983,13 @@ fun uniffi_navi_checksum_func_haversine_km(
 ): Short
 fun uniffi_navi_checksum_func_highway_class_display_label(
 ): Short
+fun uniffi_navi_checksum_func_indexed_maps_status(
+): Short
 fun uniffi_navi_checksum_func_init_native_logging(
 ): Short
 fun uniffi_navi_checksum_func_last_gps_fix(
+): Short
+fun uniffi_navi_checksum_func_list_saved_places(
 ): Short
 fun uniffi_navi_checksum_func_list_saved_routes(
 ): Short
@@ -1041,6 +1061,8 @@ fun uniffi_navi_checksum_func_rasterize_icon_check(
 ): Short
 fun uniffi_navi_checksum_func_rasterize_icon_png(
 ): Short
+fun uniffi_navi_checksum_func_rename_saved_place(
+): Short
 fun uniffi_navi_checksum_func_road_label_near(
 ): Short
 fun uniffi_navi_checksum_func_route_plan_timing_enabled(
@@ -1058,6 +1080,8 @@ fun uniffi_navi_checksum_func_save_ebike_config(
 fun uniffi_navi_checksum_func_save_ev_car_config(
 ): Short
 fun uniffi_navi_checksum_func_save_fuel_config(
+): Short
+fun uniffi_navi_checksum_func_save_named_place(
 ): Short
 fun uniffi_navi_checksum_func_save_named_route(
 ): Short
@@ -1184,6 +1208,8 @@ fun uniffi_navi_fn_func_bind_geofabrik_region(`dataDir`: RustBuffer.ByValue,`geo
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_check_osm_updates(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_delete_saved_place(`dataDir`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_delete_saved_route(`dataDir`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_detected_parallelism(uniffi_out_err: UniffiRustCallStatus, 
@@ -1201,6 +1227,8 @@ fun uniffi_navi_fn_func_eco_mode_default(`profile`: RustBuffer.ByValue,uniffi_ou
 fun uniffi_navi_fn_func_eco_mode_toggleable(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_elevation_at(`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_ensure_indexed_maps(`pbfPath`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1222,9 +1250,13 @@ fun uniffi_navi_fn_func_haversine_km(`lat1`: Double,`lon1`: Double,`lat2`: Doubl
 ): Double
 fun uniffi_navi_fn_func_highway_class_display_label(`highway`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_indexed_maps_status(`pbfPath`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_init_native_logging(uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_navi_fn_func_last_gps_fix(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_list_saved_places(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_list_saved_routes(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1296,6 +1328,8 @@ fun uniffi_navi_fn_func_rasterize_icon_check(`key`: RustBuffer.ByValue,`theme`: 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_rasterize_icon_png(`key`: RustBuffer.ByValue,`theme`: RustBuffer.ByValue,`width`: Int,`height`: Int,`bundledDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_rename_saved_place(`dataDir`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_road_label_near(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`profile`: RustBuffer.ByValue,`maxM`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_route_plan_timing_enabled(uniffi_out_err: UniffiRustCallStatus, 
@@ -1314,6 +1348,8 @@ fun uniffi_navi_fn_func_save_ev_car_config(`dataDir`: RustBuffer.ByValue,`config
 ): Byte
 fun uniffi_navi_fn_func_save_fuel_config(`dataDir`: RustBuffer.ByValue,`config`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_save_named_place(`dataDir`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`kind`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_save_named_route(`dataDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`startName`: RustBuffer.ByValue,`endLat`: Double,`endLon`: Double,`endName`: RustBuffer.ByValue,`viaJson`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`summaryJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_save_prefer_official_networks(`dataDir`: RustBuffer.ByValue,`prefer`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -1487,6 +1523,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_check_osm_updates() != 15834.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_delete_saved_place() != 42612.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_delete_saved_route() != 15986.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1512,6 +1551,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_elevation_at() != 51192.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_ensure_indexed_maps() != 12375.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_ensure_place_index() != 50894.toShort()) {
@@ -1544,10 +1586,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_highway_class_display_label() != 12499.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_indexed_maps_status() != 61327.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_init_native_logging() != 25400.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_last_gps_fix() != 31720.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_list_saved_places() != 36918.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_list_saved_routes() != 35027.toShort()) {
@@ -1655,6 +1703,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_rasterize_icon_png() != 19569.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_rename_saved_place() != 57651.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_road_label_near() != 12920.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1680,6 +1731,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_save_fuel_config() != 64541.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_save_named_place() != 54905.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_save_named_route() != 29751.toShort()) {
@@ -2924,6 +2978,54 @@ public object FfiConverterTypeFfiProfilePoiRadii: FfiConverterRustBuffer<FfiProf
 
 
 
+data class FfiSavedPlace (
+    var `id`: kotlin.String, 
+    var `name`: kotlin.String, 
+    var `lat`: kotlin.Double, 
+    var `lon`: kotlin.Double, 
+    var `kind`: kotlin.String, 
+    var `createdAt`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSavedPlace: FfiConverterRustBuffer<FfiSavedPlace> {
+    override fun read(buf: ByteBuffer): FfiSavedPlace {
+        return FfiSavedPlace(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiSavedPlace) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterDouble.allocationSize(value.`lat`) +
+            FfiConverterDouble.allocationSize(value.`lon`) +
+            FfiConverterString.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`createdAt`)
+    )
+
+    override fun write(value: FfiSavedPlace, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterDouble.write(value.`lat`, buf)
+            FfiConverterDouble.write(value.`lon`, buf)
+            FfiConverterString.write(value.`kind`, buf)
+            FfiConverterString.write(value.`createdAt`, buf)
+    }
+}
+
+
+
 data class FfiSavedRoute (
     var `id`: kotlin.String, 
     var `startName`: kotlin.String, 
@@ -3594,6 +3696,34 @@ public object FfiConverterSequenceTypeFfiPmtilesJob: FfiConverterRustBuffer<List
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeFfiSavedPlace: FfiConverterRustBuffer<List<FfiSavedPlace>> {
+    override fun read(buf: ByteBuffer): List<FfiSavedPlace> {
+        val len = buf.getInt()
+        return List<FfiSavedPlace>(len) {
+            FfiConverterTypeFfiSavedPlace.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiSavedPlace>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiSavedPlace.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiSavedPlace>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiSavedPlace.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeFfiSavedRoute: FfiConverterRustBuffer<List<FfiSavedRoute>> {
     override fun read(buf: ByteBuffer): List<FfiSavedRoute> {
         val len = buf.getInt()
@@ -3748,6 +3878,15 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     )
     }
     
+ fun `deleteSavedPlace`(`dataDir`: kotlin.String, `id`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_delete_saved_place(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`id`),_status)
+}
+    )
+    }
+    
  fun `deleteSavedRoute`(`dataDir`: kotlin.String, `id`: kotlin.String): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
@@ -3842,6 +3981,22 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_elevation_at(
         FfiConverterString.lower(`elevDir`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Build preprocess-once indexed map packs next to a region PBF (graph + POI/barrier).
+         *
+         * Writes `{stem}.navi-graph-*.rkyv`, `{stem}.navi-poi-barrier.rkyv`, and
+         * `{stem}.navi-manifest.json` under `data_dir` (defaults to the PBF parent).
+         * Safe to call after download / for migration rebuild from local PBF.
+         */ fun `ensureIndexedMaps`(`pbfPath`: kotlin.String, `dataDir`: kotlin.String, `elevDir`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_ensure_indexed_maps(
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`dataDir`),FfiConverterOptionalString.lower(`elevDir`),_status)
 }
     )
     }
@@ -3970,6 +4125,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     
 
         /**
+         * Whether region indexed packs are ready for `pbf_path` under `data_dir`.
+         */ fun `indexedMapsStatus`(`pbfPath`: kotlin.String, `dataDir`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_indexed_maps_status(
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Initialize native logging so download progress appears in `adb logcat`
          * (tag `NaviNative`). Safe to call more than once. Also invoked automatically
          * from download FFI entry points.
@@ -3990,6 +4157,15 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_last_gps_fix(
         _status)
+}
+    )
+    }
+    
+ fun `listSavedPlaces`(`dataDir`: kotlin.String): List<FfiSavedPlace> {
+            return FfiConverterSequenceTypeFfiSavedPlace.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_list_saved_places(
+        FfiConverterString.lower(`dataDir`),_status)
 }
     )
     }
@@ -4371,6 +4547,15 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     )
     }
     
+ fun `renameSavedPlace`(`dataDir`: kotlin.String, `id`: kotlin.String, `name`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_rename_saved_place(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`id`),FfiConverterString.lower(`name`),_status)
+}
+    )
+    }
+    
 
         /**
          * Nearest OSM way label at `(lat, lon)` for idle GPS (no planned corridor).
@@ -4472,6 +4657,15 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_save_fuel_config(
         FfiConverterString.lower(`dataDir`),FfiConverterTypeFfiFuelConfig.lower(`config`),_status)
+}
+    )
+    }
+    
+ fun `saveNamedPlace`(`dataDir`: kotlin.String, `name`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double, `kind`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_save_named_place(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`name`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterString.lower(`kind`),_status)
 }
     )
     }

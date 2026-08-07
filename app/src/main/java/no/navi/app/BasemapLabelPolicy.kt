@@ -13,7 +13,10 @@ import org.maplibre.android.style.layers.SymbolLayer
  * - zoom ≥ 13: motorway labels/shields
  * - zoom ≥ 14: + secondary road names
  * - zoom ≥ 15: + other major (primary/tertiary/trunk) and minor street names
- * - zoom ≥ 16: basemap POI icons (schools, fuel, shops, …)
+ * - zoom ≥ 16: basemap amenity POI icons (schools, fuel, shops, …)
+ *
+ * Protected-area names are a separate ladder (`pois_protected` / Liberty
+ * `park_label_protected`, from ~z8) — see [BasemapProtectedAreaStyle].
  *
  * Distinct from Navi [docs/poi.md] rest/overnight [PoiIndex].
  */

@@ -58,6 +58,9 @@
           "match",
           ["get", "kind"],
           "park", "#c8e0b0",
+          "national_park", "#c8e0b0",
+          "nature_reserve", "#c8e0b0",
+          "protected_area", "#c8e0b0",
           "forest", "#a8d090",
           "wood", "#a8d090",
           "scrub", "#d0e0b8",
@@ -71,6 +74,26 @@
           "#e8e0d0"
         ],
         "fill-opacity": 0.5
+      }
+    },
+    {
+      "id": "landuse_protected_outline",
+      "type": "line",
+      "source": "protomaps",
+      "source-layer": "landuse",
+      "minzoom": 7,
+      "filter": [
+        "match",
+        ["get", "kind"],
+        ["national_park", "nature_reserve", "protected_area"],
+        true,
+        false
+      ],
+      "paint": {
+        "line-color": "#2f7a32",
+        "line-width": 1.5,
+        "line-dasharray": [2, 1.5],
+        "line-opacity": 0.9
       }
     },
     {
@@ -296,6 +319,38 @@
         "text-color": "#504030",
         "text-halo-color": "#f8f4f0",
         "text-halo-width": 1.0
+      }
+    },
+    {
+      "id": "pois_protected",
+      "type": "symbol",
+      "source": "protomaps",
+      "source-layer": "pois",
+      "minzoom": 8,
+      "filter": [
+        "all",
+        ["has", "name"],
+        [">=", ["zoom"], ["coalesce", ["get", "min_zoom"], 0]],
+        [
+          "match",
+          ["get", "kind"],
+          ["national_park", "protected_area", "nature_reserve"],
+          true,
+          false
+        ]
+      ],
+      "layout": {
+        "text-field": ["get", "name"],
+        "text-font": ["Noto Sans Italic"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 8, 11, 12, 13],
+        "text-optional": true,
+        "text-allow-overlap": false,
+        "text-max-width": 10
+      },
+      "paint": {
+        "text-color": "#1e5a28",
+        "text-halo-color": "#f8f4f0",
+        "text-halo-width": 1.4
       }
     },
     {

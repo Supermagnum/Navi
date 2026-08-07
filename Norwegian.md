@@ -74,6 +74,7 @@ ikoner kommer fra Navit (**GPL v2**); se [`docs/icons.md`](docs/icons.md).
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Et lite bladikon vises når øko er på. | Ferdig |
 | **Frakoblet planlegging** | Last ned en region én gang, planlegg og se ruten på enheten. | Ferdig |
 | **Stedssøk** | Søk steder og sett Fra / Via / Til. | Ferdig |
+| **Kartmerke og lagrede steder** | Hold på kartet ~4 s for å merke et punkt; sett Fra / Via / Til eller lagre et navngitt sted (skilt fra Lagrede ruter). | Ferdig |
 | **Pauser og hvile** | Påminner når pause er «forfalt» og kan foreslå stopp. Bil bruker timer mellom pauser; fottur/sykling bruker rasteavstander; lastebil bruker juridiske kjøretidsregler der de er kjent. | Ferdig |
 | **Kjørefelt** | Tynn toppstripe (høyde) og bunnstripe (zoom, pauseteller, tur-ETA, veinavn, økoblad). | Ferdig |
 | **GPS-følge** | Kartet følger deg som standard. Panorer bort, trykk deretter **Recenter**. | Ferdig |
@@ -121,6 +122,13 @@ Vanlige stier forblir tilgjengelige, så et hull aldri stenger hele turen.
 
 **Steder.** Søk fyller Fra / Via / Til. Hva som teller som hytte, rasteplass
 osv. er beskrevet i [`docs/poi.md`](docs/poi.md).
+
+**Kartmerking og lagrede steder.** Hold én finger på kartet i ca. **4 sekunder**
+for å merke et punkt, sett det som Fra / Via / Til, eller lagre under
+**Saved places** (ett navngitt koordinat — ikke en hel **Saved route**).
+Brukerveiledning:
+[`docs/kartmerking-lagrede-steder.md`](docs/kartmerking-lagrede-steder.md)
+(engelsk: [`docs/map-marking-saved-places.md`](docs/map-marking-saved-places.md)).
 
 **Hvile og overnatting.** Hver modus har egne standarder. Lange lastebilturer
 kan deles i dager med juridiske hvileregler (EU- eller US-pakker der de er
@@ -300,6 +308,7 @@ Fullt galleri: [`docs/bilder.md`](docs/bilder.md) (engelsk:
 | [`docs/bilder.md`](docs/bilder.md) / [`docs/pictures.md`](docs/pictures.md) | Skjermbildegallerier |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online vs frakoblet kartutseende; 3D |
 | [`docs/poi.md`](docs/poi.md) | Stedstyper og søk |
+| [`docs/kartmerking-lagrede-steder.md`](docs/kartmerking-lagrede-steder.md) | **Slik bruker du** trykk-og-hold (4 s) og lagrede steder (engelsk: [`map-marking-saved-places.md`](docs/map-marking-saved-places.md)) |
 | [`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md) | Rast/vei-grunnlag for pauseintervaller (fottur/sykling) |
 | [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | EU lastebil kjøre-/hviletid |
 | [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | US lastebil kjøre-/hviletid |
@@ -437,6 +446,5 @@ Land-/regionvisuelle uttrekk kan også lages med
   full-extract-dekoding pluss andre PBF-skanninger under planlegging.
 - **Pauseteller ≠ tur-ETA:** med vilje — se
   [Pauseteller vs tur-ETA](#pauseteller-vs-tur-eta).
-- **Ikke implementert ennå:** lagring av destinasjon eller startpunkt;
-  trykk-og-hold for å merke et sted på kartet som destinasjon eller via-punkt;
-  sjekk av om koden kan optimaliseres for tegning/rendering.
+- **Ikke implementert ennå:** sjekk av om koden kan optimaliseres for
+  tegning/rendering.

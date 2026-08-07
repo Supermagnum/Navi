@@ -133,6 +133,27 @@ impl DangerBarrierIndex {
         self.glaciers.extend(other.glaciers);
     }
 
+    /// Rebuild from flat segment endpoints + glacier rings (indexed-pack load).
+    ///
+    /// Each segment is `(a_lon, a_lat, b_lon, b_lat)`. Glacier rings are
+    /// closed `[lon, lat]` rings.
+    pub fn from_segments(
+        segments: impl IntoIterator<Item = (f64, f64, f64, f64)>,
+        glaciers: Vec<Vec<[f64; 2]>>,
+    ) -> Self {
+        let segs: Vec<BarrierSeg> = segments
+            .into_iter()
+            .map(|(a_lon, a_lat, b_lon, b_lat)| BarrierSeg {
+                a: [a_lon, a_lat],
+                b: [b_lon, b_lat],
+            })
+            .collect();
+        Self {
+            tree: RTree::bulk_load(segs),
+            glaciers,
+        }
+    }
+
     /// Load railway / river / cliff / glacier ways that touch `bbox`.
     ///
     /// Avoids the expensive “index every node in bbox” pass: collects danger

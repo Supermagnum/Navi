@@ -175,6 +175,10 @@ profiles use the road graph.
 | FTS search API | UniFFI `ensure_place_index` / `search_places` |
 | Categories / tags | `core/src/poi/`, [`poi.md`](poi.md) |
 | Icon raster | UniFFI `rasterize_icon_png`, `core/src/icons/` |
+| Map long-press (4 s) + mark sheet | `MapLongPress.kt`, `CorridorMapView` touch path in `MainActivity.kt` |
+| Field population (search / GPS / mark / saved place) | `applyHit` / `applyMarkAs` in `MainActivity.kt` |
+| Saved places store | `saved_places` table, `PlaceStore` in `core/src/search/mod.rs`; UniFFI `list_saved_places` / `save_named_place` / … |
+| How to use (users) | [`map-marking-saved-places.md`](map-marking-saved-places.md) |
 
 ### Simulation (debug builds)
 
@@ -203,7 +207,7 @@ Under the app data directory (see `NaviAppData.kt`):
 | Region `.osm.pbf` + graph cache | Routing |
 | Elevation / DEM tiles | Eco costing + altitude HUD |
 | Place FTS DB | Search |
-| SQLite `app_config` / routes DB | Rest, fuel, vehicle limits, saved routes |
+| SQLite `app_config` / routes DB | Rest, fuel, vehicle limits, saved routes, **saved places** |
 | `{dataDir}/pmtiles/*.pmtiles` | Offline basemap / terrain DEM |
 | SharedPreferences `navi_map_hud` | Zoom, tilt, 3D, metric (not UniFFI) |
 

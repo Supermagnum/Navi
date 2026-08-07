@@ -111,6 +111,19 @@ Alle med **SIMULATING** på Løten-løkka (ikke live GPS).
 | Etter Recenter | ![Recenter](images/follow_gps/05_after_recenter.png) |
 | Rotasjonsmoduser OK | ![Rotasjon](images/follow_gps/06_rotation_modes_ok.png) |
 
+## Kartmerking og lagrede steder
+
+Brukerveiledning: [`kartmerking-lagrede-steder.md`](kartmerking-lagrede-steder.md)
+(SM-P613, ekte trykk-og-hold).
+
+| Scene | Forhåndsvisning |
+|---|---|
+| Holde-ring (~4 s) | ![Holde-ring](images/map-long-press/hold_ring.png) |
+| Handlingsark for merket sted | ![Meny](images/map-long-press/action_menu.png) |
+| Lagre sted-dialog | ![Lagre](images/map-long-press/save_place_dialog.png) |
+| Liste over lagrede steder | ![Lagrede steder](images/map-long-press/saved_places_list.png) |
+| Lagret sted satt som Til | ![Som Til](images/map-long-press/saved_place_as_to.png) |
+
 ## Frakoblet PMTiles-grunnkart / 3D
 
 | Scene | Forhåndsvisning |

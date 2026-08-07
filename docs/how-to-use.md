@@ -1,0 +1,283 @@
+# How to use Navi
+
+End-user guide for the current Android app. Verified against the Compose UI in
+`MainActivity.kt`, `DriveHud.kt`, and `MapLongPress.kt` (not older planning docs).
+
+The on-screen language is **English only**. Tap the **top bar** for map/display
+settings; tap the **bottom status area** (street / break / ETA text, not the
+zoom −/+) for **Drive / vehicle** settings.
+
+---
+
+## Plan a route
+
+### Set From, Via, and To
+
+1. Open route planning (search chrome). If it was closed, tap **Plan** (or the
+   compact reopen control) so the panel with **From** / **To** / **Via** chips
+   is visible.
+2. Select the chip for the field you want to fill (**From**, **To**, or
+   **Via**).
+3. Choose one of:
+
+| Method | How |
+|---|---|
+| **Keyboard search** | Type in the search field. Use **Place** (place, hut, or `lat, lon`) or **Address** (road, settlement, or `lat, lon`). Tap a result to apply it to the selected field. |
+| **Use GPS** | Tap **Use GPS as from** / **as to** / **as via** (label follows the selected chip). Needs a device fix; otherwise status shows `GPS unavailable`. |
+| **Map long-press** | Hold one finger on the map for **about 4 seconds** (blue ring). The **Marked location** sheet offers **Set as From / Start**, **Set as Via**, **Set as To / Destination**, **Save this place**, or **Cancel**. |
+| **Saved place** | Open **Saved places**, then tap **From**, **Via**, or **To** on a row. |
+
+The summary line under the chips shows the current From / To / Via names.
+**Clear vias (N)** removes all vias.
+
+Named hiking / cycle / pilgrim **routes** can appear in place search when they
+are in the local place index — search by route name the same way as a hut or
+town.
+
+### Plan route
+
+Tap **Plan route**.
+
+- If From or To is missing, status becomes **`Set From and To first`** and
+  nothing is planned.
+- You need a downloaded region PBF (Tools). If none is found, status asks you
+  to download a region (e.g. Østlandet) first.
+- While planning, the button shows **Planning…** and a progress line/bar may
+  appear.
+
+### Simulate route
+
+**Simulate route** appears only on **debuggable** builds, and only when a
+planned corridor with simulation samples is present. It walks the camera along
+the planned path. A full-screen **SIMULATING** banner is shown; tap
+**Stop simulation** (same button) to stop.
+
+Release / store builds do not expose this control.
+
+### Delete the planned route
+
+With a corridor on the map, tap **Delete route** in the planning panel (or
+**Delete planned route** under **Saved routes**). That clears the active
+corridor so you can start over. It does **not** delete entries from the Saved
+routes list unless you use **Delete route** on a saved row.
+
+---
+
+## Breaks: map toggle vs Drive settings
+
+Two different controls — easy to confuse:
+
+| Control | Where | What it does |
+|---|---|---|
+| **Breaks** switch | Top bar → map/display settings | Only shows or hides the bottom-bar **“Break in …”** reminder line. **Does not** change how often breaks are planned. |
+| Break interval / rest fields | Bottom status → Drive / vehicle settings | The actual hours and rest durations used for planning and countdowns. |
+
+### Soft profiles (Car, Car electric, Motorcycle, Motorcycle electric, Mobile home, Bicycle, Electric cycle)
+
+In Drive settings:
+
+- **Desired hours between breaks (Car)** — soft preference interval (label says
+  “Car” even when another soft profile is active; values save as the Car
+  profile default pack).
+- **Rest time (minutes)** — suggested break length.
+- **Next break shown as** → **Time** or **Distance** (optional km/mi units).
+
+These are preferences for reminders / soft multi-day overnight, not commercial
+driving-hours law.
+
+### Truck / Truck electric
+
+Drive settings switch to truck wording:
+
+- Hint: values save as **Truck EC 561/2006 defaults** (not a one-trip override).
+- **Mandatory break after (hours, Truck)**
+- **Break duration (minutes, continuous)**
+- **Split break 15+30 min**
+- **Arm +1 h exceptional extension**
+
+Which legal pack applies (EU **EC 561**, US **FMCSA**, or **decline / unknown**)
+is chosen automatically from the trip start location — there is **no** separate
+jurisdiction picker in the UI. Outside recognised packs, truck multi-day legal
+segmentation is not invented.
+
+Mobile home uses **car-style** soft breaks, not EC 561 tracking.
+
+---
+
+## Tools menu
+
+Open **Tools** from the planning panel (toggles to **Hide tools**).
+
+| Action | Meaning |
+|---|---|
+| **Download scope** | Chips **Country** vs **Region in country**. Country warns about low-RAM devices. Norway country path, or Østlandet / Vestlandet / Trøndelag / Nord-Norge / Sørlandet region chips. |
+| **Geofabrik path** | Editable path (e.g. `europe/norway/ostlandet`). |
+| **Download region + build place index** | Downloads the Geofabrik PBF, binds the region, builds the place search index, and builds indexed routing maps when possible. |
+| **Rebuild indexed maps (local PBF)** | Rebuilds preprocess packs from a PBF already on the device. |
+| **Download basemap (PMTiles)** | Offline Protomaps basemap for the selected region. |
+| **Download terrain DEM (Mapterhorn)** | Offline hillshade DEM beside the basemap. |
+| **Pause / Resume / Cancel** | Controls an in-progress download job. |
+| **Check for OSM updates** | Opt-in Geofabrik update check (never silent). |
+| **Apply pending OSM update** | Applies a previously checked update after you confirm. |
+| **Diagnostic logging** | Toggle session logging. Prefer reading logs under **Internal storage → Documents → debug** (`navi_session_*.log`) over USB/MTP — no adb required when that folder is writable. |
+
+A weekly OSM-update **reminder** may appear in Tools; it does not download by
+itself.
+
+---
+
+## Saved places
+
+A **saved place** is one named coordinate (not a full route).
+
+### Create
+
+1. Long-press the map (~4 s) → **Save this place**, or
+2. From the mark sheet, confirm/edit the **Name** → **Save**.
+
+Stored in the app database (`saved_places`).
+
+### Use, rename, delete
+
+1. Open **Saved places**.
+2. On a row: **From** / **Via** / **To**, **Rename**, or **Delete**.
+3. Plan as usual.
+
+The same place can be From on one trip and To on another.
+
+More detail (gestures, screenshots): [`map-marking-saved-places.md`](map-marking-saved-places.md).
+
+---
+
+## Saved routes
+
+A **saved route** stores start/end/via names and coordinates plus profile
+metadata (via `saveNamedRoute`).
+
+In the current UI under **Saved routes**:
+
+- **Save** — stores the current From (or a fallback start), To, and vias.
+  Requires a **To** destination (`Set a To destination first` otherwise).
+- List of saved rows with profile and time.
+- **Delete route** per row.
+- **Delete planned route** clears the **active** map corridor only.
+
+There is **no** “Load” / “Select” button today that restores a saved row into
+From/To and replans. **Continue from last stop** (planning panel) can reuse a
+saved route’s last break coordinates when present.
+
+---
+
+## Travel modes (what differs)
+
+Open Drive settings (bottom bar) to change **Travel mode**, eco, POI radius, and
+break fields. Avoidances and network toggles live in the planning **profile**
+panel.
+
+### Car / Car electric
+
+- Road network planning.
+- **Vehicle** panel: **Height (m)** (cars).
+- **Avoid motorways** / **Avoid toll roads** / **Avoid ferries**.
+- **Eco mode** toggle (hill-aware energy costing). Car electric also has battery
+  / efficiency fields in Drive settings.
+- Soft break interval (see above). Soft multi-day overnight can use **Lodging**
+  / camping / rest-area style stops from the POI index.
+
+### Motorcycle / Motorcycle electric
+
+- Plans on the **car** road graph (same builder class as Car).
+- Avoidances like other motor profiles.
+- **Eco mode** uses **motorcycle-specific** physics defaults (drag, frontal area,
+  mass) — not the car Passat baseline.
+- Soft breaks like Car (not truck HOS).
+
+### Hiking
+
+- Foot graph; wetland soft-avoid (bog/fen) and hard-avoid (swamp/reedbed) with
+  **boardwalk** exceptions.
+- **Eco mode** is locked on (not toggleable).
+- **POI search radius** slider (Drive settings) for hut / stop search.
+- **Follow official hiking/cycling networks** — soft preference for marked
+  networks; ordinary paths remain available if the network does not connect.
+- **Follow pilgrim routes** — **Hiking only** in the UI (soft preference; off by
+  default). Matches `route=pilgrimage` and pilgrim-named hiking relations
+  (Pilegrimsleden, Camino, Via Francigena, St. Olav, etc.). Falls back to normal
+  hiking when no pilgrim way connects the points.
+- Multi-day overnight / hut and via promotion follow hiking rest rules
+  (allemannsretten-oriented overnight distance logic in core).
+
+### Bicycle / Electric cycle
+
+- Same **Follow official hiking/cycling networks** toggle as Hiking.
+- **Follow pilgrim routes is not shown** for Bicycle / Electric cycle (Hiking
+  only).
+- Eco locked on for cycling profiles.
+- Electric cycle Drive fields: **Battery capacity (Wh)**, **Motor torque (Nm)**,
+  **Wheel diameter (inches)** (presets + custom). Used for range / climbing
+  reporting in plan status — legal assist caps are not enforced.
+
+### Truck / Truck electric
+
+- **Vehicle** panel: axle / bogie weight, height, width, length.
+- Avoid motorways / tolls / ferries.
+- EC 561-oriented break fields (and automatic FMCSA / unknown pack selection by
+  start country — see Breaks section).
+- Multi-day day cards when a long truck plan segments overnight.
+
+---
+
+## Official networks and pilgrim routes
+
+| Toggle | Profiles in UI | Behaviour |
+|---|---|---|
+| **Follow official hiking/cycling networks** | Hiking, Bicycle, Electric cycle | Soft cost preference for marked network ways; not a hard lock. Gaps fall back to ordinary paths. |
+| **Follow pilgrim routes** | Hiking only | Soft preference for pilgrim route ways; falls back to normal hiking. |
+
+Search for a **named** route (including pilgrim route names) in **From** / **Via** /
+**To** when that name is in your place index — independent of the toggle.
+
+---
+
+## Pilgrim stops and stamp centers (POI coverage)
+
+Verified against OSM tagging and the Ostlandet extract, plus public OSM samples:
+
+**Rest / overnight for pilgrims**
+
+- Hostels and guest houses used as pilgrim lodgings (`tourism=hostel` /
+  `guest_house`, often with “pilegrim” in the name) already match **Lodging**
+  and (for hostels) **Cabin** / **OvernightFacility**.
+- Examples in Ostlandet data: *Kongsveien Pilegrimsherberge*, *Pilegrimsloftet
+  Borkerud*, *Lia Gård Pilegrimssenter* (`guest_house`), *Smedberget Pilegrimstun*.
+
+**Stamp / credential / information centers**
+
+- There is **no** single, widely used OSM tag for “pilegrimspass /
+  Pilgerausweis / credencial office”.
+- Ostlandet examples: *Pilgrim's center* as `tourism=information` +
+  `information=office`; *Pilgrimssenter Oslo* often only as a **building**
+  without `tourism` — so it is **not** in Lodging/Cabin/General today.
+- Many “Pilegrimsleden” hits are **guideposts** (`information=guidepost` /
+  `board`), not stamp offices.
+- Nominatim did not resolve several official Norwegian center names as dedicated
+  POIs; that is an **OSM data completeness** issue, not something Navi invents.
+- **International:** Santiago’s *Oficina del Peregrino* is tagged
+  `office=company` (not `tourism=hostel` / `information=office`). Camino
+  *albergues* are typically `tourism=hostel` and already fall under **Lodging**.
+  A Via Francigena *ostello* sample was likewise `tourism=hostel`.
+
+**Product decision:** no new “Pilgrim center” POI category for now — tagging is
+too inconsistent for a reliable matcher, while lodgings are already covered and
+named centers remain findable via **place-name search** when present in the
+index. See [`poi.md`](poi.md).
+
+---
+
+## See also
+
+- [`map-marking-saved-places.md`](map-marking-saved-places.md) — long-press detail
+- [`poi.md`](poi.md) — POI category rules
+- [`map-styles.md`](map-styles.md) — online Liberty vs offline Protomaps
+- [`ec-561-truck-rest.md`](ec-561-truck-rest.md) / [`fmcsa-truck-rest.md`](fmcsa-truck-rest.md) — truck HOS detail
+- README — install, download minimums, disclaimer

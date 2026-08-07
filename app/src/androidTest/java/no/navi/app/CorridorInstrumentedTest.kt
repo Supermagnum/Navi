@@ -156,8 +156,21 @@ class CorridorInstrumentedTest {
         assertTrue("must be REAL_PIPELINE: $report", report.contains("TEST_KIND=REAL_PIPELINE"))
         assertTrue("must be real_pbf: $report", report.contains("DATA_SOURCE=real_pbf"))
         assertTrue("must PASS: $report", report.contains("PASS"))
-        assertTrue("must report cache hit: $report", report.contains("cache_hit=true"))
-        assertTrue("warm must be faster: $report", result.warmLoadS < result.coldBuildS * 0.85 || result.coldBuildS < 2.0)
+        // M5: `.navigph` warm cache removed. Fast path is indexed packs (`pack_hit`).
+        // Without packs both passes rebuild from PBF (NOTE in report); warm-speed
+        // assertion only applies when packs are present.
+        val packHit = report.contains("pack_hit=true")
+        if (packHit) {
+            assertTrue(
+                "warm pack load must be faster: $report",
+                result.warmLoadS < result.coldBuildS * 0.85 || result.coldBuildS < 2.0,
+            )
+        } else {
+            assertTrue(
+                "without packs must note navigph deprecation: $report",
+                report.contains("navigph") || report.contains("pack_hit=false"),
+            )
+        }
         assertTrue("distance must be positive: ${result.distanceKm}", result.distanceKm > 5.0)
         assertTrue("polyline must be non-empty", result.routePolyline.contains(';'))
     }

@@ -58,6 +58,18 @@ pub fn migrate(conn: &Connection) -> SqlResult<()> {
             last_overnight_lon REAL
         );
 
+        CREATE TABLE IF NOT EXISTS saved_places (
+            id TEXT PRIMARY KEY NOT NULL,
+            name TEXT NOT NULL,
+            lat REAL NOT NULL,
+            lon REAL NOT NULL,
+            kind TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_saved_places_created
+            ON saved_places(created_at DESC);
+
         CREATE INDEX IF NOT EXISTS idx_elevation_job_tiles_status
             ON elevation_job_tiles(job_id, status);
 

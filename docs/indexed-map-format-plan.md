@@ -15,8 +15,8 @@ Related:
 |---|---|
 | Opened | 2026-08-06 |
 | Owner track | Routing / plan-time I/O |
-| Current phase | **Phase 1 closed as NO-GO for this PoC class** — 1a met; **1b NO-GO** |
-| Next | Redesign first-load path (tile/block loads without full in-memory graph rebuild); do **not** start Phase 2 on R*Tree→`RouteGraph` materialization |
+| Current phase | **Phase 4 + 4b complete** — graph/POI/barrier + wetland packs; `.navigph` deprecated |
+| Next | Tools UI Ostlandet download soak; optional hiking overnight/POI pack fold-in |
 | Last updated | 2026-08-07 |
 
 ## Phase status
@@ -25,10 +25,12 @@ Related:
 |---|---|---|---|
 | 0 | Decision framework + targets | **Done** | N/A (defines bars) |
 | 1a | Confirm ≤2 s / ≥10× is achievable when a graph artifact is already on disk | **Done** | **Met** (warm `.navigph` — see honesty note) |
-| 1b | Graph-only PoC: **first** plan of a never-before-indexed bbox/region via a prebuilt spatial index | **Done** | **NO-GO** — SQLite R*Tree PoC on SM-P613 (see evidence) |
-| 2 | Extend PoC to POI/barrier | Not started | Blocked — needs a **different** first-load design that clears Phase 0, not this PoC |
-| 3 | Real format + migration design | Not started | Requires Phase 2 GO |
-| 4 | Full implementation | Not started | Requires Phase 3 plan **approval** |
+| 1b | Graph-only PoC: **first** plan via prebuilt spatial index that still **materializes** a trip `RouteGraph` | **Done** | **NO-GO** — SQLite R*Tree on SM-P613 |
+| 1c | Graph-only PoC: **first** plan via `rkyv`+`memmap2` **zero-copy** (no owned `RouteGraph`) ± precomputed Δh | **Done** | **GO** — SM-P613 hedmark (see evidence) |
+| 2 | Extend PoC to POI/barrier under the same load model | **Done** | **GO** — SM-P613 hedmark (see evidence) |
+| 3 | Real format + migration design | **Done (design)** | **Approved** 2026-08-07 |
+| 4 | Full implementation | **Done** | M0–M6 on SM-P613 (see Phase 4) |
+| **4b** | Wetland indexed pack | **Done** | **GO** — SM-P613 (see Phase 4b) |
 
 ---
 
@@ -53,16 +55,17 @@ diagnostic OD).
 | Phase | GO if | NO-GO if |
 |---|---|---|
 | **1a** (sanity) | Warm load of an **already-built** `.navigph` shows ≥10× vs cold PBF and ≤2 s `graph_build_ms` on the small corridor | Even repeat visits cannot clear the bar (would kill the approach) |
-| **1b** (real Phase 1) | A **never-before-planned** bbox/region, loaded from a **prebuilt** index produced without that plan’s PBF scan at query time, clears ≥10× and ≤2 s vs cold PBF on the same OD | First-load of a new bbox still requires a full PBF scan (only warm cache is fast) |
+| **1b** (materializing index) | A **never-before-planned** bbox/region, loaded from a **prebuilt** index produced without that plan’s PBF scan at query time, clears ≥10× and ≤2 s vs cold PBF on the same OD | First-load of a new bbox still requires a full PBF scan (only warm cache is fast) **or** indexed load still fails the bars |
+| **1c** (zero-copy) | Same first-load discipline as 1b, but graph is accessed **without** materializing an owned `RouteGraph` (mmap + archived layout), and clears the same ≤2 s / ≥10× bars | Zero-copy still fails absolute or speedup bars on SM-P613 |
 | **2** | Full `plan_duration_ms` with prebuilt graph+POI+barrier ≤ 3.0 s on Espa corridor (first load of that pack), ≥10× vs cold full plan | Only graph improved; POI/barrier still multi-second on first load |
-| **3** | Written format/migration plan reviewed; calendar estimate grounded in Phase 1b–2 numbers | Design cannot meet Phase 0 targets without unacceptable RAM/size on 4 GB class |
+| **3** | Written format/migration plan reviewed; calendar estimate grounded in Phase 1–2 numbers | Design cannot meet Phase 0 targets without unacceptable RAM/size on 4 GB class |
 | **4** | Explicit human approval of Phase 3 plan | No automatic slide from design → implementation |
 
 ### Tracking discipline
 
 - This file is the **live** phase status (per [`status.md`](status.md)).
 - Keep the row in [`future-proofing-audit-2026-07.md`](future-proofing-audit-2026-07.md) current.
-- Do **not** start Phase 2 until **Phase 1b GO** is recorded here with dated evidence.
+- Do **not** start Phase 2 until a graph first-load path records **GO** here (now **1c**).
 - Phase 1–2 code may be throwaway; do not merge a production format until Phase 4.
 
 ### Relationship to other mitigations
@@ -75,7 +78,7 @@ diagnostic OD).
 
 ---
 
-## Phase 1 — Honesty split (1a vs 1b)
+## Phase 1 — Honesty split (1a / 1b / 1c)
 
 ### What `.navigph` actually is
 
@@ -153,43 +156,362 @@ NO-GO. Routes agree (~162.5 km).
 
 **Interpretation:** R*Tree query still **materializes ~90k nodes / ~195k edges**
 into a full in-memory `RouteGraph`. That helps vs raw PBF (~5–6× on device) but
-does **not** clear Phase 0. OsmAnd/Navit-class first-load needs tile/block loads
-**without** rebuilding the whole trip graph in RAM at plan time.
+does **not** clear Phase 0. The missing piece was eliminating that materialization
+step — tested next as Phase 1c.
 
-**1b result:** Phase 1’s open question is **answered** for this PoC class —
-first-time region loads improve, but **not enough**. Do **not** treat this as a
-GO to Phase 2; redesign the load model first (or revisit with a different
-artifact).
+**1b result:** **NO-GO** for materializing indexed loads.
+
+### Phase 1c — rkyv + memmap2 zero-copy PoC (done; GO)
+
+**Claim tested:** “Does eliminating owned-graph materialization via `rkyv`
+(archived layout) + `memmap2` (mapped bytes) clear the Phase 0 bars that 1b
+missed — and does a shared per-edge elevation Δh close the separate eco
+reweight bottleneck?”
+
+**Method (throwaway tool):** `navi-ffi` binary `rkyv-mmap-graph-poc`
+(`navi-ffi/src/bin/rkyv_mmap_graph_poc.rs`).
+
+- Offline `build`: parse trip-bbox graph from region PBF (preprocess cost),
+  serialize flat CSR (`nodes` / `edges` / adjacency) with `rkyv`.
+- Variant A: plain weights (no Δh payload).
+- Variant B: same layout + `edge_delta_h_m` (metres; not energy).
+- Plan-time `bench`: `memmap2` map the archive, `rkyv::access` the bytes, A\*
+  **directly on archived fields** (no `RouteGraph`).
+
+Same cold discipline as 1b: Hedmark extract, Esso Myklegård → Atnbrufossen,
+no prior hedmark `.navigph`; PoC under `/data/local/tmp/navi_rkyv_poc/`.
+
+**SM-P613 evidence (2026-08-07, authoritative for 1c):**
+
+| Metric | Variant A | Variant B |
+|---|---|---|
+| Cold `build_from_pbf_bbox` | **16395 ms** | **16525 ms** |
+| Indexed load (`mmap`+`rkyv::access`) | **2.9 ms** | **2.3 ms** |
+| Touch-all edges (full page-in upper bound) | 12.6 ms | 19.5 ms |
+| First A\* (length weights) | 123 ms | 126 ms |
+| Archive size | 7.7 MiB | 8.5 MiB (+~0.8 MiB Δh) |
+| Speedup vs cold (load) | **~5585×** | **~7123×** |
+| ≤2.0 s absolute | **Pass** | **Pass** |
+| ≥10× | **Pass** | **Pass** |
+| **PHASE1C** | **GO** | **GO** |
+
+Route distance matches 1b (~162.5 km; eco A\* ~162.8 km / 522 nodes).
+
+**Variant B eco (same device run):**
+
+| Step | Time |
+|---|---|
+| DEM `apply_eco_reweighting` (trip-bbox graph, Car) | **145.7 ms** |
+| Δh→energy arithmetic over all archived edges (Car) | **1.69 ms** |
+| Same arithmetic (Motorcycle, shared Δh index) | **1.74 ms** |
+| Speedup arith vs DEM reweight | **~86×** |
+| Eco A\* with live Δh→energy | **67 ms** |
+
+Car vs Motorcycle energy sums from the **same** Δh array differ as expected
+(distinct mass/Cd), confirming one shared elevation-delta index serves multiple
+profiles without per-profile reprocessing.
+
+Host sanity (same OD): load ~0.05 ms, first plan ~18 ms, DEM reweight ~38 ms vs
+Δh arith ~0.87 ms — same GO class.
+
+**Interpretation:** Zero-copy closes the 1b gap. Adding Δh does **not**
+meaningfully change load time (still single-digit ms); it moves eco reweight from
+DEM sampling to cheap arithmetic. Live Δh→energy in A\* stays cheap on device.
+
+**rkyv / memmap2 constraints (flagged for Phase 3):**
+
+| Topic | Finding |
+|---|---|
+| **mmap safety** | `Mmap::map` is `unsafe` w.r.t. file mutation: the mapped file must not be truncated/replaced underfoot. Region download/update must use write-temp + atomic rename **and** never mutate a file while any planner holds a map. Safe if pack lifetime is immutable-after-publish (same discipline as PMTiles). |
+| **Schema evolution** | Archived `rkyv` layouts are brittle across struct changes. PoC uses magic `NVRK` + `variant` byte; production needs an explicit format version and a rebuild-on-mismatch path (do not attempt ad-hoc field migration of mapped bytes). |
+| **Android** | Confirmed working on SM-P613 under `/data/local/tmp` (arm64 PIE, NDK linker). App-private files dirs should behave the same with read permission; keep packs on local filesystem (not content-provider streams). |
+
+**1c result:** **GO** — first-load graph path clears Phase 0 without materializing
+`RouteGraph`. Phase 2 may proceed on this load model.
 
 ### Phase 1 overall decision (2026-08-07)
 
 | Sub-phase | Verdict |
 |---|---|
 | 1a warm-cache target check | **Met** — ≤2 s / ≥10× reachable when a trip graph is already on disk |
-| 1b first-load SQLite R*Tree PoC | **NO-GO** on SM-P613 (5.6×, 2.88 s) |
-| Phase 1 as a path to Phase 2 via this PoC | **Closed — do not advance** |
-
-Optional interim: shared-parse remains available. Next indexed-format work must
-target a load path that can clear ≤2 s / ≥10× on first use of a new region
-without full trip-graph materialization from SQLite rows.
+| 1b first-load SQLite R*Tree (materialize) | **NO-GO** on SM-P613 (5.6×, 2.88 s) |
+| 1c first-load rkyv+memmap2 (zero-copy) ± Δh | **GO** on SM-P613 (~2–3 ms load, ≥5000×) |
+| Phase 1 as a path to Phase 2 | **Open via 1c** — do not revive 1b materialization |
 
 ---
 
-## Phase 2 — POI/barrier indexed PoC (blocked — redesign first-load first)
+## Phase 2 — POI/barrier rkyv+memmap2 PoC (done; GO)
 
-Pre-committed bar: full first-load `plan_duration_ms` ≤ 3.0 s with prebuilt
-graph+POI+barrier on Espa corridor, ≥10× vs cold full plan. Not scheduled while
-graph-only first-load still fails Phase 0 under the current PoC class.
+**Claim tested:** “Does the same `rkyv`+`memmap2` approach close the remaining
+`poi_barrier_ms` cost (untouched by graph cache / 1c), and does
+graph+POI/barrier together clear Phase 0’s full-plan bar (≤3.0 s, ≥10×)?”
 
-## Phase 3 — Real format + migration (blocked on Phase 2 GO)
+**Method (throwaway tool):** `navi-ffi` binary `rkyv-mmap-poi-barrier-poc`
+(`navi-ffi/src/bin/rkyv_mmap_poi_barrier_poc.rs`). Offline `build` extracts
+trip-bbox POIs + danger barrier segments (highway-from-graph + PBF
+railway/river/cliff/glacier) into a flat archived pack; `bench` compares cold
+`PoiIndex::load_from_pbf_bbox` + `DangerBarrierIndex` vs mmap+access+materialize
+of owned records (honest “ready for break planning”).
 
-Versioning, provision-time generation, coexist-vs-replace raw PBF,
-reprocess UX, interaction with `.navigph` / PMTiles / shared-parse, calendar
-milestones from 1b–2 evidence.
+Same Hedmark / Esso Myklegård → Atnbrufossen discipline as 1b/1c; PoC under
+`/data/local/tmp/navi_rkyv_poc/`.
 
-## Phase 4 — Implementation
+**SM-P613 evidence (2026-08-07, authoritative for Phase 2):**
 
-Starts only after **explicit approval** of the Phase 3 plan.
+| Path | Time |
+|---|---|
+| Cold POI PBF load | **3982 ms** (841 POIs) |
+| Cold barrier (from_graph + PBF) | **8287 ms** (~117k segs) |
+| Cold `poi_barrier` combined | **12269 ms** |
+| Indexed mmap + materialize | **1.8 ms** |
+| Speedup vs cold `poi_barrier` | **~6710×** |
+| Archive size | 3.7 MiB |
+
+**Full-plan estimate (1c graph + Phase 2 POI/barrier on device):**
+
+| Path | Time |
+|---|---|
+| Cold graph + cold poi_barrier | **~28.7 s** |
+| Indexed: graph mmap (~0.04 ms) + 1c first-plan proxy (~150 ms) + POI/barrier load (1.8 ms) | **~152 ms** |
+| Speedup | **~189×** |
+| ≤3.0 s absolute | **Pass** |
+| ≥10× | **Pass** |
+| **PHASE2** | **GO** |
+
+Host sanity: cold `poi_barrier` **4676 ms** → indexed **0.74 ms** (~6288×);
+full-plan estimate ~151 ms vs ~10.6 s cold (~71×) — same GO class.
+
+**Interpretation:** POI/barrier has a **different shape** than the routing graph
+(far fewer POI records; barrier cost is a large segment list from a second PBF
+pass), but under the same archive+mmap approach it improves by the same
+order of magnitude as Variant A. No separate indexing strategy is required for
+Phase 0 clearance. Note: plan-time still materializes owned `PoiRecord`s from
+mapped bytes today (tags needed for break logic); that copy is cheap at this
+scale (~ms). Production may later query tags zero-copy if needed — not required
+to clear the bar.
+
+**2 result:** **GO** — Phase 3 design may proceed.
+
+---
+
+## Phase 3 — Real format + migration design (ready for approval)
+
+Status: **design complete**. Phase 4 must **not** start until this section is
+**explicitly approved**.
+
+### 3.1 On-disk format
+
+#### Schema versioning
+
+Every archive file begins with a fixed preamble (not free-form `rkyv` alone):
+
+| Field | Type | Role |
+|---|---|---|
+| `magic` | `u32` | Category id (`NVRK` graph, `NVPB` poi/barrier, …) |
+| `format_version` | `u32` | Monotonic schema version for that magic |
+| `payload` | `rkyv` bytes | Archived body for **exactly** that version |
+
+On load:
+
+1. Read magic + version from the file header (plain bytes, before `rkyv::access`).
+2. If magic unknown or `format_version` ≠ code’s supported version → **do not
+   map/interpret payload**. Treat as missing pack.
+3. Rebuild from on-disk source `.osm.pbf` (+ DEM for Δh) via the converter;
+   never attempt partial / best-effort reads of a mismatched layout.
+
+Bump `format_version` on any archived struct field change. Old packs are
+invalidated and regenerated (acceptable: preprocess is offline / provision-time).
+
+#### Contents and file layout — **separate archives per category**
+
+| File (per region stem) | Contents | Regenerated when |
+|---|---|---|
+| `{stem}.navi-graph.rkyv` | Routing CSR + optional `edge_delta_h_m` (Variant B) | OSM extract changes; DEM coverage changes (if Δh present) |
+| `{stem}.navi-poi-barrier.rkyv` | POIs + barrier segs + glacier rings | OSM extract changes |
+| (unchanged) `{stem}.osm.pbf` | Source of truth | Download / Geofabrik update |
+| (unchanged) place `place_index.db` | FTS search | Existing ensure-place-index step |
+| (unchanged) PMTiles / DEM | Basemap / terrain | Separate pipelines |
+
+**Why separate (not one combined blob):**
+
+- OSM update without DEM redo can refresh graph topology + POI/barrier without
+  re-sampling every edge Δh (or can refresh Δh alone when DEM tiles change).
+- Smaller blast radius on version bumps (only one category’s version gate fires).
+- Simpler pause/cancel: each file is an independent publish unit.
+
+A thin `{stem}.navi-manifest.json` (plain JSON) lists expected filenames,
+`format_version`s, source PBF fingerprint (size + mtime or content hash), and
+optional DEM fingerprint for Δh — used only for presence/version checks, not
+for routing.
+
+#### Generation trigger — **transparent, inside existing Tools flow**
+
+Extend **Tools → “Download region + build place index”** (and the equivalent
+update path) to also run the archive converter after the PBF is durable on
+disk. No separate user-facing “build indexed maps” step unless generation
+fails (then surface error + retry in the existing download-progress UI).
+
+Rationale: matches README “downloads happen through inbuilt tools”; users
+already wait on place-index build; adding graph+POI/barrier preprocess there
+is the natural one-time cost.
+
+### 3.2 Immutability / write-safety
+
+Generalize the Phase 1c invariant and the existing HTTP download pattern
+(`stream_get_to_file` → `*.partial` → `rename`):
+
+1. Write `{name}.rkyv.partial` (or under a job-private temp dir).
+2. fsync file (and parent dir where practical).
+3. Atomic `rename` to the final `{name}.rkyv` only after a successful full
+   serialize + header write.
+4. **Never** open a `.partial` for `mmap` / planning.
+5. **Pause / resume / cancel** (same control channel as DEM/region jobs):
+   - **Cancel or failed job:** delete `.partial`; leave any previous good
+     `.rkyv` untouched.
+   - **Pause:** stop writing; keep `.partial` for resume of **generation**
+     only if the generator is checkpointable; otherwise delete `.partial` and
+     restart generation on resume (simpler, recommended for v1 — generation is
+     CPU-bound from local PBF, not a multi-GB network fetch).
+   - **Resume after process death:** on next open, ignore/delete orphan
+     `.partial`; if final `.rkyv` missing/wrong version → fallback path (§3.3).
+6. Planner holds `Mmap` only for the duration of a plan (or an explicit
+   region session). Region replace must wait until no live maps of that file
+   (or use inode replace: rename-over means existing `Mmap` keeps old inode —
+   acceptable if plans finish against the old snapshot).
+
+### 3.3 Migration for already-downloaded regions
+
+| Detection | Response |
+|---|---|
+| Manifest / archive missing | Fall back to today’s raw PBF `graph_build` + `poi_barrier` path for that plan |
+| Magic/version mismatch | Same fallback; mark pack stale |
+| PBF fingerprint mismatch vs manifest | Stale → regenerate |
+
+**Regeneration:** prefer **local** `{stem}.osm.pbf` already on disk — **do not**
+re-download solely to rebuild archives. Offer “Rebuild indexed maps” via the
+**existing** download-progress / Tools UI patterns (same progress channel),
+not a new surface. Optional: auto-queue rebuild after app update that bumps
+`format_version`, when the device is idle / charging (nice-to-have; not
+required for v1).
+
+Until rebuild completes, routing remains correct (slow path). No hard block.
+
+### 3.4 Interaction with existing systems
+
+| System | Decision |
+|---|---|
+| **`.navigph` graph cache** | **Recommend deprecate and remove** after the mmap pack load path ships. Phase 1c load (~2–3 ms) already beats warm `.navigph` (~213 ms host / similar device class). Keeping both adds keying, invalidation, and disk clutter for no win. Keep a short dual-read window only if needed for A/B; then delete write+read of `.navigph`. |
+| **PMTiles / DEM basemap** | **Unaffected.** Separate visual/terrain plane. DEM tiles remain inputs to **offline Δh generation** only. |
+| **Shared-parse mitigation** | **Fold into the converter**, not a parallel project. One provision-time pass (or tightly sequenced passes) over the PBF produces graph + POI/barrier (+ place index remains its own FTS build). Drops the interim “shared-parse at plan time” scope. |
+| **Place index FTS** | Remains; not replaced by `navi-poi-barrier` (search ≠ break-POI spatial pack). |
+
+### 3.5 Implementation milestones (Phase 4 — for approval)
+
+Estimates assume **one** engineer familiar with this codebase; calendar weeks
+include device regression. Throwaway PoC bins stay until M3 replaces them.
+
+| # | Milestone | Effort | Exit criteria | Main risks |
+|---|---|---|---|---|
+| **M0** | Freeze header + manifest + version constants from this doc | **2–3 days** | Spec in-repo (`docs/` + Rust consts); mismatch→rebuild test | Over-designing multi-version readers (must not) |
+| **M1** | Converter CLI/library: PBF(+DEM) → `.navi-graph` + `.navi-poi-barrier` with temp→rename | **1–1.5 weeks** | Host+device generate Hedmark/Ostlandet packs; cancel deletes `.partial` | Ostlandet wall time / thermal throttling on tablet; DEM gaps for Δh |
+| **M2** | Wire converter into region download + place-index Tools flow + update path | **3–5 days** | Fresh region download produces packs; progress UI shows convert stage | Job control edge cases (kill mid-convert); storage full |
+| **M3** | Plan load path: `plan_car_route` / hiking / truck use packs when valid; else PBF fallback | **1–1.5 weeks** | Hedmark OD first plan ≤3 s wall on SM-P613 with packs; fallback still works | API surface still assumes owned `RouteGraph`/`PoiIndex` — adapter layer; eco Δh wiring |
+| **M4** | Migration: detect missing/stale; rebuild-from-local-PBF affordance in Tools | **3–5 days** | Old Ostlandet install without packs plans via fallback; rebuild produces packs without re-fetch | User confusion if rebuild is slow on large extracts |
+| **M5** | Deprecate `.navigph`: stop writing; remove read path; clear docs | **3–5 days** | No new `.navigph`; disk cleanup optional; no perf regression | Hidden callers / tests still expecting cache_hit |
+| **M6** | Full regression: six motor profiles + Hiking shared-path standard; SM-P613 spot checks | **1 week** | Route-level suite green; README cold/warm numbers updated | Profile-specific POI radii / HOS still scanning something unexpected |
+
+**Total calendar estimate:** ~**6–9 weeks** to production-ready behind the
+existing Tools flow, assuming no major Ostlandet-scale converter redesign.
+
+**Non-goals for Phase 4 v1:** multi-version payload migration; shipping packs
+from a server CDN (device-side convert from Geofabrik PBF is enough);
+replacing place-index FTS; zero-copy POI tag queries (materialize stays OK).
+
+### Phase 3 approval gate
+
+Phase 4 starts only after an explicit “approve Phase 3 plan” decision (this
+document’s §3). Until then: PoC tools remain investigation-only; no production
+format merge.
+
+---
+
+## Phase 4 — Implementation (complete; plus 4b)
+
+Phase 3 plan **approved** 2026-08-07. Status by milestone:
+
+| # | Status | Evidence |
+|---|---|---|
+| **M0** | **Done** | `core/src/routing/indexed/` — 8-byte preamble (`magic`+`format_version`), manifest JSON, atomic `.partial`→rename. Unit tests: preamble roundtrip, atomic write, version gate. |
+| **M1** | **Done** | `navi-indexed-convert` + `convert_region_packs`. SM-P613 Hedmark: convert **41.5 s** → 39 MiB graph + 8.1 MiB poi-barrier + manifest. Load+bbox materialize **~370 ms** graph / **~134 ms** poi; version mismatch → `VersionMismatch` (no payload interpret). Host convert ~15.4 s; load ~142 / 62 ms. |
+| **M2** | **Wired** | `ensure_indexed_maps` / `indexed_maps_status` UniFFI; Tools download path calls convert after place index; “Rebuild indexed maps (local PBF)” button. Needs fresh Tools UI download confirmation on device (Ostlandet wall-time risk). |
+| **M3** | **Done (SM-P613)** | Hedmark Esso Myklegård→Atnbrufossen via `navi-indexed-plan-bench`: **pack-hit** wall **1844 ms**, `build_s=0.54`, `pack_hit=true`/`poi_pack_hit=true`, 162.51 km; **genuine cold missing-pack** (wiped `.navigph`) wall **31159 ms**, `build_s=17.73`, both pack flags false, same 162.51 km. |
+| **M4** | **Wired** | Rebuild-from-local-PBF affordance in Tools; status detection via manifest. |
+| **M5** | **Done (SM-P613)** | `load_or_build_reweighted*` neither reads nor writes `.navigph`. M5 binary cold fallback: wall **30668 ms**, `cache_hit=false`, **cache dir empty** (no new `.navigph`); pack-hit still **1662 ms** / 162.51 km. Corridor instrumented test retargeted to packs. |
+| **M6** | **Done (SM-P613 spot)** | All six motor profiles + Hiking pack-hit on Hedmark (see evidence). Car/Moto/MH/Truck ~1.5 s / 162.5 km; Bicycle/e-bike ~1.7 s / 160.7 km. Hiking wetland residual closed in **Phase 4b**. |
+
+### Design refinements discovered in implementation (not silent)
+
+1. **Graph filename is profile-suffixed** (`{stem}.navi-graph-car.rkyv`, `-truck`, `-foot`, `-bicycle`) listed in the manifest. Required because `RoutingProfile` filters differ; singular `{stem}.navi-graph.rkyv` could not serve Car+Truck+Foot+Bicycle.
+2. **Converter uses `build_from_pbf_bbox` over the extract’s node extents**, not `osm4routing` full-file read — full read panics (`Missing node`) on Hedmark and is the path already documented as OOM-unsafe for Ostlandet.
+3. **Plan-time materialize clips the region pack to the trip bbox** when building `RouteGraph`. Storing a region-wide pack matches Phase 3; loading the entire Ostlandet graph into RAM does not (existing `bbox_build.rs` comment). Zero-copy A\* over the map remains a future optimization; bbox materialize already clears Phase 0 on Hedmark (~0.5 s combined vs ~28 s cold).
+4. **Wetland is a separate archive** (`{stem}.navi-wetland.rkyv`, magic `NVWL`) — independent of POI/barrier; boardwalk carve-out remains on graph edges (`is_boardwalk_crossing`), not in the wetland pack.
+
+### Module / tools
+
+| Path | Role |
+|---|---|
+| `core/src/routing/indexed/` | Format, convert, load (graph / poi-barrier / wetland) |
+| `navi-ffi` `ensure_indexed_maps` / `indexed_maps_status` | Tools + migration |
+| `navi-indexed-convert` | Offline converter CLI |
+| `navi-indexed-bench` / `navi-wetland-bench` | Load + wetland PBF vs pack timing |
+| `navi-indexed-plan-bench` | End-to-end plan pack-hit / fallback |
+
+---
+
+## Phase 4b — Wetland indexed pack (done; GO)
+
+**Residual after M6:** Hiking graph pack-hit was fast (`build_s` ~0.3 s) but
+`WetlandIndex::load_from_pbf_bbox` still did a multi-pass raw PBF scan —
+same root cause as `graph_build` / `poi_barrier`.
+
+### Baseline reconfirm (SM-P613, Hedmark long trip bbox)
+
+| Path | Time | Rings |
+|---|---|---|
+| PBF wetland load (`navi-wetland-bench`) | **18616 ms** | 47271 |
+| Indexed pack load (same bbox) | **93.5 ms** | 47271 |
+| Speedup | **~199×** | identical class sample 64/64 |
+
+Host sanity: PBF **7240 ms** → pack **65 ms** (~111×). Confirms raw-PBF-scan
+shape before building the production path.
+
+### Format / wiring
+
+- New `{stem}.navi-wetland.rkyv` (`MAGIC_WETLAND` / `NVWL`, `format_version=1`)
+- Manifest fields `wetland_file` + `wetland_format_version` (optional → PBF fallback)
+- Converter emits wetland after POI/barrier; `ensure_indexed_maps` rebuilds if wetland missing/stale version
+- `plan_hiking_route` prefers pack (`wetland_pack_hit=true`) else PBF
+- Ring AABB culling in `WetlandIndex::class_at` (apply-time; correctness-preserving)
+
+### Device plan evidence
+
+| Case | Wall | Flags | Notes |
+|---|---|---|---|
+| Long hiking OD (previously aborted ~6 min) | **60978 ms** | `pack_hit=true`, `wetland_pack_hit=true` | Completes; 174.6 km |
+| Short hiking + wetland pack | **13233 ms** | both pack hits | Was ~53 s pre-4b |
+| Short hiking wetland-only fallback (graph pack, no wetland file) | **31594 ms** | `pack_hit=true`, `wetland_pack_hit=false` | Same 1.76 km / soft=212 |
+
+### Boardwalk / apply identity
+
+- Apply counters identical pack vs PBF wetlands on same foot graph
+  (`soft=92`, `hard=0`, `boardwalk_kept=0` on Atnbrufossen-area bbox test).
+- Boardwalk carve-out remains edge-tag based (`bridge=boardwalk` /
+  `surface=wood` → `is_boardwalk_crossing` in the **graph** pack); wetland pack
+  only stores Soft/Hard rings. Tag helpers + hard-over-soft precedence unit-tested.
+- No in-repo Bråstein/Figgjo PBF fixture; identity of Soft/Hard + boardwalk
+  counters is the regression gate used here.
+
+**4b result:** **GO**
 
 ---
 
@@ -203,3 +525,13 @@ Starts only after **explicit approval** of the Phase 3 plan.
 | 2026-08-06 | Status correction | Phase 1 **not** clean GO; **1b open** |
 | 2026-08-07 | SM-P613 hedmark first-load SQLite R*Tree PoC | Cold **16196 ms** vs indexed **2881 ms** (5.6×); **1b NO-GO** |
 | 2026-08-07 | Host hedmark same PoC | Cold **5654 ms** vs indexed **2126 ms** (2.7×); confirms NO-GO |
+| 2026-08-07 | SM-P613 hedmark rkyv+memmap2 PoC (A/B) | Cold ~16.4 s vs mmap load **~2–3 ms** (≥5000×); Δh arith **~1.7 ms** vs DEM reweight **~146 ms**; **1c GO** |
+| 2026-08-07 | Host hedmark rkyv+memmap2 sanity | Same GO class; A 7.7 MiB / B 8.5 MiB |
+| 2026-08-07 | SM-P613 hedmark POI/barrier rkyv+mmap | Cold `poi_barrier` **12269 ms** vs indexed **1.8 ms** (~6710×); full-plan est **~152 ms** vs **~28.7 s** (~189×); **Phase 2 GO** |
+| 2026-08-07 | Phase 3 design written | Ready for approval; Phase 4 not started |
+| 2026-08-07 | Phase 3 approved → Phase 4 start | M0+M1 on SM-P613; design refinements recorded |
+| 2026-08-07 | SM-P613 M3 pack-hit plan | Wall **1844 ms**, `build_s=0.54`, `pack_hit`+`poi_pack_hit`, 162.51 km |
+| 2026-08-07 | SM-P613 M3 cold missing-pack fallback | Wall **31159 ms**, `build_s=17.73`, packs false, same 162.51 km (`.navigph` wiped) |
+| 2026-08-07 | SM-P613 M5 no-write confirm | Cold fallback **30668 ms**; **no** `.navigph` created; pack-hit **1662 ms** |
+| 2026-08-07 | SM-P613 M6 multi-profile | Car/Moto/MH/Truck ~1.5 s pack-hit; Bike/e-bike ~1.7 s; Hiking short pack graph 0.29 s (wetland residual ~53 s wall) |
+| 2026-08-07 | SM-P613 Phase 4b wetland PBF vs pack | **18616 ms** → **93.5 ms** (~199×); long hike completes **61 s** with `wetland_pack_hit`; **4b GO** |

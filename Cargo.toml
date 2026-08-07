@@ -50,3 +50,5 @@ usvg = "0.44"
 resvg = "0.44"
 flate2 = "1"
 png = "0.17"
+rkyv = { version = "0.8", features = ["alloc"] }
+memmap2 = "0.9"
