@@ -21,6 +21,7 @@ How to help: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 1. [What this is](#what-this-is)
 2. [Features](#features)
    - [What you need to download](#what-you-need-to-download)
+   - [How to use](#how-to-use)
    - [How features work](#how-features-work)
 3. [Settings](#settings)
 4. [Break timer vs trip ETA](#break-timer-vs-trip-eta)
@@ -104,10 +105,13 @@ online for Liberty).
 Prefer a **region** (not a whole huge country) on tablets with limited RAM —
 see [Minimum hardware and storage](#minimum-hardware-and-storage).
 
-## How features work
+## How to use
 
-Full step-by-step (planning, Tools, saved places/routes, per-mode options,
-pilgrim coverage): **[`docs/how-to-use.md`](docs/how-to-use.md)**.
+Step-by-step end-user guide (planning, Tools, breaks, saved places/routes,
+per-mode options, pilgrim coverage):
+**[How to use Navi](docs/how-to-use.md)**.
+
+## How features work
 
 **Planning a route.** Set **From** and **To** (and optional vias), pick a travel
 mode, then **Plan route**. From is often set with **Use GPS**. Hiking paths
@@ -319,7 +323,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/pictures.md`](docs/pictures.md) / [`docs/bilder.md`](docs/bilder.md) | Screenshot galleries |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online vs offline map look; 3D |
 | [`docs/poi.md`](docs/poi.md) | Place types and search |
-| [`docs/how-to-use.md`](docs/how-to-use.md) | **End-user how-to** (planning, Tools, breaks, saved places/routes, profiles) |
+| [How to use Navi](docs/how-to-use.md) | End-user how-to (planning, Tools, breaks, saved places/routes, profiles) |
 | [`docs/map-marking-saved-places.md`](docs/map-marking-saved-places.md) | Map long-press (4 s) and Saved places detail (Norwegian: [`kartmerking-lagrede-steder.md`](docs/kartmerking-lagrede-steder.md)) |
 | [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | EU truck driving-time rules |
 | [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | US truck hours-of-service |
