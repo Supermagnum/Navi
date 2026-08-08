@@ -462,6 +462,7 @@ Phase 3 plan **approved** 2026-08-07. Status by milestone:
 |---|---|
 | `core/src/routing/indexed/` | Format, convert, load (graph / poi-barrier / wetland) |
 | `navi-ffi` `ensure_indexed_maps` / `indexed_maps_status` | Tools + migration |
+| Graph pack **v2** edge shape CSR (`edge_shape_offsets` + lon/lat) | Map overlay follows OSM curves on `pack_hit` (v1 was junction chords only) |
 | `navi-indexed-convert` | Offline converter CLI |
 | `navi-indexed-bench` / `navi-wetland-bench` | Load + wetland PBF vs pack timing |
 | `navi-indexed-plan-bench` | End-to-end plan pack-hit / fallback |

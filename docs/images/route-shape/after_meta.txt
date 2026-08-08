@@ -1,0 +1,4 @@
+verts=5315
+pack_hit=true
+distance_km=188.91
+camera=60.98,10.70,z11.5 Moelv/Mjosa shore

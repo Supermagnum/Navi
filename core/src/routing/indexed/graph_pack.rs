@@ -11,7 +11,8 @@ use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile};
 
 /// Little-endian ASCII "NVRK".
 pub const MAGIC_GRAPH: u32 = 0x4E_56_52_4B;
-pub const GRAPH_FORMAT_VERSION: u32 = 1;
+/// v2: CSR edge shape arrays so map overlays follow OSM road curves.
+pub const GRAPH_FORMAT_VERSION: u32 = 2;
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone)]
 pub struct FlatGraphPack {
@@ -37,6 +38,12 @@ pub struct FlatGraphPack {
     pub edge_is_ferry: Vec<u8>,
     pub edge_is_roundabout: Vec<u8>,
     pub edge_is_boardwalk: Vec<u8>,
+    /// CSR: `edge_shape_offsets.len() == edge_src.len() + 1`.
+    /// Edge `i` shape points are `edge_shape_lons[start..end]` / `…_lats` where
+    /// `start = offsets[i]`, `end = offsets[i + 1]` (lon, lat; endpoints excluded).
+    pub edge_shape_offsets: Vec<u32>,
+    pub edge_shape_lons: Vec<f64>,
+    pub edge_shape_lats: Vec<f64>,
 }
 
 impl FlatGraphPack {
@@ -71,6 +78,10 @@ impl FlatGraphPack {
         let mut edge_is_ferry = Vec::with_capacity(n);
         let mut edge_is_roundabout = Vec::with_capacity(n);
         let mut edge_is_boardwalk = Vec::with_capacity(n);
+        let mut edge_shape_offsets = Vec::with_capacity(n + 1);
+        let mut edge_shape_lons: Vec<f64> = Vec::new();
+        let mut edge_shape_lats: Vec<f64> = Vec::new();
+        edge_shape_offsets.push(0);
 
         if elev.is_some() {
             edge_delta_h_m.reserve(n);
@@ -95,6 +106,11 @@ impl FlatGraphPack {
             edge_is_ferry.push(u8::from(e.is_ferry));
             edge_is_roundabout.push(u8::from(e.is_roundabout));
             edge_is_boardwalk.push(u8::from(e.is_boardwalk_crossing));
+            for &(lon, lat) in &e.shape {
+                edge_shape_lons.push(lon);
+                edge_shape_lats.push(lat);
+            }
+            edge_shape_offsets.push(edge_shape_lons.len() as u32);
             if let Some(elev) = elev {
                 let dh = match (
                     elev.get_elevation(e.start_lat, e.start_lon),
@@ -129,6 +145,9 @@ impl FlatGraphPack {
             edge_is_ferry,
             edge_is_roundabout,
             edge_is_boardwalk,
+            edge_shape_offsets,
+            edge_shape_lons,
+            edge_shape_lats,
         }
     }
 
@@ -191,6 +210,7 @@ impl FlatGraphPack {
             let name = self.edge_name[i].as_str();
             let road_ref = self.edge_road_ref[i].as_str();
             let maxspeed = self.edge_maxspeed_kmh[i];
+            let shape = self.shape_for_edge(i);
             edges.push(GraphEdge {
                 id: format!("{}-{}", src.0, tgt.0),
                 source: src,
@@ -202,7 +222,7 @@ impl FlatGraphPack {
                 start_lon: self.edge_start_lon[i],
                 end_lat: self.edge_end_lat[i],
                 end_lon: self.edge_end_lon[i],
-                shape: Vec::new(),
+                shape,
                 highway: if hw.is_empty() {
                     None
                 } else {
@@ -236,5 +256,99 @@ impl FlatGraphPack {
             });
         }
         RouteGraph::from_parts(nodes, edges, profile)
+    }
+
+    fn shape_for_edge(&self, i: usize) -> Vec<(f64, f64)> {
+        if self.edge_shape_offsets.len() < 2 || i + 1 >= self.edge_shape_offsets.len() {
+            return Vec::new();
+        }
+        let start = self.edge_shape_offsets[i] as usize;
+        let end = self.edge_shape_offsets[i + 1] as usize;
+        if end > self.edge_shape_lons.len()
+            || end > self.edge_shape_lats.len()
+            || start > end
+            || self.edge_shape_lons.len() != self.edge_shape_lats.len()
+        {
+            return Vec::new();
+        }
+        (start..end)
+            .map(|j| (self.edge_shape_lons[j], self.edge_shape_lats[j]))
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile};
+    use geo_types::Coord;
+    use osm4routing::{Node, NodeId};
+    use std::collections::HashMap;
+
+    fn tiny_curved_graph() -> RouteGraph {
+        let n1 = NodeId(1);
+        let n2 = NodeId(2);
+        let mut nodes = HashMap::new();
+        nodes.insert(
+            n1,
+            Node {
+                id: n1,
+                coord: Coord { x: 10.0, y: 60.0 },
+                uses: 2,
+            },
+        );
+        nodes.insert(
+            n2,
+            Node {
+                id: n2,
+                coord: Coord { x: 10.2, y: 60.1 },
+                uses: 2,
+            },
+        );
+        let edges = vec![GraphEdge {
+            id: "1-2".into(),
+            source: n1,
+            target: n2,
+            length_m: 1_000.0,
+            base_weight: 1_000.0,
+            eco_weight: Some(1_000.0),
+            start_lat: 60.0,
+            start_lon: 10.0,
+            end_lat: 60.1,
+            end_lon: 10.2,
+            shape: vec![(10.05, 60.04), (10.12, 60.07), (10.18, 60.09)],
+            highway: Some("secondary".into()),
+            maxspeed_kmh: Some(80.0),
+            name: Some("Curvy".into()),
+            road_ref: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+        }];
+        RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
+    }
+
+    #[test]
+    fn pack_roundtrip_preserves_edge_shape() {
+        let graph = tiny_curved_graph();
+        let pack = FlatGraphPack::from_route_graph(&graph, None);
+        assert_eq!(pack.edge_shape_offsets, vec![0, 3]);
+        assert_eq!(pack.edge_shape_lons.len(), 3);
+        let back = pack.to_route_graph(RoutingProfile::Car);
+        assert_eq!(back.edges.len(), 1);
+        assert_eq!(
+            back.edges[0].shape,
+            vec![(10.05, 60.04), (10.12, 60.07), (10.18, 60.09)]
+        );
+        let poly = back.path_overlay_polyline(&[NodeId(1), NodeId(2)]);
+        // Endpoints + 3 shape points => denser than a pure chord (2 verts).
+        assert!(poly.split(';').count() >= 5, "poly={poly}");
     }
 }
