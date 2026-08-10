@@ -185,6 +185,19 @@ revisit.
 
 End-user summary: [`how-to-use.md`](how-to-use.md#pilgrim-stops-and-stamp-centers-poi-coverage).
 
+## Overnight glacier / building exclusion
+
+Hiking overnight candidates are filtered by [`SafetyConfig`](../core/src/config/safety.rs)
+(`SAFETY_MIN_BUILDING_DISTANCE_M`, `SAFETY_MIN_GLACIER_DISTANCE_M`). Glacier
+distance uses **polygon edge** geometry from the PBF / `.navi-poi-barrier` pack
+(`DangerBarrierIndex`), not basemap tiles. Rejected stops surface a clear reason
+in multi-day cards and pause labels (e.g. `Excluded: within 1 km of a glacier`,
+`Excluded: too close to a building`).
+
+**PBF vs Protomaps skew:** the overnight pack and the offline basemap are
+independent extracts — see README [Known issues](../README.md#known-issues).
+UI exclusion wording is intentional mitigation when those sources disagree.
+
 ## Code
 
 - `core/src/poi/categories.rs` — enum + radii
@@ -192,3 +205,4 @@ End-user summary: [`how-to-use.md`](how-to-use.md#pilgrim-stops-and-stamp-center
 - `core/src/poi/icons.rs` — OSM → icon key
 - `core/src/poi/index.rs` — R-tree load / `nearest` query
 - `core/src/config/safety.rs` / `defaults.rs` — default search radii
+- `core/src/routing/safety/` — overnight reject reasons + glacier edge distance

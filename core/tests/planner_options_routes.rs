@@ -398,9 +398,22 @@ fn overnight_filter_excludes_tent_near_building_for_ffi_path() {
     // Hut still rejected for building (always applies).
     assert!(check_overnight_candidate(61.0, 10.0, &safety, &hut, &[building], &[]).is_some());
     // Glacier override for established hut.
-    let glacier = (61.005, 10.005);
-    assert!(check_overnight_candidate(61.0, 10.0, &safety, &hut, &[], &[glacier]).is_none());
+    let glacier = tiny_ring(61.005, 10.005);
+    assert!(
+        check_overnight_candidate(61.0, 10.0, &safety, &hut, &[], &[glacier.clone()]).is_none()
+    );
     assert!(check_overnight_candidate(61.0, 10.0, &safety, &tent, &[], &[glacier]).is_some());
+}
+
+fn tiny_ring(lat: f64, lon: f64) -> Vec<[f64; 2]> {
+    let d = 0.001;
+    vec![
+        [lon - d, lat - d],
+        [lon + d, lat - d],
+        [lon + d, lat + d],
+        [lon - d, lat + d],
+        [lon - d, lat - d],
+    ]
 }
 
 #[test]

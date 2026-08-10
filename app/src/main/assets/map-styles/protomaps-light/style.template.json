@@ -40,7 +40,7 @@
           "barren", "#f0e8d8",
           "urban_area", "#e8e0d8",
           "farmland", "#e8f0d0",
-          "glacier", "#e8f0f8",
+          "glacier", "#C8E9E9",
           "scrub", "#d0e0b8",
           "forest", "#a8d090",
           "#d8e8c8"
@@ -71,6 +71,8 @@
           "hospital", "#f0d8d8",
           "school", "#f0e8c8",
           "industrial", "#d8d0c8",
+          "military", "#c96a5a",
+          "glacier", "#C8E9E9",
           "#e8e0d0"
         ],
         "fill-opacity": 0.5
@@ -358,10 +360,21 @@
       "type": "symbol",
       "source": "protomaps",
       "source-layer": "pois",
-      "minzoom": 16,
+      "minzoom": 12,
       "filter": [
         "all",
         [">=", ["zoom"], ["coalesce", ["get", "min_zoom"], 0]],
+        [
+          ">=",
+          ["zoom"],
+          [
+            "match",
+            ["get", "kind"],
+            "glacier",
+            12,
+            16
+          ]
+        ],
         [
           "match",
           ["get", "kind"],
@@ -396,7 +409,8 @@
             "cinema",
             "hotel",
             "peak",
-            "hill"
+            "hill",
+            "glacier"
           ],
           true,
           false
@@ -431,6 +445,7 @@
           "cinema", "theatre",
           "peak", "peak",
           "hill", "peak",
+          "glacier", "peak",
           "fuel", "townspot",
           "charging_station", "townspot",
           "parking", "townspot",
@@ -450,7 +465,20 @@
         "text-anchor": "top"
       },
       "paint": {
-        "text-color": "#303030",
+        "icon-opacity": [
+          "match",
+          ["get", "kind"],
+          "glacier",
+          0,
+          1
+        ],
+        "text-color": [
+          "match",
+          ["get", "kind"],
+          "glacier",
+          "#406060",
+          "#303030"
+        ],
         "text-halo-color": "#f8f4f0",
         "text-halo-width": 1.0
       }

@@ -78,7 +78,8 @@ pub use rest::{
     TruckRestFacility, OVERNIGHT_NEAR_HUT_MAX_M,
 };
 pub use safety::{
-    check_overnight_candidate, DangerBarrierIndex, OvernightProximityIndex, OvernightRejectReason,
+    check_overnight_candidate, min_distance_to_glacier_rings_m, DangerBarrierIndex,
+    OvernightProximityIndex, OvernightRejectReason,
 };
 pub use terrain::{least_cost_path, TerrainPath, TERRAIN_CELL_M, TERRAIN_MAX_GAP_M};
 pub use wetland::{

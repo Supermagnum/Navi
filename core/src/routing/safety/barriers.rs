@@ -50,10 +50,14 @@ impl DangerBarrierIndex {
         self.glaciers.len()
     }
 
-    /// Sample points for overnight distance checks (ring centroids).
+    /// Glacier rings as `[lon, lat]` (closed) for overnight edge-distance checks.
+    pub fn glacier_rings(&self) -> &[Vec<[f64; 2]>] {
+        &self.glaciers
+    }
+
+    /// Sample points (ring centroids) — diagnostics / benches only.
     ///
-    /// Reuses glacier geometry already loaded for barrier blocking — avoids a
-    /// second PBF pass dedicated to overnight proximity.
+    /// Overnight exclusion uses [`Self::glacier_rings`] + edge distance, not these.
     pub fn glacier_sample_points(&self) -> Vec<(f64, f64)> {
         self.glaciers
             .iter()
@@ -285,6 +289,11 @@ fn classify_pbf_barrier(tags: &HashMap<String, String>) -> Option<BarrierKind> {
         }
     }
     None
+}
+
+/// Ray-casting point-in-polygon. `ring` is `[lon, lat]`.
+pub(crate) fn point_in_glacier_ring(p: [f64; 2], ring: &[[f64; 2]]) -> bool {
+    point_in_ring(p, ring)
 }
 
 /// Ray-casting point-in-polygon. `ring` is `[lon, lat]`.

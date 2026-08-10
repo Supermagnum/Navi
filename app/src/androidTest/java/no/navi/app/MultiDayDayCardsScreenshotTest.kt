@@ -231,4 +231,108 @@ class MultiDayDayCardsScreenshotTest {
         }
         pfd.close()
     }
+
+    private fun hikingGlacierExclusionRoute(): CorridorRouteResult {
+        val days =
+            """
+            [
+              {"day_index":1,"date":"","start_km":0.0,"end_km":35.0,"distance_km":35.0,
+               "driving_hours":0.0,"profile":"hiking","rest_kind":"tent","rest_hours":0.0,
+               "rest_label":"Excluded: within 1 km of a glacier",
+               "overnight_name":"Tent site","overnight_found":false,
+               "safety_rejected":true,"safety_reason":"Excluded: within 1 km of a glacier",
+               "not_in_cab":false,"compensation":"","is_final":false},
+              {"day_index":2,"date":"","start_km":35.0,"end_km":70.0,"distance_km":35.0,
+               "driving_hours":0.0,"profile":"hiking","rest_kind":"","rest_hours":0.0,
+               "rest_label":"","overnight_name":"","overnight_found":false,
+               "not_in_cab":false,"compensation":"","is_final":true}
+            ]
+            """.trimIndent()
+        return CorridorRouteResult(
+            report =
+                "TEST_KIND=MULTI_DAY_GLACIER_EXCLUSION\n" +
+                    "hiking_overnight: safety_rejected=true; " +
+                    "safety_reason=\"Excluded: within 1 km of a glacier\"\nPASS\n",
+            distanceKm = 70.0,
+            etaMinutes = 70.0 * 16.0,
+            cacheHit = true,
+            coldBuildS = 0.0,
+            warmLoadS = 0.0,
+            routePolyline = "8.40,61.52;8.41,61.53;8.42,61.54",
+            poiLat = 61.54,
+            poiLon = 8.42,
+            poiName = "Spiterstulen",
+            poiIconKey = "cabin",
+            breakPoisJson =
+                """[{"name":"Excluded: within 1 km of a glacier","lat":61.521,"lon":8.406,"kind":"tent","safety_rejected":true,"safety_reason":"Excluded: within 1 km of a glacier"}]""",
+            daysJson = days,
+            simSamplesJson = "[]",
+            maneuversJson = "[]",
+            priorityPathSharePct = 0.0,
+            routeSegmentsJson = "[]",
+            offTrailAdvisory = "",
+        )
+    }
+
+    @Test
+    fun hikingGlacierExclusion_reasonVisible_and_screenshot() {
+        composeRule.waitForIdle()
+        run {
+            val styleDeadline = System.currentTimeMillis() + 45_000
+            while (System.currentTimeMillis() < styleDeadline) {
+                if (NaviMapTestHooks.styleReady || NaviMapTestHooks.lastReportedLayerCount >= 1) break
+                Thread.sleep(400)
+            }
+        }
+
+        NaviMapTestHooks.hideSearchChrome = false
+        NaviMapTestHooks.routeStartLabel = "Gjende"
+        NaviMapTestHooks.routeEndLabel = "Spiterstulen"
+        NaviMapTestHooks.pendingRoute = hikingGlacierExclusionRoute()
+
+        val deadline = System.currentTimeMillis() + 60_000
+        var cardsVisible = false
+        while (System.currentTimeMillis() < deadline) {
+            composeRule.waitForIdle()
+            try {
+                composeRule
+                    .onNodeWithTag("multi_day_plan_cards", useUnmergedTree = true)
+                    .assertIsDisplayed()
+                cardsVisible = true
+                break
+            } catch (_: Throwable) {
+                NaviMapTestHooks.pendingRoute = hikingGlacierExclusionRoute()
+                Thread.sleep(400)
+            }
+        }
+        assertTrue("glacier-exclusion multi-day cards should be visible", cardsVisible)
+        composeRule
+            .onNodeWithTag("multi_day_overnight_1", useUnmergedTree = true)
+            .assertIsDisplayed()
+
+        val cards = parseDaysJson(hikingGlacierExclusionRoute().daysJson)
+        assertTrue(cards[0].safetyRejected)
+        assertTrue(
+            "expected glacier exclusion wording, got ${cards[0].safetyReason}",
+            cards[0].safetyReason.contains("within 1 km of a glacier"),
+        )
+
+        Thread.sleep(1_200)
+        val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+        assertTrue(shot != null)
+        val out = File(dataDir, "multi_day_glacier_exclusion.png")
+        out.outputStream().use { shot!!.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        assertTrue(out.length() > 5_000)
+        val pfd =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .uiAutomation
+                .executeShellCommand("screencap -p /data/local/tmp/multi_day_glacier_exclusion.png")
+        java.io.FileInputStream(pfd.fileDescriptor).use { input ->
+            val buf = ByteArray(4096)
+            while (input.read(buf) >= 0) {
+            }
+        }
+        pfd.close()
+    }
 }

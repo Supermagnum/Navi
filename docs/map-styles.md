@@ -216,17 +216,28 @@ Distinct from Navi [`poi.md`](poi.md) rest/overnight **PoiIndex** categories.
 Applied at style load via `BasemapLabelPolicy` (Liberty) and baked into the
 offline Protomaps template (`roads_label_*`, `pois`):
 
-| Camera zoom | Road / shield labels | Basemap amenity / peak POIs |
+| Camera zoom | Road / shield labels | Basemap amenity / peak / glacier POIs |
 |---|---|---|
-| ≥ 13 | Motorways | Hidden |
-| ≥ 14 | + secondary | Hidden |
-| ≥ 15 | + other majors and minor streets | Hidden |
-| ≥ 16 | Same | Visible (schools, fuel, shops, peaks, …) |
+| ≥ 12 | (roads unchanged below) | Glacier names (`pois.kind=glacier`) when tile `min_zoom` allows |
+| ≥ 13 | Motorways | Same |
+| ≥ 14 | + secondary | Same |
+| ≥ 15 | + other majors and minor streets | Same |
+| ≥ 16 | Same | Urban amenities + peak/hill icons (`pois` kinds other than glacier) |
 
 Offline Protomaps peaks live in the `pois` source-layer (`kind=peak` / `hill`),
-not only `places`. OpenFreeMap Liberty has **no** `mountain_peak` layer; some
-peaks appear only when present in OMT `poi` ranks (e.g. Galdhøpiggen) and may
-be missing online (e.g. Elgpiggen) even when offline Protomaps shows them.
+not only `places`. Glacier **names** are also `pois` points (`kind=glacier`,
+tile floor ~z12) — not properties on `landuse`/`landcover` fill polygons. The
+`pois` layer keeps a **per-kind** zoom floor (`glacier` → 12, everything else →
+16) so enabling glacier labels does not pull schools/fuel/etc. down to z12.
+Glacier labels use the same size/offset as peaks but a cooler text color
+(`#406060`) and no icon, so ice names read distinctly from summit labels.
+OpenFreeMap Liberty has **no** `mountain_peak` layer; some peaks appear only
+when present in OMT `poi` ranks (e.g. Galdhøpiggen) and may be missing online
+(e.g. Elgpiggen) even when offline Protomaps shows them.
+
+**Liberty glacier names:** OpenFreeMap Liberty / OpenMapTiles expose ice only as
+`landcover` fill (`landcover_ice`) with **no** named glacier POI/label path —
+upstream gap, not a Navi Protomaps bug. Leave Liberty unchanged.
 
 Sprites: kinds without a matching icon (e.g. `fuel`) fall back to `townspot`.
 Match filters must not duplicate labels (MapLibre rejects the layer with
@@ -450,3 +461,32 @@ The earlier “screenshot-only fringe” conclusion remains for the soft AA rim 
 affects both styles in captures. The shard / missing-tile water failure was a
 **separate, live offline Protomaps style bug** and should not be folded into
 that fringe write-up.
+
+## Offline Protomaps military + glacier (`landuse` match)
+
+Same class of bug as the protected-area `kind` gap: tile data was present;
+Navi’s `landuse` fill `match` was incomplete.
+
+| Kind | Tile path (Ostlandet PMTiles) | Style fix |
+|---|---|---|
+| `military` | `landuse.kind=military` at mid/high zoom | Fill `#c96a5a` (muted dusty red for legibility — deliberate departure from Protomaps light’s gray `#dcdcdc` and from OSM Carto `#f55`) |
+| `glacier` | `landcover.kind=glacier` at low zoom only; **`landuse.kind=glacier` at z8–z12+** (hiking) | Keep landcover glacier fill; **add** `landuse` glacier `#C8E9E9` (exact ice tint) |
+
+**Liberty:** OpenFreeMap Liberty has **no** military landuse layer (upstream
+omission). Navi does **not** add one — deliberate, not a bug fix. Glaciers
+already use Liberty `landcover_ice` (`class=ice` / `subclass=glacier`); leave
+that path alone.
+
+Evidence: `MilitaryGlacierLanduseScreenshotTest` (Rena leir way `962221904`;
+Gjende glacier way `380644665`). On-device captures (SM-P613):
+`docs/images/military-glacier/` (`offline_pm_military_rena_z{8,10,12}.png`,
+`offline_pm_glacier_gjende_z{8,10,12}.png`, `…_z12_3d.png`, plus Liberty
+baselines).
+
+Overnight safety still reads glaciers from the Geofabrik PBF / poi-barrier pack,
+not these tiles — see README known issues (PBF/PMTiles skew) and
+[`poi.md`](poi.md#overnight-glacier--building-exclusion).
+
+Glacier **names** are a separate fix on the `pois` symbol layer (`kind=glacier`
+from ~z12) — see [Basemap road names and amenity POIs](#basemap-road-names-and-amenity-pois-zoom-ladder).
+Do not label `landuse`/`landcover` glacier fills (no `name` property).

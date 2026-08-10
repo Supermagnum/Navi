@@ -567,20 +567,33 @@ fn days_json_from_hiking(plan: &HikingMultiDayPlan) -> String {
         .enumerate()
         .map(|(i, d)| {
             let is_final = i + 1 == n;
-            let (rest_kind, rest_label, overnight_name, overnight_found) = match &d.overnight {
-                Some(o) => (
-                    if o.is_network { "network_hut" } else { "hut" }.to_string(),
-                    if o.is_network {
-                        "Network hut overnight"
-                    } else {
-                        "Hut overnight"
+            let (rest_kind, rest_label, overnight_name, overnight_found, safety_reason) =
+                match &d.overnight {
+                    Some(o) => {
+                        let reason = o.safety_reason.clone().unwrap_or_default();
+                        let label = if o.safety_rejected && !reason.is_empty() {
+                            reason.clone()
+                        } else if o.is_network {
+                            "Network hut overnight".to_string()
+                        } else {
+                            "Hut overnight".to_string()
+                        };
+                        (
+                            if o.is_network { "network_hut" } else { "hut" }.to_string(),
+                            label,
+                            o.name.clone(),
+                            !o.safety_rejected,
+                            reason,
+                        )
                     }
-                    .to_string(),
-                    o.name.clone(),
-                    !o.safety_rejected,
-                ),
-                None => (String::new(), String::new(), String::new(), false),
-            };
+                    None => (
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        false,
+                        String::new(),
+                    ),
+                };
             json!({
                 "day_index": d.day_index,
                 "date": "",
@@ -594,6 +607,8 @@ fn days_json_from_hiking(plan: &HikingMultiDayPlan) -> String {
                 "rest_label": rest_label,
                 "overnight_name": overnight_name,
                 "overnight_found": overnight_found,
+                "safety_rejected": d.overnight.as_ref().map(|o| o.safety_rejected).unwrap_or(false),
+                "safety_reason": safety_reason,
                 "not_in_cab": false,
                 "compensation": "",
                 "is_final": is_final,
@@ -852,8 +867,15 @@ fn pick_hiking_pause_at(
         let Some((safety, prox)) = overnight else {
             return true;
         };
-        check_overnight_candidate(p.lat, p.lon, safety, p, &prox.buildings, &prox.glaciers)
-            .is_none()
+        check_overnight_candidate(
+            p.lat,
+            p.lon,
+            safety,
+            p,
+            &prox.buildings,
+            &prox.glacier_rings,
+        )
+        .is_none()
     };
     let pick_hut = |p: &PoiRecord| -> (String, f64, f64, String, String) {
         let name = p
@@ -951,20 +973,16 @@ fn pick_hiking_pause_at(
             tags: Default::default(),
             name: Some("Tent site".into()),
         };
-        if check_overnight_candidate(
+        if let Some(reason) = check_overnight_candidate(
             lat,
             lon,
             safety,
             &synthetic,
             &prox.buildings,
-            &prox.glaciers,
-        )
-        .is_some()
-        {
-            // Still return a marker so the break interval has a stop, but label it
-            // so the host can see the safety rejection in the report path.
+            &prox.glacier_rings,
+        ) {
             return (
-                "Tent site (safety review)".into(),
+                reason.user_message().to_string(),
                 lat,
                 lon,
                 "tent".into(),
@@ -2893,7 +2911,7 @@ pub fn plan_hiking_route(
     report.push_str(&format!(
         "overnight_buildings={}; overnight_glaciers={}; overnight_source=poi+barriers; overnight_corridor_margin_m={OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M:.0}\n",
         overnight_prox.buildings.len(),
-        overnight_prox.glaciers.len()
+        overnight_prox.glacier_rings.len()
     ));
     let overnight_ctx = (safety, overnight_prox);
     let poi_barrier_ms = timer.lap_ms();
@@ -3022,11 +3040,15 @@ pub fn plan_hiking_route(
             ));
             if let Some(o) = &d.overnight {
                 report.push_str(&format!(
-                    "hiking_overnight: name={:?}; network={}; safety_rejected={}; dist_m={:.0}; lat={:.5}; lon={:.5}\n",
-                    o.name, o.is_network, o.safety_rejected, o.distance_from_target_m, o.lat, o.lon
+                    "hiking_overnight: name={:?}; network={}; safety_rejected={}; safety_reason={:?}; dist_m={:.0}; lat={:.5}; lon={:.5}\n",
+                    o.name, o.is_network, o.safety_rejected, o.safety_reason, o.distance_from_target_m, o.lat, o.lon
                 ));
                 hiking_overnight_pins.push(json!({
-                    "name": o.name,
+                    "name": if o.safety_rejected {
+                        o.safety_reason.clone().unwrap_or_else(|| o.name.clone())
+                    } else {
+                        o.name.clone()
+                    },
                     "lat": o.lat,
                     "lon": o.lon,
                     "kind": if o.is_network { "network_hut" } else { "hut" },
@@ -3035,6 +3057,7 @@ pub fn plan_hiking_route(
                     "along_km": d.end_km,
                     "overnight": true,
                     "safety_rejected": o.safety_rejected,
+                    "safety_reason": o.safety_reason,
                 }));
             }
         }

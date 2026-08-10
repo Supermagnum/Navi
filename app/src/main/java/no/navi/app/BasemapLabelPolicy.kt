@@ -14,6 +14,8 @@ import org.maplibre.android.style.layers.SymbolLayer
  * - zoom ≥ 14: + secondary road names
  * - zoom ≥ 15: + other major (primary/tertiary/trunk) and minor street names
  * - zoom ≥ 16: basemap amenity POI icons (schools, fuel, shops, …)
+ * - offline Protomaps: glacier name labels from ~z12 (`pois.kind=glacier`);
+ *   other `pois` kinds still gated to z16 via style filter
  *
  * Protected-area names are a separate ladder (`pois_protected` / Liberty
  * `park_label_protected`, from ~z8) — see [BasemapProtectedAreaStyle].
@@ -103,7 +105,9 @@ object BasemapLabelPolicy {
         style.getLayer("roads_label_secondary")?.setMinZoom(SECONDARY_MIN_ZOOM.toFloat())
         style.getLayer("roads_label_major")?.setMinZoom(MAJOR_MINOR_MIN_ZOOM.toFloat())
         style.getLayer("roads_label_minor")?.setMinZoom(MAJOR_MINOR_MIN_ZOOM.toFloat())
-        style.getLayer("pois")?.setMinZoom(POI_MIN_ZOOM.toFloat())
+        // Layer floor z12 so glacier labels can appear; amenity/peak kinds stay at
+        // z16 via the style filter's per-kind zoom match (see style.template.json).
+        style.getLayer("pois")?.setMinZoom(12f)
         return true
     }
 }

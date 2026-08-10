@@ -7,7 +7,9 @@ use geo::{Distance, Haversine, Point};
 
 use crate::config::SafetyConfig;
 use crate::poi::{PoiCategory, PoiIndex, PoiRecord};
-use crate::routing::safety::{check_overnight_candidate, OvernightProximityIndex};
+use crate::routing::safety::{
+    check_overnight_candidate, OvernightProximityIndex, OvernightRejectReason,
+};
 
 /// Max distance from the day-boundary sample to accept a hut as “near”.
 pub const OVERNIGHT_NEAR_HUT_MAX_M: f64 = 5_000.0;
@@ -28,6 +30,8 @@ pub struct HikingOvernightStop {
     pub is_network: bool,
     pub distance_from_target_m: f64,
     pub safety_rejected: bool,
+    /// When [`Self::safety_rejected`], user-facing reason (glacier / building).
+    pub safety_reason: Option<String>,
     pub icon_key: String,
 }
 
@@ -79,6 +83,7 @@ fn to_stop(
     dist_m: f64,
     is_network: bool,
     safety_rejected: bool,
+    safety_reason: Option<OvernightRejectReason>,
 ) -> HikingOvernightStop {
     HikingOvernightStop {
         lat: p.lat,
@@ -98,6 +103,7 @@ fn to_stop(
         is_network,
         distance_from_target_m: dist_m,
         safety_rejected,
+        safety_reason: safety_reason.map(|r| r.user_message().to_string()),
         icon_key: p.icon_key.clone(),
     }
 }
@@ -152,20 +158,25 @@ pub fn choose_hiking_overnight(
             .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
     });
 
-    let mut fallback: Option<(PoiRecord, f64, bool)> = None;
+    let mut fallback: Option<(PoiRecord, f64, bool, OvernightRejectReason)> = None;
     for (p, d, is_net) in candidates {
-        let rejected =
-            check_overnight_candidate(p.lat, p.lon, safety, &p, &prox.buildings, &prox.glaciers)
-                .is_some();
-        if !rejected {
-            return Some(to_stop(&p, d, is_net, false));
+        let rejected = check_overnight_candidate(
+            p.lat,
+            p.lon,
+            safety,
+            &p,
+            &prox.buildings,
+            &prox.glacier_rings,
+        );
+        if rejected.is_none() {
+            return Some(to_stop(&p, d, is_net, false, None));
         }
         if fallback.is_none() {
-            fallback = Some((p, d, is_net));
+            fallback = Some((p, d, is_net, rejected.unwrap()));
         }
     }
 
-    fallback.map(|(p, d, is_net)| to_stop(&p, d, is_net, true))
+    fallback.map(|(p, d, is_net, reason)| to_stop(&p, d, is_net, true, Some(reason)))
 }
 
 /// Segment a hiking corridor into days bounded by `max_daily_km`, matching overnight

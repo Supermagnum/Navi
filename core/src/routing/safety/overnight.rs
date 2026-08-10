@@ -1,32 +1,33 @@
-//! Building and glacier proximity points for overnight candidate filtering.
+//! Building and glacier proximity for overnight candidate filtering.
 //!
 //! Buildings are collected during the same PBF load as [`crate::poi::PoiIndex`]
-//! (see `overnight_buildings`). Glaciers are sampled from
+//! (see `overnight_buildings`). Glacier rings come from
 //! [`super::DangerBarrierIndex`] which is already built for break-stop access.
 //! Do **not** add a separate full-extract `osmpbf` pass for overnight checks.
 
 use super::DangerBarrierIndex;
 
-/// Point lists used by [`super::check_overnight_candidate`].
+/// Geometry used by [`super::check_overnight_candidate`].
 #[derive(Debug, Clone, Default)]
 pub struct OvernightProximityIndex {
     pub buildings: Vec<(f64, f64)>,
-    pub glaciers: Vec<(f64, f64)>,
+    /// Closed glacier rings as `[lon, lat]` for edge-distance checks.
+    pub glacier_rings: Vec<Vec<[f64; 2]>>,
 }
 
 impl OvernightProximityIndex {
     pub fn is_empty(&self) -> bool {
-        self.buildings.is_empty() && self.glaciers.is_empty()
+        self.buildings.is_empty() && self.glacier_rings.is_empty()
     }
 
-    /// Build from POI-load building points + barrier glacier samples (no PBF I/O).
+    /// Build from POI-load building points + barrier glacier rings (no PBF I/O).
     pub fn from_poi_buildings_and_barriers(
         buildings: Vec<(f64, f64)>,
         barriers: &DangerBarrierIndex,
     ) -> Self {
         Self {
             buildings,
-            glaciers: barriers.glacier_sample_points(),
+            glacier_rings: barriers.glacier_rings().to_vec(),
         }
     }
 
@@ -76,7 +77,7 @@ impl OvernightProximityIndex {
                         buildings.push((lat, lon));
                     }
                     if is_glacier {
-                        glaciers.push((lat, lon));
+                        glaciers.push(tiny_ring(lat, lon));
                     }
                 }
                 Element::DenseNode(n) => {
@@ -100,7 +101,7 @@ impl OvernightProximityIndex {
                         buildings.push((lat, lon));
                     }
                     if is_glacier {
-                        glaciers.push((lat, lon));
+                        glaciers.push(tiny_ring(lat, lon));
                     }
                 }
                 _ => {}
@@ -125,11 +126,13 @@ impl OvernightProximityIndex {
                     if !is_building && !is_glacier {
                         return;
                     }
+                    let mut ring: Vec<[f64; 2]> = Vec::new();
                     let mut sum_lat = 0.0;
                     let mut sum_lon = 0.0;
                     let mut n = 0usize;
                     for nid in way.refs() {
                         if let Some(&(lat, lon)) = node_coord.get(&nid) {
+                            ring.push([lon, lat]);
                             sum_lat += lat;
                             sum_lon += lon;
                             n += 1;
@@ -146,7 +149,16 @@ impl OvernightProximityIndex {
                         buildings.push((lat, lon));
                     }
                     if is_glacier {
-                        glaciers.push((lat, lon));
+                        if ring.len() >= 3 {
+                            let first = ring[0];
+                            let last = *ring.last().unwrap();
+                            if first != last {
+                                ring.push(first);
+                            }
+                            glaciers.push(ring);
+                        } else {
+                            glaciers.push(tiny_ring(lat, lon));
+                        }
                     }
                 }
             })?;
@@ -154,7 +166,18 @@ impl OvernightProximityIndex {
 
         Ok(Self {
             buildings,
-            glaciers,
+            glacier_rings: glaciers,
         })
     }
+}
+
+fn tiny_ring(lat: f64, lon: f64) -> Vec<[f64; 2]> {
+    let d = 1e-5;
+    vec![
+        [lon - d, lat - d],
+        [lon + d, lat - d],
+        [lon + d, lat + d],
+        [lon - d, lat + d],
+        [lon - d, lat - d],
+    ]
 }

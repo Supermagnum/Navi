@@ -30,6 +30,8 @@ data class MultiDayCard(
     val restLabel: String = "",
     val overnightName: String = "",
     val overnightFound: Boolean = false,
+    val safetyRejected: Boolean = false,
+    val safetyReason: String = "",
     val notInCab: Boolean = false,
     val compensation: String = "",
     val isFinal: Boolean = false,
@@ -64,6 +66,8 @@ private fun multiDayCardFromJson(o: JSONObject): MultiDayCard =
         restLabel = o.optString("rest_label").orEmpty(),
         overnightName = o.optString("overnight_name").orEmpty(),
         overnightFound = o.optBoolean("overnight_found", false),
+        safetyRejected = o.optBoolean("safety_rejected", false),
+        safetyReason = o.optString("safety_reason").orEmpty(),
         notInCab = o.optBoolean("not_in_cab", false),
         compensation = o.optString("compensation").orEmpty(),
         isFinal = o.optBoolean("is_final", false),
@@ -134,6 +138,8 @@ fun MultiDayPlanCards(
                     if (!day.isFinal) {
                         val overnight =
                             when {
+                                day.safetyRejected && day.safetyReason.isNotBlank() ->
+                                    " — ${day.safetyReason}"
                                 day.overnightFound && day.overnightName.isNotBlank() ->
                                     " @ ${day.overnightName}"
                                 day.overnightName.isNotBlank() ->
@@ -142,17 +148,25 @@ fun MultiDayPlanCards(
                                     " — no match found; plan continued"
                             }
                         val rest =
-                            day.restLabel.ifBlank {
-                                if (day.restHours > 0.0) {
-                                    "%.0f h rest".format(day.restHours)
-                                } else {
-                                    "Overnight"
-                                }
+                            when {
+                                day.safetyRejected && day.safetyReason.isNotBlank() ->
+                                    day.safetyReason
+                                day.restLabel.isNotBlank() -> day.restLabel
+                                day.restHours > 0.0 -> "%.0f h rest".format(day.restHours)
+                                else -> "Overnight"
                             }
                         val cab = if (day.notInCab) " — not in cab" else ""
+                        // When rest_label already is the exclusion reason, avoid duplicating it.
+                        val line =
+                            if (day.safetyRejected && day.safetyReason.isNotBlank() && rest == day.safetyReason) {
+                                rest + cab
+                            } else {
+                                "$rest$overnight$cab"
+                            }
                         Text(
-                            "$rest$overnight$cab",
+                            line,
                             style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("multi_day_overnight_${day.dayIndex}"),
                         )
                     }
                     if (day.compensation.isNotBlank()) {

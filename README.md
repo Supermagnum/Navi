@@ -516,5 +516,18 @@ Country/region visual extracts can also be prepared with
   overnight/POI decode cost can remain.
 - **Break timer ≠ trip ETA:** by design — see
   [Break timer vs trip ETA](#break-timer-vs-trip-eta).
+- **Overnight glacier safety vs basemap can disagree.** Hiking overnight
+  exclusion (`SAFETY_MIN_GLACIER_DISTANCE_M`, 1 km to glacier **polygon edge**)
+  reads Geofabrik `.osm.pbf` / the `.navi-poi-barrier` pack. Offline map ice fill
+  comes from a separately downloaded Protomaps PMTiles extract. Those pipelines
+  update independently (different Tools actions and build dates). Confirmed on
+  SM-P613 Ostlandet: PBF mtime vs PMTiles content date differed, and at Gjende
+  (OSM way `380644665`) pack geometry and basemap `landuse.kind=glacier` tiles
+  did not cover the same footprint. A tent site may therefore be excluded near
+  ice the map does not show (or vice versa). The plan UI surfaces the reason
+  explicitly (e.g. `Excluded: within 1 km of a glacier`) so the decision stays
+  legible when map and pack disagree. Future consideration (not built): optional
+  “refresh basemap after OSM update” prompt. See [`docs/poi.md`](docs/poi.md)
+  and [`docs/map-styles.md`](docs/map-styles.md).
 - **Not implemented yet:** checking whether the code can be optimised for
   rendering.

@@ -137,17 +137,17 @@ fn overnight_proximity_no_redundant_pbf_scan() {
     eprintln!(
         "OVERNIGHT_SCAN_BENCH corridor=Aakersaetra-Rondvassbu bbox={BBOX:?}\n         BEFORE_extra_overnight_raw_pbf_ms={before_extra_ms:.1}          buildings={} glaciers={}\n         AFTER_poi_plain_ms={poi_plain_ms:.1}          AFTER_poi_with_buildings_ms={poi_ms:.1} (overnight_buildings={})          barriers_ms={barriers_ms:.1} (glacier_rings={})          merge_only_ms={after_extra_ms:.1} merged_glaciers={}\n         SAVED_vs_poi_plain_plus_legacy≈{:.1} ms          (plain+legacy={:.1}; with_buildings+merge={:.1})",
         legacy.buildings.len(),
-        legacy.glaciers.len(),
+        legacy.glacier_rings.len(),
         poi.overnight_buildings().len(),
         barriers.glacier_ring_count(),
-        merged.glaciers.len(),
+        merged.glacier_rings.len(),
         (poi_plain_ms + before_extra_ms) - (poi_ms + after_extra_ms),
         poi_plain_ms + before_extra_ms,
         poi_ms + after_extra_ms,
     );
 
     assert!(
-        !poi.overnight_buildings().is_empty() || !merged.glaciers.is_empty(),
+        !poi.overnight_buildings().is_empty() || !merged.glacier_rings.is_empty(),
         "expected some overnight proximity data from POI buildings and/or barrier glaciers"
     );
     assert!(
