@@ -920,6 +920,16 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -948,6 +958,10 @@ fun uniffi_navi_checksum_func_approach_urgency_m(
 fun uniffi_navi_checksum_func_bind_geofabrik_region(
 ): Short
 fun uniffi_navi_checksum_func_check_osm_updates(
+): Short
+fun uniffi_navi_checksum_func_current_speed_kmh(
+): Short
+fun uniffi_navi_checksum_func_current_speed_limit_kmh(
 ): Short
 fun uniffi_navi_checksum_func_delete_saved_place(
 ): Short
@@ -1031,6 +1045,8 @@ fun uniffi_navi_checksum_func_osm_update_staleness_days(
 ): Short
 fun uniffi_navi_checksum_func_osm_weekly_reminder_due(
 ): Short
+fun uniffi_navi_checksum_func_overspeed_delta_kmh(
+): Short
 fun uniffi_navi_checksum_func_plan_car_route(
 ): Short
 fun uniffi_navi_checksum_func_plan_car_route_at(
@@ -1077,7 +1093,11 @@ fun uniffi_navi_checksum_func_rasterize_icon_png(
 ): Short
 fun uniffi_navi_checksum_func_rename_saved_place(
 ): Short
+fun uniffi_navi_checksum_func_resolve_speed_limit_kmh(
+): Short
 fun uniffi_navi_checksum_func_road_label_near(
+): Short
+fun uniffi_navi_checksum_func_road_near_info(
 ): Short
 fun uniffi_navi_checksum_func_route_plan_timing_enabled(
 ): Short
@@ -1224,6 +1244,10 @@ fun uniffi_navi_fn_func_bind_geofabrik_region(`dataDir`: RustBuffer.ByValue,`geo
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_check_osm_updates(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_current_speed_kmh(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_current_speed_limit_kmh(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`maxM`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_delete_saved_place(`dataDir`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_delete_saved_route(`dataDir`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1306,6 +1330,8 @@ fun uniffi_navi_fn_func_osm_update_staleness_days(uniffi_out_err: UniffiRustCall
 ): Long
 fun uniffi_navi_fn_func_osm_weekly_reminder_due(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_overspeed_delta_kmh(`speedKmh`: RustBuffer.ByValue,`limitKmh`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`avoidTolls`: Byte,`avoidFerries`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_plan_car_route_at(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`avoidTolls`: Byte,`avoidFerries`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`departureLocalIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1352,7 +1378,11 @@ fun uniffi_navi_fn_func_rasterize_icon_png(`key`: RustBuffer.ByValue,`theme`: Ru
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_rename_saved_place(`dataDir`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_resolve_speed_limit_kmh(`postedKmh`: RustBuffer.ByValue,`maxspeedConditional`: RustBuffer.ByValue,`highway`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Double
 fun uniffi_navi_fn_func_road_label_near(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`profile`: RustBuffer.ByValue,`maxM`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_road_near_info(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`profile`: RustBuffer.ByValue,`maxM`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_route_plan_timing_enabled(uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
@@ -1398,7 +1428,7 @@ fun uniffi_navi_fn_func_station_timeout_max_s(uniffi_out_err: UniffiRustCallStat
 ): Long
 fun uniffi_navi_fn_func_travel_profile_menu_focus(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
-fun uniffi_navi_fn_func_update_gps_fix(`lat`: Double,`lon`: Double,`available`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_navi_fn_func_update_gps_fix(`lat`: Double,`lon`: Double,`available`: Byte,`speedKmh`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1547,6 +1577,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_check_osm_updates() != 15834.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_current_speed_kmh() != 41847.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_current_speed_limit_kmh() != 27880.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_delete_saved_place() != 42612.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1670,6 +1706,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_osm_weekly_reminder_due() != 61589.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_overspeed_delta_kmh() != 44096.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_plan_car_route() != 33864.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1739,7 +1778,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_rename_saved_place() != 57651.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_road_label_near() != 54741.toShort()) {
+    if (lib.uniffi_navi_checksum_func_resolve_speed_limit_kmh() != 59162.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_road_label_near() != 33867.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_road_near_info() != 51635.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_route_plan_timing_enabled() != 55311.toShort()) {
@@ -1808,7 +1853,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_travel_profile_menu_focus() != 46717.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_update_gps_fix() != 26321.toShort()) {
+    if (lib.uniffi_navi_checksum_func_update_gps_fix() != 48545.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_method_ffitrackstore_all() != 9523.toShort()) {
@@ -2859,7 +2904,12 @@ public object FfiConverterTypeFfiFuelConfig: FfiConverterRustBuffer<FfiFuelConfi
 data class FfiGpsFix (
     var `lat`: kotlin.Double, 
     var `lon`: kotlin.Double, 
-    var `available`: kotlin.Boolean
+    var `available`: kotlin.Boolean, 
+    /**
+     * Device-reported speed in km/h when known (`Location.hasSpeed()` / gpsd).
+     * `None` when the provider did not supply speed.
+     */
+    var `speedKmh`: kotlin.Double?
 ) {
     
     companion object
@@ -2874,19 +2924,22 @@ public object FfiConverterTypeFfiGpsFix: FfiConverterRustBuffer<FfiGpsFix> {
             FfiConverterDouble.read(buf),
             FfiConverterDouble.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterOptionalDouble.read(buf),
         )
     }
 
     override fun allocationSize(value: FfiGpsFix) = (
             FfiConverterDouble.allocationSize(value.`lat`) +
             FfiConverterDouble.allocationSize(value.`lon`) +
-            FfiConverterBoolean.allocationSize(value.`available`)
+            FfiConverterBoolean.allocationSize(value.`available`) +
+            FfiConverterOptionalDouble.allocationSize(value.`speedKmh`)
     )
 
     override fun write(value: FfiGpsFix, buf: ByteBuffer) {
             FfiConverterDouble.write(value.`lat`, buf)
             FfiConverterDouble.write(value.`lon`, buf)
             FfiConverterBoolean.write(value.`available`, buf)
+            FfiConverterOptionalDouble.write(value.`speedKmh`, buf)
     }
 }
 
@@ -3009,6 +3062,62 @@ public object FfiConverterTypeFfiProfilePoiRadii: FfiConverterRustBuffer<FfiProf
             FfiConverterDouble.write(value.`networkHutRadiusM`, buf)
             FfiConverterDouble.write(value.`networkHutPreferenceRadiusM`, buf)
             FfiConverterBoolean.write(value.`requireRoadLink`, buf)
+    }
+}
+
+
+
+data class FfiRoadNearInfo (
+    /**
+     * Street label (name → ref → highway class), empty when no edge in range.
+     */
+    var `label`: kotlin.String, 
+    /**
+     * Applicable limit km/h (conditional → posted → highway fallback); 0 when no edge.
+     */
+    var `speedLimitKmh`: kotlin.Double, 
+    var `highway`: kotlin.String?, 
+    /**
+     * True when a base OSM `maxspeed` tag was present on the locked edge.
+     */
+    var `maxspeedPosted`: kotlin.Boolean, 
+    /**
+     * True when a matching `maxspeed:conditional` window is active now.
+     */
+    var `limitFromConditional`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiRoadNearInfo: FfiConverterRustBuffer<FfiRoadNearInfo> {
+    override fun read(buf: ByteBuffer): FfiRoadNearInfo {
+        return FfiRoadNearInfo(
+            FfiConverterString.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiRoadNearInfo) = (
+            FfiConverterString.allocationSize(value.`label`) +
+            FfiConverterDouble.allocationSize(value.`speedLimitKmh`) +
+            FfiConverterOptionalString.allocationSize(value.`highway`) +
+            FfiConverterBoolean.allocationSize(value.`maxspeedPosted`) +
+            FfiConverterBoolean.allocationSize(value.`limitFromConditional`)
+    )
+
+    override fun write(value: FfiRoadNearInfo, buf: ByteBuffer) {
+            FfiConverterString.write(value.`label`, buf)
+            FfiConverterDouble.write(value.`speedLimitKmh`, buf)
+            FfiConverterOptionalString.write(value.`highway`, buf)
+            FfiConverterBoolean.write(value.`maxspeedPosted`, buf)
+            FfiConverterBoolean.write(value.`limitFromConditional`, buf)
     }
 }
 
@@ -3914,6 +4023,33 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     )
     }
     
+
+        /**
+         * Live GPS speed (km/h) from the last [`update_gps_fix`], or `None` when the
+         * host has not pushed a fix / did not supply speed.
+         */ fun `currentSpeedKmh`(): kotlin.Double? {
+            return FfiConverterOptionalDouble.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_current_speed_kmh(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Applicable speed limit (km/h) for the road under the last GPS fix, using the
+         * same sticky nearest-edge path as [`road_near_info`]. `None` when GPS is
+         * unavailable or no edge is in range.
+         */ fun `currentSpeedLimitKmh`(`pbfPath`: kotlin.String, `cacheDir`: kotlin.String, `elevDir`: kotlin.String, `profile`: TravelProfile, `maxM`: kotlin.Double): kotlin.Double? {
+            return FfiConverterOptionalDouble.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_current_speed_limit_kmh(
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`cacheDir`),FfiConverterString.lower(`elevDir`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterDouble.lower(`maxM`),_status)
+}
+    )
+    }
+    
  fun `deleteSavedPlace`(`dataDir`: kotlin.String, `id`: kotlin.String): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
@@ -4370,6 +4506,19 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     
 
         /**
+         * Positive when `speed_kmh` exceeds `limit_kmh`; `None` if either value is
+         * missing/non-finite. Convenience for HUD overspeed chrome (optional).
+         */ fun `overspeedDeltaKmh`(`speedKmh`: kotlin.Double?, `limitKmh`: kotlin.Double?): kotlin.Double? {
+            return FfiConverterOptionalDouble.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_overspeed_delta_kmh(
+        FfiConverterOptionalDouble.lower(`speedKmh`),FfiConverterOptionalDouble.lower(`limitKmh`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Plan a motor / bicycle route between two WGS84 points using a local OSM `.pbf`.
          *
          * Always builds a **bbox-clipped** graph (`[min_lat,min_lon,max_lat,max_lon]` padded
@@ -4633,6 +4782,19 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     
 
         /**
+         * Resolve applicable road speed limit (km/h): `maxspeed:conditional` at local
+         * now, else posted `maxspeed`, else highway-class ETA fallback.
+         */ fun `resolveSpeedLimitKmh`(`postedKmh`: kotlin.Double?, `maxspeedConditional`: kotlin.String?, `highway`: kotlin.String?): kotlin.Double {
+            return FfiConverterDouble.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_resolve_speed_limit_kmh(
+        FfiConverterOptionalDouble.lower(`postedKmh`),FfiConverterOptionalString.lower(`maxspeedConditional`),FfiConverterOptionalString.lower(`highway`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Nearest OSM way label at `(lat, lon)` for idle GPS (no planned corridor).
          *
          * Loads a small bbox-clipped routing graph (cached under `cache_dir`), then
@@ -4640,10 +4802,27 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
          * hysteresis (sustained margin before switching parallel roads). Prefer this
          * over place-index address voting at junctions. Empty string when no edge is
          * close enough or inputs are missing.
+         *
+         * Prefer [`road_near_info`] when the HUD also needs the speed limit.
          */ fun `roadLabelNear`(`pbfPath`: kotlin.String, `cacheDir`: kotlin.String, `elevDir`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double, `profile`: TravelProfile, `maxM`: kotlin.Double): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_road_label_near(
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`cacheDir`),FfiConverterString.lower(`elevDir`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterDouble.lower(`maxM`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Nearest OSM way at `(lat, lon)` for idle GPS: label + applicable speed limit.
+         *
+         * Shares sticky hysteresis with [`road_label_near`] (same graph cache) so the
+         * speed-limit value does not flip-flop near parallel roads.
+         */ fun `roadNearInfo`(`pbfPath`: kotlin.String, `cacheDir`: kotlin.String, `elevDir`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double, `profile`: TravelProfile, `maxM`: kotlin.Double): FfiRoadNearInfo {
+            return FfiConverterTypeFfiRoadNearInfo.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_road_near_info(
         FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`cacheDir`),FfiConverterString.lower(`elevDir`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterDouble.lower(`maxM`),_status)
 }
     )
@@ -4886,11 +5065,14 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
 
         /**
          * Push the device LocationManager / fused fix into the native layer.
-         */ fun `updateGpsFix`(`lat`: kotlin.Double, `lon`: kotlin.Double, `available`: kotlin.Boolean)
+         *
+         * `speed_kmh` is optional: pass the provider speed converted to km/h
+         * (Android `Location.speed` is m/s → × 3.6), or `None` when unknown.
+         */ fun `updateGpsFix`(`lat`: kotlin.Double, `lon`: kotlin.Double, `available`: kotlin.Boolean, `speedKmh`: kotlin.Double?)
         = 
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_update_gps_fix(
-        FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterBoolean.lower(`available`),_status)
+        FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterBoolean.lower(`available`),FfiConverterOptionalDouble.lower(`speedKmh`),_status)
 }
     
     

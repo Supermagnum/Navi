@@ -9,6 +9,10 @@ data class RouteSimSample(
     val speedKmh: Double,
     val highway: String?,
     val maxspeedPosted: Boolean,
+    /** Posted OSM maxspeed (km/h) when present — for live limit resolution. */
+    val maxspeedKmh: Double? = null,
+    /** Raw OSM maxspeed:conditional for live time-based limit evaluation. */
+    val maxspeedConditional: String? = null,
     /** OSM name, else ref; null → UI uses [highwayClassDisplayLabel]. */
     val street: String? = null,
 )
@@ -74,11 +78,27 @@ fun parseRouteSimSamples(json: String): List<RouteSimSample> {
                         speedKmh = o.getDouble("speed_kmh"),
                         highway = o.optString("highway").takeIf { it.isNotBlank() && it != "null" },
                         maxspeedPosted = o.optBoolean("maxspeed_posted", false),
+                        maxspeedKmh =
+                            if (o.has("maxspeed_kmh") && !o.isNull("maxspeed_kmh")) {
+                                o.optDouble("maxspeed_kmh").takeIf { it.isFinite() && it > 0.0 }
+                            } else {
+                                null
+                            },
+                        maxspeedConditional =
+                            if (o.isNull("maxspeed_conditional")) {
+                                null
+                            } else {
+                                o
+                                    .optString("maxspeed_conditional")
+                                    .takeIf { it.isNotBlank() && it != "null" }
+                            },
                         street =
                             if (o.isNull("street")) {
                                 null
                             } else {
-                                o.optString("street").takeIf { it.isNotBlank() && it != "null" }
+                                o
+                                    .optString("street")
+                                    .takeIf { it.isNotBlank() && it != "null" }
                             },
                     ),
                 )

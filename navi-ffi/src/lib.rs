@@ -3632,6 +3632,9 @@ pub struct FfiGpsFix {
     pub lat: f64,
     pub lon: f64,
     pub available: bool,
+    /// Device-reported speed in km/h when known (`Location.hasSpeed()` / gpsd).
+    /// `None` when the provider did not supply speed.
+    pub speed_kmh: Option<f64>,
 }
 
 fn routes_db(data_dir: &str) -> PathBuf {
@@ -4261,18 +4264,23 @@ fn gps_fix_slot() -> &'static std::sync::Mutex<FfiGpsFix> {
             lat: 0.0,
             lon: 0.0,
             available: false,
+            speed_kmh: None,
         })
     })
 }
 
 /// Push the device LocationManager / fused fix into the native layer.
+///
+/// `speed_kmh` is optional: pass the provider speed converted to km/h
+/// (Android `Location.speed` is m/s → × 3.6), or `None` when unknown.
 #[uniffi::export]
-pub fn update_gps_fix(lat: f64, lon: f64, available: bool) {
+pub fn update_gps_fix(lat: f64, lon: f64, available: bool, speed_kmh: Option<f64>) {
     if let Ok(mut g) = gps_fix_slot().lock() {
         *g = FfiGpsFix {
             lat,
             lon,
             available,
+            speed_kmh: speed_kmh.filter(|v| v.is_finite() && *v >= 0.0),
         };
     }
 }
@@ -4288,7 +4296,44 @@ pub fn last_gps_fix() -> FfiGpsFix {
             lat: 0.0,
             lon: 0.0,
             available: false,
+            speed_kmh: None,
         })
+}
+
+/// Live GPS speed (km/h) from the last [`update_gps_fix`], or `None` when the
+/// host has not pushed a fix / did not supply speed.
+#[uniffi::export]
+pub fn current_speed_kmh() -> Option<f64> {
+    let fix = last_gps_fix();
+    if !fix.available {
+        return None;
+    }
+    fix.speed_kmh
+}
+
+/// Positive when `speed_kmh` exceeds `limit_kmh`; `None` if either value is
+/// missing/non-finite. Convenience for HUD overspeed chrome (optional).
+#[uniffi::export]
+pub fn overspeed_delta_kmh(speed_kmh: Option<f64>, limit_kmh: Option<f64>) -> Option<f64> {
+    let s = speed_kmh.filter(|v| v.is_finite())?;
+    let lim = limit_kmh.filter(|v| v.is_finite() && *v > 0.0)?;
+    Some(s - lim)
+}
+
+/// Resolve applicable road speed limit (km/h): `maxspeed:conditional` at local
+/// now, else posted `maxspeed`, else highway-class ETA fallback.
+#[uniffi::export]
+pub fn resolve_speed_limit_kmh(
+    posted_kmh: Option<f64>,
+    maxspeed_conditional: Option<String>,
+    highway: Option<String>,
+) -> f64 {
+    driver_break_core::routing::speed_camera::applicable_limit_or_fallback_kmh(
+        posted_kmh,
+        maxspeed_conditional.as_deref(),
+        highway.as_deref(),
+        None,
+    )
 }
 
 /// Format a short validation blurb for avoid-motorways / toll / ferry preferences.
@@ -4510,15 +4555,60 @@ fn road_label_cache_key(profile: RoutingProfile, bbox: [f64; 4]) -> String {
     )
 }
 
-/// Nearest OSM way label at `(lat, lon)` for idle GPS (no planned corridor).
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiRoadNearInfo {
+    /// Street label (name → ref → highway class), empty when no edge in range.
+    pub label: String,
+    /// Applicable limit km/h (conditional → posted → highway fallback); 0 when no edge.
+    pub speed_limit_kmh: f64,
+    pub highway: Option<String>,
+    /// True when a base OSM `maxspeed` tag was present on the locked edge.
+    pub maxspeed_posted: bool,
+    /// True when a matching `maxspeed:conditional` window is active now.
+    pub limit_from_conditional: bool,
+}
+
+fn empty_road_near_info() -> FfiRoadNearInfo {
+    FfiRoadNearInfo {
+        label: String::new(),
+        speed_limit_kmh: 0.0,
+        highway: None,
+        maxspeed_posted: false,
+        limit_from_conditional: false,
+    }
+}
+
+fn road_near_info_from_sticky(
+    sticky: &mut RoadLabelSticky,
+    graph: &RouteGraph,
+    lat: f64,
+    lon: f64,
+    max_m: f64,
+) -> FfiRoadNearInfo {
+    let Some(hit) = sticky.update_hit(graph, lat, lon, max_m) else {
+        return empty_road_near_info();
+    };
+    let speed_limit_kmh = hit.speed_limit_kmh_at(None);
+    let limit_from_conditional = hit.limit_from_conditional_at(None);
+    let maxspeed_posted = hit
+        .maxspeed_kmh
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .is_some();
+    FfiRoadNearInfo {
+        label: hit.label,
+        speed_limit_kmh,
+        highway: hit.highway,
+        maxspeed_posted,
+        limit_from_conditional,
+    }
+}
+
+/// Nearest OSM way at `(lat, lon)` for idle GPS: label + applicable speed limit.
 ///
-/// Loads a small bbox-clipped routing graph (cached under `cache_dir`), then
-/// snaps to the nearest edge within `max_m` using full edge shape + sticky
-/// hysteresis (sustained margin before switching parallel roads). Prefer this
-/// over place-index address voting at junctions. Empty string when no edge is
-/// close enough or inputs are missing.
+/// Shares sticky hysteresis with [`road_label_near`] (same graph cache) so the
+/// speed-limit value does not flip-flop near parallel roads.
 #[uniffi::export]
-pub fn road_label_near(
+pub fn road_near_info(
     pbf_path: String,
     cache_dir: String,
     elev_dir: String,
@@ -4526,13 +4616,13 @@ pub fn road_label_near(
     lon: f64,
     profile: TravelProfile,
     max_m: f64,
-) -> String {
+) -> FfiRoadNearInfo {
     if !lat.is_finite() || !lon.is_finite() {
-        return String::new();
+        return empty_road_near_info();
     }
     let pbf = Path::new(pbf_path.trim());
     if !pbf.is_file() {
-        return String::new();
+        return empty_road_near_info();
     }
     let routing_profile = if profile == TravelProfile::Hiking {
         RoutingProfile::Foot
@@ -4546,10 +4636,13 @@ pub fn road_label_near(
         let mut guard = ROAD_LABEL_GRAPH.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(cached) = guard.as_mut() {
             if cached.key == key {
-                return cached
-                    .sticky
-                    .update(&cached.graph, lat, lon, max_m)
-                    .unwrap_or_default();
+                return road_near_info_from_sticky(
+                    &mut cached.sticky,
+                    &cached.graph,
+                    lat,
+                    lon,
+                    max_m,
+                );
             }
         }
     }
@@ -4578,15 +4671,61 @@ pub fn road_label_near(
             bbox,
         ) {
             Ok(v) => v,
-            Err(_) => return String::new(),
+            Err(_) => return empty_road_near_info(),
         },
     };
     let mut sticky = RoadLabelSticky::new();
-    let label = sticky.update(&graph, lat, lon, max_m).unwrap_or_default();
+    let info = road_near_info_from_sticky(&mut sticky, &graph, lat, lon, max_m);
     if let Ok(mut guard) = ROAD_LABEL_GRAPH.lock() {
         *guard = Some(RoadLabelGraphCache { key, graph, sticky });
     }
-    label
+    info
+}
+
+/// Nearest OSM way label at `(lat, lon)` for idle GPS (no planned corridor).
+///
+/// Loads a small bbox-clipped routing graph (cached under `cache_dir`), then
+/// snaps to the nearest edge within `max_m` using full edge shape + sticky
+/// hysteresis (sustained margin before switching parallel roads). Prefer this
+/// over place-index address voting at junctions. Empty string when no edge is
+/// close enough or inputs are missing.
+///
+/// Prefer [`road_near_info`] when the HUD also needs the speed limit.
+#[uniffi::export]
+pub fn road_label_near(
+    pbf_path: String,
+    cache_dir: String,
+    elev_dir: String,
+    lat: f64,
+    lon: f64,
+    profile: TravelProfile,
+    max_m: f64,
+) -> String {
+    road_near_info(pbf_path, cache_dir, elev_dir, lat, lon, profile, max_m).label
+}
+
+/// Applicable speed limit (km/h) for the road under the last GPS fix, using the
+/// same sticky nearest-edge path as [`road_near_info`]. `None` when GPS is
+/// unavailable or no edge is in range.
+#[uniffi::export]
+pub fn current_speed_limit_kmh(
+    pbf_path: String,
+    cache_dir: String,
+    elev_dir: String,
+    profile: TravelProfile,
+    max_m: f64,
+) -> Option<f64> {
+    let fix = last_gps_fix();
+    if !fix.available {
+        return None;
+    }
+    let info = road_near_info(
+        pbf_path, cache_dir, elev_dir, fix.lat, fix.lon, profile, max_m,
+    );
+    if info.label.is_empty() && info.speed_limit_kmh <= 0.0 {
+        return None;
+    }
+    Some(info.speed_limit_kmh)
 }
 
 /// Canonical Geofabrik `-latest.osm.pbf` URL for a region path
@@ -5208,5 +5347,39 @@ mod hiking_auto_via_tests {
         let merged = merge_hiking_waypoints_with_auto_vias(&user, &cum, &autos);
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[1].name, "Eldåbu");
+    }
+}
+
+#[cfg(test)]
+mod gps_speed_ffi_tests {
+    use super::*;
+
+    #[test]
+    fn current_speed_tracks_update_gps_fix() {
+        update_gps_fix(60.85, 11.0, true, Some(72.5));
+        assert!((current_speed_kmh().unwrap() - 72.5).abs() < 1e-9);
+        let fix = last_gps_fix();
+        assert!(fix.available);
+        assert!((fix.speed_kmh.unwrap() - 72.5).abs() < 1e-9);
+
+        update_gps_fix(60.85, 11.0, true, None);
+        assert!(current_speed_kmh().is_none());
+    }
+
+    #[test]
+    fn resolve_speed_limit_uses_conditional_and_fallback() {
+        let night_cond = Some("50 @ (Mo-Fr 00:00-06:00)".to_string());
+        // Without live clock control here, base posted still wins when the window
+        // does not match — posted 80 must be returned for a mid-day default path
+        // through applicable_limit_or_fallback (conditional only when OH matches).
+        let day = resolve_speed_limit_kmh(Some(80.0), night_cond.clone(), Some("primary".into()));
+        assert!(day == 80.0 || day == 50.0, "got {day}");
+
+        let fallback = resolve_speed_limit_kmh(None, None, Some("residential".into()));
+        assert!((fallback - 40.0).abs() < 1e-9);
+
+        let delta = overspeed_delta_kmh(Some(95.0), Some(80.0)).unwrap();
+        assert!((delta - 15.0).abs() < 1e-9);
+        assert!(overspeed_delta_kmh(None, Some(80.0)).is_none());
     }
 }

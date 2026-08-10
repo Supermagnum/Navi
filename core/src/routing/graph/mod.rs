@@ -35,4 +35,7 @@ pub use network_pref::{
     NON_NETWORK_PENALTY,
 };
 pub use reweight::reweight_graph_for_eco;
-pub use road_near::{edge_distance_m, nearest_road_label, RoadLabelSticky, RoadNodeIndex};
+pub use road_near::{
+    edge_distance_m, nearest_road_hit, nearest_road_label, NearestRoadHit, RoadLabelSticky,
+    RoadNodeIndex,
+};

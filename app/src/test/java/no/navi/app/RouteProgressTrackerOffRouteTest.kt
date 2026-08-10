@@ -16,10 +16,10 @@ class RouteProgressTrackerOffRouteTest {
     fun offRouteFix_suppressesManeuver_freezesAlong() {
         val samples =
             listOf(
-                RouteSimSample(60.80, 11.30, 0.0, 50.0, "primary", true, "E6"),
-                RouteSimSample(60.81, 11.30, 1_000.0, 50.0, "primary", true, "E6"),
-                RouteSimSample(60.82, 11.30, 2_000.0, 50.0, "primary", true, "E6"),
-                RouteSimSample(60.83, 11.30, 3_000.0, 50.0, "primary", true, "E6"),
+                RouteSimSample(60.80, 11.30, 0.0, 50.0, "primary", true, street = "E6"),
+                RouteSimSample(60.81, 11.30, 1_000.0, 50.0, "primary", true, street = "E6"),
+                RouteSimSample(60.82, 11.30, 2_000.0, 50.0, "primary", true, street = "E6"),
+                RouteSimSample(60.83, 11.30, 3_000.0, 50.0, "primary", true, street = "E6"),
             )
         val maneuvers =
             listOf(

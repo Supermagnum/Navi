@@ -27,6 +27,12 @@ pub struct SimSample {
     pub highway: Option<String>,
     /// True when OSM `maxspeed` was present on the edge (not highway-class fallback).
     pub maxspeed_posted: bool,
+    /// Raw posted OSM `maxspeed` (km/h) when parseable — for live HUD limit resolution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub maxspeed_kmh: Option<f64>,
+    /// Raw OSM `maxspeed:conditional` for live time-based limit evaluation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub maxspeed_conditional: Option<String>,
     /// Current-road label: OSM `name`, else `ref`, else null (UI applies highway-class label).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub street: Option<String>,
@@ -480,6 +486,8 @@ pub fn build_sim_samples_from_lat_lon(
             speed_kmh: speed,
             highway: hwy.clone(),
             maxspeed_posted: false,
+            maxspeed_kmh: None,
+            maxspeed_conditional: None,
             street: None,
         });
         return out;
@@ -502,6 +510,8 @@ pub fn build_sim_samples_from_lat_lon(
             speed_kmh: speed,
             highway: hwy.clone(),
             maxspeed_posted: false,
+            maxspeed_kmh: None,
+            maxspeed_conditional: None,
             street: None,
         });
     }
@@ -563,6 +573,8 @@ pub fn build_sim_samples(graph: &RouteGraph, path: &[NodeId]) -> Vec<SimSample> 
                 speed_kmh: speed,
                 highway: e.highway.clone(),
                 maxspeed_posted: posted,
+                maxspeed_kmh: e.maxspeed_kmh,
+                maxspeed_conditional: e.maxspeed_conditional.clone(),
                 street: street.clone(),
             });
         }
@@ -577,14 +589,14 @@ pub fn build_sim_samples(graph: &RouteGraph, path: &[NodeId]) -> Vec<SimSample> 
             lat: last.coord.y,
             lon: last.coord.x,
             cum_m: cum,
-            speed_kmh: e_last
-                .map(edge_speed_kmh)
-                .unwrap_or_else(|| highway_fallback_kmh(None)),
+            speed_kmh: e_last.map(edge_speed_kmh).unwrap_or(50.0).max(1.0),
             highway: e_last.and_then(|e| e.highway.clone()),
             maxspeed_posted: e_last
                 .and_then(|e| e.maxspeed_kmh)
                 .filter(|v| v.is_finite() && *v > 0.0)
                 .is_some(),
+            maxspeed_kmh: e_last.and_then(|e| e.maxspeed_kmh),
+            maxspeed_conditional: e_last.and_then(|e| e.maxspeed_conditional.clone()),
             street: e_last
                 .and_then(|e| prefer_street_label(e.name.as_deref(), e.road_ref.as_deref())),
         });

@@ -222,6 +222,12 @@ data class DriveHudState(
      * corridor is active; cleared when navigation ends (see docs/current-street.md).
      */
     val currentStreet: String? = null,
+    /** Live GPS / sim speed in km/h; null when the provider did not supply speed. */
+    val currentSpeedKmh: Double? = null,
+    /** Applicable posted/conditional/fallback speed limit (km/h) for the current road. */
+    val currentSpeedLimitKmh: Double? = null,
+    /** True when [currentSpeedKmh] exceeds [currentSpeedLimitKmh] (HUD hint). */
+    val overspeed: Boolean = false,
 )
 
 /**
@@ -250,6 +256,19 @@ fun formatBreakHudLine(
         }
     } else {
         String.format("Break in %.0f min", mins)
+    }
+}
+
+/** Bottom-HUD speed / limit line, or null when neither value is known. */
+fun formatHudSpeedLine(state: DriveHudState): String? {
+    val speed = state.currentSpeedKmh
+    val limit = state.currentSpeedLimitKmh
+    return when {
+        speed != null && limit != null ->
+            String.format("%.0f / %.0f km/h", speed, limit)
+        speed != null -> String.format("%.0f km/h", speed)
+        limit != null -> String.format("Limit %.0f km/h", limit)
+        else -> null
     }
 }
 
@@ -619,6 +638,22 @@ fun BottomDriveHud(
                         maxLines = 1,
                         softWrap = false,
                         modifier = Modifier.testTag("hud_current_street"),
+                    )
+                }
+                val speedLine = formatHudSpeedLine(state)
+                if (speedLine != null) {
+                    Text(
+                        speedLine,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        softWrap = false,
+                        color =
+                            if (state.overspeed) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                        modifier = Modifier.testTag("hud_current_speed"),
                     )
                 }
                 val breakTxt =

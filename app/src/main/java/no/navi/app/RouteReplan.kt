@@ -150,8 +150,13 @@ object RouteReplan {
             val street =
                 s.street?.let { org.json.JSONObject.quote(it) } ?: "null"
             val hwy = s.highway?.let { org.json.JSONObject.quote(it) } ?: "null"
+            val cond =
+                s.maxspeedConditional?.let { org.json.JSONObject.quote(it) } ?: "null"
+            val posted =
+                s.maxspeedKmh?.takeIf { it.isFinite() }?.toString() ?: "null"
             """{"lat":${s.lat},"lon":${s.lon},"cum_m":${s.cumM},"speed_kmh":${s.speedKmh},""" +
-                """"highway":$hwy,"maxspeed_posted":${s.maxspeedPosted},"street":$street}"""
+                """"highway":$hwy,"maxspeed_posted":${s.maxspeedPosted},""" +
+                """"maxspeed_kmh":$posted,"maxspeed_conditional":$cond,"street":$street}"""
         }
     }
 

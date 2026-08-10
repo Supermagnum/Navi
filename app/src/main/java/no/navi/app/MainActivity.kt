@@ -135,7 +135,9 @@ import uniffi.navi.pmtilesResumeJob
 import uniffi.navi.pmtilesRunJob
 import uniffi.navi.provisionRegionData
 import uniffi.navi.renameSavedPlace
+import uniffi.navi.resolveSpeedLimitKmh
 import uniffi.navi.roadLabelNear
+import uniffi.navi.roadNearInfo
 import uniffi.navi.saveCarRestSettings
 import uniffi.navi.saveNamedPlace
 import uniffi.navi.saveNamedRoute
@@ -541,7 +543,15 @@ private fun NaviMapScreen() {
                 multiDayCards = emptyList(),
                 layerEpoch = mapState.layerEpoch + 1,
             )
-        driveHud = driveHud.copy(minutesToBreak = null, tripEtaMinutes = null, currentStreet = null)
+        driveHud =
+            driveHud.copy(
+                minutesToBreak = null,
+                tripEtaMinutes = null,
+                currentStreet = null,
+                currentSpeedKmh = null,
+                currentSpeedLimitKmh = null,
+                overspeed = false,
+            )
         approachGuidance = ApproachGuidanceState()
         NaviMapTestHooks.lastApproachPhase = ApproachUiPhase.Hidden
         NaviMapTestHooks.lastRoutePolylineChars = 0
@@ -1344,9 +1354,32 @@ private fun NaviMapScreen() {
             if (NaviMapTestHooks.ignoreLiveGpsFixes && !testOrSim) return
             // Always update map GPS mark from a valid fix.
             if (loc.latitude != 0.0 || loc.longitude != 0.0) {
-                // Mirror into native so lastGpsFix() is never a demo stub.
+                // Mirror into native so lastGpsFix() / currentSpeedKmh() stay live.
+                val speedKmh =
+                    if (loc.hasSpeed() && loc.speed.isFinite() && loc.speed >= 0f) {
+                        loc.speed * 3.6
+                    } else {
+                        null
+                    }
+                val speedAccKmh =
+                    if (loc.hasSpeedAccuracy() &&
+                        loc.speedAccuracyMetersPerSecond.isFinite() &&
+                        loc.speedAccuracyMetersPerSecond > 0f
+                    ) {
+                        loc.speedAccuracyMetersPerSecond * 3.6
+                    } else {
+                        null
+                    }
                 runCatching {
-                    updateGpsFix(loc.latitude, loc.longitude, available = true)
+                    updateGpsFix(
+                        loc.latitude,
+                        loc.longitude,
+                        available = true,
+                        speedKmh = speedKmh,
+                    )
+                }
+                if (speedKmh != null) {
+                    NaviMapTestHooks.lastGpsSpeedKmh = speedKmh
                 }
                 val acc = if (loc.hasAccuracy()) loc.accuracy else null
                 val moved =
@@ -1409,10 +1442,30 @@ private fun NaviMapScreen() {
                         }
                         val road = formatCurrentRoadLabel(s.street, s.highway)
                         streetFromRoute = true
-                        if (driveHud.currentStreet != road) {
-                            driveHud = driveHud.copy(currentStreet = road)
-                        }
+                        val limit =
+                            resolveSpeedLimitKmh(
+                                postedKmh = s.maxspeedKmh,
+                                maxspeedConditional = s.maxspeedConditional,
+                                highway = s.highway,
+                            )
+                        val over =
+                            OverspeedHud.isOverspeed(speedKmh, limit, speedAccKmh)
                         NaviMapTestHooks.lastCurrentStreet = road
+                        NaviMapTestHooks.lastCurrentSpeedLimitKmh = limit
+                        if (
+                            driveHud.currentStreet != road ||
+                            driveHud.currentSpeedKmh != speedKmh ||
+                            driveHud.currentSpeedLimitKmh != limit ||
+                            driveHud.overspeed != over
+                        ) {
+                            driveHud =
+                                driveHud.copy(
+                                    currentStreet = road,
+                                    currentSpeedKmh = speedKmh,
+                                    currentSpeedLimitKmh = limit,
+                                    overspeed = over,
+                                )
+                        }
                     }
                     if (loc.hasBearing()) {
                         NaviMapTestHooks.gpsBearingDeg = loc.bearing.toDouble()
@@ -1568,6 +1621,16 @@ private fun NaviMapScreen() {
                     }
                 }
                 if (!streetFromRoute) {
+                    if (speedKmh != null && driveHud.currentSpeedKmh != speedKmh) {
+                        val over =
+                            OverspeedHud.isOverspeed(
+                                speedKmh,
+                                driveHud.currentSpeedLimitKmh,
+                                speedAccKmh,
+                            )
+                        driveHud =
+                            driveHud.copy(currentSpeedKmh = speedKmh, overspeed = over)
+                    }
                     // Idle GPS: nearest OSM way (bbox graph), place-index only as fallback.
                     val now = android.os.SystemClock.elapsedRealtime()
                     val movedM =
@@ -1611,11 +1674,11 @@ private fun NaviMapScreen() {
                                 driveHud = driveHud.copy(currentStreet = interim)
                                 NaviMapTestHooks.lastCurrentStreet = interim
                             }
-                            val fromEdge =
+                            val nearInfo =
                                 withContext(Dispatchers.IO) {
                                     val pbf = resolveRegionPbf() ?: return@withContext null
                                     runCatching {
-                                        roadLabelNear(
+                                        roadNearInfo(
                                             pbf.absolutePath,
                                             graphCacheDirForPbf(pbf).absolutePath,
                                             File(dataDir, "elevation").absolutePath,
@@ -1624,19 +1687,38 @@ private fun NaviMapScreen() {
                                             prof,
                                             80.0,
                                         )
-                                    }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+                                    }.getOrNull()?.takeIf { it.label.isNotBlank() }
                                 }
                             nearbyStreetInFlight.set(false)
                             when {
-                                fromEdge != null -> {
-                                    if (driveHud.currentStreet != fromEdge) {
-                                        driveHud = driveHud.copy(currentStreet = fromEdge)
-                                    }
-                                    NaviMapTestHooks.lastCurrentStreet = fromEdge
+                                nearInfo != null -> {
+                                    val over =
+                                        OverspeedHud.isOverspeed(
+                                            driveHud.currentSpeedKmh ?: speedKmh,
+                                            nearInfo.speedLimitKmh,
+                                            speedAccKmh,
+                                        )
+                                    NaviMapTestHooks.lastCurrentStreet = nearInfo.label
+                                    NaviMapTestHooks.lastCurrentSpeedLimitKmh =
+                                        nearInfo.speedLimitKmh
+                                    driveHud =
+                                        driveHud.copy(
+                                            currentStreet = nearInfo.label,
+                                            currentSpeedKmh =
+                                                driveHud.currentSpeedKmh ?: speedKmh,
+                                            currentSpeedLimitKmh = nearInfo.speedLimitKmh,
+                                            overspeed = over,
+                                        )
                                 }
                                 interim == null && clearIfFar && driveHud.currentStreet != null -> {
-                                    driveHud = driveHud.copy(currentStreet = null)
+                                    driveHud =
+                                        driveHud.copy(
+                                            currentStreet = null,
+                                            currentSpeedLimitKmh = null,
+                                            overspeed = false,
+                                        )
                                     NaviMapTestHooks.lastCurrentStreet = null
+                                    NaviMapTestHooks.lastCurrentSpeedLimitKmh = null
                                 }
                             }
                         }

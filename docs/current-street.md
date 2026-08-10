@@ -14,6 +14,7 @@ the approach-instruction box, which shows the **next** street after a turn
 | Element | Role |
 |---|---|
 | Bottom drive HUD | `Currently on {label}` — `labelSmall`, one line, test tag `hud_current_street` |
+| Bottom drive HUD | `{speed} / {limit} km/h` — same column, test tag `hud_current_speed` |
 | Approach box | Next street only — unchanged |
 
 Layout notes: [`hud-layout.md`](hud-layout.md).
@@ -36,7 +37,18 @@ Core: `driver_break_core::current_road_label` /
 Kotlin mirror (HUD): `formatCurrentRoadLabel` / `highwayClassDisplayLabel` in
 `RouteGuidanceModels.kt` (kept aligned with `highwayFallbackKmh`).
 
-UniFFI: `formatCurrentRoadLabel`, `highwayClassDisplayLabel`, `roadLabelNear`.
+UniFFI: `formatCurrentRoadLabel`, `highwayClassDisplayLabel`, `roadLabelNear`,
+`roadNearInfo`, `currentSpeedKmh`, `resolveSpeedLimitKmh`, `overspeedDeltaKmh`.
+
+Live GPS speed comes from Android `Location.speed` (m/s → km/h) via
+`updateGpsFix`; the applicable limit reuses sticky nearest-edge matching
+(`RoadLabelSticky`) plus `maxspeed:conditional` evaluation and the ETA
+highway-class fallback table.
+
+Overspeed chrome uses [`OverspeedHud`](../app/src/main/java/no/navi/app/OverspeedHud.kt)
+(`MARGIN_KMH = 3.0`, widened from an untuned `+0.5` float-epsilon; effective
+margin is `max(3.0, speedAccuracyKmh)` when the fix reports speed accuracy).
+Confirm outdoors with `GpsSpeedNoiseInstrumentedTest` (not the route simulator).
 
 ---
 

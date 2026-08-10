@@ -563,6 +563,14 @@ object NaviMapTestHooks {
     @Volatile
     var lastCurrentStreet: String? = null
 
+    /** Last GPS / sim speed pushed into HUD (km/h). */
+    @Volatile
+    var lastGpsSpeedKmh: Double? = null
+
+    /** Last resolved applicable speed limit (km/h). */
+    @Volatile
+    var lastCurrentSpeedLimitKmh: Double? = null
+
     /**
      * When set, MainActivity applies this as [DriveHudState.currentStreet] once
      * (instrumented UTF-8 / layout checks without a full corridor rebuild).

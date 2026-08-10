@@ -112,6 +112,20 @@ pub fn applicable_limit_kmh(
     base
 }
 
+/// Live posted/applicable speed limit (km/h) for a road edge: evaluate
+/// `maxspeed:conditional` at `at` (or now), else base `maxspeed`, else the
+/// pre-departure ETA highway-class fallback table.
+pub fn applicable_limit_or_fallback_kmh(
+    base: Option<f64>,
+    conditional: Option<&str>,
+    highway: Option<&str>,
+    at: Option<NaiveDateTime>,
+) -> f64 {
+    applicable_limit_kmh(base, conditional, at)
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .unwrap_or_else(|| crate::routing::eta::highway_fallback_kmh(highway))
+}
+
 /// Index speed cameras from a PBF: `highway=speed_camera` nodes plus
 /// `type=enforcement` relations (`maxspeed` / `average_speed`).
 pub fn load_speed_cameras_from_pbf(

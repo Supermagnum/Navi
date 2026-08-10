@@ -112,8 +112,13 @@ How to use map mark + saved places:
 | Rust | Purpose |
 |---|---|
 | `elevation_at(elev_dir, lat, lon)` | Optional DEM height (metres) |
-| `update_gps_fix(lat, lon, available)` | Push last fix into native slot |
-| `last_gps_fix` | Read `FfiGpsFix` |
+| `update_gps_fix(lat, lon, available, speed_kmh?)` | Push last fix into native slot (optional km/h) |
+| `last_gps_fix` | Read `FfiGpsFix` (includes optional `speed_kmh`) |
+| `current_speed_kmh` | Live GPS speed from last push, or null |
+| `current_speed_limit_kmh(pbf, cache, elev, profile, max_m)` | Sticky nearest-edge limit at last GPS |
+| `road_near_info(...)` | Sticky label + applicable `speed_limit_kmh` (+ flags) |
+| `resolve_speed_limit_kmh(posted?, conditional?, highway?)` | Conditional → posted → highway fallback |
+| `overspeed_delta_kmh(speed?, limit?)` | `speed − limit` when both known (HUD convenience) |
 
 The Android UI primarily drives MapLibre from Kotlin location / simulation; the
 GPS slot is for native consumers and tests.
@@ -127,7 +132,8 @@ GPS slot is for native consumers and tests.
 | `format_approach_distance(distance_m, prefer_metric)` | HUD distance text |
 | `highway_class_display_label(highway?)` | Human class label when name/ref missing |
 | `format_current_road_label(name?, ref?, highway?)` | Bottom-HUD current-road string |
-| `road_label_near(pbf, cache_dir, elev_dir, lat, lon, profile, max_m)` | Idle-GPS nearest-edge street label (bbox graph) |
+| `road_label_near(pbf, cache_dir, elev_dir, lat, lon, profile, max_m)` | Idle-GPS nearest-edge street label (bbox graph); thin wrapper over `road_near_info` |
+| `road_near_info(...)` | Same sticky snap as `road_label_near`, plus applicable speed limit |
 | `format_avoid_motorways_report` / `format_route_avoidance_report` | Avoidance summary strings |
 
 Product rules: [`approach-instructions.md`](approach-instructions.md),

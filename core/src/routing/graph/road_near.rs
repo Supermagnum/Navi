@@ -155,6 +155,50 @@ fn edge_has_name_or_ref(e: &GraphEdge) -> bool {
         || e.road_ref.as_ref().is_some_and(|s| !s.trim().is_empty())
 }
 
+/// Nearest-edge snap for idle GPS: label plus posted/conditional maxspeed tags.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NearestRoadHit {
+    pub label: String,
+    pub highway: Option<String>,
+    pub maxspeed_kmh: Option<f64>,
+    pub maxspeed_conditional: Option<String>,
+    pub distance_m: f64,
+}
+
+impl NearestRoadHit {
+    fn from_edge(e: &GraphEdge, distance_m: f64) -> Self {
+        Self {
+            label: edge_label(e),
+            highway: e.highway.clone(),
+            maxspeed_kmh: e.maxspeed_kmh,
+            maxspeed_conditional: e.maxspeed_conditional.clone(),
+            distance_m,
+        }
+    }
+
+    /// Applicable limit now (conditional → posted → highway-class fallback).
+    pub fn speed_limit_kmh_at(&self, at: Option<chrono::NaiveDateTime>) -> f64 {
+        crate::routing::speed_camera::applicable_limit_or_fallback_kmh(
+            self.maxspeed_kmh,
+            self.maxspeed_conditional.as_deref(),
+            self.highway.as_deref(),
+            at,
+        )
+    }
+
+    /// True when a matching `maxspeed:conditional` window overrides the base.
+    pub fn limit_from_conditional_at(&self, at: Option<chrono::NaiveDateTime>) -> bool {
+        let Some(raw) = self.maxspeed_conditional.as_deref() else {
+            return false;
+        };
+        crate::routing::conditional::conditional_maxspeed_kmh_at(
+            raw,
+            at.unwrap_or_else(|| chrono::Local::now().naive_local()),
+        )
+        .is_some()
+    }
+}
+
 /// Instantaneous nearest-edge label within [max_m] of `(lat, lon)`.
 ///
 /// Among edges within 8 m of the closest hit, prefer one with OSM `name`/`ref`
@@ -163,7 +207,17 @@ fn edge_has_name_or_ref(e: &GraphEdge) -> bool {
 /// Distance uses full edge shape when present. Prefer [`RoadLabelSticky`] for
 /// live GPS so parallel roads do not flip-flop on noise.
 pub fn nearest_road_label(graph: &RouteGraph, lat: f64, lon: f64, max_m: f64) -> Option<String> {
-    nearest_road_candidate(graph, lat, lon, max_m).map(|(_, label)| label)
+    nearest_road_hit(graph, lat, lon, max_m).map(|h| h.label)
+}
+
+/// Instantaneous nearest-edge hit (label + maxspeed tags) within [max_m].
+pub fn nearest_road_hit(
+    graph: &RouteGraph,
+    lat: f64,
+    lon: f64,
+    max_m: f64,
+) -> Option<NearestRoadHit> {
+    nearest_road_candidate(graph, lat, lon, max_m)
 }
 
 fn nearest_road_candidate(
@@ -171,35 +225,61 @@ fn nearest_road_candidate(
     lat: f64,
     lon: f64,
     max_m: f64,
-) -> Option<(f64, String)> {
+) -> Option<NearestRoadHit> {
     let max_m = max_m.max(1.0);
     let mut best_d = f64::INFINITY;
-    let mut best_named: Option<(f64, String)> = None;
-    let mut best_any: Option<(f64, String)> = None;
+    let mut best_named: Option<NearestRoadHit> = None;
+    let mut best_any: Option<NearestRoadHit> = None;
     for e in &graph.edges {
         let d = edge_distance_m(e, lat, lon);
         if d > max_m {
             continue;
         }
-        let label = edge_label(e);
+        let hit = NearestRoadHit::from_edge(e, d);
         if d < best_d {
             best_d = d;
-            best_any = Some((d, label.clone()));
+            best_any = Some(hit.clone());
         }
         if edge_has_name_or_ref(e) {
             match &best_named {
-                None => best_named = Some((d, label)),
-                Some((bd, _)) if d < *bd => best_named = Some((d, label)),
+                None => best_named = Some(hit),
+                Some(bd) if d < bd.distance_m => best_named = Some(hit),
                 _ => {}
             }
         }
     }
     match (best_named, best_any) {
-        (Some((nd, nlabel)), Some((ad, _))) if nd <= ad + 8.0 => Some((nd, nlabel)),
-        (_, Some((ad, alabel))) => Some((ad, alabel)),
-        (Some((nd, nlabel)), None) => Some((nd, nlabel)),
+        (Some(named), Some(any)) if named.distance_m <= any.distance_m + 8.0 => Some(named),
+        (_, Some(any)) => Some(any),
+        (Some(named), None) => Some(named),
         (None, None) => None,
     }
+}
+
+fn hit_for_label(
+    graph: &RouteGraph,
+    lat: f64,
+    lon: f64,
+    max_m: f64,
+    label: &str,
+) -> Option<NearestRoadHit> {
+    let max_m = max_m.max(1.0);
+    let mut best: Option<NearestRoadHit> = None;
+    for e in &graph.edges {
+        if edge_label(e) != label {
+            continue;
+        }
+        let d = edge_distance_m(e, lat, lon);
+        if d > max_m {
+            continue;
+        }
+        match &best {
+            None => best = Some(NearestRoadHit::from_edge(e, d)),
+            Some(b) if d < b.distance_m => best = Some(NearestRoadHit::from_edge(e, d)),
+            _ => {}
+        }
+    }
+    best
 }
 
 fn distance_to_label(
@@ -209,22 +289,7 @@ fn distance_to_label(
     max_m: f64,
     label: &str,
 ) -> Option<f64> {
-    let max_m = max_m.max(1.0);
-    let mut best = f64::INFINITY;
-    for e in &graph.edges {
-        if edge_label(e) != label {
-            continue;
-        }
-        let d = edge_distance_m(e, lat, lon);
-        if d <= max_m && d < best {
-            best = d;
-        }
-    }
-    if best.is_finite() {
-        Some(best)
-    } else {
-        None
-    }
+    hit_for_label(graph, lat, lon, max_m, label).map(|h| h.distance_m)
 }
 
 /// Sticky idle-GPS road label: hysteresis + sustained confirm before switching.
@@ -254,54 +319,67 @@ impl RoadLabelSticky {
 
     /// Resolve label for this fix; updates internal lock / pending state.
     pub fn update(&mut self, graph: &RouteGraph, lat: f64, lon: f64, max_m: f64) -> Option<String> {
-        let Some((best_d, best_label)) = nearest_road_candidate(graph, lat, lon, max_m) else {
+        self.update_hit(graph, lat, lon, max_m).map(|h| h.label)
+    }
+
+    /// Same stickiness as [`Self::update`], returning maxspeed tags for the
+    /// locked road (so speed-limit HUD shares hysteresis with the street name).
+    pub fn update_hit(
+        &mut self,
+        graph: &RouteGraph,
+        lat: f64,
+        lon: f64,
+        max_m: f64,
+    ) -> Option<NearestRoadHit> {
+        let Some(best) = nearest_road_candidate(graph, lat, lon, max_m) else {
             self.reset();
             return None;
         };
 
         let Some(locked) = self.last_label.clone() else {
-            self.last_label = Some(best_label.clone());
+            self.last_label = Some(best.label.clone());
             self.pending_label = None;
             self.pending_hits = 0;
-            return Some(best_label);
+            return Some(best);
         };
 
-        if locked == best_label {
+        if locked == best.label {
             self.pending_label = None;
             self.pending_hits = 0;
-            return Some(locked);
+            // Refresh tags/distance from the locked way nearest this fix.
+            return hit_for_label(graph, lat, lon, max_m, &locked).or(Some(best));
         }
 
         let locked_d = distance_to_label(graph, lat, lon, max_m, &locked);
         match locked_d {
             None => {
                 // Locked road left the snap radius — take instantaneous best.
-                self.last_label = Some(best_label.clone());
+                self.last_label = Some(best.label.clone());
                 self.pending_label = None;
                 self.pending_hits = 0;
-                Some(best_label)
+                Some(best)
             }
             Some(ld) => {
-                let advantage = ld - best_d;
+                let advantage = ld - best.distance_m;
                 if advantage < ROAD_LABEL_SWITCH_MARGIN_M {
                     // Still within hysteresis band — keep lock (GPS noise).
                     self.pending_label = None;
                     self.pending_hits = 0;
-                    return Some(locked);
+                    return hit_for_label(graph, lat, lon, max_m, &locked);
                 }
-                if self.pending_label.as_deref() == Some(best_label.as_str()) {
+                if self.pending_label.as_deref() == Some(best.label.as_str()) {
                     self.pending_hits = self.pending_hits.saturating_add(1);
                 } else {
-                    self.pending_label = Some(best_label.clone());
+                    self.pending_label = Some(best.label.clone());
                     self.pending_hits = 1;
                 }
                 if self.pending_hits >= ROAD_LABEL_SWITCH_CONFIRM_HITS {
-                    self.last_label = Some(best_label.clone());
+                    self.last_label = Some(best.label.clone());
                     self.pending_label = None;
                     self.pending_hits = 0;
-                    Some(best_label)
+                    Some(best)
                 } else {
-                    Some(locked)
+                    hit_for_label(graph, lat, lon, max_m, &locked)
                 }
             }
         }
@@ -329,6 +407,26 @@ mod tests {
         road_ref: Option<&str>,
         shape: Vec<(f64, f64)>,
     ) -> GraphEdge {
+        edge_with_speed(
+            id, s, t, lat0, lon0, lat1, lon1, highway, name, road_ref, shape, None, None,
+        )
+    }
+
+    fn edge_with_speed(
+        id: &str,
+        s: i64,
+        t: i64,
+        lat0: f64,
+        lon0: f64,
+        lat1: f64,
+        lon1: f64,
+        highway: &str,
+        name: Option<&str>,
+        road_ref: Option<&str>,
+        shape: Vec<(f64, f64)>,
+        maxspeed_kmh: Option<f64>,
+        maxspeed_conditional: Option<&str>,
+    ) -> GraphEdge {
         GraphEdge {
             id: id.into(),
             source: NodeId(s),
@@ -342,7 +440,7 @@ mod tests {
             end_lon: lon1,
             shape,
             highway: Some(highway.into()),
-            maxspeed_kmh: None,
+            maxspeed_kmh,
             name: name.map(|s| s.into()),
             road_ref: road_ref.map(|s| s.into()),
             maxweight_t: None,
@@ -357,7 +455,7 @@ mod tests {
             is_roundabout: false,
             motor_vehicle_conditional: None,
             access_conditional: None,
-            maxspeed_conditional: None,
+            maxspeed_conditional: maxspeed_conditional.map(|s| s.into()),
         }
     }
 
@@ -477,7 +575,7 @@ mod tests {
             );
         }
         let edges = vec![
-            edge(
+            edge_with_speed(
                 "furnes",
                 1,
                 2,
@@ -489,8 +587,10 @@ mod tests {
                 Some("Furnesvegen"),
                 Some("184"),
                 Vec::new(),
+                Some(60.0),
+                None,
             ),
-            edge(
+            edge_with_speed(
                 "e6",
                 3,
                 4,
@@ -502,6 +602,8 @@ mod tests {
                 None,
                 Some("E 6"),
                 Vec::new(),
+                Some(100.0),
+                None,
             ),
         ];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
@@ -636,5 +738,118 @@ mod tests {
                 "sticky must hold Furnes under ~15 m GPS noise toward E6"
             );
         }
+    }
+
+    #[test]
+    fn sticky_speed_limit_holds_with_furnes_label() {
+        let graph = parallel_furnes_e6_graph();
+        let mid_lon = 11.0080;
+        let mut sticky = RoadLabelSticky::new();
+        let first = sticky
+            .update_hit(&graph, 60.85250, mid_lon, 80.0)
+            .expect("hit");
+        assert_eq!(first.label, "Furnesvegen");
+        assert_eq!(first.speed_limit_kmh_at(None), 60.0);
+
+        let noisy_lat = 60.85236;
+        for _ in 0..3 {
+            let hit = sticky
+                .update_hit(&graph, noisy_lat, mid_lon, 80.0)
+                .expect("hit");
+            assert_eq!(hit.label, "Furnesvegen");
+            assert_eq!(
+                hit.speed_limit_kmh_at(None),
+                60.0,
+                "speed limit must not flip to E6 100 under midpoint noise"
+            );
+        }
+    }
+
+    #[test]
+    fn conditional_maxspeed_overrides_base_on_hit() {
+        use chrono::NaiveDate;
+        let mut nodes = HashMap::new();
+        nodes.insert(
+            NodeId(1),
+            Node {
+                id: NodeId(1),
+                coord: Coord { x: 11.0, y: 60.85 },
+                uses: 0,
+            },
+        );
+        nodes.insert(
+            NodeId(2),
+            Node {
+                id: NodeId(2),
+                coord: Coord { x: 11.01, y: 60.85 },
+                uses: 0,
+            },
+        );
+        let edges = vec![edge_with_speed(
+            "cond",
+            1,
+            2,
+            60.85,
+            11.0,
+            60.85,
+            11.01,
+            "primary",
+            Some("Testvegen"),
+            None,
+            Vec::new(),
+            Some(80.0),
+            Some("50 @ (Mo-Fr 00:00-06:00)"),
+        )];
+        let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        let hit = nearest_road_hit(&graph, 60.85, 11.005, 80.0).expect("hit");
+        let night = NaiveDate::from_ymd_opt(2026, 3, 9)
+            .unwrap()
+            .and_hms_opt(3, 0, 0)
+            .unwrap(); // Monday 03:00
+        let day = NaiveDate::from_ymd_opt(2026, 3, 9)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        assert_eq!(hit.speed_limit_kmh_at(Some(night)), 50.0);
+        assert!(hit.limit_from_conditional_at(Some(night)));
+        assert_eq!(hit.speed_limit_kmh_at(Some(day)), 80.0);
+        assert!(!hit.limit_from_conditional_at(Some(day)));
+    }
+
+    #[test]
+    fn highway_fallback_when_no_maxspeed_tag() {
+        let mut nodes = HashMap::new();
+        nodes.insert(
+            NodeId(1),
+            Node {
+                id: NodeId(1),
+                coord: Coord { x: 11.0, y: 60.85 },
+                uses: 0,
+            },
+        );
+        nodes.insert(
+            NodeId(2),
+            Node {
+                id: NodeId(2),
+                coord: Coord { x: 11.01, y: 60.85 },
+                uses: 0,
+            },
+        );
+        let edges = vec![edge(
+            "fb",
+            1,
+            2,
+            60.85,
+            11.0,
+            60.85,
+            11.01,
+            "residential",
+            Some("Sidevegen"),
+            None,
+            Vec::new(),
+        )];
+        let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        let hit = nearest_road_hit(&graph, 60.85, 11.005, 80.0).expect("hit");
+        assert_eq!(hit.speed_limit_kmh_at(None), 40.0); // residential fallback
     }
 }

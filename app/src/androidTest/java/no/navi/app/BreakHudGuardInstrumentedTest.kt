@@ -173,6 +173,36 @@ class BreakHudGuardInstrumentedTest {
     }
 
     @Test
+    fun formatHudSpeedLine_showsSpeedAndLimit() {
+        assertNull(formatHudSpeedLine(DriveHudState()))
+        assertEquals(
+            "72 km/h",
+            formatHudSpeedLine(DriveHudState(currentSpeedKmh = 72.0)),
+        )
+        assertEquals(
+            "Limit 80 km/h",
+            formatHudSpeedLine(DriveHudState(currentSpeedLimitKmh = 80.0)),
+        )
+        assertEquals(
+            "72 / 80 km/h",
+            formatHudSpeedLine(
+                DriveHudState(currentSpeedKmh = 72.4, currentSpeedLimitKmh = 80.0),
+            ),
+        )
+    }
+
+    @Test
+    fun overspeedHud_marginRejectsSubHalfKmNoise() {
+        // Old +0.5 margin would flag 80.6 on an 80 limit; new floor must not.
+        assertFalse(OverspeedHud.isOverspeed(80.4, 80.0))
+        assertFalse(OverspeedHud.isOverspeed(82.5, 80.0))
+        assertTrue(OverspeedHud.isOverspeed(83.1, 80.0))
+        // Reported accuracy widens the gate.
+        assertFalse(OverspeedHud.isOverspeed(84.0, 80.0, speedAccuracyKmh = 5.0))
+        assertTrue(OverspeedHud.isOverspeed(86.0, 80.0, speedAccuracyKmh = 5.0))
+    }
+
+    @Test
     fun noRoute_neverShowsBreakInfo_includingAfterStaleClear() {
         waitStyle()
         // Cold start / idle: no corridor.
