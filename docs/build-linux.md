@@ -219,15 +219,6 @@ On Android 11+ you can pair over Wi‑Fi (**Developer options → Wireless
 debugging**) and use `adb pair <ip>:<port>` then `adb connect <ip>:<port>`.
 Prefer USB for first-time installs and large `adb push` transfers.
 
-**Smoke-check against Navi**
-
-```bash
-adb devices
-# After building a debug APK (see android-build.md):
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n no.navi.app/.MainActivity
-```
-
 ### System libraries
 
 | Library | Required? | Notes |
@@ -240,6 +231,49 @@ adb shell am start -n no.navi.app/.MainActivity
 
 SVG rasterization (`usvg` / `resvg`) and `flate2` / `png` are pure Rust crates —
 no extra system SVG libraries.
+
+---
+
+## Build and install the Android app
+
+Full shared recipe: [`android-build.md`](android-build.md). On Linux, from the
+repository root after SDK/NDK/`adb` are set up ([Prerequisites](#prerequisites)
+and [adb](#android-debug-bridge-adb) above):
+
+```bash
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
+export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
+
+# Physical arm64 tablet / phone
+rustup target add aarch64-linux-android   # once
+./scripts/build-android-native.sh aarch64-linux-android release
+./gradlew :app:assembleDebug
+./gradlew :app:installDebug
+adb shell am start -n no.navi.app/.MainActivity
+```
+
+Emulator (x86_64 image):
+
+```bash
+rustup target add x86_64-linux-android   # once
+./scripts/build-android-native.sh x86_64-linux-android release
+./gradlew :app:installDebug
+./scripts/launch-navi-emulator.sh
+```
+
+Confirm the APK embeds `libnavi.so` for the ABI you built:
+
+```bash
+unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'lib/.*/libnavi.so'
+```
+
+Manual install (same as Gradle `:app:installDebug`):
+
+```bash
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n no.navi.app/.MainActivity
+```
 
 ---
 

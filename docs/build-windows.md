@@ -195,19 +195,26 @@ Fixtures / ignored integration tests: same directory layout as
 
 ## Build and install the Android app
 
+Full shared recipe: [`android-build.md`](android-build.md). On Windows, use
+**Git Bash** for the native script; Gradle/`adb` may run from Git Bash or
+PowerShell.
+
 ### Native library (Git Bash)
 
 ```bash
 cd /c/path/to/Navi
-rustup target add aarch64-linux-android
+export ANDROID_HOME="${ANDROID_HOME:-$LOCALAPPDATA/Android/Sdk}"
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
+
+rustup target add aarch64-linux-android   # once (phone/tablet)
 ./scripts/build-android-native.sh aarch64-linux-android release
 ```
 
 Emulator ABI:
 
 ```bash
-rustup target add x86_64-linux-android
+rustup target add x86_64-linux-android   # once
 ./scripts/build-android-native.sh x86_64-linux-android release
 ```
 
@@ -216,9 +223,10 @@ rustup target add x86_64-linux-android
 ```powershell
 .\gradlew.bat :app:assembleDebug
 .\gradlew.bat :app:installDebug
+adb shell am start -n no.navi.app/.MainActivity
 ```
 
-Or Git Bash: `./gradlew :app:assembleDebug`.
+Or Git Bash: `./gradlew :app:assembleDebug` then `./gradlew :app:installDebug`.
 
 Manual install:
 

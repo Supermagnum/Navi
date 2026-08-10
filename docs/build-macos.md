@@ -192,22 +192,26 @@ Fixtures / ignored integration tests: same layout as
 
 ## Build and install the Android app
 
-From the repository root (bash — Terminal.app or iTerm):
+Full shared recipe: [`android-build.md`](android-build.md). On macOS, from the
+repository root after SDK/NDK/`adb` are set up:
 
 ```bash
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
+
 # Physical arm64 device / many tablets
-rustup target add aarch64-linux-android
-export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<version>"
+rustup target add aarch64-linux-android   # once
 ./scripts/build-android-native.sh aarch64-linux-android release
 ./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:installDebug
 adb shell am start -n no.navi.app/.MainActivity
 ```
 
 Emulator (x86_64 image):
 
 ```bash
-rustup target add x86_64-linux-android
+rustup target add x86_64-linux-android   # once
 ./scripts/build-android-native.sh x86_64-linux-android release
 ./gradlew :app:installDebug
 ./scripts/launch-navi-emulator.sh
@@ -217,6 +221,13 @@ Confirm the APK contains the expected ABI:
 
 ```bash
 unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'lib/.*/libnavi.so'
+```
+
+Manual install:
+
+```bash
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n no.navi.app/.MainActivity
 ```
 
 ---

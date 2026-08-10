@@ -369,20 +369,33 @@ Kortversjon av CI-forventninger:
 
 # Bygge og installere
 
-Fullstendige guider:
+## Android-appen (alle vertsplattformer)
 
-- Android-APK: [`docs/android-build.md`](docs/android-build.md)
-- Linux (kjerne, `navi-desktop`, gpsd, adb): [`docs/build-linux.md`](docs/build-linux.md)
-- macOS (verktøy, NDK, adb): [`docs/build-macos.md`](docs/build-macos.md)
-- Windows (MSVC, verktøy, NDK, adb): [`docs/build-windows.md`](docs/build-windows.md)
+APK-en bygges likt på **Linux**, **macOS** og **Windows**: kompiler `libnavi.so`
+med NDK, deretter Gradle. Vertsspesifikk oppsett (SDK-stier, NDK-clang, `adb`)
+står i OS-guidene; felles oppskrift er
+[`docs/android-build.md`](docs/android-build.md).
 
-### Emulator (x86_64)
+| Vert | Installer verktøy, NDK, `adb` | Deretter |
+|---|---|---|
+| Linux | [`docs/build-linux.md`](docs/build-linux.md) | [`docs/android-build.md`](docs/android-build.md) |
+| macOS | [`docs/build-macos.md`](docs/build-macos.md) | samme |
+| Windows | [`docs/build-windows.md`](docs/build-windows.md) (**Git Bash** for `scripts/*.sh`; `.\gradlew.bat` fra PowerShell) | samme |
+
+**Én gang per maskin:** Rust Android-mål, JDK 17, Android SDK (API 36), NDK,
+og `ANDROID_HOME` / `ANDROID_NDK_HOME`. Pek `.cargo/config.toml` mot NDK-ens
+verts-prebuilt (`linux-x86_64`, `darwin-arm64` / `darwin-x86_64`, eller
+`windows-x86_64`).
+
+### Emulator (x86_64-bilde)
 
 ```bash
-export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
+# Fra repo-roten (bash: Linux/macOS, eller Git Bash på Windows)
+export ANDROID_HOME=…                 # se OS-guiden for typisk sti
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<version>"
 rustup target add x86_64-linux-android   # én gang
 ./scripts/build-android-native.sh x86_64-linux-android release
-./gradlew :app:assembleDebug
+./gradlew :app:assembleDebug          # Windows PowerShell: .\gradlew.bat …
 ./gradlew :app:installDebug
 ./scripts/launch-navi-emulator.sh
 ```
@@ -390,10 +403,12 @@ rustup target add x86_64-linux-android   # én gang
 ### Nettbrett / telefon (arm64)
 
 ```bash
+export ANDROID_HOME=…
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<version>"
 rustup target add aarch64-linux-android   # én gang
 ./scripts/build-android-native.sh aarch64-linux-android release
 ./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:installDebug
 adb shell am start -n no.navi.app/.MainActivity
 ```
 
@@ -402,6 +417,14 @@ Bekreft at APK-en inneholder arm64-biblioteket:
 ```bash
 unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'lib/arm64-v8a/libnavi.so'
 ```
+
+## Skrivebord / kjerne (valgfritt)
+
+| Vert | Guide |
+|---|---|
+| Linux (`navi-desktop`, gpsd, kjernetester) | [`docs/build-linux.md`](docs/build-linux.md) |
+| macOS | [`docs/build-macos.md`](docs/build-macos.md) |
+| Windows | [`docs/build-windows.md`](docs/build-windows.md) |
 
 ### Arbeidsområdets struktur
 

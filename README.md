@@ -351,10 +351,10 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | US truck hours-of-service |
 | [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Country/region rule packs |
 | [`docs/osm-updates.md`](docs/osm-updates.md) | Opt-in map updates |
-| [`docs/android-build.md`](docs/android-build.md) | Build the Android app |
-| [`docs/build-linux.md`](docs/build-linux.md) | Linux / desktop build (tools, gpsd, adb) |
-| [`docs/build-macos.md`](docs/build-macos.md) | macOS build (tools, Android NDK, adb) |
-| [`docs/build-windows.md`](docs/build-windows.md) | Windows build (MSVC, tools, Android NDK, adb) |
+| [`docs/android-build.md`](docs/android-build.md) | Build/install Android APK (Linux, macOS, Windows hosts) |
+| [`docs/build-linux.md`](docs/build-linux.md) | Linux host: tools, gpsd, adb, Android install |
+| [`docs/build-macos.md`](docs/build-macos.md) | macOS host: tools, Android NDK, adb, Android install |
+| [`docs/build-windows.md`](docs/build-windows.md) | Windows host: MSVC, tools, Android NDK, adb, Android install |
 | [`docs/debugging.md`](docs/debugging.md) | Debugging |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | Physical device checklist |
 | [`docs/status.md`](docs/status.md) | Which docs are live status vs historical evidence |
@@ -400,20 +400,33 @@ Short version of CI expectations:
 
 # Building and installing
 
-Full guides:
+## Android app (all host platforms)
 
-- Android APK: [`docs/android-build.md`](docs/android-build.md)
-- Linux (core, `navi-desktop`, gpsd, adb): [`docs/build-linux.md`](docs/build-linux.md)
-- macOS (tools, NDK, adb): [`docs/build-macos.md`](docs/build-macos.md)
-- Windows (MSVC, tools, NDK, adb): [`docs/build-windows.md`](docs/build-windows.md)
+The product APK is built the same way on **Linux**, **macOS**, and **Windows**:
+compile `libnavi.so` with the NDK, then assemble/install with Gradle. Host-specific
+setup (SDK paths, NDK clang, `adb`) lives in the OS guides; the shared recipe is
+[`docs/android-build.md`](docs/android-build.md).
 
-### Emulator (x86_64)
+| Host OS | Install tools, NDK, `adb` | Then follow |
+|---|---|---|
+| Linux | [`docs/build-linux.md`](docs/build-linux.md) (SDK/`adb` sections + [Android install](docs/build-linux.md#build-and-install-the-android-app)) | [`docs/android-build.md`](docs/android-build.md) |
+| macOS | [`docs/build-macos.md`](docs/build-macos.md) | same |
+| Windows | [`docs/build-windows.md`](docs/build-windows.md) (use **Git Bash** for `scripts/*.sh`; `.\gradlew.bat` from PowerShell is fine) | same |
+
+**Once per machine:** Rust Android targets, JDK 17, Android SDK (API 36), NDK,
+and `ANDROID_HOME` / `ANDROID_NDK_HOME` (see the OS guide). Point
+`.cargo/config.toml` linkers at your NDK’s host prebuilt (`linux-x86_64`,
+`darwin-arm64` / `darwin-x86_64`, or `windows-x86_64`).
+
+### Emulator (x86_64 image)
 
 ```bash
-export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/<version>}"
+# From the repo root (bash: Linux/macOS Terminal, or Git Bash on Windows)
+export ANDROID_HOME=…                 # see OS guide for typical path
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<version>"
 rustup target add x86_64-linux-android   # once
 ./scripts/build-android-native.sh x86_64-linux-android release
-./gradlew :app:assembleDebug
+./gradlew :app:assembleDebug          # Windows PowerShell: .\gradlew.bat …
 ./gradlew :app:installDebug
 ./scripts/launch-navi-emulator.sh
 ```
@@ -421,10 +434,14 @@ rustup target add x86_64-linux-android   # once
 ### Tablet / phone (arm64)
 
 ```bash
+export ANDROID_HOME=…
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<version>"
 rustup target add aarch64-linux-android   # once
 ./scripts/build-android-native.sh aarch64-linux-android release
 ./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:installDebug
+# Equivalent:
+#   adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n no.navi.app/.MainActivity
 ```
 
@@ -433,6 +450,17 @@ Confirm the APK contains the arm64 library:
 ```bash
 unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'lib/arm64-v8a/libnavi.so'
 ```
+
+On Windows PowerShell you can use Gradle install (`.\gradlew.bat :app:installDebug`)
+or `adb install -r app\build\outputs\apk\debug\app-debug.apk`.
+
+## Desktop / core (optional)
+
+| Host | Guide |
+|---|---|
+| Linux (`navi-desktop`, gpsd, core tests) | [`docs/build-linux.md`](docs/build-linux.md) |
+| macOS (tools + optional desktop shell) | [`docs/build-macos.md`](docs/build-macos.md) |
+| Windows (MSVC, tools + optional desktop shell) | [`docs/build-windows.md`](docs/build-windows.md) |
 
 ### Workspace layout
 
