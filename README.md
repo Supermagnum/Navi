@@ -138,8 +138,11 @@ How-to: [`docs/map-marking-saved-places.md`](docs/map-marking-saved-places.md)
 
 **Rest and overnight.** Each mode has its own defaults. Long truck trips can
 split into days with legal rest rules (EU or US packs where known). Long
-car/bike/hiking trips can suggest overnight stops. The bottom-bar **Breaks**
-toggle only shows or hides the reminder — it does not invent a new rest law.
+car/bike/hiking trips can suggest overnight stops. Hiking overnight sites are
+filtered away from buildings and glaciers (1 km to the glacier **polygon edge**);
+rejected pins show a clear reason (for example `Excluded: within 1 km of a
+glacier`). The bottom-bar **Breaks** toggle only shows or hides the reminder —
+it does not invent a new rest law.
 
 **Map bars.** Tap the top bar for map/display settings. Tap the bottom status
 area for drive/vehicle settings (mode, break interval, fuel, e-bike, and so on).
@@ -238,6 +241,9 @@ conditions.
   and [`docs/route-simulation.md`](docs/route-simulation.md#guidance).
 - Wild-camping distance defaults follow a Norway-oriented “right to roam” idea
   and **may not apply in other countries**.
+- Hiking overnight exclusion (buildings / glaciers) uses the downloaded OSM
+  region and barrier pack, not the visual basemap tiles — those can disagree;
+  see [Known issues](#known-issues).
 - Truck rest packs only apply where the app can recognise the jurisdiction;
   otherwise it will not pretend to be a legal tachograph.
 - Always treat map data (OpenStreetMap) as possibly incomplete or outdated until
@@ -289,6 +295,17 @@ GPS follow during simulation:
 Portrait, offline Ostlandet Protomaps, 3D off:
 
 ![SM-P613 offline Protomaps 2D (portrait)](docs/images/Screenshot_20260731_123746.jpg)
+
+Offline Protomaps military landuse (muted red) and glacier fill, Rena / Gjende:
+
+![SM-P613 offline Protomaps military landuse at Rena (z12)](docs/images/military-glacier/offline_pm_military_rena_z12.png)
+
+![SM-P613 offline Protomaps glacier fill near Gjende (z12)](docs/images/military-glacier/offline_pm_glacier_gjende_z12.png)
+
+More zoom ladder shots: [`docs/images/military-glacier/`](docs/images/military-glacier/).
+Offline Protomaps also labels glacier **names** from ~z12 (`pois.kind=glacier`);
+online Liberty still has fill-only ice (upstream OpenMapTiles gap). Details:
+[`docs/map-styles.md`](docs/map-styles.md).
 
 Car head-unit testing is still open —
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
@@ -519,15 +536,19 @@ Country/region visual extracts can also be prepared with
 - **Overnight glacier safety vs basemap can disagree.** Hiking overnight
   exclusion (`SAFETY_MIN_GLACIER_DISTANCE_M`, 1 km to glacier **polygon edge**)
   reads Geofabrik `.osm.pbf` / the `.navi-poi-barrier` pack. Offline map ice fill
-  comes from a separately downloaded Protomaps PMTiles extract. Those pipelines
-  update independently (different Tools actions and build dates). Confirmed on
-  SM-P613 Ostlandet: PBF mtime vs PMTiles content date differed, and at Gjende
-  (OSM way `380644665`) pack geometry and basemap `landuse.kind=glacier` tiles
-  did not cover the same footprint. A tent site may therefore be excluded near
-  ice the map does not show (or vice versa). The plan UI surfaces the reason
-  explicitly (e.g. `Excluded: within 1 km of a glacier`) so the decision stays
-  legible when map and pack disagree. Future consideration (not built): optional
-  “refresh basemap after OSM update” prompt. See [`docs/poi.md`](docs/poi.md)
-  and [`docs/map-styles.md`](docs/map-styles.md).
+  and glacier **name** labels come from a separately downloaded Protomaps
+  PMTiles extract. Those pipelines update independently (different Tools actions
+  and build dates). Confirmed on SM-P613 Ostlandet: PBF mtime vs PMTiles content
+  date differed, and at Gjende (OSM way `380644665`) pack geometry and basemap
+  `landuse.kind=glacier` tiles did not cover the same footprint. A tent site may
+  therefore be excluded near ice the map does not show (or vice versa). The plan
+  UI surfaces the reason explicitly (e.g. `Excluded: within 1 km of a glacier`)
+  so the decision stays legible when map and pack disagree. Future consideration
+  (not built): optional “refresh basemap after OSM update” prompt. See
+  [`docs/poi.md`](docs/poi.md) and [`docs/map-styles.md`](docs/map-styles.md).
+- **Online Liberty has no named glacier labels.** OpenFreeMap Liberty /
+  OpenMapTiles expose ice as fill only (`landcover_ice`); there is no glacier
+  POI name path to style. Offline Protomaps labels `pois.kind=glacier` from
+  ~z12. Not a Navi Liberty regression — see [`docs/map-styles.md`](docs/map-styles.md).
 - **Not implemented yet:** checking whether the code can be optimised for
   rendering.
