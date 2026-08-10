@@ -45,7 +45,7 @@ UniFFI: `formatCurrentRoadLabel`, `highwayClassDisplayLabel`, `roadLabelNear`.
 | Situation | Behaviour |
 |---|---|
 | Active planned corridor (or debug simulation) | Label from snapped `sim_samples_json` sample (`street` + `highway`) on every fix |
-| **No planned corridor** (idle GPS) | 1) Quick interim from place-index addresses (most-common street in ~200 m). 2) Then upgrade to the **nearest routing-graph edge** within ~80 m (`road_label_near` / `nearest_road_label`) when a region PBF is available. Among edges within 8 m of the closest hit, prefer one with OSM `name`/`ref` over a class-only stub. Refresh every ~3 s or after ~30 m of movement (IO thread; in-process cell cache) |
+| **No planned corridor** (idle GPS) | 1) Quick interim from place-index addresses (most-common street in ~200 m). 2) Then upgrade to the **nearest routing-graph edge** within ~80 m (`road_label_near` / sticky `RoadLabelSticky` over shape-aware distance) when a region PBF is available. Among edges within 8 m of the closest hit, prefer one with OSM `name`/`ref` over a class-only stub. **Stickiness:** once locked, require the alternate to be ≥ ~10 m closer for two consecutive polls (~3 s each) before switching — avoids Furnesvegen/E6-class flip-flop from GPS noise on ~25 m parallel corridors. Distance uses full edge shape, not start→end chords. Refresh every ~3 s or after ~30 m of movement (IO thread; in-process cell cache) |
 | No region PBF on device | Place-index interim only (weaker at junctions — side-street houses can outvote the through-road) |
 | Neither PBF nor place index | Line stays hidden |
 

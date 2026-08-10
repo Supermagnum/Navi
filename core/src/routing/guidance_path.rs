@@ -208,6 +208,25 @@ fn count_same_dir_alternatives(
     (more_ways, turn_no)
 }
 
+/// True when the turn node has any outgoing way other than the route continue
+/// and the inbound reverse — i.e. a real junction / cross-street, not a mere
+/// shape vertex on a single through-road.
+fn junction_has_other_ways(
+    graph: &RouteGraph,
+    turn_node: NodeId,
+    route_target: NodeId,
+    inbound_from: NodeId,
+) -> bool {
+    for &ei in graph.outgoing_edge_indices(turn_node) {
+        let e = &graph.edges[ei];
+        if e.target == route_target || e.target == inbound_from {
+            continue;
+        }
+        return true;
+    }
+    false
+}
+
 fn maybe_keep_left_right(
     graph: &RouteGraph,
     turn_node: NodeId,
@@ -683,7 +702,14 @@ pub fn build_maneuvers(graph: &RouteGraph, path: &[NodeId]) -> Vec<RouteManeuver
             classify_turn_navit(delta, more, turn_no)
         };
         if kind == ManeuverKind::Straight {
-            continue;
+            // Product choice: do not emit "continue straight" at every shape
+            // node (dense grids would spam the approach UI). Emit Straight only
+            // at a real junction — other outgoing ways exist besides inbound and
+            // the route continue — so the icon reassures at ambiguous
+            // straight-through crossings. Keep L/R already covers one-sided forks.
+            if !junction_has_other_ways(graph, n1, n2, n0) {
+                continue;
+            }
         }
         let node = &graph.nodes[&n1];
         out.push(RouteManeuver {
@@ -1309,6 +1335,106 @@ mod tests {
         assert_eq!(classify_turn_navit(30.0, 1, 0), ManeuverKind::SlightRight);
         assert_eq!(classify_turn_navit(-50.0, 1, 0), ManeuverKind::Left);
         assert_eq!(classify_turn_navit(50.0, 1, 0), ManeuverKind::Right);
+    }
+
+    #[test]
+    fn straight_emitted_only_at_real_junction() {
+        fn node(id: i64, lon: f64, lat: f64) -> (NodeId, osm4routing::Node) {
+            (
+                NodeId(id),
+                osm4routing::Node {
+                    id: NodeId(id),
+                    coord: geo_types::Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            )
+        }
+        fn edge(
+            id: &str,
+            s: i64,
+            t: i64,
+            lat0: f64,
+            lon0: f64,
+            lat1: f64,
+            lon1: f64,
+        ) -> crate::routing::graph::GraphEdge {
+            crate::routing::graph::GraphEdge {
+                id: id.into(),
+                source: NodeId(s),
+                target: NodeId(t),
+                length_m: 100.0,
+                base_weight: 100.0,
+                eco_weight: None,
+                start_lat: lat0,
+                start_lon: lon0,
+                end_lat: lat1,
+                end_lon: lon1,
+                shape: Vec::new(),
+                highway: Some("residential".into()),
+                maxspeed_kmh: None,
+                name: Some(id.into()),
+                road_ref: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+            }
+        }
+
+        // Straight through with a cross-street at the middle node → emit Straight.
+        let mut nodes = std::collections::HashMap::new();
+        for (id, n) in [
+            node(1, 10.0, 60.0),
+            node(2, 10.001, 60.0),
+            node(3, 10.002, 60.0),
+            node(4, 10.001, 60.001),
+        ] {
+            nodes.insert(id, n);
+        }
+        let edges = vec![
+            edge("in", 1, 2, 60.0, 10.0, 60.0, 10.001),
+            edge("out", 2, 3, 60.0, 10.001, 60.0, 10.002),
+            edge("side", 2, 4, 60.0, 10.001, 60.001, 10.001),
+            edge("side_back", 4, 2, 60.001, 10.001, 60.0, 10.001),
+        ];
+        let graph =
+            RouteGraph::from_parts(nodes, edges, crate::routing::graph::RoutingProfile::Car);
+        let mans = build_maneuvers(&graph, &[NodeId(1), NodeId(2), NodeId(3)]);
+        assert!(
+            mans.iter().any(|m| m.kind == "straight"),
+            "expected straight at cross-street junction, got {mans:?}"
+        );
+
+        // No side way — only through nodes → no Straight spam.
+        let mut nodes2 = std::collections::HashMap::new();
+        for (id, n) in [
+            node(1, 10.0, 60.0),
+            node(2, 10.001, 60.0),
+            node(3, 10.002, 60.0),
+        ] {
+            nodes2.insert(id, n);
+        }
+        let edges2 = vec![
+            edge("in", 1, 2, 60.0, 10.0, 60.0, 10.001),
+            edge("out", 2, 3, 60.0, 10.001, 60.0, 10.002),
+            edge("back", 2, 1, 60.0, 10.001, 60.0, 10.0),
+        ];
+        let graph2 =
+            RouteGraph::from_parts(nodes2, edges2, crate::routing::graph::RoutingProfile::Car);
+        let mans2 = build_maneuvers(&graph2, &[NodeId(1), NodeId(2), NodeId(3)]);
+        assert!(
+            mans2.iter().all(|m| m.kind != "straight"),
+            "trivial through-node must not emit straight, got {mans2:?}"
+        );
     }
 
     #[test]

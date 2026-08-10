@@ -1739,7 +1739,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_rename_saved_place() != 57651.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_road_label_near() != 12920.toShort()) {
+    if (lib.uniffi_navi_checksum_func_road_label_near() != 54741.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_route_plan_timing_enabled() != 55311.toShort()) {
@@ -4636,9 +4636,10 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
          * Nearest OSM way label at `(lat, lon)` for idle GPS (no planned corridor).
          *
          * Loads a small bbox-clipped routing graph (cached under `cache_dir`), then
-         * snaps to the nearest edge within `max_m`. Prefer this over place-index
-         * address voting at junctions. Empty string when no edge is close enough or
-         * inputs are missing.
+         * snaps to the nearest edge within `max_m` using full edge shape + sticky
+         * hysteresis (sustained margin before switching parallel roads). Prefer this
+         * over place-index address voting at junctions. Empty string when no edge is
+         * close enough or inputs are missing.
          */ fun `roadLabelNear`(`pbfPath`: kotlin.String, `cacheDir`: kotlin.String, `elevDir`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double, `profile`: TravelProfile, `maxM`: kotlin.Double): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->

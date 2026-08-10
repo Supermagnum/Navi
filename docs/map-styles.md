@@ -216,21 +216,28 @@ Distinct from Navi [`poi.md`](poi.md) rest/overnight **PoiIndex** categories.
 Applied at style load via `BasemapLabelPolicy` (Liberty) and baked into the
 offline Protomaps template (`roads_label_*`, `pois`):
 
-| Camera zoom | Road / shield labels | Basemap amenity / peak / glacier POIs |
+| Camera zoom | Road / shield labels | Basemap amenity / peak / glacier / wetland / water POIs |
 |---|---|---|
-| ≥ 12 | (roads unchanged below) | Glacier names (`pois.kind=glacier`) when tile `min_zoom` allows |
+| ≥ 9 | (roads unchanged below) | Lake point names (`water_label_lake`; tile `min_zoom` often 9) |
+| ≥ 10 | Same | + river line names (`water_label_river`; tile `min_zoom` often 10) |
+| ≥ 12 | (roads unchanged below) | Glacier + wetland names (`pois.kind=glacier` / `wetland`) when tile `min_zoom` allows |
 | ≥ 13 | Motorways | Same |
 | ≥ 14 | + secondary | Same |
 | ≥ 15 | + other majors and minor streets | Same |
-| ≥ 16 | Same | Urban amenities + peak/hill icons (`pois` kinds other than glacier) |
+| ≥ 16 | Same | Urban amenities + peak/hill icons (`pois` kinds other than glacier/wetland) |
 
 Offline Protomaps peaks live in the `pois` source-layer (`kind=peak` / `hill`),
 not only `places`. Glacier **names** are also `pois` points (`kind=glacier`,
-tile floor ~z12) — not properties on `landuse`/`landcover` fill polygons. The
-`pois` layer keeps a **per-kind** zoom floor (`glacier` → 12, everything else →
-16) so enabling glacier labels does not pull schools/fuel/etc. down to z12.
-Glacier labels use the same size/offset as peaks but a cooler text color
-(`#406060`) and no icon, so ice names read distinctly from summit labels.
+tile floor ~z12) — not properties on `landuse`/`landcover` fill polygons.
+Wetland **names** are likewise `pois` points (`kind=wetland`, ~z12); wetland
+**polygons** in `landuse` carry no `name`. Lake/river names sit on the mixed
+`water` layer (Point vs LineString) and use dedicated symbol layers — fill/line
+geometry filters are unchanged (shard fix stays labeling-orthogonal). The
+`pois` layer keeps a **per-kind** zoom floor (`glacier`/`wetland` → 12,
+everything else → 16) so enabling those labels does not pull schools/fuel/etc.
+down to z12. Glacier labels use cooler text (`#406060`); wetland `#3d5c3d`;
+both omit icons. Lake/river labels use italic `#2a5a78` so they read apart from
+town and peak names.
 OpenFreeMap Liberty has **no** `mountain_peak` layer; some peaks appear only
 when present in OMT `poi` ranks (e.g. Galdhøpiggen) and may be missing online
 (e.g. Elgpiggen) even when offline Protomaps shows them.
@@ -238,6 +245,13 @@ when present in OMT `poi` ranks (e.g. Galdhøpiggen) and may be missing online
 **Liberty glacier names:** OpenFreeMap Liberty / OpenMapTiles expose ice only as
 `landcover` fill (`landcover_ice`) with **no** named glacier POI/label path —
 upstream gap, not a Navi Protomaps bug. Leave Liberty unchanged.
+
+**Liberty wetland names:** OpenMapTiles exposes wetland only as `landcover`
+fill (`class=wetland`) with **no** name properties and no wetland entry in
+`water_name` / `poi` for named bogs such as Bårdsæterkjølen — upstream schema
+gap. Navi cannot fix this in style JSON; offline Protomaps is the path that
+labels wetlands. Liberty lake/river labels (`water_name_*_label`,
+`waterway_line_label`) already exist upstream and are left as-is.
 
 Sprites: kinds without a matching icon (e.g. `fuel`) fall back to `townspot`.
 Match filters must not duplicate labels (MapLibre rejects the layer with

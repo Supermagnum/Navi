@@ -130,6 +130,58 @@
       }
     },
     {
+      "id": "water_label_lake",
+      "type": "symbol",
+      "source": "protomaps",
+      "source-layer": "water",
+      "minzoom": 9,
+      "filter": [
+        "all",
+        ["has", "name"],
+        ["match", ["geometry-type"], ["Point"], true, false],
+        [">=", ["zoom"], ["coalesce", ["get", "min_zoom"], 9]]
+      ],
+      "layout": {
+        "text-field": ["get", "name"],
+        "text-font": ["Noto Sans Italic"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 9, 12, 12, 15],
+        "text-optional": true,
+        "text-allow-overlap": false,
+        "text-max-width": 10
+      },
+      "paint": {
+        "text-color": "#2a5a78",
+        "text-halo-color": "#f8f4f0",
+        "text-halo-width": 1.4
+      }
+    },
+    {
+      "id": "water_label_river",
+      "type": "symbol",
+      "source": "protomaps",
+      "source-layer": "water",
+      "minzoom": 10,
+      "filter": [
+        "all",
+        ["has", "name"],
+        ["match", ["geometry-type"], ["LineString", "MultiLineString"], true, false],
+        [">=", ["zoom"], ["coalesce", ["get", "min_zoom"], 10]]
+      ],
+      "layout": {
+        "symbol-placement": "line",
+        "text-field": ["get", "name"],
+        "text-font": ["Noto Sans Italic"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 10, 11, 14, 13],
+        "text-max-angle": 30,
+        "text-optional": true
+      },
+      "paint": {
+        "text-color": "#2a5a78",
+        "text-halo-color": "#f8f4f0",
+        "text-halo-width": 1.2
+      }
+    },
+    {
       "id": "buildings",
       "type": "fill",
       "source": "protomaps",
@@ -372,6 +424,8 @@
             ["get", "kind"],
             "glacier",
             12,
+            "wetland",
+            12,
             16
           ]
         ],
@@ -410,7 +464,8 @@
             "hotel",
             "peak",
             "hill",
-            "glacier"
+            "glacier",
+            "wetland"
           ],
           true,
           false
@@ -446,6 +501,7 @@
           "peak", "peak",
           "hill", "peak",
           "glacier", "peak",
+          "wetland", "park",
           "fuel", "townspot",
           "charging_station", "townspot",
           "parking", "townspot",
@@ -470,6 +526,8 @@
           ["get", "kind"],
           "glacier",
           0,
+          "wetland",
+          0,
           1
         ],
         "text-color": [
@@ -477,6 +535,8 @@
           ["get", "kind"],
           "glacier",
           "#406060",
+          "wetland",
+          "#3d5c3d",
           "#303030"
         ],
         "text-halo-color": "#f8f4f0",

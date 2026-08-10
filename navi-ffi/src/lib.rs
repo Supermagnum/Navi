@@ -20,7 +20,7 @@ use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
 use driver_break_core::routing::graph::{
     apply_official_network_preference, difficulty_notes_for_path, load_official_network_way_ids,
     load_or_build_reweighted, load_or_build_reweighted_bbox, load_pilgrim_route_way_ids,
-    load_way_difficulty_tags, max_waypoint_snap_m, nearest_road_label, OfficialNetworkKind,
+    load_way_difficulty_tags, max_waypoint_snap_m, OfficialNetworkKind, RoadLabelSticky,
     RoadNodeIndex, RouteGraph, RouteOptions, RoutingProfile, SnapTooFar,
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
@@ -4485,6 +4485,7 @@ const ROAD_LABEL_PAD_CELLS: f64 = 1.0;
 struct RoadLabelGraphCache {
     key: String,
     graph: RouteGraph,
+    sticky: RoadLabelSticky,
 }
 
 static ROAD_LABEL_GRAPH: Mutex<Option<RoadLabelGraphCache>> = Mutex::new(None);
@@ -4512,9 +4513,10 @@ fn road_label_cache_key(profile: RoutingProfile, bbox: [f64; 4]) -> String {
 /// Nearest OSM way label at `(lat, lon)` for idle GPS (no planned corridor).
 ///
 /// Loads a small bbox-clipped routing graph (cached under `cache_dir`), then
-/// snaps to the nearest edge within `max_m`. Prefer this over place-index
-/// address voting at junctions. Empty string when no edge is close enough or
-/// inputs are missing.
+/// snaps to the nearest edge within `max_m` using full edge shape + sticky
+/// hysteresis (sustained margin before switching parallel roads). Prefer this
+/// over place-index address voting at junctions. Empty string when no edge is
+/// close enough or inputs are missing.
 #[uniffi::export]
 pub fn road_label_near(
     pbf_path: String,
@@ -4539,11 +4541,14 @@ pub fn road_label_near(
     };
     let bbox = road_label_bbox(lat, lon);
     let key = road_label_cache_key(routing_profile, bbox);
+    let max_m = max_m.max(1.0);
     {
-        let guard = ROAD_LABEL_GRAPH.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(cached) = guard.as_ref() {
+        let mut guard = ROAD_LABEL_GRAPH.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(cached) = guard.as_mut() {
             if cached.key == key {
-                return nearest_road_label(&cached.graph, lat, lon, max_m.max(1.0))
+                return cached
+                    .sticky
+                    .update(&cached.graph, lat, lon, max_m)
                     .unwrap_or_default();
             }
         }
@@ -4576,9 +4581,10 @@ pub fn road_label_near(
             Err(_) => return String::new(),
         },
     };
-    let label = nearest_road_label(&graph, lat, lon, max_m.max(1.0)).unwrap_or_default();
+    let mut sticky = RoadLabelSticky::new();
+    let label = sticky.update(&graph, lat, lon, max_m).unwrap_or_default();
     if let Ok(mut guard) = ROAD_LABEL_GRAPH.lock() {
-        *guard = Some(RoadLabelGraphCache { key, graph });
+        *guard = Some(RoadLabelGraphCache { key, graph, sticky });
     }
     label
 }
