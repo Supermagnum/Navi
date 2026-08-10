@@ -2884,32 +2884,66 @@ pub fn plan_hiking_route(
     ));
     let hybrid_path_ms = timer.lap_ms();
 
-    // Clip POI load to the trip bbox, then overnight buildings to a corridor band
-    // around the planned path (pre-filter before the exact 150 m check).
+    // Prefer indexed POI/barrier pack (v2 includes overnight buildings). Fall back
+    // to the corridor PBF scan only when packs are missing/stale.
     let corridor_lat_lon = hybrid.full_coords();
-    let poi_index = match PoiIndex::load_from_pbf_bbox_with_overnight_buildings_near_corridor(
-        pbf,
-        bbox,
-        &corridor_lat_lon,
-        OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M,
-    ) {
-        Ok(i) => i,
-        Err(e) => {
-            report.push_str(&format!("FAIL: POI index: {e:#}\n"));
-            return empty_corridor(report);
-        }
-    };
-    let barriers = load_break_barriers(&graph, pbf, bbox);
+    let data_dir_poi = pbf
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let (poi_index, barriers, poi_pack_hit, overnight_buildings_pack_hit) =
+        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan(&data_dir_poi, pbf)
+        {
+            Ok((mut idx, pack_barriers)) => {
+                let had_buildings = !idx.overnight_buildings().is_empty();
+                if had_buildings {
+                    let band = driver_break_core::poi::CorridorBand::from_lat_lon(
+                        &corridor_lat_lon,
+                        OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M,
+                    );
+                    if band.is_empty() {
+                        // No corridor geometry — keep bbox buildings from pack.
+                    } else {
+                        idx.retain_overnight_buildings(|lat, lon| band.contains(lat, lon));
+                    }
+                }
+                let mut barriers = DangerBarrierIndex::from_graph(&graph);
+                barriers.merge(pack_barriers);
+                (idx, barriers, true, had_buildings)
+            }
+            Err(_) => {
+                let idx = match PoiIndex::load_from_pbf_bbox_with_overnight_buildings_near_corridor(
+                    pbf,
+                    bbox,
+                    &corridor_lat_lon,
+                    OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M,
+                ) {
+                    Ok(i) => i,
+                    Err(e) => {
+                        report.push_str(&format!("FAIL: POI index: {e:#}\n"));
+                        return empty_corridor(report);
+                    }
+                };
+                let barriers = load_break_barriers(&graph, pbf, bbox);
+                (idx, barriers, false, false)
+            }
+        };
+    report.push_str(&format!(
+        "poi_pack_hit={poi_pack_hit}; overnight_buildings_pack_hit={overnight_buildings_pack_hit}\n"
+    ));
     let mut safety = SafetyConfig::default();
     poi_radii.apply_to_safety(&mut safety);
-    // Buildings from the corridor-filtered POI load; glaciers from the barrier
-    // index already built for break access — no extra overnight PBF scan.
     let overnight_prox = OvernightProximityIndex::from_poi_buildings_and_barriers(
         poi_index.overnight_buildings().to_vec(),
         &barriers,
     );
+    let overnight_source = if overnight_buildings_pack_hit {
+        "pack+corridor_filter"
+    } else {
+        "pbf_corridor"
+    };
     report.push_str(&format!(
-        "overnight_buildings={}; overnight_glaciers={}; overnight_source=poi+barriers; overnight_corridor_margin_m={OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M:.0}\n",
+        "overnight_buildings={}; overnight_glaciers={}; overnight_source={overnight_source}; overnight_corridor_margin_m={OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M:.0}\n",
         overnight_prox.buildings.len(),
         overnight_prox.glacier_rings.len()
     ));
@@ -3356,8 +3390,8 @@ pub fn ensure_indexed_maps(pbf_path: String, data_dir: String, elev_dir: Option<
     let man_path = manifest_path(&data, &stem);
     if man_path.is_file() {
         if let Ok(man) = NaviManifest::load(&man_path) {
-            // Wetland is optional (motor plans do not require it). Only force a
-            // rebuild when graph/POI packs are missing, stale, or version-mismatched.
+            // Ready requires graph + POI/barrier v2 + wetland (tiled or monolith).
+            // Packs built before wetland tiling / overnight buildings regenerate.
             if man.status_for_pbf(&data, &pbf) == PackStatus::Ready {
                 return format!("PASS\ncache_hit=true\nmanifest={}\n", man_path.display());
             }

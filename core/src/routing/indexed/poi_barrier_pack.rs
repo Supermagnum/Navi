@@ -9,7 +9,8 @@ use crate::routing::safety::DangerBarrierIndex;
 
 /// Little-endian ASCII "NVPB".
 pub const MAGIC_POI_BARRIER: u32 = 0x4E_56_50_42;
-pub const POI_BARRIER_FORMAT_VERSION: u32 = 1;
+/// v2 adds overnight building centroids for hiking allemannsretten checks.
+pub const POI_BARRIER_FORMAT_VERSION: u32 = 2;
 
 const CAT_WATER: u16 = 1 << 0;
 const CAT_CABIN: u16 = 1 << 1;
@@ -41,6 +42,10 @@ pub struct FlatPoiBarrierPack {
     pub glacier_offsets: Vec<u32>,
     pub glacier_lon: Vec<f64>,
     pub glacier_lat: Vec<f64>,
+    /// Overnight building centroids for hiking safety (format v2+). Parallel
+    /// `building_lats[i]` / `building_lons[i]`.
+    pub building_lats: Vec<f64>,
+    pub building_lons: Vec<f64>,
 }
 
 fn cat_mask(cats: &[PoiCategory]) -> u16 {
@@ -104,6 +109,8 @@ impl FlatPoiBarrierPack {
             glacier_offsets: vec![0],
             glacier_lon: Vec::new(),
             glacier_lat: Vec::new(),
+            building_lats: Vec::new(),
+            building_lons: Vec::new(),
         }
     }
 
@@ -111,6 +118,7 @@ impl FlatPoiBarrierPack {
         records: &[PoiRecord],
         segments: &[(f64, f64, f64, f64)],
         glaciers: &[Vec<[f64; 2]>],
+        overnight_buildings: &[(f64, f64)],
     ) -> Self {
         let mut pack = Self::empty();
         pack.tag_offsets.clear();
@@ -144,6 +152,10 @@ impl FlatPoiBarrierPack {
             }
             pack.glacier_offsets.push(pack.glacier_lon.len() as u32);
         }
+        for &(lat, lon) in overnight_buildings {
+            pack.building_lats.push(lat);
+            pack.building_lons.push(lon);
+        }
         pack
     }
 
@@ -171,6 +183,12 @@ impl FlatPoiBarrierPack {
                 name,
             });
         }
+        let n = self.building_lats.len().min(self.building_lons.len());
+        let mut buildings = Vec::with_capacity(n);
+        for i in 0..n {
+            buildings.push((self.building_lats[i], self.building_lons[i]));
+        }
+        index.set_overnight_buildings(buildings);
         index
     }
 

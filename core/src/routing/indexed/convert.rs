@@ -12,13 +12,14 @@ use super::header::Preamble;
 use super::io::{discard_partial, write_archive_atomic};
 use super::manifest::{
     graph_pack_filename, graph_tile_filename, manifest_path, pbf_fingerprint,
-    poi_barrier_pack_filename, profile_key, wetland_pack_filename, GraphTileEntry, NaviManifest,
+    poi_barrier_pack_filename, profile_key, wetland_pack_filename, wetland_tile_filename,
+    GraphTileEntry, NaviManifest,
 };
 use super::poi_barrier_pack::{FlatPoiBarrierPack, MAGIC_POI_BARRIER, POI_BARRIER_FORMAT_VERSION};
 use super::wetland_pack::{FlatWetlandPack, MAGIC_WETLAND, WETLAND_FORMAT_VERSION};
 use crate::download::progress as download_progress;
 use crate::download::DownloadControl;
-use crate::poi::{classify_tags, osm_icon_key, PoiRecord};
+use crate::poi::{classify_tags, osm_icon_key, PoiIndex, PoiRecord};
 use crate::routing::elevation::{ElevationCache, ElevationService};
 use crate::routing::graph::{RouteGraph, RoutingProfile};
 use crate::routing::wetland::WetlandIndex;
@@ -563,7 +564,17 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
     let records = collect_poi_records(&opts.pbf)?;
     let (mut segs, glaciers) = extract_pbf_barrier_geometry(&opts.pbf)?;
     segs.extend(barrier_extra);
-    let poi_pack = FlatPoiBarrierPack::from_parts(&records, &segs, &glaciers);
+    // Overnight building centroids for hiking allemannsretten (pack v2).
+    let overnight_buildings = {
+        let overnight =
+            PoiIndex::load_from_pbf_bbox_with_overnight_buildings(&opts.pbf, region_bbox)?;
+        let b = overnight.overnight_buildings().to_vec();
+        note_rss(&mut peak_rss_mb, "overnight_buildings");
+        b
+    };
+    let overnight_building_count = overnight_buildings.len();
+    let poi_pack = FlatPoiBarrierPack::from_parts(&records, &segs, &glaciers, &overnight_buildings);
+    drop(overnight_buildings);
     let poi_payload = rkyv::to_bytes::<RkyvError>(&poi_pack)
         .map_err(|e| anyhow::anyhow!("rkyv poi serialize: {e}"))?;
     drop(poi_pack);
@@ -583,14 +594,69 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
     note_rss(&mut peak_rss_mb, "poi_done");
 
     download_progress::set(95, Some(100), "Building indexed maps: wetlands…");
-    // Wetland is optional for motor plans. Tiled (region-scale) converts skip it
-    // on purpose: the ring index alone can exceed free RAM on 4GB tablets and
-    // abort an otherwise successful graph build. Monolith corridors still try;
-    // failures there remain best-effort skips.
+    // Clear prior wetland packs (monolith or tiles) so rebuilds do not leave gaps.
+    if let Ok(rd) = std::fs::read_dir(&opts.data_dir) {
+        for ent in rd.flatten() {
+            let name = ent.file_name();
+            let Some(s) = name.to_str() else { continue };
+            if s.starts_with(&format!("{stem}.navi-wetland")) && s.ends_with(".rkyv") {
+                let _ = std::fs::remove_file(ent.path());
+            }
+        }
+    }
     let wet_name = wetland_pack_filename(&stem);
+    let mut wetland_tiles_out: Vec<GraphTileEntry> = Vec::new();
     let wetland_rings = if use_tiles {
-        log::info!("wetland extract skipped for tiled region convert");
-        0
+        // Shared way/coord extract once; emit one tile pack at a time so peak
+        // ring RAM stays tile-sized (closes the old full-region OOM skip).
+        let tiles = tile_grid(region_bbox, 1.0);
+        match crate::routing::wetland::WetlandWayExtract::load(&opts.pbf) {
+            Ok(extract) => {
+                note_rss(&mut peak_rss_mb, "wetland_extract");
+                let mut rings_total = 0usize;
+                for (row, col, logical) in &tiles {
+                    if opts.control.is_cancelled() {
+                        anyhow::bail!("cancelled");
+                    }
+                    let idx = extract.index_for_bbox(*logical);
+                    let n = idx.ring_count();
+                    if n == 0 {
+                        continue;
+                    }
+                    rings_total += n;
+                    let wet_pack = FlatWetlandPack::from_wetland_index(&idx);
+                    drop(idx);
+                    let name = wetland_tile_filename(&stem, *row, *col);
+                    let wet_path = opts.data_dir.join(&name);
+                    discard_partial(&wet_path);
+                    match rkyv::to_bytes::<RkyvError>(&wet_pack) {
+                        Ok(wet_payload) => {
+                            drop(wet_pack);
+                            write_archive_atomic(
+                                &wet_path,
+                                Preamble::new(MAGIC_WETLAND, WETLAND_FORMAT_VERSION),
+                                wet_payload.as_ref(),
+                            )?;
+                            wetland_tiles_out.push(GraphTileEntry {
+                                file: name,
+                                bbox: *logical,
+                            });
+                            note_rss(&mut peak_rss_mb, &format!("wetland_tile_{row}_{col}"));
+                        }
+                        Err(e) => {
+                            log::warn!("wetland tile {row}_{col} serialize skipped: {e}");
+                        }
+                    }
+                }
+                drop(extract);
+                note_rss(&mut peak_rss_mb, "wetland_done");
+                rings_total
+            }
+            Err(e) => {
+                log::warn!("wetland extract skipped: {e:#}");
+                0
+            }
+        }
     } else {
         match WetlandIndex::load_from_pbf(&opts.pbf) {
             Ok(wetlands) => {
@@ -628,11 +694,17 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
             }
         }
     };
-    let wetland_file = if opts.data_dir.join(&wet_name).is_file() {
-        Some(wet_name.clone())
+    let (wetland_file, wetland_format_version) = if !wetland_tiles_out.is_empty() {
+        (None, WETLAND_FORMAT_VERSION)
+    } else if opts.data_dir.join(&wet_name).is_file() {
+        (Some(wet_name.clone()), WETLAND_FORMAT_VERSION)
     } else {
-        None
+        (None, 0)
     };
+    log::info!(
+        "indexed convert overnight_buildings={overnight_building_count} wetland_rings={wetland_rings} wetland_tiles={}",
+        wetland_tiles_out.len()
+    );
 
     let mut all_graph_names: Vec<String> = graph_files.values().cloned().collect();
     for tiles in graph_tiles.values() {
@@ -655,11 +727,8 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
         poi_barrier_file: poi_name.clone(),
         poi_barrier_format_version: POI_BARRIER_FORMAT_VERSION,
         wetland_file: wetland_file.clone(),
-        wetland_format_version: if wetland_file.is_some() {
-            WETLAND_FORMAT_VERSION
-        } else {
-            0
-        },
+        wetland_tiles: wetland_tiles_out,
+        wetland_format_version,
         has_delta_h: elev_ref.is_some(),
         elev_dir: if elev_ref.is_some() {
             opts.elev_dir

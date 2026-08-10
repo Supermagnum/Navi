@@ -23,8 +23,9 @@ pub use load::{
 };
 pub use manifest::{
     bbox_intersects, graph_pack_filename, graph_tile_filename, manifest_path,
-    poi_barrier_pack_filename, wetland_pack_filename, GraphTileEntry, NaviManifest, PackStatus,
-    GRAPH_PROFILE_BICYCLE, GRAPH_PROFILE_CAR, GRAPH_PROFILE_FOOT, GRAPH_PROFILE_TRUCK,
+    poi_barrier_pack_filename, wetland_pack_filename, wetland_tile_filename, GraphTileEntry,
+    NaviManifest, PackStatus, GRAPH_PROFILE_BICYCLE, GRAPH_PROFILE_CAR, GRAPH_PROFILE_FOOT,
+    GRAPH_PROFILE_TRUCK,
 };
 pub use poi_barrier_pack::{FlatPoiBarrierPack, MAGIC_POI_BARRIER, POI_BARRIER_FORMAT_VERSION};
 pub use wetland_pack::{FlatWetlandPack, MAGIC_WETLAND, WETLAND_FORMAT_VERSION};

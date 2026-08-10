@@ -86,6 +86,20 @@ impl PoiIndex {
         &self.overnight_buildings
     }
 
+    /// Replace overnight building centroids (indexed-pack hydrate path).
+    pub fn set_overnight_buildings(&mut self, buildings: Vec<(f64, f64)>) {
+        self.overnight_buildings = buildings;
+    }
+
+    /// Keep only overnight buildings matching `pred(lat, lon)`.
+    pub fn retain_overnight_buildings<F>(&mut self, mut pred: F)
+    where
+        F: FnMut(f64, f64) -> bool,
+    {
+        self.overnight_buildings
+            .retain(|&(lat, lon)| pred(lat, lon));
+    }
+
     pub fn load_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         Self::load_from_pbf_filtered(path, None, OvernightBuildings::Off)
     }

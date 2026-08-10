@@ -229,6 +229,9 @@ pub fn try_load_poi_barrier_for_plan(
 }
 
 /// Prefer indexed wetland pack when present and valid; else `Err` → PBF fallback.
+///
+/// Region-scale packs may store wetland as spatial tiles (`wetland_tiles`); those
+/// are merged for the plan bbox. Monolith corridors use a single `wetland_file`.
 pub fn try_load_wetland_for_plan(
     data_dir: &Path,
     pbf: &Path,
@@ -255,14 +258,47 @@ pub fn try_load_wetland_for_plan(
         PackStatus::StalePbf => return Err(PackLoadError::Stale),
         PackStatus::VersionMismatch => return Err(PackLoadError::VersionMismatch),
     }
-    let Some(path) = man.wetland_path(data_dir) else {
-        return Err(PackLoadError::Missing);
-    };
     if man.wetland_format_version != WETLAND_FORMAT_VERSION {
         return Err(PackLoadError::VersionMismatch);
     }
+    if man.uses_wetland_tiles() {
+        return load_tiled_wetland(data_dir, man.wetland_tiles(), bbox);
+    }
+    let Some(path) = man.wetland_path(data_dir) else {
+        return Err(PackLoadError::Missing);
+    };
     if !path.is_file() {
         return Err(PackLoadError::Missing);
     }
     load_wetland_pack(&path, bbox)
+}
+
+fn load_tiled_wetland(
+    data_dir: &Path,
+    tiles: &[super::manifest::GraphTileEntry],
+    bbox: Option<[f64; 4]>,
+) -> Result<WetlandIndex, PackLoadError> {
+    let selected: Vec<&super::manifest::GraphTileEntry> = match bbox {
+        Some(b) => tiles
+            .iter()
+            .filter(|t| bbox_intersects(t.bbox, b))
+            .collect(),
+        None => tiles.iter().collect(),
+    };
+    if selected.is_empty() {
+        return Err(PackLoadError::Missing);
+    }
+    let mut merged = FlatWetlandPack::empty();
+    for t in selected {
+        let path = data_dir.join(&t.file);
+        let mmap = map_file(&path)?;
+        check_preamble(&mmap, MAGIC_WETLAND, WETLAND_FORMAT_VERSION)?;
+        let body = &mmap[archive_payload_offset()..];
+        let archived = rkyv::access::<ArchivedFlatWetlandPack, RkyvError>(body)
+            .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
+        let pack: FlatWetlandPack = rkyv::deserialize::<FlatWetlandPack, RkyvError>(archived)
+            .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
+        merged.extend_from(&pack);
+    }
+    Ok(merged.to_wetland_index(bbox))
 }

@@ -37,21 +37,47 @@ impl FlatWetlandPack {
 
     pub fn from_wetland_index(index: &WetlandIndex) -> Self {
         let mut pack = Self::empty();
-        pack.ring_offsets.clear();
-        pack.ring_offsets.push(0);
         for (class, ring) in index.rings_as_parts() {
-            let class_u8 = match class {
-                WetlandClass::SoftAvoid => CLASS_SOFT,
-                WetlandClass::HardAvoid => CLASS_HARD,
-            };
-            for pt in ring {
-                pack.ring_lon.push(pt[0]);
-                pack.ring_lat.push(pt[1]);
-            }
-            pack.ring_offsets.push(pack.ring_lon.len() as u32);
-            pack.ring_class.push(class_u8);
+            pack.push_ring(class, &ring);
         }
         pack
+    }
+
+    /// Append one closed ring `[lon,lat]` (same classification rules as the index).
+    pub fn push_ring(&mut self, class: WetlandClass, ring: &[[f64; 2]]) {
+        if ring.len() < 3 {
+            return;
+        }
+        let class_u8 = match class {
+            WetlandClass::SoftAvoid => CLASS_SOFT,
+            WetlandClass::HardAvoid => CLASS_HARD,
+        };
+        for pt in ring {
+            self.ring_lon.push(pt[0]);
+            self.ring_lat.push(pt[1]);
+        }
+        self.ring_offsets.push(self.ring_lon.len() as u32);
+        self.ring_class.push(class_u8);
+    }
+
+    /// Merge another pack's rings into this one (tiled load path).
+    pub fn extend_from(&mut self, other: &Self) {
+        for i in 0..other.ring_class.len() {
+            let start = other.ring_offsets[i] as usize;
+            let end = other.ring_offsets[i + 1] as usize;
+            if end < start + 3 {
+                continue;
+            }
+            let class = match other.ring_class[i] {
+                CLASS_HARD => WetlandClass::HardAvoid,
+                _ => WetlandClass::SoftAvoid,
+            };
+            let mut ring = Vec::with_capacity(end - start);
+            for j in start..end {
+                ring.push([other.ring_lon[j], other.ring_lat[j]]);
+            }
+            self.push_ring(class, &ring);
+        }
     }
 
     pub fn ring_count(&self) -> usize {

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::graph_pack::GRAPH_FORMAT_VERSION;
 use super::poi_barrier_pack::POI_BARRIER_FORMAT_VERSION;
+use super::wetland_pack::WETLAND_FORMAT_VERSION;
 use crate::routing::graph::RoutingProfile;
 
 pub const GRAPH_PROFILE_CAR: &str = "car";
@@ -45,6 +46,10 @@ pub struct NaviManifest {
     /// falls back to PBF wetland scan.
     #[serde(default)]
     pub wetland_file: Option<String>,
+    /// Spatial wetland tiles (region-scale converts). Preferred over a single
+    /// [`Self::wetland_file`] so convert never holds a full-region ring index.
+    #[serde(default)]
+    pub wetland_tiles: Vec<GraphTileEntry>,
     #[serde(default)]
     pub wetland_format_version: u32,
     #[serde(default)]
@@ -75,6 +80,10 @@ pub fn poi_barrier_pack_filename(stem: &str) -> String {
 
 pub fn wetland_pack_filename(stem: &str) -> String {
     format!("{stem}.navi-wetland.rkyv")
+}
+
+pub fn wetland_tile_filename(stem: &str, row: usize, col: usize) -> String {
+    format!("{stem}.navi-wetland.t{row}_{col}.rkyv")
 }
 
 pub fn profile_key(profile: RoutingProfile) -> &'static str {
@@ -160,6 +169,24 @@ impl NaviManifest {
         if !data_dir.join(&self.poi_barrier_file).is_file() {
             return PackStatus::Missing;
         }
+        // Wetland is required for Ready (hiking pack-hit). Tiled or monolith.
+        if self.wetland_format_version != WETLAND_FORMAT_VERSION {
+            return PackStatus::VersionMismatch;
+        }
+        if !self.wetland_tiles.is_empty() {
+            for t in &self.wetland_tiles {
+                if !data_dir.join(&t.file).is_file() {
+                    return PackStatus::Missing;
+                }
+            }
+        } else {
+            let Some(name) = &self.wetland_file else {
+                return PackStatus::Missing;
+            };
+            if !data_dir.join(name).is_file() {
+                return PackStatus::Missing;
+            }
+        }
         PackStatus::Ready
     }
 
@@ -182,6 +209,14 @@ impl NaviManifest {
 
     pub fn wetland_path(&self, data_dir: &Path) -> Option<PathBuf> {
         self.wetland_file.as_ref().map(|n| data_dir.join(n))
+    }
+
+    pub fn wetland_tiles(&self) -> &[GraphTileEntry] {
+        &self.wetland_tiles
+    }
+
+    pub fn uses_wetland_tiles(&self) -> bool {
+        !self.wetland_tiles.is_empty()
     }
 }
 

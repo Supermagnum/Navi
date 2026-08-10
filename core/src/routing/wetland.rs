@@ -157,7 +157,28 @@ impl WetlandIndex {
 
     /// Load closed wetland ways (and multipolygon outers) that touch `bbox`.
     pub fn load_from_pbf_bbox(path: impl AsRef<Path>, bbox: [f64; 4]) -> anyhow::Result<Self> {
-        let path = path.as_ref();
+        let extract = WetlandWayExtract::load(path.as_ref())?;
+        Ok(extract.index_for_bbox(bbox))
+    }
+
+    /// Region-wide load (full extract extents). Used by the indexed converter.
+    pub fn load_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        // Wide bbox: accept every ring that has at least one resolved node.
+        Self::load_from_pbf_bbox(path, [-90.0, -180.0, 90.0, 180.0])
+    }
+}
+
+/// Shared PBF wetland way/coord extract so tiled converts can emit one tile pack
+/// at a time without holding a full-region [`WetlandIndex`].
+pub struct WetlandWayExtract {
+    ways: Vec<(Vec<i64>, WetlandClass)>,
+    way_nodes: HashMap<i64, Vec<i64>>,
+    rel_outers: Vec<(WetlandClass, Vec<i64>)>,
+    coords: HashMap<i64, (f64, f64)>,
+}
+
+impl WetlandWayExtract {
+    pub fn load(path: &Path) -> anyhow::Result<Self> {
         let mut ways: Vec<(Vec<i64>, WetlandClass)> = Vec::new();
         let mut needed: HashSet<i64> = HashSet::new();
         let mut rel_outers: Vec<(WetlandClass, Vec<i64>)> = Vec::new();
@@ -250,12 +271,21 @@ impl WetlandIndex {
             })?;
         }
 
+        Ok(Self {
+            ways,
+            way_nodes,
+            rel_outers,
+            coords,
+        })
+    }
+
+    pub fn index_for_bbox(&self, bbox: [f64; 4]) -> WetlandIndex {
         let mut rings = Vec::new();
-        for (refs, class) in ways {
-            if let Some(ring) = ring_from_refs(&refs, &coords, bbox) {
+        for (refs, class) in &self.ways {
+            if let Some(ring) = ring_from_refs(refs, &self.coords, bbox) {
                 let (min_lon, max_lon, min_lat, max_lat) = ring_bounds(&ring);
                 rings.push(WetlandRing {
-                    class,
+                    class: *class,
                     ring,
                     min_lon,
                     max_lon,
@@ -264,15 +294,15 @@ impl WetlandIndex {
                 });
             }
         }
-        for (class, outers) in rel_outers {
+        for (class, outers) in &self.rel_outers {
             for wid in outers {
-                let Some(refs) = way_nodes.get(&wid) else {
+                let Some(refs) = self.way_nodes.get(wid) else {
                     continue;
                 };
-                if let Some(ring) = ring_from_refs(refs, &coords, bbox) {
+                if let Some(ring) = ring_from_refs(refs, &self.coords, bbox) {
                     let (min_lon, max_lon, min_lat, max_lat) = ring_bounds(&ring);
                     rings.push(WetlandRing {
-                        class,
+                        class: *class,
                         ring,
                         min_lon,
                         max_lon,
@@ -282,14 +312,7 @@ impl WetlandIndex {
                 }
             }
         }
-
-        Ok(Self { rings })
-    }
-
-    /// Region-wide load (full extract extents). Used by the indexed converter.
-    pub fn load_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        // Wide bbox: accept every ring that has at least one resolved node.
-        Self::load_from_pbf_bbox(path, [-90.0, -180.0, 90.0, 180.0])
+        WetlandIndex { rings }
     }
 }
 

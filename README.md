@@ -510,9 +510,11 @@ Country/region visual extracts can also be prepared with
   Historical pre-pack Car Espa→Atnbrufossen (SM-P613): `plan_duration_ms=26835`
   with `graph_build_ms=17571`, `poi_barrier_ms=8045`, `astar_ms=378` — that
   ~15–27 s class remains the **fallback** when packs are missing, stale, or
-  still converting in the background. `.navigph` deprecated. Residual Hiking
-  wall time can still include overnight/POI PBF work. Reproduce stages with
-  Diagnostic logging → `ROUTE_PLAN` / `ROUTE_PLAN_STAGES`
+  still converting in the background. `.navigph` deprecated. Region-scale packs
+  now include tiled wetland + overnight buildings (POI/barrier v2): short
+  Atnbrufossen hike on SM-P613 **159 s → ~3.1 s** with `wetland_pack_hit` and
+  `overnight_buildings_pack_hit`. Reproduce stages with Diagnostic logging →
+  `ROUTE_PLAN` / `ROUTE_PLAN_STAGES`
   ([`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file)).
   See also [`docs/status.md`](docs/status.md).
 - **Rerouting after a detour is not instant.** Off-route (cross-track beyond
@@ -523,14 +525,14 @@ Country/region visual extracts can also be prepared with
   is an expected wait, not a hang. Motor profiles auto-reroute after a short
   sustained debounce (~5 s); **Hiking prompts** first. See
   [`docs/route-simulation.md`](docs/route-simulation.md#guidance).
-- **Hiking plan speed on huge areas (addressed for packs; residual PBF work):**
-  overnight buildings use a 1.5 km corridor pre-filter and a single PBF scan for
-  POI + buildings when packs do not cover that work (exact 150 m
-  allemannsretten check unchanged). Historical DNT Åkersætra→Rondvassbu
+- **Hiking plan speed on huge areas (addressed for packs):** overnight buildings
+  use a 1.5 km corridor pre-filter over pack-stored centroids when POI/barrier
+  v2 packs are ready (exact 150 m allemannsretten check unchanged). Historical
+  DNT Åkersætra→Rondvassbu
   (~**139.9 km** corridor; `overnight_scan_bench`, debug): bbox-all
   **102 556 buildings / ~180.7 s** load → corridor **487 buildings / ~83.1 s**
-  load. Graph/wetland pack-hit removes the old multi-minute wetland abort; some
-  overnight/POI decode cost can remain.
+  load. Graph/wetland/overnight pack-hit removes that PBF path when packs are
+  ready (fallback remains if packs are missing or still converting).
 - **Break timer ≠ trip ETA:** by design — see
   [Break timer vs trip ETA](#break-timer-vs-trip-eta).
 - **Overnight glacier safety vs basemap can disagree.** Hiking overnight

@@ -454,7 +454,14 @@ Phase 3 plan **approved** 2026-08-07. Status by milestone:
 1. **Graph filename is profile-suffixed** (`{stem}.navi-graph-car.rkyv`, `-truck`, `-foot`, `-bicycle`) listed in the manifest. Required because `RoutingProfile` filters differ; singular `{stem}.navi-graph.rkyv` could not serve Car+Truck+Foot+Bicycle.
 2. **Converter uses `build_from_pbf_bbox` over the extract’s node extents**, not `osm4routing` full-file read — full read panics (`Missing node`) on Hedmark and is the path already documented as OOM-unsafe for Ostlandet.
 3. **Plan-time materialize clips the region pack to the trip bbox** when building `RouteGraph`. Storing a region-wide pack matches Phase 3; loading the entire Ostlandet graph into RAM does not (existing `bbox_build.rs` comment). Zero-copy A\* over the map remains a future optimization; bbox materialize already clears Phase 0 on Hedmark (~0.5 s combined vs ~28 s cold).
-4. **Wetland is a separate archive** (`{stem}.navi-wetland.rkyv`, magic `NVWL`) — independent of POI/barrier; boardwalk carve-out remains on graph edges (`is_boardwalk_crossing`), not in the wetland pack. Tiled (region-scale) converts **skip wetland emission** so 4GB-class devices survive graph+POI peaks; monolith corridors still attempt wetland.
+4. **Wetland is a separate archive** (`{stem}.navi-wetland.rkyv` or tiled
+   `{stem}.navi-wetland.t{r}_{c}.rkyv`, magic `NVWL`) — independent of POI/barrier;
+   boardwalk carve-out remains on graph edges (`is_boardwalk_crossing`), not in
+   the wetland pack. Region-scale converts emit **per-tile** wetland packs (shared
+   way/coord extract, one tile materialized at a time) so 4GB-class devices avoid
+   a full-region ring index. Monolith corridors still write a single wetland file.
+   `PackStatus::Ready` requires wetland present (tiled or monolith) and POI/barrier
+   **v2** (overnight building centroids for hiking corridor filter).
 5. **Large regions use spatial graph tiles** (~1° cells, `graph_tiles` in the manifest) with way-first multi-tile PBF passes (not 3×N tiles×N profiles). POI/barrier extracted once after all profile graphs. Truck aliases car tiles.
 
 ### Known limitation — region-scale convert memory (open)
@@ -553,3 +560,4 @@ shape before building the production path.
 | 2026-08-07 | SM-P613 Phase 4b wetland PBF vs pack | **18616 ms** → **93.5 ms** (~199×); long hike completes **61 s** with `wetland_pack_hit`; **4b GO** |
 | 2026-08-10 | SM-P613 Ostlandet tiled v3 convert (UI fg) | ~657 s; 60 tiles; min `MemAvailable` **~329 MiB**; swap +~250 MiB; TRIM CRITICAL observed — **open memory margin** (README Known issues) |
 | 2026-08-10 | SM-P613 Ostlandet pack-hit Friisvegen | summer `pack_hit=true` seasonal=0; winter `pack_hit=true` seasonal=36 |
+| 2026-08-10 | SM-P613 tiled wetland + overnight buildings | Convert `peak_rss_mb=1737.4`, `wetland_rings=366222`, 20 wetland tiles; short Atnbrufossen hike **159477→3105 ms** (`wetland_pack_hit=true`, `overnight_buildings_pack_hit=true`) |
