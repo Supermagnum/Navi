@@ -1,6 +1,6 @@
 # Jurisdiction-dependent rules (reusable pattern)
 
-Navi already has two working precedents where behaviour depends on **where
+Navi already has working precedents where behaviour depends on **where
 you are** (GPS fix, overnight candidate, or route corridor), not only on the
 selected travel profile. This document extracts a **general, reusable pattern**
 from those examples so future contributors can add another jurisdiction-dependent
@@ -24,6 +24,7 @@ Related:
 - Plugin host / capabilities: [`plugins.md`](plugins.md)
 - POI overnight categories: [`poi.md`](poi.md) (**RestArea**, **Lodging**)
 - Profile / rest overview: [`../README.md`](../README.md)
+- Speed cameras (feature status): [`../README.md` Features](../README.md#features)
 
 ---
 
@@ -75,17 +76,38 @@ where Nordic wild-camp logic does not apply. Host would expose
 **Sources:** Outdoor Recreation Act / country outdoor-access codes cited in the
 camping table; re-verify before production use.
 
-### 1.3 What they share and where they differ
+### 1.3 Speed camera warnings (core; display only)
 
-| Aspect | EC 561 truck rest | Right-to-roam camping |
-|---|---|---|
-| **Depends on location** | Yes (which driving-hours law applies) | Yes (which access/camping pack applies) |
-| **Keyed rule pack** | Single EU/EEA-shaped pack today; multi-pack (EC 561 vs AETR vs other) is the natural extension | Explicit country table + sub-region gates |
-| **Unknown jurisdiction** | Must not pretend local HGV law is EC 561 | **Decline** suggestion; never guess Norway |
-| **Hard vs soft** | Hard planning constraints + history | Mostly hard *filters* for suggestions + lots of informational guidance |
-| **Lives in** | **Core** (planning) | **Plugin** (advisory guest) |
-| **Traceable sources** | Regulation articles | National outdoor-access law / codes |
-| **Granularity** | Country / treaty family (EU/EEA/AETR) | Country **and** region (e.g. N. Norway) |
+Speed-camera **display and approach warnings** (not route avoidance) follow the
+same jurisdiction pattern: resolve country from offline ISO rings
+(`country_iso_at`), then **opt-in where allowed** or **decline** elsewhere.
+
+| Jurisdiction | Behaviour |
+|---|---|
+| **Norway (`no`), UK (`gb`)** | Allowed after **first-run opt-in** dialog. OSM-sourced (`highway=speed_camera`, `type=enforcement`); may be incomplete — dialog states this. |
+| **Germany (`de`), France (`fr`), Switzerland (`ch`)** | **Decline** — no icons / warnings. |
+| **Unknown / other** | **Decline** (standing default). |
+
+**Placement:** **core** UI + `core/src/routing/speed_camera.rs`. Deliberate
+product decision: warnings only — no “avoid cameras” routing toggle.
+`maxspeed:conditional` evaluated at live local time for applicable limits.
+
+**Contrast — seasonal road closures:** hard filters on OSM
+`motor_vehicle:conditional` / `access:conditional` are **not**
+jurisdiction-pack-gated; they apply from tags whenever Car/Truck plans (Hiking /
+Bicycle skip motor conditionals). See README Features.
+
+### 1.4 What they share and where they differ
+
+| Aspect | EC 561 truck rest | Right-to-roam camping | Speed cameras |
+|---|---|---|---|
+| **Depends on location** | Yes (which driving-hours law applies) | Yes (which access/camping pack applies) | Yes (whether display is lawful / offered) |
+| **Keyed rule pack** | Single EU/EEA-shaped pack today; multi-pack (EC 561 vs AETR vs other) is the natural extension | Explicit country table + sub-region gates | Allow-list NO/UK; decline DE/FR/CH + unknown |
+| **Unknown jurisdiction** | Must not pretend local HGV law is EC 561 | **Decline** suggestion; never guess Norway | **Decline** display |
+| **Hard vs soft** | Hard planning constraints + history | Mostly hard *filters* for suggestions + lots of informational guidance | Soft UI (opt-in warnings); never hard-reroutes |
+| **Lives in** | **Core** (planning) | **Plugin** (advisory guest) | **Core** (display) |
+| **Traceable sources** | Regulation articles | National outdoor-access law / codes | Product/legal policy + OSM completeness caveat |
+| **Granularity** | Country / treaty family (EU/EEA/AETR) | Country **and** region (e.g. N. Norway) | Country ISO |
 
 The general pattern below is this comparison turned into process: detect
 jurisdiction → select a keyed pack → decline when unknown → place core vs
@@ -215,9 +237,9 @@ Illustrative; **not implemented** in this pass:
   do **not** assume horse access equals foot access under allemannsretten /
   allemansrätten / CRoW without checking each jurisdiction.
 
-**Shipped driving-hours packs:** EC 561 (see [`ec-561-truck-rest.md`](ec-561-truck-rest.md))
-and US FMCSA property-carrying (see [`fmcsa-truck-rest.md`](fmcsa-truck-rest.md)),
-with Unknown → decline-by-default.
+**Shipped location-gated packs / gates:** EC 561 and US FMCSA property-carrying
+(Unknown → decline); speed-camera display allow-list NO/UK with first-run
+opt-in (§1.3). Seasonal OSM conditionals are tag-driven, not a jurisdiction pack.
 
 ---
 

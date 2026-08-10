@@ -1,6 +1,8 @@
 //! Offline routing: graph build, elevation reweighting, rest/safety helpers.
 
 pub mod basemap;
+pub mod conditional;
+pub mod dnt_winter;
 pub mod ebike_route;
 pub mod elevation;
 pub mod eta;
@@ -12,6 +14,7 @@ pub mod osm_update;
 pub mod region;
 pub mod rest;
 pub mod safety;
+pub mod speed_camera;
 pub mod terrain;
 pub mod wetland;
 pub mod workers;

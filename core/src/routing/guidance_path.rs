@@ -959,6 +959,9 @@ mod tests {
             is_ferry: false,
             is_boardwalk_crossing: false,
             is_roundabout,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
         }
     }
 

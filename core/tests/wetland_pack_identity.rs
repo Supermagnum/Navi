@@ -1,14 +1,19 @@
 //! Pack vs PBF wetland identity: same Soft/Hard classification and boardwalk
 //! carve-out counters when hazards are applied to the same foot graph.
+//!
+//! Builds the wetland archive directly (not via region convert): tiled Ostlandet/
+//! Hedmark converts intentionally skip wetland emission for 4GB-class RAM margin.
 
 use std::path::PathBuf;
 use std::time::Instant;
 
 use driver_break_core::routing::graph::{RouteGraph, RoutingProfile};
 use driver_break_core::routing::indexed::{
-    convert_region_packs, load_wetland_pack, ConvertOptions, FlatWetlandPack,
+    load_wetland_pack, write_archive_atomic, FlatWetlandPack, Preamble, MAGIC_WETLAND,
+    WETLAND_FORMAT_VERSION,
 };
 use driver_break_core::routing::wetland::{tags_indicate_boardwalk, WetlandClass, WetlandIndex};
+use rkyv::rancor::Error as RkyvError;
 
 fn hedmark_pbf() -> Option<PathBuf> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -22,18 +27,24 @@ fn wetland_pack_matches_pbf_class_and_boardwalk_stats() {
         eprintln!("skip: hedmark PBF missing");
         return;
     };
-    let dir = tempfile::tempdir().expect("tmpdir");
-    let mut opts = ConvertOptions::new(dir.path(), &pbf);
-    opts.profiles = vec![RoutingProfile::Foot];
-    let report = convert_region_packs(&opts).expect("convert");
-    assert!(report.wetland_rings > 0);
-
     // Trip-scale bbox around Esso Myklegård → Atnbrufossen.
     let bbox = [60.452_f64, 9.837, 62.248, 11.765];
     let t0 = Instant::now();
     let from_pbf = WetlandIndex::load_from_pbf_bbox(&pbf, bbox).expect("pbf wetlands");
     let pbf_ms = t0.elapsed().as_secs_f64() * 1000.0;
-    let wet_path = dir.path().join(&report.wetland_file);
+    assert!(from_pbf.ring_count() > 0);
+
+    let dir = tempfile::tempdir().expect("tmpdir");
+    let wet_path = dir.path().join("hedmark-latest.navi-wetland.rkyv");
+    let wet_pack = FlatWetlandPack::from_wetland_index(&from_pbf);
+    let bytes = rkyv::to_bytes::<RkyvError>(&wet_pack).expect("serialize wetland");
+    write_archive_atomic(
+        &wet_path,
+        Preamble::new(MAGIC_WETLAND, WETLAND_FORMAT_VERSION),
+        bytes.as_ref(),
+    )
+    .expect("write wetland");
+
     let t1 = Instant::now();
     let from_pack = load_wetland_pack(&wet_path, Some(bbox)).expect("pack wetlands");
     let pack_ms = t1.elapsed().as_secs_f64() * 1000.0;

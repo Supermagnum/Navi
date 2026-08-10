@@ -10,6 +10,8 @@ object MapHudPrefs {
     private const val KEY_BREAK_AS_DISTANCE = "break_as_distance"
     private const val KEY_PREFER_METRIC = "prefer_metric"
     private const val KEY_OPT_IN_3D = "opt_in_3d"
+    private const val KEY_SPEED_CAMERA_OPT_IN = "speed_camera_opt_in"
+    private const val KEY_SPEED_CAMERA_PROMPT_SHOWN = "speed_camera_prompt_shown"
     private const val KEY_CAMERA_TILT = "camera_tilt_deg"
     private const val KEY_PMTILES_BASE_URL = "pmtiles_base_url"
     private const val KEY_GEOFABRIK_PATH = "geofabrik_path"
@@ -153,6 +155,42 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_OPT_IN_3D, enabled)
+            .apply()
+    }
+
+    /**
+     * Speed-camera warnings (display only). Default off; first-run prompt in
+     * allowed jurisdictions (NO/UK). Never enable silently.
+     */
+    fun loadSpeedCameraOptIn(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_SPEED_CAMERA_OPT_IN, false)
+
+    fun saveSpeedCameraOptIn(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_SPEED_CAMERA_OPT_IN, enabled)
+            .apply()
+    }
+
+    fun loadSpeedCameraPromptShown(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_SPEED_CAMERA_PROMPT_SHOWN, false)
+
+    fun saveSpeedCameraPromptShown(
+        context: Context,
+        shown: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_SPEED_CAMERA_PROMPT_SHOWN, shown)
             .apply()
     }
 

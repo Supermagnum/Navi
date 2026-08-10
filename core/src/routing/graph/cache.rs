@@ -112,6 +112,12 @@ struct CachedGraphEdge {
     is_boardwalk_crossing: bool,
     #[serde(default)]
     is_roundabout: bool,
+    #[serde(default)]
+    motor_vehicle_conditional: Option<String>,
+    #[serde(default)]
+    access_conditional: Option<String>,
+    #[serde(default)]
+    maxspeed_conditional: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -193,6 +199,9 @@ pub fn save_reweighted_graph(
                 is_ferry: edge.is_ferry,
                 is_boardwalk_crossing: edge.is_boardwalk_crossing,
                 is_roundabout: edge.is_roundabout,
+                motor_vehicle_conditional: edge.motor_vehicle_conditional.clone(),
+                access_conditional: edge.access_conditional.clone(),
+                maxspeed_conditional: edge.maxspeed_conditional.clone(),
             })
             .collect(),
     };
@@ -335,6 +344,9 @@ fn reconstruct_graph(payload: CachedRouteGraph) -> RouteGraph {
             is_ferry: edge.is_ferry,
             is_boardwalk_crossing: edge.is_boardwalk_crossing,
             is_roundabout: edge.is_roundabout,
+            motor_vehicle_conditional: edge.motor_vehicle_conditional,
+            access_conditional: edge.access_conditional,
+            maxspeed_conditional: edge.maxspeed_conditional,
         })
         .collect();
 
@@ -386,6 +398,9 @@ mod tests {
             is_ferry: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
     }

@@ -1849,6 +1849,47 @@ pub fn plan_car_route(
     vehicle: FfiVehicleLimits,
     prefer_official_networks: bool,
 ) -> CorridorRouteResult {
+    plan_car_route_at(
+        pbf_path,
+        elev_dir,
+        cache_dir,
+        start_lat,
+        start_lon,
+        end_lat,
+        end_lon,
+        use_eco,
+        profile,
+        avoid_motorways,
+        avoid_tolls,
+        avoid_ferries,
+        vehicle,
+        prefer_official_networks,
+        None,
+    )
+}
+
+/// Same as [`plan_car_route`], with optional local departure for seasonal closures.
+///
+/// `departure_local_iso` accepts `YYYY-MM-DDTHH:MM:SS` (no timezone). When `None`,
+/// the planner uses the device local clock (same as [`plan_car_route`]).
+#[uniffi::export]
+pub fn plan_car_route_at(
+    pbf_path: String,
+    elev_dir: String,
+    cache_dir: String,
+    start_lat: f64,
+    start_lon: f64,
+    end_lat: f64,
+    end_lon: f64,
+    use_eco: bool,
+    profile: TravelProfile,
+    avoid_motorways: bool,
+    avoid_tolls: bool,
+    avoid_ferries: bool,
+    vehicle: FfiVehicleLimits,
+    prefer_official_networks: bool,
+    departure_local_iso: Option<String>,
+) -> CorridorRouteResult {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         plan_car_route_inner(
             pbf_path,
@@ -1865,6 +1906,7 @@ pub fn plan_car_route(
             avoid_ferries,
             vehicle,
             prefer_official_networks,
+            departure_local_iso,
         )
     })) {
         Ok(result) => result,
@@ -1872,6 +1914,16 @@ pub fn plan_car_route(
             "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: native panic during plan_car_route\n".into(),
         ),
     }
+}
+
+fn parse_departure_local(iso: Option<&str>) -> Option<chrono::NaiveDateTime> {
+    let s = iso?.trim();
+    if s.is_empty() {
+        return None;
+    }
+    chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
+        .ok()
 }
 
 fn plan_car_route_inner(
@@ -1889,6 +1941,7 @@ fn plan_car_route_inner(
     avoid_ferries: bool,
     vehicle: FfiVehicleLimits,
     prefer_official_networks: bool,
+    departure_local_iso: Option<String>,
 ) -> CorridorRouteResult {
     let empty = empty_corridor;
 
@@ -1904,11 +1957,13 @@ fn plan_car_route_inner(
     let _ = plan.install_rayon_pool();
 
     let vehicle_limits = ffi_vehicle_to_limits(&vehicle);
+    let departure_local = parse_departure_local(departure_local_iso.as_deref());
     let route_opts = RouteOptions {
         avoid_motorways,
         avoid_tolls,
         avoid_ferries,
         vehicle: vehicle_limits.clone(),
+        departure_local,
     };
 
     let mut report = String::new();
@@ -2024,6 +2079,10 @@ fn plan_car_route_inner(
         graph.nodes.len(),
         graph.edges.len()
     ));
+    // Emit before snap/A*: winter OD on a seasonally closed mountain road can fail
+    // snap, but the pack-hit graph still carries the closures we need to report.
+    let seasonal_n = graph.seasonal_closure_excluded_in_graph(&route_opts);
+    report.push_str(&format!("seasonal_closure_excluded_edges={seasonal_n}\n"));
 
     driver_break_core::download::progress::set(3, Some(5), "Planning route: finding path…");
     let (s, snap_start_m) = match nearest(&graph, start_lat, start_lon) {
@@ -2892,12 +2951,23 @@ pub fn plan_hiking_route(
     let hut_via_ms = timer.lap_ms();
     let dist_km = distance_m / 1000.0;
     let route_segments_json = hybrid.segments_json();
-    let off_trail_advisory = if hybrid.off_trail_m > 1.0 {
+    let mut off_trail_advisory = if hybrid.off_trail_m > 1.0 {
         report.push_str(&format!("ADVISORY: {OFF_TRAIL_ADVISORY}\n"));
         OFF_TRAIL_ADVISORY.to_string()
     } else {
         String::new()
     };
+    // Informational only — DNT/OSM has no reliable winter closure tags.
+    if let Some(winter) =
+        driver_break_core::routing::dnt_winter::dnt_winter_advisory_for_month(None)
+    {
+        report.push_str(&format!("ADVISORY: {winter}\n"));
+        if off_trail_advisory.is_empty() {
+            off_trail_advisory = winter.to_string();
+        } else {
+            off_trail_advisory = format!("{off_trail_advisory} · {winter}");
+        }
+    }
 
     if prefer_official_networks {
         let way_ids: std::collections::HashSet<i64> = full_path
@@ -3235,7 +3305,6 @@ pub fn ensure_indexed_maps(pbf_path: String, data_dir: String, elev_dir: Option<
     use driver_break_core::routing::graph::RoutingProfile;
     use driver_break_core::routing::indexed::{
         convert_region_packs, manifest_path, ConvertOptions, NaviManifest, PackStatus,
-        WETLAND_FORMAT_VERSION,
     };
 
     let pbf = PathBuf::from(&pbf_path);
@@ -3264,12 +3333,9 @@ pub fn ensure_indexed_maps(pbf_path: String, data_dir: String, elev_dir: Option<
     let man_path = manifest_path(&data, &stem);
     if man_path.is_file() {
         if let Ok(man) = NaviManifest::load(&man_path) {
-            let wetland_ok = man
-                .wetland_file
-                .as_ref()
-                .is_some_and(|f| data.join(f).is_file())
-                && man.wetland_format_version == WETLAND_FORMAT_VERSION;
-            if man.status_for_pbf(&data, &pbf) == PackStatus::Ready && wetland_ok {
+            // Wetland is optional (motor plans do not require it). Only force a
+            // rebuild when graph/POI packs are missing, stale, or version-mismatched.
+            if man.status_for_pbf(&data, &pbf) == PackStatus::Ready {
                 return format!("PASS\ncache_hit=true\nmanifest={}\n", man_path.display());
             }
         }
@@ -3286,13 +3352,15 @@ pub fn ensure_indexed_maps(pbf_path: String, data_dir: String, elev_dir: Option<
     ];
     match convert_region_packs(&opts) {
         Ok(r) => format!(
-            "PASS\ncache_hit=false\nconvert_ms={:.1}\nnodes={}\nedges={}\npois={}\nbarrier_segs={}\nwetland_rings={}\nmanifest={}\n",
+            "PASS\ncache_hit=false\nconvert_ms={:.1}\nnodes={}\nedges={}\npois={}\nbarrier_segs={}\nwetland_rings={}\ngraph_tiles={}\npeak_rss_mb={:.1}\nmanifest={}\n",
             r.convert_ms,
             r.nodes,
             r.edges,
             r.pois,
             r.barrier_segs,
             r.wetland_rings,
+            r.graph_tiles,
+            r.peak_rss_mb,
             r.manifest_file
         ),
         Err(e) => format!("FAIL: indexed convert: {e:#}\n"),
@@ -4188,6 +4256,7 @@ pub fn format_route_avoidance_report(
         avoid_tolls,
         avoid_ferries,
         vehicle: None,
+        departure_local: None,
     };
     driver_break_core::format_route_avoidance_report(&opts, 0, priority_path_share_pct)
 }
@@ -4229,6 +4298,110 @@ pub fn approach_urgency_m() -> f64 {
 #[uniffi::export]
 pub fn approach_hide_m() -> f64 {
     driver_break_core::APPROACH_HIDE_M
+}
+
+/// True when speed-camera display may be offered (NO/UK opt-in jurisdictions).
+#[uniffi::export]
+pub fn speed_camera_jurisdiction_allows(lat: f64, lon: f64) -> bool {
+    use driver_break_core::routing::speed_camera::{
+        resolve_speed_camera_jurisdiction_at, SpeedCameraJurisdiction,
+    };
+    resolve_speed_camera_jurisdiction_at(lat, lon) == SpeedCameraJurisdiction::AllowedOptIn
+}
+
+/// Load speed cameras from a PBF as JSON (point + average-speed records).
+#[uniffi::export]
+pub fn load_speed_cameras_json(pbf_path: String) -> String {
+    match driver_break_core::routing::speed_camera::load_speed_cameras_from_pbf(&pbf_path) {
+        Ok(cams) => {
+            let rows: Vec<serde_json::Value> = cams
+                .into_iter()
+                .map(|c| {
+                    serde_json::json!({
+                        "osm_id": c.osm_id,
+                        "lat": c.lat,
+                        "lon": c.lon,
+                        "kind": match c.kind {
+                            driver_break_core::routing::speed_camera::SpeedCameraKind::Point => "point",
+                            driver_break_core::routing::speed_camera::SpeedCameraKind::AverageSpeed => "average_speed",
+                        },
+                        "maxspeed_kmh": c.maxspeed_kmh,
+                        "maxspeed_conditional": c.maxspeed_conditional,
+                        "zone_from_lat": c.zone_from_lat,
+                        "zone_from_lon": c.zone_from_lon,
+                        "zone_to_lat": c.zone_to_lat,
+                        "zone_to_lon": c.zone_to_lon,
+                        "zone_length_m": c.zone_length_m,
+                    })
+                })
+                .collect();
+            serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
+        }
+        Err(e) => format!(
+            r#"{{"error":{}}}"#,
+            serde_json::to_string(&e.to_string()).unwrap_or_default()
+        ),
+    }
+}
+
+/// Nearest speed-camera warning JSON for live HUD (empty object when none).
+#[uniffi::export]
+pub fn nearest_speed_camera_warning_json(
+    cameras_json: String,
+    lat: f64,
+    lon: f64,
+    opted_in: bool,
+) -> String {
+    use driver_break_core::routing::speed_camera::{
+        nearest_speed_camera_warning, SpeedCameraKind, SpeedCameraRecord,
+    };
+    let Ok(raw) = serde_json::from_str::<Vec<serde_json::Value>>(&cameras_json) else {
+        return "{}".into();
+    };
+    let mut cams = Vec::new();
+    for v in raw {
+        let kind = match v.get("kind").and_then(|x| x.as_str()).unwrap_or("point") {
+            "average_speed" => SpeedCameraKind::AverageSpeed,
+            _ => SpeedCameraKind::Point,
+        };
+        cams.push(SpeedCameraRecord {
+            osm_id: v.get("osm_id").and_then(|x| x.as_i64()).unwrap_or(0),
+            lat: v.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            lon: v.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            kind,
+            maxspeed_kmh: v.get("maxspeed_kmh").and_then(|x| x.as_f64()),
+            maxspeed_conditional: v
+                .get("maxspeed_conditional")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string()),
+            zone_from_lat: v.get("zone_from_lat").and_then(|x| x.as_f64()),
+            zone_from_lon: v.get("zone_from_lon").and_then(|x| x.as_f64()),
+            zone_to_lat: v.get("zone_to_lat").and_then(|x| x.as_f64()),
+            zone_to_lon: v.get("zone_to_lon").and_then(|x| x.as_f64()),
+            zone_length_m: v.get("zone_length_m").and_then(|x| x.as_f64()),
+        });
+    }
+    let Some(w) = nearest_speed_camera_warning(&cams, lat, lon, opted_in, None) else {
+        return "{}".into();
+    };
+    let phase = match w.phase {
+        driver_break_core::ApproachPhase::Hidden => "hidden",
+        driver_break_core::ApproachPhase::Appear => "appear",
+        driver_break_core::ApproachPhase::Urgency => "urgency",
+    };
+    serde_json::json!({
+        "kind": match w.kind {
+            SpeedCameraKind::Point => "point",
+            SpeedCameraKind::AverageSpeed => "average_speed",
+        },
+        "phase": phase,
+        "distance_m": w.distance_m,
+        "applicable_limit_kmh": w.applicable_limit_kmh,
+        "zone_remaining_m": w.zone_remaining_m,
+        "zone_time_budget_s": w.zone_time_budget_s,
+        "label": w.label,
+    })
+    .to_string()
 }
 
 /// Human highway-class label when OSM name/ref are missing (never a raw tag).

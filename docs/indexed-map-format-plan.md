@@ -443,9 +443,9 @@ Phase 3 plan **approved** 2026-08-07. Status by milestone:
 |---|---|---|
 | **M0** | **Done** | `core/src/routing/indexed/` — 8-byte preamble (`magic`+`format_version`), manifest JSON, atomic `.partial`→rename. Unit tests: preamble roundtrip, atomic write, version gate. |
 | **M1** | **Done** | `navi-indexed-convert` + `convert_region_packs`. SM-P613 Hedmark: convert **41.5 s** → 39 MiB graph + 8.1 MiB poi-barrier + manifest. Load+bbox materialize **~370 ms** graph / **~134 ms** poi; version mismatch → `VersionMismatch` (no payload interpret). Host convert ~15.4 s; load ~142 / 62 ms. |
-| **M2** | **Wired** | `ensure_indexed_maps` / `indexed_maps_status` UniFFI; Tools download path calls convert after place index; “Rebuild indexed maps (local PBF)” button. Needs fresh Tools UI download confirmation on device (Ostlandet wall-time risk). |
+| **M2** | **Done (SM-P613)** | `ensure_indexed_maps` / `indexed_maps_status` UniFFI; Tools download starts **non-blocking** background convert (`IndexedMapsBackground`) after place index — region usable immediately via bbox/PBF fallback; Tools shows passive status. Ostlandet full tiled convert ~10–11 min on SM-P613; see **Known limitation** below. |
 | **M3** | **Done (SM-P613)** | Hedmark Esso Myklegård→Atnbrufossen via `navi-indexed-plan-bench`: **pack-hit** wall **1844 ms**, `build_s=0.54`, `pack_hit=true`/`poi_pack_hit=true`, 162.51 km; **genuine cold missing-pack** (wiped `.navigph`) wall **31159 ms**, `build_s=17.73`, both pack flags false, same 162.51 km. |
-| **M4** | **Wired** | Rebuild-from-local-PBF affordance in Tools; status detection via manifest. |
+| **M4** | **Done (SM-P613)** | Rebuild-from-local-PBF in Tools (background); status via manifest; v2→v3 Ostlandet tiled regen without Geofabrik re-fetch; Friisvegen seasonal pack-hit verified on region tiles. |
 | **M5** | **Done (SM-P613)** | `load_or_build_reweighted*` neither reads nor writes `.navigph`. M5 binary cold fallback: wall **30668 ms**, `cache_hit=false`, **cache dir empty** (no new `.navigph`); pack-hit still **1662 ms** / 162.51 km. Corridor instrumented test retargeted to packs. |
 | **M6** | **Done (SM-P613 spot)** | All six motor profiles + Hiking pack-hit on Hedmark (see evidence). Car/Moto/MH/Truck ~1.5 s / 162.5 km; Bicycle/e-bike ~1.7 s / 160.7 km. Hiking wetland residual closed in **Phase 4b**. |
 
@@ -454,7 +454,21 @@ Phase 3 plan **approved** 2026-08-07. Status by milestone:
 1. **Graph filename is profile-suffixed** (`{stem}.navi-graph-car.rkyv`, `-truck`, `-foot`, `-bicycle`) listed in the manifest. Required because `RoutingProfile` filters differ; singular `{stem}.navi-graph.rkyv` could not serve Car+Truck+Foot+Bicycle.
 2. **Converter uses `build_from_pbf_bbox` over the extract’s node extents**, not `osm4routing` full-file read — full read panics (`Missing node`) on Hedmark and is the path already documented as OOM-unsafe for Ostlandet.
 3. **Plan-time materialize clips the region pack to the trip bbox** when building `RouteGraph`. Storing a region-wide pack matches Phase 3; loading the entire Ostlandet graph into RAM does not (existing `bbox_build.rs` comment). Zero-copy A\* over the map remains a future optimization; bbox materialize already clears Phase 0 on Hedmark (~0.5 s combined vs ~28 s cold).
-4. **Wetland is a separate archive** (`{stem}.navi-wetland.rkyv`, magic `NVWL`) — independent of POI/barrier; boardwalk carve-out remains on graph edges (`is_boardwalk_crossing`), not in the wetland pack.
+4. **Wetland is a separate archive** (`{stem}.navi-wetland.rkyv`, magic `NVWL`) — independent of POI/barrier; boardwalk carve-out remains on graph edges (`is_boardwalk_crossing`), not in the wetland pack. Tiled (region-scale) converts **skip wetland emission** so 4GB-class devices survive graph+POI peaks; monolith corridors still attempt wetland.
+5. **Large regions use spatial graph tiles** (~1° cells, `graph_tiles` in the manifest) with way-first multi-tile PBF passes (not 3×N tiles×N profiles). POI/barrier extracted once after all profile graphs. Truck aliases car tiles.
+
+### Known limitation — region-scale convert memory (open)
+
+**Region-scale pack conversion has thin memory margin on lower-end 4GB-class
+hardware.** Full wording and product status live in
+[`../README.md` Known issues](../README.md#known-issues). Summary of the
+measured fact (SM-P613, ~3.5GB RAM, MainActivity foreground, Østlandet
+background tiled convert): completed with no crash / no LMK kill of the app;
+lowest system `MemAvailable` ~**329 MiB**; ~**250 MiB** extra swap used;
+`TRIM_MEMORY_RUNNING_CRITICAL` observed on other processes during the POI
+phase. Survived pressure, not a comfortable margin — further mitigation not
+yet implemented. Region **download and immediate use** are unaffected (PBF
+fallback); risk is specific to background pack conversion.
 
 ### Module / tools
 
@@ -463,6 +477,7 @@ Phase 3 plan **approved** 2026-08-07. Status by milestone:
 | `core/src/routing/indexed/` | Format, convert, load (graph / poi-barrier / wetland) |
 | `navi-ffi` `ensure_indexed_maps` / `indexed_maps_status` | Tools + migration |
 | Graph pack **v2** edge shape CSR (`edge_shape_offsets` + lon/lat) | Map overlay follows OSM curves on `pack_hit` (v1 was junction chords only) |
+| Graph pack **v3** raw `motor_vehicle:conditional` / `access:conditional` / `maxspeed:conditional` strings | Plan-time seasonal closure eval (not a convert-time bool). **v1 limitation:** multi-day trips that cross a season boundary evaluate only the planned departure instant. |
 | `navi-indexed-convert` | Offline converter CLI |
 | `navi-indexed-bench` / `navi-wetland-bench` | Load + wetland PBF vs pack timing |
 | `navi-indexed-plan-bench` | End-to-end plan pack-hit / fallback |
@@ -536,3 +551,5 @@ shape before building the production path.
 | 2026-08-07 | SM-P613 M5 no-write confirm | Cold fallback **30668 ms**; **no** `.navigph` created; pack-hit **1662 ms** |
 | 2026-08-07 | SM-P613 M6 multi-profile | Car/Moto/MH/Truck ~1.5 s pack-hit; Bike/e-bike ~1.7 s; Hiking short pack graph 0.29 s (wetland residual ~53 s wall) |
 | 2026-08-07 | SM-P613 Phase 4b wetland PBF vs pack | **18616 ms** → **93.5 ms** (~199×); long hike completes **61 s** with `wetland_pack_hit`; **4b GO** |
+| 2026-08-10 | SM-P613 Ostlandet tiled v3 convert (UI fg) | ~657 s; 60 tiles; min `MemAvailable` **~329 MiB**; swap +~250 MiB; TRIM CRITICAL observed — **open memory margin** (README Known issues) |
+| 2026-08-10 | SM-P613 Ostlandet pack-hit Friisvegen | summer `pack_hit=true` seasonal=0; winter `pack_hit=true` seasonal=36 |

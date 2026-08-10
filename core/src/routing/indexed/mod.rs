@@ -22,9 +22,9 @@ pub use load::{
     try_load_wetland_for_plan, PackLoadError, PackedPlanData,
 };
 pub use manifest::{
-    graph_pack_filename, manifest_path, poi_barrier_pack_filename, wetland_pack_filename,
-    NaviManifest, PackStatus, GRAPH_PROFILE_BICYCLE, GRAPH_PROFILE_CAR, GRAPH_PROFILE_FOOT,
-    GRAPH_PROFILE_TRUCK,
+    bbox_intersects, graph_pack_filename, graph_tile_filename, manifest_path,
+    poi_barrier_pack_filename, wetland_pack_filename, GraphTileEntry, NaviManifest, PackStatus,
+    GRAPH_PROFILE_BICYCLE, GRAPH_PROFILE_CAR, GRAPH_PROFILE_FOOT, GRAPH_PROFILE_TRUCK,
 };
 pub use poi_barrier_pack::{FlatPoiBarrierPack, MAGIC_POI_BARRIER, POI_BARRIER_FORMAT_VERSION};
 pub use wetland_pack::{FlatWetlandPack, MAGIC_WETLAND, WETLAND_FORMAT_VERSION};

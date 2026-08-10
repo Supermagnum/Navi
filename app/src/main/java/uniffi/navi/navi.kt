@@ -912,6 +912,14 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1007,11 +1015,15 @@ fun uniffi_navi_checksum_func_load_prefer_pilgrim_routes(
 ): Short
 fun uniffi_navi_checksum_func_load_profile_poi_radii(
 ): Short
+fun uniffi_navi_checksum_func_load_speed_cameras_json(
+): Short
 fun uniffi_navi_checksum_func_load_truck_rest_settings(
 ): Short
 fun uniffi_navi_checksum_func_load_vehicle_limits(
 ): Short
 fun uniffi_navi_checksum_func_nearby_places(
+): Short
+fun uniffi_navi_checksum_func_nearest_speed_camera_warning_json(
 ): Short
 fun uniffi_navi_checksum_func_offset_lat_lon_m(
 ): Short
@@ -1020,6 +1032,8 @@ fun uniffi_navi_checksum_func_osm_update_staleness_days(
 fun uniffi_navi_checksum_func_osm_weekly_reminder_due(
 ): Short
 fun uniffi_navi_checksum_func_plan_car_route(
+): Short
+fun uniffi_navi_checksum_func_plan_car_route_at(
 ): Short
 fun uniffi_navi_checksum_func_plan_hiking_route(
 ): Short
@@ -1102,6 +1116,8 @@ fun uniffi_navi_checksum_func_set_osm_weekly_reminder(
 fun uniffi_navi_checksum_func_set_route_plan_timing_enabled(
 ): Short
 fun uniffi_navi_checksum_func_set_truck_exceptional_extension_armed(
+): Short
+fun uniffi_navi_checksum_func_speed_camera_jurisdiction_allows(
 ): Short
 fun uniffi_navi_checksum_func_station_timeout_max_s(
 ): Short
@@ -1274,11 +1290,15 @@ fun uniffi_navi_fn_func_load_prefer_pilgrim_routes(`dataDir`: RustBuffer.ByValue
 ): Byte
 fun uniffi_navi_fn_func_load_profile_poi_radii(`dataDir`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_load_speed_cameras_json(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_truck_rest_settings(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_vehicle_limits(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_nearby_places(`indexDbPath`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_nearest_speed_camera_warning_json(`camerasJson`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`optedIn`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_offset_lat_lon_m(`lat`: Double,`lon`: Double,`eastM`: Double,`northM`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1287,6 +1307,8 @@ fun uniffi_navi_fn_func_osm_update_staleness_days(uniffi_out_err: UniffiRustCall
 fun uniffi_navi_fn_func_osm_weekly_reminder_due(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`avoidTolls`: Byte,`avoidFerries`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_plan_car_route_at(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`avoidTolls`: Byte,`avoidFerries`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`departureLocalIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_plan_hiking_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`waypointsJson`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`preferPilgrimRoutes`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1369,6 +1391,8 @@ fun uniffi_navi_fn_func_set_osm_weekly_reminder(`dataDir`: RustBuffer.ByValue,`e
 fun uniffi_navi_fn_func_set_route_plan_timing_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_navi_fn_func_set_truck_exceptional_extension_armed(`dataDir`: RustBuffer.ByValue,`armed`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_navi_fn_func_speed_camera_jurisdiction_allows(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_station_timeout_max_s(uniffi_out_err: UniffiRustCallStatus, 
 ): Long
@@ -1622,6 +1646,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_load_profile_poi_radii() != 23658.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_load_speed_cameras_json() != 9336.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_load_truck_rest_settings() != 11002.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1629,6 +1656,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_nearby_places() != 65514.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_nearest_speed_camera_warning_json() != 25638.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_offset_lat_lon_m() != 49727.toShort()) {
@@ -1641,6 +1671,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_plan_car_route() != 33864.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_plan_car_route_at() != 21232.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_plan_hiking_route() != 56165.toShort()) {
@@ -1764,6 +1797,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_set_truck_exceptional_extension_armed() != 17978.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_speed_camera_jurisdiction_allows() != 51350.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_station_timeout_max_s() != 23541.toShort()) {
@@ -4251,6 +4287,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     )
     }
     
+
+        /**
+         * Load speed cameras from a PBF as JSON (point + average-speed records).
+         */ fun `loadSpeedCamerasJson`(`pbfPath`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_load_speed_cameras_json(
+        FfiConverterString.lower(`pbfPath`),_status)
+}
+    )
+    }
+    
  fun `loadTruckRestSettings`(`dataDir`: kotlin.String): FfiTruckRestSettings {
             return FfiConverterTypeFfiTruckRestSettings.lift(
     uniffiRustCall() { _status ->
@@ -4277,6 +4325,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_nearby_places(
         FfiConverterString.lower(`indexDbPath`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterDouble.lower(`radiusM`),FfiConverterUInt.lower(`limit`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Nearest speed-camera warning JSON for live HUD (empty object when none).
+         */ fun `nearestSpeedCameraWarningJson`(`camerasJson`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double, `optedIn`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_nearest_speed_camera_warning_json(
+        FfiConverterString.lower(`camerasJson`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterBoolean.lower(`optedIn`),_status)
 }
     )
     }
@@ -4322,6 +4382,21 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_plan_car_route(
         FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`elevDir`),FfiConverterString.lower(`cacheDir`),FfiConverterDouble.lower(`startLat`),FfiConverterDouble.lower(`startLon`),FfiConverterDouble.lower(`endLat`),FfiConverterDouble.lower(`endLon`),FfiConverterBoolean.lower(`useEco`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterBoolean.lower(`avoidMotorways`),FfiConverterBoolean.lower(`avoidTolls`),FfiConverterBoolean.lower(`avoidFerries`),FfiConverterTypeFfiVehicleLimits.lower(`vehicle`),FfiConverterBoolean.lower(`preferOfficialNetworks`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Same as [`plan_car_route`], with optional local departure for seasonal closures.
+         *
+         * `departure_local_iso` accepts `YYYY-MM-DDTHH:MM:SS` (no timezone). When `None`,
+         * the planner uses the device local clock (same as [`plan_car_route`]).
+         */ fun `planCarRouteAt`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean, `profile`: TravelProfile, `avoidMotorways`: kotlin.Boolean, `avoidTolls`: kotlin.Boolean, `avoidFerries`: kotlin.Boolean, `vehicle`: FfiVehicleLimits, `preferOfficialNetworks`: kotlin.Boolean, `departureLocalIso`: kotlin.String?): CorridorRouteResult {
+            return FfiConverterTypeCorridorRouteResult.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_plan_car_route_at(
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`elevDir`),FfiConverterString.lower(`cacheDir`),FfiConverterDouble.lower(`startLat`),FfiConverterDouble.lower(`startLon`),FfiConverterDouble.lower(`endLat`),FfiConverterDouble.lower(`endLon`),FfiConverterBoolean.lower(`useEco`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterBoolean.lower(`avoidMotorways`),FfiConverterBoolean.lower(`avoidTolls`),FfiConverterBoolean.lower(`avoidFerries`),FfiConverterTypeFfiVehicleLimits.lower(`vehicle`),FfiConverterBoolean.lower(`preferOfficialNetworks`),FfiConverterOptionalString.lower(`departureLocalIso`),_status)
 }
     )
     }
@@ -4770,6 +4845,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_set_truck_exceptional_extension_armed(
         FfiConverterString.lower(`dataDir`),FfiConverterBoolean.lower(`armed`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * True when speed-camera display may be offered (NO/UK opt-in jurisdictions).
+         */ fun `speedCameraJurisdictionAllows`(`lat`: kotlin.Double, `lon`: kotlin.Double): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_speed_camera_jurisdiction_allows(
+        FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),_status)
 }
     )
     }

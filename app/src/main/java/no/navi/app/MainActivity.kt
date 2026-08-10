@@ -115,7 +115,6 @@ import uniffi.navi.downloadProgressSnapshot
 import uniffi.navi.ecoModeDefault
 import uniffi.navi.ecoModeToggleable
 import uniffi.navi.elevationAt
-import uniffi.navi.ensureIndexedMaps
 import uniffi.navi.ensurePlaceIndex
 import uniffi.navi.formatRouteAvoidanceReport
 import uniffi.navi.geofabrikLatestPbfUrl
@@ -447,10 +446,15 @@ private fun NaviMapScreen() {
     var renamePlaceId by remember { mutableStateOf<String?>(null) }
     var renamePlaceDraft by remember { mutableStateOf("") }
     var approachGuidance by remember { mutableStateOf(ApproachGuidanceState()) }
+    var speedCameraOptIn by remember { mutableStateOf(MapHudPrefs.loadSpeedCameraOptIn(context)) }
+    var showSpeedCameraPrompt by remember { mutableStateOf(false) }
+    var speedCamerasJson by remember { mutableStateOf("[]") }
+    var speedCameraWarning by remember { mutableStateOf(SpeedCameraWarningState()) }
     var hideChrome by remember { mutableStateOf(false) }
     var hideSearch by remember { mutableStateOf(false) }
     var regionDownloadProgress by remember { mutableStateOf("") }
     var downloadPolling by remember { mutableStateOf(false) }
+    var indexedMapsUiLine by remember { mutableStateOf("") }
     var planningRoute by remember { mutableStateOf(false) }
     var routePlanProgress by remember { mutableStateOf("") }
     var recalculatingRoute by remember { mutableStateOf(false) }
@@ -1014,6 +1018,30 @@ private fun NaviMapScreen() {
         return candidates.firstOrNull { it.isFile }
     }
 
+    LaunchedEffect(Unit) {
+        val lat = mapState.gpsLat
+        val lon = mapState.gpsLon
+        if (
+            !MapHudPrefs.loadSpeedCameraPromptShown(context) &&
+            uniffi.navi.speedCameraJurisdictionAllows(lat, lon)
+        ) {
+            showSpeedCameraPrompt = true
+        }
+    }
+    LaunchedEffect(speedCameraOptIn, dataDir) {
+        if (!speedCameraOptIn) {
+            speedCamerasJson = "[]"
+            speedCameraWarning = SpeedCameraWarningState()
+            return@LaunchedEffect
+        }
+        val pbf = resolveRegionPbf() ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            runCatching {
+                speedCamerasJson = uniffi.navi.loadSpeedCamerasJson(pbf.absolutePath)
+            }
+        }
+    }
+
     fun graphCacheDirForPbf(pbf: File): File {
         val graphTag =
             when (profile) {
@@ -1132,6 +1160,10 @@ private fun NaviMapScreen() {
                     snap.label.contains("DEM", ignoreCase = true)
                 ) {
                     pmtilesProgress = line
+                } else if (snap.label.contains("indexed", ignoreCase = true) ||
+                    snap.label.contains("Building indexed", ignoreCase = true)
+                ) {
+                    indexedMapsUiLine = "Indexed maps (background): $line"
                 } else {
                     regionDownloadProgress = line
                 }
@@ -1147,6 +1179,24 @@ private fun NaviMapScreen() {
                 }
             }
             delay(400)
+        }
+    }
+
+    // Passive indexed-maps status; auto-start background rebuild when packs are stale.
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            val pbf =
+                dataDir.listFiles()?.firstOrNull {
+                    it.isFile && it.name.endsWith(".osm.pbf")
+                }
+            if (pbf != null) {
+                val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
+                IndexedMapsBackground.ensureStarted(scope, pbf, dataDir, elev)
+                indexedMapsUiLine = IndexedMapsBackground.uiLine(pbf, dataDir)
+            } else {
+                indexedMapsUiLine = ""
+            }
+            delay(if (IndexedMapsBackground.isRunning()) 500 else 2_500)
         }
     }
 
@@ -1410,6 +1460,21 @@ private fun NaviMapScreen() {
                         approachGuidance = ApproachGuidanceState()
                         NaviMapTestHooks.lastApproachPhase = ApproachUiPhase.Hidden
                         NaviMapTestHooks.lastApproachIconKey = null
+                    }
+                    if (speedCameraOptIn && speedCamerasJson != "[]") {
+                        val warnJson =
+                            uniffi.navi.nearestSpeedCameraWarningJson(
+                                speedCamerasJson,
+                                loc.latitude,
+                                loc.longitude,
+                                true,
+                            )
+                        speedCameraWarning =
+                            speedCameraWarningFromJson(warnJson).copy(
+                                preferMetric = driveHud.preferMetric,
+                            )
+                    } else {
+                        speedCameraWarning = SpeedCameraWarningState()
                     }
                     val offAction =
                         offRouteCoordinator.onFix(
@@ -2408,6 +2473,47 @@ private fun NaviMapScreen() {
                     .zIndex(7f)
                     .padding(top = if (simulating) 108.dp else 64.dp),
         )
+        if (showSpeedCameraPrompt) {
+            AlertDialog(
+                onDismissRequest = {
+                    showSpeedCameraPrompt = false
+                    MapHudPrefs.saveSpeedCameraPromptShown(context, true)
+                    MapHudPrefs.saveSpeedCameraOptIn(context, false)
+                    speedCameraOptIn = false
+                },
+                title = { Text("Speed camera warnings") },
+                text = {
+                    Text(
+                        "Show nearby speed-camera warnings while driving? " +
+                            "Display only — cameras are never used to change routes. " +
+                            "Data comes from OpenStreetMap and may be incomplete. " +
+                            "Not available in all countries.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showSpeedCameraPrompt = false
+                            MapHudPrefs.saveSpeedCameraPromptShown(context, true)
+                            MapHudPrefs.saveSpeedCameraOptIn(context, true)
+                            speedCameraOptIn = true
+                        },
+                        modifier = Modifier.testTag("btn_speed_camera_opt_in_yes"),
+                    ) { Text("Enable") }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showSpeedCameraPrompt = false
+                            MapHudPrefs.saveSpeedCameraPromptShown(context, true)
+                            MapHudPrefs.saveSpeedCameraOptIn(context, false)
+                            speedCameraOptIn = false
+                        },
+                        modifier = Modifier.testTag("btn_speed_camera_opt_in_no"),
+                    ) { Text("Not now") }
+                },
+            )
+        }
         if (showHikingReroutePrompt) {
             AlertDialog(
                 onDismissRequest = {
@@ -2474,6 +2580,14 @@ private fun NaviMapScreen() {
                     state = approachGuidance,
                     iconsDir = iconsDir.absolutePath,
                     routePlanned = mapState.polyline.isNotBlank(),
+                    modifier =
+                        Modifier
+                            .align(Alignment.Start)
+                            .padding(bottom = 8.dp),
+                )
+                SpeedCameraWarningBox(
+                    state = speedCameraWarning,
+                    iconsDir = iconsDir.absolutePath,
                     modifier =
                         Modifier
                             .align(Alignment.Start)
@@ -3899,21 +4013,20 @@ private fun NaviMapScreen() {
                                         } else {
                                             "PBF missing after download"
                                         }
-                                    val elevDir = File(dataDir, "elevation").takeIf { it.isDirectory }
-                                    val indexedReport =
-                                        if (pbf.isFile) {
-                                            withContext(Dispatchers.IO) {
-                                                status = "Building indexed maps…"
-                                                ensureIndexedMaps(
-                                                    pbf.absolutePath,
-                                                    dataDir.absolutePath,
-                                                    elevDir?.absolutePath,
-                                                )
-                                            }
-                                        } else {
-                                            "skip indexed maps"
-                                        }
-                                    status = "$report | $bind | $indexReport | $indexedReport"
+                                    // Region is usable immediately via PBF fallback.
+                                    // Pack conversion upgrades to pack-hit in the background.
+                                    if (pbf.isFile) {
+                                        val elevDir =
+                                            File(dataDir, "elevation").takeIf { it.isDirectory }
+                                        IndexedMapsBackground.ensureStarted(
+                                            scope,
+                                            pbf,
+                                            dataDir,
+                                            elevDir,
+                                        )
+                                    }
+                                    status =
+                                        "$report | $bind | $indexReport | indexed maps: background"
                                 }
                             }
                         },
@@ -3935,27 +4048,16 @@ private fun NaviMapScreen() {
                                     status = "No local region PBF to rebuild indexed maps from"
                                     return@launch
                                 }
-                                status = "Rebuild indexed maps from local ${pbf.name}…"
                                 val elevDir =
                                     File(dataDir, "elevation").takeIf { it.isDirectory }
                                 val before =
                                     withContext(Dispatchers.IO) {
                                         indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath)
                                     }
-                                val report =
-                                    withContext(Dispatchers.IO) {
-                                        ensureIndexedMaps(
-                                            pbf.absolutePath,
-                                            dataDir.absolutePath,
-                                            elevDir?.absolutePath,
-                                        )
-                                    }
-                                val after =
-                                    withContext(Dispatchers.IO) {
-                                        indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath)
-                                    }
+                                IndexedMapsBackground.ensureStarted(scope, pbf, dataDir, elevDir)
                                 status =
-                                    "indexed before=$before | $report | after=$after"
+                                    "indexed before=$before — rebuild started in background " +
+                                    "(region stays usable via PBF fallback)"
                             }
                         },
                         modifier =
@@ -3963,7 +4065,14 @@ private fun NaviMapScreen() {
                                 .fillMaxWidth()
                                 .testTag("btn_rebuild_indexed_maps"),
                     ) {
-                        Text("Rebuild indexed maps (local PBF)")
+                        Text("Rebuild indexed maps (local PBF, background)")
+                    }
+                    if (indexedMapsUiLine.isNotBlank()) {
+                        Text(
+                            indexedMapsUiLine,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("indexed_maps_bg_status"),
+                        )
                     }
                     if (regionDownloadProgress.isNotBlank()) {
                         Text(
@@ -6231,6 +6340,12 @@ private fun ensureIconsCopied(
     runCatching {
         context.assets.open("icons/leaf.svg").use { input ->
             File(dest, "leaf.svg").outputStream().use { output -> input.copyTo(output) }
+        }
+    }
+    // Same for the custom speed-camera mark (lean-pack inclusion / unknown.svg bug).
+    runCatching {
+        context.assets.open("icons/speed_camera.svg").use { input ->
+            File(dest, "speed_camera.svg").outputStream().use { output -> input.copyTo(output) }
         }
     }
 }

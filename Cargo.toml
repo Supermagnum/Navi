@@ -52,3 +52,6 @@ flate2 = "1"
 png = "0.17"
 rkyv = { version = "0.8", features = ["alloc"] }
 memmap2 = "0.9"
+chrono = { version = "0.4", default-features = true, features = ["clock"] }
+# 1.4.x: stable Rust. 2.x needs nightly (`push_mut`).
+opening-hours = "=1.4.0"

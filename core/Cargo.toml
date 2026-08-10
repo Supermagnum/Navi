@@ -46,6 +46,8 @@ png.workspace = true
 rkyv = { workspace = true }
 memmap2 = { workspace = true }
 gpsd_proto = { version = "1.0", optional = true }
+chrono = { workspace = true }
+opening-hours = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

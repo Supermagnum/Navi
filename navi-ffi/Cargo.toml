@@ -12,6 +12,7 @@ name = "navi"
 
 [dependencies]
 driver-break-core = { path = "../core" }
+chrono = { workspace = true }
 uniffi = { workspace = true, features = ["cli"] }
 osm4routing = { workspace = true }
 uuid = { workspace = true }

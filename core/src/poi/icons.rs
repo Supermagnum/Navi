@@ -32,6 +32,15 @@ pub fn osm_icon_key(tags: &HashMap<String, String>) -> String {
     if let Some(shop) = tags.get("shop") {
         return format!("shop-{shop}");
     }
+    if tags.get("highway").map(String::as_str) == Some("speed_camera") {
+        // Custom lean-pack key (see docs/icons.md); not highway-speed_camera.
+        return "speed_camera".to_string();
+    }
+    if tags.get("enforcement").map(String::as_str) == Some("maxspeed")
+        || tags.get("enforcement").map(String::as_str) == Some("average_speed")
+    {
+        return "speed_camera".to_string();
+    }
     if let Some(highway) = tags.get("highway") {
         return format!("highway-{highway}");
     }

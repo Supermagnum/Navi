@@ -685,6 +685,9 @@ mod tests {
                 is_ferry: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
             },
             GraphEdge {
                 id: "20".into(),
@@ -712,6 +715,9 @@ mod tests {
                 is_ferry: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
             },
         ];
         let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot);
@@ -784,6 +790,9 @@ mod tests {
                 is_ferry: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
             },
             GraphEdge {
                 id: "200".into(),
@@ -811,6 +820,9 @@ mod tests {
                 is_ferry: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
             },
         ];
         let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot);
@@ -859,6 +871,9 @@ mod tests {
                 is_ferry: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
             },
             GraphEdge {
                 id: "20".into(),
@@ -886,6 +901,9 @@ mod tests {
                 is_ferry: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
             },
             GraphEdge {
                 id: "21".into(),
@@ -913,6 +931,9 @@ mod tests {
                 is_ferry: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
             },
         ];
         let plain = RouteGraph::from_parts(HashMap::new(), edges.clone(), RoutingProfile::Foot);

@@ -10,7 +10,7 @@ use thiserror::Error;
 use super::graph_pack::{ArchivedFlatGraphPack, FlatGraphPack, GRAPH_FORMAT_VERSION, MAGIC_GRAPH};
 use super::header::Preamble;
 use super::io::archive_payload_offset;
-use super::manifest::{manifest_path, NaviManifest, PackStatus};
+use super::manifest::{bbox_intersects, manifest_path, NaviManifest, PackStatus};
 use super::poi_barrier_pack::{
     ArchivedFlatPoiBarrierPack, FlatPoiBarrierPack, MAGIC_POI_BARRIER, POI_BARRIER_FORMAT_VERSION,
 };
@@ -21,6 +21,7 @@ use crate::poi::PoiIndex;
 use crate::routing::graph::{RouteGraph, RoutingProfile};
 use crate::routing::safety::DangerBarrierIndex;
 use crate::routing::wetland::WetlandIndex;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Error)]
 pub enum PackLoadError {
@@ -152,10 +153,51 @@ pub fn try_load_graph_for_plan_bbox(
         PackStatus::StalePbf => return Err(PackLoadError::Stale),
         PackStatus::VersionMismatch => return Err(PackLoadError::VersionMismatch),
     }
+    if let Some(tiles) = man.graph_tiles_for(profile) {
+        return load_tiled_graph(data_dir, tiles, profile, bbox);
+    }
     let path = man
         .graph_path(data_dir, profile)
         .ok_or(PackLoadError::Missing)?;
     load_graph_pack_bbox(&path, profile, bbox)
+}
+
+fn load_tiled_graph(
+    data_dir: &Path,
+    tiles: &[super::manifest::GraphTileEntry],
+    profile: RoutingProfile,
+    bbox: Option<[f64; 4]>,
+) -> Result<RouteGraph, PackLoadError> {
+    let selected: Vec<&super::manifest::GraphTileEntry> = match bbox {
+        Some(b) => tiles
+            .iter()
+            .filter(|t| bbox_intersects(t.bbox, b))
+            .collect(),
+        None => tiles.iter().collect(),
+    };
+    if selected.is_empty() {
+        return Err(PackLoadError::Missing);
+    }
+    let mut nodes = HashMap::new();
+    let mut edges = Vec::new();
+    let mut seen_edge_ids = HashSet::new();
+    for t in selected {
+        let path = data_dir.join(&t.file);
+        // Materialize each tile clipped to the plan bbox when provided.
+        let g = load_graph_pack_bbox(&path, profile, bbox)?;
+        for (id, node) in g.nodes {
+            nodes.insert(id, node);
+        }
+        for e in g.edges {
+            if seen_edge_ids.insert(e.id.clone()) {
+                edges.push(e);
+            }
+        }
+    }
+    if edges.is_empty() {
+        return Err(PackLoadError::Missing);
+    }
+    Ok(RouteGraph::from_parts(nodes, edges, profile))
 }
 
 pub fn try_load_poi_barrier_for_plan(

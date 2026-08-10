@@ -140,6 +140,12 @@ Icons are named by OSM-style keys where applicable, for example:
 - `leaf.svg` — eco-mode indicator (**custom** Navi drop-in; not from the Navit
   inventory — same override-by-filename mechanism as other keys; document any
   further custom art the same way)
+- `speed_camera.svg` — speed-camera POI / warning mark (**custom**, origin:
+  project maintainer self-authored Inkscape art; **not** third-party / not from
+  Navit). Same treatment as `leaf.svg`. Aliases: `speed_camera`, `speed-camera`,
+  `enforcement_maxspeed`, `highway-speed_camera`. Must ship in the Android lean
+  pack (`app/src/main/assets/icons/speed_camera.svg`) so map markers do not fall
+  back to `unknown.svg`.
 - `fish.svg` — **pre-existing Navit-derived** icon (present in the initial
   bundled Navit set under `core/src/icons`, same provenance/timestamp class as
   e.g. `fuel.svg`). Used for `PoiCategory::Fishing` via keys `leisure-fishing` /

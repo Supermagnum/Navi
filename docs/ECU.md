@@ -420,6 +420,136 @@ let cost = refine_energy_cost(/* predicted */ 1.2e6, /* distance_m */ 500.0, Som
 
 ---
 
+## 6. Vehicle-side protocol reference (OBD-2 / CAN)
+
+Context: aftermarket/DIY instrument cluster hardware (TFT/IPS displays, ESP32
+or STM32-based builds) needs to read data **from** the vehicle. That is a
+separate concern from Navi’s planned **outbound** nav-data export to clusters
+([`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md)).
+This section is reference material for hardware builders, not part of the
+`LiveEnergyProvider` plugin implementation described above.
+
+### Why OBD-2 over raw CAN for hobbyist builds
+
+- Raw CAN bus messages are largely proprietary per manufacturer and not
+  publicly documented; building a full custom cluster against raw CAN
+  requires reverse-engineering each vehicle’s message IDs.
+- OBD-2 exposes a standardized, documented subset of vehicle data
+  specifically so this reverse-engineering isn’t required for common signals
+  (speed, RPM, coolant temp, throttle position, fuel level, etc.).
+
+### Protocol stack
+
+| Layer | Standard | Role |
+|---|---|---|
+| Diagnostic request/response | SAE J1979 / ISO 15031-5 | Standardized Mode/PID format (Mode 01 = current data, Mode 03 = DTCs, etc.) |
+| Transport (multi-frame over CAN) | ISO 15765-2 (ISO-TP) | Carries OBD-2 requests/responses over CAN’s 8-byte frame limit |
+| Manufacturer-specific diagnostics | ISO 14229 (UDS) | Protocol is standardized; per-make/model identifier tables (Mode 22) are generally proprietary/undocumented |
+| Common hobbyist interface | ELM327 command set | De facto standard AT-command interface used by cheap OBD dongles; not a vehicle protocol itself |
+
+### Where to obtain the standards themselves
+
+| Standard | Publisher | Access |
+|---|---|---|
+| SAE J1979 (OBD-2 diagnostic test modes) | SAE International | Paid standard, purchasable at [sae.org](https://www.sae.org/); summarized/mirrored informally on many OBD hobbyist sites and [Wikipedia’s OBD-II PIDs](https://en.wikipedia.org/wiki/OBD-II_PIDs) page, which lists the common Mode 01 PIDs and formulas without requiring purchase |
+| ISO 15031-5 (equivalent to J1979, international) | ISO | Paid standard via [iso.org](https://www.iso.org/) or national standards bodies |
+| ISO 15765-2 (ISO-TP transport) | ISO | Paid standard via [iso.org](https://www.iso.org/) |
+| ISO 14229 (UDS) | ISO | Paid standard via [iso.org](https://www.iso.org/); widely summarized in reverse-engineering/security-research writeups since the framing (Mode 22, negative response codes, etc.) is public even where per-vehicle identifiers aren’t |
+| SAE J1850, ISO 9141-2, ISO 14230 (older non-CAN OBD physical layers) | SAE / ISO | Paid standards; mostly legacy, relevant only for pre-2008 US vehicles or pre-2001 EU vehicles where OBD-2 wasn’t yet CAN-based |
+| CAN 2.0 / CAN FD (physical/data-link layer under all of the above) | Bosch (original spec), ISO 11898 | Bosch’s original CAN 2.0 spec is freely available as a PDF from Bosch; ISO 11898 itself is paid via [iso.org](https://www.iso.org/) |
+
+Note: the underlying diagnostic modes/PIDs (which bytes mean what) are
+effectively public knowledge despite the formal standards being paywalled —
+they are documented for free by hobbyist and security-research communities
+([Wikipedia’s OBD-II PIDs](https://en.wikipedia.org/wiki/OBD-II_PIDs),
+[ELM327 datasheet / AT command reference](https://www.elmelectronics.com/wp-content/uploads/2016/07/ELM327DS.pdf),
+[opendbc](https://github.com/commaai/opendbc), various OBD forums) to a level
+sufficient for a DIY build. Purchase of the formal standard is mainly relevant
+for the transport-layer/timing details (ISO-TP framing, UDS negative response
+handling) if building a protocol stack from scratch rather than using an
+existing library.
+
+### How the data is actually carried (wire format)
+
+For builders who need to know what’s actually on the wire, not just where to
+buy the spec:
+
+- **CAN frame basics:** a standard CAN 2.0A frame carries an 11-bit
+  identifier and up to 8 data bytes; CAN 2.0B extends the identifier to 29
+  bits (used for most OBD-2 and many manufacturer buses); CAN FD extends the
+  payload up to 64 bytes per frame but is not universal in older vehicles.
+- **OBD-2 request/response over CAN:** requests are sent to CAN ID `0x7DF`
+  (functional/broadcast query) or a specific ECU’s request ID (commonly in
+  the `0x7E0`–`0x7E7` range); the responding ECU replies on its paired ID
+  (commonly `0x7E8`–`0x7EF`). Each 8-byte CAN frame’s first byte(s) encode
+  the payload length and, for multi-frame messages, ISO-TP sequencing
+  (single frame / first frame / consecutive frame / flow control), followed
+  by the Mode byte (e.g. `0x01` for current data), the PID byte, and then
+  the data bytes themselves.
+- **Example:** a Mode 01 PID `0x0D` (vehicle speed) request is
+  `[0x02, 0x01, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00]` (length=2, mode=01,
+  PID=0D); the response’s data byte A directly equals speed in km/h,
+  needing no scaling — while other PIDs use documented formulas (e.g. RPM =
+  `((A*256)+B)/4`).
+- **UDS (Mode 22) structure:** request format is `[length, 0x22, DID_high,
+  DID_low, …]` where DID is a 2-byte Data Identifier; unlike Mode 01 PIDs,
+  DIDs and their scaling formulas are manufacturer-defined and not published
+  in a universal table, which is the core reason UDS-based signals need
+  vehicle-specific reverse-engineering or a community DBC file.
+- **DBC file role:** a DBC file is essentially a lookup table mapping CAN ID
+  + bit offset + bit length + scale/offset to a named, human-readable
+  signal; it’s the practical artifact that turns raw frames as described
+  above into usable values, and is why opendbc-style resources matter more
+  in practice than the formal standards documents for anything beyond
+  generic OBD-2 PIDs.
+
+This stays at reference depth (enough to know what tool/library to reach for
+and roughly what’s on the wire), not a full protocol implementation guide.
+Prefer linking out rather than reproducing full PID tables here:
+[Wikipedia OBD-II PIDs](https://en.wikipedia.org/wiki/OBD-II_PIDs),
+[ELM327 datasheet](https://www.elmelectronics.com/wp-content/uploads/2016/07/ELM327DS.pdf),
+[opendbc](https://github.com/commaai/opendbc).
+
+### Where public CAN documentation exists
+
+- [opendbc](https://github.com/commaai/opendbc) (comma.ai) — open collection of
+  DBC files with reverse-engineered CAN message definitions across many
+  production vehicles.
+- DBC file format (Vector) — de facto standard for describing CAN message
+  layout (ID, signal bit position, scaling, units); usable with tools like
+  SavvyCAN.
+- Car Hacking Village / academic CAN research — periodic publication of
+  vehicle-specific CAN maps, primarily security-research motivated.
+- Marque-specific enthusiast forums — often the best source for a specific
+  vehicle’s proprietary signals, since other builders publish their findings.
+
+### Note on existing aftermarket CAN-bus decoder boxes
+
+Many Android head units read body-CAN signals (steering wheel controls,
+parking sensor distance, door status) via third-party “canbus box” adapters.
+These work by embedding a proprietary, reverse-engineered per-vehicle
+signal map in the box’s firmware — this mapping is not published as a
+spec, which is why it isn’t a usable documentation source, only evidence
+that the signals have been reverse-engineered by someone.
+
+### Recommendation for aftermarket cluster hardware
+
+Build against OBD-2 (J1979 + ISO-TP) for standardized signals as the primary
+path. For richer data (individual sensors, warning states, proprietary
+values) not exposed via generic OBD-2, either locate an existing opendbc /
+community DBC file for the target vehicle or budget separate time for CAN
+sniffing and correlation — there is no universal public spec for that layer.
+
+### Relation to other docs
+
+| Doc | Relation |
+|---|---|
+| [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Opposite direction (Navi → cluster); outbound VSS/JSON export — not vehicle input |
+| [`PROTOCOLS.md`](PROTOCOLS.md) | Index of vehicle / radio wire docs |
+| §1 OBD-II above | ELM327 / Mode 01 path into `LiveEnergySnapshot` |
+
+---
+
 ## Status in this repository
 
 | Piece | Status |

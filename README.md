@@ -78,6 +78,8 @@ from Navit (**GPL v2**); see [`docs/icons.md`](docs/icons.md).
 | **GPS follow** | Map follows you by default. Pan away, then tap **Recenter**. | Done |
 | **Map rotation** | North-up, compass, or direction of travel. | Done |
 | **Moving icons** | Can draw nearby tracked markers on the map. A live radio feed is not built in yet. | Partial |
+| **Seasonal road closures** | OSM `motor_vehicle:conditional` / `access:conditional` hard-filtered against the planned departure time (Car/Truck honour it; Hiking/Bicycle do not). Verified on Friisvegen (way `361797686`) on both bbox/PBF fallback and pack-hit (graph pack **v3**). Purely OSM-tag-driven — no jurisdiction pack. **v1 limitation:** multi-day trips that cross a season boundary are evaluated only at the planned departure instant (not re-evaluated day-by-day along the trip). | Done |
+| **Speed camera warnings** | Point cameras use the existing approach distance-phase UX; average-speed / section-control zones use a distinct enter/exit box. `maxspeed:conditional` is evaluated against live local time. Jurisdiction-gated like EC561 / allemannsretten: Norway/UK opt-in (OSM-sourced, may be incomplete); Germany/France/Switzerland and unknown jurisdictions decline — see [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). First-run opt-in dialog required (not silently enabled). | Done (display/warning only — no route-avoidance toggle, by deliberate product decision) |
 | **Map updates** | Only when you ask — check for OpenStreetMap updates or download a fresh region. Never silent. | Done |
 | **Diagnostic logging** | Tools toggle writes a session log (GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system) you can copy over USB/MTP — no adb required. Files: **Internal storage → Documents → debug** (`navi_session_*.log`). | Done |
 | **Plugins** | A safe sandbox for future add-ons exists; product plugins are not shipped yet. | Host ready |
@@ -231,9 +233,9 @@ conditions.
   is detected via cross-track distance. The approach box shows **Off route**
   instead of turn distances that would be wrong. Motor profiles auto-replan
   after a short sustained debounce; **Hiking asks first** (trail wander is often
-  intentional). Recalculation uses the same planner as Plan and can take many
-  seconds — see [Known issues](#known-issues) and
-  [`docs/route-simulation.md`](docs/route-simulation.md#guidance).
+  intentional). Recalculation uses the same planner as Plan (pack-hit when packs
+  are ready; otherwise the slower PBF fallback) — see [Known issues](#known-issues)
+  and [`docs/route-simulation.md`](docs/route-simulation.md#guidance).
 - Wild-camping distance defaults follow a Norway-oriented “right to roam” idea
   and **may not apply in other countries**.
 - Truck rest packs only apply where the app can recognise the jurisdiction;
@@ -249,18 +251,20 @@ device:
 | Piece | Minimum / practical note |
 |---|---|
 | **CPU** | **8 cores**, about **2 GHz** class |
-| **RAM** | **4 GB**. Prefer **regional** extracts on that class; whole large countries in one go are often too heavy. |
-| **Storage** | Leave room for the region file, place index, offline basemap, and optional DEM — often several GB for a region. |
+| **RAM** | **4 GB**. Prefer **regional** extracts on that class; whole large countries in one go are often too heavy. On the reference SM-P613 (~3.5 GB total), region **use** is fine via pack-hit or PBF fallback; **background pack conversion** still has thin system memory margin — see [Known issues](#known-issues). |
+| **Storage** | Leave room for the region file, place index, offline basemap, optional DEM, and indexed packs — often several GB for a region. |
 | **GPU** | MapLibre GLES is the default path used on the tested tablet. |
 
-Mitigations already in the design: regional downloads by default, cached graphs,
-background builds, and worker pools that leave room for the UI. Details:
-historically under “Minimum hardware and storage capacity” in older README
-revisions and in [`docs/architecture.md`](docs/architecture.md).
+Mitigations already in the design: regional downloads by default, preprocess-once
+indexed packs (background convert after download; region usable immediately via
+bbox/PBF fallback), and worker pools that leave room for the UI. Details:
+[`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md) and
+[`docs/architecture.md`](docs/architecture.md).
 
-**Planning latency note:** on low-RAM devices in particular, route planning time
-is dominated by sequential `.osm.pbf` loads (graph build + POI/barrier), not by
-A* itself — see [Known issues](#known-issues) and reproduce with
+**Planning latency note:** when indexed packs are ready, motor pack-hit plans are
+typically ~1.5–2 s on the reference tablet. Cold / missing-pack fallback is still
+dominated by sequential `.osm.pbf` loads (graph build + POI/barrier), not A*
+itself — see [Known issues](#known-issues) and reproduce with
 [Tools → Diagnostic logging](docs/debugging.md#3b-diagnostic-session-log-on-device-file)
 (`ROUTE_PLAN` / `ROUTE_PLAN_STAGES`).
 
@@ -360,8 +364,10 @@ plugins ship in the app yet** — that is intentional. Overview:
 
 ## Icons (Navit)
 
-POI / turn / status icons under `core/src/icons` come from Navit (**GPL v2**).
-How to add custom SVG icons: [`docs/icons.md`](docs/icons.md).
+POI / turn / status icons under `core/src/icons` are mostly from Navit
+(**GPL v2**). Custom maintainer-authored overrides (same mechanism) include
+`leaf.svg` (eco) and `speed_camera.svg` (speed-camera warnings) — see
+[`docs/icons.md`](docs/icons.md).
 
 # Coding standards and contributing
 
@@ -442,7 +448,7 @@ or update.
 | Elevation | Public DEM tiles | Eco / hills |
 | Map picture | OpenFreeMap Liberty (online) or Protomaps PMTiles (offline) | What you see on screen |
 | Position | Device GPS (or gpsd on Linux) | Where you are |
-| Icons | Bundled Navit-derived SVG | Markers and turns |
+| Icons | Mostly Navit-derived SVG; custom `leaf` / `speed_camera` | Markers and turns |
 
 Country/region visual extracts can also be prepared with
 [PMT-splitter](https://github.com/Supermagnum/PMT-splitter/tree/main).
@@ -461,43 +467,53 @@ Country/region visual extracts can also be prepared with
 - **Screenshot-only lake fringe:** a soft blue rim around water can appear in
   captures but not while using the app live — see
   [`docs/map-styles.md`](docs/map-styles.md).
-- **Route planning is data-loading-bound, not pathfinding-bound — worse on
-  low-RAM devices.** Per-stage timing (Diagnostic logging → `ROUTE_PLAN` /
-  `ROUTE_PLAN_STAGES`; see
-  [`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file))
-  shows A* itself is typically sub-second; wall-clock cost was dominated by
-  sequential OSM `.pbf` scans — `graph_build`, `poi_barrier`, and (for Hiking)
-  wetland classification. Historical on-device Car Espa→Atnbrufossen (SM-P613):
-  `plan_duration_ms=26835` with `graph_build_ms=17571`, `poi_barrier_ms=8045`,
-  `astar_ms=378`. **Mitigation shipped:** preprocess-once indexed packs
-  (`rkyv`+`memmap2`) — live status in
-  [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md)
-  (**Phase 4 + 4b complete**): motor pack-hit ~1.5–1.8 s vs cold missing-pack
-  ~31 s on Hedmark 162 km; wetland load **18.6 s → 93 ms** (~199×) on SM-P613;
-  long Hiking OD that previously aborted ~6 min now completes (~61 s) with
-  `wetland_pack_hit`. `.navigph` deprecated. Residual Hiking wall time can still
-  include overnight/POI PBF work. See also
-  [`docs/status.md`](docs/status.md) and
-  [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md).
-- **Rerouting after a detour is not instant.** When the app detects you have
-  left the planned route (cross-track beyond ~75 m motor / ~100 m hiking) and
-  computes a new one, it reuses the same planning pipeline above — expect a
-  real delay (often many seconds on low-RAM devices, matching the measured
-  `graph_build` / `poi_barrier` costs) before an adjusted route appears. While
-  off-route, the approach box shows **Off route** rather than corridor turn
-  distances. A **Recalculating route…** banner is shown during the wait (with
-  Cancel). This is an expected wait, not a hang. Motor profiles auto-reroute
-  after a short sustained debounce (~5 s); **Hiking prompts** first (leaving a
-  trail is often intentional). See
+- **Region-scale pack conversion has thin memory margin on lower-end 4GB-class
+  hardware.** Measured on a Samsung Galaxy Tab S6 Lite (SM-P613, ~3.5GB total
+  RAM — below this project's nominal 4GB floor): a full Østlandet-scale
+  background conversion completed successfully with no crash and no process
+  kill, but system-level available memory dropped to ~329 MiB at its lowest
+  point, ~250 MiB of swap was used, and Android issued
+  `TRIM_MEMORY_RUNNING_CRITICAL` to other running processes during the
+  conversion's POI phase. This indicates real, if survived, system memory
+  pressure — not a comfortable margin. Devices with less RAM than this
+  reference device, or under heavier concurrent load (more background apps,
+  less free memory at the time conversion starts), remain an open risk. Region
+  download and immediate use are unaffected (bbox/PBF fallback works
+  immediately regardless); this risk is specific to the background
+  pack-conversion step. Further mitigation (e.g. smaller tile size, trading
+  more wall-clock time for wider memory margin) has not yet been implemented.
+  Cross-ref: [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md)
+  and [Minimum hardware and storage](#minimum-hardware-and-storage).
+- **Cold / missing-pack planning is still data-loading-bound; pack-hit is not.**
+  A* itself is typically sub-second. **With indexed packs ready** (Phase 4 + 4b;
+  see [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md)):
+  motor pack-hit ~1.5–1.8 s vs cold missing-pack ~31 s on Hedmark 162 km;
+  wetland load **18.6 s → 93 ms** (~199×) on SM-P613; long Hiking OD that
+  previously aborted ~6 min completes (~61 s) with `wetland_pack_hit`.
+  Historical pre-pack Car Espa→Atnbrufossen (SM-P613): `plan_duration_ms=26835`
+  with `graph_build_ms=17571`, `poi_barrier_ms=8045`, `astar_ms=378` — that
+  ~15–27 s class remains the **fallback** when packs are missing, stale, or
+  still converting in the background. `.navigph` deprecated. Residual Hiking
+  wall time can still include overnight/POI PBF work. Reproduce stages with
+  Diagnostic logging → `ROUTE_PLAN` / `ROUTE_PLAN_STAGES`
+  ([`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file)).
+  See also [`docs/status.md`](docs/status.md).
+- **Rerouting after a detour is not instant.** Off-route (cross-track beyond
+  ~75 m motor / ~100 m hiking) reuses the same planner: **pack-hit when packs
+  are ready** (~seconds class matching Plan), otherwise the slower PBF
+  fallback. While off-route, the approach box shows **Off route**. A
+  **Recalculating route…** banner is shown during the wait (with Cancel). This
+  is an expected wait, not a hang. Motor profiles auto-reroute after a short
+  sustained debounce (~5 s); **Hiking prompts** first. See
   [`docs/route-simulation.md`](docs/route-simulation.md#guidance).
-- **Hiking plan speed on huge areas (addressed):** overnight buildings use a
-  1.5 km corridor pre-filter and a single PBF scan for POI + buildings (exact
-  150 m allemannsretten check unchanged). Measured on DNT Åkersætra→Rondvassbu
+- **Hiking plan speed on huge areas (addressed for packs; residual PBF work):**
+  overnight buildings use a 1.5 km corridor pre-filter and a single PBF scan for
+  POI + buildings when packs do not cover that work (exact 150 m
+  allemannsretten check unchanged). Historical DNT Åkersætra→Rondvassbu
   (~**139.9 km** corridor; `overnight_scan_bench`, debug): bbox-all
   **102 556 buildings / ~180.7 s** load → corridor **487 buildings / ~83.1 s**
-  load (was ~177.6 s for a full plan when the bbox-all set fed overnight
-  checks). Remaining cost is mostly mandatory full-extract decode plus other
-  plan-time PBF scans.
+  load. Graph/wetland pack-hit removes the old multi-minute wetland abort; some
+  overnight/POI decode cost can remain.
 - **Break timer ≠ trip ETA:** by design — see
   [Break timer vs trip ETA](#break-timer-vs-trip-eta).
 - **Not implemented yet:** checking whether the code can be optimised for

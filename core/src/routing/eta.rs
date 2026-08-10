@@ -300,6 +300,9 @@ mod tests {
             is_ferry: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
         }];
         let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
         let mins = motor_path_minutes(&graph, &[NodeId(1), NodeId(2)]);
@@ -353,6 +356,9 @@ mod tests {
             is_ferry: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
         }];
         let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
         let mins = motor_path_minutes(&graph, &[NodeId(1), NodeId(2)]);

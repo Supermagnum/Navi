@@ -11,8 +11,8 @@ use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile};
 
 /// Little-endian ASCII "NVRK".
 pub const MAGIC_GRAPH: u32 = 0x4E_56_52_4B;
-/// v2: CSR edge shape arrays so map overlays follow OSM road curves.
-pub const GRAPH_FORMAT_VERSION: u32 = 2;
+/// v3: v2 shapes + raw seasonal / maxspeed conditional tag strings per edge.
+pub const GRAPH_FORMAT_VERSION: u32 = 3;
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone)]
 pub struct FlatGraphPack {
@@ -44,6 +44,12 @@ pub struct FlatGraphPack {
     pub edge_shape_offsets: Vec<u32>,
     pub edge_shape_lons: Vec<f64>,
     pub edge_shape_lats: Vec<f64>,
+    /// Raw OSM `motor_vehicle:conditional` (empty = none).
+    pub edge_motor_vehicle_conditional: Vec<String>,
+    /// Raw OSM `access:conditional` (empty = none).
+    pub edge_access_conditional: Vec<String>,
+    /// Raw OSM `maxspeed:conditional` (empty = none).
+    pub edge_maxspeed_conditional: Vec<String>,
 }
 
 impl FlatGraphPack {
@@ -81,6 +87,9 @@ impl FlatGraphPack {
         let mut edge_shape_offsets = Vec::with_capacity(n + 1);
         let mut edge_shape_lons: Vec<f64> = Vec::new();
         let mut edge_shape_lats: Vec<f64> = Vec::new();
+        let mut edge_motor_vehicle_conditional = Vec::with_capacity(n);
+        let mut edge_access_conditional = Vec::with_capacity(n);
+        let mut edge_maxspeed_conditional = Vec::with_capacity(n);
         edge_shape_offsets.push(0);
 
         if elev.is_some() {
@@ -106,6 +115,10 @@ impl FlatGraphPack {
             edge_is_ferry.push(u8::from(e.is_ferry));
             edge_is_roundabout.push(u8::from(e.is_roundabout));
             edge_is_boardwalk.push(u8::from(e.is_boardwalk_crossing));
+            edge_motor_vehicle_conditional
+                .push(e.motor_vehicle_conditional.clone().unwrap_or_default());
+            edge_access_conditional.push(e.access_conditional.clone().unwrap_or_default());
+            edge_maxspeed_conditional.push(e.maxspeed_conditional.clone().unwrap_or_default());
             for &(lon, lat) in &e.shape {
                 edge_shape_lons.push(lon);
                 edge_shape_lats.push(lat);
@@ -148,6 +161,9 @@ impl FlatGraphPack {
             edge_shape_offsets,
             edge_shape_lons,
             edge_shape_lats,
+            edge_motor_vehicle_conditional,
+            edge_access_conditional,
+            edge_maxspeed_conditional,
         }
     }
 
@@ -253,6 +269,42 @@ impl FlatGraphPack {
                 is_ferry: self.edge_is_ferry[i] != 0,
                 is_boardwalk_crossing: self.edge_is_boardwalk[i] != 0,
                 is_roundabout: self.edge_is_roundabout[i] != 0,
+                motor_vehicle_conditional: {
+                    let s = self
+                        .edge_motor_vehicle_conditional
+                        .get(i)
+                        .map(String::as_str)
+                        .unwrap_or("");
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_string())
+                    }
+                },
+                access_conditional: {
+                    let s = self
+                        .edge_access_conditional
+                        .get(i)
+                        .map(String::as_str)
+                        .unwrap_or("");
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_string())
+                    }
+                },
+                maxspeed_conditional: {
+                    let s = self
+                        .edge_maxspeed_conditional
+                        .get(i)
+                        .map(String::as_str)
+                        .unwrap_or("");
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_string())
+                    }
+                },
             });
         }
         RouteGraph::from_parts(nodes, edges, profile)
@@ -331,6 +383,9 @@ mod tests {
             is_ferry: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
     }

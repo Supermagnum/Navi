@@ -307,7 +307,7 @@ but separate projects.
 | [`approach-instructions.md`](../approach-instructions.md) | Shared next-maneuver semantics |
 | [`voice-guidance.md`](../voice-guidance.md) | Same guidance state, different consumer |
 | [`hud-layout.md`](../hud-layout.md) / Drive HUD | Break / ETA / eco display rules; no-route guard |
-| [`ECU.md`](../ECU.md) | Opposite direction (vehicle → Navi); do not conflate |
+| [`ECU.md`](../ECU.md#6-vehicle-side-protocol-reference-obd-2-can) | Opposite direction (vehicle → Navi); OBD-2/CAN DIY cluster reference — do not conflate |
 | [`PROTOCOLS.md`](../PROTOCOLS.md) | Index entry for VSS/JSON export |
 
 ---

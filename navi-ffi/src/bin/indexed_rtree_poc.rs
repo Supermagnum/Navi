@@ -294,6 +294,9 @@ fn load_graph_from_rtree(db: &Path, bbox: [f64; 4]) -> RouteGraph {
                 is_ferry: row.14 != 0,
                 is_boardwalk_crossing: false,
                 is_roundabout: row.15 != 0,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
             });
         }
     }

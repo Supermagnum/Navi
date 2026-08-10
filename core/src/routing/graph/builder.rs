@@ -99,6 +99,12 @@ pub struct GraphEdge {
     pub is_boardwalk_crossing: bool,
     /// OSM `junction=roundabout` — ring edges for guidance (not routing weight).
     pub is_roundabout: bool,
+    /// Raw OSM `motor_vehicle:conditional` (evaluated at plan time).
+    pub motor_vehicle_conditional: Option<String>,
+    /// Raw OSM `access:conditional` (evaluated at plan time).
+    pub access_conditional: Option<String>,
+    /// Raw OSM `maxspeed:conditional` (live speed-camera / ETA use).
+    pub maxspeed_conditional: Option<String>,
 }
 
 /// Per-query routing filters (avoid motorways, tolls/ferries, vehicle limits).
@@ -114,6 +120,8 @@ pub struct RouteOptions {
     /// Exclude ferry connections. Default off.
     pub avoid_ferries: bool,
     pub vehicle: Option<crate::config::VehicleLimits>,
+    /// Planned departure (local naive). `None` → evaluate seasonal closures at now.
+    pub departure_local: Option<chrono::NaiveDateTime>,
 }
 
 pub struct RouteGraph {
@@ -142,6 +150,9 @@ impl RouteGraph {
             .read_tag("bridge")
             .read_tag("surface")
             .read_tag("junction")
+            .read_tag("motor_vehicle:conditional")
+            .read_tag("access:conditional")
+            .read_tag("maxspeed:conditional")
             .read(path.as_ref())
             .map_err(|e| anyhow::anyhow!("osm4routing: {e}"))?;
         let filtered = filter_edges(edges, profile);
@@ -457,7 +468,7 @@ impl RouteGraph {
                     .flatten()
                     .filter_map(|&edge_idx| {
                         let edge = &self.edges[edge_idx];
-                        if !edge_allowed_for_options(edge, options) {
+                        if !edge_allowed_for_options(edge, options, self.profile) {
                             return None;
                         }
                         let cost = if use_eco {
@@ -487,7 +498,45 @@ impl RouteGraph {
     pub fn restricted_edge_count(&self, edge_indices: &[usize], options: &RouteOptions) -> usize {
         edge_indices
             .iter()
-            .filter(|&&i| !edge_allowed_for_options(&self.edges[i], options))
+            .filter(|&&i| !edge_allowed_for_options(&self.edges[i], options, self.profile))
+            .count()
+    }
+
+    /// Count edges excluded specifically by seasonal access conditionals at departure.
+    pub fn seasonal_closure_excluded_count(
+        &self,
+        edge_indices: &[usize],
+        options: &RouteOptions,
+    ) -> usize {
+        let apply_motor = matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
+        edge_indices
+            .iter()
+            .filter(|&&i| {
+                let e = &self.edges[i];
+                crate::routing::conditional::edge_seasonally_closed(
+                    e.motor_vehicle_conditional.as_deref(),
+                    e.access_conditional.as_deref(),
+                    apply_motor,
+                    options.departure_local,
+                )
+            })
+            .count()
+    }
+
+    /// Count edges in this planning graph that are hard-filtered by seasonal
+    /// conditionals at `options.departure_local` (or local now when unset).
+    pub fn seasonal_closure_excluded_in_graph(&self, options: &RouteOptions) -> usize {
+        let apply_motor = matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
+        self.edges
+            .iter()
+            .filter(|e| {
+                crate::routing::conditional::edge_seasonally_closed(
+                    e.motor_vehicle_conditional.as_deref(),
+                    e.access_conditional.as_deref(),
+                    apply_motor,
+                    options.departure_local,
+                )
+            })
             .count()
     }
 
@@ -560,6 +609,11 @@ pub fn format_route_avoidance_report(
     lines.join("\n")
 }
 
+/// Append seasonal-closure counters to an avoidance report (plan-time).
+pub fn append_seasonal_closure_report(report: &str, excluded_edges: usize) -> String {
+    format!("{report}\nseasonal_closure_excluded_edges={excluded_edges}")
+}
+
 type EdgeMeta = (
     Option<String>,
     Option<f64>,
@@ -575,6 +629,9 @@ type EdgeMeta = (
     bool,
     bool,
     bool,
+    Option<String>,
+    Option<String>,
+    Option<String>,
 );
 
 fn edge_meta(edge: &Edge) -> EdgeMeta {
@@ -619,6 +676,9 @@ fn edge_meta(edge: &Edge) -> EdgeMeta {
         .get("junction")
         .map(|s| s.eq_ignore_ascii_case("roundabout"))
         .unwrap_or(false);
+    let motor_vehicle_conditional = edge.tags.get("motor_vehicle:conditional").cloned();
+    let access_conditional = edge.tags.get("access:conditional").cloned();
+    let maxspeed_conditional = edge.tags.get("maxspeed:conditional").cloned();
     (
         highway,
         maxspeed_kmh,
@@ -634,6 +694,9 @@ fn edge_meta(edge: &Edge) -> EdgeMeta {
         is_ferry,
         is_boardwalk_crossing,
         is_roundabout,
+        motor_vehicle_conditional,
+        access_conditional,
+        maxspeed_conditional,
     )
 }
 
@@ -684,6 +747,9 @@ fn push_directed_edge(
         is_ferry: meta.11,
         is_boardwalk_crossing: meta.12,
         is_roundabout: meta.13,
+        motor_vehicle_conditional: meta.14.clone(),
+        access_conditional: meta.15.clone(),
+        maxspeed_conditional: meta.16.clone(),
     });
     graph.adjacency.entry(source).or_default().push(idx);
 }
@@ -726,7 +792,11 @@ pub fn highway_is_motorway(highway: Option<&str>) -> bool {
     highway.is_some_and(is_motorway_highway)
 }
 
-fn edge_allowed_for_options(edge: &GraphEdge, options: &RouteOptions) -> bool {
+fn edge_allowed_for_options(
+    edge: &GraphEdge,
+    options: &RouteOptions,
+    profile: RoutingProfile,
+) -> bool {
     if options.avoid_motorways && edge.highway.as_deref().is_some_and(is_motorway_highway) {
         return false;
     }
@@ -734,6 +804,15 @@ fn edge_allowed_for_options(edge: &GraphEdge, options: &RouteOptions) -> bool {
         return false;
     }
     if options.avoid_ferries && edge.is_ferry {
+        return false;
+    }
+    let apply_motor = matches!(profile, RoutingProfile::Car | RoutingProfile::Truck);
+    if crate::routing::conditional::edge_seasonally_closed(
+        edge.motor_vehicle_conditional.as_deref(),
+        edge.access_conditional.as_deref(),
+        apply_motor,
+        options.departure_local,
+    ) {
         return false;
     }
     if let Some(ref limits) = options.vehicle {
@@ -869,6 +948,9 @@ mod tests {
             is_ferry: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot)
     }
@@ -986,6 +1068,9 @@ mod tests {
             is_ferry: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
         };
         let edges = vec![
             edge("low", 1, 2, 60.0, 10.0, 60.0, 10.01, Some(3.0)),
@@ -1041,13 +1126,17 @@ mod tests {
             is_ferry: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
         };
         assert!(!edge_allowed_for_options(
             &edge,
             &RouteOptions {
                 avoid_tolls: true,
                 ..Default::default()
-            }
+            },
+            RoutingProfile::Car,
         ));
         edge.is_toll = false;
         edge.is_ferry = true;
@@ -1056,8 +1145,97 @@ mod tests {
             &RouteOptions {
                 avoid_ferries: true,
                 ..Default::default()
-            }
+            },
+            RoutingProfile::Car,
         ));
-        assert!(edge_allowed_for_options(&edge, &RouteOptions::default()));
+        assert!(edge_allowed_for_options(
+            &edge,
+            &RouteOptions::default(),
+            RoutingProfile::Car,
+        ));
+    }
+
+    #[test]
+    fn friisvegen_style_conditional_blocks_car_not_foot() {
+        use chrono::NaiveDate;
+        let mut edge = GraphEdge {
+            id: "361797686-0".into(),
+            source: NodeId(1),
+            target: NodeId(2),
+            length_m: 100.0,
+            base_weight: 100.0,
+            eco_weight: None,
+            start_lat: 61.9,
+            start_lon: 10.0,
+            end_lat: 61.91,
+            end_lon: 10.01,
+            shape: Vec::new(),
+            highway: Some("unclassified".into()),
+            maxspeed_kmh: Some(80.0),
+            name: Some("Friisvegen".into()),
+            road_ref: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: Some("no @ Nov-Jun".into()),
+            access_conditional: None,
+            maxspeed_conditional: None,
+        };
+        let jan = NaiveDate::from_ymd_opt(2026, 1, 15)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let jul = NaiveDate::from_ymd_opt(2026, 7, 15)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let winter = RouteOptions {
+            departure_local: Some(jan),
+            ..Default::default()
+        };
+        let summer = RouteOptions {
+            departure_local: Some(jul),
+            ..Default::default()
+        };
+        assert!(!edge_allowed_for_options(
+            &edge,
+            &winter,
+            RoutingProfile::Car
+        ));
+        assert!(!edge_allowed_for_options(
+            &edge,
+            &winter,
+            RoutingProfile::Truck
+        ));
+        assert!(edge_allowed_for_options(
+            &edge,
+            &summer,
+            RoutingProfile::Car
+        ));
+        // Hiking/Bicycle must ignore motor_vehicle:conditional.
+        assert!(edge_allowed_for_options(
+            &edge,
+            &winter,
+            RoutingProfile::Foot
+        ));
+        assert!(edge_allowed_for_options(
+            &edge,
+            &winter,
+            RoutingProfile::Bicycle
+        ));
+        edge.motor_vehicle_conditional = None;
+        edge.access_conditional = Some("no @ Nov-Jun".into());
+        assert!(!edge_allowed_for_options(
+            &edge,
+            &winter,
+            RoutingProfile::Foot
+        ));
     }
 }

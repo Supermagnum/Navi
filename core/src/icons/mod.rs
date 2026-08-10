@@ -156,6 +156,10 @@ fn candidate_filenames(key: &str, theme: IconTheme) -> Vec<String> {
         "fuel" => out.push("fuel.svg".into()),
         "toilets" | "restroom" => out.push("toilets.svg".into()),
         "leisure-fishing" | "fishing" | "fish" => out.push("fish.svg".into()),
+        // Self-authored speed camera mark (docs/icons.md); OSM-tag-key filename.
+        "speed_camera" | "speed-camera" | "enforcement_maxspeed" | "highway-speed_camera" => {
+            out.push("speed_camera.svg".into())
+        }
         _ => {}
     }
     if let Some(rest) = key.strip_prefix("country_") {
@@ -204,6 +208,27 @@ mod tests {
         let height = 48;
         let rgba = rasterize_file(&path, width, height).expect("leaf.svg rasterize");
         assert_nontrivial_rgba(&rgba, width, height);
+    }
+
+    #[test]
+    fn resolves_and_rasterizes_speed_camera() {
+        let bundled = bundled_icons_dir();
+        let p = resolve_icon("speed_camera", IconTheme::Day, None, &bundled);
+        assert!(
+            p.ends_with("speed_camera.svg"),
+            "must not fall back to unknown: {}",
+            p.display()
+        );
+        let rgba = rasterize_key(
+            "enforcement_maxspeed",
+            IconTheme::Day,
+            64,
+            64,
+            None,
+            &bundled,
+        )
+        .expect("speed_camera rasterize");
+        assert_nontrivial_rgba(&rgba, 64, 64);
     }
 
     #[test]
