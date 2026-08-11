@@ -7,6 +7,10 @@ neurological condition related to dyscalculia that makes programming harder in a
 way similar to how dyscalculia makes maths harder. AI was used to turn design
 ideas into working code and docs. The author still chose the product rules,
 reviewed the work, and ran the testing.
+It is written in rust,so as many as standard crates are used. The AI assistant has written minimum of code to "tie" them together.
+The crates used in the project is listed here:
+https://github.com/Supermagnum/Navi/blob/main/docs/crates.md
+
 
 # Testers wanted
 
