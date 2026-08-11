@@ -131,6 +131,7 @@ Re-run this whenever Rust/`navi-ffi` exports change. Skipping it leaves a stale
 
 # Release APK (minify currently off in app/build.gradle.kts)
 ./gradlew :app:assembleRelease
+# → app/build/outputs/apk/release/app-release.apk
 ```
 
 Windows PowerShell:
@@ -146,22 +147,35 @@ Debug APK path (typical):
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Release:
+Release APK / AAB:
 
 ```text
 app/build/outputs/apk/release/app-release.apk
 app/build/outputs/bundle/release/app-release.aab
 ```
 
-Signed release AAB (local upload keystore for smoke tests):
+### Signed release (local upload key)
 
 ```bash
+# Once: gitignored keystore under app/keystore/ (not Play production)
 ./scripts/make-upload-keystore.sh
-./gradlew :app:bundleRelease
+
+# Native libs for ABIs you ship
+./scripts/build-android-native.sh aarch64-linux-android release
+./scripts/build-android-native.sh x86_64-linux-android release
+
+./gradlew :app:assembleRelease   # APK
+./gradlew :app:bundleRelease     # AAB
 ```
 
-See [`android-api36-plan.md`](android-api36-plan.md) for API 36 / Play AAB notes.
-F-Droid Podman buildability: [`tools/fdroid-check/README.md`](../tools/fdroid-check/README.md).
+If `app/keystore/navi-upload.jks` is present, the `release` build type signs with
+it (override via `navi.upload.*` Gradle properties). Uninstall any debug-signed
+`no.navi.app` before installing a release APK (`adb uninstall no.navi.app`).
+
+Cheat-sheet also in the [README — Release build](../README.md#release-build-apk--aab).
+See [`android-api36-plan.md`](android-api36-plan.md) for API 36 / Play AAB notes
+and bundletool smoke. F-Droid Podman buildability:
+[`tools/fdroid-check/README.md`](../tools/fdroid-check/README.md).
 
 Signing a **production** Play release uses your Play App Signing / upload key —
 the gitignored `app/keystore/navi-upload.jks` is for local `bundletool` checks

@@ -14,9 +14,10 @@ https://github.com/Supermagnum/Navi/blob/main/docs/crates.md
 
 # Testers wanted
 
-We need people to try Navi on **real devices** — car head units and tablets.
-A Samsung Galaxy Tab S6 Lite has been used for checks, but cars and other
-devices still differ for GPS, maps, and speed. Checklist:
+We need people to try Navi on **real devices** — car head units, tablets, and
+phones. Reference checks so far: Samsung Galaxy Tab S6 Lite (**SM-P613**) and
+Google Pixel 9a (**tegu**, phone cutout / API 36+). Cars and other shapes still
+differ for GPS, maps, GPU, and layout. Checklist:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 How to help: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
 
@@ -36,8 +37,10 @@ How to help: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
 9. [Plugins](#plugins)
 10. [Coding standards and contributing](#coding-standards-and-contributing)
 11. [Building and installing](#building-and-installing)
+    - [Release build (APK / AAB)](#release-build-apk--aab)
 12. [Where the map data comes from](#where-the-map-data-comes-from)
 13. [Known issues](#known-issues)
+14. [TODO](#todo)
 
 More detail lives in linked docs (architecture, truck rest rules, map styles,
 debugging, and so on). Start with [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) if you
@@ -76,9 +79,11 @@ from Navit (**GPL v2**); see [`docs/icons.md`](docs/icons.md).
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. A small leaf icon shows when eco is on. | Done |
 | **Offline planning** | Download a region once, then plan and see the route on the device. | Done |
 | **Place search** | Search places and set From / Via / To. | Done |
+| **Use GPS** | Fill From / Via / To from the live fix (nearby name within ~12 m, else coordinates). The field is the chip active when you tap — not whichever chip is selected after resolution finishes. | Done |
 | **Map mark & saved places** | Hold on the map ~4 s to mark a point; set From / Via / To or save a named place (separate from Saved routes). | Done |
+| **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position (resolved start label); hiking prompts first. | Done |
 | **Breaks & rest** | Reminds you when a break is due and can suggest stops. Cars use hours between breaks; hiking/cycling use rest distances; trucks use legal driving-time rules where known. | Done |
-| **Drive bars** | Slim top bar (altitude) and bottom bar (zoom, break timer, trip ETA, road name, eco leaf). | Done |
+| **Drive bars** | Top: altitude (cutout-aware padding). Bottom: zoom, live GPS speed, posted limit when known, break timer, trip ETA, current street, eco leaf. | Done |
 | **GPS follow** | Map follows you by default. Pan away, then tap **Recenter**. | Done |
 | **Map rotation** | North-up, compass, or direction of travel. | Done |
 | **Moving icons** | Can draw nearby tracked markers on the map. A live radio feed is not built in yet. | Partial |
@@ -88,9 +93,9 @@ from Navit (**GPL v2**); see [`docs/icons.md`](docs/icons.md).
 | **Diagnostic logging** | Tools toggle writes a session log (GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system) you can copy over USB/MTP — no adb required. Files: **Internal storage → Documents → debug** (`navi_session_*.log`). | Done |
 | **Plugins** | A safe sandbox for future add-ons exists; product plugins are not shipped yet. | Host ready |
 
-**Hardware note:** Tablet checks have started (Samsung Galaxy Tab S6 Lite). Car
-head units still need more real-world testing before treating this as
-ship-ready. See [Screenshots](#screenshots) and
+**Hardware note:** Real-device checks include Samsung Galaxy Tab S6 Lite
+(**SM-P613**) and Google Pixel 9a. Car head units still need more real-world
+testing before treating this as ship-ready. See [Screenshots](#screenshots) and
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 
 ## What you need to download
@@ -121,9 +126,10 @@ per-mode options, pilgrim coverage):
 ## How features work
 
 **Planning a route.** Set **From** and **To** (and optional vias), pick a travel
-mode, then **Plan route**. From is often set with **Use GPS**. Hiking paths
-need the **Hiking** mode — planning with Car uses the road network and will not
-follow foot trails properly.
+mode, then **Plan route**. From is often set with **Use GPS** (select the
+**From** / **To** / **Via** chip first; the button label follows the chip).
+Hiking paths need the **Hiking** mode — planning with Car uses the road network
+and will not follow foot trails properly.
 
 **Eco vs shortest.** Shortest ignores hills. Eco makes steep climbs “cost” more.
 Electric modes get some credit for downhill recovery.
@@ -263,7 +269,7 @@ device:
 | **CPU** | **8 cores**, about **2 GHz** class |
 | **RAM** | **4 GB**. Prefer **regional** extracts on that class; whole large countries in one go are often too heavy. On the reference SM-P613 (~3.5 GB total), region **use** is fine via pack-hit or PBF fallback; **background pack conversion** still has thin system memory margin — see [Known issues](#known-issues). |
 | **Storage** | Leave room for the region file, place index, offline basemap, optional DEM, and indexed packs — often several GB for a region. |
-| **GPU** | MapLibre GLES is the default path used on the tested tablet. |
+| **GPU** | MapLibre GLES is the default path (verified on SM-P613 Adreno and Pixel 9a Mali). |
 
 Mitigations already in the design: regional downloads by default, preprocess-once
 indexed packs (background convert after download; region usable immediately via
@@ -459,6 +465,64 @@ unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'lib/arm64-v8a/libnavi
 On Windows PowerShell you can use Gradle install (`.\gradlew.bat :app:installDebug`)
 or `adb install -r app\build\outputs\apk\debug\app-debug.apk`.
 
+### Release build (APK / AAB)
+
+Debug installs use the Android **debug** keystore. A **release** package is what
+you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
+
+1. **Native library** for every ABI you ship (store AABs usually need both):
+
+```bash
+export ANDROID_HOME=…
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<version>"
+./scripts/build-android-native.sh aarch64-linux-android release
+./scripts/build-android-native.sh x86_64-linux-android release
+```
+
+2. **Local upload keystore** (optional but recommended for installable release
+   APKs / AAB smoke). Creates gitignored `app/keystore/navi-upload.jks` — for
+   **local testing only**, not Play production signing:
+
+```bash
+./scripts/make-upload-keystore.sh
+```
+
+   If that file exists, the `release` build type signs with it. Override
+   passwords/alias with Gradle properties `navi.upload.storePassword`,
+   `navi.upload.keyAlias`, and `navi.upload.keyPassword` if needed. Without a
+   keystore, Gradle still produces release outputs, but they may be unsigned.
+
+3. **Assemble**:
+
+```bash
+# Signed/unsigned release APK
+./gradlew :app:assembleRelease
+# → app/build/outputs/apk/release/app-release.apk
+
+# Play-style app bundle
+./gradlew :app:bundleRelease
+# → app/build/outputs/bundle/release/app-release.aab
+```
+
+4. **Install a release APK** (signatures differ from debug — uninstall the debug
+   build first if `adb` refuses the upgrade):
+
+```bash
+adb uninstall no.navi.app   # only if a debug/other-signed build is present
+adb install -r app/build/outputs/apk/release/app-release.apk
+adb shell am start -n no.navi.app/.MainActivity
+```
+
+5. **AAB smoke** (optional): validate / split / install with
+   [bundletool](https://github.com/google/bundletool) as in
+   [`docs/android-api36-plan.md`](docs/android-api36-plan.md#aab-smoke-host).
+
+Current `versionName` / `versionCode` live in `app/build.gradle.kts`
+(`0.1.0` / `1` at time of writing). Bump those before a real store or tagged
+release. F-Droid-style Podman reproducibility:
+[`tools/fdroid-check/README.md`](tools/fdroid-check/README.md). Full shared
+recipe: [`docs/android-build.md`](docs/android-build.md).
+
 ## Desktop / core (optional)
 
 | Host | Guide |
@@ -512,8 +576,8 @@ Country/region visual extracts can also be prepared with
   are not the primary path yet.
 - **Map / GPU quirks:** some emulator and phone GPU setups have historically
   crashed or washed out hillshade; the project defaulted to MapLibre GLES after
-  tablet checks. Details in [`docs/map-styles.md`](docs/map-styles.md) and
-  [`docs/debugging.md`](docs/debugging.md).
+  SM-P613 and Pixel 9a checks. Details in [`docs/map-styles.md`](docs/map-styles.md)
+  and [`docs/debugging.md`](docs/debugging.md).
 - **Screenshot-only lake fringe:** a soft blue rim around water can appear in
   captures but not while using the app live — see
   [`docs/map-styles.md`](docs/map-styles.md).
@@ -587,3 +651,60 @@ Country/region visual extracts can also be prepared with
   ~z12. Not a Navi Liberty regression — see [`docs/map-styles.md`](docs/map-styles.md).
 - **Not implemented yet:** checking whether the code can be optimised for
   rendering.
+
+# TODO
+
+## Integrate [Supermagnum/road-signs](https://github.com/Supermagnum/road-signs)
+
+Official **Norwegian traffic-sign** SVG catalogue plus machine-readable JSON,
+maintained as a **separate** open repository (not shipped in Navi yet). Source
+graphics/metadata come from Statens vegvesen / Kartverket under
+[NLOD 2.0](https://data.norge.no/nlod/en/2.0) — keep that attribution when
+vendoring. Pipeline code in that repo rebuilds the catalogue; Navi should
+consume the **published artefacts**, not re-run NVDB downloads at runtime.
+
+### What the catalogue provides (investigate snapshot)
+
+| Artefact | Role for Navi |
+|---|---|
+| `svg/fareskilt/`, `svg/speed_limit/`, `svg/serviceskilt/`, `svg/vegvisning/` | Vector art (~116 files across 121 NVDB codes; a few speed codes still lack graphics) |
+| `database/signs_en.json` / `signs.json` | English-primary / bilingual inventory (`code`, name, meaning, SVG path, status) |
+| `database/osm_tags.json` (+ `.md`) | Maps each code → `traffic_sign=NO:…`, companion tags (`hazard=*`, `maxspeed=*`, POI/destination tags), plus flags such as **usable as fixed navi symbol** (~93) and **usable as navi icon outside Norway** (~88), Vienna vs Norway-specific scope |
+
+Categories today: warning triangles (100-series), speed-limit / related plates,
+service/tourist symbols (640/650), selected direction/route symbols (723 /
+755–780 / 790). Unresolved graphics remain listed with `"svg": null` — skip
+those until the upstream catalogue fills them.
+
+### How it should plug into Navi (planned work)
+
+1. **Asset pipeline** — Vendor a pinned snapshot (submodule, sparse checkout, or
+   copied tree) of the SVGs + `signs_en.json` + `osm_tags.json`. Rasterize into
+   the existing icon lean pack the same way other approach icons are prepared
+   (`docs/icons.md`), with a clear **NLOD** attribution note alongside the
+   current Navit **GPL v2** icon set (do not mix licence stories).
+2. **OSM matching** — On the planned corridor / approach path, match downloaded
+   OSM `traffic_sign=NO:…` (and companion `hazard=*`, `maxspeed=*`, etc.) using
+   `osm_tags.json`. Prefer entries marked usable as a fixed navi symbol; ignore
+   `not_for_navigation` / pure `variable_content` templates (digit plates,
+   distance stripes) until a dedicated variable renderer exists.
+3. **Guidance UX** — Surface upcoming matched signs in the approach / warning
+   chrome (same distance-phase family as speed-camera warnings), not as a
+   second basemap layer that fights MapLibre tiles. Speed plates should
+   **complement** the existing way-based posted-limit HUD, not replace edge
+   `maxspeed` parsing.
+4. **Jurisdiction** — First ship **Norway** (`NO:` IDs). For other Vienna
+   Convention countries, reuse only symbols/tags the mapping marks as safe
+   outside NO, and never stamp foreign roads with `traffic_sign=NO:…`. Nordic-
+   specific art (elk, reindeer, ski, …) stays optional outside that region.
+5. **Pack / offline** — Decide whether sign hits are scanned from the region
+   PBF at plan time, indexed into a small pack beside graph/POI packs, or
+   queried live from place/edge metadata — same offline-first rules as the rest
+   of routing (no silent network).
+6. **Gaps** — Upstream still missing a few speed-limit SVGs; forbud / vikeplikt
+   / underskilt packs were audited empty for the guidance set and are **out of
+   scope** until that catalogue grows. Do not invent new OSM `hazard=*` values
+   beyond what `osm_tags.json` already documents.
+
+Tracking / design detail can land later under `docs/` (icons + jurisdiction);
+this README entry is the product-level integration TODO until that work starts.

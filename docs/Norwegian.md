@@ -11,9 +11,10 @@ testen.
 
 # Testere ønskes
 
-Vi trenger folk som prøver Navi på **ekte enheter** — bilskjermer og nettbrett.
-En Samsung Galaxy Tab S6 Lite er brukt til sjekker, men biler og andre enheter
-oppfører seg fortsatt annerledes for GPS, kart og ytelse. Sjekkliste:
+Vi trenger folk som prøver Navi på **ekte enheter** — bilskjermer, nettbrett og
+telefoner. Referansesjekker så langt: Samsung Galaxy Tab S6 Lite (**SM-P613**) og
+Google Pixel 9a (**tegu**, kamerahull / API 36+). Biler og andre formater
+oppfører seg fortsatt annerledes for GPS, kart, GPU og layout. Sjekkliste:
 [`real-hardware-testing.md`](real-hardware-testing.md).
 Hvordan bidra: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
@@ -33,8 +34,10 @@ Hvordan bidra: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 9. [Plugins](#plugins)
 10. [Kodestandarder og bidrag](#kodestandarder-og-bidrag)
 11. [Bygge og installere](#bygge-og-installere)
+    - [Utgivelsesbygg (APK / AAB)](#utgivelsesbygg-apk--aab)
 12. [Hvor kartdataene kommer fra](#hvor-kartdataene-kommer-fra)
 13. [Kjente problemer](#kjente-problemer)
+14. [TODO](#todo)
 
 Mer detalj ligger i lenkede dokumenter (arkitektur, lastebilhvile, kartstiler,
 feilsøking osv.). Start med [`CONTRIBUTING.md`](CONTRIBUTING.md) hvis du vil
@@ -75,9 +78,11 @@ ikoner kommer fra Navit (**GPL v2**); se [`icons.md`](icons.md).
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Et lite bladikon vises når øko er på. | Ferdig |
 | **Frakoblet planlegging** | Last ned en region én gang, planlegg og se ruten på enheten. | Ferdig |
 | **Stedssøk** | Søk steder og sett Fra / Via / Til. | Ferdig |
+| **Bruk GPS** | Fyll Fra / Via / Til fra live-posisjon (navn innen ~12 m, ellers koordinater). Feltet er chipen som var aktiv da du trykket — ikke den som er valgt etter at oppslaget er ferdig. | Ferdig |
 | **Kartmerke og lagrede steder** | Hold på kartet ~4 s for å merke et punkt; sett Fra / Via / Til eller lagre et navngitt sted (skilt fra Lagrede ruter). | Ferdig |
+| **Avvik / omberegning** | Vedvarende avvik viser **Off route**; motorprofiler omplanlegger automatisk fra live posisjon; fottur spør først. | Ferdig |
 | **Pauser og hvile** | Påminner når pause er «forfalt» og kan foreslå stopp. Bil bruker timer mellom pauser; fottur/sykling bruker rasteavstander; lastebil bruker juridiske kjøretidsregler der de er kjent. | Ferdig |
-| **Kjørefelt** | Tynn toppstripe (høyde) og bunnstripe (zoom, pauseteller, tur-ETA, veinavn, økoblad). | Ferdig |
+| **Kjørefelt** | Topp: høyde (tilpasset kamerahull). Bunn: zoom, live GPS-fart, skiltet fartsgrense når kjent, pauseteller, tur-ETA, veinavn, økoblad. | Ferdig |
 | **GPS-følge** | Kartet følger deg som standard. Panorer bort, trykk deretter **Recenter**. | Ferdig |
 | **Kartrotasjon** | Nord opp, kompass eller kjøreretning. | Ferdig |
 | **Bevegelige ikoner** | Kan tegne nærliggende spormarkører på kartet. Live radiomating er ikke innebygd ennå. | Delvis |
@@ -85,9 +90,10 @@ ikoner kommer fra Navit (**GPL v2**); se [`icons.md`](icons.md).
 | **Diagnostisk logging** | Bryter under Tools skriver en øktlogg (GPS, kamera, brytere, ruteplan/trinn, øko, POI, pauser, instruksjoner, drivstoff, system) du kan kopiere over USB/MTP — adb trengs ikke. Filer: **Intern lagring → Documents → debug** (`navi_session_*.log`). | Ferdig |
 | **Plugins** | En trygg sandkasse for fremtidige tillegg finnes; produktplugins er ikke levert ennå. | Vert klar |
 
-**Maskinvare:** Nettbrettsjekker er startet (Samsung Galaxy Tab S6 Lite).
-Bilskjermer trenger fortsatt mer testing i virkeligheten før dette behandles som
-klart til levering. Se [Skjermbilder](#skjermbilder) og
+**Maskinvare:** Ekte enhetssjekker inkluderer Samsung Galaxy Tab S6 Lite
+(**SM-P613**) og Google Pixel 9a. Bilskjermer trenger fortsatt mer testing i
+virkeligheten før dette behandles som klart til levering. Se
+[Skjermbilder](#skjermbilder) og
 [`real-hardware-testing.md`](real-hardware-testing.md).
 
 ## Hva du må laste ned
@@ -118,7 +124,8 @@ per-modus valg, pilegrim):
 ## Slik fungerer funksjonene
 
 **Planlegge rute.** Sett **From** og **To** (og valgfrie via-punkter), velg
-reisemåte, deretter **Plan route**. From settes ofte med **Use GPS**.
+reisemåte, deretter **Plan route**. From settes ofte med **Use GPS** (velg
+**From** / **To** / **Via**-chip først; knappeetiketten følger chipen).
 Fotstier krever **Hiking**-modus — planlegging med Car bruker veinettet og
 følger ikke stier skikkelig.
 
@@ -418,6 +425,51 @@ Bekreft at APK-en inneholder arm64-biblioteket:
 unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'lib/arm64-v8a/libnavi.so'
 ```
 
+### Utgivelsesbygg (APK / AAB)
+
+Debug bruker Android **debug**-nøkkel. Et **release**-pakke er det du sidelaster
+som utgivelse, kjører F-Droid-lignende sjekker på, eller røyktester som AAB.
+
+1. **Native bibliotek** for hver ABI du leverer (butikk-AAB trenger vanligvis begge):
+
+```bash
+export ANDROID_HOME=…
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<version>"
+./scripts/build-android-native.sh aarch64-linux-android release
+./scripts/build-android-native.sh x86_64-linux-android release
+```
+
+2. **Lokal opplastingsnøkkel** (valgfritt, anbefalt for installerbar release).
+   Lager gitignorert `app/keystore/navi-upload.jks` — **kun lokal testing**, ikke
+   Play-produksjonssignering:
+
+```bash
+./scripts/make-upload-keystore.sh
+```
+
+3. **Bygg**:
+
+```bash
+./gradlew :app:assembleRelease
+# → app/build/outputs/apk/release/app-release.apk
+
+./gradlew :app:bundleRelease
+# → app/build/outputs/bundle/release/app-release.aab
+```
+
+4. **Installer release-APK** (annen signatur enn debug — avinstaller debug først
+   hvis `adb` nekter oppgradering):
+
+```bash
+adb uninstall no.navi.app
+adb install -r app/build/outputs/apk/release/app-release.apk
+adb shell am start -n no.navi.app/.MainActivity
+```
+
+Mer detalj (bundletool, F-Droid Podman): engelsk
+[README — Release build](../README.md#release-build-apk--aab) og
+[`android-build.md`](android-build.md).
+
 ## Skrivebord / kjerne (valgfritt)
 
 | Vert | Guide |
@@ -489,3 +541,15 @@ Land-/regionvisuelle uttrekk kan også lages med
   [Pauseteller vs tur-ETA](#pauseteller-vs-tur-eta).
 - **Ikke implementert ennå:** sjekk av om koden kan optimaliseres for
   tegning/rendering.
+
+# TODO
+
+## Integrere [Supermagnum/road-signs](https://github.com/Supermagnum/road-signs)
+
+Åpen katalog med offisielle **norske trafikkskilt** (SVG + JSON), egen repo under
+[NLOD 2.0](https://data.norge.no/nlod/en/2.0). Planlagt i Navi: vendore SVG +
+`signs_en.json` / `osm_tags.json`, rasterisere inn i ikonpakken, matche OSM
+`traffic_sign=NO:…` / `hazard=*` / `maxspeed=*` langs rute/innkjøring, vise i
+approach-/advarsels-UI (som fartskamera), Norge først, Vienna-gjenbruk kun der
+kartleggingen tillater det. Full integrasjonsbeskrivelse (artefakter, steg,
+begrensninger): engelsk [README — TODO](../README.md#todo).

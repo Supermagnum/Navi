@@ -159,12 +159,21 @@ class OffRouteBehaviorInstrumentedTest {
                 NaviMapTestHooks.lastPlanDistanceKm == result.distanceKm + 1.5,
         )
         assertFalse(NaviMapTestHooks.hikingReroutePromptVisible)
+        // Reroute start must be a live resolved label (or coord fallback), not
+        // the hardcoded "Here" and not the stale original Plan start ("Espa").
+        val startAfter = NaviMapTestHooks.lastAppliedRouteStartLabel
+        assertTrue("reroute start label present", startAfter.isNotBlank())
+        assertTrue(
+            "reroute start must not stay 'Here' or original Espa (got=$startAfter)",
+            startAfter != "Here" && startAfter != "Espa",
+        )
+        assertEquals("", NaviMapTestHooks.routeStartLabel)
         saveShot("car_off_route_fixed.png")
         pullShot("car_off_route_fixed.png")
         Log.i(
             TAG,
             "FINDING car: off-route suppresses approach; auto-reroute count=" +
-                "${NaviMapTestHooks.autoRerouteTriggeredCount}",
+                "${NaviMapTestHooks.autoRerouteTriggeredCount}; start=$startAfter",
         )
     }
 

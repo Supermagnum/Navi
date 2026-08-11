@@ -42,6 +42,9 @@ class CorridorInstrumentedTest {
                 val am = context.assets
                 val names = am.list("icons") ?: emptyArray()
                 for (name in names) {
+                    // AssetManager.list includes subdirs (e.g. aprs/); open() only works on files.
+                    val children = am.list("icons/$name")
+                    if (children != null) continue
                     val out = File(dest, name)
                     if (!out.exists()) {
                         am.open("icons/$name").use { input ->
@@ -61,6 +64,15 @@ class CorridorInstrumentedTest {
         val localPbf = File(dataDir, "espa-atnbrufossen-corridor.osm.pbf")
         if (!localPbf.isFile || localPbf.length() < 1_000_000L) {
             stagedPbf.copyTo(localPbf, overwrite = true)
+        }
+        // Stale/partial indexed packs for this stem can report pack_hit=true while
+        // leaving Espa/Atnbrufossen unsnappable (seen on Pixel 9a). Prefer PBF build.
+        val stem = "espa-atnbrufossen-corridor"
+        dataDir.listFiles()?.forEach { f ->
+            val n = f.name
+            if (n.startsWith(stem) && (n.contains(".navi-") || n.endsWith(".rkyv") || n.endsWith(".navi-manifest.json"))) {
+                f.delete()
+            }
         }
         val elevDir = File(dataDir, "elevation")
         if (!elevDir.isDirectory || elevDir.list().isNullOrEmpty()) {

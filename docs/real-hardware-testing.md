@@ -1,16 +1,20 @@
 # Real-hardware testing guide
 
-**The app needs testing on real hardware.** Development and automated checks so
-far have used the **Android Automotive emulator only** — no physical Android
-Automotive / phone head-unit has been available. Emulator results are not a
-shipping substitute for device GPS/IMU, GPU drivers, audio, USB accessories, or
+**The app needs testing on real hardware.** Emulator results are not a shipping
+substitute for device GPS/IMU, GPU drivers, audio, USB accessories, or
 4 GB RAM behaviour. Treat **8 cores (~2 GHz class) and 4 GB RAM** as the
 **minimum required** hardware for this product class; see
 [README minimum hardware and storage capacity](../README.md#minimum-hardware-and-storage-capacity)
 (including country disk budgets for Norway / Sweden / Germany / Russia / USA).
 
+Two **confirmed** phone/tablet targets are documented below (**SM-P613** and
+**Pixel 9a**). Keep their findings in **separate** sections — several rendering
+and memory results have been **device-specific**, so do not merge Pixel results
+into the SM-P613 baseline or assume one transfers to the other.
+
 If you have access to real hardware, this guide covers what to check and how to
-capture evidence so findings can be compared against the emulator baseline.
+capture evidence so findings can be compared against the emulator baseline and
+against these two devices.
 
 ## Diagnostic logging (preferred — no adb required)
 
@@ -82,8 +86,136 @@ fault `0x30` in `libGLESv2_enc.so` during `MapRenderer::render`) on any non-zero
 bearing, without needing a screenshot. The app briefly depended on
 `android-sdk-vulkan`; as of 2026-07-31 it **finalizes** `android-sdk:11.13.5`
 GLES after `BearingCrashIsolationTest` **PASS** on `emulator-5554` (no MapLibre
-SIGSEGV; SM-P613 wash also cleared under GLES). Still confirm Compass / DoT
+SIGSEGV; SM-P613 wash also cleared under GLES). Pixel 9a (Mali-G715) later
+confirmed the same GLES default: no bearing SIGSEGV and no Adreno-class
+hillshade wash (see **Pixel 9a** findings). Still confirm Compass / DoT
 rotation on real hardware GPU drivers (item 5).
+
+---
+
+## Confirmed devices (do not merge findings)
+
+### Samsung Galaxy Tab S6 Lite (SM-P613)
+
+Primary early tablet target: Samsung / Adreno 618, ~3.5–4 GB RAM class. Authoritative
+detail for indexed packs, hillshade wash under Vulkan vs GLES, and Ostlandet
+convert memory lives in [`indexed-map-format-plan.md`](indexed-map-format-plan.md)
+and [`map-styles.md`](map-styles.md). Short recall for comparison only:
+
+| Topic | SM-P613 note |
+|---|---|
+| Renderer | Vulkan produced olive hillshade wash (`washFrac`≈0.999); GLES 11.13.5 clears it (`washFrac`≈0.09 online / ≈0.002 offline) |
+| Bearing | GLES bearing stress OK on this GPU (AAOS SIGSEGV was emulator/GL-enc) |
+| Ostlandet tiled convert | ~657 s; min system `MemAvailable` ~**329 MiB**; swap +~250 MiB; thin margin / TRIM CRITICAL observed |
+
+### Pixel 9a (`tegu`) — onboard 2026-08-11
+
+Second confirmed real-hardware target: **stock Android** on Google Tensor
+silicon — meaningfully different SoC/GPU/RAM/OEM skin from SM-P613. Serial used
+in this pass: `58091JEBF00012`. App: `no.navi.app` debug install,
+`minSdk=26` / `targetSdk=36`.
+
+| Field | Value |
+|---|---|
+| Model / codename | Pixel 9a / `tegu` |
+| Android / API | **17 / 37** (newer than typical SM-P613 tablet trains; relevant to API 36 target work) |
+| GPU | **ARM Mali-G715** (`ro.hardware.egl=mali`; SurfaceFlinger: `GLES: ARM, Mali-G715, OpenGL ES 3.2 …`) — **not** Adreno 618 |
+| RAM | `MemTotal` ~**7.5 GB** (`7498068` kB) |
+| MapLibre default under test | GLES `android-sdk:11.13.5` (global finalized default) |
+
+#### 1. Install / launch
+
+- `adb devices -l`: `device` (not offline).
+- `:app:installDebug` + `MainActivity` launch OK; planning UI navigable.
+
+#### 2. Renderer (GLES vs Vulkan question — new GPU data)
+
+Tested under the **current GLES default** only (no Vulkan A/B on this pass).
+
+| Check | Result on Pixel 9a (Mali-G715) | vs SM-P613 / AAOS |
+|---|---|---|
+| `BearingCrashIsolationTest` (bearing + screenshot; bearing-alone) | **PASS** — no MapLibre / RenderThread SIGSEGV | Matches AAOS GLES re-check and SM-P613 GLES stability; **does not** reproduce the old AAOS GLES SIGSEGV |
+| Online Gjendebu 3D (`OnlineGjendebu3dHillshadeDiagnosticTest`) | **PASS** — default `washFrac`≈**0.118**, `lum_std`≈41.7, `creamFrac`≈0.098; exag 0.3 `washFrac`≈**0.017** | **Not** the SM-P613 Vulkan wash (`washFrac`≈0.999). Same ballpark as SM-P613 **GLES** online (~0.09) |
+| Offline downloaded 3D (`OfflineDownloaded3dScreenshotTest`) | **PASS** — `washFrac`≈**0.0001**, `creamFrac`≈0.54, `demHitsOk`≥10, elev/tile sanity OK | Matches SM-P613 GLES offline clear (SM-P613 `washFrac`≈0.002); wash bug **does not** reproduce on Mali under GLES |
+
+**Divergence takeaway:** On Mali-G715 + stock Android 17, GLES looks **healthy** (no wash, no bearing crash). That supports “SM-P613 Vulkan wash was **device/GPU-backend-specific**,” not a universal MapLibre hillshade defect. It does **not** by itself prove Vulkan would be safe on Pixel — Vulkan was not re-enabled here. Per-device renderer selection remains an open product question; this is a second GPU data point under the global GLES default.
+
+#### 3. Region download / indexed-pack conversion (MemAvailable)
+
+Methodology: system `/proc/meminfo` `MemAvailable` sampled ~every 2 s during
+`OstlandetV3TiledRebuildInstrumentedTest` (fallback plan + full tiled
+`ensureIndexedMaps` + Friisvegen seasonal pack-hit), not process RSS alone.
+
+| Metric | Pixel 9a (this pass) | SM-P613 baseline |
+|---|---|---|
+| Ostlandet tiled convert wall | `ensureIndexedMaps elapsed_ms`≈**978553** (~16.3 min); `graph_tiles=60`; report **PASS** | ~**657 s** (~11 min) |
+| Min `MemAvailable` during run | ~**43 MiB** (brief dips; 51 samples &lt;200 MiB) | ~**329 MiB** |
+| Swap context | Device already heavily swapped at start (`SwapUsed`≈**3660 MiB** of ~3661 MiB); little further swap headroom | ~+250 MiB swap during convert |
+
+**Divergence takeaway:** Higher `MemTotal` did **not** make this convert “comfortable” under a busy system — absolute `MemAvailable` bottoms were **worse** than the SM-P613 controlled baseline. Treat Ostlandet convert memory pressure as **still a real risk** on Pixel-class hardware when the rest of the system is memory-busy; do not assume the SM-P613 thin-margin issue is tablet-only. Re-measure on a quieter Pixel (lower baseline swap) before claiming a permanent margin improvement.
+
+Friisvegen seasonal (same test class): summer `pack_hit=true`,
+`seasonal_closure_excluded_edges=0`; winter `pack_hit=true`,
+`seasonal_closure_excluded_edges=36`, route `FAIL` / longer alt as expected.
+
+#### 4. Regression corridors and recent features
+
+Follow-up pass **2026-08-11/12** after Espresso **3.7.0** / androidx.test **1.7**
+(API 37 `InputManager.getInstance` fix — see below).
+
+| Scenario | Result |
+|---|---|
+| DNT Skolla→Rondvassbu keyboard hike (`HikingSearchRouteScreenshotTest`) | **PASS** |
+| Espa→Atnbrufossen eco plan + sim (`DiagnosticLogOnDeviceInstrumentedTest`) | **PASS** |
+| Full `CorridorInstrumentedTest` (smoke, map overlay, **realPipeline**, icons) | **PASS** (after wiping stale corridor indexed packs that caused a false `pack_hit` + snap fail — **not** a tooling issue) |
+| Friisvegen seasonal (Ostlandet v3 rebuild class) | **PASS** |
+| Rena leir military + Gjende glacier (`MilitaryGlacierLanduseScreenshotTest`) | **PASS** |
+| Hellstugubrean glacier name ladder (`GlacierNameLabelScreenshotTest`) | **PASS** |
+| Speed HUD FFI / Compose (`SpeedHudFfiInstrumentedTest`) | **PASS** |
+| Speed-camera lean-pack icon (`SpeedCameraIconScreenshotTest`) | **PASS** |
+| Avoid-motorways priority share (`AvoidMotorwaysShareInstrumentedTest`) | **PASS** |
+| Bearing isolation (`BearingCrashIsolationTest`) | **PASS** |
+| Diagnostic logging path | **PASS** — `/storage/emulated/0/Documents/debug/` on stock Pixel |
+
+`realPipeline` snap failure with `pack_hit=true` was **separate from** the Espresso
+gap: leftover/partial `espa-atnbrufossen-corridor` indexed packs made the pack
+loader succeed while Atnbrufossen sat ~4.6 km off the pack graph. Clearing those
+packs (and skipping `icons/aprs` asset dirs in corridor `setUp`) restored
+**PASS**. Instrumented runner also marks the first-run speed-camera opt-in prompt
+as already shown so that modal cannot block Compose UI after `pm clear`.
+
+#### 4b. Instrumented test tooling for API 37
+
+Android 17 removes reflective `InputManager.getInstance()`. Espresso **3.6.1**
+still called it from `Espresso.onIdle` (Compose UI test path). Official fix:
+[Espresso 3.7.0](https://developer.android.com/jetpack/androidx/releases/test)
+(2025-07-30) — *“Use getSystemService instead of reflective InputManager.getInstance”*.
+
+Pinned in `app/build.gradle.kts` (app `compileSdk`/`targetSdk` remain **36**):
+
+| Artifact | Version |
+|---|---|
+| `androidx.test.espresso:espresso-core` | **3.7.0** |
+| `androidx.test:runner` | **1.7.0** |
+| `androidx.test:rules` | **1.7.0** |
+| `androidx.test.ext:junit` | **1.3.0** |
+| `androidx.test.uiautomator:uiautomator` | 2.3.0 (unchanged) |
+
+Compose `ui-test-junit4` stays on the existing Compose BOM; it resolves Espresso
+**3.5.0 → 3.7.0** via the direct espresso-core pin.
+
+SM-P613 re-check (**Android 14 / API 34**, serial `R52TB0JQEDE`, 2026-08-12):
+`SpeedHudFfiInstrumentedTest` + `BearingCrashIsolationTest` +
+`AvoidMotorwaysShareInstrumentedTest` — **PASS** (6/6) with the same Espresso
+3.7.0 / androidx.test 1.7 pins. No `InputManager` regression on the older API.
+
+#### 5. Why this device matters
+
+Pixel 9a is the first **non-Samsung / non-Adreno** confirmed target in this
+project. Renderer and memory results above are **new data points** for the
+recurring “universal fix vs device-specific” question — especially GLES
+hillshade (looks good on Mali) and Ostlandet convert `MemAvailable` (still
+thin when the system is busy).
 
 ---
 

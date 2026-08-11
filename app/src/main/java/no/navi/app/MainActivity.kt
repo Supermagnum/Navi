@@ -24,11 +24,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -81,6 +86,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
@@ -728,18 +734,26 @@ private fun NaviMapScreen() {
         val pts = parsePolyline(pending.routePolyline)
         val startPt = pts.firstOrNull()
         val endPt = pts.lastOrNull()
+        // Prefer live waypoint names. Test hooks are fallbacks for instrumented
+        // pushes that set labels without a From/To waypoint (never override a
+        // real fromPoint after reroute / plan).
         val startLabel =
-            NaviMapTestHooks.routeStartLabel
-                .ifBlank { fromPoint?.name.orEmpty() }
+            fromPoint
+                ?.name
+                .orEmpty()
+                .ifBlank { NaviMapTestHooks.routeStartLabel }
                 .ifBlank { "Start" }
         val endLabel =
-            NaviMapTestHooks.routeEndLabel
-                .ifBlank { toPoint.name }
+            toPoint.name
+                .ifBlank { NaviMapTestHooks.routeEndLabel }
                 .ifBlank { pending.poiName }
                 .ifBlank { "End" }
         val viaLabel =
-            NaviMapTestHooks.routeViaLabel
-                .ifBlank { viaPoints.firstOrNull()?.name.orEmpty() }
+            viaPoints
+                .firstOrNull()
+                ?.name
+                .orEmpty()
+                .ifBlank { NaviMapTestHooks.routeViaLabel }
         val breaks =
             parseBreakPoisJson(
                 runCatching { pending.breakPoisJson }.getOrDefault("[]"),
@@ -844,6 +858,7 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastPlanReport = pending.report
         NaviMapTestHooks.lastPlanDistanceKm = pending.distanceKm
         NaviMapTestHooks.lastRoutePolyline = pending.routePolyline
+        NaviMapTestHooks.lastAppliedRouteStartLabel = startLabel
         NaviMapTestHooks.lastBreakPoiCount = breaks.size
         NaviMapTestHooks.lastManeuversJson =
             runCatching { pending.maneuversJson }.getOrDefault("[]")
@@ -906,94 +921,6 @@ private fun NaviMapScreen() {
         }
     }
 
-    /**
-     * Recompute from current GPS to remaining vias + destination after a
-     * confirmed off-route. Uses [RouteReplan] (same UniFFI pipeline as Plan).
-     */
-    fun startRerouteFromCurrent(
-        lat: Double,
-        lon: Double,
-    ) {
-        if (recalculatingRoute || planningRoute) return
-        if (toPoint.name.isBlank() && mapState.endName.isBlank()) return
-        val dest =
-            if (toPoint.lat != 0.0 || toPoint.lon != 0.0) {
-                toPoint
-            } else {
-                Waypoint(mapState.endName.ifBlank { "End" }, mapState.endLat, mapState.endLon)
-            }
-        val remainingVias =
-            viaPoints.filterIndexed { idx, _ ->
-                idx > NaviMapTestHooks.lastViaIndex
-            }
-        val pts =
-            buildList {
-                add(Waypoint("Here", lat, lon))
-                addAll(remainingVias)
-                add(dest)
-            }
-        rerouteJob?.cancel()
-        rerouteJob =
-            scope.launch {
-                recalculatingRoute = true
-                planningRoute = true
-                NaviMapTestHooks.reroutingActive = true
-                NaviMapTestHooks.autoRerouteTriggeredCount += 1
-                routePlanProgress = "Recalculating route…"
-                routePlanPct = 0
-                status = "Recalculating route… (may take several seconds)"
-                val ecoForPlan = if (ecoModeToggleable(profile)) ecoEnabled else true
-                val vehicle =
-                    runCatching { loadVehicleLimits(dataDir.absolutePath) }
-                        .getOrElse {
-                            FfiVehicleLimits(null, null, null, null, null, null)
-                        }
-                val result =
-                    runCatching {
-                        RouteReplan.plan(
-                            dataDir = dataDir,
-                            profile = profile,
-                            waypoints = pts,
-                            useEco = ecoForPlan,
-                            avoidMotorways = avoidMotorways,
-                            avoidTolls = avoidTolls,
-                            avoidFerries = avoidFerries,
-                            vehicle = vehicle,
-                            preferOfficialNetworks = preferOfficialNetworks,
-                            preferPilgrimRoutes = preferPilgrimRoutes,
-                            onProgress = { pct, detail ->
-                                routePlanPct = pct
-                                routePlanProgress = "Recalculating route… $detail"
-                            },
-                        )
-                    }.getOrElse { e ->
-                        if (e is kotlinx.coroutines.CancellationException) throw e
-                        status = "Reroute failed: ${e.message}"
-                        recalculatingRoute = false
-                        planningRoute = false
-                        NaviMapTestHooks.reroutingActive = false
-                        routePlanProgress = ""
-                        offRouteCoordinator.suppressUntilOnRoute()
-                        return@launch
-                    }
-                if (!isActive) return@launch
-                recalculatingRoute = false
-                planningRoute = false
-                NaviMapTestHooks.reroutingActive = false
-                routePlanProgress = ""
-                if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
-                    status = userFacingStatus(result.report).ifBlank { "Reroute failed" }
-                    offRouteCoordinator.suppressUntilOnRoute()
-                    return@launch
-                }
-                fromPoint = Waypoint("Here", lat, lon)
-                applyPlannedRoute(result)
-                status =
-                    "Route updated · ${"%.1f".format(result.distanceKm)} km " +
-                    "(recalculated after detour)"
-            }
-    }
-
     LaunchedEffect(dataDir) {
         preferOfficialNetworks = uniffi.navi.loadPreferOfficialNetworks(dataDir.absolutePath)
         preferPilgrimRoutes = uniffi.navi.loadPreferPilgrimRoutes(dataDir.absolutePath)
@@ -1018,16 +945,7 @@ private fun NaviMapScreen() {
         return preferred
     }
 
-    fun resolveRegionPbf(): File? {
-        val candidates =
-            listOf(
-                File(dataDir, "ostlandet-latest.osm.pbf"),
-                File(dataDir, "oppland-latest.osm.pbf"),
-                File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
-                File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"),
-            )
-        return candidates.firstOrNull { it.isFile }
-    }
+    fun resolveRegionPbf(): File? = RouteReplan.resolvePbf(dataDir)
 
     LaunchedEffect(Unit) {
         val lat = mapState.gpsLat
@@ -1082,7 +1000,7 @@ private fun NaviMapScreen() {
         val resolved =
             withContext(Dispatchers.IO) {
                 val hits =
-                    runCatching {
+                    try {
                         nearbyPlaces(
                             resolvePlaceIndexDb().absolutePath,
                             lat,
@@ -1090,10 +1008,14 @@ private fun NaviMapScreen() {
                             GPS_WAYPOINT_RESOLVE_RADIUS_M,
                             16u,
                         )
-                    }.getOrDefault(emptyList())
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
                 pickNearbyPlaceNameForGpsWaypoint(hits)
-                    ?: runCatching {
-                        val pbf = resolveRegionPbf() ?: return@runCatching null
+                    ?: try {
+                        val pbf = resolveRegionPbf() ?: return@withContext null
                         roadLabelNear(
                             pbf.absolutePath,
                             graphCacheDirForPbf(pbf).absolutePath,
@@ -1102,14 +1024,144 @@ private fun NaviMapScreen() {
                             lon,
                             profile,
                             GPS_WAYPOINT_RESOLVE_RADIUS_M,
-                        )
-                    }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+                        )?.trim()?.takeIf { it.isNotEmpty() }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
             }
         return if (resolved != null) {
             resolved to "map-resolved"
         } else {
             formatMapMarkFallback(lat, lon) to "map-mark"
         }
+    }
+
+    /**
+     * Fast start label for reroute: place-index only (no road-graph build).
+     * Falls back to GPS coordinate text within a short timeout.
+     */
+    suspend fun resolveRerouteStartLabel(
+        lat: Double,
+        lon: Double,
+    ): String {
+        val fromIndex =
+            withTimeoutOrNull(2_000L) {
+                withContext(Dispatchers.IO) {
+                    try {
+                        val hits =
+                            nearbyPlaces(
+                                resolvePlaceIndexDb().absolutePath,
+                                lat,
+                                lon,
+                                GPS_WAYPOINT_RESOLVE_RADIUS_M,
+                                16u,
+                            )
+                        pickNearbyPlaceNameForGpsWaypoint(hits)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+            }
+        return fromIndex?.takeIf { it.isNotBlank() }
+            ?: formatGpsWaypointFallback(lat, lon)
+    }
+
+    /**
+     * Recompute from current GPS to remaining vias + destination after a
+     * confirmed off-route. Uses [RouteReplan] (same UniFFI pipeline as Plan).
+     * Start label is resolved via [resolveLabelAt] (~12 m), matching Use GPS.
+     */
+    fun startRerouteFromCurrent(
+        lat: Double,
+        lon: Double,
+    ) {
+        if (recalculatingRoute || planningRoute) return
+        if (toPoint.name.isBlank() && mapState.endName.isBlank()) return
+        val dest =
+            if (toPoint.lat != 0.0 || toPoint.lon != 0.0) {
+                toPoint
+            } else {
+                Waypoint(mapState.endName.ifBlank { "End" }, mapState.endLat, mapState.endLon)
+            }
+        val remainingVias =
+            viaPoints.filterIndexed { idx, _ ->
+                idx > NaviMapTestHooks.lastViaIndex
+            }
+        rerouteJob?.cancel()
+        rerouteJob =
+            scope.launch {
+                recalculatingRoute = true
+                planningRoute = true
+                NaviMapTestHooks.reroutingActive = true
+                NaviMapTestHooks.autoRerouteTriggeredCount += 1
+                routePlanProgress = "Recalculating route…"
+                routePlanPct = 0
+                status = "Recalculating route… (may take several seconds)"
+                val startWp =
+                    Waypoint(resolveRerouteStartLabel(lat, lon), lat, lon)
+                val pts =
+                    buildList {
+                        add(startWp)
+                        addAll(remainingVias)
+                        add(dest)
+                    }
+                val ecoForPlan = if (ecoModeToggleable(profile)) ecoEnabled else true
+                val vehicle =
+                    runCatching { loadVehicleLimits(dataDir.absolutePath) }
+                        .getOrElse {
+                            FfiVehicleLimits(null, null, null, null, null, null)
+                        }
+                val result =
+                    runCatching {
+                        RouteReplan.plan(
+                            dataDir = dataDir,
+                            profile = profile,
+                            waypoints = pts,
+                            useEco = ecoForPlan,
+                            avoidMotorways = avoidMotorways,
+                            avoidTolls = avoidTolls,
+                            avoidFerries = avoidFerries,
+                            vehicle = vehicle,
+                            preferOfficialNetworks = preferOfficialNetworks,
+                            preferPilgrimRoutes = preferPilgrimRoutes,
+                            onProgress = { pct, detail ->
+                                routePlanPct = pct
+                                routePlanProgress = "Recalculating route… $detail"
+                            },
+                        )
+                    }.getOrElse { e ->
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        status = "Reroute failed: ${e.message}"
+                        recalculatingRoute = false
+                        planningRoute = false
+                        NaviMapTestHooks.reroutingActive = false
+                        routePlanProgress = ""
+                        offRouteCoordinator.suppressUntilOnRoute()
+                        return@launch
+                    }
+                if (!isActive) return@launch
+                recalculatingRoute = false
+                planningRoute = false
+                NaviMapTestHooks.reroutingActive = false
+                routePlanProgress = ""
+                if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
+                    status = userFacingStatus(result.report).ifBlank { "Reroute failed" }
+                    offRouteCoordinator.suppressUntilOnRoute()
+                    return@launch
+                }
+                // Drop stale Plan-time hook labels so applyPlannedRoute uses
+                // the live fromPoint name from resolveLabelAt.
+                NaviMapTestHooks.routeStartLabel = ""
+                fromPoint = startWp
+                applyPlannedRoute(result)
+                status =
+                    "Route updated · ${"%.1f".format(result.distanceKm)} km " +
+                    "(recalculated after detour)"
+            }
     }
 
     val showVehicleClearance =
@@ -2246,7 +2298,10 @@ private fun NaviMapScreen() {
         }
     }
 
-    fun applyHit(hit: PlaceHit) {
+    fun applyHit(
+        hit: PlaceHit,
+        target: SearchTarget = searchTarget,
+    ) {
         val (street, house, post) = parseAddressDisplayLines(combined = hit.name)
         val wp =
             Waypoint(
@@ -2257,7 +2312,7 @@ private fun NaviMapScreen() {
                 houseNumber = house,
                 postcode = post,
             )
-        when (searchTarget) {
+        when (target) {
             SearchTarget.From -> fromPoint = wp
             SearchTarget.To -> toPoint = wp
             SearchTarget.Via -> viaPoints = viaPoints + wp
@@ -2276,7 +2331,7 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.followGps = false
         query = hit.name
         hits = emptyList()
-        status = userFacingStatus("Set ${searchTarget.name.lowercase()}: ${hit.name}")
+        status = userFacingStatus("Set ${target.name.lowercase()}: ${hit.name}")
     }
 
     fun applyMarkAs(
@@ -2292,6 +2347,7 @@ private fun NaviMapScreen() {
                 lat = pending.lat,
                 lon = pending.lon,
             ),
+            target = target,
         )
         mapMarkPending = null
     }
@@ -2731,7 +2787,11 @@ private fun NaviMapScreen() {
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
                     .zIndex(1f)
-                    .padding(10.dp)
+                    .windowInsetsPadding(
+                        WindowInsets.safeDrawing.only(
+                            WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
+                        ),
+                    ).padding(10.dp)
                     .heightIn(max = 520.dp)
                     .verticalScroll(rememberScrollState()),
         ) {
@@ -3344,6 +3404,9 @@ private fun NaviMapScreen() {
                                         }
                                         val fixLat = mapState.gpsLat
                                         val fixLon = mapState.gpsLon
+                                        // Capture field at tap time — resolveLabelAt is async;
+                                        // do not re-read searchTarget after await (chip race).
+                                        val targetAtClick = searchTarget
                                         // Resolve a nearby address/name within 12 m; else GPS coords.
                                         scope.launch {
                                             val (name, kind) = resolveLabelAt(fixLat, fixLon)
@@ -3367,6 +3430,7 @@ private fun NaviMapScreen() {
                                                     lat = fixLat,
                                                     lon = fixLon,
                                                 ),
+                                                target = targetAtClick,
                                             )
                                         }
                                     },
@@ -3467,10 +3531,6 @@ private fun NaviMapScreen() {
                                         )
                                     }
                                 }
-                                Text(
-                                    "Also in enum (not primary menu): CarElectric, TruckElectric, MotorcycleElectric",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -4639,7 +4699,11 @@ private fun NaviMapScreen() {
                     Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .padding(10.dp)
+                        .windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(
+                                WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal,
+                            ),
+                        ).padding(10.dp)
                         .zIndex(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {

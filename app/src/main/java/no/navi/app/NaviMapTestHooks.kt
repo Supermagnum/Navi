@@ -147,7 +147,13 @@ object NaviMapTestHooks {
     @Volatile
     var preferStagedHikingRoute: Boolean = false
 
-    /** Optional start / via / end labels for map SymbolLayer (tests + search). */
+    /**
+     * Optional start / via / end labels for map SymbolLayer.
+     * Fallback only when the corresponding live waypoint name is blank
+     * (instrumented tests). [MainActivity.applyPlannedRoute] prefers
+     * `fromPoint` / `toPoint` / vias over these hooks so a stale Plan-time
+     * value cannot mask a live reroute start name.
+     */
     @Volatile
     var routeStartLabel: String = ""
 
@@ -156,6 +162,10 @@ object NaviMapTestHooks {
 
     @Volatile
     var routeEndLabel: String = ""
+
+    /** Last start label actually applied to the map (after plan or reroute). */
+    @Volatile
+    var lastAppliedRouteStartLabel: String = ""
 
     /**
      * Synthetic magnetic heading (degrees clockwise from north). Used when rotation
