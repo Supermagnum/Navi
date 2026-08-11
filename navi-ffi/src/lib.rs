@@ -5039,6 +5039,31 @@ pub fn pmtiles_region_bbox(geofabrik_path: String) -> Option<Vec<f64>> {
     region_bbox(&geofabrik_path).map(|b| b.to_vec())
 }
 
+/// Most-specific known Geofabrik path covering `(lat, lon)`, or empty when unknown.
+#[uniffi::export]
+pub fn suggest_geofabrik_path(lat: f64, lon: f64) -> String {
+    driver_break_core::routing::suggest_geofabrik_path_for_point(lat, lon)
+        .unwrap_or("")
+        .to_string()
+}
+
+/// Whether any of the comma-separated Geofabrik paths' bboxes cover `(lat, lon)`.
+#[uniffi::export]
+pub fn regions_cover_point(geofabrik_paths_csv: String, lat: f64, lon: f64) -> bool {
+    let paths: Vec<&str> = geofabrik_paths_csv
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    driver_break_core::routing::point_covered_by_regions(lat, lon, &paths)
+}
+
+/// Map a PBF filename/stem (`ostlandet-latest.osm.pbf`) to a Geofabrik path.
+#[uniffi::export]
+pub fn geofabrik_path_for_pbf_name(pbf_name: String) -> String {
+    driver_break_core::routing::pbf_stem_to_geofabrik_path(&pbf_name).unwrap_or_default()
+}
+
 /// Queue a Mapterhorn DEM extract for the same Geofabrik bbox as the basemap.
 /// Writes `{region_key}_dem.pmtiles` beside the vector extract.
 #[uniffi::export]

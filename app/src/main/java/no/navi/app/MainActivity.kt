@@ -461,6 +461,7 @@ private fun NaviMapScreen() {
     var routePlanProgress by remember { mutableStateOf("") }
     var recalculatingRoute by remember { mutableStateOf(false) }
     var showHikingReroutePrompt by remember { mutableStateOf(false) }
+    var missingCoveragePrompt by remember { mutableStateOf<MissingRegionCoverage?>(null) }
     var rerouteJob by remember { mutableStateOf<Job?>(null) }
     val offRouteCoordinator = remember { OffRouteCoordinator() }
     var routePlanPct by remember { mutableIntStateOf(-1) }
@@ -2634,6 +2635,95 @@ private fun NaviMapScreen() {
                 },
             )
         }
+        missingCoveragePrompt?.let { missing ->
+            AlertDialog(
+                onDismissRequest = {
+                    missingCoveragePrompt = null
+                    NaviMapTestHooks.missingCoveragePromptVisible = false
+                    status = "Download cancelled — set another destination or download a region in Tools"
+                },
+                title = { Text("Map data needed") },
+                text = { Text(missing.message) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val path = missing.suggestedGeofabrikPath
+                            missingCoveragePrompt = null
+                            NaviMapTestHooks.missingCoveragePromptVisible = false
+                            selectedGeofabrikPath = path
+                            downloadScopeCountry = path == "europe/norway"
+                            showTools = true
+                            scope.launch {
+                                val leaf = path.substringAfterLast('/')
+                                val filename = "$leaf-latest.osm.pbf"
+                                val url = geofabrikLatestPbfUrl(path)
+                                downloadProgressClear()
+                                regionDownloadProgress = "Downloading region… 0%"
+                                downloadPolling = true
+                                status = "Downloading $path..."
+                                val report =
+                                    withContext(Dispatchers.IO) {
+                                        provisionRegionData(
+                                            dataDir = dataDir.absolutePath,
+                                            pbfUrl = url,
+                                            pbfFilename = filename,
+                                            elevationTarUrl = null,
+                                        )
+                                    }
+                                downloadPolling = false
+                                status = report
+                                if (report.contains("PASS")) {
+                                    val bind =
+                                        withContext(Dispatchers.IO) {
+                                            bindGeofabrikRegion(
+                                                dataDir = dataDir.absolutePath,
+                                                geofabrikRegion = path,
+                                                pbfFilename = filename,
+                                                localSequence = null,
+                                            )
+                                        }
+                                    val pbf = File(dataDir, filename)
+                                    val indexReport =
+                                        if (pbf.isFile) {
+                                            withContext(Dispatchers.IO) {
+                                                ensurePlaceIndex(
+                                                    pbf.absolutePath,
+                                                    resolvePlaceIndexDb().absolutePath,
+                                                )
+                                            }
+                                        } else {
+                                            "PBF missing after download"
+                                        }
+                                    if (pbf.isFile) {
+                                        val elevDir =
+                                            File(dataDir, "elevation").takeIf { it.isDirectory }
+                                        IndexedMapsBackground.ensureStarted(
+                                            scope,
+                                            pbf,
+                                            dataDir,
+                                            elevDir,
+                                        )
+                                    }
+                                    status =
+                                        "$report | $bind | $indexReport | indexed maps: background"
+                                }
+                            }
+                        },
+                        modifier = Modifier.testTag("btn_missing_coverage_download"),
+                    ) { Text("Download ${RegionCoverage.displayName(missing.suggestedGeofabrikPath)}") }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            missingCoveragePrompt = null
+                            NaviMapTestHooks.missingCoveragePromptVisible = false
+                            status = "Download cancelled — no route planned"
+                        },
+                        modifier = Modifier.testTag("btn_missing_coverage_dismiss"),
+                    ) { Text("Not now") }
+                },
+            )
+        }
 
         Column(
             modifier =
@@ -2811,28 +2901,60 @@ private fun NaviMapScreen() {
                                             status = "Set From and To first"
                                             return@launch
                                         }
+                                        val coverageWaypoints =
+                                            buildList {
+                                                add(
+                                                    RegionCoverage.Waypoint(
+                                                        "From",
+                                                        start.name,
+                                                        start.lat,
+                                                        start.lon,
+                                                    ),
+                                                )
+                                                viaPoints.forEach { v ->
+                                                    add(
+                                                        RegionCoverage.Waypoint(
+                                                            "Via",
+                                                            v.name,
+                                                            v.lat,
+                                                            v.lon,
+                                                        ),
+                                                    )
+                                                }
+                                                add(
+                                                    RegionCoverage.Waypoint(
+                                                        "To",
+                                                        toPoint.name,
+                                                        toPoint.lat,
+                                                        toPoint.lon,
+                                                    ),
+                                                )
+                                            }
+                                        val missing =
+                                            RegionCoverage.missingCoverage(coverageWaypoints, dataDir)
+                                        if (missing != null) {
+                                            missingCoveragePrompt = missing
+                                            NaviMapTestHooks.missingCoveragePromptVisible = true
+                                            NaviMapTestHooks.lastMissingCoveragePath =
+                                                missing.suggestedGeofabrikPath
+                                            status = missing.message
+                                            return@launch
+                                        }
                                         val pts =
                                             buildList {
                                                 add(start)
                                                 addAll(viaPoints)
                                                 add(toPoint)
                                             }
-                                        // Region extracts only (never corridor fixtures — those skew
-                                        // real-device routing tests). Prefer Ostlandet when present.
-                                        val pbfCandidates =
-                                            listOf(
-                                                File(dataDir, "ostlandet-latest.osm.pbf"),
-                                                File(dataDir, "oppland-latest.osm.pbf"),
-                                                File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
-                                                File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"),
-                                            )
-                                        val pbf = pbfCandidates.firstOrNull { it.isFile }
+                                        // Prefer a single downloaded extract that covers the trip.
+                                        val pbf =
+                                            RegionCoverage.resolvePlanPbf(dataDir, coverageWaypoints)
                                         val stagedOk =
                                             profile == TravelProfile.HIKING &&
                                                 NaviMapTestHooks.preferStagedHikingRoute &&
                                                 File("/data/local/tmp/navi_fixtures/skolla_rondvassbu.polyline.txt").isFile
                                         if (pbf == null && !stagedOk) {
-                                            status = "No region PBF — download Ostlandet in Tools first"
+                                            status = "No region PBF — download a region in Tools first"
                                             return@launch
                                         }
                                         val wpsJson =
@@ -3118,6 +3240,9 @@ private fun NaviMapScreen() {
                                             }
                                         val durationMs = System.currentTimeMillis() - planStarted
                                         if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
+                                            NaviMapTestHooks.lastPlanReport = result.report
+                                            NaviMapTestHooks.lastRoutePolylineChars = 0
+                                            NaviMapTestHooks.lastRoutePolyline = ""
                                             RoutingPlanLog.failed(
                                                 ecoForPlan,
                                                 durationMs,

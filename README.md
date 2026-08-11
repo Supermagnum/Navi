@@ -340,6 +340,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | Document | What it is for |
 |---|---|
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to contribute |
+| [`docs/crates.md`](docs/crates.md) | First-party Rust crates created here, and unaltered crates.io dependencies |
 | [`docs/architecture.md`](docs/architecture.md) | How the pieces fit together |
 | [`docs/codebase-map.md`](docs/codebase-map.md) | Where to change code for a given feature |
 | [`docs/pictures.md`](docs/pictures.md) / [`docs/bilder.md`](docs/bilder.md) | Screenshot galleries |

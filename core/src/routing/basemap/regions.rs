@@ -100,6 +100,75 @@ pub fn bbox_covers_point(bbox: [f64; 4], lat: f64, lon: f64) -> bool {
     lat >= bbox[0] && lat <= bbox[2] && lon >= bbox[1] && lon <= bbox[3]
 }
 
+/// Area of a lat/lon bbox in square degrees (for picking the tightest landsdel).
+fn bbox_area_deg2(bbox: [f64; 4]) -> f64 {
+    (bbox[2] - bbox[0]).max(0.0) * (bbox[3] - bbox[1]).max(0.0)
+}
+
+/// Most-specific Geofabrik landsdel/country path whose approximate bbox covers
+/// `(lat, lon)`. Prefers Norway landsdel extracts over `europe/norway`.
+///
+/// Returns `None` when no known table entry covers the point.
+pub fn suggest_geofabrik_path_for_point(lat: f64, lon: f64) -> Option<&'static str> {
+    let mut best: Option<(&'static str, f64)> = None;
+    for (path, bbox) in NORWAY_LANDSDEL {
+        if *path == "test/oslo" {
+            continue;
+        }
+        if !bbox_covers_point(*bbox, lat, lon) {
+            continue;
+        }
+        let area = bbox_area_deg2(*bbox);
+        match best {
+            None => best = Some((*path, area)),
+            Some((_, best_area)) if area < best_area => best = Some((*path, area)),
+            _ => {}
+        }
+    }
+    best.map(|(p, _)| p)
+}
+
+/// Whether `(lat, lon)` falls inside any of the given Geofabrik path bboxes.
+pub fn point_covered_by_regions(lat: f64, lon: f64, geofabrik_paths: &[&str]) -> bool {
+    geofabrik_paths.iter().any(|path| {
+        region_bbox(path)
+            .map(|bbox| bbox_covers_point(bbox, lat, lon))
+            .unwrap_or(false)
+    })
+}
+
+/// Map a downloaded PBF leaf stem (`ostlandet-latest`) to a Geofabrik path.
+pub fn pbf_stem_to_geofabrik_path(stem: &str) -> Option<String> {
+    let leaf = stem
+        .trim()
+        .trim_end_matches(".osm.pbf")
+        .trim_end_matches("-latest")
+        .trim_end_matches("_latest")
+        .to_ascii_lowercase();
+    if leaf.is_empty() {
+        return None;
+    }
+    match leaf.as_str() {
+        "norway" => Some("europe/norway".into()),
+        "ostlandet" | "oppland" => Some("europe/norway/ostlandet".into()),
+        "vestlandet" => Some("europe/norway/vestlandet".into()),
+        "trondelag" => Some("europe/norway/trondelag".into()),
+        "nord-norge" | "nord_norge" => Some("europe/norway/nord-norge".into()),
+        "sorlandet" => Some("europe/norway/sorlandet".into()),
+        other => {
+            // Already a full path with slashes replaced? Prefer known table hit.
+            let as_path = other.replace('_', "/");
+            if region_bbox(&as_path).is_some() {
+                Some(as_path)
+            } else if region_bbox(&format!("europe/norway/{other}")).is_some() {
+                Some(format!("europe/norway/{other}"))
+            } else {
+                None
+            }
+        }
+    }
+}
+
 const NORWAY_LANDSDEL: &[(&str, [f64; 4])] = &[
     ("europe/norway", [57.9, 4.5, 71.5, 31.5]),
     ("europe/norway/ostlandet", [58.5, 7.5, 62.8, 13.5]),
@@ -130,6 +199,56 @@ mod tests {
         let bbox = region_bbox("europe/norway/ostlandet").unwrap();
         assert!(bbox_covers_point(bbox, 59.91, 10.75));
         assert!(!bbox_covers_point(bbox, 69.65, 18.96));
+    }
+
+    #[test]
+    fn suggest_landsdel_prefers_specific_over_country() {
+        assert_eq!(
+            suggest_geofabrik_path_for_point(59.91, 10.75),
+            Some("europe/norway/ostlandet")
+        );
+        assert_eq!(
+            suggest_geofabrik_path_for_point(69.65, 18.96),
+            Some("europe/norway/nord-norge")
+        );
+        // Bergen — Vestlandet only (Preikestolen sits in Vestlandet∩Sørlandet overlap).
+        assert_eq!(
+            suggest_geofabrik_path_for_point(60.3913, 5.3221),
+            Some("europe/norway/vestlandet")
+        );
+        // Just west of Ostlandet min_lon 7.5.
+        assert_eq!(
+            suggest_geofabrik_path_for_point(60.4, 7.4),
+            Some("europe/norway/vestlandet")
+        );
+    }
+
+    #[test]
+    fn coverage_uses_downloaded_paths_only() {
+        let ost = ["europe/norway/ostlandet"];
+        assert!(point_covered_by_regions(59.91, 10.75, &ost));
+        assert!(!point_covered_by_regions(69.65, 18.96, &ost));
+        assert!(point_covered_by_regions(
+            69.65,
+            18.96,
+            &["europe/norway/ostlandet", "europe/norway/nord-norge"]
+        ));
+    }
+
+    #[test]
+    fn pbf_stem_maps_to_geofabrik_path() {
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("ostlandet-latest"),
+            Some("europe/norway/ostlandet".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("oppland-latest.osm.pbf"),
+            Some("europe/norway/ostlandet".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("norway-latest"),
+            Some("europe/norway".into())
+        );
     }
 
     #[test]

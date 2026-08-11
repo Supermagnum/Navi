@@ -21,7 +21,8 @@ pub mod workers;
 
 pub use basemap::{
     bbox_covers_point, default_pmtiles_base_url, default_pmtiles_planet_url,
-    geofabrik_path_to_region_key, region_bbox, region_pmtiles_url, resolve_planet_url_blocking,
+    geofabrik_path_to_region_key, pbf_stem_to_geofabrik_path, point_covered_by_regions,
+    region_bbox, region_pmtiles_url, resolve_planet_url_blocking, suggest_geofabrik_path_for_point,
     PmtilesDownloader, PmtilesJob, DEFAULT_EXTRACT_MAX_ZOOM, DEFAULT_PMTILES_BASE_URL,
     PROTOMAPS_PLANET_FALLBACK_URL,
 };

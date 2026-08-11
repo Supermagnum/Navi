@@ -130,6 +130,14 @@ object NaviMapTestHooks {
     @Volatile
     var pendingGeofabrikPath: String? = null
 
+    /** Last missing-coverage prompt Geofabrik path (instrumented tests). */
+    @Volatile
+    var lastMissingCoveragePath: String = ""
+
+    /** Whether the missing-coverage download dialog is visible. */
+    @Volatile
+    var missingCoveragePromptVisible: Boolean = false
+
     /**
      * When true, Plan route (Hiking) may load a host-staged polyline + breaks
      * (+ optional `skolla_rondvassbu.sim_samples.json` for debug simulation)
