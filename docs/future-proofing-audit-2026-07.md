@@ -57,7 +57,7 @@ action table. Update the action table status / last-verified dates when items cl
 - **Informational (healthy)**: `cargo deny` and `cargo audit` are enforced in CI, not only configured:
   - Workflow steps exist in `.github/workflows/ci.yml`.
   - Latest observed successful run (`30402861748`) included passing `cargo deny check` and `cargo audit`.
-- **Resolved (fix pass)**: Dependency maintenance watch process documented in `CONTRIBUTING.md` (quarterly checklist; near-term flags `wee_alloc`, `gpsd_proto`; lower-priority `osm4routing` / `geotiff`). No immediate crate swap required — replacements scheduled for when guests / GPS wiring next change.
+- **Resolved (fix pass)**: Dependency maintenance watch process documented in `docs/CONTRIBUTING.md` (quarterly checklist; near-term flags `wee_alloc`, `gpsd_proto`; lower-priority `osm4routing` / `geotiff`). No immediate crate swap required — replacements scheduled for when guests / GPS wiring next change.
 - **Resolved (fix pass)**: Android API 36 baseline **plan** recorded in [`android-api36-plan.md`](android-api36-plan.md) (bump not executed in this pass). Project remains on `compileSdk`/`targetSdk` 35 until that checklist is run green.
 - **Resolved (fix pass)**: Toolchain `1.88` pin documented as **reproducibility**, not a proven MSRV (`rust-toolchain.toml`, root `Cargo.toml`, `docs/build-linux.md`). No lower-bound matrix job added in this pass.
 
@@ -105,7 +105,7 @@ legal-compliance claims until resolved. BLOCKING is lifted only with concrete ev
 | 3 | Close `docs/android-test-results.md` contradiction and reduce structural doc sprawl. | No | **Closed** | 2026-07-29 | Item 7 toast row reconciled to Item 8 fixed; [`status.md`](status.md) canonical map. |
 | 4 | Centralize duplicated Geofabrik URL construction in Android UI/core boundary. | No | **Closed** | 2026-07-29 | UniFFI `geofabrikLatestPbfUrl` / `geofabrikUpdatesBaseUrl`; `MainActivity` uses FFI builder. |
 | 5 | Raise Android platform baseline plan (API 36 + AGP/Kotlin alignment). | No | **Closed (plan)** | 2026-07-29 | Plan only: [`android-api36-plan.md`](android-api36-plan.md). SDK bump deferred until checklist green. |
-| 6 | Add dependency maintenance watch process. | No | **Closed** | 2026-07-29 | Quarterly checklist in `CONTRIBUTING.md`; `wee_alloc`/`gpsd_proto` scheduled later, not swapped now. |
+| 6 | Add dependency maintenance watch process. | No | **Closed** | 2026-07-29 | Quarterly checklist in `docs/CONTRIBUTING.md`; `wee_alloc`/`gpsd_proto` scheduled later, not swapped now. |
 | 7 | Record MSRV verification policy explicitly. | No | **Closed** | 2026-07-29 | Documented as reproducibility pin (no matrix). See `rust-toolchain.toml`, `Cargo.toml`, `docs/build-linux.md`. |
 
 ## Informational-only findings to carry forward (no immediate action)

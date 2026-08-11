@@ -1,4 +1,4 @@
-**[English README](README.md)**
+**[English README](../README.md)**
 
 # AI-bistand
 
@@ -14,7 +14,7 @@ testen.
 Vi trenger folk som prøver Navi på **ekte enheter** — bilskjermer og nettbrett.
 En Samsung Galaxy Tab S6 Lite er brukt til sjekker, men biler og andre enheter
 oppfører seg fortsatt annerledes for GPS, kart og ytelse. Sjekkliste:
-[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+[`real-hardware-testing.md`](real-hardware-testing.md).
 Hvordan bidra: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Innhold
@@ -61,7 +61,7 @@ Selve ruting bruker et eget OpenStreetMap-uttrekk du laster ned under
 kartet.
 
 Lisens: se `LICENSE` (GPL-3.0-or-later med mindre annet er angitt). Mange små
-ikoner kommer fra Navit (**GPL v2**); se [`docs/icons.md`](docs/icons.md).
+ikoner kommer fra Navit (**GPL v2**); se [`icons.md`](icons.md).
 
 # Funksjoner
 
@@ -88,7 +88,7 @@ ikoner kommer fra Navit (**GPL v2**); se [`docs/icons.md`](docs/icons.md).
 **Maskinvare:** Nettbrettsjekker er startet (Samsung Galaxy Tab S6 Lite).
 Bilskjermer trenger fortsatt mer testing i virkeligheten før dette behandles som
 klart til levering. Se [Skjermbilder](#skjermbilder) og
-[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+[`real-hardware-testing.md`](real-hardware-testing.md).
 
 ## Hva du må laste ned
 
@@ -113,7 +113,7 @@ RAM — se [Minimum maskinvare og lagring](#minimum-maskinvare-og-lagring).
 
 Steg-for-steg brukerveiledning (planlegging, Tools, pauser, lagrede steder/ruter,
 per-modus valg, pilegrim):
-**[How to use Navi](docs/how-to-use.md)** (engelsk).
+**[How to use Navi](how-to-use.md)** (engelsk).
 
 ## Slik fungerer funksjonene
 
@@ -129,14 +129,14 @@ følger ikke stier skikkelig.
 Vanlige stier forblir tilgjengelige, så et hull aldri stenger hele turen.
 
 **Steder.** Søk fyller Fra / Via / Til. Hva som teller som hytte, rasteplass
-osv. er beskrevet i [`docs/poi.md`](docs/poi.md).
+osv. er beskrevet i [`poi.md`](poi.md).
 
 **Kartmerking og lagrede steder.** Hold én finger på kartet i ca. **4 sekunder**
 for å merke et punkt, sett det som Fra / Via / Til, eller lagre under
 **Saved places** (ett navngitt koordinat — ikke en hel **Saved route**).
 Brukerveiledning:
-[`docs/kartmerking-lagrede-steder.md`](docs/kartmerking-lagrede-steder.md)
-(engelsk: [`docs/map-marking-saved-places.md`](docs/map-marking-saved-places.md)).
+[`kartmerking-lagrede-steder.md`](kartmerking-lagrede-steder.md)
+(engelsk: [`map-marking-saved-places.md`](map-marking-saved-places.md)).
 
 **Hvile og overnatting.** Hver modus har egne standarder. Lange lastebilturer
 kan deles i dager med juridiske hvileregler (EU- eller US-pakker der de er
@@ -151,11 +151,11 @@ elsykkel osv.).
 # Innstillinger
 
 **Språk:** appens menyer er **bare engelsk** i dag. Det finnes ingen
-språkmeny ennå. Denne filen (`Norwegian.md`) er dokumentasjon, ikke en
+språkmeny ennå. Denne filen (`docs/Norwegian.md`) er dokumentasjon, ikke en
 språkpakke i appen. En fremtidig oversettelsesplugin er beskrevet i
-[`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
+[`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md).
 En arbeids-CSV for oversettere ligger ved siden av den spesifikasjonen:
-[`docs/plugins/translations.csv`](docs/plugins/translations.csv).
+[`plugins/translations.csv`](plugins/translations.csv).
 
 Innstillinger lagres på enheten (hvile/drivstoff/kjøretøy i en liten database;
 kartvisning i app-preferanser).
@@ -254,7 +254,7 @@ forholdene langs stien.
 
 Tiltak i designet: regionale nedlastinger som standard, bufrede grafer,
 bygging i bakgrunnen, og arbeidspooler som lar UI få plass. Mer:
-[`docs/architecture.md`](docs/architecture.md).
+[`architecture.md`](architecture.md).
 
 # Skjermbilder
 
@@ -262,77 +262,77 @@ Hovedeksempler (Samsung Galaxy Tab S6 Lite **SM-P613** og rutesimulering):
 
 Landskap med valgfri **3D**-skygge (frakoblet Protomaps + lokalt terreng):
 
-![SM-P613 frakoblet Protomaps + Mapterhorn DEM-hillshade (landskap)](docs/images/Screenshot_20260731_123844.jpg)
+![SM-P613 frakoblet Protomaps + Mapterhorn DEM-hillshade (landskap)](images/Screenshot_20260731_123844.jpg)
 
 Fotturkorridor Skolla → Rondvassbu (**SIMULATING**):
 
-![Skolla til Rondvassbu](docs/images/terrain/hike_eldabu_ramshogda_3d.png)
+![Skolla til Rondvassbu](images/terrain/hike_eldabu_ramshogda_3d.png)
 
 GPS-følge under simulering:
 
-![Følge under simulering](docs/images/follow_gps/01_simulating_follow.png)
+![Følge under simulering](images/follow_gps/01_simulating_follow.png)
 
 ### Ekte maskinvare (SM-P613)
 
 Portrett, frakoblet Østlandet-Protomaps, 3D av:
 
-![SM-P613 frakoblet Protomaps 2D (portrett)](docs/images/Screenshot_20260731_123746.jpg)
+![SM-P613 frakoblet Protomaps 2D (portrett)](images/Screenshot_20260731_123746.jpg)
 
 Testing på bilskjerm er fortsatt åpen —
-[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+[`real-hardware-testing.md`](real-hardware-testing.md).
 
 ### Flere bilder
 
 Idle HUD:
 
-![Idle begge linjer](docs/images/hud/hud_idle_both_bars.png)
+![Idle begge linjer](images/hud/hud_idle_both_bars.png)
 
 Karttilt 45° (3D av / på):
 
-![45° tilt, 3D av](docs/images/tilt45_3d_off.png)
+![45° tilt, 3D av](images/tilt45_3d_off.png)
 
-![45° tilt, 3D på](docs/images/tilt45_3d_on.png)
+![45° tilt, 3D på](images/tilt45_3d_on.png)
 
 Følge / pan / Recenter / rotasjon:
 
-![Følge under simulering](docs/images/follow_gps/01_simulating_follow.png)
+![Følge under simulering](images/follow_gps/01_simulating_follow.png)
 
-![Etter pan](docs/images/follow_gps/02_after_pan.png)
+![Etter pan](images/follow_gps/02_after_pan.png)
 
-![Etter Recenter](docs/images/follow_gps/05_after_recenter.png)
+![Etter Recenter](images/follow_gps/05_after_recenter.png)
 
-![Rotasjonsmodi](docs/images/follow_gps/06_rotation_modes_ok.png)
+![Rotasjonsmodi](images/follow_gps/06_rotation_modes_ok.png)
 
-Fullt galleri: [`docs/bilder.md`](docs/bilder.md) (engelsk:
-[`docs/pictures.md`](docs/pictures.md)).
+Fullt galleri: [`bilder.md`](bilder.md) (engelsk:
+[`pictures.md`](pictures.md)).
 
 # Dokumenter
 
 | Dokument | Hva det er til |
 |---|---|
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Hvordan bidra (engelsk) |
-| [`docs/architecture.md`](docs/architecture.md) | Hvordan delene henger sammen |
-| [`docs/codebase-map.md`](docs/codebase-map.md) | Hvor man endrer kode for en gitt funksjon |
-| [`docs/bilder.md`](docs/bilder.md) / [`docs/pictures.md`](docs/pictures.md) | Skjermbildegallerier |
-| [`docs/map-styles.md`](docs/map-styles.md) | Online vs frakoblet kartutseende; 3D |
-| [`docs/poi.md`](docs/poi.md) | Stedstyper og søk |
-| [How to use Navi](docs/how-to-use.md) | Brukerveiledning (planlegging, Tools, pauser, lagrede steder/ruter, profiler) — engelsk |
-| [`docs/kartmerking-lagrede-steder.md`](docs/kartmerking-lagrede-steder.md) | Trykk-og-hold (4 s) og lagrede steder (engelsk: [`map-marking-saved-places.md`](docs/map-marking-saved-places.md)) |
-| [`docs/historisk-bakgrunn.md`](docs/historisk-bakgrunn.md) | Rast/vei-grunnlag for pauseintervaller (fottur/sykling) |
-| [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | EU lastebil kjøre-/hviletid |
-| [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | US lastebil kjøre-/hviletid |
-| [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md) | Land-/regionregelpakker |
-| [`docs/osm-updates.md`](docs/osm-updates.md) | Valgfrie kartoppdateringer |
-| [`docs/android-build.md`](docs/android-build.md) | Bygge Android-appen |
-| [`docs/build-linux.md`](docs/build-linux.md) | Linux- / skrivebordsbygg (verktøy, gpsd, adb) |
-| [`docs/build-macos.md`](docs/build-macos.md) | macOS-bygg (verktøy, Android NDK, adb) |
-| [`docs/build-windows.md`](docs/build-windows.md) | Windows-bygg (MSVC, verktøy, Android NDK, adb) |
-| [`docs/debugging.md`](docs/debugging.md) | Feilsøking |
-| [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | Sjekkliste for fysisk enhet |
-| [`docs/status.md`](docs/status.md) | Hvilke dokumenter er live status vs historikk |
-| [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Fremtidssikring / åpne risikoer |
-| [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md) | Indekserte rutingkart (fased evaluering) |
-| [`docs/plugins.md`](docs/plugins.md) | Plugin-vert og veikart |
+| [`architecture.md`](architecture.md) | Hvordan delene henger sammen |
+| [`codebase-map.md`](codebase-map.md) | Hvor man endrer kode for en gitt funksjon |
+| [`bilder.md`](bilder.md) / [`pictures.md`](pictures.md) | Skjermbildegallerier |
+| [`map-styles.md`](map-styles.md) | Online vs frakoblet kartutseende; 3D |
+| [`poi.md`](poi.md) | Stedstyper og søk |
+| [How to use Navi](how-to-use.md) | Brukerveiledning (planlegging, Tools, pauser, lagrede steder/ruter, profiler) — engelsk |
+| [`kartmerking-lagrede-steder.md`](kartmerking-lagrede-steder.md) | Trykk-og-hold (4 s) og lagrede steder (engelsk: [`map-marking-saved-places.md`](map-marking-saved-places.md)) |
+| [`historisk-bakgrunn.md`](historisk-bakgrunn.md) | Rast/vei-grunnlag for pauseintervaller (fottur/sykling) |
+| [`ec-561-truck-rest.md`](ec-561-truck-rest.md) | EU lastebil kjøre-/hviletid |
+| [`fmcsa-truck-rest.md`](fmcsa-truck-rest.md) | US lastebil kjøre-/hviletid |
+| [`jurisdiction-rules.md`](jurisdiction-rules.md) | Land-/regionregelpakker |
+| [`osm-updates.md`](osm-updates.md) | Valgfrie kartoppdateringer |
+| [`android-build.md`](android-build.md) | Bygge Android-appen |
+| [`build-linux.md`](build-linux.md) | Linux- / skrivebordsbygg (verktøy, gpsd, adb) |
+| [`build-macos.md`](build-macos.md) | macOS-bygg (verktøy, Android NDK, adb) |
+| [`build-windows.md`](build-windows.md) | Windows-bygg (MSVC, verktøy, Android NDK, adb) |
+| [`debugging.md`](debugging.md) | Feilsøking |
+| [`real-hardware-testing.md`](real-hardware-testing.md) | Sjekkliste for fysisk enhet |
+| [`status.md`](status.md) | Hvilke dokumenter er live status vs historikk |
+| [`future-proofing-audit-2026-07.md`](future-proofing-audit-2026-07.md) | Fremtidssikring / åpne risikoer |
+| [`indexed-map-format-plan.md`](indexed-map-format-plan.md) | Indekserte rutingkart (fased evaluering) |
+| [`plugins.md`](plugins.md) | Plugin-vert og veikart |
 
 Se `docs/`-mappen for mer spesialiserte emner (stemme, APRS, ECU, formler osv.).
 
@@ -340,20 +340,20 @@ Se `docs/`-mappen for mer spesialiserte emner (stemme, APRS, ECU, formler osv.).
 
 En sandkasse for plugins finnes, så fremtidige tillegg kan kjøre trygt.
 **Ingen produktplugins leveres i appen ennå** — det er med vilje. Oversikt:
-[`docs/plugins.md`](docs/plugins.md).
+[`plugins.md`](plugins.md).
 
 | Spesifikasjon | Emne |
 |---|---|
-| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Fremtidige UI-språk (bare engelsk i dag). Oversettertabell: [`translations.csv`](docs/plugins/translations.csv) |
-| [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Villcamping-forslag (plugin, ikke kjerne) |
-| [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Drivstoff-/vannforsyning |
-| [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Eksportere nav-tilstand til instrumentcluster |
-| [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Animerte ikoner |
+| [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md) | Fremtidige UI-språk (bare engelsk i dag). Oversettertabell: [`translations.csv`](plugins/translations.csv) |
+| [`plugins/right-to-roam-camping-spec.md`](plugins/right-to-roam-camping-spec.md) | Villcamping-forslag (plugin, ikke kjerne) |
+| [`plugins/safety-resupply.md`](plugins/safety-resupply.md) | Drivstoff-/vannforsyning |
+| [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Eksportere nav-tilstand til instrumentcluster |
+| [`plugins/animated-icons-spec.md`](plugins/animated-icons-spec.md) | Animerte ikoner |
 
 ## Ikoner (Navit)
 
 POI- / sving- / statusikoner under `core/src/icons` kommer fra Navit
-(**GPL v2**). Hvordan legge til egne SVG-ikoner: [`docs/icons.md`](docs/icons.md).
+(**GPL v2**). Hvordan legge til egne SVG-ikoner: [`icons.md`](icons.md).
 
 # Kodestandarder og bidrag
 
@@ -374,13 +374,13 @@ Kortversjon av CI-forventninger:
 APK-en bygges likt på **Linux**, **macOS** og **Windows**: kompiler `libnavi.so`
 med NDK, deretter Gradle. Vertsspesifikk oppsett (SDK-stier, NDK-clang, `adb`)
 står i OS-guidene; felles oppskrift er
-[`docs/android-build.md`](docs/android-build.md).
+[`android-build.md`](android-build.md).
 
 | Vert | Installer verktøy, NDK, `adb` | Deretter |
 |---|---|---|
-| Linux | [`docs/build-linux.md`](docs/build-linux.md) | [`docs/android-build.md`](docs/android-build.md) |
-| macOS | [`docs/build-macos.md`](docs/build-macos.md) | samme |
-| Windows | [`docs/build-windows.md`](docs/build-windows.md) (**Git Bash** for `scripts/*.sh`; `.\gradlew.bat` fra PowerShell) | samme |
+| Linux | [`build-linux.md`](build-linux.md) | [`android-build.md`](android-build.md) |
+| macOS | [`build-macos.md`](build-macos.md) | samme |
+| Windows | [`build-windows.md`](build-windows.md) (**Git Bash** for `scripts/*.sh`; `.\gradlew.bat` fra PowerShell) | samme |
 
 **Én gang per maskin:** Rust Android-mål, JDK 17, Android SDK (API 36), NDK,
 og `ANDROID_HOME` / `ANDROID_NDK_HOME`. Pek `.cargo/config.toml` mot NDK-ens
@@ -422,9 +422,9 @@ unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'lib/arm64-v8a/libnavi
 
 | Vert | Guide |
 |---|---|
-| Linux (`navi-desktop`, gpsd, kjernetester) | [`docs/build-linux.md`](docs/build-linux.md) |
-| macOS | [`docs/build-macos.md`](docs/build-macos.md) |
-| Windows | [`docs/build-windows.md`](docs/build-windows.md) |
+| Linux (`navi-desktop`, gpsd, kjernetester) | [`build-linux.md`](build-linux.md) |
+| macOS | [`build-macos.md`](build-macos.md) |
+| Windows | [`build-windows.md`](build-windows.md) |
 
 ### Arbeidsområdets struktur
 
@@ -432,7 +432,7 @@ unzip -l app/build/outputs/apk/debug/app-debug.apk | grep 'lib/arm64-v8a/libnavi
 - `navi-ffi/` — bro til Android og andre verter
 - `app/` — Android-UI (Kotlin)
 - `plugin-host/` / `plugin-sdk/` / `plugins/` — fremtidige plugins
-- [`docs/architecture.md`](docs/architecture.md) — hvordan det henger sammen
+- [`architecture.md`](architecture.md) — hvordan det henger sammen
 
 ### Vertstester (eksempler)
 
@@ -443,7 +443,7 @@ cargo test -p navi-plugin-host --test isolation -- --nocapture
 
 Store kartfil-integrasjonstester er vanligvis merket `#[ignore]` og trenger
 fiksturer under `core/target/integration-fixtures`. Se
-[`docs/test-results.md`](docs/test-results.md).
+[`test-results.md`](test-results.md).
 
 # Hvor kartdataene kommer fra
 
@@ -472,11 +472,11 @@ Land-/regionvisuelle uttrekk kan også lages med
   kartsymbol-lag er ikke hovedstien ennå.
 - **Kart / GPU-særheter:** noen emulator- og telefon-GPU-oppsett har historisk
   krasjet eller vasket ut bakkeskygge; prosjektet gikk over til MapLibre GLES
-  etter nettbrettsjekker. Detaljer i [`docs/map-styles.md`](docs/map-styles.md)
-  og [`docs/debugging.md`](docs/debugging.md).
+  etter nettbrettsjekker. Detaljer i [`map-styles.md`](map-styles.md)
+  og [`debugging.md`](debugging.md).
 - **Bare-i-skjermbilde innsjøkant:** en myk blå kant rundt vann kan dukke opp i
   skjermbilder, men ikke under vanlig bruk — se
-  [`docs/map-styles.md`](docs/map-styles.md).
+  [`map-styles.md`](map-styles.md).
 - **Treg fotturplan på store områder (løst):** overnattingsbygninger bruker et
   1,5 km korridorfilter og én PBF-skanning for POI + bygninger (nøyaktig 150 m
   allemannsretten-sjekk uendret). Målt på DNT Åkersætra→Rondvassbu

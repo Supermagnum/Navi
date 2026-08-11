@@ -214,7 +214,7 @@ host/Tools actions.
 | MapLibre camera / style | `MainActivity.kt`, `BasemapStyleResolver.kt` | Host rendering |
 | Live ECU polling | `core/src/ecu` types only | [`ECU.md`](ECU.md) — no UniFFI poll yet |
 | Voice guidance | Spec only | [`voice-guidance.md`](voice-guidance.md) |
-| Documentation languages | `README.md` / `Norwegian.md` | Not in-app i18n ([`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md)) |
+| Documentation languages | `README.md` / `docs/Norwegian.md` | Not in-app i18n ([`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md)) |
 
 ---
 

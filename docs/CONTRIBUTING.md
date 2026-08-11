@@ -1,14 +1,14 @@
 # Contributing to Navi
 
 Thank you for considering a contribution. Navi is a **solo-maintained**,
-**AI-assisted** offline navigation project (see the [AI assistance](README.md#ai-assistance)
+**AI-assisted** offline navigation project (see the [AI assistance](../README.md#ai-assistance)
 note in the README — that background is intentional and ongoing). Contributions
 of **all kinds** are welcome: code, testing, documentation, translations,
 jurisdiction packs, plugins, icons, and bug reports from real driving.
 
-Start with [`docs/architecture.md`](docs/architecture.md) for how the pieces fit
+Start with [`architecture.md`](architecture.md) for how the pieces fit
 together (`core`, `plugin-host` / `plugin-sdk`, Android `app`, UniFFI). For
-“where do I change X?”, use [`docs/codebase-map.md`](docs/codebase-map.md).
+“where do I change X?”, use [`codebase-map.md`](codebase-map.md).
 
 ---
 
@@ -22,7 +22,7 @@ list.
 Development has been **emulator-heavy**. Real Android Automotive / head-unit
 hardware (Xtrons, Atoto, Joying, and similar) and rugged/tablet form factors
 differ for GPS, MapLibre, Vulkan/GLES, and performance. That gap is explicit —
-use the checklist in [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md)
+use the checklist in [`real-hardware-testing.md`](real-hardware-testing.md)
 and report what you ran, on which device, and what failed.
 
 ### Regional testing
@@ -35,18 +35,18 @@ is highly valuable. Prefer real regional PBFs and real GPS when practical.
 ### Translation / localization
 
 - **UI language packs** are specified but not shipped (English-only UI today):
-  [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
+  [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md).
 - **Voice guidance** is planned as a plugin; phrase design must respect
   per-language **concatenation vs whole-phrase** recordings — see
-  [`docs/voice-guidance.md`](docs/voice-guidance.md).
-- Parallel documentation (`Norwegian.md`, `docs/bilder.md`, …) is welcome;
+  [`voice-guidance.md`](voice-guidance.md).
+- Parallel documentation (`docs/Norwegian.md`, `docs/bilder.md`, …) is welcome;
   that is **docs**, not in-app i18n.
 
 ### Jurisdiction rule sets
 
 Country/region packs (driving-hour families, right-to-roam / outdoor-access,
 future horse-access style rules) follow the pattern in
-[`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). Adding a pack for a
+[`jurisdiction-rules.md`](jurisdiction-rules.md). Adding a pack for a
 jurisdiction you know well — with honest “decline rather than guess” behaviour
 when rules are unclear — is a first-class contribution.
 
@@ -55,15 +55,15 @@ when rules are unclear — is a first-class contribution.
 The **plugin host is implemented and tested**; **product content plugins are
 not shipped yet on purpose**. Specs exist for contributors to pick up (camping /
 allemannsretten, safety resupply, instrument cluster / AGL, UI translation,
-animated icons, voice, APRS/CAT, …). See [`docs/plugins.md`](docs/plugins.md)
-and files under [`docs/plugins/`](docs/plugins/). This is an open invitation, not
+animated icons, voice, APRS/CAT, …). See [`plugins.md`](plugins.md)
+and files under [`plugins/`](plugins/). This is an open invitation, not
 an incomplete core feature.
 
 ### Signs and icons
 
 Custom static icons: SVG / SVGZ, Inkscape workflow, semantic key naming —
-[`docs/icons.md`](docs/icons.md). Animated icons: Synfig → frame packs —
-[`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md).
+[`icons.md`](icons.md). Animated icons: Synfig → frame packs —
+[`plugins/animated-icons-spec.md`](plugins/animated-icons-spec.md).
 Regional road **warning / traffic sign** artwork and licensing review are
 welcome; any new asset must document provenance the same way as the Navit /
 APRS sets (see Licensing below).
@@ -83,15 +83,15 @@ Do not duplicate long build recipes here — use the maintained guides:
 
 | Goal | Doc |
 |---|---|
-| Rust core, host integration tests, optional gpsd/IMU (Linux) | [`docs/build-linux.md`](docs/build-linux.md) |
-| macOS build host (tools, Android NDK, adb) | [`docs/build-macos.md`](docs/build-macos.md) |
-| Windows build host (MSVC, tools, Android NDK, adb) | [`docs/build-windows.md`](docs/build-windows.md) |
-| Native `libnavi.so`, UniFFI Kotlin, Gradle APK, AAOS emulator | [`docs/android-build.md`](docs/android-build.md) |
-| Host + Android debug loops | [`docs/debugging.md`](docs/debugging.md) |
+| Rust core, host integration tests, optional gpsd/IMU (Linux) | [`build-linux.md`](build-linux.md) |
+| macOS build host (tools, Android NDK, adb) | [`build-macos.md`](build-macos.md) |
+| Windows build host (MSVC, tools, Android NDK, adb) | [`build-windows.md`](build-windows.md) |
+| Native `libnavi.so`, UniFFI Kotlin, Gradle APK, AAOS emulator | [`android-build.md`](android-build.md) |
+| Host + Android debug loops | [`debugging.md`](debugging.md) |
 | Launch / install on emulator | `./scripts/launch-navi-emulator.sh` (see Android build doc) |
 
 Workspace layout is summarized in the README and
-[`docs/architecture.md`](docs/architecture.md).
+[`architecture.md`](architecture.md).
 
 ---
 
@@ -131,7 +131,7 @@ Repository code license: see root `LICENSE` (GPL-3.0-or-later unless noted).
 Icon and symbol provenance is tracked explicitly:
 
 - Bundled POI / nav / status icons under `core/src/icons`: **Navit-derived GPL v2**
-  — [`docs/icons.md`](docs/icons.md).
+  — [`icons.md`](icons.md).
 - Custom SVG overrides: document **your** license next to the override set.
 - APRS symbol sets: per-symbol notes under `core/src/icons/aprs/COPYRIGHT.md`
   (and the app asset copy).
@@ -165,7 +165,7 @@ a prior discussion — open a PR or issue directly.
 
 ### CI expectations (GitHub Actions)
 
-Every push/PR runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+Every push/PR runs [`.github/workflows/ci.yml`](../.github/workflows/ci.yml):
 
 | Job | What it checks |
 |---|---|
@@ -177,10 +177,10 @@ Every push/PR runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 **Not** in the per-PR gate (run locally or via manual workflow dispatch):
 
 - Rust `#[ignore]` OSM/DEM integration tests (need fixtures under
-  `core/target/integration-fixtures` — see [`docs/build-linux.md`](docs/build-linux.md)).
-- Android instrumented tests — [`.github/workflows/android-instrumented.yml`](.github/workflows/android-instrumented.yml)
+  `core/target/integration-fixtures` — see [`build-linux.md`](build-linux.md)).
+- Android instrumented tests — [`.github/workflows/android-instrumented.yml`](../.github/workflows/android-instrumented.yml)
   (`workflow_dispatch` only; not scheduled and not a required check — see
-  [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md#github-hosted-instrumented-ci)).
+  [`real-hardware-testing.md`](real-hardware-testing.md#github-hosted-instrumented-ci)).
 
 Before opening a PR, prefer running at least:
 
@@ -197,7 +197,7 @@ cargo deny check
 ```
 
 Rust toolchain is pinned by `rust-toolchain.toml` (**1.88** reproducibility
-pin — not a proven MSRV matrix; see [`docs/build-linux.md`](docs/build-linux.md)).
+pin — not a proven MSRV matrix; see [`build-linux.md`](build-linux.md)).
 
 ## Dependency maintenance watch
 
@@ -218,10 +218,10 @@ any release / store submission). Checklist:
 3. **Lower-priority periodic checks:** `osm4routing`, `geotiff` — low churn;
    verify still compile and license-clean when bumping related map/DEM work.
 4. **Gradle / Android** — Compose BOM, AGP, Kotlin, MapLibre; see
-   [`docs/android-api36-plan.md`](docs/android-api36-plan.md) for the API 36 bump
+   [`android-api36-plan.md`](android-api36-plan.md) for the API 36 bump
    plan. Prefer one coordinated bump PR over silent drift.
 5. Record the review date in the PR or in
-   [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md)
+   [`future-proofing-audit-2026-07.md`](future-proofing-audit-2026-07.md)
    priority-6 notes when closing a watch cycle.
 
 This is a **process** deliverable: do not mass-upgrade dependencies in the same

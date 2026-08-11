@@ -37,7 +37,7 @@ Sources: [Behavior changes for apps targeting Android 16+](https://developer.and
 3. Add `dependenciesInfo` omit flags + local upload signing for AAB smoke. **Done.**
 4. Build signed AAB; validate with `bundletool`; install APK set on SM-P613. **Done**
    (`targetSdk=36` confirmed via `dumpsys`).
-5. Local CI sequence (same as `CONTRIBUTING.md`) after bump — see run log.
+5. Local CI sequence (same as `docs/CONTRIBUTING.md`) after bump — see run log.
 6. F-Droid Podman buildability check: `tools/fdroid-check/`.
 
 ## AAB smoke (host)

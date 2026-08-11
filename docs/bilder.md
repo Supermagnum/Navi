@@ -1,6 +1,6 @@
 # Bilder
 
-**[English pictures gallery](pictures.md)** · **[Norsk README](../Norwegian.md)**
+**[English pictures gallery](pictures.md)** · **[Norsk README](Norwegian.md)**
 
 Skjermbilder for Navi. **Bare ekte maskinvare** (Samsung Galaxy Tab S6 Lite
 SM-P613). Ikke bruk emulator for galleriopptak.
@@ -25,7 +25,7 @@ Ekstra instrumenterte testopptak blir på enheten / lokal disk.
 Bruk **ikke** syntetiske (håndtegnede / 2-punkts stubb) ruter.
 
 Idle HUD og Skolla → Rondvassbu-oversikt også i
-[Norwegian README](../Norwegian.md) / [engelsk README](../README.md)
+[Norwegian README](Norwegian.md) / [engelsk README](../README.md)
 (`docs/images/hud/hud_idle_both_bars.png`,
 `docs/images/terrain/hike_eldabu_ramshogda_3d.png`).
 Kaldstart-splash (rødt open-app-merke): `docs/images/splash_open_app.png`.

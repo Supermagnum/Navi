@@ -1,4 +1,4 @@
-**[Dokument på Norsk](Norwegian.md)**
+**[Dokument på Norsk](docs/Norwegian.md)**
 
 # AI assistance
 
@@ -14,7 +14,7 @@ We need people to try Navi on **real devices** — car head units and tablets.
 A Samsung Galaxy Tab S6 Lite has been used for checks, but cars and other
 devices still differ for GPS, maps, and speed. Checklist:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
-How to help: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+How to help: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
 
 ## Table of contents
 
@@ -36,7 +36,7 @@ How to help: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 13. [Known issues](#known-issues)
 
 More detail lives in linked docs (architecture, truck rest rules, map styles,
-debugging, and so on). Start with [`CONTRIBUTING.md`](CONTRIBUTING.md) if you
+debugging, and so on). Start with [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) if you
 want to help.
 
 # What this is
@@ -150,7 +150,7 @@ area for drive/vehicle settings (mode, break interval, fuel, e-bike, and so on).
 # Settings
 
 **Language:** the app chrome is **English only** today. There is no language
-menu yet. Docs may exist in Norwegian (`Norwegian.md`); that is documentation,
+menu yet. Docs may exist in Norwegian (`docs/Norwegian.md`); that is documentation,
 not an in-app language pack. A future translation plugin is described in
 [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
 A working CSV for translators lives next to that spec:
@@ -339,7 +339,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 
 | Document | What it is for |
 |---|---|
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to contribute |
+| [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | How to contribute |
 | [`docs/crates.md`](docs/crates.md) | First-party Rust crates created here, and unaltered crates.io dependencies |
 | [`docs/architecture.md`](docs/architecture.md) | How the pieces fit together |
 | [`docs/codebase-map.md`](docs/codebase-map.md) | Where to change code for a given feature |
@@ -389,7 +389,7 @@ POI / turn / status icons under `core/src/icons` are mostly from Navit
 
 # Coding standards and contributing
 
-Please read **[`CONTRIBUTING.md`](CONTRIBUTING.md)**.
+Please read **[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)**.
 
 Short version of CI expectations:
 

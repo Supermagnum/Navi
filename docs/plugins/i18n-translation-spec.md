@@ -38,7 +38,7 @@ As of this writing:
 - There is **no language-switching control** in map settings, drive settings, or
   tools.
 - Repository docs may exist in English and Norwegian (`README.md` /
-  `Norwegian.md`, `docs/pictures.md` / `docs/bilder.md`, …). That is
+  `docs/Norwegian.md`, `docs/pictures.md` / `docs/bilder.md`, …). That is
   **documentation**, not an in-app locale system.
 
 This plugin is how a future contributor would add selectable UI languages
@@ -186,7 +186,7 @@ data-driven (OSM), not catalog strings.
 
 ## Relation to documentation translations
 
-Human-maintained docs (`Norwegian.md`, `docs/bilder.md`, …) are **not** this
+Human-maintained docs (`docs/Norwegian.md`, `docs/bilder.md`, …) are **not** this
 plugin. Keep shipping parallel markdown for docs as today. The plugin covers
 **in-app** UI chrome only.
 
