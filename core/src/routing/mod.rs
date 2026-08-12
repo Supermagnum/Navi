@@ -1,5 +1,6 @@
 //! Offline routing: graph build, elevation reweighting, rest/safety helpers.
 
+pub mod access;
 pub mod basemap;
 pub mod conditional;
 pub mod dnt_winter;

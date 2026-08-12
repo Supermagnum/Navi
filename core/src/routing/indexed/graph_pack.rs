@@ -11,8 +11,8 @@ use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile};
 
 /// Little-endian ASCII "NVRK".
 pub const MAGIC_GRAPH: u32 = 0x4E_56_52_4B;
-/// v3: v2 shapes + raw seasonal / maxspeed conditional tag strings per edge.
-pub const GRAPH_FORMAT_VERSION: u32 = 3;
+/// v4: v3 + static access-forbid flags per edge and barrier-blocked nodes.
+pub const GRAPH_FORMAT_VERSION: u32 = 4;
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone)]
 pub struct FlatGraphPack {
@@ -50,6 +50,10 @@ pub struct FlatGraphPack {
     pub edge_access_conditional: Vec<String>,
     /// Raw OSM `maxspeed:conditional` (empty = none).
     pub edge_maxspeed_conditional: Vec<String>,
+    /// Profile-static access forbid flag per edge (`1` = forbidden).
+    pub edge_access_forbidden: Vec<u8>,
+    /// Parallel to `node_ids`: `1` when the node is a profile access-blocked barrier.
+    pub node_access_blocked: Vec<u8>,
 }
 
 impl FlatGraphPack {
@@ -90,6 +94,7 @@ impl FlatGraphPack {
         let mut edge_motor_vehicle_conditional = Vec::with_capacity(n);
         let mut edge_access_conditional = Vec::with_capacity(n);
         let mut edge_maxspeed_conditional = Vec::with_capacity(n);
+        let mut edge_access_forbidden = Vec::with_capacity(n);
         edge_shape_offsets.push(0);
 
         if elev.is_some() {
@@ -119,6 +124,7 @@ impl FlatGraphPack {
                 .push(e.motor_vehicle_conditional.clone().unwrap_or_default());
             edge_access_conditional.push(e.access_conditional.clone().unwrap_or_default());
             edge_maxspeed_conditional.push(e.maxspeed_conditional.clone().unwrap_or_default());
+            edge_access_forbidden.push(u8::from(e.access_forbidden));
             for &(lon, lat) in &e.shape {
                 edge_shape_lons.push(lon);
                 edge_shape_lats.push(lat);
@@ -135,6 +141,11 @@ impl FlatGraphPack {
                 edge_delta_h_m.push(dh);
             }
         }
+
+        let node_access_blocked: Vec<u8> = node_ids
+            .iter()
+            .map(|id| u8::from(graph.access_blocked_nodes.contains(&NodeId(*id))))
+            .collect();
 
         Self {
             has_delta_h: elev.is_some(),
@@ -164,6 +175,8 @@ impl FlatGraphPack {
             edge_motor_vehicle_conditional,
             edge_access_conditional,
             edge_maxspeed_conditional,
+            edge_access_forbidden,
+            node_access_blocked,
         }
     }
 
@@ -305,9 +318,20 @@ impl FlatGraphPack {
                         Some(s.to_string())
                     }
                 },
+                access_forbidden: self.edge_access_forbidden.get(i).copied().unwrap_or(0) != 0,
             });
         }
-        RouteGraph::from_parts(nodes, edges, profile)
+        let mut blocked = std::collections::HashSet::new();
+        for (i, flag) in self.node_access_blocked.iter().enumerate() {
+            if *flag != 0 && used_nodes.contains_key(&(i as u32)) {
+                blocked.insert(NodeId(self.node_ids[i]));
+            }
+        }
+        // When packing older in-memory graphs without parallel flags, length may be 0.
+        if self.node_access_blocked.is_empty() {
+            // nothing
+        }
+        RouteGraph::from_parts_with_blocks(nodes, edges, profile, blocked)
     }
 
     fn shape_for_edge(&self, i: usize) -> Vec<(f64, f64)> {
@@ -386,6 +410,7 @@ mod tests {
             motor_vehicle_conditional: None,
             access_conditional: None,
             maxspeed_conditional: None,
+            access_forbidden: false,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
     }

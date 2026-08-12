@@ -118,6 +118,8 @@ struct CachedGraphEdge {
     access_conditional: Option<String>,
     #[serde(default)]
     maxspeed_conditional: Option<String>,
+    #[serde(default)]
+    access_forbidden: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -126,6 +128,8 @@ struct CachedRouteGraph {
     profile: RoutingProfile,
     nodes: Vec<CachedNode>,
     edges: Vec<CachedGraphEdge>,
+    #[serde(default)]
+    access_blocked_nodes: Vec<i64>,
 }
 
 fn profile_tag(profile: RoutingProfile) -> &'static str {
@@ -202,8 +206,10 @@ pub fn save_reweighted_graph(
                 motor_vehicle_conditional: edge.motor_vehicle_conditional.clone(),
                 access_conditional: edge.access_conditional.clone(),
                 maxspeed_conditional: edge.maxspeed_conditional.clone(),
+                access_forbidden: edge.access_forbidden,
             })
             .collect(),
+        access_blocked_nodes: graph.access_blocked_nodes.iter().map(|id| id.0).collect(),
     };
 
     let encoded = bincode::serialize(&payload)?;
@@ -347,10 +353,16 @@ fn reconstruct_graph(payload: CachedRouteGraph) -> RouteGraph {
             motor_vehicle_conditional: edge.motor_vehicle_conditional,
             access_conditional: edge.access_conditional,
             maxspeed_conditional: edge.maxspeed_conditional,
+            access_forbidden: edge.access_forbidden,
         })
         .collect();
 
-    RouteGraph::from_parts(nodes, edges, payload.profile)
+    let blocked = payload
+        .access_blocked_nodes
+        .into_iter()
+        .map(NodeId)
+        .collect();
+    RouteGraph::from_parts_with_blocks(nodes, edges, payload.profile, blocked)
 }
 
 #[cfg(test)]
@@ -401,6 +413,7 @@ mod tests {
             motor_vehicle_conditional: None,
             access_conditional: None,
             maxspeed_conditional: None,
+            access_forbidden: false,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
     }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use osm4routing::{
@@ -11,6 +11,7 @@ use crate::config::{
     Profile, CAR_MAX_WAYPOINT_SNAP_M, CYCLING_MAX_WAYPOINT_SNAP_M, HIKING_MAX_WAYPOINT_SNAP_M,
     TRUCK_MAX_WAYPOINT_SNAP_M,
 };
+use crate::routing::access::{self, AccessMode};
 use crate::routing::elevation::ElevationService;
 use crate::routing::wetland::{
     tags_indicate_boardwalk, WetlandClass, WetlandIndex, WETLAND_SOFT_COST_MULT,
@@ -23,6 +24,16 @@ pub enum RoutingProfile {
     Truck,
     Foot,
     Bicycle,
+}
+
+impl RoutingProfile {
+    pub fn access_mode(self) -> AccessMode {
+        match self {
+            Self::Car | Self::Truck => AccessMode::Motor,
+            Self::Foot => AccessMode::Foot,
+            Self::Bicycle => AccessMode::Bicycle,
+        }
+    }
 }
 
 /// Profile-specific maximum waypoint snap distance (metres).
@@ -105,6 +116,9 @@ pub struct GraphEdge {
     pub access_conditional: Option<String>,
     /// Raw OSM `maxspeed:conditional` (live speed-camera / ETA use).
     pub maxspeed_conditional: Option<String>,
+    /// Static OSM access forbids this graph's profile (`motor_vehicle`/`access`/
+    /// `foot`/`bicycle` with tag specificity). Independent of dimension limits.
+    pub access_forbidden: bool,
 }
 
 /// Per-query routing filters (avoid motorways, tolls/ferries, vehicle limits).
@@ -129,6 +143,10 @@ pub struct RouteGraph {
     pub edges: Vec<GraphEdge>,
     adjacency: HashMap<NodeId, Vec<usize>>,
     profile: RoutingProfile,
+    /// Barrier (and similar) nodes that must not be traversed *through* for this
+    /// profile. Arriving at the node as a destination is allowed; leaving it is
+    /// not unless the path started there.
+    pub access_blocked_nodes: HashSet<NodeId>,
 }
 
 impl RouteGraph {
@@ -150,6 +168,10 @@ impl RouteGraph {
             .read_tag("bridge")
             .read_tag("surface")
             .read_tag("junction")
+            .read_tag("motor_vehicle")
+            .read_tag("access")
+            .read_tag("foot")
+            .read_tag("bicycle")
             .read_tag("motor_vehicle:conditional")
             .read_tag("access:conditional")
             .read_tag("maxspeed:conditional")
@@ -161,6 +183,7 @@ impl RouteGraph {
             edges: Vec::new(),
             adjacency: HashMap::new(),
             profile,
+            access_blocked_nodes: HashSet::new(),
         };
         for edge in filtered {
             let start = graph
@@ -176,7 +199,11 @@ impl RouteGraph {
             let end_lat = end.coord.y;
             let end_lon = end.coord.x;
             let length_m = edge.length();
-            let meta = edge_meta(&edge);
+            let meta = edge_meta(&edge, profile);
+            if meta.17 {
+                // Static access forbids this profile — omit from graph.
+                continue;
+            }
             let (forward_ok, backward_ok) = directed_access(&edge, profile);
             if forward_ok {
                 let shape: Vec<(f64, f64)> = edge
@@ -224,6 +251,8 @@ impl RouteGraph {
                 );
             }
         }
+        graph.access_blocked_nodes =
+            load_access_blocked_barrier_nodes(path.as_ref(), &graph.nodes, profile)?;
         Ok(graph)
     }
 
@@ -237,6 +266,16 @@ impl RouteGraph {
         edges: Vec<GraphEdge>,
         profile: RoutingProfile,
     ) -> Self {
+        Self::from_parts_with_blocks(nodes, edges, profile, HashSet::new())
+    }
+
+    /// Like [`from_parts`], with explicit barrier / access-blocked junctions.
+    pub fn from_parts_with_blocks(
+        nodes: HashMap<NodeId, Node>,
+        edges: Vec<GraphEdge>,
+        profile: RoutingProfile,
+        access_blocked_nodes: HashSet<NodeId>,
+    ) -> Self {
         let mut adjacency: HashMap<NodeId, Vec<usize>> = HashMap::new();
         for (idx, edge) in edges.iter().enumerate() {
             adjacency.entry(edge.source).or_default().push(idx);
@@ -246,6 +285,7 @@ impl RouteGraph {
             edges,
             adjacency,
             profile,
+            access_blocked_nodes,
         }
     }
 
@@ -462,6 +502,11 @@ impl RouteGraph {
         let result = astar(
             &start,
             |node| {
+                // Node-scoped barrier block: may arrive as destination, but must
+                // not continue through unless this node was the path start.
+                if self.access_blocked_nodes.contains(node) && node != &start {
+                    return Vec::new();
+                }
                 self.adjacency
                     .get(node)
                     .into_iter()
@@ -632,9 +677,10 @@ type EdgeMeta = (
     Option<String>,
     Option<String>,
     Option<String>,
+    bool,
 );
 
-fn edge_meta(edge: &Edge) -> EdgeMeta {
+fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
     let highway = edge.tags.get("highway").cloned();
     let maxspeed_kmh = edge
         .tags
@@ -679,6 +725,13 @@ fn edge_meta(edge: &Edge) -> EdgeMeta {
     let motor_vehicle_conditional = edge.tags.get("motor_vehicle:conditional").cloned();
     let access_conditional = edge.tags.get("access:conditional").cloned();
     let maxspeed_conditional = edge.tags.get("maxspeed:conditional").cloned();
+    let access_forbidden = access::mode_access_forbidden(
+        profile.access_mode(),
+        edge.tags.get("motor_vehicle").map(String::as_str),
+        edge.tags.get("access").map(String::as_str),
+        edge.tags.get("foot").map(String::as_str),
+        edge.tags.get("bicycle").map(String::as_str),
+    );
     (
         highway,
         maxspeed_kmh,
@@ -697,6 +750,7 @@ fn edge_meta(edge: &Edge) -> EdgeMeta {
         motor_vehicle_conditional,
         access_conditional,
         maxspeed_conditional,
+        access_forbidden,
     )
 }
 
@@ -750,6 +804,7 @@ fn push_directed_edge(
         motor_vehicle_conditional: meta.14.clone(),
         access_conditional: meta.15.clone(),
         maxspeed_conditional: meta.16.clone(),
+        access_forbidden: meta.17,
     });
     graph.adjacency.entry(source).or_default().push(idx);
 }
@@ -797,6 +852,9 @@ fn edge_allowed_for_options(
     options: &RouteOptions,
     profile: RoutingProfile,
 ) -> bool {
+    if edge.access_forbidden {
+        return false;
+    }
     if options.avoid_motorways && edge.highway.as_deref().is_some_and(is_motorway_highway) {
         return false;
     }
@@ -863,6 +921,15 @@ fn filter_edges(edges: Vec<Edge>, profile: RoutingProfile) -> Vec<Edge> {
 }
 
 fn edge_allowed(edge: &Edge, profile: RoutingProfile) -> bool {
+    if access::mode_access_forbidden(
+        profile.access_mode(),
+        edge.tags.get("motor_vehicle").map(String::as_str),
+        edge.tags.get("access").map(String::as_str),
+        edge.tags.get("foot").map(String::as_str),
+        edge.tags.get("bicycle").map(String::as_str),
+    ) {
+        return false;
+    }
     let mut props = edge.properties;
     props.normalize();
     match profile {
@@ -876,6 +943,43 @@ fn edge_allowed(edge: &Edge, profile: RoutingProfile) -> bool {
                 || props.bike_backward != BikeAccessibility::Forbidden
         }
     }
+}
+
+fn load_access_blocked_barrier_nodes(
+    path: &Path,
+    graph_nodes: &HashMap<NodeId, Node>,
+    profile: RoutingProfile,
+) -> anyhow::Result<HashSet<NodeId>> {
+    use osmpbf::{Element, ElementReader};
+
+    let mode = profile.access_mode();
+    let mut blocked = HashSet::new();
+    let file = std::fs::File::open(path)?;
+    let reader = ElementReader::new(file);
+    reader.for_each(|element| {
+        let (id, tags): (i64, HashMap<String, String>) = match element {
+            Element::Node(n) => (
+                n.id(),
+                n.tags()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            ),
+            Element::DenseNode(n) => (
+                n.id(),
+                n.tags()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            ),
+            _ => return,
+        };
+        if !graph_nodes.contains_key(&NodeId(id)) {
+            return;
+        }
+        if access::barrier_node_forbids_mode(&tags, mode) {
+            blocked.insert(NodeId(id));
+        }
+    })?;
+    Ok(blocked)
 }
 
 fn haversine_m(a: &Node, b: &Node) -> f64 {
@@ -951,6 +1055,7 @@ mod tests {
             motor_vehicle_conditional: None,
             access_conditional: None,
             maxspeed_conditional: None,
+            access_forbidden: false,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot)
     }
@@ -1071,6 +1176,7 @@ mod tests {
             motor_vehicle_conditional: None,
             access_conditional: None,
             maxspeed_conditional: None,
+            access_forbidden: false,
         };
         let edges = vec![
             edge("low", 1, 2, 60.0, 10.0, 60.0, 10.01, Some(3.0)),
@@ -1129,6 +1235,7 @@ mod tests {
             motor_vehicle_conditional: None,
             access_conditional: None,
             maxspeed_conditional: None,
+            access_forbidden: false,
         };
         assert!(!edge_allowed_for_options(
             &edge,
@@ -1187,6 +1294,7 @@ mod tests {
             motor_vehicle_conditional: Some("no @ Nov-Jun".into()),
             access_conditional: None,
             maxspeed_conditional: None,
+            access_forbidden: false,
         };
         let jan = NaiveDate::from_ymd_opt(2026, 1, 15)
             .unwrap()

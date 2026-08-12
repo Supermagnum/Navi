@@ -930,6 +930,12 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -998,6 +1004,8 @@ fun uniffi_navi_checksum_func_format_current_road_label(
 fun uniffi_navi_checksum_func_format_route_avoidance_report(
 ): Short
 fun uniffi_navi_checksum_func_geofabrik_latest_pbf_url(
+): Short
+fun uniffi_navi_checksum_func_geofabrik_path_for_pbf_name(
 ): Short
 fun uniffi_navi_checksum_func_geofabrik_updates_base_url(
 ): Short
@@ -1091,6 +1099,8 @@ fun uniffi_navi_checksum_func_rasterize_icon_check(
 ): Short
 fun uniffi_navi_checksum_func_rasterize_icon_png(
 ): Short
+fun uniffi_navi_checksum_func_regions_cover_point(
+): Short
 fun uniffi_navi_checksum_func_rename_saved_place(
 ): Short
 fun uniffi_navi_checksum_func_resolve_speed_limit_kmh(
@@ -1140,6 +1150,8 @@ fun uniffi_navi_checksum_func_set_truck_exceptional_extension_armed(
 fun uniffi_navi_checksum_func_speed_camera_jurisdiction_allows(
 ): Short
 fun uniffi_navi_checksum_func_station_timeout_max_s(
+): Short
+fun uniffi_navi_checksum_func_suggest_geofabrik_path(
 ): Short
 fun uniffi_navi_checksum_func_travel_profile_menu_focus(
 ): Short
@@ -1284,6 +1296,8 @@ fun uniffi_navi_fn_func_format_route_avoidance_report(`avoidMotorways`: Byte,`av
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_geofabrik_latest_pbf_url(`geofabrikRegion`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_geofabrik_path_for_pbf_name(`pbfName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_geofabrik_updates_base_url(`geofabrikRegion`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_haversine_km(`lat1`: Double,`lon1`: Double,`lat2`: Double,`lon2`: Double,uniffi_out_err: UniffiRustCallStatus, 
@@ -1376,6 +1390,8 @@ fun uniffi_navi_fn_func_rasterize_icon_check(`key`: RustBuffer.ByValue,`theme`: 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_rasterize_icon_png(`key`: RustBuffer.ByValue,`theme`: RustBuffer.ByValue,`width`: Int,`height`: Int,`bundledDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_regions_cover_point(`geofabrikPathsCsv`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_rename_saved_place(`dataDir`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_resolve_speed_limit_kmh(`postedKmh`: RustBuffer.ByValue,`maxspeedConditional`: RustBuffer.ByValue,`highway`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1426,6 +1442,8 @@ fun uniffi_navi_fn_func_speed_camera_jurisdiction_allows(`lat`: Double,`lon`: Do
 ): Byte
 fun uniffi_navi_fn_func_station_timeout_max_s(uniffi_out_err: UniffiRustCallStatus, 
 ): Long
+fun uniffi_navi_fn_func_suggest_geofabrik_path(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_travel_profile_menu_focus(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_update_gps_fix(`lat`: Double,`lon`: Double,`available`: Byte,`speedKmh`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1637,6 +1655,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_geofabrik_latest_pbf_url() != 13066.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_geofabrik_path_for_pbf_name() != 59887.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_geofabrik_updates_base_url() != 24441.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1775,6 +1796,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_rasterize_icon_png() != 19569.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_regions_cover_point() != 25316.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_rename_saved_place() != 57651.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1848,6 +1872,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_station_timeout_max_s() != 23541.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_suggest_geofabrik_path() != 33163.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_travel_profile_menu_focus() != 46717.toShort()) {
@@ -4264,6 +4291,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     
 
         /**
+         * Map a PBF filename/stem (`ostlandet-latest.osm.pbf`) to a Geofabrik path.
+         */ fun `geofabrikPathForPbfName`(`pbfName`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_geofabrik_path_for_pbf_name(
+        FfiConverterString.lower(`pbfName`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Canonical Geofabrik `{region}-updates` base URL (no trailing slash).
          */ fun `geofabrikUpdatesBaseUrl`(`geofabrikRegion`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
@@ -4771,6 +4810,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     )
     }
     
+
+        /**
+         * Whether any of the comma-separated Geofabrik paths' bboxes cover `(lat, lon)`.
+         */ fun `regionsCoverPoint`(`geofabrikPathsCsv`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_regions_cover_point(
+        FfiConverterString.lower(`geofabrikPathsCsv`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),_status)
+}
+    )
+    }
+    
  fun `renameSavedPlace`(`dataDir`: kotlin.String, `id`: kotlin.String, `name`: kotlin.String): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
@@ -5046,6 +5097,18 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_station_timeout_max_s(
         _status)
+}
+    )
+    }
+    
+
+        /**
+         * Most-specific known Geofabrik path covering `(lat, lon)`, or empty when unknown.
+         */ fun `suggestGeofabrikPath`(`lat`: kotlin.Double, `lon`: kotlin.Double): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_suggest_geofabrik_path(
+        FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),_status)
 }
     )
     }

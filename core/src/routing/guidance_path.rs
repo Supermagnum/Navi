@@ -1000,6 +1000,7 @@ mod tests {
             motor_vehicle_conditional: None,
             access_conditional: None,
             maxspeed_conditional: None,
+            access_forbidden: false,
         }
     }
 
@@ -1399,6 +1400,7 @@ mod tests {
                 motor_vehicle_conditional: None,
                 access_conditional: None,
                 maxspeed_conditional: None,
+                access_forbidden: false,
             }
         }
 

@@ -297,6 +297,7 @@ fn load_graph_from_rtree(db: &Path, bbox: [f64; 4]) -> RouteGraph {
                 motor_vehicle_conditional: None,
                 access_conditional: None,
                 maxspeed_conditional: None,
+                access_forbidden: false,
             });
         }
     }

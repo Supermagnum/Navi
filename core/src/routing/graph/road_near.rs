@@ -456,6 +456,7 @@ mod tests {
             motor_vehicle_conditional: None,
             access_conditional: None,
             maxspeed_conditional: maxspeed_conditional.map(|s| s.into()),
+            access_forbidden: false,
         }
     }
 

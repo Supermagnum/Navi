@@ -303,6 +303,7 @@ mod tests {
             motor_vehicle_conditional: None,
             access_conditional: None,
             maxspeed_conditional: None,
+            access_forbidden: false,
         }];
         let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
         let mins = motor_path_minutes(&graph, &[NodeId(1), NodeId(2)]);
@@ -359,6 +360,7 @@ mod tests {
             motor_vehicle_conditional: None,
             access_conditional: None,
             maxspeed_conditional: None,
+            access_forbidden: false,
         }];
         let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
         let mins = motor_path_minutes(&graph, &[NodeId(1), NodeId(2)]);

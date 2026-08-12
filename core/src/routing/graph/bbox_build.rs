@@ -14,6 +14,7 @@ use osm4routing::{Node, NodeId};
 use osmpbf::{Element, ElementReader};
 
 use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
+use crate::routing::access;
 use crate::routing::wetland::tags_map_indicate_boardwalk;
 
 #[derive(Clone)]
@@ -172,8 +173,9 @@ impl RouteGraph {
         drop(in_bbox_ids);
 
         crate::download::progress::set(2, Some(4), "Planning route: loading geometry…");
-        // Pass 3: coords only for nodes referenced by kept ways.
+        // Pass 3: coords + barrier access tags for nodes referenced by kept ways.
         let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
+        let mut barrier_tags: HashMap<i64, HashMap<String, String>> = HashMap::new();
         {
             let file = std::fs::File::open(path)?;
             let reader = ElementReader::new(file);
@@ -181,11 +183,25 @@ impl RouteGraph {
                 Element::Node(n) => {
                     if needed.contains(&n.id()) {
                         coords.insert(n.id(), (n.lat(), n.lon()));
+                        let tags: HashMap<String, String> = n
+                            .tags()
+                            .map(|(k, v)| (k.to_string(), v.to_string()))
+                            .collect();
+                        if tags.contains_key("barrier") {
+                            barrier_tags.insert(n.id(), tags);
+                        }
                     }
                 }
                 Element::DenseNode(n) => {
                     if needed.contains(&n.id()) {
                         coords.insert(n.id(), (n.lat(), n.lon()));
+                        let tags: HashMap<String, String> = n
+                            .tags()
+                            .map(|(k, v)| (k.to_string(), v.to_string()))
+                            .collect();
+                        if tags.contains_key("barrier") {
+                            barrier_tags.insert(n.id(), tags);
+                        }
                     }
                 }
                 _ => {}
@@ -195,7 +211,7 @@ impl RouteGraph {
 
         crate::download::progress::set(3, Some(4), "Planning route: linking graph…");
         let arcs: Vec<Arc<RawWay>> = ways.into_iter().map(Arc::new).collect();
-        let graph = graph_from_raw_ways(&arcs, &coords, profile)?;
+        let graph = graph_from_raw_ways(&arcs, &coords, profile, &barrier_tags)?;
         if graph.edges.is_empty() {
             anyhow::bail!("bbox graph empty for {bbox:?} from {}", path.display());
         }
@@ -272,9 +288,10 @@ impl RouteGraph {
             })?;
         }
 
-        // Pass 2: coords only for highway-referenced nodes (not every OSM node).
+        // Pass 2: coords + barrier tags for highway-referenced nodes.
         crate::download::progress::set(1, Some(4), "Indexed maps: tiling geometry…");
         let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
+        let mut barrier_tags: HashMap<i64, HashMap<String, String>> = HashMap::new();
         {
             let file = std::fs::File::open(path)?;
             let reader = ElementReader::new(file);
@@ -282,11 +299,25 @@ impl RouteGraph {
                 Element::Node(n) => {
                     if needed.contains(&n.id()) {
                         coords.insert(n.id(), (n.lat(), n.lon()));
+                        let tags: HashMap<String, String> = n
+                            .tags()
+                            .map(|(k, v)| (k.to_string(), v.to_string()))
+                            .collect();
+                        if tags.contains_key("barrier") {
+                            barrier_tags.insert(n.id(), tags);
+                        }
                     }
                 }
                 Element::DenseNode(n) => {
                     if needed.contains(&n.id()) {
                         coords.insert(n.id(), (n.lat(), n.lon()));
+                        let tags: HashMap<String, String> = n
+                            .tags()
+                            .map(|(k, v)| (k.to_string(), v.to_string()))
+                            .collect();
+                        if tags.contains_key("barrier") {
+                            barrier_tags.insert(n.id(), tags);
+                        }
                     }
                 }
                 _ => {}
@@ -327,7 +358,7 @@ impl RouteGraph {
                 retain_coords_for_remaining_tiles(&mut coords, &tile_ways, i + 1);
                 continue;
             }
-            match graph_from_raw_ways(&ways, &coords, profile) {
+            match graph_from_raw_ways(&ways, &coords, profile, &barrier_tags) {
                 Ok(g) if !g.edges.is_empty() => {
                     on_tile(*row, *col, *logical, g)?;
                     produced += 1;
@@ -368,9 +399,14 @@ fn graph_from_raw_ways(
     ways: &[Arc<RawWay>],
     coords: &HashMap<i64, (f64, f64)>,
     profile: RoutingProfile,
+    barrier_tags: &HashMap<i64, HashMap<String, String>>,
 ) -> anyhow::Result<RouteGraph> {
+    let mode = profile.access_mode();
     let mut uses: HashMap<i64, i32> = HashMap::new();
     for way in ways {
+        if access::tags_forbid_mode(&way.tags, mode) {
+            continue;
+        }
         let n = way.nodes.len();
         for (i, id) in way.nodes.iter().enumerate() {
             let add = if i == 0 || i + 1 == n { 2 } else { 1 };
@@ -394,6 +430,9 @@ fn graph_from_raw_ways(
 
     let mut edges: Vec<GraphEdge> = Vec::new();
     for way in ways {
+        if access::tags_forbid_mode(&way.tags, mode) {
+            continue;
+        }
         let mut source: Option<i64> = None;
         let mut prev: Option<(i64, f64, f64)> = None;
         let mut length_m = 0.0;
@@ -496,6 +535,7 @@ fn graph_from_raw_ways(
                 motor_vehicle_conditional.clone(),
                 access_conditional.clone(),
                 maxspeed_conditional.clone(),
+                false,
             ));
             if !forward_only {
                 edges.push(bbox_edge(
@@ -525,6 +565,7 @@ fn graph_from_raw_ways(
                     motor_vehicle_conditional.clone(),
                     access_conditional.clone(),
                     maxspeed_conditional.clone(),
+                    false,
                 ));
             }
             source = Some(tgt);
@@ -533,7 +574,13 @@ fn graph_from_raw_ways(
         }
     }
 
-    Ok(RouteGraph::from_parts(nodes, edges, profile))
+    let blocked = access::blocked_barrier_nodes(barrier_tags, mode)
+        .into_iter()
+        .filter(|id| nodes.contains_key(id))
+        .collect();
+    Ok(RouteGraph::from_parts_with_blocks(
+        nodes, edges, profile, blocked,
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -564,6 +611,7 @@ fn bbox_edge(
     motor_vehicle_conditional: Option<String>,
     access_conditional: Option<String>,
     maxspeed_conditional: Option<String>,
+    access_forbidden: bool,
 ) -> GraphEdge {
     GraphEdge {
         id,
@@ -594,6 +642,7 @@ fn bbox_edge(
         motor_vehicle_conditional,
         access_conditional,
         maxspeed_conditional,
+        access_forbidden,
     }
 }
 

@@ -64,6 +64,7 @@ fn edge(
         motor_vehicle_conditional: None,
         access_conditional: None,
         maxspeed_conditional: None,
+        access_forbidden: false,
     }
 }
 
@@ -511,4 +512,125 @@ fn truck_rest_params_change_break_placement_along_route() {
         (truck_iv - car_tight).abs() > 100.0,
         "truck EC spacing must stay independent of car soft hours"
     );
+}
+
+/// Way-level access_forbidden excludes an edge independently of height limits.
+#[test]
+fn static_access_forbidden_changes_planned_route() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let mut banned = edge(
+        "banned",
+        1,
+        2,
+        60.0,
+        10.0,
+        60.0,
+        10.01,
+        100.0,
+        "residential",
+    );
+    banned.access_forbidden = true;
+    let bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "residential");
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 220.0, "residential");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 220.0, "residential");
+    let graph = RouteGraph::from_parts(nodes, vec![banned, bc, ad, dc], RoutingProfile::Car);
+
+    let path = graph
+        .shortest_path(NodeId(1), NodeId(3), false)
+        .expect("detour around access ban");
+    assert!(
+        !path.0.contains(&NodeId(2)),
+        "must not use access-forbidden corridor: {:?}",
+        path.0
+    );
+    assert!(path.0.contains(&NodeId(4)));
+}
+
+/// Height limit and access ban both exclude independently (OR of filters).
+#[test]
+fn access_ban_and_height_limit_both_apply() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+        node(5, 60.02, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    // Short path A-B-C: B edge low bridge; A-B also access banned on first hop.
+    let mut ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "primary");
+    ab.access_forbidden = true;
+    ab.maxheight_m = Some(3.0);
+    let bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "primary");
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 200.0, "primary");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 200.0, "primary");
+    let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Truck);
+
+    let limited = graph
+        .shortest_path_with_options(
+            NodeId(1),
+            NodeId(3),
+            false,
+            &RouteOptions {
+                vehicle: Some(VehicleLimits {
+                    height_m: Some(4.0),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(!limited.0.contains(&NodeId(2)));
+    assert!(limited.0.contains(&NodeId(4)));
+}
+
+/// Barrier node blocks through-passage for motor but allows arriving as goal / leaving as start.
+#[test]
+fn barrier_node_blocks_through_not_way_wide() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01), // bollard
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01), // detour
+    ] {
+        nodes.insert(id, n);
+    }
+    let ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "residential");
+    let bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "residential");
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 250.0, "residential");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 250.0, "residential");
+    let blocked = HashSet::from([NodeId(2)]);
+    let graph = RouteGraph::from_parts_with_blocks(
+        nodes,
+        vec![ab, bc, ad, dc],
+        RoutingProfile::Car,
+        blocked,
+    );
+
+    let through = graph
+        .shortest_path(NodeId(1), NodeId(3), false)
+        .expect("detour around bollard");
+    assert!(
+        !through.0.contains(&NodeId(2)),
+        "must not traverse bollard node: {:?}",
+        through.0
+    );
+    assert!(through.0.contains(&NodeId(4)));
+
+    // Arriving AT the bollard as destination is allowed (node-scoped, not way-wide).
+    let to_barrier = graph
+        .shortest_path(NodeId(1), NodeId(2), false)
+        .expect("may drive up to bollard");
+    assert_eq!(to_barrier.0, vec![NodeId(1), NodeId(2)]);
 }

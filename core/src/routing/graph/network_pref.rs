@@ -688,6 +688,7 @@ mod tests {
                 motor_vehicle_conditional: None,
                 access_conditional: None,
                 maxspeed_conditional: None,
+                access_forbidden: false,
             },
             GraphEdge {
                 id: "20".into(),
@@ -718,6 +719,7 @@ mod tests {
                 motor_vehicle_conditional: None,
                 access_conditional: None,
                 maxspeed_conditional: None,
+                access_forbidden: false,
             },
         ];
         let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot);
@@ -793,6 +795,7 @@ mod tests {
                 motor_vehicle_conditional: None,
                 access_conditional: None,
                 maxspeed_conditional: None,
+                access_forbidden: false,
             },
             GraphEdge {
                 id: "200".into(),
@@ -823,6 +826,7 @@ mod tests {
                 motor_vehicle_conditional: None,
                 access_conditional: None,
                 maxspeed_conditional: None,
+                access_forbidden: false,
             },
         ];
         let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot);
@@ -874,6 +878,7 @@ mod tests {
                 motor_vehicle_conditional: None,
                 access_conditional: None,
                 maxspeed_conditional: None,
+                access_forbidden: false,
             },
             GraphEdge {
                 id: "20".into(),
@@ -904,6 +909,7 @@ mod tests {
                 motor_vehicle_conditional: None,
                 access_conditional: None,
                 maxspeed_conditional: None,
+                access_forbidden: false,
             },
             GraphEdge {
                 id: "21".into(),
@@ -934,6 +940,7 @@ mod tests {
                 motor_vehicle_conditional: None,
                 access_conditional: None,
                 maxspeed_conditional: None,
+                access_forbidden: false,
             },
         ];
         let plain = RouteGraph::from_parts(HashMap::new(), edges.clone(), RoutingProfile::Foot);
