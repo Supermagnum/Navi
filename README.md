@@ -649,6 +649,21 @@ Country/region visual extracts can also be prepared with
   OpenMapTiles expose ice as fill only (`landcover_ice`); there is no glacier
   POI name path to style. Offline Protomaps labels `pois.kind=glacier` from
   ~z12. Not a Navi Liberty regression — see [`docs/map-styles.md`](docs/map-styles.md).
+- **Pilgrim stamp / credential offices have no stable OSM tag.** Official
+  pilgrim centers (pilegrimspass / credencial stamp points) are tagged
+  inconsistently: `tourism=information`+`information=office`, bare
+  `building=office`, guideposts, or (Camino) `office=company`. Navi therefore
+  has **no dedicated POI category** for them — a name matcher would mostly hit
+  guideposts, and `information=office` would pull generic tourist offices.
+  Pilgrim lodgings (`tourism=hostel` / `guest_house`) already match Lodging /
+  Cabin. Named centers remain searchable via the place index when present.
+  Upstream proposal under discussion:
+  [proposal: pilgrimage=stamp_office and network=pilgrim](https://community.openstreetmap.org/t/proposal-pilgrimage-stamp-office-and-network-pilgrim/146371).
+  Related `tourism=checkpoint` / `checkpoint:type=stamp` tagging does not close
+  the gap (no reliable route-relation link, tourism-key collision, no
+  pilgrimage semantics). Revisit a `PilgrimCenter` category if OSM settles on a
+  consistent, machine-readable scheme. See [`docs/poi.md`](docs/poi.md) and
+  [`docs/how-to-use.md`](docs/how-to-use.md#pilgrim-stops-and-stamp-centers-poi-coverage).
 - **Not implemented yet:** checking whether the code can be optimised for
   rendering.
 

@@ -181,7 +181,10 @@ international objects (2026-08):
 has a consistent, non-ambiguous tagging pattern. A name-only matcher would
 mostly hit guideposts; `information=office` without name filters would pull
 generic tourist offices. Prefer improving OSM tags for official centers, then
-revisit.
+revisit. Proposal under discussion:
+[pilgrimage=stamp_office and network=pilgrim](https://community.openstreetmap.org/t/proposal-pilgrimage-stamp-office-and-network-pilgrim/146371)
+(`tourism=checkpoint` / `checkpoint:type=stamp` is related but does not close
+the gap). Product-level note: README [Known issues](../README.md#known-issues).
 
 End-user summary: [`how-to-use.md`](how-to-use.md#pilgrim-stops-and-stamp-centers-poi-coverage).
 

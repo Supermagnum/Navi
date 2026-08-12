@@ -270,7 +270,9 @@ Verified against OSM tagging and the Ostlandet extract, plus public OSM samples:
 **Product decision:** no new “Pilgrim center” POI category for now — tagging is
 too inconsistent for a reliable matcher, while lodgings are already covered and
 named centers remain findable via **place-name search** when present in the
-index. See [`poi.md`](poi.md).
+index. See [`poi.md`](poi.md) and README [Known issues](../README.md#known-issues).
+OSM tagging proposal:
+[pilgrimage=stamp_office and network=pilgrim](https://community.openstreetmap.org/t/proposal-pilgrimage-stamp-office-and-network-pilgrim/146371).
 
 ---
 
