@@ -24,24 +24,25 @@ How to help: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
 ## Table of contents
 
 1. [What this is](#what-this-is)
-2. [Features](#features)
+2. [Support Navi](#support-navi)
+3. [Features](#features)
    - [What you need to download](#what-you-need-to-download)
    - [Indexing (background after download)](#indexing-background-after-download)
    - [How to use](#how-to-use)
    - [How features work](#how-features-work)
-3. [Settings](#settings)
-4. [Break timer vs trip ETA](#break-timer-vs-trip-eta)
-5. [Routing safety](#routing-safety)
-6. [Minimum hardware and storage](#minimum-hardware-and-storage)
-7. [Screenshots](#screenshots)
-8. [Documents](#documents)
-9. [Plugins](#plugins)
-10. [Coding standards and contributing](#coding-standards-and-contributing)
-11. [Building and installing](#building-and-installing)
+4. [Settings](#settings)
+5. [Break timer vs trip ETA](#break-timer-vs-trip-eta)
+6. [Routing safety](#routing-safety)
+7. [Minimum hardware and storage](#minimum-hardware-and-storage)
+8. [Screenshots](#screenshots)
+9. [Documents](#documents)
+10. [Plugins](#plugins)
+11. [Coding standards and contributing](#coding-standards-and-contributing)
+12. [Building and installing](#building-and-installing)
     - [Release build (APK / AAB)](#release-build-apk--aab)
-12. [Where the map data comes from](#where-the-map-data-comes-from)
-13. [Known issues](#known-issues)
-14. [TODO](#todo)
+13. [Where the map data comes from](#where-the-map-data-comes-from)
+14. [Known issues](#known-issues)
+15. [TODO](#todo)
 
 More detail lives in linked docs (architecture, truck rest rules, map styles,
 debugging, and so on). Start with [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) if you
@@ -68,7 +69,18 @@ is the “brain” for finding roads and paths, not just the pretty map.
 License: see `LICENSE` (GPL-3.0-or-later unless noted). Many small icons are
 from Navit (**GPL v2**); see [`docs/icons.md`](docs/icons.md).
 
-Optional donations: [Liberapay](https://liberapay.com/Supermagnum/).
+# Support Navi
+
+Navi is free and open source, developed independently. If you'd like to
+support its development, donations are welcome via direct bank transfer:
+
+- **IBAN:** NO02 1802 0334 084
+- **BIC/SWIFT:** SHEDNO22
+
+Please include "Navi donation" as the payment reference/message, so it's
+identifiable on your statement.
+
+This is entirely optional support, not a paywall — Navi is and will remain free.
 
 # Features
 

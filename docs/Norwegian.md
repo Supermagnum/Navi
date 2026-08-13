@@ -21,24 +21,25 @@ Hvordan bidra: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 ## Innhold
 
 1. [Hva dette er](#hva-dette-er)
-2. [Funksjoner](#funksjoner)
+2. [Støtt Navi](#støtt-navi)
+3. [Funksjoner](#funksjoner)
    - [Hva du må laste ned](#hva-du-må-laste-ned)
    - [Indeksering (bakgrunn etter nedlasting)](#indeksering-bakgrunn-etter-nedlasting)
    - [Slik bruker du](#slik-bruker-du)
    - [Slik fungerer funksjonene](#slik-fungerer-funksjonene)
-3. [Innstillinger](#innstillinger)
-4. [Pauseteller vs tur-ETA](#pauseteller-vs-tur-eta)
-5. [Ruting og sikkerhet](#ruting-og-sikkerhet)
-6. [Minimum maskinvare og lagring](#minimum-maskinvare-og-lagring)
-7. [Skjermbilder](#skjermbilder)
-8. [Dokumenter](#dokumenter)
-9. [Plugins](#plugins)
-10. [Kodestandarder og bidrag](#kodestandarder-og-bidrag)
-11. [Bygge og installere](#bygge-og-installere)
+4. [Innstillinger](#innstillinger)
+5. [Pauseteller vs tur-ETA](#pauseteller-vs-tur-eta)
+6. [Ruting og sikkerhet](#ruting-og-sikkerhet)
+7. [Minimum maskinvare og lagring](#minimum-maskinvare-og-lagring)
+8. [Skjermbilder](#skjermbilder)
+9. [Dokumenter](#dokumenter)
+10. [Plugins](#plugins)
+11. [Kodestandarder og bidrag](#kodestandarder-og-bidrag)
+12. [Bygge og installere](#bygge-og-installere)
     - [Utgivelsesbygg (APK / AAB)](#utgivelsesbygg-apk--aab)
-12. [Hvor kartdataene kommer fra](#hvor-kartdataene-kommer-fra)
-13. [Kjente problemer](#kjente-problemer)
-14. [TODO](#todo)
+13. [Hvor kartdataene kommer fra](#hvor-kartdataene-kommer-fra)
+14. [Kjente problemer](#kjente-problemer)
+15. [TODO](#todo)
 
 Mer detalj ligger i lenkede dokumenter (arkitektur, lastebilhvile, kartstiler,
 feilsøking osv.). Start med [`CONTRIBUTING.md`](CONTRIBUTING.md) hvis du vil
@@ -66,6 +67,19 @@ kartet.
 
 Lisens: se `LICENSE` (GPL-3.0-or-later med mindre annet er angitt). Mange små
 ikoner kommer fra Navit (**GPL v2**); se [`icons.md`](icons.md).
+
+# Støtt Navi
+
+Navi er fri programvare med åpen kildekode, utviklet uavhengig. Om du vil støtte
+utviklingen, er donasjoner velkomne via bankoverføring:
+
+- **IBAN:** NO02 1802 0334 084
+- **BIC/SWIFT:** SHEDNO22
+
+Skriv «Navi donation» som betalingsreferanse/melding, så det er tydelig på
+kontoutskriften.
+
+Dette er helt valgfri støtte, ikke en betalingsmur — Navi er og forblir gratis.
 
 # Funksjoner
 
