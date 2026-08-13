@@ -49,7 +49,18 @@ object RegionCoverage {
             "europe/norway/trondelag" -> "Trondelag"
             "europe/norway/nord-norge" -> "Nord-Norge"
             "europe/norway/sorlandet" -> "Sorlandet"
-            else -> geofabrikPath.substringAfterLast('/').ifBlank { geofabrikPath }
+            "europe/sweden" -> "Sweden"
+            "europe/finland" -> "Finland"
+            "europe/germany" -> "Germany"
+            "europe/france" -> "France"
+            "europe/switzerland" -> "Switzerland"
+            "europe/austria" -> "Austria"
+            "europe/great-britain" -> "Great Britain"
+            "north-america/us" -> "United States"
+            "russia" -> "Russia"
+            else ->
+                GeofabrikDownloadCatalog.findByPath(geofabrikPath)?.label
+                    ?: geofabrikPath.substringAfterLast('/').ifBlank { geofabrikPath }
         }
 
     fun geofabrikPathForPbfName(pbfName: String): String? {

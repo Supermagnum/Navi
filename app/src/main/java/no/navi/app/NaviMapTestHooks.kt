@@ -130,6 +130,10 @@ object NaviMapTestHooks {
     @Volatile
     var pendingGeofabrikPath: String? = null
 
+    /** Mirrors Tools selected Geofabrik path for instrumented assertions. */
+    @Volatile
+    var lastSelectedGeofabrikPath: String = ""
+
     /** Last missing-coverage prompt Geofabrik path (instrumented tests). */
     @Volatile
     var lastMissingCoveragePath: String = ""

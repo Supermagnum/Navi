@@ -406,6 +406,12 @@ private fun NaviMapScreen() {
     var selectedGeofabrikPath by remember {
         mutableStateOf(MapHudPrefs.loadGeofabrikPath(context))
     }
+    var downloadContinent by remember {
+        mutableStateOf(GeofabrikDownloadCatalog.continentForPath(selectedGeofabrikPath))
+    }
+    LaunchedEffect(selectedGeofabrikPath) {
+        NaviMapTestHooks.lastSelectedGeofabrikPath = selectedGeofabrikPath
+    }
     LaunchedEffect(Unit) {
         DiagnosticLog.restoreFromPrefs(context)
         diagnosticLogging = DiagnosticLog.isEnabled()
@@ -414,7 +420,12 @@ private fun NaviMapScreen() {
             if (pendingPath != null) {
                 NaviMapTestHooks.pendingGeofabrikPath = null
                 selectedGeofabrikPath = pendingPath
-                downloadScopeCountry = false
+                downloadContinent = GeofabrikDownloadCatalog.continentForPath(pendingPath)
+                // Country-root paths keep Country scope; landsdels / freeform → Region.
+                val country = GeofabrikDownloadCatalog.findByPath(pendingPath)
+                downloadScopeCountry =
+                    country != null &&
+                    country.path == pendingPath.trim().trim('/')
             }
             kotlinx.coroutines.delay(200)
         }
@@ -2723,7 +2734,11 @@ private fun NaviMapScreen() {
                             missingCoveragePrompt = null
                             NaviMapTestHooks.missingCoveragePromptVisible = false
                             selectedGeofabrikPath = path
-                            downloadScopeCountry = path == "europe/norway"
+                            downloadContinent = GeofabrikDownloadCatalog.continentForPath(path)
+                            val countryHit = GeofabrikDownloadCatalog.findByPath(path)
+                            downloadScopeCountry =
+                                countryHit != null &&
+                                countryHit.path == path.trim().trim('/')
                             showTools = true
                             scope.launch {
                                 val leaf = path.substringAfterLast('/')
@@ -4220,12 +4235,27 @@ private fun NaviMapScreen() {
                         "Download scope (Geofabrik)",
                         style = MaterialTheme.typography.labelLarge,
                     )
+                    Text(
+                        "Countries and bboxes come from Geofabrik's published index. " +
+                            "Central America extracts are listed under North America. " +
+                            "Jurisdiction packs still follow GPS, not this picker.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
                             selected = downloadScopeCountry,
                             onClick = {
                                 downloadScopeCountry = true
-                                selectedGeofabrikPath = "europe/norway"
+                                val current =
+                                    GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)
+                                val pick =
+                                    current
+                                        ?: GeofabrikDownloadCatalog
+                                            .countriesIn(downloadContinent)
+                                            .firstOrNull()
+                                        ?: GeofabrikDownloadCatalog.countries.first()
+                                downloadContinent = pick.continent
+                                selectedGeofabrikPath = pick.path
                             },
                             label = { Text("Country") },
                             modifier = Modifier.testTag("chip_download_country"),
@@ -4234,7 +4264,20 @@ private fun NaviMapScreen() {
                             selected = !downloadScopeCountry,
                             onClick = {
                                 downloadScopeCountry = false
-                                selectedGeofabrikPath = "europe/norway/ostlandet"
+                                if (GeofabrikDownloadCatalog.hasRegionChips(selectedGeofabrikPath)) {
+                                    if (selectedGeofabrikPath == "europe/norway" ||
+                                        !selectedGeofabrikPath.startsWith("europe/norway/")
+                                    ) {
+                                        selectedGeofabrikPath = "europe/norway/ostlandet"
+                                    }
+                                } else {
+                                    // Keep country path; sub-region chips are Norway-only.
+                                    val country =
+                                        GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)
+                                    if (country != null) {
+                                        selectedGeofabrikPath = country.path
+                                    }
+                                }
                             },
                             label = { Text("Region in country") },
                             modifier = Modifier.testTag("chip_download_region"),
@@ -4247,23 +4290,67 @@ private fun NaviMapScreen() {
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.testTag("country_download_low_ram_warning"),
                         )
-                        FilterChip(
-                            selected = selectedGeofabrikPath == "europe/norway",
-                            onClick = { selectedGeofabrikPath = "europe/norway" },
-                            label = { Text("Norway") },
-                        )
-                    } else {
+                        Text("Continent", style = MaterialTheme.typography.labelMedium)
                         Row(
                             modifier = Modifier.horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            listOf(
-                                "ostlandet" to "Østlandet",
-                                "vestlandet" to "Vestlandet",
-                                "trondelag" to "Trøndelag",
-                                "nord-norge" to "Nord-Norge",
-                                "sorlandet" to "Sørlandet",
-                            ).forEach { (slug, label) ->
+                            GeofabrikDownloadCatalog.continents.forEach { continent ->
+                                FilterChip(
+                                    selected = downloadContinent == continent,
+                                    onClick = {
+                                        downloadContinent = continent
+                                        GeofabrikDownloadCatalog
+                                            .countriesIn(continent)
+                                            .firstOrNull()
+                                            ?.let { selectedGeofabrikPath = it.path }
+                                    },
+                                    label = { Text(continent.label) },
+                                    modifier = Modifier.testTag(continent.testTag),
+                                )
+                            }
+                        }
+                        Text("Country", style = MaterialTheme.typography.labelMedium)
+                        val continentCountries =
+                            GeofabrikDownloadCatalog.countriesIn(downloadContinent)
+                        if (continentCountries.isEmpty()) {
+                            Text(
+                                GeofabrikDownloadCatalog.EMPTY_CONTINENT_NOTE,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.testTag("continent_empty_note"),
+                            )
+                        } else {
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                continentCountries.forEach { country ->
+                                    FilterChip(
+                                        selected = selectedGeofabrikPath == country.path,
+                                        onClick = { selectedGeofabrikPath = country.path },
+                                        label = { Text(country.label) },
+                                        modifier = Modifier.testTag(country.testTag),
+                                    )
+                                }
+                            }
+                            GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)?.let { country ->
+                                if (country.path == selectedGeofabrikPath.trim().trim('/') &&
+                                    country.continent == downloadContinent
+                                ) {
+                                    Text(
+                                        country.supportNote,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.testTag("country_support_note"),
+                                    )
+                                }
+                            }
+                        }
+                    } else if (GeofabrikDownloadCatalog.hasRegionChips(selectedGeofabrikPath)) {
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            GeofabrikDownloadCatalog.norwayRegions.forEach { (slug, label) ->
                                 val path = "europe/norway/$slug"
                                 FilterChip(
                                     selected = selectedGeofabrikPath == path,
@@ -4272,6 +4359,14 @@ private fun NaviMapScreen() {
                                 )
                             }
                         }
+                    } else {
+                        Text(
+                            "Sub-region chips are listed for Norway only today. " +
+                                "Enter a Geofabrik subpath in the field below " +
+                                "(e.g. europe/germany/bayern), or switch back to Country.",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("region_chips_norway_only_note"),
+                        )
                     }
                     OutlinedTextField(
                         value = selectedGeofabrikPath,

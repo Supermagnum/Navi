@@ -140,6 +140,11 @@ The pattern must support both. A country-only key is fine when the law is
 uniform; do not assume country-level always suffices, and do not force every
 rule to invent fake sub-national splits.
 
+**Contrast — Tools download country list:** The Tools **Download scope**
+continent → country picker is **not** a jurisdiction override. It only lists
+Geofabrik extracts that have an offline `region_bbox` (maps/PMTiles). HOS and
+speed-camera packs still resolve from GPS via `country_iso_at` as above.
+
 ### 2.2 Rule-set structure
 
 Model packs as a **keyed table** (conceptually: `ISO_country` or

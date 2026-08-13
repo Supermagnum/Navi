@@ -100,6 +100,10 @@ is chosen automatically from the trip start location — there is **no** separat
 jurisdiction picker in the UI. Outside recognised packs, truck multi-day legal
 segmentation is not invented.
 
+(The Tools **Download scope** country list is a Geofabrik extract picker only —
+continent → country for offline maps — not a HOS/jurisdiction override. See
+[`jurisdiction-rules.md`](jurisdiction-rules.md).)
+
 Mobile home uses **car-style** soft breaks, not EC 561 tracking.
 
 ---
@@ -110,8 +114,8 @@ Open **Tools** from the planning panel (toggles to **Hide tools**).
 
 | Action | Meaning |
 |---|---|
-| **Download scope** | Chips **Country** vs **Region in country**. Country warns about low-RAM devices. Norway country path, or Østlandet / Vestlandet / Trøndelag / Nord-Norge / Sørlandet region chips. |
-| **Geofabrik path** | Editable path (e.g. `europe/norway/ostlandet`). |
+| **Download scope** | Chips **Country** vs **Region in country**. Country mode is a **continent → country** picker using the standard seven continents. Country paths and bboxes come from Geofabrik’s published index (`index-v1.json`); Central America extracts appear under North America in the UI while keeping `central-america/…` download paths. Antarctica is listed (Geofabrik root extract). Selecting a country shows an honest support note (most are maps-only; HOS/cameras only where packs exist). Region chips remain Norway landsdels only. Country-scale downloads warn about low-RAM devices. |
+| **Geofabrik path** | Editable path (e.g. `europe/norway/ostlandet`, `europe/sweden`, `north-america/us`). |
 | **Download region + build place index** | Downloads the Geofabrik PBF, binds the region, builds the place search index, and builds indexed routing maps when possible. |
 | **Rebuild indexed maps (local PBF)** | Rebuilds preprocess packs from a PBF already on the device. |
 | **Download basemap (PMTiles)** | Offline Protomaps basemap for the selected region. |
