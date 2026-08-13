@@ -28,8 +28,9 @@ import kotlin.math.abs
  * offline style must paint `wood` (and landcover `forest`) or land stays cream.
  *
  * Prefer host `am instrument` after `:app:installDebug` /
- * `:app:installDebugAndroidTest` — Gradle `connectedDebugAndroidTest` may
- * uninstall and wipe app data.
+ * `:app:installDebugAndroidTest`. Older AGP runs of `connectedDebugAndroidTest`
+ * could uninstall and wipe app data; this repo now keeps APKs installed after
+ * connected tests (`leaveApksInstalledAfterRun`).
  */
 @RunWith(AndroidJUnit4::class)
 class ForestLandcoverCompareScreenshotTest {

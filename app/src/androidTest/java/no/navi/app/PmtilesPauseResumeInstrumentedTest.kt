@@ -37,8 +37,9 @@ import kotlin.math.abs
  * between them (in-memory DownloadControl does not survive process death).
  *
  * Prefer `adb shell am instrument` after `:app:installDebug` /
- * `:app:installDebugAndroidTest`. Gradle `connectedDebugAndroidTest` uninstalls
- * the app when the task finishes, which wipes `navi.db` and breaks Phase B.
+ * `:app:installDebugAndroidTest`. Older AGP 8.1+ `connectedDebugAndroidTest`
+ * uninstalled the app when the task finished (wiping packs / `navi.db`); this
+ * repo sets `android.injected.androidTest.leaveApksInstalledAfterRun=true`.
  *
  * Host sketch:
  * ```

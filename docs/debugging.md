@@ -218,7 +218,8 @@ instrumented tests or `adb shell uiautomator dump`.
 ```bash
 ./gradlew :app:installDebug :app:installDebugAndroidTest
 
-# One class
+# One class (APKs stay installed after the run — see
+# android.injected.androidTest.leaveApksInstalledAfterRun in gradle.properties)
 ./gradlew :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.HudVerificationInstrumentedTest
 
@@ -226,6 +227,11 @@ instrumented tests or `adb shell uiautomator dump`.
 ./gradlew :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.HudVerificationInstrumentedTest#hud_map_tap_does_not_affect_settings_sheets
 ```
+
+Do **not** `adb uninstall no.navi.app` between debug iterations — that deletes
+app-private indexed packs, place index, and PMTiles. Use `:app:installDebug`
+(in-place update) or `adb install -r`. Uninstall only when switching signing
+keys (debug ↔ release) or deliberately testing a fresh install.
 
 Watch the same logcat tags while the suite runs. HUD screenshots are written
 under the app external files dir (and sometimes mirrored under

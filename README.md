@@ -26,6 +26,7 @@ How to help: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
 1. [What this is](#what-this-is)
 2. [Features](#features)
    - [What you need to download](#what-you-need-to-download)
+   - [Indexing (background after download)](#indexing-background-after-download)
    - [How to use](#how-to-use)
    - [How features work](#how-features-work)
 3. [Settings](#settings)
@@ -67,6 +68,8 @@ is the “brain” for finding roads and paths, not just the pretty map.
 License: see `LICENSE` (GPL-3.0-or-later unless noted). Many small icons are
 from Navit (**GPL v2**); see [`docs/icons.md`](docs/icons.md).
 
+Optional donations: [Liberapay](https://liberapay.com/Supermagnum/).
+
 # Features
 
 | Feature | In plain words | Status |
@@ -78,6 +81,7 @@ from Navit (**GPL v2**); see [`docs/icons.md`](docs/icons.md).
 | **Official trails** | For hiking/cycling, optionally prefer marked long-distance trails (off by default). Normal paths still work if the marked trail has a gap. | Done |
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. A small leaf icon shows when eco is on. | Done |
 | **Offline planning** | Download a region once, then plan and see the route on the device. | Done |
+| **Indexing** | After a region download, a background job turns the OSM extract into compact routing packs so later plans are fast. You can plan while it runs. | Done |
 | **Place search** | Search places and set From / Via / To. | Done |
 | **Use GPS** | Fill From / Via / To from the live fix (nearby name within ~12 m, else coordinates). The field is the chip active when you tap — not whichever chip is selected after resolution finishes. | Done |
 | **Map mark & saved places** | Hold on the map ~4 s to mark a point; set From / Via / To or save a named place (separate from Saved routes). | Done |
@@ -116,6 +120,40 @@ you can go offline.
 online for Liberty).  
 Prefer a **region** (not a whole huge country) on tablets with limited RAM —
 see [Minimum hardware and storage](#minimum-hardware-and-storage).
+
+After the region file is on disk, Navi **indexes** it in the background so later
+plans are fast — see [Indexing (background after download)](#indexing-background-after-download).
+
+## Indexing (background after download)
+
+When **Download region + build place index** has saved the OpenStreetMap
+extract, Navi starts a **background indexing** job. That is not the map picture
+on screen (basemap tiles) and not the raw `.osm.pbf` file itself — it is a
+one-time conversion of that extract into compact **indexed packs** the planner
+can load quickly instead of scanning the whole extract on every trip.
+
+You can search and tap **Plan route** as soon as the download finishes. Until
+indexing is done, planning uses the slower raw `.osm.pbf` path. Tools shows
+progress as **Indexed maps (background)**; when it says **Indexed maps: ready
+(pack-hit)**, the next plan uses the packs — typically about 1.5–2 seconds on
+the reference tablet instead of tens of seconds.
+
+What the background job writes:
+
+| Pack | What it is for |
+|---|---|
+| **Road / path graph** | The network A* follows, per travel mode (car, foot, bicycle, and so on). Large regions are split into spatial tiles so a 4 GB-class device does not have to hold the whole region in RAM at once. |
+| **POIs and barriers** | Huts, rest stops, lodgings, overnight buildings, glacier polygons, and similar features used for rest / overnight planning and hiking safety filters. |
+| **Wetland** | Marsh and water polygons hiking uses to stay out of bogs (boardwalks stay on the graph). |
+
+A separate **place index** (names for From / Via / To search) is built as part
+of the download button, before this background job starts.
+
+If packs are missing, stale, or still converting, planning still works via the
+PBF fallback. Rebuild from a file already on the device with **Rebuild indexed
+maps (local PBF, background)** — no re-download. More detail:
+[`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md). Memory
+margin on lower-end 4 GB devices during conversion: [Known issues](#known-issues).
 
 ## How to use
 

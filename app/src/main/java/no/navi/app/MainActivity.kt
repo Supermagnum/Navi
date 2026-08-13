@@ -465,6 +465,9 @@ private fun NaviMapScreen() {
     var indexedMapsUiLine by remember { mutableStateOf("") }
     var planningRoute by remember { mutableStateOf(false) }
     var routePlanProgress by remember { mutableStateOf("") }
+
+    /** True while planning when indexed packs are not ready (slow PBF path). */
+    var planIndexingHintVisible by remember { mutableStateOf(false) }
     var recalculatingRoute by remember { mutableStateOf(false) }
     var showHikingReroutePrompt by remember { mutableStateOf(false) }
     var missingCoveragePrompt by remember { mutableStateOf<MissingRegionCoverage?>(null) }
@@ -1101,6 +1104,17 @@ private fun NaviMapScreen() {
                 routePlanProgress = "Recalculating route…"
                 routePlanPct = 0
                 status = "Recalculating route… (may take several seconds)"
+                planIndexingHintVisible =
+                    withContext(Dispatchers.IO) {
+                        val planPbf = resolveRegionPbf()
+                        if (planPbf == null || !planPbf.isFile) {
+                            true
+                        } else {
+                            runCatching {
+                                indexedMapsStatus(planPbf.absolutePath, dataDir.absolutePath).trim()
+                            }.getOrDefault("missing") != "ready"
+                        }
+                    }
                 val startWp =
                     Waypoint(resolveRerouteStartLabel(lat, lon), lat, lon)
                 val pts =
@@ -1138,6 +1152,7 @@ private fun NaviMapScreen() {
                         status = "Reroute failed: ${e.message}"
                         recalculatingRoute = false
                         planningRoute = false
+                        planIndexingHintVisible = false
                         NaviMapTestHooks.reroutingActive = false
                         routePlanProgress = ""
                         offRouteCoordinator.suppressUntilOnRoute()
@@ -1146,6 +1161,7 @@ private fun NaviMapScreen() {
                 if (!isActive) return@launch
                 recalculatingRoute = false
                 planningRoute = false
+                planIndexingHintVisible = false
                 NaviMapTestHooks.reroutingActive = false
                 routePlanProgress = ""
                 if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
@@ -3039,6 +3055,20 @@ private fun NaviMapScreen() {
                                         routePlanPct = 0
                                         routePlanProgress = "Planning route: starting…"
                                         status = routePlanProgress
+                                        planIndexingHintVisible =
+                                            withContext(Dispatchers.IO) {
+                                                val planPbf = pbf ?: resolveRegionPbf()
+                                                if (planPbf == null || !planPbf.isFile) {
+                                                    true
+                                                } else {
+                                                    runCatching {
+                                                        indexedMapsStatus(
+                                                            planPbf.absolutePath,
+                                                            dataDir.absolutePath,
+                                                        ).trim()
+                                                    }.getOrDefault("missing") != "ready"
+                                                }
+                                            }
                                         val result =
                                             try {
                                                 withContext(Dispatchers.IO) {
@@ -3296,6 +3326,7 @@ private fun NaviMapScreen() {
                                                 planningRoute = false
                                                 routePlanPct = -1
                                                 routePlanProgress = ""
+                                                planIndexingHintVisible = false
                                                 downloadProgressClear()
                                             }
                                         val durationMs = System.currentTimeMillis() - planStarted
@@ -3384,6 +3415,22 @@ private fun NaviMapScreen() {
                                                 .height(6.dp)
                                                 .testTag("route_plan_bar"),
                                     )
+                                }
+                                if (planIndexingHintVisible) {
+                                    TextButton(
+                                        onClick = { showTools = true },
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .testTag("route_plan_indexing_hint"),
+                                    ) {
+                                        Text(
+                                            "Planning is faster once background indexing finishes " +
+                                                "(Tools → Indexed maps). This plan may take longer " +
+                                                "if indexing isn't done yet.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
                                 }
                             }
                             MultiDayPlanCards(
@@ -4593,6 +4640,31 @@ private fun NaviMapScreen() {
                                         applyOsmUpdate(dataDir.absolutePath)
                                     }
                                 pendingUpdatePlan = null
+                                // applyOsmUpdate clears place_index + graph-cache and
+                                // fingerprints the new PBF so packs become stale_pbf.
+                                // Mirror the download button: rebuild index + queue packs.
+                                if (status.contains("PASS", ignoreCase = true)) {
+                                    val pbf = resolveRegionPbf()
+                                    if (pbf != null && pbf.isFile) {
+                                        withContext(Dispatchers.IO) {
+                                            ensurePlaceIndex(
+                                                pbf.absolutePath,
+                                                resolvePlaceIndexDb().absolutePath,
+                                            )
+                                        }
+                                        val elevDir =
+                                            File(dataDir, "elevation").takeIf { it.isDirectory }
+                                        IndexedMapsBackground.ensureStarted(
+                                            scope,
+                                            pbf,
+                                            dataDir,
+                                            elevDir,
+                                        )
+                                        status =
+                                            "$status | place index rebuild started; " +
+                                            "indexed maps: background"
+                                    }
+                                }
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),

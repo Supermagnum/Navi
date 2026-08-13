@@ -23,6 +23,7 @@ Hvordan bidra: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 1. [Hva dette er](#hva-dette-er)
 2. [Funksjoner](#funksjoner)
    - [Hva du må laste ned](#hva-du-må-laste-ned)
+   - [Indeksering (bakgrunn etter nedlasting)](#indeksering-bakgrunn-etter-nedlasting)
    - [Slik bruker du](#slik-bruker-du)
    - [Slik fungerer funksjonene](#slik-fungerer-funksjonene)
 3. [Innstillinger](#innstillinger)
@@ -77,6 +78,7 @@ ikoner kommer fra Navit (**GPL v2**); se [`icons.md`](icons.md).
 | **Offisielle løyper** | For fottur/sykling kan du valgfritt foretrekke merkede langturer (av som standard). Vanlige stier fungerer fortsatt hvis merket løype har hull. | Ferdig |
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Et lite bladikon vises når øko er på. | Ferdig |
 | **Frakoblet planlegging** | Last ned en region én gang, planlegg og se ruten på enheten. | Ferdig |
+| **Indeksering** | Etter regionsnedlasting gjør en bakgrunnsjobb OSM-uttrekket om til kompakte rutingpakker, så senere planer går raskt. Du kan planlegge mens den kjører. | Ferdig |
 | **Stedssøk** | Søk steder og sett Fra / Via / Til. | Ferdig |
 | **Bruk GPS** | Fyll Fra / Via / Til fra live-posisjon (navn innen ~12 m, ellers koordinater). Feltet er chipen som var aktiv da du trykket — ikke den som er valgt etter at oppslaget er ferdig. | Ferdig |
 | **Kartmerke og lagrede steder** | Hold på kartet ~4 s for å merke et punkt; sett Fra / Via / Til eller lagre et navngitt sted (skilt fra Lagrede ruter). | Ferdig |
@@ -114,6 +116,42 @@ kan du gå frakoblet.
 (eller bli på nett med Liberty).  
 Foretrekk en **region** (ikke et helt stort land) på nettbrett med begrenset
 RAM — se [Minimum maskinvare og lagring](#minimum-maskinvare-og-lagring).
+
+Når regionsfilen ligger på disken, **indekserer** Navi den i bakgrunnen slik at
+senere planer går raskt — se
+[Indeksering (bakgrunn etter nedlasting)](#indeksering-bakgrunn-etter-nedlasting).
+
+## Indeksering (bakgrunn etter nedlasting)
+
+Når **Download region + build place index** har lagret OpenStreetMap-uttrekket,
+starter Navi en **indekseringsjobb i bakgrunnen**. Det er ikke kartbildet på
+skjermen (grunnkartfliser) og ikke selve `.osm.pbf`-filen — det er en
+engangskonvertering av uttrekket til kompakte **indekserte pakker** som
+planleggeren kan laste raskt, i stedet for å skanne hele uttrekket på hver tur.
+
+Du kan søke og trykke **Plan route** så snart nedlastingen er ferdig. Inntil
+indekseringen er ferdig, bruker planlegging den tregere rå `.osm.pbf`-stien.
+Tools viser fremdrift som **Indexed maps (background)**; når det står
+**Indexed maps: ready (pack-hit)**, bruker neste plan pakkene — typisk ca.
+1,5–2 sekunder på referansenettbrettet i stedet for titalls sekunder.
+
+Det bakgrunnsjobben skriver:
+
+| Pakke | Hva den brukes til |
+|---|---|
+| **Vei- / stinett** | Nettverket A* følger, per reisemåte (bil, fot, sykkel osv.). Store regioner deles i romlige fliser, slik at en 4 GB-klasse enhet ikke må holde hele regionen i RAM samtidig. |
+| **POI og barrierer** | Hytter, rasteplasser, overnatting, isbrepolygoner og liknende trekk brukt til hvile-/overnattingsplanlegging og fottursikkerhetsfiltre. |
+| **Våtmark** | Myr- og vannpolygoner fottur bruker for å holde seg unna myr (klopp/bru blir på grafen). |
+
+En separat **stedsindeks** (navn til Fra / Via / Til-søk) bygges som del av
+nedlastingsknappen, før denne bakgrunnsjobben starter.
+
+Hvis pakker mangler, er utdaterte, eller fortsatt konverteres, fungerer
+planlegging likevel via PBF-reservestien. Bygg på nytt fra en fil som allerede
+ligger på enheten med **Rebuild indexed maps (local PBF, background)** — uten
+ny nedlasting. Mer:
+[`indexed-map-format-plan.md`](indexed-map-format-plan.md). Minnebuffert på
+svakere 4 GB-enheter under konvertering: [Kjente problemer](#kjente-problemer).
 
 ## Slik bruker du
 
