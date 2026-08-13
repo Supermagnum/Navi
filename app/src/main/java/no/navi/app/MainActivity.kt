@@ -2857,21 +2857,30 @@ private fun NaviMapScreen() {
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    // Shared query/hits are not per-chip drafts — clear when
+                                    // switching so a resolved GPS/place label from From does
+                                    // not linger visually on To/Via (and vice versa).
+                                    fun selectSearchTarget(next: SearchTarget) {
+                                        if (searchTarget == next) return
+                                        searchTarget = next
+                                        query = ""
+                                        hits = emptyList()
+                                    }
                                     FilterChip(
                                         selected = searchTarget == SearchTarget.From,
-                                        onClick = { searchTarget = SearchTarget.From },
+                                        onClick = { selectSearchTarget(SearchTarget.From) },
                                         label = { Text("From") },
                                         modifier = Modifier.testTag("chip_from"),
                                     )
                                     FilterChip(
                                         selected = searchTarget == SearchTarget.To,
-                                        onClick = { searchTarget = SearchTarget.To },
+                                        onClick = { selectSearchTarget(SearchTarget.To) },
                                         label = { Text("To") },
                                         modifier = Modifier.testTag("chip_to"),
                                     )
                                     FilterChip(
                                         selected = searchTarget == SearchTarget.Via,
-                                        onClick = { searchTarget = SearchTarget.Via },
+                                        onClick = { selectSearchTarget(SearchTarget.Via) },
                                         label = { Text("Via") },
                                         modifier = Modifier.testTag("chip_via"),
                                     )

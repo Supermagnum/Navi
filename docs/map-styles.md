@@ -223,8 +223,8 @@ offline Protomaps template (`roads_label_*`, `pois`):
 | ≥ 12 | (roads unchanged below) | Glacier + wetland names (`pois.kind=glacier` / `wetland`) when tile `min_zoom` allows |
 | ≥ 13 | Motorways | Same |
 | ≥ 14 | + secondary | Same |
-| ≥ 15 | + other majors and minor streets | Same |
-| ≥ 16 | Same | Urban amenities + peak/hill icons (`pois` kinds other than glacier/wetland) |
+| ≥ 15 | + other majors and minor streets | + townhall names (`pois.kind=townhall`; feature `min_zoom` often 15) |
+| ≥ 16 | Same | Urban amenities + peak/hill icons (`pois` kinds other than glacier/wetland/townhall) |
 
 Offline Protomaps peaks live in the `pois` source-layer (`kind=peak` / `hill`),
 not only `places`. Glacier **names** are also `pois` points (`kind=glacier`,
@@ -234,10 +234,17 @@ Wetland **names** are likewise `pois` points (`kind=wetland`, ~z12); wetland
 `water` layer (Point vs LineString) and use dedicated symbol layers — fill/line
 geometry filters are unchanged (shard fix stays labeling-orthogonal). The
 `pois` layer keeps a **per-kind** zoom floor (`glacier`/`wetland` → 12,
-everything else → 16) so enabling those labels does not pull schools/fuel/etc.
-down to z12. Glacier labels use cooler text (`#406060`); wetland `#3d5c3d`;
-both omit icons. Lake/river labels use italic `#2a5a78` so they read apart from
-town and peak names.
+`townhall` → 15, everything else → 16) so enabling those labels does not pull
+schools/fuel/etc. down to z12. Glacier labels use cooler text (`#406060`);
+wetland `#3d5c3d`; both omit icons. Lake/river labels use italic `#2a5a78` so
+they read apart from town and peak names.
+
+**Out of scope — generic named buildings:** Protomaps drops `name` from the
+`buildings` fill layer. Ordinary `building=yes` + `name=*` footprints that are
+not classified as a `pois` kind (amenity/shop/townhall/…) are **not** in the
+`pois` layer and will not get labels from this whitelist. Fixing those would
+need a separate, larger schema/style change. `kind=building` was checked in
+Hamar/Gjøvik z12–15 tiles and was empty there — not added to the whitelist.
 OpenFreeMap Liberty has **no** `mountain_peak` layer; some peaks appear only
 when present in OMT `poi` ranks (e.g. Galdhøpiggen) and may be missing online
 (e.g. Elgpiggen) even when offline Protomaps shows them.
