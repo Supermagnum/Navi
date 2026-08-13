@@ -5367,6 +5367,7 @@ private fun CorridorMapView(
         BasemapLabelPolicy.apply(style)
         BasemapPathPaint.apply(style)
         BasemapProtectedAreaStyle.apply(style)
+        BasemapHousenumberStyle.apply(style)
         ensureRouteAboveHillshade(style)
         applyCameraTilt(map)
         styleReady.value = true

@@ -187,7 +187,38 @@
       "source": "protomaps",
       "source-layer": "buildings",
       "minzoom": 13,
+      "filter": [
+        "all",
+        ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
+        ["!=", ["get", "kind"], "address"]
+      ],
       "paint": { "fill-color": "#d8d0c8", "fill-opacity": 0.7 }
+    },
+    {
+      "id": "buildings_label_housenumber",
+      "type": "symbol",
+      "source": "protomaps",
+      "source-layer": "buildings",
+      "minzoom": 15,
+      "filter": [
+        "all",
+        ["==", ["get", "kind"], "address"],
+        ["has", "addr_housenumber"]
+      ],
+      "layout": {
+        "text-field": ["get", "addr_housenumber"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 15, 9.5, 17, 11],
+        "text-optional": true,
+        "text-allow-overlap": false,
+        "text-ignore-placement": false,
+        "text-padding": 1.5,
+        "symbol-placement": "point",
+        "text-anchor": "center"
+      },
+      "paint": {
+        "text-color": "#5a5a5a"
+      }
     },
     {
       "id": "roads_minor",
