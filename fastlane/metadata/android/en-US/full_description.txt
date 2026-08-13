@@ -1,0 +1,11 @@
+Navi is an offline-first navigation app. Download map data once, then plan and follow routes on the device without needing the internet for every trip.
+
+Travel modes include car, bicycle, e-bike, hiking, motorcycle, truck, and motorhome. Optional vehicle size limits skip roads that are too tight. Avoidances cover motorways (not trunk/primary), tolls, and ferries.
+
+Eco routing prefers gentler, less energy-hungry roads by taking hills into account. Hiking and cycling can optionally prefer marked long-distance and pilgrim-style trails, with normal paths used when a marked trail has a gap.
+
+Download a region (OpenStreetMap extract), an offline basemap, and optional elevation/terrain data in Tools. A background indexing job builds compact routing packs so later plans are fast; you can still plan while indexing runs. Map updates are never silent — only when you ask.
+
+On the road: place search, From / Via / To, GPS fill, map mark and saved places, off-route detection and reroute, break and rest suggestions (including truck driving-time rules where known), drive bars with altitude and trip ETA, GPS follow, and north-up / compass / direction-of-travel map rotation. Optional experimental 3D hill shading and map tilt.
+
+Navi is free and open source (GPL-3.0-or-later). There are no ads and no tracking. Network use is for downloads and updates you choose — not for silent data collection.

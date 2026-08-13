@@ -1,0 +1,3 @@
+Initial 0.1.0 release.
+
+Offline-first routing for car, bike, e-bike, hiking, motorcycle, truck, and motorhome. Terrain-aware eco mode, official/pilgrim trail preference for hiking/cycling, regional OSM download with background pack indexing, offline basemap and optional DEM, place search, drive HUD, breaks/rest (including truck rules where known), off-route reroute, and user-triggered map updates only. No ads or tracking.
