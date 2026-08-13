@@ -76,9 +76,14 @@ Base: `registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie`
   when not on a dedicated F-Droid build VM.
 - `.cargo/config.toml` linker paths are rewritten from `$$NDK$$` in `prebuild`.
 - Native `libnavi.so` is built from source for `aarch64` and `x86_64` before
-  `gradle assembleRelease`.
+  `gradle assembleRelease`. Committed `jniLibs/*/libnavi.so` prebuilts (used by
+  GitHub `android-build` which does not cross-compile Rust) are removed in
+  `prebuild:` so the F-Droid APK cannot pick them up; the build step asserts they
+  are gone before compile and present after `build-android-native.sh`.
 - `dependenciesInfo.includeInApk` / `includeInBundle` are `false` in
   `app/build.gradle.kts`.
+- `io.opencensus` appears only under AGP Unified Test Platform host configs
+  (instrumented-test tooling). It is not a release/runtime dependency.
 
 ## Override image
 

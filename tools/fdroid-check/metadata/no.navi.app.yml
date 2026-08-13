@@ -10,6 +10,10 @@ AutoName: Navi
 RepoType: git
 Repo: https://github.com/Supermagnum/Navi.git
 
+# Convenience prebuilts under jniLibs/ are for local/CI Gradle-only assemble.
+# F-Droid must not package them: prebuild deletes them, then cross-compiles from
+# Rust source (see Builds[].prebuild / Builds[].build).
+
 Builds:
   - versionName: 0.1.0
     versionCode: 1
@@ -55,8 +59,14 @@ Builds:
         . "${CARGO_HOME:-$HOME/.cargo}/env" 2>/dev/null || true
         export ANDROID_NDK_HOME="$$NDK$$"
         export ANDROID_HOME="$$SDK$$"
+        test ! -e ../app/src/main/jniLibs/arm64-v8a/libnavi.so
+        test ! -e ../app/src/main/jniLibs/x86_64/libnavi.so
         ../scripts/build-android-native.sh aarch64-linux-android release
         ../scripts/build-android-native.sh x86_64-linux-android release
+        test -f ../app/src/main/jniLibs/arm64-v8a/libnavi.so
+        test -f ../app/src/main/jniLibs/x86_64/libnavi.so
+        sha256sum ../app/src/main/jniLibs/arm64-v8a/libnavi.so \
+          ../app/src/main/jniLibs/x86_64/libnavi.so
         gradle assembleRelease
     ndk: r27c
     gradle:
@@ -66,5 +76,12 @@ MaintainerNotes: |
   Local F-Droid buildability check metadata (not yet submitted to fdroiddata).
   Rust via rustup in sudo:; .cargo/config.toml rewritten from $$NDK$$ in prebuild.
   dependenciesInfo.includeInApk/Bundle are false in app/build.gradle.kts.
+  libnavi.so: prebuild rm removes committed jniLibs prebuilts; build:
+  runs scripts/build-android-native.sh for aarch64 and x86_64 before assembleRelease
+  (asserts absence before compile and presence after).
+  io.opencensus: AGP Unified Test Platform host tooling only
+  (com.google.testing.platform via com.android.tools.utp) — not on
+  releaseRuntimeClasspath, not shipped in the APK, not used for app telemetry.
+  Do not globally exclude (breaks instrumented-test UTP). False-positive tracker flag.
 
 ArchivePolicy: 0 versions

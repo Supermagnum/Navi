@@ -175,5 +175,7 @@ jobs:
           cache-read-only: false
 
       - name: assembleDebug
-        # Uses prebuilt jniLibs where present; does not rebuild Rust native in CI.
+        # Uses committed jniLibs/*/libnavi.so when present (fast PR gate).
+        # F-Droid builds delete those prebuilts and cross-compile from Rust source
+        # (see tools/fdroid-check/metadata/no.navi.app.yml).
         run: ./gradlew :app:assembleDebug --no-daemon
