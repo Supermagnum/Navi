@@ -160,3 +160,24 @@ fun pickNearbyPlaceNameForGpsWaypoint(hits: List<uniffi.navi.PlaceHit>): String?
     if (addr != null) return addr
     return hits.firstNotNullOfOrNull { usable(it) }
 }
+
+/**
+ * Search-result label: `Place, Sub-area, Municipality`. Empty and duplicate
+ * parts are omitted so unique names stay readable (`Espa, Stange`) while
+ * identical names stay distinguishable (`Båberg, Brattberg, Gjøvik`).
+ */
+fun placeHitDisplayLabel(hit: uniffi.navi.PlaceHit): String {
+    val parts = mutableListOf<String>()
+
+    fun add(raw: String) {
+        val t = raw.trim()
+        if (t.isEmpty()) return
+        if (parts.any { it.equals(t, ignoreCase = true) }) return
+        parts.add(t)
+    }
+
+    add(hit.name)
+    add(hit.subArea)
+    add(hit.municipality)
+    return parts.joinToString(", ")
+}

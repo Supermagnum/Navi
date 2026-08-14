@@ -15,8 +15,8 @@ Repo: https://github.com/Supermagnum/Navi.git
 # Rust source (see Builds[].prebuild / Builds[].build).
 
 Builds:
-  - versionName: 0.1.0
-    versionCode: 1
+  - versionName: 0.2.0
+    versionCode: 2
     commit: PLACEHOLDER_COMMIT
     timeout: 14400
     subdir: app
@@ -85,3 +85,5 @@ MaintainerNotes: |
   Do not globally exclude (breaks instrumented-test UTP). False-positive tracker flag.
 
 ArchivePolicy: 0 versions
+CurrentVersion: 0.2.0
+CurrentVersionCode: 2

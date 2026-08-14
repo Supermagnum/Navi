@@ -77,7 +77,7 @@ used by truck / restriction costing (see record in `navi-ffi`).
 | Rust | Purpose |
 |---|---|
 | `ensure_place_index(pbf_path, index_db_path)` | Build or reuse FTS index; report string |
-| `search_places(index_db_path, query, limit)` | → `Vec<PlaceHit>` (`osm_id`, `name`, `kind`, `lat`, `lon`) |
+| `search_places(index_db_path, query, limit)` | → `Vec<PlaceHit>` (`osm_id`, `name`, `kind`, `lat`, `lon`, `sub_area`, `municipality`) |
 | `nearby_places(index_db_path, lat, lon, radius_m, limit)` | Place hits near a fix (idle current-street interim) |
 | `rasterize_icon_png(key, theme, …)` | PNG bytes for Navit-derived icon key |
 | `rasterize_icon_check(key, theme, …)` | Validation / smoke for icon key |

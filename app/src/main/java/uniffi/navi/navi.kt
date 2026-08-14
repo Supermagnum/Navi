@@ -3446,7 +3446,15 @@ data class PlaceHit (
     var `name`: kotlin.String, 
     var `kind`: kotlin.String, 
     var `lat`: kotlin.Double, 
-    var `lon`: kotlin.Double
+    var `lon`: kotlin.Double, 
+    /**
+     * Named hamlet / neighbourhood / locality containing or nearest the place.
+     */
+    var `subArea`: kotlin.String, 
+    /**
+     * Containing municipality (kommune), from OSM admin_level 6–8 polygons.
+     */
+    var `municipality`: kotlin.String
 ) {
     
     companion object
@@ -3463,6 +3471,8 @@ public object FfiConverterTypePlaceHit: FfiConverterRustBuffer<PlaceHit> {
             FfiConverterString.read(buf),
             FfiConverterDouble.read(buf),
             FfiConverterDouble.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -3471,7 +3481,9 @@ public object FfiConverterTypePlaceHit: FfiConverterRustBuffer<PlaceHit> {
             FfiConverterString.allocationSize(value.`name`) +
             FfiConverterString.allocationSize(value.`kind`) +
             FfiConverterDouble.allocationSize(value.`lat`) +
-            FfiConverterDouble.allocationSize(value.`lon`)
+            FfiConverterDouble.allocationSize(value.`lon`) +
+            FfiConverterString.allocationSize(value.`subArea`) +
+            FfiConverterString.allocationSize(value.`municipality`)
     )
 
     override fun write(value: PlaceHit, buf: ByteBuffer) {
@@ -3480,6 +3492,8 @@ public object FfiConverterTypePlaceHit: FfiConverterRustBuffer<PlaceHit> {
             FfiConverterString.write(value.`kind`, buf)
             FfiConverterDouble.write(value.`lat`, buf)
             FfiConverterDouble.write(value.`lon`, buf)
+            FfiConverterString.write(value.`subArea`, buf)
+            FfiConverterString.write(value.`municipality`, buf)
     }
 }
 

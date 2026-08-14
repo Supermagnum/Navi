@@ -345,6 +345,8 @@ async fn api_search(
                     "kind": h.kind,
                     "lat": h.lat,
                     "lon": h.lon,
+                    "sub_area": h.sub_area,
+                    "municipality": h.municipality,
                 })
             })
             .collect::<Vec<_>>()

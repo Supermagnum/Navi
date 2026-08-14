@@ -7,6 +7,10 @@ use rusqlite::{params, Connection, Result as SqlResult};
 
 use crate::storage::Storage;
 
+mod place_context;
+
+pub use place_context::{format_place_display, PLACE_INDEX_SCHEMA_VERSION};
+
 #[derive(Debug, Clone)]
 pub struct NameHit {
     pub osm_id: i64,
@@ -14,6 +18,8 @@ pub struct NameHit {
     pub kind: String,
     pub lat: f64,
     pub lon: f64,
+    pub sub_area: String,
+    pub municipality: String,
 }
 
 /// Local FTS5 name index for settlements, POIs, huts, peaks, and named ways.
@@ -42,7 +48,9 @@ impl NameIndex {
                 name TEXT NOT NULL,
                 kind TEXT NOT NULL,
                 lat REAL NOT NULL,
-                lon REAL NOT NULL
+                lon REAL NOT NULL,
+                sub_area TEXT NOT NULL DEFAULT '',
+                municipality TEXT NOT NULL DEFAULT ''
             );
             CREATE VIRTUAL TABLE IF NOT EXISTS name_fts USING fts5(
                 name,
@@ -51,12 +59,57 @@ impl NameIndex {
                 content_rowid='osm_id'
             );
             ",
-        )
+        )?;
+        Self::ensure_context_columns(conn)
+    }
+
+    fn ensure_context_columns(conn: &Connection) -> SqlResult<()> {
+        let mut has_sub = false;
+        let mut has_muni = false;
+        let mut stmt = conn.prepare("PRAGMA table_info(name_entries)")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        for r in rows {
+            match r?.as_str() {
+                "sub_area" => has_sub = true,
+                "municipality" => has_muni = true,
+                _ => {}
+            }
+        }
+        if !has_sub {
+            conn.execute(
+                "ALTER TABLE name_entries ADD COLUMN sub_area TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+        if !has_muni {
+            conn.execute(
+                "ALTER TABLE name_entries ADD COLUMN municipality TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// True when this DB was built by a context-aware `load_from_pbf`.
+    pub fn is_current_schema(path: impl AsRef<Path>) -> bool {
+        let Ok(conn) = Connection::open(path.as_ref()) else {
+            return false;
+        };
+        let v: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap_or(0);
+        v >= PLACE_INDEX_SCHEMA_VERSION
     }
 
     pub fn load_from_pbf(&mut self, path: impl AsRef<Path>) -> anyhow::Result<usize> {
         let path = path.as_ref();
         let mut batch: Vec<(i64, String, String, f64, f64)> = Vec::new();
+
+        // Admin polygons use their own PBF passes (relations → ways → nodes).
+        let admin_rings = place_context::load_admin_from_pbf(path).unwrap_or_else(|e| {
+            log::warn!("admin boundary load for place context skipped: {e:#}");
+            Vec::new()
+        });
 
         // Pass 1: collect named closed/open ways that need node centroids
         // (tourism=zoo, amenity areas, etc. are often ways, not nodes).
@@ -161,17 +214,37 @@ impl NameIndex {
             }
         }
 
+        let sub_areas = batch
+            .iter()
+            .filter_map(|(osm_id, name, kind, lat, lon)| {
+                place_context::sub_area_pt(*osm_id, name.clone(), kind, *lat, *lon)
+            })
+            .collect();
+        let resolver =
+            place_context::ContextResolver::from_admin_and_sub_areas(admin_rings, sub_areas);
+
         let tx = self.conn.unchecked_transaction()?;
+        tx.execute_batch(
+            "
+            DELETE FROM name_entries;
+            INSERT INTO name_fts(name_fts) VALUES('delete-all');
+            ",
+        )?;
         for (osm_id, name, kind, lat, lon) in &batch {
+            let ctx = resolver.resolve(*osm_id, name, kind, *lat, *lon);
             tx.execute(
-                "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon) VALUES (?1,?2,?3,?4,?5)",
-                params![osm_id, name, kind, lat, lon],
+                "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                params![osm_id, name, kind, lat, lon, ctx.sub_area, ctx.municipality],
             )?;
             tx.execute(
                 "INSERT INTO name_fts(rowid, name, kind) VALUES (?1,?2,?3)",
                 params![osm_id, name, kind],
             )?;
         }
+        tx.execute_batch(&format!(
+            "PRAGMA user_version = {PLACE_INDEX_SCHEMA_VERSION};"
+        ))?;
         tx.commit()?;
         Ok(batch.len())
     }
@@ -185,9 +258,23 @@ impl NameIndex {
         lat: f64,
         lon: f64,
     ) -> SqlResult<()> {
+        self.upsert_entry_with_context(osm_id, name, kind, lat, lon, String::new(), String::new())
+    }
+
+    pub fn upsert_entry_with_context(
+        &mut self,
+        osm_id: i64,
+        name: String,
+        kind: String,
+        lat: f64,
+        lon: f64,
+        sub_area: String,
+        municipality: String,
+    ) -> SqlResult<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon) VALUES (?1,?2,?3,?4,?5)",
-            params![osm_id, name, kind, lat, lon],
+            "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality)
+             VALUES (?1,?2,?3,?4,?5,?6,?7)",
+            params![osm_id, name, kind, lat, lon, sub_area, municipality],
         )?;
         // Rebuild FTS row for this id (delete + insert keeps content sync).
         let _ = self.conn.execute(
@@ -212,7 +299,7 @@ impl NameIndex {
         let fetch = (limit.saturating_mul(8)).clamp(40, 200);
         let mut stmt = self.conn.prepare(
             "
-            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon
+            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality
             FROM name_fts f
             JOIN name_entries e ON e.osm_id = f.rowid
             WHERE name_fts MATCH ?1
@@ -226,6 +313,8 @@ impl NameIndex {
                 kind: row.get(2)?,
                 lat: row.get(3)?,
                 lon: row.get(4)?,
+                sub_area: row.get(5)?,
+                municipality: row.get(6)?,
             })
         })?;
         let mut out = Vec::new();
@@ -275,7 +364,7 @@ impl NameIndex {
         let lon_pad = radius_m / (111_320.0 * lat.to_radians().cos().max(0.2));
         let mut stmt = self.conn.prepare(
             "
-            SELECT osm_id, name, kind, lat, lon
+            SELECT osm_id, name, kind, lat, lon, sub_area, municipality
             FROM name_entries
             WHERE lat BETWEEN ?1 AND ?2 AND lon BETWEEN ?3 AND ?4
             ",
@@ -289,6 +378,8 @@ impl NameIndex {
                     kind: row.get(2)?,
                     lat: row.get(3)?,
                     lon: row.get(4)?,
+                    sub_area: row.get(5)?,
+                    municipality: row.get(6)?,
                 })
             },
         )?;
@@ -670,5 +761,80 @@ mod tests {
         assert_eq!(store.list().unwrap()[0].name, "Atnbrufossen lookout");
         store.delete("p1").unwrap();
         assert!(store.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn search_returns_precomputed_area_context() {
+        let mut idx = NameIndex::open_in_memory().expect("mem");
+        idx.upsert_entry_with_context(
+            1,
+            "Båberg".into(),
+            "place:farm".into(),
+            60.96849,
+            10.54821,
+            "Brattberg".into(),
+            "Gjøvik".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_context(
+            2,
+            "Båberg".into(),
+            "place:farm".into(),
+            60.92416,
+            10.83636,
+            "Løken".into(),
+            "Ringsaker".into(),
+        )
+        .unwrap();
+        let hits = idx.search("Båberg", 8).unwrap();
+        assert_eq!(hits.len(), 2);
+        let labels: Vec<String> = hits
+            .iter()
+            .map(|h| format_place_display(&h.name, &h.sub_area, &h.municipality))
+            .collect();
+        assert!(
+            labels.iter().any(|s| s == "Båberg, Brattberg, Gjøvik"),
+            "got {labels:?}"
+        );
+        assert!(
+            labels.iter().any(|s| s == "Båberg, Løken, Ringsaker"),
+            "got {labels:?}"
+        );
+    }
+
+    #[test]
+    fn migrate_adds_context_columns_to_legacy_table() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("legacy.db");
+        {
+            let conn = rusqlite::Connection::open(&db).unwrap();
+            conn.execute_batch(
+                "
+                CREATE TABLE name_entries (
+                    osm_id INTEGER PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    lat REAL NOT NULL,
+                    lon REAL NOT NULL
+                );
+                CREATE VIRTUAL TABLE name_fts USING fts5(
+                    name, kind, content='name_entries', content_rowid='osm_id'
+                );
+                ",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO name_entries(osm_id, name, kind, lat, lon) VALUES (1,'Tangen','place:village',60.6,11.2)",
+                [],
+            )
+            .unwrap();
+        }
+        assert!(!NameIndex::is_current_schema(&db));
+        let idx = NameIndex::open(&db).expect("open legacy");
+        let hits = idx.nearby(60.6, 11.2, 500.0, 4).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].name, "Tangen");
+        assert_eq!(hits[0].municipality, "");
+        assert_eq!(hits[0].sub_area, "");
     }
 }

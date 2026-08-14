@@ -162,11 +162,13 @@ helpers used by Drive settings write through this store.
 
 | Table | Purpose |
 |---|---|
-| `name_entries` | `osm_id`, name, kind, lat, lon |
+| `name_entries` | `osm_id`, name, kind, lat, lon, sub_area, municipality |
 | `name_fts` | FTS5 virtual table over names (`content='name_entries'`) |
 
 Built from the region `.pbf` (`load_from_pbf`). Queries use prefix FTS
-(`query*`) and return `NameHit` for the search UI.
+(`query*`) and return `NameHit` for the search UI. Containing municipality
+and a nearby named sub-area are resolved once at index-build time (admin
+polygons + nearest hamlet), not per search.
 
 ### 3. Graph cache (not SQLite)
 

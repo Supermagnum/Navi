@@ -24,7 +24,7 @@ fn index_db_path() -> PathBuf {
 }
 
 fn ensure_index(pbf: &Path, db: &Path) -> NameIndex {
-    if db.exists() {
+    if db.exists() && NameIndex::is_current_schema(db) {
         return NameIndex::open(db).expect("open existing place index");
     }
     assert!(
@@ -32,6 +32,9 @@ fn ensure_index(pbf: &Path, db: &Path) -> NameIndex {
         "OSM extract missing at {} — download/index region before blaming search logic",
         pbf.display()
     );
+    if db.exists() {
+        let _ = std::fs::remove_file(db);
+    }
     let mut idx = NameIndex::open(db).expect("create place index");
     let n = idx.load_from_pbf(pbf).expect("index pbf");
     eprintln!("Indexed {n} named nodes from {}", pbf.display());
@@ -83,5 +86,35 @@ fn car_and_hiking_name_search_samples() {
         "unresolved queries: {failures:?} (pbf={}, db={})",
         pbf.display(),
         db.display()
+    );
+}
+
+#[test]
+#[ignore = "needs ostlandet (or NAME_INDEX_*) place index fixtures"]
+fn baberg_duplicate_farms_include_kommune_context() {
+    let pbf = fixture_pbf();
+    let db = index_db_path();
+    let idx = ensure_index(&pbf, &db);
+    let hits = idx.search("Båberg", 20).expect("search");
+    let labels: Vec<String> = hits
+        .iter()
+        .map(|h| {
+            driver_break_core::search::format_place_display(&h.name, &h.sub_area, &h.municipality)
+        })
+        .collect();
+    eprintln!("Båberg hits: {labels:?}");
+    let gjovik = hits.iter().any(|h| {
+        h.name == "Båberg"
+            && h.municipality.eq_ignore_ascii_case("Gjøvik")
+            && h.sub_area.to_lowercase().contains("brattberg")
+    });
+    let ringsaker = hits.iter().any(|h| {
+        h.name == "Båberg"
+            && h.municipality.eq_ignore_ascii_case("Ringsaker")
+            && h.sub_area.to_lowercase().contains("løken")
+    });
+    assert!(
+        gjovik && ringsaker,
+        "expected both Båberg farms with Brattberg/Gjøvik and Løken/Ringsaker, got {labels:?}"
     );
 }

@@ -568,7 +568,7 @@ adb shell am start -n no.navi.app/.MainActivity
    [`docs/android-api36-plan.md`](docs/android-api36-plan.md#aab-smoke-host).
 
 Current `versionName` / `versionCode` live in `app/build.gradle.kts`
-(`0.1.0` / `1` at time of writing). Bump those before a real store or tagged
+(`0.2.0` / `2` at time of writing). Bump those before a real store or tagged
 release. F-Droid-style Podman reproducibility:
 [`tools/fdroid-check/README.md`](tools/fdroid-check/README.md). Full shared
 recipe: [`docs/android-build.md`](docs/android-build.md).

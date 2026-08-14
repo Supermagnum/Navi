@@ -198,7 +198,13 @@
       const data = await res.json();
       (data.hits || []).forEach((h) => {
         const li = document.createElement("li");
-        li.textContent = `${h.name} (${h.kind})`;
+        const parts = [h.name, h.sub_area, h.municipality].filter((p) => p && String(p).trim());
+        const seen = [];
+        parts.forEach((p) => {
+          const t = String(p).trim();
+          if (!seen.some((s) => s.toLowerCase() === t.toLowerCase())) seen.push(t);
+        });
+        li.textContent = `${seen.join(", ")} (${h.kind})`;
         li.onclick = () => {
           document.getElementById("end").value = `${h.lat},${h.lon}`;
         };

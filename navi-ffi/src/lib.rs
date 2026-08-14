@@ -3321,6 +3321,10 @@ pub struct PlaceHit {
     pub kind: String,
     pub lat: f64,
     pub lon: f64,
+    /// Named hamlet / neighbourhood / locality containing or nearest the place.
+    pub sub_area: String,
+    /// Containing municipality (kommune), from OSM admin_level 6–8 polygons.
+    pub municipality: String,
 }
 
 /// Build or open the offline FTS name index for a region PBF.
@@ -3335,10 +3339,10 @@ pub fn ensure_place_index(pbf_path: String, index_db_path: String) -> String {
     if let Some(parent) = db.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    // Reuse existing index if non-trivial.
+    // Reuse existing index if non-trivial and built with area-context schema.
     if db.is_file() {
         if let Ok(meta) = std::fs::metadata(db) {
-            if meta.len() > 10_000 {
+            if meta.len() > 10_000 && driver_break_core::search::NameIndex::is_current_schema(db) {
                 return format!("PASS\ncache_hit=true\nindex_db={index_db_path}\n");
             }
         }
@@ -3478,6 +3482,8 @@ pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<Pl
             kind: h.kind,
             lat: h.lat,
             lon: h.lon,
+            sub_area: h.sub_area,
+            municipality: h.municipality,
         })
         .collect()
 }
@@ -3504,6 +3510,8 @@ pub fn nearby_places(
             kind: h.kind,
             lat: h.lat,
             lon: h.lon,
+            sub_area: h.sub_area,
+            municipality: h.municipality,
         })
         .collect()
 }

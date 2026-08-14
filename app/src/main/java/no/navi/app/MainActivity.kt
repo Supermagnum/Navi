@@ -1272,6 +1272,17 @@ private fun NaviMapScreen() {
         }
     }
 
+    // Rebuild a pre-context place index when the region PBF is already on device
+    // (app upgrade). Current schema is a cheap cache hit.
+    LaunchedEffect(dataDir) {
+        val pbf = resolveRegionPbf()
+        if (pbf != null && pbf.isFile) {
+            withContext(Dispatchers.IO) {
+                ensurePlaceIndex(pbf.absolutePath, resolvePlaceIndexDb().absolutePath)
+            }
+        }
+    }
+
     // Passive indexed-maps status; auto-start background rebuild when packs are stale.
     LaunchedEffect(Unit) {
         while (isActive) {
@@ -2329,10 +2340,11 @@ private fun NaviMapScreen() {
         hit: PlaceHit,
         target: SearchTarget = searchTarget,
     ) {
+        val label = placeHitDisplayLabel(hit)
         val (street, house, post) = parseAddressDisplayLines(combined = hit.name)
         val wp =
             Waypoint(
-                name = hit.name,
+                name = label,
                 lat = hit.lat,
                 lon = hit.lon,
                 street = street,
@@ -2352,13 +2364,13 @@ private fun NaviMapScreen() {
                 cameraZoom = 12.0,
                 poiLat = hit.lat,
                 poiLon = hit.lon,
-                poiName = hit.name,
+                poiName = label,
                 layerEpoch = mapState.layerEpoch + 1,
             )
         NaviMapTestHooks.followGps = false
-        query = hit.name
+        query = label
         hits = emptyList()
-        status = userFacingStatus("Set ${target.name.lowercase()}: ${hit.name}")
+        status = userFacingStatus("Set ${target.name.lowercase()}: $label")
     }
 
     fun applyMarkAs(
@@ -2373,6 +2385,8 @@ private fun NaviMapScreen() {
                 kind = pending.kind,
                 lat = pending.lat,
                 lon = pending.lon,
+                subArea = "",
+                municipality = "",
             ),
             target = target,
         )
@@ -2397,6 +2411,8 @@ private fun NaviMapScreen() {
                         kind = "coordinate",
                         lat = lat,
                         lon = lon,
+                        subArea = "",
+                        municipality = "",
                     ),
                 )
             NaviMapTestHooks.lastSearchHitCount = 1
@@ -2435,7 +2451,7 @@ private fun NaviMapScreen() {
                     }
                 NaviMapTestHooks.lastSearchHitCount = hits.size
                 NaviMapTestHooks.lastSearchQuery = trimmed
-                NaviMapTestHooks.lastSearchHitNames = hits.map { it.name }
+                NaviMapTestHooks.lastSearchHitNames = hits.map { placeHitDisplayLabel(it) }
                 searchBusy = false
             }
     }
@@ -2982,7 +2998,10 @@ private fun NaviMapScreen() {
                                                 .clickable { applyHit(hit) }
                                                 .padding(vertical = 6.dp, horizontal = 4.dp),
                                     ) {
-                                        Text(hit.name, style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            placeHitDisplayLabel(hit),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                        )
                                         Text(hit.kind, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
@@ -3500,6 +3519,8 @@ private fun NaviMapScreen() {
                                                     kind = hitKind,
                                                     lat = fixLat,
                                                     lon = fixLon,
+                                                    subArea = "",
+                                                    municipality = "",
                                                 ),
                                                 target = targetAtClick,
                                             )
@@ -4098,6 +4119,8 @@ private fun NaviMapScreen() {
                                                                 kind = place.kind.ifBlank { "saved-place" },
                                                                 lat = place.lat,
                                                                 lon = place.lon,
+                                                                subArea = "",
+                                                                municipality = "",
                                                             ),
                                                         )
                                                     },
@@ -4113,6 +4136,8 @@ private fun NaviMapScreen() {
                                                                 kind = place.kind.ifBlank { "saved-place" },
                                                                 lat = place.lat,
                                                                 lon = place.lon,
+                                                                subArea = "",
+                                                                municipality = "",
                                                             ),
                                                         )
                                                     },
@@ -4128,6 +4153,8 @@ private fun NaviMapScreen() {
                                                                 kind = place.kind.ifBlank { "saved-place" },
                                                                 lat = place.lat,
                                                                 lon = place.lon,
+                                                                subArea = "",
+                                                                municipality = "",
                                                             ),
                                                         )
                                                     },
