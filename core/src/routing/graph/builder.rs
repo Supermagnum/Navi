@@ -147,6 +147,12 @@ pub struct RouteGraph {
     /// profile. Arriving at the node as a destination is allowed; leaving it is
     /// not unless the path started there.
     pub access_blocked_nodes: HashSet<NodeId>,
+    /// Nodes incident to at least one edge (source or target).
+    incident: HashSet<NodeId>,
+    /// Weakly-connected component root per incident node (undirected).
+    component_root: HashMap<NodeId, NodeId>,
+    /// Root of the largest weakly-connected component, if any.
+    giant_root: Option<NodeId>,
 }
 
 impl RouteGraph {
@@ -184,6 +190,9 @@ impl RouteGraph {
             adjacency: HashMap::new(),
             profile,
             access_blocked_nodes: HashSet::new(),
+            incident: HashSet::new(),
+            component_root: HashMap::new(),
+            giant_root: None,
         };
         for edge in filtered {
             let start = graph
@@ -253,6 +262,7 @@ impl RouteGraph {
         }
         graph.access_blocked_nodes =
             load_access_blocked_barrier_nodes(path.as_ref(), &graph.nodes, profile)?;
+        graph.rebuild_adjacency();
         Ok(graph)
     }
 
@@ -276,17 +286,18 @@ impl RouteGraph {
         profile: RoutingProfile,
         access_blocked_nodes: HashSet<NodeId>,
     ) -> Self {
-        let mut adjacency: HashMap<NodeId, Vec<usize>> = HashMap::new();
-        for (idx, edge) in edges.iter().enumerate() {
-            adjacency.entry(edge.source).or_default().push(idx);
-        }
-        Self {
+        let mut graph = Self {
             nodes,
             edges,
-            adjacency,
+            adjacency: HashMap::new(),
             profile,
             access_blocked_nodes,
-        }
+            incident: HashSet::new(),
+            component_root: HashMap::new(),
+            giant_root: None,
+        };
+        graph.rebuild_adjacency();
+        graph
     }
 
     /// Fast edge lookup using adjacency (O(degree), not O(edges)).
@@ -314,16 +325,15 @@ impl RouteGraph {
 
     /// True if the node is incident to any profile edge (source or target).
     pub fn is_linked(&self, id: NodeId) -> bool {
-        if self.has_outgoing(id) {
-            return true;
-        }
-        self.edges.iter().any(|e| e.target == id)
+        self.incident.contains(&id)
     }
 
     /// Nearest linked graph node within the profile snap budget.
     ///
-    /// Prefer linked nodes (same as historical FFI snap). Returns
-    /// [`SnapTooFar`] when the closest candidate exceeds
+    /// Prefers the largest weakly-connected component when a candidate exists
+    /// inside the snap budget so farms on leftover private-track islands snap
+    /// to the public road network instead of a disconnected courtyard. Returns
+    /// [`SnapTooFar`] when the closest linked node exceeds
     /// [`max_waypoint_snap_m`] — callers must treat that as unreachable, not
     /// silently substitute a distant network node.
     pub fn nearest_routable(&self, lat: f64, lon: f64) -> Result<(NodeId, f64), SnapTooFar> {
@@ -337,24 +347,40 @@ impl RouteGraph {
                 v
             }
         };
-        let Some(best) = pool.into_iter().min_by(|a, b| {
-            let da = haversine_point_m(lat, lon, a);
-            let db = haversine_point_m(lat, lon, b);
-            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-        }) else {
+        let mut nearest_any: Option<(&Node, f64)> = None;
+        let mut nearest_giant: Option<(&Node, f64)> = None;
+        for n in pool {
+            let dist = haversine_point_m(lat, lon, n);
+            if nearest_any.is_none_or(|(_, d)| dist < d) {
+                nearest_any = Some((n, dist));
+            }
+            if dist <= max_m
+                && self.in_giant_component(n.id)
+                && nearest_giant.is_none_or(|(_, d)| dist < d)
+            {
+                nearest_giant = Some((n, dist));
+            }
+        }
+        let Some((best_any, nearest_m)) = nearest_any else {
             return Err(SnapTooFar {
                 nearest_m: f64::INFINITY,
                 max_m,
             });
         };
-        let dist = haversine_point_m(lat, lon, best);
-        if dist > max_m {
-            return Err(SnapTooFar {
-                nearest_m: dist,
-                max_m,
-            });
+        if let Some((n, dist)) = nearest_giant {
+            return Ok((n.id, dist));
         }
-        Ok((best.id, dist))
+        if nearest_m > max_m {
+            return Err(SnapTooFar { nearest_m, max_m });
+        }
+        Ok((best_any.id, nearest_m))
+    }
+
+    fn in_giant_component(&self, id: NodeId) -> bool {
+        match (self.giant_root, self.component_root.get(&id)) {
+            (Some(giant), Some(root)) => *root == giant,
+            _ => true,
+        }
     }
 
     /// Nearest linked node with **no** snap-distance budget (trailhead for gap-fill).
@@ -422,9 +448,37 @@ impl RouteGraph {
 
     fn rebuild_adjacency(&mut self) {
         self.adjacency.clear();
+        self.incident.clear();
+        self.component_root.clear();
+        self.giant_root = None;
         for (idx, edge) in self.edges.iter().enumerate() {
             self.adjacency.entry(edge.source).or_default().push(idx);
+            self.incident.insert(edge.source);
+            self.incident.insert(edge.target);
         }
+        self.recompute_weak_components();
+    }
+
+    fn recompute_weak_components(&mut self) {
+        let mut parent: HashMap<NodeId, NodeId> = HashMap::new();
+        let mut size: HashMap<NodeId, usize> = HashMap::new();
+        for &id in &self.incident {
+            parent.insert(id, id);
+            size.insert(id, 1);
+        }
+        for edge in &self.edges {
+            uf_union(&mut parent, &mut size, edge.source, edge.target);
+        }
+        let mut giant: Option<(NodeId, usize)> = None;
+        for &id in &self.incident {
+            let root = uf_find(&mut parent, id);
+            self.component_root.insert(id, root);
+            let n = size.get(&root).copied().unwrap_or(1);
+            if giant.is_none_or(|(_, s)| n > s) {
+                giant = Some((root, n));
+            }
+        }
+        self.giant_root = giant.map(|(root, _)| root);
     }
 
     /// Map overlay polyline (`lon,lat;…`) following each edge’s OSM shape when present.
@@ -999,10 +1053,52 @@ fn haversine_latlon_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     2.0 * 6_378_100.0 * h.sqrt().asin()
 }
 
+fn uf_find(parent: &mut HashMap<NodeId, NodeId>, x: NodeId) -> NodeId {
+    let mut root = x;
+    loop {
+        let p = *parent.get(&root).unwrap_or(&root);
+        if p == root {
+            break;
+        }
+        root = p;
+    }
+    let mut cur = x;
+    while cur != root {
+        let next = *parent.get(&cur).unwrap_or(&cur);
+        parent.insert(cur, root);
+        cur = next;
+    }
+    parent.entry(x).or_insert(root);
+    root
+}
+
+fn uf_union(
+    parent: &mut HashMap<NodeId, NodeId>,
+    size: &mut HashMap<NodeId, usize>,
+    a: NodeId,
+    b: NodeId,
+) {
+    let ra = uf_find(parent, a);
+    let rb = uf_find(parent, b);
+    if ra == rb {
+        return;
+    }
+    let sa = size.get(&ra).copied().unwrap_or(1);
+    let sb = size.get(&rb).copied().unwrap_or(1);
+    let (keep, drop, new_size) = if sa >= sb {
+        (ra, rb, sa + sb)
+    } else {
+        (rb, ra, sa + sb)
+    };
+    parent.insert(drop, keep);
+    size.insert(keep, new_size);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::HIKING_MAX_WAYPOINT_SNAP_M;
+    use geo_types::Coord;
 
     #[test]
     fn profile_mapping() {
@@ -1082,6 +1178,121 @@ mod tests {
             .expect_err("600 m exceeds 500 m hiking budget");
         assert!(err.nearest_m > HIKING_MAX_WAYPOINT_SNAP_M);
         assert_eq!(err.max_m, HIKING_MAX_WAYPOINT_SNAP_M);
+    }
+
+    fn test_node(id: i64, lat: f64, lon: f64) -> (NodeId, Node) {
+        let nid = NodeId(id);
+        (
+            nid,
+            Node {
+                id: nid,
+                coord: Coord { x: lon, y: lat },
+                uses: 2,
+            },
+        )
+    }
+
+    fn test_edge(
+        source: i64,
+        target: i64,
+        slat: f64,
+        slon: f64,
+        elat: f64,
+        elon: f64,
+    ) -> GraphEdge {
+        GraphEdge {
+            id: format!("{source}-{target}"),
+            source: NodeId(source),
+            target: NodeId(target),
+            length_m: 100.0,
+            base_weight: 100.0,
+            eco_weight: None,
+            start_lat: slat,
+            start_lon: slon,
+            end_lat: elat,
+            end_lon: elon,
+            shape: Vec::new(),
+            highway: Some("residential".into()),
+            maxspeed_kmh: None,
+            name: None,
+            road_ref: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+        }
+    }
+
+    /// Island courtyard next to a longer public road, matching farm snap-off-network.
+    fn island_and_public_car_graph(public_lat: f64) -> RouteGraph {
+        let mut nodes = HashMap::new();
+        for (id, n) in [
+            test_node(1, 60.0, 10.0),
+            test_node(2, 60.0, 10.001),
+            test_node(10, public_lat, 10.0),
+            test_node(11, public_lat, 10.002),
+            test_node(12, public_lat, 10.004),
+            test_node(13, public_lat, 10.006),
+        ] {
+            nodes.insert(id, n);
+        }
+        let mut edges = Vec::new();
+        let pairs = [
+            (1, 2, 60.0, 10.0, 60.0, 10.001),
+            (10, 11, public_lat, 10.0, public_lat, 10.002),
+            (11, 12, public_lat, 10.002, public_lat, 10.004),
+            (12, 13, public_lat, 10.004, public_lat, 10.006),
+        ];
+        for (s, t, slat, slon, elat, elon) in pairs {
+            edges.push(test_edge(s, t, slat, slon, elat, elon));
+            edges.push(test_edge(t, s, elat, elon, slat, slon));
+        }
+        RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
+    }
+
+    #[test]
+    fn nearest_routable_prefers_public_network_over_nearby_island() {
+        // ~500 m north: inside the 750 m car snap budget.
+        let public_lat = 60.0 + (500.0 / 111_320.0);
+        let graph = island_and_public_car_graph(public_lat);
+        let (id, dist) = graph
+            .nearest_routable(60.0, 10.0)
+            .expect("public road within car snap budget");
+        assert_eq!(id, NodeId(10), "must skip the 2-node island at the farm");
+        assert!(dist > 400.0 && dist < 600.0, "dist_m={dist}");
+    }
+
+    #[test]
+    fn nearest_routable_keeps_island_when_public_road_is_beyond_budget() {
+        // ~900 m north: outside the 750 m car snap budget.
+        let public_lat = 60.0 + (900.0 / 111_320.0);
+        let graph = island_and_public_car_graph(public_lat);
+        let (id, dist) = graph
+            .nearest_routable(60.0, 10.0)
+            .expect("island still within budget");
+        assert_eq!(id, NodeId(1));
+        assert!(dist < 50.0, "dist_m={dist}");
+    }
+
+    #[test]
+    fn shortest_path_reaches_public_snap_from_other_end() {
+        let public_lat = 60.0 + (500.0 / 111_320.0);
+        let graph = island_and_public_car_graph(public_lat);
+        let start = graph.nearest_routable(public_lat, 10.006).unwrap().0;
+        let goal = graph.nearest_routable(60.0, 10.0).unwrap().0;
+        assert_eq!(start, NodeId(13));
+        assert_eq!(goal, NodeId(10));
+        assert!(graph.shortest_path(start, goal, false).is_some());
     }
 
     #[test]
