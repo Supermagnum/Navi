@@ -28,6 +28,7 @@ How to help: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
 3. [Features](#features)
    - [What you need to download](#what-you-need-to-download)
    - [Indexing (background after download)](#indexing-background-after-download)
+   - [Leaving a downloaded region](#leaving-a-downloaded-region)
    - [How to use](#how-to-use)
    - [How features work](#how-features-work)
 4. [Settings](#settings)
@@ -166,6 +167,39 @@ PBF fallback. Rebuild from a file already on the device with **Rebuild indexed
 maps (local PBF, background)** — no re-download. More detail:
 [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md). Memory
 margin on lower-end 4 GB devices during conversion: [Known issues](#known-issues).
+
+## Leaving a downloaded region
+
+A region download (OSM extract + indexed packs) and the offline basemap only
+cover that extract’s area. Navi does **not** silently invent roads or tiles
+outside it.
+
+**Planning a trip that leaves your data.** Before **Plan route**, From / Via /
+To are checked against the bounding boxes of downloaded Geofabrik extracts.
+
+- If any waypoint is outside every downloaded area, planning is **blocked**
+  (no partial or guessed route).
+- A **Map data needed** dialog offers a suggested download (for example
+  Vestlandet or Nord-Norge). You can download from there, or dismiss and pick
+  another destination.
+- If From and To need **different** landsdels (or similar splits), the prompt
+  prefers a **country** extract (e.g. Norway). The planner uses a **single**
+  region file and does not stitch two extracts into one trip.
+
+**Already navigating.** There is no continuous “you left the map” fence while
+you drive.
+
+- **Basemap:** tiles stop where the downloaded Protomaps region ends (or you
+  fall back to online Liberty if the network is available).
+- **Guidance:** keeps following the route you already planned while you stay
+  on it.
+- **Off-route recalculation:** uses the local region extract again. Outside
+  that extract, snap / pathfinding can fail; you do **not** get the planning
+  download dialog on auto-reroute. Download the covering region in Tools
+  before you need to replan there.
+
+Indexed packs match the extract they were built from. Leaving that area means
+no offline graph for new plans — not a soft fade-out.
 
 ## How to use
 

@@ -25,6 +25,7 @@ Hvordan bidra: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 3. [Funksjoner](#funksjoner)
    - [Hva du må laste ned](#hva-du-må-laste-ned)
    - [Indeksering (bakgrunn etter nedlasting)](#indeksering-bakgrunn-etter-nedlasting)
+   - [Når du forlater en nedlastet region](#når-du-forlater-en-nedlastet-region)
    - [Slik bruker du](#slik-bruker-du)
    - [Slik fungerer funksjonene](#slik-fungerer-funksjonene)
 4. [Innstillinger](#innstillinger)
@@ -166,6 +167,39 @@ ligger på enheten med **Rebuild indexed maps (local PBF, background)** — uten
 ny nedlasting. Mer:
 [`indexed-map-format-plan.md`](indexed-map-format-plan.md). Minnebuffert på
 svakere 4 GB-enheter under konvertering: [Kjente problemer](#kjente-problemer).
+
+## Når du forlater en nedlastet region
+
+En regionsnedlasting (OSM-uttrekk + indekserte pakker) og det frakoblede
+grunnkartet dekker bare det uttrekkets område. Navi finner ikke opp veier eller
+fliser utenfor det.
+
+**Planlegge en tur som går utenfor dataene dine.** Før **Plan route** sjekkes
+From / Via / To mot avgrensningsboksene til nedlastede Geofabrik-uttrekk.
+
+- Hvis et veipunkt ligger utenfor alle nedlastede områder, **blokkeres**
+  planlegging (ingen delvis eller gjettet rute).
+- Dialogen **Map data needed** foreslår en nedlasting (for eksempel Vestlandet
+  eller Nord-Norge). Du kan laste ned derfra, eller avbryte og velge et annet
+  mål.
+- Hvis From og To trenger **ulike** landsdeler (eller tilsvarende delinger),
+  foreslås et **landsuttrekk** (f.eks. Norge). Planleggeren bruker **én**
+  regionsfil og syr ikke sammen to uttrekk til én tur.
+
+**Allerede underveis.** Det finnes ingen kontinuerlig «du forlot kartet»-grense
+mens du kjører.
+
+- **Grunnkart:** flisene stopper der den nedlastede Protomaps-regionen slutter
+  (eller du faller tilbake til Liberty på nett hvis nettverk er tilgjengelig).
+- **Veiledning:** følger ruten du allerede har planlagt så lenge du holder deg
+  til den.
+- **Omruting ved avvik:** bruker det lokale regionsuttrekket på nytt. Utenfor
+  det uttrekket kan snap / veifinning feile; du får **ikke**
+  nedlastingsdialogen fra planlegging ved automatisk omruting. Last ned den
+  dekkende regionen under Tools før du trenger å planlegge på nytt der.
+
+Indekserte pakker matcher uttrekket de ble bygget fra. Å forlate det området
+betyr ingen frakoblet graf for nye planer — ikke en myk overgang.
 
 ## Slik bruker du
 
