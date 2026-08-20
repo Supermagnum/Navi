@@ -36,6 +36,9 @@ pub const PROTOMAPS_BUILD_BASE_URL: &str = "https://build.protomaps.com";
 /// Fallback dated build if metadata is unreachable.
 pub const PROTOMAPS_PLANET_FALLBACK_URL: &str = "https://build.protomaps.com/20260722.pmtiles";
 
+/// Progress label while tile/coalesce planning runs (total byte count not known yet).
+pub const PLANNING_EXTRACT_LABEL: &str = "Planning extract…";
+
 /// Default max zoom for offline extracts (higher = larger downloads).
 pub const DEFAULT_EXTRACT_MAX_ZOOM: u8 = 15;
 
@@ -198,7 +201,7 @@ pub async fn extract_bbox_to_file(
 
     wait_if_paused_or_cancelled(control, store, &partial, &staging).await?;
 
-    download_progress::set(0, None, progress_label);
+    download_progress::set(0, None, PLANNING_EXTRACT_LABEL);
     let fetched = fetch_tiles_coalesced(
         &backend,
         &coords,
@@ -247,27 +250,22 @@ pub async fn extract_bbox_to_file(
         done += 1;
         if done % 32 == 0 || done == wrote_total {
             if let Some((storage, job_id)) = store {
-                // Keep download-byte total if set; surface write progress via UI label.
-                PmtilesJobStore::new(storage).set_progress(
-                    job_id,
-                    done,
-                    Some(wrote_total.max(total)),
-                )?;
+                PmtilesJobStore::new(storage).set_progress(job_id, done, Some(wrote_total))?;
             }
-            download_progress::set(done, Some(wrote_total.max(total)), "Writing map archive…");
+            download_progress::set(done, Some(wrote_total), "Writing map archive…");
         }
         if done % 256 == 0 || done == wrote_total {
-            let pct = if total == 0 {
+            let pct = if wrote_total == 0 {
                 100
             } else {
-                (done.saturating_mul(100) / total.max(1)).min(100)
+                (done.saturating_mul(100) / wrote_total.max(1)).min(100)
             };
             let elapsed = started.elapsed().as_secs_f64().max(1e-6);
             let tiles_per_s = done as f64 / elapsed;
             let reqs = http_requests.load(Ordering::Relaxed);
             log::info!(
                 target: "NaviDownload",
-                "[NaviDownload] pmtiles extract progress dest={} tiles={done}/{total} pct={pct} \
+                "[NaviDownload] pmtiles extract progress dest={} tiles={done}/{wrote_total} pct={pct} \
                  tiles_per_s={tiles_per_s:.2} http_requests={reqs} available_bytes={:?}",
                 dest.display(),
                 crate::download::available_bytes(dest)
@@ -298,7 +296,7 @@ pub async fn extract_bbox_to_file(
     let reqs = http_requests.load(Ordering::Relaxed);
     log::info!(
         target: "NaviDownload",
-        "[NaviDownload] pmtiles extract complete dest={} bytes={len} tiles={total} wrote={done} \
+        "[NaviDownload] pmtiles extract complete dest={} bytes={len} bbox_tiles={total} wrote={done} \
          elapsed_s={elapsed:.1} tiles_per_s={tiles_per_s:.2} http_requests={reqs}",
         dest.display()
     );

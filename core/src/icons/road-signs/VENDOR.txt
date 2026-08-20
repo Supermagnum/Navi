@@ -1,0 +1,5 @@
+Supermagnum/road-signs
+commit: be4dda9c6debe210a2a0d2fbbde5ed252714a7f4
+date: 2026-08-12 01:39:32 +0200
+license: NLOD 2.0 / Statens vegvesen / Kartverket (sign graphics)
+upstream: https://github.com/Supermagnum/road-signs

@@ -472,6 +472,8 @@ private fun NaviMapScreen() {
     var showSpeedCameraPrompt by remember { mutableStateOf(false) }
     var speedCamerasJson by remember { mutableStateOf("[]") }
     var speedCameraWarning by remember { mutableStateOf(SpeedCameraWarningState()) }
+    var roadSignsJson by remember { mutableStateOf("[]") }
+    var roadSignWarning by remember { mutableStateOf(RoadSignWarningState()) }
     var hideChrome by remember { mutableStateOf(false) }
     var hideSearch by remember { mutableStateOf(false) }
     var regionDownloadProgress by remember { mutableStateOf("") }
@@ -992,6 +994,14 @@ private fun NaviMapScreen() {
             }
         }
     }
+    LaunchedEffect(dataDir) {
+        val pbf = resolveRegionPbf() ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            runCatching {
+                roadSignsJson = uniffi.navi.loadRoadSignsJson(pbf.absolutePath)
+            }
+        }
+    }
 
     fun graphCacheDirForPbf(pbf: File): File {
         val graphTag =
@@ -1243,6 +1253,7 @@ private fun NaviMapScreen() {
         return when {
             pct != null && total != null -> "$label $pct% ($done / $total)"
             pct != null -> "$label $pct%"
+            total == null -> label
             else -> "$label $done / ?"
         }
     }
@@ -1255,7 +1266,9 @@ private fun NaviMapScreen() {
                 val line = formatProgressPct(snap.unitsDone, snap.unitsTotal, snap.label)
                 if (snap.label.contains("map tiles", ignoreCase = true) ||
                     snap.label.contains("basemap", ignoreCase = true) ||
-                    snap.label.contains("DEM", ignoreCase = true)
+                    snap.label.contains("DEM", ignoreCase = true) ||
+                    snap.label.contains("Planning extract", ignoreCase = true) ||
+                    snap.label.contains("Writing map archive", ignoreCase = true)
                 ) {
                     pmtilesProgress = line
                 } else if (snap.label.contains("indexed", ignoreCase = true) ||
@@ -1635,6 +1648,22 @@ private fun NaviMapScreen() {
                             )
                     } else {
                         speedCameraWarning = SpeedCameraWarningState()
+                    }
+                    if (roadSignsJson != "[]" &&
+                        uniffi.navi.roadSignJurisdictionAllows(loc.latitude, loc.longitude)
+                    ) {
+                        val signJson =
+                            uniffi.navi.nearestRoadSignWarningJson(
+                                roadSignsJson,
+                                loc.latitude,
+                                loc.longitude,
+                            )
+                        roadSignWarning =
+                            roadSignWarningFromJson(signJson).copy(
+                                preferMetric = driveHud.preferMetric,
+                            )
+                    } else {
+                        roadSignWarning = RoadSignWarningState()
                     }
                     val offAction =
                         offRouteCoordinator.onFix(
@@ -2889,6 +2918,14 @@ private fun NaviMapScreen() {
                 )
                 SpeedCameraWarningBox(
                     state = speedCameraWarning,
+                    iconsDir = iconsDir.absolutePath,
+                    modifier =
+                        Modifier
+                            .align(Alignment.Start)
+                            .padding(bottom = 8.dp),
+                )
+                RoadSignWarningBox(
+                    state = roadSignWarning,
                     iconsDir = iconsDir.absolutePath,
                     modifier =
                         Modifier

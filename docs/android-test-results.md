@@ -141,10 +141,10 @@ Status key: **fixed and visually confirmed** / **confirmed-broken** /
 | Eco on bottom when active | **fixed and visually confirmed** | Green `ECO` on bottom bar in `hud_map_top_bottom_only.png` (42 strong-green pixels in HUD band) |
 | Eco absent when inactive | **fixed and visually confirmed** | [`hud_settings_eco_off.png`](docs/images/hud/hud_settings_eco_off.png) / [`hud_eco_off.png`](docs/images/hud/hud_eco_off.png) — eco switch off, 0 ECO green in HUD band |
 | Tap top → map settings; tap bottom → drive settings; Apply/Close collapses | **fixed and visually confirmed** | [`hud_rot_mode_compass.png`](docs/images/hud/hud_rot_mode_compass.png), [`hud_settings_open.png`](docs/images/hud/hud_settings_open.png), [`hud_after_break_hours_apply.png`](docs/images/hud/hud_after_break_hours_apply.png) |
-| Tap map does nothing to sheets | **still-needs-testing** | No instrumented assert / no dedicated shot |
+| Tap map does nothing to sheets | **fixed and visually confirmed** (Item 9) | `HudVerificationInstrumentedTest#hud_map_tap_does_not_affect_settings_sheets` — map tap does not open/close/toggle sheets; pan still works |
 | One app zoom −/+ on bottom bar; AAOS `- 63 +` is climate | **fixed and visually confirmed** | App −/+ on bottom HUD; climate `- 63 +` in system bar (distinct position/style) |
 | Toast vs MapLibre attribution | **fixed and visually confirmed** (Item 8) | Was broken when toast sat bottom-left over attribution. Fixed: shared `status_toast` at **BottomEnd**. Do not treat older Item 7 screenshots as current status — see Item 8 evidence. |
-| Auto-zoom −/+ enabled styling consistent | **confirmed-broken** | [`hud_auto_zoom_preset.png`](docs/images/hud/hud_auto_zoom_preset.png) — with auto-zoom on, `−` has pill background, `+` is plain |
+| Auto-zoom −/+ enabled styling consistent | **fixed and visually confirmed** | Map settings use matching `OutlinedButton` styling for `−`/`+`; [`hud_auto_zoom_preset.png`](docs/images/hud/hud_auto_zoom_preset.png) re-shot on SM-P613 (2026-08-20) |
 
 ### Collapsed bar heights vs Garmin reference
 
@@ -177,8 +177,9 @@ Root causes fixed in code: recursive/`leaf.svg` refresh in `ensureIconsCopied`; 
 
 ## Item 9 — Map tap does not affect settings sheets (2026-07-22)
 
-Instrumented: `HudVerificationInstrumentedTest` **PASS** (2/2), including new
-`hud_map_tap_does_not_affect_settings_sheets`.
+Instrumented: `HudVerificationInstrumentedTest` **PASS** (2/2), including
+`hud_map_tap_does_not_affect_settings_sheets` (closes Item 7 “tap map does
+nothing to sheets”).
 
 | Case | Result |
 |---|---|
@@ -195,23 +196,23 @@ bearing updates no longer re-apply Compose zoom.
 
 Instrumented: `no.navi.app.OsmUpdateCatalogRoutingFollowupTest` (+ isolated
 `d_sweden_border_keyboard_prompt` re-run). Device: **Samsung Galaxy Tab S6 Lite
-(SM-P613)**, serial `R52TB0JQEDE`, Android 14. App **0.2.0** installed
-2026-08-19 23:24 local. Evidence base: working tree on **`db67dc2`** (OSM
-user-copy, Sweden border coverage, catalog granularity notes — uncommitted at
-time of run).
+(SM-P613)**, serial `R52TB0JQEDE`, Android 14. Initial pass 2026-08-19; fylke
+crossing follow-up **`e_`/`f_`** re-run **2026-08-20** (both **PASS**, 29 s).
 
 Connected suite result:
 
 ```
-tests=4 failures=0  (full class, ordered a→b→c + d re-run isolated)
+tests=6 failures=0  (a→c + isolated d/e/f)
 ```
 
 | Test method | Result |
 |---|---|
-| `a_keyboard_five_routes_missing_coverage` | **PASS** (logs; Sweden case inconclusive in batch — see re-run) |
+| `a_keyboard_four_routes_missing_coverage` | **PASS** — Grotli/Hjelle + Os/Roros prompt; Fagernes/Gol + Strandlykkja/Morskogen do not |
 | `b_catalog_granularity_sweden_us_russia_germany` | **PASS** |
 | `c_osm_check_and_apply_show_plain_language` | **PASS** |
-| `d_sweden_border_keyboard_prompt` (isolated re-run) | **PASS** |
+| `d_sweden_border_keyboard_prompt` (isolated) | **PASS** |
+| `e_fagernes_gol_crosses_fylke_stays_in_ostlandet` (isolated) | **PASS** |
+| `f_strandlykkja_morskogen_near_border_stays_in_ostlandet` (isolated) | **PASS** |
 
 Log tag: `OsmCatalogFollowup`.
 
@@ -239,8 +240,8 @@ via Route search coordinates (`lat, lon`) per standing keyboard rule.
 |---|---|---|---|
 | **Grotli → Hjelle** | **Yes** | `europe/norway/vestlandet` | Destination west of Ostlandet bbox (`lon` 7.16 < min 7.5) |
 | **Os → Røros** | **Yes** | `europe/norway` (country) | Cross-landsdel trip; dialog copy names Norway |
-| **Fagernes → Gol** | **No** | — | Both waypoints inside Ostlandet bbox; planning started (`indexing area…`) |
-| **Strandlykkja → Morskogen** | **No** | — | Both inside Ostlandet bbox; batch run interrupted by long Fagernes→Gol plan |
+| **Fagernes → Gol** | **No** | — | Crosses **fylke** (Innlandet ↔ Buskerud) but both endpoints stay in **Ostlandet**; no download prompt (`e_fagernes_gol_crosses_fylke_stays_in_ostlandet`) |
+| **Strandlykkja → Morskogen** | **No** | — | Near the Norway–Sweden border but both endpoints remain in Norway/Ostlandet; no prompt (`f_strandlykkja_morskogen_near_border_stays_in_ostlandet`) |
 | **Rundfloen tollstasjon → Långflons Köpcentrum** | **Yes** (isolated re-run) | **`europe/sweden`** | Norway→Sweden border case; message: *"…is in Sweden, which is not downloaded. Download Sweden to plan this trip."*; **Download Sweden** action; dismiss clean (`poly=0`) |
 
 Sweden fix: `RegionCoverage` uses Norway–Sweden border polyline +
@@ -269,9 +270,12 @@ Geofabrik subpath in the path field.
 ./gradlew :app:installDebug :app:installDebugAndroidTest
 ./gradlew :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.OsmUpdateCatalogRoutingFollowupTest
-# Sweden border only (after batch inconclusive):
+# Sweden border only:
 ./gradlew :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.OsmUpdateCatalogRoutingFollowupTest#d_sweden_border_keyboard_prompt
+# Ostlandet-only fylke-crossing sanity (no prompt expected):
+./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.OsmUpdateCatalogRoutingFollowupTest#e_fagernes_gol_crosses_fylke_stays_in_ostlandet,no.navi.app.OsmUpdateCatalogRoutingFollowupTest#f_strandlykkja_morskogen_near_border_stays_in_ostlandet
 adb logcat -s OsmCatalogFollowup:I
 ```
 

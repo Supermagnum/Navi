@@ -14,6 +14,7 @@ pub mod indexed;
 pub mod osm_update;
 pub mod region;
 pub mod rest;
+pub mod road_sign;
 pub mod safety;
 pub mod speed_camera;
 pub mod terrain;

@@ -50,4 +50,21 @@ class RegionCoverageTest {
         assertEquals("West Virginia", RegionCoverage.displayName("north-america/us/west-virginia"))
         assertEquals("Nevada", RegionCoverage.displayName("north-america/us/nevada"))
     }
+
+    @Test
+    fun fylke_crossing_endpoints_stay_norwegian_not_sweden() {
+        val fagernes = 60.9858 to 9.2322
+        val gol = 60.7011 to 8.9564
+        val strand = 60.5175 to 11.2670
+        val morskogen = 60.5080 to 11.2200
+        for ((lat, lon) in listOf(fagernes, gol, strand, morskogen)) {
+            assertFalse(RegionCoverage.eastOfNorwaySwedenBorder(lat, lon))
+        }
+        assertTrue(
+            RegionCoverage.downloadedCoversIdentity(
+                "europe/norway/ostlandet",
+                "europe/norway/ostlandet",
+            ),
+        )
+    }
 }

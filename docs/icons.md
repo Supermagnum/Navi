@@ -178,3 +178,20 @@ Per-file detail and research notes: `COPYRIGHT.md` in those directories.
 | `aprs_human.png` / `.svg` | GPL-3.0-or-later | **Navi original** (2026-07-29). Replaced upstream VEC-OH7LZB / Unknown. |
 
 Last verified: **2026-07-29**.
+
+## Norwegian road signs (NLOD — separate licence)
+
+Flat traffic-sign SVGs vendored from
+[Supermagnum/road-signs](https://github.com/Supermagnum/road-signs) (`be4dda9`) live
+under `core/src/icons/road-signs/` and ship in the Android lean pack at
+`app/src/main/assets/icons/road-signs/`. Keys are `no_sign_{code}.svg`.
+
+**Licence:** [NLOD 2.0](https://data.norge.no/nlod/en/2.0) / Statens vegvesen /
+Kartverket — **not** Navit GPL-2.0. Do not merge attribution with the Navit icon
+provenance above.
+
+**Underskilt gap:** this set is standalone flat icons only; compound assemblies with
+supplementary plates are out of scope. See the required note in
+[`road-signs.md`](road-signs.md).
+
+Refresh: `scripts/vendor-road-signs.sh [commit]`.

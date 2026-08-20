@@ -6,8 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -17,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -446,21 +449,29 @@ fun MapSettingsSheet(
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.testTag("auto_zoom_level_label"),
                 )
-                TextButton(
+                OutlinedButton(
                     onClick = {
                         onAutoZoomLevelChange(
                             MapHudPrefs.clampZoom(state.autoZoomLevel - 0.5),
                         )
                     },
-                    modifier = Modifier.testTag("auto_zoom_level_out"),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    modifier =
+                        Modifier
+                            .height(32.dp)
+                            .testTag("auto_zoom_level_out"),
                 ) { Text("-") }
-                TextButton(
+                OutlinedButton(
                     onClick = {
                         onAutoZoomLevelChange(
                             MapHudPrefs.clampZoom(state.autoZoomLevel + 0.5),
                         )
                     },
-                    modifier = Modifier.testTag("auto_zoom_level_in"),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    modifier =
+                        Modifier
+                            .height(32.dp)
+                            .testTag("auto_zoom_level_in"),
                 ) { Text("+") }
             }
             Row(

@@ -148,6 +148,9 @@ fn candidate_filenames(key: &str, theme: IconTheme) -> Vec<String> {
     }
     out.push(format!("{key}.svg"));
     out.push(format!("{key}.svgz"));
+    if key.starts_with("no_sign_") {
+        out.push(format!("road-signs/{key}.svg"));
+    }
     // Common semantic aliases -> Navit filenames.
     match key {
         "water" | "drinking_water" => out.push("drinking_water.svg".into()),

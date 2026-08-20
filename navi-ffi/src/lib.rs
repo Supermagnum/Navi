@@ -4583,6 +4583,107 @@ pub fn nearest_speed_camera_warning_json(
     .to_string()
 }
 
+/// True when Norwegian road-sign warnings may be shown at `(lat, lon)`.
+#[uniffi::export]
+pub fn road_sign_jurisdiction_allows(lat: f64, lon: f64) -> bool {
+    use driver_break_core::routing::road_sign::{
+        resolve_road_sign_jurisdiction_at, RoadSignJurisdiction,
+    };
+    resolve_road_sign_jurisdiction_at(lat, lon) == RoadSignJurisdiction::Norway
+}
+
+/// Load catalogue-matched road signs from a region PBF as JSON.
+#[uniffi::export]
+pub fn load_road_signs_json(pbf_path: String) -> String {
+    use driver_break_core::routing::road_sign::{load_catalog, load_road_signs_from_pbf};
+    let catalog = match load_catalog() {
+        Ok(c) => c,
+        Err(e) => {
+            return format!(
+                r#"{{"error":{}}}"#,
+                serde_json::to_string(&e.to_string()).unwrap_or_default()
+            );
+        }
+    };
+    match load_road_signs_from_pbf(&pbf_path, &catalog) {
+        Ok(signs) => {
+            let rows: Vec<serde_json::Value> = signs
+                .into_iter()
+                .map(|s| {
+                    serde_json::json!({
+                        "osm_id": s.osm_id,
+                        "lat": s.lat,
+                        "lon": s.lon,
+                        "icon_key": s.icon_key,
+                        "code": s.code,
+                        "name_en": s.name_en,
+                        "traffic_sign_raw": s.traffic_sign_raw,
+                    })
+                })
+                .collect();
+            serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
+        }
+        Err(e) => format!(
+            r#"{{"error":{}}}"#,
+            serde_json::to_string(&e.to_string()).unwrap_or_default()
+        ),
+    }
+}
+
+/// Nearest road-sign warning JSON for live HUD (empty object when none).
+#[uniffi::export]
+pub fn nearest_road_sign_warning_json(signs_json: String, lat: f64, lon: f64) -> String {
+    use driver_break_core::routing::road_sign::{nearest_road_sign_warning, RoadSignRecord};
+    let Ok(raw) = serde_json::from_str::<Vec<serde_json::Value>>(&signs_json) else {
+        return "{}".into();
+    };
+    let mut signs = Vec::new();
+    for v in raw {
+        signs.push(RoadSignRecord {
+            osm_id: v.get("osm_id").and_then(|x| x.as_i64()).unwrap_or(0),
+            lat: v.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            lon: v.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            icon_key: v
+                .get("icon_key")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            code: v
+                .get("code")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            name_en: v
+                .get("name_en")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            traffic_sign_raw: v
+                .get("traffic_sign_raw")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+        });
+    }
+    let Some(w) = nearest_road_sign_warning(&signs, lat, lon) else {
+        return "{}".into();
+    };
+    let phase = match w.phase {
+        driver_break_core::ApproachPhase::Hidden => "hidden",
+        driver_break_core::ApproachPhase::Appear => "appear",
+        driver_break_core::ApproachPhase::Urgency => "urgency",
+    };
+    serde_json::json!({
+        "phase": phase,
+        "distance_m": w.distance_m,
+        "icon_key": w.icon_key,
+        "code": w.code,
+        "name_en": w.name_en,
+        "label": w.label,
+    })
+    .to_string()
+}
+
 /// Human highway-class label when OSM name/ref are missing (never a raw tag).
 #[uniffi::export]
 pub fn highway_class_display_label(highway: Option<String>) -> String {

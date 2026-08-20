@@ -15,6 +15,9 @@ local.properties
 .idea/
 *.apk
 *.aab
+# Sideload copy committed for testers (see README).
+!compiled/
+!compiled/*.apk
 app/keystore/
 *.jks
 *.keystore

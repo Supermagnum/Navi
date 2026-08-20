@@ -938,6 +938,12 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1039,6 +1045,8 @@ fun uniffi_navi_checksum_func_load_prefer_pilgrim_routes(
 ): Short
 fun uniffi_navi_checksum_func_load_profile_poi_radii(
 ): Short
+fun uniffi_navi_checksum_func_load_road_signs_json(
+): Short
 fun uniffi_navi_checksum_func_load_speed_cameras_json(
 ): Short
 fun uniffi_navi_checksum_func_load_truck_rest_settings(
@@ -1046,6 +1054,8 @@ fun uniffi_navi_checksum_func_load_truck_rest_settings(
 fun uniffi_navi_checksum_func_load_vehicle_limits(
 ): Short
 fun uniffi_navi_checksum_func_nearby_places(
+): Short
+fun uniffi_navi_checksum_func_nearest_road_sign_warning_json(
 ): Short
 fun uniffi_navi_checksum_func_nearest_speed_camera_warning_json(
 ): Short
@@ -1110,6 +1120,8 @@ fun uniffi_navi_checksum_func_resolve_speed_limit_kmh(
 fun uniffi_navi_checksum_func_road_label_near(
 ): Short
 fun uniffi_navi_checksum_func_road_near_info(
+): Short
+fun uniffi_navi_checksum_func_road_sign_jurisdiction_allows(
 ): Short
 fun uniffi_navi_checksum_func_route_plan_timing_enabled(
 ): Short
@@ -1332,6 +1344,8 @@ fun uniffi_navi_fn_func_load_prefer_pilgrim_routes(`dataDir`: RustBuffer.ByValue
 ): Byte
 fun uniffi_navi_fn_func_load_profile_poi_radii(`dataDir`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_load_road_signs_json(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_speed_cameras_json(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_truck_rest_settings(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1339,6 +1353,8 @@ fun uniffi_navi_fn_func_load_truck_rest_settings(`dataDir`: RustBuffer.ByValue,u
 fun uniffi_navi_fn_func_load_vehicle_limits(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_nearby_places(`indexDbPath`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_nearest_road_sign_warning_json(`signsJson`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_nearest_speed_camera_warning_json(`camerasJson`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`optedIn`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1404,6 +1420,8 @@ fun uniffi_navi_fn_func_road_label_near(`pbfPath`: RustBuffer.ByValue,`cacheDir`
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_road_near_info(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`profile`: RustBuffer.ByValue,`maxM`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_road_sign_jurisdiction_allows(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_route_plan_timing_enabled(uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_routing_worker_count(uniffi_out_err: UniffiRustCallStatus, 
@@ -1709,6 +1727,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_load_profile_poi_radii() != 23658.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_load_road_signs_json() != 61490.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_load_speed_cameras_json() != 9336.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1719,6 +1740,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_nearby_places() != 65514.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_nearest_road_sign_warning_json() != 37591.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_nearest_speed_camera_warning_json() != 25638.toShort()) {
@@ -1815,6 +1839,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_road_near_info() != 51635.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_road_sign_jurisdiction_allows() != 45135.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_route_plan_timing_enabled() != 55311.toShort()) {
@@ -4562,6 +4589,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Load catalogue-matched road signs from a region PBF as JSON.
+         */ fun `loadRoadSignsJson`(`pbfPath`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_load_road_signs_json(
+        FfiConverterString.lower(`pbfPath`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Load speed cameras from a PBF as JSON (point + average-speed records).
          */ fun `loadSpeedCamerasJson`(`pbfPath`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
@@ -4598,6 +4637,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_nearby_places(
         FfiConverterString.lower(`indexDbPath`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterDouble.lower(`radiusM`),FfiConverterUInt.lower(`limit`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Nearest road-sign warning JSON for live HUD (empty object when none).
+         */ fun `nearestRoadSignWarningJson`(`signsJson`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_nearest_road_sign_warning_json(
+        FfiConverterString.lower(`signsJson`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),_status)
 }
     )
     }
@@ -4973,6 +5024,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_road_near_info(
         FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`cacheDir`),FfiConverterString.lower(`elevDir`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterDouble.lower(`maxM`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * True when Norwegian road-sign warnings may be shown at `(lat, lon)`.
+         */ fun `roadSignJurisdictionAllows`(`lat`: kotlin.Double, `lon`: kotlin.Double): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_road_sign_jurisdiction_allows(
+        FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),_status)
 }
     )
     }

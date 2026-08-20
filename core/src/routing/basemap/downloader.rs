@@ -165,15 +165,27 @@ impl PmtilesDownloader {
         }
 
         let mut planet_url = job.url.clone();
-        // Only auto-resolve Protomaps planet when the job was queued without a
-        // concrete third-party URL (Mapterhorn DEM uses download.mapterhorn.com).
-        let is_fixed_third_party =
-            planet_url.contains("mapterhorn.com") || planet_url.contains("build.protomaps.com/");
-        if !is_fixed_third_party {
-            if let Ok(resolved) = resolve_planet_url(&self.client).await {
-                planet_url = resolved;
-            } else {
-                planet_url = PROTOMAPS_PLANET_FALLBACK_URL.to_string();
+        // Mapterhorn DEM uses a fixed third-party planet URL; Protomaps jobs always
+        // resolve the current dated build at run time (queued URLs may be stale).
+        let is_mapterhorn = planet_url.contains("mapterhorn.com");
+        if !is_mapterhorn {
+            match resolve_planet_url(&self.client).await {
+                Ok(resolved) => {
+                    if resolved != planet_url {
+                        log::info!(
+                            target: "NaviDownload",
+                            "[NaviDownload] resolved protomaps planet url {planet_url} -> {resolved}"
+                        );
+                    }
+                    planet_url = resolved;
+                }
+                Err(e) => {
+                    log::warn!(
+                        target: "NaviDownload",
+                        "[NaviDownload] protomaps metadata resolve failed: {e:#}; using fallback"
+                    );
+                    planet_url = PROTOMAPS_PLANET_FALLBACK_URL.to_string();
+                }
             }
         }
 

@@ -42,6 +42,7 @@ How to help: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
 10. [Plugins](#plugins)
 11. [Coding standards and contributing](#coding-standards-and-contributing)
 12. [Building and installing](#building-and-installing)
+    - [Install a prebuilt APK](#install-a-prebuilt-apk)
     - [Release build (APK / AAB)](#release-build-apk--aab)
 13. [Where the map data comes from](#where-the-map-data-comes-from)
 14. [Known issues](#known-issues)
@@ -503,6 +504,27 @@ Short version of CI expectations:
 
 # Building and installing
 
+## Install a prebuilt APK
+
+A debug-signed APK is in [`compiled/navi-debug.apk`](compiled/navi-debug.apk)
+(arm64, same package as `./gradlew :app:assembleDebug`). You do not need a
+Rust/NDK toolchain to install it.
+
+1. On the device: enable **Developer options** and **USB debugging**.
+2. Connect with `adb devices` and confirm the device is listed.
+3. If an older Navi build with a **different signature** is already installed,
+   uninstall it first (`adb uninstall no.navi.app`).
+4. Install and launch:
+
+```bash
+adb install -r compiled/navi-debug.apk
+adb shell am start -n no.navi.app/.MainActivity
+```
+
+This APK is signed with the Android **debug** keystore. It is for testers, not
+a Play Store / F-Droid release. To rebuild from source, follow the sections
+below.
+
 ## Android app (all host platforms)
 
 The product APK is built the same way on **Linux**, **macOS**, and **Windows**:
@@ -761,57 +783,12 @@ Country/region visual extracts can also be prepared with
 
 # TODO
 
-## Integrate [Supermagnum/road-signs](https://github.com/Supermagnum/road-signs)
+## Norwegian road signs — implemented
 
-Official **Norwegian traffic-sign** SVG catalogue plus machine-readable JSON,
-maintained as a **separate** open repository (not shipped in Navi yet). Source
-graphics/metadata come from Statens vegvesen / Kartverket under
-[NLOD 2.0](https://data.norge.no/nlod/en/2.0) — keep that attribution when
-vendoring. Pipeline code in that repo rebuilds the catalogue; Navi should
-consume the **published artefacts**, not re-run NVDB downloads at runtime.
-
-### What the catalogue provides (investigate snapshot)
-
-| Artefact | Role for Navi |
-|---|---|
-| `svg/fareskilt/`, `svg/speed_limit/`, `svg/serviceskilt/`, `svg/vegvisning/` | Vector art (~116 files across 121 NVDB codes; a few speed codes still lack graphics) |
-| `database/signs_en.json` / `signs.json` | English-primary / bilingual inventory (`code`, name, meaning, SVG path, status) |
-| `database/osm_tags.json` (+ `.md`) | Maps each code → `traffic_sign=NO:…`, companion tags (`hazard=*`, `maxspeed=*`, POI/destination tags), plus flags such as **usable as fixed navi symbol** (~93) and **usable as navi icon outside Norway** (~88), Vienna vs Norway-specific scope |
-
-Categories today: warning triangles (100-series), speed-limit / related plates,
-service/tourist symbols (640/650), selected direction/route symbols (723 /
-755–780 / 790). Unresolved graphics remain listed with `"svg": null` — skip
-those until the upstream catalogue fills them.
-
-### How it should plug into Navi (planned work)
-
-1. **Asset pipeline** — Vendor a pinned snapshot (submodule, sparse checkout, or
-   copied tree) of the SVGs + `signs_en.json` + `osm_tags.json`. Rasterize into
-   the existing icon lean pack the same way other approach icons are prepared
-   (`docs/icons.md`), with a clear **NLOD** attribution note alongside the
-   current Navit **GPL v2** icon set (do not mix licence stories).
-2. **OSM matching** — On the planned corridor / approach path, match downloaded
-   OSM `traffic_sign=NO:…` (and companion `hazard=*`, `maxspeed=*`, etc.) using
-   `osm_tags.json`. Prefer entries marked usable as a fixed navi symbol; ignore
-   `not_for_navigation` / pure `variable_content` templates (digit plates,
-   distance stripes) until a dedicated variable renderer exists.
-3. **Guidance UX** — Surface upcoming matched signs in the approach / warning
-   chrome (same distance-phase family as speed-camera warnings), not as a
-   second basemap layer that fights MapLibre tiles. Speed plates should
-   **complement** the existing way-based posted-limit HUD, not replace edge
-   `maxspeed` parsing.
-4. **Jurisdiction** — First ship **Norway** (`NO:` IDs). For other Vienna
-   Convention countries, reuse only symbols/tags the mapping marks as safe
-   outside NO, and never stamp foreign roads with `traffic_sign=NO:…`. Nordic-
-   specific art (elk, reindeer, ski, …) stays optional outside that region.
-5. **Pack / offline** — Decide whether sign hits are scanned from the region
-   PBF at plan time, indexed into a small pack beside graph/POI packs, or
-   queried live from place/edge metadata — same offline-first rules as the rest
-   of routing (no silent network).
-6. **Gaps** — Upstream still missing a few speed-limit SVGs; forbud / vikeplikt
-   / underskilt packs were audited empty for the guidance set and are **out of
-   scope** until that catalogue grows. Do not invent new OSM `hazard=*` values
-   beyond what `osm_tags.json` already documents.
-
-Tracking / design detail can land later under `docs/` (icons + jurisdiction);
-this README entry is the product-level integration TODO until that work starts.
+Vendored flat-icon catalogue from
+[Supermagnum/road-signs](https://github.com/Supermagnum/road-signs) (`be4dda9`):
+approach warnings for OSM `traffic_sign=NO:…` in Norway, separate **NLOD 2.0**
+attribution from Navit GPL icons. Design, exclusions, underskilt scope gap, and
+offline decision: [`docs/road-signs.md`](docs/road-signs.md). Icons:
+[`docs/icons.md`](docs/icons.md#norwegian-road-signs-nlod--separate-licence).
+Refresh vendored snapshot: `scripts/vendor-road-signs.sh [commit]`.

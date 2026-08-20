@@ -114,68 +114,87 @@ class OsmUpdateCatalogRoutingFollowupTest {
     }
 
     @Test
-    fun a_keyboard_five_routes_missing_coverage() {
+    fun a_keyboard_four_routes_missing_coverage() {
         openRoutePanel()
         selectProfile("chip_profile_car")
         val rows =
             listOf(
-                RouteCase("Grotli", 61.9803, 8.2775, "Hjelle", 61.9160, 7.1640),
-                RouteCase("Os", 62.4964, 11.1436, "Roros", 62.5747, 11.3840),
-                RouteCase("Fagernes", 60.9858, 9.2322, "Gol", 60.7011, 8.9564),
-                RouteCase("Strandlykkja", 60.5175, 11.2670, "Morskogen", 60.5080, 11.2200),
-                RouteCase("Rundfloen", 61.8956, 12.2208, "Langflons Kopcentrum", 61.8975, 12.2685),
+                RouteCase(
+                    "Grotli",
+                    61.9803,
+                    8.2775,
+                    "Hjelle",
+                    61.9160,
+                    7.1640,
+                    expectPrompt = true,
+                    expectedPath = "europe/norway/vestlandet",
+                ),
+                RouteCase(
+                    "Os",
+                    62.4964,
+                    11.1436,
+                    "Roros",
+                    62.5747,
+                    11.3840,
+                    expectPrompt = true,
+                    expectedPath = "europe/norway",
+                ),
+                RouteCase(
+                    "Fagernes",
+                    60.9858,
+                    9.2322,
+                    "Gol",
+                    60.7011,
+                    8.9564,
+                    expectPrompt = false,
+                ),
+                RouteCase(
+                    "Strandlykkja",
+                    60.5175,
+                    11.2670,
+                    "Morskogen",
+                    60.5080,
+                    11.2200,
+                    expectPrompt = false,
+                ),
             )
         for (row in rows) {
-            NaviMapTestHooks.missingCoveragePromptVisible = false
-            NaviMapTestHooks.lastMissingCoveragePath = ""
-            NaviMapTestHooks.lastMissingCoverageMessage = ""
-            NaviMapTestHooks.lastRoutePolylineChars = 0
-            NaviMapTestHooks.lastPlanReport = ""
-            typeCoordAndPickHit("chip_from", row.fromLat, row.fromLon)
-            typeCoordAndPickHit("chip_to", row.toLat, row.toLon)
-            clickTag("btn_plan_route")
-            val deadline = System.currentTimeMillis() + 25_000
-            var prompted = false
-            while (System.currentTimeMillis() < deadline) {
-                if (NaviMapTestHooks.missingCoveragePromptVisible) {
-                    prompted = true
-                    break
-                }
-                if (NaviMapTestHooks.lastRoutePolylineChars > 0 ||
-                    NaviMapTestHooks.lastPlanReport.contains("PASS")
-                ) {
-                    break
-                }
-                Thread.sleep(200)
-            }
-            val path = NaviMapTestHooks.lastMissingCoveragePath
-            val msg = NaviMapTestHooks.lastMissingCoverageMessage
-            val toast = toastText()
-            Log.i(
-                TAG,
-                "ROUTE ${row.fromName} -> ${row.toName} prompted=$prompted " +
-                    "path=$path msg='$msg' toast='$toast' " +
-                    "poly=${NaviMapTestHooks.lastRoutePolylineChars}",
-            )
-            if (prompted) {
-                assertClean(msg)
-                assertClean(toast)
-                composeRule
-                    .onNodeWithTag("btn_missing_coverage_download", useUnmergedTree = true)
-                    .assertIsDisplayed()
-                if (row.toName.startsWith("Langflon")) {
-                    assertEquals("europe/sweden", path)
-                    assertTrue(msg.contains("Sweden"))
-                    composeRule
-                        .onNodeWithTag("btn_missing_coverage_download", useUnmergedTree = true)
-                        .assertIsDisplayed()
-                }
-                clickTag("btn_missing_coverage_dismiss")
-                Thread.sleep(400)
-                assertFalse(NaviMapTestHooks.missingCoveragePromptVisible)
-                assertEquals(0, NaviMapTestHooks.lastRoutePolylineChars)
-            }
+            planRouteAndAssert(row)
         }
+    }
+
+    @Test
+    fun e_fagernes_gol_crosses_fylke_stays_in_ostlandet() {
+        openRoutePanel()
+        selectProfile("chip_profile_car")
+        planRouteAndAssert(
+            RouteCase(
+                "Fagernes",
+                60.9858,
+                9.2322,
+                "Gol",
+                60.7011,
+                8.9564,
+                expectPrompt = false,
+            ),
+        )
+    }
+
+    @Test
+    fun f_strandlykkja_morskogen_near_border_stays_in_ostlandet() {
+        openRoutePanel()
+        selectProfile("chip_profile_car")
+        planRouteAndAssert(
+            RouteCase(
+                "Strandlykkja",
+                60.5175,
+                11.2670,
+                "Morskogen",
+                60.5080,
+                11.2200,
+                expectPrompt = false,
+            ),
+        )
     }
 
     @Test
@@ -291,7 +310,87 @@ class OsmUpdateCatalogRoutingFollowupTest {
         val toName: String,
         val toLat: Double,
         val toLon: Double,
+        val expectPrompt: Boolean,
+        val expectedPath: String? = null,
     )
+
+    private fun planRouteAndAssert(row: RouteCase) {
+        NaviMapTestHooks.missingCoveragePromptVisible = false
+        NaviMapTestHooks.lastMissingCoveragePath = ""
+        NaviMapTestHooks.lastMissingCoverageMessage = ""
+        NaviMapTestHooks.lastRoutePolylineChars = 0
+        NaviMapTestHooks.lastPlanReport = ""
+        typeCoordAndPickHit("chip_from", row.fromLat, row.fromLon)
+        typeCoordAndPickHit("chip_to", row.toLat, row.toLon)
+        clickTag("btn_plan_route")
+        val timeoutMs = if (row.expectPrompt) 25_000L else 12_000L
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var prompted = false
+        while (System.currentTimeMillis() < deadline) {
+            if (NaviMapTestHooks.missingCoveragePromptVisible) {
+                prompted = true
+                break
+            }
+            if (!row.expectPrompt &&
+                (
+                    NaviMapTestHooks.lastRoutePolylineChars > 0 ||
+                        NaviMapTestHooks.lastPlanReport.contains("PASS") ||
+                        toastText().contains("indexing", ignoreCase = true) ||
+                        toastText().contains("Planning", ignoreCase = true)
+                )
+            ) {
+                break
+            }
+            if (row.expectPrompt &&
+                (
+                    NaviMapTestHooks.lastRoutePolylineChars > 0 ||
+                        NaviMapTestHooks.lastPlanReport.contains("PASS")
+                )
+            ) {
+                break
+            }
+            Thread.sleep(200)
+        }
+        val path = NaviMapTestHooks.lastMissingCoveragePath
+        val msg = NaviMapTestHooks.lastMissingCoverageMessage
+        val toast = toastText()
+        Log.i(
+            TAG,
+            "ROUTE ${row.fromName} -> ${row.toName} expectPrompt=${row.expectPrompt} " +
+                "prompted=$prompted path=$path msg='$msg' toast='$toast' " +
+                "poly=${NaviMapTestHooks.lastRoutePolylineChars}",
+        )
+        assertEquals(
+            "${row.fromName} -> ${row.toName} prompt expectation",
+            row.expectPrompt,
+            prompted,
+        )
+        if (row.expectPrompt) {
+            assertClean(msg)
+            assertClean(toast)
+            composeRule
+                .onNodeWithTag("btn_missing_coverage_download", useUnmergedTree = true)
+                .assertIsDisplayed()
+            row.expectedPath?.let { assertEquals(it, path) }
+            clickTag("btn_missing_coverage_dismiss")
+            Thread.sleep(400)
+            assertFalse(NaviMapTestHooks.missingCoveragePromptVisible)
+            assertEquals(0, NaviMapTestHooks.lastRoutePolylineChars)
+        } else {
+            assertFalse(
+                "${row.fromName} -> ${row.toName} should not block on missing coverage",
+                NaviMapTestHooks.missingCoveragePromptVisible,
+            )
+            assertTrue(
+                "${row.fromName} -> ${row.toName} should start planning without a prompt",
+                toast.contains("Planning", ignoreCase = true) ||
+                    toast.contains("indexing", ignoreCase = true) ||
+                    NaviMapTestHooks.lastPlanReport.isNotBlank() ||
+                    NaviMapTestHooks.lastRoutePolylineChars > 0,
+            )
+            runCatching { clickTag("btn_delete_planned_route") }
+        }
+    }
 
     private fun assertClean(msg: String) {
         val lower = msg.lowercase()
