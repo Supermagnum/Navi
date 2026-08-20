@@ -4684,6 +4684,284 @@ pub fn nearest_road_sign_warning_json(signs_json: String, lat: f64, lon: f64) ->
     .to_string()
 }
 
+fn children_zone_category_from_tags<'a>(
+    tags: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Option<&'static str> {
+    let mut amenity = None;
+    let mut leisure = None;
+    for (k, v) in tags {
+        if k == "amenity" {
+            amenity = Some(v);
+        } else if k == "leisure" {
+            leisure = Some(v);
+        }
+    }
+    match (amenity, leisure) {
+        (Some("school"), _) => Some("school"),
+        (Some("kindergarten"), _) => Some("kindergarten"),
+        (_, Some("playground")) => Some("playground"),
+        _ => None,
+    }
+}
+
+/// Load child-zone POIs (`amenity=school`, `amenity=kindergarten`, `leisure=playground`)
+/// from a region PBF (nodes + way boundary nodes + centroids).
+#[uniffi::export]
+pub fn load_school_pois_json(pbf_path: String) -> String {
+    use osmpbf::{Element, ElementReader};
+    use std::collections::HashMap;
+
+    let mut pois: Vec<serde_json::Value> = Vec::new();
+    let mut way_refs: Vec<(i64, Vec<i64>, Option<String>, &'static str)> = Vec::new();
+    let mut needed: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
+    let reader = match ElementReader::from_path(&pbf_path) {
+        Ok(r) => r,
+        Err(e) => {
+            return format!(
+                r#"{{"error":{}}}"#,
+                serde_json::to_string(&e.to_string()).unwrap_or_default()
+            )
+        }
+    };
+
+    if let Err(e) = reader.for_each(|el| {
+        if let Element::Way(way) = el {
+            let mut name = None;
+            let mut category = None;
+            for (k, v) in way.tags() {
+                if k == "name" {
+                    name = Some(v.to_string());
+                }
+                if category.is_none() {
+                    category = children_zone_category_from_tags([(k, v)]);
+                }
+            }
+            let Some(category) = category else {
+                return;
+            };
+            let refs: Vec<i64> = way.refs().collect();
+            if refs.len() < 2 {
+                return;
+            }
+            for id in &refs {
+                needed.insert(*id);
+            }
+            way_refs.push((way.id(), refs, name, category));
+        }
+    }) {
+        return format!(
+            r#"{{"error":{}}}"#,
+            serde_json::to_string(&e.to_string()).unwrap_or_default()
+        );
+    }
+
+    let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len().max(1024));
+    let reader = match ElementReader::from_path(&pbf_path) {
+        Ok(r) => r,
+        Err(e) => {
+            return format!(
+                r#"{{"error":{}}}"#,
+                serde_json::to_string(&e.to_string()).unwrap_or_default()
+            )
+        }
+    };
+    if let Err(e) = reader.for_each(|el| match el {
+        Element::Node(n) => {
+            let id = n.id();
+            if needed.contains(&id) {
+                coords.insert(id, (n.lat(), n.lon()));
+            }
+            let mut name = None;
+            let mut category = None;
+            for (k, v) in n.tags() {
+                if k == "name" {
+                    name = Some(v.to_string());
+                }
+                if category.is_none() {
+                    category = children_zone_category_from_tags([(k, v)]);
+                }
+            }
+            if let Some(category) = category {
+                pois.push(serde_json::json!({
+                    "osm_id": n.id(),
+                    "lat": n.lat(),
+                    "lon": n.lon(),
+                    "name": name.unwrap_or_default(),
+                    "category": category,
+                    "kind": "node",
+                }));
+            }
+        }
+        Element::DenseNode(n) => {
+            let id = n.id;
+            if needed.contains(&id) {
+                coords.insert(id, (n.lat(), n.lon()));
+            }
+            let mut name = None;
+            let mut category = None;
+            for (k, v) in n.tags() {
+                if k == "name" {
+                    name = Some(v.to_string());
+                }
+                if category.is_none() {
+                    category = children_zone_category_from_tags([(k, v)]);
+                }
+            }
+            if let Some(category) = category {
+                pois.push(serde_json::json!({
+                    "osm_id": n.id,
+                    "lat": n.lat(),
+                    "lon": n.lon(),
+                    "name": name.unwrap_or_default(),
+                    "category": category,
+                    "kind": "node",
+                }));
+            }
+        }
+        _ => {}
+    }) {
+        return format!(
+            r#"{{"error":{}}}"#,
+            serde_json::to_string(&e.to_string()).unwrap_or_default()
+        );
+    }
+
+    for (way_id, refs, name, category) in way_refs {
+        let poi_name = name.unwrap_or_default();
+        let mut sum_lat = 0.0;
+        let mut sum_lon = 0.0;
+        let mut n = 0usize;
+        for id in refs {
+            if let Some((lat, lon)) = coords.get(&id) {
+                sum_lat += *lat;
+                sum_lon += *lon;
+                n += 1;
+                pois.push(serde_json::json!({
+                    "osm_id": way_id,
+                    "lat": *lat,
+                    "lon": *lon,
+                    "name": poi_name.clone(),
+                    "category": category,
+                    "kind": "way_node",
+                }));
+            }
+        }
+        if n == 0 {
+            continue;
+        }
+        pois.push(serde_json::json!({
+            "osm_id": way_id,
+            "lat": sum_lat / n as f64,
+            "lon": sum_lon / n as f64,
+            "name": poi_name,
+            "category": category,
+            "kind": "way_centroid",
+        }));
+    }
+    serde_json::to_string(&pois).unwrap_or_else(|_| "[]".into())
+}
+
+/// Keep school POIs within `margin_m` of the route corridor (`sim_samples_json`).
+#[uniffi::export]
+pub fn schools_near_route_corridor_json(
+    schools_json: String,
+    sim_samples_json: String,
+    margin_m: f64,
+) -> String {
+    use driver_break_core::CorridorBand;
+    let Ok(schools) = serde_json::from_str::<Vec<serde_json::Value>>(&schools_json) else {
+        return "[]".into();
+    };
+    let Ok(samples) = serde_json::from_str::<Vec<serde_json::Value>>(&sim_samples_json) else {
+        return "[]".into();
+    };
+    let coords: Vec<(f64, f64)> = samples
+        .iter()
+        .filter_map(|s| Some((s.get("lat")?.as_f64()?, s.get("lon")?.as_f64()?)))
+        .collect();
+    if coords.len() < 2 {
+        return "[]".into();
+    }
+    let band = CorridorBand::from_lat_lon(&coords, margin_m.max(1.0));
+    let filtered: Vec<serde_json::Value> = schools
+        .into_iter()
+        .filter(|v| {
+            let lat = v.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0);
+            let lon = v.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0);
+            band.contains(lat, lon)
+        })
+        .collect();
+    serde_json::to_string(&filtered).unwrap_or_else(|_| "[]".into())
+}
+
+/// Nearest children-zone proximity fallback warning JSON (empty object when none).
+/// Picks the single closest POI across school/kindergarten/playground — no stacked warnings.
+#[uniffi::export]
+pub fn nearest_school_proximity_warning_json(schools_json: String, lat: f64, lon: f64) -> String {
+    use driver_break_core::{
+        ApproachPhase, APPROACH_APPEAR_M, APPROACH_HIDE_M, APPROACH_URGENCY_M,
+    };
+
+    let Ok(pois) = serde_json::from_str::<Vec<serde_json::Value>>(&schools_json) else {
+        return "{}".into();
+    };
+    let mut best: Option<(serde_json::Value, f64)> = None;
+    for poi in pois {
+        let plat = poi.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0);
+        let plon = poi.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0);
+        let d = driver_break_core::haversine_km(lat, lon, plat, plon) * 1_000.0;
+        match &best {
+            Some((_, bd)) if d >= *bd => {}
+            _ => best = Some((poi, d)),
+        }
+    }
+    let Some((poi, d)) = best else {
+        return "{}".into();
+    };
+    let phase = if !d.is_finite() || d > APPROACH_APPEAR_M || d <= APPROACH_HIDE_M {
+        ApproachPhase::Hidden
+    } else if d <= APPROACH_URGENCY_M {
+        ApproachPhase::Urgency
+    } else {
+        ApproachPhase::Appear
+    };
+    if phase == ApproachPhase::Hidden {
+        return "{}".into();
+    }
+    let phase_s = match phase {
+        ApproachPhase::Hidden => "hidden",
+        ApproachPhase::Appear => "appear",
+        ApproachPhase::Urgency => "urgency",
+    };
+    let poi_name = poi
+        .get("name")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let category = poi
+        .get("category")
+        .and_then(|x| x.as_str())
+        .unwrap_or("school");
+    let osm_id = poi.get("osm_id").and_then(|x| x.as_i64()).unwrap_or(0);
+    serde_json::json!({
+        "phase": phase_s,
+        "distance_m": d,
+        "icon_key": "no_sign_142",
+        "code": "142",
+        "name_en": "Children",
+        "label": if poi_name.is_empty() { "Children ahead".to_string() } else { format!("Children zone: {poi_name}") },
+        "source": "children_proximity",
+        "category": category,
+        "poi_osm_id": osm_id,
+        "school_osm_id": osm_id,
+        "poi_name": poi_name,
+        "school_name": poi_name,
+    })
+    .to_string()
+}
+
 /// Human highway-class label when OSM name/ref are missing (never a raw tag).
 #[uniffi::export]
 pub fn highway_class_display_label(highway: Option<String>) -> String {

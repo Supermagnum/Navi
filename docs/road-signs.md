@@ -72,6 +72,9 @@ column — **not** a MapLibre layer.
 
 Speed-limit **plates** from this catalogue complement the existing way-based posted-limit
 HUD (`resolve_speed_limit_kmh` / edge `maxspeed`); they do not replace graph parsing.
+When a warning triangle (`1xx` fareskilt) and a speed plate (`362`/`364`/`366`) are both
+in the same approach phase, the warning is shown — otherwise a dense 30/40/60 cluster
+hides school-area signs such as `109`.
 
 FFI: `load_road_signs_json`, `nearest_road_sign_warning_json`, `road_sign_jurisdiction_allows`.
 
@@ -86,8 +89,37 @@ for dense geometry (graph, POI/barriers, wetlands). Sign hits are reloaded when 
 region PBF changes (`LaunchedEffect(dataDir)`), preserving offline-first discipline with
 no runtime network fetch of catalogue data.
 
+Østlandet Geofabrik extract (nodes scanned on-device): **no** `traffic_sign=NO:142`
+or `hazard=children` objects. School buildings (`amenity=school`) are still widely
+mapped, so tag-only matching can miss school-zone risk context.
+
+Fallback now adds a route-corridor children-zone proximity signal:
+
+- load real child-zone POIs from the active region PBF (nodes + way geometry points):
+  `amenity=school`, `amenity=kindergarten`, `leisure=playground`
+- keep only POIs within **200 m** of the planned route corridor (`CorridorBand`)
+- surface a single generic `142` (Children) warning in `RoadSignWarningBox` using the
+  same approach phases (750 / 150 / 25 m) — one warning per approach even when several
+  categories cluster (nearest POI wins)
+- keep explicit mapped children warnings (`NO:142`, `hazard=child_safety`, etc.) as
+  higher-priority when present
+
+Presentation uses the same `no_sign_142` icon and generic “Children ahead” / “Children
+zone: {name}” label for all three categories; sign 142’s catalogue meaning already
+covers schools and playgrounds.
+
+This fallback is jurisdiction-agnostic by design: it does not assume Norwegian
+tagging completeness and works as a last-resort safety cue where explicit children
+warning tags are sparse.
+
+Innlandet east of 11°E is mis-labelled `se` by the coarse Sweden ISO ring; road-sign
+jurisdiction treats that overlap as Norway so Vallset / Elverum / Løten warnings
+are not suppressed.
+
 ## Tests
 
 - Rust unit: `cargo test -p driver-break-core road_sign::`
 - Icon raster: `core/tests/road_sign_icon_assets.rs`
-- Device: `RoadSignIntegrationInstrumentedTest`, `RoadSignIconScreenshotTest` (PNG samples on `/sdcard/Download/` and `docs/screenshots/road-signs/`)
+- Device: `RoadSignIntegrationInstrumentedTest`, `RoadSignIconScreenshotTest`,
+  `RoadSignSchoolCorridorInstrumentedTest` (Vallset skole / `NO:109` + children-zone
+  proximity on SM-P613)

@@ -24,6 +24,8 @@ pub enum RoadSignJurisdiction {
 pub fn resolve_road_sign_jurisdiction_at(lat: f64, lon: f64) -> RoadSignJurisdiction {
     match country_iso_at(lat, lon) {
         Some("no") => RoadSignJurisdiction::Norway,
+        // Coarse Sweden ring starts at lon 11.0 and swallows Innlandet (e.g. Vallset).
+        Some("se") if (59.3..=63.5).contains(&lat) && lon < 12.15 => RoadSignJurisdiction::Norway,
         _ => RoadSignJurisdiction::Other,
     }
 }
@@ -185,17 +187,37 @@ fn phase_for_distance(distance_m: f64) -> ApproachPhase {
 }
 
 fn parse_traffic_sign_tokens(raw: &str) -> Vec<String> {
-    raw.split(',')
+    raw.split([',', ';'])
         .map(normalize_traffic_sign_token)
         .filter(|s| !s.is_empty() && s != "NO:")
         .collect()
 }
 
+/// `NO:366.30` → `NO:366` when the dotted form is not itself a catalogue code.
+fn parent_traffic_sign_token(token: &str) -> Option<String> {
+    let (base, suffix) = token.rsplit_once('.')?;
+    if !suffix.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    if !base.starts_with("NO:") || base == "NO:" {
+        return None;
+    }
+    Some(base.to_string())
+}
+
 impl RoadSignCatalog {
+    fn lookup_traffic_sign(&self, token: &str) -> Option<&CatalogEntry> {
+        if let Some(entry) = self.by_traffic_sign.get(token) {
+            return Some(entry);
+        }
+        let parent = parent_traffic_sign_token(token)?;
+        self.by_traffic_sign.get(&parent)
+    }
+
     pub fn match_node_tags(&self, tags: &HashMap<String, String>) -> Option<RoadSignMatch> {
         if let Some(raw) = tags.get("traffic_sign") {
             for token in parse_traffic_sign_tokens(raw) {
-                if let Some(entry) = self.by_traffic_sign.get(&token) {
+                if let Some(entry) = self.lookup_traffic_sign(&token) {
                     return Some(RoadSignMatch {
                         code: entry.code.clone(),
                         name_en: entry.name_en.clone(),
@@ -268,6 +290,25 @@ fn ingest_node_tags(
     });
 }
 
+/// Lower is shown first. Warning triangles beat speed plates: the HUD already
+/// shows the posted limit, so a nearby `362.*` must not hide `109` / `142`.
+fn approach_priority(code: &str, phase: ApproachPhase) -> (u8, u8) {
+    let phase_rank = match phase {
+        ApproachPhase::Urgency => 0,
+        ApproachPhase::Appear => 1,
+        ApproachPhase::Hidden => 2,
+    };
+    let kind_rank = if code.starts_with("362") || code.starts_with("364") || code.starts_with("366")
+    {
+        2
+    } else if code.starts_with('1') {
+        0
+    } else {
+        1
+    };
+    (phase_rank, kind_rank)
+}
+
 /// Nearest upcoming sign warning for the driver's position (Norway only).
 pub fn nearest_road_sign_warning(
     signs: &[RoadSignRecord],
@@ -278,15 +319,17 @@ pub fn nearest_road_sign_warning(
         return None;
     }
     let mut best: Option<RoadSignWarning> = None;
-    let mut best_d = f64::INFINITY;
+    let mut best_key = (u8::MAX, u8::MAX, f64::INFINITY);
     for sign in signs {
         let d = haversine_m(lat, lon, sign.lat, sign.lon);
         let phase = phase_for_distance(d);
         if phase == ApproachPhase::Hidden {
             continue;
         }
-        if d < best_d {
-            best_d = d;
+        let (phase_rank, kind_rank) = approach_priority(&sign.code, phase);
+        let key = (phase_rank, kind_rank, d);
+        if key < best_key {
+            best_key = key;
             best = Some(RoadSignWarning {
                 phase,
                 distance_m: d,
@@ -331,6 +374,18 @@ mod tests {
     }
 
     #[test]
+    fn dotted_zone_suffix_falls_back_to_base_catalogue_code() {
+        let cat = load_catalog().expect("catalog");
+        let mut tags = HashMap::new();
+        tags.insert("traffic_sign".into(), "NO:366.30".into());
+        let matched = cat.match_node_tags(&tags).expect("366.30");
+        assert_eq!(matched.code, "366");
+        tags.insert("traffic_sign".into(), "NO:362.30".into());
+        let matched = cat.match_node_tags(&tags).expect("362.30");
+        assert_eq!(matched.code, "362.30");
+    }
+
+    #[test]
     fn hazard_companion_tag_matches_catalogue() {
         let cat = load_catalog().expect("catalog");
         let mut tags = HashMap::new();
@@ -346,5 +401,40 @@ mod tests {
         assert_eq!(phase_for_distance(400.0), ApproachPhase::Appear);
         assert_eq!(phase_for_distance(100.0), ApproachPhase::Urgency);
         assert_eq!(phase_for_distance(10.0), ApproachPhase::Hidden);
+    }
+
+    #[test]
+    fn vallset_innlandet_counts_as_norway_despite_coarse_sweden_ring() {
+        assert_eq!(
+            resolve_road_sign_jurisdiction_at(60.6811, 11.3422),
+            RoadSignJurisdiction::Norway
+        );
+    }
+
+    #[test]
+    fn fareskilt_outranks_nearby_speed_plate() {
+        let signs = vec![
+            RoadSignRecord {
+                osm_id: 1,
+                lat: 60.68080,
+                lon: 11.34420,
+                icon_key: "no_sign_362_60".into(),
+                code: "362.60".into(),
+                name_en: "Speed limit 60 km/h".into(),
+                traffic_sign_raw: "NO:362.60".into(),
+            },
+            RoadSignRecord {
+                osm_id: 9988748740,
+                lat: 60.6801722,
+                lon: 11.3458249,
+                icon_key: "no_sign_109".into(),
+                code: "109".into(),
+                name_en: "Speed hump".into(),
+                traffic_sign_raw: "NO:109,802[50 m];362.40".into(),
+            },
+        ];
+        let warn = nearest_road_sign_warning(&signs, 60.6808046, 11.3453802).expect("warn");
+        assert_eq!(warn.code, "109");
+        assert_eq!(warn.icon_key, "no_sign_109");
     }
 }

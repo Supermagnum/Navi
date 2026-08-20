@@ -274,7 +274,18 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | **Proposed caps** | `icon_anim_query`, `icon_anim_frame`, `plugin_kv` / `storage`, `log` |
 | **Notes** | Spec only — not implemented. Core still renders one SVG per `rasterize_key` call. |
 
-### 12. Horse trekking (`horse_trekking` / `horse_trek`)
+### 12. Custom alert sounds (`custom_alert_sounds` / `alert_sounds`)
+
+| | |
+|---|---|
+| **Benefit** | User-customizable short audio alerts for overspeed, road-sign approach warnings (including children-zone proximity fallback), speed cameras, seasonal closures, and future hazard categories |
+| **Docs** | [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md) — category mapping, sound pack layout, urgency-phase timing, host `alert_sound_play` capability |
+| **Host duties** | Shared rodio/Symphonia playback (same stack as voice guidance); phase-transition events; resolve `{dataDir}/sounds/alerts/` files; audio focus / mute |
+| **Guest duties** | Map warning events → category → clip; per-category enable flags; debounce overspeed repeats |
+| **Proposed caps** | `warning_event_subscribe` (new), `alert_sound_play` (new), `alert_sound_catalog` (new), `plugin_kv` / `storage`, `log` |
+| **Notes** | Spec only — not implemented. One short tone at **urgency** phase entry (750/150/25 m model), not continuous audio through the approach window. |
+
+### 13. Horse trekking (`horse_trekking` / `horse_trek`)
 
 | | |
 |---|---|
@@ -311,6 +322,9 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | `icon_anim_query` | List installed animated-icon packs (key, fps, frames) |
 | `icon_anim_frame` | Resolve SVG bytes/path for `key` + frame index |
 | `protected_area_query` | Protected-area polygons / ids crossed by corridor (horse *verneforskrift* packs) |
+| `warning_event_subscribe` | Push approach-phase transitions for road signs, cameras, overspeed, closures |
+| `alert_sound_play` | Queue short alert clip by category (host owns audio device) |
+| `alert_sound_catalog` | List bundled + user override alert sound files |
 
 Add a capability to `plugin-host` `Capability` enum + HostApi **before** shipping
 any guest that needs it. Until then, host-native services may write into core

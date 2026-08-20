@@ -641,4 +641,24 @@ object NaviMapTestHooks {
     /** Approach box icon key stem last applied (e.g. nav_right_1). */
     @Volatile
     var lastApproachIconKey: String? = null
+
+    /** Last road-sign approach warning JSON from live/sim position (or `{}`). */
+    @Volatile
+    var lastRoadSignWarningJson: String = "{}"
+
+    /** Last school-proximity fallback warning JSON from live/sim position (or `{}`). */
+    @Volatile
+    var lastSchoolProximityWarningJson: String = "{}"
+
+    /** Number of school POIs inside the current planned route corridor (200 m band). */
+    @Volatile
+    var lastRouteSchoolPoiCount: Int = 0
+
+    /** Length of the in-memory school POI list after PBF load (`-1` = not loaded). */
+    @Volatile
+    var lastSchoolPoisIndexed: Int = -1
+
+    /** Length of the in-memory road-sign index after PBF load (`-1` = not loaded). */
+    @Volatile
+    var lastRoadSignsIndexed: Int = -1
 }

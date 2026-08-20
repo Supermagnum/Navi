@@ -194,4 +194,9 @@ provenance above.
 supplementary plates are out of scope. See the required note in
 [`road-signs.md`](road-signs.md).
 
+**Runtime use:** approach warnings for tagged `traffic_sign=NO:…` in Norway, plus
+a route-corridor **children-zone proximity fallback** (school / kindergarten /
+playground POIs → generic sign **142**) when no explicit children-warning tag
+exists. Details: [`road-signs.md`](road-signs.md).
+
 Refresh: `scripts/vendor-road-signs.sh [commit]`.

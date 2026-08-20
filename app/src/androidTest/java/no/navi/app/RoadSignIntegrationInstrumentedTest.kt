@@ -11,9 +11,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.navi.FfiIconTheme
 import uniffi.navi.loadRoadSignsJson
+import uniffi.navi.loadSchoolPoisJson
 import uniffi.navi.nearestRoadSignWarningJson
+import uniffi.navi.nearestSchoolProximityWarningJson
 import uniffi.navi.rasterizeIconPng
 import uniffi.navi.roadSignJurisdictionAllows
+import uniffi.navi.schoolsNearRouteCorridorJson
 import java.io.File
 
 @RunWith(AndroidJUnit4::class)
@@ -131,6 +134,19 @@ class RoadSignIntegrationInstrumentedTest {
     }
 
     @Test
+    fun probe_vallset_109_warning_json() {
+        val pbf = norwegianPbf()
+        val raw = loadRoadSignsJson(pbf.absolutePath)
+        val lat = 60.68080462520444
+        val lon = 11.34538019366088
+        val allows = roadSignJurisdictionAllows(lat, lon)
+        val warn = nearestRoadSignWarningJson(raw, lat, lon)
+        Log.i(TAG, "probe allows=$allows warn=$warn")
+        assertTrue("jurisdiction at Vallset", allows)
+        assertTrue("expected 109 at 70m: $warn", warn.contains("\"code\":\"109\""))
+    }
+
+    @Test
     fun pbf_index_and_synthetic_warning() {
         val pbf = norwegianPbf()
         val raw = loadRoadSignsJson(pbf.absolutePath)
@@ -167,5 +183,105 @@ class RoadSignIntegrationInstrumentedTest {
                     ?: error("corridor: no sign yielded approach warning")
             assertTrue("corridor warning: $corridor", corridor.contains("icon_key"))
         }
+    }
+
+    @Test
+    fun school_corridor_fallback_boundary_is_real_200m() {
+        val pbf = norwegianPbf()
+        val pois = loadSchoolPoisJson(pbf.absolutePath)
+        assertFalse("children-zone load error", pois.contains("\"error\""))
+        val nearRoute =
+            """
+            [
+              {"lat":60.68105,"lon":11.34210,"cum_m":0.0},
+              {"lat":60.68120,"lon":11.34240,"cum_m":150.0}
+            ]
+            """.trimIndent()
+        val nearFiltered = JSONArray(schoolsNearRouteCorridorJson(pois, nearRoute, 200.0))
+        assertTrue("expected Vallset school in 200m corridor", nearFiltered.length() >= 1)
+        val warnNear = nearestSchoolProximityWarningJson(nearFiltered.toString(), 60.68020, 11.34223)
+        assertTrue("expected 142 fallback near school: $warnNear", warnNear.contains("\"code\":\"142\""))
+        assertTrue("expected children_proximity source: $warnNear", warnNear.contains("\"source\":\"children_proximity\""))
+
+        val farRoute =
+            """
+            [
+              {"lat":60.68110,"lon":11.34720,"cum_m":0.0},
+              {"lat":60.68120,"lon":11.34780,"cum_m":200.0}
+            ]
+            """.trimIndent()
+        val farFiltered = JSONArray(schoolsNearRouteCorridorJson(pois, farRoute, 200.0))
+        val warnFar = nearestSchoolProximityWarningJson(farFiltered.toString(), 60.68110, 11.34740)
+        assertEquals("{}", warnFar)
+    }
+
+    @Test
+    fun children_zone_index_includes_kindergarten_and_playground() {
+        val pbf = norwegianPbf()
+        val raw = loadSchoolPoisJson(pbf.absolutePath)
+        assertFalse("load error", raw.contains("\"error\""))
+        val arr = JSONArray(raw)
+        assertTrue("expected child-zone POIs in region", arr.length() >= 1)
+        var hasSchool = false
+        var hasKindergarten = false
+        var hasPlayground = false
+        for (i in 0 until arr.length()) {
+            when (arr.getJSONObject(i).optString("category")) {
+                "school" -> hasSchool = true
+                "kindergarten" -> hasKindergarten = true
+                "playground" -> hasPlayground = true
+            }
+        }
+        assertTrue("expected school category in extract", hasSchool)
+        assertTrue("expected kindergarten category in extract", hasKindergarten)
+        assertTrue("expected playground category in extract", hasPlayground)
+        Log.i(TAG, "child-zone categories school=$hasSchool kg=$hasKindergarten pg=$hasPlayground n=${arr.length()}")
+    }
+
+    @Test
+    fun vallset_kindergarten_proximity_fallback_in_corridor() {
+        val pbf = norwegianPbf()
+        val pois = loadSchoolPoisJson(pbf.absolutePath)
+        val arr = JSONArray(pois)
+        val kg =
+            (0 until arr.length())
+                .map { arr.getJSONObject(it) }
+                .firstOrNull {
+                    it.optString("category") == "kindergarten" &&
+                        it.optString("name").contains("Vallset", ignoreCase = true)
+                }
+                ?: error("Vallset barnehage not indexed in ${pbf.name}")
+        val lat = kg.getDouble("lat")
+        val lon = kg.getDouble("lon")
+        val route =
+            """
+            [
+              {"lat":${lat + 0.0008},"lon":${lon - 0.0004},"cum_m":0.0},
+              {"lat":${lat - 0.0008},"lon":${lon + 0.0004},"cum_m":250.0}
+            ]
+            """.trimIndent()
+        val filtered = JSONArray(schoolsNearRouteCorridorJson(pois, route, 200.0))
+        assertTrue("kindergarten must be in 200m corridor", filtered.length() >= 1)
+        val warn = nearestSchoolProximityWarningJson(filtered.toString(), lat + 0.0003, lon)
+        assertTrue("expected 142 at kindergarten: $warn", warn.contains("\"code\":\"142\""))
+        assertTrue("expected kindergarten category: $warn", warn.contains("\"category\":\"kindergarten\""))
+    }
+
+    @Test
+    fun clustered_child_zones_emit_single_nearest_warning() {
+        val clustered =
+            """
+            [
+              {"osm_id":1,"lat":60.68110,"lon":11.34220,"name":"Vallset skole","category":"school","kind":"way_centroid"},
+              {"osm_id":2,"lat":60.68216,"lon":11.34090,"name":"Vallset barnehage","category":"kindergarten","kind":"node"},
+              {"osm_id":3,"lat":60.68105,"lon":11.34225,"name":"Playground","category":"playground","kind":"node"}
+            ]
+            """.trimIndent()
+        val warn = nearestSchoolProximityWarningJson(clustered, 60.68050, 11.34200)
+        assertTrue("expected single 142 warning: $warn", warn.contains("\"code\":\"142\""))
+        assertTrue("expected children_proximity: $warn", warn.contains("\"source\":\"children_proximity\""))
+        assertFalse("must not stack multiple warnings", warn.contains("\"warnings\""))
+        // Nearest to query point is playground at 60.68105 (shortest haversine from 60.68050, 11.34200)
+        assertTrue("nearest POI wins: $warn", warn.contains("\"category\":\"playground\""))
     }
 }

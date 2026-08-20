@@ -944,6 +944,12 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1047,6 +1053,8 @@ fun uniffi_navi_checksum_func_load_profile_poi_radii(
 ): Short
 fun uniffi_navi_checksum_func_load_road_signs_json(
 ): Short
+fun uniffi_navi_checksum_func_load_school_pois_json(
+): Short
 fun uniffi_navi_checksum_func_load_speed_cameras_json(
 ): Short
 fun uniffi_navi_checksum_func_load_truck_rest_settings(
@@ -1056,6 +1064,8 @@ fun uniffi_navi_checksum_func_load_vehicle_limits(
 fun uniffi_navi_checksum_func_nearby_places(
 ): Short
 fun uniffi_navi_checksum_func_nearest_road_sign_warning_json(
+): Short
+fun uniffi_navi_checksum_func_nearest_school_proximity_warning_json(
 ): Short
 fun uniffi_navi_checksum_func_nearest_speed_camera_warning_json(
 ): Short
@@ -1152,6 +1162,8 @@ fun uniffi_navi_checksum_func_save_profile_poi_radii(
 fun uniffi_navi_checksum_func_save_truck_rest_settings(
 ): Short
 fun uniffi_navi_checksum_func_save_vehicle_limits(
+): Short
+fun uniffi_navi_checksum_func_schools_near_route_corridor_json(
 ): Short
 fun uniffi_navi_checksum_func_search_places(
 ): Short
@@ -1346,6 +1358,8 @@ fun uniffi_navi_fn_func_load_profile_poi_radii(`dataDir`: RustBuffer.ByValue,`pr
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_road_signs_json(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_load_school_pois_json(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_speed_cameras_json(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_truck_rest_settings(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1355,6 +1369,8 @@ fun uniffi_navi_fn_func_load_vehicle_limits(`dataDir`: RustBuffer.ByValue,uniffi
 fun uniffi_navi_fn_func_nearby_places(`indexDbPath`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_nearest_road_sign_warning_json(`signsJson`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_nearest_school_proximity_warning_json(`schoolsJson`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_nearest_speed_camera_warning_json(`camerasJson`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`optedIn`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1452,6 +1468,8 @@ fun uniffi_navi_fn_func_save_truck_rest_settings(`dataDir`: RustBuffer.ByValue,`
 ): Byte
 fun uniffi_navi_fn_func_save_vehicle_limits(`dataDir`: RustBuffer.ByValue,`limits`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_schools_near_route_corridor_json(`schoolsJson`: RustBuffer.ByValue,`simSamplesJson`: RustBuffer.ByValue,`marginM`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_search_places(`indexDbPath`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_set_osm_weekly_reminder(`dataDir`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -1730,6 +1748,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_load_road_signs_json() != 61490.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_load_school_pois_json() != 39766.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_load_speed_cameras_json() != 9336.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1743,6 +1764,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_nearest_road_sign_warning_json() != 37591.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_nearest_school_proximity_warning_json() != 56216.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_nearest_speed_camera_warning_json() != 25638.toShort()) {
@@ -1887,6 +1911,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_save_vehicle_limits() != 61328.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_schools_near_route_corridor_json() != 55087.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_search_places() != 16235.toShort()) {
@@ -4601,6 +4628,19 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Load child-zone POIs (`amenity=school`, `amenity=kindergarten`, `leisure=playground`)
+         * from a region PBF (nodes + way boundary nodes + centroids).
+         */ fun `loadSchoolPoisJson`(`pbfPath`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_load_school_pois_json(
+        FfiConverterString.lower(`pbfPath`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Load speed cameras from a PBF as JSON (point + average-speed records).
          */ fun `loadSpeedCamerasJson`(`pbfPath`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
@@ -4649,6 +4689,19 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_nearest_road_sign_warning_json(
         FfiConverterString.lower(`signsJson`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Nearest children-zone proximity fallback warning JSON (empty object when none).
+         * Picks the single closest POI across school/kindergarten/playground — no stacked warnings.
+         */ fun `nearestSchoolProximityWarningJson`(`schoolsJson`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_nearest_school_proximity_warning_json(
+        FfiConverterString.lower(`schoolsJson`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),_status)
 }
     )
     }
@@ -5190,6 +5243,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_save_vehicle_limits(
         FfiConverterString.lower(`dataDir`),FfiConverterTypeFfiVehicleLimits.lower(`limits`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Keep school POIs within `margin_m` of the route corridor (`sim_samples_json`).
+         */ fun `schoolsNearRouteCorridorJson`(`schoolsJson`: kotlin.String, `simSamplesJson`: kotlin.String, `marginM`: kotlin.Double): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_schools_near_route_corridor_json(
+        FfiConverterString.lower(`schoolsJson`),FfiConverterString.lower(`simSamplesJson`),FfiConverterDouble.lower(`marginM`),_status)
 }
     )
     }

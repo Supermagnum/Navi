@@ -473,6 +473,8 @@ private fun NaviMapScreen() {
     var speedCamerasJson by remember { mutableStateOf("[]") }
     var speedCameraWarning by remember { mutableStateOf(SpeedCameraWarningState()) }
     var roadSignsJson by remember { mutableStateOf("[]") }
+    var schoolPoisJson by remember { mutableStateOf("[]") }
+    var routeSchoolPoisJson by remember { mutableStateOf("[]") }
     var roadSignWarning by remember { mutableStateOf(RoadSignWarningState()) }
     var hideChrome by remember { mutableStateOf(false) }
     var hideSearch by remember { mutableStateOf(false) }
@@ -508,6 +510,18 @@ private fun NaviMapScreen() {
             java.util.concurrent.atomic
                 .AtomicBoolean(false)
         }
+    val roadSignsJsonRef =
+        remember {
+            java.util.concurrent.atomic
+                .AtomicReference("[]")
+        }
+    roadSignsJsonRef.set(roadSignsJson)
+    val routeSchoolPoisJsonRef =
+        remember {
+            java.util.concurrent.atomic
+                .AtomicReference("[]")
+        }
+    routeSchoolPoisJsonRef.set(routeSchoolPoisJson)
     val applyFixRef =
         remember {
             java.util.concurrent.atomic
@@ -888,6 +902,18 @@ private fun NaviMapScreen() {
             parseRouteSimSamples(
                 runCatching { pending.simSamplesJson }.getOrDefault("[]"),
             )
+        routeSchoolPoisJson =
+            if (schoolPoisJson != "[]" && routeSamples.size >= 2) {
+                runCatching {
+                    uniffi.navi.schoolsNearRouteCorridorJson(
+                        schoolPoisJson,
+                        runCatching { pending.simSamplesJson }.getOrDefault("[]"),
+                        200.0,
+                    )
+                }.getOrDefault("[]")
+            } else {
+                "[]"
+            }
         routeManeuvers =
             parseRouteManeuvers(
                 runCatching { pending.maneuversJson }.getOrDefault("[]"),
@@ -997,9 +1023,30 @@ private fun NaviMapScreen() {
     LaunchedEffect(dataDir) {
         val pbf = resolveRegionPbf() ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            runCatching {
-                roadSignsJson = uniffi.navi.loadRoadSignsJson(pbf.absolutePath)
-            }
+            val raw =
+                runCatching { uniffi.navi.loadRoadSignsJson(pbf.absolutePath) }
+                    .getOrElse {
+                        NaviMapTestHooks.lastRoadSignsIndexed = -2
+                        return@withContext
+                    }
+            roadSignsJson = raw
+            NaviMapTestHooks.lastRoadSignsIndexed =
+                if (raw.contains("\"error\"")) {
+                    -3
+                } else {
+                    runCatching { org.json.JSONArray(raw).length() }.getOrDefault(0)
+                }
+            val schoolRaw =
+                runCatching {
+                    uniffi.navi.loadSchoolPoisJson(pbf.absolutePath)
+                }.getOrDefault("[]")
+            NaviMapTestHooks.lastSchoolPoisIndexed =
+                if (schoolRaw.contains("\"error\"")) {
+                    -2
+                } else {
+                    runCatching { org.json.JSONArray(schoolRaw).length() }.getOrDefault(0)
+                }
+            schoolPoisJson = schoolRaw
         }
     }
 
@@ -1649,22 +1696,48 @@ private fun NaviMapScreen() {
                     } else {
                         speedCameraWarning = SpeedCameraWarningState()
                     }
-                    if (roadSignsJson != "[]" &&
-                        uniffi.navi.roadSignJurisdictionAllows(loc.latitude, loc.longitude)
-                    ) {
-                        val signJson =
+                    val signJson =
+                        if (roadSignsJsonRef.get() != "[]" &&
+                            uniffi.navi.roadSignJurisdictionAllows(loc.latitude, loc.longitude)
+                        ) {
                             uniffi.navi.nearestRoadSignWarningJson(
-                                roadSignsJson,
+                                roadSignsJsonRef.get(),
                                 loc.latitude,
                                 loc.longitude,
                             )
-                        roadSignWarning =
-                            roadSignWarningFromJson(signJson).copy(
-                                preferMetric = driveHud.preferMetric,
+                        } else {
+                            "{}"
+                        }
+                    val schoolFallbackJson =
+                        if (routeSchoolPoisJsonRef.get() != "[]") {
+                            uniffi.navi.nearestSchoolProximityWarningJson(
+                                routeSchoolPoisJsonRef.get(),
+                                loc.latitude,
+                                loc.longitude,
                             )
-                    } else {
-                        roadSignWarning = RoadSignWarningState()
-                    }
+                        } else {
+                            "{}"
+                        }
+                    val signState = roadSignWarningFromJson(signJson)
+                    val schoolState = roadSignWarningFromJson(schoolFallbackJson)
+                    val finalRoadSignJson =
+                        when {
+                            // Real mapped children warning (142) has priority over proximity fallback.
+                            signState.active && signState.code == "142" -> signJson
+                            // Proximity fallback when no explicit children-sign tag is active.
+                            schoolState.active -> schoolFallbackJson
+                            else -> signJson
+                        }
+                    roadSignWarning =
+                        roadSignWarningFromJson(finalRoadSignJson).copy(
+                            preferMetric = driveHud.preferMetric,
+                        )
+                    NaviMapTestHooks.lastRoadSignWarningJson =
+                        if (roadSignWarning.active) finalRoadSignJson else "{}"
+                    NaviMapTestHooks.lastSchoolProximityWarningJson = schoolFallbackJson
+                    NaviMapTestHooks.lastRouteSchoolPoiCount =
+                        runCatching { org.json.JSONArray(routeSchoolPoisJsonRef.get()).length() }
+                            .getOrDefault(0)
                     val offAction =
                         offRouteCoordinator.onFix(
                             offRoute = snap.offRoute,

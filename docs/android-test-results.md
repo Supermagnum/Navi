@@ -393,3 +393,56 @@ cargo test -p driver-break-core 'basemap::regions::tests'
   -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.UsRoutesRegionFollowupTest
 adb logcat -s UsRoutesFollowup:I CycleWaterFollowup:I
 ```
+
+## Item 13 — Norwegian road signs + children-zone proximity (SM-P613, 2026-08-20)
+
+Device: **SM-P613** (`R52TB0JQEDE`). Fixture: **Ostlandet** Geofabrik extract.
+Log tags: `RoadSignIntegration`, `RoadSignSchool`.
+
+### Implementation summary
+
+| Layer | What shipped |
+|---|---|
+| Catalogue | Vendored Supermagnum/road-signs (`be4dda9`); 116 SVG keys; Norway jurisdiction gate |
+| Tagged signs | PBF scan at region load; `nearest_road_sign_warning_json`; approach box |
+| Children-zone fallback | `amenity=school`, `amenity=kindergarten`, `leisure=playground` POIs; 200 m route corridor; single generic **142** warning (`source=children_proximity`); explicit tagged **142** wins |
+| Dedup | Nearest POI across categories — no stacked warnings when school + kindergarten cluster |
+
+### Device tests
+
+| Test | Result | Notes |
+|---|---|---|
+| `RoadSignIntegrationInstrumentedTest` (5 methods) | **PASS** | Index includes all three POI categories; Vallset barnehage corridor; cluster dedup; 200 m boundary; `NO:109` probe unchanged |
+| `RoadSignSchoolCorridorInstrumentedTest#vallset_skole_proximity_school_warning_on_real_route` | **PASS** | Real Fv1890 corridor; `142` at ~67 m; screenshot `vallset_skole_school_proximity_142.png` |
+
+Evidence screenshots: [`docs/screenshots/road-signs/`](screenshots/road-signs/).
+
+### Commands
+
+```bash
+./scripts/build-android-native.sh aarch64-linux-android release
+./gradlew :app:installDebug :app:installDebugAndroidTest
+adb shell am instrument -w -e class \
+  'no.navi.app.RoadSignIntegrationInstrumentedTest,no.navi.app.RoadSignSchoolCorridorInstrumentedTest#vallset_skole_proximity_school_warning_on_real_route' \
+  no.navi.app.test/no.navi.app.NaviAndroidTestRunner
+cargo test -p driver-break-core road_sign::
+```
+
+Design reference: [`road-signs.md`](road-signs.md).
+
+## Item 14 — PMTiles/DEM download progress (Luxembourg bbox, SM-P613, 2026-08-20)
+
+Instrumented: `LuxembourgDownloadProgressInstrumentedTest` (log tag
+`LuxembourgProgress`). Verifies monotonic byte progress and non-stale labels during
+Protomaps region + DEM queue/download for `europe/luxembourg` (small bbox — fast
+on-device check).
+
+Fixes covered: coalesced range download progress callbacks; indexed-map convert
+stage labels on the shared `download_progress` channel; Tools status shows plain
+**"Download in progress…"** during OSM apply (Item 10) — no raw FFI dumps.
+
+```bash
+./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.LuxembourgDownloadProgressInstrumentedTest
+adb logcat -s LuxembourgProgress:I NaviDownload:I
+```

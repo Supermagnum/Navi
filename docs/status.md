@@ -1,6 +1,6 @@
 # Documentation status map (canonical sources)
 
-Last updated: 2026-08-07.
+Last updated: 2026-08-20.
 
 Readers should not need to cross-reference half a dozen overlapping “status”
 documents. Use this map. Point-in-time reports stay as historical evidence;
