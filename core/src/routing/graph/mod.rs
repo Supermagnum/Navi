@@ -29,10 +29,11 @@ pub use cache::{
     load_reweighted_graph, save_reweighted_graph, GraphCacheFingerprint,
 };
 pub use network_pref::{
-    apply_official_network_preference, difficulty_notes_for_path, is_official_route_relation,
-    is_pilgrim_route_relation, load_named_route_entries, load_official_network_way_ids,
-    load_pilgrim_route_way_ids, load_way_difficulty_tags, NamedRouteEntry, OfficialNetworkKind,
-    NON_NETWORK_PENALTY,
+    apply_official_network_preference, apply_slow_road_preference, difficulty_notes_for_path,
+    is_official_route_relation, is_pilgrim_route_relation, load_named_route_entries,
+    load_official_network_way_ids, load_pilgrim_route_way_ids, load_way_difficulty_tags,
+    slow_road_edge_multiplier, NamedRouteEntry, OfficialNetworkKind, HIGH_SPEED_ROAD_KMH,
+    HIGH_SPEED_ROAD_PENALTY, NON_NETWORK_PENALTY,
 };
 pub use reweight::reweight_graph_for_eco;
 pub use road_near::{

@@ -190,3 +190,202 @@ Instrumented: `HudVerificationInstrumentedTest` **PASS** (2/2), including new
 Also fixed while enabling gestures: track-overlay Canvas forwards touches to MapView;
 camera-idle is source of truth for zoom/lat/lon (poll no longer overwrites);
 bearing updates no longer re-apply Compose zoom.
+
+## Item 10 — OSM update copy, cross-region prompts, expanded catalog (2026-08-19)
+
+Instrumented: `no.navi.app.OsmUpdateCatalogRoutingFollowupTest` (+ isolated
+`d_sweden_border_keyboard_prompt` re-run). Device: **Samsung Galaxy Tab S6 Lite
+(SM-P613)**, serial `R52TB0JQEDE`, Android 14. App **0.2.0** installed
+2026-08-19 23:24 local. Evidence base: working tree on **`db67dc2`** (OSM
+user-copy, Sweden border coverage, catalog granularity notes — uncommitted at
+time of run).
+
+Connected suite result:
+
+```
+tests=4 failures=0  (full class, ordered a→b→c + d re-run isolated)
+```
+
+| Test method | Result |
+|---|---|
+| `a_keyboard_five_routes_missing_coverage` | **PASS** (logs; Sweden case inconclusive in batch — see re-run) |
+| `b_catalog_granularity_sweden_us_russia_germany` | **PASS** |
+| `c_osm_check_and_apply_show_plain_language` | **PASS** |
+| `d_sweden_border_keyboard_prompt` (isolated re-run) | **PASS** |
+
+Log tag: `OsmCatalogFollowup`.
+
+### OSM update messaging (Tools toggles)
+
+| | Before (bug) | After (confirmed on device) |
+|---|---|---|
+| **Check for OSM updates** | Raw FFI/planner dump shown in Tools status, e.g. `USER_VISIBLE=true`, `local_sequence=…`, `Full re-download recommended… reason=Local Geofabrik sequence unknown…`, or `OSM update check unsupported.\nreason=No region_meta.json…` | **"New map data is available. Tap Apply pending OSM update to download."** (when update available) or plain up-to-date / no-region strings |
+| **Apply pending OSM update** | Raw apply report, e.g. `PASS\nmethod=full_redownload\nreason=…` piped into status | **"Download in progress…"** then **"Map data updated. Preparing search and routes in the background."** when indexing starts |
+
+Implementation: `OsmUpdateUserCopy.kt` maps check/apply reports; Tools status
+and bottom toast use `userFacingStatus()` safety net. Unit tests:
+`OsmUpdateUserCopyTest`.
+
+Device evidence (2026-08-19): Check → *"New map data is available…"*; Apply →
+*"Download in progress…"*. No `method=`, `reason=`, `USER_VISIBLE=`, or
+`region_meta` strings in on-screen copy.
+
+### Cross-region / cross-border routing (keyboard entry, car profile)
+
+Fixture: **Ostlandet-only** download (`ostlandet-latest.osm.pbf`). Routes entered
+via Route search coordinates (`lat, lon`) per standing keyboard rule.
+
+| Route | Prompt? | Suggested download | Notes |
+|---|---|---|---|
+| **Grotli → Hjelle** | **Yes** | `europe/norway/vestlandet` | Destination west of Ostlandet bbox (`lon` 7.16 < min 7.5) |
+| **Os → Røros** | **Yes** | `europe/norway` (country) | Cross-landsdel trip; dialog copy names Norway |
+| **Fagernes → Gol** | **No** | — | Both waypoints inside Ostlandet bbox; planning started (`indexing area…`) |
+| **Strandlykkja → Morskogen** | **No** | — | Both inside Ostlandet bbox; batch run interrupted by long Fagernes→Gol plan |
+| **Rundfloen tollstasjon → Långflons Köpcentrum** | **Yes** (isolated re-run) | **`europe/sweden`** | Norway→Sweden border case; message: *"…is in Sweden, which is not downloaded. Download Sweden to plan this trip."*; **Download Sweden** action; dismiss clean (`poly=0`) |
+
+Sweden fix: `RegionCoverage` uses Norway–Sweden border polyline +
+identity-aware coverage (Ostlandet bbox overlap no longer masks Sweden).
+Re-run log: `path=europe/sweden`, `prompted=true`.
+
+### Expanded Geofabrik catalog (Tools download scope)
+
+Honest granularity from Geofabrik HEAD + on-device picker notes
+(`GeofabrikDownloadCatalog.regionGranularityNote`):
+
+| Picker request | Real Geofabrik granularity | Confirmed size / behaviour |
+|---|---|---|
+| **Sweden → Kronobergs län** | **Country only** — Geofabrik page: *"No sub regions are defined for this region."* | `europe/sweden-latest.osm.pbf` **~814 MB**; `europe/sweden/kronobergs-lan` returns **~2.9 KB HTML stub** (not a PBF) |
+| **USA → West Virginia** | US **state** extracts exist; country picker lists `north-america/us` only | `north-america/us/west-virginia-latest.osm.pbf` **~98 MB**; typed-path download started on device |
+| **Russia** | Country **+ federal districts** on Geofabrik; **no district chips** in Tools picker today | `russia-latest.osm.pbf` **~4.1 GB**; `russia/kaliningrad-latest.osm.pbf` **~28 MB** download started; bogus slug `russia/central-federal-district` is HTML stub — UI note points at typed paths like `russia/kaliningrad` |
+| **Germany → Bremen** | German **Bundesland** extracts exist; picker lists country only | `europe/germany/bremen-latest.osm.pbf` **~21 MB**; typed-path download started on device |
+
+Norway remains the only country with **Region in country** sub-region chips
+(Ostlandet, Vestlandet, …). Other countries: switch to **Country** or type a
+Geofabrik subpath in the path field.
+
+### Commands
+
+```bash
+./gradlew :app:installDebug :app:installDebugAndroidTest
+./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.OsmUpdateCatalogRoutingFollowupTest
+# Sweden border only (after batch inconclusive):
+./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.OsmUpdateCatalogRoutingFollowupTest#d_sweden_border_keyboard_prompt
+adb logcat -s OsmCatalogFollowup:I
+```
+
+Unit tests (host): `./gradlew :app:testDebugUnitTest --tests no.navi.app.OsmUpdateUserCopyTest --tests no.navi.app.RegionCoverageTest --tests no.navi.app.GeofabrikDownloadCatalogTest`
+
+## Item 11 — Cycle routing, US routes, water POI pickup (SM-P613, 2026-08-20)
+
+Device: **SM-P613** (`R52TB0JQEDE`). Fixture: **Ostlandet** +
+eventual **west-virginia** / **nevada** downloads. Log tags:
+`CycleWaterFollowup`, `UsRoutesFollowup`.
+
+### Norway cycle routes (keyboard station names)
+
+| Route | Profile | Result | Notes |
+|---|---|---|---|
+| **Elverum stasjon → Tynset stasjon** | Bicycle | **PASS** | FTS snap 60.883/11.547 → 62.275/10.776; **211 km** multi-leg UI plan; `slow_road_preference=applied` on single-leg audit (**204 km**); corridor uses **Nord-Østerdalsveien**, pilgrim/cycling network, local roads — **no Rv 3 or Fv 237 in street labels** (official cycling network + speed-class penalty avoids Rv 3 without labelled Fv 237 segments) |
+| **Gjøvik stasjon → Kyrkjestølen** | Bicycle | **PASS** (prompt) | Missing-coverage dialog: *"Download **Norway** so the whole corridor is covered."* `path=europe/norway`; no polyline (expected) |
+
+### US routes — initial pass (bugs found)
+
+| Route | Profile | Initial result | Blocker |
+|---|---|---|---|
+| **CKB → Stringtown → Sandusky WV** | Car | Blocked | Missing-coverage suggested **`russia`** (bug); WV only **partial** (~89 MB) on disk |
+| **Reese River → Eureka B&B NV** | Car | Blocked | Same **`russia`** suggestion; Nevada not downloaded |
+
+### Water POI pickup (Norway)
+
+| Route | Count | Examples |
+|---|---|---|
+| Elverum → Tynset | **4** | Unnamed sources near Elverum start; **Bjørns kilde** (~61.562, 11.164) at ~96 km along corridor |
+| Gjøvik → Kyrkjestølen | N/A | No route (coverage prompt) |
+
+---
+
+## Item 12 — Region-suggestion fix, partial resume, US routes completed (SM-P613, 2026-08-20)
+
+### 1. Russia region-suggestion bug — root cause and fix
+
+**Root cause:** `suggest_geofabrik_path_for_point` picked the **smallest bbox area**
+among all matches. **`russia`** and **`north-america/us`** both use Geofabrik
+index bboxes spanning **longitude −180°…+180°** (antimeridian/world-spanning
+metadata). For US points both match; Russia's **lat span is narrower**, so its
+bbox **area** was smaller than the US country bbox — Russia won incorrectly.
+
+**Fix** (`core/src/routing/basemap/regions.rs`):
+
+- Added `bbox_is_coarse_longitude_fallback()` (lon span ≥ 120°).
+- Two-pass selection: prefer **non-coarse** bboxes first, then coarse country
+  fallbacks only if nothing tighter matches.
+- Added **`north-america/us/west-virginia`** and **`north-america/us/nevada`**
+  state bboxes (from Geofabrik index geometries).
+- `RegionCoverage.suggestGeofabrikPath()` now delegates to UniFFI
+  `suggestGeofabrikPath()` (single source of truth).
+
+**Verified on device** (`UsRoutesRegionFollowupTest#a_region_suggestion_us_and_regression`):
+
+| Coordinate | Before | After |
+|---|---|---|
+| CKB area (39.297, −80.228) | `russia` | **`north-america/us/west-virginia`** |
+| Reese River (39.434, −117.272) | `russia` | **`north-america/us/nevada`** |
+| Oslo regression (59.91, 10.75) | (unchanged) | **`europe/norway/ostlandet`** |
+
+Rust unit tests: `us_state_beats_global_longitude_country_extracts`,
+`coarse_longitude_fallback_only_when_no_tighter_match` — **PASS**.
+
+**Proactive audit:** other coarse-longitude catalog entries include
+`north-america/us`, `russia`, `antarctica`, and `australia-oceania` — all
+excluded from the tight-match pass so sub-regions win when present.
+
+### 2. Stale West Virginia `.partial` download
+
+**Finding: expected behaviour, not a resume bug.**
+
+- `west-virginia-latest.osm.pbf.partial` (**~89 MB**) from the earlier catalog
+  session was **not consumed** on the cycle-routing pass because the missing-coverage
+  prompt suggested **`russia`**, the user/test **dismissed** without starting a WV
+  download, and `downloadedGeofabrikPaths()` intentionally lists **complete**
+  `.osm.pbf` files only (> 1 MB), not `.partial` siblings.
+- The shared HTTP downloader (`core/src/download/http.rs`) **does** auto-resume
+  from `.partial` when `provision_region_data` / `download_file` runs for the
+  same destination filename.
+- **Confirmed on follow-up:** `provisionRegionData` for WV resumed the partial
+  and finished **`west-virginia-latest.osm.pbf`** at **98 339 645 bytes** (~2 s
+  after test start — not a full re-download).
+- Added explicit resume logging in `provision_region` when a non-empty partial
+  exists before download.
+
+### 3. US routes re-run (complete downloads + planning)
+
+Downloads (`UsRoutesRegionFollowupTest`):
+
+| Region | File size | Method |
+|---|---|---|
+| West Virginia | **98 MB** | Resume from partial + complete |
+| Nevada | **123 MB** | Fresh download (~11 s) |
+
+Routes (Car profile; keyboard **`lat, lon`** entry in UI; native `planCarRoute`
+for planning — UI Plan exceeded 10 min on first US graph build on SM-P613):
+
+| Route | Distance | Result | Water POIs |
+|---|---|---|---|
+| **CKB (39.297, −80.228) → Stringtown (39.456, −79.707) → Sandusky WV (39.556, −80.859)** | **201 km** (2 legs) | **PASS** | **1** — `water:8996923368` at (39.517, −80.095), sample ~108 km |
+| **Reese River (39.434, −117.272) → Eureka (39.513, −115.962)** | **134 km** | **PASS** | **46** along corridor (many mapped spring/water nodes in central NV; e.g. `water:10015106031` at route start) |
+
+WV low POI count is plausible (rural highway corridor); Nevada high count
+matches OSM spring density in the Reese River / Austin area — not a pickup bug.
+
+### Commands
+
+```bash
+./scripts/build-android-native.sh aarch64-linux-android release
+./gradlew :app:installDebug :app:installDebugAndroidTest
+cargo test -p driver-break-core 'basemap::regions::tests'
+./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.UsRoutesRegionFollowupTest
+adb logcat -s UsRoutesFollowup:I CycleWaterFollowup:I
+```

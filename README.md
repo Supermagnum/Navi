@@ -106,7 +106,8 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Moving icons** | Can draw nearby tracked markers on the map. A live radio feed is not built in yet. | Partial |
 | **Seasonal road closures** | OSM `motor_vehicle:conditional` / `access:conditional` hard-filtered against the planned departure time (Car/Truck honour it; Hiking/Bicycle do not). Verified on Friisvegen (way `361797686`) on both bbox/PBF fallback and pack-hit (graph pack **v3**). Purely OSM-tag-driven — no jurisdiction pack. **v1 limitation:** multi-day trips that cross a season boundary are evaluated only at the planned departure instant (not re-evaluated day-by-day along the trip). | Done |
 | **Speed camera warnings** | Point cameras use the existing approach distance-phase UX; average-speed / section-control zones use a distinct enter/exit box. `maxspeed:conditional` is evaluated against live local time. Jurisdiction-gated like EC561 / allemannsretten: Norway/UK opt-in (OSM-sourced, may be incomplete); Germany/France/Switzerland and unknown jurisdictions decline — see [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). First-run opt-in dialog required (not silently enabled). | Done (display/warning only — no route-avoidance toggle, by deliberate product decision) |
-| **Map updates** | Only when you ask — check for OpenStreetMap updates or download a fresh region. Never silent. | Done |
+| **Map updates** | Only when you ask — check for OpenStreetMap updates or download a fresh region. Never silent. On-screen copy is plain language (no internal planner dumps). | Done |
+| **Cross-region / cross-country prompts** | Destinations outside downloaded data (including another country, e.g. Sweden) show **Map data needed** with the correct Geofabrik extract — not a silent partial route. Evidence: [`android-test-results.md` Item 10](docs/android-test-results.md#item-10--osm-update-copy-cross-region-prompts-expanded-catalog-2026-08-19). | Done |
 | **Diagnostic logging** | Tools toggle writes a session log (GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system) you can copy over USB/MTP — no adb required. Files: **Internal storage → Documents → debug** (`navi_session_*.log`). | Done |
 | **Plugins** | A safe sandbox for future add-ons exists; product plugins are not shipped yet. | Host ready |
 
@@ -185,6 +186,9 @@ To are checked against the bounding boxes of downloaded Geofabrik extracts.
 - If From and To need **different** landsdels (or similar splits), the prompt
   prefers a **country** extract (e.g. Norway). The planner uses a **single**
   region file and does not stitch two extracts into one trip.
+- Cross-border destinations (e.g. Sweden) get a **country-specific** suggestion
+  when the waypoint lies in another catalog entry — see
+  [`android-test-results.md` Item 10](docs/android-test-results.md#item-10--osm-update-copy-cross-region-prompts-expanded-catalog-2026-08-19).
 
 **Already navigating.** There is no continuous “you left the map” fence while
 you drive.
@@ -452,6 +456,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/build-windows.md`](docs/build-windows.md) | Windows host: MSVC, tools, Android NDK, adb, Android install |
 | [`docs/debugging.md`](docs/debugging.md) | Debugging |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | Physical device checklist |
+| [`docs/android-test-results.md`](docs/android-test-results.md) | Chronological on-device / emulator instrumented evidence |
 | [`docs/status.md`](docs/status.md) | Which docs are live status vs historical evidence |
 | [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Tracked future-proofing / open risk items |
 | [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md) | Phased evaluation of preprocess-once indexed routing maps |

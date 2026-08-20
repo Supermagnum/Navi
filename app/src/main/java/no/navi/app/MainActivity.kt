@@ -349,6 +349,9 @@ private fun formatEbikePlanStatus(
 private fun userFacingStatus(raw: String): String {
     val t = raw.trim()
     if (t.isEmpty()) return ""
+    if (OsmUpdateUserCopy.looksTechnical(t)) {
+        return OsmUpdateUserCopy.sanitize(t)
+    }
     if (t.contains("TEST_KIND=") || t.contains("detected_cores=") || t.contains("DATA_SOURCE=")) {
         return when {
             t.contains("PASS") && t.contains("distance_km=") -> {
@@ -474,6 +477,7 @@ private fun NaviMapScreen() {
     var regionDownloadProgress by remember { mutableStateOf("") }
     var downloadPolling by remember { mutableStateOf(false) }
     var indexedMapsUiLine by remember { mutableStateOf("") }
+    var placeIndexUiLine by remember { mutableStateOf("") }
     var planningRoute by remember { mutableStateOf(false) }
     var routePlanProgress by remember { mutableStateOf("") }
 
@@ -876,6 +880,8 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastBreakPoiCount = breaks.size
         NaviMapTestHooks.lastManeuversJson =
             runCatching { pending.maneuversJson }.getOrDefault("[]")
+        NaviMapTestHooks.lastSimSamplesJson =
+            runCatching { pending.simSamplesJson }.getOrDefault("[]")
         routeSamples =
             parseRouteSimSamples(
                 runCatching { pending.simSamplesJson }.getOrDefault("[]"),
@@ -945,8 +951,10 @@ private fun NaviMapScreen() {
             File(context.filesDir, "icons").also { ensureIconsCopied(context, it) }
         }
 
+    fun placeIndexDbForWrite(): File = File(dataDir, "place_index.db")
+
     fun resolvePlaceIndexDb(): File {
-        val preferred = File(dataDir, "place_index.db")
+        val preferred = placeIndexDbForWrite()
         // Prefer the app-local copy. /data/local/tmp may look readable (canRead)
         // on the AVD but SQLite open still fails under the app sandbox.
         if (preferred.isFile && preferred.length() > 10_000L) {
@@ -1273,13 +1281,12 @@ private fun NaviMapScreen() {
     }
 
     // Rebuild a pre-context place index when the region PBF is already on device
-    // (app upgrade). Current schema is a cheap cache hit.
+    // (app upgrade). Runs on a process-scoped job so composition restart cannot
+    // cancel the multi-minute PBF scan before place_index.db is written.
     LaunchedEffect(dataDir) {
         val pbf = resolveRegionPbf()
         if (pbf != null && pbf.isFile) {
-            withContext(Dispatchers.IO) {
-                ensurePlaceIndex(pbf.absolutePath, resolvePlaceIndexDb().absolutePath)
-            }
+            PlaceIndexBackground.ensureStarted(pbf, placeIndexDbForWrite())
         }
     }
 
@@ -1294,6 +1301,13 @@ private fun NaviMapScreen() {
                 val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
                 IndexedMapsBackground.ensureStarted(scope, pbf, dataDir, elev)
                 indexedMapsUiLine = IndexedMapsBackground.uiLine(pbf, dataDir)
+                placeIndexUiLine =
+                    if (PlaceIndexBackground.isRunning()) {
+                        "Place index: building (background)"
+                    } else {
+                        val st = PlaceIndexBackground.statusLine()
+                        if (st == "idle") "" else "Place index: $st"
+                    }
             } else {
                 indexedMapsUiLine = ""
             }
@@ -1445,6 +1459,7 @@ private fun NaviMapScreen() {
             if (NaviMapTestHooks.ignoreLiveGpsFixes && !testOrSim) return
             // Always update map GPS mark from a valid fix.
             if (loc.latitude != 0.0 || loc.longitude != 0.0) {
+                NaviMapTestHooks.lastGpsProvider = provider
                 // Mirror into native so lastGpsFix() / currentSpeedKmh() stay live.
                 val speedKmh =
                     if (loc.hasSpeed() && loc.speed.isFinite() && loc.speed >= 0f) {
@@ -1543,6 +1558,7 @@ private fun NaviMapScreen() {
                             OverspeedHud.isOverspeed(speedKmh, limit, speedAccKmh)
                         NaviMapTestHooks.lastCurrentStreet = road
                         NaviMapTestHooks.lastCurrentSpeedLimitKmh = limit
+                        NaviMapTestHooks.lastOverspeed = over
                         if (
                             driveHud.currentStreet != road ||
                             driveHud.currentSpeedKmh != speedKmh ||
@@ -1721,6 +1737,7 @@ private fun NaviMapScreen() {
                             )
                         driveHud =
                             driveHud.copy(currentSpeedKmh = speedKmh, overspeed = over)
+                        NaviMapTestHooks.lastOverspeed = over
                     }
                     // Idle GPS: nearest OSM way (bbox graph), place-index only as fallback.
                     val now = android.os.SystemClock.elapsedRealtime()
@@ -1800,6 +1817,7 @@ private fun NaviMapScreen() {
                                             currentSpeedLimitKmh = nearInfo.speedLimitKmh,
                                             overspeed = over,
                                         )
+                                    NaviMapTestHooks.lastOverspeed = over
                                 }
                                 interim == null && clearIfFar && driveHud.currentStreet != null -> {
                                     driveHud =
@@ -1810,6 +1828,7 @@ private fun NaviMapScreen() {
                                         )
                                     NaviMapTestHooks.lastCurrentStreet = null
                                     NaviMapTestHooks.lastCurrentSpeedLimitKmh = null
+                                    NaviMapTestHooks.lastOverspeed = false
                                 }
                             }
                         }
@@ -2072,7 +2091,11 @@ private fun NaviMapScreen() {
                                     longitude = inject.second
                                     time = System.currentTimeMillis()
                                     accuracy = 5f
+                                    NaviMapTestHooks.pendingInjectFixSpeedKmh?.let { kmh ->
+                                        speed = (kmh / 3.6).toFloat()
+                                    }
                                 }
+                            NaviMapTestHooks.pendingInjectFixSpeedKmh = null
                             applyFixRef.get().invoke(loc)
                         }
                         val hikeAns = NaviMapTestHooks.requestHikingRerouteAnswer
@@ -2791,7 +2814,7 @@ private fun NaviMapScreen() {
                                             withContext(Dispatchers.IO) {
                                                 ensurePlaceIndex(
                                                     pbf.absolutePath,
-                                                    resolvePlaceIndexDb().absolutePath,
+                                                    placeIndexDbForWrite().absolutePath,
                                                 )
                                             }
                                         } else {
@@ -3056,6 +3079,7 @@ private fun NaviMapScreen() {
                                             NaviMapTestHooks.missingCoveragePromptVisible = true
                                             NaviMapTestHooks.lastMissingCoveragePath =
                                                 missing.suggestedGeofabrikPath
+                                            NaviMapTestHooks.lastMissingCoverageMessage = missing.message
                                             status = missing.message
                                             return@launch
                                         }
@@ -4388,9 +4412,7 @@ private fun NaviMapScreen() {
                         }
                     } else {
                         Text(
-                            "Sub-region chips are listed for Norway only today. " +
-                                "Enter a Geofabrik subpath in the field below " +
-                                "(e.g. europe/germany/bayern), or switch back to Country.",
+                            GeofabrikDownloadCatalog.regionGranularityNote(selectedGeofabrikPath),
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.testTag("region_chips_norway_only_note"),
                         )
@@ -4452,7 +4474,7 @@ private fun NaviMapScreen() {
                                             withContext(Dispatchers.IO) {
                                                 ensurePlaceIndex(
                                                     pbf.absolutePath,
-                                                    resolvePlaceIndexDb().absolutePath,
+                                                    placeIndexDbForWrite().absolutePath,
                                                 )
                                             }
                                         } else {
@@ -4517,6 +4539,13 @@ private fun NaviMapScreen() {
                             indexedMapsUiLine,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.testTag("indexed_maps_bg_status"),
+                        )
+                    }
+                    if (placeIndexUiLine.isNotBlank()) {
+                        Text(
+                            placeIndexUiLine,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("place_index_bg_status"),
                         )
                     }
                     if (regionDownloadProgress.isNotBlank()) {
@@ -4739,15 +4768,19 @@ private fun NaviMapScreen() {
                     Button(
                         onClick = {
                             scope.launch {
-                                status =
+                                val raw =
                                     withContext(Dispatchers.IO) {
                                         checkOsmUpdates(dataDir.absolutePath)
                                     }
-                                pendingUpdatePlan = status
+                                pendingUpdatePlan = raw
+                                status = OsmUpdateUserCopy.forCheckReport(raw)
                                 updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .testTag("btn_check_osm_updates"),
                     ) {
                         Text("Check for OSM updates")
                     }
@@ -4756,17 +4789,17 @@ private fun NaviMapScreen() {
                             scope.launch {
                                 val plan = pendingUpdatePlan
                                 if (plan.isNullOrBlank() || plan.contains("up to date", ignoreCase = true)) {
-                                    status = "Run Check for OSM updates first, or already up to date."
+                                    status = OsmUpdateUserCopy.NEED_CHECK
                                     return@launch
                                 }
                                 if (plan.contains("Unsupported", ignoreCase = true) ||
                                     plan.contains("unsupported", ignoreCase = true)
                                 ) {
-                                    status = "This extract has no Geofabrik binding. Bind a region or re-download."
+                                    status = OsmUpdateUserCopy.NO_BINDING
                                     return@launch
                                 }
-                                status = "Applying OSM update (user confirmed)..."
-                                status =
+                                status = OsmUpdateUserCopy.APPLYING
+                                val raw =
                                     withContext(Dispatchers.IO) {
                                         applyOsmUpdate(dataDir.absolutePath)
                                     }
@@ -4774,13 +4807,13 @@ private fun NaviMapScreen() {
                                 // applyOsmUpdate clears place_index + graph-cache and
                                 // fingerprints the new PBF so packs become stale_pbf.
                                 // Mirror the download button: rebuild index + queue packs.
-                                if (status.contains("PASS", ignoreCase = true)) {
+                                if (raw.contains("PASS", ignoreCase = true)) {
                                     val pbf = resolveRegionPbf()
                                     if (pbf != null && pbf.isFile) {
                                         withContext(Dispatchers.IO) {
                                             ensurePlaceIndex(
                                                 pbf.absolutePath,
-                                                resolvePlaceIndexDb().absolutePath,
+                                                placeIndexDbForWrite().absolutePath,
                                             )
                                         }
                                         val elevDir =
@@ -4791,14 +4824,19 @@ private fun NaviMapScreen() {
                                             dataDir,
                                             elevDir,
                                         )
-                                        status =
-                                            "$status | place index rebuild started; " +
-                                            "indexed maps: background"
+                                        status = OsmUpdateUserCopy.UPDATED_INDEXING
+                                    } else {
+                                        status = OsmUpdateUserCopy.UPDATED
                                     }
+                                } else {
+                                    status = OsmUpdateUserCopy.forApplyReport(raw)
                                 }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .testTag("btn_apply_osm_update"),
                         enabled = !pendingUpdatePlan.isNullOrBlank(),
                     ) {
                         Text("Apply pending OSM update")
@@ -4875,7 +4913,11 @@ private fun NaviMapScreen() {
                     ) {
                         Text("Export diagnostic log")
                     }
-                    Text(status, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        userFacingStatus(status),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("tools_status"),
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = {

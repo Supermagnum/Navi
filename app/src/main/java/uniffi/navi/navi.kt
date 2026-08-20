@@ -936,6 +936,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1156,6 +1158,8 @@ fun uniffi_navi_checksum_func_suggest_geofabrik_path(
 fun uniffi_navi_checksum_func_travel_profile_menu_focus(
 ): Short
 fun uniffi_navi_checksum_func_update_gps_fix(
+): Short
+fun uniffi_navi_checksum_func_water_pois_along_polyline(
 ): Short
 fun uniffi_navi_checksum_method_ffitrackstore_all(
 ): Short
@@ -1448,6 +1452,8 @@ fun uniffi_navi_fn_func_travel_profile_menu_focus(`profile`: RustBuffer.ByValue,
 ): Byte
 fun uniffi_navi_fn_func_update_gps_fix(`lat`: Double,`lon`: Double,`available`: Byte,`speedKmh`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+fun uniffi_navi_fn_func_water_pois_along_polyline(`dataDir`: RustBuffer.ByValue,`pbfPath`: RustBuffer.ByValue,`polyline`: RustBuffer.ByValue,`sampleStepKm`: Double,`radiusM`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun ffi_navi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1881,6 +1887,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_update_gps_fix() != 48545.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_water_pois_along_polyline() != 62262.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_method_ffitrackstore_all() != 9523.toShort()) {
@@ -3499,6 +3508,53 @@ public object FfiConverterTypePlaceHit: FfiConverterRustBuffer<PlaceHit> {
 
 
 
+/**
+ * Water-source POI hit sampled along a planned route polyline.
+ */
+data class WaterPoiAlongRoute (
+    var `name`: kotlin.String, 
+    var `lat`: kotlin.Double, 
+    var `lon`: kotlin.Double, 
+    var `sampleKm`: kotlin.Double, 
+    var `distM`: kotlin.Double
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWaterPoiAlongRoute: FfiConverterRustBuffer<WaterPoiAlongRoute> {
+    override fun read(buf: ByteBuffer): WaterPoiAlongRoute {
+        return WaterPoiAlongRoute(
+            FfiConverterString.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WaterPoiAlongRoute) = (
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterDouble.allocationSize(value.`lat`) +
+            FfiConverterDouble.allocationSize(value.`lon`) +
+            FfiConverterDouble.allocationSize(value.`sampleKm`) +
+            FfiConverterDouble.allocationSize(value.`distM`)
+    )
+
+    override fun write(value: WaterPoiAlongRoute, buf: ByteBuffer) {
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterDouble.write(value.`lat`, buf)
+            FfiConverterDouble.write(value.`lon`, buf)
+            FfiConverterDouble.write(value.`sampleKm`, buf)
+            FfiConverterDouble.write(value.`distM`, buf)
+    }
+}
+
+
+
 
 enum class FfiIconTheme {
     
@@ -3984,6 +4040,34 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypePlaceHit.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer<List<WaterPoiAlongRoute>> {
+    override fun read(buf: ByteBuffer): List<WaterPoiAlongRoute> {
+        val len = buf.getInt()
+        return List<WaterPoiAlongRoute>(len) {
+            FfiConverterTypeWaterPoiAlongRoute.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WaterPoiAlongRoute>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWaterPoiAlongRoute.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WaterPoiAlongRoute>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWaterPoiAlongRoute.write(it, buf)
         }
     }
 }
@@ -5152,6 +5236,19 @@ public object FfiConverterSequenceTypePlaceHit: FfiConverterRustBuffer<List<Plac
         FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterBoolean.lower(`available`),FfiConverterOptionalDouble.lower(`speedKmh`),_status)
 }
     
+    
+
+        /**
+         * Sample a route polyline every `sample_step_km` and collect unique water POIs
+         * within `radius_m` of each sample (indexed pack preferred, PBF fallback).
+         */ fun `waterPoisAlongPolyline`(`dataDir`: kotlin.String, `pbfPath`: kotlin.String, `polyline`: kotlin.String, `sampleStepKm`: kotlin.Double, `radiusM`: kotlin.Double): List<WaterPoiAlongRoute> {
+            return FfiConverterSequenceTypeWaterPoiAlongRoute.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_water_pois_along_polyline(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`polyline`),FfiConverterDouble.lower(`sampleStepKm`),FfiConverterDouble.lower(`radiusM`),_status)
+}
+    )
+    }
     
 
 

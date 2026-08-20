@@ -18,10 +18,10 @@ use driver_break_core::icons::{self, IconTheme};
 use driver_break_core::poi::{rest_area_suitable_for_weekly, PoiCategory, PoiIndex, PoiRecord};
 use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
 use driver_break_core::routing::graph::{
-    apply_official_network_preference, difficulty_notes_for_path, load_official_network_way_ids,
-    load_or_build_reweighted, load_or_build_reweighted_bbox, load_pilgrim_route_way_ids,
-    load_way_difficulty_tags, max_waypoint_snap_m, OfficialNetworkKind, RoadLabelSticky,
-    RoadNodeIndex, RouteGraph, RouteOptions, RoutingProfile, SnapTooFar,
+    apply_official_network_preference, apply_slow_road_preference, difficulty_notes_for_path,
+    load_official_network_way_ids, load_or_build_reweighted, load_or_build_reweighted_bbox,
+    load_pilgrim_route_way_ids, load_way_difficulty_tags, max_waypoint_snap_m, OfficialNetworkKind,
+    RoadLabelSticky, RoadNodeIndex, RouteGraph, RouteOptions, RoutingProfile, SnapTooFar,
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::safety::{
@@ -2091,6 +2091,10 @@ fn plan_car_route_inner(
             &mut report,
         );
     }
+    if profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric {
+        apply_slow_road_preference(&mut graph);
+        report.push_str("slow_road_preference=applied; profile=bicycle\n");
+    }
     let network_pref_ms = timer.lap_ms();
     report.push_str(&format!(
         "build_s={build_s:.2}; cache_hit={cache_hit}; pack_hit={pack_hit}; nodes={}; edges={}\n",
@@ -2808,6 +2812,8 @@ pub fn plan_hiking_route(
         prefer_pilgrim_routes,
         &mut report,
     );
+    apply_slow_road_preference(&mut graph);
+    report.push_str("slow_road_preference=applied; profile=hiking\n");
     let network_pref_ms = timer.lap_ms();
     report.push_str(&format!(
         "build_s={build_s:.2}; cache_hit={cache_hit}; pack_hit={pack_hit}; nodes={}; edges={}\n",
@@ -3464,6 +3470,69 @@ pub fn indexed_maps_status(pbf_path: String, data_dir: String) -> String {
         },
         Err(e) => format!("error: {e:#}\n"),
     }
+}
+
+/// Water-source POI hit sampled along a planned route polyline.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct WaterPoiAlongRoute {
+    pub name: String,
+    pub lat: f64,
+    pub lon: f64,
+    pub sample_km: f64,
+    pub dist_m: f64,
+}
+
+/// Sample a route polyline every `sample_step_km` and collect unique water POIs
+/// within `radius_m` of each sample (indexed pack preferred, PBF fallback).
+#[uniffi::export]
+pub fn water_pois_along_polyline(
+    data_dir: String,
+    pbf_path: String,
+    polyline: String,
+    sample_step_km: f64,
+    radius_m: f64,
+) -> Vec<WaterPoiAlongRoute> {
+    let data_dir = PathBuf::from(data_dir);
+    let pbf = PathBuf::from(pbf_path);
+    let poi_index =
+        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan(&data_dir, &pbf) {
+            Ok((poi, _)) => poi,
+            Err(_) => match PoiIndex::load_from_pbf(&pbf) {
+                Ok(i) => i,
+                Err(_) => return Vec::new(),
+            },
+        };
+    let samples = sample_polyline_km(&polyline);
+    if samples.len() < 2 {
+        return Vec::new();
+    }
+    let total = samples.last().map(|s| s.2).unwrap_or(0.0);
+    let step = sample_step_km.max(1.0);
+    let mut seen = std::collections::HashSet::<i64>::new();
+    let mut out = Vec::new();
+    let mut km = 0.0;
+    while km <= total + 0.01 {
+        let (lat, lon) = interpolate_at_km(&samples, km);
+        for w in poi_index.nearest(PoiCategory::Water, lat, lon, radius_m) {
+            if !seen.insert(w.osm_id) {
+                continue;
+            }
+            let name = w
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("water:{}", w.osm_id));
+            let dist = haversine_m(lat, lon, w.lat, w.lon);
+            out.push(WaterPoiAlongRoute {
+                name,
+                lat: w.lat,
+                lon: w.lon,
+                sample_km: km,
+                dist_m: dist,
+            });
+        }
+        km += step;
+    }
+    out
 }
 
 /// Offline place / address-style name search (FTS5 prefix).

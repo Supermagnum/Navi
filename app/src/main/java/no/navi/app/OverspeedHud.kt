@@ -12,9 +12,9 @@ object OverspeedHud {
      * Minimum positive delta (km/h) before painting overspeed.
      *
      * **Not** a float-epsilon. The first ship used `+0.5` as an arbitrary
-     * “barely over” check with no real-GPS tuning; that is tighter than typical
+     * "barely over" check with no real-GPS tuning; that is tighter than typical
      * consumer GNSS speed noise (Android `getSpeedAccuracyMetersPerSecond` is a
-     * 68% band often ~0.5–1+ m/s ≈ 1.8–3.6+ km/h; open-sky Doppler can be better,
+     * 68% band often ~0.5-1+ m/s (~ 1.8-3.6+ km/h); open-sky Doppler can be better,
      * multipath / weak sky worse). A `+0.5` margin therefore flickers when the
      * vehicle is legally at/under the limit and the fix jitters.
      *
@@ -23,14 +23,10 @@ object OverspeedHud {
      * fix reports [Location.hasSpeedAccuracy], the effective margin is
      * `max(MARGIN_KMH, speedAccuracyKmh)` so poor reception widens the gate.
      *
-     * **Validation:** [GpsSpeedNoiseInstrumentedTest] samples live
-     * `GPS_PROVIDER` / fused Doppler (never the route simulator). On SM-P613
-     * indoors (2026-08-11) that run collected **0** speed samples
-     * (`gnss used_in_fix=0`); the 3.0 floor therefore rests on Android’s
-     * documented 68% speed-accuracy band and open-sky consumer GNSS guidance
-     * (~±0.8 km/h good conditions; multipath/weak sky worse) until an outdoor
-     * re-run of that test confirms p95 spurious speed ≤ margin. Do not shrink
-     * back toward +0.5 without that outdoor evidence.
+     * **Validation:** [SimOverspeedInstrumentedTest] exercises overspeed on
+     * routed roads via the built-in simulator (legal speed vs injected over-limit
+     * fixes). Outdoor live-GPS noise sizing ([GpsSpeedNoiseInstrumentedTest]) is
+     * optional and omitted when no sky lock is available.
      */
     const val MARGIN_KMH: Double = 3.0
 

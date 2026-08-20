@@ -138,6 +138,10 @@ object NaviMapTestHooks {
     @Volatile
     var lastMissingCoveragePath: String = ""
 
+    /** Last missing-coverage dialog body (instrumented tests). */
+    @Volatile
+    var lastMissingCoverageMessage: String = ""
+
     /** Whether the missing-coverage download dialog is visible. */
     @Volatile
     var missingCoveragePromptVisible: Boolean = false
@@ -277,6 +281,10 @@ object NaviMapTestHooks {
     /** Last planned maneuvers JSON (same payload as UniFFI `maneuversJson`). */
     @Volatile
     var lastManeuversJson: String = "[]"
+
+    /** Last planned simulation samples JSON (street labels along the corridor). */
+    @Volatile
+    var lastSimSamplesJson: String = "[]"
 
     /** Full overlay polyline from the last planned / injected route. */
     @Volatile
@@ -589,9 +597,24 @@ object NaviMapTestHooks {
     @Volatile
     var lastGpsSpeedKmh: Double? = null
 
+    /** Last LocationManager provider that fed applyFix (gps/network/passive/sim). */
+    @Volatile
+    var lastGpsProvider: String = ""
+
     /** Last resolved applicable speed limit (km/h). */
     @Volatile
     var lastCurrentSpeedLimitKmh: Double? = null
+
+    /** Last bottom-HUD overspeed chrome flag (mirrored from MainActivity). */
+    @Volatile
+    var lastOverspeed: Boolean = false
+
+    /**
+     * Optional speed (km/h) for the next [pendingInjectFixLatLon] inject.
+     * Cleared after one shot.
+     */
+    @Volatile
+    var pendingInjectFixSpeedKmh: Double? = null
 
     /**
      * When set, MainActivity applies this as [DriveHudState.currentStreet] once
