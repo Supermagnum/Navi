@@ -19,6 +19,8 @@ phones. Reference checks so far: Samsung Galaxy Tab S6 Lite (**SM-P613**) and
 Google Pixel 9a (**tegu**, phone cutout / API 36+). Cars and other shapes still
 differ for GPS, maps, GPU, and layout. Checklist:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+On-device and emulator results:
+[`docs/android-test-results.md`](docs/android-test-results.md).
 How to help: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
 
 ## Table of contents
@@ -113,8 +115,9 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 
 **Hardware note:** Real-device checks include Samsung Galaxy Tab S6 Lite
 (**SM-P613**) and Google Pixel 9a. Car head units still need more real-world
-testing before treating this as ship-ready. See [Screenshots](#screenshots) and
-[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+testing before treating this as ship-ready. See [Screenshots](#screenshots),
+[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md), and
+[`docs/android-test-results.md`](docs/android-test-results.md).
 
 ## What you need to download
 
