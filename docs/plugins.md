@@ -245,12 +245,12 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 
 | | |
 |---|---|
-| **Benefit** | Export Navi nav state (speed, limit, next maneuver, ETA, break timing, eco, polyline) to open-source clusters and AGL via VSS/Kuksa.val, with a simple JSON fallback |
-| **Docs** | [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) — VSS mapping + `Vehicle.Private.Navi.*`, `navi.cluster.v1` JSON, host-mediated publish, AGL scope boundary |
-| **Host duties** | Assemble guidance snapshot; implement Kuksa.val / loopback JSON / log sinks; user opt-in; never grant raw sockets to WASM |
-| **Guest duties** | Decide what/when to publish; call `vehicle_signal_publish`; enforce no-route clear for rest fields |
+| **Benefit** | Export Navi nav state (speed, limit, overspeed chrome, next maneuver, ETA, break timing, eco, polyline, **and merged approach warnings** — road signs, children-zone proximity, speed cameras, seasonal closures) to open-source clusters and AGL via VSS/Kuksa.val, with a simple JSON fallback |
+| **Docs** | [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) — VSS mapping + `Vehicle.Private.Navi.*` (including `Warning.*`), `navi.cluster.v1` JSON, host-mediated publish, AGL scope boundary |
+| **Host duties** | Assemble guidance + **merged warning** snapshot (same UniFFI / merge order as map chrome); implement Kuksa.val / loopback JSON / log sinks; user opt-in; never grant raw sockets to WASM |
+| **Guest duties** | Decide what/when to publish; call `vehicle_signal_publish`; enforce no-route clear for rest fields and clear warning leaves when chrome is hidden |
 | **Proposed caps** | `nav_guidance_read` (new), `vehicle_signal_publish` (new), `position_read`, `log` |
-| **Notes** | Spec only — not implemented. Export only (not ECU in). Not an AGL `afm` / Wayland packaging effort. |
+| **Notes** | Spec only — not implemented. Export only (not ECU in; not alert audio). Not an AGL `afm` / Wayland packaging effort. |
 
 ### 10. UI language / translation (`i18n` / `ui_translation`)
 
@@ -272,7 +272,7 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | **Host duties** | Load `{dataDir}/icon_anim/{key}/` packs; advance frames; call existing SVG rasterize; respect reduce motion |
 | **Guest duties** | Optional: validate packs / choose keys; must not download packs or play `.sif` |
 | **Proposed caps** | `icon_anim_query`, `icon_anim_frame`, `plugin_kv` / `storage`, `log` |
-| **Notes** | Spec only — not implemented. Core still renders one SVG per `rasterize_key` call. |
+| **Notes** | Spec only — not implemented. Core still renders one SVG per `rasterize_key` call. Road-sign catalogue (`no_sign_*`) remains static NLOD art unless an optional anim overlay is added later. |
 
 ### 12. Custom alert sounds (`custom_alert_sounds` / `alert_sounds`)
 
@@ -296,6 +296,17 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | **Proposed caps** | `position_read`, `poi_query`, `route_read`, `admin_region_read`, `protected_area_query` (new), `plugin_kv` / `storage`, `log` |
 | **Notes** | Spec only — not implemented. **Hiking remains the accepted interim stopgap** and does not apply horse-specific access, pace, water, or park rules. |
 
+### 14. Adaptive speed warning (`adaptive_speed_warning` / `speed_warning`)
+
+| | |
+|---|---|
+| **Benefit** | Escalating spoken overspeed alerts by **percentage over** the HUD’s applicable limit, with a long arm delay so routine overtakes do not nag, and faster disarm when the driver corrects |
+| **Docs** | [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) — `overPct` tiers, arm/disarm timers, GNSS/HUD floor, road-class modulation, split from custom-alert-sounds tones |
+| **Host duties** | Authoritative speed/limit/highway snapshot (`road_near_info` / `OverspeedHud`); `voice_speak` + optional `overspeed` earcon; audio focus / mute; USB debug under `Documents/debug/adaptive-speed-warning/` |
+| **Guest duties** | Tier state machine, arm/disarm, phrase-key selection; configurable constants in `plugin_kv` |
+| **Proposed caps** | `road_speed_state_read` (new), `voice_speak` / `voice_pack_query`, `alert_sound_play`, `plugin_kv` / `storage`, `admin_region_read` (optional), `log` |
+| **Notes** | Spec only — not implemented. Motor profiles only. Not a ticket predictor. HUD chrome stays display-only. |
+
 ### Capability sketch (not in ABI yet)
 
 | Proposed | Purpose |
@@ -314,7 +325,7 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | `admin_region_read` | Country / county for lat/lon (right-to-roam rule pack) |
 | `clock_read` | Current date for seasonal fire-ban guidance |
 | `plugin_kv` / `storage` | Small per-plugin persist (e.g. two-night camping memory, POI confirmations) |
-| `nav_guidance_read` | Active route / maneuver / ETA / break / eco / polyline snapshot for cluster export |
+| `nav_guidance_read` | Active route / maneuver / ETA / break / eco / polyline / **merged approach warning** / overspeed snapshot for cluster export |
 | `vehicle_signal_publish` | Ask host to publish VSS path/values or `navi.cluster.v1` JSON (host owns Kuksa/UDP/WS) |
 | `i18n_catalog_query` | List installed UI translation packs |
 | `i18n_string_resolve` | Resolve message id (+ args) for the active locale |
@@ -325,6 +336,7 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | `warning_event_subscribe` | Push approach-phase transitions for road signs, cameras, overspeed, closures |
 | `alert_sound_play` | Queue short alert clip by category (host owns audio device) |
 | `alert_sound_catalog` | List bundled + user override alert sound files |
+| `road_speed_state_read` | Speed, applicable limit, HUD overspeed flag, highway class, profile (adaptive speed warning) |
 
 Add a capability to `plugin-host` `Capability` enum + HostApi **before** shipping
 any guest that needs it. Until then, host-native services may write into core

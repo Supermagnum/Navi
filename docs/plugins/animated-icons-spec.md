@@ -15,6 +15,12 @@ Static custom icons (Inkscape → `.svg` / `.svgz`) remain documented in
 authoring in Synfig Studio, packaging frames or timed SVG, and presenting them
 in the Android / future hosts.
 
+**Road-sign catalogue icons** (`core/src/icons/road-signs/`, NLOD; see
+[`road-signs.md`](../road-signs.md)) stay **static** for v1 approach chrome.
+Optional animated urgency emphasis for `no_sign_*` keys is a future overlay on
+this plugin — do not re-author the Statens vegvesen catalogue inside Synfig as
+the source of truth.
+
 ---
 
 ## Current product state (do not invent a player)

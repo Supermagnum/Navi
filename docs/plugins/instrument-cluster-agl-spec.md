@@ -18,8 +18,9 @@ and **not** a full AGL Application Framework packaging effort (see § AGL scope)
 
 1. Publish a stable, read-only set of nav / vehicle-adjacent signals so a
    third-party cluster (or AGL HMI that already consumes VSS) can show speed,
-   limits, next turn, ETA, break timing, eco status, and optionally a mini-map
-   polyline.
+   limits, next turn, ETA, break timing, eco status, **approach warnings**
+   (Norwegian road signs, children-zone proximity, speed cameras, seasonal
+   closures), overspeed chrome, and optionally a mini-map polyline.
 2. Prefer **COVESA Vehicle Signal Specification (VSS)** via a
    **Kuksa.val-compatible databroker** as the primary interoperability layer.
 3. Offer a **versioned JSON** fallback for hobbyist clusters that do not run
@@ -33,10 +34,18 @@ and **not** a full AGL Application Framework packaging effort (see § AGL scope)
 - Packaging Navi as an AGL `afm` widget or integrating with Wayland/Weston
   surface sharing.
 - Opening sockets, D-Bus, or gRPC from inside the sandboxed WASM module.
-- Becoming a second source of truth for maneuvers / breaks — this plugin is a
-  **third consumer** of the same guidance state already used by the approach-
-  instruction box ([`approach-instructions.md`](../approach-instructions.md))
+- Becoming a second source of truth for maneuvers / breaks / warnings — this
+  plugin is a **third consumer** of the same guidance and warning state already
+  used by the approach-instruction box
+  ([`approach-instructions.md`](../approach-instructions.md)),
+  `RoadSignWarningBox` / speed-camera chrome ([`road-signs.md`](../road-signs.md)),
   and planned voice guidance ([`voice-guidance.md`](../voice-guidance.md)).
+- Rasterizing or shipping SVG icon bytes over VSS/JSON (publish `icon_key` /
+  `code` / phase / distance; the cluster renders its own glyph or fetches a
+  local asset pack).
+- Playing alert audio (that belongs to
+  [`custom-alert-sounds-spec.md`](custom-alert-sounds-spec.md) and
+  [`adaptive-speed-warning-spec.md`](adaptive-speed-warning-spec.md)).
 
 ---
 
@@ -46,6 +55,7 @@ and **not** a full AGL Application Framework packaging effort (see § AGL scope)
 |---|---|---|
 | Current speed | GPS / sensor thread (ground speed) | Same class of fix that feeds the map puck |
 | Posted speed limit | Current road segment maxspeed when known | Omit / null when unknown — never invent |
+| Overspeed (HUD) | `OverspeedHud.isOverspeed` | Display gate only (`MARGIN_KMH` / GNSS accuracy); not a spoken tier |
 | Next maneuver type | Shared nav-guidance state | Icon / enum aligned with approach box |
 | Next maneuver distance | Shared nav-guidance state | Metres internally |
 | Next street name | Shared nav-guidance state | Prefer OSM `name`, else `ref`; omit if neither |
@@ -54,10 +64,55 @@ and **not** a full AGL Application Framework packaging effort (see § AGL scope)
 | Eco-mode on/off | Drive / planner eco setting | |
 | Travel profile | Active `TravelProfile` | Navi-specific |
 | Route polyline | Active planned corridor geometry | For clusters with a mini-map; may be empty |
+| **Active approach warning** | Same merged chrome as the map host | Road sign, children-zone proximity, speed camera, or seasonal closure — see [§ Approach warnings](#approach-warnings-road-signs-cameras-closures) |
 
 Publish cadence: host-driven poll of the guest at a modest rate (e.g. 1–5 Hz)
 under existing fuel/timeout budgets — never starve T2 UI/audio
 ([`plugins.md`](../plugins.md) design rules).
+
+---
+
+## Approach warnings (road signs, cameras, closures)
+
+Clusters that show only next-turn + speed miss the safety chrome already on
+Navi’s map. Export the **same merged warning** the Android host would show —
+do not invent a second distance clock or a second jurisdiction gate.
+
+### Warning categories (v1 export)
+
+| Category | Host source (today) | Notes |
+|---|---|---|
+| `road_sign` | `nearest_road_sign_warning_json` | Tagged `traffic_sign=NO:…` / `hazard=*`; Norway jurisdiction; 750 / 150 / 25 m phases ([`road-signs.md`](../road-signs.md)) |
+| `children_proximity` | `nearest_school_proximity_warning_json` | Corridor fallback for `amenity=school` / `kindergarten` / `leisure=playground`; code `142`, `source=children_proximity`; explicit tagged `142` **outranks** this |
+| `speed_camera_point` / `speed_camera_section` | `nearest_speed_camera_warning_json` | First-run opt-in + jurisdiction pack; section enter/exit fields when average-speed |
+| `seasonal_closure` | Route-plan / conditional-access eval | When a hard-filtered conditional way affects the active corridor |
+| `overspeed` | `OverspeedHud` + limit | Boolean (+ optional delta); not the adaptive spoken tier table |
+
+**Merge priority** (must match Compose): explicit road sign &gt; children
+proximity &gt; speed camera (same order documented for
+[`custom-alert-sounds-spec.md`](custom-alert-sounds-spec.md)). Publish **one**
+primary `warning` object for the cluster HMI; optional `warnings[]` may list
+suppressed candidates for debug sinks only.
+
+### Snapshot fields for the primary warning
+
+| Field | Meaning |
+|---|---|
+| `category` | One of the ids above |
+| `phase` | `appear` / `urgency` (omit or null when hidden / none) |
+| `distance_m` | Along approach model |
+| `code` | Catalogue code when applicable (e.g. `142`, `109`) |
+| `icon_key` | Raster key (e.g. `no_sign_142`) — not SVG bytes |
+| `label` / `name_en` | Same strings as `RoadSignWarningBox` / camera box |
+| `source` | e.g. `children_proximity` vs tagged catalogue |
+| Camera extras | `kind`, `applicable_limit_kmh`, `zone_remaining_m`, … when category is camera |
+
+When no warning is active, set `warning` to `null` (and clear VSS warning
+leaves). Do **not** leave a previous sign’s code/distance after hide / reroute /
+jurisdiction decline.
+
+Underskilt / compound-sign limitation from [`road-signs.md`](../road-signs.md)
+applies: export the **base sign only** that the host shows.
 
 ---
 
@@ -118,9 +173,20 @@ Vehicle.Private.Navi.*
 | Travel profile | `Vehicle.Private.Navi.Eco.Profile` (string enum) |
 | Route polyline (encoded) | `Vehicle.Private.Navi.Route.Polyline` (see JSON schema encoding) |
 | Route active | `Vehicle.Private.Navi.Route.Active` |
+| Overspeed (HUD) | `Vehicle.Private.Navi.Speed.Overspeed` (bool) |
+| Warning active | `Vehicle.Private.Navi.Warning.Active` |
+| Warning category | `Vehicle.Private.Navi.Warning.Category` |
+| Warning phase | `Vehicle.Private.Navi.Warning.Phase` |
+| Warning distance (m) | `Vehicle.Private.Navi.Warning.DistanceM` |
+| Warning code | `Vehicle.Private.Navi.Warning.Code` |
+| Warning icon key | `Vehicle.Private.Navi.Warning.IconKey` |
+| Warning label | `Vehicle.Private.Navi.Warning.Label` |
+| Warning source | `Vehicle.Private.Navi.Warning.Source` |
 
 When `Route.Active` is false, clear or withhold Rest.* and trip remaining fields
 (and set `Rest.Active=false`) so clusters never display a stale break countdown.
+When no approach warning is shown, set `Warning.Active=false` and clear or
+withhold the other `Warning.*` leaves.
 
 ---
 
@@ -151,11 +217,22 @@ No cloud upload. Opt-in in host settings; off by default (privacy /
     "h_acc_m": 5.0
   },
   "speed_limit_kmh": 80,
+  "overspeed": false,
   "route_active": true,
   "maneuver": {
     "type": "turn_right",
     "distance_m": 320,
     "street_name": "Storgata"
+  },
+  "warning": {
+    "category": "children_proximity",
+    "phase": "urgency",
+    "distance_m": 67.2,
+    "code": "142",
+    "icon_key": "no_sign_142",
+    "name_en": "Children",
+    "label": "Children zone: Vallset skole",
+    "source": "children_proximity"
   },
   "trip": {
     "eta": "2026-07-24T04:15:00Z",
@@ -177,20 +254,41 @@ No cloud upload. Opt-in in host settings; off by default (privacy /
 }
 ```
 
+Example tagged road-sign `warning` (same schema, different category/source):
+
+```json
+{
+  "category": "road_sign",
+  "phase": "appear",
+  "distance_m": 410,
+  "code": "109",
+  "icon_key": "no_sign_109",
+  "name_en": "School",
+  "label": "School",
+  "source": "traffic_sign"
+}
+```
+
 **Null / omit rules**
 
 - `speed_limit_kmh`: omit or `null` if unknown.
+- `overspeed`: `false` when limit unknown or HUD gate not met.
 - `maneuver`: `null` when no upcoming guidance (same hide rules as approach box
   when far from a turn — or always publish next-in-route if the cluster prefers
   continuous guidance; host setting, default = match approach-box relevance).
+- `warning`: `null` when no active approach chrome (hidden / passed / declined
+  jurisdiction / cameras opted out). Never leave a previous sign after hide.
 - When `route_active` is **false**: `trip` and `rest` must be `null` (or
   `rest.active=false` with other rest fields null). Never leave a previous
-  trip’s break timer in the payload.
+  trip’s break timer in the payload. Children-zone proximity and corridor
+  cameras may still clear with no route; tagged roadside signs may remain if
+  the host evaluates them on idle GPS (match map behaviour).
 - `route.polyline`: empty string or omit when no active corridor; host may
   down-sample for UDP size.
 
 Semver: breaking JSON changes bump `navi.cluster.vN`. Additive optional fields
-may appear within `v1` without a bump if clients ignore unknowns.
+(`warning`, `overspeed`) may appear within `v1` without a bump if clients
+ignore unknowns.
 
 ---
 
@@ -226,10 +324,15 @@ arbitrary network access, even when the *feature* is “networking.”
 
 | Capability | Direction | Purpose |
 |---|---|---|
-| `nav_guidance_read` (new) | host → guest | JSON blob: speed, limit, maneuver, ETA, break, eco, profile, polyline, `route_active` |
+| `nav_guidance_read` (new) | host → guest | JSON blob: speed, limit, overspeed, maneuver, **merged warning**, ETA, break, eco, profile, polyline, `route_active` |
 | `vehicle_signal_publish` (new) | guest → host | Publish one or more path/value pairs (VSS path string + typed value), or a whole `navi.cluster.v1` document for the JSON sink |
 | `position_read` | existing | Fallback / corroboration |
 | `log` | existing | Debug |
+
+Host assembly for `nav_guidance_read` must reuse the same UniFFI warning
+helpers the map already calls (`nearest_road_sign_warning_json`,
+`nearest_school_proximity_warning_json`, `nearest_speed_camera_warning_json`,
+jurisdiction / opt-in gates) — see [`API.md`](../API.md).
 
 Suggested import sketch (exact ABI TBD when implemented):
 
@@ -277,8 +380,9 @@ Example `plugin.json`:
 ```
 
 UI requirement: before enabling, show that the plugin may export location,
-speed, and route guidance to a **user-configured** local databroker / JSON
-endpoint. No silent grant.
+speed, route guidance, and **approach warnings** (road signs, children-zone
+proximity, speed cameras when opted in) to a **user-configured** local
+databroker / JSON endpoint. No silent grant.
 
 Until `vehicle_signal_publish` and `nav_guidance_read` exist on
 `Capability` / HostApi, this guest **cannot** load — add the enum variants and
@@ -304,9 +408,14 @@ but separate projects.
 | Doc | Relation |
 |---|---|
 | [`plugins.md`](../plugins.md) | Host isolation, capability gating, roadmap entry |
-| [`approach-instructions.md`](../approach-instructions.md) | Shared next-maneuver semantics |
-| [`voice-guidance.md`](../voice-guidance.md) | Same guidance state, different consumer |
+| [`approach-instructions.md`](../approach-instructions.md) | Shared next-maneuver + 750 / 150 / 25 m phases |
+| [`road-signs.md`](../road-signs.md) | Catalogue, jurisdiction, children-zone proximity merge |
+| [`current-street.md`](../current-street.md) | Speed / limit / overspeed chrome |
+| [`plugins/custom-alert-sounds-spec.md`](custom-alert-sounds-spec.md) | Same warning categories for audio; this plugin exports state only |
+| [`plugins/adaptive-speed-warning-spec.md`](adaptive-speed-warning-spec.md) | Spoken overspeed tiers — not duplicated here beyond HUD `overspeed` bool |
+| [`voice-guidance.md`](../voice-guidance.md) | Same maneuver guidance state, different consumer |
 | [`hud-layout.md`](../hud-layout.md) / Drive HUD | Break / ETA / eco display rules; no-route guard |
+| [`API.md`](../API.md) | UniFFI warning / speed-limit helpers the host snapshot must call |
 | [`ECU.md`](../ECU.md#6-vehicle-side-protocol-reference-obd-2-can) | Opposite direction (vehicle → Navi); OBD-2/CAN DIY cluster reference — do not conflate |
 | [`PROTOCOLS.md`](../PROTOCOLS.md) | Index entry for VSS/JSON export |
 
@@ -318,12 +427,16 @@ but separate projects.
    linker wiring; extend isolation tests (deny without grant; allow with mock
    log sink).
 2. Host: assemble `nav_guidance_read` snapshot from Android/Linux sensor +
-   active route + guidance + rest HUD inputs (respect `route_active`).
+   active route + guidance + rest HUD inputs + **merged approach warning**
+   (road sign / children proximity / camera / closure) + HUD overspeed
+   (respect `route_active`, jurisdiction, camera opt-in).
 3. Reference WASM guest: read snapshot → `vehicle_signal_publish` batch each
-   call; host logs paths.
+   call (including `Vehicle.Private.Navi.Warning.*`); host logs paths.
 4. Host backends behind a trait: `LogSink`, then `KuksaSink`, then `JsonUdpSink`
    / `JsonWsSink`.
 5. Document pinned VSS catalog version + overlay `.vspec` for
-   `Vehicle.Private.Navi.*`.
+   `Vehicle.Private.Navi.*` (including Warning.*).
 6. User settings: enable plugin, choose sink, databroker URL / JSON port;
    default **off**.
+7. Tests: Vallset-style children-zone / tagged `109` fixtures publish
+   `warning` then clear to `null` after hide; opted-out cameras never appear.

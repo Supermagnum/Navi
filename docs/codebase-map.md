@@ -37,6 +37,7 @@ Default Cargo workspace members: `core`, `plugin-host` (see root `Cargo.toml`).
 |---|---|
 | `MainActivity.kt` | App shell: MapLibre camera, GPS / sim `applyFix`, route planning calls, HUD state, settings sheets wiring |
 | `DriveHud.kt` | Top / bottom HUD bars, map settings sheet (auto-zoom, 3D, tilt), drive settings sheet |
+| `OverspeedHud.kt` | Display-only overspeed gate (`MARGIN_KMH`, GNSS accuracy); used by bottom speed line |
 | `MapHudPrefs.kt` | SharedPreferences for HUD: default zoom, tilt presets, 3D opt-in, metric, Geofabrik path |
 | `ApproachInstructionBox.kt` | Next-turn approach chrome (icon, distance, street / house / postcode layout) |
 | `RouteGuidanceModels.kt` | Kotlin models for maneuvers, samples, approach display helpers |
@@ -130,10 +131,28 @@ next maneuver”).
 | Product rules / no-route policy | [`current-street.md`](current-street.md) |
 | Sample `street` + highway | `guidance_path::build_sim_samples` |
 | Class fallback labels | `eta::highway_class_display_label` (aligned with `highway_fallback_kmh`) |
-| Idle GPS nearest edge | `graph/road_near.rs` (`nearest_road_label`) + UniFFI `road_label_near` |
+| Idle GPS nearest edge | `graph/road_near.rs` (`nearest_road_label`) + UniFFI `road_label_near` / `road_near_info` |
+| Applicable limit | UniFFI `current_speed_limit_kmh`, `resolve_speed_limit_kmh`, `road_near_info` |
+| Live GPS speed | `update_gps_fix` / Android `Location.speed` → `DriveHudState.currentSpeedKmh` |
+| Speed line text | `formatHudSpeedLine` in `DriveHud.kt` (`hud_current_speed`) |
+| Overspeed colour | `OverspeedHud.isOverspeed` (not `overspeed_delta_kmh` alone) |
+| Spoken escalating overspeed | Spec only: [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) |
 | Place-index interim | UniFFI `nearby_places` + `streetLabelFromNearbyPlaces` |
 | Bottom HUD line | `BottomDriveHud` / `DriveHudState.currentStreet` |
 | Unicode pipeline notes | [`unicode-road-names.md`](unicode-road-names.md) |
+
+### Approach warnings (road signs / children zone / cameras)
+
+| What | Where |
+|---|---|
+| Product rules | [`road-signs.md`](road-signs.md), README Features (speed cameras) |
+| Catalogue + match | `core/src/routing/road_sign.rs`, `core/src/icons/road-signs/` |
+| Children-zone fallback | `load_school_pois_json`, `schools_near_route_corridor_json`, `nearest_school_proximity_warning_json` |
+| Speed cameras | `core/src/routing/speed_camera.rs` + UniFFI `nearest_speed_camera_warning_json` |
+| Compose chrome | `RoadSignWarningBox.kt`, speed-camera box in `MainActivity.kt` |
+| Merge / host wiring | `MainActivity.kt` (explicit sign outranks proximity) |
+| Alert tones (planned) | [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md) |
+| Cluster export (planned) | [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) |
 
 ### Break countdown / trip ETA
 
@@ -194,7 +213,7 @@ profiles use the road graph.
 |---|---|
 | Host + capabilities | `plugin-host/src/abi.rs`, [`plugins.md`](plugins.md) |
 | Guest helpers | `plugin-sdk/` |
-| Specs (not built) | `docs/plugins/*.md` |
+| Specs (not built) | `docs/plugins/*.md` — including custom alert sounds, horse trekking, adaptive speed warning; index in [`plugins.md`](plugins.md) |
 
 ---
 
@@ -230,4 +249,5 @@ Under the app data directory (see `NaviAppData.kt`):
 - Callable APIs: [`API.md`](API.md)
 - Wire / protocol index: [`PROTOCOLS.md`](PROTOCOLS.md)
 - HUD geometry: [`hud-layout.md`](hud-layout.md)
+- Current street / speed HUD: [`current-street.md`](current-street.md)
 - Approach product rules: [`approach-instructions.md`](approach-instructions.md)

@@ -99,10 +99,13 @@ Dette er helt valgfri støtte, ikke en betalingsmur — Navi er og forblir grati
 | **Kartmerke og lagrede steder** | Hold på kartet ~4 s for å merke et punkt; sett Fra / Via / Til eller lagre et navngitt sted (skilt fra Lagrede ruter). | Ferdig |
 | **Avvik / omberegning** | Vedvarende avvik viser **Off route**; motorprofiler omplanlegger automatisk fra live posisjon; fottur spør først. | Ferdig |
 | **Pauser og hvile** | Påminner når pause er «forfalt» og kan foreslå stopp. Bil bruker timer mellom pauser; fottur/sykling bruker rasteavstander; lastebil bruker juridiske kjøretidsregler der de er kjent. | Ferdig |
-| **Kjørefelt** | Topp: høyde (tilpasset kamerahull). Bunn: zoom, live GPS-fart, skiltet fartsgrense når kjent, pauseteller, tur-ETA, veinavn, økoblad. | Ferdig |
+| **Kjørefelt** | Topp: høyde (tilpasset kamerahull). Bunn: zoom, live GPS-fart, skiltet fartsgrense når kjent, pauseteller, tur-ETA, veinavn, økoblad. Fartslinjen bruker feilfarge ved overskridelse (kun visning — ikke taleskjenning). | Ferdig |
 | **GPS-følge** | Kartet følger deg som standard. Panorer bort, trykk deretter **Recenter**. | Ferdig |
 | **Kartrotasjon** | Nord opp, kompass eller kjøreretning. | Ferdig |
 | **Bevegelige ikoner** | Kan tegne nærliggende spormarkører på kartet. Live radiomating er ikke innebygd ennå. | Delvis |
+| **Norske vegskiltvarsler** | Vendoret `NO:`-katalog for tilnærmingsikoner i Norge; eksplisitte OSM `traffic_sign` / `hazard`-tagger. Samme 750 / 150 / 25 m-faser som svinginstruksjoner. Se [`road-signs.md`](road-signs.md). | Ferdig |
+| **Barnefasiliteter i nærheten** | Når ingen tagget barn-/skolevarselskilt finnes langs korridoren, gir skoler, barnehager og lekeplasser innen **200 m** fra planlagt rute fortsatt et generisk **142 Barn**-tilnærmingsvarsel (nærmeste POI; tagget `NO:142` går foran denne reserven). Detaljer: [`road-signs.md`](road-signs.md). | Ferdig |
+| **Fartskameravarsler** | Punktkamera bruker samme tilnærmingsfaser; snittfart / strekningskontroll har egen inn-/utboks. Jurisdiksjonsstyrt (Norge/UK opt-in; flere land avslår) — se [`jurisdiction-rules.md`](jurisdiction-rules.md). Første-gangs opt-in-dialog. | Ferdig (kun visning/varsel) |
 | **Kartoppdateringer** | Bare når du ber om det — sjekk OpenStreetMap-oppdateringer eller last en fersk region. Aldri i det stille. | Ferdig |
 | **Diagnostisk logging** | Bryter under Tools skriver en øktlogg (GPS, kamera, brytere, ruteplan/trinn, øko, POI, pauser, instruksjoner, drivstoff, system) du kan kopiere over USB/MTP — adb trengs ikke. Filer: **Intern lagring → Documents → debug** (`navi_session_*.log`). | Ferdig |
 | **Plugins** | En trygg sandkasse for fremtidige tillegg finnes; produktplugins er ikke levert ennå. | Vert klar |
@@ -239,7 +242,17 @@ ny hvilelov.
 
 **Kartstriper.** Trykk toppstripen for kart-/skjerminnstillinger. Trykk
 bunnstatusen for kjøre-/kjøretøyinnstillinger (modus, pauseintervall, drivstoff,
-elsykkel osv.).
+elsykkel osv.). Bunnstripen viser også **live GPS-fart / skiltet grense** (km/t)
+når fiks og gjeldende grense er kjent; overskridelse er bare farge i dag
+([`current-street.md`](current-street.md)). Talt, eskalerende varsel er en
+**pluginspesifikasjon**, ikke levert:
+[`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md).
+
+**Barnefasiliteter i nærheten.** Langs en planlagt rute, hvis OSM mangler tagget
+barn-/skolevarselskilt, varsler Navi likevel når skole, barnehage eller
+lekeplass ligger innen **200 m** fra korridoren — generisk skilt **142**, samme
+tilnærmingsboks som andre vegskilt. Eksplisitt tagget `NO:142` (eller
+tilsvarende) går foran denne reserven. Se [`road-signs.md`](road-signs.md).
 
 # Innstillinger
 
@@ -410,6 +423,8 @@ Fullt galleri: [`bilder.md`](bilder.md) (engelsk:
 | [`map-styles.md`](map-styles.md) | Online vs frakoblet kartutseende; 3D |
 | [`poi.md`](poi.md) | Stedstyper og søk |
 | [How to use Navi](how-to-use.md) | Brukerveiledning (planlegging, Tools, pauser, lagrede steder/ruter, profiler) — engelsk |
+| [`current-street.md`](current-street.md) | Bunn-HUD: veinavn, GPS-fart / skiltet grense, overskridelsesfarge |
+| [`road-signs.md`](road-signs.md) | Norske fareskilt, barnesone-nærhet, tilnærmingsfaser |
 | [`kartmerking-lagrede-steder.md`](kartmerking-lagrede-steder.md) | Trykk-og-hold (4 s) og lagrede steder (engelsk: [`map-marking-saved-places.md`](map-marking-saved-places.md)) |
 | [`historisk-bakgrunn.md`](historisk-bakgrunn.md) | Rast/vei-grunnlag for pauseintervaller (fottur/sykling) |
 | [`ec-561-truck-rest.md`](ec-561-truck-rest.md) | EU lastebil kjøre-/hviletid |
@@ -440,8 +455,11 @@ En sandkasse for plugins finnes, så fremtidige tillegg kan kjøre trygt.
 | [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md) | Fremtidige UI-språk (bare engelsk i dag). Oversettertabell: [`translations.csv`](plugins/translations.csv) |
 | [`plugins/right-to-roam-camping-spec.md`](plugins/right-to-roam-camping-spec.md) | Villcamping-forslag (plugin, ikke kjerne) |
 | [`plugins/safety-resupply.md`](plugins/safety-resupply.md) | Drivstoff-/vannforsyning |
-| [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Eksportere nav-tilstand til instrumentcluster |
+| [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Eksportere nav-tilstand og tilnærmingsvarsler til instrumentcluster |
 | [`plugins/animated-icons-spec.md`](plugins/animated-icons-spec.md) | Animerte ikoner |
+| [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md) | Korte varselyder (skilt, kamera, overskridelse-earcon) |
+| [`plugins/horse-trekking-spec.md`](plugins/horse-trekking-spec.md) | Ridning: forsyning og adgangsveiledning (Hiking er midlertidig stopgap) |
+| [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) | Talt, eskalerende fartsvarsel (prosenttrinn; ikke levert) |
 
 ## Ikoner (Navit)
 

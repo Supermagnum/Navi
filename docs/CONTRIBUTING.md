@@ -55,7 +55,8 @@ when rules are unclear — is a first-class contribution.
 The **plugin host is implemented and tested**; **product content plugins are
 not shipped yet on purpose**. Specs exist for contributors to pick up (camping /
 allemannsretten, safety resupply, instrument cluster / AGL, UI translation,
-animated icons, voice, APRS/CAT, …). See [`plugins.md`](plugins.md)
+animated icons, custom alert sounds, adaptive speed warning, horse trekking,
+voice, APRS/CAT, …). See [`plugins.md`](plugins.md)
 and files under [`plugins/`](plugins/). This is an open invitation, not
 an incomplete core feature.
 

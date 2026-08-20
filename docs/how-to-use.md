@@ -4,8 +4,11 @@ End-user guide for the current Android app. Verified against the Compose UI in
 `MainActivity.kt`, `DriveHud.kt`, and `MapLongPress.kt` (not older planning docs).
 
 The on-screen language is **English only**. Tap the **top bar** for map/display
-settings; tap the **bottom status area** (street / break / ETA text, not the
-zoom −/+) for **Drive / vehicle** settings.
+settings; tap the **bottom status area** (street / speed / break / ETA text, not
+the zoom −/+) for **Drive / vehicle** settings. Speed and posted limit live on
+that bar ([`current-street.md`](current-street.md)); spoken overspeed nags are
+not in the app yet
+([`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md)).
 
 ---
 

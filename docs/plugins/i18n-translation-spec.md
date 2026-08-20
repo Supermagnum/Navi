@@ -157,8 +157,12 @@ Rules:
 3. Persist `ui_locale` next to other `MapHudPrefs` / app config.
 4. On missing key: log once at debug, show English, then id if English missing.
 
-Approach-instruction street names, POI names, and basemap labels remain
-data-driven (OSM), not catalog strings.
+Approach-instruction street names, POI names, basemap labels, and **road-sign
+catalogue / children-zone warning labels** (`name_en`, `label` from
+[`road-signs.md`](../road-signs.md) / UniFFI warning JSON) remain data-driven,
+not UI catalog strings. Soft chrome around those boxes (“Children ahead”
+wrappers already in FFI, camera copy, settings titles) *can* move into packs
+when this plugin ships.
 
 ---
 

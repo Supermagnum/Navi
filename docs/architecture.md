@@ -216,7 +216,8 @@ APIs take `dataDir` / explicit paths.
 
 See [`docs/plugins.md`](docs/plugins.md) for HostApi, manifest format, isolation,
 and the planned beneficial plugins (APRS, weather, road info, CAT, ECU/EV,
-voice guidance).
+voice guidance, custom alert sounds, adaptive speed warning, and others listed
+there).
 
 ## ECU / live energy (T1)
 

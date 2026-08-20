@@ -49,6 +49,9 @@ Overspeed chrome uses [`OverspeedHud`](../app/src/main/java/no/navi/app/Overspee
 (`MARGIN_KMH = 3.0`, widened from an untuned `+0.5` float-epsilon; effective
 margin is `max(3.0, speedAccuracyKmh)` when the fix reports speed accuracy).
 Confirm outdoors with `GpsSpeedNoiseInstrumentedTest` (not the route simulator).
+Spoken escalating overspeed (percentage tiers, arm delay) is a **plugin spec
+only** — [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) —
+and must not fire unless this HUD would already paint overspeed.
 
 ---
 

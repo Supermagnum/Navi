@@ -16,7 +16,7 @@ Both drive bars are **collapsed by default**.
 | Bar | Collapsed content | Tap |
 |---|---|---|
 | Top (`TopDriveHud`) | Map label, altitude, rotation hint | Toggles `MapSettingsSheet` (rotation, Trip ETA, Breaks, Auto-zoom, experimental 3D) |
-| Bottom (`BottomDriveHud`) | Zoom −/+, **Recenter** (when the user has panned away from GPS follow), **current street** (`Currently on …`, low weight), trip ETA, eco leaf; **break countdown (time or distance) only when a route is planned** | Status area toggles `DriveSettingsSheet` (rest / fuel / eco / break display mode) |
+| Bottom (`BottomDriveHud`) | Zoom −/+, **Recenter** (when the user has panned away from GPS follow), **current street** (`Currently on …`, low weight), **speed / limit** (`hud_current_speed`; error colour when `OverspeedHud.isOverspeed`), trip ETA, eco leaf; **break countdown (time or distance) only when a route is planned** | Status area toggles `DriveSettingsSheet` (rest / fuel / eco / break display mode) |
 
 Altitude: when a DEM tile covers the fix, the HUD shows terrain height from
 on-disk Copernicus/SRTM (~MSL), not `Location.altitude` (AVD/network providers

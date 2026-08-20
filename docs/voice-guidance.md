@@ -27,6 +27,13 @@ The UI should treat them as selectable backends for the same phrase keys: if
 Piper is unavailable or disabled, fall back to recordings without changing
 maneuver trigger logic.
 
+**Scope boundary:** this plugin covers **turn-by-turn maneuver speech**. It does
+**not** own road-sign / children-zone / speed-camera alerts (see
+[`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md)) or
+escalating overspeed nags (see
+[`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md)).
+Those may share the host audio device but use different phrase / clip families.
+
 ---
 
 ## 2. Playback approach
@@ -248,6 +255,9 @@ unaffected when the setting is empty/off.
 | [`android-build.md`](android-build.md) | ABI / NDK constraints for any native audio or ONNX spike |
 | [`icons.md`](icons.md) | GPL bundling decision shared with Piper |
 | [`plugins.md`](plugins.md) | Optional future: voice as `voice_guidance` plugin ([§6](plugins.md#6-voice-guidance-voice--voice_guidance)) |
+| [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) | Spoken overspeed tiers reuse `voice_speak` / the same playback stack |
+| [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md) | Road-sign / camera / children-zone **tones** — not turn-by-turn phrases |
+| [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Exports the same maneuver + warning state to clusters (no audio) |
 
 ## Status checklist
 

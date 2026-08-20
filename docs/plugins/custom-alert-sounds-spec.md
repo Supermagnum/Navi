@@ -80,7 +80,10 @@ Rules:
 4. **Overspeed:** fire when crossing into sustained overspeed (host-defined
    threshold aligned with HUD red styling), with a minimum repeat interval
    (e.g. 60 s) so a long overspeed stretch does not spam — distinct from
-   one-shot road-sign urgency.
+   one-shot road-sign urgency. **Spoken escalating nags** are a different
+   plugin ([`adaptive-speed-warning-spec.md`](adaptive-speed-warning-spec.md));
+   when that guest is enabled, this category is an **earcon at tier
+   transition** only, not a parallel beep loop.
 
 ---
 
@@ -135,7 +138,7 @@ Example `manifest.json` (optional, not required for v1):
 
 | Category id | Trigger | Default tone character | Notes |
 |---|---|---|---|
-| `overspeed` | GPS speed &gt; posted limit (+ host hysteresis) | Short beep / double beep | Tied to bottom HUD limit display; repeats throttled |
+| `overspeed` | GPS speed &gt; posted limit (+ host hysteresis) | Short beep / double beep | Tied to bottom HUD limit display; repeats throttled unless [`adaptive-speed-warning-spec.md`](adaptive-speed-warning-spec.md) owns the voice path (then: earcon on tier change only) |
 | `road_sign_regulatory` | Approach urgency for stop/yield/prohibition-class signs (`1xx` fareskilt where catalogue marks regulatory intent, e.g. stop, no entry) | Firm, attention-grabbing | Sub-type of tagged `road_sign` warnings |
 | `road_sign_warning` | Approach urgency for hazard triangles (`1xx` general warnings: animals, ice, curves, **142 Children**) | Standard warning chime | Includes tagged `NO:142` **and** `children_proximity` fallback (same clip — driver message is identical) |
 | `road_sign_informational` | Services / direction plates that still surface in warning box (if any) | Soft ping | Lower priority; may share clip with `road_sign_warning` in bundled defaults |
@@ -244,5 +247,6 @@ Fuel/timeout: event handling is O(1) per fix; no PBF or graph work in WASM.
 - [`road-signs.md`](../road-signs.md) — catalogue, approach phases, children-zone fallback
 - [`voice-guidance.md`](../voice-guidance.md) — rodio / Symphonia playback stack
 - [`approach-instructions.md`](../approach-instructions.md) — 750 / 150 / 25 m phases
-- [`plugins/instrument-cluster-agl-spec.md`](instrument-cluster-agl-spec.md) — host-mediated I/O pattern
+- [`plugins/instrument-cluster-agl-spec.md`](instrument-cluster-agl-spec.md) — host-mediated I/O; exports the same warning categories to clusters
+- [`plugins/adaptive-speed-warning-spec.md`](adaptive-speed-warning-spec.md) — spoken escalating overspeed (percentage tiers)
 - [`plugins.md`](../plugins.md) — capability sketch and design rules
