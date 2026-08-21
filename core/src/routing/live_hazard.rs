@@ -804,40 +804,45 @@ pub fn speed_limit_cone_as_sign_warning(
         return None;
     }
     let rounded = hit.speed_limit_kmh.round() as i32;
-    let (code, icon_key) = match rounded {
-        20 => ("362.20", "no_sign_362_20"),
-        30 => ("362.30", "no_sign_362_30"),
-        40 => ("362.40", "no_sign_362_40"),
-        50 => ("362.50", "no_sign_362_50"),
-        60 => ("362.60", "no_sign_362_60"),
-        70 => ("362.70", "no_sign_362_70"),
-        80 => ("362.80", "no_sign_362_80"),
-        90 => ("362.90", "no_sign_362_90"),
-        100 => ("362.100", "no_sign_362_100"),
-        110 => ("362.110", "no_sign_362_110"),
-        other => {
-            // Snap to the nearest plate we ship an SVG for (never emit a
-            // missing `no_sign_362` key — that falls through to unknown.svg).
-            const PLATES: &[(i32, &str, &str)] = &[
-                (20, "362.20", "no_sign_362_20"),
-                (30, "362.30", "no_sign_362_30"),
-                (40, "362.40", "no_sign_362_40"),
-                (50, "362.50", "no_sign_362_50"),
-                (60, "362.60", "no_sign_362_60"),
-                (70, "362.70", "no_sign_362_70"),
-                (80, "362.80", "no_sign_362_80"),
-                (90, "362.90", "no_sign_362_90"),
-                (100, "362.100", "no_sign_362_100"),
-                (110, "362.110", "no_sign_362_110"),
-            ];
+    // Dedicated plates first (official NPRA + digit-composited extras). Odd OSM
+    // values still snap to the nearest shipped plate so we never emit a missing
+    // `no_sign_362_*` key (that falls through to unknown.svg).
+    const PLATES: &[(i32, &str, &str)] = &[
+        (5, "362.5", "no_sign_362_5"),
+        (10, "362.10", "no_sign_362_10"),
+        (15, "362.15", "no_sign_362_15"),
+        (20, "362.20", "no_sign_362_20"),
+        (25, "362.25", "no_sign_362_25"),
+        (30, "362.30", "no_sign_362_30"),
+        (35, "362.35", "no_sign_362_35"),
+        (40, "362.40", "no_sign_362_40"),
+        (45, "362.45", "no_sign_362_45"),
+        (50, "362.50", "no_sign_362_50"),
+        (55, "362.55", "no_sign_362_55"),
+        (60, "362.60", "no_sign_362_60"),
+        (65, "362.65", "no_sign_362_65"),
+        (70, "362.70", "no_sign_362_70"),
+        (75, "362.75", "no_sign_362_75"),
+        (80, "362.80", "no_sign_362_80"),
+        (85, "362.85", "no_sign_362_85"),
+        (90, "362.90", "no_sign_362_90"),
+        (95, "362.95", "no_sign_362_95"),
+        (100, "362.100", "no_sign_362_100"),
+        (105, "362.105", "no_sign_362_105"),
+        (110, "362.110", "no_sign_362_110"),
+    ];
+    let (code, icon_key) = PLATES
+        .iter()
+        .find(|(kmh, _, _)| *kmh == rounded)
+        .map(|(_, code, key)| (*code, *key))
+        .unwrap_or_else(|| {
             let (_, code, key) = PLATES
                 .iter()
-                .min_by_key(|(kmh, _, _)| (kmh - other).unsigned_abs())
+                .min_by_key(|(kmh, _, _)| (kmh - rounded).unsigned_abs())
                 .copied()
                 .unwrap_or((50, "362.50", "no_sign_362_50"));
             (code, key)
-        }
-    };
+        });
     Some(RoadSignWarning {
         phase,
         distance_m: hit.distance_m,
@@ -883,5 +888,39 @@ mod tests {
         assert_eq!(w.icon_key, "no_sign_362_20");
         assert_eq!(w.code, "362.20");
         assert!(w.label.contains("20"));
+    }
+
+    #[test]
+    fn generated_speed_plates_use_dedicated_icons() {
+        for (kmh, code, key) in [
+            (5, "362.5", "no_sign_362_5"),
+            (45, "362.45", "no_sign_362_45"),
+            (65, "362.65", "no_sign_362_65"),
+            (105, "362.105", "no_sign_362_105"),
+        ] {
+            let hit = LiveSpeedLimitCone {
+                distance_m: 80.0,
+                speed_limit_kmh: kmh as f64,
+                highway: Some("residential".into()),
+                maxspeed_posted: true,
+            };
+            let w = speed_limit_cone_as_sign_warning(&hit, Some(80.0)).expect("warning");
+            assert_eq!(w.icon_key, key, "km/h={kmh}");
+            assert_eq!(w.code, code, "km/h={kmh}");
+            assert!(w.label.contains(&kmh.to_string()), "{}", w.label);
+        }
+    }
+
+    #[test]
+    fn odd_maxspeed_still_snaps_to_nearest_shipped_plate() {
+        let hit = LiveSpeedLimitCone {
+            distance_m: 80.0,
+            speed_limit_kmh: 47.0,
+            highway: Some("tertiary".into()),
+            maxspeed_posted: true,
+        };
+        let w = speed_limit_cone_as_sign_warning(&hit, Some(80.0)).expect("warning");
+        assert_eq!(w.icon_key, "no_sign_362_45");
+        assert_eq!(w.code, "362.45");
     }
 }

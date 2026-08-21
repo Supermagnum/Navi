@@ -3572,23 +3572,23 @@
       "meaning_en": "General warning of another hazard not covered by a more specific warning sign. Often combined with a supplementary plate."
     },
     {
-      "code": "362.100",
-      "nvdb_enum_id": 8879,
+      "code": "362.5",
+      "nvdb_enum_id": null,
       "category": "speed_limit",
-      "name_nb": "Fartsgrense 100 km/t.",
-      "name_en": "Speed limit 100 km/h",
+      "name_nb": "Fartsgrense 5 km/t.",
+      "name_en": "Speed limit 5 km/h",
       "name_en_machine_translated": false,
-      "nvdb_value": "362.100 - Fartsgrense 100 km/t",
-      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362.100)",
-      "sort_order": 204,
-      "svg": "svg/speed_limit/362_100.svg",
-      "conversion_method": "geonorge_native",
+      "nvdb_value": null,
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362 family; 362.5 is a generated catalogue extension, not an NVDB enum)",
+      "sort_order": 194,
+      "svg": "svg/speed_limit/362_5.svg",
+      "conversion_method": "digit_composite_from_official_plates",
       "status": "ok",
-      "source_file": "unpacked/geonorge/362_100/362_100/362_100.svg",
+      "source_file": "generated/speed_limit/362_5.svg",
       "source_attribution": {
         "license": "NLOD 2.0",
         "license_url": "https://data.norge.no/nlod/en/2.0",
-        "attribution": "Inneholder data under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens vegvesen / Kartverket (Geonorge).",
+        "attribution": "Derived from Statens vegvesen / Kartverket (Geonorge) NLOD 2.0 sign graphics: digit outlines composited from official 362 plates. Not an original government publication for this speed value.",
         "publishers": [
           "Statens vegvesen",
           "Kartverket / Geonorge",
@@ -3637,27 +3637,29 @@
           "usage": "background / symbols"
         }
       },
-      "notes": [],
-      "meaning_en": "Mandatory maximum speed limit of 100 km/h begins."
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines."
+      ],
+      "meaning_en": "Mandatory maximum speed limit of 50 km/h begins."
     },
     {
-      "code": "362.110",
-      "nvdb_enum_id": 11816,
+      "code": "362.10",
+      "nvdb_enum_id": null,
       "category": "speed_limit",
-      "name_nb": "Fartsgrense 110 km/t.",
-      "name_en": "Speed limit 110 km/h",
+      "name_nb": "Fartsgrense 10 km/t.",
+      "name_en": "Speed limit 10 km/h",
       "name_en_machine_translated": false,
-      "nvdb_value": "362.110 - Fartsgrense 110 km/t",
-      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362.110)",
-      "sort_order": 206,
-      "svg": "svg/speed_limit/362_110.svg",
-      "conversion_method": "geonorge_native",
+      "nvdb_value": null,
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362 family; 362.10 is a generated catalogue extension, not an NVDB enum)",
+      "sort_order": 194,
+      "svg": "svg/speed_limit/362_10.svg",
+      "conversion_method": "digit_composite_from_official_plates",
       "status": "ok",
-      "source_file": "unpacked/geonorge/362_110/362_110/362_110.svg",
+      "source_file": "generated/speed_limit/362_10.svg",
       "source_attribution": {
         "license": "NLOD 2.0",
         "license_url": "https://data.norge.no/nlod/en/2.0",
-        "attribution": "Inneholder data under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens vegvesen / Kartverket (Geonorge).",
+        "attribution": "Derived from Statens vegvesen / Kartverket (Geonorge) NLOD 2.0 sign graphics: digit outlines composited from official 362 plates. Not an original government publication for this speed value.",
         "publishers": [
           "Statens vegvesen",
           "Kartverket / Geonorge",
@@ -3706,8 +3708,81 @@
           "usage": "background / symbols"
         }
       },
-      "notes": [],
-      "meaning_en": "Mandatory maximum speed limit of 110 km/h begins."
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines."
+      ],
+      "meaning_en": "Mandatory maximum speed limit of 50 km/h begins."
+    },
+    {
+      "code": "362.15",
+      "nvdb_enum_id": null,
+      "category": "speed_limit",
+      "name_nb": "Fartsgrense 15 km/t.",
+      "name_en": "Speed limit 15 km/h",
+      "name_en_machine_translated": false,
+      "nvdb_value": null,
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362 family; 362.15 is a generated catalogue extension, not an NVDB enum)",
+      "sort_order": 194,
+      "svg": "svg/speed_limit/362_15.svg",
+      "conversion_method": "digit_composite_from_official_plates",
+      "status": "ok",
+      "source_file": "generated/speed_limit/362_15.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Derived from Statens vegvesen / Kartverket (Geonorge) NLOD 2.0 sign graphics: digit outlines composited from official 362 plates. Not an original government publication for this speed value.",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines."
+      ],
+      "meaning_en": "Mandatory maximum speed limit of 50 km/h begins."
     },
     {
       "code": "362.20",
@@ -3782,6 +3857,77 @@
       "meaning_en": "Mandatory maximum speed limit of 20 km/h begins."
     },
     {
+      "code": "362.25",
+      "nvdb_enum_id": null,
+      "category": "speed_limit",
+      "name_nb": "Fartsgrense 25 km/t.",
+      "name_en": "Speed limit 25 km/h",
+      "name_en_machine_translated": false,
+      "nvdb_value": null,
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362 family; 362.25 is a generated catalogue extension, not an NVDB enum)",
+      "sort_order": 194,
+      "svg": "svg/speed_limit/362_25.svg",
+      "conversion_method": "digit_composite_from_official_plates",
+      "status": "ok",
+      "source_file": "generated/speed_limit/362_25.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Derived from Statens vegvesen / Kartverket (Geonorge) NLOD 2.0 sign graphics: digit outlines composited from official 362 plates. Not an original government publication for this speed value.",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines."
+      ],
+      "meaning_en": "Mandatory maximum speed limit of 50 km/h begins."
+    },
+    {
       "code": "362.30",
       "nvdb_enum_id": 8872,
       "category": "speed_limit",
@@ -3849,6 +3995,77 @@
       },
       "notes": [],
       "meaning_en": "Mandatory maximum speed limit of 30 km/h begins."
+    },
+    {
+      "code": "362.35",
+      "nvdb_enum_id": null,
+      "category": "speed_limit",
+      "name_nb": "Fartsgrense 35 km/t.",
+      "name_en": "Speed limit 35 km/h",
+      "name_en_machine_translated": false,
+      "nvdb_value": null,
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362 family; 362.35 is a generated catalogue extension, not an NVDB enum)",
+      "sort_order": 194,
+      "svg": "svg/speed_limit/362_35.svg",
+      "conversion_method": "digit_composite_from_official_plates",
+      "status": "ok",
+      "source_file": "generated/speed_limit/362_35.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Derived from Statens vegvesen / Kartverket (Geonorge) NLOD 2.0 sign graphics: digit outlines composited from official 362 plates. Not an original government publication for this speed value.",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines."
+      ],
+      "meaning_en": "Mandatory maximum speed limit of 50 km/h begins."
     },
     {
       "code": "362.40",
@@ -3920,6 +4137,77 @@
       "meaning_en": "Mandatory maximum speed limit of 40 km/h begins."
     },
     {
+      "code": "362.45",
+      "nvdb_enum_id": null,
+      "category": "speed_limit",
+      "name_nb": "Fartsgrense 45 km/t.",
+      "name_en": "Speed limit 45 km/h",
+      "name_en_machine_translated": false,
+      "nvdb_value": null,
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362 family; 362.45 is a generated catalogue extension, not an NVDB enum)",
+      "sort_order": 194,
+      "svg": "svg/speed_limit/362_45.svg",
+      "conversion_method": "digit_composite_from_official_plates",
+      "status": "ok",
+      "source_file": "generated/speed_limit/362_45.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Derived from Statens vegvesen / Kartverket (Geonorge) NLOD 2.0 sign graphics: digit outlines composited from official 362 plates. Not an original government publication for this speed value.",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines."
+      ],
+      "meaning_en": "Mandatory maximum speed limit of 50 km/h begins."
+    },
+    {
       "code": "362.50",
       "nvdb_enum_id": 8874,
       "category": "speed_limit",
@@ -3986,6 +4274,77 @@
         }
       },
       "notes": [],
+      "meaning_en": "Mandatory maximum speed limit of 50 km/h begins."
+    },
+    {
+      "code": "362.55",
+      "nvdb_enum_id": null,
+      "category": "speed_limit",
+      "name_nb": "Fartsgrense 55 km/t.",
+      "name_en": "Speed limit 55 km/h",
+      "name_en_machine_translated": false,
+      "nvdb_value": null,
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362 family; 362.55 is a generated catalogue extension, not an NVDB enum)",
+      "sort_order": 194,
+      "svg": "svg/speed_limit/362_55.svg",
+      "conversion_method": "digit_composite_from_official_plates",
+      "status": "ok",
+      "source_file": "generated/speed_limit/362_55.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Derived from Statens vegvesen / Kartverket (Geonorge) NLOD 2.0 sign graphics: digit outlines composited from official 362 plates. Not an original government publication for this speed value.",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines."
+      ],
       "meaning_en": "Mandatory maximum speed limit of 50 km/h begins."
     },
     {
@@ -4058,6 +4417,77 @@
       "meaning_en": "Mandatory maximum speed limit of 60 km/h begins."
     },
     {
+      "code": "362.65",
+      "nvdb_enum_id": null,
+      "category": "speed_limit",
+      "name_nb": "Fartsgrense 65 km/t.",
+      "name_en": "Speed limit 65 km/h",
+      "name_en_machine_translated": false,
+      "nvdb_value": null,
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362 family; 362.65 is a generated catalogue extension, not an NVDB enum)",
+      "sort_order": 194,
+      "svg": "svg/speed_limit/362_65.svg",
+      "conversion_method": "digit_composite_from_official_plates",
+      "status": "ok",
+      "source_file": "generated/speed_limit/362_65.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Derived from Statens vegvesen / Kartverket (Geonorge) NLOD 2.0 sign graphics: digit outlines composited from official 362 plates. Not an original government publication for this speed value.",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines."
+      ],
+      "meaning_en": "Mandatory maximum speed limit of 50 km/h begins."
+    },
+    {
       "code": "362.70",
       "nvdb_enum_id": 8876,
       "category": "speed_limit",
@@ -4125,6 +4555,77 @@
       },
       "notes": [],
       "meaning_en": "Mandatory maximum speed limit of 70 km/h begins."
+    },
+    {
+      "code": "362.75",
+      "nvdb_enum_id": null,
+      "category": "speed_limit",
+      "name_nb": "Fartsgrense 75 km/t.",
+      "name_en": "Speed limit 75 km/h",
+      "name_en_machine_translated": false,
+      "nvdb_value": null,
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362 family; 362.75 is a generated catalogue extension, not an NVDB enum)",
+      "sort_order": 194,
+      "svg": "svg/speed_limit/362_75.svg",
+      "conversion_method": "digit_composite_from_official_plates",
+      "status": "ok",
+      "source_file": "generated/speed_limit/362_75.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Derived from Statens vegvesen / Kartverket (Geonorge) NLOD 2.0 sign graphics: digit outlines composited from official 362 plates. Not an original government publication for this speed value.",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines."
+      ],
+      "meaning_en": "Mandatory maximum speed limit of 50 km/h begins."
     },
     {
       "code": "362.80",
@@ -4196,6 +4697,77 @@
       "meaning_en": "Mandatory maximum speed limit of 80 km/h begins."
     },
     {
+      "code": "362.85",
+      "nvdb_enum_id": null,
+      "category": "speed_limit",
+      "name_nb": "Fartsgrense 85 km/t.",
+      "name_en": "Speed limit 85 km/h",
+      "name_en_machine_translated": false,
+      "nvdb_value": null,
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362 family; 362.85 is a generated catalogue extension, not an NVDB enum)",
+      "sort_order": 194,
+      "svg": "svg/speed_limit/362_85.svg",
+      "conversion_method": "digit_composite_from_official_plates",
+      "status": "ok",
+      "source_file": "generated/speed_limit/362_85.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Derived from Statens vegvesen / Kartverket (Geonorge) NLOD 2.0 sign graphics: digit outlines composited from official 362 plates. Not an original government publication for this speed value.",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines."
+      ],
+      "meaning_en": "Mandatory maximum speed limit of 50 km/h begins."
+    },
+    {
       "code": "362.90",
       "nvdb_enum_id": 8878,
       "category": "speed_limit",
@@ -4263,6 +4835,286 @@
       },
       "notes": [],
       "meaning_en": "Mandatory maximum speed limit of 90 km/h begins."
+    },
+    {
+      "code": "362.95",
+      "nvdb_enum_id": null,
+      "category": "speed_limit",
+      "name_nb": "Fartsgrense 95 km/t.",
+      "name_en": "Speed limit 95 km/h",
+      "name_en_machine_translated": false,
+      "nvdb_value": null,
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362 family; 362.95 is a generated catalogue extension, not an NVDB enum)",
+      "sort_order": 194,
+      "svg": "svg/speed_limit/362_95.svg",
+      "conversion_method": "digit_composite_from_official_plates",
+      "status": "ok",
+      "source_file": "generated/speed_limit/362_95.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Derived from Statens vegvesen / Kartverket (Geonorge) NLOD 2.0 sign graphics: digit outlines composited from official 362 plates. Not an original government publication for this speed value.",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines."
+      ],
+      "meaning_en": "Mandatory maximum speed limit of 50 km/h begins."
+    },
+    {
+      "code": "362.100",
+      "nvdb_enum_id": 8879,
+      "category": "speed_limit",
+      "name_nb": "Fartsgrense 100 km/t.",
+      "name_en": "Speed limit 100 km/h",
+      "name_en_machine_translated": false,
+      "nvdb_value": "362.100 - Fartsgrense 100 km/t",
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362.100)",
+      "sort_order": 204,
+      "svg": "svg/speed_limit/362_100.svg",
+      "conversion_method": "geonorge_native",
+      "status": "ok",
+      "source_file": "unpacked/geonorge/362_100/362_100/362_100.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Inneholder data under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens vegvesen / Kartverket (Geonorge).",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": [],
+      "meaning_en": "Mandatory maximum speed limit of 100 km/h begins."
+    },
+    {
+      "code": "362.105",
+      "nvdb_enum_id": null,
+      "category": "speed_limit",
+      "name_nb": "Fartsgrense 105 km/t.",
+      "name_en": "Speed limit 105 km/h",
+      "name_en_machine_translated": false,
+      "nvdb_value": null,
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362 family; 362.105 is a generated catalogue extension, not an NVDB enum)",
+      "sort_order": 194,
+      "svg": "svg/speed_limit/362_105.svg",
+      "conversion_method": "digit_composite_from_official_plates",
+      "status": "ok",
+      "source_file": "generated/speed_limit/362_105.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Derived from Statens vegvesen / Kartverket (Geonorge) NLOD 2.0 sign graphics: digit outlines composited from official 362 plates. Not an original government publication for this speed value.",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines."
+      ],
+      "meaning_en": "Mandatory maximum speed limit of 50 km/h begins."
+    },
+    {
+      "code": "362.110",
+      "nvdb_enum_id": 11816,
+      "category": "speed_limit",
+      "name_nb": "Fartsgrense 110 km/t.",
+      "name_en": "Speed limit 110 km/h",
+      "name_en_machine_translated": false,
+      "nvdb_value": "362.110 - Fartsgrense 110 km/t",
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (forbudsskilt, skilt 362.110)",
+      "sort_order": 206,
+      "svg": "svg/speed_limit/362_110.svg",
+      "conversion_method": "geonorge_native",
+      "status": "ok",
+      "source_file": "unpacked/geonorge/362_110/362_110/362_110.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Inneholder data under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens vegvesen / Kartverket (Geonorge).",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": [],
+      "meaning_en": "Mandatory maximum speed limit of 110 km/h begins."
     },
     {
       "code": "364.20",
@@ -5106,147 +5958,6 @@
       "meaning_en": "Warns that speed may be measured ahead (speed camera / enforcement warning)."
     },
     {
-      "code": "812",
-      "nvdb_enum_id": 7822,
-      "category": "speed_limit",
-      "name_nb": "Anbefalt fart.",
-      "name_en": "Recommended speed",
-      "name_en_machine_translated": false,
-      "nvdb_value": "812 - Anbefalt fart",
-      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (underskilt, skilt 812)",
-      "sort_order": 1192,
-      "svg": "svg/speed_limit/812.svg",
-      "conversion_method": "geonorge_native",
-      "status": "ok",
-      "source_file": "unpacked/geonorge/812_0/812_0/812_0.svg",
-      "source_attribution": {
-        "license": "NLOD 2.0",
-        "license_url": "https://data.norge.no/nlod/en/2.0",
-        "attribution": "Inneholder data under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens vegvesen / Kartverket (Geonorge).",
-        "publishers": [
-          "Statens vegvesen",
-          "Kartverket / Geonorge",
-          "NVDB"
-        ]
-      },
-      "color_codes": {
-        "yellow": {
-          "pms": "116",
-          "hex": "#F7D117",
-          "usage": "fareskilt background"
-        },
-        "red": {
-          "pms": "485",
-          "hex": "#DA291C",
-          "usage": "border / forbud"
-        },
-        "blue": {
-          "pms": "300",
-          "hex": "#005EB8",
-          "usage": "påbud / opplysning"
-        },
-        "green": {
-          "pms": "340",
-          "hex": "#009A44",
-          "usage": "serviceskilt"
-        },
-        "orange": {
-          "pms": "165",
-          "hex": "#FF671F",
-          "usage": "temporary / work"
-        },
-        "brown": {
-          "pms": "469",
-          "hex": "#693F23",
-          "usage": "tourist"
-        },
-        "black": {
-          "pms": "Black",
-          "hex": "#000000",
-          "usage": "symbols / text"
-        },
-        "white": {
-          "pms": "White",
-          "hex": "#FFFFFF",
-          "usage": "background / symbols"
-        }
-      },
-      "notes": [],
-      "meaning_en": "Indicates a recommended (advisory) speed — not the same as a mandatory speed limit."
-    },
-    {
-      "code": "856",
-      "nvdb_enum_id": 23073,
-      "category": "speed_limit",
-      "name_nb": "Generell fartsgrense i miniatyr",
-      "name_en": "General speed limit (miniature)",
-      "name_en_machine_translated": false,
-      "nvdb_value": "856 - Generell fartsgrense i miniatyr",
-      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (underskilt, skilt 856)",
-      "sort_order": 1263,
-      "svg": null,
-      "conversion_method": "no_source_found",
-      "status": "no_source_found",
-      "source_file": null,
-      "source_attribution": {
-        "license": "NLOD 2.0",
-        "license_url": "https://data.norge.no/nlod/en/2.0",
-        "attribution": "Inneholder data under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens vegvesen / Kartverket (Geonorge).",
-        "publishers": [
-          "Statens vegvesen",
-          "Kartverket / Geonorge",
-          "NVDB"
-        ]
-      },
-      "color_codes": {
-        "yellow": {
-          "pms": "116",
-          "hex": "#F7D117",
-          "usage": "fareskilt background"
-        },
-        "red": {
-          "pms": "485",
-          "hex": "#DA291C",
-          "usage": "border / forbud"
-        },
-        "blue": {
-          "pms": "300",
-          "hex": "#005EB8",
-          "usage": "påbud / opplysning"
-        },
-        "green": {
-          "pms": "340",
-          "hex": "#009A44",
-          "usage": "serviceskilt"
-        },
-        "orange": {
-          "pms": "165",
-          "hex": "#FF671F",
-          "usage": "temporary / work"
-        },
-        "brown": {
-          "pms": "469",
-          "hex": "#693F23",
-          "usage": "tourist"
-        },
-        "black": {
-          "pms": "Black",
-          "hex": "#000000",
-          "usage": "symbols / text"
-        },
-        "white": {
-          "pms": "White",
-          "hex": "#FFFFFF",
-          "usage": "background / symbols"
-        }
-      },
-      "notes": [
-        "No Geonorge SVG, EPS, or JPG/PNG graphic could be resolved for this code.",
-        "No matching Geonorge/EPS/JPG file for miniature general speed-limit sign 856."
-      ],
-      "meaning_en": "Miniature version of the general speed-limit information sign."
-    },
-    {
       "code": "640.10",
       "nvdb_enum_id": 9184,
       "category": "serviceskilt",
@@ -5261,144 +5972,6 @@
       "conversion_method": "geonorge_native",
       "status": "ok",
       "source_file": "unpacked/geonorge/640_10/640_10/640_10.svg",
-      "source_attribution": {
-        "license": "NLOD 2.0",
-        "license_url": "https://data.norge.no/nlod/en/2.0",
-        "attribution": "Inneholder data under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens vegvesen / Kartverket (Geonorge).",
-        "publishers": [
-          "Statens vegvesen",
-          "Kartverket / Geonorge",
-          "NVDB"
-        ]
-      },
-      "color_codes": {
-        "yellow": {
-          "pms": "116",
-          "hex": "#F7D117",
-          "usage": "fareskilt background"
-        },
-        "red": {
-          "pms": "485",
-          "hex": "#DA291C",
-          "usage": "border / forbud"
-        },
-        "blue": {
-          "pms": "300",
-          "hex": "#005EB8",
-          "usage": "påbud / opplysning"
-        },
-        "green": {
-          "pms": "340",
-          "hex": "#009A44",
-          "usage": "serviceskilt"
-        },
-        "orange": {
-          "pms": "165",
-          "hex": "#FF671F",
-          "usage": "temporary / work"
-        },
-        "brown": {
-          "pms": "469",
-          "hex": "#693F23",
-          "usage": "tourist"
-        },
-        "black": {
-          "pms": "Black",
-          "hex": "#000000",
-          "usage": "symbols / text"
-        },
-        "white": {
-          "pms": "White",
-          "hex": "#FFFFFF",
-          "usage": "background / symbols"
-        }
-      },
-      "notes": []
-    },
-    {
-      "code": "640.101",
-      "nvdb_enum_id": 21398,
-      "category": "serviceskilt",
-      "name_nb": "Verdensarv.",
-      "name_en": "World Heritage",
-      "name_en_machine_translated": false,
-      "meaning_en": "Tourist symbol for a UNESCO World Heritage site.",
-      "nvdb_value": "640.101 - Verdensarv",
-      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (serviceskilt / Kap. 6, skilt 640.101)",
-      "sort_order": 654,
-      "svg": "svg/serviceskilt/640_101.svg",
-      "conversion_method": "geonorge_native",
-      "status": "ok",
-      "source_file": "unpacked/geonorge/640_101/640_101/640_101.svg",
-      "source_attribution": {
-        "license": "NLOD 2.0",
-        "license_url": "https://data.norge.no/nlod/en/2.0",
-        "attribution": "Inneholder data under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens vegvesen / Kartverket (Geonorge).",
-        "publishers": [
-          "Statens vegvesen",
-          "Kartverket / Geonorge",
-          "NVDB"
-        ]
-      },
-      "color_codes": {
-        "yellow": {
-          "pms": "116",
-          "hex": "#F7D117",
-          "usage": "fareskilt background"
-        },
-        "red": {
-          "pms": "485",
-          "hex": "#DA291C",
-          "usage": "border / forbud"
-        },
-        "blue": {
-          "pms": "300",
-          "hex": "#005EB8",
-          "usage": "påbud / opplysning"
-        },
-        "green": {
-          "pms": "340",
-          "hex": "#009A44",
-          "usage": "serviceskilt"
-        },
-        "orange": {
-          "pms": "165",
-          "hex": "#FF671F",
-          "usage": "temporary / work"
-        },
-        "brown": {
-          "pms": "469",
-          "hex": "#693F23",
-          "usage": "tourist"
-        },
-        "black": {
-          "pms": "Black",
-          "hex": "#000000",
-          "usage": "symbols / text"
-        },
-        "white": {
-          "pms": "White",
-          "hex": "#FFFFFF",
-          "usage": "background / symbols"
-        }
-      },
-      "notes": []
-    },
-    {
-      "code": "640.102",
-      "nvdb_enum_id": 21399,
-      "category": "serviceskilt",
-      "name_nb": "Nasjonale festningsverk.",
-      "name_en": "National fortifications",
-      "name_en_machine_translated": false,
-      "meaning_en": "Tourist symbol for national fortifications.",
-      "nvdb_value": "640.102 - Nasjonale festningsverk",
-      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (serviceskilt / Kap. 6, skilt 640.102)",
-      "sort_order": 655,
-      "svg": "svg/serviceskilt/640_102.svg",
-      "conversion_method": "geonorge_native",
-      "status": "ok",
-      "source_file": "unpacked/geonorge/640_102/640_102/640_102.svg",
       "source_attribution": {
         "license": "NLOD 2.0",
         "license_url": "https://data.norge.no/nlod/en/2.0",
@@ -5592,6 +6165,75 @@
       "notes": []
     },
     {
+      "code": "640.101",
+      "nvdb_enum_id": 21398,
+      "category": "serviceskilt",
+      "name_nb": "Verdensarv.",
+      "name_en": "World Heritage",
+      "name_en_machine_translated": false,
+      "meaning_en": "Tourist symbol for a UNESCO World Heritage site.",
+      "nvdb_value": "640.101 - Verdensarv",
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (serviceskilt / Kap. 6, skilt 640.101)",
+      "sort_order": 654,
+      "svg": "svg/serviceskilt/640_101.svg",
+      "conversion_method": "geonorge_native",
+      "status": "ok",
+      "source_file": "unpacked/geonorge/640_101/640_101/640_101.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Inneholder data under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens vegvesen / Kartverket (Geonorge).",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": []
+    },
+    {
       "code": "640.30",
       "nvdb_enum_id": 9187,
       "category": "serviceskilt",
@@ -5606,6 +6248,75 @@
       "conversion_method": "geonorge_native",
       "status": "ok",
       "source_file": "unpacked/geonorge/640_30/640_30/640_30.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Inneholder data under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens vegvesen / Kartverket (Geonorge).",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": []
+    },
+    {
+      "code": "640.102",
+      "nvdb_enum_id": 21399,
+      "category": "serviceskilt",
+      "name_nb": "Nasjonale festningsverk.",
+      "name_en": "National fortifications",
+      "name_en_machine_translated": false,
+      "meaning_en": "Tourist symbol for national fortifications.",
+      "nvdb_value": "640.102 - Nasjonale festningsverk",
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (serviceskilt / Kap. 6, skilt 640.102)",
+      "sort_order": 655,
+      "svg": "svg/serviceskilt/640_102.svg",
+      "conversion_method": "geonorge_native",
+      "status": "ok",
+      "source_file": "unpacked/geonorge/640_102/640_102/640_102.svg",
       "source_attribution": {
         "license": "NLOD 2.0",
         "license_url": "https://data.norge.no/nlod/en/2.0",
@@ -6006,20 +6717,20 @@
       "notes": []
     },
     {
-      "code": "650.40",
-      "nvdb_enum_id": 9192,
+      "code": "650.41",
+      "nvdb_enum_id": 21401,
       "category": "serviceskilt",
-      "name_nb": "Gardsmat/Bygdeturisme.",
-      "name_en": "Farm food / rural tourism",
+      "name_nb": "Olavsrosa.",
+      "name_en": "Olavsrosa",
       "name_en_machine_translated": false,
-      "meaning_en": "Tourist symbol for farm food / rural tourism (gardsmat/bygdeturisme).",
-      "nvdb_value": "650.40 - Gardsmat/Bygdeturisme",
-      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (serviceskilt / Kap. 6, skilt 650.40)",
-      "sort_order": 664,
-      "svg": "svg/serviceskilt/650_40.svg",
+      "meaning_en": "Tourist symbol for sites marked with the Olavsrosa quality label.",
+      "nvdb_value": "650.41 - Olavsrosa",
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (serviceskilt / Kap. 6, skilt 650.41)",
+      "sort_order": 663,
+      "svg": "svg/serviceskilt/650_41.svg",
       "conversion_method": "geonorge_native",
       "status": "ok",
-      "source_file": "unpacked/geonorge/650_40/650_40/650_40.svg",
+      "source_file": "unpacked/geonorge/650_41/650_41/650_41.svg",
       "source_attribution": {
         "license": "NLOD 2.0",
         "license_url": "https://data.norge.no/nlod/en/2.0",
@@ -6075,20 +6786,20 @@
       "notes": []
     },
     {
-      "code": "650.41",
-      "nvdb_enum_id": 21401,
+      "code": "650.40",
+      "nvdb_enum_id": 9192,
       "category": "serviceskilt",
-      "name_nb": "Olavsrosa.",
-      "name_en": "Olavsrosa",
+      "name_nb": "Gardsmat/Bygdeturisme.",
+      "name_en": "Farm food / rural tourism",
       "name_en_machine_translated": false,
-      "meaning_en": "Tourist symbol for sites marked with the Olavsrosa quality label.",
-      "nvdb_value": "650.41 - Olavsrosa",
-      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (serviceskilt / Kap. 6, skilt 650.41)",
-      "sort_order": 663,
-      "svg": "svg/serviceskilt/650_41.svg",
+      "meaning_en": "Tourist symbol for farm food / rural tourism (gardsmat/bygdeturisme).",
+      "nvdb_value": "650.40 - Gardsmat/Bygdeturisme",
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (serviceskilt / Kap. 6, skilt 650.40)",
+      "sort_order": 664,
+      "svg": "svg/serviceskilt/650_40.svg",
       "conversion_method": "geonorge_native",
       "status": "ok",
-      "source_file": "unpacked/geonorge/650_41/650_41/650_41.svg",
+      "source_file": "unpacked/geonorge/650_40/650_40/650_40.svg",
       "source_attribution": {
         "license": "NLOD 2.0",
         "license_url": "https://data.norge.no/nlod/en/2.0",
@@ -8419,6 +9130,147 @@
         }
       },
       "notes": []
+    },
+    {
+      "code": "812",
+      "nvdb_enum_id": 7822,
+      "category": "speed_limit",
+      "name_nb": "Anbefalt fart.",
+      "name_en": "Recommended speed",
+      "name_en_machine_translated": false,
+      "nvdb_value": "812 - Anbefalt fart",
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (underskilt, skilt 812)",
+      "sort_order": 1192,
+      "svg": "svg/speed_limit/812.svg",
+      "conversion_method": "geonorge_native",
+      "status": "ok",
+      "source_file": "unpacked/geonorge/812_0/812_0/812_0.svg",
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Inneholder data under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens vegvesen / Kartverket (Geonorge).",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": [],
+      "meaning_en": "Indicates a recommended (advisory) speed — not the same as a mandatory speed limit."
+    },
+    {
+      "code": "856",
+      "nvdb_enum_id": 23073,
+      "category": "speed_limit",
+      "name_nb": "Generell fartsgrense i miniatyr",
+      "name_en": "General speed limit (miniature)",
+      "name_en_machine_translated": false,
+      "nvdb_value": "856 - Generell fartsgrense i miniatyr",
+      "legal_reference": "https://lovdata.no/dokument/SF/forskrift/2005-10-07-1219 (underskilt, skilt 856)",
+      "sort_order": 1263,
+      "svg": null,
+      "conversion_method": "no_source_found",
+      "status": "no_source_found",
+      "source_file": null,
+      "source_attribution": {
+        "license": "NLOD 2.0",
+        "license_url": "https://data.norge.no/nlod/en/2.0",
+        "attribution": "Inneholder data under norsk lisens for offentlige data (NLOD) tilgjengeliggjort av Statens vegvesen / Kartverket (Geonorge).",
+        "publishers": [
+          "Statens vegvesen",
+          "Kartverket / Geonorge",
+          "NVDB"
+        ]
+      },
+      "color_codes": {
+        "yellow": {
+          "pms": "116",
+          "hex": "#F7D117",
+          "usage": "fareskilt background"
+        },
+        "red": {
+          "pms": "485",
+          "hex": "#DA291C",
+          "usage": "border / forbud"
+        },
+        "blue": {
+          "pms": "300",
+          "hex": "#005EB8",
+          "usage": "påbud / opplysning"
+        },
+        "green": {
+          "pms": "340",
+          "hex": "#009A44",
+          "usage": "serviceskilt"
+        },
+        "orange": {
+          "pms": "165",
+          "hex": "#FF671F",
+          "usage": "temporary / work"
+        },
+        "brown": {
+          "pms": "469",
+          "hex": "#693F23",
+          "usage": "tourist"
+        },
+        "black": {
+          "pms": "Black",
+          "hex": "#000000",
+          "usage": "symbols / text"
+        },
+        "white": {
+          "pms": "White",
+          "hex": "#FFFFFF",
+          "usage": "background / symbols"
+        }
+      },
+      "notes": [
+        "No Geonorge SVG, EPS, or JPG/PNG graphic could be resolved for this code.",
+        "No matching Geonorge/EPS/JPG file for miniature general speed-limit sign 856."
+      ],
+      "meaning_en": "Miniature version of the general speed-limit information sign."
     }
   ]
 }

@@ -2809,6 +2809,60 @@
       ]
     },
     {
+      "code": "362.10",
+      "category": "speed_limit",
+      "name": "Speed limit 10 km/h",
+      "name_nb": "Fartsgrense 10 km/t.",
+      "svg": "svg/speed_limit/362_10.svg",
+      "traffic_sign": {
+        "preferred": "NO:362.10",
+        "template": "NO:362.10",
+        "variants_documented": [
+          "NO:362[10]",
+          "NO:362:10"
+        ],
+        "taginfo_object_count_approx": 0,
+        "taginfo_examples": [],
+        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A362.10"
+      },
+      "implied_tags": [
+        {
+          "key": "maxspeed",
+          "value": "10",
+          "role": "regulation",
+          "source": "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+          "osm_status": "in_use"
+        },
+        {
+          "key": "source:maxspeed",
+          "value": "sign",
+          "role": "provenance",
+          "osm_status": "established"
+        }
+      ],
+      "related_tags": [],
+      "match_status": "hazard_convention",
+      "navi_usable_as_fixed_symbol": true,
+      "international": {
+        "companion_tags_international": true,
+        "symbol_scope": "vienna_convention_family",
+        "graphic_reuse_outside_NO": "yes",
+        "usable_as_navi_icon_outside_norway": true,
+        "equivalent_traffic_sign_ids": [],
+        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same.",
+        "notes": []
+      },
+      "variable_fields": [],
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines.",
+        "Catalogue code 362.10 is for icon/maxspeed matching; it is not an official NVDB Skiltnummer."
+      ],
+      "sources": [
+        "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
+      ]
+    },
+    {
       "code": "362.100",
       "category": "speed_limit",
       "name": "Speed limit 100 km/h",
@@ -2866,6 +2920,60 @@
       "notes": [
         "Norwegian wiki example: traffic_sign=NO:362.60 + maxspeed=60.",
         "Colon form NO:362:100 / NO:362:110 appears in taginfo for 100/110."
+      ],
+      "sources": [
+        "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
+      ]
+    },
+    {
+      "code": "362.105",
+      "category": "speed_limit",
+      "name": "Speed limit 105 km/h",
+      "name_nb": "Fartsgrense 105 km/t.",
+      "svg": "svg/speed_limit/362_105.svg",
+      "traffic_sign": {
+        "preferred": "NO:362.105",
+        "template": "NO:362.105",
+        "variants_documented": [
+          "NO:362[105]",
+          "NO:362:105"
+        ],
+        "taginfo_object_count_approx": 0,
+        "taginfo_examples": [],
+        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A362.105"
+      },
+      "implied_tags": [
+        {
+          "key": "maxspeed",
+          "value": "105",
+          "role": "regulation",
+          "source": "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+          "osm_status": "in_use"
+        },
+        {
+          "key": "source:maxspeed",
+          "value": "sign",
+          "role": "provenance",
+          "osm_status": "established"
+        }
+      ],
+      "related_tags": [],
+      "match_status": "hazard_convention",
+      "navi_usable_as_fixed_symbol": true,
+      "international": {
+        "companion_tags_international": true,
+        "symbol_scope": "vienna_convention_family",
+        "graphic_reuse_outside_NO": "yes",
+        "usable_as_navi_icon_outside_norway": true,
+        "equivalent_traffic_sign_ids": [],
+        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same.",
+        "notes": []
+      },
+      "variable_fields": [],
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines.",
+        "Catalogue code 362.105 is for icon/maxspeed matching; it is not an official NVDB Skiltnummer."
       ],
       "sources": [
         "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
@@ -2937,6 +3045,60 @@
       ]
     },
     {
+      "code": "362.15",
+      "category": "speed_limit",
+      "name": "Speed limit 15 km/h",
+      "name_nb": "Fartsgrense 15 km/t.",
+      "svg": "svg/speed_limit/362_15.svg",
+      "traffic_sign": {
+        "preferred": "NO:362.15",
+        "template": "NO:362.15",
+        "variants_documented": [
+          "NO:362[15]",
+          "NO:362:15"
+        ],
+        "taginfo_object_count_approx": 0,
+        "taginfo_examples": [],
+        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A362.15"
+      },
+      "implied_tags": [
+        {
+          "key": "maxspeed",
+          "value": "15",
+          "role": "regulation",
+          "source": "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+          "osm_status": "in_use"
+        },
+        {
+          "key": "source:maxspeed",
+          "value": "sign",
+          "role": "provenance",
+          "osm_status": "established"
+        }
+      ],
+      "related_tags": [],
+      "match_status": "hazard_convention",
+      "navi_usable_as_fixed_symbol": true,
+      "international": {
+        "companion_tags_international": true,
+        "symbol_scope": "vienna_convention_family",
+        "graphic_reuse_outside_NO": "yes",
+        "usable_as_navi_icon_outside_norway": true,
+        "equivalent_traffic_sign_ids": [],
+        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same.",
+        "notes": []
+      },
+      "variable_fields": [],
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines.",
+        "Catalogue code 362.15 is for icon/maxspeed matching; it is not an official NVDB Skiltnummer."
+      ],
+      "sources": [
+        "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
+      ]
+    },
+    {
       "code": "362.20",
       "category": "speed_limit",
       "name": "Speed limit 20 km/h",
@@ -2986,6 +3148,60 @@
       "notes": [
         "Norwegian wiki example: traffic_sign=NO:362.60 + maxspeed=60.",
         "Colon form NO:362:100 / NO:362:110 appears in taginfo for 100/110."
+      ],
+      "sources": [
+        "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
+      ]
+    },
+    {
+      "code": "362.25",
+      "category": "speed_limit",
+      "name": "Speed limit 25 km/h",
+      "name_nb": "Fartsgrense 25 km/t.",
+      "svg": "svg/speed_limit/362_25.svg",
+      "traffic_sign": {
+        "preferred": "NO:362.25",
+        "template": "NO:362.25",
+        "variants_documented": [
+          "NO:362[25]",
+          "NO:362:25"
+        ],
+        "taginfo_object_count_approx": 0,
+        "taginfo_examples": [],
+        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A362.25"
+      },
+      "implied_tags": [
+        {
+          "key": "maxspeed",
+          "value": "25",
+          "role": "regulation",
+          "source": "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+          "osm_status": "in_use"
+        },
+        {
+          "key": "source:maxspeed",
+          "value": "sign",
+          "role": "provenance",
+          "osm_status": "established"
+        }
+      ],
+      "related_tags": [],
+      "match_status": "hazard_convention",
+      "navi_usable_as_fixed_symbol": true,
+      "international": {
+        "companion_tags_international": true,
+        "symbol_scope": "vienna_convention_family",
+        "graphic_reuse_outside_NO": "yes",
+        "usable_as_navi_icon_outside_norway": true,
+        "equivalent_traffic_sign_ids": [],
+        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same.",
+        "notes": []
+      },
+      "variable_fields": [],
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines.",
+        "Catalogue code 362.25 is for icon/maxspeed matching; it is not an official NVDB Skiltnummer."
       ],
       "sources": [
         "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
@@ -3057,6 +3273,60 @@
       "notes": [
         "Norwegian wiki example: traffic_sign=NO:362.60 + maxspeed=60.",
         "Colon form NO:362:100 / NO:362:110 appears in taginfo for 100/110."
+      ],
+      "sources": [
+        "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
+      ]
+    },
+    {
+      "code": "362.35",
+      "category": "speed_limit",
+      "name": "Speed limit 35 km/h",
+      "name_nb": "Fartsgrense 35 km/t.",
+      "svg": "svg/speed_limit/362_35.svg",
+      "traffic_sign": {
+        "preferred": "NO:362.35",
+        "template": "NO:362.35",
+        "variants_documented": [
+          "NO:362[35]",
+          "NO:362:35"
+        ],
+        "taginfo_object_count_approx": 0,
+        "taginfo_examples": [],
+        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A362.35"
+      },
+      "implied_tags": [
+        {
+          "key": "maxspeed",
+          "value": "35",
+          "role": "regulation",
+          "source": "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+          "osm_status": "in_use"
+        },
+        {
+          "key": "source:maxspeed",
+          "value": "sign",
+          "role": "provenance",
+          "osm_status": "established"
+        }
+      ],
+      "related_tags": [],
+      "match_status": "hazard_convention",
+      "navi_usable_as_fixed_symbol": true,
+      "international": {
+        "companion_tags_international": true,
+        "symbol_scope": "vienna_convention_family",
+        "graphic_reuse_outside_NO": "yes",
+        "usable_as_navi_icon_outside_norway": true,
+        "equivalent_traffic_sign_ids": [],
+        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same.",
+        "notes": []
+      },
+      "variable_fields": [],
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines.",
+        "Catalogue code 362.35 is for icon/maxspeed matching; it is not an official NVDB Skiltnummer."
       ],
       "sources": [
         "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
@@ -3141,6 +3411,114 @@
       ]
     },
     {
+      "code": "362.45",
+      "category": "speed_limit",
+      "name": "Speed limit 45 km/h",
+      "name_nb": "Fartsgrense 45 km/t.",
+      "svg": "svg/speed_limit/362_45.svg",
+      "traffic_sign": {
+        "preferred": "NO:362.45",
+        "template": "NO:362.45",
+        "variants_documented": [
+          "NO:362[45]",
+          "NO:362:45"
+        ],
+        "taginfo_object_count_approx": 0,
+        "taginfo_examples": [],
+        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A362.45"
+      },
+      "implied_tags": [
+        {
+          "key": "maxspeed",
+          "value": "45",
+          "role": "regulation",
+          "source": "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+          "osm_status": "in_use"
+        },
+        {
+          "key": "source:maxspeed",
+          "value": "sign",
+          "role": "provenance",
+          "osm_status": "established"
+        }
+      ],
+      "related_tags": [],
+      "match_status": "hazard_convention",
+      "navi_usable_as_fixed_symbol": true,
+      "international": {
+        "companion_tags_international": true,
+        "symbol_scope": "vienna_convention_family",
+        "graphic_reuse_outside_NO": "yes",
+        "usable_as_navi_icon_outside_norway": true,
+        "equivalent_traffic_sign_ids": [],
+        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same.",
+        "notes": []
+      },
+      "variable_fields": [],
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines.",
+        "Catalogue code 362.45 is for icon/maxspeed matching; it is not an official NVDB Skiltnummer."
+      ],
+      "sources": [
+        "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
+      ]
+    },
+    {
+      "code": "362.5",
+      "category": "speed_limit",
+      "name": "Speed limit 5 km/h",
+      "name_nb": "Fartsgrense 5 km/t.",
+      "svg": "svg/speed_limit/362_5.svg",
+      "traffic_sign": {
+        "preferred": "NO:362.5",
+        "template": "NO:362.5",
+        "variants_documented": [
+          "NO:362[5]",
+          "NO:362:5"
+        ],
+        "taginfo_object_count_approx": 0,
+        "taginfo_examples": [],
+        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A362.5"
+      },
+      "implied_tags": [
+        {
+          "key": "maxspeed",
+          "value": "5",
+          "role": "regulation",
+          "source": "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+          "osm_status": "in_use"
+        },
+        {
+          "key": "source:maxspeed",
+          "value": "sign",
+          "role": "provenance",
+          "osm_status": "established"
+        }
+      ],
+      "related_tags": [],
+      "match_status": "hazard_convention",
+      "navi_usable_as_fixed_symbol": true,
+      "international": {
+        "companion_tags_international": true,
+        "symbol_scope": "vienna_convention_family",
+        "graphic_reuse_outside_NO": "yes",
+        "usable_as_navi_icon_outside_norway": true,
+        "equivalent_traffic_sign_ids": [],
+        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same.",
+        "notes": []
+      },
+      "variable_fields": [],
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines.",
+        "Catalogue code 362.5 is for icon/maxspeed matching; it is not an official NVDB Skiltnummer."
+      ],
+      "sources": [
+        "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
+      ]
+    },
+    {
       "code": "362.50",
       "category": "speed_limit",
       "name": "Speed limit 50 km/h",
@@ -3207,6 +3585,60 @@
       "notes": [
         "Norwegian wiki example: traffic_sign=NO:362.60 + maxspeed=60.",
         "Colon form NO:362:100 / NO:362:110 appears in taginfo for 100/110."
+      ],
+      "sources": [
+        "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
+      ]
+    },
+    {
+      "code": "362.55",
+      "category": "speed_limit",
+      "name": "Speed limit 55 km/h",
+      "name_nb": "Fartsgrense 55 km/t.",
+      "svg": "svg/speed_limit/362_55.svg",
+      "traffic_sign": {
+        "preferred": "NO:362.55",
+        "template": "NO:362.55",
+        "variants_documented": [
+          "NO:362[55]",
+          "NO:362:55"
+        ],
+        "taginfo_object_count_approx": 0,
+        "taginfo_examples": [],
+        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A362.55"
+      },
+      "implied_tags": [
+        {
+          "key": "maxspeed",
+          "value": "55",
+          "role": "regulation",
+          "source": "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+          "osm_status": "in_use"
+        },
+        {
+          "key": "source:maxspeed",
+          "value": "sign",
+          "role": "provenance",
+          "osm_status": "established"
+        }
+      ],
+      "related_tags": [],
+      "match_status": "hazard_convention",
+      "navi_usable_as_fixed_symbol": true,
+      "international": {
+        "companion_tags_international": true,
+        "symbol_scope": "vienna_convention_family",
+        "graphic_reuse_outside_NO": "yes",
+        "usable_as_navi_icon_outside_norway": true,
+        "equivalent_traffic_sign_ids": [],
+        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same.",
+        "notes": []
+      },
+      "variable_fields": [],
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines.",
+        "Catalogue code 362.55 is for icon/maxspeed matching; it is not an official NVDB Skiltnummer."
       ],
       "sources": [
         "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
@@ -3291,6 +3723,60 @@
       ]
     },
     {
+      "code": "362.65",
+      "category": "speed_limit",
+      "name": "Speed limit 65 km/h",
+      "name_nb": "Fartsgrense 65 km/t.",
+      "svg": "svg/speed_limit/362_65.svg",
+      "traffic_sign": {
+        "preferred": "NO:362.65",
+        "template": "NO:362.65",
+        "variants_documented": [
+          "NO:362[65]",
+          "NO:362:65"
+        ],
+        "taginfo_object_count_approx": 0,
+        "taginfo_examples": [],
+        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A362.65"
+      },
+      "implied_tags": [
+        {
+          "key": "maxspeed",
+          "value": "65",
+          "role": "regulation",
+          "source": "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+          "osm_status": "in_use"
+        },
+        {
+          "key": "source:maxspeed",
+          "value": "sign",
+          "role": "provenance",
+          "osm_status": "established"
+        }
+      ],
+      "related_tags": [],
+      "match_status": "hazard_convention",
+      "navi_usable_as_fixed_symbol": true,
+      "international": {
+        "companion_tags_international": true,
+        "symbol_scope": "vienna_convention_family",
+        "graphic_reuse_outside_NO": "yes",
+        "usable_as_navi_icon_outside_norway": true,
+        "equivalent_traffic_sign_ids": [],
+        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same.",
+        "notes": []
+      },
+      "variable_fields": [],
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines.",
+        "Catalogue code 362.65 is for icon/maxspeed matching; it is not an official NVDB Skiltnummer."
+      ],
+      "sources": [
+        "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
+      ]
+    },
+    {
       "code": "362.70",
       "category": "speed_limit",
       "name": "Speed limit 70 km/h",
@@ -3353,6 +3839,60 @@
       "notes": [
         "Norwegian wiki example: traffic_sign=NO:362.60 + maxspeed=60.",
         "Colon form NO:362:100 / NO:362:110 appears in taginfo for 100/110."
+      ],
+      "sources": [
+        "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
+      ]
+    },
+    {
+      "code": "362.75",
+      "category": "speed_limit",
+      "name": "Speed limit 75 km/h",
+      "name_nb": "Fartsgrense 75 km/t.",
+      "svg": "svg/speed_limit/362_75.svg",
+      "traffic_sign": {
+        "preferred": "NO:362.75",
+        "template": "NO:362.75",
+        "variants_documented": [
+          "NO:362[75]",
+          "NO:362:75"
+        ],
+        "taginfo_object_count_approx": 0,
+        "taginfo_examples": [],
+        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A362.75"
+      },
+      "implied_tags": [
+        {
+          "key": "maxspeed",
+          "value": "75",
+          "role": "regulation",
+          "source": "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+          "osm_status": "in_use"
+        },
+        {
+          "key": "source:maxspeed",
+          "value": "sign",
+          "role": "provenance",
+          "osm_status": "established"
+        }
+      ],
+      "related_tags": [],
+      "match_status": "hazard_convention",
+      "navi_usable_as_fixed_symbol": true,
+      "international": {
+        "companion_tags_international": true,
+        "symbol_scope": "vienna_convention_family",
+        "graphic_reuse_outside_NO": "yes",
+        "usable_as_navi_icon_outside_norway": true,
+        "equivalent_traffic_sign_ids": [],
+        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same.",
+        "notes": []
+      },
+      "variable_fields": [],
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines.",
+        "Catalogue code 362.75 is for icon/maxspeed matching; it is not an official NVDB Skiltnummer."
       ],
       "sources": [
         "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
@@ -3429,6 +3969,60 @@
       ]
     },
     {
+      "code": "362.85",
+      "category": "speed_limit",
+      "name": "Speed limit 85 km/h",
+      "name_nb": "Fartsgrense 85 km/t.",
+      "svg": "svg/speed_limit/362_85.svg",
+      "traffic_sign": {
+        "preferred": "NO:362.85",
+        "template": "NO:362.85",
+        "variants_documented": [
+          "NO:362[85]",
+          "NO:362:85"
+        ],
+        "taginfo_object_count_approx": 0,
+        "taginfo_examples": [],
+        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A362.85"
+      },
+      "implied_tags": [
+        {
+          "key": "maxspeed",
+          "value": "85",
+          "role": "regulation",
+          "source": "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+          "osm_status": "in_use"
+        },
+        {
+          "key": "source:maxspeed",
+          "value": "sign",
+          "role": "provenance",
+          "osm_status": "established"
+        }
+      ],
+      "related_tags": [],
+      "match_status": "hazard_convention",
+      "navi_usable_as_fixed_symbol": true,
+      "international": {
+        "companion_tags_international": true,
+        "symbol_scope": "vienna_convention_family",
+        "graphic_reuse_outside_NO": "yes",
+        "usable_as_navi_icon_outside_norway": true,
+        "equivalent_traffic_sign_ids": [],
+        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same.",
+        "notes": []
+      },
+      "variable_fields": [],
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines.",
+        "Catalogue code 362.85 is for icon/maxspeed matching; it is not an official NVDB Skiltnummer."
+      ],
+      "sources": [
+        "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
+      ]
+    },
+    {
       "code": "362.90",
       "category": "speed_limit",
       "name": "Speed limit 90 km/h",
@@ -3491,6 +4085,60 @@
       "notes": [
         "Norwegian wiki example: traffic_sign=NO:362.60 + maxspeed=60.",
         "Colon form NO:362:100 / NO:362:110 appears in taginfo for 100/110."
+      ],
+      "sources": [
+        "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
+      ]
+    },
+    {
+      "code": "362.95",
+      "category": "speed_limit",
+      "name": "Speed limit 95 km/h",
+      "name_nb": "Fartsgrense 95 km/t.",
+      "svg": "svg/speed_limit/362_95.svg",
+      "traffic_sign": {
+        "preferred": "NO:362.95",
+        "template": "NO:362.95",
+        "variants_documented": [
+          "NO:362[95]",
+          "NO:362:95"
+        ],
+        "taginfo_object_count_approx": 0,
+        "taginfo_examples": [],
+        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A362.95"
+      },
+      "implied_tags": [
+        {
+          "key": "maxspeed",
+          "value": "95",
+          "role": "regulation",
+          "source": "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
+          "osm_status": "in_use"
+        },
+        {
+          "key": "source:maxspeed",
+          "value": "sign",
+          "role": "provenance",
+          "osm_status": "established"
+        }
+      ],
+      "related_tags": [],
+      "match_status": "hazard_convention",
+      "navi_usable_as_fixed_symbol": true,
+      "international": {
+        "companion_tags_international": true,
+        "symbol_scope": "vienna_convention_family",
+        "graphic_reuse_outside_NO": "yes",
+        "usable_as_navi_icon_outside_norway": true,
+        "equivalent_traffic_sign_ids": [],
+        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same.",
+        "notes": []
+      },
+      "variable_fields": [],
+      "notes": [
+        "Generated plate: digits composited from official NPRA/Kartverket-sourced 362 plates already in this catalogue. Not an original Statens vegvesen / Kartverket published graphic for this code; no NVDB Skiltnummer enum exists for this value. Derived work under NLOD 2.0 from the official digit outlines.",
+        "Catalogue code 362.95 is for icon/maxspeed matching; it is not an official NVDB Skiltnummer."
       ],
       "sources": [
         "https://wiki.openstreetmap.org/wiki/No:Road_signs_in_Norway",
@@ -4138,93 +4786,6 @@
       "variable_fields": [],
       "notes": [
         "Speed-measurement / enforcement warning; no established NO wiki row yet."
-      ],
-      "sources": [
-        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
-      ]
-    },
-    {
-      "code": "812",
-      "category": "speed_limit",
-      "name": "Recommended speed",
-      "name_nb": "Anbefalt fart.",
-      "svg": "svg/speed_limit/812.svg",
-      "traffic_sign": {
-        "preferred": "NO:812",
-        "template": "NO:812[{kmh}]",
-        "variants_documented": [],
-        "taginfo_object_count_approx": 0,
-        "taginfo_examples": [],
-        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A812"
-      },
-      "implied_tags": [
-        {
-          "key": "maxspeed:advisory",
-          "value": "{kmh}",
-          "role": "advisory",
-          "osm_status": "established",
-          "note": "Advisory only — not a mandatory maxspeed."
-        }
-      ],
-      "related_tags": [],
-      "match_status": "variable_content",
-      "navi_usable_as_fixed_symbol": false,
-      "international": {
-        "companion_tags_international": true,
-        "symbol_scope": "vienna_convention_family",
-        "graphic_reuse_outside_NO": "with_caveat",
-        "usable_as_navi_icon_outside_norway": false,
-        "equivalent_traffic_sign_ids": [],
-        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same. See meta.international for Vienna Convention country lists.",
-        "notes": [
-          "Advisory speed plates are widespread; use maxspeed:advisory=* (global), not maxspeed."
-        ]
-      },
-      "variable_fields": [
-        {
-          "name": "kmh",
-          "description": "Recommended speed shown on the sign."
-        }
-      ],
-      "notes": [
-        "Do not set maxspeed= from 812; use maxspeed:advisory."
-      ],
-      "sources": [
-        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
-      ]
-    },
-    {
-      "code": "856",
-      "category": "speed_limit",
-      "name": "General speed limit (miniature)",
-      "name_nb": "Generell fartsgrense i miniatyr",
-      "svg": null,
-      "traffic_sign": {
-        "preferred": "NO:856",
-        "template": "NO:856",
-        "variants_documented": [],
-        "taginfo_object_count_approx": 0,
-        "taginfo_examples": [],
-        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A856"
-      },
-      "implied_tags": [],
-      "related_tags": [],
-      "match_status": "traffic_sign_only",
-      "navi_usable_as_fixed_symbol": false,
-      "international": {
-        "companion_tags_international": true,
-        "symbol_scope": "norway_specific",
-        "graphic_reuse_outside_NO": "no",
-        "usable_as_navi_icon_outside_norway": false,
-        "equivalent_traffic_sign_ids": [],
-        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same. See meta.international for Vienna Convention country lists.",
-        "notes": [
-          "Miniature of Norwegian general speed-limit information (see 560.1)."
-        ]
-      },
-      "variable_fields": [],
-      "notes": [
-        "Miniature general speed-limit information; same role family as 560.1."
       ],
       "sources": [
         "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
@@ -6202,6 +6763,93 @@
       },
       "variable_fields": [],
       "notes": [],
+      "sources": [
+        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
+      ]
+    },
+    {
+      "code": "812",
+      "category": "speed_limit",
+      "name": "Recommended speed",
+      "name_nb": "Anbefalt fart.",
+      "svg": "svg/speed_limit/812.svg",
+      "traffic_sign": {
+        "preferred": "NO:812",
+        "template": "NO:812[{kmh}]",
+        "variants_documented": [],
+        "taginfo_object_count_approx": 0,
+        "taginfo_examples": [],
+        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A812"
+      },
+      "implied_tags": [
+        {
+          "key": "maxspeed:advisory",
+          "value": "{kmh}",
+          "role": "advisory",
+          "osm_status": "established",
+          "note": "Advisory only — not a mandatory maxspeed."
+        }
+      ],
+      "related_tags": [],
+      "match_status": "variable_content",
+      "navi_usable_as_fixed_symbol": false,
+      "international": {
+        "companion_tags_international": true,
+        "symbol_scope": "vienna_convention_family",
+        "graphic_reuse_outside_NO": "with_caveat",
+        "usable_as_navi_icon_outside_norway": false,
+        "equivalent_traffic_sign_ids": [],
+        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same. See meta.international for Vienna Convention country lists.",
+        "notes": [
+          "Advisory speed plates are widespread; use maxspeed:advisory=* (global), not maxspeed."
+        ]
+      },
+      "variable_fields": [
+        {
+          "name": "kmh",
+          "description": "Recommended speed shown on the sign."
+        }
+      ],
+      "notes": [
+        "Do not set maxspeed= from 812; use maxspeed:advisory."
+      ],
+      "sources": [
+        "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
+      ]
+    },
+    {
+      "code": "856",
+      "category": "speed_limit",
+      "name": "General speed limit (miniature)",
+      "name_nb": "Generell fartsgrense i miniatyr",
+      "svg": null,
+      "traffic_sign": {
+        "preferred": "NO:856",
+        "template": "NO:856",
+        "variants_documented": [],
+        "taginfo_object_count_approx": 0,
+        "taginfo_examples": [],
+        "taginfo_url": "https://taginfo.openstreetmap.org/tags/traffic_sign=NO%3A856"
+      },
+      "implied_tags": [],
+      "related_tags": [],
+      "match_status": "traffic_sign_only",
+      "navi_usable_as_fixed_symbol": false,
+      "international": {
+        "companion_tags_international": true,
+        "symbol_scope": "norway_specific",
+        "graphic_reuse_outside_NO": "no",
+        "usable_as_navi_icon_outside_norway": false,
+        "equivalent_traffic_sign_ids": [],
+        "mapping_note": "When mapping roads outside Norway, use that country's traffic_sign=ISO:code, not NO:{code}. Companion tags (hazard=*, maxspeed=*, amenity=*, …) stay the same. See meta.international for Vienna Convention country lists.",
+        "notes": [
+          "Miniature of Norwegian general speed-limit information (see 560.1)."
+        ]
+      },
+      "variable_fields": [],
+      "notes": [
+        "Miniature general speed-limit information; same role family as 560.1."
+      ],
       "sources": [
         "https://wiki.openstreetmap.org/wiki/Key:traffic_sign"
       ]

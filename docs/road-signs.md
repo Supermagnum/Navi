@@ -14,35 +14,51 @@ Graphics and metadata are from Statens vegvesen / Kartverket via the upstream
 | Android lean pack | `app/src/main/assets/icons/road-signs/` |
 | Catalogue JSON | `core/src/icons/road-signs/database/osm_tags.json` (compile-time include) |
 
-Categories vendored: `fareskilt/` (51), `speed_limit/` (19), `serviceskilt/` (13),
-`vegvisning/` (33) — **116 SVG files**. Catalogue entries with `"svg": null`
-(`362.20`, `364.20`, `560.1`, `560.3`, `856`) are skipped by `load_catalog` until
-upstream adds art. Look-forward speed-limit cone ships a Navi-drawn stand-in
-`no_sign_362_20.svg` (Vienna-style red ring + path digits) so 20 km/h plates
-do not fall back to `unknown.svg`. Odd numeric `maxspeed` values from OSM that
-lack a dedicated 362 plate snap to the nearest shipped plate
-(`20/30/40/50/60/70/80/90/100/110`).
+Categories: official vendored SVGs from upstream plus **12 generated** every-5 km/h
+plates and the Navi `362.20` stand-in — **129** flat SVG files under
+`core/src/icons/road-signs/` / the Android lean pack. Catalogue entries with
+`"svg": null` (`362.20`, `364.20`, `560.1`, `560.3`, `856`) are skipped by
+`load_catalog` until upstream adds art; the look-forward cone still uses
+`no_sign_362_20.svg` for 20 km/h so that value does not fall back to
+`unknown.svg`.
+
+### Speed-plate coverage (look-forward cone)
+
+Dedicated plates (exact `maxspeed` match, no nearest-neighbor snap):
+
+`5`, `10`, `15`, `20`, `25`, `30`, `35`, `40`, `45`, `50`, `55`, `60`, `65`, `70`, `75`, `80`, `85`, `90`, `95`, `100`, `105`, `110` km/h.
+
+Of those, **12 values are generated** (digit-composited from official NPRA/Kartverket-sourced plates, Trafikkalfabetet spacing) rather than original Statens vegvesen / Kartverket published graphics for that code:
+
+`5`, `10`, `15`, `25`, `35`, `45`, `55`, `65`, `75`, `85`, `95`, `105`
+
+They remain NLOD 2.0 **derived works** from the official digit outlines. Catalogue JSON marks them with `conversion_method: digit_composite_from_official_plates`. Odd OSM `maxspeed` values that still lack a dedicated plate snap to the nearest shipped plate in the list above.
+
+Staging originals and the compositor live under `new-signs/` (`generate_362.py`). Upstream contribution: [Supermagnum/road-signs#1](https://github.com/Supermagnum/road-signs/pull/1).
 
 ## Licensing (separate from Navit icons)
 
 Road-sign SVGs are **not** part of the Navit GPL-2.0 icon set documented in
 [`icons.md`](icons.md). They are distributed under
 [NLOD 2.0](https://data.norge.no/nlod/en/2.0) via Statens vegvesen / Kartverket.
-Keep attribution and licence text for these assets **separate** from Navit-derived
-icons when documenting or shipping the app.
+The 12 generated every-5 plates are **derived works** under the same licence
+(digit outlines taken from official catalogue plates), not original government
+publications for those codes. Keep attribution and licence text for these assets
+**separate** from Navit-derived icons when documenting or shipping the app.
 
 ## Exclusions (runtime filter)
 
 Matching uses only catalogue rows where:
 
-- `"svg"` is present (116 vendored files)
-- `navi_usable_as_fixed_symbol` is true (~91 after SVG filter)
+- `"svg"` is present (usable catalogue graphics, including the 12 generated plates)
+- `navi_usable_as_fixed_symbol` is true
 - `match_status` is **not** `variable_content` (8, including `136.*`, `140`, **`812`**) or `not_for_navigation` (3: `723.71`–`723.73`)
 
 `812` (recommended speed / advisory plate) is filed under `speed_limit` upstream but
 flagged `variable_content` with `maxspeed:advisory` — it is **excluded** from fixed-icon
 warnings. Compound OSM values such as `NO:100.1,812[40 km/t],807.2` match the first
-usable base sign only (`100.1`); underskilt segments are ignored.
+usable base sign only (`100.1`); underskilt segments are ignored. The generated fixed
+speed plates are **not** subject to those exclusion filters.
 
 ## Underskilt / compound-sign scope (known limitation)
 

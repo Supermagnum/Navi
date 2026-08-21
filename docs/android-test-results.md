@@ -403,7 +403,7 @@ Log tags: `RoadSignIntegration`, `RoadSignSchool`.
 
 | Layer | What shipped |
 |---|---|
-| Catalogue | Vendored Supermagnum/road-signs (`be4dda9`); 116 SVG keys; Norway jurisdiction gate |
+| Catalogue | Vendored Supermagnum/road-signs (`be4dda9`) plus 12 generated every-5 km/h plates and the `362.20` stand-in; **129** SVG keys; Norway jurisdiction gate |
 | Tagged signs | PBF scan at region load; `nearest_road_sign_warning_json`; approach box |
 | Children-zone fallback | `amenity=school`, `amenity=kindergarten`, `leisure=playground` POIs; 200 m route corridor; single generic **142** warning (`source=children_proximity`); explicit tagged **142** wins |
 | Dedup | Nearest POI across categories — no stacked warnings when school + kindergarten cluster |
@@ -485,3 +485,18 @@ adb push /tmp/live_hazards_cache/ostlandet-latest.osm \
 ```
 
 Design reference: [`road-signs.md`](road-signs.md), [`route-simulation.md`](route-simulation.md).
+
+## Item 15 — Generated every-5 km/h speed plates (2026-08-21)
+
+Dedicated look-forward plates for OSM `maxspeed` values
+`5/10/15/25/35/45/55/65/75/85/95/105` (digit-composited from official NLOD 362
+plates; not original government art for those codes). Snap fallback remains only
+for odd values still without a shipped plate.
+
+| Check | Result |
+|---|---|
+| `live_hazard` unit: dedicated icons for 5/45/65/105 | **PASS** |
+| `road_sign_icon_assets`: all cone plates resolve; catalogue rasterize | **PASS** (no `unknown.svg`) |
+| Docs / upstream | [`road-signs.md`](road-signs.md); [Supermagnum/road-signs#1](https://github.com/Supermagnum/road-signs/pull/1) |
+
+On-device confirmation of dedicated plates for real `maxspeed=45` / `65` ways is still recommended after installing this build.

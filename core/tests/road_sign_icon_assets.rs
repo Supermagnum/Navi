@@ -93,15 +93,27 @@ fn all_catalog_svgs_have_bundled_icons() {
 fn speed_limit_cone_plates_all_resolve() {
     let bundled = icons_root();
     for key in [
+        "no_sign_362_5",
+        "no_sign_362_10",
+        "no_sign_362_15",
         "no_sign_362_20",
+        "no_sign_362_25",
         "no_sign_362_30",
+        "no_sign_362_35",
         "no_sign_362_40",
+        "no_sign_362_45",
         "no_sign_362_50",
+        "no_sign_362_55",
         "no_sign_362_60",
+        "no_sign_362_65",
         "no_sign_362_70",
+        "no_sign_362_75",
         "no_sign_362_80",
+        "no_sign_362_85",
         "no_sign_362_90",
+        "no_sign_362_95",
         "no_sign_362_100",
+        "no_sign_362_105",
         "no_sign_362_110",
     ] {
         let path = driver_break_core::icons::resolve_icon(key, IconTheme::Day, None, &bundled);
