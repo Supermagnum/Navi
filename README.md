@@ -828,3 +828,6 @@ Country/region visual extracts can also be prepared with
 # TODO
 
 (Future work only — shipped features are listed in the Features table above.)
+Add support for imperial units, and language selection based on android devices location
+with fallback to English as default if no translation is found.
+
