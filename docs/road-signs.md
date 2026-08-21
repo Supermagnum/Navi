@@ -117,10 +117,11 @@ When a route is active, children-zone proximity uses the corridor band:
 - keep explicit mapped children warnings (`NO:142`, `hazard=child_safety`, etc.) as
   higher-priority when present
 
-### Live hazard cone without a route (300 m)
+### Live hazard cone without a route (300 m) — product name: **Look forward**
 
 When **no** progress tracker / planned route is active, GPS position + heading
-drive the same approach chrome via a **route-independent cone**:
+drive the same approach chrome via a **route-independent cone** (README:
+**Look forward**):
 
 | Item | Value |
 |---|---|

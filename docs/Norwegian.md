@@ -105,9 +105,9 @@ Dette er helt valgfri støtte, ikke en betalingsmur — Navi er og forblir grati
 | **Kartrotasjon** | Nord opp, kompass eller kjøreretning. | Ferdig |
 | **Bevegelige ikoner** | Kan tegne nærliggende spormarkører på kartet. Live radiomating er ikke innebygd ennå. | Delvis |
 | **Norske vegskiltvarsler** | Vendoret `NO:`-katalog for tilnærmingsikoner i Norge; eksplisitte OSM `traffic_sign` / `hazard`-tagger. Samme 750 / 150 / 25 m-faser som svinginstruksjoner. Se [`road-signs.md`](road-signs.md). | Ferdig |
-| **Barnefasiliteter i nærheten** | Når ingen tagget barn-/skolevarselskilt er aktivt, gir skoler, barnehager og lekeplasser fortsatt et generisk **142 Barn**-tilnærmingsvarsel (nærmeste anlegg; tagget `NO:142` går foran). **Med planlagt rute:** innen **200 m** fra korridoren. **Uten rute (live kjøring):** innen **300 m** heading-kjegle fra GPS. Detaljer: [`road-signs.md`](road-signs.md). | Ferdig |
-| **Live farekjegle (uten rute)** | Kjøring uten planlagt rute viser likevel tilnærmingsvarsler for katalogskilt, fartshumper (`traffic_calming` som `NO:109`), barnefasiliteter og opt-in fartskamera innen **300 m** fremoverkjegle (±60°). Kompakte punkter parses én gang ved regionslasting; vindu gjenbruker samme celle som idle veinavn/fartsgrense. Fartsgrense-look-ahead bruker eksisterende cellegraf. Samme jurisdiksjonsregler som rute-korridoren. | Ferdig |
-| **Fartskameravarsler** | Punktkamera bruker samme tilnærmingsfaser; snittfart / strekningskontroll har egen inn-/utboks. Jurisdiksjonsstyrt (Norge/UK opt-in; flere land avslår) — se [`jurisdiction-rules.md`](jurisdiction-rules.md). Første-gangs opt-in-dialog. Virker både på planlagt-rute-korridor og live farekjegle. | Ferdig (kun visning/varsel) |
+| **Look forward / Se fremover** | Uten planlagt rute ser GPS-posisjon + heading **300 m** fremover (±60°) etter katalogskilt, fartshumper (`NO:109`), barnefasiliteter (generisk **142**), opt-in fartskamera og kommende skiltet fartsgrense fra eksisterende veinavn-/cellegraf — samme tilnærmingsboks (750 / 150 / 25 m) og jurisdiksjonsregler som rute-korridoren. Kompakte punkter lastes én gang per region. Detaljer: [`road-signs.md`](road-signs.md). | Ferdig |
+| **Barnefasiliteter i nærheten** | Når ingen tagget barn-/skolevarselskilt er aktivt, gir skoler, barnehager og lekeplasser fortsatt et generisk **142 Barn**-tilnærmingsvarsel (nærmeste anlegg; tagget `NO:142` går foran). **Med planlagt rute:** innen **200 m** fra korridoren. **Uten rute:** dekkes av **Look forward** (300 m kjegle). Detaljer: [`road-signs.md`](road-signs.md). | Ferdig |
+| **Fartskameravarsler** | Punktkamera bruker samme tilnærmingsfaser; snittfart / strekningskontroll har egen inn-/utboks. Jurisdiksjonsstyrt (Norge/UK opt-in; flere land avslår) — se [`jurisdiction-rules.md`](jurisdiction-rules.md). Første-gangs opt-in-dialog. Virker både på planlagt-rute-korridor og **Look forward**. | Ferdig (kun visning/varsel) |
 | **Kartoppdateringer** | Bare når du ber om det — sjekk OpenStreetMap-oppdateringer eller last en fersk region. Aldri i det stille. | Ferdig |
 | **Diagnostisk logging** | Bryter under Tools skriver en øktlogg (GPS, kamera, brytere, ruteplan/trinn, øko, POI, pauser, instruksjoner, drivstoff, system) du kan kopiere over USB/MTP — adb trengs ikke. Filer: **Intern lagring → Documents → debug** (`navi_session_*.log`). | Ferdig |
 | **Plugins** | En trygg sandkasse for fremtidige tillegg finnes; produktplugins er ikke levert ennå. | Vert klar |
@@ -254,13 +254,15 @@ når fiks og gjeldende grense er kjent; overskridelse er bare farge i dag
 varsler Navi likevel når skole, barnehage eller lekeplass er i nærheten —
 generisk skilt **142**, samme tilnærmingsboks som andre vegskilt. Langs en
 **planlagt rute** betyr det innen **200 m** fra korridoren; ved **live kjøring
-uten rute** innen **300 m** heading-kjegle. Eksplisitt tagget `NO:142` (eller
-tilsvarende) går foran denne reserven. Se [`road-signs.md`](road-signs.md).
+uten rute** dekker **Look forward** dem innen **300 m** heading-kjegle.
+Eksplisitt tagget `NO:142` (eller tilsvarende) går foran denne reserven. Se
+[`road-signs.md`](road-signs.md).
 
-**Live farekjegle.** Uten planlagt rute styrer GPS-posisjon + heading samme
-`RoadSignWarningBox` / kamerachrome for skilt, humper, barnesoner og opt-in
-kamera (300 m kjegle). Kompakte punkter lastes én gang per region (ikke
-omparses hvert GPS-tick). Detaljer: [`road-signs.md`](road-signs.md),
+**Look forward / Se fremover.** Uten planlagt rute ser GPS-posisjon + heading
+**300 m** fremover (±60°) og styrer samme tilnærmingschrome for katalogskilt,
+fartshumper, barnesoner, opt-in kamera og kommende skiltet fartsgrense fra
+eksisterende veinavn-/cellegraf. Kompakte punkter lastes én gang per region
+(ikke omparses hvert GPS-tick). Detaljer: [`road-signs.md`](road-signs.md),
 [`route-simulation.md`](route-simulation.md).
 
 # Innstillinger
@@ -434,7 +436,7 @@ Fullt galleri: [`bilder.md`](bilder.md) (engelsk:
 | [`poi.md`](poi.md) | Stedstyper og søk |
 | [How to use Navi](how-to-use.md) | Brukerveiledning (planlegging, Tools, pauser, lagrede steder/ruter, profiler) — engelsk |
 | [`current-street.md`](current-street.md) | Bunn-HUD: veinavn, GPS-fart / skiltet grense, overskridelsesfarge |
-| [`road-signs.md`](road-signs.md) | Norske fareskilt, barnesone-nærhet, live 300 m farekjegle, tilnærmingsfaser |
+| [`road-signs.md`](road-signs.md) | Norske fareskilt, barnesone-nærhet, Look forward (300 m kjegle), tilnærmingsfaser |
 | [`kartmerking-lagrede-steder.md`](kartmerking-lagrede-steder.md) | Trykk-og-hold (4 s) og lagrede steder (engelsk: [`map-marking-saved-places.md`](map-marking-saved-places.md)) |
 | [`historisk-bakgrunn.md`](historisk-bakgrunn.md) | Rast/vei-grunnlag for pauseintervaller (fottur/sykling) |
 | [`ec-561-truck-rest.md`](ec-561-truck-rest.md) | EU lastebil kjøre-/hviletid |
