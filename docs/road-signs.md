@@ -80,37 +80,69 @@ FFI: `load_road_signs_json`, `nearest_road_sign_warning_json`, `road_sign_jurisd
 
 ## Offline / pack architecture (decision)
 
-**Decision:** one-time PBF scan at region load, JSON cache in memory (same pattern as
-speed cameras). No separate indexed sidecar in v1.
+**Decision:** parse once into **compact native point sets** at region load
+(catalogue signs, children **centroids** only, speed cameras, speed bumps), then
+query in memory. Prefer an on-disk layer cache under
+`live_hazards_cache/<pbf-stem>/` (`signs.json`, `children.json`, `cameras.json`,
+`bumps.json`) when present so low-RAM devices skip multi-pass Ostlandet-scale
+PBF rescans. Host extract helper:
+`cargo run -p navi-ffi --bin live-hazard-extract --release -- <pbf> <out_dir>`.
 
-**Reasoning:** tagged sign nodes are sparse; a full-region scan completes in seconds on
-device and reuses the already-downloaded Geofabrik extract. Indexed packs remain reserved
-for dense geometry (graph, POI/barriers, wetlands). Sign hits are reloaded when the active
-region PBF changes (`LaunchedEffect(dataDir)`), preserving offline-first discipline with
-no runtime network fetch of catalogue data.
+No separate indexed sidecar in v1 for these sparse point hazards.
+
+**Reasoning:** tagged sign / calming / camera nodes and facility centroids are
+sparse (~MB for Østlandet, not tens of MB of way vertices). Re-decoding full
+region JSON on every GPS tick was ruled out (tens–hundreds of ms). Compact
+points + a cell window keep per-tick UniFFI cost in the low-millisecond range
+on SM-P613.
+
+Hits are (re)ingested when the active region PBF / cache key changes
+(`LaunchedEffect(dataDir)`), preserving offline-first discipline with no
+runtime network fetch of catalogue data.
 
 Østlandet Geofabrik extract (nodes scanned on-device): **no** `traffic_sign=NO:142`
 or `hazard=children` objects. School buildings (`amenity=school`) are still widely
 mapped, so tag-only matching can miss school-zone risk context.
 
-Fallback now adds a route-corridor children-zone proximity signal:
+### Planned-route corridor (200 m)
 
-- load real child-zone POIs from the active region PBF (nodes + way geometry points):
+When a route is active, children-zone proximity uses the corridor band:
+
+- load child-zone facilities from the active region (nodes + **way centroids**):
   `amenity=school`, `amenity=kindergarten`, `leisure=playground`
-- keep only POIs within **200 m** of the planned route corridor (`CorridorBand`)
+- keep only facilities within **200 m** of the planned route corridor (`CorridorBand`)
 - surface a single generic `142` (Children) warning in `RoadSignWarningBox` using the
   same approach phases (750 / 150 / 25 m) — one warning per approach even when several
-  categories cluster (nearest POI wins)
+  categories cluster (nearest facility wins)
 - keep explicit mapped children warnings (`NO:142`, `hazard=child_safety`, etc.) as
   higher-priority when present
 
-Presentation uses the same `no_sign_142` icon and generic “Children ahead” / “Children
-zone: {name}” label for all three categories; sign 142’s catalogue meaning already
-covers schools and playgrounds.
+### Live hazard cone without a route (300 m)
 
-This fallback is jurisdiction-agnostic by design: it does not assume Norwegian
-tagging completeness and works as a last-resort safety cue where explicit children
-warning tags are sparse.
+When **no** progress tracker / planned route is active, GPS position + heading
+drive the same approach chrome via a **route-independent cone**:
+
+| Item | Value |
+|---|---|
+| Radius | **300 m** (distinct from the 200 m route-corridor children band) |
+| Half-width | ±60° from GPS heading (isotropic disk if bearing unknown) |
+| Categories | Catalogue road signs, speed bumps → `NO:109`, children centroids → `142`, opted-in speed cameras, upcoming speed-limit plate from the **existing** `road_label_near` cell graph |
+| Window | Same ~0.05° cell + 1 pad as idle street / posted-limit refresh |
+| Priority | Explicit tagged `142` > children proximity > other signs/humps; nearest-wins among clustered child-zone categories |
+| Jurisdiction | Same Norway road-sign gate and camera jurisdiction / opt-in as the corridor path — a missing route must not bypass gates |
+
+Implementation: `core/src/routing/live_hazard.rs`, UniFFI
+`live_hazard_cone_*` / `live_hazards_ingest_from_json` / `live_speed_limit_cone_json`,
+host wiring in `MainActivity.kt` (cone only when `progressTracker == null`).
+
+Presentation uses the same `no_sign_142` / `no_sign_109` icons and
+“Children ahead” / “Children zone: {name}” labels as the corridor path.
+
+The **corridor** children proximity fallback remains a last-resort safety cue
+where explicit children warning tags are sparse (it does not invent Norwegian
+catalogue IDs outside the cone/sign jurisdiction path). Catalogue signs and
+speed-bump `109` plates on the live cone stay Norway-gated like other road-sign
+warnings.
 
 Innlandet east of 11°E is mis-labelled `se` by the coarse Sweden ISO ring; road-sign
 jurisdiction treats that overlap as Norway so Vallset / Elverum / Løten warnings
@@ -118,8 +150,11 @@ are not suppressed.
 
 ## Tests
 
-- Rust unit: `cargo test -p driver-break-core road_sign::`
+- Rust unit: `cargo test -p driver-break-core road_sign::` and `live_hazard::`
 - Icon raster: `core/tests/road_sign_icon_assets.rs`
-- Device: `RoadSignIntegrationInstrumentedTest`, `RoadSignIconScreenshotTest`,
+- Device (corridor): `RoadSignIntegrationInstrumentedTest`, `RoadSignIconScreenshotTest`,
   `RoadSignSchoolCorridorInstrumentedTest` (Vallset skole / `NO:109` + children-zone
   proximity on SM-P613)
+- Device (live cone): `LiveHazardConeVallsetInstrumentedTest` (built-in simulator,
+  route-independent Vallset corridor), `LiveHazardConeOverheadInstrumentedTest`
+  (compact ingest + tick cost; prefers `live_hazards_cache/`)

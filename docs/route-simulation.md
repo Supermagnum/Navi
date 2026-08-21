@@ -68,8 +68,30 @@ inject off-route fixes via `NaviMapTestHooks.pendingInjectFixLatLon`.
 Plan results expose `simSamplesJson` and `maneuversJson` on
 `CorridorRouteResult` (also merged across multi-via legs on the Android host).
 
+## Route-independent live hazard cone
+
+Debug / instrumented playback can also drive the **live hazard cone** without
+planning a route:
+
+1. Set `NaviMapTestHooks.liveConeSimCoordsJson` to a densified `[[lat,lon],…]`
+   polyline and `requestStartLiveConeSimulation = true`.
+2. Host clears `progressTracker`, builds samples via UniFFI
+   `simSamplesJsonFromLatLon`, and starts `RouteSimulator` on the same
+   `applyFix` path.
+3. Because no progress tracker is present, each fix runs the **300 m** heading
+   cone (`live_hazard_cone_*`) instead of corridor / isotropic route warnings.
+
+Seek (`requestSimSeekCumM`) must not call `prepareRouteSimulation()` in this
+mode — that would attach a progress tracker and disable the cone. Approach
+lead distance should stay outside `APPROACH_HIDE_M` (~25 m) so hazards remain
+ahead in the cone.
+
+See [`road-signs.md`](road-signs.md) (Live hazard cone) and device tests
+`LiveHazardConeVallsetInstrumentedTest`, `LiveHazardConeOverheadInstrumentedTest`.
+
 ## Related
 
 - Live GPS / IMU hardware checks remain in [`real-hardware-testing.md`](real-hardware-testing.md)
   — this simulator does **not** replace those.
 - Approach UX: [`approach-instructions.md`](approach-instructions.md)
+- Road signs / children / cone: [`road-signs.md`](road-signs.md)

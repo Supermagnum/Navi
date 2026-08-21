@@ -110,8 +110,9 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Moving icons** | Can draw nearby tracked markers on the map. A live radio feed is not built in yet. | Partial |
 | **Seasonal road closures** | OSM `motor_vehicle:conditional` / `access:conditional` hard-filtered against the planned departure time (Car/Truck honour it; Hiking/Bicycle do not). Verified on Friisvegen (way `361797686`) on both bbox/PBF fallback and pack-hit (graph pack **v3**). Purely OSM-tag-driven — no jurisdiction pack. **v1 limitation:** multi-day trips that cross a season boundary are evaluated only at the planned departure instant (not re-evaluated day-by-day along the trip). | Done |
 | **Norwegian road-sign warnings** | Vendored `NO:` catalogue approach icons in Norway; explicit OSM `traffic_sign` / `hazard` tags. Same 750 / 150 / 25 m approach phases as maneuvers. See [`docs/road-signs.md`](docs/road-signs.md). | Done |
-| **Children facilities nearby** | When no tagged children / school sign is on the corridor, schools, kindergartens, and playgrounds within **200 m** of the planned route still trigger a generic **142 Children** approach warning (one nearest POI; tagged `NO:142` outranks this fallback). Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
-| **Speed camera warnings** | Point cameras use the existing approach distance-phase UX; average-speed / section-control zones use a distinct enter/exit box. `maxspeed:conditional` is evaluated against live local time. Jurisdiction-gated like EC561 / allemannsretten: Norway/UK opt-in (OSM-sourced, may be incomplete); Germany/France/Switzerland and unknown jurisdictions decline — see [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). First-run opt-in dialog required (not silently enabled). | Done (display/warning only — no route-avoidance toggle, by deliberate product decision) |
+| **Children facilities nearby** | When no tagged children / school sign is active, schools, kindergartens, and playgrounds still trigger a generic **142 Children** approach warning (nearest facility wins; tagged `NO:142` outranks this fallback). **With a planned route:** facilities within **200 m** of the corridor. **Without a route (live drive):** facilities inside a **300 m** heading cone from GPS. Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
+| **Live hazard cone (no route)** | Driving without a planned route still shows approach warnings for catalogue signs, speed humps (`traffic_calming=hump/table/bump` as `NO:109`), children facilities, and opted-in speed cameras inside a **300 m** forward cone (±60°). Compact points are parsed once at region load (optional on-disk cache); residency reuses the same cell window as idle street/limit snap. Speed-limit look-ahead queries the existing cell graph — no separate limit dataset. Same jurisdiction gates as the route-corridor path. | Done |
+| **Speed camera warnings** | Point cameras use the existing approach distance-phase UX; average-speed / section-control zones use a distinct enter/exit box. `maxspeed:conditional` is evaluated against live local time. Jurisdiction-gated like EC561 / allemannsretten: Norway/UK opt-in (OSM-sourced, may be incomplete); Germany/France/Switzerland and unknown jurisdictions decline — see [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). First-run opt-in dialog required (not silently enabled). Works on both planned-route corridor and live hazard cone. | Done (display/warning only — no route-avoidance toggle, by deliberate product decision) |
 | **Map updates** | Only when you ask — check for OpenStreetMap updates or download a fresh region. Never silent. On-screen copy is plain language (no internal planner dumps). | Done |
 | **Cross-region / cross-country prompts** | Destinations outside downloaded data (including another country, e.g. Sweden) show **Map data needed** with the correct Geofabrik extract — not a silent partial route. Evidence: [`android-test-results.md` Item 10](docs/android-test-results.md#item-10--osm-update-copy-cross-region-prompts-expanded-catalog-2026-08-19). | Done |
 | **Diagnostic logging** | Tools toggle writes a session log (GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system) you can copy over USB/MTP — no adb required. Files: **Internal storage → Documents → debug** (`navi_session_*.log`). | Done |
@@ -257,12 +258,19 @@ and an applicable limit are known; overspeed is a colour change only today
 warnings are a **plugin spec**, not shipped:
 [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md).
 
-**Children facilities nearby.** Along a planned route, if OSM has no tagged
-children / school warning sign, Navi still warns when a school, kindergarten, or
-playground sits within **200 m** of the corridor — generic sign **142**, same
-approach box timing as other road-sign warnings. An explicit tagged `NO:142`
-(or equivalent) wins over this fallback. See
+**Children facilities nearby.** If OSM has no tagged children / school warning
+sign, Navi still warns when a school, kindergarten, or playground is nearby —
+generic sign **142**, same approach box timing as other road-sign warnings.
+Along a **planned route** that means within **200 m** of the corridor; on a
+**live drive without a route** it means inside the **300 m** heading cone.
+An explicit tagged `NO:142` (or equivalent) wins over this fallback. See
 [`docs/road-signs.md`](docs/road-signs.md).
+
+**Live hazard cone.** Without a planned route, GPS position + heading drive the
+same `RoadSignWarningBox` / camera chrome for signs, humps, children zones, and
+opted-in cameras (300 m cone). Compact point sets are loaded once per region
+(not re-parsed every GPS tick). Detail: [`docs/road-signs.md`](docs/road-signs.md),
+[`docs/route-simulation.md`](docs/route-simulation.md).
 
 # Settings
 
@@ -465,7 +473,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/map-styles.md`](docs/map-styles.md) | Online vs offline map look; 3D |
 | [`docs/poi.md`](docs/poi.md) | Place types and search |
 | [How to use Navi](docs/how-to-use.md) | End-user how-to (planning, Tools, breaks, saved places/routes, profiles) |
-| [`docs/road-signs.md`](docs/road-signs.md) | Norwegian road-sign catalogue, children-zone proximity, approach phases |
+| [`docs/road-signs.md`](docs/road-signs.md) | Norwegian road-sign catalogue, children-zone proximity, live 300 m hazard cone, approach phases |
 | [`docs/map-marking-saved-places.md`](docs/map-marking-saved-places.md) | Map long-press (4 s) and Saved places detail (Norwegian: [`kartmerking-lagrede-steder.md`](docs/kartmerking-lagrede-steder.md)) |
 | [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | EU truck driving-time rules |
 | [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | US truck hours-of-service |

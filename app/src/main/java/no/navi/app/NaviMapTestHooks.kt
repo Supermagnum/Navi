@@ -661,4 +661,43 @@ object NaviMapTestHooks {
     /** Length of the in-memory road-sign index after PBF load (`-1` = not loaded). */
     @Volatile
     var lastRoadSignsIndexed: Int = -1
+
+    /**
+     * When true (default), route-independent 300 m heading cone is used whenever there
+     * is no planned route. Set false for overhead A/B (feature-off baseline).
+     */
+    @Volatile
+    var liveHazardConeEnabled: Boolean = true
+
+    /** Compact live-hazard load stats from [ensureLiveHazardsLoaded] (`-1` = not loaded). */
+    @Volatile
+    var lastLiveHazardSigns: Int = -1
+
+    @Volatile
+    var lastLiveHazardChildren: Int = -1
+
+    @Volatile
+    var lastLiveHazardCameras: Int = -1
+
+    @Volatile
+    var lastLiveHazardBumps: Int = -1
+
+    @Volatile
+    var lastLiveHazardCompactUtf8: Long = -1
+
+    @Volatile
+    var lastLiveHazardConeM: Double = Double.NaN
+
+    /**
+     * One-shot: start route simulation along [liveConeSimCoordsJson] without a planned
+     * route (progress tracker cleared). Coords JSON: `[[lat,lon],…]`.
+     */
+    @Volatile
+    var requestStartLiveConeSimulation: Boolean = false
+
+    @Volatile
+    var liveConeSimCoordsJson: String? = null
+
+    @Volatile
+    var liveConeSimSpeedKmh: Double = 40.0
 }

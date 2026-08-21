@@ -145,12 +145,14 @@ next maneuver”).
 
 | What | Where |
 |---|---|
-| Product rules | [`road-signs.md`](road-signs.md), README Features (speed cameras) |
+| Product rules | [`road-signs.md`](road-signs.md), README Features (speed cameras / live cone) |
 | Catalogue + match | `core/src/routing/road_sign.rs`, `core/src/icons/road-signs/` |
-| Children-zone fallback | `load_school_pois_json`, `schools_near_route_corridor_json`, `nearest_school_proximity_warning_json` |
+| Children-zone corridor fallback | `load_school_pois_json`, `schools_near_route_corridor_json`, `nearest_school_proximity_warning_json` |
+| Live hazard cone (no route) | `core/src/routing/live_hazard.rs`; UniFFI `live_hazard_cone_*`, `live_hazards_ingest_from_json`, `live_speed_limit_cone_json` |
+| Host extract (compact JSON) | `navi-ffi` bin `live-hazard-extract` |
 | Speed cameras | `core/src/routing/speed_camera.rs` + UniFFI `nearest_speed_camera_warning_json` |
 | Compose chrome | `RoadSignWarningBox.kt`, speed-camera box in `MainActivity.kt` |
-| Merge / host wiring | `MainActivity.kt` (explicit sign outranks proximity) |
+| Merge / host wiring | `MainActivity.kt` (corridor when progress tracker set; cone when null; explicit sign outranks proximity) |
 | Alert tones (planned) | [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md) |
 | Cluster export (planned) | [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) |
 
@@ -204,7 +206,8 @@ profiles use the road graph.
 | What | Where |
 |---|---|
 | Behaviour | [`route-simulation.md`](route-simulation.md) |
-| Engine | `RouteSimulator.kt` + `sim_samples_json` from FFI |
+| Engine | `RouteSimulator.kt` + `sim_samples_json` / `sim_samples_json_from_lat_lon` from FFI |
+| Live-cone hooks | `NaviMapTestHooks.liveConeSimCoordsJson`, `requestStartLiveConeSimulation` |
 | Banner / hooks | `MainActivity.kt`, `NaviMapTestHooks.kt` |
 
 ### Plugins

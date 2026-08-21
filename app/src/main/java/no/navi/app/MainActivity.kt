@@ -1016,30 +1016,81 @@ private fun NaviMapScreen() {
         val pbf = resolveRegionPbf() ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
             runCatching {
-                speedCamerasJson = uniffi.navi.loadSpeedCamerasJson(pbf.absolutePath)
+                // Prefer native compact cache (already filled at region load).
+                val fromCache = uniffi.navi.liveHazardsSpeedCamerasJson()
+                speedCamerasJson =
+                    if (fromCache != "[]") {
+                        fromCache
+                    } else {
+                        uniffi.navi.loadSpeedCamerasJson(pbf.absolutePath)
+                    }
             }
         }
     }
     LaunchedEffect(dataDir) {
         val pbf = resolveRegionPbf() ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            val raw =
-                runCatching { uniffi.navi.loadRoadSignsJson(pbf.absolutePath) }
-                    .getOrElse {
-                        NaviMapTestHooks.lastRoadSignsIndexed = -2
-                        return@withContext
-                    }
-            roadSignsJson = raw
+            fun readCache(name: String): String? {
+                val candidates =
+                    listOf(
+                        File(dataDir, "live_hazards_cache/${pbf.nameWithoutExtension}/$name"),
+                        File("/data/local/tmp/navi_fixtures/live_hazards_cache/${pbf.nameWithoutExtension}/$name"),
+                    )
+                return candidates.firstOrNull { it.isFile && it.length() > 2 }?.readText()
+            }
+            val cachedSigns = readCache("signs.json")
+            val cachedCams = readCache("cameras.json")
+            val cachedChildren = readCache("children.json")
+            val cachedBumps = readCache("bumps.json")
+            val signsRaw: String
+            val schoolRaw: String
+            val camsRaw: String
+            val bumpsRaw: String
+            if (
+                cachedSigns != null &&
+                cachedCams != null &&
+                cachedChildren != null &&
+                cachedBumps != null
+            ) {
+                signsRaw = cachedSigns
+                schoolRaw = cachedChildren
+                camsRaw = cachedCams
+                bumpsRaw = cachedBumps
+            } else {
+                signsRaw =
+                    runCatching { uniffi.navi.loadRoadSignsJson(pbf.absolutePath) }
+                        .getOrElse {
+                            NaviMapTestHooks.lastRoadSignsIndexed = -2
+                            return@withContext
+                        }
+                schoolRaw =
+                    runCatching { uniffi.navi.loadSchoolPoisJson(pbf.absolutePath) }
+                        .getOrDefault("[]")
+                camsRaw =
+                    runCatching { uniffi.navi.loadSpeedCamerasJson(pbf.absolutePath) }
+                        .getOrDefault("[]")
+                bumpsRaw =
+                    runCatching { uniffi.navi.loadSpeedBumpsJson(pbf.absolutePath) }
+                        .getOrDefault("[]")
+                // Persist compact layers so later launches (and low-RAM devices) skip PBF rescans.
+                runCatching {
+                    val cacheDir =
+                        File(dataDir, "live_hazards_cache/${pbf.nameWithoutExtension}").also {
+                            it.mkdirs()
+                        }
+                    File(cacheDir, "signs.json").writeText(signsRaw)
+                    File(cacheDir, "cameras.json").writeText(camsRaw)
+                    File(cacheDir, "children.json").writeText(schoolRaw)
+                    File(cacheDir, "bumps.json").writeText(bumpsRaw)
+                }
+            }
+            roadSignsJson = signsRaw
             NaviMapTestHooks.lastRoadSignsIndexed =
-                if (raw.contains("\"error\"")) {
+                if (signsRaw.contains("\"error\"")) {
                     -3
                 } else {
-                    runCatching { org.json.JSONArray(raw).length() }.getOrDefault(0)
+                    runCatching { org.json.JSONArray(signsRaw).length() }.getOrDefault(0)
                 }
-            val schoolRaw =
-                runCatching {
-                    uniffi.navi.loadSchoolPoisJson(pbf.absolutePath)
-                }.getOrDefault("[]")
             NaviMapTestHooks.lastSchoolPoisIndexed =
                 if (schoolRaw.contains("\"error\"")) {
                     -2
@@ -1047,6 +1098,27 @@ private fun NaviMapScreen() {
                     runCatching { org.json.JSONArray(schoolRaw).length() }.getOrDefault(0)
                 }
             schoolPoisJson = schoolRaw
+            if (speedCameraOptIn) {
+                speedCamerasJson = camsRaw
+            }
+            val liveStats =
+                runCatching {
+                    uniffi.navi.liveHazardsIngestFromJson(
+                        pbf.absolutePath,
+                        signsRaw,
+                        camsRaw,
+                        schoolRaw,
+                        bumpsRaw,
+                    )
+                }.getOrNull()
+            if (liveStats != null) {
+                NaviMapTestHooks.lastLiveHazardSigns = liveStats.signs.toInt()
+                NaviMapTestHooks.lastLiveHazardChildren = liveStats.children.toInt()
+                NaviMapTestHooks.lastLiveHazardCameras = liveStats.cameras.toInt()
+                NaviMapTestHooks.lastLiveHazardBumps = liveStats.bumps.toInt()
+                NaviMapTestHooks.lastLiveHazardCompactUtf8 = liveStats.compactJsonUtf8.toLong()
+                NaviMapTestHooks.lastLiveHazardConeM = liveStats.coneM
+            }
         }
     }
 
@@ -1828,6 +1900,89 @@ private fun NaviMapScreen() {
                             }
                         }
                     }
+                } else if (
+                    NaviMapTestHooks.liveHazardConeEnabled &&
+                    progressTrackerRef.get() == null
+                ) {
+                    // Route-independent 300 m heading cone (no planned route / progress tracker).
+                    if (loc.hasBearing() && loc.bearing.isFinite()) {
+                        NaviMapTestHooks.gpsBearingDeg = loc.bearing.toDouble()
+                    }
+                    val headingDeg =
+                        if (loc.hasBearing() && loc.bearing.isFinite()) {
+                            loc.bearing.toDouble()
+                        } else {
+                            null
+                        }
+                    val camJson =
+                        if (speedCameraOptIn) {
+                            uniffi.navi.liveHazardConeSpeedCameraWarningJson(
+                                loc.latitude,
+                                loc.longitude,
+                                headingDeg,
+                                true,
+                            )
+                        } else {
+                            "{}"
+                        }
+                    speedCameraWarning =
+                        speedCameraWarningFromJson(camJson).copy(
+                            preferMetric = driveHud.preferMetric,
+                        )
+                    val signJson =
+                        uniffi.navi.liveHazardConeRoadSignWarningJson(
+                            loc.latitude,
+                            loc.longitude,
+                            headingDeg,
+                        )
+                    val schoolFallbackJson =
+                        uniffi.navi.liveHazardConeChildrenWarningJson(
+                            loc.latitude,
+                            loc.longitude,
+                            headingDeg,
+                        )
+                    val signState = roadSignWarningFromJson(signJson)
+                    val schoolState = roadSignWarningFromJson(schoolFallbackJson)
+                    var finalRoadSignJson =
+                        when {
+                            signState.active && signState.code == "142" -> signJson
+                            schoolState.active -> schoolFallbackJson
+                            else -> signJson
+                        }
+                    if (!roadSignWarningFromJson(finalRoadSignJson).active) {
+                        val pbf = resolveRegionPbf()
+                        if (pbf != null) {
+                            val limitJson =
+                                runCatching {
+                                    uniffi.navi.liveSpeedLimitConeJson(
+                                        pbf.absolutePath,
+                                        graphCacheDirForPbf(pbf).absolutePath,
+                                        File(dataDir, "elevation").absolutePath,
+                                        loc.latitude,
+                                        loc.longitude,
+                                        headingDeg,
+                                        profile,
+                                        driveHud.currentSpeedLimitKmh,
+                                    )
+                                }.getOrDefault("{}")
+                            val plate =
+                                runCatching {
+                                    org.json.JSONObject(limitJson).optJSONObject("road_sign")
+                                }.getOrNull()
+                            if (plate != null && plate.has("icon_key")) {
+                                finalRoadSignJson = plate.toString()
+                            }
+                        }
+                    }
+                    roadSignWarning =
+                        roadSignWarningFromJson(finalRoadSignJson).copy(
+                            preferMetric = driveHud.preferMetric,
+                        )
+                    NaviMapTestHooks.lastRoadSignWarningJson =
+                        if (roadSignWarning.active) finalRoadSignJson else "{}"
+                    NaviMapTestHooks.lastSchoolProximityWarningJson = schoolFallbackJson
+                    NaviMapTestHooks.lastLiveHazardConeM =
+                        runCatching { uniffi.navi.liveHazardConeM() }.getOrDefault(300.0)
                 }
                 if (!streetFromRoute) {
                     if (speedKmh != null && driveHud.currentSpeedKmh != speedKmh) {
@@ -2169,6 +2324,28 @@ private fun NaviMapScreen() {
                                 startRouteSimulation()
                             }
                         }
+                        if (NaviMapTestHooks.requestStartLiveConeSimulation) {
+                            val coords = NaviMapTestHooks.liveConeSimCoordsJson
+                            if (!coords.isNullOrBlank()) {
+                                NaviMapTestHooks.requestStartLiveConeSimulation = false
+                                // No planned route: clear progress tracker so the live cone path runs.
+                                progressTrackerRef.set(null)
+                                NaviMapTestHooks.lastRoutePolyline = ""
+                                routeSchoolPoisJson = "[]"
+                                val samplesJson =
+                                    runCatching {
+                                        uniffi.navi.simSamplesJsonFromLatLon(
+                                            coords,
+                                            NaviMapTestHooks.liveConeSimSpeedKmh,
+                                        )
+                                    }.getOrDefault("[]")
+                                routeSamples = parseRouteSimSamples(samplesJson)
+                                NaviMapTestHooks.lastSimSamplesJson = samplesJson
+                                if (routeSamples.size >= 2) {
+                                    startRouteSimulation()
+                                }
+                            }
+                        }
                         if (NaviMapTestHooks.requestStopRouteSimulation) {
                             NaviMapTestHooks.requestStopRouteSimulation = false
                             stopRouteSimulation()
@@ -2220,8 +2397,25 @@ private fun NaviMapScreen() {
                         val seekCum = NaviMapTestHooks.requestSimSeekCumM
                         if (seekCum != null) {
                             NaviMapTestHooks.requestSimSeekCumM = null
-                            if (routeSimulator == null) {
-                                prepareRouteSimulation()
+                            if (routeSimulator == null && routeSamples.size >= 2) {
+                                if (progressTrackerRef.get() != null) {
+                                    prepareRouteSimulation()
+                                } else {
+                                    // Route-independent live-cone playback: no progress tracker.
+                                    routeSimulator =
+                                        RouteSimulator(
+                                            scope = scope,
+                                            samples = routeSamples,
+                                            onFix = { loc -> applyFixRef.get().invoke(loc) },
+                                            onSample = { s ->
+                                                NaviMapTestHooks.lastSimSpeedKmh = s.speedKmh
+                                                NaviMapTestHooks.lastSimHighway = s.highway
+                                                NaviMapTestHooks.lastSimMaxspeedPosted =
+                                                    s.maxspeedPosted
+                                            },
+                                            onFinished = {},
+                                        )
+                                }
                             }
                             // Mark as simulating so LM fixes stay suppressed during seeks.
                             simulating = true

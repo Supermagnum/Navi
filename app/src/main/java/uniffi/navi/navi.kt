@@ -950,6 +950,30 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1005,6 +1029,8 @@ fun uniffi_navi_checksum_func_elevation_at(
 ): Short
 fun uniffi_navi_checksum_func_ensure_indexed_maps(
 ): Short
+fun uniffi_navi_checksum_func_ensure_live_hazards_loaded(
+): Short
 fun uniffi_navi_checksum_func_ensure_place_index(
 ): Short
 fun uniffi_navi_checksum_func_ffi_linkage_smoke_test(
@@ -1037,6 +1063,24 @@ fun uniffi_navi_checksum_func_list_saved_places(
 ): Short
 fun uniffi_navi_checksum_func_list_saved_routes(
 ): Short
+fun uniffi_navi_checksum_func_live_hazard_cone_children_warning_json(
+): Short
+fun uniffi_navi_checksum_func_live_hazard_cone_m(
+): Short
+fun uniffi_navi_checksum_func_live_hazard_cone_road_sign_warning_json(
+): Short
+fun uniffi_navi_checksum_func_live_hazard_cone_speed_camera_warning_json(
+): Short
+fun uniffi_navi_checksum_func_live_hazards_children_json(
+): Short
+fun uniffi_navi_checksum_func_live_hazards_ingest_from_json(
+): Short
+fun uniffi_navi_checksum_func_live_hazards_road_signs_json(
+): Short
+fun uniffi_navi_checksum_func_live_hazards_speed_cameras_json(
+): Short
+fun uniffi_navi_checksum_func_live_speed_limit_cone_json(
+): Short
 fun uniffi_navi_checksum_func_load_car_rest_settings(
 ): Short
 fun uniffi_navi_checksum_func_load_ebike_config(
@@ -1054,6 +1098,8 @@ fun uniffi_navi_checksum_func_load_profile_poi_radii(
 fun uniffi_navi_checksum_func_load_road_signs_json(
 ): Short
 fun uniffi_navi_checksum_func_load_school_pois_json(
+): Short
+fun uniffi_navi_checksum_func_load_speed_bumps_json(
 ): Short
 fun uniffi_navi_checksum_func_load_speed_cameras_json(
 ): Short
@@ -1172,6 +1218,8 @@ fun uniffi_navi_checksum_func_set_osm_weekly_reminder(
 fun uniffi_navi_checksum_func_set_route_plan_timing_enabled(
 ): Short
 fun uniffi_navi_checksum_func_set_truck_exceptional_extension_armed(
+): Short
+fun uniffi_navi_checksum_func_sim_samples_json_from_lat_lon(
 ): Short
 fun uniffi_navi_checksum_func_speed_camera_jurisdiction_allows(
 ): Short
@@ -1310,6 +1358,8 @@ fun uniffi_navi_fn_func_elevation_at(`elevDir`: RustBuffer.ByValue,`lat`: Double
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ensure_indexed_maps(`pbfPath`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_ensure_live_hazards_loaded(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ffi_linkage_smoke_test(uniffi_out_err: UniffiRustCallStatus, 
@@ -1342,6 +1392,24 @@ fun uniffi_navi_fn_func_list_saved_places(`dataDir`: RustBuffer.ByValue,uniffi_o
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_list_saved_routes(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_live_hazard_cone_children_warning_json(`lat`: Double,`lon`: Double,`headingDeg`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_live_hazard_cone_m(uniffi_out_err: UniffiRustCallStatus, 
+): Double
+fun uniffi_navi_fn_func_live_hazard_cone_road_sign_warning_json(`lat`: Double,`lon`: Double,`headingDeg`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_live_hazard_cone_speed_camera_warning_json(`lat`: Double,`lon`: Double,`headingDeg`: RustBuffer.ByValue,`optedIn`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_live_hazards_children_json(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_live_hazards_ingest_from_json(`pbfKey`: RustBuffer.ByValue,`signsJson`: RustBuffer.ByValue,`camerasJson`: RustBuffer.ByValue,`childrenJson`: RustBuffer.ByValue,`bumpsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_live_hazards_road_signs_json(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_live_hazards_speed_cameras_json(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_live_speed_limit_cone_json(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`headingDeg`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`currentLimitKmh`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_car_rest_settings(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_ebike_config(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1359,6 +1427,8 @@ fun uniffi_navi_fn_func_load_profile_poi_radii(`dataDir`: RustBuffer.ByValue,`pr
 fun uniffi_navi_fn_func_load_road_signs_json(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_school_pois_json(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_load_speed_bumps_json(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_speed_cameras_json(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1478,6 +1548,8 @@ fun uniffi_navi_fn_func_set_route_plan_timing_enabled(`enabled`: Byte,uniffi_out
 ): Unit
 fun uniffi_navi_fn_func_set_truck_exceptional_extension_armed(`dataDir`: RustBuffer.ByValue,`armed`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_sim_samples_json_from_lat_lon(`coordsJson`: RustBuffer.ByValue,`speedKmh`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_speed_camera_jurisdiction_allows(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_station_timeout_max_s(uniffi_out_err: UniffiRustCallStatus, 
@@ -1676,6 +1748,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_ensure_indexed_maps() != 12375.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_ensure_live_hazards_loaded() != 1961.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_ensure_place_index() != 50894.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1724,6 +1799,33 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_list_saved_routes() != 35027.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_live_hazard_cone_children_warning_json() != 56189.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_live_hazard_cone_m() != 22046.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_live_hazard_cone_road_sign_warning_json() != 15179.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_live_hazard_cone_speed_camera_warning_json() != 64022.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_live_hazards_children_json() != 17881.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_live_hazards_ingest_from_json() != 7985.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_live_hazards_road_signs_json() != 59220.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_live_hazards_speed_cameras_json() != 53837.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_live_speed_limit_cone_json() != 55807.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_load_car_rest_settings() != 14933.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1748,7 +1850,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_load_road_signs_json() != 61490.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_load_school_pois_json() != 39766.toShort()) {
+    if (lib.uniffi_navi_checksum_func_load_school_pois_json() != 42356.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_load_speed_bumps_json() != 12479.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_load_speed_cameras_json() != 9336.toShort()) {
@@ -1926,6 +2031,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_set_truck_exceptional_extension_armed() != 17978.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_sim_samples_json_from_lat_lon() != 35705.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_speed_camera_jurisdiction_allows() != 51350.toShort()) {
@@ -3030,6 +3138,54 @@ public object FfiConverterTypeFfiGpsFix: FfiConverterRustBuffer<FfiGpsFix> {
             FfiConverterDouble.write(value.`lon`, buf)
             FfiConverterBoolean.write(value.`available`, buf)
             FfiConverterOptionalDouble.write(value.`speedKmh`, buf)
+    }
+}
+
+
+
+data class FfiLiveHazardLoadStats (
+    var `signs`: kotlin.UInt, 
+    var `children`: kotlin.UInt, 
+    var `cameras`: kotlin.UInt, 
+    var `bumps`: kotlin.UInt, 
+    var `compactJsonUtf8`: kotlin.ULong, 
+    var `coneM`: kotlin.Double
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiLiveHazardLoadStats: FfiConverterRustBuffer<FfiLiveHazardLoadStats> {
+    override fun read(buf: ByteBuffer): FfiLiveHazardLoadStats {
+        return FfiLiveHazardLoadStats(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterDouble.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiLiveHazardLoadStats) = (
+            FfiConverterUInt.allocationSize(value.`signs`) +
+            FfiConverterUInt.allocationSize(value.`children`) +
+            FfiConverterUInt.allocationSize(value.`cameras`) +
+            FfiConverterUInt.allocationSize(value.`bumps`) +
+            FfiConverterULong.allocationSize(value.`compactJsonUtf8`) +
+            FfiConverterDouble.allocationSize(value.`coneM`)
+    )
+
+    override fun write(value: FfiLiveHazardLoadStats, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`signs`, buf)
+            FfiConverterUInt.write(value.`children`, buf)
+            FfiConverterUInt.write(value.`cameras`, buf)
+            FfiConverterUInt.write(value.`bumps`, buf)
+            FfiConverterULong.write(value.`compactJsonUtf8`, buf)
+            FfiConverterDouble.write(value.`coneM`, buf)
     }
 }
 
@@ -4354,6 +4510,19 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Parse compact hazard points once into the native cache (signs, children centroids,
+         * cameras, speed bumps). Window refresh reuses the road_label_near cell bbox.
+         */ fun `ensureLiveHazardsLoaded`(`pbfPath`: kotlin.String): FfiLiveHazardLoadStats {
+            return FfiConverterTypeFfiLiveHazardLoadStats.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_ensure_live_hazards_loaded(
+        FfiConverterString.lower(`pbfPath`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Build or open the offline FTS name index for a region PBF.
          * Returns number of indexed named features (0 on failure; check report string).
          */ fun `ensurePlaceIndex`(`pbfPath`: kotlin.String, `indexDbPath`: kotlin.String): kotlin.String {
@@ -4542,6 +4711,117 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
+
+        /**
+         * Children proximity only (source=`children_proximity`) inside the live cone.
+         */ fun `liveHazardConeChildrenWarningJson`(`lat`: kotlin.Double, `lon`: kotlin.Double, `headingDeg`: kotlin.Double?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_live_hazard_cone_children_warning_json(
+        FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterOptionalDouble.lower(`headingDeg`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Hard-coded live cone radius (metres). Distinct from the 200 m route corridor.
+         */ fun `liveHazardConeM`(): kotlin.Double {
+            return FfiConverterDouble.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_live_hazard_cone_m(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Route-independent 300 m heading-cone road-sign / bump / children warning.
+         * `heading_deg` null = isotropic disk within the cone radius.
+         */ fun `liveHazardConeRoadSignWarningJson`(`lat`: kotlin.Double, `lon`: kotlin.Double, `headingDeg`: kotlin.Double?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_live_hazard_cone_road_sign_warning_json(
+        FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterOptionalDouble.lower(`headingDeg`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Speed-camera warning inside the live cone (same jurisdiction / opt-in gates).
+         */ fun `liveHazardConeSpeedCameraWarningJson`(`lat`: kotlin.Double, `lon`: kotlin.Double, `headingDeg`: kotlin.Double?, `optedIn`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_live_hazard_cone_speed_camera_warning_json(
+        FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterOptionalDouble.lower(`headingDeg`),FfiConverterBoolean.lower(`optedIn`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Children-centroid JSON from the native compact cache.
+         */ fun `liveHazardsChildrenJson`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_live_hazards_children_json(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Build the native compact cache from already-loaded JSON layers (parse once).
+         * Prefer this over [`ensure_live_hazards_loaded`] when the host already scanned the PBF.
+         */ fun `liveHazardsIngestFromJson`(`pbfKey`: kotlin.String, `signsJson`: kotlin.String, `camerasJson`: kotlin.String, `childrenJson`: kotlin.String, `bumpsJson`: kotlin.String): FfiLiveHazardLoadStats {
+            return FfiConverterTypeFfiLiveHazardLoadStats.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_live_hazards_ingest_from_json(
+        FfiConverterString.lower(`pbfKey`),FfiConverterString.lower(`signsJson`),FfiConverterString.lower(`camerasJson`),FfiConverterString.lower(`childrenJson`),FfiConverterString.lower(`bumpsJson`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Road-sign JSON from the native compact cache (empty if not loaded).
+         */ fun `liveHazardsRoadSignsJson`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_live_hazards_road_signs_json(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Speed-camera JSON from the native compact cache.
+         */ fun `liveHazardsSpeedCamerasJson`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_live_hazards_speed_cameras_json(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Upcoming speed limit on the existing road_label cell graph within the 300 m cone.
+         * No separate speed-limit dataset — reuses [`road_near_info`]'s graph cache.
+         */ fun `liveSpeedLimitConeJson`(`pbfPath`: kotlin.String, `cacheDir`: kotlin.String, `elevDir`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double, `headingDeg`: kotlin.Double?, `profile`: TravelProfile, `currentLimitKmh`: kotlin.Double?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_live_speed_limit_cone_json(
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`cacheDir`),FfiConverterString.lower(`elevDir`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterOptionalDouble.lower(`headingDeg`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterOptionalDouble.lower(`currentLimitKmh`),_status)
+}
+    )
+    }
+    
  fun `loadCarRestSettings`(`dataDir`: kotlin.String): FfiCarRestSettings {
             return FfiConverterTypeFfiCarRestSettings.lift(
     uniffiRustCall() { _status ->
@@ -4628,12 +4908,23 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * Load child-zone POIs (`amenity=school`, `amenity=kindergarten`, `leisure=playground`)
-         * from a region PBF (nodes + way boundary nodes + centroids).
+         * Load child-zone POIs as **centroids only** (nodes + way centroids — no way vertices).
          */ fun `loadSchoolPoisJson`(`pbfPath`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_load_school_pois_json(
+        FfiConverterString.lower(`pbfPath`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Load speed-bump / hump / table nodes as compact JSON.
+         */ fun `loadSpeedBumpsJson`(`pbfPath`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_load_speed_bumps_json(
         FfiConverterString.lower(`pbfPath`),_status)
 }
     )
@@ -5302,6 +5593,19 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_set_truck_exceptional_extension_armed(
         FfiConverterString.lower(`dataDir`),FfiConverterBoolean.lower(`armed`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Densify a lat/lon polyline into simulation samples (no route plan required).
+         * `coords_json`: `[[lat,lon],…]`.
+         */ fun `simSamplesJsonFromLatLon`(`coordsJson`: kotlin.String, `speedKmh`: kotlin.Double): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_sim_samples_json_from_lat_lon(
+        FfiConverterString.lower(`coordsJson`),FfiConverterDouble.lower(`speedKmh`),_status)
 }
     )
     }

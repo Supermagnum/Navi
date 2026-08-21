@@ -11,6 +11,7 @@ pub mod graph;
 pub mod guidance_path;
 pub mod hiking_hybrid;
 pub mod indexed;
+pub mod live_hazard;
 pub mod osm_update;
 pub mod region;
 pub mod rest;

@@ -68,3 +68,7 @@ path = "src/bin/navi_indexed_plan_bench.rs"
 [[bin]]
 name = "navi-wetland-bench"
 path = "src/bin/navi_wetland_bench.rs"
+
+[[bin]]
+name = "live-hazard-extract"
+path = "src/bin/live_hazard_extract.rs"

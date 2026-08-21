@@ -4684,182 +4684,517 @@ pub fn nearest_road_sign_warning_json(signs_json: String, lat: f64, lon: f64) ->
     .to_string()
 }
 
-fn children_zone_category_from_tags<'a>(
-    tags: impl IntoIterator<Item = (&'a str, &'a str)>,
-) -> Option<&'static str> {
-    let mut amenity = None;
-    let mut leisure = None;
-    for (k, v) in tags {
-        if k == "amenity" {
-            amenity = Some(v);
-        } else if k == "leisure" {
-            leisure = Some(v);
+struct LiveHazardStore {
+    pbf_key: String,
+    full: driver_break_core::routing::live_hazard::LiveHazardIndex,
+    window_key: String,
+    window: driver_break_core::routing::live_hazard::LiveHazardIndex,
+}
+
+static LIVE_HAZARD_STORE: Mutex<Option<LiveHazardStore>> = Mutex::new(None);
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiLiveHazardLoadStats {
+    pub signs: u32,
+    pub children: u32,
+    pub cameras: u32,
+    pub bumps: u32,
+    pub compact_json_utf8: u64,
+    pub cone_m: f64,
+}
+
+/// Parse compact hazard points once into the native cache (signs, children centroids,
+/// cameras, speed bumps). Window refresh reuses the road_label_near cell bbox.
+#[uniffi::export]
+pub fn ensure_live_hazards_loaded(pbf_path: String) -> FfiLiveHazardLoadStats {
+    use driver_break_core::routing::live_hazard::{LiveHazardIndex, LIVE_HAZARD_CONE_M};
+    let key = pbf_path.clone();
+    {
+        let guard = LIVE_HAZARD_STORE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(store) = guard.as_ref() {
+            if store.pbf_key == key {
+                return FfiLiveHazardLoadStats {
+                    signs: store.full.signs.len() as u32,
+                    children: store.full.children.len() as u32,
+                    cameras: store.full.cameras.len() as u32,
+                    bumps: store.full.bumps.len() as u32,
+                    compact_json_utf8: store.full.estimated_compact_json_utf8() as u64,
+                    cone_m: LIVE_HAZARD_CONE_M,
+                };
+            }
         }
     }
-    match (amenity, leisure) {
-        (Some("school"), _) => Some("school"),
-        (Some("kindergarten"), _) => Some("kindergarten"),
-        (_, Some("playground")) => Some("playground"),
-        _ => None,
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        LiveHazardIndex::load_from_pbf(&pbf_path)
+    })) {
+        Ok(Ok((full, stats))) => {
+            let empty = LiveHazardIndex::default();
+            let out = FfiLiveHazardLoadStats {
+                signs: stats.signs as u32,
+                children: stats.children as u32,
+                cameras: stats.cameras as u32,
+                bumps: stats.bumps as u32,
+                compact_json_utf8: stats.compact_json_utf8 as u64,
+                cone_m: LIVE_HAZARD_CONE_M,
+            };
+            if let Ok(mut guard) = LIVE_HAZARD_STORE.lock() {
+                *guard = Some(LiveHazardStore {
+                    pbf_key: key,
+                    full,
+                    window_key: String::new(),
+                    window: empty,
+                });
+            }
+            log::info!(
+                target: "NaviNative",
+                "live_hazards loaded signs={} children={} cameras={} bumps={}",
+                out.signs, out.children, out.cameras, out.bumps
+            );
+            out
+        }
+        Ok(Err(e)) => {
+            log::error!(target: "NaviNative", "live_hazards load error: {e:#}");
+            FfiLiveHazardLoadStats {
+                signs: 0,
+                children: 0,
+                cameras: 0,
+                bumps: 0,
+                compact_json_utf8: 0,
+                cone_m: LIVE_HAZARD_CONE_M,
+            }
+        }
+        Err(_) => {
+            log::error!(target: "NaviNative", "live_hazards load panicked");
+            FfiLiveHazardLoadStats {
+                signs: 0,
+                children: 0,
+                cameras: 0,
+                bumps: 0,
+                compact_json_utf8: 0,
+                cone_m: LIVE_HAZARD_CONE_M,
+            }
+        }
     }
 }
 
-/// Load child-zone POIs (`amenity=school`, `amenity=kindergarten`, `leisure=playground`)
-/// from a region PBF (nodes + way boundary nodes + centroids).
+/// Build the native compact cache from already-loaded JSON layers (parse once).
+/// Prefer this over [`ensure_live_hazards_loaded`] when the host already scanned the PBF.
+#[uniffi::export]
+pub fn live_hazards_ingest_from_json(
+    pbf_key: String,
+    signs_json: String,
+    cameras_json: String,
+    children_json: String,
+    bumps_json: String,
+) -> FfiLiveHazardLoadStats {
+    use driver_break_core::routing::live_hazard::{
+        ChildrenCentroid, LiveHazardIndex, SpeedBumpPoint, LIVE_HAZARD_CONE_M,
+    };
+    use driver_break_core::routing::road_sign::RoadSignRecord;
+    use driver_break_core::routing::speed_camera::{SpeedCameraKind, SpeedCameraRecord};
+
+    let signs: Vec<RoadSignRecord> = serde_json::from_str::<Vec<serde_json::Value>>(&signs_json)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|v| RoadSignRecord {
+            osm_id: v.get("osm_id").and_then(|x| x.as_i64()).unwrap_or(0),
+            lat: v.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            lon: v.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            icon_key: v
+                .get("icon_key")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            code: v
+                .get("code")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            name_en: v
+                .get("name_en")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            traffic_sign_raw: v
+                .get("traffic_sign_raw")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+        })
+        .collect();
+
+    let cameras: Vec<SpeedCameraRecord> =
+        serde_json::from_str::<Vec<serde_json::Value>>(&cameras_json)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|v| {
+                let kind = match v.get("kind").and_then(|x| x.as_str()).unwrap_or("point") {
+                    "average_speed" => SpeedCameraKind::AverageSpeed,
+                    _ => SpeedCameraKind::Point,
+                };
+                SpeedCameraRecord {
+                    osm_id: v.get("osm_id").and_then(|x| x.as_i64()).unwrap_or(0),
+                    lat: v.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                    lon: v.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                    kind,
+                    maxspeed_kmh: v.get("maxspeed_kmh").and_then(|x| x.as_f64()),
+                    maxspeed_conditional: v
+                        .get("maxspeed_conditional")
+                        .and_then(|x| x.as_str())
+                        .map(|s| s.to_string()),
+                    zone_from_lat: v.get("zone_from_lat").and_then(|x| x.as_f64()),
+                    zone_from_lon: v.get("zone_from_lon").and_then(|x| x.as_f64()),
+                    zone_to_lat: v.get("zone_to_lat").and_then(|x| x.as_f64()),
+                    zone_to_lon: v.get("zone_to_lon").and_then(|x| x.as_f64()),
+                    zone_length_m: v.get("zone_length_m").and_then(|x| x.as_f64()),
+                }
+            })
+            .collect();
+
+    let children: Vec<ChildrenCentroid> =
+        serde_json::from_str::<Vec<serde_json::Value>>(&children_json)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|v| {
+                let category = match v.get("category").and_then(|x| x.as_str())? {
+                    "school" => "school",
+                    "kindergarten" => "kindergarten",
+                    "playground" => "playground",
+                    _ => return None,
+                };
+                Some(ChildrenCentroid {
+                    osm_id: v.get("osm_id").and_then(|x| x.as_i64()).unwrap_or(0),
+                    lat: v.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                    lon: v.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                    name: v
+                        .get("name")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    category,
+                })
+            })
+            .collect();
+
+    let bumps: Vec<SpeedBumpPoint> = serde_json::from_str::<Vec<serde_json::Value>>(&bumps_json)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|v| SpeedBumpPoint {
+            osm_id: v.get("osm_id").and_then(|x| x.as_i64()).unwrap_or(0),
+            lat: v.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            lon: v.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            calming: v
+                .get("calming")
+                .and_then(|x| x.as_str())
+                .unwrap_or("hump")
+                .to_string(),
+        })
+        .collect();
+
+    let full = LiveHazardIndex {
+        signs,
+        children,
+        cameras,
+        bumps,
+    };
+    let out = FfiLiveHazardLoadStats {
+        signs: full.signs.len() as u32,
+        children: full.children.len() as u32,
+        cameras: full.cameras.len() as u32,
+        bumps: full.bumps.len() as u32,
+        compact_json_utf8: full.estimated_compact_json_utf8() as u64,
+        cone_m: LIVE_HAZARD_CONE_M,
+    };
+    if let Ok(mut guard) = LIVE_HAZARD_STORE.lock() {
+        *guard = Some(LiveHazardStore {
+            pbf_key,
+            full,
+            window_key: String::new(),
+            window: LiveHazardIndex::default(),
+        });
+    }
+    out
+}
+
+/// Load speed-bump / hump / table nodes as compact JSON.
+#[uniffi::export]
+pub fn load_speed_bumps_json(pbf_path: String) -> String {
+    match driver_break_core::routing::live_hazard::load_speed_bumps_json(&pbf_path) {
+        Ok(s) => s,
+        Err(e) => format!(
+            r#"{{"error":{}}}"#,
+            serde_json::to_string(&e.to_string()).unwrap_or_default()
+        ),
+    }
+}
+
+/// Road-sign JSON from the native compact cache (empty if not loaded).
+#[uniffi::export]
+pub fn live_hazards_road_signs_json() -> String {
+    let guard = LIVE_HAZARD_STORE.lock().unwrap_or_else(|e| e.into_inner());
+    match guard.as_ref() {
+        Some(s) => s.full.signs_json(),
+        None => "[]".into(),
+    }
+}
+
+/// Children-centroid JSON from the native compact cache.
+#[uniffi::export]
+pub fn live_hazards_children_json() -> String {
+    let guard = LIVE_HAZARD_STORE.lock().unwrap_or_else(|e| e.into_inner());
+    match guard.as_ref() {
+        Some(s) => s.full.children_json(),
+        None => "[]".into(),
+    }
+}
+
+/// Speed-camera JSON from the native compact cache.
+#[uniffi::export]
+pub fn live_hazards_speed_cameras_json() -> String {
+    use driver_break_core::routing::speed_camera::SpeedCameraKind;
+    let guard = LIVE_HAZARD_STORE.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(s) = guard.as_ref() else {
+        return "[]".into();
+    };
+    let rows: Vec<_> = s
+        .full
+        .cameras
+        .iter()
+        .map(|c| {
+            serde_json::json!({
+                "osm_id": c.osm_id,
+                "lat": c.lat,
+                "lon": c.lon,
+                "kind": match c.kind {
+                    SpeedCameraKind::Point => "point",
+                    SpeedCameraKind::AverageSpeed => "average_speed",
+                },
+                "maxspeed_kmh": c.maxspeed_kmh,
+                "maxspeed_conditional": c.maxspeed_conditional,
+                "zone_from_lat": c.zone_from_lat,
+                "zone_from_lon": c.zone_from_lon,
+                "zone_to_lat": c.zone_to_lat,
+                "zone_to_lon": c.zone_to_lon,
+                "zone_length_m": c.zone_length_m,
+            })
+        })
+        .collect();
+    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
+}
+
+/// Hard-coded live cone radius (metres). Distinct from the 200 m route corridor.
+#[uniffi::export]
+pub fn live_hazard_cone_m() -> f64 {
+    driver_break_core::routing::live_hazard::LIVE_HAZARD_CONE_M
+}
+
+fn with_live_hazard_window<R>(
+    lat: f64,
+    lon: f64,
+    f: impl FnOnce(&driver_break_core::routing::live_hazard::LiveHazardIndex) -> R,
+) -> Option<R> {
+    use driver_break_core::routing::live_hazard::live_hazard_cell_key;
+    let mut guard = LIVE_HAZARD_STORE.lock().ok()?;
+    let store = guard.as_mut()?;
+    let key = live_hazard_cell_key(lat, lon);
+    if store.window_key != key {
+        store.window = store.full.windowed(lat, lon);
+        store.window_key = key;
+    }
+    Some(f(&store.window))
+}
+
+fn road_sign_warning_to_json(w: &driver_break_core::routing::road_sign::RoadSignWarning) -> String {
+    use driver_break_core::ApproachPhase;
+    let phase = match w.phase {
+        ApproachPhase::Hidden => "hidden",
+        ApproachPhase::Appear => "appear",
+        ApproachPhase::Urgency => "urgency",
+    };
+    serde_json::json!({
+        "phase": phase,
+        "distance_m": w.distance_m,
+        "icon_key": w.icon_key,
+        "code": w.code,
+        "name_en": w.name_en,
+        "label": w.label,
+        "cone_m": driver_break_core::routing::live_hazard::LIVE_HAZARD_CONE_M,
+        "source": "live_cone",
+    })
+    .to_string()
+}
+
+/// Route-independent 300 m heading-cone road-sign / bump / children warning.
+/// `heading_deg` null = isotropic disk within the cone radius.
+#[uniffi::export]
+pub fn live_hazard_cone_road_sign_warning_json(
+    lat: f64,
+    lon: f64,
+    heading_deg: Option<f64>,
+) -> String {
+    use driver_break_core::routing::live_hazard::{
+        live_sign_and_children, nearest_live_sign_style_warning,
+    };
+    let Some((sign_opt, children, w_opt)) = with_live_hazard_window(lat, lon, |window| {
+        let (sign_opt, children) = live_sign_and_children(window, lat, lon, heading_deg);
+        let w_opt = nearest_live_sign_style_warning(window, lat, lon, heading_deg);
+        (sign_opt, children, w_opt)
+    }) else {
+        return "{}".into();
+    };
+    let Some(w) = w_opt else {
+        return "{}".into();
+    };
+    let mut v: serde_json::Value =
+        serde_json::from_str(&road_sign_warning_to_json(&w)).unwrap_or(serde_json::json!({}));
+    if let Some((_, cat)) = children {
+        let tagged_142 = sign_opt.as_ref().map(|s| s.code.as_str()) == Some("142");
+        if w.code == "142" && !tagged_142 {
+            v["source"] = serde_json::json!("children_proximity");
+            v["category"] = serde_json::json!(cat);
+        }
+    }
+    v.to_string()
+}
+
+/// Children proximity only (source=`children_proximity`) inside the live cone.
+#[uniffi::export]
+pub fn live_hazard_cone_children_warning_json(
+    lat: f64,
+    lon: f64,
+    heading_deg: Option<f64>,
+) -> String {
+    use driver_break_core::routing::live_hazard::nearest_live_children_warning;
+    let Some(hit) = with_live_hazard_window(lat, lon, |window| {
+        nearest_live_children_warning(window, lat, lon, heading_deg)
+    }) else {
+        return "{}".into();
+    };
+    let Some((w, cat)) = hit else {
+        return "{}".into();
+    };
+    let mut v: serde_json::Value =
+        serde_json::from_str(&road_sign_warning_to_json(&w)).unwrap_or(serde_json::json!({}));
+    v["source"] = serde_json::json!("children_proximity");
+    v["category"] = serde_json::json!(cat);
+    v.to_string()
+}
+
+/// Speed-camera warning inside the live cone (same jurisdiction / opt-in gates).
+#[uniffi::export]
+pub fn live_hazard_cone_speed_camera_warning_json(
+    lat: f64,
+    lon: f64,
+    heading_deg: Option<f64>,
+    opted_in: bool,
+) -> String {
+    use driver_break_core::routing::live_hazard::nearest_live_speed_camera_warning;
+    use driver_break_core::ApproachPhase;
+    let Some(w_opt) = with_live_hazard_window(lat, lon, |window| {
+        nearest_live_speed_camera_warning(window, lat, lon, heading_deg, opted_in)
+    }) else {
+        return "{}".into();
+    };
+    let Some(w) = w_opt else {
+        return "{}".into();
+    };
+    let phase = match w.phase {
+        ApproachPhase::Hidden => "hidden",
+        ApproachPhase::Appear => "appear",
+        ApproachPhase::Urgency => "urgency",
+    };
+    serde_json::json!({
+        "kind": match w.kind {
+            driver_break_core::routing::speed_camera::SpeedCameraKind::Point => "point",
+            driver_break_core::routing::speed_camera::SpeedCameraKind::AverageSpeed => "average_speed",
+        },
+        "phase": phase,
+        "distance_m": w.distance_m,
+        "applicable_limit_kmh": w.applicable_limit_kmh,
+        "zone_remaining_m": w.zone_remaining_m,
+        "zone_time_budget_s": w.zone_time_budget_s,
+        "label": w.label,
+        "cone_m": driver_break_core::routing::live_hazard::LIVE_HAZARD_CONE_M,
+        "source": "live_cone",
+    })
+    .to_string()
+}
+
+/// Upcoming speed limit on the existing road_label cell graph within the 300 m cone.
+/// No separate speed-limit dataset — reuses [`road_near_info`]'s graph cache.
+#[uniffi::export]
+pub fn live_speed_limit_cone_json(
+    pbf_path: String,
+    cache_dir: String,
+    elev_dir: String,
+    lat: f64,
+    lon: f64,
+    heading_deg: Option<f64>,
+    profile: TravelProfile,
+    current_limit_kmh: Option<f64>,
+) -> String {
+    use driver_break_core::routing::live_hazard::{
+        live_speed_limit_in_cone, speed_limit_cone_as_sign_warning, LIVE_HAZARD_CONE_M,
+    };
+    // Ensure the cell graph is warm via the same path as idle street/limit.
+    let _ = road_near_info(pbf_path, cache_dir, elev_dir, lat, lon, profile, 80.0);
+    let guard = match ROAD_LABEL_GRAPH.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    };
+    let Some(cache) = guard.as_ref() else {
+        return "{}".into();
+    };
+    let Some(hit) = live_speed_limit_in_cone(&cache.graph, lat, lon, heading_deg) else {
+        return "{}".into();
+    };
+    let mut out = serde_json::json!({
+        "distance_m": hit.distance_m,
+        "speed_limit_kmh": hit.speed_limit_kmh,
+        "highway": hit.highway,
+        "maxspeed_posted": hit.maxspeed_posted,
+        "cone_m": LIVE_HAZARD_CONE_M,
+        "source": "live_cone_graph",
+    });
+    if let Some(w) = speed_limit_cone_as_sign_warning(&hit, current_limit_kmh) {
+        out["road_sign"] =
+            serde_json::from_str(&road_sign_warning_to_json(&w)).unwrap_or(serde_json::json!({}));
+    }
+    out.to_string()
+}
+
+/// Densify a lat/lon polyline into simulation samples (no route plan required).
+/// `coords_json`: `[[lat,lon],…]`.
+#[uniffi::export]
+pub fn sim_samples_json_from_lat_lon(coords_json: String, speed_kmh: f64) -> String {
+    let Ok(raw) = serde_json::from_str::<Vec<serde_json::Value>>(&coords_json) else {
+        return "[]".into();
+    };
+    let coords: Vec<(f64, f64)> = raw
+        .iter()
+        .filter_map(|v| {
+            if let Some(arr) = v.as_array() {
+                if arr.len() >= 2 {
+                    return Some((arr[0].as_f64()?, arr[1].as_f64()?));
+                }
+            }
+            Some((v.get("lat")?.as_f64()?, v.get("lon")?.as_f64()?))
+        })
+        .collect();
+    let samples = build_sim_samples_from_lat_lon(&coords, speed_kmh.max(1.0), Some("residential"));
+    samples_to_json(&samples)
+}
+
+/// Load child-zone POIs as **centroids only** (nodes + way centroids — no way vertices).
 #[uniffi::export]
 pub fn load_school_pois_json(pbf_path: String) -> String {
-    use osmpbf::{Element, ElementReader};
-    use std::collections::HashMap;
-
-    let mut pois: Vec<serde_json::Value> = Vec::new();
-    let mut way_refs: Vec<(i64, Vec<i64>, Option<String>, &'static str)> = Vec::new();
-    let mut needed: std::collections::HashSet<i64> = std::collections::HashSet::new();
-
-    let reader = match ElementReader::from_path(&pbf_path) {
-        Ok(r) => r,
-        Err(e) => {
-            return format!(
-                r#"{{"error":{}}}"#,
-                serde_json::to_string(&e.to_string()).unwrap_or_default()
-            )
-        }
-    };
-
-    if let Err(e) = reader.for_each(|el| {
-        if let Element::Way(way) = el {
-            let mut name = None;
-            let mut category = None;
-            for (k, v) in way.tags() {
-                if k == "name" {
-                    name = Some(v.to_string());
-                }
-                if category.is_none() {
-                    category = children_zone_category_from_tags([(k, v)]);
-                }
-            }
-            let Some(category) = category else {
-                return;
-            };
-            let refs: Vec<i64> = way.refs().collect();
-            if refs.len() < 2 {
-                return;
-            }
-            for id in &refs {
-                needed.insert(*id);
-            }
-            way_refs.push((way.id(), refs, name, category));
-        }
-    }) {
-        return format!(
+    match driver_break_core::routing::live_hazard::load_children_centroids_json(&pbf_path) {
+        Ok(s) => s,
+        Err(e) => format!(
             r#"{{"error":{}}}"#,
             serde_json::to_string(&e.to_string()).unwrap_or_default()
-        );
+        ),
     }
-
-    let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len().max(1024));
-    let reader = match ElementReader::from_path(&pbf_path) {
-        Ok(r) => r,
-        Err(e) => {
-            return format!(
-                r#"{{"error":{}}}"#,
-                serde_json::to_string(&e.to_string()).unwrap_or_default()
-            )
-        }
-    };
-    if let Err(e) = reader.for_each(|el| match el {
-        Element::Node(n) => {
-            let id = n.id();
-            if needed.contains(&id) {
-                coords.insert(id, (n.lat(), n.lon()));
-            }
-            let mut name = None;
-            let mut category = None;
-            for (k, v) in n.tags() {
-                if k == "name" {
-                    name = Some(v.to_string());
-                }
-                if category.is_none() {
-                    category = children_zone_category_from_tags([(k, v)]);
-                }
-            }
-            if let Some(category) = category {
-                pois.push(serde_json::json!({
-                    "osm_id": n.id(),
-                    "lat": n.lat(),
-                    "lon": n.lon(),
-                    "name": name.unwrap_or_default(),
-                    "category": category,
-                    "kind": "node",
-                }));
-            }
-        }
-        Element::DenseNode(n) => {
-            let id = n.id;
-            if needed.contains(&id) {
-                coords.insert(id, (n.lat(), n.lon()));
-            }
-            let mut name = None;
-            let mut category = None;
-            for (k, v) in n.tags() {
-                if k == "name" {
-                    name = Some(v.to_string());
-                }
-                if category.is_none() {
-                    category = children_zone_category_from_tags([(k, v)]);
-                }
-            }
-            if let Some(category) = category {
-                pois.push(serde_json::json!({
-                    "osm_id": n.id,
-                    "lat": n.lat(),
-                    "lon": n.lon(),
-                    "name": name.unwrap_or_default(),
-                    "category": category,
-                    "kind": "node",
-                }));
-            }
-        }
-        _ => {}
-    }) {
-        return format!(
-            r#"{{"error":{}}}"#,
-            serde_json::to_string(&e.to_string()).unwrap_or_default()
-        );
-    }
-
-    for (way_id, refs, name, category) in way_refs {
-        let poi_name = name.unwrap_or_default();
-        let mut sum_lat = 0.0;
-        let mut sum_lon = 0.0;
-        let mut n = 0usize;
-        for id in refs {
-            if let Some((lat, lon)) = coords.get(&id) {
-                sum_lat += *lat;
-                sum_lon += *lon;
-                n += 1;
-                pois.push(serde_json::json!({
-                    "osm_id": way_id,
-                    "lat": *lat,
-                    "lon": *lon,
-                    "name": poi_name.clone(),
-                    "category": category,
-                    "kind": "way_node",
-                }));
-            }
-        }
-        if n == 0 {
-            continue;
-        }
-        pois.push(serde_json::json!({
-            "osm_id": way_id,
-            "lat": sum_lat / n as f64,
-            "lon": sum_lon / n as f64,
-            "name": poi_name,
-            "category": category,
-            "kind": "way_centroid",
-        }));
-    }
-    serde_json::to_string(&pois).unwrap_or_else(|_| "[]".into())
 }
 
 /// Keep school POIs within `margin_m` of the route corridor (`sim_samples_json`).

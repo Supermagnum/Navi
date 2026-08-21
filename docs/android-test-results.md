@@ -446,3 +446,42 @@ stage labels on the shared `download_progress` channel; Tools status shows plain
   -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.LuxembourgDownloadProgressInstrumentedTest
 adb logcat -s LuxembourgProgress:I NaviDownload:I
 ```
+
+## Item 15 — Live hazard cone (route-independent, SM-P613, 2026-08-21)
+
+Device: **SM-P613**. Fixture: Ostlandet PBF + host-extracted
+`live_hazards_cache/ostlandet-latest.osm/` (compact layers; avoids multi-pass
+PBF OOM on the tablet). Log tags: `LiveHazardConeVallset`, `LiveHazardConeOverhead`.
+
+### Implementation summary
+
+| Layer | What shipped |
+|---|---|
+| Compact points | Signs, children **centroids**, cameras, speed bumps — parse once / ingest once |
+| Window | Same cell as `road_label_near` (~0.05° + 1 pad) |
+| Cone | **300 m**, ±60° heading; approach chrome 750 / 150 / 25 m |
+| Speed-limit look-ahead | Existing cell graph only — no new dataset |
+| Host path | Cone when `progressTracker == null`; corridor path unchanged with a planned route |
+
+### Device tests
+
+| Test | Result | Notes |
+|---|---|---|
+| `LiveHazardConeOverheadInstrumentedTest` | **PASS** | Ingest ~96 ms; **COMPACT_TICK mean ≈ 2.9 ms**; compact UTF-8 est ≈ 2.2 MB; `cone_m=300` |
+| `LiveHazardConeVallsetInstrumentedTest` (3 methods) | **PASS** | Simulator, no planned route; Vallset children `142` + `NO:109`; near-miss ~350 m does not fire |
+
+```bash
+# Optional host extract → push cache for low-RAM devices
+cargo run -p navi-ffi --bin live-hazard-extract --release -- \
+  /path/to/ostlandet-latest.osm.pbf /tmp/live_hazards_cache/ostlandet-latest.osm
+adb push /tmp/live_hazards_cache/ostlandet-latest.osm \
+  /data/local/tmp/navi_fixtures/live_hazards_cache/ostlandet-latest.osm
+
+./scripts/build-android-native.sh aarch64-linux-android release
+./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.LiveHazardConeOverheadInstrumentedTest
+./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.LiveHazardConeVallsetInstrumentedTest
+```
+
+Design reference: [`road-signs.md`](road-signs.md), [`route-simulation.md`](route-simulation.md).
