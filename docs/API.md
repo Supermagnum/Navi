@@ -125,10 +125,11 @@ GPS slot is for native consumers and tests.
 
 Bottom-HUD overspeed **chrome** is not UniFFI: Kotlin
 `OverspeedHud.isOverspeed(speedKmh, limitKmh, speedAccuracyKmh?)` requires a
-positive delta above `max(3.0 km/h, speedAccuracyKmh)`
+positive delta above the hybrid margin
+`max(limit × 0.05, speedAccuracyKmh, 3.0 km/h)`
 ([`current-street.md`](current-street.md), `OverspeedHud.kt`).
 `overspeed_delta_kmh` is a raw subtraction for tests/HUD helpers; it does
-**not** apply that GNSS floor.
+**not** apply that hybrid floor.
 
 Spoken escalating overspeed (`overPct` tiers, arm/disarm) is **not** a UniFFI
 export — planned HostApi `road_speed_state_read` + `voice_speak` in

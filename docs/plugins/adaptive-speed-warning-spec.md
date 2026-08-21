@@ -62,7 +62,7 @@ wrong or stale.
 
 | Surface | Role today | This plugin |
 |---|---|---|
-| Bottom HUD `{speed} / {limit} km/h` | Visual overspeed colour via `OverspeedHud` (`MARGIN_KMH = 3.0`, widened by `speedAccuracyKmh`) | **Unchanged.** Audio must not fire unless `OverspeedHud.isOverspeed` would be true for the same fix. |
+| Bottom HUD `{speed} / {limit} km/h` | Visual overspeed colour via `OverspeedHud` (hybrid `max(limit × 0.05, speedAccuracyKmh, 3.0)`) | **Unchanged.** Audio must not fire unless `OverspeedHud.isOverspeed` would be true for the same fix. |
 | `current_speed_limit_kmh` / `road_near_info` / `resolve_speed_limit_kmh` | Sticky nearest-edge limit: conditional → posted → highway-class fallback | Host snapshot fields; guest does not re-resolve OSM tags. |
 | `overspeed_delta_kmh` | `speed − limit` convenience for HUD | Useful debug; **not** the escalation metric (see [§ Core trigger](#core-trigger-metric)). |
 | Custom alert sounds `overspeed` clip | Planned short beep, ~60 s repeat throttle | **Earcon at tier transitions** when both plugins are enabled — not a second repeating nag. See [§ Alert sounds](#relationship-to-custom-alert-sounds). |
@@ -98,15 +98,16 @@ not a claim about any country’s penalty schedule.
 
 ### GNSS floor (Navi-specific)
 
-HUD chrome already rejects sub-noise overspeed (`3.0 km/h` or the fix’s speed
-accuracy, whichever is larger). Audio **additionally** requires that floor:
+HUD chrome already rejects sub-noise overspeed with the hybrid margin
+`max(limit × 0.05, speedAccuracyKmh, 3.0)`. Audio **additionally** requires
+that floor:
 
 1. `OverspeedHud.isOverspeed(speed, limit, speedAccuracy)` is true, **and**
 2. `overPct` is in tier 1 or higher.
 
-On a 30 km/h road, 5% is only 1.5 km/h — tighter than the HUD margin — so
-tier 1 must not speak from percentage alone. On an 80 km/h road, 5% is 4 km/h
-and sits just above the default HUD floor.
+On a 30 km/h road, 5% is only 1.5 km/h — below the HUD’s 3.0 km/h floor — so
+tier 1 must not speak from percentage alone (HUD gate wins). On an 80 km/h
+road, 5% is 4 km/h and matches the HUD’s percent term.
 
 ---
 
@@ -322,7 +323,7 @@ T0/T1 budget rules as other plugins ([`plugins.md`](../plugins.md)).
 - Jurisdiction-accurate legal threshold matching.
 - Guest-side OSM / PBF parsing.
 - Final voice-line copywriting per language (voice-pack / i18n docs).
-- Changing HUD `MARGIN_KMH` or limit-resolution policy in core.
+- Changing HUD hybrid overspeed margin (`max(limit×0.05, speedAccuracy, MARGIN_KMH)`) or limit-resolution policy in core.
 
 ---
 

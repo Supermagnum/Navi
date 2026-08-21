@@ -60,7 +60,7 @@ and **not** a full AGL Application Framework packaging effort (see § AGL scope)
 |---|---|---|
 | Current speed | GPS / sensor thread (ground speed) | Same class of fix that feeds the map puck |
 | Posted speed limit | Current road segment maxspeed when known | Omit / null when unknown — never invent |
-| Overspeed (HUD) | `OverspeedHud.isOverspeed` | Display gate only (`MARGIN_KMH` / GNSS accuracy); not a spoken tier |
+| Overspeed (HUD) | `OverspeedHud.isOverspeed` | Display gate only (hybrid `max(limit×0.05, speedAccuracy, 3.0)`); not a spoken tier |
 | Next maneuver type | Shared nav-guidance state | Icon / enum aligned with approach box |
 | Next maneuver distance | Shared nav-guidance state | Metres internally |
 | Next street name | Shared nav-guidance state | Prefer OSM `name`, else `ref`; omit if neither |

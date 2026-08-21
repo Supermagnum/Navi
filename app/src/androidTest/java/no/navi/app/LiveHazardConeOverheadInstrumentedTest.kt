@@ -126,4 +126,83 @@ class LiveHazardConeOverheadInstrumentedTest {
                 "compact_utf8_est=${stats.compactJsonUtf8} layer_utf8=$layerUtf8 cone_m=${stats.coneM}",
         )
     }
+
+    @Test
+    fun cone_categories_emit_icon_keys_and_rasterize() {
+        val cache =
+            cacheDir()
+                ?: error("need live_hazards_cache/$PBF_STEM for cone category probe")
+        liveHazardsIngestFromJson(
+            "cache:$PBF_STEM:icons",
+            File(cache, "signs.json").readText(),
+            File(cache, "cameras.json").readText(),
+            File(cache, "children.json").readText(),
+            File(cache, "bumps.json").readText(),
+        )
+        val sign = liveHazardConeRoadSignWarningJson(QUERY_LAT, QUERY_LON, HEADING)
+        val children = liveHazardConeChildrenWarningJson(QUERY_LAT, QUERY_LON, HEADING)
+        val camera = liveHazardConeSpeedCameraWarningJson(QUERY_LAT, QUERY_LON, HEADING, true)
+        Log.i(TAG, "cone_sign=$sign")
+        Log.i(TAG, "cone_children=$children")
+        Log.i(TAG, "cone_camera=$camera")
+        assertTrue(
+            "expected children or tagged sign near Vallset: children=$children sign=$sign",
+            children.contains("icon_key") || sign.contains("icon_key"),
+        )
+        if (children.contains("icon_key")) {
+            assertTrue(
+                "children use 142 plate: $children",
+                children.contains("no_sign_142") || children.contains("\"code\":\"142\""),
+            )
+        }
+        if (sign.contains("\"code\":\"109\"")) {
+            assertTrue("bump uses 109 plate: $sign", sign.contains("no_sign_109"))
+        }
+
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val iconsDir = File(ctx.filesDir, "icons-cone-category-test").also { it.mkdirs() }
+
+        fun copyAsset(
+            assetPath: String,
+            dest: File,
+        ) {
+            dest.parentFile?.mkdirs()
+            ctx.assets.open(assetPath).use { input ->
+                dest.outputStream().use { input.copyTo(it) }
+            }
+        }
+        copyAsset("icons/speed_camera.svg", File(iconsDir, "speed_camera.svg"))
+        for (key in listOf("no_sign_109", "no_sign_142", "no_sign_362_20")) {
+            copyAsset("icons/road-signs/$key.svg", File(iconsDir, "road-signs/$key.svg"))
+        }
+        for (key in listOf("no_sign_109", "no_sign_142", "speed_camera", "no_sign_362_20")) {
+            val png =
+                uniffi.navi.rasterizeIconPng(
+                    key = key,
+                    theme = uniffi.navi.FfiIconTheme.DAY,
+                    width = 96u,
+                    height = 96u,
+                    bundledDir = iconsDir.absolutePath,
+                )
+            assertTrue("$key empty png", png.isNotEmpty())
+            Log.i(TAG, "raster_ok key=$key bytes=${png.size}")
+        }
+
+        val cams = org.json.JSONArray(File(cache, "cameras.json").readText())
+        assertTrue("Ostlandet cache should include cameras", cams.length() > 0)
+        var sawCameraWarn = false
+        for (i in 0 until minOf(cams.length(), 80)) {
+            val o = cams.getJSONObject(i)
+            val lat = o.getDouble("lat")
+            val lon = o.getDouble("lon")
+            val qLat = lat + (150.0 / 111_320.0)
+            val warn = liveHazardConeSpeedCameraWarningJson(qLat, lon, 180.0, true)
+            if (warn != "{}" && warn.isNotBlank()) {
+                Log.i(TAG, "camera_warn=$warn at $lat,$lon")
+                sawCameraWarn = true
+                break
+            }
+        }
+        assertTrue("expected at least one camera cone warning in region sample", sawCameraWarn)
+    }
 }

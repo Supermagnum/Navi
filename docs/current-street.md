@@ -46,9 +46,10 @@ Live GPS speed comes from Android `Location.speed` (m/s → km/h) via
 highway-class fallback table.
 
 Overspeed chrome uses [`OverspeedHud`](../app/src/main/java/no/navi/app/OverspeedHud.kt)
-(`MARGIN_KMH = 3.0`, widened from an untuned `+0.5` float-epsilon; effective
-margin is `max(3.0, speedAccuracyKmh)` when the fix reports speed accuracy).
-Confirm outdoors with `GpsSpeedNoiseInstrumentedTest` (not the route simulator).
+(hybrid margin, widened from an untuned `+0.5` float-epsilon; effective margin
+is `max(limit × 0.05, speedAccuracyKmh, 3.0)` — 5% of the posted limit, optional
+GNSS speed-accuracy widening, and a 3.0 km/h floor). Confirm outdoors with
+`GpsSpeedNoiseInstrumentedTest` (not the route simulator).
 Spoken escalating overspeed (percentage tiers, arm delay) is a **plugin spec
 only** — [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) —
 and must not fire unless this HUD would already paint overspeed.

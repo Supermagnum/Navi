@@ -55,6 +55,13 @@ class RoadSignIconScreenshotTest {
                 "no_sign_366" to "road_sign_speed_limit_366.png",
                 "no_sign_640_10" to "road_sign_serviceskilt_640_10.png",
                 "no_sign_755" to "road_sign_vegvisning_755.png",
+                // Look-ahead cone consumers
+                "no_sign_109" to "cone_bump_109.png",
+                "no_sign_142" to "cone_children_142.png",
+                "no_sign_362_20" to "cone_speed_362_20.png",
+                "no_sign_362_50" to "cone_speed_362_50.png",
+                "no_sign_362_80" to "cone_speed_362_80.png",
+                "speed_camera" to "cone_speed_camera.png",
             )
         for ((key, filename) in samples) {
             val png =

@@ -37,7 +37,7 @@ Default Cargo workspace members: `core`, `plugin-host` (see root `Cargo.toml`).
 |---|---|
 | `MainActivity.kt` | App shell: MapLibre camera, GPS / sim `applyFix`, route planning calls, HUD state, settings sheets wiring |
 | `DriveHud.kt` | Top / bottom HUD bars, map settings sheet (auto-zoom, 3D, tilt), drive settings sheet |
-| `OverspeedHud.kt` | Display-only overspeed gate (`MARGIN_KMH`, GNSS accuracy); used by bottom speed line |
+| `OverspeedHud.kt` | Display-only overspeed gate (hybrid `max(limit×0.05, speedAccuracy, 3.0)`); used by bottom speed line |
 | `MapHudPrefs.kt` | SharedPreferences for HUD: default zoom, tilt presets, 3D opt-in, metric, Geofabrik path |
 | `ApproachInstructionBox.kt` | Next-turn approach chrome (icon, distance, street / house / postcode layout) |
 | `RouteGuidanceModels.kt` | Kotlin models for maneuvers, samples, approach display helpers |

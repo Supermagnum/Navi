@@ -805,6 +805,7 @@ pub fn speed_limit_cone_as_sign_warning(
     }
     let rounded = hit.speed_limit_kmh.round() as i32;
     let (code, icon_key) = match rounded {
+        20 => ("362.20", "no_sign_362_20"),
         30 => ("362.30", "no_sign_362_30"),
         40 => ("362.40", "no_sign_362_40"),
         50 => ("362.50", "no_sign_362_50"),
@@ -814,7 +815,28 @@ pub fn speed_limit_cone_as_sign_warning(
         90 => ("362.90", "no_sign_362_90"),
         100 => ("362.100", "no_sign_362_100"),
         110 => ("362.110", "no_sign_362_110"),
-        _ => ("362", "no_sign_362"),
+        other => {
+            // Snap to the nearest plate we ship an SVG for (never emit a
+            // missing `no_sign_362` key — that falls through to unknown.svg).
+            const PLATES: &[(i32, &str, &str)] = &[
+                (20, "362.20", "no_sign_362_20"),
+                (30, "362.30", "no_sign_362_30"),
+                (40, "362.40", "no_sign_362_40"),
+                (50, "362.50", "no_sign_362_50"),
+                (60, "362.60", "no_sign_362_60"),
+                (70, "362.70", "no_sign_362_70"),
+                (80, "362.80", "no_sign_362_80"),
+                (90, "362.90", "no_sign_362_90"),
+                (100, "362.100", "no_sign_362_100"),
+                (110, "362.110", "no_sign_362_110"),
+            ];
+            let (_, code, key) = PLATES
+                .iter()
+                .min_by_key(|(kmh, _, _)| (kmh - other).unsigned_abs())
+                .copied()
+                .unwrap_or((50, "362.50", "no_sign_362_50"));
+            (code, key)
+        }
     };
     Some(RoadSignWarning {
         phase,
@@ -847,5 +869,19 @@ mod tests {
         let a = live_hazard_cell_key(60.6808, 11.3454);
         let b = live_hazard_cell_key(60.6810, 11.3456);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn speed_limit_20_maps_to_standin_icon() {
+        let hit = LiveSpeedLimitCone {
+            distance_m: 58.0,
+            speed_limit_kmh: 20.0,
+            highway: Some("residential".into()),
+            maxspeed_posted: true,
+        };
+        let w = speed_limit_cone_as_sign_warning(&hit, Some(50.0)).expect("warning");
+        assert_eq!(w.icon_key, "no_sign_362_20");
+        assert_eq!(w.code, "362.20");
+        assert!(w.label.contains("20"));
     }
 }

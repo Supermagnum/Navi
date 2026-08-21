@@ -112,25 +112,75 @@ class RoadSignIntegrationInstrumentedTest {
     @Test
     fun catalogue_icons_rasterize_on_device() {
         val icons = iconsDir()
-        val samples =
-            listOf(
-                "no_sign_100_1" to "fareskilt",
-                "no_sign_366" to "speed_limit",
-                "no_sign_640_10" to "serviceskilt",
-                "no_sign_755" to "vegvisning",
+        val unknown =
+            rasterizeIconPng(
+                key = "definitely_missing_icon_xyz",
+                theme = FfiIconTheme.DAY,
+                width = 96u,
+                height = 96u,
+                bundledDir = icons.absolutePath,
             )
-        for ((key, category) in samples) {
-            val png =
-                rasterizeIconPng(
-                    key = key,
-                    theme = FfiIconTheme.DAY,
-                    width = 96u,
-                    height = 96u,
-                    bundledDir = icons.absolutePath,
-                )
-            assertTrue("$category $key png empty", png.isNotEmpty())
-            Log.i(TAG, "raster ok key=$key bytes=${png.size}")
+        assertTrue("unknown fallback must produce png", unknown.isNotEmpty())
+        val unknownSha = unknown.contentHashCode()
+
+        // APK assets ship flat `icons/road-signs/*.svg` (catalogue JSON lives in
+        // core only). Rasterize every shipped plate plus cone / camera keys.
+        val roadSignsDir = File(icons, "road-signs")
+        assertTrue("road-signs dir missing", roadSignsDir.isDirectory)
+        val keys =
+            roadSignsDir
+                .listFiles()
+                ?.filter { it.isFile && it.name.endsWith(".svg") }
+                ?.map { it.name.removeSuffix(".svg") }
+                ?.toMutableSet()
+                ?: mutableSetOf()
+        keys.add("speed_camera")
+        assertTrue("expected vendored road-sign SVGs", keys.size >= 90)
+
+        val failed = mutableListOf<String>()
+        for (key in keys.sorted()) {
+            val pngResult =
+                runCatching {
+                    rasterizeIconPng(
+                        key = key,
+                        theme = FfiIconTheme.DAY,
+                        width = 96u,
+                        height = 96u,
+                        bundledDir = icons.absolutePath,
+                    )
+                }
+            if (pngResult.isFailure) {
+                failed.add("$key exception=${pngResult.exceptionOrNull()?.message}")
+                continue
+            }
+            val png = pngResult.getOrNull()!!
+            if (png.isEmpty()) {
+                failed.add("$key empty")
+                continue
+            }
+            if (png.contentHashCode() == unknownSha) {
+                failed.add("$key resolved to unknown.svg")
+            }
         }
+        // Upstream catalogue still has svg=null for these usable codes (no asset).
+        val knownNullSvg = listOf("362.20", "364.20", "560.1", "560.3", "856")
+        // 362.20 is covered by Navi stand-in no_sign_362_20.svg in the flat pack.
+        assertTrue(
+            "Navi 20 km/h stand-in must be in pack",
+            keys.contains("no_sign_362_20"),
+        )
+        assertFalse(
+            "generic no_sign_362 must not exist (was unknown fallback)",
+            keys.contains("no_sign_362"),
+        )
+        Log.i(
+            TAG,
+            "catalogue rasterized keys=${keys.size} known_null_svg=$knownNullSvg failed=${failed.size}",
+        )
+        assertTrue(
+            "icon raster gaps (unknown.svg / empty): $failed",
+            failed.isEmpty(),
+        )
     }
 
     @Test

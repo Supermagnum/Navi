@@ -285,6 +285,13 @@ class LiveHazardConeVallsetInstrumentedTest {
             "expected NO:109 speed hump via live cone; sign=${NaviMapTestHooks.lastRoadSignWarningJson}",
             saw109,
         )
+        // Icon keys must be real plates (not empty / unknown fallback path).
+        val humpJson = NaviMapTestHooks.lastRoadSignWarningJson
+        assertTrue("109 warning must carry icon_key: $humpJson", humpJson.contains("\"icon_key\""))
+        assertTrue(
+            "109 must use no_sign_109: $humpJson",
+            humpJson.contains("no_sign_109") || humpJson.contains("\"code\":\"109\""),
+        )
     }
 
     @Test

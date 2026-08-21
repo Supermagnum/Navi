@@ -24,7 +24,8 @@ import kotlin.math.sqrt
 
 /**
  * Samples **live** [LocationManager.GPS_PROVIDER] speed (not the route simulator)
- * to size [OverspeedHud.MARGIN_KMH] against real consumer GPS noise.
+ * to size [OverspeedHud] hybrid margin (`max(limit×0.05, speedAccuracy, 3.0)`)
+ * against real consumer GPS noise.
  *
  * **Omitted by default** — prefer [SimOverspeedInstrumentedTest] for routed-road
  * overspeed behaviour. Re-enable manually for outdoor sky-lock validation only.

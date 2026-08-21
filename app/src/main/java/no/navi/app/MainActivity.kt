@@ -7169,6 +7169,16 @@ private fun ensureIconsCopied(
             File(dest, "speed_camera.svg").outputStream().use { output -> input.copyTo(output) }
         }
     }
+    // Look-forward 20 km/h plate (Navi stand-in; upstream catalogue has svg=null).
+    runCatching {
+        val roadSigns = File(dest, "road-signs")
+        roadSigns.mkdirs()
+        context.assets.open("icons/road-signs/no_sign_362_20.svg").use { input ->
+            File(roadSigns, "no_sign_362_20.svg").outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+    }
 }
 
 private fun copyAssetDir(

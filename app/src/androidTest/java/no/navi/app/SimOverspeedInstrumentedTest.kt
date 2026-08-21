@@ -22,7 +22,8 @@ import java.io.File
  *
  * Replaces outdoor live-GPS noise sizing: we seek to a posted-limit segment,
  * confirm legal sim speed does not trip overspeed, then inject fixes just
- * under and over [OverspeedHud.MARGIN_KMH].
+ * under and over [OverspeedHud.effectiveMarginKmh] (hybrid
+ * `max(limit×0.05, speedAccuracy, 3.0)`).
  */
 @RunWith(AndroidJUnit4::class)
 class SimOverspeedInstrumentedTest {
@@ -157,10 +158,11 @@ class SimOverspeedInstrumentedTest {
             NaviMapTestHooks.lastOverspeed,
         )
         assertFalse(OverspeedHud.isOverspeed(legalSpeed, limit))
-        assertFalse(OverspeedHud.isOverspeed(limit + OverspeedHud.MARGIN_KMH - 0.5, limit))
-        assertTrue(OverspeedHud.isOverspeed(limit + OverspeedHud.MARGIN_KMH + 1.0, limit))
+        val margin = OverspeedHud.effectiveMarginKmh(limit)
+        assertFalse(OverspeedHud.isOverspeed(limit + margin - 0.5, limit))
+        assertTrue(OverspeedHud.isOverspeed(limit + margin + 1.0, limit))
         // Inject just over margin on the same road position (HUD integration).
-        val injectSpeed = limit + OverspeedHud.MARGIN_KMH + 1.0
+        val injectSpeed = limit + margin + 1.0
         injectAtSample(sample, injectSpeed)
         composeRule.waitUntil(timeoutMillis = 8_000) {
             NaviMapTestHooks.lastGpsSpeedKmh != null &&
@@ -184,7 +186,7 @@ class SimOverspeedInstrumentedTest {
         injectRoute()
         val sample = seekToPostedSegment()
         val limit = NaviMapTestHooks.lastCurrentSpeedLimitKmh!!
-        val injectSpeed = limit + OverspeedHud.MARGIN_KMH - 0.5
+        val injectSpeed = limit + OverspeedHud.effectiveMarginKmh(limit) - 0.5
         injectAtSample(sample, injectSpeed)
         composeRule.waitUntil(timeoutMillis = 8_000) {
             NaviMapTestHooks.lastGpsSpeedKmh != null &&

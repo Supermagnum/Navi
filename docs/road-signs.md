@@ -15,8 +15,13 @@ Graphics and metadata are from Statens vegvesen / Kartverket via the upstream
 | Catalogue JSON | `core/src/icons/road-signs/database/osm_tags.json` (compile-time include) |
 
 Categories vendored: `fareskilt/` (51), `speed_limit/` (19), `serviceskilt/` (13),
-`vegvisning/` (33) — **116 SVG files**. Five catalogue entries with `"svg": null`
-(`362.20`, `364.20`, `560.1`, `560.3`, `856`) are skipped until upstream adds art.
+`vegvisning/` (33) — **116 SVG files**. Catalogue entries with `"svg": null`
+(`362.20`, `364.20`, `560.1`, `560.3`, `856`) are skipped by `load_catalog` until
+upstream adds art. Look-forward speed-limit cone ships a Navi-drawn stand-in
+`no_sign_362_20.svg` (Vienna-style red ring + path digits) so 20 km/h plates
+do not fall back to `unknown.svg`. Odd numeric `maxspeed` values from OSM that
+lack a dedicated 362 plate snap to the nearest shipped plate
+(`20/30/40/50/60/70/80/90/100/110`).
 
 ## Licensing (separate from Navit icons)
 
