@@ -40,6 +40,7 @@ How to help: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
 8. [Screenshots](#screenshots)
 9. [Documents](#documents)
 10. [Plugins](#plugins)
+    - [Icons (where they live)](#icons-where-they-live)
 11. [Coding standards and contributing](#coding-standards-and-contributing)
 12. [Building and installing](#building-and-installing)
     - [Install a prebuilt APK](#install-a-prebuilt-apk)
@@ -460,6 +461,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/architecture.md`](docs/architecture.md) | How the pieces fit together |
 | [`docs/codebase-map.md`](docs/codebase-map.md) | Where to change code for a given feature |
 | [`docs/pictures.md`](docs/pictures.md) / [`docs/bilder.md`](docs/bilder.md) | Screenshot galleries |
+| [`docs/icons.md`](docs/icons.md) | Where icon files live, licensing, and how to add SVGs |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online vs offline map look; 3D |
 | [`docs/poi.md`](docs/poi.md) | Place types and search |
 | [How to use Navi](docs/how-to-use.md) | End-user how-to (planning, Tools, breaks, saved places/routes, profiles) |
@@ -479,7 +481,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/status.md`](docs/status.md) | Which docs are live status vs historical evidence |
 | [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Tracked future-proofing / open risk items |
 | [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md) | Phased evaluation of preprocess-once indexed routing maps |
-| [`docs/plugins.md`](docs/plugins.md) | Plugin host and roadmap |
+| [`docs/plugins.md`](docs/plugins.md) | Plugin host and roadmap (enable/disable; USB/Bluetooth I/O) |
 
 See the `docs/` folder for more specialised topics (voice, APRS, ECU, formulas,
 and so on).
@@ -488,7 +490,9 @@ and so on).
 
 A sandboxed plugin host exists so future add-ons can run safely. **No product
 plugins ship in the app yet** — that is intentional. Overview:
-[`docs/plugins.md`](docs/plugins.md).
+[`docs/plugins.md`](docs/plugins.md). The system requires a per-plugin
+**enable/disable** control, and host-mediated **USB** / **Bluetooth** I/O for
+hardware-facing plugins.
 
 | Spec | Topic |
 |---|---|
@@ -501,11 +505,23 @@ plugins ship in the app yet** — that is intentional. Overview:
 | [`docs/plugins/horse-trekking-spec.md`](docs/plugins/horse-trekking-spec.md) | Equestrian lookahead and access guidance (Hiking is the interim stopgap) |
 | [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md) | Spoken escalating overspeed (percentage tiers; not shipped) |
 
-## Icons (Navit)
+## Icons (where they live)
 
-POI / turn / status icons under `core/src/icons` are mostly from Navit
-(**GPL v2**). Custom maintainer-authored overrides (same mechanism) include
-`leaf.svg` (eco) and `speed_camera.svg` (speed-camera warnings) — see
+Map, turn, POI, and status icons are files in the repo — they are not generated
+at runtime. Authoring, resolution order, and licences:
+[`docs/icons.md`](docs/icons.md).
+
+| Path | What is there |
+|---|---|
+| [`core/src/icons/`](core/src/icons/) | **Full set** (source of truth for desktop / core). Mostly Navit (**GPL v2**). Custom Navi files here include `leaf.svg` (eco) and `speed_camera.svg`. |
+| [`app/src/main/assets/icons/`](app/src/main/assets/icons/) | Android **lean pack** — a size-trimmed copy shipped in every APK. Keys missing here fall back to `unknown.svg` on device. |
+| [`core/src/icons/road-signs/`](core/src/icons/road-signs/) | Norwegian traffic-sign SVGs (**NLOD 2.0**, not Navit). Android copy: [`app/src/main/assets/icons/road-signs/`](app/src/main/assets/icons/road-signs/). |
+| [`core/src/icons/aprs/`](core/src/icons/aprs/) | APRS moving-icon symbols. Android copy: [`app/src/main/assets/icons/aprs/`](app/src/main/assets/icons/aprs/). |
+| [`app/src/main/res/mipmap-*`](app/src/main/res/) | Android **launcher** (home screen / app drawer). Separate Navi brand art, not from Navit. |
+| [`docs/icons/open-app.svg`](docs/icons/open-app.svg) | Splash / open-app brand mark (Inkscape source). Android drawables: `app/src/main/res/drawable/ic_splash*.xml`. |
+
+To add or override a map/POI icon, put an SVG in `core/src/icons/` (and copy it
+into the Android lean pack if it must appear on device). See
 [`docs/icons.md`](docs/icons.md).
 
 # Coding standards and contributing
@@ -665,9 +681,9 @@ recipe: [`docs/android-build.md`](docs/android-build.md).
 
 ### Workspace layout
 
-- `core/` — routing, places, rest rules, icons (Rust)
+- `core/` — routing, places, rest rules, icons (Rust). Icon SVGs: `core/src/icons/`
 - `navi-ffi/` — bridge to Android and other hosts
-- `app/` — Android UI (Kotlin)
+- `app/` — Android UI (Kotlin). On-device icon pack: `app/src/main/assets/icons/`
 - `plugin-host/` / `plugin-sdk/` / `plugins/` — future plugins
 - [`docs/architecture.md`](docs/architecture.md) — how it fits together
 

@@ -8,6 +8,10 @@ costing and network preference belong in a future **Horse travel profile** in
 core ([`horse-profile.md`](../horse-profile.md)); this plugin covers advisory
 content, support-service lookahead, and per-protected-area access guidance that
 must not be hard-wired as a single global rule.
+**System requirements** (all plugins): user **enable/disable** toggle; any
+device link uses host-mediated **USB** / **Bluetooth**
+([`plugins.md` — enable/disable](../plugins.md#enable--disable-required),
+[USB/Bluetooth](../plugins.md#external-device-io--usb-and-bluetooth-required)).
 
 Working title / id suggestion: `horse_trekking` / `horse_trek`.
 

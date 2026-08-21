@@ -6,6 +6,10 @@
 capability-gated `HostApi` ([`plugins.md`](../plugins.md)). Planning logic stays
 out of the trusted routing core; the host supplies route corridor samples, POI
 hits, and (optionally) weather / user confirmations.
+**System requirements** (all plugins): user **enable/disable** toggle; any
+device link uses host-mediated **USB** / **Bluetooth**
+([`plugins.md` — enable/disable](../plugins.md#enable--disable-required),
+[USB/Bluetooth](../plugins.md#external-device-io--usb-and-bluetooth-required)).
 
 Working title / id suggestion: `safety` / `resupply_safety`.
 

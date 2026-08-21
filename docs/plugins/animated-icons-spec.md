@@ -7,6 +7,10 @@ the existing SVG icon pipeline ([`icons.md`](../icons.md),
 [`plugins.md`](../plugins.md)). Frame playback and timeline selection stay out
 of the trusted routing core; the core continues to resolve and rasterize
 **one SVG document per call**.
+**System requirements** (all plugins): user **enable/disable** toggle; any
+device link uses host-mediated **USB** / **Bluetooth**
+([`plugins.md` — enable/disable](../plugins.md#enable--disable-required),
+[USB/Bluetooth](../plugins.md#external-device-io--usb-and-bluetooth-required)).
 
 Working title / id suggestion: `animated_icons` / `icon_anim`.
 
@@ -180,7 +184,10 @@ Artists may still use Synfig only to produce a **still** SVG and install it via
 ## Design rules (same family as other plugins)
 
 1. Offline-first; pack install is user-initiated on the host.
-2. Core routing and static icon resolution work with the plugin disabled.
+2. User **enable/disable** per [`plugins.md`](../plugins.md#enable--disable-required);
+   core routing and static icon resolution work with the plugin disabled.
 3. No silent mutation of OSM / graph caches.
 4. Tier budgets: animation decode stays T0/T1 — never starve guidance audio/UI.
 5. Privacy: packs and preferences stay on device.
+6. Hardware I/O (if any) is host-mediated **USB** / **Bluetooth** only
+   ([`plugins.md`](../plugins.md#external-device-io--usb-and-bluetooth-required)).

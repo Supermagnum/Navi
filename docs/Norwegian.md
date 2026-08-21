@@ -35,6 +35,7 @@ Hvordan bidra: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 8. [Skjermbilder](#skjermbilder)
 9. [Dokumenter](#dokumenter)
 10. [Plugins](#plugins)
+    - [Ikoner (hvor de ligger)](#ikoner-hvor-de-ligger)
 11. [Kodestandarder og bidrag](#kodestandarder-og-bidrag)
 12. [Bygge og installere](#bygge-og-installere)
     - [Utgivelsesbygg (APK / AAB)](#utgivelsesbygg-apk--aab)
@@ -420,6 +421,7 @@ Fullt galleri: [`bilder.md`](bilder.md) (engelsk:
 | [`architecture.md`](architecture.md) | Hvordan delene henger sammen |
 | [`codebase-map.md`](codebase-map.md) | Hvor man endrer kode for en gitt funksjon |
 | [`bilder.md`](bilder.md) / [`pictures.md`](pictures.md) | Skjermbildegallerier |
+| [`icons.md`](icons.md) | Hvor ikonfilene ligger, lisens og hvordan man legger til SVG |
 | [`map-styles.md`](map-styles.md) | Online vs frakoblet kartutseende; 3D |
 | [`poi.md`](poi.md) | Stedstyper og søk |
 | [How to use Navi](how-to-use.md) | Brukerveiledning (planlegging, Tools, pauser, lagrede steder/ruter, profiler) — engelsk |
@@ -440,7 +442,7 @@ Fullt galleri: [`bilder.md`](bilder.md) (engelsk:
 | [`status.md`](status.md) | Hvilke dokumenter er live status vs historikk |
 | [`future-proofing-audit-2026-07.md`](future-proofing-audit-2026-07.md) | Fremtidssikring / åpne risikoer |
 | [`indexed-map-format-plan.md`](indexed-map-format-plan.md) | Indekserte rutingkart (fased evaluering) |
-| [`plugins.md`](plugins.md) | Plugin-vert og veikart |
+| [`plugins.md`](plugins.md) | Plugin-vert og veikart (av/på; USB/Bluetooth) |
 
 Se `docs/`-mappen for mer spesialiserte emner (stemme, APRS, ECU, formler osv.).
 
@@ -448,7 +450,8 @@ Se `docs/`-mappen for mer spesialiserte emner (stemme, APRS, ECU, formler osv.).
 
 En sandkasse for plugins finnes, så fremtidige tillegg kan kjøre trygt.
 **Ingen produktplugins leveres i appen ennå** — det er med vilje. Oversikt:
-[`plugins.md`](plugins.md).
+[`plugins.md`](plugins.md). Systemkrav: hver plugin skal kunne **slås av/på**,
+og maskinvareplugins skal kunne snakke over **USB** / **Bluetooth** via verten.
 
 | Spesifikasjon | Emne |
 |---|---|
@@ -461,10 +464,23 @@ En sandkasse for plugins finnes, så fremtidige tillegg kan kjøre trygt.
 | [`plugins/horse-trekking-spec.md`](plugins/horse-trekking-spec.md) | Ridning: forsyning og adgangsveiledning (Hiking er midlertidig stopgap) |
 | [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) | Talt, eskalerende fartsvarsel (prosenttrinn; ikke levert) |
 
-## Ikoner (Navit)
+## Ikoner (hvor de ligger)
 
-POI- / sving- / statusikoner under `core/src/icons` kommer fra Navit
-(**GPL v2**). Hvordan legge til egne SVG-ikoner: [`icons.md`](icons.md).
+Kart-, sving-, POI- og statusikoner er filer i repoet — de lages ikke ved
+kjøring. Forfatterguide, oppslagsrekkefølge og lisenser: [`icons.md`](icons.md).
+
+| Sti | Hva som ligger der |
+|---|---|
+| [`core/src/icons/`](../core/src/icons/) | **Fullt sett** (kilde for skrivebord / kjerne). Mest Navit (**GPL v2**). Egne Navi-filer her inkluderer `leaf.svg` (øko) og `speed_camera.svg`. |
+| [`app/src/main/assets/icons/`](../app/src/main/assets/icons/) | Android **lean-pakke** — en nedskalert kopi som følger med hver APK. Nøkler som mangler her faller tilbake til `unknown.svg` på enheten. |
+| [`core/src/icons/road-signs/`](../core/src/icons/road-signs/) | Norske trafikkskilt-SVG-er (**NLOD 2.0**, ikke Navit). Android-kopi: [`app/src/main/assets/icons/road-signs/`](../app/src/main/assets/icons/road-signs/). |
+| [`core/src/icons/aprs/`](../core/src/icons/aprs/) | APRS-symboler for bevegelige ikoner. Android-kopi: [`app/src/main/assets/icons/aprs/`](../app/src/main/assets/icons/aprs/). |
+| [`app/src/main/res/mipmap-*`](../app/src/main/res/) | Android-**launcher** (startskjerm / app-skuff). Egen Navi-merkevare, ikke fra Navit. |
+| [`docs/icons/open-app.svg`](icons/open-app.svg) | Splash- / åpne-app-merke (Inkscape-kilde). Android-drawables: `app/src/main/res/drawable/ic_splash*.xml`. |
+
+For å legge til eller overstyre et kart-/POI-ikon, legg en SVG i `core/src/icons/`
+(og kopier den inn i Android lean-pakken hvis den skal vises på enheten). Se
+[`icons.md`](icons.md).
 
 # Kodestandarder og bidrag
 
@@ -584,9 +600,9 @@ Mer detalj (bundletool, F-Droid Podman): engelsk
 
 ### Arbeidsområdets struktur
 
-- `core/` — ruting, steder, hvileregler, ikoner (Rust)
+- `core/` — ruting, steder, hvileregler, ikoner (Rust). Ikon-SVG-er: `core/src/icons/`
 - `navi-ffi/` — bro til Android og andre verter
-- `app/` — Android-UI (Kotlin)
+- `app/` — Android-UI (Kotlin). Ikonpakke på enheten: `app/src/main/assets/icons/`
 - `plugin-host/` / `plugin-sdk/` / `plugins/` — fremtidige plugins
 - [`architecture.md`](architecture.md) — hvordan det henger sammen
 

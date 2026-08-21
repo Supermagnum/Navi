@@ -4,6 +4,11 @@
 **Path:** `docs/plugins/instrument-cluster-agl-spec.md`  
 **Architecture:** planned WASM guest via `plugin-host` / `plugin-sdk` and
 capability-gated `HostApi` ([`plugins.md`](../plugins.md)).
+**System requirements** (all plugins): user **enable/disable** toggle; any
+device link (e.g. USB serial to a cluster, Bluetooth to a companion display)
+uses host-mediated **USB** / **Bluetooth**
+([`plugins.md` — enable/disable](../plugins.md#enable--disable-required),
+[USB/Bluetooth](../plugins.md#external-device-io--usb-and-bluetooth-required)).
 
 Working title / id suggestion: `instrument_cluster` / `agl_signal_export`.
 

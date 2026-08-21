@@ -6,6 +6,10 @@
 capability-gated `HostApi` ([`plugins.md`](../plugins.md)). String catalogs and
 locale choice stay out of the trusted routing core; the host owns Compose UI
 text lookup and optional pack download.
+**System requirements** (all plugins): user **enable/disable** toggle; any
+device link uses host-mediated **USB** / **Bluetooth**
+([`plugins.md` — enable/disable](../plugins.md#enable--disable-required),
+[USB/Bluetooth](../plugins.md#external-device-io--usb-and-bluetooth-required)).
 
 Working title / id suggestion: `i18n` / `ui_translation`.
 
@@ -199,6 +203,9 @@ plugin. Keep shipping parallel markdown for docs as today. The plugin covers
 ## Design rules (same family as other plugins)
 
 1. Offline-first; network pack download is host/Tools, user-initiated.
-2. Core routing works with the plugin disabled (English strings in host).
+2. User **enable/disable** per [`plugins.md`](../plugins.md#enable--disable-required);
+   core routing works with the plugin disabled (English strings in host).
 3. No silent mutation of OSM / graph caches.
 4. Privacy: locale preference stays on device; no phone-home of UI language.
+5. Hardware I/O (if any) is host-mediated **USB** / **Bluetooth** only
+   ([`plugins.md`](../plugins.md#external-device-io--usb-and-bluetooth-required)).

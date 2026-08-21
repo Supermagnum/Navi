@@ -12,7 +12,12 @@ guests, UI translation packs, animated icon packs, etc.). That is **expected and
 the host exists so future contributors can ship those plugins independently
 without changing the navigation core. Country/region-dependent packs (camping,
 future driving-hour families, horse access, …) follow the reusable pattern in
-[`jurisdiction-rules.md`](jurisdiction-rules.md). See [Ideas for beneficial plugins](#ideas-for-beneficial-plugins)
+[`jurisdiction-rules.md`](jurisdiction-rules.md). **Product requirements** for
+the system (not optional): users can **enable/disable** each plugin, and
+hardware-facing plugins can talk over **USB** and **Bluetooth** via the host —
+see [Enable / disable](#enable--disable-required) and
+[External device I/O](#external-device-io--usb-and-bluetooth-required). See
+[Ideas for beneficial plugins](#ideas-for-beneficial-plugins)
 below as an open invitation / roadmap, not as incomplete core features.
 
 Navi runs untrusted extension code in a **wasmtime** sandbox (`plugin-host`), not
@@ -50,6 +55,58 @@ snapshots into the core; WASM guests must not get raw sockets.
 Capabilities are validated **before** the module is instantiated. Unknown
 capability names reject the load. Requested capabilities must be a subset of the
 host policy set passed to `PluginHost::load_dir`.
+
+## Enable / disable (required)
+
+Every installed plugin **must** be individually **enableable and disableable** by
+the user. This is a product requirement for the plugin system, not an optional
+per-plugin nicety.
+
+| Rule | Detail |
+|---|---|
+| **Per-plugin toggle** | Host UI (Tools / Settings) shows one on/off control per installed plugin (manifest `name`). |
+| **Persisted** | Enabled/disabled state is stored on device (e.g. `plugin_kv` / host preferences). Survives app restart. |
+| **Default** | Newly installed plugins start **disabled** until the user turns them on (opt-in), unless a ship checklist documents an exception. |
+| **Disabled = not called** | A disabled plugin is not invoked on route plan, tick, or event hooks. Its HostApi imports must not run. Capability grants alone do not keep it live. |
+| **Core without plugins** | Routing, map, GPS, and HUD must keep working with **all** plugins disabled ([Design rules](#design-rules-for-all-plugins)). |
+| **Load vs enable** | The host may still **discover** / validate a `.wasm` + `plugin.json` while disabled; enable only gates **execution** and side effects (audio, overlays, accessory I/O). |
+
+Future host API sketch (not in ABI yet): `plugin_list` / `plugin_set_enabled(name, bool)`
+owned by the Android/desktop host, not by guest WASM.
+
+## External device I/O — USB and Bluetooth (required)
+
+Plugins that talk to hardware **must** be able to use **USB** and/or **Bluetooth**
+(including BLE where the device requires it). Guests never open raw sockets or
+raw HID/serial themselves — the **host** owns the transport and feeds sanitized
+data (or accepts sanitized commands) through capability-gated HostApi imports.
+
+| Rule | Detail |
+|---|---|
+| **Transports** | **USB** (USB-serial, USB accessory / AOA, wired UART over USB) and **Bluetooth** (Classic SPP and/or BLE GATT) are first-class plugin I/O paths. |
+| **Host-mediated** | WASM guests request open/read/write/close via HostApi. Host opens the OS device, enforces permissions, rate-limits, and may disconnect on disable / app background policy. |
+| **User consent** | Pairing, USB permission dialogs, and “allow this plugin to use accessory X” stay in the host UI. Disabling a plugin closes its sessions. |
+| **No silent TX** | Radio CAT, OBD write, or any transmit path stays gated (read/query free where safe; TX only with explicit arm — see CAT / ECU ideas below). |
+| **Offline routing** | Accessory I/O must not block T2 UI or A*. Dropped links degrade the plugin feature, not core nav. |
+
+### Proposed capabilities (not in ABI yet)
+
+| Proposed | Purpose |
+|---|---|
+| `accessory_list` | List paired / attached USB and Bluetooth devices the host is willing to expose |
+| `accessory_open` | Open a session (plugin id + device id + mode: usb-serial / bt-spp / ble) |
+| `accessory_read` / `accessory_write` | Exchange bytes or framed messages; host may impose max length / rate |
+| `accessory_close` | Release the session (also implied when the plugin is disabled) |
+| `accessory_events` | Optional push of connect/disconnect / permission-denied |
+
+Until those land, **host-native** services (as already sketched for ECU Bluetooth /
+USB, CAT serial/USB, DIY e-bike USB-serial) may open the link and push snapshots
+into core; a future WASM guest then only calls `ecu_read` / `cat_vfo_set` /
+`ebike_telemetry_read`-class imports.
+
+Specs that need a cable or radio (**ECU**, **CAT**, **ebike_telemetry**, APRS
+TNC, future instruments) must document which transport(s) they use and that
+they honour enable/disable (sessions closed when off).
 
 ## Debug files (USB/MTP)
 
@@ -176,8 +233,8 @@ internet weather overlay.
 |---|---|
 | **Benefit** | Set VFO frequency / offset / CTCSS from nearby NFM repeaters while driving |
 | **Docs** | [`CAT.md`](CAT.md) — auto-tune algorithm, RepeaterBook + OSM onboard DB, Innlandsnettet example |
-| **Host duties** | Serial/USB CAT dialect (Kenwood/Yaesu/Icom/…); never auto-TX |
-| **Proposed caps** | `position_read`, `repeater_query` (new), `cat_vfo_set` (new, host-gated), `log` |
+| **Host duties** | Serial/USB CAT dialect (Kenwood/Yaesu/Icom/…); never auto-TX; honour plugin enable/disable (close sessions when off) |
+| **Proposed caps** | `position_read`, `repeater_query` (new), `cat_vfo_set` (new, host-gated), `accessory_*` (USB), `log` |
 | **Safety** | Read/query free; **TX inhibited** unless user explicitly arms PTT path |
 
 Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
@@ -192,9 +249,9 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | **Docs** | [`ECU.md`](ECU.md) — OBD-II, J1939, MegaSquirt examples → `LiveEnergySnapshot` |
 | **ICE** | `fuel_rate_l_h` from PID `5E` / J1939 LFE / MS pulse-width |
 | **EV / hybrid** | `state_of_charge_pct`, `power_kw` (traction / HV), optional remaining range |
-| **Host duties** | Bluetooth SPP / USB / SocketCAN; read-only diagnostics |
+| **Host duties** | Bluetooth SPP / USB / SocketCAN; read-only diagnostics; honour plugin enable/disable |
 | **Core effect** | `refine_energy_cost` / `LiveEnergyProvider` on T1 |
-| **Proposed caps** | `ecu_read` (new), `log` — no DTC clear / programming |
+| **Proposed caps** | `ecu_read` (new), `accessory_*` (USB / Bluetooth), `log` — no DTC clear / programming |
 
 ### 5b. DIY wired e-bike telemetry (`ebike_telemetry`)
 
@@ -202,8 +259,8 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 |---|---|
 | **Benefit** | Live assist power, pack SoC, regen, and DIY-computed remaining time/distance for Electric Cycle — supplements physics-based `EbikeConfig` estimates when a custom display/BMS is cabled in |
 | **Docs** | [`ebike-telemetry-diy.md`](ebike-telemetry-diy.md) — open `$NAVIPWR` ASCII over USB-serial (CAN optional); no open cross-vendor standard exists |
-| **Transport** | **Wired only** (USB-serial primary; CAN secondary). No Bluetooth/BLE in this path |
-| **Host duties** | Open UART/CAN; parse checksummed `$NAVIPWR`; expose latest snapshot (WASM cannot open serial) |
+| **Transport** | **Wired USB-serial** primary; CAN secondary; **Bluetooth/BLE** allowed when the DIY display/BMS exposes it — same host-mediated `accessory_*` path as ECU |
+| **Host duties** | Open UART/CAN/BT; parse checksummed `$NAVIPWR`; expose latest snapshot (WASM cannot open serial); close on plugin disable |
 | **Core effect** | Feed `LiveEnergySnapshot`-class SoC/power (+ optional remaining); physics climb/range stays default offline |
 | **Proposed caps** | `ebike_telemetry_read` (new) / host `read_ebike_serial_telemetry()`, `log` |
 | **Notes** | Spec only — not implemented. Distinct from reverse-engineering commercial Bosch/Bafang/STEPS buses (deferred, high maintenance). |
@@ -337,6 +394,8 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | `alert_sound_play` | Queue short alert clip by category (host owns audio device) |
 | `alert_sound_catalog` | List bundled + user override alert sound files |
 | `road_speed_state_read` | Speed, applicable limit, HUD overspeed flag, highway class, profile (adaptive speed warning) |
+| `accessory_list` / `accessory_open` / `accessory_read` / `accessory_write` / `accessory_close` | Host-mediated **USB** and **Bluetooth** (SPP/BLE) I/O for hardware plugins |
+| `plugin_list` / `plugin_set_enabled` | Host-owned inventory and per-plugin enable/disable (UI + persistence) |
 
 Add a capability to `plugin-host` `Capability` enum + HostApi **before** shipping
 any guest that needs it. Until then, host-native services may write into core
@@ -346,10 +405,16 @@ via UniFFI without WASM.
 
 1. **Offline-first:** network is opt-in; core routing must work with plugins
    disabled.
-2. **No silent map-data mutation:** OSM extracts and graph caches change only via
+2. **Enable / disable:** every plugin has a user-facing on/off control; disabled
+   plugins are not executed and must release USB/Bluetooth sessions
+   ([Enable / disable](#enable--disable-required)).
+3. **USB / Bluetooth:** hardware-facing plugins use host-mediated USB and/or
+   Bluetooth — never raw guest sockets
+   ([External device I/O](#external-device-io--usb-and-bluetooth-required)).
+4. **No silent map-data mutation:** OSM extracts and graph caches change only via
    explicit user actions ([`osm-updates.md`](osm-updates.md)).
-3. **Tier priorities:** plugins run at T0/T1 priority budgets — never block UI.
-4. **Privacy:** no VIN / callsign / location upload unless the user enables it.
-5. **Range discipline:** map overlays respect the same ~150 km class of filters
+5. **Tier priorities:** plugins run at T0/T1 priority budgets — never block UI.
+6. **Privacy:** no VIN / callsign / location upload unless the user enables it.
+7. **Range discipline:** map overlays respect the same ~150 km class of filters
    used by tracks and CAT repeater search unless the user raises a documented
    clamp.

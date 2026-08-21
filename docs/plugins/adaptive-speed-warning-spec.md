@@ -4,6 +4,10 @@
 **Path:** `docs/plugins/adaptive-speed-warning-spec.md`  
 **Architecture:** planned WASM guest via `plugin-host` / `plugin-sdk` and
 capability-gated `HostApi` ([`plugins.md`](../plugins.md)).
+**System requirements** (all plugins): user **enable/disable** toggle; any
+device link uses host-mediated **USB** / **Bluetooth**
+([`plugins.md` — enable/disable](../plugins.md#enable--disable-required),
+[USB/Bluetooth](../plugins.md#external-device-io--usb-and-bluetooth-required)).
 
 Working title / id suggestion: `adaptive_speed_warning` / `speed_warning`.
 

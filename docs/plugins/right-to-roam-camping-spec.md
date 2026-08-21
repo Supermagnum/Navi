@@ -5,6 +5,10 @@
 **Architecture:** WASM guest via `plugin-host` / `plugin-sdk` and capability-gated
 `HostApi` ([`plugins.md`](../plugins.md)). No new core routing; the plugin
 consumes position, route, POI/area, and safety config the host already exposes.
+**System requirements** (all plugins): user **enable/disable** toggle; any
+device link uses host-mediated **USB** / **Bluetooth**
+([`plugins.md` — enable/disable](../plugins.md#enable--disable-required),
+[USB/Bluetooth](../plugins.md#external-device-io--usb-and-bluetooth-required)).
 
 Working title / id suggestion: `right_to_roam_camping` (or
 `allemannsretten_camping` for a Norway-first packaging of the same guest).
