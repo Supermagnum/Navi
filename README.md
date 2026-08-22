@@ -21,7 +21,19 @@ differ for GPS, maps, GPU, and layout. Checklist:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 On-device and emulator results:
 [`docs/android-test-results.md`](docs/android-test-results.md).
-How to help: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
+
+**Translators wanted.** UI language packs are specified but not shipped
+(English-only chrome today). Fill or review the working table and follow the
+spec: [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md)
+(catalog: [`docs/plugins/translations.csv`](docs/plugins/translations.csv)).
+Do not add a language toggle until that plugin exists.
+
+**How to help:** testers, docs, translations, and code all start in
+[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md). That page is the contribution
+guide: how to **fork the repo and work on `dev`** (not `main`), basic GitHub
+usage (clone your fork, sync with upstream, open a pull request against
+`dev`), and which kinds of help are useful. Hardware testers can follow the
+checklist above and file an issue; you do not need to write code.
 
 ## Table of contents
 
@@ -50,8 +62,9 @@ How to help: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
 15. [TODO](#todo)
 
 More detail lives in linked docs (architecture, truck rest rules, map styles,
-debugging, and so on). Start with [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) if you
-want to help.
+debugging, and so on). To contribute, start with
+[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md): fork from **`dev`**, GitHub
+basics, and what to work on.
 
 # What this is
 
@@ -471,7 +484,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 
 | Document | What it is for |
 |---|---|
-| [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | How to contribute |
+| [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | How to help: fork from **`dev`**, GitHub basics (PR against `dev`), testing, docs, plugins, CI |
 | [`docs/crates.md`](docs/crates.md) | First-party Rust crates created here, and unaltered crates.io dependencies |
 | [`docs/architecture.md`](docs/architecture.md) | How the pieces fit together |
 | [`docs/codebase-map.md`](docs/codebase-map.md) | Where to change code for a given feature |
@@ -541,7 +554,12 @@ into the Android lean pack if it must appear on device). See
 
 # Coding standards and contributing
 
-Please read **[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)**.
+Please read **[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)** first. It covers
+how to **fork** [github.com/Supermagnum/Navi](https://github.com/Supermagnum/Navi),
+check out **`dev`**, keep your fork in sync, and open a pull request with
+**base branch `dev`**. Clone steps in [Building and installing](#building-and-installing)
+are for a local build; they are not a substitute for a fork if you want to send
+a change.
 
 Short version of CI expectations:
 
@@ -554,14 +572,21 @@ Short version of CI expectations:
 # Building and installing
 
 Clone from GitHub first. Development is on **`dev`** (newest features); **`main`**
-is the default clone target. Install Git if needed (`sudo apt install git` on
-Debian/Ubuntu — other systems in [`docs/build-linux.md`](docs/build-linux.md#getting-the-code)):
+is the default clone target (a plain `git clone` checks out `main`). Install Git
+if needed (`sudo apt install git` on Debian/Ubuntu — other systems in
+[`docs/build-linux.md`](docs/build-linux.md#getting-the-code)).
+
+**To build or install locally** (no pull request):
 
 ```bash
 git clone https://github.com/Supermagnum/Navi.git
 cd Navi
 git checkout dev
 ```
+
+**To contribute a change:** do not only clone this URL. Fork the repository,
+clone **your** fork, and work on **`dev`** — step-by-step in
+[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md#fork-from-dev-and-basic-github-usage).
 
 ## Install a prebuilt APK
 
@@ -855,4 +880,31 @@ Display **units** (metric / US / UK) are shipped (Drive settings). Norwegian
 speed-limit **pictograms** stay official km/h plates; mph *plate artwork* is
 still future (`new-signs/`). Offline Protomaps alcohol-shop labels
 (`pois.kind=alcohol`, z16+) are shipped — see [`docs/map-styles.md`](docs/map-styles.md).
+
+**Historical Norwegian/Norse distance units** as a selectable display option
+(e.g. rast, dagsvei, fjerdingvei), alongside the existing Metric / US / UK
+profiles. Display-only historical/cultural mode, not a default or a serious
+alternative to metric/imperial for navigation — likely a novelty or
+regional-flavor toggle. Needs a design pass before implementation (which
+distance fields it applies to, how it interacts with `DisplayUnits`, whether
+it is era-specific or one canonical conversion set).
+
+Context for whoever picks this up:
+
+- A **rast** was the distance traveled on foot before needing a rest ("rast,"
+  "pause"). It corresponded to a *mil* and was tied to the length of the ell,
+  and varied by region and era. In the 900s, a rast was about 192 stone
+  throws, divided into four **fjerdingvei** (quarter-ways), roughly
+  **9,100.8 m**. By the 12th century it was expressed as 16,000 ells (four
+  quarters of 8,000 feet), the same order of magnitude.
+- A **dagsvei** (day's journey) was the traditional distance walkable in a
+  day, commonly reckoned at about **40 km**.
+- A **stone's throw** was 120 ells (also called a "great hundred") — about
+  **56.88 m** (200 feet).
+- An **arrow's flight** was 4 stone's throws, ~480 ells — about **227.52 m**
+  (800 feet) around the year 900. Later in the Middle Ages, 10 arrow shots
+  made up a **fjerding** of a mile — **2,275.2 m** (8,000 feet), a quarter of
+  the younger Norse mile.
+- The **younger Norse mile** (rast / vei) was **9,100.8 m** (32,000 feet) —
+  the same order of magnitude as the 12th-century 16,000-ell figure above.
 

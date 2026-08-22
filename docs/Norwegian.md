@@ -16,7 +16,22 @@ telefoner. Referansesjekker så langt: Samsung Galaxy Tab S6 Lite (**SM-P613**) 
 Google Pixel 9a (**tegu**, kamerahull / API 36+). Biler og andre formater
 oppfører seg fortsatt annerledes for GPS, kart, GPU og layout. Sjekkliste:
 [`real-hardware-testing.md`](real-hardware-testing.md).
-Hvordan bidra: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Resultater på enhet og emulator:
+[`android-test-results.md`](android-test-results.md).
+
+**Oversettere ønskes.** UI-språkpakker er spesifisert, men ikke levert (bare
+engelsk i menyene i dag). Fyll eller gjennomgå arbeidstabellen og følg
+spesifikasjonen:
+[`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md)
+(katalog: [`plugins/translations.csv`](plugins/translations.csv)). Ikke innfør
+en språkbryter før den pluginen finnes.
+
+**Hvordan bidra:** testere, dokumentasjon, oversettelser og kode starter i
+[`CONTRIBUTING.md`](CONTRIBUTING.md) (engelsk). Den siden forklarer hvordan du
+**forker repoet og jobber på `dev`** (ikke `main`), grunnleggende GitHub-bruk
+(klone din fork, synke med upstream, åpne pull request mot `dev`), og hva slags
+hjelp som er nyttig. Testere kan følge sjekklisten over og åpne et issue; du
+trenger ikke skrive kode.
 
 ## Innhold
 
@@ -44,8 +59,9 @@ Hvordan bidra: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 15. [TODO](#todo)
 
 Mer detalj ligger i lenkede dokumenter (arkitektur, lastebilhvile, kartstiler,
-feilsøking osv.). Start med [`CONTRIBUTING.md`](CONTRIBUTING.md) hvis du vil
-bidra.
+feilsøking osv.). For å bidra, start med
+[`CONTRIBUTING.md`](CONTRIBUTING.md) (engelsk): fork fra **`dev`**,
+GitHub-grunnlag, og hva du kan jobbe med.
 
 # Hva dette er
 
@@ -432,7 +448,7 @@ Fullt galleri: [`bilder.md`](bilder.md) (engelsk:
 
 | Dokument | Hva det er til |
 |---|---|
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Hvordan bidra (engelsk) |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Hvordan bidra (engelsk): fork fra **`dev`**, GitHub-grunnlag (PR mot `dev`), testing, docs, plugins, CI |
 | [`architecture.md`](architecture.md) | Hvordan delene henger sammen |
 | [`codebase-map.md`](codebase-map.md) | Hvor man endrer kode for en gitt funksjon |
 | [`bilder.md`](bilder.md) / [`pictures.md`](pictures.md) | Skjermbildegallerier |
@@ -499,7 +515,12 @@ For å legge til eller overstyre et kart-/POI-ikon, legg en SVG i `core/src/icon
 
 # Kodestandarder og bidrag
 
-Les **[`CONTRIBUTING.md`](CONTRIBUTING.md)** (engelsk).
+Les **[`CONTRIBUTING.md`](CONTRIBUTING.md)** (engelsk) først. Den forklarer
+hvordan du **forker** [github.com/Supermagnum/Navi](https://github.com/Supermagnum/Navi),
+sjekker ut **`dev`**, holder forken oppdatert, og åpner en pull request med
+**base-gren `dev`**. Klone-stegene under [Bygge og installere](#bygge-og-installere)
+er for et lokalt bygg; de erstatter ikke en fork hvis du vil sende inn en
+endring.
 
 Kortversjon av CI-forventninger:
 
@@ -512,15 +533,23 @@ Kortversjon av CI-forventninger:
 # Bygge og installere
 
 Hent koden fra GitHub. Utvikling skjer på **`dev`** (nyeste funksjoner);
-**`main`** er standardgren ved `git clone`. Installer Git ved behov
+**`main`** er standardgren ved `git clone` (en vanlig `git clone` sjekker ut
+`main`). Installer Git ved behov
 (`sudo apt install git` på Debian/Ubuntu — andre systemer i
-[`build-linux.md`](build-linux.md#getting-the-code)):
+[`build-linux.md`](build-linux.md#getting-the-code)).
+
+**For å bygge eller installere lokalt** (uten pull request):
 
 ```bash
 git clone https://github.com/Supermagnum/Navi.git
 cd Navi
 git checkout dev
 ```
+
+**For å bidra med en endring:** ikke bare klone denne URL-en. Fork repoet,
+klone **din** fork, og jobb på **`dev`** — steg for steg i
+[`CONTRIBUTING.md`](CONTRIBUTING.md#fork-from-dev-and-basic-github-usage)
+(engelsk).
 
 ## Android-appen (alle vertsplattformer)
 
@@ -703,5 +732,13 @@ Visnings**enheter** (metrisk / US / UK) er levert (kjøreinnstillinger). Norske
 fartsgrenseskilt forblir offisielle km/t-plater; mph-*platekunst* er fortsatt
 fremtid (`new-signs/`). Frakoblede Protomaps-etiketter for alkoholutsalg
 (`pois.kind=alcohol`, z16+) er levert — se [`map-styles.md`](map-styles.md).
+
+**Historiske norske/norrøne avstandsenheter** som valgbar visningsmodus
+(f.eks. rast, dagsvei, fjerdingvei), ved siden av de eksisterende
+Metric / US / UK-profilene. Bare visning — historisk/kulturell modus, ikke
+standard og ikke et seriøst navigasjonsalternativ til metrisk/imperial.
+Trenger en designrunde før implementering (hvilke avstandsfelt, samspill med
+`DisplayUnits`, periode-spesifikk eller ett kanonisk omregningssett).
+Kontekst og omregningstall: [README — TODO](../README.md#todo).
 
 Engelsk: [README — TODO](../README.md#todo).

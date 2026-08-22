@@ -6,9 +6,120 @@ note in the README — that background is intentional and ongoing). Contribution
 of **all kinds** are welcome: code, testing, documentation, translations,
 jurisdiction packs, plugins, icons, and bug reports from real driving.
 
-Start with [`architecture.md`](architecture.md) for how the pieces fit
-together (`core`, `plugin-host` / `plugin-sdk`, Android `app`, UniFFI). For
-“where do I change X?”, use [`codebase-map.md`](codebase-map.md).
+Start with these orientation docs before changing code:
+
+| Doc | Use it for |
+|---|---|
+| [`architecture.md`](architecture.md) | How the pieces fit together (`core`, `plugin-host` / `plugin-sdk`, Android `app`, UniFFI) |
+| [`codebase-map.md`](codebase-map.md) | Where to change a given feature (files for zoom, HUD, routing, rest, map styles, …) |
+| [`API.md`](API.md) | Callable surfaces: UniFFI host API, plugin HostApi, and what is not an API |
+
+---
+
+## Fork from `dev` and basic GitHub usage
+
+The public repo is [github.com/Supermagnum/Navi](https://github.com/Supermagnum/Navi).
+
+**Branches:** New work lands on **`dev`**. **`main`** is GitHub’s default clone
+target. You fork the **whole repository**, then work from **`dev`**. GitHub
+does not fork a single branch by itself; after the fork, check out `dev`.
+
+If you only want to **build or install** and will not open a pull request, clone
+the upstream repo and `git checkout dev` as in the [README](../README.md#building-and-installing).
+That checkout cannot receive your pull requests. Use a **fork** for contributions.
+
+### 1. Account and fork
+
+1. Create a [GitHub](https://github.com) account if you do not have one.
+2. Open [github.com/Supermagnum/Navi](https://github.com/Supermagnum/Navi).
+3. Click **Fork** (top right). Keep the name `Navi` unless you have a reason
+   not to. You now have `https://github.com/<your-user>/Navi`.
+4. On **your** fork, use the branch dropdown and select **`dev`**. The fork’s
+   default branch is usually **`main`** (same as upstream). Do not start work
+   from `main` unless you mean to.
+
+### 2. Clone your fork and check out `dev`
+
+Install Git if needed (`sudo apt install git` on Debian/Ubuntu; other systems:
+[`build-linux.md`](build-linux.md#getting-the-code)).
+
+```bash
+git clone https://github.com/<your-user>/Navi.git
+cd Navi
+git checkout dev
+```
+
+A plain `git clone` checks out **`main`**. Always switch to **`dev`** before
+new work. One-step:
+
+```bash
+git clone -b dev https://github.com/<your-user>/Navi.git
+cd Navi
+```
+
+If `dev` is missing locally: `git fetch origin` then
+`git checkout -b dev origin/dev`.
+
+### 3. Add `upstream` (the original repo)
+
+Your clone’s `origin` is **your fork**. Add the Navi repo as `upstream` so you
+can pull new commits:
+
+```bash
+git remote add upstream https://github.com/Supermagnum/Navi.git
+git fetch upstream
+git remote -v
+```
+
+`origin` should be `https://github.com/<your-user>/Navi.git`.  
+`upstream` should be `https://github.com/Supermagnum/Navi.git`.
+
+### 4. Keep your `dev` in sync
+
+Before starting a change (and when GitHub shows your fork is behind):
+
+```bash
+git checkout dev
+git fetch upstream
+git merge upstream/dev
+git push origin dev
+```
+
+On the GitHub website you can also open your fork and use **Sync fork**.
+Do not force-push to `dev` or `main`.
+
+### 5. Branch, push, and open a pull request
+
+1. Create a topic branch **from latest `dev`**, not from `main`:
+
+   ```bash
+   git checkout dev
+   git fetch upstream
+   git merge upstream/dev
+   git checkout -b my-change
+   ```
+
+2. Make the change, commit, then push to **your fork**:
+
+   ```bash
+   git push -u origin my-change
+   ```
+
+3. On GitHub, open a **Pull request**.
+   - **base repository:** `Supermagnum/Navi`
+   - **base branch:** **`dev`** (not `main`)
+   - **compare:** your `my-change` branch on your fork
+
+You cannot push directly to `Supermagnum/Navi` unless the maintainer has given
+you write access. Fork plus pull request is the normal path.
+
+### When to use Issue, Discussion, or Pull request
+
+| Use | For |
+|---|---|
+| **Issue** | Bugs, hardware reports, small requests |
+| **Discussion** | Design questions before large work (see below) |
+| **Pull request** | A proposed change; must target **`dev`** |
 
 ---
 
@@ -86,6 +197,9 @@ Do not duplicate long build recipes here — use the maintained guides:
 
 | Goal | Doc |
 |---|---|
+| Where to edit a feature | [`codebase-map.md`](codebase-map.md) |
+| UniFFI / plugin HostApi | [`API.md`](API.md) |
+| Crate wiring / databases | [`architecture.md`](architecture.md) |
 | Rust core, host integration tests, optional gpsd/IMU (Linux) | [`build-linux.md`](build-linux.md) |
 | macOS build host (tools, Android NDK, adb) | [`build-macos.md`](build-macos.md) |
 | Windows build host (MSVC, tools, Android NDK, adb) | [`build-windows.md`](build-windows.md) |
@@ -160,9 +274,17 @@ a prior discussion — open a PR or issue directly.
 
 ## Pull requests
 
+Fork from **`dev`** first ([Fork from `dev` and basic GitHub usage](#fork-from-dev-and-basic-github-usage)).
+Then:
+
 - Keep PRs focused; one concern per PR when practical.
 - Include the evidence you used (test names, device, region, screenshot paths).
-- Target pull requests at **`dev`** (that is where new work lands).
+- Target pull requests at **`dev`** (that is where new work lands). Do not open
+  PRs against `main` unless the maintainer asks.
+- **CI must pass locally before you open a PR.** Run the commands in
+  [CI expectations](#ci-expectations-github-actions) and do not open the PR
+  until they succeed. GitHub Actions is a second check, not a substitute for a
+  local run.
 - Do not force-push to `main` or `dev`; do not skip hooks unless the maintainer asks.
 - The maintainer may ask clarifying questions before merge — that is normal for
   a solo-maintained tree.
@@ -187,7 +309,9 @@ Every push to **`main`** or **`dev`**, and every PR, runs
   (`workflow_dispatch` only; not scheduled and not a required check — see
   [`real-hardware-testing.md`](real-hardware-testing.md#github-hosted-instrumented-ci)).
 
-Before opening a PR, prefer running at least:
+**Required** before opening a PR: the same gate as GitHub Actions must already
+be green **on your machine**. Do not open a PR hoping CI will catch failures.
+Run at least:
 
 ```bash
 cargo fmt --all -- --check
@@ -198,6 +322,7 @@ cargo test --workspace \
   --exclude navi-desktop --exclude navi-plugin-log-hello --exclude navi-plugin-busy-loop
 cargo test -p navi-plugin-host --test isolation
 cargo deny check
+cargo audit
 ./gradlew :app:ktlintCheck :app:detekt :app:testDebugUnitTest :app:assembleDebug
 ```
 

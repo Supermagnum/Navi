@@ -27,9 +27,9 @@ Columns: **Language** is only a header placeholder (leave cells blank — it
 marks that language columns follow). **English** holds source UI wording from
 the current app: both **individual words** (e.g. Apply, Norway, Ostlandet, ETA,
 Basemap) and **full phrases** / status lines. Words are listed first, then
-phrases. **Norwegian (Norsk)** and **Swedish (Svenska)** stay blank until a
-translator fills them. This CSV is the working source for a future
-`messages.json` pack; it is **not** loaded by the app today.
+phrases. **Norwegian (Norsk)**, **Swedish (Svenska)**, and **Old West Norse
+(Norrønt)** stay blank until a translator fills them. This CSV is the working
+source for a future `messages.json` pack; it is **not** loaded by the app today.
 
 ---
 
@@ -56,7 +56,7 @@ This plugin is how a future contributor would add selectable UI languages
 ## Goals
 
 1. Let the host resolve UI strings by **stable message id** + **locale tag**
-   (BCP 47, e.g. `en`, `nb-NO`, `de`).
+   (BCP 47, e.g. `en`, `nb-NO`, `de`, `non`).
 2. Ship translation catalogs as **offline packs** the user installs (or that
    ship beside the APK), not as silent network fetches from the WASM guest.
 3. Keep the default UI English when no pack is installed or a key is missing
@@ -115,6 +115,7 @@ Offline directory (example):
   en/messages.json
   nb-NO/messages.json
   de/messages.json
+  non/messages.json
   manifest.json
 ```
 
@@ -126,10 +127,20 @@ Offline directory (example):
   "default_locale": "en",
   "packs": [
     { "locale": "en", "name": "English", "file": "en/messages.json", "version": "1.0.0" },
-    { "locale": "nb-NO", "name": "Norsk (bokmål)", "file": "nb-NO/messages.json", "version": "1.0.0" }
+    { "locale": "nb-NO", "name": "Norsk (bokmål)", "file": "nb-NO/messages.json", "version": "1.0.0" },
+    { "locale": "non", "name": "Norrønt (vestnorrønt)", "file": "non/messages.json", "version": "1.0.0" }
   ]
 }
 ```
+
+**Locale tag for Old West Norse:** BCP 47 / ISO 639 has a code for **Old Norse**
+generally (`non`), but no distinct standard subtag for the **West** Norse
+dialect group as opposed to Old East Norse. The sketch uses `non` as the best
+available standard tag. If the distinction from Old East Norse ever matters
+(for example both added as separate packs), a private-use subtag extension
+(e.g. `non-x-west`) or a documented project convention would be needed at that
+point. Do not invent that convention now; treat it as a known gap for whoever
+implements packs.
 
 `messages.json` (flat message ids → strings; ICU `{name}` placeholders allowed):
 
