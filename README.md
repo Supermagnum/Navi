@@ -830,4 +830,5 @@ Country/region visual extracts can also be prepared with
 (Future work only — shipped features are listed in the Features table above.)
 Add support for imperial units, and language selection based on android devices location
 with fallback to English as default if no translation is found.
+Investigate why alcohol shops are not displayed on the map.
 
