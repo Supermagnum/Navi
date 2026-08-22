@@ -1007,27 +1007,13 @@ private fun NaviMapScreen() {
             showSpeedCameraPrompt = true
         }
     }
+    // Single effect for live-hazard layers + speed cameras: at most one PBF camera
+    // scan per (dataDir, opt-in) need. Cameras are never scanned when opt-in is false.
     LaunchedEffect(speedCameraOptIn, dataDir) {
         if (!speedCameraOptIn) {
             speedCamerasJson = "[]"
             speedCameraWarning = SpeedCameraWarningState()
-            return@LaunchedEffect
         }
-        val pbf = resolveRegionPbf() ?: return@LaunchedEffect
-        withContext(Dispatchers.IO) {
-            runCatching {
-                // Prefer native compact cache (already filled at region load).
-                val fromCache = uniffi.navi.liveHazardsSpeedCamerasJson()
-                speedCamerasJson =
-                    if (fromCache != "[]") {
-                        fromCache
-                    } else {
-                        uniffi.navi.loadSpeedCamerasJson(pbf.absolutePath)
-                    }
-            }
-        }
-    }
-    LaunchedEffect(dataDir) {
         val pbf = resolveRegionPbf() ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
             fun readCache(name: String): String? {
@@ -1046,42 +1032,54 @@ private fun NaviMapScreen() {
             val schoolRaw: String
             val camsRaw: String
             val bumpsRaw: String
-            if (
-                cachedSigns != null &&
-                cachedCams != null &&
-                cachedChildren != null &&
-                cachedBumps != null
-            ) {
-                signsRaw = cachedSigns
-                schoolRaw = cachedChildren
-                camsRaw = cachedCams
-                bumpsRaw = cachedBumps
+            val signsChildrenBumpsCached =
+                cachedSigns != null && cachedChildren != null && cachedBumps != null
+            if (signsChildrenBumpsCached && (!speedCameraOptIn || cachedCams != null)) {
+                signsRaw = cachedSigns!!
+                schoolRaw = cachedChildren!!
+                bumpsRaw = cachedBumps!!
+                camsRaw =
+                    when {
+                        speedCameraOptIn -> cachedCams!!
+                        else -> cachedCams ?: "[]"
+                    }
             } else {
                 signsRaw =
-                    runCatching { uniffi.navi.loadRoadSignsJson(pbf.absolutePath) }
-                        .getOrElse {
-                            NaviMapTestHooks.lastRoadSignsIndexed = -2
-                            return@withContext
-                        }
+                    cachedSigns
+                        ?: runCatching { uniffi.navi.loadRoadSignsJson(pbf.absolutePath) }
+                            .getOrElse {
+                                NaviMapTestHooks.lastRoadSignsIndexed = -2
+                                return@withContext
+                            }
                 schoolRaw =
-                    runCatching { uniffi.navi.loadSchoolPoisJson(pbf.absolutePath) }
-                        .getOrDefault("[]")
-                camsRaw =
-                    runCatching { uniffi.navi.loadSpeedCamerasJson(pbf.absolutePath) }
-                        .getOrDefault("[]")
+                    cachedChildren
+                        ?: runCatching { uniffi.navi.loadSchoolPoisJson(pbf.absolutePath) }
+                            .getOrDefault("[]")
                 bumpsRaw =
-                    runCatching { uniffi.navi.loadSpeedBumpsJson(pbf.absolutePath) }
-                        .getOrDefault("[]")
-                // Persist compact layers so later launches (and low-RAM devices) skip PBF rescans.
+                    cachedBumps
+                        ?: runCatching { uniffi.navi.loadSpeedBumpsJson(pbf.absolutePath) }
+                            .getOrDefault("[]")
+                camsRaw =
+                    when {
+                        !speedCameraOptIn -> cachedCams ?: "[]"
+                        cachedCams != null -> cachedCams
+                        else ->
+                            runCatching { uniffi.navi.loadSpeedCamerasJson(pbf.absolutePath) }
+                                .getOrDefault("[]")
+                    }
+                // Persist compact layers. Never write cameras.json as a poisoned
+                // empty array when opt-in is false (that would skip a real scan later).
                 runCatching {
                     val cacheDir =
                         File(dataDir, "live_hazards_cache/${pbf.nameWithoutExtension}").also {
                             it.mkdirs()
                         }
                     File(cacheDir, "signs.json").writeText(signsRaw)
-                    File(cacheDir, "cameras.json").writeText(camsRaw)
                     File(cacheDir, "children.json").writeText(schoolRaw)
                     File(cacheDir, "bumps.json").writeText(bumpsRaw)
+                    if (speedCameraOptIn && !camsRaw.contains("\"error\"")) {
+                        File(cacheDir, "cameras.json").writeText(camsRaw)
+                    }
                 }
             }
             roadSignsJson = signsRaw
@@ -1106,7 +1104,7 @@ private fun NaviMapScreen() {
                     uniffi.navi.liveHazardsIngestFromJson(
                         pbf.absolutePath,
                         signsRaw,
-                        camsRaw,
+                        if (speedCameraOptIn) camsRaw else "[]",
                         schoolRaw,
                         bumpsRaw,
                     )
