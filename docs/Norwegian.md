@@ -737,8 +737,10 @@ fremtid (`new-signs/`). Frakoblede Protomaps-etiketter for alkoholutsalg
 (f.eks. rast, dagsvei, fjerdingvei), ved siden av de eksisterende
 Metric / US / UK-profilene. Bare visning — historisk/kulturell modus, ikke
 standard og ikke et seriøst navigasjonsalternativ til metrisk/imperial.
-Trenger en designrunde før implementering (hvilke avstandsfelt, samspill med
-`DisplayUnits`, periode-spesifikk eller ett kanonisk omregningssett).
+**Fart:** norrøn **mil per time** kan erstatte km/t; mindre avstander
+(steinens kast, pileskudd, fjerdingvei, …). Trenger en designrunde før
+implementering (hvilke avstands-/fartsfelt, samspill med `DisplayUnits`,
+periode-spesifikk eller ett kanonisk omregningssett).
 Kontekst og omregningstall: [README — TODO](../README.md#todo).
 
 Engelsk: [README — TODO](../README.md#todo).

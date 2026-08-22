@@ -886,8 +886,14 @@ still future (`new-signs/`). Offline Protomaps alcohol-shop labels
 profiles. Display-only historical/cultural mode, not a default or a serious
 alternative to metric/imperial for navigation — likely a novelty or
 regional-flavor toggle. Needs a design pass before implementation (which
-distance fields it applies to, how it interacts with `DisplayUnits`, whether
-it is era-specific or one canonical conversion set).
+distance and speed fields it applies to, how it interacts with
+`DisplayUnits`, whether it is era-specific or one canonical conversion set).
+
+**Speed:** Old Norse **mil per hour** (using the younger Norse mile /
+rast ≈ 9,100.8 m) could replace kilometre per hour in HUD / limit chrome for
+this profile. **Smaller distances** (approach box, remaining distance under
+a mil, etc.) should use the finer traditional units — stone's throw,
+arrow's flight, fjerdingvei — not only mil / rast / dagsvei.
 
 Context for whoever picks this up:
 
@@ -907,4 +913,7 @@ Context for whoever picks this up:
   the younger Norse mile.
 - The **younger Norse mile** (rast / vei) was **9,100.8 m** (32,000 feet) —
   the same order of magnitude as the 12th-century 16,000-ell figure above.
+  Speed display in this mode: **mil/h** derived from that mile length
+  (≈ 9.1008 km/h per mil/h), with sub-mil distances shown as stone's throw,
+  arrow's flight, and so on.
 
