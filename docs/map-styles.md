@@ -260,9 +260,20 @@ gap. Navi cannot fix this in style JSON; offline Protomaps is the path that
 labels wetlands. Liberty lake/river labels (`water_name_*_label`,
 `waterway_line_label`) already exist upstream and are left as-is.
 
-Sprites: kinds without a matching icon (e.g. `fuel`) fall back to `townspot`.
+Sprites: kinds without a matching icon (e.g. `fuel`, `alcohol`, vehicle-repair
+kinds) fall back to `townspot`.
 Match filters must not duplicate labels (MapLibre rejects the layer with
 `Branch labels must be unique`).
+
+**Alcohol shops and vehicle repair (offline Protomaps):** `shop=alcohol` tiles
+as `pois.kind=alcohol` (Planetiler often `min_zoom` 16). That kind was missing
+from the `pois` allow-list, so named shops such as Vinmonopolet never drew
+even when the PMTiles feature existed. The template now allows `alcohol`,
+`car_repair`, `motorcycle_repair` / `motorcycle`, `bicycle_repair` /
+`bicycle_repair_station` / `bicycle`. They follow the default kind floor
+(**z16+**). Rest/overnight `PoiIndex` (`CraftBrewery` / `shop=alcohol`) is a
+separate plane — [`poi.md`](poi.md). Other dense shop kinds (clothes, kiosk, …)
+stay off the whitelist on purpose.
 
 ## Coverage fallback
 

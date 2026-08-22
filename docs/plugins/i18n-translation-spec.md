@@ -41,6 +41,9 @@ As of this writing:
   resources in the Compose host).
 - There is **no language-switching control** in map settings, drive settings, or
   tools.
+- Do **not** infer UI language from GPS or SIM/network country. That would
+  override the language the user already chose in Android. Display **units**
+  may infer once from SIM country; locale must not piggyback on that.
 - Repository docs may exist in English and Norwegian (`README.md` /
   `docs/Norwegian.md`, `docs/pictures.md` / `docs/bilder.md`, …). That is
   **documentation**, not an in-app locale system.

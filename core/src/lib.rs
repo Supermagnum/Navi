@@ -23,8 +23,9 @@ pub use config::{
 };
 pub use download::DownloadControl;
 pub use nav::{
-    current_road_label, format_distance_m, prefer_street_label, ApproachPhase, ManeuverKind,
-    NavGuidance, APPROACH_APPEAR_M, APPROACH_HIDE_M, APPROACH_URGENCY_M,
+    current_road_label, format_altitude_m, format_distance_m, format_speed_kmh,
+    prefer_street_label, ApproachPhase, ManeuverKind, NavGuidance, APPROACH_APPEAR_M,
+    APPROACH_HIDE_M, APPROACH_URGENCY_M,
 };
 pub use poi::{CorridorBand, PoiCategory, PoiIndex, PoiRecord};
 pub use routing::elevation::{ElevationCache, ElevationDownloader, ElevationJob, ElevationService};

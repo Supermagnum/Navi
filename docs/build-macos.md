@@ -19,12 +19,20 @@ Debugging: [`debugging.md`](debugging.md).
 
 ## Getting the code
 
+Git usually arrives with **Xcode Command Line Tools** (`xcode-select --install`).
+Otherwise: `brew install git`. Debian/Ubuntu users on a Mac-adjacent Linux box
+can use `sudo apt install git` — full table in
+[`build-linux.md`](build-linux.md#getting-the-code).
+
 ```bash
 git clone https://github.com/Supermagnum/Navi.git
 cd Navi
+git checkout dev
 ```
 
-Use branch **`main`** (no formal release tags yet).
+**Branch / tag:** Development happens on **`dev`** (newest features). A plain
+`git clone` checks out **`main`** (GitHub default). There are no formal release
+tags yet. One-step: `git clone -b dev https://github.com/Supermagnum/Navi.git`.
 
 ---
 

@@ -100,7 +100,8 @@ Dette er helt valgfri støtte, ikke en betalingsmur — Navi er og forblir grati
 | **Kartmerke og lagrede steder** | Hold på kartet ~4 s for å merke et punkt; sett Fra / Via / Til eller lagre et navngitt sted (skilt fra Lagrede ruter). | Ferdig |
 | **Avvik / omberegning** | Vedvarende avvik viser **Off route**; motorprofiler omplanlegger automatisk fra live posisjon; fottur spør først. | Ferdig |
 | **Pauser og hvile** | Påminner når pause er «forfalt» og kan foreslå stopp. Bil bruker timer mellom pauser; fottur/sykling bruker rasteavstander; lastebil bruker juridiske kjøretidsregler der de er kjent. | Ferdig |
-| **Kjørefelt** | Topp: høyde (tilpasset kamerahull). Bunn: zoom, live GPS-fart, skiltet fartsgrense når kjent, pauseteller, tur-ETA, veinavn, økoblad. Fartslinjen bruker feilfarge ved overskridelse (kun visning — ikke taleskjenning). | Ferdig |
+| **Kjørefelt** | Topp: høyde (tilpasset kamerahull; meter, eller fot i US-enhetsprofilen). Bunn: zoom, live GPS-fart, skiltet fartsgrense når kjent, pauseteller, tur-ETA, veinavn, økoblad. Fart og avstand følger **enheter**. Fartslinjen bruker feilfarge ved overskridelse (kun visning — ikke taleskjenning). | Ferdig |
+| **Enheter** | Kjøreinnstillinger: **Metric** (km, km/t), **US** (ft / mi, mph, høyde i fot), eller **UK** (yd deretter mi, mph, høyde i meter). Første installasjon utledes én gang fra SIM/nettverksland (GB → UK, US/LR/MM → US, ellers metrisk; emulatorer forblir metriske). Brikkene overstyrer alltid. | Ferdig |
 | **GPS-følge** | Kartet følger deg som standard. Panorer bort, trykk deretter **Recenter**. | Ferdig |
 | **Kartrotasjon** | Nord opp, kompass eller kjøreretning. | Ferdig |
 | **Bevegelige ikoner** | Kan tegne nærliggende spormarkører på kartet. Live radiomating er ikke innebygd ennå. | Delvis |
@@ -244,8 +245,8 @@ ny hvilelov.
 
 **Kartstriper.** Trykk toppstripen for kart-/skjerminnstillinger. Trykk
 bunnstatusen for kjøre-/kjøretøyinnstillinger (modus, pauseintervall, drivstoff,
-elsykkel osv.). Bunnstripen viser også **live GPS-fart / skiltet grense** (km/t)
-når fiks og gjeldende grense er kjent; overskridelse er bare farge i dag
+elsykkel osv.). Bunnstripen viser også **live GPS-fart / skiltet grense**
+(km/t eller mph etter **enheter**) når fiks og gjeldende grense er kjent; overskridelse er bare farge i dag
 ([`current-street.md`](current-street.md)). Talt, eskalerende varsel er en
 **pluginspesifikasjon**, ikke levert:
 [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md).
@@ -268,8 +269,11 @@ eksisterende veinavn-/cellegraf. Kompakte punkter lastes én gang per region
 # Innstillinger
 
 **Språk:** appens menyer er **bare engelsk** i dag. Det finnes ingen
-språkmeny ennå. Denne filen (`docs/Norwegian.md`) er dokumentasjon, ikke en
-språkpakke i appen. En fremtidig oversettelsesplugin er beskrevet i
+språkmeny ennå, og Navi velger **ikke** UI-språk fra GPS eller SIM-land (det
+ville overstyre språket brukeren allerede har satt på telefonen). Denne filen
+(`docs/Norwegian.md`) er dokumentasjon, ikke en språkpakke i appen. En
+fremtidig oversettelsesplugin (valgbare pakker, **tilbakefall til engelsk**
+når en nøkkel mangler) er beskrevet i
 [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md).
 En arbeids-CSV for oversettere ligger ved siden av den spesifikasjonen:
 [`plugins/translations.csv`](plugins/translations.csv).
@@ -298,6 +302,7 @@ kartvisning i app-preferanser).
 | **Hours between breaks** | Hvor ofte du *ønsker* pause (bil), eller lastebilens pålagte pause-etter-tid |
 | **Rest time** | Hvor lenge pausen bør vare (forslag / lastebil sammenhengende pause) |
 | **Next break as Time / Distance** | Vis nedtelling i minutter, eller som km/mi ved antatt cruisehastighet |
+| **Units** | Metrisk, US (ft / mph) eller UK (mi / mph). Første-gangs standard fra SIM/nettverksland; alltid overstyrbar. UK-høyde forblir meter (ikke US-fot). |
 | **Eco mode** | Energikost med bakker (låst på for fottur/sykling) |
 | **POI search radius** | Hvor langt til siden planleggeren kan lete etter hytter / stopp |
 | **Vehicle limits** | Høyde/bredde/lengde/aksellast for frihøyde |
@@ -506,6 +511,17 @@ Kortversjon av CI-forventninger:
 
 # Bygge og installere
 
+Hent koden fra GitHub. Utvikling skjer på **`dev`** (nyeste funksjoner);
+**`main`** er standardgren ved `git clone`. Installer Git ved behov
+(`sudo apt install git` på Debian/Ubuntu — andre systemer i
+[`build-linux.md`](build-linux.md#getting-the-code)):
+
+```bash
+git clone https://github.com/Supermagnum/Navi.git
+cd Navi
+git checkout dev
+```
+
 ## Android-appen (alle vertsplattformer)
 
 APK-en bygges likt på **Linux**, **macOS** og **Windows**: kompiler `libnavi.so`
@@ -674,12 +690,18 @@ Land-/regionvisuelle uttrekk kan også lages med
 
 # TODO
 
-## Integrere [Supermagnum/road-signs](https://github.com/Supermagnum/road-signs)
+(Bare fremtidig arbeid — leverte funksjoner står i tabellen Funksjoner over.)
 
-Åpen katalog med offisielle **norske trafikkskilt** (SVG + JSON), egen repo under
-[NLOD 2.0](https://data.norge.no/nlod/en/2.0). Planlagt i Navi: vendore SVG +
-`signs_en.json` / `osm_tags.json`, rasterisere inn i ikonpakken, matche OSM
-`traffic_sign=NO:…` / `hazard=*` / `maxspeed=*` langs rute/innkjøring, vise i
-approach-/advarsels-UI (som fartskamera), Norge først, Vienna-gjenbruk kun der
-kartleggingen tillater det. Full integrasjonsbeskrivelse (artefakter, steg,
-begrensninger): engelsk [README — TODO](../README.md#todo).
+**UI-språkpakker** — menyene er bare engelsk i dag. En fremtidig `i18n` /
+`ui_translation`-plugin skal gi valgbare språk med **tilbakefall til engelsk**
+når en oversettelse eller pakke mangler. Spesifikasjon:
+[`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md).
+Ikke utled UI-språk fra GPS eller SIM-land. Ikke innfør en språkbryter før den
+pluginen finnes.
+
+Visnings**enheter** (metrisk / US / UK) er levert (kjøreinnstillinger). Norske
+fartsgrenseskilt forblir offisielle km/t-plater; mph-*platekunst* er fortsatt
+fremtid (`new-signs/`). Frakoblede Protomaps-etiketter for alkoholutsalg
+(`pois.kind=alcohol`, z16+) er levert — se [`map-styles.md`](map-styles.md).
+
+Engelsk: [README — TODO](../README.md#todo).

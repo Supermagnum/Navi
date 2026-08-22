@@ -326,6 +326,7 @@ private fun preDepartureEtaMinutes(
 private fun formatEbikePlanStatus(
     report: String,
     distanceKm: Double,
+    unitSystem: UnitSystem,
 ): String? {
     if (!report.contains("ebike_pct_of_capacity=") && !report.contains("ev_pct_of_capacity=")) {
         return null
@@ -337,7 +338,7 @@ private fun formatEbikePlanStatus(
             ?.getOrNull(1)
     val base =
         buildString {
-            append("Route planned · ${"%.1f".format(distanceKm)} km")
+            append(DisplayUnits.formatRoutePlanned(distanceKm, unitSystem))
             if (pct != null) {
                 append(" · ~${pct.toDoubleOrNull()?.toInt() ?: pct}% of battery")
             }
@@ -542,7 +543,7 @@ private fun NaviMapScreen() {
                 autoZoomLevel = MapHudPrefs.loadAutoZoomLevel(context),
                 autoZoomWhileMoving = MapHudPrefs.loadAutoZoomOn(context),
                 breakAsDistance = MapHudPrefs.loadBreakAsDistance(context),
-                preferMetric = MapHudPrefs.loadPreferMetric(context),
+                unitSystem = MapHudPrefs.loadUnitSystem(context),
                 optIn3d = MapHudPrefs.loadOptIn3d(context),
                 cameraTiltDeg = MapHudPrefs.loadCameraTiltDeg(context),
                 snapRotationBackToMode = MapHudPrefs.loadSnapRotationBack(context),
@@ -942,7 +943,7 @@ private fun NaviMapScreen() {
         status =
             userFacingStatus(
                 if (pending.distanceKm > 0.0) {
-                    "Route planned · ${"%.1f".format(pending.distanceKm)} km"
+                    DisplayUnits.formatRoutePlanned(pending.distanceKm, driveHud.unitSystem)
                 } else {
                     pending.report
                 },
@@ -1483,7 +1484,7 @@ private fun NaviMapScreen() {
                     minutesToBreak = null,
                     distanceToTurnKm = null,
                     breakAsDistance = MapHudPrefs.loadBreakAsDistance(context),
-                    preferMetric = MapHudPrefs.loadPreferMetric(context),
+                    unitSystem = MapHudPrefs.loadUnitSystem(context),
                 )
         }
         if (!locationPermGranted) {
@@ -1717,7 +1718,7 @@ private fun NaviMapScreen() {
                             ApproachGuidanceState(
                                 active = true,
                                 offRoute = true,
-                                preferMetric = driveHud.preferMetric,
+                                unitSystem = driveHud.unitSystem,
                             )
                         NaviMapTestHooks.lastApproachPhase = approachUiPhase(approachGuidance)
                         NaviMapTestHooks.lastApproachIconKey = null
@@ -1741,7 +1742,7 @@ private fun NaviMapScreen() {
                                 houseNumber = house,
                                 postcode = post,
                                 roundaboutExit = man.roundaboutExit,
-                                preferMetric = driveHud.preferMetric,
+                                unitSystem = driveHud.unitSystem,
                                 offRoute = false,
                             )
                         NaviMapTestHooks.lastApproachPhase = approachUiPhase(approachGuidance)
@@ -1761,7 +1762,7 @@ private fun NaviMapScreen() {
                             )
                         speedCameraWarning =
                             speedCameraWarningFromJson(warnJson).copy(
-                                preferMetric = driveHud.preferMetric,
+                                unitSystem = driveHud.unitSystem,
                             )
                     } else {
                         speedCameraWarning = SpeedCameraWarningState()
@@ -1800,7 +1801,7 @@ private fun NaviMapScreen() {
                         }
                     roadSignWarning =
                         roadSignWarningFromJson(finalRoadSignJson).copy(
-                            preferMetric = driveHud.preferMetric,
+                            unitSystem = driveHud.unitSystem,
                         )
                     NaviMapTestHooks.lastRoadSignWarningJson =
                         if (roadSignWarning.active) finalRoadSignJson else "{}"
@@ -1925,7 +1926,7 @@ private fun NaviMapScreen() {
                         }
                     speedCameraWarning =
                         speedCameraWarningFromJson(camJson).copy(
-                            preferMetric = driveHud.preferMetric,
+                            unitSystem = driveHud.unitSystem,
                         )
                     val signJson =
                         uniffi.navi.liveHazardConeRoadSignWarningJson(
@@ -1974,7 +1975,7 @@ private fun NaviMapScreen() {
                     }
                     roadSignWarning =
                         roadSignWarningFromJson(finalRoadSignJson).copy(
-                            preferMetric = driveHud.preferMetric,
+                            unitSystem = driveHud.unitSystem,
                         )
                     NaviMapTestHooks.lastRoadSignWarningJson =
                         if (roadSignWarning.active) finalRoadSignJson else "{}"
@@ -2593,7 +2594,7 @@ private fun NaviMapScreen() {
                             breakRemindersEnabled = driveHud.breakRemindersEnabled,
                             minutesToBreak = driveHud.minutesToBreak,
                             breakAsDistance = driveHud.breakAsDistance,
-                            preferMetric = driveHud.preferMetric,
+                            unitSystem = driveHud.unitSystem,
                         ) != null
                         NaviMapTestHooks.lastHudAltitudeM = driveHud.altitudeM
 
@@ -3727,14 +3728,22 @@ private fun NaviMapScreen() {
                                         // consume the hook and the visible map stays empty.
                                         applyPlannedRoute(result)
                                         prioritySharePct = result.priorityPathSharePct
-                                        status = formatEbikePlanStatus(result.report, result.distanceKm)
+                                        status = formatEbikePlanStatus(
+                                            result.report,
+                                            result.distanceKm,
+                                            driveHud.unitSystem,
+                                        )
                                             ?: (
                                                 formatRouteAvoidanceReport(
                                                     avoidMotorways,
                                                     avoidTolls,
                                                     avoidFerries,
                                                     prioritySharePct,
-                                                ) + "\nRoute planned · ${"%.1f".format(result.distanceKm)} km"
+                                                ) + "\n" +
+                                                    DisplayUnits.formatRoutePlanned(
+                                                        result.distanceKm,
+                                                        driveHud.unitSystem,
+                                                    )
                                             )
                                     }
                                 },
@@ -3804,6 +3813,7 @@ private fun NaviMapScreen() {
                             }
                             MultiDayPlanCards(
                                 days = mapState.multiDayCards,
+                                unitSystem = driveHud.unitSystem,
                                 modifier =
                                     Modifier
                                         .fillMaxWidth()
@@ -5497,12 +5507,12 @@ private fun NaviMapScreen() {
                         DiagnosticLog.logToggle("break_as_distance", on)
                         DiagnosticLog.logSettingSaved("break_as_distance", on)
                     },
-                    preferMetric = driveHud.preferMetric,
-                    onPreferMetricChange = { on ->
-                        MapHudPrefs.savePreferMetric(context, on)
-                        driveHud = driveHud.copy(preferMetric = on)
-                        DiagnosticLog.logToggle("prefer_metric", on)
-                        DiagnosticLog.logSettingSaved("prefer_metric", on)
+                    unitSystem = driveHud.unitSystem,
+                    onUnitSystemChange = { system ->
+                        MapHudPrefs.saveUnitSystem(context, system)
+                        driveHud = driveHud.copy(unitSystem = system)
+                        DiagnosticLog.logToggle("unit_system", system.persistId)
+                        DiagnosticLog.logSettingSaved("unit_system", system.persistId)
                     },
                     onApplied = {
                         showDriveSettings = false
@@ -5534,7 +5544,7 @@ private fun NaviMapScreen() {
                                     ecoActive = ecoFromStore || ecoEnabled,
                                     minutesToBreak = minsLeft,
                                     breakAsDistance = MapHudPrefs.loadBreakAsDistance(context),
-                                    preferMetric = MapHudPrefs.loadPreferMetric(context),
+                                    unitSystem = MapHudPrefs.loadUnitSystem(context),
                                 )
                             ecoEnabled = ecoFromStore || ecoEnabled
                         }

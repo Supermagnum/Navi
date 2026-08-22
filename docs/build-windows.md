@@ -19,15 +19,19 @@ Debugging: [`debugging.md`](debugging.md).
 
 ## Getting the code
 
-Install [Git for Windows](https://git-scm.com/download/win), then in
-**Git Bash** or PowerShell:
+Install [Git for Windows](https://git-scm.com/download/win) (or use Git inside
+**WSL2**, e.g. `sudo apt install git` — see [`build-linux.md`](build-linux.md#getting-the-code)).
+Then in **Git Bash** or PowerShell:
 
 ```bash
 git clone https://github.com/Supermagnum/Navi.git
 cd Navi
+git checkout dev
 ```
 
-Use branch **`main`** (no formal release tags yet).
+**Branch / tag:** Development happens on **`dev`** (newest features). A plain
+`git clone` checks out **`main`** (GitHub default). There are no formal release
+tags yet. One-step: `git clone -b dev https://github.com/Supermagnum/Navi.git`.
 
 Prefer **Git Bash** (or WSL2) when running `./scripts/build-android-native.sh`
 and other bash scripts. Gradle can run from PowerShell via `.\gradlew.bat`.

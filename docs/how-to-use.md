@@ -3,10 +3,12 @@
 End-user guide for the current Android app. Verified against the Compose UI in
 `MainActivity.kt`, `DriveHud.kt`, and `MapLongPress.kt` (not older planning docs).
 
-The on-screen language is **English only**. Tap the **top bar** for map/display
+The on-screen language is **English only**. Navi does not pick UI language from
+GPS or SIM country. Tap the **top bar** for map/display
 settings; tap the **bottom status area** (street / speed / break / ETA text, not
 the zoom −/+) for **Drive / vehicle** settings. Speed and posted limit live on
-that bar ([`current-street.md`](current-street.md)); spoken overspeed nags are
+that bar ([`current-street.md`](current-street.md)) and follow **Units** in Drive
+settings; spoken overspeed nags are
 not in the app yet
 ([`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md)).
 
@@ -83,7 +85,9 @@ In Drive settings:
   “Car” even when another soft profile is active; values save as the Car
   profile default pack).
 - **Rest time (minutes)** — suggested break length.
-- **Next break shown as** → **Time** or **Distance** (optional km/mi units).
+- **Next break shown as** → **Time** or **Distance**.
+- **Units** → **Metric**, **US · ft / mph**, or **UK · mi / mph** (first install
+  may infer from SIM/network country; chips always override).
 
 These are preferences for reminders / soft multi-day overnight, not commercial
 driving-hours law.

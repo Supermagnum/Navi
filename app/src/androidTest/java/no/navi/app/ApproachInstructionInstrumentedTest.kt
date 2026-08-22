@@ -215,7 +215,6 @@ class ApproachInstructionInstrumentedTest {
                 distanceM = 450.0,
                 iconKey = "nav_right_1",
                 nextStreet = "Nysethvegen",
-                preferMetric = true,
             )
         Thread.sleep(1_000)
         composeRule.onAllNodesWithTag("approach_instruction_box").assertCountEquals(0)
@@ -235,7 +234,6 @@ class ApproachInstructionInstrumentedTest {
                 nextStreet = "Ommangsgutua",
                 houseNumber = "12",
                 postcode = "2312",
-                preferMetric = true,
             )
         Thread.sleep(800)
         composeRule.onNodeWithTag("approach_instruction_box").assertIsDisplayed()
@@ -293,7 +291,6 @@ class ApproachInstructionInstrumentedTest {
                 nextStreet = "Ommangsgutua",
                 houseNumber = "12",
                 postcode = "2312",
-                preferMetric = true,
             )
         Thread.sleep(800)
         composeRule.onNodeWithTag("approach_instruction_box").assertIsDisplayed()

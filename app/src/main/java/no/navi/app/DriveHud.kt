@@ -205,7 +205,7 @@ data class DriveHudState(
     val breakRemindersEnabled: Boolean = true,
     /** When true, format break remaining as distance; else as time. */
     val breakAsDistance: Boolean = false,
-    val preferMetric: Boolean = true,
+    val unitSystem: UnitSystem = UnitSystem.METRIC,
     val rotationMode: MapRotationMode = MapRotationMode.NorthUp,
     /** When true, manual rotate snaps back to [rotationMode] after a short pause. */
     val snapRotationBackToMode: Boolean = true,
@@ -233,6 +233,9 @@ data class DriveHudState(
     val overspeed: Boolean = false,
 )
 
+val DriveHudState.preferMetric: Boolean
+    get() = unitSystem.isMetric
+
 /**
  * Format the bottom-HUD break line, or null when nothing should be shown.
  *
@@ -246,17 +249,30 @@ fun formatBreakHudLine(
     breakAsDistance: Boolean,
     preferMetric: Boolean,
     cruiseSpeedKmh: Double = MapHudPrefs.BREAK_DISPLAY_SPEED_KMH,
+): String? =
+    formatBreakHudLine(
+        routePlanned = routePlanned,
+        breakRemindersEnabled = breakRemindersEnabled,
+        minutesToBreak = minutesToBreak,
+        breakAsDistance = breakAsDistance,
+        unitSystem = UnitSystem.fromPreferMetric(preferMetric),
+        cruiseSpeedKmh = cruiseSpeedKmh,
+    )
+
+fun formatBreakHudLine(
+    routePlanned: Boolean,
+    breakRemindersEnabled: Boolean,
+    minutesToBreak: Double?,
+    breakAsDistance: Boolean,
+    unitSystem: UnitSystem,
+    cruiseSpeedKmh: Double = MapHudPrefs.BREAK_DISPLAY_SPEED_KMH,
 ): String? {
     if (!routePlanned) return null
     if (!breakRemindersEnabled) return "Break reminders off"
     val mins = minutesToBreak ?: return null
     return if (breakAsDistance) {
         val km = (mins / 60.0) * cruiseSpeedKmh
-        if (preferMetric) {
-            String.format("Break in %.0f km", km)
-        } else {
-            String.format("Break in %.0f mi", km / 1.609344)
-        }
+        "Break in ${DisplayUnits.formatDistanceKmWhole(km, unitSystem)}"
     } else {
         String.format("Break in %.0f min", mins)
     }
@@ -266,11 +282,13 @@ fun formatBreakHudLine(
 fun formatHudSpeedLine(state: DriveHudState): String? {
     val speed = state.currentSpeedKmh
     val limit = state.currentSpeedLimitKmh
+    val unit = DisplayUnits.speedUnit(state.unitSystem)
     return when {
         speed != null && limit != null ->
-            String.format("%.0f / %.0f km/h", speed, limit)
-        speed != null -> String.format("%.0f km/h", speed)
-        limit != null -> String.format("Limit %.0f km/h", limit)
+            "${DisplayUnits.formatSpeedNumber(speed, state.unitSystem)} / " +
+                "${DisplayUnits.formatSpeedNumber(limit, state.unitSystem)} $unit"
+        speed != null -> DisplayUnits.formatSpeedKmh(speed, state.unitSystem)
+        limit != null -> "Limit ${DisplayUnits.formatSpeedKmh(limit, state.unitSystem)}"
         else -> null
     }
 }
@@ -295,7 +313,9 @@ fun TopDriveHud(
             MapRotationMode.DirectionOfTravel -> "Travel"
             MapRotationMode.NorthUp -> "N-up"
         }
-    val altTxt = state.altitudeM?.let { String.format("Alt %.0f m", it) } ?: "Alt --"
+    val altTxt =
+        state.altitudeM?.let { "Alt ${DisplayUnits.formatAltitudeM(it, state.unitSystem)}" }
+            ?: "Alt --"
     Surface(
         shape = RoundedCornerShape(10.dp),
         tonalElevation = 3.dp,
@@ -673,7 +693,7 @@ fun BottomDriveHud(
                         breakRemindersEnabled = state.breakRemindersEnabled,
                         minutesToBreak = state.minutesToBreak,
                         breakAsDistance = state.breakAsDistance,
-                        preferMetric = state.preferMetric,
+                        unitSystem = state.unitSystem,
                     )
                 if (breakTxt != null) {
                     Text(
@@ -725,8 +745,8 @@ fun DriveSettingsSheet(
     onEcoChange: (Boolean) -> Unit,
     breakAsDistance: Boolean,
     onBreakAsDistanceChange: (Boolean) -> Unit,
-    preferMetric: Boolean,
-    onPreferMetricChange: (Boolean) -> Unit,
+    unitSystem: UnitSystem,
+    onUnitSystemChange: (UnitSystem) -> Unit,
     onApplied: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -747,7 +767,7 @@ fun DriveSettingsSheet(
     var poiRequireRoadLink by remember { mutableStateOf(true) }
     var status by remember { mutableStateOf("") }
     var asDistance by remember { mutableStateOf(breakAsDistance) }
-    var metric by remember { mutableStateOf(preferMetric) }
+    var units by remember { mutableStateOf(unitSystem) }
     val truckRest = usesTruckRestSettings(travelProfile)
     val ebikeSpecs = usesEbikeVehicleSpecs(travelProfile)
     val evCarSpecs = usesEvCarBatterySpecs(travelProfile)
@@ -808,7 +828,7 @@ fun DriveSettingsSheet(
             poiRequireRoadLink = usesMotorRoadLinkedPois(travelProfile)
         }
         asDistance = breakAsDistance
-        metric = preferMetric
+        units = unitSystem
     }
 
     Surface(
@@ -943,15 +963,38 @@ fun DriveSettingsSheet(
                     modifier = Modifier.testTag("chip_break_as_distance"),
                 )
             }
-            if (asDistance) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (metric) "Distance units: km" else "Distance units: miles")
-                    Switch(
-                        checked = metric,
-                        onCheckedChange = { metric = it },
-                        modifier = Modifier.testTag("toggle_break_metric"),
-                    )
-                }
+            Text("Units", style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(
+                    selected = units == UnitSystem.METRIC,
+                    onClick = {
+                        units = UnitSystem.METRIC
+                        onUnitSystemChange(UnitSystem.METRIC)
+                    },
+                    label = { Text("Metric") },
+                    modifier = Modifier.testTag("toggle_break_metric"),
+                )
+                FilterChip(
+                    selected = units == UnitSystem.IMPERIAL_US,
+                    onClick = {
+                        units = UnitSystem.IMPERIAL_US
+                        onUnitSystemChange(UnitSystem.IMPERIAL_US)
+                    },
+                    label = { Text("US · ft / mph") },
+                    modifier = Modifier.testTag("chip_units_us"),
+                )
+                FilterChip(
+                    selected = units == UnitSystem.IMPERIAL_UK,
+                    onClick = {
+                        units = UnitSystem.IMPERIAL_UK
+                        onUnitSystemChange(UnitSystem.IMPERIAL_UK)
+                    },
+                    label = { Text("UK · mi / mph") },
+                    modifier = Modifier.testTag("chip_units_uk"),
+                )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Eco mode")
@@ -1301,7 +1344,7 @@ fun DriveSettingsSheet(
                                 }
                             }
                         onBreakAsDistanceChange(asDistance)
-                        onPreferMetricChange(metric)
+                        onUnitSystemChange(units)
                         if (restOk && energyOk && radiiOk) {
                             onApplied()
                         } else {

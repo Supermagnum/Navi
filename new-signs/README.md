@@ -56,11 +56,16 @@ python3 generate_362.py --speeds 80 \
 For **Germany**, other national speed-limit designs, and any jurisdiction that posts limits in **miles per hour**, keep using **text-only fallbacks** for now. Do not ship these Norwegian 362 composites as stand-ins for foreign signs.
 
 - German (and similar) national plates: text fallback until dedicated national assets exist.
-- mph / imperial posted limits: text fallback until imperial plate support exists (see TODO).
+- mph / imperial posted **plate artwork**: text fallback until dedicated mph
+  plates exist (see TODO). HUD **display units** (mph numbers in chrome) are
+  already in the Android app — this folder is only about SVG plate generation.
 
 ## TODO
 
-- **Add support for imperial units** (mph plates / display, not only km/h compositing and text fallbacks).
+- **mph plate artwork** (US/UK sign faces), not only km/h compositing and
+  text fallbacks. Android HUD already formats speed/distance in mph/miles when
+  the user picks US or UK units — that is separate from these Norwegian 362
+  SVGs.
 
 ## Approved (quality)
 
@@ -137,5 +142,6 @@ Pair spacing (V2.3a, as fractions of capital height H): **1–5**, **2–5**, **
 
 - No edits to `core/src/routing/road_sign.rs`, `live_hazard.rs`, catalogue JSON, `core/src/icons/road-signs/`, `app/src/main/assets/icons/road-signs/`, or app code.
 - 5 and 10 are quality-approved but not integrated; say so if they should be copied into the pack and added to the cone snap table.
-- Imperial / mph plate generation (see TODO above).
+- Imperial / mph **plate** generation (see TODO above). HUD display units are
+  shipped in the Android app.
 - Dedicated national plates for Germany and other jurisdictions (text-only fallback until then).

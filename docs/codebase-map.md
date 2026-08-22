@@ -38,7 +38,7 @@ Default Cargo workspace members: `core`, `plugin-host` (see root `Cargo.toml`).
 | `MainActivity.kt` | App shell: MapLibre camera, GPS / sim `applyFix`, route planning calls, HUD state, settings sheets wiring |
 | `DriveHud.kt` | Top / bottom HUD bars, map settings sheet (auto-zoom, 3D, tilt), drive settings sheet |
 | `OverspeedHud.kt` | Display-only overspeed gate (hybrid `max(limit×0.05, speedAccuracy, 3.0)`); used by bottom speed line |
-| `MapHudPrefs.kt` | SharedPreferences for HUD: default zoom, tilt presets, 3D opt-in, metric, Geofabrik path |
+| `MapHudPrefs.kt` | SharedPreferences for HUD: default zoom, tilt presets, 3D opt-in, unit system, Geofabrik path |
 | `ApproachInstructionBox.kt` | Next-turn approach chrome (icon, distance, street / house / postcode layout) |
 | `RouteGuidanceModels.kt` | Kotlin models for maneuvers, samples, approach display helpers |
 | `RouteProgressTracker.kt` | Snap position → along-route progress, distance-to-maneuver, ETA, break elapsed hours |
@@ -165,6 +165,7 @@ next maneuver”).
 | Truck HOS packs | `core/src/routing/rest/` + [`ec-561-truck-rest.md`](ec-561-truck-rest.md) / [`fmcsa-truck-rest.md`](fmcsa-truck-rest.md) |
 | HUD break / ETA chrome | `DriveHud.kt` |
 | Pref: show break as distance | `MapHudPrefs.BREAK_DISPLAY_SPEED_KMH` + `loadBreakAsDistance` |
+| Pref: display units | `MapHudPrefs.loadUnitSystem` / `saveUnitSystem`; formatters in `DisplayUnits.kt` |
 
 ### Routing / planning
 

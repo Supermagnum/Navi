@@ -318,7 +318,7 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | **Host duties** | Load packs from `{dataDir}/i18n/`; resolve message ids in Compose; persist `ui_locale`; install packs via Tools (no WASM sockets) |
 | **Guest duties** | Optional: validate packs, suggest locale; must not fetch translations itself |
 | **Proposed caps** | `i18n_catalog_query`, `i18n_string_resolve`, `i18n_locale_get` / `i18n_locale_set`, `plugin_kv` / `storage`, `log` |
-| **Notes** | Spec only — not implemented. **Today the app UI is English only and has no language toggle.** Parallel markdown (`docs/Norwegian.md`, etc.) is documentation, not in-app i18n. |
+| **Notes** | Spec only — not implemented. **Today the app UI is English only and has no language toggle.** Do not infer UI language from GPS/SIM. Parallel markdown (`docs/Norwegian.md`, etc.) is documentation, not in-app i18n. |
 
 ### 11. Animated icons (`animated_icons` / `icon_anim`)
 

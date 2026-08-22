@@ -141,7 +141,7 @@ export — planned HostApi `road_speed_state_read` + `voice_speak` in
 |---|---|
 | `approach_appear_m` / `approach_urgency_m` / `approach_hide_m` | Threshold metres (see `core/src/nav/mod.rs`) |
 | `approach_phase_for_distance(active, distance_m)` | Phase name string |
-| `format_approach_distance(distance_m, prefer_metric)` | HUD distance text |
+| `format_approach_distance(distance_m, prefer_metric)` | UniFFI distance text (metric vs US ft/mi). Android HUD/overlays use Kotlin `DisplayUnits` / `UnitSystem` (adds UK yards/miles). |
 | `highway_class_display_label(highway?)` | Human class label when name/ref missing |
 | `format_current_road_label(name?, ref?, highway?)` | Bottom-HUD current-road string |
 | `road_label_near(pbf, cache_dir, elev_dir, lat, lon, profile, max_m)` | Idle-GPS nearest-edge street label (bbox graph); thin wrapper over `road_near_info` |
@@ -247,7 +247,7 @@ host/Tools actions.
 
 | Surface | Location | Notes |
 |---|---|---|
-| Map HUD prefs (auto-zoom, tilt, 3D, metric) | `MapHudPrefs.kt` SharedPreferences | See [`codebase-map.md`](codebase-map.md) |
+| Map HUD prefs (auto-zoom, tilt, 3D, unit system) | `MapHudPrefs.kt` SharedPreferences | See [`codebase-map.md`](codebase-map.md) |
 | Compose HUD layout | `DriveHud.kt`, [`hud-layout.md`](hud-layout.md) | UI only |
 | Overspeed chrome | `OverspeedHud.isOverspeed` in `OverspeedHud.kt` | Display-only; not an alert engine ([`current-street.md`](current-street.md)) |
 | Adaptive speed warning | Spec only | [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) |

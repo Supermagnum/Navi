@@ -9,7 +9,7 @@ ideas into working code and docs. The author still chose the product rules,
 reviewed the work, and ran the testing.
 It is written in rust,so as many as standard crates are used. The AI assistant has written minimum of code to "tie" them together.
 The crates used in the project is listed here:
-https://github.com/Supermagnum/Navi/blob/main/docs/crates.md
+https://github.com/Supermagnum/Navi/blob/dev/docs/crates.md
 
 
 # Testers wanted
@@ -103,8 +103,9 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Use GPS** | Fill From / Via / To from the live fix (nearby name within ~12 m, else coordinates). The field is the chip active when you tap — not whichever chip is selected after resolution finishes. | Done |
 | **Map mark & saved places** | Hold on the map ~4 s to mark a point; set From / Via / To or save a named place (separate from Saved routes). | Done |
 | **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position (resolved start label); hiking prompts first. | Done |
-| **Breaks & rest** | Reminds you when a break is due and can suggest stops. Cars use hours between breaks; hiking/cycling use rest distances; trucks use legal driving-time rules where known. | Done |
-| **Drive bars** | Top: altitude (cutout-aware padding). Bottom: zoom, live GPS speed, posted limit when known, break timer, trip ETA, current street, eco leaf. Speed line turns the error colour when GPS speed is over the applicable limit (display only — not a spoken nag). | Done |
+| **Breaks & rest** | Reminds you when a break is due and can suggest stops. Cars use hours between breaks; hiking/cycling use rest distances; trucks use legal driving-time rules where known. What is searched and used as pause POIs: [`docs/poi.md`](docs/poi.md). | Done |
+| **Drive bars** | Top: altitude (cutout-aware padding; metres, or feet in the US unit profile). Bottom: zoom, live GPS speed, posted limit when known, break timer, trip ETA, current street, eco leaf. Speed and distance follow **Display units**. Speed line turns the error colour when GPS speed is over the applicable limit (display only — not a spoken nag). | Done |
+| **Display units** | Drive settings: **Metric** (km, km/h), **US** (ft / mi, mph, altitude ft), or **UK** (yd then mi, mph, altitude m). First install infers once from SIM/network country (GB → UK, US/LR/MM → US, else metric; emulators stay metric). The chips always override; the choice is never re-inferred on travel. Internal values stay metric. | Done |
 | **GPS follow** | Map follows you by default. Pan away, then tap **Recenter**. | Done |
 | **Map rotation** | North-up, compass, or direction of travel. | Done |
 | **Moving icons** | Can draw nearby tracked markers on the map. A live radio feed is not built in yet. | Partial |
@@ -252,8 +253,8 @@ it does not invent a new rest law.
 
 **Map bars.** Tap the top bar for map/display settings. Tap the bottom status
 area for drive/vehicle settings (mode, break interval, fuel, e-bike, and so on).
-The bottom bar also shows **live GPS speed / posted limit** (km/h) when a fix
-and an applicable limit are known; overspeed is a colour change only today
+The bottom bar also shows **live GPS speed / posted limit** when a fix
+and an applicable limit are known (km/h or mph per **Display units**); overspeed is a colour change only today
 ([`docs/current-street.md`](docs/current-street.md)). Spoken escalating
 warnings are a **plugin spec**, not shipped:
 [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md).
@@ -277,8 +278,11 @@ region (not re-parsed every GPS tick). Detail:
 # Settings
 
 **Language:** the app chrome is **English only** today. There is no language
-menu yet. Docs may exist in Norwegian (`docs/Norwegian.md`); that is documentation,
-not an in-app language pack. A future translation plugin is described in
+menu yet, and Navi does **not** pick UI language from GPS or SIM country (that
+would override the language already set on the phone). Docs may exist in
+Norwegian (`docs/Norwegian.md`); that is documentation, not an in-app language
+pack. A future translation plugin (selectable packs, **fallback to English**
+when a key is missing) is described in
 [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
 A working CSV for translators lives next to that spec:
 [`docs/plugins/translations.csv`](docs/plugins/translations.csv).
@@ -307,6 +311,7 @@ display choices in app preferences).
 | **Hours between breaks** | How often you *want* a break (cars), or truck mandatory break-after time |
 | **Rest time** | How long a break should last (suggestion / truck continuous break) |
 | **Next break as Time / Distance** | Show break countdown in minutes, or as km/mi at an assumed cruising speed |
+| **Units** | Metric, US (ft / mph), or UK (mi / mph). First-install default from SIM/network country; always overridable. UK altitude stays metres (not US feet). |
 | **Eco mode** | Hill-aware energy costing (locked on for hiking/cycling) |
 | **POI search radius** | How far aside the planner may look for huts / stops |
 | **Vehicle limits** | Height/width/length/axle weight for clearance |
@@ -547,6 +552,16 @@ Short version of CI expectations:
 | Android | `./gradlew :app:assembleDebug` |
 
 # Building and installing
+
+Clone from GitHub first. Development is on **`dev`** (newest features); **`main`**
+is the default clone target. Install Git if needed (`sudo apt install git` on
+Debian/Ubuntu — other systems in [`docs/build-linux.md`](docs/build-linux.md#getting-the-code)):
+
+```bash
+git clone https://github.com/Supermagnum/Navi.git
+cd Navi
+git checkout dev
+```
 
 ## Install a prebuilt APK
 
@@ -828,7 +843,16 @@ Country/region visual extracts can also be prepared with
 # TODO
 
 (Future work only — shipped features are listed in the Features table above.)
-Add support for imperial units, and language selection based on android devices location
-with fallback to English as default if no translation is found.
-Investigate why alcohol shops are not displayed on the map.
+
+**UI language packs** — chrome is English-only today. A future `i18n` /
+`ui_translation` plugin will add selectable languages with **fallback to
+English** when a translation or pack is missing. Spec:
+[`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
+Do **not** infer UI language from GPS or SIM country. Do not add a language
+toggle until that plugin exists.
+
+Display **units** (metric / US / UK) are shipped (Drive settings). Norwegian
+speed-limit **pictograms** stay official km/h plates; mph *plate artwork* is
+still future (`new-signs/`). Offline Protomaps alcohol-shop labels
+(`pois.kind=alcohol`, z16+) are shipped — see [`docs/map-styles.md`](docs/map-styles.md).
 

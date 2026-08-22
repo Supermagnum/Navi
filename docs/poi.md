@@ -65,6 +65,10 @@ Craft brewery / alcohol retail maps to semantic icon key `shop-alcohol`. Other
 POIs use `amenity-*`, `tourism-*`, `leisure-*`, etc. via `osm_icon_key` in
 `core/src/poi/icons.rs`. See [`icons.md`](icons.md).
 
+That index is for **rest / nearby planning**, not the visual basemap. Offline
+Protomaps labels `shop=alcohol` as `pois.kind=alcohol` (z16+, `townspot` icon)
+once the style allow-list includes that kind — [`map-styles.md`](map-styles.md).
+
 ## Adding a POI category (example: fishing)
 
 Use this checklist when you want a new typed POI such as **fishing** (spots,

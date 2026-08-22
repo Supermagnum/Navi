@@ -81,6 +81,7 @@ private fun multiDayCardFromJson(o: JSONObject): MultiDayCard =
 fun MultiDayPlanCards(
     days: List<MultiDayCard>,
     modifier: Modifier = Modifier,
+    unitSystem: UnitSystem = UnitSystem.METRIC,
 ) {
     if (days.size <= 1) return
     Column(
@@ -118,7 +119,7 @@ fun MultiDayPlanCards(
                         Text(title, style = MaterialTheme.typography.bodyLarge)
                         if (day.distanceKm > 0.0) {
                             Text(
-                                "%.1f km".format(day.distanceKm),
+                                DisplayUnits.formatDistanceKm(day.distanceKm, unitSystem),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
@@ -129,7 +130,13 @@ fun MultiDayPlanCards(
                                 add("%.1f h driving".format(day.drivingHours))
                             }
                             if (day.startKm > 0.0 || day.endKm > 0.0) {
-                                add("%.0f–%.0f km".format(day.startKm, day.endKm))
+                                add(
+                                    DisplayUnits.formatDistanceKmRange(
+                                        day.startKm,
+                                        day.endKm,
+                                        unitSystem,
+                                    ),
+                                )
                             }
                         }.joinToString(" · ")
                     if (driveLine.isNotBlank()) {

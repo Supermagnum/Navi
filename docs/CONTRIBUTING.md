@@ -36,6 +36,8 @@ is highly valuable. Prefer real regional PBFs and real GPS when practical.
 
 - **UI language packs** are specified but not shipped (English-only UI today):
   [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md).
+  Do not infer UI language from GPS or SIM country; do not add a language
+  toggle until that plugin exists. Fallback to English is part of the spec.
 - **Voice guidance** is planned as a plugin; phrase design must respect
   per-language **concatenation vs whole-phrase** recordings — see
   [`voice-guidance.md`](voice-guidance.md).
@@ -160,13 +162,15 @@ a prior discussion — open a PR or issue directly.
 
 - Keep PRs focused; one concern per PR when practical.
 - Include the evidence you used (test names, device, region, screenshot paths).
-- Do not force-push to `main`; do not skip hooks unless the maintainer asks.
+- Target pull requests at **`dev`** (that is where new work lands).
+- Do not force-push to `main` or `dev`; do not skip hooks unless the maintainer asks.
 - The maintainer may ask clarifying questions before merge — that is normal for
   a solo-maintained tree.
 
 ### CI expectations (GitHub Actions)
 
-Every push/PR runs [`.github/workflows/ci.yml`](../.github/workflows/ci.yml):
+Every push to **`main`** or **`dev`**, and every PR, runs
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml):
 
 | Job | What it checks |
 |---|---|

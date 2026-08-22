@@ -159,6 +159,30 @@ pub fn format_distance_m(distance_m: f64, prefer_metric: bool) -> String {
     }
 }
 
+/// Format speed for display. Values are stored as km/h; imperial shows mph.
+pub fn format_speed_kmh(speed_kmh: f64, prefer_metric: bool) -> String {
+    if !speed_kmh.is_finite() || speed_kmh < 0.0 {
+        return String::new();
+    }
+    if prefer_metric {
+        format!("{speed_kmh:.0} km/h")
+    } else {
+        format!("{:.0} mph", speed_kmh / 1.609344)
+    }
+}
+
+/// Format altitude for display. Values are stored as metres; imperial shows feet.
+pub fn format_altitude_m(altitude_m: f64, prefer_metric: bool) -> String {
+    if !altitude_m.is_finite() {
+        return String::new();
+    }
+    if prefer_metric {
+        format!("{altitude_m:.0} m")
+    } else {
+        format!("{:.0} ft", altitude_m * 3.28084)
+    }
+}
+
 /// Prefer colloquial name over systematic ref (Navit surfaces both; Navi box uses one line).
 pub fn prefer_street_label(name: Option<&str>, systematic_ref: Option<&str>) -> Option<String> {
     let n = name.map(str::trim).filter(|s| !s.is_empty());
@@ -285,5 +309,25 @@ mod tests {
         // æ in real Østlandet place data (Ævongsli / camping names).
         let label4 = current_road_label(Some("Ævongsli"), None, Some("residential"));
         assert!(label4.contains('Æ') || label4.contains('æ'));
+    }
+
+    #[test]
+    fn format_distance_metric_and_imperial() {
+        assert_eq!(format_distance_m(250.0, true), "250 m");
+        assert_eq!(format_distance_m(3200.0, true), "3.2 km");
+        assert_eq!(format_distance_m(100.0, false), "328 ft");
+        assert_eq!(format_distance_m(3200.0, false), "2.0 mi");
+    }
+
+    #[test]
+    fn format_speed_metric_and_imperial() {
+        assert_eq!(format_speed_kmh(80.0, true), "80 km/h");
+        assert_eq!(format_speed_kmh(80.0, false), "50 mph");
+    }
+
+    #[test]
+    fn format_altitude_metric_and_imperial() {
+        assert_eq!(format_altitude_m(412.0, true), "412 m");
+        assert_eq!(format_altitude_m(412.0, false), "1352 ft");
     }
 }

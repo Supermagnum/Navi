@@ -28,7 +28,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 import uniffi.navi.FfiIconTheme
-import uniffi.navi.formatApproachDistance
 import uniffi.navi.rasterizeIconPng
 
 data class RoadSignWarningState(
@@ -38,7 +37,7 @@ data class RoadSignWarningState(
     val iconKey: String = "",
     val code: String = "",
     val label: String = "",
-    val preferMetric: Boolean = true,
+    val unitSystem: UnitSystem = UnitSystem.METRIC,
 )
 
 fun roadSignWarningFromJson(raw: String): RoadSignWarningState {
@@ -83,7 +82,7 @@ fun RoadSignWarningBox(
         remember(png) {
             if (png.isEmpty()) null else BitmapFactory.decodeByteArray(png, 0, png.size)
         }
-    val dist = formatApproachDistance(state.distanceM, state.preferMetric)
+    val dist = DisplayUnits.formatDistanceM(state.distanceM, state.unitSystem)
     val title = state.label.ifBlank { "Road sign" }
     Box(
         modifier =
