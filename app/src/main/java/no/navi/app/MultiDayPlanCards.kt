@@ -32,6 +32,7 @@ data class MultiDayCard(
     val overnightFound: Boolean = false,
     val safetyRejected: Boolean = false,
     val safetyReason: String = "",
+    val membershipRequired: Boolean = false,
     val notInCab: Boolean = false,
     val compensation: String = "",
     val isFinal: Boolean = false,
@@ -68,6 +69,7 @@ private fun multiDayCardFromJson(o: JSONObject): MultiDayCard =
         overnightFound = o.optBoolean("overnight_found", false),
         safetyRejected = o.optBoolean("safety_rejected", false),
         safetyReason = o.optString("safety_reason").orEmpty(),
+        membershipRequired = o.optBoolean("membership_required", false),
         notInCab = o.optBoolean("not_in_cab", false),
         compensation = o.optString("compensation").orEmpty(),
         isFinal = o.optBoolean("is_final", false),
@@ -159,6 +161,8 @@ fun MultiDayPlanCards(
                                 day.safetyRejected && day.safetyReason.isNotBlank() ->
                                     day.safetyReason
                                 day.restLabel.isNotBlank() -> day.restLabel
+                                day.membershipRequired ->
+                                    "Network hut nearby (membership required)"
                                 day.restHours > 0.0 -> "%.0f h rest".format(day.restHours)
                                 else -> "Overnight"
                             }

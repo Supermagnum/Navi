@@ -56,6 +56,20 @@ git clone -b dev https://github.com/Supermagnum/Navi.git
 cd Navi
 ```
 
+### Updating an existing checkout
+
+If you already cloned the repo, pull the latest commits on your current branch:
+
+```bash
+cd Navi
+git checkout dev          # if you are not already on dev
+git pull origin dev
+```
+
+`git pull` fetches from the remote and merges into your local branch. If you have
+local uncommitted changes that conflict, either commit or stash them first
+(`git stash`, then `git pull`, then `git stash pop`).
+
 **Branch / tag:** Development happens on **`dev`** — that is where the newest
 features are. **`main`** is the GitHub default (a plain `git clone` checks it
 out). Use `main` only when you explicitly want that tip. There is **no** formal

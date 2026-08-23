@@ -22,14 +22,52 @@ Human-editable catalogs for filling translations live next to this spec:
 | File | Format |
 |---|---|
 | [`translations.csv`](translations.csv) | UTF-8 CSV (standard spreadsheet import) |
+| [`translations-context.md`](translations-context.md) | Context for CSV words and phrases (UI area, ambiguous terms, placeholders, keep-as-is tokens) |
+
+**Before translating**, read [`translations-context.md`](translations-context.md).
+Short English labels in the CSV are often navigation jargon (for example
+**Break** = rest stop reminder, **Arm** = arm a truck exception, **Liberty** =
+MapLibre style name). The context doc is the glossary for those senses.
 
 Columns: **Language** is only a header placeholder (leave cells blank — it
 marks that language columns follow). **English** holds source UI wording from
 the current app: both **individual words** (e.g. Apply, Norway, Ostlandet, ETA,
 Basemap) and **full phrases** / status lines. Words are listed first, then
-phrases. **Norwegian (Norsk)**, **Swedish (Svenska)**, and **Old West Norse
-(Norrønt)** stay blank until a translator fills them. This CSV is the working
-source for a future `messages.json` pack; it is **not** loaded by the app today.
+phrases. The English column header lists major countries and regions where
+English is used as a UI language (United Kingdom, Ireland, United States,
+Canada, Australia, New Zealand, and other regions).
+
+Other language columns stay blank until a translator fills them. Current
+columns (beyond English):
+
+| Column header | Notes |
+|---|---|
+| Norwegian (Norsk) | Bokmål / general Norwegian working column |
+| Swedish (Svenska) | Standard Swedish |
+| Old West Norse (Norrønt) | Historical; see locale-tag note below |
+| Finnish (Suomi) | |
+| German (Deutsch) | |
+| Icelandic (Íslenska) | |
+| Danish (Dansk) | |
+| Faroese (Føroyskt) | |
+| Norway, - Troms and Finnmark, - Kven | Dialect / minority language |
+| Norway, - Traveller communities, - Romani rakripa | Dialect / minority language |
+| United Kingdom, - Scotland, - Scottish Gaelic | Dialect / minority language |
+| Isle of Man, - Mann, - Manx Gaelic | Dialect / minority language |
+| Sweden, - Älvdalen, - Älvdalsk | Dialect (Elfdalian) |
+
+**Dialect column naming:** dialect (and minority-language) headers use this
+exact pattern, including spaces around the dashes:
+
+`country, - name of area, - name of dialect`
+
+Example: `Sweden, - Älvdalen, - Älvdalsk`. Use the country name in English,
+then the area where the variety is primarily spoken, then the variety’s own
+name. Standard national languages keep the shorter `English name (endonym)`
+form (e.g. `Finnish (Suomi)`).
+
+This CSV is the working source for a future `messages.json` pack; it is **not**
+loaded by the app today.
 
 ---
 

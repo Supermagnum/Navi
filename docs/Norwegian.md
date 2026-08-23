@@ -23,8 +23,12 @@ Resultater på enhet og emulator:
 engelsk i menyene i dag). Fyll eller gjennomgå arbeidstabellen og følg
 spesifikasjonen:
 [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md)
-(katalog: [`plugins/translations.csv`](plugins/translations.csv)). Ikke innfør
-en språkbryter før den pluginen finnes.
+(katalog: [`plugins/translations.csv`](plugins/translations.csv);
+ord/frasesammenheng:
+[`plugins/translations-context.md`](plugins/translations-context.md)).
+Engelsk-kolonnen lister land/regioner i overskriften; dialektkolonner følger
+`land, - område, - dialekt` (se spesifikasjonen). Ikke innfør en språkbryter
+før den pluginen finnes.
 
 **Hvordan bidra:** testere, dokumentasjon, oversettelser og kode starter i
 [`CONTRIBUTING.md`](CONTRIBUTING.md) (engelsk). Den siden forklarer hvordan du
@@ -293,6 +297,10 @@ når en nøkkel mangler) er beskrevet i
 [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md).
 En arbeids-CSV for oversettere ligger ved siden av den spesifikasjonen:
 [`plugins/translations.csv`](plugins/translations.csv).
+Sammenheng for ord og fraser:
+[`plugins/translations-context.md`](plugins/translations-context.md).
+Engelsk-kolonnen lister land/regioner; dialektkolonner bruker
+`land, - område, - dialekt` (dokumentert i i18n-spesifikasjonen).
 
 Innstillinger lagres på enheten (hvile/drivstoff/kjøretøy i en liten database;
 kartvisning i app-preferanser).
@@ -486,7 +494,7 @@ og maskinvareplugins skal kunne snakke over **USB** / **Bluetooth** via verten.
 
 | Spesifikasjon | Emne |
 |---|---|
-| [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md) | Fremtidige UI-språk (bare engelsk i dag). Oversettertabell: [`translations.csv`](plugins/translations.csv) |
+| [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md) | Fremtidige UI-språk (bare engelsk i dag). Oversettertabell: [`translations.csv`](plugins/translations.csv); sammenheng: [`translations-context.md`](plugins/translations-context.md) |
 | [`plugins/right-to-roam-camping-spec.md`](plugins/right-to-roam-camping-spec.md) | Villcamping-forslag (plugin, ikke kjerne) |
 | [`plugins/safety-resupply.md`](plugins/safety-resupply.md) | Drivstoff-/vannforsyning |
 | [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Eksportere nav-tilstand og tilnærmingsvarsler til instrumentcluster |

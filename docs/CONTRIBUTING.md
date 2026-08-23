@@ -28,9 +28,25 @@ If you only want to **build or install** and will not open a pull request, clone
 the upstream repo and `git checkout dev` as in the [README](../README.md#building-and-installing).
 That checkout cannot receive your pull requests. Use a **fork** for contributions.
 
-### 1. Account and fork
+### 1. Register a GitHub account (if needed)
 
-1. Create a [GitHub](https://github.com) account if you do not have one.
+You need a free GitHub account to fork the repo and open pull requests.
+
+1. Open [github.com/signup](https://github.com/signup) (or **Sign up** on
+   [github.com](https://github.com)).
+2. Enter an email you can access, a password, and a username. Confirm you are
+   not a robot when asked.
+3. Verify the account from the email GitHub sends (check spam if it is missing).
+4. Optional but recommended: turn on
+   [two-factor authentication](https://docs.github.com/en/authentication/securing-your-account-with-two-factor-authentication-2fa)
+   under **Settings → Password and authentication**.
+5. You do not need a paid plan for contributing to Navi.
+
+Official help: [Creating an account on GitHub](https://docs.github.com/en/get-started/start-your-journey/creating-an-account-on-github).
+
+### 2. Fork the repository
+
+1. Sign in to GitHub.
 2. Open [github.com/Supermagnum/Navi](https://github.com/Supermagnum/Navi).
 3. Click **Fork** (top right). Keep the name `Navi` unless you have a reason
    not to. You now have `https://github.com/<your-user>/Navi`.
@@ -38,7 +54,7 @@ That checkout cannot receive your pull requests. Use a **fork** for contribution
    default branch is usually **`main`** (same as upstream). Do not start work
    from `main` unless you mean to.
 
-### 2. Clone your fork and check out `dev`
+### 3. Clone your fork and check out `dev`
 
 Install Git if needed (`sudo apt install git` on Debian/Ubuntu; other systems:
 [`build-linux.md`](build-linux.md#getting-the-code)).
@@ -60,7 +76,7 @@ cd Navi
 If `dev` is missing locally: `git fetch origin` then
 `git checkout -b dev origin/dev`.
 
-### 3. Add `upstream` (the original repo)
+### 4. Add `upstream` (the original repo)
 
 Your clone’s `origin` is **your fork**. Add the Navi repo as `upstream` so you
 can pull new commits:
@@ -74,7 +90,7 @@ git remote -v
 `origin` should be `https://github.com/<your-user>/Navi.git`.  
 `upstream` should be `https://github.com/Supermagnum/Navi.git`.
 
-### 4. Keep your `dev` in sync
+### 5. Keep your `dev` in sync
 
 Before starting a change (and when GitHub shows your fork is behind):
 
@@ -88,7 +104,7 @@ git push origin dev
 On the GitHub website you can also open your fork and use **Sync fork**.
 Do not force-push to `dev` or `main`.
 
-### 5. Branch, push, and open a pull request
+### 6. Branch, push, and open a pull request
 
 1. Create a topic branch **from latest `dev`**, not from `main`:
 
@@ -146,9 +162,14 @@ is highly valuable. Prefer real regional PBFs and real GPS when practical.
 ### Translation / localization
 
 - **UI language packs** are specified but not shipped (English-only UI today):
-  [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md).
-  Do not infer UI language from GPS or SIM country; do not add a language
-  toggle until that plugin exists. Fallback to English is part of the spec.
+  [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md)
+  and the working catalog [`plugins/translations.csv`](plugins/translations.csv)
+  with sense notes in
+  [`plugins/translations-context.md`](plugins/translations-context.md).
+  The English column header lists countries/regions; dialect columns use
+  `country, - area, - dialect`. Do not infer UI language from GPS or SIM
+  country; do not add a language toggle until that plugin exists. Fallback to
+  English is part of the spec.
 - **Voice guidance** is planned as a plugin; phrase design must respect
   per-language **concatenation vs whole-phrase** recordings — see
   [`voice-guidance.md`](voice-guidance.md).

@@ -25,8 +25,12 @@ On-device and emulator results:
 **Translators wanted.** UI language packs are specified but not shipped
 (English-only chrome today). Fill or review the working table and follow the
 spec: [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md)
-(catalog: [`docs/plugins/translations.csv`](docs/plugins/translations.csv)).
-Do not add a language toggle until that plugin exists.
+(catalog: [`docs/plugins/translations.csv`](docs/plugins/translations.csv);
+word/phrase context:
+[`docs/plugins/translations-context.md`](docs/plugins/translations-context.md)).
+The English column header lists countries/regions; dialect columns use
+`country, - area, - dialect` (see the spec). Do not add a language toggle
+until that plugin exists.
 
 **How to help:** testers, docs, translations, and code all start in
 [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md). That page is the contribution
@@ -299,6 +303,10 @@ when a key is missing) is described in
 [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
 A working CSV for translators lives next to that spec:
 [`docs/plugins/translations.csv`](docs/plugins/translations.csv).
+Sense notes for words and phrases:
+[`docs/plugins/translations-context.md`](docs/plugins/translations-context.md).
+English source strings list countries/regions in the column header; dialect
+headers use `country, - area, - dialect` (documented in the i18n spec).
 
 Settings are saved on the device (rest/fuel/vehicle in a small database; map
 display choices in app preferences).
@@ -524,7 +532,7 @@ hardware-facing plugins.
 
 | Spec | Topic |
 |---|---|
-| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Future UI languages (English-only today). Translator table: [`translations.csv`](docs/plugins/translations.csv) |
+| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Future UI languages (English-only today). Translator table: [`translations.csv`](docs/plugins/translations.csv); context: [`translations-context.md`](docs/plugins/translations-context.md) |
 | [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Wild-camping suggestions (plugin, not core) |
 | [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Fuel/water resupply ideas |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state + approach warnings to instrument clusters |

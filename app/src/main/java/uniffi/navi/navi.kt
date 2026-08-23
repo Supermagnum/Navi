@@ -974,6 +974,14 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1089,6 +1097,8 @@ fun uniffi_navi_checksum_func_load_ev_car_config(
 ): Short
 fun uniffi_navi_checksum_func_load_fuel_config(
 ): Short
+fun uniffi_navi_checksum_func_load_network_hut_member(
+): Short
 fun uniffi_navi_checksum_func_load_prefer_official_networks(
 ): Short
 fun uniffi_navi_checksum_func_load_prefer_pilgrim_routes(
@@ -1104,6 +1114,8 @@ fun uniffi_navi_checksum_func_load_speed_bumps_json(
 fun uniffi_navi_checksum_func_load_speed_cameras_json(
 ): Short
 fun uniffi_navi_checksum_func_load_truck_rest_settings(
+): Short
+fun uniffi_navi_checksum_func_load_use_networked_cabins(
 ): Short
 fun uniffi_navi_checksum_func_load_vehicle_limits(
 ): Short
@@ -1199,6 +1211,8 @@ fun uniffi_navi_checksum_func_save_named_place(
 ): Short
 fun uniffi_navi_checksum_func_save_named_route(
 ): Short
+fun uniffi_navi_checksum_func_save_network_hut_member(
+): Short
 fun uniffi_navi_checksum_func_save_prefer_official_networks(
 ): Short
 fun uniffi_navi_checksum_func_save_prefer_pilgrim_routes(
@@ -1206,6 +1220,8 @@ fun uniffi_navi_checksum_func_save_prefer_pilgrim_routes(
 fun uniffi_navi_checksum_func_save_profile_poi_radii(
 ): Short
 fun uniffi_navi_checksum_func_save_truck_rest_settings(
+): Short
+fun uniffi_navi_checksum_func_save_use_networked_cabins(
 ): Short
 fun uniffi_navi_checksum_func_save_vehicle_limits(
 ): Short
@@ -1418,6 +1434,8 @@ fun uniffi_navi_fn_func_load_ev_car_config(`dataDir`: RustBuffer.ByValue,uniffi_
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_fuel_config(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_load_network_hut_member(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_load_prefer_official_networks(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_load_prefer_pilgrim_routes(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1434,6 +1452,8 @@ fun uniffi_navi_fn_func_load_speed_cameras_json(`pbfPath`: RustBuffer.ByValue,un
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_truck_rest_settings(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_load_use_networked_cabins(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_load_vehicle_limits(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_nearby_places(`indexDbPath`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
@@ -1528,6 +1548,8 @@ fun uniffi_navi_fn_func_save_named_place(`dataDir`: RustBuffer.ByValue,`name`: R
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_save_named_route(`dataDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`startName`: RustBuffer.ByValue,`endLat`: Double,`endLon`: Double,`endName`: RustBuffer.ByValue,`viaJson`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`summaryJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_save_network_hut_member(`dataDir`: RustBuffer.ByValue,`isMember`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_save_prefer_official_networks(`dataDir`: RustBuffer.ByValue,`prefer`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_save_prefer_pilgrim_routes(`dataDir`: RustBuffer.ByValue,`prefer`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -1535,6 +1557,8 @@ fun uniffi_navi_fn_func_save_prefer_pilgrim_routes(`dataDir`: RustBuffer.ByValue
 fun uniffi_navi_fn_func_save_profile_poi_radii(`dataDir`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_save_truck_rest_settings(`dataDir`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_navi_fn_func_save_use_networked_cabins(`dataDir`: RustBuffer.ByValue,`prefer`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_save_vehicle_limits(`dataDir`: RustBuffer.ByValue,`limits`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
@@ -1838,6 +1862,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_load_fuel_config() != 47253.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_load_network_hut_member() != 42341.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_load_prefer_official_networks() != 40384.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1860,6 +1887,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_load_truck_rest_settings() != 11002.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_load_use_networked_cabins() != 55107.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_load_vehicle_limits() != 31229.toShort()) {
@@ -2003,6 +2033,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_save_named_route() != 29751.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_save_network_hut_member() != 25854.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_save_prefer_official_networks() != 11384.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2013,6 +2046,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_save_truck_rest_settings() != 32221.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_save_use_networked_cabins() != 41801.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_save_vehicle_limits() != 61328.toShort()) {
@@ -4860,6 +4896,19 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Load whether the user is a DNT/STF/… network hut member (default false).
+         * Gates overnight-stay preference only — not auto-via waypoints.
+         */ fun `loadNetworkHutMember`(`dataDir`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_load_network_hut_member(
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Soft preference for official hiking/cycling route networks (default off).
          */ fun `loadPreferOfficialNetworks`(`dataDir`: kotlin.String): kotlin.Boolean {
             return FfiConverterBoolean.lift(
@@ -4946,6 +4995,19 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
             return FfiConverterTypeFfiTruckRestSettings.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_load_truck_rest_settings(
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Allow networked (DNT/STF/…) huts as hiking auto-via waypoints (default off).
+         * Geographic via only — does not imply membership or right of entry.
+         */ fun `loadUseNetworkedCabins`(`dataDir`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_load_use_networked_cabins(
         FfiConverterString.lower(`dataDir`),_status)
 }
     )
@@ -5490,6 +5552,15 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
+ fun `saveNetworkHutMember`(`dataDir`: kotlin.String, `isMember`: kotlin.Boolean): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_save_network_hut_member(
+        FfiConverterString.lower(`dataDir`),FfiConverterBoolean.lower(`isMember`),_status)
+}
+    )
+    }
+    
  fun `savePreferOfficialNetworks`(`dataDir`: kotlin.String, `prefer`: kotlin.Boolean): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
@@ -5525,6 +5596,15 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_save_truck_rest_settings(
         FfiConverterString.lower(`dataDir`),FfiConverterTypeFfiTruckRestSettings.lower(`settings`),_status)
+}
+    )
+    }
+    
+ fun `saveUseNetworkedCabins`(`dataDir`: kotlin.String, `prefer`: kotlin.Boolean): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_save_use_networked_cabins(
+        FfiConverterString.lower(`dataDir`),FfiConverterBoolean.lower(`prefer`),_status)
 }
     )
     }

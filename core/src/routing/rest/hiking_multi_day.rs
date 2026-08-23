@@ -28,6 +28,9 @@ pub struct HikingOvernightStop {
     pub name: String,
     pub osm_id: i64,
     pub is_network: bool,
+    /// True when a network hut was chosen without an asserted membership — UI must
+    /// not present it as an unqualified planned stay.
+    pub membership_required: bool,
     pub distance_from_target_m: f64,
     pub safety_rejected: bool,
     /// When [`Self::safety_rejected`], user-facing reason (glacier / building).
@@ -82,6 +85,7 @@ fn to_stop(
     p: &PoiRecord,
     dist_m: f64,
     is_network: bool,
+    membership_required: bool,
     safety_rejected: bool,
     safety_reason: Option<OvernightRejectReason>,
 ) -> HikingOvernightStop {
@@ -101,6 +105,7 @@ fn to_stop(
             }),
         osm_id: p.osm_id,
         is_network,
+        membership_required: is_network && membership_required,
         distance_from_target_m: dist_m,
         safety_rejected,
         safety_reason: safety_reason.map(|r| r.user_message().to_string()),
@@ -108,28 +113,39 @@ fn to_stop(
     }
 }
 
-/// Prefer network huts within preference radius, then cabins / overnight facilities.
+/// Choose an overnight hut near `(lat, lon)`.
+///
+/// When `network_hut_member` is true, network huts within the preference radius
+/// win (historical behaviour). When false, non-network cabins / overnight
+/// facilities are preferred; a network hut is only used as a last resort and is
+/// flagged [`HikingOvernightStop::membership_required`] so UI must not imply access.
 pub fn choose_hiking_overnight(
     poi: &PoiIndex,
     safety: &SafetyConfig,
     prox: &OvernightProximityIndex,
     lat: f64,
     lon: f64,
+    network_hut_member: bool,
 ) -> Option<HikingOvernightStop> {
     let mut candidates: Vec<(PoiRecord, f64, bool)> = Vec::new();
 
-    for p in poi.nearest(
-        PoiCategory::NetworkHut,
-        lat,
-        lon,
-        safety.poi_radius_network_hut_m,
-    ) {
-        let d = haversine_m(lat, lon, p.lat, p.lon);
-        candidates.push(((*p).clone(), d, true));
+    if network_hut_member {
+        for p in poi.nearest(
+            PoiCategory::NetworkHut,
+            lat,
+            lon,
+            safety.poi_radius_network_hut_m,
+        ) {
+            let d = haversine_m(lat, lon, p.lat, p.lon);
+            candidates.push(((*p).clone(), d, true));
+        }
     }
     for p in poi.nearest(PoiCategory::Cabin, lat, lon, safety.poi_radius_cabin_m) {
         let d = haversine_m(lat, lon, p.lat, p.lon);
         let is_net = p.categories.contains(&PoiCategory::NetworkHut);
+        if !network_hut_member && is_net {
+            continue;
+        }
         if candidates.iter().any(|(c, _, _)| c.osm_id == p.osm_id) {
             continue;
         }
@@ -143,22 +159,48 @@ pub fn choose_hiking_overnight(
     ) {
         let d = haversine_m(lat, lon, p.lat, p.lon);
         let is_net = p.categories.contains(&PoiCategory::NetworkHut);
+        if !network_hut_member && is_net {
+            continue;
+        }
         if candidates.iter().any(|(c, _, _)| c.osm_id == p.osm_id) {
             continue;
         }
         candidates.push(((*p).clone(), d, is_net));
     }
 
+    // Non-member last-resort pool: network huts only if nothing else is usable.
+    let mut network_fallback: Vec<(PoiRecord, f64)> = Vec::new();
+    if !network_hut_member {
+        for p in poi.nearest(
+            PoiCategory::NetworkHut,
+            lat,
+            lon,
+            safety.poi_radius_network_hut_m,
+        ) {
+            let d = haversine_m(lat, lon, p.lat, p.lon);
+            if network_fallback.iter().any(|(c, _)| c.osm_id == p.osm_id) {
+                continue;
+            }
+            network_fallback.push(((*p).clone(), d));
+        }
+        network_fallback.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    }
+
     candidates.sort_by(|a, b| {
-        let a_pref = a.2 && a.1 <= safety.network_hut_preference_radius_m;
-        let b_pref = b.2 && b.1 <= safety.network_hut_preference_radius_m;
-        b_pref
-            .cmp(&a_pref)
-            .then_with(|| a.2.cmp(&b.2))
-            .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        if network_hut_member {
+            let a_pref = a.2 && a.1 <= safety.network_hut_preference_radius_m;
+            let b_pref = b.2 && b.1 <= safety.network_hut_preference_radius_m;
+            b_pref
+                .cmp(&a_pref)
+                .then_with(|| a.2.cmp(&b.2))
+                .then_with(|| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        } else {
+            // Prefer closer non-network cabins.
+            a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+        }
     });
 
-    let mut fallback: Option<(PoiRecord, f64, bool, OvernightRejectReason)> = None;
+    let mut safety_fallback: Option<(PoiRecord, f64, bool, OvernightRejectReason)> = None;
     for (p, d, is_net) in candidates {
         let rejected = check_overnight_candidate(
             p.lat,
@@ -169,24 +211,61 @@ pub fn choose_hiking_overnight(
             &prox.glacier_rings,
         );
         if rejected.is_none() {
-            return Some(to_stop(&p, d, is_net, false, None));
+            return Some(to_stop(&p, d, is_net, false, false, None));
         }
-        if fallback.is_none() {
-            fallback = Some((p, d, is_net, rejected.unwrap()));
+        if safety_fallback.is_none() {
+            safety_fallback = Some((p, d, is_net, rejected.unwrap()));
         }
     }
 
-    fallback.map(|(p, d, is_net, reason)| to_stop(&p, d, is_net, true, Some(reason)))
+    // Non-member: only then try a network hut (membership-required label).
+    if !network_hut_member {
+        let mut net_safety_fallback: Option<(PoiRecord, f64, OvernightRejectReason)> = None;
+        for (p, d) in network_fallback {
+            let rejected = check_overnight_candidate(
+                p.lat,
+                p.lon,
+                safety,
+                &p,
+                &prox.buildings,
+                &prox.glacier_rings,
+            );
+            if rejected.is_none() {
+                return Some(to_stop(&p, d, true, true, false, None));
+            }
+            if net_safety_fallback.is_none() {
+                net_safety_fallback = Some((p, d, rejected.unwrap()));
+            }
+        }
+        if let Some((p, d, reason)) = net_safety_fallback {
+            return Some(to_stop(&p, d, true, true, true, Some(reason)));
+        }
+    }
+
+    safety_fallback.map(|(p, d, is_net, reason)| {
+        to_stop(
+            &p,
+            d,
+            is_net,
+            is_net && !network_hut_member,
+            true,
+            Some(reason),
+        )
+    })
 }
 
 /// Segment a hiking corridor into days bounded by `max_daily_km`, matching overnight
 /// huts near each day boundary (same scoring spirit as the DNT integration helper).
+///
+/// `network_hut_member` gates overnight preference for DNT/STF/… network huts
+/// (see [`choose_hiking_overnight`]); it does not affect auto-via waypoints.
 pub fn plan_hiking_multi_day(
     samples: &[HikingRouteSample],
     max_daily_km: f64,
     safety: &SafetyConfig,
     poi: &PoiIndex,
     prox: &OvernightProximityIndex,
+    network_hut_member: bool,
 ) -> HikingMultiDayPlan {
     let max_daily = max_daily_km.max(1.0);
     let total_km = samples.last().map(|s| s.cumulative_km).unwrap_or(0.0);
@@ -207,7 +286,9 @@ pub fn plan_hiking_multi_day(
 
         while probe_km <= window_end && !is_final {
             let (lat, lon) = interpolate_at_km(samples, probe_km);
-            if let Some(choice) = choose_hiking_overnight(poi, safety, prox, lat, lon) {
+            if let Some(choice) =
+                choose_hiking_overnight(poi, safety, prox, lat, lon, network_hut_member)
+            {
                 if choice.distance_from_target_m <= OVERNIGHT_NEAR_HUT_MAX_M {
                     let hut_km = samples
                         .iter()
@@ -231,27 +312,41 @@ pub fn plan_hiking_multi_day(
 
                         let take = match &best {
                             None => true,
-                            Some((prev_km, prev)) => match (snapped.is_network, prev.is_network) {
-                                (true, false) => true,
-                                (false, true) => false,
-                                _ => {
-                                    let much_closer = snapped.distance_from_target_m
-                                        + DETOUR_SLACK_M
-                                        < prev.distance_from_target_m;
-                                    let much_worse = snapped.distance_from_target_m
-                                        > prev.distance_from_target_m + DETOUR_SLACK_M;
-                                    if much_closer {
-                                        true
-                                    } else if much_worse {
-                                        false
-                                    } else {
-                                        hut_km > *prev_km
-                                            || ((hut_km - *prev_km).abs() < 1.0
-                                                && snapped.distance_from_target_m
-                                                    < prev.distance_from_target_m)
+                            Some((prev_km, prev)) => {
+                                // Members: prefer network. Non-members: prefer non-network
+                                // (membership-required last-resort stays behind open huts).
+                                match (
+                                    network_hut_member,
+                                    snapped.is_network,
+                                    prev.is_network,
+                                    snapped.membership_required,
+                                    prev.membership_required,
+                                ) {
+                                    (true, true, false, _, _) => true,
+                                    (true, false, true, _, _) => false,
+                                    (false, false, true, _, _) => true,
+                                    (false, true, false, _, _) => false,
+                                    (false, _, _, true, false) => false,
+                                    (false, _, _, false, true) => true,
+                                    _ => {
+                                        let much_closer = snapped.distance_from_target_m
+                                            + DETOUR_SLACK_M
+                                            < prev.distance_from_target_m;
+                                        let much_worse = snapped.distance_from_target_m
+                                            > prev.distance_from_target_m + DETOUR_SLACK_M;
+                                        if much_closer {
+                                            true
+                                        } else if much_worse {
+                                            false
+                                        } else {
+                                            hut_km > *prev_km
+                                                || ((hut_km - *prev_km).abs() < 1.0
+                                                    && snapped.distance_from_target_m
+                                                        < prev.distance_from_target_m)
+                                        }
                                     }
                                 }
-                            },
+                            }
                         };
                         if take {
                             best = Some((hut_km, snapped));
@@ -270,7 +365,7 @@ pub fn plan_hiking_multi_day(
             (hut_km, Some(choice), gap)
         } else {
             let (lat, lon) = interpolate_at_km(samples, window_end);
-            let fallback = choose_hiking_overnight(poi, safety, prox, lat, lon);
+            let fallback = choose_hiking_overnight(poi, safety, prox, lat, lon, network_hut_member);
             let gap = fallback
                 .as_ref()
                 .map(|o| o.distance_from_target_m > OVERNIGHT_NEAR_HUT_MAX_M || o.safety_rejected)
@@ -366,6 +461,7 @@ mod tests {
             &SafetyConfig::default(),
             &poi,
             &OvernightProximityIndex::default(),
+            false,
         );
         assert!(!plan.multi_day);
         assert_eq!(plan.days.len(), 1);
@@ -384,6 +480,7 @@ mod tests {
             &SafetyConfig::default(),
             &poi,
             &OvernightProximityIndex::default(),
+            true, // member: network hut overnight OK
         );
         assert!(plan.multi_day, "days={:?}", plan.days.len());
         assert!(plan.days.len() >= 2);
@@ -393,7 +490,55 @@ mod tests {
             .expect("overnight after day 1");
         assert_eq!(o.name, "Testbu");
         assert!(o.is_network);
+        assert!(!o.membership_required);
         assert!(!o.safety_rejected);
         assert!(plan.days[0].distance_km <= 40.0 + 1.0);
+    }
+
+    #[test]
+    fn non_member_prefers_open_hut_over_network() {
+        let samples = samples_along_north(80.0, 1.0);
+        let mut poi = PoiIndex::new();
+        // Network hut slightly closer to the ~40 km boundary.
+        poi.insert_record(hut(1, 61.36, 10.01, "NetworkBu", true));
+        // Non-network cabin a bit farther but still near.
+        poi.insert_record(hut(2, 61.365, 10.02, "OpenBu", false));
+        let plan = plan_hiking_multi_day(
+            &samples,
+            40.0,
+            &SafetyConfig::default(),
+            &poi,
+            &OvernightProximityIndex::default(),
+            false,
+        );
+        let o = plan.days[0]
+            .overnight
+            .as_ref()
+            .expect("overnight after day 1");
+        assert_eq!(o.name, "OpenBu");
+        assert!(!o.is_network);
+        assert!(!o.membership_required);
+    }
+
+    #[test]
+    fn non_member_network_only_marks_membership_required() {
+        let samples = samples_along_north(80.0, 1.0);
+        let mut poi = PoiIndex::new();
+        poi.insert_record(hut(1, 61.36, 10.01, "OnlyNetwork", true));
+        let plan = plan_hiking_multi_day(
+            &samples,
+            40.0,
+            &SafetyConfig::default(),
+            &poi,
+            &OvernightProximityIndex::default(),
+            false,
+        );
+        let o = plan.days[0]
+            .overnight
+            .as_ref()
+            .expect("overnight after day 1");
+        assert_eq!(o.name, "OnlyNetwork");
+        assert!(o.is_network);
+        assert!(o.membership_required);
     }
 }

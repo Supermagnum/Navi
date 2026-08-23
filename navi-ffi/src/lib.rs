@@ -573,6 +573,8 @@ fn days_json_from_hiking(plan: &HikingMultiDayPlan) -> String {
                         let reason = o.safety_reason.clone().unwrap_or_default();
                         let label = if o.safety_rejected && !reason.is_empty() {
                             reason.clone()
+                        } else if o.is_network && o.membership_required {
+                            "Network hut nearby (membership required)".to_string()
                         } else if o.is_network {
                             "Network hut overnight".to_string()
                         } else {
@@ -609,6 +611,11 @@ fn days_json_from_hiking(plan: &HikingMultiDayPlan) -> String {
                 "overnight_found": overnight_found,
                 "safety_rejected": d.overnight.as_ref().map(|o| o.safety_rejected).unwrap_or(false),
                 "safety_reason": safety_reason,
+                "membership_required": d
+                    .overnight
+                    .as_ref()
+                    .map(|o| o.membership_required)
+                    .unwrap_or(false),
                 "not_in_cab": false,
                 "compensation": "",
                 "is_final": is_final,
@@ -1391,6 +1398,10 @@ fn merge_hiking_waypoints_with_auto_vias(
 /// Named cabin / network hut candidates near a rast sample for auto-via promotion.
 /// Prefers path-linked (or ≤800 m) candidates; otherwise allows up to
 /// `lateral_max_m` (Drive cabin-radius slider) when the hut remains graph-reachable.
+///
+/// When `use_networked_cabins` is false, DNT/STF/… network huts are excluded from
+/// auto-via candidacy (open cabins / overnight facilities remain eligible). This is
+/// a geographic via filter only — it does not grant or imply hut access rights.
 fn hiking_auto_via_hut_candidates_at(
     poi: &PoiIndex,
     graph: &RouteGraph,
@@ -1400,18 +1411,28 @@ fn hiking_auto_via_hut_candidates_at(
     lon: f64,
     search_radius_m: f64,
     lateral_max_m: f64,
+    use_networked_cabins: bool,
 ) -> Vec<(String, f64, f64)> {
     let mut scored: Vec<(f64, f64, i64, String, f64, f64)> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     let search_m = search_radius_m.max(500.0);
     let lateral_m = lateral_max_m.max(500.0);
-    for cat in [
-        PoiCategory::NetworkHut,
-        PoiCategory::Cabin,
-        PoiCategory::OvernightFacility,
-    ] {
-        for p in poi.nearest(cat, lat, lon, search_m) {
+    let categories: &[PoiCategory] = if use_networked_cabins {
+        &[
+            PoiCategory::NetworkHut,
+            PoiCategory::Cabin,
+            PoiCategory::OvernightFacility,
+        ]
+    } else {
+        &[PoiCategory::Cabin, PoiCategory::OvernightFacility]
+    };
+    for cat in categories {
+        for p in poi.nearest(*cat, lat, lon, search_m) {
             if !seen.insert(p.osm_id) {
+                continue;
+            }
+            let is_network = p.categories.contains(&PoiCategory::NetworkHut);
+            if is_network && !use_networked_cabins {
                 continue;
             }
             let Some(name) = p.name.as_ref().map(|n| n.trim()).filter(|n| !n.is_empty()) else {
@@ -1431,11 +1452,7 @@ fn hiking_auto_via_hut_candidates_at(
             }
             // Prefer nearer to the rast sample (not merely on-path), then network, then lateral.
             let rank = sample_dist
-                + if p.categories.contains(&PoiCategory::NetworkHut) {
-                    0.0
-                } else {
-                    500.0
-                }
+                + if is_network { 0.0 } else { 500.0 }
                 + if linked { 0.0 } else { 200.0 };
             scored.push((rank, sample_dist, p.osm_id, name.to_string(), p.lat, p.lon));
         }
@@ -1463,6 +1480,7 @@ fn collect_hiking_auto_vias(
     user_cum_km: &[f64],
     cabin_radius_m: f64,
     search_radius_m: f64,
+    use_networked_cabins: bool,
     report: &mut String,
 ) -> Vec<HikingAutoVia> {
     let samples = sample_polyline_km(polyline);
@@ -1474,7 +1492,7 @@ fn collect_hiking_auto_vias(
     let search_m = search_radius_m.max(cabin_radius_m);
     let lateral_m = cabin_radius_m;
     report.push_str(&format!(
-        "auto_via_limits: search_m={search_m:.0}; lateral_m={lateral_m:.0}; extra_floor_m={cabin_radius_m:.0}; extra_frac={HIKING_AUTO_VIA_MAX_EXTRA_FRAC}\n"
+        "auto_via_limits: search_m={search_m:.0}; lateral_m={lateral_m:.0}; extra_floor_m={cabin_radius_m:.0}; extra_frac={HIKING_AUTO_VIA_MAX_EXTRA_FRAC}; use_networked_cabins={use_networked_cabins}\n"
     ));
     let mut autos = Vec::new();
     let mut next = HIKING_MAIN_BREAK_DISTANCE_KM;
@@ -1489,6 +1507,7 @@ fn collect_hiking_auto_vias(
             lon,
             search_m,
             lateral_m,
+            use_networked_cabins,
         );
 
         // Containing user leg for detour check.
@@ -2702,6 +2721,10 @@ pub fn plan_hiking_route(
     report.push_str(&format!(
         "prefer_official_networks={prefer_official_networks}; prefer_pilgrim_routes={prefer_pilgrim_routes}\n"
     ));
+    let use_networked_cabins = load_use_networked_cabins_near_cache(&PathBuf::from(&cache_dir));
+    report.push_str(&format!("use_networked_cabins={use_networked_cabins}\n"));
+    let network_hut_member = load_network_hut_member_near_cache(&PathBuf::from(&cache_dir));
+    report.push_str(&format!("network_hut_member={network_hut_member}\n"));
     let user_wps: Vec<HikingWp> = match serde_json::from_str::<Vec<Wp>>(&waypoints_json) {
         Ok(v) => v
             .into_iter()
@@ -2970,6 +2993,7 @@ pub fn plan_hiking_route(
             &user_cum_km,
             poi_radii.cabin_radius_m,
             poi_radii.search_radius_m,
+            use_networked_cabins,
             &mut report,
         )
     } else {
@@ -3065,6 +3089,7 @@ pub fn plan_hiking_route(
         &overnight_ctx.0,
         &poi_index,
         &overnight_ctx.1,
+        network_hut_member,
     );
     let days_json = days_json_from_hiking(&multi);
     let mut hiking_overnight_pins: Vec<serde_json::Value> = Vec::new();
@@ -3080,8 +3105,8 @@ pub fn plan_hiking_route(
             ));
             if let Some(o) = &d.overnight {
                 report.push_str(&format!(
-                    "hiking_overnight: name={:?}; network={}; safety_rejected={}; safety_reason={:?}; dist_m={:.0}; lat={:.5}; lon={:.5}\n",
-                    o.name, o.is_network, o.safety_rejected, o.safety_reason, o.distance_from_target_m, o.lat, o.lon
+                    "hiking_overnight: name={:?}; network={}; membership_required={}; safety_rejected={}; safety_reason={:?}; dist_m={:.0}; lat={:.5}; lon={:.5}\n",
+                    o.name, o.is_network, o.membership_required, o.safety_rejected, o.safety_reason, o.distance_from_target_m, o.lat, o.lon
                 ));
                 hiking_overnight_pins.push(json!({
                     "name": if o.safety_rejected {
@@ -3096,6 +3121,7 @@ pub fn plan_hiking_route(
                     "icon_key": o.icon_key,
                     "along_km": d.end_km,
                     "overnight": true,
+                    "membership_required": o.membership_required,
                     "safety_rejected": o.safety_rejected,
                     "safety_reason": o.safety_reason,
                 }));
@@ -3969,6 +3995,46 @@ pub fn save_prefer_pilgrim_routes(data_dir: String, prefer: bool) -> bool {
     store.save_prefer_pilgrim_routes(prefer).is_ok()
 }
 
+/// Allow networked (DNT/STF/…) huts as hiking auto-via waypoints (default off).
+/// Geographic via only — does not imply membership or right of entry.
+#[uniffi::export]
+pub fn load_use_networked_cabins(data_dir: String) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.load_use_networked_cabins().unwrap_or(false)
+}
+
+#[uniffi::export]
+pub fn save_use_networked_cabins(data_dir: String, prefer: bool) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.save_use_networked_cabins(prefer).is_ok()
+}
+
+/// Load whether the user is a DNT/STF/… network hut member (default false).
+/// Gates overnight-stay preference only — not auto-via waypoints.
+#[uniffi::export]
+pub fn load_network_hut_member(data_dir: String) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.load_network_hut_member().unwrap_or(false)
+}
+
+#[uniffi::export]
+pub fn save_network_hut_member(data_dir: String, is_member: bool) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.save_network_hut_member(is_member).is_ok()
+}
+
 fn ffi_from_poi_radii(r: &ProfilePoiRadii) -> FfiProfilePoiRadii {
     FfiProfilePoiRadii {
         search_radius_m: r.search_radius_m,
@@ -4150,6 +4216,26 @@ fn load_profile_poi_radii_near_cache(cache: &Path) -> ProfilePoiRadiiTable {
     driver_break_core::storage::ConfigStore::new(&storage)
         .load_profile_poi_radii()
         .unwrap_or_default()
+}
+
+fn load_use_networked_cabins_near_cache(cache: &Path) -> bool {
+    let data_dir = cache.parent().unwrap_or(cache);
+    let Ok(storage) = driver_break_core::storage::Storage::open(data_dir.join("navi.db")) else {
+        return false;
+    };
+    driver_break_core::storage::ConfigStore::new(&storage)
+        .load_use_networked_cabins()
+        .unwrap_or(false)
+}
+
+fn load_network_hut_member_near_cache(cache: &Path) -> bool {
+    let data_dir = cache.parent().unwrap_or(cache);
+    let Ok(storage) = driver_break_core::storage::Storage::open(data_dir.join("navi.db")) else {
+        return false;
+    };
+    driver_break_core::storage::ConfigStore::new(&storage)
+        .load_network_hut_member()
+        .unwrap_or(false)
 }
 
 fn load_ebike_config_near_cache(cache: &Path) -> driver_break_core::config::EbikeConfig {

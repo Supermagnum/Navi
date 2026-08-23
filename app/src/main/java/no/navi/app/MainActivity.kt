@@ -443,6 +443,8 @@ private fun NaviMapScreen() {
     var avoidFerries by remember { mutableStateOf(false) }
     var preferOfficialNetworks by remember { mutableStateOf(false) }
     var preferPilgrimRoutes by remember { mutableStateOf(false) }
+    var useNetworkedCabins by remember { mutableStateOf(false) }
+    var networkHutMember by remember { mutableStateOf(false) }
 
     /** Sticky manual bearing when snap-back is off; cleared by mode chip. */
     var manualRotationSticky by remember { mutableStateOf(false) }
@@ -567,6 +569,9 @@ private fun NaviMapScreen() {
         mapState =
             mapState.copy(
                 polyline = "",
+                // Hiking corridors live in routeSegmentsJson; clearing polyline alone
+                // leaves applyRouteToStyle redrawing the stale on/off-trail layers.
+                routeSegmentsJson = "[]",
                 poiLat = 0.0,
                 poiLon = 0.0,
                 poiName = "",
@@ -973,6 +978,8 @@ private fun NaviMapScreen() {
     LaunchedEffect(dataDir) {
         preferOfficialNetworks = uniffi.navi.loadPreferOfficialNetworks(dataDir.absolutePath)
         preferPilgrimRoutes = uniffi.navi.loadPreferPilgrimRoutes(dataDir.absolutePath)
+        useNetworkedCabins = uniffi.navi.loadUseNetworkedCabins(dataDir.absolutePath)
+        networkHutMember = uniffi.navi.loadNetworkHutMember(dataDir.absolutePath)
         NaviMapTestHooks.lastSnapRotationBack = driveHud.snapRotationBackToMode
     }
     val iconsDir =
@@ -4016,8 +4023,62 @@ private fun NaviMapScreen() {
                                             },
                                         )
                                     }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text("Use networked cabins")
+                                        Switch(
+                                            checked = useNetworkedCabins,
+                                            onCheckedChange = { on ->
+                                                useNetworkedCabins = on
+                                                uniffi.navi.saveUseNetworkedCabins(
+                                                    dataDir.absolutePath,
+                                                    on,
+                                                )
+                                                DiagnosticLog.logToggle(
+                                                    "use_networked_cabins",
+                                                    on,
+                                                    mapOf("profile" to profile.name),
+                                                )
+                                                DiagnosticLog.logSettingSaved(
+                                                    "use_networked_cabins",
+                                                    on,
+                                                )
+                                            },
+                                            modifier = Modifier.testTag("toggle_use_networked_cabins"),
+                                        )
+                                    }
                                 }
                                 if (profile == TravelProfile.HIKING) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text("Network hut member (DNT/STF/…)")
+                                        Switch(
+                                            checked = networkHutMember,
+                                            onCheckedChange = { on ->
+                                                networkHutMember = on
+                                                uniffi.navi.saveNetworkHutMember(
+                                                    dataDir.absolutePath,
+                                                    on,
+                                                )
+                                                DiagnosticLog.logToggle(
+                                                    "network_hut_member",
+                                                    on,
+                                                    mapOf("profile" to profile.name),
+                                                )
+                                                DiagnosticLog.logSettingSaved(
+                                                    "network_hut_member",
+                                                    on,
+                                                )
+                                            },
+                                            modifier = Modifier.testTag("toggle_network_hut_member"),
+                                        )
+                                    }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
@@ -6875,6 +6936,9 @@ private fun applyRouteToStyle(
             (style.getSource("poi-src") as? GeoJsonSource)
                 ?.setGeoJson(FeatureCollection.fromFeature(feature))
         }
+    } else {
+        if (style.getLayer("poi-layer") != null) style.removeLayer("poi-layer")
+        if (style.getSource("poi-src") != null) style.removeSource("poi-src")
     }
 
     // Start / via / end place names — always drawn when coords are set so labels
@@ -6934,6 +6998,10 @@ private fun applyRouteToStyle(
         } else {
             (style.getSource("waypoints-src") as? GeoJsonSource)?.setGeoJson(collection)
         }
+    } else {
+        if (style.getLayer("waypoints-layer") != null) style.removeLayer("waypoints-layer")
+        if (style.getLayer("waypoints-dots") != null) style.removeLayer("waypoints-dots")
+        if (style.getSource("waypoints-src") != null) style.removeSource("waypoints-src")
     }
 
     // Current GPS / device position (dot only; no text label).
