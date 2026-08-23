@@ -133,7 +133,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Speed camera warnings** | Point cameras use the existing approach distance-phase UX; average-speed / section-control zones use a distinct enter/exit box. `maxspeed:conditional` is evaluated against live local time. Jurisdiction-gated like EC561 / allemannsretten: Norway/UK opt-in (OSM-sourced, may be incomplete); Germany/France/Switzerland and unknown jurisdictions decline — see [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). First-run opt-in dialog required (not silently enabled). Works on both planned-route corridor and **Look forward**. | Done (display/warning only — no route-avoidance toggle, by deliberate product decision) |
 | **Map updates** | Only when you ask — check for OpenStreetMap updates or download a fresh region. Never silent. On-screen copy is plain language (no internal planner dumps). | Done |
 | **Cross-region / cross-country prompts** | Destinations outside downloaded data (including another country, e.g. Sweden) show **Map data needed** with the correct Geofabrik extract — not a silent partial route. Evidence: [`android-test-results.md` Item 10](docs/android-test-results.md#item-10--osm-update-copy-cross-region-prompts-expanded-catalog-2026-08-19). | Done |
-| **Diagnostic logging** | Tools toggle writes a session log (GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system) you can copy over USB/MTP — no adb required. Files: **Internal storage → Documents → debug** (`navi_session_*.log`). | Done |
+| **Diagnostic logging** | **Tools → Diagnostic logging** (off by default). When on, writes a dated session log under **Internal storage → Documents → debug** (`navi_session_*.log`) for copy over USB/MTP — no adb required. Covers GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system. Not uploaded. **Export diagnostic log** shares the latest file. Detail: [Settings → Tools](#tools-downloads-and-diagnostic-logging) and [`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file). | Done |
 | **Plugins** | A safe sandbox for future add-ons exists; product plugins are not shipped yet. | Host ready |
 
 **Hardware note:** Real-device checks include Samsung Galaxy Tab S6 Lite
@@ -248,8 +248,11 @@ and will not follow foot trails properly.
 **Eco vs shortest.** Shortest ignores hills. Eco makes steep climbs “cost” more.
 Electric modes get some credit for downhill recovery.
 
-**Official networks.** Optional soft preference for marked hiking/cycle routes.
-Ordinary paths remain available so a gap never traps you.
+**Official networks.** Optional soft preference for marked hiking/cycle routes
+(**Follow official hiking/cycling networks**). Ordinary paths remain available
+so a gap never traps you. Separate toggles control **networked cabins** as
+waypoints and whether you are a **network hut member** for overnight planning
+(see [Drive / vehicle](#drive--vehicle-tap-bottom-status)).
 
 **Places.** Search fills From / Via / To. What counts as a hut, rest area, and so
 on is documented in [`docs/poi.md`](docs/poi.md).
@@ -265,8 +268,11 @@ split into days with legal rest rules (EU or US packs where known). Long
 car/bike/hiking trips can suggest overnight stops. Hiking overnight sites are
 filtered away from buildings and glaciers (1 km to the glacier **polygon edge**);
 rejected pins show a clear reason (for example `Excluded: within 1 km of a
-glacier`). The bottom-bar **Breaks** toggle only shows or hides the reminder —
-it does not invent a new rest law.
+glacier`). With **Network hut member** off (default), overnight prefers
+non-network cabins; a DNT/STF-style network hut is only a last resort and is
+labelled as membership-required. Membership does **not** grant entry — it only
+changes overnight preference. The bottom-bar **Breaks** toggle only shows or
+hides the reminder — it does not invent a new rest law.
 
 **Map bars.** Tap the top bar for map/display settings. Tap the bottom status
 area for drive/vehicle settings (mode, break interval, fuel, e-bike, and so on).
@@ -328,6 +334,9 @@ display choices in app preferences).
 | Setting | Plain meaning |
 |---|---|
 | **Travel mode** | Car, bike, hiking, truck, … |
+| **Follow official hiking/cycling networks** | Hiking / bicycle / e-bike: soft preference for waymarked networks (ordinary paths still usable) |
+| **Use networked cabins** | Hiking / bicycle / e-bike: allow DNT/STF-style **network** huts as auto-via / waypoint candidates (off by default). Does **not** change overnight membership rules |
+| **Network hut member (DNT/STF/…)** | Hiking only: when on, overnight may prefer network huts; when off (default), prefer non-network cabins and flag network stops as membership-required |
 | **Follow pilgrim routes** | Hiking only; soft preference (off by default), falls back to normal hiking |
 | **Hours between breaks** | How often you *want* a break (cars), or truck mandatory break-after time |
 | **Rest time** | How long a break should last (suggestion / truck continuous break) |
@@ -339,7 +348,34 @@ display choices in app preferences).
 
 Route planning chrome (**Route**): From / To / Via, Plan, Simulate, avoidances
 (**Avoid motorways** excludes `highway=motorway` / `motorway_link` only),
-saved routes. **Tools**: download region, basemap, DEM, OSM update check.
+saved routes.
+
+### Tools (downloads and diagnostic logging)
+
+Open **Tools** from the planning panel (same screen as region / basemap
+downloads).
+
+| Setting / action | Plain meaning |
+|---|---|
+| **Download region / basemap / DEM** | Offline map data (see [What you need to download](#what-you-need-to-download)) |
+| **Check for OSM updates** / **Apply pending** | Opt-in refresh; never silent auto-download |
+| **Weekly update reminder** | Optional nag only — does not download by itself |
+| **Diagnostic logging** | **Debug toggle** (off by default). When **on**, Navi appends a pipe-delimited **session log** on the device so you can diagnose planning, GPS, and setting changes without `adb logcat`. When **off**, no new session file is written and native per-stage route-plan timing stays gated off |
+| **Export diagnostic log** | Opens the Android share sheet for the latest session file (or tells you to turn logging on first) |
+
+**What the diagnostic log is for:** bug reports, planning timing (`ROUTE_PLAN` /
+`ROUTE_PLAN_STAGES`), and confirming toggles/settings on real hardware. It is
+**not** a crash dump mirror of logcat, and it is **not** uploaded by Navi.
+
+**Where the file lives** (USB file transfer / MTP — no adb required):
+
+```text
+Internal storage → Documents → debug → navi_session_YYYY-MM-DD_HH-mm-ss.log
+```
+
+(Fallback: `Download/debug`, then app-private storage if Documents is not
+writable.) Older sessions are rotated (last 10 kept). Full categories and
+retrieval steps: [`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file).
 
 Full control lists and truck/jurisdiction detail stay in the older deep docs
 linked from [Documents](#documents) when you need them.

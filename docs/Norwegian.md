@@ -130,7 +130,7 @@ Dette er helt valgfri støtte, ikke en betalingsmur — Navi er og forblir grati
 | **Barnefasiliteter i nærheten** | Når ingen tagget barn-/skolevarselskilt er aktivt, gir skoler, barnehager og lekeplasser fortsatt et generisk **142 Barn**-tilnærmingsvarsel (nærmeste anlegg; tagget `NO:142` går foran). **Med planlagt rute:** innen **200 m** fra korridoren. **Uten rute:** dekkes av **Look forward** (300 m kjegle). Detaljer: [`road-signs.md`](road-signs.md). | Ferdig |
 | **Fartskameravarsler** | Punktkamera bruker samme tilnærmingsfaser; snittfart / strekningskontroll har egen inn-/utboks. Jurisdiksjonsstyrt (Norge/UK opt-in; flere land avslår) — se [`jurisdiction-rules.md`](jurisdiction-rules.md). Første-gangs opt-in-dialog. Virker både på planlagt-rute-korridor og **Look forward**. | Ferdig (kun visning/varsel) |
 | **Kartoppdateringer** | Bare når du ber om det — sjekk OpenStreetMap-oppdateringer eller last en fersk region. Aldri i det stille. | Ferdig |
-| **Diagnostisk logging** | Bryter under Tools skriver en øktlogg (GPS, kamera, brytere, ruteplan/trinn, øko, POI, pauser, instruksjoner, drivstoff, system) du kan kopiere over USB/MTP — adb trengs ikke. Filer: **Intern lagring → Documents → debug** (`navi_session_*.log`). | Ferdig |
+| **Diagnostisk logging** | **Tools → Diagnostic logging** (av som standard). Når på, skrives en datert øktlogg under **Intern lagring → Documents → debug** (`navi_session_*.log`) for kopiering over USB/MTP — adb trengs ikke. Dekker GPS, kamera, brytere, ruteplan/trinn, øko, POI, pauser, instruksjoner, drivstoff, system. Lastes ikke opp. **Export diagnostic log** deler siste fil. Detalj: [Innstillinger → Tools](#tools-nedlastinger-og-diagnostisk-logging) og [`debugging.md`](debugging.md#3b-diagnostic-session-log-on-device-file). | Ferdig |
 | **Plugins** | En trygg sandkasse for fremtidige tillegg finnes; produktplugins er ikke levert ennå. | Vert klar |
 
 **Maskinvare:** Ekte enhetssjekker inkluderer Samsung Galaxy Tab S6 Lite
@@ -244,8 +244,11 @@ følger ikke stier skikkelig.
 **Øko vs kortest.** Kortest ignorerer bakker. Øko gjør bratte stigninger
 «dyrere». Elektriske modi får noe kreditt for energi tilbake i nedoverbakke.
 
-**Offisielle nettverk.** Valgfri myk preferanse for merkede tur-/sykkelruter.
-Vanlige stier forblir tilgjengelige, så et hull aldri stenger hele turen.
+**Offisielle nettverk.** Valgfri myk preferanse for merkede tur-/sykkelruter
+(**Follow official hiking/cycling networks**). Vanlige stier forblir
+tilgjengelige, så et hull aldri stenger hele turen. Egne brytere styrer
+**nettverkshytter** som via-punkter og om du er **nettverkshytte-medlem** for
+overnatting (se [Kjøring / kjøretøy](#kjøring--kjøretøy-trykk-bunnstatus)).
 
 **Steder.** Søk fyller Fra / Via / Til. Hva som teller som hytte, rasteplass
 osv. er beskrevet i [`poi.md`](poi.md).
@@ -259,9 +262,13 @@ Brukerveiledning:
 
 **Hvile og overnatting.** Hver modus har egne standarder. Lange lastebilturer
 kan deles i dager med juridiske hvileregler (EU- eller US-pakker der de er
-kjent). Lange bil-/sykkel-/fotturer kan foreslå overnatting. Bryteren
-**Breaks** i bunnstripen viser eller skjuler bare påminnelsen — den lager ikke
-ny hvilelov.
+kjent). Lange bil-/sykkel-/fotturer kan foreslå overnatting. Fottur-overnatting
+filtreres bort fra bygninger og isbreer (1 km til isbreens **polygonkant**);
+avviste nåler viser en klar grunn. Med **Network hut member** av (standard)
+foretrekkes ikke-nettverkshytter; DNT/STF-lignende nettverkshytte er bare
+siste utvei og merkes som medlemskapskrevd. Medlemskap gir **ikke** adgang —
+det endrer bare overnattingspreferanse. Bryteren **Breaks** i bunnstripen
+viser eller skjuler bare påminnelsen — den lager ikke ny hvilelov.
 
 **Kartstriper.** Trykk toppstripen for kart-/skjerminnstillinger. Trykk
 bunnstatusen for kjøre-/kjøretøyinnstillinger (modus, pauseintervall, drivstoff,
@@ -322,6 +329,9 @@ kartvisning i app-preferanser).
 | Innstilling | Enkel forklaring |
 |---|---|
 | **Travel mode** | Bil, sykkel, fottur, lastebil, … |
+| **Follow official hiking/cycling networks** | Fottur / sykkel / elsykkel: myk preferanse for merkede nettverk (vanlige stier fortsatt brukbare) |
+| **Use networked cabins** | Fottur / sykkel / elsykkel: tillat DNT/STF-lignende **nettverkshytter** som auto-via / via-kandidater (av som standard). Endrer **ikke** overnattingsmedlemskapsregler |
+| **Network hut member (DNT/STF/…)** | Bare fottur: når på, kan overnatting foretrekke nettverkshytter; når av (standard), foretrekk ikke-nettverk og merk nettverkstopp som medlemskapskrevd |
 | **Follow pilgrim routes** | Bare fottur; myk preferanse (av som standard), faller tilbake til vanlig fottur |
 | **Hours between breaks** | Hvor ofte du *ønsker* pause (bil), eller lastebilens pålagte pause-etter-tid |
 | **Rest time** | Hvor lenge pausen bør vare (forslag / lastebil sammenhengende pause) |
@@ -333,7 +343,34 @@ kartvisning i app-preferanser).
 
 Ruteplanlegging (**Route**): From / To / Via, Plan, Simulate, unngåelser
 (**Avoid motorways** ekskluderer bare `highway=motorway` / `motorway_link`),
-lagrede ruter. **Tools**: last ned region, grunnkart, DEM, OSM-oppdateringssjekk.
+lagrede ruter.
+
+### Tools (nedlastinger og diagnostisk logging)
+
+Åpne **Tools** fra planleggingspanelet (samme skjerm som region-/grunnkart-
+nedlasting).
+
+| Innstilling / handling | Enkel forklaring |
+|---|---|
+| **Download region / basemap / DEM** | Frakoblede kartdata (se hva du må laste ned ovenfor) |
+| **Check for OSM updates** / **Apply pending** | Valgfri oppdatering; aldri stille autodownload |
+| **Weekly update reminder** | Valgfri påminnelse — laster ikke ned selv |
+| **Diagnostic logging** | **Debug-bryter** (av som standard). Når **på**, skriver Navi en rør-separert **øktlogg** på enheten så du kan feilsøke planlegging, GPS og innstillinger uten `adb logcat`. Når **av**, skrives ingen ny øktfil, og native per-trinns ruteplan-timing er også av |
+| **Export diagnostic log** | Åpner Androids delingsark for siste øktfil (eller ber deg skru logging på først) |
+
+**Hva loggen er til:** feilrapporter, planleggingstid (`ROUTE_PLAN` /
+`ROUTE_PLAN_STAGES`), og bekreftelse av brytere på ekte maskinvare. Den er
+**ikke** et logcat-speil, og Navi **laster den ikke opp**.
+
+**Hvor filen ligger** (USB filoverføring / MTP — adb trengs ikke):
+
+```text
+Intern lagring → Documents → debug → navi_session_YYYY-MM-DD_HH-mm-ss.log
+```
+
+(Fallback: `Download/debug`, deretter app-privat lagring.) Eldre økter
+roteres (siste 10 beholdes). Full kategoriliste:
+[`debugging.md`](debugging.md#3b-diagnostic-session-log-on-device-file).
 
 Lengre kontrollister og lastebil-/jurisdiksjonsdetaljer ligger i dokumentene
 under [Dokumenter](#dokumenter).

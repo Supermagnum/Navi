@@ -102,7 +102,7 @@ These are easy to mistranslate. Use the **Navi sense**.
 | **Country-scale** | Whole-country Geofabrik extracts (heavy on low-RAM devices). | Political “scale” |
 | **Custom** | User-supplied values / URL / path. | Customs border |
 | **Desired** | Preferred hours between breaks (car comfort), not law. | Romantic desire |
-| **Diagnostic** / **Diagnostics** | Optional **session logging** and export. | Medical diagnosis |
+| **Diagnostic** / **Diagnostics** | Optional **session logging** and export under Tools (**Diagnostic logging** debug toggle). | Medical diagnosis |
 | **Download** / **Downloading** | Fetching PBF / PMTiles / DEM (user-started, never silent OSM weekly download). | Generic app store |
 | **Drive** | **Drive / vehicle settings** panel (bottom bar), not “USB drive”. | Hard disk; motivation |
 | **Eco** | **Eco mode / eco routing**: hill-aware energy / effort costing. Locked on for hiking/cycling. | Generic “ecology” label without routing sense |
@@ -220,6 +220,11 @@ Do not merge “break” wording into “ETA” wording in languages where one w
 - **Avoid ferries** / **Avoid toll roads** / **Avoid motorways/trunk/primary** — costing flags, not map filters that hide geometry.
 - **Eco mode** / **Eco routing** — energy/effort-aware costing; may be locked on for some profiles.
 - **Follow official hiking/cycling networks** — soft preference for waymarked networks.
+- **Use networked cabins** — allow network (DNT/STF-style) huts as auto-via /
+  waypoint candidates only; off by default; does not grant membership.
+- **Network hut member (DNT/STF/…)** — hiking overnight preference; off by
+  default prefers non-network cabins and labels network overnight as
+  membership-required.
 - **Require path / trail link** — hiking graph must use path/trail-linked edges.
 - **POI search radius (active profile)** — how far aside the planner may search for stops/huts.
 - **Multi-day** — overnight / day-split plans (truck or long hiking), not “multi-day calendar UI”.

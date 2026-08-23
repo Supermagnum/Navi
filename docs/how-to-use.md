@@ -130,10 +130,14 @@ Open **Tools** from the planning panel (toggles to **Hide tools**).
 | **Pause / Resume / Cancel** | Controls an in-progress download job. |
 | **Check for OSM updates** | Opt-in Geofabrik update check (never silent). |
 | **Apply pending OSM update** | Applies a previously checked update after you confirm. |
-| **Diagnostic logging** | Toggle session logging. Prefer reading logs under **Internal storage → Documents → debug** (`navi_session_*.log`) over USB/MTP — no adb required when that folder is writable. |
+| **Diagnostic logging** | **Debug toggle** (off by default). When on, writes a dated pipe-delimited session log under **Internal storage → Documents → debug** (`navi_session_*.log`) for USB/MTP copy — no adb required. Categories: GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system. Not uploaded; when off, no new file and native per-stage plan timing stays gated off. |
+| **Export diagnostic log** | Share-sheet export of the latest session file (enable logging first if none exists). |
 
 A weekly OSM-update **reminder** may appear in Tools; it does not download by
 itself.
+
+Full retrieval and category detail:
+[`debugging.md`](debugging.md#3b-diagnostic-session-log-on-device-file).
 
 ---
 
@@ -211,6 +215,11 @@ panel.
 - **POI search radius** slider (Drive settings) for hut / stop search.
 - **Follow official hiking/cycling networks** — soft preference for marked
   networks; ordinary paths remain available if the network does not connect.
+- **Use networked cabins** — allow DNT/STF-style **network** huts as auto-via /
+  waypoint candidates (off by default). Independent of overnight membership.
+- **Network hut member (DNT/STF/…)** — overnight preference only (off by
+  default). When off, prefer non-network cabins; network huts are last-resort
+  and labelled membership-required. Does not grant cabin access.
 - **Follow pilgrim routes** — **Hiking only** in the UI (soft preference; off by
   default). Matches `route=pilgrimage` and pilgrim-named hiking relations
   (Pilegrimsleden, Camino, Via Francigena, St. Olav, etc.). Falls back to normal
@@ -220,9 +229,10 @@ panel.
 
 ### Bicycle / Electric cycle
 
-- Same **Follow official hiking/cycling networks** toggle as Hiking.
-- **Follow pilgrim routes is not shown** for Bicycle / Electric cycle (Hiking
-  only).
+- Same **Follow official hiking/cycling networks** and **Use networked cabins**
+  toggles as Hiking.
+- **Network hut member** and **Follow pilgrim routes** are **not** shown for
+  Bicycle / Electric cycle (Hiking only).
 - Eco locked on for cycling profiles.
 - Electric cycle Drive fields: **Battery capacity (Wh)**, **Motor torque (Nm)**,
   **Wheel diameter (inches)** (presets + custom). Used for range / climbing
@@ -243,6 +253,8 @@ panel.
 | Toggle | Profiles in UI | Behaviour |
 |---|---|---|
 | **Follow official hiking/cycling networks** | Hiking, Bicycle, Electric cycle | Soft cost preference for marked network ways; not a hard lock. Gaps fall back to ordinary paths. |
+| **Use networked cabins** | Hiking, Bicycle, Electric cycle | Allow network huts as auto-via / waypoint candidates (off by default). Does not imply membership or overnight preference. |
+| **Network hut member (DNT/STF/…)** | Hiking only | Overnight may prefer network huts when on; when off (default), prefer non-network and flag network overnight as membership-required. |
 | **Follow pilgrim routes** | Hiking only | Soft preference for pilgrim route ways; falls back to normal hiking. |
 
 Search for a **named** route (including pilgrim route names) in **From** / **Via** /
