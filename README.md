@@ -928,7 +928,7 @@ still future (`new-signs/`). Offline Protomaps alcohol-shop labels
 **Historical Norwegian/Norse distance units** as a selectable display option
 (e.g. rast, dagsvei, fjerdingvei), alongside the existing Metric / US / UK
 profiles. Display-only historical/cultural mode, not a default or a serious
-alternative to metric/imperial for navigation — likely a novelty or
+alternative to metric/imperial for navigation — a novelty or
 regional-flavor toggle. Needs a design pass before implementation (which
 distance and speed fields it applies to, how it interacts with
 `DisplayUnits`, whether it is era-specific or one canonical conversion set).
@@ -960,4 +960,8 @@ Context for whoever picks this up:
   Speed display in this mode: **mil/h** derived from that mile length
   (≈ 9.1008 km/h per mil/h), with sub-mil distances shown as stone's throw,
   arrow's flight, and so on.
+
+Grab missing map sympols from OpenStreetMap Carto, they are under the Creative Commons CC0 1.0 Universal Public Domain Dedication.
+Investigate if lake names can be displayed along the lake shore.
+
 
