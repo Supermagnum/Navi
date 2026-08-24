@@ -913,6 +913,8 @@ Country/region visual extracts can also be prepared with
 
 (Future work only — shipped features are listed in the Features table above.)
 
+Investigate why hiking planning is so slow.
+
 **UI language packs** — chrome is English-only today. A future `i18n` /
 `ui_translation` plugin will add selectable languages with **fallback to
 English** when a translation or pack is missing. Spec:
