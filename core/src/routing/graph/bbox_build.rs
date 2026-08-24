@@ -4,14 +4,22 @@
 //! them on a 4GB Automotive AVD kills the process (LMK) before routing starts.
 //! Planning clips the same region `.pbf` to the trip bbox so we never materialize
 //! the nationwide graph in-process.
+//!
+//! Tiled convert (`build_tiled_from_pbf`) spills filtered ways to a tempfile and
+//! only keeps highway-referenced coordinates in RAM, then builds+writes one tile
+//! at a time so the first `.rkyv` appears after two PBF passes — without holding
+//! every way's full tag map in-process (that path LMK'd ~4GB tablets before any
+//! tile was written).
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use geo_types::Coord;
 use osm4routing::{Node, NodeId};
 use osmpbf::{Element, ElementReader};
+use serde::{Deserialize, Serialize};
 
 use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
 use crate::routing::access;
@@ -22,6 +30,131 @@ struct RawWay {
     id: i64,
     nodes: Vec<i64>,
     tags: HashMap<String, String>,
+}
+
+/// Tags needed by [`graph_from_raw_ways`] / access / boardwalk — drop the rest
+/// so Pass 1 does not retain every OSM key on every highway.
+fn keep_way_tag(key: &str) -> bool {
+    matches!(
+        key,
+        "highway"
+            | "oneway"
+            | "junction"
+            | "maxspeed"
+            | "name"
+            | "ref"
+            | "maxweight"
+            | "maxaxleload"
+            | "maxbogieweight"
+            | "maxheight"
+            | "maxwidth"
+            | "maxlength"
+            | "toll"
+            | "route"
+            | "ferry"
+            | "bridge"
+            | "surface"
+            | "motor_vehicle"
+            | "access"
+            | "foot"
+            | "bicycle"
+            | "motor_vehicle:conditional"
+            | "access:conditional"
+            | "maxspeed:conditional"
+    )
+}
+
+fn filter_way_tags(tags: HashMap<String, String>) -> HashMap<String, String> {
+    tags.into_iter().filter(|(k, _)| keep_way_tag(k)).collect()
+}
+
+fn filter_barrier_tags(tags: HashMap<String, String>) -> HashMap<String, String> {
+    tags.into_iter()
+        .filter(|(k, _)| {
+            matches!(
+                k.as_str(),
+                "barrier" | "access" | "motor_vehicle" | "foot" | "bicycle"
+            )
+        })
+        .collect()
+}
+
+#[derive(Serialize, Deserialize)]
+struct SpilledWay {
+    id: i64,
+    nodes: Vec<i64>,
+    tags: Vec<(String, String)>,
+}
+
+impl SpilledWay {
+    fn from_raw(id: i64, nodes: Vec<i64>, tags: HashMap<String, String>) -> Self {
+        Self {
+            id,
+            nodes,
+            tags: tags.into_iter().collect(),
+        }
+    }
+
+    fn into_raw(self) -> RawWay {
+        RawWay {
+            id: self.id,
+            nodes: self.nodes,
+            tags: self.tags.into_iter().collect(),
+        }
+    }
+}
+
+struct TempSpill {
+    path: PathBuf,
+}
+
+impl TempSpill {
+    fn create(dir: &Path, label: &str) -> anyhow::Result<(Self, BufWriter<std::fs::File>)> {
+        let path = dir.join(format!(
+            "navi-{}-{}-{}.bin",
+            label,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0)
+        ));
+        let file = std::fs::File::create(&path)?;
+        Ok((Self { path }, BufWriter::new(file)))
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempSpill {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn write_spilled_way(w: &mut impl Write, way: &SpilledWay) -> anyhow::Result<()> {
+    let bytes = bincode::serialize(way).map_err(|e| anyhow::anyhow!("spill serialize: {e}"))?;
+    let len = u32::try_from(bytes.len()).map_err(|_| anyhow::anyhow!("spill way too large"))?;
+    w.write_all(&len.to_le_bytes())?;
+    w.write_all(&bytes)?;
+    Ok(())
+}
+
+fn read_spilled_way(r: &mut impl Read) -> anyhow::Result<Option<SpilledWay>> {
+    let mut len_buf = [0u8; 4];
+    match r.read_exact(&mut len_buf) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(e) => return Err(e.into()),
+    }
+    let len = u32::from_le_bytes(len_buf) as usize;
+    let mut bytes = vec![0u8; len];
+    r.read_exact(&mut bytes)?;
+    let way =
+        bincode::deserialize(&bytes).map_err(|e| anyhow::anyhow!("spill deserialize: {e}"))?;
+    Ok(Some(way))
 }
 
 fn in_bbox(lat: f64, lon: f64, bbox: [f64; 4]) -> bool {
@@ -143,10 +276,11 @@ impl RouteGraph {
                 let Element::Way(way) = element else {
                     return;
                 };
-                let tags: HashMap<String, String> = way
-                    .tags()
-                    .map(|(k, v)| (k.to_string(), v.to_string()))
-                    .collect();
+                let tags = filter_way_tags(
+                    way.tags()
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect(),
+                );
                 let Some(highway) = tags.get("highway") else {
                     return;
                 };
@@ -188,7 +322,7 @@ impl RouteGraph {
                             .map(|(k, v)| (k.to_string(), v.to_string()))
                             .collect();
                         if tags.contains_key("barrier") {
-                            barrier_tags.insert(n.id(), tags);
+                            barrier_tags.insert(n.id(), filter_barrier_tags(tags));
                         }
                     }
                 }
@@ -200,7 +334,7 @@ impl RouteGraph {
                             .map(|(k, v)| (k.to_string(), v.to_string()))
                             .collect();
                         if tags.contains_key("barrier") {
-                            barrier_tags.insert(n.id(), tags);
+                            barrier_tags.insert(n.id(), filter_barrier_tags(tags));
                         }
                     }
                 }
@@ -222,24 +356,29 @@ impl RouteGraph {
     /// three × tile count). Invokes `on_tile` as each tile graph is ready so
     /// callers can write+drop without retaining every tile in RAM.
     ///
-    /// Way-first (not node-first): only highway-referenced nodes are retained,
-    /// so region extracts do not materialize every OSM node into a mask map
-    /// (that path OOMs on ~4GB tablets). Ways are shared across tiles via
-    /// [`Arc`]. `tiles` entries are `(row, col, logical_bbox)`.
+    /// Way-first (not node-first): only highway-referenced nodes are retained.
+    /// Filtered ways are **spilled to a tempfile** during Pass 1 so the process
+    /// does not hold every highway + full tag map in RAM (that OOMs ~4GB tablets
+    /// before any tile write). After Pass 2, ways are assigned into per-tile
+    /// spill files, then each tile is built+written and dropped. `tiles` entries
+    /// are `(row, col, logical_bbox)`.
     pub fn build_tiled_from_pbf(
         path: impl AsRef<Path>,
         profile: RoutingProfile,
         tiles: &[(usize, usize, [f64; 4])],
         pad_deg: f64,
+        spill_dir: impl AsRef<Path>,
         mut on_tile: impl FnMut(usize, usize, [f64; 4], Self) -> anyhow::Result<()>,
     ) -> anyhow::Result<usize> {
         let path = path.as_ref();
+        let spill_dir = spill_dir.as_ref();
         if tiles.is_empty() {
             anyhow::bail!("no tiles");
         }
         if tiles.len() > 64 {
             anyhow::bail!("tile grid exceeds u64 bitmask capacity ({})", tiles.len());
         }
+        std::fs::create_dir_all(spill_dir)?;
         let expanded: Vec<[f64; 4]> = tiles
             .iter()
             .map(|(_, _, b)| {
@@ -252,21 +391,27 @@ impl RouteGraph {
             })
             .collect();
 
-        // Pass 1: profile highways only (region PBFs are already clipped).
+        // Pass 1: profile highways only — spill filtered ways; keep node-id set.
         crate::download::progress::set(0, Some(4), "Indexed maps: tiling roads…");
-        let mut ways: Vec<RawWay> = Vec::new();
+        let (ways_spill, mut ways_writer) = TempSpill::create(spill_dir, "tiled-ways")?;
         let mut needed: HashSet<i64> = HashSet::new();
+        let mut way_count = 0u64;
+        let write_err = std::cell::RefCell::new(None::<String>);
         {
             let file = std::fs::File::open(path)?;
             let reader = ElementReader::new(file);
             reader.for_each(|element| {
+                if write_err.borrow().is_some() {
+                    return;
+                }
                 let Element::Way(way) = element else {
                     return;
                 };
-                let tags: HashMap<String, String> = way
-                    .tags()
-                    .map(|(k, v)| (k.to_string(), v.to_string()))
-                    .collect();
+                let tags = filter_way_tags(
+                    way.tags()
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect(),
+                );
                 let Some(highway) = tags.get("highway") else {
                     return;
                 };
@@ -280,15 +425,26 @@ impl RouteGraph {
                 for id in &refs {
                     needed.insert(*id);
                 }
-                ways.push(RawWay {
-                    id: way.id(),
-                    nodes: refs,
-                    tags,
-                });
+                let spilled = SpilledWay::from_raw(way.id(), refs, tags);
+                if let Err(e) = write_spilled_way(&mut ways_writer, &spilled) {
+                    *write_err.borrow_mut() = Some(e.to_string());
+                    return;
+                }
+                way_count += 1;
             })?;
         }
+        if let Some(e) = write_err.into_inner() {
+            anyhow::bail!("spill ways: {e}");
+        }
+        ways_writer
+            .flush()
+            .map_err(|e| anyhow::anyhow!("spill flush: {e}"))?;
+        drop(ways_writer);
+        if way_count == 0 {
+            anyhow::bail!("tiled graph empty for profile {profile:?} (no ways)");
+        }
 
-        // Pass 2: coords + barrier tags for highway-referenced nodes.
+        // Pass 2: coords + compact barrier tags for highway-referenced nodes.
         crate::download::progress::set(1, Some(4), "Indexed maps: tiling geometry…");
         let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
         let mut barrier_tags: HashMap<i64, HashMap<String, String>> = HashMap::new();
@@ -304,7 +460,7 @@ impl RouteGraph {
                             .map(|(k, v)| (k.to_string(), v.to_string()))
                             .collect();
                         if tags.contains_key("barrier") {
-                            barrier_tags.insert(n.id(), tags);
+                            barrier_tags.insert(n.id(), filter_barrier_tags(tags));
                         }
                     }
                 }
@@ -316,7 +472,7 @@ impl RouteGraph {
                             .map(|(k, v)| (k.to_string(), v.to_string()))
                             .collect();
                         if tags.contains_key("barrier") {
-                            barrier_tags.insert(n.id(), tags);
+                            barrier_tags.insert(n.id(), filter_barrier_tags(tags));
                         }
                     }
                 }
@@ -325,39 +481,68 @@ impl RouteGraph {
         }
         drop(needed);
 
+        // Assign spilled ways into per-tile spill files (still streaming; no
+        // region-wide Vec<RawWay> in RAM).
         crate::download::progress::set(2, Some(4), "Indexed maps: assigning tiles…");
-        let mut tile_ways: Vec<Vec<Arc<RawWay>>> = (0..tiles.len()).map(|_| Vec::new()).collect();
-        for way in ways {
-            let mut mask = 0u64;
-            for id in &way.nodes {
-                let Some(&(lat, lon)) = coords.get(id) else {
+        let mut tile_spills: Vec<TempSpill> = Vec::with_capacity(tiles.len());
+        let mut tile_writers: Vec<BufWriter<std::fs::File>> = Vec::with_capacity(tiles.len());
+        for i in 0..tiles.len() {
+            let (spill, w) = TempSpill::create(spill_dir, &format!("tiled-t{i}"))?;
+            tile_spills.push(spill);
+            tile_writers.push(w);
+        }
+        let mut tile_way_counts = vec![0u64; tiles.len()];
+        {
+            let file = std::fs::File::open(ways_spill.path())?;
+            let mut reader = BufReader::new(file);
+            while let Some(way) = read_spilled_way(&mut reader)? {
+                let mut mask = 0u64;
+                for id in &way.nodes {
+                    let Some(&(lat, lon)) = coords.get(id) else {
+                        continue;
+                    };
+                    for (i, bb) in expanded.iter().enumerate() {
+                        if in_bbox(lat, lon, *bb) {
+                            mask |= 1u64 << i;
+                        }
+                    }
+                }
+                if mask == 0 {
                     continue;
-                };
-                for (i, bb) in expanded.iter().enumerate() {
-                    if in_bbox(lat, lon, *bb) {
-                        mask |= 1u64 << i;
+                }
+                for (i, writer) in tile_writers.iter_mut().enumerate() {
+                    if mask & (1u64 << i) != 0 {
+                        write_spilled_way(writer, &way)?;
+                        tile_way_counts[i] += 1;
                     }
                 }
             }
-            if mask == 0 {
-                continue;
-            }
-            let raw = Arc::new(way);
-            for (i, bucket) in tile_ways.iter_mut().enumerate() {
-                if mask & (1u64 << i) != 0 {
-                    bucket.push(Arc::clone(&raw));
-                }
-            }
         }
+        for w in &mut tile_writers {
+            w.flush()?;
+        }
+        drop(tile_writers);
+        drop(ways_spill);
 
         crate::download::progress::set(3, Some(4), "Indexed maps: writing tile graphs…");
         let mut produced = 0usize;
+        let mut remaining_counts = tile_way_counts.clone();
         for (i, (row, col, logical)) in tiles.iter().enumerate() {
-            let ways = std::mem::take(&mut tile_ways[i]);
-            if ways.is_empty() {
-                retain_coords_for_remaining_tiles(&mut coords, &tile_ways, i + 1);
+            remaining_counts[i] = 0;
+            if tile_way_counts[i] == 0 {
+                retain_coords_for_remaining_counts(&mut coords, &remaining_counts, &tile_spills)?;
                 continue;
             }
+            let mut ways: Vec<Arc<RawWay>> = Vec::with_capacity(tile_way_counts[i] as usize);
+            {
+                let file = std::fs::File::open(tile_spills[i].path())?;
+                let mut reader = BufReader::new(file);
+                while let Some(way) = read_spilled_way(&mut reader)? {
+                    ways.push(Arc::new(way.into_raw()));
+                }
+            }
+            // Free this tile's spill before building the graph.
+            let _ = std::fs::remove_file(tile_spills[i].path());
             match graph_from_raw_ways(&ways, &coords, profile, &barrier_tags) {
                 Ok(g) if !g.edges.is_empty() => {
                     on_tile(*row, *col, *logical, g)?;
@@ -366,7 +551,7 @@ impl RouteGraph {
                 _ => {}
             }
             drop(ways);
-            retain_coords_for_remaining_tiles(&mut coords, &tile_ways, i + 1);
+            retain_coords_for_remaining_counts(&mut coords, &remaining_counts, &tile_spills)?;
         }
         if produced == 0 {
             anyhow::bail!("tiled graph empty for profile {profile:?}");
@@ -375,24 +560,30 @@ impl RouteGraph {
     }
 }
 
-fn retain_coords_for_remaining_tiles(
+fn retain_coords_for_remaining_counts(
     coords: &mut HashMap<i64, (f64, f64)>,
-    tile_ways: &[Vec<Arc<RawWay>>],
-    from: usize,
-) {
-    if from >= tile_ways.len() {
+    remaining_counts: &[u64],
+    tile_spills: &[TempSpill],
+) -> anyhow::Result<()> {
+    if remaining_counts.iter().all(|&c| c == 0) {
         coords.clear();
-        return;
+        return Ok(());
     }
     let mut keep: HashSet<i64> = HashSet::new();
-    for ways in &tile_ways[from..] {
-        for w in ways {
-            for id in &w.nodes {
-                keep.insert(*id);
+    for (i, &count) in remaining_counts.iter().enumerate() {
+        if count == 0 {
+            continue;
+        }
+        let file = std::fs::File::open(tile_spills[i].path())?;
+        let mut reader = BufReader::new(file);
+        while let Some(way) = read_spilled_way(&mut reader)? {
+            for id in way.nodes {
+                keep.insert(id);
             }
         }
     }
     coords.retain(|id, _| keep.contains(id));
+    Ok(())
 }
 
 fn graph_from_raw_ways(

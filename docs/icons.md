@@ -27,7 +27,10 @@ Android also keeps three **separate** icon roles (do not conflate them):
 
 Splash theme: `Theme.Navi.Splash` (`values/themes.xml`) with white
 `splash_background` and `androidx.core:core-splashscreen` via
-`installSplashScreen()` in `MainActivity` (covers pre-API-31).
+`installSplashScreen()` in `MainActivity` (covers pre-API-31). Normal launches
+dismiss the splash on the first Compose frame and **never hold it longer than
+2 seconds** (MapLibre / map UI load after that frame). Capture hold remains
+`am start … --ez navi_keep_splash true`.
 
 ## Android lean pack (release-path)
 

@@ -67,8 +67,9 @@ POIs use `amenity-*`, `tourism-*`, `leisure-*`, etc. via `osm_icon_key` in
 `core/src/poi/icons.rs`. See [`icons.md`](icons.md).
 
 That index is for **rest / nearby planning**, not the visual basemap. Offline
-Protomaps labels `shop=alcohol` as `pois.kind=alcohol` (z16+, `townspot` icon)
-once the style allow-list includes that kind — [`map-styles.md`](map-styles.md).
+Protomaps labels `shop=alcohol` as `pois.kind=alcohol` (z16+, dedicated
+`alcohol` sprite) once the style allow-list includes that kind —
+[`map-styles.md`](map-styles.md), [`poi-icon-whitelist.md`](poi-icon-whitelist.md).
 
 ## Adding a POI category (example: fishing)
 

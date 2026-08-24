@@ -446,6 +446,11 @@ impl RouteGraph {
         }
     }
 
+    /// Rebuild adjacency after hard edge removal (bike suitability, etc.).
+    pub fn rebuild_after_edge_filter(&mut self) {
+        self.rebuild_adjacency();
+    }
+
     fn rebuild_adjacency(&mut self) {
         self.adjacency.clear();
         self.incident.clear();

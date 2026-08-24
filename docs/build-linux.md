@@ -15,7 +15,7 @@ Debugging loops: [`debugging.md`](debugging.md).
 Plugin build details: [`plugins.md`](plugins.md).  
 Map styles / offline PMTiles: [`map-styles.md`](map-styles.md).  
 gpsd / IMU on Linux: see [Sensors](#sensors-on-linux-gpsd--imu) below and
-[`imu-calibration.md`](imu-calibration.md).  
+[`imu-plugin.md`](plugins/imu-plugin.md).  
 ADB / device install from Linux: [Android Debug Bridge (adb)](#android-debug-bridge-adb).  
 macOS host: [`build-macos.md`](build-macos.md).  
 Windows host: [`build-windows.md`](build-windows.md).
@@ -599,7 +599,7 @@ Linux they should consume **real** gpsd course and/or IMU heading through the
 same rotation-mode wiring (`SensorBus` → host map bearing).
 
 Vehicle mounting pitch/roll zeroing for eco elevation correction is a **deferred**
-feature — see [`imu-calibration.md`](imu-calibration.md).
+feature — see [`imu-plugin.md`](plugins/imu-plugin.md).
 
 With a live gpsd and optional `--demo-imu`, `navi-linux` prints POS (course) and
 IMU (heading) lines — the same bus `navi-desktop` polls for the position marker.

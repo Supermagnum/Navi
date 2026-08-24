@@ -235,7 +235,11 @@ Wetland **names** are likewise `pois` points (`kind=wetland`, ~z12); wetland
 geometry filters are unchanged (shard fix stays labeling-orthogonal). The
 `pois` layer keeps a **per-kind** zoom floor (`glacier`/`wetland` → 12,
 `townhall` → 15, everything else → 16) so enabling those labels does not pull
-schools/fuel/etc. down to z12. Glacier labels use cooler text (`#406060`);
+schools/fuel/etc. down to z12. Peak/hill labels append OSM elevation when the
+tile carries it: Protomaps exposes numeric `elevation` (metres), not `ele`.
+The template prints metres; `BasemapPeakElevationStyle` rewrites feet for
+`UnitSystem.IMPERIAL_US` (UK stays metres, same as HUD altitude). Glacier
+labels use cooler text (`#406060`);
 wetland `#3d5c3d`; both omit icons. Lake/river labels use italic `#2a5a78` so
 they read apart from town and peak names.
 
@@ -245,9 +249,11 @@ not classified as a `pois` kind (amenity/shop/townhall/…) are **not** in the
 `pois` layer and will not get labels from this whitelist. Fixing those would
 need a separate, larger schema/style change. `kind=building` was checked in
 Hamar/Gjøvik z12–15 tiles and was empty there — not added to the whitelist.
-OpenFreeMap Liberty has **no** `mountain_peak` layer; some peaks appear only
-when present in OMT `poi` ranks (e.g. Galdhøpiggen) and may be missing online
-(e.g. Elgpiggen) even when offline Protomaps shows them.
+OpenFreeMap Liberty **tiles** include OpenMapTiles `mountain_peak` (`ele` /
+`ele_ft`); upstream Liberty JSON does not bind that layer. Navi adds
+`mountain_peak_label` at runtime (`BasemapPeakElevationStyle`) so named peaks
+such as Galdhøpiggen and Elgpiggen can show height online. Offline Protomaps
+peaks remain `pois.kind=peak` / `hill`.
 
 **Liberty glacier names:** OpenFreeMap Liberty / OpenMapTiles expose ice only as
 `landcover` fill (`landcover_ice`) with **no** named glacier POI/label path —
@@ -260,8 +266,9 @@ gap. Navi cannot fix this in style JSON; offline Protomaps is the path that
 labels wetlands. Liberty lake/river labels (`water_name_*_label`,
 `waterway_line_label`) already exist upstream and are left as-is.
 
-Sprites: kinds without a matching icon (e.g. `fuel`, `alcohol`, vehicle-repair
-kinds) fall back to `townspot`.
+Sprites: every kind currently on the offline `pois` whitelist has a dedicated
+(or shared) atlas key — see [`poi-icon-whitelist.md`](poi-icon-whitelist.md).
+`townspot` is the `icon-image` default for unknown kinds only.
 Match filters must not duplicate labels (MapLibre rejects the layer with
 `Branch labels must be unique`).
 
@@ -506,8 +513,8 @@ Navi’s `landuse` fill `match` was incomplete.
 
 **Liberty:** OpenFreeMap Liberty has **no** military landuse layer (upstream
 omission). Navi does **not** add one — deliberate, not a bug fix. Glaciers
-already use Liberty `landcover_ice` (`class=ice` / `subclass=glacier`); leave
-that path alone.
+already use Liberty `landcover_ice` (`class=ice` / `subclass=glacier`); Navi
+adds a teal dashed `landcover_ice_outline` for edge visibility.
 
 Evidence: `MilitaryGlacierLanduseScreenshotTest` (Rena leir way `962221904`;
 Gjende glacier way `380644665`). On-device captures (SM-P613):
@@ -522,3 +529,7 @@ not these tiles — see README known issues (PBF/PMTiles skew) and
 Glacier **names** are a separate fix on the `pois` symbol layer (`kind=glacier`
 from ~z12) — see [Basemap road names and amenity POIs](#basemap-road-names-and-amenity-pois-zoom-ladder).
 Do not label `landuse`/`landcover` glacier fills (no `name` property).
+Dashed glacier outlines (`landcover_glacier_outline` / `landuse_glacier_outline`,
+and Liberty `landcover_ice_outline`) use teal `#2a6e70` and the same
+`line-dasharray` `[2, 1.5]` as nature reserves, so ice edges stay visible
+without looking like a park boundary.

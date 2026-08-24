@@ -13,12 +13,17 @@
 //! in [`builder`] without changing elevation or rest logic.
 
 mod bbox_build;
+mod bike_suitability;
 mod builder;
 mod cache;
 mod network_pref;
 mod reweight;
 mod road_near;
 
+pub use bike_suitability::{
+    apply_bike_suitability, apply_bike_suitability_from_pbf, load_way_terrain_tags,
+    tags_unsuitable_for, way_id_from_edge_id, BikeCapability,
+};
 pub use builder::{
     append_seasonal_closure_report, format_route_avoidance_report, highway_is_motorway,
     max_waypoint_snap_m, GraphEdge, RouteGraph, RouteOptions, RoutingProfile, SnapTooFar,

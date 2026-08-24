@@ -466,8 +466,8 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
         // ~1° cells keep a single Ostlandet tile well under ~1 GB host RSS.
         let tiles = tile_grid(region_bbox, 1.0);
         // POI / barrier / wetland are extracted once below — not per profile.
-        // Graph tiling uses 3 PBF passes per profile (shared across all tiles),
-        // not 3 passes × tile count (the previous multi-hour path).
+        // Graph tiling: 2 PBF passes per profile with ways spilled to data_dir,
+        // then one tile built+written at a time (avoids LMK before first .rkyv).
         let total_steps = (build_profiles.len() + 3) as u64;
         for (pi, profile) in build_profiles.iter().enumerate() {
             if opts.control.is_cancelled() {
@@ -485,6 +485,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
                 *profile,
                 &tiles,
                 0.05,
+                &opts.data_dir,
                 |row, col, logical, graph| {
                     nodes = graph.nodes.len().max(nodes);
                     edges = graph.edges.len().max(edges);

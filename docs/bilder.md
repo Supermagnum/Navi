@@ -14,8 +14,9 @@ som skal vise grunnkart-ikoner ved zoom ≥ **16** kan også bruke
 `pendingCamera` / `GalleryPeakPoiRetakeScreenshotTest`.
 
 Grunnkart-ameniteter/topper (ikke [`poi.md`](poi.md) PoiIndex) krever zoom ≥
-**16**. Liberty mangler `mountain_peak`; noen topper (f.eks. Elgpiggen) synes
-på frakoblet Protomaps men ikke online Liberty.
+**16**. OpenFreeMap Liberty-fliser har `mountain_peak` (`ele`); Navi binder
+det laget ved kjøring slik at navngitte topper kan vise høyde både online og
+frakoblet.
 
 ## GitHub-tillatelsesliste (plass)
 

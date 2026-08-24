@@ -982,6 +982,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1088,6 +1092,8 @@ fun uniffi_navi_checksum_func_live_hazards_road_signs_json(
 fun uniffi_navi_checksum_func_live_hazards_speed_cameras_json(
 ): Short
 fun uniffi_navi_checksum_func_live_speed_limit_cone_json(
+): Short
+fun uniffi_navi_checksum_func_load_bike_capability(
 ): Short
 fun uniffi_navi_checksum_func_load_car_rest_settings(
 ): Short
@@ -1198,6 +1204,8 @@ fun uniffi_navi_checksum_func_routing_worker_count(
 fun uniffi_navi_checksum_func_run_car_corridor_pipeline(
 ): Short
 fun uniffi_navi_checksum_func_run_car_corridor_smoke_test(
+): Short
+fun uniffi_navi_checksum_func_save_bike_capability(
 ): Short
 fun uniffi_navi_checksum_func_save_car_rest_settings(
 ): Short
@@ -1426,6 +1434,8 @@ fun uniffi_navi_fn_func_live_hazards_speed_cameras_json(uniffi_out_err: UniffiRu
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_live_speed_limit_cone_json(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`headingDeg`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`currentLimitKmh`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_load_bike_capability(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_car_rest_settings(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_ebike_config(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1536,6 +1546,8 @@ fun uniffi_navi_fn_func_run_car_corridor_pipeline(`pbfPath`: RustBuffer.ByValue,
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_run_car_corridor_smoke_test(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`breakIntervalHours`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_save_bike_capability(`dataDir`: RustBuffer.ByValue,`capability`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_save_car_rest_settings(`dataDir`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_save_ebike_config(`dataDir`: RustBuffer.ByValue,`config`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1850,6 +1862,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_live_speed_limit_cone_json() != 55807.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_load_bike_capability() != 13032.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_load_car_rest_settings() != 14933.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2013,6 +2028,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_run_car_corridor_smoke_test() != 48155.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_save_bike_capability() != 28948.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_save_car_rest_settings() != 64488.toShort()) {
@@ -4858,6 +4876,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
+
+        /**
+         * Bicycle / electric-cycle terrain capability: `road`, `trekking`, or `mountain`.
+         */ fun `loadBikeCapability`(`dataDir`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_load_bike_capability(
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
  fun `loadCarRestSettings`(`dataDir`: kotlin.String): FfiCarRestSettings {
             return FfiConverterTypeFfiCarRestSettings.lift(
     uniffiRustCall() { _status ->
@@ -5491,6 +5521,15 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_run_car_corridor_smoke_test(
         FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`elevDir`),FfiConverterDouble.lower(`breakIntervalHours`),_status)
+}
+    )
+    }
+    
+ fun `saveBikeCapability`(`dataDir`: kotlin.String, `capability`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_save_bike_capability(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`capability`),_status)
 }
     )
     }

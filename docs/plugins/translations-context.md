@@ -102,7 +102,7 @@ These are easy to mistranslate. Use the **Navi sense**.
 | **Country-scale** | Whole-country Geofabrik extracts (heavy on low-RAM devices). | Political “scale” |
 | **Custom** | User-supplied values / URL / path. | Customs border |
 | **Desired** | Preferred hours between breaks (car comfort), not law. | Romantic desire |
-| **Diagnostic** / **Diagnostics** | Optional **session logging** and export under Tools (**Diagnostic logging** debug toggle). | Medical diagnosis |
+| **Diagnostic** / **Diagnostics** | Optional **session logging** and export under Tools (**Diagnostic logging** debug toggle). Check session logs for `pack_hit=false` when planning feels extremely slow. | Medical diagnosis |
 | **Download** / **Downloading** | Fetching PBF / PMTiles / DEM (user-started, never silent OSM weekly download). | Generic app store |
 | **Drive** | **Drive / vehicle settings** panel (bottom bar), not “USB drive”. | Hard disk; motivation |
 | **Eco** | **Eco mode / eco routing**: hill-aware energy / effort costing. Locked on for hiking/cycling. | Generic “ecology” label without routing sense |

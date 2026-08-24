@@ -3,7 +3,7 @@ package no.navi.app
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -18,21 +18,28 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * Non-blocking indexed-map conversion. Region PBF remains usable via bbox/PBF
  * fallback until packs become `ready`; pack-hit engages automatically after.
+ *
+ * Uses a **process-scoped** [CoroutineScope] (same pattern as [PlaceIndexBackground])
+ * so conversion survives Compose recomposition / Activity recreation. It does
+ * **not** use WorkManager: a force-stop or process death still kills the job.
+ * There is no on-disk checkpoint — convert restarts from scratch on next
+ * [ensureStarted], after deleting prior `{stem}.navi-graph-*.rkyv` at the
+ * beginning of a tiled rebuild (see core `convert_region_packs`).
  */
 object IndexedMapsBackground {
     private const val TAG = "IndexedMapsBg"
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
     private val running = AtomicBoolean(false)
     private val lastStatus = AtomicReference("idle")
-    private var job: Job? = null
 
     fun isRunning(): Boolean = running.get()
 
     fun statusLine(): String = lastStatus.get()
 
     /**
-     * Passive progress for Tools (passive). Empty when idle and packs are ready.
+     * Tools status line. Empty when idle and packs are ready.
      */
     fun uiLine(
         pbf: File?,
@@ -74,50 +81,72 @@ object IndexedMapsBackground {
     /**
      * Start conversion if packs are not ready. Returns immediately; does not block.
      * No-op if already running or packs already ready.
+     *
+     * @param scope unused; kept for call-site compatibility. Work runs on the
+     *   process-scoped scope so Compose cancellation cannot abort convert.
      */
+    @Suppress("UNUSED_PARAMETER")
     fun ensureStarted(
         scope: CoroutineScope,
         pbf: File,
         dataDir: File,
         elevDir: File? = null,
     ) {
+        ensureStarted(pbf, dataDir, elevDir)
+    }
+
+    fun ensureStarted(
+        pbf: File,
+        dataDir: File,
+        elevDir: File? = null,
+    ) {
         if (!pbf.isFile) return
-        scope.launch(Dispatchers.IO) {
-            mutex.withLock {
-                if (running.get()) return@withLock
-                val st = indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath).trim()
-                if (st == "ready") {
-                    lastStatus.set("ready")
-                    return@withLock
-                }
-                running.set(true)
-                lastStatus.set("starting ($st)")
-                Log.i(TAG, "start ensureIndexedMaps status=$st pbf=${pbf.name}")
-                job =
-                    launch(Dispatchers.IO) {
-                        try {
-                            downloadProgressClear()
-                            val report =
-                                ensureIndexedMaps(
-                                    pbf.absolutePath,
-                                    dataDir.absolutePath,
-                                    elevDir?.takeIf { it.isDirectory }?.absolutePath,
-                                )
-                            lastStatus.set(
-                                if (report.contains("PASS")) {
-                                    "done"
-                                } else {
-                                    "failed"
-                                },
-                            )
-                            Log.i(TAG, "finished: $report")
-                        } catch (t: Throwable) {
-                            lastStatus.set("failed: ${t.message}")
-                            Log.e(TAG, "ensureIndexedMaps crashed", t)
-                        } finally {
-                            running.set(false)
-                        }
+        this.scope.launch {
+            val shouldRun =
+                mutex.withLock {
+                    if (running.get()) {
+                        return@withLock false
                     }
+                    val st =
+                        runCatching {
+                            indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath).trim()
+                        }.getOrElse {
+                            Log.e(TAG, "indexedMapsStatus failed", it)
+                            "error"
+                        }
+                    if (st == "ready") {
+                        lastStatus.set("ready")
+                        Log.i(TAG, "packs ready; skip convert pbf=${pbf.name}")
+                        return@withLock false
+                    }
+                    running.set(true)
+                    lastStatus.set("starting ($st)")
+                    Log.i(TAG, "start ensureIndexedMaps status=$st pbf=${pbf.name}")
+                    true
+                }
+            if (!shouldRun) return@launch
+            // Convert outside the mutex so status polls can observe [isRunning].
+            try {
+                downloadProgressClear()
+                val report =
+                    ensureIndexedMaps(
+                        pbf.absolutePath,
+                        dataDir.absolutePath,
+                        elevDir?.takeIf { it.isDirectory }?.absolutePath,
+                    )
+                lastStatus.set(
+                    if (report.contains("PASS")) {
+                        "done"
+                    } else {
+                        "failed"
+                    },
+                )
+                Log.i(TAG, "finished: $report")
+            } catch (t: Throwable) {
+                lastStatus.set("failed: ${t.message}")
+                Log.e(TAG, "ensureIndexedMaps crashed", t)
+            } finally {
+                running.set(false)
             }
         }
     }

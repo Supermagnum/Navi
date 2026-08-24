@@ -78,6 +78,7 @@ plan routes on the device without needing the internet for every trip.
 It can:
 
 - Plan routes for car, bicycle, e-bike, hiking, motorcycle, truck, and motorhome
+- For bicycle / e-bike, pick **Road / Gravel / MTB** so unsuitable tracks are skipped
 - Prefer gentler / less energy-hungry roads when **eco mode** is on (hills matter)
 - Suggest rest stops and overnight places along longer trips
 - Respect truck driving-time rules where it knows the country rules
@@ -113,6 +114,10 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **E-bike specs** | Battery size, motor torque, and wheel size help estimate battery use and steep climbs. Live cable telemetry is planned later. | Done (planning); live data later |
 | **Avoidances** | You can ask to avoid motorways (not trunk/primary), tolls, or ferries. | Done |
 | **Official trails** | For hiking/cycling, optionally prefer marked long-distance trails (off by default). Normal paths still work if the marked trail has a gap. | Done |
+| **Bike surface suitability** | Bicycle / e-bike Drive setting: **Road / Gravel / MTB**. Unsuitable OSM surfaces and tracks are hard-excluded after the graph loads (does not rebuild packs). Default is Gravel (trekking). | Done |
+| **Basemap POI icons** | Offline Protomaps amenity icons (fuel, hospital, alcohol shops, cycle/repair, and the rest of the allow-list) use dedicated sprites, not a generic dot. Kind list: [`docs/poi-icon-whitelist.md`](docs/poi-icon-whitelist.md). | Done |
+| **Peak heights** | Named mountain peaks show OSM elevation on the label (metres, or feet in the US unit profile — UK stays metres, same as HUD altitude). | Done |
+| **Glacier outlines** | Ice polygons get a teal dashed outline so they stay visible against pale fill (same dash as nature reserves, different colour). | Done |
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. A small leaf icon shows when eco is on. | Done |
 | **Offline planning** | Download a region once, then plan and see the route on the device. | Done |
 | **Indexing** | After a region download, a background job turns the OSM extract into compact routing packs so later plans are fast. You can plan while it runs. | Done |
@@ -165,6 +170,16 @@ After the region file is on disk, Navi **indexes** it in the background so later
 plans are fast — see [Indexing (background after download)](#indexing-background-after-download).
 
 ## Indexing (background after download)
+
+**Be patient — this takes time.** After you **download a new region** or **update
+map data from the internet** (for example **Check for OSM updates** or a fresh
+region download), Navi must build two things from the OpenStreetMap extract:
+the **place index** (search names for From / Via / To) and, in the background,
+the **indexed routing packs**. Both scan the full region file and can run for
+many minutes on a large extract (Østlandet on a tablet is often on the order of
+tens of minutes, sometimes longer). That is expected; leave the app open or
+return to it later. You can still plan routes while work continues — planning
+is just slower until indexing finishes.
 
 When **Download region + build place index** has saved the OpenStreetMap
 extract, Navi starts a **background indexing** job. That is not the map picture
@@ -334,6 +349,7 @@ display choices in app preferences).
 | Setting | Plain meaning |
 |---|---|
 | **Travel mode** | Car, bike, hiking, truck, … |
+| **Bike type** | Bicycle / e-bike: **Road / Gravel / MTB** surface capability (hard-excludes unsuitable tracks) |
 | **Follow official hiking/cycling networks** | Hiking / bicycle / e-bike: soft preference for waymarked networks (ordinary paths still usable) |
 | **Use networked cabins** | Hiking / bicycle / e-bike: allow DNT/STF-style **network** huts as auto-via / waypoint candidates (off by default). Does **not** change overnight membership rules |
 | **Network hut member (DNT/STF/…)** | Hiking only: when on, overnight may prefer network huts; when off (default), prefer non-network cabins and flag network stops as membership-required |
@@ -535,6 +551,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/pictures.md`](docs/pictures.md) / [`docs/bilder.md`](docs/bilder.md) | Screenshot galleries |
 | [`docs/icons.md`](docs/icons.md) | Where icon files live, licensing, and how to add SVGs |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online vs offline map look; 3D |
+| [`docs/poi-icon-whitelist.md`](docs/poi-icon-whitelist.md) | Which offline POI kinds draw, and which shop kinds are held back |
 | [`docs/poi.md`](docs/poi.md) | Place types and search |
 | [How to use Navi](docs/how-to-use.md) | End-user how-to (planning, Tools, breaks, saved places/routes, profiles) |
 | [`docs/road-signs.md`](docs/road-signs.md) | Norwegian road-sign catalogue, children-zone proximity, Look forward (300 m cone), approach phases |
@@ -836,8 +853,11 @@ Country/region visual extracts can also be prepared with
   less free memory at the time conversion starts), remain an open risk. Region
   download and immediate use are unaffected (bbox/PBF fallback works
   immediately regardless); this risk is specific to the background
-  pack-conversion step. Further mitigation (e.g. smaller tile size, trading
-  more wall-clock time for wider memory margin) has not yet been implemented.
+  pack-conversion step. On ~4GB-class devices the tiled graph builder now spills
+  filtered ways to the app data dir and keeps only routing-relevant tags in RAM
+  (instead of holding every highway + full OSM tag map until the first tile),
+  which previously caused LMK with zero `.rkyv` written. Further margin work
+  (e.g. smaller tile cells) may still help on the tightest hardware.
   Cross-ref: [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md)
   and [Minimum hardware and storage](#minimum-hardware-and-storage).
 - **Cold / missing-pack planning is still data-loading-bound; pack-hit is not.**
@@ -849,11 +869,24 @@ Country/region visual extracts can also be prepared with
   Historical pre-pack Car Espa→Atnbrufossen (SM-P613): `plan_duration_ms=26835`
   with `graph_build_ms=17571`, `poi_barrier_ms=8045`, `astar_ms=378` — that
   ~15–27 s class remains the **fallback** when packs are missing, stale, or
-  still converting in the background. `.navigph` deprecated. Region-scale packs
-  now include tiled wetland + overnight buildings (POI/barrier v2): short
-  Atnbrufossen hike on SM-P613 **159 s → ~3.1 s** with `wetland_pack_hit` and
-  `overnight_buildings_pack_hit`. Reproduce stages with Diagnostic logging →
-  `ROUTE_PLAN` / `ROUTE_PLAN_STAGES`
+  still converting in the background. `.navigph` deprecated (ignored on every
+  plan — do not expect `.navigph` files to speed anything up).
+  **Host re-check (release, Ostlandet, 2026-08-24):** without packs, Car
+  Espa→Atnbrufossen ~**54 s** (`graph_build_ms≈29 s` + `poi_barrier_ms≈25 s`,
+  `astar_ms≈0.3 s`, `pack_hit=false` both back-to-back runs); with packs
+  ~**2.7 s** (`pack_hit=true`, `graph_build_ms≈1.5 s`, `poi_barrier_ms≈0.3 s`).
+  Hiking Skolla→Rondvassbu ~**104 s** without packs vs ~**25 s** with packs
+  (`pack_hit` / `wetland_pack_hit` / `poi_pack_hit` true; remaining time is
+  mostly `network_pref_ms` + `wetland_ms` + `multiday_ms`, not A*). Cabin
+  prefs (`use_networked_cabins`) do **not** invalidate the graph cache.
+  Region-scale packs now include tiled wetland + overnight buildings
+  (POI/barrier v2): short Atnbrufossen hike on SM-P613 **159 s → ~3.1 s** with
+  `wetland_pack_hit` and `overnight_buildings_pack_hit`. If planning feels
+  extremely slow across modes, check Diagnostic logging for `pack_hit=false`
+  and use **Tools → Rebuild indexed maps** (or wait for background convert
+  after download). The UI status also warns when a completed plan used the
+  PBF fallback. Reproduce stages with Diagnostic logging → `ROUTE_PLAN` /
+  `ROUTE_PLAN_STAGES`
   ([`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file)).
   See also [`docs/status.md`](docs/status.md).
 - **Rerouting after a detour is not instant.** Off-route (cross-track beyond
@@ -889,8 +922,9 @@ Country/region visual extracts can also be prepared with
   [`docs/poi.md`](docs/poi.md) and [`docs/map-styles.md`](docs/map-styles.md).
 - **Online Liberty has no named glacier labels.** OpenFreeMap Liberty /
   OpenMapTiles expose ice as fill only (`landcover_ice`); there is no glacier
-  POI name path to style. Offline Protomaps labels `pois.kind=glacier` from
-  ~z12. Not a Navi Liberty regression — see [`docs/map-styles.md`](docs/map-styles.md).
+  POI name path to style. Navi adds a dashed ice outline for visibility.
+  Offline Protomaps labels `pois.kind=glacier` from ~z12. Not a Navi Liberty
+  regression — see [`docs/map-styles.md`](docs/map-styles.md).
 - **Pilgrim stamp / credential offices have no stable OSM tag.** Official
   pilgrim centers (pilegrimspass / credencial stamp points) are tagged
   inconsistently: `tourism=information`+`information=office`, bare
@@ -920,10 +954,18 @@ English** when a translation or pack is missing. Spec:
 Do **not** infer UI language from GPS or SIM country. Do not add a language
 toggle until that plugin exists.
 
-Display **units** (metric / US / UK) are shipped (Drive settings). Norwegian
-speed-limit **pictograms** stay official km/h plates; mph *plate artwork* is
-still future (`new-signs/`). Offline Protomaps alcohol-shop labels
-(`pois.kind=alcohol`, z16+) are shipped — see [`docs/map-styles.md`](docs/map-styles.md).
+Display **units** (metric / US / UK) are shipped (Drive settings), including
+peak-height labels on the basemap. Norwegian speed-limit **pictograms** stay
+official km/h plates; mph *plate artwork* is still future (`new-signs/`).
+
+Shipped on the offline basemap (not TODO): alcohol-shop labels, dedicated POI
+sprites for the current allow-list, peak elevations, and dashed glacier
+outlines — [`docs/map-styles.md`](docs/map-styles.md),
+[`docs/poi-icon-whitelist.md`](docs/poi-icon-whitelist.md). Extra dense shop
+kinds (clothes, kiosk, …) stay off the whitelist on purpose.
+
+Bicycle **Road / Gravel / MTB** surface suitability is shipped (Drive
+settings). Live e-bike cable telemetry remains later.
 
 **Historical Norwegian/Norse distance units** as a selectable display option
 (e.g. rast, dagsvei, fjerdingvei), alongside the existing Metric / US / UK

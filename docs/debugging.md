@@ -193,6 +193,13 @@ and native per-stage plan timing is also gated off. Older sessions are rotated
 different stage keys). Useful to confirm planning is PBF-load-bound rather than
 A*-bound — see README [Known issues](../README.md#known-issues).
 
+**Extreme slowness checklist:** if every plan takes tens of seconds across
+modes, look for `pack_hit=false` (and usually large `graph_build_ms` /
+`poi_barrier_ms`) in the session report. That means indexed packs are missing,
+stale, or still converting — A* is typically sub-second. Fix: wait for
+background indexing after download, or **Tools → Rebuild indexed maps**.
+`.navigph` files are deprecated and do not speed plans.
+
 ---
 
 ## 4. Android Studio / breakpoints

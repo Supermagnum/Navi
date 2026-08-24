@@ -11,6 +11,7 @@ import android.location.LocationManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -52,6 +53,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
@@ -74,6 +76,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -158,24 +161,46 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 import android.graphics.Paint as AndroidPaint
 
+/** Max time the cold-start splash may stay up on a normal launch (not capture hold). */
+private const val SPLASH_MAX_HOLD_MS = 2_000L
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // Splash Screen API (androidx.core:core-splashscreen) for API 26–30 compat
         // and native API 31+. Activity theme is Theme.Navi.Splash; post-splash
         // switches to Theme.Navi. Distinct from launcher mipmaps and any notify icon.
         // adb hold for capture: --ez navi_keep_splash true
+        // Normal launches: dismiss as soon as the first frame draws, and never hold
+        // the splash longer than 2s (heavy map init is deferred past that frame).
         val keepSplashForCapture =
             AtomicBoolean(intent?.getBooleanExtra("navi_keep_splash", false) == true)
-        installSplashScreen().setKeepOnScreenCondition { keepSplashForCapture.get() }
+        val splashStartedAtMs = SystemClock.uptimeMillis()
+        val firstFrameDrawn = AtomicBoolean(false)
+        installSplashScreen().setKeepOnScreenCondition {
+            if (keepSplashForCapture.get()) return@setKeepOnScreenCondition true
+            if (firstFrameDrawn.get()) return@setKeepOnScreenCondition false
+            SystemClock.uptimeMillis() - splashStartedAtMs < SPLASH_MAX_HOLD_MS
+        }
         super.onCreate(savedInstanceState)
         applyNaviLaunchExtras(intent)
         runCatching { uniffi.navi.initNativeLogging() }
-        MapLibre.getInstance(this)
         setContent {
+            var showMap by remember { mutableStateOf(false) }
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    NaviMapScreen()
+                    // Cheap first frame so the splash can exit within SPLASH_MAX_HOLD_MS
+                    // even while MapLibre / NaviMapScreen still warm up.
+                    if (showMap) {
+                        NaviMapScreen()
+                    }
                 }
+            }
+            SideEffect {
+                firstFrameDrawn.set(true)
+            }
+            LaunchedEffect(Unit) {
+                MapLibre.getInstance(this@MainActivity)
+                showMap = true
             }
         }
     }
@@ -347,6 +372,24 @@ private fun formatEbikePlanStatus(
     return if (warn != null) "$base\n${warn.take(160)}" else base
 }
 
+/**
+ * When indexed packs are missing/stale, every plan rebuilds from the PBF
+ * (~tens of seconds). Surface that so "extreme slowness" is actionable.
+ */
+private fun indexedPackMissHint(report: String): String? {
+    if (!report.contains("pack_hit=false")) return null
+    return "Slow plan: indexed maps not ready (PBF fallback). " +
+        "Wait for background indexing, or Tools → Rebuild indexed maps."
+}
+
+private fun withIndexedPackMissHint(
+    statusLine: String,
+    report: String,
+): String {
+    val hint = indexedPackMissHint(report) ?: return statusLine
+    return if (statusLine.isBlank()) hint else "$statusLine\n$hint"
+}
+
 private fun userFacingStatus(raw: String): String {
     val t = raw.trim()
     if (t.isEmpty()) return ""
@@ -357,9 +400,11 @@ private fun userFacingStatus(raw: String): String {
         return when {
             t.contains("PASS") && t.contains("distance_km=") -> {
                 val km = Regex("""distance_km=([0-9.]+)""").find(t)?.groupValues?.getOrNull(1)
-                if (km != null) "Route planned · $km km" else "Route planned"
+                val base =
+                    if (km != null) "Route planned · $km km" else "Route planned"
+                withIndexedPackMissHint(base, t)
             }
-            t.contains("PASS") -> "Done"
+            t.contains("PASS") -> withIndexedPackMissHint("Done", t)
             t.lineSequence().any { it.startsWith("FAIL") } ->
                 t
                     .lineSequence()
@@ -444,6 +489,7 @@ private fun NaviMapScreen() {
     var preferOfficialNetworks by remember { mutableStateOf(false) }
     var preferPilgrimRoutes by remember { mutableStateOf(false) }
     var useNetworkedCabins by remember { mutableStateOf(false) }
+    var bikeCapability by remember { mutableStateOf("trekking") }
     var networkHutMember by remember { mutableStateOf(false) }
 
     /** Sticky manual bearing when snap-back is off; cleared by mode chip. */
@@ -979,6 +1025,7 @@ private fun NaviMapScreen() {
         preferOfficialNetworks = uniffi.navi.loadPreferOfficialNetworks(dataDir.absolutePath)
         preferPilgrimRoutes = uniffi.navi.loadPreferPilgrimRoutes(dataDir.absolutePath)
         useNetworkedCabins = uniffi.navi.loadUseNetworkedCabins(dataDir.absolutePath)
+        bikeCapability = uniffi.navi.loadBikeCapability(dataDir.absolutePath)
         networkHutMember = uniffi.navi.loadNetworkHutMember(dataDir.absolutePath)
         NaviMapTestHooks.lastSnapRotationBack = driveHud.snapRotationBackToMode
     }
@@ -1449,7 +1496,7 @@ private fun NaviMapScreen() {
             } else {
                 indexedMapsUiLine = ""
             }
-            delay(if (IndexedMapsBackground.isRunning()) 500 else 2_500)
+            delay(2_500)
         }
     }
 
@@ -2819,6 +2866,7 @@ private fun NaviMapScreen() {
             prefer3d = driveHud.optIn3d,
             cameraTiltDeg = driveHud.cameraTiltDeg,
             vulkanAvailable = driveHud.vulkanAvailable,
+            unitSystem = driveHud.unitSystem,
             styleEpoch = styleEpoch,
             bearingEpoch = bearingApplyEpoch,
             modifier = Modifier.fillMaxSize(),
@@ -3720,12 +3768,6 @@ private fun NaviMapScreen() {
                                             return@launch
                                         }
                                         RoutingPlanLog.complete(result, ecoForPlan, durationMs)
-                                        if (result.offTrailAdvisory.isNotBlank()) {
-                                            status =
-                                                userFacingStatus(result.report)
-                                                    .ifBlank { "Route planned" } +
-                                                " · Off-trail: use judgment (terrain advisory)"
-                                        }
                                         NaviMapTestHooks.routeStartLabel = start.name
                                         NaviMapTestHooks.routeEndLabel = toPoint.name
                                         NaviMapTestHooks.routeViaLabel =
@@ -3735,22 +3777,32 @@ private fun NaviMapScreen() {
                                         // consume the hook and the visible map stays empty.
                                         applyPlannedRoute(result)
                                         prioritySharePct = result.priorityPathSharePct
-                                        status = formatEbikePlanStatus(
-                                            result.report,
-                                            result.distanceKm,
-                                            driveHud.unitSystem,
-                                        )
-                                            ?: (
-                                                formatRouteAvoidanceReport(
-                                                    avoidMotorways,
-                                                    avoidTolls,
-                                                    avoidFerries,
-                                                    prioritySharePct,
-                                                ) + "\n" +
-                                                    DisplayUnits.formatRoutePlanned(
-                                                        result.distanceKm,
-                                                        driveHud.unitSystem,
-                                                    )
+                                        val planStatus =
+                                            formatEbikePlanStatus(
+                                                result.report,
+                                                result.distanceKm,
+                                                driveHud.unitSystem,
+                                            )
+                                                ?: (
+                                                    formatRouteAvoidanceReport(
+                                                        avoidMotorways,
+                                                        avoidTolls,
+                                                        avoidFerries,
+                                                        prioritySharePct,
+                                                    ) + "\n" +
+                                                        DisplayUnits.formatRoutePlanned(
+                                                            result.distanceKm,
+                                                            driveHud.unitSystem,
+                                                        )
+                                                )
+                                        status =
+                                            withIndexedPackMissHint(
+                                                if (result.offTrailAdvisory.isNotBlank()) {
+                                                    "$planStatus · Off-trail: use judgment (terrain advisory)"
+                                                } else {
+                                                    planStatus
+                                                },
+                                                result.report,
                                             )
                                     }
                                 },
@@ -4049,6 +4101,47 @@ private fun NaviMapScreen() {
                                             },
                                             modifier = Modifier.testTag("toggle_use_networked_cabins"),
                                         )
+                                    }
+                                }
+                                if (profile == TravelProfile.BICYCLE ||
+                                    profile == TravelProfile.BICYCLE_ELECTRIC
+                                ) {
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        Text("Bike type (surface suitability)")
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            listOf(
+                                                "road" to "Road",
+                                                "trekking" to "Gravel",
+                                                "mountain" to "MTB",
+                                            ).forEach { (id, label) ->
+                                                TextButton(
+                                                    onClick = {
+                                                        bikeCapability = id
+                                                        uniffi.navi.saveBikeCapability(
+                                                            dataDir.absolutePath,
+                                                            id,
+                                                        )
+                                                        DiagnosticLog.logSettingSaved(
+                                                            "bike_capability",
+                                                            id,
+                                                        )
+                                                    },
+                                                ) {
+                                                    Text(
+                                                        label,
+                                                        fontWeight =
+                                                            if (bikeCapability == id) {
+                                                                FontWeight.Bold
+                                                            } else {
+                                                                FontWeight.Normal
+                                                            },
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                                 if (profile == TravelProfile.HIKING) {
@@ -5707,6 +5800,7 @@ private fun CorridorMapView(
     prefer3d: Boolean,
     cameraTiltDeg: Double,
     vulkanAvailable: Boolean,
+    unitSystem: UnitSystem,
     styleEpoch: Int,
     bearingEpoch: Int = 0,
     modifier: Modifier = Modifier,
@@ -5820,9 +5914,15 @@ private fun CorridorMapView(
             java.util.concurrent.atomic
                 .AtomicReference(cameraTiltDeg)
         }
+    val unitSystemRef =
+        remember {
+            java.util.concurrent.atomic
+                .AtomicReference(unitSystem)
+        }
     prefer3dRef.set(prefer3d)
     vulkanRef.set(vulkanAvailable)
     tiltRef.set(cameraTiltDeg)
+    unitSystemRef.set(unitSystem)
 
     fun effectiveTiltDeg(): Double {
         val liveVulkan = vulkanRef.get()
@@ -5914,6 +6014,8 @@ private fun CorridorMapView(
         BasemapPathPaint.apply(style)
         BasemapProtectedAreaStyle.apply(style)
         BasemapHousenumberStyle.apply(style)
+        BasemapGlacierOutlineStyle.apply(style)
+        BasemapPeakElevationStyle.apply(style, unitSystemRef.get())
         ensureRouteAboveHillshade(style)
         applyCameraTilt(map)
         styleReady.value = true
@@ -6136,6 +6238,15 @@ private fun CorridorMapView(
                 runCatching { mapView.onPause() }
                 runCatching { mapView.onStop() }
                 runCatching { mapView.onDestroy() }
+            }
+        }
+    }
+
+    LaunchedEffect(unitSystem, styleReady.value) {
+        if (!styleReady.value) return@LaunchedEffect
+        mapRef?.getStyle { style ->
+            if (style != null) {
+                BasemapPeakElevationStyle.apply(style, unitSystem)
             }
         }
     }

@@ -211,6 +211,7 @@ Language,"English (United Kingdom, Ireland, United States, Canada, Australia, Ne
 ,Network hut nearby (membership required),,,,,,,,,,,,,
 ,Network hut overnight,,,,,,,,,,,,,
 ,Use networked cabins,,,,,,,,,,,,,
+,"Slow plan: indexed maps not ready (PBF fallback). Wait for background indexing, or Tools → Rebuild indexed maps.",,,,,,,,,,,,,
 ,3D (experimental),,,,,,,,,,,,,
 ,3D requires Vulkan renderer,,,,,,,,,,,,,
 ,3D unavailable on this device; using 2D Liberty,,,,,,,,,,,,,

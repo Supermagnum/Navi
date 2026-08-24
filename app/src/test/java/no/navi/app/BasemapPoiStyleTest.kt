@@ -24,23 +24,18 @@ class BasemapPoiStyleTest {
         )
 
     @Test
-    fun alcoholIsWhitelistedWithTownspotFallback() {
+    fun alcoholHasDedicatedSprite() {
         val pois = layerJson("pois")
         val kinds = kindWhitelist(pois)
         assertTrue("alcohol must be in the pois kind whitelist", kinds.contains("alcohol"))
 
         val icon = iconForKind(pois, "alcohol")
-        assertEquals(
-            "bundled sprites have no alcohol icon; use townspot like fuel/pharmacy",
-            "townspot",
-            icon,
-        )
-        assertTrue(spriteKeys().contains("townspot"))
-        assertFalse(spriteKeys().contains("alcohol"))
+        assertEquals("alcohol", icon)
+        assertTrue(spriteKeys().contains("alcohol"))
         for (kind in vehicleRepairKinds) {
             assertTrue("$kind must be in the pois kind whitelist", kinds.contains(kind))
-            assertEquals("townspot", iconForKind(pois, kind))
-            assertFalse(spriteKeys().contains(kind))
+            assertEquals(kind, iconForKind(pois, kind))
+            assertTrue(spriteKeys().contains(kind))
         }
     }
 
@@ -65,6 +60,48 @@ class BasemapPoiStyleTest {
         assertTrue(
             passesPoisFilter(kinds, floors, kind = "supermarket", minZoom = 15.0, zoom = 16.0),
         )
+    }
+
+    @Test
+    fun peakLabelUsesElevationProperty() {
+        val pois = layerJson("pois")
+        val layoutAt = pois.indexOf("\"text-field\"")
+        assertTrue("pois must have text-field", layoutAt >= 0)
+        val field = arraySlice(pois, pois.indexOf('[', layoutAt))
+        assertTrue("peak labels must read tile elevation, not only name", field.contains("\"elevation\""))
+        assertTrue("peak kinds must be gated in the text-field", field.contains("\"peak\""))
+        assertFalse("must not use OSM ele key; Protomaps tiles use elevation", field.contains("\"ele\""))
+    }
+
+    @Test
+    fun glacierHasDashedOutlineLayers() {
+        for (id in listOf("landcover_glacier_outline", "landuse_glacier_outline")) {
+            val layer = layerJson(id)
+            assertTrue("$id must be a line layer", layer.contains("\"type\": \"line\""))
+            assertTrue("$id must dash", layer.contains("\"line-dasharray\""))
+            assertTrue("$id must key on glacier", layer.contains("\"glacier\""))
+            assertTrue("$id uses teal not reserve green", layer.contains("#2a6e70"))
+        }
+        val reserve = layerJson("landuse_protected_outline")
+        assertTrue(reserve.contains("#2f7a32"))
+    }
+
+    @Test
+    fun whitelistedKindsDoNotFallBackToTownspot() {
+        val pois = layerJson("pois")
+        val kinds = kindWhitelist(pois)
+        val sprites = spriteKeys()
+        for (kind in kinds) {
+            val icon = iconForKind(pois, kind)
+            assertTrue(
+                "$kind must not use townspot fallback (got $icon)",
+                icon != "townspot",
+            )
+            assertTrue(
+                "$kind icon $icon must exist in light.json",
+                sprites.contains(icon),
+            )
+        }
     }
 
     private fun passesPoisFilter(

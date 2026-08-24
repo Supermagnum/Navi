@@ -49,6 +49,20 @@
       }
     },
     {
+      "id": "landcover_glacier_outline",
+      "type": "line",
+      "source": "protomaps",
+      "source-layer": "landcover",
+      "minzoom": 5,
+      "filter": ["==", ["get", "kind"], "glacier"],
+      "paint": {
+        "line-color": "#2a6e70",
+        "line-width": 1.5,
+        "line-dasharray": [2, 1.5],
+        "line-opacity": 0.9
+      }
+    },
+    {
       "id": "landuse",
       "type": "fill",
       "source": "protomaps",
@@ -93,6 +107,20 @@
       ],
       "paint": {
         "line-color": "#2f7a32",
+        "line-width": 1.5,
+        "line-dasharray": [2, 1.5],
+        "line-opacity": 0.9
+      }
+    },
+    {
+      "id": "landuse_glacier_outline",
+      "type": "line",
+      "source": "protomaps",
+      "source-layer": "landuse",
+      "minzoom": 7,
+      "filter": ["==", ["get", "kind"], "glacier"],
+      "paint": {
+        "line-color": "#2a6e70",
         "line-width": 1.5,
         "line-dasharray": [2, 1.5],
         "line-opacity": 0.9
@@ -527,13 +555,13 @@
           "convenience", "convenience",
           "supermarket", "supermarket",
           "grocery", "supermarket",
-          "alcohol", "townspot",
-          "car_repair", "townspot",
-          "motorcycle_repair", "townspot",
-          "motorcycle", "townspot",
-          "bicycle_repair", "townspot",
-          "bicycle_repair_station", "townspot",
-          "bicycle", "townspot",
+          "alcohol", "alcohol",
+          "car_repair", "car_repair",
+          "motorcycle_repair", "motorcycle_repair",
+          "motorcycle", "motorcycle",
+          "bicycle_repair", "bicycle_repair",
+          "bicycle_repair_station", "bicycle_repair_station",
+          "bicycle", "bicycle",
           "attraction", "attraction",
           "museum", "museum",
           "library", "library",
@@ -550,18 +578,33 @@
           "hill", "peak",
           "glacier", "peak",
           "wetland", "park",
-          "fuel", "townspot",
-          "charging_station", "townspot",
-          "parking", "townspot",
-          "hospital", "townspot",
-          "pharmacy", "townspot",
-          "hotel", "townspot",
-          "townhall", "townspot",
+          "fuel", "fuel",
+          "charging_station", "charging_station",
+          "parking", "parking",
+          "hospital", "hospital",
+          "pharmacy", "pharmacy",
+          "hotel", "hotel",
+          "townhall", "townhall",
           "townspot"
         ],
         "icon-size": 1.0,
         "icon-allow-overlap": true,
-        "text-field": ["get", "name"],
+        "text-field": [
+          "case",
+          [
+            "all",
+            ["match", ["get", "kind"], ["peak", "hill"], true, false],
+            ["has", "elevation"]
+          ],
+          [
+            "concat",
+            ["coalesce", ["get", "name"], ""],
+            "\n",
+            ["to-string", ["round", ["to-number", ["get", "elevation"]]]],
+            " m"
+          ],
+          ["get", "name"]
+        ],
         "text-font": ["Noto Sans Regular"],
         "text-size": 11,
         "text-optional": true,
