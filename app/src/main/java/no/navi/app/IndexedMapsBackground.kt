@@ -7,8 +7,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import uniffi.navi.downloadProgressClear
-import uniffi.navi.downloadProgressSnapshot
+import uniffi.navi.convertProgressClear
+import uniffi.navi.convertProgressSnapshot
 import uniffi.navi.ensureIndexedMaps
 import uniffi.navi.indexedMapsStatus
 import java.io.File
@@ -47,7 +47,7 @@ object IndexedMapsBackground {
     ): String {
         if (pbf == null || !pbf.isFile) return ""
         if (running.get()) {
-            val snap = runCatching { downloadProgressSnapshot() }.getOrNull()
+            val snap = runCatching { convertProgressSnapshot() }.getOrNull()
             val prog =
                 if (snap != null && snap.label.isNotBlank()) {
                     val pct =
@@ -127,7 +127,7 @@ object IndexedMapsBackground {
             if (!shouldRun) return@launch
             // Convert outside the mutex so status polls can observe [isRunning].
             try {
-                downloadProgressClear()
+                convertProgressClear()
                 val report =
                     ensureIndexedMaps(
                         pbf.absolutePath,

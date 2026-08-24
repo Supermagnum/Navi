@@ -3,6 +3,7 @@
 mod control;
 mod fsutil;
 pub mod http;
+pub mod pbf_priority;
 pub mod progress;
 
 pub use control::DownloadControl;
@@ -12,3 +13,4 @@ pub use http::{
     stream_get_to_file_blocking, timeout_for_bytes, StreamDownloadOpts, StreamDownloadResult,
     DEFAULT_RETRIES,
 };
+pub use pbf_priority::ForegroundPlanGuard;

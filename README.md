@@ -947,8 +947,6 @@ Country/region visual extracts can also be prepared with
 
 (Future work only — shipped features are listed in the Features table above.)
 
-
-
 **UI language packs** — chrome is English-only today. A future `i18n` /
 `ui_translation` plugin will add selectable languages with **fallback to
 English** when a translation or pack is missing. Spec:
@@ -959,16 +957,6 @@ toggle until that plugin exists.
 Display **units** (metric / US / UK) are shipped (Drive settings), including
 peak-height labels on the basemap. Norwegian speed-limit **pictograms** stay
 official km/h plates; mph *plate artwork* is still future (`new-signs/`).
-
-Shipped on the offline basemap (not TODO): Carto POI sprites for the current
-allow-list, alcohol-shop labels, peak elevations, and dashed glacier outlines —
-[`docs/map-styles.md`](docs/map-styles.md),
-[`docs/poi-icon-whitelist.md`](docs/poi-icon-whitelist.md). Extra dense shop
-kinds (clothes, kiosk, …) stay off the whitelist on purpose.
-
-Bicycle **Road / Gravel / MTB** surface suitability is shipped (Drive
-settings; OSM `surface` / `smoothness` / `tracktype` / `mtb:scale` /
-`incline` / `route=mtb`). Live e-bike cable telemetry remains later.
 
 **Historical Norwegian/Norse distance units** as a selectable display option
 (e.g. rast, dagsvei, fjerdingvei), alongside the existing Metric / US / UK

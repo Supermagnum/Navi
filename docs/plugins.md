@@ -198,6 +198,7 @@ DSP docs already exist where noted.
 | **Host duties** | Own RTL-SDR / TNC; decode frames; upsert `TrackStation` |
 | **Guest duties** | Optional: filter/annotate beacons, map symbol keys, messaging UI helpers |
 | **Proposed caps** | `position_read`, `track_upsert` (new), `log`; network/USB stay host-side |
+| **Related work** | [SDRoxide issue #150](https://github.com/dividebysandwich/sdroxide/issues/150#event-29920362864) — Navi asked about an APRS plugin; upstream is considering APRS as built-in with the **decoder in its own crate**, which this plugin could reuse rather than duplicating AFSK/AX.25 |
 
 Range display already clamps to **50–150 km** in core — plugins must respect
 that (no global dump onto the map).

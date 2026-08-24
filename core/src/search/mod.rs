@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use osmpbf::{Element, ElementReader};
+use osmpbf::Element;
 use rusqlite::{params, Connection, Result as SqlResult};
 
 use crate::storage::Storage;
@@ -90,6 +90,22 @@ impl NameIndex {
         Ok(())
     }
 
+    /// True when `name_entries` has at least one row (built index, not a stub).
+    /// Read-only: never creates the DB file.
+    pub fn has_entries(path: impl AsRef<Path>) -> bool {
+        let path = path.as_ref();
+        if !path.is_file() {
+            return false;
+        }
+        let Ok(conn) =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        else {
+            return false;
+        };
+        conn.query_row("SELECT 1 FROM name_entries LIMIT 1", [], |_| Ok(()))
+            .is_ok()
+    }
+
     /// True when this DB was built by a context-aware `load_from_pbf`.
     pub fn is_current_schema(path: impl AsRef<Path>) -> bool {
         let Ok(conn) = Connection::open(path.as_ref()) else {
@@ -102,6 +118,7 @@ impl NameIndex {
     }
 
     pub fn load_from_pbf(&mut self, path: impl AsRef<Path>) -> anyhow::Result<usize> {
+        let _bg = crate::download::pbf_priority::BackgroundIndexerGuard::enter();
         let path = path.as_ref();
         let mut batch: Vec<(i64, String, String, f64, f64)> = Vec::new();
 
@@ -116,9 +133,7 @@ impl NameIndex {
         let mut way_jobs: Vec<(i64, String, String, Vec<i64>)> = Vec::new();
         let mut needed_nodes: std::collections::HashSet<i64> = std::collections::HashSet::new();
         {
-            let file = std::fs::File::open(path)?;
-            let reader = ElementReader::new(file);
-            reader.for_each(|element| {
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
                 let Element::Way(way) = element else {
                     return;
                 };
@@ -154,9 +169,7 @@ impl NameIndex {
         let mut node_coords: std::collections::HashMap<i64, (f64, f64)> =
             std::collections::HashMap::with_capacity(needed_nodes.len());
         {
-            let file = std::fs::File::open(path)?;
-            let reader = ElementReader::new(file);
-            reader.for_each(|element| match element {
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
                 Element::Node(node) => {
                     let id = node.id();
                     let lat = node.lat();
@@ -203,6 +216,7 @@ impl NameIndex {
         // Official hiking/cycling route relations (name/ref/operator) for To/Via search.
         // Relation ids are distinct from node ids in OSM; store relation id as-is
         // (FTS rowid = osm_id).
+        crate::download::pbf_priority::yield_if_foreground_plan();
         match crate::routing::graph::load_named_route_entries(path) {
             Ok(routes) => {
                 for r in routes {
@@ -836,5 +850,26 @@ mod tests {
         assert_eq!(hits[0].name, "Tangen");
         assert_eq!(hits[0].municipality, "");
         assert_eq!(hits[0].sub_area, "");
+    }
+
+    #[test]
+    fn has_entries_false_on_empty_and_true_after_upsert() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("empty.db");
+        NameIndex::open(&db).expect("create");
+        assert!(!NameIndex::has_entries(&db));
+        let mut idx = NameIndex::open(&db).expect("reopen");
+        idx.upsert_entry(1, "Oslo".into(), "place:city".into(), 59.91, 10.75)
+            .unwrap();
+        drop(idx);
+        assert!(NameIndex::has_entries(&db));
+    }
+
+    #[test]
+    fn has_entries_missing_file_does_not_create() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("no-such.db");
+        assert!(!NameIndex::has_entries(&db));
+        assert!(!db.exists());
     }
 }

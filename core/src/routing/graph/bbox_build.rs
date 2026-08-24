@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use geo_types::Coord;
 use osm4routing::{Node, NodeId};
-use osmpbf::{Element, ElementReader};
+use osmpbf::Element;
 use serde::{Deserialize, Serialize};
 
 use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
@@ -248,9 +248,7 @@ impl RouteGraph {
         // Pass 1: node ids inside bbox (ids only — storing every coord OOMs on large extracts).
         let mut in_bbox_ids: HashSet<i64> = HashSet::new();
         {
-            let file = std::fs::File::open(path)?;
-            let reader = ElementReader::new(file);
-            reader.for_each(|element| match element {
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
                 Element::Node(n) => {
                     if in_bbox(n.lat(), n.lon(), bbox) {
                         in_bbox_ids.insert(n.id());
@@ -270,9 +268,7 @@ impl RouteGraph {
         let mut ways: Vec<RawWay> = Vec::new();
         let mut needed: HashSet<i64> = HashSet::new();
         {
-            let file = std::fs::File::open(path)?;
-            let reader = ElementReader::new(file);
-            reader.for_each(|element| {
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
                 let Element::Way(way) = element else {
                     return;
                 };
@@ -311,9 +307,7 @@ impl RouteGraph {
         let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
         let mut barrier_tags: HashMap<i64, HashMap<String, String>> = HashMap::new();
         {
-            let file = std::fs::File::open(path)?;
-            let reader = ElementReader::new(file);
-            reader.for_each(|element| match element {
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
                 Element::Node(n) => {
                     if needed.contains(&n.id()) {
                         coords.insert(n.id(), (n.lat(), n.lon()));
@@ -398,9 +392,7 @@ impl RouteGraph {
         let mut way_count = 0u64;
         let write_err = std::cell::RefCell::new(None::<String>);
         {
-            let file = std::fs::File::open(path)?;
-            let reader = ElementReader::new(file);
-            reader.for_each(|element| {
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
                 if write_err.borrow().is_some() {
                     return;
                 }
@@ -449,9 +441,7 @@ impl RouteGraph {
         let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
         let mut barrier_tags: HashMap<i64, HashMap<String, String>> = HashMap::new();
         {
-            let file = std::fs::File::open(path)?;
-            let reader = ElementReader::new(file);
-            reader.for_each(|element| match element {
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
                 Element::Node(n) => {
                     if needed.contains(&n.id()) {
                         coords.insert(n.id(), (n.lat(), n.lon()));

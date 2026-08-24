@@ -80,7 +80,12 @@ pub struct FfiDownloadProgress {
 /// Snapshot of the in-flight download (region PBF or PMTiles extract) for UI polling.
 #[uniffi::export]
 pub fn download_progress_snapshot() -> FfiDownloadProgress {
-    let s = driver_break_core::download::progress::snapshot();
+    ffi_progress(driver_break_core::download::progress::snapshot_on(
+        driver_break_core::download::progress::ProgressChannel::Download,
+    ))
+}
+
+fn ffi_progress(s: driver_break_core::download::progress::Snapshot) -> FfiDownloadProgress {
     FfiDownloadProgress {
         units_done: s.units_done,
         units_total: s.units_total,
@@ -89,10 +94,65 @@ pub fn download_progress_snapshot() -> FfiDownloadProgress {
     }
 }
 
+/// Plan-only progress (PBF bbox / A*). Isolated from convert and cone.
+#[uniffi::export]
+pub fn plan_progress_snapshot() -> FfiDownloadProgress {
+    ffi_progress(driver_break_core::download::progress::snapshot_on(
+        driver_break_core::download::progress::ProgressChannel::Plan,
+    ))
+}
+
+/// Indexed-maps convert progress. Isolated from plan and download.
+#[uniffi::export]
+pub fn convert_progress_snapshot() -> FfiDownloadProgress {
+    ffi_progress(driver_break_core::download::progress::snapshot_on(
+        driver_break_core::download::progress::ProgressChannel::Convert,
+    ))
+}
+
 /// Clear the shared download progress snapshot.
 #[uniffi::export]
 pub fn download_progress_clear() {
-    driver_break_core::download::progress::clear();
+    driver_break_core::download::progress::clear_on(
+        driver_break_core::download::progress::ProgressChannel::Download,
+    );
+}
+
+#[uniffi::export]
+pub fn plan_progress_clear() {
+    driver_break_core::download::progress::clear_on(
+        driver_break_core::download::progress::ProgressChannel::Plan,
+    );
+}
+
+#[uniffi::export]
+pub fn convert_progress_clear() {
+    driver_break_core::download::progress::clear_on(
+        driver_break_core::download::progress::ProgressChannel::Convert,
+    );
+}
+
+/// Pause background PBF convert / place-index while a foreground plan runs.
+#[uniffi::export]
+pub fn foreground_plan_enter() {
+    driver_break_core::download::pbf_priority::enter();
+}
+
+#[uniffi::export]
+pub fn foreground_plan_leave() {
+    driver_break_core::download::pbf_priority::leave();
+}
+
+/// True while [`foreground_plan_enter`] is unmatched by leave (UI plan in flight).
+#[uniffi::export]
+pub fn foreground_plan_active() -> bool {
+    driver_break_core::download::pbf_priority::foreground_plan_active()
+}
+
+/// True when the place-index SQLite file has at least one searchable row.
+#[uniffi::export]
+pub fn place_index_has_entries(index_db_path: String) -> bool {
+    driver_break_core::search::NameIndex::has_entries(std::path::Path::new(&index_db_path))
 }
 
 /// Number of logical CPU cores detected on the host (routing worker autodetect input).
@@ -1929,6 +1989,9 @@ pub fn plan_car_route_at(
     departure_local_iso: Option<String>,
 ) -> CorridorRouteResult {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ch = driver_break_core::download::progress::ChannelGuard::enter(
+            driver_break_core::download::progress::ProgressChannel::Plan,
+        );
         plan_car_route_inner(
             pbf_path,
             elev_dir,
@@ -2071,29 +2134,34 @@ fn plan_car_route_inner(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
-    let (mut graph, cache_hit, pack_hit) =
-        match driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
-            &data_dir,
+    let pack_try = driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
+        &data_dir,
+        pbf,
+        routing_profile,
+        Some(bbox),
+    );
+    let _pause_bg = if pack_try.is_err() {
+        Some(driver_break_core::download::ForegroundPlanGuard::acquire())
+    } else {
+        None
+    };
+    let (mut graph, cache_hit, pack_hit) = match pack_try {
+        Ok(g) => (g, false, true),
+        Err(_) => match load_or_build_reweighted_bbox(
             pbf,
+            &cache,
             routing_profile,
-            Some(bbox),
+            &elevation,
+            &eco,
+            bbox,
         ) {
-            Ok(g) => (g, false, true),
-            Err(_) => match load_or_build_reweighted_bbox(
-                pbf,
-                &cache,
-                routing_profile,
-                &elevation,
-                &eco,
-                bbox,
-            ) {
-                Ok((g, hit)) => (g, hit, false),
-                Err(e) => {
-                    report.push_str(&format!("FAIL: graph build: {e:#}\n"));
-                    return empty(report);
-                }
-            },
-        };
+            Ok((g, hit)) => (g, hit, false),
+            Err(e) => {
+                report.push_str(&format!("FAIL: graph build: {e:#}\n"));
+                return empty(report);
+            }
+        },
+    };
     // Pack path skips load_or_build eco; apply DEM reweight when eco is on.
     if pack_hit && use_eco {
         graph.apply_eco_reweighting(&elevation, &eco);
@@ -2731,6 +2799,9 @@ pub fn plan_hiking_route(
     prefer_official_networks: bool,
     prefer_pilgrim_routes: bool,
 ) -> CorridorRouteResult {
+    let _ch = driver_break_core::download::progress::ChannelGuard::enter(
+        driver_break_core::download::progress::ProgressChannel::Plan,
+    );
     #[derive(Deserialize)]
     struct Wp {
         name: String,
@@ -2825,29 +2896,34 @@ pub fn plan_hiking_route(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
-    let (mut graph, cache_hit, pack_hit) =
-        match driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
-            &data_dir,
+    let pack_try = driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
+        &data_dir,
+        pbf,
+        RoutingProfile::Foot,
+        Some(bbox),
+    );
+    let _pause_bg = if pack_try.is_err() {
+        Some(driver_break_core::download::ForegroundPlanGuard::acquire())
+    } else {
+        None
+    };
+    let (mut graph, cache_hit, pack_hit) = match pack_try {
+        Ok(g) => (g, false, true),
+        Err(_) => match load_or_build_reweighted_bbox(
             pbf,
+            &cache,
             RoutingProfile::Foot,
-            Some(bbox),
+            &elevation,
+            &eco,
+            bbox,
         ) {
-            Ok(g) => (g, false, true),
-            Err(_) => match load_or_build_reweighted_bbox(
-                pbf,
-                &cache,
-                RoutingProfile::Foot,
-                &elevation,
-                &eco,
-                bbox,
-            ) {
-                Ok((g, hit)) => (g, hit, false),
-                Err(e) => {
-                    report.push_str(&format!("FAIL: foot graph build: {e:#}\n"));
-                    return empty_corridor(report);
-                }
-            },
-        };
+            Ok((g, hit)) => (g, hit, false),
+            Err(e) => {
+                report.push_str(&format!("FAIL: foot graph build: {e:#}\n"));
+                return empty_corridor(report);
+            }
+        },
+    };
     let build_s = t_graph.elapsed().as_secs_f64();
     let graph_build_ms = timer.lap_ms();
     apply_route_prefs_if_requested(
@@ -5264,6 +5340,9 @@ pub fn live_speed_limit_cone_json(
     profile: TravelProfile,
     current_limit_kmh: Option<f64>,
 ) -> String {
+    let _ch = driver_break_core::download::progress::ChannelGuard::enter(
+        driver_break_core::download::progress::ProgressChannel::Cone,
+    );
     use driver_break_core::routing::live_hazard::{
         live_speed_limit_in_cone, speed_limit_cone_as_sign_warning, LIVE_HAZARD_CONE_M,
     };
@@ -5539,6 +5618,9 @@ pub fn road_near_info(
     profile: TravelProfile,
     max_m: f64,
 ) -> FfiRoadNearInfo {
+    let _ch = driver_break_core::download::progress::ChannelGuard::enter(
+        driver_break_core::download::progress::ProgressChannel::Cone,
+    );
     if !lat.is_finite() || !lon.is_finite() {
         return empty_road_near_info();
     }

@@ -125,6 +125,9 @@ import uniffi.navi.ecoModeDefault
 import uniffi.navi.ecoModeToggleable
 import uniffi.navi.elevationAt
 import uniffi.navi.ensurePlaceIndex
+import uniffi.navi.foregroundPlanActive
+import uniffi.navi.foregroundPlanEnter
+import uniffi.navi.foregroundPlanLeave
 import uniffi.navi.formatRouteAvoidanceReport
 import uniffi.navi.geofabrikLatestPbfUrl
 import uniffi.navi.indexedMapsStatus
@@ -135,6 +138,9 @@ import uniffi.navi.loadTruckRestSettings
 import uniffi.navi.loadVehicleLimits
 import uniffi.navi.nearbyPlaces
 import uniffi.navi.osmWeeklyReminderDue
+import uniffi.navi.placeIndexHasEntries
+import uniffi.navi.planProgressClear
+import uniffi.navi.planProgressSnapshot
 import uniffi.navi.pmtilesCancelJob
 import uniffi.navi.pmtilesDefaultBaseUrl
 import uniffi.navi.pmtilesGetJob
@@ -447,6 +453,7 @@ private fun NaviMapScreen() {
     var query by remember { mutableStateOf("") }
     var hits by remember { mutableStateOf<List<PlaceHit>>(emptyList()) }
     var searchBusy by remember { mutableStateOf(false) }
+    var searchIndexHint by remember { mutableStateOf("") }
     var showTools by remember { mutableStateOf(false) }
     var diagnosticLogging by remember {
         mutableStateOf(MapHudPrefs.loadDiagnosticLogging(context))
@@ -1303,84 +1310,91 @@ private fun NaviMapScreen() {
             scope.launch {
                 recalculatingRoute = true
                 planningRoute = true
-                NaviMapTestHooks.reroutingActive = true
-                NaviMapTestHooks.autoRerouteTriggeredCount += 1
-                routePlanProgress = "Recalculating route…"
-                routePlanPct = 0
-                status = "Recalculating route… (may take several seconds)"
-                planIndexingHintVisible =
-                    withContext(Dispatchers.IO) {
-                        val planPbf = resolveRegionPbf()
-                        if (planPbf == null || !planPbf.isFile) {
-                            true
-                        } else {
-                            runCatching {
-                                indexedMapsStatus(planPbf.absolutePath, dataDir.absolutePath).trim()
-                            }.getOrDefault("missing") != "ready"
+                planProgressClear()
+                try {
+                    foregroundPlanEnter()
+                    NaviMapTestHooks.reroutingActive = true
+                    NaviMapTestHooks.autoRerouteTriggeredCount += 1
+                    routePlanProgress = "Recalculating route…"
+                    routePlanPct = 0
+                    status = "Recalculating route… (may take several seconds)"
+                    planIndexingHintVisible =
+                        withContext(Dispatchers.IO) {
+                            val planPbf = resolveRegionPbf()
+                            if (planPbf == null || !planPbf.isFile) {
+                                true
+                            } else {
+                                runCatching {
+                                    indexedMapsStatus(planPbf.absolutePath, dataDir.absolutePath).trim()
+                                }.getOrDefault("missing") != "ready"
+                            }
                         }
-                    }
-                val startWp =
-                    Waypoint(resolveRerouteStartLabel(lat, lon), lat, lon)
-                val pts =
-                    buildList {
-                        add(startWp)
-                        addAll(remainingVias)
-                        add(dest)
-                    }
-                val ecoForPlan = if (ecoModeToggleable(profile)) ecoEnabled else true
-                val vehicle =
-                    runCatching { loadVehicleLimits(dataDir.absolutePath) }
-                        .getOrElse {
-                            FfiVehicleLimits(null, null, null, null, null, null)
+                    val startWp =
+                        Waypoint(resolveRerouteStartLabel(lat, lon), lat, lon)
+                    val pts =
+                        buildList {
+                            add(startWp)
+                            addAll(remainingVias)
+                            add(dest)
                         }
-                val result =
-                    runCatching {
-                        RouteReplan.plan(
-                            dataDir = dataDir,
-                            profile = profile,
-                            waypoints = pts,
-                            useEco = ecoForPlan,
-                            avoidMotorways = avoidMotorways,
-                            avoidTolls = avoidTolls,
-                            avoidFerries = avoidFerries,
-                            vehicle = vehicle,
-                            preferOfficialNetworks = preferOfficialNetworks,
-                            preferPilgrimRoutes = preferPilgrimRoutes,
-                            onProgress = { pct, detail ->
-                                routePlanPct = pct
-                                routePlanProgress = "Recalculating route… $detail"
-                            },
-                        )
-                    }.getOrElse { e ->
-                        if (e is kotlinx.coroutines.CancellationException) throw e
-                        status = "Reroute failed: ${e.message}"
-                        recalculatingRoute = false
-                        planningRoute = false
-                        planIndexingHintVisible = false
-                        NaviMapTestHooks.reroutingActive = false
-                        routePlanProgress = ""
+                    val ecoForPlan = if (ecoModeToggleable(profile)) ecoEnabled else true
+                    val vehicle =
+                        runCatching { loadVehicleLimits(dataDir.absolutePath) }
+                            .getOrElse {
+                                FfiVehicleLimits(null, null, null, null, null, null)
+                            }
+                    val result =
+                        runCatching {
+                            RouteReplan.plan(
+                                dataDir = dataDir,
+                                profile = profile,
+                                waypoints = pts,
+                                useEco = ecoForPlan,
+                                avoidMotorways = avoidMotorways,
+                                avoidTolls = avoidTolls,
+                                avoidFerries = avoidFerries,
+                                vehicle = vehicle,
+                                preferOfficialNetworks = preferOfficialNetworks,
+                                preferPilgrimRoutes = preferPilgrimRoutes,
+                                onProgress = { pct, detail ->
+                                    routePlanPct = pct
+                                    routePlanProgress = "Recalculating route… $detail"
+                                },
+                            )
+                        }.getOrElse { e ->
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            status = "Reroute failed: ${e.message}"
+                            recalculatingRoute = false
+                            planningRoute = false
+                            planIndexingHintVisible = false
+                            NaviMapTestHooks.reroutingActive = false
+                            routePlanProgress = ""
+                            offRouteCoordinator.suppressUntilOnRoute()
+                            return@launch
+                        }
+                    if (!isActive) return@launch
+                    recalculatingRoute = false
+                    planningRoute = false
+                    planIndexingHintVisible = false
+                    NaviMapTestHooks.reroutingActive = false
+                    routePlanProgress = ""
+                    if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
+                        status = userFacingStatus(result.report).ifBlank { "Reroute failed" }
                         offRouteCoordinator.suppressUntilOnRoute()
                         return@launch
                     }
-                if (!isActive) return@launch
-                recalculatingRoute = false
-                planningRoute = false
-                planIndexingHintVisible = false
-                NaviMapTestHooks.reroutingActive = false
-                routePlanProgress = ""
-                if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
-                    status = userFacingStatus(result.report).ifBlank { "Reroute failed" }
-                    offRouteCoordinator.suppressUntilOnRoute()
-                    return@launch
+                    // Drop stale Plan-time hook labels so applyPlannedRoute uses
+                    // the live fromPoint name from resolveLabelAt.
+                    NaviMapTestHooks.routeStartLabel = ""
+                    fromPoint = startWp
+                    applyPlannedRoute(result)
+                    status =
+                        "Route updated · ${"%.1f".format(result.distanceKm)} km " +
+                        "(recalculated after detour)"
+                } finally {
+                    foregroundPlanLeave()
+                    planProgressClear()
                 }
-                // Drop stale Plan-time hook labels so applyPlannedRoute uses
-                // the live fromPoint name from resolveLabelAt.
-                NaviMapTestHooks.routeStartLabel = ""
-                fromPoint = startWp
-                applyPlannedRoute(result)
-                status =
-                    "Route updated · ${"%.1f".format(result.distanceKm)} km " +
-                    "(recalculated after detour)"
             }
     }
 
@@ -1446,10 +1460,6 @@ private fun NaviMapScreen() {
                     snap.label.contains("Writing map archive", ignoreCase = true)
                 ) {
                     pmtilesProgress = line
-                } else if (snap.label.contains("indexed", ignoreCase = true) ||
-                    snap.label.contains("Building indexed", ignoreCase = true)
-                ) {
-                    indexedMapsUiLine = "Indexed maps (background): $line"
                 } else {
                     regionDownloadProgress = line
                 }
@@ -1506,12 +1516,13 @@ private fun NaviMapScreen() {
     LaunchedEffect(planningRoute) {
         if (!planningRoute) return@LaunchedEffect
         while (isActive && planningRoute) {
-            val snap = runCatching { downloadProgressSnapshot() }.getOrNull()
-            if (snap != null && snap.label.startsWith("Planning route")) {
+            val snap = runCatching { planProgressSnapshot() }.getOrNull()
+            if (snap != null && snap.label.isNotBlank()) {
                 val line = formatProgressPct(snap.unitsDone, snap.unitsTotal, snap.label)
                 routePlanProgress = line
                 status = line
-                routePlanPct = snap.percent?.toInt() ?: -1
+                routePlanPct =
+                    monotonicPlanPercent(routePlanPct, snap.percent?.toInt())
             }
             delay(250)
         }
@@ -2018,7 +2029,15 @@ private fun NaviMapScreen() {
                         runCatching { uniffi.navi.liveHazardConeM() }.getOrDefault(300.0)
                     if (!roadSignWarning.active) {
                         val pbf = resolveRegionPbf()
-                        if (pbf != null && speedLimitConeInFlight.compareAndSet(false, true)) {
+                        val skipGraph =
+                            skipLiveGraphWorkDuringForegroundPlan(
+                                runCatching { foregroundPlanActive() }
+                                    .getOrDefault(planningRoute),
+                            )
+                        if (pbf != null &&
+                            !skipGraph &&
+                            speedLimitConeInFlight.compareAndSet(false, true)
+                        ) {
                             val fixLat = loc.latitude
                             val fixLon = loc.longitude
                             val heading = headingDeg
@@ -2121,6 +2140,13 @@ private fun NaviMapScreen() {
                             }
                             val nearInfo =
                                 withContext(Dispatchers.IO) {
+                                    if (skipLiveGraphWorkDuringForegroundPlan(
+                                            runCatching { foregroundPlanActive() }
+                                                .getOrDefault(false),
+                                        )
+                                    ) {
+                                        return@withContext null
+                                    }
                                     val pbf = resolveRegionPbf() ?: return@withContext null
                                     runCatching {
                                         roadNearInfo(
@@ -2797,6 +2823,7 @@ private fun NaviMapScreen() {
         val trimmed = q.trim()
         if (trimmed.length < 2) {
             hits = emptyList()
+            searchIndexHint = ""
             return
         }
         // Accept WGS84 "lat, lon" for From / Via / To without place FTS.
@@ -2818,15 +2845,17 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.lastSearchQuery = trimmed
             NaviMapTestHooks.lastSearchHitNames = listOf(name)
             searchBusy = false
+            searchIndexHint = ""
             return
         }
         searchBusy = true
         searchJob =
             scope.launch {
                 delay(200)
+                val dbPath = resolvePlaceIndexDb().absolutePath
                 val list =
                     withContext(Dispatchers.IO) {
-                        searchPlaces(resolvePlaceIndexDb().absolutePath, trimmed, 20u)
+                        searchPlaces(dbPath, trimmed, 20u)
                     }
                 hits =
                     when (searchMode) {
@@ -2848,9 +2877,20 @@ private fun NaviMapScreen() {
                                     k.contains("highway") || k.contains("place") || k.contains("addr")
                                 }.ifEmpty { list }
                     }
+                val hasEntries =
+                    withContext(Dispatchers.IO) {
+                        runCatching { placeIndexHasEntries(dbPath) }.getOrDefault(false)
+                    }
+                searchIndexHint =
+                    placeSearchBuildingMessage(
+                        hits.isEmpty(),
+                        hasEntries,
+                        PlaceIndexBackground.isRunning(),
+                    ).orEmpty()
                 NaviMapTestHooks.lastSearchHitCount = hits.size
                 NaviMapTestHooks.lastSearchQuery = trimmed
                 NaviMapTestHooks.lastSearchHitNames = hits.map { placeHitDisplayLabel(it) }
+                NaviMapTestHooks.lastSearchIndexBuildingHint = searchIndexHint
                 searchBusy = false
             }
     }
@@ -3396,6 +3436,16 @@ private fun NaviMapScreen() {
                             if (searchBusy) {
                                 Text("Searching...", style = MaterialTheme.typography.bodySmall)
                             }
+                            if (searchIndexHint.isNotBlank() && hits.isEmpty() && !searchBusy) {
+                                Text(
+                                    searchIndexHint,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .testTag("search_index_building_hint"),
+                                )
+                            }
                             if (hits.isNotEmpty()) {
                                 hits.take(8).forEachIndexed { idx, hit ->
                                     Column(
@@ -3503,26 +3553,28 @@ private fun NaviMapScreen() {
                                             endLon = pts.last().lon,
                                         )
                                         downloadProgressClear()
+                                        planProgressClear()
                                         planningRoute = true
                                         routePlanPct = 0
                                         routePlanProgress = "Planning route: starting…"
                                         status = routePlanProgress
-                                        planIndexingHintVisible =
-                                            withContext(Dispatchers.IO) {
-                                                val planPbf = pbf ?: resolveRegionPbf()
-                                                if (planPbf == null || !planPbf.isFile) {
-                                                    true
-                                                } else {
-                                                    runCatching {
-                                                        indexedMapsStatus(
-                                                            planPbf.absolutePath,
-                                                            dataDir.absolutePath,
-                                                        ).trim()
-                                                    }.getOrDefault("missing") != "ready"
-                                                }
-                                            }
                                         val result =
                                             try {
+                                                foregroundPlanEnter()
+                                                planIndexingHintVisible =
+                                                    withContext(Dispatchers.IO) {
+                                                        val planPbf = pbf ?: resolveRegionPbf()
+                                                        if (planPbf == null || !planPbf.isFile) {
+                                                            true
+                                                        } else {
+                                                            runCatching {
+                                                                indexedMapsStatus(
+                                                                    planPbf.absolutePath,
+                                                                    dataDir.absolutePath,
+                                                                ).trim()
+                                                            }.getOrDefault("missing") != "ready"
+                                                        }
+                                                    }
                                                 withContext(Dispatchers.IO) {
                                                     runCatching {
                                                         val stagedPoly =
@@ -3779,6 +3831,8 @@ private fun NaviMapScreen() {
                                                 routePlanPct = -1
                                                 routePlanProgress = ""
                                                 planIndexingHintVisible = false
+                                                planProgressClear()
+                                                foregroundPlanLeave()
                                                 downloadProgressClear()
                                             }
                                         val durationMs = System.currentTimeMillis() - planStarted
@@ -3916,28 +3970,41 @@ private fun NaviMapScreen() {
                                         }
                                         val fixLat = mapState.gpsLat
                                         val fixLon = mapState.gpsLon
-                                        // Capture field at tap time — resolveLabelAt is async;
-                                        // do not re-read searchTarget after await (chip race).
                                         val targetAtClick = searchTarget
-                                        // Resolve a nearby address/name within 12 m; else GPS coords.
+                                        val immediate = gpsImmediateCoordHit(fixLat, fixLon)
+                                        applyHit(immediate, target = targetAtClick)
+                                        NaviMapTestHooks.lastGpsImmediateCoord =
+                                            formatCoordWaypointName(fixLat, fixLon)
                                         scope.launch {
                                             val (name, kind) = resolveLabelAt(fixLat, fixLon)
+                                            val current =
+                                                when (targetAtClick) {
+                                                    SearchTarget.From -> fromPoint
+                                                    SearchTarget.To -> toPoint
+                                                    SearchTarget.Via -> viaPoints.lastOrNull()
+                                                }
+                                            if (!gpsWaypointShouldUpgrade(
+                                                    current?.lat,
+                                                    current?.lon,
+                                                    current?.name,
+                                                    fixLat,
+                                                    fixLon,
+                                                    name,
+                                                    kind,
+                                                )
+                                            ) {
+                                                return@launch
+                                            }
                                             val hitKind =
                                                 when (kind) {
                                                     "map-resolved" -> "gps-resolved"
                                                     "map-mark" -> "gps"
                                                     else -> kind
                                                 }
-                                            val label =
-                                                if (hitKind == "gps") {
-                                                    formatGpsWaypointFallback(fixLat, fixLon)
-                                                } else {
-                                                    name
-                                                }
                                             applyHit(
                                                 PlaceHit(
                                                     osmId = 0L,
-                                                    name = label,
+                                                    name = name,
                                                     kind = hitKind,
                                                     lat = fixLat,
                                                     lon = fixLon,

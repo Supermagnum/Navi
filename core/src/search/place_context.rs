@@ -12,7 +12,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use osmpbf::{Element, ElementReader, RelMemberType};
+use osmpbf::{Element, RelMemberType};
 use rstar::{RTree, RTreeObject, AABB};
 
 use crate::tracks::haversine_km;
@@ -290,9 +290,7 @@ pub(crate) fn load_admin_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Vec<
     let mut rels: Vec<(String, u8, Vec<i64>)> = Vec::new();
     let mut needed_ways: HashSet<i64> = HashSet::new();
     {
-        let file = std::fs::File::open(path)?;
-        let reader = ElementReader::new(file);
-        reader.for_each(|element| {
+        crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
             let Element::Relation(rel) = element else {
                 return;
             };
@@ -329,9 +327,7 @@ pub(crate) fn load_admin_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Vec<
     let mut way_nodes: HashMap<i64, Vec<i64>> = HashMap::new();
     let mut standalone: Vec<(String, u8, Vec<i64>)> = Vec::new();
     {
-        let file = std::fs::File::open(path)?;
-        let reader = ElementReader::new(file);
-        reader.for_each(|element| {
+        crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
             let Element::Way(way) = element else {
                 return;
             };
@@ -362,9 +358,7 @@ pub(crate) fn load_admin_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Vec<
 
     let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed_nodes.len());
     {
-        let file = std::fs::File::open(path)?;
-        let reader = ElementReader::new(file);
-        reader.for_each(|element| match element {
+        crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
             Element::Node(n) => {
                 if needed_nodes.contains(&n.id()) {
                     coords.insert(n.id(), (n.lat(), n.lon()));

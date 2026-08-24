@@ -302,6 +302,14 @@ object NaviMapTestHooks {
     @Volatile
     var lastSearchHitNames: List<String> = emptyList()
 
+    /** Non-empty when place search showed the building-index hint. */
+    @Volatile
+    var lastSearchIndexBuildingHint: String = ""
+
+    /** Immediate coord label from the last Use GPS tap (before roadLabelNear). */
+    @Volatile
+    var lastGpsImmediateCoord: String = ""
+
     /** When true, MainActivity clears the search query field (test helper). */
     @Volatile
     var requestClearSearch: Boolean = false

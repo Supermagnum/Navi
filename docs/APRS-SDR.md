@@ -9,6 +9,12 @@ Moving-icon display and range filtering already exist (see [`APRS.md`](APRS.md))
 This document captures the expected demodulation contract (bit-stream stages,
 hardware constraints) so a plugin or native host crate can match it.
 
+A possible shared decoder (instead of Navi owning AFSK/AX.25) is discussed on
+[SDRoxide issue #150](https://github.com/dividebysandwich/sdroxide/issues/150#event-29920362864)
+(upstream considering APRS as built-in, with the decoder as a separate crate
+Navi’s [`aprs` / `aprs_sdr` plugin](plugins.md#1-aprs-aprs--aprs_sdr) could
+consume).
+
 ## Planned hardware crate: `rtl-sdr-rs`
 
 | Item | Value |

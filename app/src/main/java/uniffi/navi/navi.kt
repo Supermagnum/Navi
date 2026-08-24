@@ -986,6 +986,22 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1014,6 +1030,10 @@ fun uniffi_navi_checksum_func_approach_urgency_m(
 fun uniffi_navi_checksum_func_bind_geofabrik_region(
 ): Short
 fun uniffi_navi_checksum_func_check_osm_updates(
+): Short
+fun uniffi_navi_checksum_func_convert_progress_clear(
+): Short
+fun uniffi_navi_checksum_func_convert_progress_snapshot(
 ): Short
 fun uniffi_navi_checksum_func_current_speed_kmh(
 ): Short
@@ -1046,6 +1066,12 @@ fun uniffi_navi_checksum_func_ensure_live_hazards_loaded(
 fun uniffi_navi_checksum_func_ensure_place_index(
 ): Short
 fun uniffi_navi_checksum_func_ffi_linkage_smoke_test(
+): Short
+fun uniffi_navi_checksum_func_foreground_plan_active(
+): Short
+fun uniffi_navi_checksum_func_foreground_plan_enter(
+): Short
+fun uniffi_navi_checksum_func_foreground_plan_leave(
 ): Short
 fun uniffi_navi_checksum_func_format_approach_distance(
 ): Short
@@ -1141,11 +1167,17 @@ fun uniffi_navi_checksum_func_osm_weekly_reminder_due(
 ): Short
 fun uniffi_navi_checksum_func_overspeed_delta_kmh(
 ): Short
+fun uniffi_navi_checksum_func_place_index_has_entries(
+): Short
 fun uniffi_navi_checksum_func_plan_car_route(
 ): Short
 fun uniffi_navi_checksum_func_plan_car_route_at(
 ): Short
 fun uniffi_navi_checksum_func_plan_hiking_route(
+): Short
+fun uniffi_navi_checksum_func_plan_progress_clear(
+): Short
+fun uniffi_navi_checksum_func_plan_progress_snapshot(
 ): Short
 fun uniffi_navi_checksum_func_pmtiles_cancel_job(
 ): Short
@@ -1356,6 +1388,10 @@ fun uniffi_navi_fn_func_bind_geofabrik_region(`dataDir`: RustBuffer.ByValue,`geo
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_check_osm_updates(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_convert_progress_clear(uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_navi_fn_func_convert_progress_snapshot(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_current_speed_kmh(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_current_speed_limit_kmh(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`maxM`: Double,uniffi_out_err: UniffiRustCallStatus, 
@@ -1388,6 +1424,12 @@ fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexD
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ffi_linkage_smoke_test(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_foreground_plan_active(uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_navi_fn_func_foreground_plan_enter(uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_navi_fn_func_foreground_plan_leave(uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_navi_fn_func_format_approach_distance(`distanceM`: Double,`preferMetric`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_format_avoid_motorways_report(`avoidMotorways`: Byte,`priorityPathSharePct`: Double,uniffi_out_err: UniffiRustCallStatus, 
@@ -1482,11 +1524,17 @@ fun uniffi_navi_fn_func_osm_weekly_reminder_due(`dataDir`: RustBuffer.ByValue,un
 ): Byte
 fun uniffi_navi_fn_func_overspeed_delta_kmh(`speedKmh`: RustBuffer.ByValue,`limitKmh`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_place_index_has_entries(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`avoidTolls`: Byte,`avoidFerries`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_plan_car_route_at(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`avoidTolls`: Byte,`avoidFerries`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`departureLocalIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_plan_hiking_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`waypointsJson`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`preferPilgrimRoutes`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_plan_progress_clear(uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+fun uniffi_navi_fn_func_plan_progress_snapshot(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_pmtiles_cancel_job(`jobId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1745,6 +1793,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_check_osm_updates() != 15834.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_convert_progress_clear() != 30163.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_convert_progress_snapshot() != 18503.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_current_speed_kmh() != 41847.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1791,6 +1845,15 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_ffi_linkage_smoke_test() != 11010.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_foreground_plan_active() != 41919.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_foreground_plan_enter() != 37483.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_foreground_plan_leave() != 44155.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_format_approach_distance() != 13757.toShort()) {
@@ -1934,6 +1997,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_overspeed_delta_kmh() != 44096.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_place_index_has_entries() != 5091.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_plan_car_route() != 33864.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1941,6 +2007,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_plan_hiking_route() != 56165.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_plan_progress_clear() != 29793.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_plan_progress_snapshot() != 3424.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_pmtiles_cancel_job() != 53964.toShort()) {
@@ -4412,6 +4484,26 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
+ fun `convertProgressClear`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_convert_progress_clear(
+        _status)
+}
+    
+    
+
+        /**
+         * Indexed-maps convert progress. Isolated from plan and download.
+         */ fun `convertProgressSnapshot`(): FfiDownloadProgress {
+            return FfiConverterTypeFfiDownloadProgress.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_convert_progress_snapshot(
+        _status)
+}
+    )
+    }
+    
 
         /**
          * Live GPS speed (km/h) from the last [`update_gps_fix`], or `None` when the
@@ -4601,6 +4693,37 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
 }
     )
     }
+    
+
+        /**
+         * True while [`foreground_plan_enter`] is unmatched by leave (UI plan in flight).
+         */ fun `foregroundPlanActive`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_foreground_plan_active(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Pause background PBF convert / place-index while a foreground plan runs.
+         */ fun `foregroundPlanEnter`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_foreground_plan_enter(
+        _status)
+}
+    
+    
+ fun `foregroundPlanLeave`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_foreground_plan_leave(
+        _status)
+}
+    
     
 
         /**
@@ -5143,6 +5266,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * True when the place-index SQLite file has at least one searchable row.
+         */ fun `placeIndexHasEntries`(`indexDbPath`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_place_index_has_entries(
+        FfiConverterString.lower(`indexDbPath`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Plan a motor / bicycle route between two WGS84 points using a local OSM `.pbf`.
          *
          * Always builds a **bbox-clipped** graph (`[min_lat,min_lon,max_lat,max_lon]` padded
@@ -5190,6 +5325,26 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_plan_hiking_route(
         FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`elevDir`),FfiConverterString.lower(`cacheDir`),FfiConverterString.lower(`waypointsJson`),FfiConverterBoolean.lower(`preferOfficialNetworks`),FfiConverterBoolean.lower(`preferPilgrimRoutes`),_status)
+}
+    )
+    }
+    
+ fun `planProgressClear`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_plan_progress_clear(
+        _status)
+}
+    
+    
+
+        /**
+         * Plan-only progress (PBF bbox / A*). Isolated from convert and cone.
+         */ fun `planProgressSnapshot`(): FfiDownloadProgress {
+            return FfiConverterTypeFfiDownloadProgress.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_plan_progress_snapshot(
+        _status)
 }
     )
     }

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use osmpbf::{Element, ElementReader};
+use osmpbf::Element;
 use rkyv::rancor::Error as RkyvError;
 
 use super::graph_pack::{FlatGraphPack, GRAPH_FORMAT_VERSION, MAGIC_GRAPH};
@@ -88,9 +88,7 @@ fn pbf_node_bbox(pbf: &Path) -> anyhow::Result<[f64; 4]> {
     let mut lats: Vec<f64> = Vec::with_capacity(SAMPLE_CAP);
     let mut lons: Vec<f64> = Vec::with_capacity(SAMPLE_CAP);
     let mut seen: u64 = 0;
-    let file = std::fs::File::open(pbf)?;
-    let reader = ElementReader::new(file);
-    reader.for_each(|element| {
+    crate::download::pbf_priority::for_each_pbf_elements(pbf, |element| {
         let (lat, lon) = match element {
             Element::Node(n) => (n.lat(), n.lon()),
             Element::DenseNode(n) => (n.lat(), n.lon()),
@@ -138,9 +136,7 @@ fn pbf_node_bbox(pbf: &Path) -> anyhow::Result<[f64; 4]> {
 
 fn collect_poi_records(pbf: &Path) -> anyhow::Result<Vec<PoiRecord>> {
     let mut out = Vec::new();
-    let file = std::fs::File::open(pbf)?;
-    let reader = ElementReader::new(file);
-    reader.for_each(|element| {
+    crate::download::pbf_priority::for_each_pbf_elements(pbf, |element| {
         let (id, lat, lon, tags) = match element {
             Element::Node(n) => (
                 n.id(),
@@ -192,9 +188,7 @@ fn extract_pbf_barrier_geometry(
     let mut ways: Vec<(Vec<i64>, Kind)> = Vec::new();
     let mut needed: HashSet<i64> = HashSet::new();
     {
-        let file = std::fs::File::open(pbf)?;
-        let reader = ElementReader::new(file);
-        reader.for_each(|element| {
+        crate::download::pbf_priority::for_each_pbf_elements(pbf, |element| {
             let Element::Way(way) = element else {
                 return;
             };
@@ -233,9 +227,7 @@ fn extract_pbf_barrier_geometry(
 
     let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
     {
-        let file = std::fs::File::open(pbf)?;
-        let reader = ElementReader::new(file);
-        reader.for_each(|element| match element {
+        crate::download::pbf_priority::for_each_pbf_elements(pbf, |element| match element {
             Element::Node(n) => {
                 if needed.contains(&n.id()) {
                     coords.insert(n.id(), (n.lat(), n.lon()));
@@ -398,6 +390,10 @@ fn write_graph_pack(
 /// 4GB-class device budgets. Cancelling mid-write deletes the current `.partial`
 /// and leaves prior good archives untouched.
 pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertReport> {
+    let _ch = crate::download::progress::ChannelGuard::enter(
+        crate::download::progress::ProgressChannel::Convert,
+    );
+    let _bg = crate::download::pbf_priority::BackgroundIndexerGuard::enter();
     let t0 = Instant::now();
     let mut peak_rss_mb = rss_mb();
     let stem = stem_of(&opts.pbf);
@@ -470,6 +466,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
         // then one tile built+written at a time (avoids LMK before first .rkyv).
         let total_steps = (build_profiles.len() + 3) as u64;
         for (pi, profile) in build_profiles.iter().enumerate() {
+            crate::download::pbf_priority::yield_if_foreground_plan();
             if opts.control.is_cancelled() {
                 anyhow::bail!("cancelled");
             }
@@ -521,6 +518,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
     } else {
         let total_steps = (build_profiles.len() + 3) as u64;
         for (i, profile) in build_profiles.iter().enumerate() {
+            crate::download::pbf_priority::yield_if_foreground_plan();
             if opts.control.is_cancelled() {
                 anyhow::bail!("cancelled");
             }
@@ -561,6 +559,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
     }
 
     download_progress::set(90, Some(100), "Building indexed maps: POI + barriers…");
+    crate::download::pbf_priority::yield_if_foreground_plan();
     note_rss(&mut peak_rss_mb, "poi_start");
     let records = collect_poi_records(&opts.pbf)?;
     let (mut segs, glaciers) = extract_pbf_barrier_geometry(&opts.pbf)?;
@@ -595,6 +594,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
     note_rss(&mut peak_rss_mb, "poi_done");
 
     download_progress::set(95, Some(100), "Building indexed maps: wetlands…");
+    crate::download::pbf_priority::yield_if_foreground_plan();
     // Clear prior wetland packs (monolith or tiles) so rebuilds do not leave gaps.
     if let Ok(rd) = std::fs::read_dir(&opts.data_dir) {
         for ent in rd.flatten() {
