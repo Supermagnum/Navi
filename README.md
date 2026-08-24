@@ -947,7 +947,9 @@ Country/region visual extracts can also be prepared with
 
 (Future work only — shipped features are listed in the Features table above.)
 
-Investigate why hiking planning is so slow, and why routing does not use all marked huts/cabins.
+Investigate why hiking planning is so slow when packs are missing, and why
+routing does not use all marked huts/cabins (network-cabin prefs exist; coverage
+and overnight membership rules may still miss some OSM tagging).
 
 **UI language packs** — chrome is English-only today. A future `i18n` /
 `ui_translation` plugin will add selectable languages with **fallback to
@@ -960,14 +962,15 @@ Display **units** (metric / US / UK) are shipped (Drive settings), including
 peak-height labels on the basemap. Norwegian speed-limit **pictograms** stay
 official km/h plates; mph *plate artwork* is still future (`new-signs/`).
 
-Shipped on the offline basemap (not TODO): alcohol-shop labels, dedicated POI
-sprites for the current allow-list, peak elevations, and dashed glacier
-outlines — [`docs/map-styles.md`](docs/map-styles.md),
+Shipped on the offline basemap (not TODO): Carto POI sprites for the current
+allow-list, alcohol-shop labels, peak elevations, and dashed glacier outlines —
+[`docs/map-styles.md`](docs/map-styles.md),
 [`docs/poi-icon-whitelist.md`](docs/poi-icon-whitelist.md). Extra dense shop
 kinds (clothes, kiosk, …) stay off the whitelist on purpose.
 
 Bicycle **Road / Gravel / MTB** surface suitability is shipped (Drive
-settings). Live e-bike cable telemetry remains later.
+settings; OSM `surface` / `smoothness` / `tracktype` / `mtb:scale` /
+`incline` / `route=mtb`). Live e-bike cable telemetry remains later.
 
 **Historical Norwegian/Norse distance units** as a selectable display option
 (e.g. rast, dagsvei, fjerdingvei), alongside the existing Metric / US / UK
@@ -1005,16 +1008,6 @@ Context for whoever picks this up:
   (≈ 9.1008 km/h per mil/h), with sub-mil distances shown as stone's throw,
   arrow's flight, and so on.
 
-Grab missing map sympols from OpenStreetMap Carto, they are under the Creative Commons CC0 1.0 Universal Public Domain Dedication.
 Investigate if lake names can be displayed along the lake shore.
-Investigate if glaciers can have a dashed line like nature reserves have, for visibility purposes.
-Investigate why mountain peaks does not display height. 
-Add surface toggles for cycling. Some additional tags that should be used to indicate suitability of such ways for bicycles:
-    surface=*
-    smoothness=*
-    tracktype=*
-    mtb:scale=*
-    incline=*
-    route=mtb
 
 
