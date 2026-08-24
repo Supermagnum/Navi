@@ -947,9 +947,7 @@ Country/region visual extracts can also be prepared with
 
 (Future work only — shipped features are listed in the Features table above.)
 
-Investigate why hiking planning is so slow when packs are missing, and why
-routing does not use all marked huts/cabins (network-cabin prefs exist; coverage
-and overnight membership rules may still miss some OSM tagging).
+
 
 **UI language packs** — chrome is English-only today. A future `i18n` /
 `ui_translation` plugin will add selectable languages with **fallback to
