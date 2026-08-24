@@ -101,20 +101,13 @@ object BasemapPeakElevationStyle {
                 )
             }
 
-        val below = style.getLayer("poi_r1")
-        val above =
-            when {
-                style.getLayer(BasemapProtectedAreaStyle.PARK_LABEL_LAYER_ID) != null ->
-                    BasemapProtectedAreaStyle.PARK_LABEL_LAYER_ID
-                style.getLayer("park_outline") != null -> "park_outline"
-                style.getLayer("landcover_ice") != null -> "landcover_ice"
-                else -> null
-            }
-        when {
-            below != null -> style.addLayerBelow(labels, "poi_r1")
-            above != null -> style.addLayerAbove(labels, above)
-            else -> style.addLayer(labels)
-        }
+        // Prefer under Liberty POI symbols; never fall back onto a fill/line
+        // (park_outline / landcover_ice) — that put peaks under later outlines.
+        BasemapLayerOrder.addSymbolLayer(
+            style,
+            labels,
+            preferBelow = "poi_r1",
+        )
         Log.i(TAG, "added $LIBERTY_LAYER_ID minzoom=$LIBERTY_MIN_ZOOM units=${unitSystem.persistId}")
     }
 

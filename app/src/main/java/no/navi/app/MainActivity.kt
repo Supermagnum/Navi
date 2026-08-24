@@ -585,6 +585,9 @@ private fun NaviMapScreen() {
     var lastNearbyStreetLat by remember { mutableDoubleStateOf(Double.NaN) }
     var lastNearbyStreetLon by remember { mutableDoubleStateOf(Double.NaN) }
     val nearbyStreetInFlight = remember { AtomicBoolean(false) }
+
+    /** Cold PBF bbox build for [liveSpeedLimitConeJson] — must not run on main. */
+    val speedLimitConeInFlight = remember { AtomicBoolean(false) }
     var driveHud by remember {
         mutableStateOf(
             DriveHudState(
@@ -2002,31 +2005,8 @@ private fun NaviMapScreen() {
                             schoolState.active -> schoolFallbackJson
                             else -> signJson
                         }
-                    if (!roadSignWarningFromJson(finalRoadSignJson).active) {
-                        val pbf = resolveRegionPbf()
-                        if (pbf != null) {
-                            val limitJson =
-                                runCatching {
-                                    uniffi.navi.liveSpeedLimitConeJson(
-                                        pbf.absolutePath,
-                                        graphCacheDirForPbf(pbf).absolutePath,
-                                        File(dataDir, "elevation").absolutePath,
-                                        loc.latitude,
-                                        loc.longitude,
-                                        headingDeg,
-                                        profile,
-                                        driveHud.currentSpeedLimitKmh,
-                                    )
-                                }.getOrDefault("{}")
-                            val plate =
-                                runCatching {
-                                    org.json.JSONObject(limitJson).optJSONObject("road_sign")
-                                }.getOrNull()
-                            if (plate != null && plate.has("icon_key")) {
-                                finalRoadSignJson = plate.toString()
-                            }
-                        }
-                    }
+                    // Apply hazard/school plate immediately. Speed-limit cone may
+                    // cold-build a PBF bbox graph (tens of seconds) — never on main.
                     roadSignWarning =
                         roadSignWarningFromJson(finalRoadSignJson).copy(
                             unitSystem = driveHud.unitSystem,
@@ -2036,6 +2016,53 @@ private fun NaviMapScreen() {
                     NaviMapTestHooks.lastSchoolProximityWarningJson = schoolFallbackJson
                     NaviMapTestHooks.lastLiveHazardConeM =
                         runCatching { uniffi.navi.liveHazardConeM() }.getOrDefault(300.0)
+                    if (!roadSignWarning.active) {
+                        val pbf = resolveRegionPbf()
+                        if (pbf != null && speedLimitConeInFlight.compareAndSet(false, true)) {
+                            val fixLat = loc.latitude
+                            val fixLon = loc.longitude
+                            val heading = headingDeg
+                            val prof = profile
+                            val currentLimit = driveHud.currentSpeedLimitKmh
+                            val unit = driveHud.unitSystem
+                            val pbfPath = pbf.absolutePath
+                            val cachePath = graphCacheDirForPbf(pbf).absolutePath
+                            val elevPath = File(dataDir, "elevation").absolutePath
+                            scope.launch {
+                                try {
+                                    val limitJson =
+                                        withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                uniffi.navi.liveSpeedLimitConeJson(
+                                                    pbfPath,
+                                                    cachePath,
+                                                    elevPath,
+                                                    fixLat,
+                                                    fixLon,
+                                                    heading,
+                                                    prof,
+                                                    currentLimit,
+                                                )
+                                            }.getOrDefault("{}")
+                                        }
+                                    val plate =
+                                        runCatching {
+                                            org.json.JSONObject(limitJson).optJSONObject("road_sign")
+                                        }.getOrNull()
+                                    if (plate != null && plate.has("icon_key")) {
+                                        val plateJson = plate.toString()
+                                        roadSignWarning =
+                                            roadSignWarningFromJson(plateJson).copy(
+                                                unitSystem = unit,
+                                            )
+                                        NaviMapTestHooks.lastRoadSignWarningJson = plateJson
+                                    }
+                                } finally {
+                                    speedLimitConeInFlight.set(false)
+                                }
+                            }
+                        }
+                    }
                 }
                 if (!streetFromRoute) {
                     if (speedKmh != null && driveHud.currentSpeedKmh != speedKmh) {

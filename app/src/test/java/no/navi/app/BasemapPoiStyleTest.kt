@@ -108,6 +108,37 @@ class BasemapPoiStyleTest {
     }
 
     @Test
+    fun glacierOutlinesStackAboveLandFills() {
+        val text = templateFile().readText()
+
+        fun layerIndex(id: String): Int {
+            val at = text.indexOf("\"id\": \"$id\"")
+            assertTrue("missing layer $id", at >= 0)
+            return at
+        }
+
+        val landcover = layerIndex("landcover")
+        val landuse = layerIndex("landuse")
+        val protectedOutline = layerIndex("landuse_protected_outline")
+        val landcoverOutline = layerIndex("landcover_glacier_outline")
+        val landuseOutline = layerIndex("landuse_glacier_outline")
+        val water = layerIndex("water")
+        assertTrue("landcover fill before landuse fill", landcover < landuse)
+        assertTrue(
+            "landcover glacier outline after land fills",
+            landcoverOutline > landuse && landcoverOutline > protectedOutline,
+        )
+        assertTrue(
+            "landuse glacier outline after land fills",
+            landuseOutline > landuse && landuseOutline > protectedOutline,
+        )
+        assertTrue(
+            "glacier outlines before water/roads",
+            landcoverOutline < water && landuseOutline < water,
+        )
+    }
+
+    @Test
     fun whitelistedKindsDoNotFallBackToTownspot() {
         val pois = layerJson("pois")
         val kinds = kindWhitelist(pois)

@@ -227,7 +227,7 @@ object BasemapStyleResolver {
         if (!pmFile.isFile) return null
 
         val outRoot = File(context.filesDir, PREPARED_DIR)
-        val assetEpoch = "v14-peak-z13-glacier-label-teal"
+        val assetEpoch = "v16-labels-above-fills"
         val epochFile = File(outRoot, ".asset_epoch")
         val needCopy =
             !outRoot.exists() ||

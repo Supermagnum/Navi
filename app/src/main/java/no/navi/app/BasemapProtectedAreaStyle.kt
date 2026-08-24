@@ -90,17 +90,10 @@ object BasemapProtectedAreaStyle {
                 )
             }
 
-        val above =
-            when {
-                style.getLayer("park_outline") != null -> "park_outline"
-                style.getLayer("park") != null -> "park"
-                else -> null
-            }
-        if (above != null) {
-            style.addLayerAbove(labels, above)
-        } else {
-            style.addLayer(labels)
-        }
+        // Must sit in the symbol block (above every fill/line). Inserting above
+        // park_outline (early land fill stack) let later glacier/water/road
+        // lines cover national-park names — see [BasemapLayerOrder].
+        BasemapLayerOrder.addSymbolLayer(style, labels)
         Log.i(TAG, "added $PARK_LABEL_LAYER_ID minzoom=$LABEL_MIN_ZOOM")
     }
 }

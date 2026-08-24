@@ -63,17 +63,8 @@ object BasemapHousenumberStyle {
                 )
             }
 
-        val above =
-            when {
-                style.getLayer("building-3d") != null -> "building-3d"
-                style.getLayer("building") != null -> "building"
-                else -> null
-            }
-        if (above != null) {
-            style.addLayerAbove(labels, above)
-        } else {
-            style.addLayer(labels)
-        }
+        // Symbol block only — not above building fill (roads/lines would cover).
+        BasemapLayerOrder.addSymbolLayer(style, labels)
         Log.i(TAG, "added $LAYER_ID minzoom=$MIN_ZOOM")
     }
 }

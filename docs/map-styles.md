@@ -538,4 +538,12 @@ Do not label `landuse`/`landcover` glacier fills (no `name` property).
 Dashed glacier outlines (`landcover_glacier_outline` / `landuse_glacier_outline`,
 and Liberty `landcover_ice_outline`) use teal `#2a6e70` and the same
 `line-dasharray` `[2, 1.5]` as nature reserves, so ice edges stay visible
-without looking like a park boundary.
+without looking like a park boundary. Offline outlines are stacked **after**
+`landcover`/`landuse` fills (and the protected outline) and **before**
+water/roads so park and other landuse polygons cannot cover the ice edge,
+and **before every symbol layer** so national-park / place / POI labels stay
+on top (standing rule: fills/lines then all symbols — see
+`metadata.navi:layer_order` / `BasemapLayerOrder`). Liberty inserts
+`landcover_ice_outline` below the first road/tunnel casing for the same reason
+(upstream draws wetland/landuse/water/sand after `landcover_ice`), and adds
+`park_label_protected` / peak / housenumber symbols into the symbol block only.
