@@ -71,6 +71,27 @@ class BasemapPoiStyleTest {
         assertTrue("peak labels must read tile elevation, not only name", field.contains("\"elevation\""))
         assertTrue("peak kinds must be gated in the text-field", field.contains("\"peak\""))
         assertFalse("must not use OSM ele key; Protomaps tiles use elevation", field.contains("\"ele\""))
+        val floors = kindZoomFloors(pois)
+        assertEquals(13.0, floors["peak"] ?: error("peak zoom floor missing"), 0.0)
+        assertEquals(13.0, floors["hill"] ?: error("hill zoom floor missing"), 0.0)
+        assertEquals(
+            13.0f,
+            BasemapPeakElevationStyle.LIBERTY_MIN_ZOOM,
+            0.0f,
+        )
+    }
+
+    @Test
+    fun glacierLabelUsesOutlineTeal() {
+        val pois = layerJson("pois")
+        val paintAt = pois.indexOf("\"text-color\"")
+        assertTrue("pois must have text-color", paintAt >= 0)
+        val colorExpr = arraySlice(pois, pois.indexOf('[', paintAt))
+        assertTrue(
+            "glacier labels must use outline teal on ice fill",
+            colorExpr.contains("\"glacier\"") && colorExpr.contains("#2a6e70"),
+        )
+        assertFalse("must not keep muddy grey-teal", colorExpr.contains("#406060"))
     }
 
     @Test

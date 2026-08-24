@@ -221,10 +221,10 @@ offline Protomaps template (`roads_label_*`, `pois`):
 | ≥ 9 | (roads unchanged below) | Lake point names (`water_label_lake`; tile `min_zoom` often 9) |
 | ≥ 10 | Same | + river line names (`water_label_river`; tile `min_zoom` often 10) |
 | ≥ 12 | (roads unchanged below) | Glacier + wetland names (`pois.kind=glacier` / `wetland`) when tile `min_zoom` allows |
-| ≥ 13 | Motorways | Same |
+| ≥ 13 | Motorways | + peak/hill name+elevation (`pois.kind=peak` / `hill`; OSM Carto / osm.org peak floor) when tile `min_zoom` allows |
 | ≥ 14 | + secondary | Same |
 | ≥ 15 | + other majors and minor streets | + townhall names (`pois.kind=townhall`; feature `min_zoom` often 15) |
-| ≥ 16 | Same | Urban amenities + peak/hill icons (`pois` kinds other than glacier/wetland/townhall) |
+| ≥ 16 | Same | Urban amenities (`pois` kinds other than glacier/wetland/townhall/peak/hill) |
 
 Offline Protomaps peaks live in the `pois` source-layer (`kind=peak` / `hill`),
 not only `places`. Glacier **names** are also `pois` points (`kind=glacier`,
@@ -234,12 +234,18 @@ Wetland **names** are likewise `pois` points (`kind=wetland`, ~z12); wetland
 `water` layer (Point vs LineString) and use dedicated symbol layers — fill/line
 geometry filters are unchanged (shard fix stays labeling-orthogonal). The
 `pois` layer keeps a **per-kind** zoom floor (`glacier`/`wetland` → 12,
-`townhall` → 15, everything else → 16) so enabling those labels does not pull
-schools/fuel/etc. down to z12. Peak/hill labels append OSM elevation when the
-tile carries it: Protomaps exposes numeric `elevation` (metres), not `ele`.
+`peak`/`hill` → 13, `townhall` → 15, everything else → 16) so enabling
+glacier/peak labels does not pull schools/fuel/etc. down to z12. Peak/hill
+use **z13** (same floor as openstreetmap.org / OSM Carto peak names), not the
+default z16: offline extracts are native **maxzoom 15**, so a z16 gate never
+draws. The baked style also pins the vector source `maxzoom` to the PMTiles
+header so camera z16–z18 overzooms z15 tiles instead of requesting empty ones.
+Peak/hill labels append OSM elevation when the tile carries it: Protomaps
+exposes numeric `elevation` (metres), not `ele`.
 The template prints metres; `BasemapPeakElevationStyle` rewrites feet for
-`UnitSystem.IMPERIAL_US` (UK stays metres, same as HUD altitude). Glacier
-labels use cooler text (`#406060`);
+`UnitSystem.IMPERIAL_US` (UK stays metres, same as HUD altitude). Online
+Liberty `mountain_peak_label` uses the same z13 floor. Glacier labels use the
+outline teal (`#2a6e70`) for contrast on ice fill `#C8E9E9`;
 wetland `#3d5c3d`; both omit icons. Lake/river labels use italic `#2a5a78` so
 they read apart from town and peak names.
 

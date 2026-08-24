@@ -9,7 +9,8 @@
     "protomaps": {
       "type": "vector",
       "url": "__PMTILES_URL__",
-      "attribution": "© OpenStreetMap © Protomaps"
+      "attribution": "© OpenStreetMap © Protomaps",
+      "maxzoom": 15
     }
   },
   "sprite": "__SPRITE__",
@@ -485,6 +486,10 @@
             12,
             "wetland",
             12,
+            "peak",
+            13,
+            "hill",
+            13,
             "townhall",
             15,
             16
@@ -626,7 +631,7 @@
           "match",
           ["get", "kind"],
           "glacier",
-          "#406060",
+          "#2a6e70",
           "wetland",
           "#3d5c3d",
           "#303030"

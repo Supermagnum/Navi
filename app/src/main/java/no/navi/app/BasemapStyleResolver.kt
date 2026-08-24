@@ -227,7 +227,7 @@ object BasemapStyleResolver {
         if (!pmFile.isFile) return null
 
         val outRoot = File(context.filesDir, PREPARED_DIR)
-        val assetEpoch = "v12-peak-ele-glacier-dash"
+        val assetEpoch = "v14-peak-z13-glacier-label-teal"
         val epochFile = File(outRoot, ".asset_epoch")
         val needCopy =
             !outRoot.exists() ||
@@ -264,6 +264,11 @@ object BasemapStyleResolver {
         if (!pm.has("attribution")) {
             pm.put("attribution", "© OpenStreetMap © Protomaps")
         }
+        // Region extracts are maxzoom 15 (see DEFAULT_EXTRACT_MAX_ZOOM). If the
+        // source advertises a higher maxzoom, MapLibre requests z16+ tiles that
+        // do not exist and the map goes blank — including peak labels, which
+        // then never appear. Pin maxzoom to the archive header so z16+ overzooms.
+        readPmtilesMaxZoom(pmFile)?.let { pm.put("maxzoom", it) }
         var styleJson = json
         if (demFor3d != null && demFor3d.isFile) {
             val tileJsonUrl = MapterhornTerrain.ensureLocalDemTileJsonUrl(demFor3d)
@@ -275,6 +280,25 @@ object BasemapStyleResolver {
         outStyle.writeText(styleJson.toString())
         // MapLibre Native expects a URI scheme for local styles.
         return "file://${outStyle.absolutePath}"
+    }
+
+    /**
+     * PMTiles v3 header: magic at 0, maxzoom uint8 at offset 101.
+     * Returns null if the file is too short or not a PMTiles archive.
+     */
+    internal fun readPmtilesMaxZoom(pmFile: File): Int? {
+        if (!pmFile.isFile || pmFile.length() < 127L) return null
+        val header = ByteArray(127)
+        pmFile.inputStream().use { input ->
+            var off = 0
+            while (off < header.size) {
+                val n = input.read(header, off, header.size - off)
+                if (n <= 0) return null
+                off += n
+            }
+        }
+        if (String(header, 0, 7, Charsets.US_ASCII) != "PMTiles") return null
+        return header[101].toInt() and 0xFF
     }
 
     private fun copyAssetTree(

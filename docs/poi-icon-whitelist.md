@@ -58,13 +58,14 @@ Every kind in the offline `pois` allow-list maps to a named sprite in
 | `cinema` | `theatre` | shared theatre sprite |
 | `hotel` | `hotel` | OSM Carto |
 | `townhall` | `townhall` | OSM Carto; kind floor z15 |
-| `peak` | `peak` | kind floor z16 (not zoom-exempt) |
-| `hill` | `peak` | shared peak sprite |
+| `peak` | `peak` | kind floor z13 (OSM Carto / osm.org peak floor; extract maxzoom is 15) |
+| `hill` | `peak` | shared peak sprite; kind floor z13 |
 | `glacier` | `peak` | icon opacity 0; name-only from z12 |
 | `wetland` | `park` | icon opacity 0; name-only from z12 |
 
-Default kind floor is **z16**. Exceptions: `glacier` / `wetland` → 12,
-`townhall` → 15. `peak` / `hill` are whitelisted but **not** zoom-exempt.
+Default kind floor is **z16**. Exceptions: `glacier` / `wetland` / `peak` /
+`hill` → 12, `townhall` → 15. Peaks cannot stay at the default z16 floor:
+offline region extracts are native maxzoom 15, so a z16 gate never shows.
 
 ## 2. Whitelisted kinds still using generic fallback
 

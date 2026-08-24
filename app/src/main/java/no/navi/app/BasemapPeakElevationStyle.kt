@@ -23,8 +23,11 @@ object BasemapPeakElevationStyle {
 
     const val LIBERTY_LAYER_ID = "mountain_peak_label"
 
-    /** Matches prominent OpenMapTiles `mountain_peak` inclusion (~z12). */
-    const val LIBERTY_MIN_ZOOM = 12.0f
+    /**
+     * Same floor as openstreetmap.org / OSM Carto peak names (~z13).
+     * Offline Protomaps uses the same number in the `pois` kind match.
+     */
+    const val LIBERTY_MIN_ZOOM = 13.0f
 
     private const val LABEL_COLOR = "#303030"
 
