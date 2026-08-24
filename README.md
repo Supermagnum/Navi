@@ -947,6 +947,8 @@ Country/region visual extracts can also be prepared with
 
 (Future work only — shipped features are listed in the Features table above.)
 
+Investigate why hiking planning is so slow, and why routing does not use all marked huts/cabins.
+
 **UI language packs** — chrome is English-only today. A future `i18n` /
 `ui_translation` plugin will add selectable languages with **fallback to
 English** when a translation or pack is missing. Spec:
@@ -970,7 +972,7 @@ settings). Live e-bike cable telemetry remains later.
 **Historical Norwegian/Norse distance units** as a selectable display option
 (e.g. rast, dagsvei, fjerdingvei), alongside the existing Metric / US / UK
 profiles. Display-only historical/cultural mode, not a default or a serious
-alternative to metric/imperial for navigation — likely a novelty or
+alternative to metric/imperial for navigation — a novelty or
 regional-flavor toggle. Needs a design pass before implementation (which
 distance and speed fields it applies to, how it interacts with
 `DisplayUnits`, whether it is era-specific or one canonical conversion set).
@@ -1002,4 +1004,17 @@ Context for whoever picks this up:
   Speed display in this mode: **mil/h** derived from that mile length
   (≈ 9.1008 km/h per mil/h), with sub-mil distances shown as stone's throw,
   arrow's flight, and so on.
+
+Grab missing map sympols from OpenStreetMap Carto, they are under the Creative Commons CC0 1.0 Universal Public Domain Dedication.
+Investigate if lake names can be displayed along the lake shore.
+Investigate if glaciers can have a dashed line like nature reserves have, for visibility purposes.
+Investigate why mountain peaks does not display height. 
+Add surface toggles for cycling. Some additional tags that should be used to indicate suitability of such ways for bicycles:
+    surface=*
+    smoothness=*
+    tracktype=*
+    mtb:scale=*
+    incline=*
+    route=mtb
+
 
