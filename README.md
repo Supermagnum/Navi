@@ -963,5 +963,14 @@ Context for whoever picks this up:
 
 Grab missing map sympols from OpenStreetMap Carto, they are under the Creative Commons CC0 1.0 Universal Public Domain Dedication.
 Investigate if lake names can be displayed along the lake shore.
+Investigate if glaciers can have a dashed line like nature reserves have, for visibility purposes.
+Investigate why mountain peaks does not display height. 
+Add surface toggles for cycling. Some additional tags that should be used to indicate suitability of such ways for bicycles:
+    surface=*
+    smoothness=*
+    tracktype=*
+    mtb:scale=*
+    incline=*
+    route=mtb
 
 
