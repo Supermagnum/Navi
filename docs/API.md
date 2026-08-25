@@ -23,8 +23,14 @@ Package / module: `uniffi.navi` on Android.
 | Rust | Kotlin | Returns | Purpose |
 |---|---|---|---|
 | `init_native_logging` | `initNativeLogging` | — | Enable native `log` for downloads / routing |
-| `download_progress_snapshot` | `downloadProgressSnapshot` | `FfiDownloadProgress` | Bytes / phase for active download |
-| `download_progress_clear` | `downloadProgressClear` | — | Clear progress slot |
+| `download_progress_snapshot` | `downloadProgressSnapshot` | `FfiDownloadProgress` | Bytes / phase for **download** channel |
+| `download_progress_clear` | `downloadProgressClear` | — | Clear download channel |
+| `plan_progress_snapshot` | `planProgressSnapshot` | `FfiDownloadProgress` | Plan-only progress (UI plan bar) |
+| `plan_progress_clear` | `planProgressClear` | — | Clear plan channel |
+| `convert_progress_snapshot` | `convertProgressSnapshot` | `FfiDownloadProgress` | Indexed-map convert progress (Tools) |
+| `convert_progress_clear` | `convertProgressClear` | — | Clear convert channel |
+| `foreground_plan_enter` / `foreground_plan_leave` | `foregroundPlanEnter` / `foregroundPlanLeave` | — | Pause background PBF convert / place-index while a UI plan runs |
+| `foreground_plan_active` | `foregroundPlanActive` | `bool` | True while enter is unmatched by leave |
 | `detected_parallelism` | `detectedParallelism` | `u32` | Detected CPU count |
 | `routing_worker_count` | `routingWorkerCount` | `u32` | Rayon workers reserved for routing |
 | `ffi_linkage_smoke_test` | `ffiLinkageSmokeTest` | `String` | Linkage / pool smoke string |
@@ -77,6 +83,7 @@ used by truck / restriction costing (see record in `navi-ffi`).
 | Rust | Purpose |
 |---|---|
 | `ensure_place_index(pbf_path, index_db_path)` | Build or reuse FTS index; report string |
+| `place_index_has_entries(index_db_path)` | True when the SQLite FTS file has at least one searchable row (empty stub → false) |
 | `search_places(index_db_path, query, limit)` | → `Vec<PlaceHit>` (`osm_id`, `name`, `kind`, `lat`, `lon`, `sub_area`, `municipality`) |
 | `nearby_places(index_db_path, lat, lon, radius_m, limit)` | Place hits near a fix (idle current-street interim) |
 | `rasterize_icon_png(key, theme, …)` | PNG bytes for Navit-derived icon key |
@@ -116,7 +123,7 @@ How to use map mark + saved places:
 | `last_gps_fix` | Read `FfiGpsFix` (includes optional `speed_kmh`) |
 | `current_speed_kmh` | Live GPS speed from last push, or null |
 | `current_speed_limit_kmh(pbf, cache, elev, profile, max_m)` | Sticky nearest-edge limit at last GPS |
-| `road_near_info(...)` | Sticky label + applicable `speed_limit_kmh` (+ flags) |
+| `road_near_info(...)` | Sticky label + applicable `speed_limit_kmh` (+ flags). Pack-miss bbox builds **skip** (empty result) while a foreground plan owns the PBF — see `foreground_plan_*` |
 | `resolve_speed_limit_kmh(posted?, conditional?, highway?)` | Conditional → posted → highway fallback |
 | `overspeed_delta_kmh(speed?, limit?)` | `speed − limit` when both known (HUD convenience) |
 
@@ -145,7 +152,7 @@ export — planned HostApi `road_speed_state_read` + `voice_speak` in
 | `highway_class_display_label(highway?)` | Human class label when name/ref missing |
 | `format_current_road_label(name?, ref?, highway?)` | Bottom-HUD current-road string |
 | `road_label_near(pbf, cache_dir, elev_dir, lat, lon, profile, max_m)` | Idle-GPS nearest-edge street label (bbox graph); thin wrapper over `road_near_info` |
-| `road_near_info(...)` | Same sticky snap as `road_label_near`, plus applicable speed limit |
+| `road_near_info(...)` | Same sticky snap as `road_label_near`, plus applicable speed limit. On pack-miss, bbox build skips while a foreground plan is active |
 | `format_avoid_motorways_report` / `format_route_avoidance_report` | Avoidance summary strings |
 
 Product rules: [`approach-instructions.md`](approach-instructions.md),

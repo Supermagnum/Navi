@@ -49,6 +49,9 @@ adb logcat -s NaviRouting:I
 
 Lines include `planning_progress pct=… eco=…`, then after 100%
 `planning_done duration_ms=…` and `planning_pois count=… names=…`.
+The on-screen plan bar reads **plan** progress only (`planProgressSnapshot`);
+indexed-map convert and speed-limit cone use separate native channels so they
+do not move the plan percent.
 
 **Zoom:** the app owns **one** zoom −/+ set on the bottom bar. AAOS system chrome
 often shows separate climate − N + controls; those are not map zoom.

@@ -120,9 +120,9 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Glacier outlines** | Ice polygons get a teal dashed outline so they stay visible against pale fill (same dash as nature reserves, different colour). | Done |
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. A small leaf icon shows when eco is on. | Done |
 | **Offline planning** | Download a region once, then plan and see the route on the device. | Done |
-| **Indexing** | After a region download, a background job turns the OSM extract into compact routing packs so later plans are fast. You can plan while it runs. | Done |
-| **Place search** | Search places and set From / Via / To. | Done |
-| **Use GPS** | Fill From / Via / To from the live fix (nearby name within ~12 m, else coordinates). The field is the chip active when you tap — not whichever chip is selected after resolution finishes. | Done |
+| **Indexing** | After a region download, a background job turns the OSM extract into compact routing packs so later plans are fast. You can plan while it runs; convert and place-index **pause** during a foreground plan so the PBF fallback is not starved. | Done |
+| **Place search** | Search places and set From / Via / To. While the place index is still empty/building, search shows a building hint (coordinates and map tap still work). | Done |
+| **Use GPS** | Fill From / Via / To from the live fix: coordinates appear immediately, then an optional nearby road-name upgrade. The field is the chip active when you tap — not whichever chip is selected after resolution finishes. | Done |
 | **Map mark & saved places** | Hold on the map ~4 s to mark a point; set From / Via / To or save a named place (separate from Saved routes). | Done |
 | **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position (resolved start label); hiking prompts first. | Done |
 | **Breaks & rest** | Reminds you when a break is due and can suggest stops. Cars use hours between breaks; hiking/cycling use rest distances; trucks use legal driving-time rules where known. What is searched and used as pause POIs: [`docs/poi.md`](docs/poi.md). | Done |
@@ -192,6 +192,14 @@ indexing is done, planning uses the slower raw `.osm.pbf` path. Tools shows
 progress as **Indexed maps (background)**; when it says **Indexed maps: ready
 (pack-hit)**, the next plan uses the packs — typically about 1.5–2 seconds on
 the reference tablet instead of tens of seconds.
+
+While a **Plan route** (or auto-reroute) is running on that PBF fallback,
+background convert and place-index **yield** so they do not contend for the
+same extract. GPS-triggered speed-limit cone / road-near bbox builds **skip**
+for that window (one missed HUD update) and resume on the next fix after the
+plan finishes. Plan progress uses its own channel so convert/cone labels do
+not move the plan bar. The UI may also remind you that planning is faster once
+background indexing finishes.
 
 What the background job writes:
 
@@ -885,8 +893,11 @@ Country/region visual extracts can also be prepared with
   extremely slow across modes, check Diagnostic logging for `pack_hit=false`
   and use **Tools → Rebuild indexed maps** (or wait for background convert
   after download). The UI status also warns when a completed plan used the
-  PBF fallback. Reproduce stages with Diagnostic logging → `ROUTE_PLAN` /
-  `ROUTE_PLAN_STAGES`
+  PBF fallback. Concurrent convert / place-index / GPS cone PBF readers are
+  coordinated during a foreground plan (pause / skip — see
+  [Indexing](#indexing-background-after-download)); without that, pack-miss
+  plans on a large extract can stretch into many minutes. Reproduce stages
+  with Diagnostic logging → `ROUTE_PLAN` / `ROUTE_PLAN_STAGES`
   ([`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file)).
   See also [`docs/status.md`](docs/status.md).
 - **Rerouting after a detour is not instant.** Off-route (cross-track beyond

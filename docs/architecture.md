@@ -207,6 +207,21 @@ elevation/              ← tile files
 `.navigph` trip-bbox caches are **deprecated** (M5): planners no longer read or
 write them; missing packs fall back to a cold PBF rebuild.
 
+Progress and PBF contention (Android / UniFFI):
+
+| Channel | Consumer | UI |
+|---|---|---|
+| Download | Region / PMTiles / DEM jobs | Tools download line |
+| Plan | `plan_car_route` / hiking / UI plan coroutine | Plan bar (`planProgressSnapshot`) |
+| Convert | Indexed-map convert | Tools **Indexed maps (background)** |
+| Cone | Speed-limit cone / road-near | Drive HUD only (not the plan bar) |
+
+While a foreground plan runs (`foreground_plan_enter` / pack-miss
+`ForegroundPlanGuard`), background convert and place-index **yield** between
+PBF element batches. Non-plan callers of `load_or_build_reweighted_bbox`
+**skip** instead of scanning the extract in parallel. See
+`core/src/download/pbf_priority.rs` and `progress.rs`.
+
 Exact filenames are host-chosen under the Android app data directory; UniFFI
 APIs take `dataDir` / explicit paths.
 

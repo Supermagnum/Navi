@@ -155,7 +155,10 @@ drive the same approach chrome via a **route-independent cone** (README:
 
 Implementation: `core/src/routing/live_hazard.rs`, UniFFI
 `live_hazard_cone_*` / `live_hazards_ingest_from_json` / `live_speed_limit_cone_json`,
-host wiring in `MainActivity.kt` (cone only when `progressTracker == null`).
+host wiring in `MainActivity.kt` (cone only when `progressTracker == null`;
+speed-limit cone runs on an IO thread). Pack-miss cone / road-near bbox builds
+**skip** while a foreground plan owns the PBF so continuous GPS fixes cannot
+reintroduce multi-minute plan stalls.
 
 Presentation uses the same `no_sign_142` / `no_sign_109` icons and
 “Children ahead” / “Children zone: {name}” labels as the corridor path.

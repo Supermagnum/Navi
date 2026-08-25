@@ -438,8 +438,10 @@ Protomaps region + DEM queue/download for `europe/luxembourg` (small bbox — fa
 on-device check).
 
 Fixes covered: coalesced range download progress callbacks; indexed-map convert
-stage labels on the shared `download_progress` channel; Tools status shows plain
-**"Download in progress…"** during OSM apply (Item 10) — no raw FFI dumps.
+stage labels (historically on the shared `download_progress` channel — as of
+2026-08 convert uses `convert_progress_*` and the plan UI uses
+`plan_progress_*`); Tools status shows plain **"Download in progress…"** during
+OSM apply (Item 10) — no raw FFI dumps.
 
 ```bash
 ./gradlew :app:connectedDebugAndroidTest \
@@ -500,3 +502,22 @@ for odd values still without a shipped plate.
 | Docs / upstream | [`road-signs.md`](road-signs.md); [Supermagnum/road-signs#1](https://github.com/Supermagnum/road-signs/pull/1) |
 
 On-device confirmation of dedicated plates for real `maxspeed=45` / `65` ways is still recommended after installing this build.
+
+## Item 16 — Foreground-plan PBF priority + cone skip (Pixel 9a, 2026-08-24)
+
+Device: **Pixel 9a** (`58091JEBF00012`). Pre-index: Ostlandet PBF present, packs
+and place index wiped/unbuilt, convert + place-index running.
+
+| Claim | Result |
+|---|---|
+| Convert / place-index yield during UI plan | **PASS** — no new `.rkyv` during plan; tiles resume afterward |
+| Distinct progress channels | **PASS** — plan bar 0→25→50→75→80 while cone HUD still updated limits/street |
+| Empty place-index search hint | **PASS** — “Place index is still building…” for Oslo while FTS empty |
+| Use GPS immediate coords | **PASS** — From set to live lat/lon without waiting on road resolve |
+| Cone bbox skip during plan (Issue 2 gap) | **PASS** — instrumented `ForegroundPlanConeSkipInstrumentedTest`: 182 cone calls during plan, all under 100 ms; **0** slow PBF scans; plan wall **~151 s** release native (vs ~12–13 min when cones contended) |
+| Cone recovers after plan | **PASS** — skip flag cleared; post-plan cone no longer on the skip path |
+
+Implementation: `core/src/download/pbf_priority.rs`, `progress.rs` channels,
+`load_or_build_reweighted_bbox` skip + serialize, Kotlin
+`foregroundPlanEnter`/`Leave` + `skipLiveGraphWorkDuringForegroundPlan`.
+Canonical product copy: README [Indexing](../README.md#indexing-background-after-download).

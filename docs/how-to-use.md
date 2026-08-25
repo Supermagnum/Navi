@@ -27,8 +27,8 @@ not in the app yet
 
 | Method | How |
 |---|---|
-| **Keyboard search** | Type in the search field. Use **Place** (place, hut, or `lat, lon`) or **Address** (road, settlement, or `lat, lon`). Tap a result to apply it to the selected field. |
-| **Use GPS** | Tap **Use GPS as from** / **as to** / **as via** (label follows the selected chip). Needs a device fix; otherwise status shows `GPS unavailable`. |
+| **Keyboard search** | Type in the search field. Use **Place** (place, hut, or `lat, lon`) or **Address** (road, settlement, or `lat, lon`). Tap a result to apply it to the selected field. While the place index is still empty/building, the list shows a building hint instead of zero hits — use coordinates, map tap, or **Use GPS**. |
+| **Use GPS** | Tap **Use GPS as from** / **as to** / **as via** (label follows the selected chip). Needs a device fix; otherwise status shows `GPS unavailable`. Coordinates appear immediately; an optional nearby road-name upgrade may follow. |
 | **Map long-press** | Hold one finger on the map for **about 4 seconds** (blue ring). The **Marked location** sheet offers **Set as From / Start**, **Set as Via**, **Set as To / Destination**, **Save this place**, or **Cancel**. |
 | **Saved place** | Open **Saved places**, then tap **From**, **Via**, or **To** on a row. |
 
@@ -48,7 +48,12 @@ Tap **Plan route**.
 - You need a downloaded region PBF (Tools). If none is found, status asks you
   to download a region (e.g. Østlandet) first.
 - While planning, the button shows **Planning…** and a progress line/bar may
-  appear.
+  appear (plan-only progress — convert / cone work use separate channels).
+- If the place index is still empty, searching a name shows
+  **Place index is still building…**; use coordinates, map tap, or **Use GPS**
+  meanwhile.
+- **Use GPS** fills coordinates immediately, then may upgrade to a nearby
+  road name when resolution finishes.
 
 ### Simulate route
 

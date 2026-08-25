@@ -114,9 +114,9 @@ Dette er helt valgfri støtte, ikke en betalingsmur — Navi er og forblir grati
 | **Offisielle løyper** | For fottur/sykling kan du valgfritt foretrekke merkede langturer (av som standard). Vanlige stier fungerer fortsatt hvis merket løype har hull. | Ferdig |
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Et lite bladikon vises når øko er på. | Ferdig |
 | **Frakoblet planlegging** | Last ned en region én gang, planlegg og se ruten på enheten. | Ferdig |
-| **Indeksering** | Etter regionsnedlasting gjør en bakgrunnsjobb OSM-uttrekket om til kompakte rutingpakker, så senere planer går raskt. Du kan planlegge mens den kjører. | Ferdig |
-| **Stedssøk** | Søk steder og sett Fra / Via / Til. | Ferdig |
-| **Bruk GPS** | Fyll Fra / Via / Til fra live-posisjon (navn innen ~12 m, ellers koordinater). Feltet er chipen som var aktiv da du trykket — ikke den som er valgt etter at oppslaget er ferdig. | Ferdig |
+| **Indeksering** | Etter regionsnedlasting gjør en bakgrunnsjobb OSM-uttrekket om til kompakte rutingpakker, så senere planer går raskt. Du kan planlegge mens den kjører; konvertering og stedsindeks **pauser** under en forgrunnsplan, slik at PBF-reservestien ikke sulter. | Ferdig |
+| **Stedssøk** | Søk steder og sett Fra / Via / Til. Mens stedsindeksen fortsatt er tom/bygges, viser søket en byggehint (koordinater og karttrykk fungerer fortsatt). | Ferdig |
+| **Bruk GPS** | Fyll Fra / Via / Til fra live-posisjon: koordinater kommer med en gang, deretter eventuelt oppgradering til veiknavn i nærheten. Feltet er chipen som var aktiv da du trykket — ikke den som er valgt etter at oppslaget er ferdig. | Ferdig |
 | **Kartmerke og lagrede steder** | Hold på kartet ~4 s for å merke et punkt; sett Fra / Via / Til eller lagre et navngitt sted (skilt fra Lagrede ruter). | Ferdig |
 | **Avvik / omberegning** | Vedvarende avvik viser **Off route**; motorprofiler omplanlegger automatisk fra live posisjon; fottur spør først. | Ferdig |
 | **Pauser og hvile** | Påminner når pause er «forfalt» og kan foreslå stopp. Bil bruker timer mellom pauser; fottur/sykling bruker rasteavstander; lastebil bruker juridiske kjøretidsregler der de er kjent. | Ferdig |
@@ -175,6 +175,13 @@ indekseringen er ferdig, bruker planlegging den tregere rå `.osm.pbf`-stien.
 Tools viser fremdrift som **Indexed maps (background)**; når det står
 **Indexed maps: ready (pack-hit)**, bruker neste plan pakkene — typisk ca.
 1,5–2 sekunder på referansenettbrettet i stedet for titalls sekunder.
+
+Mens **Plan route** (eller auto-omberegning) kjører på PBF-reservestien,
+viker bakgrunnskonvertering og stedsindeks, slik at de ikke konkurrerer om
+samme uttrekk. GPS-utløste fartsgrense-kjegle- / veinær-bygginger **hopper
+over** i det vinduet (én mistet HUD-oppdatering) og fortsetter på neste
+fix etter planen. Planfremdrift har egen kanal, så konverterings-/kjegle-
+etiketter ikke flytter planlinjen.
 
 Det bakgrunnsjobben skriver:
 
@@ -757,6 +764,10 @@ Land-/regionvisuelle uttrekk kan også lages med
   lasting (tidligere ~177,6 s for en hel plan når bbox-alle matet
   overnattingssjekker). Gjenværende kostnad er mest obligatorisk
   full-extract-dekoding pluss andre PBF-skanninger under planlegging.
+  Under en forgrunnsplan viker bakgrunnskonvertering/stedsindeks, og
+  GPS-kjegle-/veinær-bbox-bygging hopper over, slik at samtidige PBF-lesere
+  ikke strekker pack-miss-planer til mange minutter (se
+  [Indeksering](#indeksering-bakgrunn-etter-nedlasting)).
 - **Pauseteller ≠ tur-ETA:** med vilje — se
   [Pauseteller vs tur-ETA](#pauseteller-vs-tur-eta).
 - **Ikke implementert ennå:** sjekk av om koden kan optimaliseres for
