@@ -20,6 +20,7 @@ mod network_pref;
 mod reweight;
 mod road_near;
 
+pub use bbox_build::TiledBuildTimings;
 pub use bike_suitability::{
     apply_bike_suitability, apply_bike_suitability_from_pbf, load_way_terrain_tags,
     tags_unsuitable_for, way_id_from_edge_id, BikeCapability,

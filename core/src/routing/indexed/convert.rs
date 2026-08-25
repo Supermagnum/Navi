@@ -2,6 +2,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use osmpbf::Element;
@@ -19,7 +21,7 @@ use super::poi_barrier_pack::{FlatPoiBarrierPack, MAGIC_POI_BARRIER, POI_BARRIER
 use super::wetland_pack::{FlatWetlandPack, MAGIC_WETLAND, WETLAND_FORMAT_VERSION};
 use crate::download::progress as download_progress;
 use crate::download::DownloadControl;
-use crate::poi::{classify_tags, osm_icon_key, PoiIndex, PoiRecord};
+use crate::poi::{classify_tags, osm_icon_key, PoiRecord};
 use crate::routing::elevation::{ElevationCache, ElevationService};
 use crate::routing::graph::{RouteGraph, RoutingProfile};
 use crate::routing::wetland::WetlandIndex;
@@ -65,6 +67,22 @@ pub struct ConvertReport {
     pub peak_rss_mb: f64,
     /// Number of spatial graph tiles written (0 = monolithic).
     pub graph_tiles: usize,
+    /// Wall time for the PBF node-extent bbox scan.
+    pub bbox_scan_ms: f64,
+    /// Wall time per routing profile graph build (key = `profile_key`).
+    pub graph_ms: BTreeMap<String, f64>,
+    /// Per-profile tile way-assignment time (tiled convert only).
+    pub tile_assign_ms: BTreeMap<String, f64>,
+    /// Per-profile parallel tile build+pack time (tiled convert only).
+    pub tile_build_ms: BTreeMap<String, f64>,
+    /// Wall time for POI node collection.
+    pub poi_ms: f64,
+    /// Wall time for barrier way + node-coord extraction.
+    pub barrier_ms: f64,
+    /// Wall time for overnight-building detection (0 when folded into POI).
+    pub overnight_ms: f64,
+    /// Wall time for wetland extract + pack write.
+    pub wetland_ms: f64,
 }
 
 fn stem_of(pbf: &Path) -> String {
@@ -81,81 +99,107 @@ fn stem_of(pbf: &Path) -> String {
 
 /// Scan PBF node extents so we can use the memory-safe bbox builder.
 ///
-/// Uses 0.5–99.5 percentiles over a reservoir sample so a few garbage OSM
-/// coordinates do not inflate tiling into hundreds of empty cells.
+/// Uses 0.5–99.5 percentiles over all node coordinates (parallel merge-sort,
+/// order-independent) so a few garbage OSM coordinates do not inflate tiling
+/// into hundreds of empty cells.
 fn pbf_node_bbox(pbf: &Path) -> anyhow::Result<[f64; 4]> {
-    const SAMPLE_CAP: usize = 250_000;
-    let mut lats: Vec<f64> = Vec::with_capacity(SAMPLE_CAP);
-    let mut lons: Vec<f64> = Vec::with_capacity(SAMPLE_CAP);
-    let mut seen: u64 = 0;
-    crate::download::pbf_priority::for_each_pbf_elements(pbf, |element| {
-        let (lat, lon) = match element {
-            Element::Node(n) => (n.lat(), n.lon()),
-            Element::DenseNode(n) => (n.lat(), n.lon()),
-            _ => return,
-        };
-        if !lat.is_finite() || !lon.is_finite() {
-            return;
-        }
-        seen += 1;
-        if lats.len() < SAMPLE_CAP {
-            lats.push(lat);
-            lons.push(lon);
-        } else {
-            // Reservoir: replace with decreasing probability.
-            let j = (seen - 1) % SAMPLE_CAP as u64;
-            // Cheap mix without pulling in a RNG crate.
-            let slot = ((seen.wrapping_mul(11400714819323198485)) as usize) % SAMPLE_CAP;
-            if j < SAMPLE_CAP as u64 / 4 || slot < SAMPLE_CAP / 8 {
-                lats[slot] = lat;
-                lons[slot] = lon;
-            }
-        }
-    })?;
-    if lats.is_empty() {
-        anyhow::bail!("PBF has no nodes: {}", pbf.display());
-    }
-    lats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    lons.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let pct = |v: &[f64], p: f64| {
-        let idx = ((v.len() as f64 - 1.0) * p).round() as usize;
-        v[idx.min(v.len() - 1)]
-    };
-    let min_lat = pct(&lats, 0.005);
-    let max_lat = pct(&lats, 0.995);
-    let min_lon = pct(&lons, 0.005);
-    let max_lon = pct(&lons, 0.995);
+    let raw = crate::download::pbf_priority::pbf_latlon_percentile_bounds(pbf, 0.005, 0.995)?;
     // Small pad so boundary ways are not clipped away.
-    Ok([
-        min_lat - 0.02,
-        min_lon - 0.02,
-        max_lat + 0.02,
-        max_lon + 0.02,
-    ])
+    Ok([raw[0] - 0.02, raw[1] - 0.02, raw[2] + 0.02, raw[3] + 0.02])
 }
 
-fn collect_poi_records(pbf: &Path) -> anyhow::Result<Vec<PoiRecord>> {
+fn tags_map_if_any<'a>(
+    tags: impl Iterator<Item = (&'a str, &'a str)>,
+) -> Option<HashMap<String, String>> {
+    let mut iter = tags;
+    let (k0, v0) = iter.next()?;
+    let mut map = HashMap::new();
+    map.insert(k0.to_string(), v0.to_string());
+    for (k, v) in iter {
+        map.insert(k.to_string(), v.to_string());
+    }
+    Some(map)
+}
+
+fn centroid_in_bbox(
+    coords: &HashMap<i64, (f64, f64)>,
+    refs: &[i64],
+    in_bbox: impl Fn(f64, f64) -> bool,
+) -> Option<(f64, f64)> {
+    let mut sum_lat = 0.0;
+    let mut sum_lon = 0.0;
+    let mut n = 0usize;
+    let mut any_in = false;
+    for id in refs {
+        let Some(&(lat, lon)) = coords.get(id) else {
+            continue;
+        };
+        if in_bbox(lat, lon) {
+            any_in = true;
+        }
+        sum_lat += lat;
+        sum_lon += lon;
+        n += 1;
+    }
+    if n == 0 || !any_in {
+        return None;
+    }
+    Some((sum_lat / n as f64, sum_lon / n as f64))
+}
+
+/// POI nodes plus overnight-building centroids in one pair of PBF scans
+/// (replaces a separate `PoiIndex::load_from_pbf_bbox_with_overnight_buildings`).
+fn collect_poi_records(
+    pbf: &Path,
+    bbox: [f64; 4],
+) -> anyhow::Result<(Vec<PoiRecord>, Vec<(f64, f64)>)> {
+    let in_bbox =
+        |lat: f64, lon: f64| lat >= bbox[0] && lat <= bbox[2] && lon >= bbox[1] && lon <= bbox[3];
+
+    let mut building_ways: Vec<Vec<i64>> = Vec::new();
+    let mut needed: HashSet<i64> = HashSet::new();
+    crate::download::pbf_priority::for_each_pbf_elements(pbf, |element| {
+        let Element::Way(way) = element else {
+            return;
+        };
+        let mut is_building = false;
+        for (k, v) in way.tags() {
+            if k == "building" && v != "no" {
+                is_building = true;
+                break;
+            }
+        }
+        if !is_building {
+            return;
+        }
+        let refs: Vec<i64> = way.refs().collect();
+        if refs.len() < 2 {
+            return;
+        }
+        for id in &refs {
+            needed.insert(*id);
+        }
+        building_ways.push(refs);
+    })?;
+
     let mut out = Vec::new();
+    let mut overnight = Vec::new();
+    let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len().max(1024));
     crate::download::pbf_priority::for_each_pbf_elements(pbf, |element| {
         let (id, lat, lon, tags) = match element {
-            Element::Node(n) => (
-                n.id(),
-                n.lat(),
-                n.lon(),
-                n.tags()
-                    .map(|(k, v)| (k.to_string(), v.to_string()))
-                    .collect::<HashMap<_, _>>(),
-            ),
-            Element::DenseNode(n) => (
-                n.id,
-                n.lat(),
-                n.lon(),
-                n.tags()
-                    .map(|(k, v)| (k.to_string(), v.to_string()))
-                    .collect::<HashMap<_, _>>(),
-            ),
+            Element::Node(n) => (n.id(), n.lat(), n.lon(), tags_map_if_any(n.tags())),
+            Element::DenseNode(n) => (n.id, n.lat(), n.lon(), tags_map_if_any(n.tags())),
             _ => return,
         };
+        if needed.contains(&id) {
+            coords.insert(id, (lat, lon));
+        }
+        let Some(tags) = tags else {
+            return;
+        };
+        if in_bbox(lat, lon) && tags.get("building").is_some_and(|v| v != "no") {
+            overnight.push((lat, lon));
+        }
         let categories = classify_tags(&tags);
         if categories.is_empty() {
             return;
@@ -170,7 +214,13 @@ fn collect_poi_records(pbf: &Path) -> anyhow::Result<Vec<PoiRecord>> {
             tags,
         });
     })?;
-    Ok(out)
+
+    for refs in building_ways {
+        if let Some(pt) = centroid_in_bbox(&coords, &refs, in_bbox) {
+            overnight.push(pt);
+        }
+    }
+    Ok((out, overnight))
 }
 
 type BarrierLineBboxes = Vec<(f64, f64, f64, f64)>;
@@ -324,6 +374,11 @@ fn note_rss(peak: &mut f64, _phase: &str) {
     }
 }
 
+fn note_phase(peak: &mut f64, phase: &str, started: Instant) -> f64 {
+    note_rss(peak, phase);
+    started.elapsed().as_secs_f64() * 1000.0
+}
+
 /// Split a region bbox into a lat/lon grid. Returns logical tile bboxes (no pad).
 fn tile_grid(region: [f64; 4], max_cell_deg: f64) -> Vec<(usize, usize, [f64; 4])> {
     let lat_span = (region[2] - region[0]).max(1e-6);
@@ -406,8 +461,9 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
         .to_string();
 
     download_progress::set(0, Some(5), "Building indexed maps: scanning bounds…");
+    let t_bbox = Instant::now();
     let region_bbox = pbf_node_bbox(&opts.pbf)?;
-    note_rss(&mut peak_rss_mb, "bounds");
+    let bbox_scan_ms = note_phase(&mut peak_rss_mb, "bounds", t_bbox);
 
     // Never warm the full-region DEM into RAM (echoes the earlier DEM-downloader
     // fully-buffered OOM). Sample on demand only; skip Δh entirely when tiling
@@ -434,6 +490,9 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
 
     let mut graph_files: BTreeMap<String, String> = BTreeMap::new();
     let mut graph_tiles: BTreeMap<String, Vec<GraphTileEntry>> = BTreeMap::new();
+    let mut graph_ms: BTreeMap<String, f64> = BTreeMap::new();
+    let mut tile_assign_ms: BTreeMap<String, f64> = BTreeMap::new();
+    let mut tile_build_ms: BTreeMap<String, f64> = BTreeMap::new();
     let mut nodes = 0usize;
     let mut edges = 0usize;
     let mut barrier_extra: Vec<(f64, f64, f64, f64)> = Vec::new();
@@ -463,8 +522,9 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
         let tiles = tile_grid(region_bbox, 1.0);
         // POI / barrier / wetland are extracted once below — not per profile.
         // Graph tiling: 2 PBF passes per profile with ways spilled to data_dir,
-        // then one tile built+written at a time (avoids LMK before first .rkyv).
+        // then per-tile graphs built+written in parallel (coords shared read-only).
         let total_steps = (build_profiles.len() + 3) as u64;
+        let barrier_arc = Arc::new(Mutex::new(barrier_extra));
         for (pi, profile) in build_profiles.iter().enumerate() {
             crate::download::pbf_priority::yield_if_foreground_plan();
             if opts.control.is_cancelled() {
@@ -476,40 +536,84 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
                 Some(total_steps),
                 &format!("Building indexed maps: graph ({key}, tiled)…"),
             );
-            let mut entries = Vec::new();
-            let produced = RouteGraph::build_tiled_from_pbf(
+            let t_graph = Instant::now();
+            let entries = Arc::new(Mutex::new(Vec::<GraphTileEntry>::new()));
+            let max_nodes = Arc::new(AtomicUsize::new(nodes));
+            let max_edges = Arc::new(AtomicUsize::new(edges));
+            let peak = Arc::new(Mutex::new(peak_rss_mb));
+            let barrier_cb = Arc::clone(&barrier_arc);
+            let tile_count_atomic = Arc::new(AtomicUsize::new(tile_count));
+            let data_dir = opts.data_dir.clone();
+            let stem_s = stem.clone();
+            let key_s = key.clone();
+            let profile_copy = *profile;
+            let control = opts.control.clone();
+            let entries_cb = Arc::clone(&entries);
+            let max_nodes_cb = Arc::clone(&max_nodes);
+            let max_edges_cb = Arc::clone(&max_edges);
+            let peak_cb = Arc::clone(&peak);
+            let tile_count_cb = Arc::clone(&tile_count_atomic);
+            let (produced, tile_timings) = RouteGraph::build_tiled_from_pbf(
                 &opts.pbf,
                 *profile,
                 &tiles,
                 0.05,
                 &opts.data_dir,
-                |row, col, logical, graph| {
-                    nodes = graph.nodes.len().max(nodes);
-                    edges = graph.edges.len().max(edges);
-                    note_rss(&mut peak_rss_mb, &format!("graph_{key}_{row}_{col}"));
-                    if *profile == RoutingProfile::Car {
-                        barrier_extra.extend(highway_barrier_segs(&graph));
+                move |row, col, logical, graph| {
+                    max_nodes_cb.fetch_max(graph.nodes.len(), Ordering::Relaxed);
+                    max_edges_cb.fetch_max(graph.edges.len(), Ordering::Relaxed);
+                    {
+                        let mut p = peak_cb.lock().unwrap_or_else(|e| e.into_inner());
+                        note_rss(&mut p, &format!("graph_{key_s}_{row}_{col}"));
                     }
-                    let name = graph_tile_filename(&stem, &key, row, col);
-                    let path = opts.data_dir.join(&name);
-                    if opts.control.is_cancelled() {
+                    if profile_copy == RoutingProfile::Car {
+                        barrier_cb
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .extend(highway_barrier_segs(&graph));
+                    }
+                    let name = graph_tile_filename(&stem_s, &key_s, row, col);
+                    let path = data_dir.join(&name);
+                    if control.is_cancelled() {
                         discard_partial(&path);
                         anyhow::bail!("cancelled");
                     }
-                    write_graph_pack(&path, &graph, elev_ref, &mut peak_rss_mb)?;
-                    entries.push(GraphTileEntry {
-                        file: name,
-                        bbox: logical,
-                    });
-                    tile_count += 1;
+                    {
+                        let mut p = peak_cb.lock().unwrap_or_else(|e| e.into_inner());
+                        write_graph_pack(&path, &graph, None, &mut p)?;
+                    }
+                    entries_cb
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push(GraphTileEntry {
+                            file: name,
+                            bbox: logical,
+                        });
+                    tile_count_cb.fetch_add(1, Ordering::Relaxed);
                     Ok(())
                 },
             )?;
-            if produced == 0 || entries.is_empty() {
+            nodes = max_nodes.load(Ordering::Relaxed);
+            edges = max_edges.load(Ordering::Relaxed);
+            peak_rss_mb = *peak.lock().unwrap_or_else(|e| e.into_inner());
+            tile_count = tile_count_atomic.load(Ordering::Relaxed);
+            let mut profile_entries = entries.lock().unwrap_or_else(|e| e.into_inner());
+            profile_entries.sort_by(|a, b| a.file.cmp(&b.file));
+            if produced == 0 || profile_entries.is_empty() {
                 anyhow::bail!("tiled convert produced no {key} tiles");
             }
-            graph_tiles.insert(key, entries);
+            graph_ms.insert(
+                key.clone(),
+                note_phase(&mut peak_rss_mb, &format!("graph_{key}"), t_graph),
+            );
+            tile_assign_ms.insert(key.clone(), tile_timings.tile_assign_ms);
+            tile_build_ms.insert(key.clone(), tile_timings.tile_build_ms);
+            graph_tiles.insert(key, std::mem::take(&mut *profile_entries));
         }
+        barrier_extra = Arc::try_unwrap(barrier_arc)
+            .map_err(|_| anyhow::anyhow!("barrier segments still shared"))?
+            .into_inner()
+            .map_err(|_| anyhow::anyhow!("barrier segments mutex poisoned"))?;
         if want_truck {
             if let Some(car_tiles) = graph_tiles.get("car").cloned() {
                 graph_tiles.insert("truck".into(), car_tiles);
@@ -528,10 +632,14 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
                 Some(total_steps),
                 &format!("Building indexed maps: graph ({key})…"),
             );
+            let t_graph = Instant::now();
             let graph = RouteGraph::build_from_pbf_bbox(&opts.pbf, *profile, region_bbox)?;
             nodes = graph.nodes.len().max(nodes);
             edges = graph.edges.len().max(edges);
-            note_rss(&mut peak_rss_mb, &format!("graph_{key}"));
+            graph_ms.insert(
+                key.clone(),
+                note_phase(&mut peak_rss_mb, &format!("graph_{key}"), t_graph),
+            );
             if *profile == RoutingProfile::Car {
                 barrier_extra = highway_barrier_segs(&graph);
             }
@@ -561,17 +669,14 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
     download_progress::set(90, Some(100), "Building indexed maps: POI + barriers…");
     crate::download::pbf_priority::yield_if_foreground_plan();
     note_rss(&mut peak_rss_mb, "poi_start");
-    let records = collect_poi_records(&opts.pbf)?;
+    let t_poi = Instant::now();
+    let (records, overnight_buildings) = collect_poi_records(&opts.pbf, region_bbox)?;
+    let poi_ms = note_phase(&mut peak_rss_mb, "poi_collect", t_poi);
+    let overnight_ms = 0.0;
+    let t_barrier = Instant::now();
     let (mut segs, glaciers) = extract_pbf_barrier_geometry(&opts.pbf)?;
     segs.extend(barrier_extra);
-    // Overnight building centroids for hiking allemannsretten (pack v2).
-    let overnight_buildings = {
-        let overnight =
-            PoiIndex::load_from_pbf_bbox_with_overnight_buildings(&opts.pbf, region_bbox)?;
-        let b = overnight.overnight_buildings().to_vec();
-        note_rss(&mut peak_rss_mb, "overnight_buildings");
-        b
-    };
+    let barrier_ms = note_phase(&mut peak_rss_mb, "barrier", t_barrier);
     let overnight_building_count = overnight_buildings.len();
     let poi_pack = FlatPoiBarrierPack::from_parts(&records, &segs, &glaciers, &overnight_buildings);
     drop(overnight_buildings);
@@ -595,6 +700,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
 
     download_progress::set(95, Some(100), "Building indexed maps: wetlands…");
     crate::download::pbf_priority::yield_if_foreground_plan();
+    let t_wetland = Instant::now();
     // Clear prior wetland packs (monolith or tiles) so rebuilds do not leave gaps.
     if let Ok(rd) = std::fs::read_dir(&opts.data_dir) {
         for ent in rd.flatten() {
@@ -695,6 +801,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
             }
         }
     };
+    let wetland_ms = note_phase(&mut peak_rss_mb, "wetland_done", t_wetland);
     let (wetland_file, wetland_format_version) = if !wetland_tiles_out.is_empty() {
         (None, WETLAND_FORMAT_VERSION)
     } else if opts.data_dir.join(&wet_name).is_file() {
@@ -703,7 +810,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
         (None, 0)
     };
     log::info!(
-        "indexed convert overnight_buildings={overnight_building_count} wetland_rings={wetland_rings} wetland_tiles={}",
+        "indexed convert overnight_buildings={overnight_building_count} wetland_rings={wetland_rings} wetland_tiles={} bbox_scan_ms={bbox_scan_ms:.1} graph_ms={graph_ms:?} poi_ms={poi_ms:.1} barrier_ms={barrier_ms:.1} overnight_ms={overnight_ms:.1} wetland_ms={wetland_ms:.1}",
         wetland_tiles_out.len()
     );
 
@@ -764,5 +871,13 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
         has_delta_h: elev_ref.is_some(),
         peak_rss_mb,
         graph_tiles: tile_count,
+        bbox_scan_ms,
+        graph_ms,
+        tile_assign_ms,
+        tile_build_ms,
+        poi_ms,
+        barrier_ms,
+        overnight_ms,
+        wetland_ms,
     })
 }

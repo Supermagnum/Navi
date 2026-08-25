@@ -21,6 +21,10 @@ local.properties
 app/keystore/
 *.jks
 *.keystore
+# Built by scripts/build-android-native.sh — do not commit rebuilt copies.
+app/src/main/jniLibs/**/*.so
+# Kotlin/IDE incremental compile scratch
+.kotlin/
 
 # Local F-Droid buildability check workspace (not for commit)
 tools/fdroid-check/work/

@@ -10,7 +10,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use osmpbf::{Element, ElementReader, RelMemberType};
+use osmpbf::{Element, RelMemberType};
 
 /// Soft-avoid cost multiplier applied to graph edges and terrain cells.
 pub const WETLAND_SOFT_COST_MULT: f64 = 5.0;
@@ -184,57 +184,50 @@ impl WetlandWayExtract {
         let mut rel_outers: Vec<(WetlandClass, Vec<i64>)> = Vec::new();
         let mut outer_way_ids: HashSet<i64> = HashSet::new();
 
-        {
-            let file = std::fs::File::open(path)?;
-            let reader = ElementReader::new(file);
-            reader.for_each(|element| match element {
-                Element::Way(way) => {
-                    let tags: HashMap<String, String> = way
-                        .tags()
-                        .map(|(k, v)| (k.to_string(), v.to_string()))
-                        .collect();
-                    let Some(class) = classify_tags(&tags) else {
-                        return;
-                    };
-                    let refs: Vec<i64> = way.refs().collect();
-                    if refs.len() < 3 {
-                        return;
-                    }
-                    for id in &refs {
-                        needed.insert(*id);
-                    }
-                    ways.push((refs, class));
+        crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
+            Element::Way(way) => {
+                let tags: HashMap<String, String> = way
+                    .tags()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect();
+                let Some(class) = classify_tags(&tags) else {
+                    return;
+                };
+                let refs: Vec<i64> = way.refs().collect();
+                if refs.len() < 3 {
+                    return;
                 }
-                Element::Relation(rel) => {
-                    let tags: HashMap<String, String> = rel
-                        .tags()
-                        .map(|(k, v)| (k.to_string(), v.to_string()))
-                        .collect();
-                    let Some(class) = classify_tags(&tags) else {
-                        return;
-                    };
-                    let mut outers = Vec::new();
-                    for m in rel.members() {
-                        let role = m.role().unwrap_or("");
-                        if m.member_type == RelMemberType::Way && role.eq_ignore_ascii_case("outer")
-                        {
-                            outers.push(m.member_id);
-                            outer_way_ids.insert(m.member_id);
-                        }
-                    }
-                    if !outers.is_empty() {
-                        rel_outers.push((class, outers));
+                for id in &refs {
+                    needed.insert(*id);
+                }
+                ways.push((refs, class));
+            }
+            Element::Relation(rel) => {
+                let tags: HashMap<String, String> = rel
+                    .tags()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect();
+                let Some(class) = classify_tags(&tags) else {
+                    return;
+                };
+                let mut outers = Vec::new();
+                for m in rel.members() {
+                    let role = m.role().unwrap_or("");
+                    if m.member_type == RelMemberType::Way && role.eq_ignore_ascii_case("outer") {
+                        outers.push(m.member_id);
+                        outer_way_ids.insert(m.member_id);
                     }
                 }
-                _ => {}
-            })?;
-        }
+                if !outers.is_empty() {
+                    rel_outers.push((class, outers));
+                }
+            }
+            _ => {}
+        })?;
 
         let mut way_nodes: HashMap<i64, Vec<i64>> = HashMap::new();
         if !outer_way_ids.is_empty() {
-            let file = std::fs::File::open(path)?;
-            let reader = ElementReader::new(file);
-            reader.for_each(|element| {
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
                 let Element::Way(way) = element else {
                     return;
                 };
@@ -253,23 +246,19 @@ impl WetlandWayExtract {
         }
 
         let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
-        {
-            let file = std::fs::File::open(path)?;
-            let reader = ElementReader::new(file);
-            reader.for_each(|element| match element {
-                Element::Node(n) => {
-                    if needed.contains(&n.id()) {
-                        coords.insert(n.id(), (n.lat(), n.lon()));
-                    }
+        crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
+            Element::Node(n) => {
+                if needed.contains(&n.id()) {
+                    coords.insert(n.id(), (n.lat(), n.lon()));
                 }
-                Element::DenseNode(n) => {
-                    if needed.contains(&n.id()) {
-                        coords.insert(n.id(), (n.lat(), n.lon()));
-                    }
+            }
+            Element::DenseNode(n) => {
+                if needed.contains(&n.id()) {
+                    coords.insert(n.id(), (n.lat(), n.lon()));
                 }
-                _ => {}
-            })?;
-        }
+            }
+            _ => {}
+        })?;
 
         Ok(Self {
             ways,

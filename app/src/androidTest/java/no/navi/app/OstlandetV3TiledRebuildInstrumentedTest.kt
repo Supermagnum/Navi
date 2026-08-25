@@ -111,7 +111,7 @@ class OstlandetV3TiledRebuildInstrumentedTest {
         assertTrue(pbf.lastModified() == beforeMtime)
 
         val man = File(dir, "ostlandet-latest.navi-manifest.json").readText()
-        assertTrue(man.contains("\"graph_format_version\": 3"))
+        assertTrue(man.contains("\"graph_format_version\": 4"))
         assertTrue("manifest missing graph_tiles:\n$man", man.contains("graph_tiles"))
         android.util.Log.i("OstlandetV3Tiled", "MANIFEST $man")
     }

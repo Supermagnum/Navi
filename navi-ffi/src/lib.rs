@@ -3533,6 +3533,7 @@ pub fn ensure_indexed_maps(pbf_path: String, data_dir: String, elev_dir: Option<
         }
     }
 
+    ensure_native_logging();
     let mut opts = ConvertOptions::new(&data, &pbf);
     opts.elev_dir = elev_dir.map(PathBuf::from);
     // Motor + hiking covers the shared planning profiles for v1.

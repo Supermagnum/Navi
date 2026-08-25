@@ -96,6 +96,11 @@ pub fn set_on(ch: ProgressChannel, bytes_or_units: u64, total: Option<u64>, labe
     if let Ok(mut g) = s.label.lock() {
         *g = label.to_string();
     }
+    // Convert phases are long; surface the active label in logcat so device
+    // LMK / crash dumps can identify which phase was in progress.
+    if ch == ProgressChannel::Convert {
+        log::info!(target: "NaviConvert", "CONVERT_PHASE {label}");
+    }
 }
 
 /// Clear the current thread's channel.
