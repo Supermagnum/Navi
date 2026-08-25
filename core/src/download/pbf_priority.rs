@@ -331,7 +331,7 @@ where
                 Ok(BlobDecode::OsmHeader(_)) | Ok(BlobDecode::Unknown(_)) => Ok(()),
                 Ok(BlobDecode::OsmData(block)) => {
                     let mut guard = f.lock().unwrap_or_else(|e| e.into_inner());
-                    block.for_each_element(|el| guard(el));
+                    block.for_each_element(&mut *guard);
                     Ok(())
                 }
                 Err(e) => Err(e.into()),

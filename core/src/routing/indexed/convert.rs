@@ -149,10 +149,9 @@ fn centroid_in_bbox(
 
 /// POI nodes plus overnight-building centroids in one pair of PBF scans
 /// (replaces a separate `PoiIndex::load_from_pbf_bbox_with_overnight_buildings`).
-fn collect_poi_records(
-    pbf: &Path,
-    bbox: [f64; 4],
-) -> anyhow::Result<(Vec<PoiRecord>, Vec<(f64, f64)>)> {
+type PoiCollectOut = (Vec<PoiRecord>, Vec<(f64, f64)>);
+
+fn collect_poi_records(pbf: &Path, bbox: [f64; 4]) -> anyhow::Result<PoiCollectOut> {
     let in_bbox =
         |lat: f64, lon: f64| lat >= bbox[0] && lat <= bbox[2] && lon >= bbox[1] && lon <= bbox[3];
 
