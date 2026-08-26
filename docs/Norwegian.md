@@ -631,9 +631,11 @@ en Play Store- / F-Droid-utgivelse. For å bygge fra kilde, følg avsnittene
 nedenfor.
 
 Du kan også laste ned
-[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-debug.apk)
+[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/blob/main/compiled/navi-debug.apk)
 direkte i nettleseren på Android-enheten og installere den derfra (tillat
-installasjon fra nettleseren hvis du blir bedt om det).
+installasjon fra nettleseren hvis du blir bedt om det). Bruk nedlastingsknappen
+på den siden, eller råfilen
+[`raw/main/compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/main/compiled/navi-debug.apk).
 
 ## Android-appen (alle vertsplattformer)
 

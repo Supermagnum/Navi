@@ -12,6 +12,15 @@ The crates used in the project is listed here:
 https://github.com/Supermagnum/Navi/blob/dev/docs/crates.md
 
 
+# NOTE !
+Background indexing is still slow on region-scale extracts, but improved
+(Østlandet convert on SM-P613 ~14.8 → ~10.6 min; remaining time is mostly
+POI + barrier extraction). You can still plan while indexing runs; plans are
+much faster once packs are ready. Cold / missing-pack long-distance planning
+is still slow (PBF graph build). Pack-hit planning is much faster — see
+[Known issues](#known-issues).
+
+
 # Testers wanted
 
 We need people to try Navi on **real devices** — car head units, tablets, and
@@ -683,9 +692,11 @@ a Play Store / F-Droid release. To rebuild from source, follow the sections
 below.
 
 You can also download
-[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-debug.apk)
+[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/blob/main/compiled/navi-debug.apk)
 directly with your browser on the Android device and install it that way
-(allow installs from the browser if prompted).
+(allow installs from the browser if prompted). Use the download button on that
+page, or the raw file at
+[`raw/main/compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/main/compiled/navi-debug.apk).
 
 ## Android app (all host platforms)
 
