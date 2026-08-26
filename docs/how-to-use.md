@@ -39,6 +39,11 @@ Named hiking / cycle / pilgrim **routes** can appear in place search when they
 are in the local place index — search by route name the same way as a hut or
 town.
 
+A suggested multi-region example (OSM `brewery=cider` producers, Rogaland to
+Trondheim) is [`cider-route.md`](cider-route.md): paste `lat, lon` from that
+table into Place search, and split the trip into legs per downloaded Geofabrik
+region.
+
 ### Plan route
 
 Tap **Plan route**.

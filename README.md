@@ -260,6 +260,9 @@ Step-by-step end-user guide (planning, Tools, breaks, saved places/routes,
 per-mode options, pilgrim coverage):
 **[How to use Navi](docs/how-to-use.md)**.
 
+A worked example of a multi-region road trip (OSM cider producers, south to
+north): [`docs/cider-route.md`](docs/cider-route.md).
+
 ## How features work
 
 **Planning a route.** Set **From** and **To** (and optional vias), pick a travel
@@ -562,6 +565,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/poi-icon-whitelist.md`](docs/poi-icon-whitelist.md) | Which offline POI kinds draw, and which shop kinds are held back |
 | [`docs/poi.md`](docs/poi.md) | Place types and search |
 | [How to use Navi](docs/how-to-use.md) | End-user how-to (planning, Tools, breaks, saved places/routes, profiles) |
+| [`docs/cider-route.md`](docs/cider-route.md) | Suggested **Norwegian Cider Route** (Siderveien): OSM `brewery=cider` stops south→north, with Navi region/leg notes |
 | [`docs/road-signs.md`](docs/road-signs.md) | Norwegian road-sign catalogue, children-zone proximity, Look forward (300 m cone), approach phases |
 | [`docs/map-marking-saved-places.md`](docs/map-marking-saved-places.md) | Map long-press (4 s) and Saved places detail (Norwegian: [`kartmerking-lagrede-steder.md`](docs/kartmerking-lagrede-steder.md)) |
 | [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | EU truck driving-time rules |

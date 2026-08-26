@@ -240,6 +240,9 @@ Steg-for-steg brukerveiledning (planlegging, Tools, pauser, lagrede steder/ruter
 per-modus valg, pilegrim):
 **[How to use Navi](how-to-use.md)** (engelsk).
 
+Et eksempel på en flersone-biltur (OSM ciderprodusenter, sør til nord):
+[`cider-route.md`](cider-route.md) (engelsk).
+
 ## Slik fungerer funksjonene
 
 **Planlegge rute.** Sett **From** og **To** (og valgfrie via-punkter), velg
@@ -508,6 +511,7 @@ Fullt galleri: [`bilder.md`](bilder.md) (engelsk:
 | [`map-styles.md`](map-styles.md) | Online vs frakoblet kartutseende; 3D |
 | [`poi.md`](poi.md) | Stedstyper og søk |
 | [How to use Navi](how-to-use.md) | Brukerveiledning (planlegging, Tools, pauser, lagrede steder/ruter, profiler) — engelsk |
+| [`cider-route.md`](cider-route.md) | Forslag til **Siderveien** (norsk cider-rute): OSM `brewery=cider`-stopp sør→nord, med Navi-region/etappe-notater — engelsk |
 | [`current-street.md`](current-street.md) | Bunn-HUD: veinavn, GPS-fart / skiltet grense, overskridelsesfarge |
 | [`road-signs.md`](road-signs.md) | Norske fareskilt, barnesone-nærhet, Look forward (300 m kjegle), tilnærmingsfaser |
 | [`kartmerking-lagrede-steder.md`](kartmerking-lagrede-steder.md) | Trykk-og-hold (4 s) og lagrede steder (engelsk: [`map-marking-saved-places.md`](map-marking-saved-places.md)) |
