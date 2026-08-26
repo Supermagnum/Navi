@@ -845,6 +845,15 @@ Country/region visual extracts can also be prepared with
 
 # Known issues
 
+- **Background indexing is currently slow.** Region-scale extracts can take a
+  long time to convert into indexed packs (for example Innlandet around
+  **20 minutes** on current reference hardware). This is a known issue and is
+  being worked on. You can still plan while indexing runs; plans are much
+  faster once packs are ready.
+- **Long-distance route planning is currently slow** when indexed packs are
+  not ready yet, for the same reason (building the routing graph from the
+  downloaded `.osm.pbf`). This is also being worked on. Details and measured
+  pack-hit vs pack-miss times are in the planning-latency bullet below.
 - **Plugins:** content add-ons are intentionally not shipped yet, as they have
   not been made.
 - **UI polish:** the screens work but still need visual tidy-up on car displays.

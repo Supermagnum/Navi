@@ -775,6 +775,15 @@ Land-/regionvisuelle uttrekk kan også lages med
 
 # Kjente problemer
 
+- **Bakgrunnsindeksering er for tiden treg.** Regionsuttrekk kan ta lang tid å
+  konvertere til indekserte pakker (for eksempel Innlandet rundt
+  **20 minutter** på nåværende referanseutstyr). Dette er et kjent problem som
+  det arbeides med. Du kan planlegge mens indeksering kjører; planer går mye
+  raskere når pakkene er klare.
+- **Langdistanse ruteplanlegging er for tiden treg** når indekserte pakker ikke
+  er klare ennå, av samme grunn (bygging av rutenettverket fra nedlastet
+  `.osm.pbf`). Dette arbeides det også med. Målte pack-hit- vs
+  pack-miss-tider står i planleggingspunktene under.
 - **Plugins:** innholdstillegg er bevisst ikke levert ennå, fordi de ikke er
   laget ennå.
 - **UI-finish:** skjermene fungerer, men trenger fortsatt visuell opprydding på
