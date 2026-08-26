@@ -845,6 +845,19 @@ Country/region visual extracts can also be prepared with
 
 # Known issues
 
+- **Background indexing is still slow on region-scale extracts, but improved.**
+  On the reference SM-P613, full Østlandet convert dropped from about **14.8 min
+  to about 10.6 min** after wetland single-pass tile assignment and a shared
+  car+foot PBF parse (host ~143 s → ~110 s). Remaining convert time is still
+  dominated by POI + barrier extraction — that path has not been accelerated
+  yet. You can still plan while indexing runs; plans are much faster once packs
+  are ready.
+- **Cold / missing-pack long-distance planning is still slow** (PBF graph build).
+  **Pack-hit planning is much faster:** parallel tile mmap/deserialize cut host
+  warm `graph_build_ms` by roughly **35–47%** on short/medium/long Ostlandet
+  routes; on SM-P613 pack-hit short/medium/long warm walls were about **4.1 /
+  8.4 / 5.4 s** (not the multi-minute PBF fallback). Details and older
+  pack-hit vs pack-miss baselines are in the planning-latency bullet below.
 - **Plugins:** content add-ons are intentionally not shipped yet, as they have
   not been made.
 - **UI polish:** the screens work but still need visual tidy-up on car displays.
@@ -892,6 +905,9 @@ Country/region visual extracts can also be prepared with
   Espa→Atnbrufossen ~**54 s** (`graph_build_ms≈29 s` + `poi_barrier_ms≈25 s`,
   `astar_ms≈0.3 s`, `pack_hit=false` both back-to-back runs); with packs
   ~**2.7 s** (`pack_hit=true`, `graph_build_ms≈1.5 s`, `poi_barrier_ms≈0.3 s`).
+  **Host pack-hit after parallel tile load (2026-08-26):** warm `graph_build_ms`
+  ~758 / ~1484 / ~983 ms on short / medium / long Ostlandet car routes
+  (was ~1398 / ~2222 / ~1862 ms sequential).
   Hiking Skolla→Rondvassbu ~**104 s** without packs vs ~**25 s** with packs
   (`pack_hit` / `wetland_pack_hit` / `poi_pack_hit` true; remaining time is
   mostly `network_pref_ms` + `wetland_ms` + `multiday_ms`, not A*). Cabin

@@ -23,6 +23,8 @@ use crate::routing::safety::DangerBarrierIndex;
 use crate::routing::wetland::WetlandIndex;
 use std::collections::{HashMap, HashSet};
 
+use rayon::prelude::*;
+
 #[derive(Debug, Error)]
 pub enum PackLoadError {
     #[error("indexed pack missing or incomplete")]
@@ -168,7 +170,7 @@ fn load_tiled_graph(
     profile: RoutingProfile,
     bbox: Option<[f64; 4]>,
 ) -> Result<RouteGraph, PackLoadError> {
-    let selected: Vec<&super::manifest::GraphTileEntry> = match bbox {
+    let mut selected: Vec<&super::manifest::GraphTileEntry> = match bbox {
         Some(b) => tiles
             .iter()
             .filter(|t| bbox_intersects(t.bbox, b))
@@ -178,13 +180,25 @@ fn load_tiled_graph(
     if selected.is_empty() {
         return Err(PackLoadError::Missing);
     }
+    // Deterministic merge order: sort by tile filename before parallel load so
+    // HashMap insert / edge-id first-wins matches the prior sequential path.
+    selected.sort_by(|a, b| a.file.cmp(&b.file));
+
+    // Parallel mmap/deserialize. Rayon uses available parallelism (min-spec
+    // floor is 8 cores); merge below stays sorted for deterministic first-wins.
+    let graphs: Vec<RouteGraph> = selected
+        .par_iter()
+        .map(|t| {
+            let path = data_dir.join(&t.file);
+            load_graph_pack_bbox(&path, profile, bbox)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
     let mut nodes = HashMap::new();
     let mut edges = Vec::new();
     let mut seen_edge_ids = HashSet::new();
-    for t in selected {
-        let path = data_dir.join(&t.file);
-        // Materialize each tile clipped to the plan bbox when provided.
-        let g = load_graph_pack_bbox(&path, profile, bbox)?;
+    // Merge in the same sorted order as the sequential path used.
+    for g in graphs {
         for (id, node) in g.nodes {
             nodes.insert(id, node);
         }

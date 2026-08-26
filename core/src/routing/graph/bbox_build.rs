@@ -197,7 +197,7 @@ fn append_spill_file(dest: &mut impl Write, src_path: &Path) -> anyhow::Result<u
 fn spill_tiled_highway_ways(
     path: &Path,
     spill_dir: &Path,
-    profile: RoutingProfile,
+    profiles: &[RoutingProfile],
     dest: &mut impl Write,
 ) -> anyhow::Result<(HashSet<i64>, u64)> {
     struct ThreadPass1 {
@@ -267,7 +267,7 @@ fn spill_tiled_highway_ways(
                     let Some(highway) = tags.get("highway") else {
                         return;
                     };
-                    if !highway_ok_for_profile(highway, profile) {
+                    if !highway_ok_for_any(highway, profiles) {
                         return;
                     }
                     let refs: Vec<i64> = way.refs().collect();
@@ -360,6 +360,19 @@ fn highway_ok_for_profile(highway: &str, profile: RoutingProfile) -> bool {
         RoutingProfile::Bicycle => {
             car_highway_ok(highway) || matches!(highway, "cycleway" | "path" | "footway")
         }
+    }
+}
+
+fn highway_ok_for_any(highway: &str, profiles: &[RoutingProfile]) -> bool {
+    profiles.iter().any(|&p| highway_ok_for_profile(highway, p))
+}
+
+fn profile_label(profile: RoutingProfile) -> &'static str {
+    match profile {
+        RoutingProfile::Car => "car",
+        RoutingProfile::Truck => "truck",
+        RoutingProfile::Foot => "foot",
+        RoutingProfile::Bicycle => "bicycle",
     }
 }
 
@@ -508,15 +521,12 @@ impl RouteGraph {
     }
 
     /// Build graphs for all spatial tiles with **two PBF passes total** (not
-    /// three × tile count). Invokes `on_tile` as each tile graph is ready so
-    /// callers can write+drop without retaining every tile in RAM.
+    /// per tile). Filtered ways are spilled; coords are loaded once; then each
+    /// tile is built+written and dropped.
     ///
-    /// Way-first (not node-first): only highway-referenced nodes are retained.
-    /// Filtered ways are **spilled to a tempfile** during Pass 1 so the process
-    /// does not hold every highway + full tag map in RAM (that OOMs ~4GB tablets
-    /// before any tile write). After Pass 2, ways are assigned into per-tile
-    /// spill files, then each tile is built+written and dropped. `tiles` entries
-    /// are `(row, col, logical_bbox)`.
+    /// For multiple profiles, Pass 1/2 run once over the highway union; each
+    /// profile then filters the shared spill and runs its own tile-assign +
+    /// tile-build. Truck must not be included (alias car packs instead).
     pub fn build_tiled_from_pbf(
         path: impl AsRef<Path>,
         profile: RoutingProfile,
@@ -525,8 +535,40 @@ impl RouteGraph {
         spill_dir: impl AsRef<Path>,
         on_tile: impl Fn(usize, usize, [f64; 4], Self) -> anyhow::Result<()> + Send + Sync,
     ) -> anyhow::Result<(usize, TiledBuildTimings)> {
+        let results = Self::build_tiled_from_pbf_profiles(
+            path,
+            &[profile],
+            tiles,
+            pad_deg,
+            spill_dir,
+            move |_profile, row, col, logical, g| on_tile(row, col, logical, g),
+        )?;
+        results
+            .into_iter()
+            .next()
+            .map(|(_, produced, timings)| (produced, timings))
+            .ok_or_else(|| anyhow::anyhow!("tiled graph empty for profile {profile:?}"))
+    }
+
+    /// Shared Pass 1/2 for all `profiles`, then per-profile tile-assign + build.
+    pub fn build_tiled_from_pbf_profiles(
+        path: impl AsRef<Path>,
+        profiles: &[RoutingProfile],
+        tiles: &[(usize, usize, [f64; 4])],
+        pad_deg: f64,
+        spill_dir: impl AsRef<Path>,
+        on_tile: impl Fn(RoutingProfile, usize, usize, [f64; 4], Self) -> anyhow::Result<()>
+            + Send
+            + Sync,
+    ) -> anyhow::Result<Vec<(RoutingProfile, usize, TiledBuildTimings)>> {
         let path = path.as_ref();
         let spill_dir = spill_dir.as_ref();
+        if profiles.is_empty() {
+            anyhow::bail!("no profiles");
+        }
+        if profiles.contains(&RoutingProfile::Truck) {
+            anyhow::bail!("truck must alias car packs; do not build tiled truck graphs");
+        }
         if tiles.is_empty() {
             anyhow::bail!("no tiles");
         }
@@ -546,39 +588,36 @@ impl RouteGraph {
             })
             .collect();
 
-        // Pass 1: profile highways only — spill filtered ways; keep node-id set.
-        let profile_key = match profile {
-            RoutingProfile::Car => "car",
-            RoutingProfile::Truck => "truck",
-            RoutingProfile::Foot => "foot",
-            RoutingProfile::Bicycle => "bicycle",
-        };
+        let label = profiles
+            .iter()
+            .map(|p| profile_label(*p))
+            .collect::<Vec<_>>()
+            .join("+");
         crate::download::progress::set(
             0,
             Some(4),
-            &format!("Indexed maps: pass1 way-spill ({profile_key})…"),
+            &format!("Indexed maps: pass1 way-spill ({label})…"),
         );
         let (ways_spill, mut ways_writer) = TempSpill::create(spill_dir, "tiled-ways")?;
         let (needed, way_count) =
-            spill_tiled_highway_ways(path, spill_dir, profile, &mut ways_writer)?;
+            spill_tiled_highway_ways(path, spill_dir, profiles, &mut ways_writer)?;
         ways_writer
             .flush()
             .map_err(|e| anyhow::anyhow!("spill flush: {e}"))?;
         drop(ways_writer);
         if way_count == 0 {
-            anyhow::bail!("tiled graph empty for profile {profile:?} (no ways)");
+            anyhow::bail!("tiled graph empty for profiles {profiles:?} (no ways)");
         }
         log::info!(
             target: "NaviConvert",
-            "CONVERT_PHASE pass1 done ({profile_key}) ways={way_count} needed_nodes={}",
+            "CONVERT_PHASE pass1 done ({label}) ways={way_count} needed_nodes={}",
             needed.len()
         );
 
-        // Pass 2: coords + compact barrier tags for highway-referenced nodes.
         crate::download::progress::set(
             1,
             Some(4),
-            &format!("Indexed maps: pass2 coords ({profile_key})…"),
+            &format!("Indexed maps: pass2 coords ({label})…"),
         );
         let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
         let mut barrier_tags: HashMap<i64, HashMap<String, String>> = HashMap::new();
@@ -614,160 +653,182 @@ impl RouteGraph {
         drop(needed);
         log::info!(
             target: "NaviConvert",
-            "CONVERT_PHASE pass2 done ({profile_key}) coords={}",
+            "CONVERT_PHASE pass2 done ({label}) coords={}",
             coords.len()
         );
 
-        // Assign spilled ways into per-tile spill files (still streaming; no
-        // region-wide Vec<RawWay> in RAM).
-        crate::download::progress::set(
-            2,
-            Some(4),
-            &format!("Indexed maps: tile-assign ({profile_key})…"),
-        );
-        let t_assign = Instant::now();
-        let mut tile_spills: Vec<TempSpill> = Vec::with_capacity(tiles.len());
-        let mut tile_writers: Vec<BufWriter<std::fs::File>> = Vec::with_capacity(tiles.len());
-        for i in 0..tiles.len() {
-            let (spill, w) = TempSpill::create(spill_dir, &format!("tiled-t{i}"))?;
-            tile_spills.push(spill);
-            tile_writers.push(w);
-        }
-        let mut tile_way_counts = vec![0u64; tiles.len()];
-        let mut tile_node_ids: Vec<HashSet<i64>> =
-            (0..tiles.len()).map(|_| HashSet::new()).collect();
-        {
-            let file = std::fs::File::open(ways_spill.path())?;
-            let mut reader = BufReader::new(file);
-            while let Some(way) = read_spilled_way(&mut reader)? {
-                let mut mask = 0u64;
-                for id in &way.nodes {
-                    let Some(&(lat, lon)) = coords.get(id) else {
+        let mut out = Vec::with_capacity(profiles.len());
+        for (pi, &profile) in profiles.iter().enumerate() {
+            let last_profile = pi + 1 == profiles.len();
+            let profile_key = profile_label(profile);
+            crate::download::progress::set(
+                2,
+                Some(4),
+                &format!("Indexed maps: tile-assign ({profile_key})…"),
+            );
+            let t_assign = Instant::now();
+            let mut tile_spills: Vec<TempSpill> = Vec::with_capacity(tiles.len());
+            let mut tile_writers: Vec<BufWriter<std::fs::File>> = Vec::with_capacity(tiles.len());
+            for i in 0..tiles.len() {
+                let (spill, w) =
+                    TempSpill::create(spill_dir, &format!("tiled-{profile_key}-t{i}"))?;
+                tile_spills.push(spill);
+                tile_writers.push(w);
+            }
+            let mut tile_way_counts = vec![0u64; tiles.len()];
+            let mut tile_node_ids: Vec<HashSet<i64>> =
+                (0..tiles.len()).map(|_| HashSet::new()).collect();
+            {
+                let file = std::fs::File::open(ways_spill.path())?;
+                let mut reader = BufReader::new(file);
+                while let Some(way) = read_spilled_way(&mut reader)? {
+                    let Some(highway) = way
+                        .tags
+                        .iter()
+                        .find(|(k, _)| k == "highway")
+                        .map(|(_, v)| v.as_str())
+                    else {
                         continue;
                     };
-                    for (i, bb) in expanded.iter().enumerate() {
-                        if in_bbox(lat, lon, *bb) {
-                            mask |= 1u64 << i;
+                    if !highway_ok_for_profile(highway, profile) {
+                        continue;
+                    }
+                    let mut mask = 0u64;
+                    for id in &way.nodes {
+                        let Some(&(lat, lon)) = coords.get(id) else {
+                            continue;
+                        };
+                        for (i, bb) in expanded.iter().enumerate() {
+                            if in_bbox(lat, lon, *bb) {
+                                mask |= 1u64 << i;
+                            }
+                        }
+                    }
+                    if mask == 0 {
+                        continue;
+                    }
+                    for (i, writer) in tile_writers.iter_mut().enumerate() {
+                        if mask & (1u64 << i) != 0 {
+                            write_spilled_way(writer, &way)?;
+                            tile_way_counts[i] += 1;
+                            tile_node_ids[i].extend(&way.nodes);
                         }
                     }
                 }
-                if mask == 0 {
-                    continue;
-                }
-                for (i, writer) in tile_writers.iter_mut().enumerate() {
-                    if mask & (1u64 << i) != 0 {
-                        write_spilled_way(writer, &way)?;
-                        tile_way_counts[i] += 1;
-                        tile_node_ids[i].extend(&way.nodes);
-                    }
-                }
             }
-        }
-        for w in &mut tile_writers {
-            w.flush()?;
-        }
-        drop(tile_writers);
-        drop(ways_spill);
-        let tile_assign_ms = t_assign.elapsed().as_secs_f64() * 1000.0;
-        log::info!(
-            target: "NaviConvert",
-            "CONVERT_PHASE tile-assign done ({profile_key}) ms={tile_assign_ms:.0}"
-        );
-
-        crate::download::progress::set(
-            3,
-            Some(4),
-            &format!("Indexed maps: step3 tile-build ({profile_key})…"),
-        );
-        let t_build = Instant::now();
-        let yield_to_plan = crate::download::pbf_priority::background_indexer_active();
-        let mut produced = 0usize;
-        let mut pending: Vec<usize> = (0..tiles.len())
-            .filter(|&i| tile_way_counts[i] > 0)
-            .collect();
-        let pending_total = pending.len();
-        log::info!(
-            target: "NaviConvert",
-            "CONVERT_PHASE step3 start ({profile_key}) tiles={pending_total} concurrency={TILE_BUILD_CONCURRENCY}"
-        );
-
-        while !pending.is_empty() {
-            let batch_len = TILE_BUILD_CONCURRENCY.min(pending.len());
-            let batch: Vec<usize> = pending.drain(..batch_len).collect();
+            for w in &mut tile_writers {
+                w.flush()?;
+            }
+            drop(tile_writers);
+            let tile_assign_ms = t_assign.elapsed().as_secs_f64() * 1000.0;
             log::info!(
                 target: "NaviConvert",
-                "CONVERT_PHASE step3 batch ({profile_key}) remaining={} batch={:?}",
-                pending.len() + batch.len(),
-                batch
+                "CONVERT_PHASE tile-assign done ({profile_key}) ms={tile_assign_ms:.0}"
             );
 
-            struct TileWork {
-                row: usize,
-                col: usize,
-                logical: [f64; 4],
-                ways: Vec<Arc<RawWay>>,
-                coords: HashMap<i64, (f64, f64)>,
-            }
+            crate::download::progress::set(
+                3,
+                Some(4),
+                &format!("Indexed maps: step3 tile-build ({profile_key})…"),
+            );
+            let t_build = Instant::now();
+            let yield_to_plan = crate::download::pbf_priority::background_indexer_active();
+            let mut produced = 0usize;
+            let mut pending: Vec<usize> = (0..tiles.len())
+                .filter(|&i| tile_way_counts[i] > 0)
+                .collect();
+            let pending_total = pending.len();
+            log::info!(
+                target: "NaviConvert",
+                "CONVERT_PHASE step3 start ({profile_key}) tiles={pending_total} concurrency={TILE_BUILD_CONCURRENCY}"
+            );
 
-            let mut works: Vec<TileWork> = Vec::with_capacity(batch.len());
-            for i in batch {
-                let (row, col, logical) = tiles[i];
-                let coords_subset = subset_coords(&coords, &tile_node_ids[i]);
-                let mut ways: Vec<Arc<RawWay>> = Vec::with_capacity(tile_way_counts[i] as usize);
-                {
-                    let file = std::fs::File::open(tile_spills[i].path())?;
-                    let mut reader = BufReader::new(file);
-                    while let Some(way) = read_spilled_way(&mut reader)? {
-                        ways.push(Arc::new(way.into_raw()));
+            while !pending.is_empty() {
+                let batch_len = TILE_BUILD_CONCURRENCY.min(pending.len());
+                let batch: Vec<usize> = pending.drain(..batch_len).collect();
+                log::info!(
+                    target: "NaviConvert",
+                    "CONVERT_PHASE step3 batch ({profile_key}) remaining={} batch={:?}",
+                    pending.len() + batch.len(),
+                    batch
+                );
+
+                struct TileWork {
+                    row: usize,
+                    col: usize,
+                    logical: [f64; 4],
+                    ways: Vec<Arc<RawWay>>,
+                    coords: HashMap<i64, (f64, f64)>,
+                }
+
+                let mut works: Vec<TileWork> = Vec::with_capacity(batch.len());
+                for i in batch {
+                    let (row, col, logical) = tiles[i];
+                    let coords_subset = subset_coords(&coords, &tile_node_ids[i]);
+                    let mut ways: Vec<Arc<RawWay>> =
+                        Vec::with_capacity(tile_way_counts[i] as usize);
+                    {
+                        let file = std::fs::File::open(tile_spills[i].path())?;
+                        let mut reader = BufReader::new(file);
+                        while let Some(way) = read_spilled_way(&mut reader)? {
+                            ways.push(Arc::new(way.into_raw()));
+                        }
+                    }
+                    let _ = std::fs::remove_file(tile_spills[i].path());
+                    works.push(TileWork {
+                        row,
+                        col,
+                        logical,
+                        ways,
+                        coords: coords_subset,
+                    });
+                }
+
+                let batch_produced = Arc::new(AtomicUsize::new(0));
+                works
+                    .par_iter()
+                    .try_for_each(|work| -> anyhow::Result<()> {
+                        crate::download::pbf_priority::yield_if_background_indexer(yield_to_plan);
+                        match graph_from_raw_ways(&work.ways, &work.coords, profile, &barrier_tags)
+                        {
+                            Ok(g) if !g.edges.is_empty() => {
+                                batch_produced.fetch_add(1, Ordering::Relaxed);
+                                on_tile(profile, work.row, work.col, work.logical, g)
+                            }
+                            _ => Ok(()),
+                        }
+                    })?;
+                produced += batch_produced.load(Ordering::Relaxed);
+
+                // Keep shared coords intact until the last profile finishes.
+                if last_profile {
+                    if pending.is_empty() {
+                        coords.clear();
+                    } else {
+                        retain_coords_for_pending_tiles(&mut coords, &tile_node_ids, &pending);
                     }
                 }
-                let _ = std::fs::remove_file(tile_spills[i].path());
-                works.push(TileWork {
-                    row,
-                    col,
-                    logical,
-                    ways,
-                    coords: coords_subset,
-                });
             }
 
-            let batch_produced = Arc::new(AtomicUsize::new(0));
-            works
-                .par_iter()
-                .try_for_each(|work| -> anyhow::Result<()> {
-                    crate::download::pbf_priority::yield_if_background_indexer(yield_to_plan);
-                    match graph_from_raw_ways(&work.ways, &work.coords, profile, &barrier_tags) {
-                        Ok(g) if !g.edges.is_empty() => {
-                            batch_produced.fetch_add(1, Ordering::Relaxed);
-                            on_tile(work.row, work.col, work.logical, g)
-                        }
-                        _ => Ok(()),
-                    }
-                })?;
-            produced += batch_produced.load(Ordering::Relaxed);
-
-            if pending.is_empty() {
-                coords.clear();
-            } else {
-                retain_coords_for_pending_tiles(&mut coords, &tile_node_ids, &pending);
+            let tile_build_ms = t_build.elapsed().as_secs_f64() * 1000.0;
+            log::info!(
+                target: "NaviConvert",
+                "CONVERT_PHASE step3 done ({profile_key}) produced={produced} ms={tile_build_ms:.0}"
+            );
+            if produced == 0 {
+                anyhow::bail!("tiled graph empty for profile {profile:?}");
             }
+            out.push((
+                profile,
+                produced,
+                TiledBuildTimings {
+                    tile_assign_ms,
+                    tile_build_ms,
+                },
+            ));
         }
-
-        let tile_build_ms = t_build.elapsed().as_secs_f64() * 1000.0;
-        log::info!(
-            target: "NaviConvert",
-            "CONVERT_PHASE step3 done ({profile_key}) produced={produced} ms={tile_build_ms:.0}"
-        );
-        if produced == 0 {
-            anyhow::bail!("tiled graph empty for profile {profile:?}");
-        }
-        Ok((
-            produced,
-            TiledBuildTimings {
-                tile_assign_ms,
-                tile_build_ms,
-            },
-        ))
+        drop(ways_spill);
+        Ok(out)
     }
 }
 
