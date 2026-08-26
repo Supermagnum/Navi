@@ -57,6 +57,7 @@ trenger ikke skrive kode.
     - [Ikoner (hvor de ligger)](#ikoner-hvor-de-ligger)
 11. [Kodestandarder og bidrag](#kodestandarder-og-bidrag)
 12. [Bygge og installere](#bygge-og-installere)
+    - [Installer en forhåndsbygd APK](#installer-en-forhåndsbygd-apk)
     - [Utgivelsesbygg (APK / AAB)](#utgivelsesbygg-apk--aab)
 13. [Hvor kartdataene kommer fra](#hvor-kartdataene-kommer-fra)
 14. [Kjente problemer](#kjente-problemer)
@@ -606,6 +607,33 @@ git checkout dev
 klone **din** fork, og jobb på **`dev`** — steg for steg i
 [`CONTRIBUTING.md`](CONTRIBUTING.md#fork-from-dev-and-basic-github-usage)
 (engelsk).
+
+## Installer en forhåndsbygd APK
+
+En debug-signert APK ligger i
+[`compiled/navi-debug.apk`](../compiled/navi-debug.apk) (arm64, samme pakke som
+`./gradlew :app:assembleDebug`). Du trenger ikke Rust/NDK-verktøykjede for å
+installere den.
+
+1. På enheten: slå på **Utvikleralternativer** og **USB-feilsøking**.
+2. Koble til med `adb devices` og bekreft at enheten er listet.
+3. Hvis en eldre Navi-bygg med **annen signatur** allerede er installert,
+   avinstaller først (`adb uninstall no.navi.app`).
+4. Installer og start:
+
+```bash
+adb install -r compiled/navi-debug.apk
+adb shell am start -n no.navi.app/.MainActivity
+```
+
+Denne APK-en er signert med Androids **debug**-nøkkel. Den er for testere, ikke
+en Play Store- / F-Droid-utgivelse. For å bygge fra kilde, følg avsnittene
+nedenfor.
+
+Du kan også laste ned
+[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-debug.apk)
+direkte i nettleseren på Android-enheten og installere den derfra (tillat
+installasjon fra nettleseren hvis du blir bedt om det).
 
 ## Android-appen (alle vertsplattformer)
 

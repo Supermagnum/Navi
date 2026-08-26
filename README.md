@@ -682,6 +682,11 @@ This APK is signed with the Android **debug** keystore. It is for testers, not
 a Play Store / F-Droid release. To rebuild from source, follow the sections
 below.
 
+You can also download
+[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-debug.apk)
+directly with your browser on the Android device and install it that way
+(allow installs from the browser if prompted).
+
 ## Android app (all host platforms)
 
 The product APK is built the same way on **Linux**, **macOS**, and **Windows**:
