@@ -1,7 +1,22 @@
-# Android instrumented tests — separate from per-PR CI.
+# Android instrumented tests — dispatch-only; not a per-PR required check.
+#
+# Why this suite is not the PR gate (category C / blocked B):
+# - GitHub-hosted AAOS + SwiftShader has produced environment artifacts rather
+#   than app bugs (docs/real-hardware-testing.md#github-hosted-instrumented-ci).
+# - Screenshot* classes capture evidence PNGs (non-null / count / washFrac). They
+#   do not golden-diff pixels. Liberty shots need live tiles; hydro fringe is a
+#   known capture-only artifact. Glacier/townhall/housenumber/protected-area
+#   style regressions are not asserted in-pixels — a human reads the PNGs.
+# - Live network: OstlandetCleanDownloadVerify (~1.16 GB mz15), PmtilesPauseResume,
+#   LuxembourgDownloadProgress, StreamDownload, ToolsDownloadUi (test/oslo extract),
+#   BasemapStyleResolver.real_oslo_extract_then_offline_style.
+# - Fixture-heavy (B, still blocked): ForegroundPlanConeSkip, Ostlandet PBF routing,
+#   RestoreOstlandetFixtures, PmtilesCompletionGuard existing_full_ostlandet_archive.
+#   Host-side stand-ins for the completion-guard / restore-offer logic run in
+#   ci.yml job regression-guards.
+#
 # These need an emulator (slow; multi-minute suites) and often local fixtures under
-# /data/local/tmp/navi_fixtures. Mirror of Rust's #[ignore] fixture integrations:
-# not part of the default PR gate.
+# /data/local/tmp/navi_fixtures. Mirror of Rust's #[ignore] fixture integrations.
 #
 # Trigger: manual workflow_dispatch only (no schedule). Not a required check.
 # Trusted instrumented results come from a local Automotive AVD matching the

@@ -15,6 +15,10 @@ import java.io.File
 /**
  * Completion-guard regression: mz12 staged fixture must not become a Completed
  * production Ostlandet job; a real maxzoom-15 archive on disk must still short-circuit OK.
+ *
+ * Host-side stand-in (per-PR): [no.navi.app.OfflinePmtilesBootstrapTest] in
+ * `app/src/test` — this class stays dispatch-only because it needs staged
+ * fixtures / a full extract on device.
  */
 @RunWith(AndroidJUnit4::class)
 class PmtilesCompletionGuardInstrumentedTest {

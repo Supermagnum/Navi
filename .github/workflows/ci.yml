@@ -1,7 +1,14 @@
-# Per-PR / push CI: Rust checks, Kotlin lint+unit tests, Android assemble, Linux build.
-# Fixture-heavy Rust integration tests (`#[ignore]`, e.g. venabygdsfjellet_ebike_climb,
-# dnt_hiking_integration) and Android instrumented suites are NOT run here — see
-# .github/workflows/android-instrumented.yml and docs/build-linux.md.
+# Per-PR / push CI: Rust checks, Kotlin lint+unit tests, Android assemble, Linux build,
+# plus a distinct regression-guards job for curated host-side guards of past bugs.
+#
+# NOT in this workflow (stay dispatch-only / local):
+# - Android instrumented suite (89 classes): GitHub-hosted AAOS+SwiftShader is not a
+#   trusted renderer (docs/real-hardware-testing.md#github-hosted-instrumented-ci).
+#   Screenshot classes are evidence captures (PNG count / washFrac), not golden
+#   pixel-diff, and several need live Liberty tiles + /data/local/tmp fixtures.
+# - Rust #[ignore] OSM/DEM integrations: live network and/or ~1 GB fixtures and
+#   multi-minute graph builds (docs/build-linux.md).
+# See android-instrumented.yml for the leftover (C) list.
 
 name: CI
 
@@ -70,7 +77,17 @@ jobs:
         # route_geometry_audit, place_name_search_check, overnight_scan_bench,
         # fondsbu_spiterstulen_polyline, planner_options_routes, raufoss_approach_route
         # require large downloaded fixtures under core/target/integration-fixtures
-        # and are manual/local-only (cargo test -- --ignored).
+        # and stay local/dispatch-only (cargo test -- --ignored).
+        #
+        # Confirmed still in this default set (not #[ignore]):
+        # - bike_suitability_route (synthetic road/MTB exclusion)
+        # - wetland_pack_identity::boardwalk_tag_logic_unchanged +
+        #   flat_pack_preserves_hard_over_soft_precedence
+        # - download::pbf_priority (cone/plan skip — ForegroundPlanConeSkip host logic)
+        # - basemap::extract::validate_rejects_mz12_large_region_fixture
+        # motor_access_barrier / wetland_apply_identity / wetland_pack_identity
+        # pack-vs-PBF now use checked-in mini PBFs under core/tests/fixtures/
+        # and are also asserted explicitly in the regression-guards job.
         # Exclude navi-desktop: default features need WebKitGTK (separate linux-build path).
         # Exclude wasm32 no_std example guests: host-triple `cargo test` cannot build them
         # (custom panic handler); they are exercised via plugin-host isolation tests.
@@ -153,6 +170,65 @@ jobs:
 
       - name: JVM unit tests
         run: ./gradlew :app:testDebugUnitTest --no-daemon
+
+  # Distinct from kotlin-checks / rust-checks so an ordinary code-only PR does not
+  # serialize those fast jobs behind this label. Parallel, required. Does not boot
+  # an emulator — instrumented (C)/(B) stay on android-instrumented.yml.
+  regression-guards:
+    name: regression-guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88.0"
+
+      - name: System deps (pkg-config / OpenSSL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: regression-guards
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Host guards for past download / restore regressions
+        # JVM stand-ins for instrumented classes that need device fixtures or a
+        # live ~1 GB Protomaps extract:
+        # - PmtilesCompletionGuardInstrumentedTest#production_restore_rejects_mz12_fixture
+        # - RestoreOstlandetFixturesInstrumentedTest / OfflineDataMismatch (restore offer)
+        # CoordinateInput was instrumented-only; now gates PRs as a host unit test.
+        run: >
+          ./gradlew :app:testDebugUnitTest --no-daemon
+          --tests no.navi.app.OfflinePmtilesBootstrapTest
+          --tests no.navi.app.OfflineDataIntegrityRestoreTest
+          --tests no.navi.app.CoordinateInputTest
+          --tests no.navi.app.PlaceSearchHintTest
+
+      - name: Motor-access + wetland pack-vs-PBF (checked-in mini PBFs)
+        # Must execute (not skip). Fixtures under core/tests/fixtures/ (~1.6 MiB).
+        # Do not point these at core/target/integration-fixtures.
+        run: |
+          cargo test -p driver-break-core --test motor_access_barrier -- --nocapture
+          cargo test -p driver-break-core --test wetland_apply_identity -- --nocapture
+          cargo test -p driver-break-core --test wetland_pack_identity -- --nocapture
 
   android-build:
     name: android-build
