@@ -1,13 +1,10 @@
 package no.navi.app
 
-import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
-import org.junit.runner.RunWith
 
-@RunWith(AndroidJUnit4::class)
-class CoordinateInputInstrumentedTest {
+class CoordinateInputTest {
     @Test
     fun parsesCommaSeparatedLatLon() {
         val parsed = parseLatLonQuery("60.562480, 11.256282")

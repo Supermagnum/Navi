@@ -1,46 +1,51 @@
-//! Apply-hazard identity using a prebuilt wetland pack (no full convert).
+//! Apply-hazard identity using a wetland pack built from the same small extract.
 //!
-//! Run:
-//!   WETLAND_PACK=/path/to/x.navi-wetland.rkyv \
-//!   HEDMARK_PBF=/path/to/hedmark-latest.osm.pbf \
-//!   cargo test -p driver-break-core --test wetland_apply_identity -- --nocapture
+//! Fixture: `tests/fixtures/atnbrufossen-wetland.osm.pbf` (~1.5 MiB), cut from
+//! Hedmark with `scripts/cut-corridor-extract.py` (Atnbrufossen bbox).
 
 use std::path::PathBuf;
 
 use driver_break_core::routing::graph::{RouteGraph, RoutingProfile};
-use driver_break_core::routing::indexed::load_wetland_pack;
+use driver_break_core::routing::indexed::{
+    load_wetland_pack, write_archive_atomic, FlatWetlandPack, Preamble, MAGIC_WETLAND,
+    WETLAND_FORMAT_VERSION,
+};
 use driver_break_core::routing::wetland::WetlandIndex;
+use rkyv::rancor::Error as RkyvError;
+
+fn fixture_pbf() -> PathBuf {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/atnbrufossen-wetland.osm.pbf");
+    assert!(
+        p.is_file(),
+        "missing checked-in fixture {} — regenerate with scripts/cut-corridor-extract.py",
+        p.display()
+    );
+    p
+}
 
 #[test]
 fn pack_and_pbf_wetland_apply_identical_counters() {
-    let pack = match std::env::var("WETLAND_PACK") {
-        Ok(p) if PathBuf::from(&p).is_file() => PathBuf::from(p),
-        _ => {
-            let p = PathBuf::from("/tmp/navi_w4b_packs/hedmark-latest.navi-wetland.rkyv");
-            if !p.is_file() {
-                eprintln!("skip: set WETLAND_PACK or build /tmp/navi_w4b_packs");
-                return;
-            }
-            p
-        }
-    };
-    let pbf = match std::env::var("HEDMARK_PBF") {
-        Ok(p) if PathBuf::from(&p).is_file() => PathBuf::from(p),
-        _ => {
-            let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("target/integration-fixtures/hedmark-latest.osm.pbf");
-            if !p.is_file() {
-                eprintln!("skip: hedmark PBF missing");
-                return;
-            }
-            p
-        }
-    };
-
-    // Smaller bbox around Atnbrufossen (boardwalk-relevant soft/hard mix region).
+    let pbf = fixture_pbf();
+    // Atnbrufossen (boardwalk-relevant soft/hard mix region).
     let bbox = [61.70_f64, 10.05, 61.95, 10.45];
     let from_pbf = WetlandIndex::load_from_pbf_bbox(&pbf, bbox).expect("pbf");
-    let from_pack = load_wetland_pack(&pack, Some(bbox)).expect("pack");
+    assert!(
+        from_pbf.ring_count() > 0,
+        "fixture must contain wetland rings"
+    );
+
+    let dir = tempfile::tempdir().expect("tmpdir");
+    let wet_path = dir.path().join("atnbrufossen.navi-wetland.rkyv");
+    let wet_pack = FlatWetlandPack::from_wetland_index(&from_pbf);
+    let bytes = rkyv::to_bytes::<RkyvError>(&wet_pack).expect("serialize wetland");
+    write_archive_atomic(
+        &wet_path,
+        Preamble::new(MAGIC_WETLAND, WETLAND_FORMAT_VERSION),
+        bytes.as_ref(),
+    )
+    .expect("write wetland");
+    let from_pack = load_wetland_pack(&wet_path, Some(bbox)).expect("pack");
     assert_eq!(from_pbf.ring_count(), from_pack.ring_count());
 
     let mut g1 = RouteGraph::build_from_pbf_bbox(&pbf, RoutingProfile::Foot, bbox).expect("g1");

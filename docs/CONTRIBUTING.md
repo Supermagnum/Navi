@@ -320,15 +320,31 @@ Every push to **`main`** or **`dev`**, and every PR, runs
 | `rust-checks` | `cargo fmt --check`, Clippy (`-D warnings`), `cargo test --workspace` (default set only; excludes `navi-desktop` and wasm example guests), plugin-host `isolation` tests, `cargo deny`, `cargo audit` |
 | `linux-build` | Workspace `cargo build` on Linux (headless `navi-desktop` features; excludes WebKit and wasm guests) |
 | `kotlin-checks` | ktlint, detekt, `./gradlew :app:testDebugUnitTest` |
+| `regression-guards` | Curated host JVM guards for past download/restore bugs (parallel; no emulator). See below. |
 | `android-build` | `./gradlew :app:assembleDebug` |
+
+**`regression-guards`** (per-PR, distinct job so rust/kotlin are not serialized behind it):
+
+- `OfflinePmtilesBootstrapTest` / `OfflineDataIntegrityRestoreTest` — mz12 fixture must not complete or offer production restore (the download-completion gap).
+- `CoordinateInputTest` — lat/lon parse (was instrumented-only).
+- `PlaceSearchHintTest` — skip live graph work while a foreground plan is active.
+- `motor_access_barrier` / `wetland_apply_identity` / `wetland_pack_identity` — Torggata/Kirkebyskogen access and wetland pack-vs-PBF against checked-in mini PBFs under `core/tests/fixtures/`.
+
+Rust counterparts already in `rust-checks` / `regression-guards` (not `#[ignore]`): `bike_suitability_route`, wetland tag/precedence unit tests, `download::pbf_priority` (cone/plan skip), `basemap::extract::validate_rejects_mz12_large_region_fixture`, `motor_access_barrier`, and wetland pack-vs-PBF (`wetland_apply_identity` / `wetland_pack_identity`) against checked-in mini PBFs under `core/tests/fixtures/` (~1.6 MiB; regenerate via `scripts/cut-corridor-extract.py`).
 
 **Not** in the per-PR gate (run locally or via manual workflow dispatch):
 
 - Rust `#[ignore]` OSM/DEM integration tests (need fixtures under
   `core/target/integration-fixtures` — see [`build-linux.md`](build-linux.md)).
+  Cached full Ostlandet (~450 MB PBF + graph build) is still multi-minute
+  (`kongsvinger_lillehammer_integration` ~232 s after fixtures) and live-network
+  extracts stay off the PR gate.
 - Android instrumented tests — [`.github/workflows/android-instrumented.yml`](../.github/workflows/android-instrumented.yml)
-  (`workflow_dispatch` only; not scheduled and not a required check — see
+  (`workflow_dispatch` only; not a required check — see
   [`real-hardware-testing.md`](real-hardware-testing.md#github-hosted-instrumented-ci)).
+  Screenshot classes are evidence captures, not golden pixel-diff; GitHub
+  SwiftShader is not a trusted MapLibre renderer. Host stand-ins for the
+  completion-guard live in `regression-guards` instead of booting an emulator.
 
 **Required** before opening a PR: the same gate as GitHub Actions must already
 be green **on your machine**. Do not open a PR hoping CI will catch failures.
@@ -345,6 +361,9 @@ cargo test -p navi-plugin-host --test isolation
 cargo deny check
 cargo audit
 ./gradlew :app:ktlintCheck :app:detekt :app:testDebugUnitTest :app:assembleDebug
+# Optional explicit subset (also covered by testDebugUnitTest):
+# ./gradlew :app:testDebugUnitTest --tests no.navi.app.OfflinePmtilesBootstrapTest \
+#   --tests no.navi.app.OfflineDataIntegrityRestoreTest
 ```
 
 Rust toolchain is pinned by `rust-toolchain.toml` (**1.88** reproducibility

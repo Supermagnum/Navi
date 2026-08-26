@@ -2,6 +2,8 @@
 """Cut a corridor-scoped OSM extract for Espa -> Atnbrufossen on-device tests.
 
 Uses pyosmium. Output is small enough to serve over HTTP to the emulator.
+Also supports one or more --bbox clips for checked-in mini fixtures under
+core/tests/fixtures/ (motor-access / wetland regression guards).
 """
 
 from __future__ import annotations
@@ -90,15 +92,18 @@ class RelPass(osmium.SimpleHandler):
                 return
 
 
-def cut(src: Path, dst: Path, bbox: tuple[float, float, float, float]) -> None:
+def _in_bboxes(lon: float, lat: float, bboxes: list[tuple[float, float, float, float]]) -> bool:
+    return any(b[0] <= lon <= b[2] and b[1] <= lat <= b[3] for b in bboxes)
+
+
+def cut(
+    src: Path,
+    dst: Path,
+    bboxes: list[tuple[float, float, float, float]],
+) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists():
         dst.unlink()
-
-    # Pass 1: nodes in bbox
-    tmp_nodes = dst.with_suffix(".nodes.opl")
-    # Use pbf writer directly with two-file approach via osmium FileProcessor is complex;
-    # simpler: use osmium.geom + apply with locations_on_ways.
 
     class Collect(osmium.SimpleHandler):
         def __init__(self):
@@ -110,11 +115,11 @@ def cut(src: Path, dst: Path, bbox: tuple[float, float, float, float]) -> None:
             loc = n.location
             if not loc.valid():
                 return
-            if bbox[0] <= loc.lon <= bbox[2] and bbox[1] <= loc.lat <= bbox[3]:
+            if _in_bboxes(loc.lon, loc.lat, bboxes):
                 self.node_ids.add(n.id)
                 self.nodes += 1
 
-    print(f"Scanning nodes in bbox {bbox} from {src} ...", flush=True)
+    print(f"Scanning nodes in {len(bboxes)} bbox(es) {bboxes} from {src} ...", flush=True)
     collect = Collect()
     collect.apply_file(str(src), locations=True)
     print(f"  in-bbox nodes: {collect.nodes}", flush=True)
@@ -179,6 +184,15 @@ def cut(src: Path, dst: Path, bbox: tuple[float, float, float, float]) -> None:
     )
 
 
+def _parse_bbox(raw: str) -> tuple[float, float, float, float]:
+    parts = [p.strip() for p in raw.split(",")]
+    if len(parts) != 4:
+        raise argparse.ArgumentTypeError(
+            "bbox must be min_lon,min_lat,max_lon,max_lat"
+        )
+    return (float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3]))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
@@ -191,11 +205,19 @@ def main() -> int:
         type=Path,
         default=Path("core/target/integration-fixtures/espa-atnbrufossen-corridor.osm.pbf"),
     )
+    ap.add_argument(
+        "--bbox",
+        action="append",
+        type=_parse_bbox,
+        metavar="MIN_LON,MIN_LAT,MAX_LON,MAX_LAT",
+        help="Clip bbox (repeatable). Default: Espa-Atnbrufossen corridor.",
+    )
     args = ap.parse_args()
     if not args.src.is_file():
         print(f"missing source PBF: {args.src}", file=sys.stderr)
         return 1
-    cut(args.src, args.dst, DEFAULT_BBOX)
+    bboxes = args.bbox if args.bbox else [DEFAULT_BBOX]
+    cut(args.src, args.dst, bboxes)
     return 0
 
 

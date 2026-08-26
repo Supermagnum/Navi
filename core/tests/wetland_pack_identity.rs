@@ -3,6 +3,9 @@
 //!
 //! Builds the wetland archive directly (not via region convert): tiled Ostlandet/
 //! Hedmark converts intentionally skip wetland emission for 4GB-class RAM margin.
+//!
+//! Fixture: `tests/fixtures/atnbrufossen-wetland.osm.pbf` (~1.5 MiB), cut from
+//! Hedmark with `scripts/cut-corridor-extract.py` (Atnbrufossen bbox).
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -15,27 +18,29 @@ use driver_break_core::routing::indexed::{
 use driver_break_core::routing::wetland::{tags_indicate_boardwalk, WetlandClass, WetlandIndex};
 use rkyv::rancor::Error as RkyvError;
 
-fn hedmark_pbf() -> Option<PathBuf> {
+fn fixture_pbf() -> PathBuf {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("target/integration-fixtures/hedmark-latest.osm.pbf");
-    p.is_file().then_some(p)
+        .join("tests/fixtures/atnbrufossen-wetland.osm.pbf");
+    assert!(
+        p.is_file(),
+        "missing checked-in fixture {} — regenerate with scripts/cut-corridor-extract.py",
+        p.display()
+    );
+    p
 }
 
 #[test]
 fn wetland_pack_matches_pbf_class_and_boardwalk_stats() {
-    let Some(pbf) = hedmark_pbf() else {
-        eprintln!("skip: hedmark PBF missing");
-        return;
-    };
-    // Trip-scale bbox around Esso Myklegård → Atnbrufossen.
-    let bbox = [60.452_f64, 9.837, 62.248, 11.765];
+    let pbf = fixture_pbf();
+    // Atnbrufossen (same clip as the checked-in extract).
+    let bbox = [61.70_f64, 10.05, 61.95, 10.45];
     let t0 = Instant::now();
     let from_pbf = WetlandIndex::load_from_pbf_bbox(&pbf, bbox).expect("pbf wetlands");
     let pbf_ms = t0.elapsed().as_secs_f64() * 1000.0;
     assert!(from_pbf.ring_count() > 0);
 
     let dir = tempfile::tempdir().expect("tmpdir");
-    let wet_path = dir.path().join("hedmark-latest.navi-wetland.rkyv");
+    let wet_path = dir.path().join("atnbrufossen.navi-wetland.rkyv");
     let wet_pack = FlatWetlandPack::from_wetland_index(&from_pbf);
     let bytes = rkyv::to_bytes::<RkyvError>(&wet_pack).expect("serialize wetland");
     write_archive_atomic(

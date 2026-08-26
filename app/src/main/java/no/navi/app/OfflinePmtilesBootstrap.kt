@@ -80,8 +80,11 @@ object OfflinePmtilesBootstrap {
         return "OK: restored $destBasemapName + $demName (${done.regionKey})"
     }
 
-    fun isFullRegionBasemap(file: File): Boolean {
-        if (!file.isFile || file.length() < MIN_FULL_BASEMAP_BYTES) return false
+    fun isFullRegionBasemap(
+        file: File,
+        minBytes: Long = MIN_FULL_BASEMAP_BYTES,
+    ): Boolean {
+        if (!file.isFile || file.length() < minBytes) return false
         val mz = readPmtilesMaxZoom(file) ?: return false
         return mz >= REQUIRED_VECTOR_MAXZOOM
     }

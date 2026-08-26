@@ -89,13 +89,6 @@ object OfflineDataIntegrity {
                         it.length() > 1_000L
                 }.map { it.name }
                 .sorted()
-        val fullStagedBasemaps =
-            stagedDir
-                .listFiles()
-                .orEmpty()
-                .filter { OfflinePmtilesBootstrap.isFullRegionBasemap(it) && !it.name.contains("_dem") }
-                .map { it.name }
-                .sorted()
         val appPmtilesEmpty =
             File(dataDir, "pmtiles").listFiles()?.none {
                 it.isFile && it.name.endsWith(".pmtiles") && it.length() > 1_000L
@@ -107,7 +100,23 @@ object OfflineDataIntegrity {
             stagedBasemapNames = stagedBasemaps,
             // Only offer Tools restore when a full maxzoom-15 extract is staged —
             // mz12 test fixtures must not look like a recoverable regional download.
-            canRestoreFromStaging = appPmtilesEmpty && fullStagedBasemaps.isNotEmpty(),
+            canRestoreFromStaging = canOfferProductionRestore(stagedDir, appPmtilesEmpty),
         )
+    }
+
+    /**
+     * Production Tools-restore is allowed only when app storage is empty and a
+     * staged file passes [OfflinePmtilesBootstrap.isFullRegionBasemap]. Truncated
+     * mz12 fixtures must not masquerade as a finished regional download.
+     */
+    fun canOfferProductionRestore(
+        stagedDir: File,
+        appPmtilesEmpty: Boolean,
+    ): Boolean {
+        if (!appPmtilesEmpty) return false
+        return stagedDir
+            .listFiles()
+            .orEmpty()
+            .any { OfflinePmtilesBootstrap.isFullRegionBasemap(it) && !it.name.contains("_dem") }
     }
 }

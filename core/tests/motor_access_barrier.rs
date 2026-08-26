@@ -3,16 +3,23 @@
 //! - Torggata (way 25968694, Hamar): motor_vehicle=no — Car must exclude; Foot/Bike may use.
 //! - Kirkebyskogen bollard (node 879594792): motor_vehicle=no — Car must not traverse;
 //!   Foot/Bike remain able to pass.
+//!
+//! Fixture: `tests/fixtures/motor-access-hamar-gjovik.osm.pbf` (~0.1 MiB), cut from
+//! Ostlandet with `scripts/cut-corridor-extract.py` (Torggata + Kirkebyskogen bboxes).
 
 use driver_break_core::routing::graph::{RouteGraph, RouteOptions, RoutingProfile};
 use osm4routing::NodeId;
 use std::path::PathBuf;
 
-fn fixture(name: &str) -> Option<PathBuf> {
+fn fixture_pbf() -> PathBuf {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("target/integration-fixtures")
-        .join(name);
-    p.is_file().then_some(p)
+        .join("tests/fixtures/motor-access-hamar-gjovik.osm.pbf");
+    assert!(
+        p.is_file(),
+        "missing checked-in fixture {} — regenerate with scripts/cut-corridor-extract.py",
+        p.display()
+    );
+    p
 }
 
 fn path_uses_way(graph: &RouteGraph, path: &[NodeId], way_id: &str) -> bool {
@@ -28,12 +35,7 @@ fn path_uses_way(graph: &RouteGraph, path: &[NodeId], way_id: &str) -> bool {
 
 #[test]
 fn torggata_motor_vehicle_no_excluded_for_car() {
-    let Some(pbf) =
-        fixture("hedmark-latest.osm.pbf").or_else(|| fixture("ostlandet-latest.osm.pbf"))
-    else {
-        eprintln!("skip: hedmark/ostlandet fixture missing");
-        return;
-    };
+    let pbf = fixture_pbf();
     let bbox = [60.7905, 11.0750, 60.7935, 11.0785];
     let car = RouteGraph::build_from_pbf_bbox(&pbf, RoutingProfile::Car, bbox).expect("car");
     let foot = RouteGraph::build_from_pbf_bbox(&pbf, RoutingProfile::Foot, bbox).expect("foot");
@@ -83,12 +85,7 @@ fn torggata_motor_vehicle_no_excluded_for_car() {
 
 #[test]
 fn kirkebyskogen_bollard_blocks_car_not_foot_bike() {
-    let Some(pbf) =
-        fixture("oppland-latest.osm.pbf").or_else(|| fixture("ostlandet-latest.osm.pbf"))
-    else {
-        eprintln!("skip: oppland/ostlandet fixture missing");
-        return;
-    };
+    let pbf = fixture_pbf();
     let bbox = [60.7765, 10.6855, 60.7800, 10.6910];
     let bollard = NodeId(879594792);
 
