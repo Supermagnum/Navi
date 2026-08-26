@@ -270,17 +270,44 @@ impl WetlandWayExtract {
 
     pub fn index_for_bbox(&self, bbox: [f64; 4]) -> WetlandIndex {
         let mut rings = Vec::new();
+        self.for_each_resolved_ring(|class, ring| {
+            if ring_touches_bbox(ring, bbox) {
+                rings.push(wetland_ring_from_parts(class, ring.to_vec()));
+            }
+        });
+        WetlandIndex { rings }
+    }
+
+    /// Assign each resolved wetland ring to every tile that contains at least
+    /// one of its vertices — the same membership rule as calling
+    /// [`Self::index_for_bbox`] once per tile, but with a single walk over ways.
+    ///
+    /// Output length equals `tiles.len()`; empty tiles get an empty index.
+    /// Rings that span tile boundaries are duplicated into each touched tile
+    /// (matching the prior per-tile rewalk behavior).
+    pub fn indexes_for_tiles(&self, tiles: &[(usize, usize, [f64; 4])]) -> Vec<WetlandIndex> {
+        let n = tiles.len();
+        let mut per_tile: Vec<Vec<WetlandRing>> = (0..n).map(|_| Vec::new()).collect();
+        self.for_each_resolved_ring(|class, ring| {
+            let mut touched = false;
+            for (i, (_, _, bbox)) in tiles.iter().enumerate() {
+                if ring_touches_bbox(ring, *bbox) {
+                    per_tile[i].push(wetland_ring_from_parts(class, ring.to_vec()));
+                    touched = true;
+                }
+            }
+            let _ = touched;
+        });
+        per_tile
+            .into_iter()
+            .map(|rings| WetlandIndex { rings })
+            .collect()
+    }
+
+    fn for_each_resolved_ring(&self, mut f: impl FnMut(WetlandClass, &[[f64; 2]])) {
         for (refs, class) in &self.ways {
-            if let Some(ring) = ring_from_refs(refs, &self.coords, bbox) {
-                let (min_lon, max_lon, min_lat, max_lat) = ring_bounds(&ring);
-                rings.push(WetlandRing {
-                    class: *class,
-                    ring,
-                    min_lon,
-                    max_lon,
-                    min_lat,
-                    max_lat,
-                });
+            if let Some(ring) = ring_from_refs_resolved(refs, &self.coords) {
+                f(*class, &ring);
             }
         }
         for (class, outers) in &self.rel_outers {
@@ -288,38 +315,40 @@ impl WetlandWayExtract {
                 let Some(refs) = self.way_nodes.get(wid) else {
                     continue;
                 };
-                if let Some(ring) = ring_from_refs(refs, &self.coords, bbox) {
-                    let (min_lon, max_lon, min_lat, max_lat) = ring_bounds(&ring);
-                    rings.push(WetlandRing {
-                        class: *class,
-                        ring,
-                        min_lon,
-                        max_lon,
-                        min_lat,
-                        max_lat,
-                    });
+                if let Some(ring) = ring_from_refs_resolved(refs, &self.coords) {
+                    f(*class, &ring);
                 }
             }
         }
-        WetlandIndex { rings }
     }
 }
 
-fn ring_from_refs(
+fn wetland_ring_from_parts(class: WetlandClass, ring: Vec<[f64; 2]>) -> WetlandRing {
+    let (min_lon, max_lon, min_lat, max_lat) = ring_bounds(&ring);
+    WetlandRing {
+        class,
+        ring,
+        min_lon,
+        max_lon,
+        min_lat,
+        max_lat,
+    }
+}
+
+/// Resolve all node coords and close the ring. Does not apply a bbox filter.
+fn ring_from_refs_resolved(
     refs: &[i64],
     coords: &HashMap<i64, (f64, f64)>,
-    bbox: [f64; 4],
 ) -> Option<Vec<[f64; 2]>> {
-    let mut ring: Vec<[f64; 2]> = Vec::with_capacity(refs.len());
-    let mut any_in = false;
+    if refs.len() < 3 {
+        return None;
+    }
+    let mut ring: Vec<[f64; 2]> = Vec::with_capacity(refs.len() + 1);
     for id in refs {
         let &(lat, lon) = coords.get(id)?;
-        if in_bbox(lat, lon, bbox) {
-            any_in = true;
-        }
         ring.push([lon, lat]);
     }
-    if !any_in || ring.len() < 3 {
+    if ring.len() < 3 {
         return None;
     }
     let first = ring[0];
@@ -328,6 +357,22 @@ fn ring_from_refs(
         ring.push(first);
     }
     Some(ring)
+}
+
+fn ring_from_refs(
+    refs: &[i64],
+    coords: &HashMap<i64, (f64, f64)>,
+    bbox: [f64; 4],
+) -> Option<Vec<[f64; 2]>> {
+    let ring = ring_from_refs_resolved(refs, coords)?;
+    if !ring_touches_bbox(&ring, bbox) {
+        return None;
+    }
+    Some(ring)
+}
+
+fn ring_touches_bbox(ring: &[[f64; 2]], bbox: [f64; 4]) -> bool {
+    ring.iter().any(|p| in_bbox(p[1], p[0], bbox))
 }
 
 fn in_bbox(lat: f64, lon: f64, bbox: [f64; 4]) -> bool {
@@ -399,5 +444,58 @@ mod tests {
         )]);
         assert_eq!(idx.class_at(60.1, 10.1), Some(WetlandClass::HardAvoid));
         assert_eq!(idx.class_at(60.5, 10.5), None);
+    }
+
+    #[test]
+    fn indexes_for_tiles_matches_per_tile_rewalk() {
+        // Synthetic extract: one ring entirely in tile A, one spanning A|B.
+        let mut coords = HashMap::new();
+        // Tile A ring: lon 10.1–10.2, lat 60.1–60.2
+        for (id, lat, lon) in [
+            (1, 60.1, 10.1),
+            (2, 60.1, 10.2),
+            (3, 60.2, 10.2),
+            (4, 60.2, 10.1),
+        ] {
+            coords.insert(id, (lat, lon));
+        }
+        // Spanning ring: vertices in both lon bands around 11.0
+        for (id, lat, lon) in [
+            (10, 60.1, 10.8),
+            (11, 60.1, 11.2),
+            (12, 60.2, 11.2),
+            (13, 60.2, 10.8),
+        ] {
+            coords.insert(id, (lat, lon));
+        }
+        let extract = WetlandWayExtract {
+            ways: vec![
+                (vec![1, 2, 3, 4, 1], WetlandClass::SoftAvoid),
+                (vec![10, 11, 12, 13, 10], WetlandClass::HardAvoid),
+            ],
+            way_nodes: HashMap::new(),
+            rel_outers: Vec::new(),
+            coords,
+        };
+        let tiles = vec![
+            (0, 0, [60.0, 10.0, 61.0, 11.0]),
+            (0, 1, [60.0, 11.0, 61.0, 12.0]),
+        ];
+        let once = extract.indexes_for_tiles(&tiles);
+        let rewalk: Vec<_> = tiles
+            .iter()
+            .map(|(_, _, b)| extract.index_for_bbox(*b))
+            .collect();
+        assert_eq!(once.len(), 2);
+        assert_eq!(once[0].ring_count(), rewalk[0].ring_count());
+        assert_eq!(once[1].ring_count(), rewalk[1].ring_count());
+        assert_eq!(once[0].ring_count(), 2); // A-only + spanning
+        assert_eq!(once[1].ring_count(), 1); // spanning only
+        assert_eq!(
+            once[0].class_at(60.15, 10.15),
+            Some(WetlandClass::SoftAvoid)
+        );
+        assert_eq!(once[0].class_at(60.15, 10.9), Some(WetlandClass::HardAvoid));
+        assert_eq!(once[1].class_at(60.15, 11.1), Some(WetlandClass::HardAvoid));
     }
 }

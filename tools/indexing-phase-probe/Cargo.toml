@@ -1,0 +1,13 @@
+[package]
+name = "indexing-phase-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+driver-break-core = { path = "../../core" }
+anyhow = "1"
+osmpbf = "0.3"
+rayon = "1"

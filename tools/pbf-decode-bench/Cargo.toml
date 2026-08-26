@@ -1,0 +1,21 @@
+[package]
+name = "pbf-decode-bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Isolated spike: wall-time + peak RSS for PBF element scans (osmpbf vs zlib-ng vs fast-osmpbf)"
+
+[features]
+default = ["osmpbf-rust-zlib"]
+osmpbf-rust-zlib = ["dep:osmpbf-default"]
+osmpbf-zlib-ng = ["dep:osmpbf-zlib-ng"]
+fast-osmpbf = ["dep:fast-osmpbf"]
+
+[dependencies]
+osmpbf-default = { package = "osmpbf", version = "0.3", optional = true }
+osmpbf-zlib-ng = { package = "osmpbf", version = "0.3", default-features = false, features = ["zlib-ng"], optional = true }
+fast-osmpbf = { version = "0.2.1", optional = true }
+rayon = "1"
+libc = "0.2"
+
+[workspace]
