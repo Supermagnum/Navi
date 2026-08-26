@@ -566,7 +566,7 @@ impl RouteGraph {
         if profiles.is_empty() {
             anyhow::bail!("no profiles");
         }
-        if profiles.iter().any(|p| *p == RoutingProfile::Truck) {
+        if profiles.contains(&RoutingProfile::Truck) {
             anyhow::bail!("truck must alias car packs; do not build tiled truck graphs");
         }
         if tiles.is_empty() {

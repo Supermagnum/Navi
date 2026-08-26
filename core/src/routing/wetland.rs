@@ -289,14 +289,11 @@ impl WetlandWayExtract {
         let n = tiles.len();
         let mut per_tile: Vec<Vec<WetlandRing>> = (0..n).map(|_| Vec::new()).collect();
         self.for_each_resolved_ring(|class, ring| {
-            let mut touched = false;
             for (i, (_, _, bbox)) in tiles.iter().enumerate() {
                 if ring_touches_bbox(ring, *bbox) {
                     per_tile[i].push(wetland_ring_from_parts(class, ring.to_vec()));
-                    touched = true;
                 }
             }
-            let _ = touched;
         });
         per_tile
             .into_iter()
@@ -355,18 +352,6 @@ fn ring_from_refs_resolved(
     let last = *ring.last().unwrap();
     if first != last {
         ring.push(first);
-    }
-    Some(ring)
-}
-
-fn ring_from_refs(
-    refs: &[i64],
-    coords: &HashMap<i64, (f64, f64)>,
-    bbox: [f64; 4],
-) -> Option<Vec<[f64; 2]>> {
-    let ring = ring_from_refs_resolved(refs, coords)?;
-    if !ring_touches_bbox(&ring, bbox) {
-        return None;
     }
     Some(ring)
 }
