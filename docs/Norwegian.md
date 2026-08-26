@@ -631,9 +631,11 @@ en Play Store- / F-Droid-utgivelse. For å bygge fra kilde, følg avsnittene
 nedenfor.
 
 Du kan også laste ned
-[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-debug.apk)
+[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/blob/main/compiled/navi-debug.apk)
 direkte i nettleseren på Android-enheten og installere den derfra (tillat
-installasjon fra nettleseren hvis du blir bedt om det).
+installasjon fra nettleseren hvis du blir bedt om det). Bruk nedlastingsknappen
+på den siden, eller råfilen
+[`raw/main/compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/main/compiled/navi-debug.apk).
 
 ## Android-appen (alle vertsplattformer)
 
@@ -775,15 +777,6 @@ Land-/regionvisuelle uttrekk kan også lages med
 
 # Kjente problemer
 
-- **Bakgrunnsindeksering er for tiden treg.** Regionsuttrekk kan ta lang tid å
-  konvertere til indekserte pakker (for eksempel Innlandet rundt
-  **20 minutter** på nåværende referanseutstyr). Dette er et kjent problem som
-  det arbeides med. Du kan planlegge mens indeksering kjører; planer går mye
-  raskere når pakkene er klare.
-- **Langdistanse ruteplanlegging er for tiden treg** når indekserte pakker ikke
-  er klare ennå, av samme grunn (bygging av rutenettverket fra nedlastet
-  `.osm.pbf`). Dette arbeides det også med. Målte pack-hit- vs
-  pack-miss-tider står i planleggingspunktene under.
 - **Plugins:** innholdstillegg er bevisst ikke levert ennå, fordi de ikke er
   laget ennå.
 - **UI-finish:** skjermene fungerer, men trenger fortsatt visuell opprydding på
