@@ -194,7 +194,7 @@ pub fn suggest_geofabrik_path_for_point(lat: f64, lon: f64) -> Option<&'static s
     if let Some(p) = pick_smallest_covering(
         NORWAY_LANDSDEL
             .iter()
-            .filter(|(path, _)| *path != "test/oslo")
+            .filter(|(path, _)| !path.starts_with("test/"))
             .copied(),
         lat,
         lon,
@@ -608,6 +608,10 @@ const NORWAY_LANDSDEL: &[(&str, [f64; 4])] = &[
     ("europe/norway/sorlandet", [57.8, 5.5, 59.5, 10.0]),
     // Small Oslo window for e2e / instrumented basemap tests (fast extract).
     ("test/oslo", [59.85, 10.6, 59.98, 10.9]),
+    // Instrumented offline screenshots: same Ostlandet bbox, `test_` key so the
+    // mz12 staged fixture can register Completed without pretending to be a
+    // full production extract.
+    ("test/ostlandet_fixture", [58.5, 7.5, 62.8, 13.5]),
 ];
 
 #[cfg(test)]

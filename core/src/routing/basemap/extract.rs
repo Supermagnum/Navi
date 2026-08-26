@@ -42,6 +42,14 @@ pub const PLANNING_EXTRACT_LABEL: &str = "Planning extract…";
 /// Default max zoom for offline extracts (higher = larger downloads).
 pub const DEFAULT_EXTRACT_MAX_ZOOM: u8 = 15;
 
+/// Minimum byte size treated as a "full" large-region vector basemap
+/// (matches instrumented reprovision / Ostlandet-scale checks).
+pub const MIN_FULL_REGION_BASEMAP_BYTES: u64 = 500_000_000;
+
+/// Bbox area (deg²) at or above which [MIN_FULL_REGION_BASEMAP_BYTES] applies.
+/// Østlandet is ~26; tiny regions (e.g. Luxembourg, `test/oslo`) stay below.
+const LARGE_REGION_BBOX_AREA_DEG2: f64 = 5.0;
+
 #[derive(Debug, serde::Deserialize)]
 struct BuildMeta {
     key: String,
@@ -287,9 +295,9 @@ pub async fn extract_bbox_to_file(
     let _ = fs::remove_dir_all(&staging);
     let len = fs::metadata(dest)?.len();
     if let Some((storage, job_id)) = store {
-        let s = PmtilesJobStore::new(storage);
-        s.set_progress(job_id, len, Some(len))?;
-        s.set_status(job_id, PmtilesJobStatus::Completed, false)?;
+        // Progress only — caller ([PmtilesDownloader::run_job]) validates the
+        // archive before marking Completed (shared guard with the short-circuit path).
+        PmtilesJobStore::new(storage).set_progress(job_id, len, Some(len))?;
     }
     let elapsed = started.elapsed().as_secs_f64().max(1e-6);
     let tiles_per_s = total as f64 / elapsed;
@@ -301,6 +309,72 @@ pub async fn extract_bbox_to_file(
         dest.display()
     );
     Ok(len)
+}
+
+/// PMTiles v3 header: magic at 0, maxzoom uint8 at offset 101.
+pub fn read_pmtiles_max_zoom(path: &Path) -> anyhow::Result<u8> {
+    let mut header = [0u8; 127];
+    let mut file = File::open(path)?;
+    use std::io::Read;
+    file.read_exact(&mut header)?;
+    if &header[0..7] != b"PMTiles" {
+        anyhow::bail!("not a PMTiles archive");
+    }
+    Ok(header[101])
+}
+
+fn is_dem_archive(region_key: &str, path: &Path) -> bool {
+    region_key.ends_with("_dem")
+        || path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.contains("_dem.pmtiles") || n.ends_with("_dem.pmtiles"))
+}
+
+fn is_test_region_key(region_key: &str) -> bool {
+    region_key.starts_with("test_")
+}
+
+fn bbox_area_deg2(bbox: [f64; 4]) -> f64 {
+    let (min_lat, min_lon, max_lat, max_lon) = (bbox[0], bbox[1], bbox[2], bbox[3]);
+    (max_lat - min_lat).abs() * (max_lon - min_lon).abs()
+}
+
+/// Shared completion guard: existing short-circuit files and fresh extracts.
+///
+/// - DEM (`*_dem`) / Mapterhorn: valid PMTiles header only (native maxzoom is 12).
+/// - `test_*` regions: valid PMTiles; no full-size / maxzoom-15 floor (fast fixtures).
+/// - Other vector regions: header maxzoom ≥ [DEFAULT_EXTRACT_MAX_ZOOM]; large bboxes
+///   also require ≥ [MIN_FULL_REGION_BASEMAP_BYTES].
+pub fn validate_completed_pmtiles(
+    path: &Path,
+    region_key: &str,
+    bbox: [f64; 4],
+) -> Result<(), String> {
+    let meta = fs::metadata(path).map_err(|e| format!("stat failed: {e}"))?;
+    let len = meta.len();
+    if len <= 1000 {
+        return Err(format!("archive too small ({len} bytes)"));
+    }
+    let maxzoom = read_pmtiles_max_zoom(path).map_err(|e| e.to_string())?;
+
+    if is_dem_archive(region_key, path) {
+        return Ok(());
+    }
+    if is_test_region_key(region_key) {
+        return Ok(());
+    }
+    if maxzoom < DEFAULT_EXTRACT_MAX_ZOOM {
+        return Err(format!(
+            "PMTiles maxzoom {maxzoom} < required {DEFAULT_EXTRACT_MAX_ZOOM} for region {region_key}"
+        ));
+    }
+    if bbox_area_deg2(bbox) >= LARGE_REGION_BBOX_AREA_DEG2 && len < MIN_FULL_REGION_BASEMAP_BYTES {
+        return Err(format!(
+            "archive {len} bytes < full-region minimum {MIN_FULL_REGION_BASEMAP_BYTES} for {region_key}"
+        ));
+    }
+    Ok(())
 }
 
 pub fn tiles_covering_bbox(bbox: [f64; 4], max_zoom: u8) -> Vec<TileCoord> {
@@ -378,6 +452,50 @@ mod tests {
         assert!(chunk_staging_dir(&p)
             .to_string_lossy()
             .ends_with("region_dem.pmtiles.chunks"));
+    }
+
+    fn write_fake_pmtiles(path: &Path, maxzoom: u8, size: usize) {
+        let mut buf = vec![0u8; size];
+        buf[0..7].copy_from_slice(b"PMTiles");
+        buf[101] = maxzoom;
+        fs::write(path, &buf).unwrap();
+    }
+
+    #[test]
+    fn validate_rejects_mz12_large_region_fixture() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("europe_norway_ostlandet.pmtiles");
+        write_fake_pmtiles(&path, 12, 192_023_045);
+        let bbox = [58.5, 7.5, 62.8, 13.5];
+        let err = validate_completed_pmtiles(&path, "europe_norway_ostlandet", bbox).unwrap_err();
+        assert!(err.contains("maxzoom"), "{err}");
+    }
+
+    #[test]
+    fn validate_accepts_mz15_full_large_region() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("europe_norway_ostlandet.pmtiles");
+        write_fake_pmtiles(&path, 15, MIN_FULL_REGION_BASEMAP_BYTES as usize);
+        let bbox = [58.5, 7.5, 62.8, 13.5];
+        validate_completed_pmtiles(&path, "europe_norway_ostlandet", bbox).unwrap();
+    }
+
+    #[test]
+    fn validate_test_region_allows_small_mz12() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fixture.pmtiles");
+        write_fake_pmtiles(&path, 12, 50_000);
+        let bbox = [58.5, 7.5, 62.8, 13.5];
+        validate_completed_pmtiles(&path, "test_ostlandet_fixture", bbox).unwrap();
+    }
+
+    #[test]
+    fn validate_dem_skips_vector_floors() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("europe_norway_ostlandet_dem.pmtiles");
+        write_fake_pmtiles(&path, 12, 50_000);
+        let bbox = [58.5, 7.5, 62.8, 13.5];
+        validate_completed_pmtiles(&path, "europe_norway_ostlandet_dem", bbox).unwrap();
     }
 
     #[tokio::test]

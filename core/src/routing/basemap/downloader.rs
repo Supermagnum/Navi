@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::download::DownloadControl;
 use crate::routing::basemap::extract::{
-    extract_bbox_to_file, resolve_planet_url, DEFAULT_EXTRACT_MAX_ZOOM,
+    extract_bbox_to_file, resolve_planet_url, validate_completed_pmtiles, DEFAULT_EXTRACT_MAX_ZOOM,
     PROTOMAPS_PLANET_FALLBACK_URL,
 };
 use crate::routing::basemap::regions::{
@@ -155,13 +155,35 @@ impl PmtilesDownloader {
         };
 
         let final_path = PathBuf::from(&job.local_path);
+        // Existing final archive: only accept if it passes the same completion
+        // guard as a fresh extract. Chunked resume uses `*.pmtiles.chunks` and
+        // never hits this path until extract renames `.partial` into place.
         if final_path.is_file() && fs::metadata(&final_path)?.len() > 1000 {
-            let len = fs::metadata(&final_path)?.len();
-            store.set_progress(job_id, len, Some(len))?;
-            store.set_status(job_id, PmtilesJobStatus::Completed, false)?;
-            return store
-                .get_job(job_id)?
-                .ok_or_else(|| anyhow::anyhow!("job missing"));
+            match validate_completed_pmtiles(&final_path, &job.region_key, bbox) {
+                Ok(()) => {
+                    let len = fs::metadata(&final_path)?.len();
+                    store.set_progress(job_id, len, Some(len))?;
+                    store.set_status(job_id, PmtilesJobStatus::Completed, false)?;
+                    return store
+                        .get_job(job_id)?
+                        .ok_or_else(|| anyhow::anyhow!("job missing"));
+                }
+                Err(reason) => {
+                    log::warn!(
+                        target: "NaviDownload",
+                        "[NaviDownload] rejecting existing archive path={} region={} reason={reason}",
+                        final_path.display(),
+                        job.region_key
+                    );
+                    store.set_status(job_id, PmtilesJobStatus::Failed, false)?;
+                    let rejected = final_path.with_extension("pmtiles.rejected");
+                    let _ = fs::rename(&final_path, &rejected);
+                    return Err(anyhow::anyhow!(
+                        "existing PMTiles rejected for {}: {reason}",
+                        job.region_key
+                    ));
+                }
+            }
         }
 
         let mut planet_url = job.url.clone();
@@ -213,6 +235,29 @@ impl PmtilesDownloader {
                     store.set_status(job_id, PmtilesJobStatus::Failed, false)?;
                 }
                 return Err(e);
+            }
+        }
+
+        match validate_completed_pmtiles(&final_path, &job.region_key, bbox) {
+            Ok(()) => {
+                let len = fs::metadata(&final_path)?.len();
+                store.set_progress(job_id, len, Some(len))?;
+                store.set_status(job_id, PmtilesJobStatus::Completed, false)?;
+            }
+            Err(reason) => {
+                log::error!(
+                    target: "NaviDownload",
+                    "[NaviDownload] extract product rejected path={} region={} reason={reason}",
+                    final_path.display(),
+                    job.region_key
+                );
+                store.set_status(job_id, PmtilesJobStatus::Failed, false)?;
+                let rejected = final_path.with_extension("pmtiles.rejected");
+                let _ = fs::rename(&final_path, &rejected);
+                return Err(anyhow::anyhow!(
+                    "extracted PMTiles rejected for {}: {reason}",
+                    job.region_key
+                ));
             }
         }
 

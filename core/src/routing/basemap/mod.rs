@@ -9,8 +9,9 @@ mod tile_read;
 
 pub use downloader::{PmtilesDownloader, PmtilesJob};
 pub use extract::{
-    extract_bbox_to_file, resolve_planet_url_blocking, DEFAULT_EXTRACT_MAX_ZOOM,
-    PROTOMAPS_BUILDS_METADATA_URL, PROTOMAPS_BUILD_BASE_URL, PROTOMAPS_PLANET_FALLBACK_URL,
+    extract_bbox_to_file, resolve_planet_url_blocking, validate_completed_pmtiles,
+    DEFAULT_EXTRACT_MAX_ZOOM, MIN_FULL_REGION_BASEMAP_BYTES, PROTOMAPS_BUILDS_METADATA_URL,
+    PROTOMAPS_BUILD_BASE_URL, PROTOMAPS_PLANET_FALLBACK_URL,
 };
 pub use regions::{
     bbox_covers_point, default_pmtiles_base_url, default_pmtiles_planet_url,

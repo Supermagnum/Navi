@@ -65,9 +65,13 @@ class ForestLandcoverCompareScreenshotTest {
 
     @Test
     fun capture_espa_staged_restore_before() {
-        val report = OfflinePmtilesBootstrap.restoreOstlandetFromStaging(dataDir)
+        val report =
+            OfflinePmtilesBootstrap.restoreOstlandetFromStaging(
+                dataDir,
+                forInstrumentedTests = true,
+            )
         check(report.startsWith("OK:")) { report }
-        val basemap = File(dataDir, "pmtiles/$BASEMAP")
+        val basemap = File(dataDir, "pmtiles/$FIXTURE_BASEMAP")
         val staged = File(OfflineDataIntegrity.STAGED_FIXTURES_DIR, BASEMAP)
         check(basemap.isFile && basemap.length() == staged.length()) {
             "basemap size ${basemap.length()} != staged ${staged.length()}"
@@ -141,7 +145,11 @@ class ForestLandcoverCompareScreenshotTest {
 
     @Test
     fun capture_espa_staged_restore_after_style_fix() {
-        val report = OfflinePmtilesBootstrap.restoreOstlandetFromStaging(dataDir)
+        val report =
+            OfflinePmtilesBootstrap.restoreOstlandetFromStaging(
+                dataDir,
+                forInstrumentedTests = true,
+            )
         check(report.startsWith("OK:")) { report }
         val green = shootEspa(DEVICE_RESTORE_AFTER)
         log(
@@ -199,9 +207,13 @@ class ForestLandcoverCompareScreenshotTest {
         File(pm, BASEMAP).delete()
         File(pm, "$BASEMAP.partial").delete()
         File(pm, "$BASEMAP.chunks").deleteRecursively()
+        File(pm, FIXTURE_BASEMAP).delete()
+        File(pm, "$FIXTURE_BASEMAP.partial").delete()
+        File(pm, "$FIXTURE_BASEMAP.chunks").deleteRecursively()
+        File(pm, "$FIXTURE_BASEMAP.rejected").delete()
         // Partial artifacts with region-key naming.
         pm.listFiles()?.forEach { f ->
-            if (f.name.startsWith("europe_norway_ostlandet") &&
+            if ((f.name.startsWith("europe_norway_ostlandet") || f.name.startsWith("test_ostlandet")) &&
                 !f.name.contains("_dem") &&
                 f.name != DEM
             ) {
@@ -338,6 +350,7 @@ class ForestLandcoverCompareScreenshotTest {
         private const val TAG = "NaviForestLandcover"
         private const val REGION = "europe/norway/ostlandet"
         private const val BASEMAP = "europe_norway_ostlandet.pmtiles"
+        private const val FIXTURE_BASEMAP = "test_ostlandet_fixture.pmtiles"
         private const val DEM = "europe_norway_ostlandet_dem.pmtiles"
         private const val ESPA_LAT = 60.617
         private const val ESPA_LON = 11.167
