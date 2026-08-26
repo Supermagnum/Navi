@@ -12,6 +12,11 @@ The crates used in the project is listed here:
 https://github.com/Supermagnum/Navi/blob/dev/docs/crates.md
 
 
+# NOTE !
+Background indexing is currently slow. Region-scale extracts can take a long time to convert into indexed packs (for example Innlandet around 20 minutes on current reference hardware). This is a known issue and is being worked on. You can still plan while indexing runs; plans are much faster once packs are ready.
+Long-distance route planning is currently slow when indexed packs are not ready yet, for the same reason (building the routing graph from the downloaded .osm.pbf). This is also being worked on.
+
+
 # Testers wanted
 
 We need people to try Navi on **real devices** — car head units, tablets, and
