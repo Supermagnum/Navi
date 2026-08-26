@@ -29,6 +29,74 @@ capabilities declared in the plugin manifest are wired. Host-owned code (Android
 service, native accessory) may open USB/serial/network and feed sanitized
 snapshots into the core; WASM guests must not get raw sockets.
 
+## Gate: upgrade wasmtime before shipping any product plugin
+
+**Source of truth for this gate.** `docs/status.md` only points here.
+
+### Current state (2026-08 triage)
+
+- `plugin-host` pins **wasmtime** major **`29`** (lockfile **`29.0.1`**), with
+  features `cranelift` + `runtime` + `gc-drc` only (not Winch).
+- **No shipped artifact links `plugin-host` today.** `navi-ffi` (Android
+  `libnavi.so`), `navi-desktop`, `navi-linux`, and `driver-break-core` do not
+  depend on `navi-plugin-host` / wasmtime. Example guests (`log-hello`,
+  `busy-loop`) run only under CI / local isolation tests.
+- Known wasmtime advisories for that pin are **suppressed in**
+  [`deny.toml`](../deny.toml) on that basis (temporary until an upgrade, not a
+  permanent “N/A forever” waiver). Suppressed RustSec IDs and GHSA aliases:
+
+| RustSec | GHSA |
+|---|---|
+| `RUSTSEC-2025-0046` | [GHSA-fm79-3f68-h2fc](https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-fm79-3f68-h2fc) |
+| `RUSTSEC-2025-0118` | [GHSA-hc7m-r6v8-hg9q](https://github.com/advisories/GHSA-hc7m-r6v8-hg9q) |
+| `RUSTSEC-2026-0006` | [GHSA-vc8c-j3xm-xj73](https://github.com/advisories/GHSA-vc8c-j3xm-xj73) |
+| `RUSTSEC-2026-0020` | [GHSA-852m-cvvp-9p4w](https://github.com/advisories/GHSA-852m-cvvp-9p4w) |
+| `RUSTSEC-2026-0021` | [GHSA-243v-98vx-264h](https://github.com/advisories/GHSA-243v-98vx-264h) |
+| `RUSTSEC-2026-0085` | [GHSA-m758-wjhj-p3jq](https://github.com/advisories/GHSA-m758-wjhj-p3jq) |
+| `RUSTSEC-2026-0086` | [GHSA-m9w2-8782-2946](https://github.com/advisories/GHSA-m9w2-8782-2946) |
+| `RUSTSEC-2026-0087` | [GHSA-qqfj-4vcm-26hv](https://github.com/advisories/GHSA-qqfj-4vcm-26hv) |
+| `RUSTSEC-2026-0088` | [GHSA-6wgr-89rj-399p](https://github.com/advisories/GHSA-6wgr-89rj-399p) |
+| `RUSTSEC-2026-0089` | [GHSA-q49f-xg75-m9xw](https://github.com/advisories/GHSA-q49f-xg75-m9xw) |
+| `RUSTSEC-2026-0091` | [GHSA-394w-hwhg-8vgm](https://github.com/advisories/GHSA-394w-hwhg-8vgm) |
+| `RUSTSEC-2026-0092` | [GHSA-jxhv-7h78-9775](https://github.com/advisories/GHSA-jxhv-7h78-9775) |
+| `RUSTSEC-2026-0093` | [GHSA-hx6p-xpx3-jvvv](https://github.com/advisories/GHSA-hx6p-xpx3-jvvv) |
+| `RUSTSEC-2026-0094` | [GHSA-f984-pcp8-v2p7](https://github.com/advisories/GHSA-f984-pcp8-v2p7) |
+| `RUSTSEC-2026-0095` | [GHSA-xx5w-cvp6-jv83](https://github.com/advisories/GHSA-xx5w-cvp6-jv83) |
+| `RUSTSEC-2026-0096` | [GHSA-jhxm-h53p-jm7w](https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-jhxm-h53p-jm7w) |
+| `RUSTSEC-2026-0222` | [GHSA-hgjw-h833-99q9](https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-hgjw-h833-99q9) |
+
+(Example-guest `wee_alloc` unmaintained advisory `RUSTSEC-2022-0054` /
+[GHSA-rc23-xxgq-x27g](https://github.com/advisories/GHSA-rc23-xxgq-x27g) is
+allowlisted separately; replace or drop that allocator before shipping
+production guests that need a custom alloc.)
+
+### Required before linking into a shipped binary
+
+**Before** depending on `navi-plugin-host` from `navi-ffi`, the Android native
+build / APK packaging path, or `navi-desktop` (or any other user-facing
+artifact) for a real product plugin (APRS, Wikipedia, camping aids, …):
+
+1. **Migrate wasmtime from major 29 to at least `36.0.7`** (or a newer
+   maintained line that includes those fixes). This is a **breaking embedder
+   API migration**, not a lockfile-only patch bump within 29.x. Prefer
+   clearing the matching `deny.toml` ignores in the same change once CI
+   `cargo deny` / `cargo audit` are clean on the new pin.
+2. **Re-verify feature / backend assumptions** at migration time — do not
+   assume the 2026-08 triage still holds. Today’s host uses Cranelift only,
+   classic `Module`/`Linker`, no WASI, no Component Model, no pooling
+   allocator, no Winch. Under that config, several Dependabot “critical”
+   items (e.g. Winch sandbox escape) and many WASI/component advisories are
+   not exercised; Cranelift x86-64 codegen issues are mainly relevant to
+   CI/dev host-triple isolation, not the current APK/desktop link. Those
+   conclusions must be re-checked against the new wasmtime version, enabled
+   features, and the architectures the linked host will run on (including
+   Android **aarch64**, where Cranelift guest-heap advisories such as
+   `RUSTSEC-2026-0096` would matter once the host is in `libnavi.so`).
+
+Until that migration lands, treat “product plugins not shipped” as a
+**temporary** mitigation that **expires** the moment `plugin-host` is linked
+into a shipped binary.
+
 ## Crates
 
 | Crate | Role |
@@ -404,18 +472,22 @@ via UniFFI without WASM.
 
 ## Design rules for all plugins
 
-1. **Offline-first:** network is opt-in; core routing must work with plugins
+1. **Wasmtime ship gate:** do not link `plugin-host` into `navi-ffi`, the
+   Android APK, or `navi-desktop` until the
+   [wasmtime upgrade gate](#gate-upgrade-wasmtime-before-shipping-any-product-plugin)
+   is done (29 → ≥36.0.7+; breaking embedder migration).
+2. **Offline-first:** network is opt-in; core routing must work with plugins
    disabled.
-2. **Enable / disable:** every plugin has a user-facing on/off control; disabled
+3. **Enable / disable:** every plugin has a user-facing on/off control; disabled
    plugins are not executed and must release USB/Bluetooth sessions
    ([Enable / disable](#enable--disable-required)).
-3. **USB / Bluetooth:** hardware-facing plugins use host-mediated USB and/or
+4. **USB / Bluetooth:** hardware-facing plugins use host-mediated USB and/or
    Bluetooth — never raw guest sockets
    ([External device I/O](#external-device-io--usb-and-bluetooth-required)).
-4. **No silent map-data mutation:** OSM extracts and graph caches change only via
+5. **No silent map-data mutation:** OSM extracts and graph caches change only via
    explicit user actions ([`osm-updates.md`](osm-updates.md)).
-5. **Tier priorities:** plugins run at T0/T1 priority budgets — never block UI.
-6. **Privacy:** no VIN / callsign / location upload unless the user enables it.
-7. **Range discipline:** map overlays respect the same ~150 km class of filters
+6. **Tier priorities:** plugins run at T0/T1 priority budgets — never block UI.
+7. **Privacy:** no VIN / callsign / location upload unless the user enables it.
+8. **Range discipline:** map overlays respect the same ~150 km class of filters
    used by tracks and CAT repeater search unless the user raises a documented
    clamp.
