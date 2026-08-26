@@ -162,11 +162,13 @@ helpers used by Drive settings write through this store.
 
 | Table | Purpose |
 |---|---|
-| `name_entries` | `osm_id`, name, kind, lat, lon |
+| `name_entries` | `osm_id`, name, kind, lat, lon, sub_area, municipality |
 | `name_fts` | FTS5 virtual table over names (`content='name_entries'`) |
 
 Built from the region `.pbf` (`load_from_pbf`). Queries use prefix FTS
-(`query*`) and return `NameHit` for the search UI.
+(`query*`) and return `NameHit` for the search UI. Containing municipality
+and a nearby named sub-area are resolved once at index-build time (admin
+polygons + nearest hamlet), not per search.
 
 ### 3. Graph cache (not SQLite)
 
@@ -205,6 +207,21 @@ elevation/              ← tile files
 `.navigph` trip-bbox caches are **deprecated** (M5): planners no longer read or
 write them; missing packs fall back to a cold PBF rebuild.
 
+Progress and PBF contention (Android / UniFFI):
+
+| Channel | Consumer | UI |
+|---|---|---|
+| Download | Region / PMTiles / DEM jobs | Tools download line |
+| Plan | `plan_car_route` / hiking / UI plan coroutine | Plan bar (`planProgressSnapshot`) |
+| Convert | Indexed-map convert | Tools **Indexed maps (background)** |
+| Cone | Speed-limit cone / road-near | Drive HUD only (not the plan bar) |
+
+While a foreground plan runs (`foreground_plan_enter` / pack-miss
+`ForegroundPlanGuard`), background convert and place-index **yield** between
+PBF element batches. Non-plan callers of `load_or_build_reweighted_bbox`
+**skip** instead of scanning the extract in parallel. See
+`core/src/download/pbf_priority.rs` and `progress.rs`.
+
 Exact filenames are host-chosen under the Android app data directory; UniFFI
 APIs take `dataDir` / explicit paths.
 
@@ -214,7 +231,8 @@ APIs take `dataDir` / explicit paths.
 
 See [`docs/plugins.md`](docs/plugins.md) for HostApi, manifest format, isolation,
 and the planned beneficial plugins (APRS, weather, road info, CAT, ECU/EV,
-voice guidance).
+voice guidance, custom alert sounds, adaptive speed warning, and others listed
+there).
 
 ## ECU / live energy (T1)
 

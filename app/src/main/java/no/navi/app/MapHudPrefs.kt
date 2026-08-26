@@ -1,6 +1,9 @@
 package no.navi.app
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.os.Build
+import android.telephony.TelephonyManager
 
 /** Session map-HUD preferences persisted on device. */
 object MapHudPrefs {
@@ -9,6 +12,7 @@ object MapHudPrefs {
     private const val KEY_AUTO_ZOOM_ON = "auto_zoom_on"
     private const val KEY_BREAK_AS_DISTANCE = "break_as_distance"
     private const val KEY_PREFER_METRIC = "prefer_metric"
+    private const val KEY_UNIT_SYSTEM = "unit_system"
     private const val KEY_OPT_IN_3D = "opt_in_3d"
     private const val KEY_SPEED_CAMERA_OPT_IN = "speed_camera_opt_in"
     private const val KEY_SPEED_CAMERA_PROMPT_SHOWN = "speed_camera_prompt_shown"
@@ -125,21 +129,88 @@ object MapHudPrefs {
             .apply()
     }
 
-    fun loadPreferMetric(context: Context): Boolean =
-        context
-            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_PREFER_METRIC, true)
+    /**
+     * Distance / speed / altitude display profile.
+     *
+     * Persistence uses [KEY_UNIT_SYSTEM] (`contains` so unset is distinct from
+     * metric). Legacy [KEY_PREFER_METRIC] is still written and, if present
+     * without [KEY_UNIT_SYSTEM], migrated (true → metric, false → US imperial)
+     * and never re-inferred.
+     *
+     * First install with neither key: infer once from SIM/network ISO
+     * (GB → UK miles/mph, US/LR/MM → US ft/mph, else metric). No country
+     * signal, or a likely emulator/test harness, stays metric. The Drive
+     * settings chips always override and persist.
+     */
+    fun loadUnitSystem(context: Context): UnitSystem {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.contains(KEY_UNIT_SYSTEM)) {
+            return UnitSystem.fromPersistId(prefs.getString(KEY_UNIT_SYSTEM, null))
+                ?: UnitSystem.METRIC
+        }
+        if (prefs.contains(KEY_PREFER_METRIC)) {
+            val migrated =
+                UnitSystem.fromPreferMetric(prefs.getBoolean(KEY_PREFER_METRIC, true))
+            persistUnitSystem(prefs, migrated)
+            return migrated
+        }
+        val inferred =
+            if (likelyEmulatorDevice()) {
+                UnitSystem.METRIC
+            } else {
+                UnitSystem.defaultForCountryIso(simOrNetworkCountryIso(context))
+            }
+        persistUnitSystem(prefs, inferred)
+        return inferred
+    }
+
+    fun saveUnitSystem(
+        context: Context,
+        unitSystem: UnitSystem,
+    ) {
+        persistUnitSystem(
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE),
+            unitSystem,
+        )
+    }
+
+    fun loadPreferMetric(context: Context): Boolean = loadUnitSystem(context).isMetric
 
     fun savePreferMetric(
         context: Context,
         preferMetric: Boolean,
     ) {
-        context
-            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        saveUnitSystem(context, UnitSystem.fromPreferMetric(preferMetric))
+    }
+
+    private fun persistUnitSystem(
+        prefs: SharedPreferences,
+        unitSystem: UnitSystem,
+    ) {
+        prefs
             .edit()
-            .putBoolean(KEY_PREFER_METRIC, preferMetric)
+            .putString(KEY_UNIT_SYSTEM, unitSystem.persistId)
+            .putBoolean(KEY_PREFER_METRIC, unitSystem.isMetric)
             .apply()
     }
+
+    /** SIM then network ISO; empty when the radio has no country. No extra permission. */
+    fun simOrNetworkCountryIso(context: Context): String? {
+        val tm =
+            context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+                ?: return null
+        val sim = tm.simCountryIso?.trim().orEmpty()
+        if (sim.isNotEmpty()) return sim
+        val network = tm.networkCountryIso?.trim().orEmpty()
+        return network.ifEmpty { null }
+    }
+
+    internal fun likelyEmulatorDevice(): Boolean =
+        UnitSystem.looksLikeEmulator(
+            fingerprint = Build.FINGERPRINT,
+            product = Build.PRODUCT,
+            model = Build.MODEL,
+        )
 
     /** Opt-in experimental OpenFreeMap 3D (online only). Never the default. */
     fun loadOptIn3d(context: Context): Boolean =

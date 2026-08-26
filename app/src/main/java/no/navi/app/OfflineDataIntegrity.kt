@@ -89,6 +89,13 @@ object OfflineDataIntegrity {
                         it.length() > 1_000L
                 }.map { it.name }
                 .sorted()
+        val fullStagedBasemaps =
+            stagedDir
+                .listFiles()
+                .orEmpty()
+                .filter { OfflinePmtilesBootstrap.isFullRegionBasemap(it) && !it.name.contains("_dem") }
+                .map { it.name }
+                .sorted()
         val appPmtilesEmpty =
             File(dataDir, "pmtiles").listFiles()?.none {
                 it.isFile && it.name.endsWith(".pmtiles") && it.length() > 1_000L
@@ -98,7 +105,9 @@ object OfflineDataIntegrity {
             missingJobFiles = missingJobs.distinct(),
             missingRememberedRegions = missingRemembered,
             stagedBasemapNames = stagedBasemaps,
-            canRestoreFromStaging = appPmtilesEmpty && stagedBasemaps.isNotEmpty(),
+            // Only offer Tools restore when a full maxzoom-15 extract is staged —
+            // mz12 test fixtures must not look like a recoverable regional download.
+            canRestoreFromStaging = appPmtilesEmpty && fullStagedBasemaps.isNotEmpty(),
         )
     }
 }

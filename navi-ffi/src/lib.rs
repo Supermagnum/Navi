@@ -18,10 +18,11 @@ use driver_break_core::icons::{self, IconTheme};
 use driver_break_core::poi::{rest_area_suitable_for_weekly, PoiCategory, PoiIndex, PoiRecord};
 use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
 use driver_break_core::routing::graph::{
-    apply_official_network_preference, difficulty_notes_for_path, load_official_network_way_ids,
-    load_or_build_reweighted, load_or_build_reweighted_bbox, load_pilgrim_route_way_ids,
-    load_way_difficulty_tags, max_waypoint_snap_m, OfficialNetworkKind, RoadLabelSticky,
-    RoadNodeIndex, RouteGraph, RouteOptions, RoutingProfile, SnapTooFar,
+    apply_bike_suitability_from_pbf, apply_official_network_preference, apply_slow_road_preference,
+    difficulty_notes_for_path, load_official_network_way_ids, load_or_build_reweighted,
+    load_or_build_reweighted_bbox, load_pilgrim_route_way_ids, load_way_difficulty_tags,
+    max_waypoint_snap_m, BikeCapability, OfficialNetworkKind, RoadLabelSticky, RoadNodeIndex,
+    RouteGraph, RouteOptions, RoutingProfile, SnapTooFar,
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::safety::{
@@ -79,7 +80,12 @@ pub struct FfiDownloadProgress {
 /// Snapshot of the in-flight download (region PBF or PMTiles extract) for UI polling.
 #[uniffi::export]
 pub fn download_progress_snapshot() -> FfiDownloadProgress {
-    let s = driver_break_core::download::progress::snapshot();
+    ffi_progress(driver_break_core::download::progress::snapshot_on(
+        driver_break_core::download::progress::ProgressChannel::Download,
+    ))
+}
+
+fn ffi_progress(s: driver_break_core::download::progress::Snapshot) -> FfiDownloadProgress {
     FfiDownloadProgress {
         units_done: s.units_done,
         units_total: s.units_total,
@@ -88,10 +94,65 @@ pub fn download_progress_snapshot() -> FfiDownloadProgress {
     }
 }
 
+/// Plan-only progress (PBF bbox / A*). Isolated from convert and cone.
+#[uniffi::export]
+pub fn plan_progress_snapshot() -> FfiDownloadProgress {
+    ffi_progress(driver_break_core::download::progress::snapshot_on(
+        driver_break_core::download::progress::ProgressChannel::Plan,
+    ))
+}
+
+/// Indexed-maps convert progress. Isolated from plan and download.
+#[uniffi::export]
+pub fn convert_progress_snapshot() -> FfiDownloadProgress {
+    ffi_progress(driver_break_core::download::progress::snapshot_on(
+        driver_break_core::download::progress::ProgressChannel::Convert,
+    ))
+}
+
 /// Clear the shared download progress snapshot.
 #[uniffi::export]
 pub fn download_progress_clear() {
-    driver_break_core::download::progress::clear();
+    driver_break_core::download::progress::clear_on(
+        driver_break_core::download::progress::ProgressChannel::Download,
+    );
+}
+
+#[uniffi::export]
+pub fn plan_progress_clear() {
+    driver_break_core::download::progress::clear_on(
+        driver_break_core::download::progress::ProgressChannel::Plan,
+    );
+}
+
+#[uniffi::export]
+pub fn convert_progress_clear() {
+    driver_break_core::download::progress::clear_on(
+        driver_break_core::download::progress::ProgressChannel::Convert,
+    );
+}
+
+/// Pause background PBF convert / place-index while a foreground plan runs.
+#[uniffi::export]
+pub fn foreground_plan_enter() {
+    driver_break_core::download::pbf_priority::enter();
+}
+
+#[uniffi::export]
+pub fn foreground_plan_leave() {
+    driver_break_core::download::pbf_priority::leave();
+}
+
+/// True while [`foreground_plan_enter`] is unmatched by leave (UI plan in flight).
+#[uniffi::export]
+pub fn foreground_plan_active() -> bool {
+    driver_break_core::download::pbf_priority::foreground_plan_active()
+}
+
+/// True when the place-index SQLite file has at least one searchable row.
+#[uniffi::export]
+pub fn place_index_has_entries(index_db_path: String) -> bool {
+    driver_break_core::search::NameIndex::has_entries(std::path::Path::new(&index_db_path))
 }
 
 /// Number of logical CPU cores detected on the host (routing worker autodetect input).
@@ -573,6 +634,8 @@ fn days_json_from_hiking(plan: &HikingMultiDayPlan) -> String {
                         let reason = o.safety_reason.clone().unwrap_or_default();
                         let label = if o.safety_rejected && !reason.is_empty() {
                             reason.clone()
+                        } else if o.is_network && o.membership_required {
+                            "Network hut nearby (membership required)".to_string()
                         } else if o.is_network {
                             "Network hut overnight".to_string()
                         } else {
@@ -609,6 +672,11 @@ fn days_json_from_hiking(plan: &HikingMultiDayPlan) -> String {
                 "overnight_found": overnight_found,
                 "safety_rejected": d.overnight.as_ref().map(|o| o.safety_rejected).unwrap_or(false),
                 "safety_reason": safety_reason,
+                "membership_required": d
+                    .overnight
+                    .as_ref()
+                    .map(|o| o.membership_required)
+                    .unwrap_or(false),
                 "not_in_cab": false,
                 "compensation": "",
                 "is_final": is_final,
@@ -1391,6 +1459,10 @@ fn merge_hiking_waypoints_with_auto_vias(
 /// Named cabin / network hut candidates near a rast sample for auto-via promotion.
 /// Prefers path-linked (or ≤800 m) candidates; otherwise allows up to
 /// `lateral_max_m` (Drive cabin-radius slider) when the hut remains graph-reachable.
+///
+/// When `use_networked_cabins` is false, DNT/STF/… network huts are excluded from
+/// auto-via candidacy (open cabins / overnight facilities remain eligible). This is
+/// a geographic via filter only — it does not grant or imply hut access rights.
 fn hiking_auto_via_hut_candidates_at(
     poi: &PoiIndex,
     graph: &RouteGraph,
@@ -1400,18 +1472,28 @@ fn hiking_auto_via_hut_candidates_at(
     lon: f64,
     search_radius_m: f64,
     lateral_max_m: f64,
+    use_networked_cabins: bool,
 ) -> Vec<(String, f64, f64)> {
     let mut scored: Vec<(f64, f64, i64, String, f64, f64)> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     let search_m = search_radius_m.max(500.0);
     let lateral_m = lateral_max_m.max(500.0);
-    for cat in [
-        PoiCategory::NetworkHut,
-        PoiCategory::Cabin,
-        PoiCategory::OvernightFacility,
-    ] {
-        for p in poi.nearest(cat, lat, lon, search_m) {
+    let categories: &[PoiCategory] = if use_networked_cabins {
+        &[
+            PoiCategory::NetworkHut,
+            PoiCategory::Cabin,
+            PoiCategory::OvernightFacility,
+        ]
+    } else {
+        &[PoiCategory::Cabin, PoiCategory::OvernightFacility]
+    };
+    for cat in categories {
+        for p in poi.nearest(*cat, lat, lon, search_m) {
             if !seen.insert(p.osm_id) {
+                continue;
+            }
+            let is_network = p.categories.contains(&PoiCategory::NetworkHut);
+            if is_network && !use_networked_cabins {
                 continue;
             }
             let Some(name) = p.name.as_ref().map(|n| n.trim()).filter(|n| !n.is_empty()) else {
@@ -1431,11 +1513,7 @@ fn hiking_auto_via_hut_candidates_at(
             }
             // Prefer nearer to the rast sample (not merely on-path), then network, then lateral.
             let rank = sample_dist
-                + if p.categories.contains(&PoiCategory::NetworkHut) {
-                    0.0
-                } else {
-                    500.0
-                }
+                + if is_network { 0.0 } else { 500.0 }
                 + if linked { 0.0 } else { 200.0 };
             scored.push((rank, sample_dist, p.osm_id, name.to_string(), p.lat, p.lon));
         }
@@ -1463,6 +1541,7 @@ fn collect_hiking_auto_vias(
     user_cum_km: &[f64],
     cabin_radius_m: f64,
     search_radius_m: f64,
+    use_networked_cabins: bool,
     report: &mut String,
 ) -> Vec<HikingAutoVia> {
     let samples = sample_polyline_km(polyline);
@@ -1474,7 +1553,7 @@ fn collect_hiking_auto_vias(
     let search_m = search_radius_m.max(cabin_radius_m);
     let lateral_m = cabin_radius_m;
     report.push_str(&format!(
-        "auto_via_limits: search_m={search_m:.0}; lateral_m={lateral_m:.0}; extra_floor_m={cabin_radius_m:.0}; extra_frac={HIKING_AUTO_VIA_MAX_EXTRA_FRAC}\n"
+        "auto_via_limits: search_m={search_m:.0}; lateral_m={lateral_m:.0}; extra_floor_m={cabin_radius_m:.0}; extra_frac={HIKING_AUTO_VIA_MAX_EXTRA_FRAC}; use_networked_cabins={use_networked_cabins}\n"
     ));
     let mut autos = Vec::new();
     let mut next = HIKING_MAIN_BREAK_DISTANCE_KM;
@@ -1489,6 +1568,7 @@ fn collect_hiking_auto_vias(
             lon,
             search_m,
             lateral_m,
+            use_networked_cabins,
         );
 
         // Containing user leg for detour check.
@@ -1909,6 +1989,9 @@ pub fn plan_car_route_at(
     departure_local_iso: Option<String>,
 ) -> CorridorRouteResult {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ch = driver_break_core::download::progress::ChannelGuard::enter(
+            driver_break_core::download::progress::ProgressChannel::Plan,
+        );
         plan_car_route_inner(
             pbf_path,
             elev_dir,
@@ -2051,29 +2134,34 @@ fn plan_car_route_inner(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
-    let (mut graph, cache_hit, pack_hit) =
-        match driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
-            &data_dir,
+    let pack_try = driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
+        &data_dir,
+        pbf,
+        routing_profile,
+        Some(bbox),
+    );
+    let _pause_bg = if pack_try.is_err() {
+        Some(driver_break_core::download::ForegroundPlanGuard::acquire())
+    } else {
+        None
+    };
+    let (mut graph, cache_hit, pack_hit) = match pack_try {
+        Ok(g) => (g, false, true),
+        Err(_) => match load_or_build_reweighted_bbox(
             pbf,
+            &cache,
             routing_profile,
-            Some(bbox),
+            &elevation,
+            &eco,
+            bbox,
         ) {
-            Ok(g) => (g, false, true),
-            Err(_) => match load_or_build_reweighted_bbox(
-                pbf,
-                &cache,
-                routing_profile,
-                &elevation,
-                &eco,
-                bbox,
-            ) {
-                Ok((g, hit)) => (g, hit, false),
-                Err(e) => {
-                    report.push_str(&format!("FAIL: graph build: {e:#}\n"));
-                    return empty(report);
-                }
-            },
-        };
+            Ok((g, hit)) => (g, hit, false),
+            Err(e) => {
+                report.push_str(&format!("FAIL: graph build: {e:#}\n"));
+                return empty(report);
+            }
+        },
+    };
     // Pack path skips load_or_build eco; apply DEM reweight when eco is on.
     if pack_hit && use_eco {
         graph.apply_eco_reweighting(&elevation, &eco);
@@ -2090,6 +2178,32 @@ fn plan_car_route_inner(
             true,
             &mut report,
         );
+    }
+    if profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric {
+        apply_slow_road_preference(&mut graph);
+        report.push_str("slow_road_preference=applied; profile=bicycle\n");
+        let bike_cap =
+            match driver_break_core::storage::Storage::open(routes_db(&data_dir.to_string_lossy()))
+            {
+                Ok(storage) => {
+                    let store = driver_break_core::storage::ConfigStore::new(&storage);
+                    BikeCapability::parse(
+                        &store
+                            .load_bike_capability()
+                            .unwrap_or_else(|_| "trekking".to_string()),
+                    )
+                }
+                Err(_) => BikeCapability::Trekking,
+            };
+        match apply_bike_suitability_from_pbf(&mut graph, pbf, bike_cap) {
+            Ok(removed) => {
+                report.push_str(&format!(
+                    "bike_capability={}; bike_suitability_removed={removed}\n",
+                    bike_cap.as_str()
+                ));
+            }
+            Err(e) => report.push_str(&format!("bike_suitability_err={e}\n")),
+        }
     }
     let network_pref_ms = timer.lap_ms();
     report.push_str(&format!(
@@ -2685,6 +2799,9 @@ pub fn plan_hiking_route(
     prefer_official_networks: bool,
     prefer_pilgrim_routes: bool,
 ) -> CorridorRouteResult {
+    let _ch = driver_break_core::download::progress::ChannelGuard::enter(
+        driver_break_core::download::progress::ProgressChannel::Plan,
+    );
     #[derive(Deserialize)]
     struct Wp {
         name: String,
@@ -2698,6 +2815,10 @@ pub fn plan_hiking_route(
     report.push_str(&format!(
         "prefer_official_networks={prefer_official_networks}; prefer_pilgrim_routes={prefer_pilgrim_routes}\n"
     ));
+    let use_networked_cabins = load_use_networked_cabins_near_cache(&PathBuf::from(&cache_dir));
+    report.push_str(&format!("use_networked_cabins={use_networked_cabins}\n"));
+    let network_hut_member = load_network_hut_member_near_cache(&PathBuf::from(&cache_dir));
+    report.push_str(&format!("network_hut_member={network_hut_member}\n"));
     let user_wps: Vec<HikingWp> = match serde_json::from_str::<Vec<Wp>>(&waypoints_json) {
         Ok(v) => v
             .into_iter()
@@ -2775,29 +2896,34 @@ pub fn plan_hiking_route(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
-    let (mut graph, cache_hit, pack_hit) =
-        match driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
-            &data_dir,
+    let pack_try = driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
+        &data_dir,
+        pbf,
+        RoutingProfile::Foot,
+        Some(bbox),
+    );
+    let _pause_bg = if pack_try.is_err() {
+        Some(driver_break_core::download::ForegroundPlanGuard::acquire())
+    } else {
+        None
+    };
+    let (mut graph, cache_hit, pack_hit) = match pack_try {
+        Ok(g) => (g, false, true),
+        Err(_) => match load_or_build_reweighted_bbox(
             pbf,
+            &cache,
             RoutingProfile::Foot,
-            Some(bbox),
+            &elevation,
+            &eco,
+            bbox,
         ) {
-            Ok(g) => (g, false, true),
-            Err(_) => match load_or_build_reweighted_bbox(
-                pbf,
-                &cache,
-                RoutingProfile::Foot,
-                &elevation,
-                &eco,
-                bbox,
-            ) {
-                Ok((g, hit)) => (g, hit, false),
-                Err(e) => {
-                    report.push_str(&format!("FAIL: foot graph build: {e:#}\n"));
-                    return empty_corridor(report);
-                }
-            },
-        };
+            Ok((g, hit)) => (g, hit, false),
+            Err(e) => {
+                report.push_str(&format!("FAIL: foot graph build: {e:#}\n"));
+                return empty_corridor(report);
+            }
+        },
+    };
     let build_s = t_graph.elapsed().as_secs_f64();
     let graph_build_ms = timer.lap_ms();
     apply_route_prefs_if_requested(
@@ -2808,6 +2934,8 @@ pub fn plan_hiking_route(
         prefer_pilgrim_routes,
         &mut report,
     );
+    apply_slow_road_preference(&mut graph);
+    report.push_str("slow_road_preference=applied; profile=hiking\n");
     let network_pref_ms = timer.lap_ms();
     report.push_str(&format!(
         "build_s={build_s:.2}; cache_hit={cache_hit}; pack_hit={pack_hit}; nodes={}; edges={}\n",
@@ -2964,6 +3092,7 @@ pub fn plan_hiking_route(
             &user_cum_km,
             poi_radii.cabin_radius_m,
             poi_radii.search_radius_m,
+            use_networked_cabins,
             &mut report,
         )
     } else {
@@ -3059,6 +3188,7 @@ pub fn plan_hiking_route(
         &overnight_ctx.0,
         &poi_index,
         &overnight_ctx.1,
+        network_hut_member,
     );
     let days_json = days_json_from_hiking(&multi);
     let mut hiking_overnight_pins: Vec<serde_json::Value> = Vec::new();
@@ -3074,8 +3204,8 @@ pub fn plan_hiking_route(
             ));
             if let Some(o) = &d.overnight {
                 report.push_str(&format!(
-                    "hiking_overnight: name={:?}; network={}; safety_rejected={}; safety_reason={:?}; dist_m={:.0}; lat={:.5}; lon={:.5}\n",
-                    o.name, o.is_network, o.safety_rejected, o.safety_reason, o.distance_from_target_m, o.lat, o.lon
+                    "hiking_overnight: name={:?}; network={}; membership_required={}; safety_rejected={}; safety_reason={:?}; dist_m={:.0}; lat={:.5}; lon={:.5}\n",
+                    o.name, o.is_network, o.membership_required, o.safety_rejected, o.safety_reason, o.distance_from_target_m, o.lat, o.lon
                 ));
                 hiking_overnight_pins.push(json!({
                     "name": if o.safety_rejected {
@@ -3090,6 +3220,7 @@ pub fn plan_hiking_route(
                     "icon_key": o.icon_key,
                     "along_km": d.end_km,
                     "overnight": true,
+                    "membership_required": o.membership_required,
                     "safety_rejected": o.safety_rejected,
                     "safety_reason": o.safety_reason,
                 }));
@@ -3321,6 +3452,10 @@ pub struct PlaceHit {
     pub kind: String,
     pub lat: f64,
     pub lon: f64,
+    /// Named hamlet / neighbourhood / locality containing or nearest the place.
+    pub sub_area: String,
+    /// Containing municipality (kommune), from OSM admin_level 6–8 polygons.
+    pub municipality: String,
 }
 
 /// Build or open the offline FTS name index for a region PBF.
@@ -3335,10 +3470,10 @@ pub fn ensure_place_index(pbf_path: String, index_db_path: String) -> String {
     if let Some(parent) = db.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    // Reuse existing index if non-trivial.
+    // Reuse existing index if non-trivial and built with area-context schema.
     if db.is_file() {
         if let Ok(meta) = std::fs::metadata(db) {
-            if meta.len() > 10_000 {
+            if meta.len() > 10_000 && driver_break_core::search::NameIndex::is_current_schema(db) {
                 return format!("PASS\ncache_hit=true\nindex_db={index_db_path}\n");
             }
         }
@@ -3398,6 +3533,7 @@ pub fn ensure_indexed_maps(pbf_path: String, data_dir: String, elev_dir: Option<
         }
     }
 
+    ensure_native_logging();
     let mut opts = ConvertOptions::new(&data, &pbf);
     opts.elev_dir = elev_dir.map(PathBuf::from);
     // Motor + hiking covers the shared planning profiles for v1.
@@ -3462,6 +3598,69 @@ pub fn indexed_maps_status(pbf_path: String, data_dir: String) -> String {
     }
 }
 
+/// Water-source POI hit sampled along a planned route polyline.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct WaterPoiAlongRoute {
+    pub name: String,
+    pub lat: f64,
+    pub lon: f64,
+    pub sample_km: f64,
+    pub dist_m: f64,
+}
+
+/// Sample a route polyline every `sample_step_km` and collect unique water POIs
+/// within `radius_m` of each sample (indexed pack preferred, PBF fallback).
+#[uniffi::export]
+pub fn water_pois_along_polyline(
+    data_dir: String,
+    pbf_path: String,
+    polyline: String,
+    sample_step_km: f64,
+    radius_m: f64,
+) -> Vec<WaterPoiAlongRoute> {
+    let data_dir = PathBuf::from(data_dir);
+    let pbf = PathBuf::from(pbf_path);
+    let poi_index =
+        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan(&data_dir, &pbf) {
+            Ok((poi, _)) => poi,
+            Err(_) => match PoiIndex::load_from_pbf(&pbf) {
+                Ok(i) => i,
+                Err(_) => return Vec::new(),
+            },
+        };
+    let samples = sample_polyline_km(&polyline);
+    if samples.len() < 2 {
+        return Vec::new();
+    }
+    let total = samples.last().map(|s| s.2).unwrap_or(0.0);
+    let step = sample_step_km.max(1.0);
+    let mut seen = std::collections::HashSet::<i64>::new();
+    let mut out = Vec::new();
+    let mut km = 0.0;
+    while km <= total + 0.01 {
+        let (lat, lon) = interpolate_at_km(&samples, km);
+        for w in poi_index.nearest(PoiCategory::Water, lat, lon, radius_m) {
+            if !seen.insert(w.osm_id) {
+                continue;
+            }
+            let name = w
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("water:{}", w.osm_id));
+            let dist = haversine_m(lat, lon, w.lat, w.lon);
+            out.push(WaterPoiAlongRoute {
+                name,
+                lat: w.lat,
+                lon: w.lon,
+                sample_km: km,
+                dist_m: dist,
+            });
+        }
+        km += step;
+    }
+    out
+}
+
 /// Offline place / address-style name search (FTS5 prefix).
 #[uniffi::export]
 pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<PlaceHit> {
@@ -3478,6 +3677,8 @@ pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<Pl
             kind: h.kind,
             lat: h.lat,
             lon: h.lon,
+            sub_area: h.sub_area,
+            municipality: h.municipality,
         })
         .collect()
 }
@@ -3504,6 +3705,8 @@ pub fn nearby_places(
             kind: h.kind,
             lat: h.lat,
             lon: h.lon,
+            sub_area: h.sub_area,
+            municipality: h.municipality,
         })
         .collect()
 }
@@ -3892,6 +4095,68 @@ pub fn save_prefer_pilgrim_routes(data_dir: String, prefer: bool) -> bool {
     store.save_prefer_pilgrim_routes(prefer).is_ok()
 }
 
+/// Allow networked (DNT/STF/…) huts as hiking auto-via waypoints (default off).
+/// Geographic via only — does not imply membership or right of entry.
+#[uniffi::export]
+pub fn load_use_networked_cabins(data_dir: String) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.load_use_networked_cabins().unwrap_or(false)
+}
+
+#[uniffi::export]
+pub fn save_use_networked_cabins(data_dir: String, prefer: bool) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.save_use_networked_cabins(prefer).is_ok()
+}
+
+/// Bicycle / electric-cycle terrain capability: `road`, `trekking`, or `mountain`.
+#[uniffi::export]
+pub fn load_bike_capability(data_dir: String) -> String {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return BikeCapability::Trekking.as_str().to_string();
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store
+        .load_bike_capability()
+        .unwrap_or_else(|_| BikeCapability::Trekking.as_str().to_string())
+}
+
+#[uniffi::export]
+pub fn save_bike_capability(data_dir: String, capability: String) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    let cap = BikeCapability::parse(&capability);
+    store.save_bike_capability(cap.as_str()).is_ok()
+}
+
+/// Load whether the user is a DNT/STF/… network hut member (default false).
+/// Gates overnight-stay preference only — not auto-via waypoints.
+#[uniffi::export]
+pub fn load_network_hut_member(data_dir: String) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.load_network_hut_member().unwrap_or(false)
+}
+
+#[uniffi::export]
+pub fn save_network_hut_member(data_dir: String, is_member: bool) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.save_network_hut_member(is_member).is_ok()
+}
+
 fn ffi_from_poi_radii(r: &ProfilePoiRadii) -> FfiProfilePoiRadii {
     FfiProfilePoiRadii {
         search_radius_m: r.search_radius_m,
@@ -4073,6 +4338,26 @@ fn load_profile_poi_radii_near_cache(cache: &Path) -> ProfilePoiRadiiTable {
     driver_break_core::storage::ConfigStore::new(&storage)
         .load_profile_poi_radii()
         .unwrap_or_default()
+}
+
+fn load_use_networked_cabins_near_cache(cache: &Path) -> bool {
+    let data_dir = cache.parent().unwrap_or(cache);
+    let Ok(storage) = driver_break_core::storage::Storage::open(data_dir.join("navi.db")) else {
+        return false;
+    };
+    driver_break_core::storage::ConfigStore::new(&storage)
+        .load_use_networked_cabins()
+        .unwrap_or(false)
+}
+
+fn load_network_hut_member_near_cache(cache: &Path) -> bool {
+    let data_dir = cache.parent().unwrap_or(cache);
+    let Ok(storage) = driver_break_core::storage::Storage::open(data_dir.join("navi.db")) else {
+        return false;
+    };
+    driver_break_core::storage::ConfigStore::new(&storage)
+        .load_network_hut_member()
+        .unwrap_or(false)
 }
 
 fn load_ebike_config_near_cache(cache: &Path) -> driver_break_core::config::EbikeConfig {
@@ -4506,6 +4791,723 @@ pub fn nearest_speed_camera_warning_json(
     .to_string()
 }
 
+/// True when Norwegian road-sign warnings may be shown at `(lat, lon)`.
+#[uniffi::export]
+pub fn road_sign_jurisdiction_allows(lat: f64, lon: f64) -> bool {
+    use driver_break_core::routing::road_sign::{
+        resolve_road_sign_jurisdiction_at, RoadSignJurisdiction,
+    };
+    resolve_road_sign_jurisdiction_at(lat, lon) == RoadSignJurisdiction::Norway
+}
+
+/// Load catalogue-matched road signs from a region PBF as JSON.
+#[uniffi::export]
+pub fn load_road_signs_json(pbf_path: String) -> String {
+    use driver_break_core::routing::road_sign::{load_catalog, load_road_signs_from_pbf};
+    let catalog = match load_catalog() {
+        Ok(c) => c,
+        Err(e) => {
+            return format!(
+                r#"{{"error":{}}}"#,
+                serde_json::to_string(&e.to_string()).unwrap_or_default()
+            );
+        }
+    };
+    match load_road_signs_from_pbf(&pbf_path, &catalog) {
+        Ok(signs) => {
+            let rows: Vec<serde_json::Value> = signs
+                .into_iter()
+                .map(|s| {
+                    serde_json::json!({
+                        "osm_id": s.osm_id,
+                        "lat": s.lat,
+                        "lon": s.lon,
+                        "icon_key": s.icon_key,
+                        "code": s.code,
+                        "name_en": s.name_en,
+                        "traffic_sign_raw": s.traffic_sign_raw,
+                    })
+                })
+                .collect();
+            serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
+        }
+        Err(e) => format!(
+            r#"{{"error":{}}}"#,
+            serde_json::to_string(&e.to_string()).unwrap_or_default()
+        ),
+    }
+}
+
+/// Nearest road-sign warning JSON for live HUD (empty object when none).
+#[uniffi::export]
+pub fn nearest_road_sign_warning_json(signs_json: String, lat: f64, lon: f64) -> String {
+    use driver_break_core::routing::road_sign::{nearest_road_sign_warning, RoadSignRecord};
+    let Ok(raw) = serde_json::from_str::<Vec<serde_json::Value>>(&signs_json) else {
+        return "{}".into();
+    };
+    let mut signs = Vec::new();
+    for v in raw {
+        signs.push(RoadSignRecord {
+            osm_id: v.get("osm_id").and_then(|x| x.as_i64()).unwrap_or(0),
+            lat: v.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            lon: v.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            icon_key: v
+                .get("icon_key")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            code: v
+                .get("code")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            name_en: v
+                .get("name_en")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            traffic_sign_raw: v
+                .get("traffic_sign_raw")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+        });
+    }
+    let Some(w) = nearest_road_sign_warning(&signs, lat, lon) else {
+        return "{}".into();
+    };
+    let phase = match w.phase {
+        driver_break_core::ApproachPhase::Hidden => "hidden",
+        driver_break_core::ApproachPhase::Appear => "appear",
+        driver_break_core::ApproachPhase::Urgency => "urgency",
+    };
+    serde_json::json!({
+        "phase": phase,
+        "distance_m": w.distance_m,
+        "icon_key": w.icon_key,
+        "code": w.code,
+        "name_en": w.name_en,
+        "label": w.label,
+    })
+    .to_string()
+}
+
+struct LiveHazardStore {
+    pbf_key: String,
+    full: driver_break_core::routing::live_hazard::LiveHazardIndex,
+    window_key: String,
+    window: driver_break_core::routing::live_hazard::LiveHazardIndex,
+}
+
+static LIVE_HAZARD_STORE: Mutex<Option<LiveHazardStore>> = Mutex::new(None);
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiLiveHazardLoadStats {
+    pub signs: u32,
+    pub children: u32,
+    pub cameras: u32,
+    pub bumps: u32,
+    pub compact_json_utf8: u64,
+    pub cone_m: f64,
+}
+
+/// Parse compact hazard points once into the native cache (signs, children centroids,
+/// cameras, speed bumps). Window refresh reuses the road_label_near cell bbox.
+#[uniffi::export]
+pub fn ensure_live_hazards_loaded(pbf_path: String) -> FfiLiveHazardLoadStats {
+    use driver_break_core::routing::live_hazard::{LiveHazardIndex, LIVE_HAZARD_CONE_M};
+    let key = pbf_path.clone();
+    {
+        let guard = LIVE_HAZARD_STORE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(store) = guard.as_ref() {
+            if store.pbf_key == key {
+                return FfiLiveHazardLoadStats {
+                    signs: store.full.signs.len() as u32,
+                    children: store.full.children.len() as u32,
+                    cameras: store.full.cameras.len() as u32,
+                    bumps: store.full.bumps.len() as u32,
+                    compact_json_utf8: store.full.estimated_compact_json_utf8() as u64,
+                    cone_m: LIVE_HAZARD_CONE_M,
+                };
+            }
+        }
+    }
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        LiveHazardIndex::load_from_pbf(&pbf_path)
+    })) {
+        Ok(Ok((full, stats))) => {
+            let empty = LiveHazardIndex::default();
+            let out = FfiLiveHazardLoadStats {
+                signs: stats.signs as u32,
+                children: stats.children as u32,
+                cameras: stats.cameras as u32,
+                bumps: stats.bumps as u32,
+                compact_json_utf8: stats.compact_json_utf8 as u64,
+                cone_m: LIVE_HAZARD_CONE_M,
+            };
+            if let Ok(mut guard) = LIVE_HAZARD_STORE.lock() {
+                *guard = Some(LiveHazardStore {
+                    pbf_key: key,
+                    full,
+                    window_key: String::new(),
+                    window: empty,
+                });
+            }
+            log::info!(
+                target: "NaviNative",
+                "live_hazards loaded signs={} children={} cameras={} bumps={}",
+                out.signs, out.children, out.cameras, out.bumps
+            );
+            out
+        }
+        Ok(Err(e)) => {
+            log::error!(target: "NaviNative", "live_hazards load error: {e:#}");
+            FfiLiveHazardLoadStats {
+                signs: 0,
+                children: 0,
+                cameras: 0,
+                bumps: 0,
+                compact_json_utf8: 0,
+                cone_m: LIVE_HAZARD_CONE_M,
+            }
+        }
+        Err(_) => {
+            log::error!(target: "NaviNative", "live_hazards load panicked");
+            FfiLiveHazardLoadStats {
+                signs: 0,
+                children: 0,
+                cameras: 0,
+                bumps: 0,
+                compact_json_utf8: 0,
+                cone_m: LIVE_HAZARD_CONE_M,
+            }
+        }
+    }
+}
+
+/// Build the native compact cache from already-loaded JSON layers (parse once).
+/// Prefer this over [`ensure_live_hazards_loaded`] when the host already scanned the PBF.
+#[uniffi::export]
+pub fn live_hazards_ingest_from_json(
+    pbf_key: String,
+    signs_json: String,
+    cameras_json: String,
+    children_json: String,
+    bumps_json: String,
+) -> FfiLiveHazardLoadStats {
+    use driver_break_core::routing::live_hazard::{
+        ChildrenCentroid, LiveHazardIndex, SpeedBumpPoint, LIVE_HAZARD_CONE_M,
+    };
+    use driver_break_core::routing::road_sign::RoadSignRecord;
+    use driver_break_core::routing::speed_camera::{SpeedCameraKind, SpeedCameraRecord};
+
+    let signs: Vec<RoadSignRecord> = serde_json::from_str::<Vec<serde_json::Value>>(&signs_json)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|v| RoadSignRecord {
+            osm_id: v.get("osm_id").and_then(|x| x.as_i64()).unwrap_or(0),
+            lat: v.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            lon: v.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            icon_key: v
+                .get("icon_key")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            code: v
+                .get("code")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            name_en: v
+                .get("name_en")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+            traffic_sign_raw: v
+                .get("traffic_sign_raw")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
+        })
+        .collect();
+
+    let cameras: Vec<SpeedCameraRecord> =
+        serde_json::from_str::<Vec<serde_json::Value>>(&cameras_json)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|v| {
+                let kind = match v.get("kind").and_then(|x| x.as_str()).unwrap_or("point") {
+                    "average_speed" => SpeedCameraKind::AverageSpeed,
+                    _ => SpeedCameraKind::Point,
+                };
+                SpeedCameraRecord {
+                    osm_id: v.get("osm_id").and_then(|x| x.as_i64()).unwrap_or(0),
+                    lat: v.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                    lon: v.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                    kind,
+                    maxspeed_kmh: v.get("maxspeed_kmh").and_then(|x| x.as_f64()),
+                    maxspeed_conditional: v
+                        .get("maxspeed_conditional")
+                        .and_then(|x| x.as_str())
+                        .map(|s| s.to_string()),
+                    zone_from_lat: v.get("zone_from_lat").and_then(|x| x.as_f64()),
+                    zone_from_lon: v.get("zone_from_lon").and_then(|x| x.as_f64()),
+                    zone_to_lat: v.get("zone_to_lat").and_then(|x| x.as_f64()),
+                    zone_to_lon: v.get("zone_to_lon").and_then(|x| x.as_f64()),
+                    zone_length_m: v.get("zone_length_m").and_then(|x| x.as_f64()),
+                }
+            })
+            .collect();
+
+    let children: Vec<ChildrenCentroid> =
+        serde_json::from_str::<Vec<serde_json::Value>>(&children_json)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|v| {
+                let category = match v.get("category").and_then(|x| x.as_str())? {
+                    "school" => "school",
+                    "kindergarten" => "kindergarten",
+                    "playground" => "playground",
+                    _ => return None,
+                };
+                Some(ChildrenCentroid {
+                    osm_id: v.get("osm_id").and_then(|x| x.as_i64()).unwrap_or(0),
+                    lat: v.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                    lon: v.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0),
+                    name: v
+                        .get("name")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    category,
+                })
+            })
+            .collect();
+
+    let bumps: Vec<SpeedBumpPoint> = serde_json::from_str::<Vec<serde_json::Value>>(&bumps_json)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|v| SpeedBumpPoint {
+            osm_id: v.get("osm_id").and_then(|x| x.as_i64()).unwrap_or(0),
+            lat: v.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            lon: v.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            calming: v
+                .get("calming")
+                .and_then(|x| x.as_str())
+                .unwrap_or("hump")
+                .to_string(),
+        })
+        .collect();
+
+    let full = LiveHazardIndex {
+        signs,
+        children,
+        cameras,
+        bumps,
+    };
+    let out = FfiLiveHazardLoadStats {
+        signs: full.signs.len() as u32,
+        children: full.children.len() as u32,
+        cameras: full.cameras.len() as u32,
+        bumps: full.bumps.len() as u32,
+        compact_json_utf8: full.estimated_compact_json_utf8() as u64,
+        cone_m: LIVE_HAZARD_CONE_M,
+    };
+    if let Ok(mut guard) = LIVE_HAZARD_STORE.lock() {
+        *guard = Some(LiveHazardStore {
+            pbf_key,
+            full,
+            window_key: String::new(),
+            window: LiveHazardIndex::default(),
+        });
+    }
+    out
+}
+
+/// Load speed-bump / hump / table nodes as compact JSON.
+#[uniffi::export]
+pub fn load_speed_bumps_json(pbf_path: String) -> String {
+    match driver_break_core::routing::live_hazard::load_speed_bumps_json(&pbf_path) {
+        Ok(s) => s,
+        Err(e) => format!(
+            r#"{{"error":{}}}"#,
+            serde_json::to_string(&e.to_string()).unwrap_or_default()
+        ),
+    }
+}
+
+/// Road-sign JSON from the native compact cache (empty if not loaded).
+#[uniffi::export]
+pub fn live_hazards_road_signs_json() -> String {
+    let guard = LIVE_HAZARD_STORE.lock().unwrap_or_else(|e| e.into_inner());
+    match guard.as_ref() {
+        Some(s) => s.full.signs_json(),
+        None => "[]".into(),
+    }
+}
+
+/// Children-centroid JSON from the native compact cache.
+#[uniffi::export]
+pub fn live_hazards_children_json() -> String {
+    let guard = LIVE_HAZARD_STORE.lock().unwrap_or_else(|e| e.into_inner());
+    match guard.as_ref() {
+        Some(s) => s.full.children_json(),
+        None => "[]".into(),
+    }
+}
+
+/// Speed-camera JSON from the native compact cache.
+#[uniffi::export]
+pub fn live_hazards_speed_cameras_json() -> String {
+    use driver_break_core::routing::speed_camera::SpeedCameraKind;
+    let guard = LIVE_HAZARD_STORE.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(s) = guard.as_ref() else {
+        return "[]".into();
+    };
+    let rows: Vec<_> = s
+        .full
+        .cameras
+        .iter()
+        .map(|c| {
+            serde_json::json!({
+                "osm_id": c.osm_id,
+                "lat": c.lat,
+                "lon": c.lon,
+                "kind": match c.kind {
+                    SpeedCameraKind::Point => "point",
+                    SpeedCameraKind::AverageSpeed => "average_speed",
+                },
+                "maxspeed_kmh": c.maxspeed_kmh,
+                "maxspeed_conditional": c.maxspeed_conditional,
+                "zone_from_lat": c.zone_from_lat,
+                "zone_from_lon": c.zone_from_lon,
+                "zone_to_lat": c.zone_to_lat,
+                "zone_to_lon": c.zone_to_lon,
+                "zone_length_m": c.zone_length_m,
+            })
+        })
+        .collect();
+    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
+}
+
+/// Hard-coded live cone radius (metres). Distinct from the 200 m route corridor.
+#[uniffi::export]
+pub fn live_hazard_cone_m() -> f64 {
+    driver_break_core::routing::live_hazard::LIVE_HAZARD_CONE_M
+}
+
+fn with_live_hazard_window<R>(
+    lat: f64,
+    lon: f64,
+    f: impl FnOnce(&driver_break_core::routing::live_hazard::LiveHazardIndex) -> R,
+) -> Option<R> {
+    use driver_break_core::routing::live_hazard::live_hazard_cell_key;
+    let mut guard = LIVE_HAZARD_STORE.lock().ok()?;
+    let store = guard.as_mut()?;
+    let key = live_hazard_cell_key(lat, lon);
+    if store.window_key != key {
+        store.window = store.full.windowed(lat, lon);
+        store.window_key = key;
+    }
+    Some(f(&store.window))
+}
+
+fn road_sign_warning_to_json(w: &driver_break_core::routing::road_sign::RoadSignWarning) -> String {
+    use driver_break_core::ApproachPhase;
+    let phase = match w.phase {
+        ApproachPhase::Hidden => "hidden",
+        ApproachPhase::Appear => "appear",
+        ApproachPhase::Urgency => "urgency",
+    };
+    serde_json::json!({
+        "phase": phase,
+        "distance_m": w.distance_m,
+        "icon_key": w.icon_key,
+        "code": w.code,
+        "name_en": w.name_en,
+        "label": w.label,
+        "cone_m": driver_break_core::routing::live_hazard::LIVE_HAZARD_CONE_M,
+        "source": "live_cone",
+    })
+    .to_string()
+}
+
+/// Route-independent 300 m heading-cone road-sign / bump / children warning.
+/// `heading_deg` null = isotropic disk within the cone radius.
+#[uniffi::export]
+pub fn live_hazard_cone_road_sign_warning_json(
+    lat: f64,
+    lon: f64,
+    heading_deg: Option<f64>,
+) -> String {
+    use driver_break_core::routing::live_hazard::{
+        live_sign_and_children, nearest_live_sign_style_warning,
+    };
+    let Some((sign_opt, children, w_opt)) = with_live_hazard_window(lat, lon, |window| {
+        let (sign_opt, children) = live_sign_and_children(window, lat, lon, heading_deg);
+        let w_opt = nearest_live_sign_style_warning(window, lat, lon, heading_deg);
+        (sign_opt, children, w_opt)
+    }) else {
+        return "{}".into();
+    };
+    let Some(w) = w_opt else {
+        return "{}".into();
+    };
+    let mut v: serde_json::Value =
+        serde_json::from_str(&road_sign_warning_to_json(&w)).unwrap_or(serde_json::json!({}));
+    if let Some((_, cat)) = children {
+        let tagged_142 = sign_opt.as_ref().map(|s| s.code.as_str()) == Some("142");
+        if w.code == "142" && !tagged_142 {
+            v["source"] = serde_json::json!("children_proximity");
+            v["category"] = serde_json::json!(cat);
+        }
+    }
+    v.to_string()
+}
+
+/// Children proximity only (source=`children_proximity`) inside the live cone.
+#[uniffi::export]
+pub fn live_hazard_cone_children_warning_json(
+    lat: f64,
+    lon: f64,
+    heading_deg: Option<f64>,
+) -> String {
+    use driver_break_core::routing::live_hazard::nearest_live_children_warning;
+    let Some(hit) = with_live_hazard_window(lat, lon, |window| {
+        nearest_live_children_warning(window, lat, lon, heading_deg)
+    }) else {
+        return "{}".into();
+    };
+    let Some((w, cat)) = hit else {
+        return "{}".into();
+    };
+    let mut v: serde_json::Value =
+        serde_json::from_str(&road_sign_warning_to_json(&w)).unwrap_or(serde_json::json!({}));
+    v["source"] = serde_json::json!("children_proximity");
+    v["category"] = serde_json::json!(cat);
+    v.to_string()
+}
+
+/// Speed-camera warning inside the live cone (same jurisdiction / opt-in gates).
+#[uniffi::export]
+pub fn live_hazard_cone_speed_camera_warning_json(
+    lat: f64,
+    lon: f64,
+    heading_deg: Option<f64>,
+    opted_in: bool,
+) -> String {
+    use driver_break_core::routing::live_hazard::nearest_live_speed_camera_warning;
+    use driver_break_core::ApproachPhase;
+    let Some(w_opt) = with_live_hazard_window(lat, lon, |window| {
+        nearest_live_speed_camera_warning(window, lat, lon, heading_deg, opted_in)
+    }) else {
+        return "{}".into();
+    };
+    let Some(w) = w_opt else {
+        return "{}".into();
+    };
+    let phase = match w.phase {
+        ApproachPhase::Hidden => "hidden",
+        ApproachPhase::Appear => "appear",
+        ApproachPhase::Urgency => "urgency",
+    };
+    serde_json::json!({
+        "kind": match w.kind {
+            driver_break_core::routing::speed_camera::SpeedCameraKind::Point => "point",
+            driver_break_core::routing::speed_camera::SpeedCameraKind::AverageSpeed => "average_speed",
+        },
+        "phase": phase,
+        "distance_m": w.distance_m,
+        "applicable_limit_kmh": w.applicable_limit_kmh,
+        "zone_remaining_m": w.zone_remaining_m,
+        "zone_time_budget_s": w.zone_time_budget_s,
+        "label": w.label,
+        "cone_m": driver_break_core::routing::live_hazard::LIVE_HAZARD_CONE_M,
+        "source": "live_cone",
+    })
+    .to_string()
+}
+
+/// Upcoming speed limit on the existing road_label cell graph within the 300 m cone.
+/// No separate speed-limit dataset — reuses [`road_near_info`]'s graph cache.
+#[uniffi::export]
+pub fn live_speed_limit_cone_json(
+    pbf_path: String,
+    cache_dir: String,
+    elev_dir: String,
+    lat: f64,
+    lon: f64,
+    heading_deg: Option<f64>,
+    profile: TravelProfile,
+    current_limit_kmh: Option<f64>,
+) -> String {
+    let _ch = driver_break_core::download::progress::ChannelGuard::enter(
+        driver_break_core::download::progress::ProgressChannel::Cone,
+    );
+    use driver_break_core::routing::live_hazard::{
+        live_speed_limit_in_cone, speed_limit_cone_as_sign_warning, LIVE_HAZARD_CONE_M,
+    };
+    // Ensure the cell graph is warm via the same path as idle street/limit.
+    let _ = road_near_info(pbf_path, cache_dir, elev_dir, lat, lon, profile, 80.0);
+    let guard = match ROAD_LABEL_GRAPH.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    };
+    let Some(cache) = guard.as_ref() else {
+        return "{}".into();
+    };
+    let Some(hit) = live_speed_limit_in_cone(&cache.graph, lat, lon, heading_deg) else {
+        return "{}".into();
+    };
+    let mut out = serde_json::json!({
+        "distance_m": hit.distance_m,
+        "speed_limit_kmh": hit.speed_limit_kmh,
+        "highway": hit.highway,
+        "maxspeed_posted": hit.maxspeed_posted,
+        "cone_m": LIVE_HAZARD_CONE_M,
+        "source": "live_cone_graph",
+    });
+    if let Some(w) = speed_limit_cone_as_sign_warning(&hit, current_limit_kmh) {
+        out["road_sign"] =
+            serde_json::from_str(&road_sign_warning_to_json(&w)).unwrap_or(serde_json::json!({}));
+    }
+    out.to_string()
+}
+
+/// Densify a lat/lon polyline into simulation samples (no route plan required).
+/// `coords_json`: `[[lat,lon],…]`.
+#[uniffi::export]
+pub fn sim_samples_json_from_lat_lon(coords_json: String, speed_kmh: f64) -> String {
+    let Ok(raw) = serde_json::from_str::<Vec<serde_json::Value>>(&coords_json) else {
+        return "[]".into();
+    };
+    let coords: Vec<(f64, f64)> = raw
+        .iter()
+        .filter_map(|v| {
+            if let Some(arr) = v.as_array() {
+                if arr.len() >= 2 {
+                    return Some((arr[0].as_f64()?, arr[1].as_f64()?));
+                }
+            }
+            Some((v.get("lat")?.as_f64()?, v.get("lon")?.as_f64()?))
+        })
+        .collect();
+    let samples = build_sim_samples_from_lat_lon(&coords, speed_kmh.max(1.0), Some("residential"));
+    samples_to_json(&samples)
+}
+
+/// Load child-zone POIs as **centroids only** (nodes + way centroids — no way vertices).
+#[uniffi::export]
+pub fn load_school_pois_json(pbf_path: String) -> String {
+    match driver_break_core::routing::live_hazard::load_children_centroids_json(&pbf_path) {
+        Ok(s) => s,
+        Err(e) => format!(
+            r#"{{"error":{}}}"#,
+            serde_json::to_string(&e.to_string()).unwrap_or_default()
+        ),
+    }
+}
+
+/// Keep school POIs within `margin_m` of the route corridor (`sim_samples_json`).
+#[uniffi::export]
+pub fn schools_near_route_corridor_json(
+    schools_json: String,
+    sim_samples_json: String,
+    margin_m: f64,
+) -> String {
+    use driver_break_core::CorridorBand;
+    let Ok(schools) = serde_json::from_str::<Vec<serde_json::Value>>(&schools_json) else {
+        return "[]".into();
+    };
+    let Ok(samples) = serde_json::from_str::<Vec<serde_json::Value>>(&sim_samples_json) else {
+        return "[]".into();
+    };
+    let coords: Vec<(f64, f64)> = samples
+        .iter()
+        .filter_map(|s| Some((s.get("lat")?.as_f64()?, s.get("lon")?.as_f64()?)))
+        .collect();
+    if coords.len() < 2 {
+        return "[]".into();
+    }
+    let band = CorridorBand::from_lat_lon(&coords, margin_m.max(1.0));
+    let filtered: Vec<serde_json::Value> = schools
+        .into_iter()
+        .filter(|v| {
+            let lat = v.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0);
+            let lon = v.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0);
+            band.contains(lat, lon)
+        })
+        .collect();
+    serde_json::to_string(&filtered).unwrap_or_else(|_| "[]".into())
+}
+
+/// Nearest children-zone proximity fallback warning JSON (empty object when none).
+/// Picks the single closest POI across school/kindergarten/playground — no stacked warnings.
+#[uniffi::export]
+pub fn nearest_school_proximity_warning_json(schools_json: String, lat: f64, lon: f64) -> String {
+    use driver_break_core::{
+        ApproachPhase, APPROACH_APPEAR_M, APPROACH_HIDE_M, APPROACH_URGENCY_M,
+    };
+
+    let Ok(pois) = serde_json::from_str::<Vec<serde_json::Value>>(&schools_json) else {
+        return "{}".into();
+    };
+    let mut best: Option<(serde_json::Value, f64)> = None;
+    for poi in pois {
+        let plat = poi.get("lat").and_then(|x| x.as_f64()).unwrap_or(0.0);
+        let plon = poi.get("lon").and_then(|x| x.as_f64()).unwrap_or(0.0);
+        let d = driver_break_core::haversine_km(lat, lon, plat, plon) * 1_000.0;
+        match &best {
+            Some((_, bd)) if d >= *bd => {}
+            _ => best = Some((poi, d)),
+        }
+    }
+    let Some((poi, d)) = best else {
+        return "{}".into();
+    };
+    let phase = if !d.is_finite() || d > APPROACH_APPEAR_M || d <= APPROACH_HIDE_M {
+        ApproachPhase::Hidden
+    } else if d <= APPROACH_URGENCY_M {
+        ApproachPhase::Urgency
+    } else {
+        ApproachPhase::Appear
+    };
+    if phase == ApproachPhase::Hidden {
+        return "{}".into();
+    }
+    let phase_s = match phase {
+        ApproachPhase::Hidden => "hidden",
+        ApproachPhase::Appear => "appear",
+        ApproachPhase::Urgency => "urgency",
+    };
+    let poi_name = poi
+        .get("name")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let category = poi
+        .get("category")
+        .and_then(|x| x.as_str())
+        .unwrap_or("school");
+    let osm_id = poi.get("osm_id").and_then(|x| x.as_i64()).unwrap_or(0);
+    serde_json::json!({
+        "phase": phase_s,
+        "distance_m": d,
+        "icon_key": "no_sign_142",
+        "code": "142",
+        "name_en": "Children",
+        "label": if poi_name.is_empty() { "Children ahead".to_string() } else { format!("Children zone: {poi_name}") },
+        "source": "children_proximity",
+        "category": category,
+        "poi_osm_id": osm_id,
+        "school_osm_id": osm_id,
+        "poi_name": poi_name,
+        "school_name": poi_name,
+    })
+    .to_string()
+}
+
 /// Human highway-class label when OSM name/ref are missing (never a raw tag).
 #[uniffi::export]
 pub fn highway_class_display_label(highway: Option<String>) -> String {
@@ -4617,6 +5619,9 @@ pub fn road_near_info(
     profile: TravelProfile,
     max_m: f64,
 ) -> FfiRoadNearInfo {
+    let _ch = driver_break_core::download::progress::ChannelGuard::enter(
+        driver_break_core::download::progress::ProgressChannel::Cone,
+    );
     if !lat.is_finite() || !lon.is_finite() {
         return empty_road_near_info();
     }

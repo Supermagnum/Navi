@@ -15,25 +15,36 @@ ignore = [
     { id = "RUSTSEC-2025-0141", reason = "bincode unmaintained; tracked for serde-compatible replacement" },
     # Example WASM guests only (plugins/log-hello, plugins/busy-loop); not production host path.
     { id = "RUSTSEC-2022-0054", reason = "wee_alloc only in example no_std guests; host does not use it" },
-    # Wasmtime 29.x advisories — API-stable upgrade to 40+/47 is a separate host migration.
-    # Guests are fuel/timeout sandboxed; WASI/component features we do not enable are in scope for several.
-    { id = "RUSTSEC-2025-0046", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2025-0118", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0006", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0020", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0021", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0085", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0086", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0087", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0088", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0089", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0091", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0092", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0093", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0094", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0095", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0096", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
-    { id = "RUSTSEC-2026-0222", reason = "wasmtime 29; upgrade tracked separately from CI bootstrap" },
+    # Wasmtime 29.x advisories — temporary ignores while plugin-host is NOT linked into
+    # any shipped artifact (navi-ffi / Android APK / navi-desktop). This is NOT a permanent
+    # "does not apply" waiver.
+    #
+    # GATE: before depending on navi-plugin-host from navi-ffi, the Android build, or
+    # navi-desktop for a real product plugin, migrate wasmtime 29 -> >=36.0.7 (breaking
+    # embedder API change, not a 29.x patch) and clear these ignores once deny/audit are
+    # clean. Re-verify Cranelift/Winch/WASI/component assumptions at that time.
+    # Source of truth: docs/plugins.md#gate-upgrade-wasmtime-before-shipping-any-product-plugin
+    #
+    # Comment history: added with CI bootstrap (c2569cd); intent "upgrade tracked
+    # separately". Guests are fuel/timeout sandboxed; several advisories target
+    # WASI/component/Winch surfaces we do not enable today — still upgrade before shipping.
+    { id = "RUSTSEC-2025-0046", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2025-0118", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0006", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0020", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0021", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0085", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0086", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0087", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0088", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0089", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0091", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0092", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0093", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0094", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0095", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0096", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
+    { id = "RUSTSEC-2026-0222", reason = "wasmtime 29; upgrade before shipping plugin-host (see docs/plugins.md gate)" },
 ]
 
 [licenses]

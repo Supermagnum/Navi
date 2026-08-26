@@ -8,7 +8,10 @@
 
 use std::env;
 
-use navi::{plan_car_route, plan_hiking_route, FfiVehicleLimits, TravelProfile};
+use navi::{
+    plan_car_route, plan_hiking_route, set_route_plan_timing_enabled, FfiVehicleLimits,
+    TravelProfile,
+};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -23,6 +26,7 @@ fn main() {
 
     let _ = std::fs::create_dir_all(&cache);
     eprintln!("planning profile={profile:?} pbf={pbf} elev={elev} cache={cache}");
+    set_route_plan_timing_enabled(true);
 
     let t0 = std::time::Instant::now();
     let (distance_km, eta_minutes, cache_hit, report, route_polyline) = if profile

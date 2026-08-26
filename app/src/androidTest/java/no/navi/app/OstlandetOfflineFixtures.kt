@@ -8,8 +8,9 @@ import java.io.File
  * registers a completed job so [BasemapStyleResolver] can attach offline 3D
  * without network.
  *
- * Without this, opt-in 3D falls through to online Mapterhorn TileJSON and the
- * status chip shows “3D terrain needs network” when Wi‑Fi is off.
+ * Uses the `test/ostlandet_fixture` region key so the truncated mz12 staging
+ * fixture can register Completed for screenshots without bypassing production
+ * completion validation for `europe/norway/ostlandet`.
  */
 object OstlandetOfflineFixtures {
     fun ensureInstalled(
@@ -20,6 +21,7 @@ object OstlandetOfflineFixtures {
             OfflinePmtilesBootstrap.restoreOstlandetFromStaging(
                 dataDir = dataDir,
                 stagedDir = stagedDir,
+                forInstrumentedTests = true,
             )
         check(report.startsWith("OK:")) { report }
     }

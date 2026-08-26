@@ -6,6 +6,10 @@
 capability-gated `HostApi` ([`plugins.md`](../plugins.md)). String catalogs and
 locale choice stay out of the trusted routing core; the host owns Compose UI
 text lookup and optional pack download.
+**System requirements** (all plugins): user **enable/disable** toggle; any
+device link uses host-mediated **USB** / **Bluetooth**
+([`plugins.md` — enable/disable](../plugins.md#enable--disable-required),
+[USB/Bluetooth](../plugins.md#external-device-io--usb-and-bluetooth-required)).
 
 Working title / id suggestion: `i18n` / `ui_translation`.
 
@@ -18,14 +22,52 @@ Human-editable catalogs for filling translations live next to this spec:
 | File | Format |
 |---|---|
 | [`translations.csv`](translations.csv) | UTF-8 CSV (standard spreadsheet import) |
+| [`translations-context.md`](translations-context.md) | Context for CSV words and phrases (UI area, ambiguous terms, placeholders, keep-as-is tokens) |
+
+**Before translating**, read [`translations-context.md`](translations-context.md).
+Short English labels in the CSV are often navigation jargon (for example
+**Break** = rest stop reminder, **Arm** = arm a truck exception, **Liberty** =
+MapLibre style name). The context doc is the glossary for those senses.
 
 Columns: **Language** is only a header placeholder (leave cells blank — it
 marks that language columns follow). **English** holds source UI wording from
 the current app: both **individual words** (e.g. Apply, Norway, Ostlandet, ETA,
 Basemap) and **full phrases** / status lines. Words are listed first, then
-phrases. **Norwegian (Norsk)** and **Swedish (Svenska)** stay blank until a
-translator fills them. This CSV is the working source for a future
-`messages.json` pack; it is **not** loaded by the app today.
+phrases. The English column header lists major countries and regions where
+English is used as a UI language (United Kingdom, Ireland, United States,
+Canada, Australia, New Zealand, and other regions).
+
+Other language columns stay blank until a translator fills them. Current
+columns (beyond English):
+
+| Column header | Notes |
+|---|---|
+| Norwegian (Norsk) | Bokmål / general Norwegian working column |
+| Swedish (Svenska) | Standard Swedish |
+| Old West Norse (Norrønt) | Historical; see locale-tag note below |
+| Finnish (Suomi) | |
+| German (Deutsch) | |
+| Icelandic (Íslenska) | |
+| Danish (Dansk) | |
+| Faroese (Føroyskt) | |
+| Norway, - Troms and Finnmark, - Kven | Dialect / minority language |
+| Norway, - Traveller communities, - Romani rakripa | Dialect / minority language |
+| United Kingdom, - Scotland, - Scottish Gaelic | Dialect / minority language |
+| Isle of Man, - Mann, - Manx Gaelic | Dialect / minority language |
+| Sweden, - Älvdalen, - Älvdalsk | Dialect (Elfdalian) |
+
+**Dialect column naming:** dialect (and minority-language) headers use this
+exact pattern, including spaces around the dashes:
+
+`country, - name of area, - name of dialect`
+
+Example: `Sweden, - Älvdalen, - Älvdalsk`. Use the country name in English,
+then the area where the variety is primarily spoken, then the variety’s own
+name. Standard national languages keep the shorter `English name (endonym)`
+form (e.g. `Finnish (Suomi)`).
+
+This CSV is the working source for a future `messages.json` pack; it is **not**
+loaded by the app today.
 
 ---
 
@@ -37,6 +79,9 @@ As of this writing:
   resources in the Compose host).
 - There is **no language-switching control** in map settings, drive settings, or
   tools.
+- Do **not** infer UI language from GPS or SIM/network country. That would
+  override the language the user already chose in Android. Display **units**
+  may infer once from SIM country; locale must not piggyback on that.
 - Repository docs may exist in English and Norwegian (`README.md` /
   `docs/Norwegian.md`, `docs/pictures.md` / `docs/bilder.md`, …). That is
   **documentation**, not an in-app locale system.
@@ -49,7 +94,7 @@ This plugin is how a future contributor would add selectable UI languages
 ## Goals
 
 1. Let the host resolve UI strings by **stable message id** + **locale tag**
-   (BCP 47, e.g. `en`, `nb-NO`, `de`).
+   (BCP 47, e.g. `en`, `nb-NO`, `de`, `non`).
 2. Ship translation catalogs as **offline packs** the user installs (or that
    ship beside the APK), not as silent network fetches from the WASM guest.
 3. Keep the default UI English when no pack is installed or a key is missing
@@ -108,6 +153,7 @@ Offline directory (example):
   en/messages.json
   nb-NO/messages.json
   de/messages.json
+  non/messages.json
   manifest.json
 ```
 
@@ -119,10 +165,20 @@ Offline directory (example):
   "default_locale": "en",
   "packs": [
     { "locale": "en", "name": "English", "file": "en/messages.json", "version": "1.0.0" },
-    { "locale": "nb-NO", "name": "Norsk (bokmål)", "file": "nb-NO/messages.json", "version": "1.0.0" }
+    { "locale": "nb-NO", "name": "Norsk (bokmål)", "file": "nb-NO/messages.json", "version": "1.0.0" },
+    { "locale": "non", "name": "Norrønt (vestnorrønt)", "file": "non/messages.json", "version": "1.0.0" }
   ]
 }
 ```
+
+**Locale tag for Old West Norse:** BCP 47 / ISO 639 has a code for **Old Norse**
+generally (`non`), but no distinct standard subtag for the **West** Norse
+dialect group as opposed to Old East Norse. The sketch uses `non` as the best
+available standard tag. If the distinction from Old East Norse ever matters
+(for example both added as separate packs), a private-use subtag extension
+(e.g. `non-x-west`) or a documented project convention would be needed at that
+point. Do not invent that convention now; treat it as a known gap for whoever
+implements packs.
 
 `messages.json` (flat message ids → strings; ICU `{name}` placeholders allowed):
 
@@ -157,8 +213,12 @@ Rules:
 3. Persist `ui_locale` next to other `MapHudPrefs` / app config.
 4. On missing key: log once at debug, show English, then id if English missing.
 
-Approach-instruction street names, POI names, and basemap labels remain
-data-driven (OSM), not catalog strings.
+Approach-instruction street names, POI names, basemap labels, and **road-sign
+catalogue / children-zone warning labels** (`name_en`, `label` from
+[`road-signs.md`](../road-signs.md) / UniFFI warning JSON) remain data-driven,
+not UI catalog strings. Soft chrome around those boxes (“Children ahead”
+wrappers already in FFI, camera copy, settings titles) *can* move into packs
+when this plugin ships.
 
 ---
 
@@ -195,6 +255,9 @@ plugin. Keep shipping parallel markdown for docs as today. The plugin covers
 ## Design rules (same family as other plugins)
 
 1. Offline-first; network pack download is host/Tools, user-initiated.
-2. Core routing works with the plugin disabled (English strings in host).
+2. User **enable/disable** per [`plugins.md`](../plugins.md#enable--disable-required);
+   core routing works with the plugin disabled (English strings in host).
 3. No silent mutation of OSM / graph caches.
 4. Privacy: locale preference stays on device; no phone-home of UI language.
+5. Hardware I/O (if any) is host-mediated **USB** / **Bluetooth** only
+   ([`plugins.md`](../plugins.md#external-device-io--usb-and-bluetooth-required)).

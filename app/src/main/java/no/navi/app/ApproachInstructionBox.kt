@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import uniffi.navi.FfiIconTheme
 import uniffi.navi.approachPhaseForDistance
-import uniffi.navi.formatApproachDistance
 import uniffi.navi.rasterizeIconPng
 
 /**
@@ -57,7 +56,7 @@ data class ApproachGuidanceState(
     val postcode: String? = null,
     /** Roundabout exit 1..=3 when applicable. */
     val roundaboutExit: Int? = null,
-    val preferMetric: Boolean = true,
+    val unitSystem: UnitSystem = UnitSystem.METRIC,
     /**
      * When true, show an explicit Off route label instead of a (likely wrong)
      * distance / maneuver from global nearest-sample snap.
@@ -160,7 +159,7 @@ fun ApproachInstructionBox(
     }
 
     val urgency = phase == ApproachUiPhase.Urgency
-    val dist = formatApproachDistance(state.distanceM, state.preferMetric)
+    val dist = DisplayUnits.formatDistanceM(state.distanceM, state.unitSystem)
     val exitLabel =
         when (state.roundaboutExit) {
             1 -> "first exit"

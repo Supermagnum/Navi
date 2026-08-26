@@ -14,6 +14,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
@@ -23,16 +24,16 @@ import kotlin.math.sqrt
 
 /**
  * Samples **live** [LocationManager.GPS_PROVIDER] speed (not the route simulator)
- * to size [OverspeedHud.MARGIN_KMH] against real consumer GPS noise.
+ * to size [OverspeedHud] hybrid margin (`max(limit×0.05, speedAccuracy, 3.0)`)
+ * against real consumer GPS noise.
  *
- * Best run outdoors / near a window with a clear sky view. Stationary samples
- * measure spurious reported speed when true speed is ~0 — the flicker risk when
- * driving just under a posted limit is at least this large (plus Doppler noise
- * while moving).
+ * **Omitted by default** — prefer [SimOverspeedInstrumentedTest] for routed-road
+ * overspeed behaviour. Re-enable manually for outdoor sky-lock validation only.
  */
 @RunWith(AndroidJUnit4::class)
 class GpsSpeedNoiseInstrumentedTest {
     @Test
+    @Ignore("Outdoor live-GPS noise — omitted; use SimOverspeedInstrumentedTest")
     fun sampleLiveGpsSpeedNoise_forOverspeedMargin() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         assumeTrue(

@@ -738,6 +738,10 @@ class HudVerificationInstrumentedTest {
             .assertIsDisplayed()
         clickTag("toggle_auto_zoom")
         waitZoom(15.5)
+        composeRule
+            .onNodeWithTag("auto_zoom_level_label", useUnmergedTree = true)
+            .performClick()
+        composeRule.waitForIdle()
         shot("hud_auto_zoom_preset.png")
         closeMapSettings()
         // Caveat: no genuine motion detection yet; toggle applies the configured level.

@@ -1,0 +1,11 @@
+Supermagnum/road-signs
+commit: be4dda9c6debe210a2a0d2fbbde5ed252714a7f4
+date: 2026-08-12 01:39:32 +0200
+license: NLOD 2.0 / Statens vegvesen / Kartverket (sign graphics)
+upstream: https://github.com/Supermagnum/road-signs
+
+Local additions (not from that upstream commit snapshot):
+- no_sign_362_20.svg — Navi stand-in (official upstream svg is null)
+- no_sign_362_{5,10,15,25,35,45,55,65,75,85,95,105}.svg — generated digit-composite
+  plates (derived NLOD work from official 362 digit outlines). See docs/road-signs.md
+  and upstream PR https://github.com/Supermagnum/road-signs/pull/1

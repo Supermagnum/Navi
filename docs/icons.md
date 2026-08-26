@@ -27,7 +27,10 @@ Android also keeps three **separate** icon roles (do not conflate them):
 
 Splash theme: `Theme.Navi.Splash` (`values/themes.xml`) with white
 `splash_background` and `androidx.core:core-splashscreen` via
-`installSplashScreen()` in `MainActivity` (covers pre-API-31).
+`installSplashScreen()` in `MainActivity` (covers pre-API-31). Normal launches
+dismiss the splash on the first Compose frame and **never hold it longer than
+2 seconds** (MapLibre / map UI load after that frame). Capture hold remains
+`am start … --ez navi_keep_splash true`.
 
 ## Android lean pack (release-path)
 
@@ -178,3 +181,25 @@ Per-file detail and research notes: `COPYRIGHT.md` in those directories.
 | `aprs_human.png` / `.svg` | GPL-3.0-or-later | **Navi original** (2026-07-29). Replaced upstream VEC-OH7LZB / Unknown. |
 
 Last verified: **2026-07-29**.
+
+## Norwegian road signs (NLOD — separate licence)
+
+Flat traffic-sign SVGs vendored from
+[Supermagnum/road-signs](https://github.com/Supermagnum/road-signs) (`be4dda9`) live
+under `core/src/icons/road-signs/` and ship in the Android lean pack at
+`app/src/main/assets/icons/road-signs/`. Keys are `no_sign_{code}.svg`.
+
+**Licence:** [NLOD 2.0](https://data.norge.no/nlod/en/2.0) / Statens vegvesen /
+Kartverket — **not** Navit GPL-2.0. Do not merge attribution with the Navit icon
+provenance above.
+
+**Underskilt gap:** this set is standalone flat icons only; compound assemblies with
+supplementary plates are out of scope. See the required note in
+[`road-signs.md`](road-signs.md).
+
+**Runtime use:** approach warnings for tagged `traffic_sign=NO:…` in Norway, plus
+a route-corridor **children-zone proximity fallback** (school / kindergarten /
+playground POIs → generic sign **142**) when no explicit children-warning tag
+exists. Details: [`road-signs.md`](road-signs.md).
+
+Refresh: `scripts/vendor-road-signs.sh [commit]`.

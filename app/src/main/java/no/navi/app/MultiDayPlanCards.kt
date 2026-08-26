@@ -32,6 +32,7 @@ data class MultiDayCard(
     val overnightFound: Boolean = false,
     val safetyRejected: Boolean = false,
     val safetyReason: String = "",
+    val membershipRequired: Boolean = false,
     val notInCab: Boolean = false,
     val compensation: String = "",
     val isFinal: Boolean = false,
@@ -68,6 +69,7 @@ private fun multiDayCardFromJson(o: JSONObject): MultiDayCard =
         overnightFound = o.optBoolean("overnight_found", false),
         safetyRejected = o.optBoolean("safety_rejected", false),
         safetyReason = o.optString("safety_reason").orEmpty(),
+        membershipRequired = o.optBoolean("membership_required", false),
         notInCab = o.optBoolean("not_in_cab", false),
         compensation = o.optString("compensation").orEmpty(),
         isFinal = o.optBoolean("is_final", false),
@@ -81,6 +83,7 @@ private fun multiDayCardFromJson(o: JSONObject): MultiDayCard =
 fun MultiDayPlanCards(
     days: List<MultiDayCard>,
     modifier: Modifier = Modifier,
+    unitSystem: UnitSystem = UnitSystem.METRIC,
 ) {
     if (days.size <= 1) return
     Column(
@@ -118,7 +121,7 @@ fun MultiDayPlanCards(
                         Text(title, style = MaterialTheme.typography.bodyLarge)
                         if (day.distanceKm > 0.0) {
                             Text(
-                                "%.1f km".format(day.distanceKm),
+                                DisplayUnits.formatDistanceKm(day.distanceKm, unitSystem),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
@@ -129,7 +132,13 @@ fun MultiDayPlanCards(
                                 add("%.1f h driving".format(day.drivingHours))
                             }
                             if (day.startKm > 0.0 || day.endKm > 0.0) {
-                                add("%.0f–%.0f km".format(day.startKm, day.endKm))
+                                add(
+                                    DisplayUnits.formatDistanceKmRange(
+                                        day.startKm,
+                                        day.endKm,
+                                        unitSystem,
+                                    ),
+                                )
                             }
                         }.joinToString(" · ")
                     if (driveLine.isNotBlank()) {
@@ -152,6 +161,8 @@ fun MultiDayPlanCards(
                                 day.safetyRejected && day.safetyReason.isNotBlank() ->
                                     day.safetyReason
                                 day.restLabel.isNotBlank() -> day.restLabel
+                                day.membershipRequired ->
+                                    "Network hut nearby (membership required)"
                                 day.restHours > 0.0 -> "%.0f h rest".format(day.restHours)
                                 else -> "Overnight"
                             }

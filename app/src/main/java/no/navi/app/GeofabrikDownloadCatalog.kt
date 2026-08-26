@@ -927,4 +927,26 @@ object GeofabrikDownloadCatalog {
 
     const val EMPTY_CONTINENT_NOTE =
         "No supported map extracts for this continent yet."
+
+    /**
+     * Shown under **Region in country** when this catalog has no sub-region chips
+     * for the selected country. Wording matches real Geofabrik granularity.
+     */
+    fun regionGranularityNote(path: String): String {
+        val country = findByPath(path)?.path
+        return when (country) {
+            "europe/sweden" ->
+                "Sweden is available as a country extract only — Geofabrik does not publish län-level files. Switch back to Country to download Sweden."
+            "north-america/us" ->
+                "US states are published by Geofabrik, but this picker lists the country extract. Enter a state path such as north-america/us/west-virginia, or switch back to Country."
+            "europe/germany" ->
+                "German states are published by Geofabrik, but this picker lists the country extract. Enter a state path such as europe/germany/bremen, or switch back to Country."
+            "russia" ->
+                "Geofabrik publishes Russian federal-district extracts, but this picker lists the country extract only. Enter a district path such as russia/kaliningrad, or switch back to Country."
+            else ->
+                "Sub-region chips are listed for Norway only today. " +
+                    "Enter a Geofabrik subpath in the field below " +
+                    "(e.g. europe/germany/bayern), or switch back to Country."
+        }
+    }
 }

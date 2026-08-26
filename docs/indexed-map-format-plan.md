@@ -389,10 +389,11 @@ Generalize the Phase 1c invariant and the existing HTTP download pattern
 
 **Regeneration:** prefer **local** `{stem}.osm.pbf` already on disk — **do not**
 re-download solely to rebuild archives. Offer “Rebuild indexed maps” via the
-**existing** download-progress / Tools UI patterns (same progress channel),
-not a new surface. Optional: auto-queue rebuild after app update that bumps
-`format_version`, when the device is idle / charging (nice-to-have; not
-required for v1).
+**existing** Tools UI patterns. Convert progress uses the dedicated **Convert**
+progress channel (`convert_progress_*`); the UI plan bar uses **Plan**
+(`plan_progress_*`) so the two never clobber each other. Optional: auto-queue
+rebuild after app update that bumps `format_version`, when the device is idle /
+charging (nice-to-have; not required for v1).
 
 Until rebuild completes, routing remains correct (slow path). No hard block.
 
@@ -561,3 +562,4 @@ shape before building the production path.
 | 2026-08-10 | SM-P613 Ostlandet tiled v3 convert (UI fg) | ~657 s; 60 tiles; min `MemAvailable` **~329 MiB**; swap +~250 MiB; TRIM CRITICAL observed — **open memory margin** (README Known issues) |
 | 2026-08-10 | SM-P613 Ostlandet pack-hit Friisvegen | summer `pack_hit=true` seasonal=0; winter `pack_hit=true` seasonal=36 |
 | 2026-08-10 | SM-P613 tiled wetland + overnight buildings | Convert `peak_rss_mb=1737.4`, `wetland_rings=366222`, 20 wetland tiles; short Atnbrufossen hike **159477→3105 ms** (`wetland_pack_hit=true`, `overnight_buildings_pack_hit=true`) |
+| 2026-08-24 | Pixel 9a pack-miss plan vs convert/cone | Foreground-plan yield for convert/place-index; cone/road-near bbox **skip** during plan; separate Plan/Convert/Cone progress channels; release Ostlandet Oslo OD ~**151 s** with GPS cone spam (was ~12–13 min) |

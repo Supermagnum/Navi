@@ -16,10 +16,65 @@ use std::path::Path;
 use osmpbf::{Element, ElementReader, RelMemberType};
 use rayon::prelude::*;
 
-use super::builder::RouteGraph;
+use super::builder::{GraphEdge, RouteGraph};
 
 /// Soft penalty applied to edges that are not members of a matching official network.
 pub const NON_NETWORK_PENALTY: f64 = 2.5;
+
+/// Posted speed at/above which hiking/cycling routes get a soft cost penalty.
+pub const HIGH_SPEED_ROAD_KMH: f64 = 80.0;
+
+/// Same multiplier discipline as official-network soft preference.
+pub const HIGH_SPEED_ROAD_PENALTY: f64 = NON_NETWORK_PENALTY;
+
+/// Lighter penalty for 60–79 km/h tagged roads.
+pub const MODERATE_SPEED_ROAD_PENALTY: f64 = 1.35;
+
+/// When maxspeed is absent, infer penalty from highway class.
+pub const UNTAGGED_HIGH_CLASS_PENALTY: f64 = 1.6;
+
+fn is_high_class_highway(hw: &str) -> bool {
+    matches!(
+        hw,
+        "primary" | "primary_link" | "trunk" | "trunk_link" | "secondary" | "secondary_link"
+    )
+}
+
+fn is_primary_or_trunk(hw: &str) -> bool {
+    matches!(hw, "primary" | "primary_link" | "trunk" | "trunk_link")
+}
+
+/// Cost multiplier for one edge under hiking/cycling slow-road preference.
+pub fn slow_road_edge_multiplier(edge: &GraphEdge) -> f64 {
+    let mut mult = 1.0;
+    if let Some(ms) = edge.maxspeed_kmh {
+        if ms >= HIGH_SPEED_ROAD_KMH {
+            mult *= HIGH_SPEED_ROAD_PENALTY;
+        } else if ms >= 60.0 {
+            mult *= MODERATE_SPEED_ROAD_PENALTY;
+        }
+    } else if edge.highway.as_deref().is_some_and(is_high_class_highway) {
+        mult *= UNTAGGED_HIGH_CLASS_PENALTY;
+    }
+    if edge.highway.as_deref().is_some_and(is_primary_or_trunk) {
+        mult *= 1.15;
+    }
+    mult
+}
+
+/// Soft preference for hiking/cycling: penalize high maxspeed / high highway class.
+/// Fallback only — never excludes edges.
+pub fn apply_slow_road_preference(graph: &mut RouteGraph) {
+    graph.edges.par_iter_mut().for_each(|edge| {
+        let mult = slow_road_edge_multiplier(edge);
+        if mult > 1.0 + 1e-9 {
+            edge.base_weight *= mult;
+            if let Some(ref mut eco) = edge.eco_weight {
+                *eco *= mult;
+            }
+        }
+    });
+}
 
 const HIKING_NETWORKS: &[&str] = &["iwn", "nwn", "rwn", "lwn"];
 const CYCLING_NETWORKS: &[&str] = &["icn", "ncn", "rcn", "lcn"];
@@ -958,5 +1013,161 @@ mod tests {
             .shortest_path(NodeId(1), NodeId(3), false)
             .expect("preferred");
         assert_eq!(path_pref, vec![NodeId(1), NodeId(2), NodeId(3)]);
+    }
+
+    fn rv3_vs_237_edges() -> Vec<GraphEdge> {
+        vec![
+            GraphEdge {
+                id: "rv3".into(),
+                source: NodeId(1),
+                target: NodeId(3),
+                length_m: 1000.0,
+                base_weight: 1000.0,
+                eco_weight: Some(1000.0),
+                start_lat: 61.89,
+                start_lon: 11.55,
+                end_lat: 61.91,
+                end_lon: 11.58,
+                shape: Vec::new(),
+                highway: Some("primary".into()),
+                maxspeed_kmh: Some(80.0),
+                name: Some("Rv 3".into()),
+                road_ref: Some("3".into()),
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+            },
+            GraphEdge {
+                id: "237a".into(),
+                source: NodeId(1),
+                target: NodeId(2),
+                length_m: 600.0,
+                base_weight: 600.0,
+                eco_weight: Some(600.0),
+                start_lat: 61.89,
+                start_lon: 11.55,
+                end_lat: 61.90,
+                end_lon: 11.56,
+                shape: Vec::new(),
+                highway: Some("tertiary".into()),
+                maxspeed_kmh: Some(50.0),
+                name: Some("Fv 237".into()),
+                road_ref: Some("237".into()),
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+            },
+            GraphEdge {
+                id: "237b".into(),
+                source: NodeId(2),
+                target: NodeId(3),
+                length_m: 600.0,
+                base_weight: 600.0,
+                eco_weight: Some(600.0),
+                start_lat: 61.90,
+                start_lon: 11.56,
+                end_lat: 61.91,
+                end_lon: 11.58,
+                shape: Vec::new(),
+                highway: Some("tertiary".into()),
+                maxspeed_kmh: Some(50.0),
+                name: Some("Fv 237".into()),
+                road_ref: Some("237".into()),
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+            },
+        ]
+    }
+
+    #[test]
+    fn slow_road_pref_prefers_lower_speed_parallel() {
+        use super::super::builder::RoutingProfile;
+        let plain =
+            RouteGraph::from_parts(HashMap::new(), rv3_vs_237_edges(), RoutingProfile::Foot);
+        let (path_plain, _) = plain
+            .shortest_path(NodeId(1), NodeId(3), false)
+            .expect("plain");
+        assert_eq!(
+            path_plain,
+            vec![NodeId(1), NodeId(3)],
+            "shorter Rv3 wins without pref"
+        );
+
+        let mut preferred =
+            RouteGraph::from_parts(HashMap::new(), rv3_vs_237_edges(), RoutingProfile::Foot);
+        apply_slow_road_preference(&mut preferred);
+        let (path_pref, _) = preferred
+            .shortest_path(NodeId(1), NodeId(3), false)
+            .expect("preferred");
+        assert_eq!(
+            path_pref,
+            vec![NodeId(1), NodeId(2), NodeId(3)],
+            "Fv 237 detour wins with slow-road pref"
+        );
+    }
+
+    #[test]
+    fn slow_road_pref_fallback_when_only_high_speed_connects() {
+        use super::super::builder::RoutingProfile;
+        let edges = vec![rv3_vs_237_edges()[0].clone()];
+        let mut graph = RouteGraph::from_parts(HashMap::new(), edges, RoutingProfile::Foot);
+        apply_slow_road_preference(&mut graph);
+        assert!(graph.edges[0].base_weight > 1000.0);
+        let (path, _) = graph
+            .shortest_path(NodeId(1), NodeId(3), false)
+            .expect("must still route on high-speed when only option");
+        assert_eq!(path, vec![NodeId(1), NodeId(3)]);
+    }
+
+    #[test]
+    fn slow_road_pref_does_not_affect_car_profile_costing() {
+        use super::super::builder::RoutingProfile;
+        // Car graph without apply_slow_road_preference — caller responsibility.
+        let graph = RouteGraph::from_parts(HashMap::new(), rv3_vs_237_edges(), RoutingProfile::Car);
+        let (path, _) = graph
+            .shortest_path(NodeId(1), NodeId(3), false)
+            .expect("car");
+        assert_eq!(path, vec![NodeId(1), NodeId(3)]);
+    }
+
+    #[test]
+    fn high_speed_edge_gets_penalty_multiplier() {
+        let edge = rv3_vs_237_edges()[0].clone();
+        let mult = slow_road_edge_multiplier(&edge);
+        assert!(mult >= HIGH_SPEED_ROAD_PENALTY);
     }
 }

@@ -16,7 +16,26 @@ telefoner. Referansesjekker så langt: Samsung Galaxy Tab S6 Lite (**SM-P613**) 
 Google Pixel 9a (**tegu**, kamerahull / API 36+). Biler og andre formater
 oppfører seg fortsatt annerledes for GPS, kart, GPU og layout. Sjekkliste:
 [`real-hardware-testing.md`](real-hardware-testing.md).
-Hvordan bidra: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Resultater på enhet og emulator:
+[`android-test-results.md`](android-test-results.md).
+
+**Oversettere ønskes.** UI-språkpakker er spesifisert, men ikke levert (bare
+engelsk i menyene i dag). Fyll eller gjennomgå arbeidstabellen og følg
+spesifikasjonen:
+[`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md)
+(katalog: [`plugins/translations.csv`](plugins/translations.csv);
+ord/frasesammenheng:
+[`plugins/translations-context.md`](plugins/translations-context.md)).
+Engelsk-kolonnen lister land/regioner i overskriften; dialektkolonner følger
+`land, - område, - dialekt` (se spesifikasjonen). Ikke innfør en språkbryter
+før den pluginen finnes.
+
+**Hvordan bidra:** testere, dokumentasjon, oversettelser og kode starter i
+[`CONTRIBUTING.md`](CONTRIBUTING.md) (engelsk). Den siden forklarer hvordan du
+**forker repoet og jobber på `dev`** (ikke `main`), grunnleggende GitHub-bruk
+(klone din fork, synke med upstream, åpne pull request mot `dev`), og hva slags
+hjelp som er nyttig. Testere kan følge sjekklisten over og åpne et issue; du
+trenger ikke skrive kode.
 
 ## Innhold
 
@@ -25,6 +44,7 @@ Hvordan bidra: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 3. [Funksjoner](#funksjoner)
    - [Hva du må laste ned](#hva-du-må-laste-ned)
    - [Indeksering (bakgrunn etter nedlasting)](#indeksering-bakgrunn-etter-nedlasting)
+   - [Når du forlater en nedlastet region](#når-du-forlater-en-nedlastet-region)
    - [Slik bruker du](#slik-bruker-du)
    - [Slik fungerer funksjonene](#slik-fungerer-funksjonene)
 4. [Innstillinger](#innstillinger)
@@ -34,16 +54,19 @@ Hvordan bidra: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 8. [Skjermbilder](#skjermbilder)
 9. [Dokumenter](#dokumenter)
 10. [Plugins](#plugins)
+    - [Ikoner (hvor de ligger)](#ikoner-hvor-de-ligger)
 11. [Kodestandarder og bidrag](#kodestandarder-og-bidrag)
 12. [Bygge og installere](#bygge-og-installere)
+    - [Installer en forhåndsbygd APK](#installer-en-forhåndsbygd-apk)
     - [Utgivelsesbygg (APK / AAB)](#utgivelsesbygg-apk--aab)
 13. [Hvor kartdataene kommer fra](#hvor-kartdataene-kommer-fra)
 14. [Kjente problemer](#kjente-problemer)
 15. [TODO](#todo)
 
 Mer detalj ligger i lenkede dokumenter (arkitektur, lastebilhvile, kartstiler,
-feilsøking osv.). Start med [`CONTRIBUTING.md`](CONTRIBUTING.md) hvis du vil
-bidra.
+feilsøking osv.). For å bidra, start med
+[`CONTRIBUTING.md`](CONTRIBUTING.md) (engelsk): fork fra **`dev`**,
+GitHub-grunnlag, og hva du kan jobbe med.
 
 # Hva dette er
 
@@ -92,18 +115,23 @@ Dette er helt valgfri støtte, ikke en betalingsmur — Navi er og forblir grati
 | **Offisielle løyper** | For fottur/sykling kan du valgfritt foretrekke merkede langturer (av som standard). Vanlige stier fungerer fortsatt hvis merket løype har hull. | Ferdig |
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Et lite bladikon vises når øko er på. | Ferdig |
 | **Frakoblet planlegging** | Last ned en region én gang, planlegg og se ruten på enheten. | Ferdig |
-| **Indeksering** | Etter regionsnedlasting gjør en bakgrunnsjobb OSM-uttrekket om til kompakte rutingpakker, så senere planer går raskt. Du kan planlegge mens den kjører. | Ferdig |
-| **Stedssøk** | Søk steder og sett Fra / Via / Til. | Ferdig |
-| **Bruk GPS** | Fyll Fra / Via / Til fra live-posisjon (navn innen ~12 m, ellers koordinater). Feltet er chipen som var aktiv da du trykket — ikke den som er valgt etter at oppslaget er ferdig. | Ferdig |
+| **Indeksering** | Etter regionsnedlasting gjør en bakgrunnsjobb OSM-uttrekket om til kompakte rutingpakker, så senere planer går raskt. Du kan planlegge mens den kjører; konvertering og stedsindeks **pauser** under en forgrunnsplan, slik at PBF-reservestien ikke sulter. | Ferdig |
+| **Stedssøk** | Søk steder og sett Fra / Via / Til. Mens stedsindeksen fortsatt er tom/bygges, viser søket en byggehint (koordinater og karttrykk fungerer fortsatt). | Ferdig |
+| **Bruk GPS** | Fyll Fra / Via / Til fra live-posisjon: koordinater kommer med en gang, deretter eventuelt oppgradering til veiknavn i nærheten. Feltet er chipen som var aktiv da du trykket — ikke den som er valgt etter at oppslaget er ferdig. | Ferdig |
 | **Kartmerke og lagrede steder** | Hold på kartet ~4 s for å merke et punkt; sett Fra / Via / Til eller lagre et navngitt sted (skilt fra Lagrede ruter). | Ferdig |
 | **Avvik / omberegning** | Vedvarende avvik viser **Off route**; motorprofiler omplanlegger automatisk fra live posisjon; fottur spør først. | Ferdig |
 | **Pauser og hvile** | Påminner når pause er «forfalt» og kan foreslå stopp. Bil bruker timer mellom pauser; fottur/sykling bruker rasteavstander; lastebil bruker juridiske kjøretidsregler der de er kjent. | Ferdig |
-| **Kjørefelt** | Topp: høyde (tilpasset kamerahull). Bunn: zoom, live GPS-fart, skiltet fartsgrense når kjent, pauseteller, tur-ETA, veinavn, økoblad. | Ferdig |
+| **Kjørefelt** | Topp: høyde (tilpasset kamerahull; meter, eller fot i US-enhetsprofilen). Bunn: zoom, live GPS-fart, skiltet fartsgrense når kjent, pauseteller, tur-ETA, veinavn, økoblad. Fart og avstand følger **enheter**. Fartslinjen bruker feilfarge ved overskridelse (kun visning — ikke taleskjenning). | Ferdig |
+| **Enheter** | Kjøreinnstillinger: **Metric** (km, km/t), **US** (ft / mi, mph, høyde i fot), eller **UK** (yd deretter mi, mph, høyde i meter). Første installasjon utledes én gang fra SIM/nettverksland (GB → UK, US/LR/MM → US, ellers metrisk; emulatorer forblir metriske). Brikkene overstyrer alltid. | Ferdig |
 | **GPS-følge** | Kartet følger deg som standard. Panorer bort, trykk deretter **Recenter**. | Ferdig |
 | **Kartrotasjon** | Nord opp, kompass eller kjøreretning. | Ferdig |
 | **Bevegelige ikoner** | Kan tegne nærliggende spormarkører på kartet. Live radiomating er ikke innebygd ennå. | Delvis |
+| **Norske vegskiltvarsler** | Vendoret `NO:`-katalog for tilnærmingsikoner i Norge; eksplisitte OSM `traffic_sign` / `hazard`-tagger. Samme 750 / 150 / 25 m-faser som svinginstruksjoner. Se [`road-signs.md`](road-signs.md). | Ferdig |
+| **Look forward / Se fremover** | Uten planlagt rute ser GPS-posisjon + heading **300 m** fremover (±60°) etter katalogskilt, fartshumper (`NO:109`), barnefasiliteter (generisk **142**), opt-in fartskamera og kommende skiltet fartsgrense fra eksisterende veinavn-/cellegraf — samme tilnærmingsboks (750 / 150 / 25 m) og jurisdiksjonsregler som rute-korridoren. Kompakte punkter lastes én gang per region. Detaljer: [`road-signs.md`](road-signs.md). | Ferdig |
+| **Barnefasiliteter i nærheten** | Når ingen tagget barn-/skolevarselskilt er aktivt, gir skoler, barnehager og lekeplasser fortsatt et generisk **142 Barn**-tilnærmingsvarsel (nærmeste anlegg; tagget `NO:142` går foran). **Med planlagt rute:** innen **200 m** fra korridoren. **Uten rute:** dekkes av **Look forward** (300 m kjegle). Detaljer: [`road-signs.md`](road-signs.md). | Ferdig |
+| **Fartskameravarsler** | Punktkamera bruker samme tilnærmingsfaser; snittfart / strekningskontroll har egen inn-/utboks. Jurisdiksjonsstyrt (Norge/UK opt-in; flere land avslår) — se [`jurisdiction-rules.md`](jurisdiction-rules.md). Første-gangs opt-in-dialog. Virker både på planlagt-rute-korridor og **Look forward**. | Ferdig (kun visning/varsel) |
 | **Kartoppdateringer** | Bare når du ber om det — sjekk OpenStreetMap-oppdateringer eller last en fersk region. Aldri i det stille. | Ferdig |
-| **Diagnostisk logging** | Bryter under Tools skriver en øktlogg (GPS, kamera, brytere, ruteplan/trinn, øko, POI, pauser, instruksjoner, drivstoff, system) du kan kopiere over USB/MTP — adb trengs ikke. Filer: **Intern lagring → Documents → debug** (`navi_session_*.log`). | Ferdig |
+| **Diagnostisk logging** | **Tools → Diagnostic logging** (av som standard). Når på, skrives en datert øktlogg under **Intern lagring → Documents → debug** (`navi_session_*.log`) for kopiering over USB/MTP — adb trengs ikke. Dekker GPS, kamera, brytere, ruteplan/trinn, øko, POI, pauser, instruksjoner, drivstoff, system. Lastes ikke opp. **Export diagnostic log** deler siste fil. Detalj: [Innstillinger → Tools](#tools-nedlastinger-og-diagnostisk-logging) og [`debugging.md`](debugging.md#3b-diagnostic-session-log-on-device-file). | Ferdig |
 | **Plugins** | En trygg sandkasse for fremtidige tillegg finnes; produktplugins er ikke levert ennå. | Vert klar |
 
 **Maskinvare:** Ekte enhetssjekker inkluderer Samsung Galaxy Tab S6 Lite
@@ -149,6 +177,13 @@ Tools viser fremdrift som **Indexed maps (background)**; når det står
 **Indexed maps: ready (pack-hit)**, bruker neste plan pakkene — typisk ca.
 1,5–2 sekunder på referansenettbrettet i stedet for titalls sekunder.
 
+Mens **Plan route** (eller auto-omberegning) kjører på PBF-reservestien,
+viker bakgrunnskonvertering og stedsindeks, slik at de ikke konkurrerer om
+samme uttrekk. GPS-utløste fartsgrense-kjegle- / veinær-bygginger **hopper
+over** i det vinduet (én mistet HUD-oppdatering) og fortsetter på neste
+fix etter planen. Planfremdrift har egen kanal, så konverterings-/kjegle-
+etiketter ikke flytter planlinjen.
+
 Det bakgrunnsjobben skriver:
 
 | Pakke | Hva den brukes til |
@@ -167,11 +202,47 @@ ny nedlasting. Mer:
 [`indexed-map-format-plan.md`](indexed-map-format-plan.md). Minnebuffert på
 svakere 4 GB-enheter under konvertering: [Kjente problemer](#kjente-problemer).
 
+## Når du forlater en nedlastet region
+
+En regionsnedlasting (OSM-uttrekk + indekserte pakker) og det frakoblede
+grunnkartet dekker bare det uttrekkets område. Navi finner ikke opp veier eller
+fliser utenfor det.
+
+**Planlegge en tur som går utenfor dataene dine.** Før **Plan route** sjekkes
+From / Via / To mot avgrensningsboksene til nedlastede Geofabrik-uttrekk.
+
+- Hvis et veipunkt ligger utenfor alle nedlastede områder, **blokkeres**
+  planlegging (ingen delvis eller gjettet rute).
+- Dialogen **Map data needed** foreslår en nedlasting (for eksempel Vestlandet
+  eller Nord-Norge). Du kan laste ned derfra, eller avbryte og velge et annet
+  mål.
+- Hvis From og To trenger **ulike** landsdeler (eller tilsvarende delinger),
+  foreslås et **landsuttrekk** (f.eks. Norge). Planleggeren bruker **én**
+  regionsfil og syr ikke sammen to uttrekk til én tur.
+
+**Allerede underveis.** Det finnes ingen kontinuerlig «du forlot kartet»-grense
+mens du kjører.
+
+- **Grunnkart:** flisene stopper der den nedlastede Protomaps-regionen slutter
+  (eller du faller tilbake til Liberty på nett hvis nettverk er tilgjengelig).
+- **Veiledning:** følger ruten du allerede har planlagt så lenge du holder deg
+  til den.
+- **Omruting ved avvik:** bruker det lokale regionsuttrekket på nytt. Utenfor
+  det uttrekket kan snap / veifinning feile; du får **ikke**
+  nedlastingsdialogen fra planlegging ved automatisk omruting. Last ned den
+  dekkende regionen under Tools før du trenger å planlegge på nytt der.
+
+Indekserte pakker matcher uttrekket de ble bygget fra. Å forlate det området
+betyr ingen frakoblet graf for nye planer — ikke en myk overgang.
+
 ## Slik bruker du
 
 Steg-for-steg brukerveiledning (planlegging, Tools, pauser, lagrede steder/ruter,
 per-modus valg, pilegrim):
 **[How to use Navi](how-to-use.md)** (engelsk).
+
+Et eksempel på en flersone-biltur (OSM ciderprodusenter, sør til nord):
+[`cider-route.md`](cider-route.md) (engelsk).
 
 ## Slik fungerer funksjonene
 
@@ -184,8 +255,11 @@ følger ikke stier skikkelig.
 **Øko vs kortest.** Kortest ignorerer bakker. Øko gjør bratte stigninger
 «dyrere». Elektriske modi får noe kreditt for energi tilbake i nedoverbakke.
 
-**Offisielle nettverk.** Valgfri myk preferanse for merkede tur-/sykkelruter.
-Vanlige stier forblir tilgjengelige, så et hull aldri stenger hele turen.
+**Offisielle nettverk.** Valgfri myk preferanse for merkede tur-/sykkelruter
+(**Follow official hiking/cycling networks**). Vanlige stier forblir
+tilgjengelige, så et hull aldri stenger hele turen. Egne brytere styrer
+**nettverkshytter** som via-punkter og om du er **nettverkshytte-medlem** for
+overnatting (se [Kjøring / kjøretøy](#kjøring--kjøretøy-trykk-bunnstatus)).
 
 **Steder.** Søk fyller Fra / Via / Til. Hva som teller som hytte, rasteplass
 osv. er beskrevet i [`poi.md`](poi.md).
@@ -199,22 +273,52 @@ Brukerveiledning:
 
 **Hvile og overnatting.** Hver modus har egne standarder. Lange lastebilturer
 kan deles i dager med juridiske hvileregler (EU- eller US-pakker der de er
-kjent). Lange bil-/sykkel-/fotturer kan foreslå overnatting. Bryteren
-**Breaks** i bunnstripen viser eller skjuler bare påminnelsen — den lager ikke
-ny hvilelov.
+kjent). Lange bil-/sykkel-/fotturer kan foreslå overnatting. Fottur-overnatting
+filtreres bort fra bygninger og isbreer (1 km til isbreens **polygonkant**);
+avviste nåler viser en klar grunn. Med **Network hut member** av (standard)
+foretrekkes ikke-nettverkshytter; DNT/STF-lignende nettverkshytte er bare
+siste utvei og merkes som medlemskapskrevd. Medlemskap gir **ikke** adgang —
+det endrer bare overnattingspreferanse. Bryteren **Breaks** i bunnstripen
+viser eller skjuler bare påminnelsen — den lager ikke ny hvilelov.
 
 **Kartstriper.** Trykk toppstripen for kart-/skjerminnstillinger. Trykk
 bunnstatusen for kjøre-/kjøretøyinnstillinger (modus, pauseintervall, drivstoff,
-elsykkel osv.).
+elsykkel osv.). Bunnstripen viser også **live GPS-fart / skiltet grense**
+(km/t eller mph etter **enheter**) når fiks og gjeldende grense er kjent; overskridelse er bare farge i dag
+([`current-street.md`](current-street.md)). Talt, eskalerende varsel er en
+**pluginspesifikasjon**, ikke levert:
+[`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md).
+
+**Barnefasiliteter i nærheten.** Hvis OSM mangler tagget barn-/skolevarselskilt,
+varsler Navi likevel når skole, barnehage eller lekeplass er i nærheten —
+generisk skilt **142**, samme tilnærmingsboks som andre vegskilt. Langs en
+**planlagt rute** betyr det innen **200 m** fra korridoren; ved **live kjøring
+uten rute** dekker **Look forward** dem innen **300 m** heading-kjegle.
+Eksplisitt tagget `NO:142` (eller tilsvarende) går foran denne reserven. Se
+[`road-signs.md`](road-signs.md).
+
+**Look forward / Se fremover.** Uten planlagt rute ser GPS-posisjon + heading
+**300 m** fremover (±60°) og styrer samme tilnærmingschrome for katalogskilt,
+fartshumper, barnesoner, opt-in kamera og kommende skiltet fartsgrense fra
+eksisterende veinavn-/cellegraf. Kompakte punkter lastes én gang per region
+(ikke omparses hvert GPS-tick). Detaljer: [`road-signs.md`](road-signs.md),
+[`route-simulation.md`](route-simulation.md).
 
 # Innstillinger
 
 **Språk:** appens menyer er **bare engelsk** i dag. Det finnes ingen
-språkmeny ennå. Denne filen (`docs/Norwegian.md`) er dokumentasjon, ikke en
-språkpakke i appen. En fremtidig oversettelsesplugin er beskrevet i
+språkmeny ennå, og Navi velger **ikke** UI-språk fra GPS eller SIM-land (det
+ville overstyre språket brukeren allerede har satt på telefonen). Denne filen
+(`docs/Norwegian.md`) er dokumentasjon, ikke en språkpakke i appen. En
+fremtidig oversettelsesplugin (valgbare pakker, **tilbakefall til engelsk**
+når en nøkkel mangler) er beskrevet i
 [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md).
 En arbeids-CSV for oversettere ligger ved siden av den spesifikasjonen:
 [`plugins/translations.csv`](plugins/translations.csv).
+Sammenheng for ord og fraser:
+[`plugins/translations-context.md`](plugins/translations-context.md).
+Engelsk-kolonnen lister land/regioner; dialektkolonner bruker
+`land, - område, - dialekt` (dokumentert i i18n-spesifikasjonen).
 
 Innstillinger lagres på enheten (hvile/drivstoff/kjøretøy i en liten database;
 kartvisning i app-preferanser).
@@ -236,17 +340,48 @@ kartvisning i app-preferanser).
 | Innstilling | Enkel forklaring |
 |---|---|
 | **Travel mode** | Bil, sykkel, fottur, lastebil, … |
+| **Follow official hiking/cycling networks** | Fottur / sykkel / elsykkel: myk preferanse for merkede nettverk (vanlige stier fortsatt brukbare) |
+| **Use networked cabins** | Fottur / sykkel / elsykkel: tillat DNT/STF-lignende **nettverkshytter** som auto-via / via-kandidater (av som standard). Endrer **ikke** overnattingsmedlemskapsregler |
+| **Network hut member (DNT/STF/…)** | Bare fottur: når på, kan overnatting foretrekke nettverkshytter; når av (standard), foretrekk ikke-nettverk og merk nettverkstopp som medlemskapskrevd |
 | **Follow pilgrim routes** | Bare fottur; myk preferanse (av som standard), faller tilbake til vanlig fottur |
 | **Hours between breaks** | Hvor ofte du *ønsker* pause (bil), eller lastebilens pålagte pause-etter-tid |
 | **Rest time** | Hvor lenge pausen bør vare (forslag / lastebil sammenhengende pause) |
 | **Next break as Time / Distance** | Vis nedtelling i minutter, eller som km/mi ved antatt cruisehastighet |
+| **Units** | Metrisk, US (ft / mph) eller UK (mi / mph). Første-gangs standard fra SIM/nettverksland; alltid overstyrbar. UK-høyde forblir meter (ikke US-fot). |
 | **Eco mode** | Energikost med bakker (låst på for fottur/sykling) |
 | **POI search radius** | Hvor langt til siden planleggeren kan lete etter hytter / stopp |
 | **Vehicle limits** | Høyde/bredde/lengde/aksellast for frihøyde |
 
 Ruteplanlegging (**Route**): From / To / Via, Plan, Simulate, unngåelser
 (**Avoid motorways** ekskluderer bare `highway=motorway` / `motorway_link`),
-lagrede ruter. **Tools**: last ned region, grunnkart, DEM, OSM-oppdateringssjekk.
+lagrede ruter.
+
+### Tools (nedlastinger og diagnostisk logging)
+
+Åpne **Tools** fra planleggingspanelet (samme skjerm som region-/grunnkart-
+nedlasting).
+
+| Innstilling / handling | Enkel forklaring |
+|---|---|
+| **Download region / basemap / DEM** | Frakoblede kartdata (se hva du må laste ned ovenfor) |
+| **Check for OSM updates** / **Apply pending** | Valgfri oppdatering; aldri stille autodownload |
+| **Weekly update reminder** | Valgfri påminnelse — laster ikke ned selv |
+| **Diagnostic logging** | **Debug-bryter** (av som standard). Når **på**, skriver Navi en rør-separert **øktlogg** på enheten så du kan feilsøke planlegging, GPS og innstillinger uten `adb logcat`. Når **av**, skrives ingen ny øktfil, og native per-trinns ruteplan-timing er også av |
+| **Export diagnostic log** | Åpner Androids delingsark for siste øktfil (eller ber deg skru logging på først) |
+
+**Hva loggen er til:** feilrapporter, planleggingstid (`ROUTE_PLAN` /
+`ROUTE_PLAN_STAGES`), og bekreftelse av brytere på ekte maskinvare. Den er
+**ikke** et logcat-speil, og Navi **laster den ikke opp**.
+
+**Hvor filen ligger** (USB filoverføring / MTP — adb trengs ikke):
+
+```text
+Intern lagring → Documents → debug → navi_session_YYYY-MM-DD_HH-mm-ss.log
+```
+
+(Fallback: `Download/debug`, deretter app-privat lagring.) Eldre økter
+roteres (siste 10 beholdes). Full kategoriliste:
+[`debugging.md`](debugging.md#3b-diagnostic-session-log-on-device-file).
 
 Lengre kontrollister og lastebil-/jurisdiksjonsdetaljer ligger i dokumentene
 under [Dokumenter](#dokumenter).
@@ -369,13 +504,17 @@ Fullt galleri: [`bilder.md`](bilder.md) (engelsk:
 
 | Dokument | Hva det er til |
 |---|---|
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Hvordan bidra (engelsk) |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Hvordan bidra (engelsk): fork fra **`dev`**, GitHub-grunnlag (PR mot `dev`), testing, docs, plugins, CI |
 | [`architecture.md`](architecture.md) | Hvordan delene henger sammen |
 | [`codebase-map.md`](codebase-map.md) | Hvor man endrer kode for en gitt funksjon |
 | [`bilder.md`](bilder.md) / [`pictures.md`](pictures.md) | Skjermbildegallerier |
+| [`icons.md`](icons.md) | Hvor ikonfilene ligger, lisens og hvordan man legger til SVG |
 | [`map-styles.md`](map-styles.md) | Online vs frakoblet kartutseende; 3D |
 | [`poi.md`](poi.md) | Stedstyper og søk |
 | [How to use Navi](how-to-use.md) | Brukerveiledning (planlegging, Tools, pauser, lagrede steder/ruter, profiler) — engelsk |
+| [`cider-route.md`](cider-route.md) | Forslag til **Siderveien** (norsk cider-rute): OSM `brewery=cider`-stopp sør→nord, med Navi-region/etappe-notater — engelsk |
+| [`current-street.md`](current-street.md) | Bunn-HUD: veinavn, GPS-fart / skiltet grense, overskridelsesfarge |
+| [`road-signs.md`](road-signs.md) | Norske fareskilt, barnesone-nærhet, Look forward (300 m kjegle), tilnærmingsfaser |
 | [`kartmerking-lagrede-steder.md`](kartmerking-lagrede-steder.md) | Trykk-og-hold (4 s) og lagrede steder (engelsk: [`map-marking-saved-places.md`](map-marking-saved-places.md)) |
 | [`historisk-bakgrunn.md`](historisk-bakgrunn.md) | Rast/vei-grunnlag for pauseintervaller (fottur/sykling) |
 | [`ec-561-truck-rest.md`](ec-561-truck-rest.md) | EU lastebil kjøre-/hviletid |
@@ -391,7 +530,7 @@ Fullt galleri: [`bilder.md`](bilder.md) (engelsk:
 | [`status.md`](status.md) | Hvilke dokumenter er live status vs historikk |
 | [`future-proofing-audit-2026-07.md`](future-proofing-audit-2026-07.md) | Fremtidssikring / åpne risikoer |
 | [`indexed-map-format-plan.md`](indexed-map-format-plan.md) | Indekserte rutingkart (fased evaluering) |
-| [`plugins.md`](plugins.md) | Plugin-vert og veikart |
+| [`plugins.md`](plugins.md) | Plugin-vert og veikart (av/på; USB/Bluetooth) |
 
 Se `docs/`-mappen for mer spesialiserte emner (stemme, APRS, ECU, formler osv.).
 
@@ -399,24 +538,46 @@ Se `docs/`-mappen for mer spesialiserte emner (stemme, APRS, ECU, formler osv.).
 
 En sandkasse for plugins finnes, så fremtidige tillegg kan kjøre trygt.
 **Ingen produktplugins leveres i appen ennå** — det er med vilje. Oversikt:
-[`plugins.md`](plugins.md).
+[`plugins.md`](plugins.md). Systemkrav: hver plugin skal kunne **slås av/på**,
+og maskinvareplugins skal kunne snakke over **USB** / **Bluetooth** via verten.
 
 | Spesifikasjon | Emne |
 |---|---|
-| [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md) | Fremtidige UI-språk (bare engelsk i dag). Oversettertabell: [`translations.csv`](plugins/translations.csv) |
+| [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md) | Fremtidige UI-språk (bare engelsk i dag). Oversettertabell: [`translations.csv`](plugins/translations.csv); sammenheng: [`translations-context.md`](plugins/translations-context.md) |
 | [`plugins/right-to-roam-camping-spec.md`](plugins/right-to-roam-camping-spec.md) | Villcamping-forslag (plugin, ikke kjerne) |
 | [`plugins/safety-resupply.md`](plugins/safety-resupply.md) | Drivstoff-/vannforsyning |
-| [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Eksportere nav-tilstand til instrumentcluster |
+| [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Eksportere nav-tilstand og tilnærmingsvarsler til instrumentcluster |
 | [`plugins/animated-icons-spec.md`](plugins/animated-icons-spec.md) | Animerte ikoner |
+| [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md) | Korte varselyder (skilt, kamera, overskridelse-earcon) |
+| [`plugins/horse-trekking-spec.md`](plugins/horse-trekking-spec.md) | Ridning: forsyning og adgangsveiledning (Hiking er midlertidig stopgap) |
+| [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) | Talt, eskalerende fartsvarsel (prosenttrinn; ikke levert) |
 
-## Ikoner (Navit)
+## Ikoner (hvor de ligger)
 
-POI- / sving- / statusikoner under `core/src/icons` kommer fra Navit
-(**GPL v2**). Hvordan legge til egne SVG-ikoner: [`icons.md`](icons.md).
+Kart-, sving-, POI- og statusikoner er filer i repoet — de lages ikke ved
+kjøring. Forfatterguide, oppslagsrekkefølge og lisenser: [`icons.md`](icons.md).
+
+| Sti | Hva som ligger der |
+|---|---|
+| [`core/src/icons/`](../core/src/icons/) | **Fullt sett** (kilde for skrivebord / kjerne). Mest Navit (**GPL v2**). Egne Navi-filer her inkluderer `leaf.svg` (øko) og `speed_camera.svg`. |
+| [`app/src/main/assets/icons/`](../app/src/main/assets/icons/) | Android **lean-pakke** — en nedskalert kopi som følger med hver APK. Nøkler som mangler her faller tilbake til `unknown.svg` på enheten. |
+| [`core/src/icons/road-signs/`](../core/src/icons/road-signs/) | Norske trafikkskilt-SVG-er (**NLOD 2.0**, ikke Navit). Android-kopi: [`app/src/main/assets/icons/road-signs/`](../app/src/main/assets/icons/road-signs/). |
+| [`core/src/icons/aprs/`](../core/src/icons/aprs/) | APRS-symboler for bevegelige ikoner. Android-kopi: [`app/src/main/assets/icons/aprs/`](../app/src/main/assets/icons/aprs/). |
+| [`app/src/main/res/mipmap-*`](../app/src/main/res/) | Android-**launcher** (startskjerm / app-skuff). Egen Navi-merkevare, ikke fra Navit. |
+| [`docs/icons/open-app.svg`](icons/open-app.svg) | Splash- / åpne-app-merke (Inkscape-kilde). Android-drawables: `app/src/main/res/drawable/ic_splash*.xml`. |
+
+For å legge til eller overstyre et kart-/POI-ikon, legg en SVG i `core/src/icons/`
+(og kopier den inn i Android lean-pakken hvis den skal vises på enheten). Se
+[`icons.md`](icons.md).
 
 # Kodestandarder og bidrag
 
-Les **[`CONTRIBUTING.md`](CONTRIBUTING.md)** (engelsk).
+Les **[`CONTRIBUTING.md`](CONTRIBUTING.md)** (engelsk) først. Den forklarer
+hvordan du **forker** [github.com/Supermagnum/Navi](https://github.com/Supermagnum/Navi),
+sjekker ut **`dev`**, holder forken oppdatert, og åpner en pull request med
+**base-gren `dev`**. Klone-stegene under [Bygge og installere](#bygge-og-installere)
+er for et lokalt bygg; de erstatter ikke en fork hvis du vil sende inn en
+endring.
 
 Kortversjon av CI-forventninger:
 
@@ -427,6 +588,52 @@ Kortversjon av CI-forventninger:
 | Android | `./gradlew :app:assembleDebug` |
 
 # Bygge og installere
+
+Hent koden fra GitHub. Utvikling skjer på **`dev`** (nyeste funksjoner);
+**`main`** er standardgren ved `git clone` (en vanlig `git clone` sjekker ut
+`main`). Installer Git ved behov
+(`sudo apt install git` på Debian/Ubuntu — andre systemer i
+[`build-linux.md`](build-linux.md#getting-the-code)).
+
+**For å bygge eller installere lokalt** (uten pull request):
+
+```bash
+git clone https://github.com/Supermagnum/Navi.git
+cd Navi
+git checkout dev
+```
+
+**For å bidra med en endring:** ikke bare klone denne URL-en. Fork repoet,
+klone **din** fork, og jobb på **`dev`** — steg for steg i
+[`CONTRIBUTING.md`](CONTRIBUTING.md#fork-from-dev-and-basic-github-usage)
+(engelsk).
+
+## Installer en forhåndsbygd APK
+
+En debug-signert APK ligger i
+[`compiled/navi-debug.apk`](../compiled/navi-debug.apk) (arm64, samme pakke som
+`./gradlew :app:assembleDebug`). Du trenger ikke Rust/NDK-verktøykjede for å
+installere den.
+
+1. På enheten: slå på **Utvikleralternativer** og **USB-feilsøking**.
+2. Koble til med `adb devices` og bekreft at enheten er listet.
+3. Hvis en eldre Navi-bygg med **annen signatur** allerede er installert,
+   avinstaller først (`adb uninstall no.navi.app`).
+4. Installer og start:
+
+```bash
+adb install -r compiled/navi-debug.apk
+adb shell am start -n no.navi.app/.MainActivity
+```
+
+Denne APK-en er signert med Androids **debug**-nøkkel. Den er for testere, ikke
+en Play Store- / F-Droid-utgivelse. For å bygge fra kilde, følg avsnittene
+nedenfor.
+
+Du kan også laste ned
+[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-debug.apk)
+direkte i nettleseren på Android-enheten og installere den derfra (tillat
+installasjon fra nettleseren hvis du blir bedt om det).
 
 ## Android-appen (alle vertsplattformer)
 
@@ -532,9 +739,9 @@ Mer detalj (bundletool, F-Droid Podman): engelsk
 
 ### Arbeidsområdets struktur
 
-- `core/` — ruting, steder, hvileregler, ikoner (Rust)
+- `core/` — ruting, steder, hvileregler, ikoner (Rust). Ikon-SVG-er: `core/src/icons/`
 - `navi-ffi/` — bro til Android og andre verter
-- `app/` — Android-UI (Kotlin)
+- `app/` — Android-UI (Kotlin). Ikonpakke på enheten: `app/src/main/assets/icons/`
 - `plugin-host/` / `plugin-sdk/` / `plugins/` — fremtidige plugins
 - [`architecture.md`](architecture.md) — hvordan det henger sammen
 
@@ -589,6 +796,10 @@ Land-/regionvisuelle uttrekk kan også lages med
   lasting (tidligere ~177,6 s for en hel plan når bbox-alle matet
   overnattingssjekker). Gjenværende kostnad er mest obligatorisk
   full-extract-dekoding pluss andre PBF-skanninger under planlegging.
+  Under en forgrunnsplan viker bakgrunnskonvertering/stedsindeks, og
+  GPS-kjegle-/veinær-bbox-bygging hopper over, slik at samtidige PBF-lesere
+  ikke strekker pack-miss-planer til mange minutter (se
+  [Indeksering](#indeksering-bakgrunn-etter-nedlasting)).
 - **Pauseteller ≠ tur-ETA:** med vilje — se
   [Pauseteller vs tur-ETA](#pauseteller-vs-tur-eta).
 - **Ikke implementert ennå:** sjekk av om koden kan optimaliseres for
@@ -596,12 +807,28 @@ Land-/regionvisuelle uttrekk kan også lages med
 
 # TODO
 
-## Integrere [Supermagnum/road-signs](https://github.com/Supermagnum/road-signs)
+(Bare fremtidig arbeid — leverte funksjoner står i tabellen Funksjoner over.)
 
-Åpen katalog med offisielle **norske trafikkskilt** (SVG + JSON), egen repo under
-[NLOD 2.0](https://data.norge.no/nlod/en/2.0). Planlagt i Navi: vendore SVG +
-`signs_en.json` / `osm_tags.json`, rasterisere inn i ikonpakken, matche OSM
-`traffic_sign=NO:…` / `hazard=*` / `maxspeed=*` langs rute/innkjøring, vise i
-approach-/advarsels-UI (som fartskamera), Norge først, Vienna-gjenbruk kun der
-kartleggingen tillater det. Full integrasjonsbeskrivelse (artefakter, steg,
-begrensninger): engelsk [README — TODO](../README.md#todo).
+**UI-språkpakker** — menyene er bare engelsk i dag. En fremtidig `i18n` /
+`ui_translation`-plugin skal gi valgbare språk med **tilbakefall til engelsk**
+når en oversettelse eller pakke mangler. Spesifikasjon:
+[`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md).
+Ikke utled UI-språk fra GPS eller SIM-land. Ikke innfør en språkbryter før den
+pluginen finnes.
+
+Visnings**enheter** (metrisk / US / UK) er levert (kjøreinnstillinger). Norske
+fartsgrenseskilt forblir offisielle km/t-plater; mph-*platekunst* er fortsatt
+fremtid (`new-signs/`). Frakoblede Protomaps-etiketter for alkoholutsalg
+(`pois.kind=alcohol`, z16+) er levert — se [`map-styles.md`](map-styles.md).
+
+**Historiske norske/norrøne avstandsenheter** som valgbar visningsmodus
+(f.eks. rast, dagsvei, fjerdingvei), ved siden av de eksisterende
+Metric / US / UK-profilene. Bare visning — historisk/kulturell modus, ikke
+standard og ikke et seriøst navigasjonsalternativ til metrisk/imperial.
+**Fart:** norrøn **mil per time** kan erstatte km/t; mindre avstander
+(steinens kast, pileskudd, fjerdingvei, …). Trenger en designrunde før
+implementering (hvilke avstands-/fartsfelt, samspill med `DisplayUnits`,
+periode-spesifikk eller ett kanonisk omregningssett).
+Kontekst og omregningstall: [README — TODO](../README.md#todo).
+
+Engelsk: [README — TODO](../README.md#todo).

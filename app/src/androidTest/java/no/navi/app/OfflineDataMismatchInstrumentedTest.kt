@@ -47,7 +47,11 @@ class OfflineDataMismatchInstrumentedTest {
 
         val report = OfflineDataIntegrity.inspect(context, dataDir)
         assertTrue(report.hasIssue)
-        assertTrue(report.canRestoreFromStaging)
+        // mz12 staged fixture must not offer production "Restore" — only full extracts.
+        assertFalse(
+            "canRestoreFromStaging must be false for mz12 fixture",
+            report.canRestoreFromStaging,
+        )
         val msg = report.userMessage()
         assertTrue(!msg.isNullOrBlank())
         assertTrue(

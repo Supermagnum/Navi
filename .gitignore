@@ -15,9 +15,16 @@ local.properties
 .idea/
 *.apk
 *.aab
+# Sideload copy committed for testers (see README).
+!compiled/
+!compiled/*.apk
 app/keystore/
 *.jks
 *.keystore
+# Built by scripts/build-android-native.sh — do not commit rebuilt copies.
+app/src/main/jniLibs/**/*.so
+# Kotlin/IDE incremental compile scratch
+.kotlin/
 
 # Local F-Droid buildability check workspace (not for commit)
 tools/fdroid-check/work/

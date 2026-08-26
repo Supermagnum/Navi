@@ -4,10 +4,11 @@
 //! decline-by-default elsewhere. Point cameras use approach-instruction distance
 //! phases; average-speed (section control) uses a distinct zone enter/exit UX.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use chrono::{Local, NaiveDateTime};
+use log::warn;
 use osmpbf::{Element, ElementReader, RelMemberType};
 
 use crate::nav::{ApproachPhase, APPROACH_APPEAR_M, APPROACH_HIDE_M, APPROACH_URGENCY_M};
@@ -126,123 +127,234 @@ pub fn applicable_limit_or_fallback_kmh(
         .unwrap_or_else(|| crate::routing::eta::highway_fallback_kmh(highway))
 }
 
+/// Hard cap on node ids retained while indexing speed cameras from one extract.
+/// Regional extracts have thousands of cameras at most; anything near this bound
+/// indicates corrupt input or a logic bug — refuse rather than allocate multi-GB.
+const SPEED_CAMERA_INDEX_CAP: usize = 100_000;
+
+struct PendingEnforcement {
+    kind: SpeedCameraKind,
+    rel_max: Option<f64>,
+    rel_cond: Option<String>,
+    device: Option<i64>,
+    from_n: Option<i64>,
+    to_n: Option<i64>,
+}
+
+fn ensure_speed_camera_index_cap(label: &str, n: usize) -> anyhow::Result<()> {
+    if n > SPEED_CAMERA_INDEX_CAP {
+        warn!(
+            target: "speed_camera",
+            "{label} count {n} exceeds cap {SPEED_CAMERA_INDEX_CAP}"
+        );
+        anyhow::bail!(
+            "speed camera index refused: {label} count {n} exceeds cap {SPEED_CAMERA_INDEX_CAP}"
+        );
+    }
+    Ok(())
+}
+
 /// Index speed cameras from a PBF: `highway=speed_camera` nodes plus
 /// `type=enforcement` relations (`maxspeed` / `average_speed`).
+///
+/// Two-pass: collect only camera / enforcement member ids first, then resolve
+/// coordinates for that set. Does **not** materialize every node or highway way
+/// in the extract (that previously drove multi-GB HashMap growth).
+///
+/// Nearest-way maxspeed fallback is omitted for v1: limits come from the
+/// relation and/or the device node tags only. HUD still works without a limit
+/// (`"Speed camera"` label); restoring way-based fill needs a camera-local
+/// index, not a full-extract `way_nodes` map.
 pub fn load_speed_cameras_from_pbf(
     path: impl AsRef<Path>,
 ) -> anyhow::Result<Vec<SpeedCameraRecord>> {
     let path = path.as_ref();
-    let mut node_coords: HashMap<i64, (f64, f64)> = HashMap::new();
+    let mut out: Vec<SpeedCameraRecord> = Vec::new();
+    let mut seen_device: HashMap<i64, usize> = HashMap::new();
+    let mut needed: HashSet<i64> = HashSet::new();
+    let mut pending: Vec<PendingEnforcement> = Vec::new();
+    // Device-node maxspeed tags from pass-1 cameras; pass 2 fills relation-only devices.
     let mut node_tags: HashMap<i64, HashMap<String, String>> = HashMap::new();
-    let mut way_maxspeed: HashMap<i64, (Option<f64>, Option<String>)> = HashMap::new();
-    let mut way_nodes: HashMap<i64, Vec<i64>> = HashMap::new();
+    let mut node_coords: HashMap<i64, (f64, f64)> = HashMap::new();
 
-    // Pass 1: nodes + ways (coords / maxspeed for nearest-way fallback).
+    // Pass 1: speed_camera nodes + enforcement relations (member ids only).
     let reader = ElementReader::from_path(path)?;
     reader.for_each(|el| match el {
         Element::Node(n) => {
-            let id = n.id();
-            node_coords.insert(id, (n.lat(), n.lon()));
-            let tags: HashMap<String, String> =
-                n.tags().map(|(k, v)| (k.into(), v.into())).collect();
-            if !tags.is_empty() {
-                node_tags.insert(id, tags);
+            let mut is_cam = false;
+            let mut tags: HashMap<String, String> = HashMap::new();
+            for (k, v) in n.tags() {
+                if k == "highway" && v == "speed_camera" {
+                    is_cam = true;
+                }
+                if k == "highway" || k == "maxspeed" || k == "maxspeed:conditional" {
+                    tags.insert(k.into(), v.into());
+                }
             }
+            if !is_cam {
+                return;
+            }
+            let id = n.id();
+            let lat = n.lat();
+            let lon = n.lon();
+            node_coords.insert(id, (lat, lon));
+            if !tags.is_empty() {
+                node_tags.insert(id, tags.clone());
+            }
+            let maxspeed_kmh = tags.get("maxspeed").and_then(|v| parse_maxspeed_kmh(v));
+            let maxspeed_conditional = tags.get("maxspeed:conditional").cloned();
+            seen_device.insert(id, out.len());
+            out.push(SpeedCameraRecord {
+                osm_id: id,
+                lat,
+                lon,
+                kind: SpeedCameraKind::Point,
+                maxspeed_kmh,
+                maxspeed_conditional,
+                zone_from_lat: None,
+                zone_from_lon: None,
+                zone_to_lat: None,
+                zone_to_lon: None,
+                zone_length_m: None,
+            });
+            needed.insert(id);
         }
         Element::DenseNode(n) => {
+            let mut is_cam = false;
+            let mut tags: HashMap<String, String> = HashMap::new();
+            for (k, v) in n.tags() {
+                if k == "highway" && v == "speed_camera" {
+                    is_cam = true;
+                }
+                if k == "highway" || k == "maxspeed" || k == "maxspeed:conditional" {
+                    tags.insert(k.into(), v.into());
+                }
+            }
+            if !is_cam {
+                return;
+            }
             let id = n.id;
-            node_coords.insert(id, (n.lat(), n.lon()));
-            let tags: HashMap<String, String> =
-                n.tags().map(|(k, v)| (k.into(), v.into())).collect();
+            let lat = n.lat();
+            let lon = n.lon();
+            node_coords.insert(id, (lat, lon));
             if !tags.is_empty() {
-                node_tags.insert(id, tags);
+                node_tags.insert(id, tags.clone());
+            }
+            let maxspeed_kmh = tags.get("maxspeed").and_then(|v| parse_maxspeed_kmh(v));
+            let maxspeed_conditional = tags.get("maxspeed:conditional").cloned();
+            seen_device.insert(id, out.len());
+            out.push(SpeedCameraRecord {
+                osm_id: id,
+                lat,
+                lon,
+                kind: SpeedCameraKind::Point,
+                maxspeed_kmh,
+                maxspeed_conditional,
+                zone_from_lat: None,
+                zone_from_lon: None,
+                zone_to_lat: None,
+                zone_to_lon: None,
+                zone_length_m: None,
+            });
+            needed.insert(id);
+        }
+        Element::Relation(rel) => {
+            let tags: HashMap<String, String> =
+                rel.tags().map(|(k, v)| (k.into(), v.into())).collect();
+            if tags.get("type").map(String::as_str) != Some("enforcement") {
+                return;
+            }
+            let enf = tags.get("enforcement").map(String::as_str).unwrap_or("");
+            let kind = match enf {
+                "maxspeed" => SpeedCameraKind::Point,
+                "average_speed" => SpeedCameraKind::AverageSpeed,
+                _ => return,
+            };
+            let mut device: Option<i64> = None;
+            let mut from_n: Option<i64> = None;
+            let mut to_n: Option<i64> = None;
+            for m in rel.members() {
+                if m.member_type != RelMemberType::Node {
+                    continue;
+                }
+                let Ok(role) = m.role() else {
+                    continue;
+                };
+                match role {
+                    "device" => device = Some(m.member_id),
+                    "from" => from_n = Some(m.member_id),
+                    "to" => to_n = Some(m.member_id),
+                    _ => {}
+                }
+            }
+            for id in [device, from_n, to_n].into_iter().flatten() {
+                needed.insert(id);
+            }
+            pending.push(PendingEnforcement {
+                kind,
+                rel_max: tags.get("maxspeed").and_then(|v| parse_maxspeed_kmh(v)),
+                rel_cond: tags.get("maxspeed:conditional").cloned(),
+                device,
+                from_n,
+                to_n,
+            });
+        }
+        _ => {}
+    })?;
+
+    ensure_speed_camera_index_cap("output cameras", out.len())?;
+    ensure_speed_camera_index_cap("needed node ids", needed.len())?;
+    ensure_speed_camera_index_cap("pending enforcement relations", pending.len())?;
+
+    // Pass 2: coordinates (+ sparse tags) only for ids referenced above.
+    let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len().max(16));
+    coords.extend(node_coords.drain());
+    let reader = ElementReader::from_path(path)?;
+    reader.for_each(|el| match el {
+        Element::Node(n) if needed.contains(&n.id()) => {
+            let id = n.id();
+            coords.entry(id).or_insert_with(|| (n.lat(), n.lon()));
+            if let std::collections::hash_map::Entry::Vacant(e) = node_tags.entry(id) {
+                let tags: HashMap<String, String> = n
+                    .tags()
+                    .filter(|(k, _)| {
+                        *k == "maxspeed" || *k == "maxspeed:conditional" || *k == "highway"
+                    })
+                    .map(|(k, v)| (k.into(), v.into()))
+                    .collect();
+                if !tags.is_empty() {
+                    e.insert(tags);
+                }
             }
         }
-        Element::Way(w) => {
-            let tags: HashMap<String, String> =
-                w.tags().map(|(k, v)| (k.into(), v.into())).collect();
-            if tags.contains_key("highway") {
-                let base = tags.get("maxspeed").and_then(|v| parse_maxspeed_kmh(v));
-                let cond = tags.get("maxspeed:conditional").cloned();
-                way_maxspeed.insert(w.id(), (base, cond));
-                way_nodes.insert(w.id(), w.refs().collect());
+        Element::DenseNode(n) if needed.contains(&n.id) => {
+            let id = n.id;
+            coords.entry(id).or_insert_with(|| (n.lat(), n.lon()));
+            if let std::collections::hash_map::Entry::Vacant(e) = node_tags.entry(id) {
+                let tags: HashMap<String, String> = n
+                    .tags()
+                    .filter(|(k, _)| {
+                        *k == "maxspeed" || *k == "maxspeed:conditional" || *k == "highway"
+                    })
+                    .map(|(k, v)| (k.into(), v.into()))
+                    .collect();
+                if !tags.is_empty() {
+                    e.insert(tags);
+                }
             }
         }
         _ => {}
     })?;
 
-    let mut out: Vec<SpeedCameraRecord> = Vec::new();
-    let mut seen_device: HashMap<i64, usize> = HashMap::new();
+    ensure_speed_camera_index_cap("resolved coords", coords.len())?;
 
-    for (id, tags) in &node_tags {
-        if tags.get("highway").map(String::as_str) != Some("speed_camera") {
-            continue;
-        }
-        let Some(&(lat, lon)) = node_coords.get(id) else {
-            continue;
-        };
-        let maxspeed_kmh = tags.get("maxspeed").and_then(|v| parse_maxspeed_kmh(v));
-        let maxspeed_conditional = tags.get("maxspeed:conditional").cloned();
-        let rec = SpeedCameraRecord {
-            osm_id: *id,
-            lat,
-            lon,
-            kind: SpeedCameraKind::Point,
-            maxspeed_kmh,
-            maxspeed_conditional,
-            zone_from_lat: None,
-            zone_from_lon: None,
-            zone_to_lat: None,
-            zone_to_lon: None,
-            zone_length_m: None,
-        };
-        seen_device.insert(*id, out.len());
-        out.push(rec);
-    }
-
-    // Pass 2: enforcement relations.
-    let reader = ElementReader::from_path(path)?;
-    reader.for_each(|el| {
-        let Element::Relation(rel) = el else {
-            return;
-        };
-        let tags: HashMap<String, String> = rel.tags().map(|(k, v)| (k.into(), v.into())).collect();
-        if tags.get("type").map(String::as_str) != Some("enforcement") {
-            return;
-        }
-        let enf = tags.get("enforcement").map(String::as_str).unwrap_or("");
-        let kind = match enf {
-            "maxspeed" => SpeedCameraKind::Point,
-            "average_speed" => SpeedCameraKind::AverageSpeed,
-            _ => return,
-        };
-        let rel_max = tags.get("maxspeed").and_then(|v| parse_maxspeed_kmh(v));
-        let rel_cond = tags.get("maxspeed:conditional").cloned();
-
-        let mut device: Option<i64> = None;
-        let mut from_n: Option<i64> = None;
-        let mut to_n: Option<i64> = None;
-        for m in rel.members() {
-            if m.member_type != RelMemberType::Node {
-                continue;
-            }
-            let Ok(role) = m.role() else {
-                continue;
-            };
-            match role {
-                "device" => device = Some(m.member_id),
-                "from" => from_n = Some(m.member_id),
-                "to" => to_n = Some(m.member_id),
-                _ => {}
-            }
-        }
-
-        let device_id = device.or(from_n);
+    for pend in pending {
+        let device_id = pend.device.or(pend.from_n);
         let Some(did) = device_id else {
-            return;
+            continue;
         };
-        let Some(&(lat, lon)) = node_coords.get(&did) else {
-            return;
+        let Some(&(lat, lon)) = coords.get(&did) else {
+            continue;
         };
 
         let device_tags = node_tags.get(&did);
@@ -253,26 +365,14 @@ pub fn load_speed_cameras_from_pbf(
             .and_then(|t| t.get("maxspeed:conditional"))
             .cloned();
 
-        // Nearest-way maxspeed fallback (coarse: any way containing the device node).
-        let mut way_max = None;
-        let mut way_cond = None;
-        for (wid, nodes) in &way_nodes {
-            if nodes.contains(&did) {
-                if let Some((b, c)) = way_maxspeed.get(wid) {
-                    way_max = *b;
-                    way_cond = c.clone();
-                    break;
-                }
-            }
-        }
-
-        let maxspeed_kmh = rel_max.or(device_max).or(way_max);
-        let maxspeed_conditional = rel_cond.or(device_cond).or(way_cond);
+        // Relation then device tags only (no full-extract nearest-way scan).
+        let maxspeed_kmh = pend.rel_max.or(device_max);
+        let maxspeed_conditional = pend.rel_cond.or(device_cond);
 
         let (zone_from_lat, zone_from_lon, zone_to_lat, zone_to_lon, zone_length_m) =
-            if kind == SpeedCameraKind::AverageSpeed {
-                let f = from_n.and_then(|id| node_coords.get(&id).copied());
-                let t = to_n.and_then(|id| node_coords.get(&id).copied());
+            if pend.kind == SpeedCameraKind::AverageSpeed {
+                let f = pend.from_n.and_then(|id| coords.get(&id).copied());
+                let t = pend.to_n.and_then(|id| coords.get(&id).copied());
                 match (f, t) {
                     (Some((flat, flon)), Some((tlat, tlon))) => (
                         Some(flat),
@@ -295,7 +395,7 @@ pub fn load_speed_cameras_from_pbf(
             if rec.maxspeed_conditional.is_none() {
                 rec.maxspeed_conditional = maxspeed_conditional.clone();
             }
-            if kind == SpeedCameraKind::AverageSpeed {
+            if pend.kind == SpeedCameraKind::AverageSpeed {
                 rec.kind = SpeedCameraKind::AverageSpeed;
                 rec.zone_from_lat = zone_from_lat;
                 rec.zone_from_lon = zone_from_lon;
@@ -304,11 +404,12 @@ pub fn load_speed_cameras_from_pbf(
                 rec.zone_length_m = zone_length_m;
             }
         } else {
-            let rec = SpeedCameraRecord {
+            seen_device.insert(did, out.len());
+            out.push(SpeedCameraRecord {
                 osm_id: did,
                 lat,
                 lon,
-                kind,
+                kind: pend.kind,
                 maxspeed_kmh,
                 maxspeed_conditional,
                 zone_from_lat,
@@ -316,12 +417,11 @@ pub fn load_speed_cameras_from_pbf(
                 zone_to_lat,
                 zone_to_lon,
                 zone_length_m,
-            };
-            seen_device.insert(did, out.len());
-            out.push(rec);
+            });
         }
-    })?;
+    }
 
+    ensure_speed_camera_index_cap("final cameras", out.len())?;
     Ok(out)
 }
 

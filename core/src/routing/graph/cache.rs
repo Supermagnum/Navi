@@ -273,6 +273,16 @@ pub fn load_or_build_reweighted_bbox(
     bbox: [f64; 4],
 ) -> anyhow::Result<(RouteGraph, bool)> {
     let _ = cache_dir;
+    // Skip GPS/cone/road-near builds while a foreground plan owns the PBF.
+    // Plan callers (ProgressChannel::Plan) pass through. Skip rather than
+    // queue: one missed cone update is cheaper than stretching the plan.
+    if crate::download::pbf_priority::skip_non_plan_bbox_build() {
+        anyhow::bail!("{}", crate::download::pbf_priority::BBOX_BUILD_SKIPPED);
+    }
+    let _excl = crate::download::pbf_priority::lock_bbox_build();
+    if crate::download::pbf_priority::skip_non_plan_bbox_build() {
+        anyhow::bail!("{}", crate::download::pbf_priority::BBOX_BUILD_SKIPPED);
+    }
     // M5: do not read or write `.navigph` (see [`load_or_build_reweighted`]).
     let mut graph = RouteGraph::build_from_pbf_bbox(pbf, profile, bbox)?;
     graph.apply_eco_reweighting(elevation, eco);
@@ -488,6 +498,74 @@ mod tests {
         assert_eq!(
             a.file_name().and_then(|s| s.to_str()),
             Some("norway.osm_car.navigph")
+        );
+    }
+
+    #[test]
+    fn bbox_build_skips_before_opening_pbf_when_plan_active() {
+        use crate::download::pbf_priority::{
+            lock_plan_flag_for_test, ForegroundPlanGuard, BBOX_BUILD_SKIPPED,
+        };
+        use crate::download::progress::{with_channel, ProgressChannel};
+        use crate::routing::elevation::{ElevationCache, ElevationService};
+
+        let _serial = lock_plan_flag_for_test();
+        let dir = tempdir().expect("tempdir");
+        let elev = ElevationService::new(ElevationCache::new(dir.path()));
+        let eco = EcoConfig::default();
+        let missing = Path::new("/nonexistent-navi-bbox-skip.osm.pbf");
+        let bbox = [59.9, 10.7, 59.95, 10.8];
+
+        let _fg = ForegroundPlanGuard::acquire();
+        let skipped = match load_or_build_reweighted_bbox(
+            missing,
+            dir.path(),
+            RoutingProfile::Car,
+            &elev,
+            &eco,
+            bbox,
+        ) {
+            Err(e) => e,
+            Ok(_) => panic!("cone/default channel must skip"),
+        };
+        assert!(
+            skipped.to_string().contains(BBOX_BUILD_SKIPPED),
+            "unexpected skip error: {skipped:#}"
+        );
+
+        let plan_err = match with_channel(ProgressChannel::Plan, || {
+            load_or_build_reweighted_bbox(
+                missing,
+                dir.path(),
+                RoutingProfile::Car,
+                &elev,
+                &eco,
+                bbox,
+            )
+        }) {
+            Err(e) => e,
+            Ok(_) => panic!("plan channel must attempt the PBF"),
+        };
+        assert!(
+            !plan_err.to_string().contains(BBOX_BUILD_SKIPPED),
+            "plan must not skip: {plan_err:#}"
+        );
+
+        drop(_fg);
+        let after = match load_or_build_reweighted_bbox(
+            missing,
+            dir.path(),
+            RoutingProfile::Car,
+            &elev,
+            &eco,
+            bbox,
+        ) {
+            Err(e) => e,
+            Ok(_) => panic!("after plan, bbox build must run normally"),
+        };
+        assert!(
+            !after.to_string().contains(BBOX_BUILD_SKIPPED),
+            "must not stay skipped after plan: {after:#}"
         );
     }
 }

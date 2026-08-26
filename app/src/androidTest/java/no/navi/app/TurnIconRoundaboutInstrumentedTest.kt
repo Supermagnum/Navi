@@ -525,7 +525,6 @@ class TurnIconRoundaboutInstrumentedTest {
                     iconKey = wantIcon,
                     nextStreet = m.street ?: m.kind,
                     roundaboutExit = m.roundaboutExit,
-                    preferMetric = true,
                 )
             Thread.sleep(200)
             if (NaviMapTestHooks.lastApproachIconKey == wantIcon &&

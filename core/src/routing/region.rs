@@ -144,6 +144,21 @@ pub fn provision_region_with_elev_tar(
     let mut osm_bytes = 0u64;
     let need_pbf = !pbf_path.is_file() || fs::metadata(&pbf_path)?.len() < 1_000_000;
     if need_pbf {
+        let partial_path = {
+            let mut p = pbf_path.as_os_str().to_owned();
+            p.push(".partial");
+            PathBuf::from(p)
+        };
+        if partial_path.is_file() {
+            let partial_bytes = fs::metadata(&partial_path)?.len();
+            if partial_bytes > 0 {
+                log::info!(
+                    target: "NaviDownload",
+                    "[NaviDownload] resume region partial dest={} partial_bytes={partial_bytes}",
+                    pbf_path.display()
+                );
+            }
+        }
         osm_bytes = download_file(pbf_url, &pbf_path)?;
         if osm_bytes < 1_000_000 {
             bail!(

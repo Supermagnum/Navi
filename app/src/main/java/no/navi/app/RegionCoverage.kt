@@ -30,17 +30,6 @@ object RegionCoverage {
         val lon: Double,
     )
 
-    /** Norway landsdels first (tight), country last (fallback). */
-    private val SUGGEST_CANDIDATES =
-        listOf(
-            "europe/norway/ostlandet",
-            "europe/norway/vestlandet",
-            "europe/norway/trondelag",
-            "europe/norway/nord-norge",
-            "europe/norway/sorlandet",
-            "europe/norway",
-        )
-
     fun displayName(geofabrikPath: String): String =
         when (geofabrikPath.trim().trim('/').lowercase()) {
             "europe/norway" -> "Norway"
@@ -57,6 +46,8 @@ object RegionCoverage {
             "europe/austria" -> "Austria"
             "europe/great-britain" -> "Great Britain"
             "north-america/us" -> "United States"
+            "north-america/us/west-virginia" -> "West Virginia"
+            "north-america/us/nevada" -> "Nevada"
             "russia" -> "Russia"
             else ->
                 GeofabrikDownloadCatalog.findByPath(geofabrikPath)?.label
@@ -93,18 +84,63 @@ object RegionCoverage {
         lat: Double,
         lon: Double,
     ): String? {
-        var best: Pair<String, Double>? = null
-        for (path in SUGGEST_CANDIDATES) {
-            val bbox = pmtilesRegionBbox(path) ?: continue
-            if (bbox.size < 4) continue
-            if (!covers(bbox, lat, lon)) continue
-            val area = (bbox[2] - bbox[0]).coerceAtLeast(0.0) * (bbox[3] - bbox[1]).coerceAtLeast(0.0)
-            val cur = best
-            if (cur == null || area < cur.second) {
-                best = path to area
+        val fromCore = uniffi.navi.suggestGeofabrikPath(lat, lon).trim()
+        return fromCore.ifBlank { null }
+    }
+
+    /**
+     * Piecewise Norway–Sweden land border longitude. East of this line at [lat]
+     * is Sweden. Vertices run south to north.
+     */
+    fun norwaySwedenBorderLon(lat: Double): Double? {
+        val pts =
+            listOf(
+                58.88 to 11.12,
+                59.20 to 11.55,
+                59.60 to 11.90,
+                60.00 to 12.38,
+                60.50 to 12.55,
+                61.00 to 12.75,
+                61.50 to 12.55,
+                61.90 to 12.24,
+                62.30 to 12.20,
+                63.00 to 12.05,
+                64.00 to 13.80,
+                65.00 to 14.20,
+                66.00 to 16.40,
+                68.00 to 20.00,
+                69.06 to 20.55,
+            )
+        if (lat < pts.first().first || lat > pts.last().first) return null
+        for (i in 0 until pts.size - 1) {
+            val (lat0, lon0) = pts[i]
+            val (lat1, lon1) = pts[i + 1]
+            if (lat >= lat0 && lat <= lat1) {
+                val t = if (lat1 == lat0) 0.0 else (lat - lat0) / (lat1 - lat0)
+                return lon0 + t * (lon1 - lon0)
             }
         }
-        return best?.first
+        return null
+    }
+
+    fun eastOfNorwaySwedenBorder(
+        lat: Double,
+        lon: Double,
+    ): Boolean {
+        val border = norwaySwedenBorderLon(lat) ?: return false
+        return lon > border
+    }
+
+    fun downloadedCoversIdentity(
+        downloaded: String,
+        identity: String?,
+    ): Boolean {
+        if (identity.isNullOrBlank()) return true
+        val d = downloaded.trim().trim('/')
+        val id = identity.trim().trim('/')
+        if (d.equals(id, ignoreCase = true)) return true
+        if (id.startsWith("$d/", ignoreCase = true)) return true
+        return false
     }
 
     fun downloadedGeofabrikPaths(dataDir: File): List<String> {
@@ -133,7 +169,12 @@ object RegionCoverage {
         lat: Double,
         lon: Double,
         downloadedPaths: List<String>,
-    ): Boolean = downloadedPaths.any { regionCovers(it, lat, lon) }
+    ): Boolean {
+        val identity = suggestGeofabrikPath(lat, lon)
+        return downloadedPaths.any { path ->
+            regionCovers(path, lat, lon) && downloadedCoversIdentity(path, identity)
+        }
+    }
 
     private fun regionCovers(
         path: String,
@@ -175,8 +216,13 @@ object RegionCoverage {
         val crossRegion = needed.size > 1
         val first = uncovered.first()
         val destSuggest = suggestGeofabrikPath(first.lat, first.lon) ?: "europe/norway"
+        val norwayInternal =
+            needed.all { it == "europe/norway" || it.startsWith("europe/norway/") }
         val suggested =
-            if (crossRegion && downloaded.none { it == "europe/norway" }) {
+            if (crossRegion &&
+                norwayInternal &&
+                downloaded.none { it == "europe/norway" }
+            ) {
                 "europe/norway"
             } else {
                 destSuggest
@@ -184,13 +230,14 @@ object RegionCoverage {
         val label = displayName(suggested)
         val place = first.name.ifBlank { "${first.lat}, ${first.lon}" }
         val message =
-            if (crossRegion && suggested == "europe/norway") {
-                "This trip leaves your downloaded map data ($place). " +
-                    "Download $label (country extract) so the whole corridor is covered. " +
-                    "On ~4 GB devices prefer a single region when both ends fit in one."
-            } else {
-                "$place is not in any downloaded area. " +
-                    "Download $label ($suggested) to plan here."
+            when {
+                suggested == "europe/sweden" ->
+                    "$place is in Sweden, which is not downloaded. Download Sweden to plan this trip."
+                crossRegion && suggested == "europe/norway" ->
+                    "This trip leaves your downloaded map data ($place). " +
+                        "Download $label so the whole corridor is covered."
+                else ->
+                    "$place is not in any downloaded area. Download $label to plan here."
             }
         return MissingRegionCoverage(
             role = first.role,

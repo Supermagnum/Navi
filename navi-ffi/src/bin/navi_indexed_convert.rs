@@ -51,9 +51,17 @@ fn main() {
     match convert_region_packs(&opts) {
         Ok(r) => {
             println!(
-                "PASS stem={} convert_ms={:.1} nodes={} edges={} pois={} barrier_segs={} wetland_rings={} graph_tiles={} peak_rss_mb={:.1} delta_h={} graphs={:?} poi={} wetland={} manifest={}",
+                "PASS stem={} convert_ms={:.1} bbox_scan_ms={:.1} graph_ms={:?} tile_assign_ms={:?} tile_build_ms={:?} poi_ms={:.1} barrier_ms={:.1} overnight_ms={:.1} wetland_ms={:.1} nodes={} edges={} pois={} barrier_segs={} wetland_rings={} graph_tiles={} peak_rss_mb={:.1} delta_h={} graphs={:?} poi={} wetland={} manifest={}",
                 r.stem,
                 r.convert_ms,
+                r.bbox_scan_ms,
+                r.graph_ms,
+                r.tile_assign_ms,
+                r.tile_build_ms,
+                r.poi_ms,
+                r.barrier_ms,
+                r.overnight_ms,
+                r.wetland_ms,
                 r.nodes,
                 r.edges,
                 r.pois,

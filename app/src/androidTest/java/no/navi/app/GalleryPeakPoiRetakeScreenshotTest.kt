@@ -59,8 +59,8 @@ class GalleryPeakPoiRetakeScreenshotTest {
         activityRule.launchActivity(null)
         shoot("poi_galdhopiggen_online.png", GALDHOPIGGEN.first, GALDHOPIGGEN.second, online = true)
         shoot("poi_elgpiggen.png", ELGPIGGEN.first, ELGPIGGEN.second, online = false)
-        // Liberty has no mountain_peak layer; Elgpiggen is often absent from OMT
-        // poi ranks. Keep the documented online-3D framing (DEM + Liberty).
+        // Liberty tiles include mountain_peak; Navi binds labels at runtime.
+        // Keep the documented online-3D framing (DEM + Liberty).
         shoot(
             "poi_elgpiggen_online.png",
             ELGPIGGEN.first,

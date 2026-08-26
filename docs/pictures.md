@@ -14,8 +14,9 @@ icons at zoom ≥ **16** may also use `NaviMapTestHooks.pendingCamera` /
 `GalleryPeakPoiRetakeScreenshotTest` so framing is reliable on hardware.
 
 Basemap amenity / peak icons (not [`poi.md`](poi.md) PoiIndex) need camera
-zoom ≥ **16**. OpenFreeMap Liberty has no `mountain_peak` layer — some peaks
-(e.g. Elgpiggen) show on offline Protomaps but not on Liberty online.
+zoom ≥ **16**. OpenFreeMap Liberty tiles include `mountain_peak` (`ele`); Navi
+binds that layer at runtime so named peaks can show height online as well as
+offline.
 
 
 Idle HUD bars and the Skolla → Rondvassbu hike overview also appear in the

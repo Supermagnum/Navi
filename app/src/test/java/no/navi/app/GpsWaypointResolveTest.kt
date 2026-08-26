@@ -12,8 +12,8 @@ class GpsWaypointResolveTest {
     fun prefersAddressWithinHits() {
         val hits =
             listOf(
-                PlaceHit(1L, "Finstad", "highway:bus_stop", 60.0, 11.0),
-                PlaceHit(2L, "Ådalsbrukvegen 134", "addr:housenumber", 60.0, 11.0),
+                PlaceHit(1L, "Finstad", "highway:bus_stop", 60.0, 11.0, "", ""),
+                PlaceHit(2L, "Ådalsbrukvegen 134", "addr:housenumber", 60.0, 11.0, "", ""),
             )
         assertEquals(
             "Ådalsbrukvegen 134",
@@ -25,7 +25,7 @@ class GpsWaypointResolveTest {
     fun usesNearestNameWhenNoAddress() {
         val hits =
             listOf(
-                PlaceHit(1L, "Finstad", "highway:bus_stop", 60.80573, 11.32984),
+                PlaceHit(1L, "Finstad", "highway:bus_stop", 60.80573, 11.32984, "", ""),
             )
         assertEquals("Finstad", pickNearbyPlaceNameForGpsWaypoint(hits))
     }
@@ -35,7 +35,29 @@ class GpsWaypointResolveTest {
         assertNull(pickNearbyPlaceNameForGpsWaypoint(emptyList()))
         assertNull(
             pickNearbyPlaceNameForGpsWaypoint(
-                listOf(PlaceHit(1L, "  ", "named", 60.0, 11.0)),
+                listOf(PlaceHit(1L, "  ", "named", 60.0, 11.0, "", "")),
+            ),
+        )
+    }
+
+    @Test
+    fun placeHitDisplayLabelJoinsContextAndSkipsDuplicates() {
+        assertEquals(
+            "Båberg, Brattberg, Gjøvik",
+            placeHitDisplayLabel(
+                PlaceHit(1L, "Båberg", "place:farm", 60.97, 10.55, "Brattberg", "Gjøvik"),
+            ),
+        )
+        assertEquals(
+            "Espa, Stange",
+            placeHitDisplayLabel(
+                PlaceHit(2L, "Espa", "place:village", 60.58, 11.27, "", "Stange"),
+            ),
+        )
+        assertEquals(
+            "Gjøvik",
+            placeHitDisplayLabel(
+                PlaceHit(3L, "Gjøvik", "place:town", 60.80, 10.69, "", "Gjøvik"),
             ),
         )
     }

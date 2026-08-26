@@ -23,8 +23,14 @@ Package / module: `uniffi.navi` on Android.
 | Rust | Kotlin | Returns | Purpose |
 |---|---|---|---|
 | `init_native_logging` | `initNativeLogging` | — | Enable native `log` for downloads / routing |
-| `download_progress_snapshot` | `downloadProgressSnapshot` | `FfiDownloadProgress` | Bytes / phase for active download |
-| `download_progress_clear` | `downloadProgressClear` | — | Clear progress slot |
+| `download_progress_snapshot` | `downloadProgressSnapshot` | `FfiDownloadProgress` | Bytes / phase for **download** channel |
+| `download_progress_clear` | `downloadProgressClear` | — | Clear download channel |
+| `plan_progress_snapshot` | `planProgressSnapshot` | `FfiDownloadProgress` | Plan-only progress (UI plan bar) |
+| `plan_progress_clear` | `planProgressClear` | — | Clear plan channel |
+| `convert_progress_snapshot` | `convertProgressSnapshot` | `FfiDownloadProgress` | Indexed-map convert progress (Tools) |
+| `convert_progress_clear` | `convertProgressClear` | — | Clear convert channel |
+| `foreground_plan_enter` / `foreground_plan_leave` | `foregroundPlanEnter` / `foregroundPlanLeave` | — | Pause background PBF convert / place-index while a UI plan runs |
+| `foreground_plan_active` | `foregroundPlanActive` | `bool` | True while enter is unmatched by leave |
 | `detected_parallelism` | `detectedParallelism` | `u32` | Detected CPU count |
 | `routing_worker_count` | `routingWorkerCount` | `u32` | Rayon workers reserved for routing |
 | `ffi_linkage_smoke_test` | `ffiLinkageSmokeTest` | `String` | Linkage / pool smoke string |
@@ -77,7 +83,8 @@ used by truck / restriction costing (see record in `navi-ffi`).
 | Rust | Purpose |
 |---|---|
 | `ensure_place_index(pbf_path, index_db_path)` | Build or reuse FTS index; report string |
-| `search_places(index_db_path, query, limit)` | → `Vec<PlaceHit>` (`osm_id`, `name`, `kind`, `lat`, `lon`) |
+| `place_index_has_entries(index_db_path)` | True when the SQLite FTS file has at least one searchable row (empty stub → false) |
+| `search_places(index_db_path, query, limit)` | → `Vec<PlaceHit>` (`osm_id`, `name`, `kind`, `lat`, `lon`, `sub_area`, `municipality`) |
 | `nearby_places(index_db_path, lat, lon, radius_m, limit)` | Place hits near a fix (idle current-street interim) |
 | `rasterize_icon_png(key, theme, …)` | PNG bytes for Navit-derived icon key |
 | `rasterize_icon_check(key, theme, …)` | Validation / smoke for icon key |
@@ -116,12 +123,24 @@ How to use map mark + saved places:
 | `last_gps_fix` | Read `FfiGpsFix` (includes optional `speed_kmh`) |
 | `current_speed_kmh` | Live GPS speed from last push, or null |
 | `current_speed_limit_kmh(pbf, cache, elev, profile, max_m)` | Sticky nearest-edge limit at last GPS |
-| `road_near_info(...)` | Sticky label + applicable `speed_limit_kmh` (+ flags) |
+| `road_near_info(...)` | Sticky label + applicable `speed_limit_kmh` (+ flags). Pack-miss bbox builds **skip** (empty result) while a foreground plan owns the PBF — see `foreground_plan_*` |
 | `resolve_speed_limit_kmh(posted?, conditional?, highway?)` | Conditional → posted → highway fallback |
 | `overspeed_delta_kmh(speed?, limit?)` | `speed − limit` when both known (HUD convenience) |
 
 The Android UI primarily drives MapLibre from Kotlin location / simulation; the
 GPS slot is for native consumers and tests.
+
+Bottom-HUD overspeed **chrome** is not UniFFI: Kotlin
+`OverspeedHud.isOverspeed(speedKmh, limitKmh, speedAccuracyKmh?)` requires a
+positive delta above the hybrid margin
+`max(limit × 0.05, speedAccuracyKmh, 3.0 km/h)`
+([`current-street.md`](current-street.md), `OverspeedHud.kt`).
+`overspeed_delta_kmh` is a raw subtraction for tests/HUD helpers; it does
+**not** apply that hybrid floor.
+
+Spoken escalating overspeed (`overPct` tiers, arm/disarm) is **not** a UniFFI
+export — planned HostApi `road_speed_state_read` + `voice_speak` in
+[`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md).
 
 ### 1.6 Approach / avoidance formatting
 
@@ -129,15 +148,36 @@ GPS slot is for native consumers and tests.
 |---|---|
 | `approach_appear_m` / `approach_urgency_m` / `approach_hide_m` | Threshold metres (see `core/src/nav/mod.rs`) |
 | `approach_phase_for_distance(active, distance_m)` | Phase name string |
-| `format_approach_distance(distance_m, prefer_metric)` | HUD distance text |
+| `format_approach_distance(distance_m, prefer_metric)` | UniFFI distance text (metric vs US ft/mi). Android HUD/overlays use Kotlin `DisplayUnits` / `UnitSystem` (adds UK yards/miles). |
 | `highway_class_display_label(highway?)` | Human class label when name/ref missing |
 | `format_current_road_label(name?, ref?, highway?)` | Bottom-HUD current-road string |
 | `road_label_near(pbf, cache_dir, elev_dir, lat, lon, profile, max_m)` | Idle-GPS nearest-edge street label (bbox graph); thin wrapper over `road_near_info` |
-| `road_near_info(...)` | Same sticky snap as `road_label_near`, plus applicable speed limit |
+| `road_near_info(...)` | Same sticky snap as `road_label_near`, plus applicable speed limit. On pack-miss, bbox build skips while a foreground plan is active |
 | `format_avoid_motorways_report` / `format_route_avoidance_report` | Avoidance summary strings |
 
 Product rules: [`approach-instructions.md`](approach-instructions.md),
 [`current-street.md`](current-street.md).
+
+### 1.6b Road signs, children-zone proximity, speed cameras
+
+| Rust | Purpose |
+|---|---|
+| `road_sign_jurisdiction_allows(lat, lon)` | Norway-only gate for `NO:` catalogue warnings |
+| `load_road_signs_json(pbf_path)` | One-time PBF scan → catalogue-matched signs JSON |
+| `nearest_road_sign_warning_json(signs_json, lat, lon)` | Nearest tagged-sign approach warning (`phase`, `distance_m`, `icon_key`, `code`, `label`, …) or `{}` |
+| `load_school_pois_json(pbf_path)` | School / kindergarten / playground POIs for corridor fallback |
+| `schools_near_route_corridor_json(schools_json, sim_samples_json, margin_m)` | Keep POIs within corridor band (app uses 200 m) |
+| `nearest_school_proximity_warning_json(schools_json, lat, lon)` | Children-zone fallback warning (`code` `142`, `source=children_proximity`) or `{}` |
+| `speed_camera_jurisdiction_allows(lat, lon)` | Jurisdiction pack gate |
+| `load_speed_cameras_json(pbf_path)` | Point / average-speed cameras from PBF |
+| `nearest_speed_camera_warning_json(cameras_json, lat, lon, opted_in)` | Camera approach / section warning or `{}` |
+
+Product rules: [`road-signs.md`](road-signs.md), README Features (speed cameras).
+UI chrome: `RoadSignWarningBox`, speed-camera box (same 750 / 150 / 25 m phases
+as maneuvers). Explicit tagged signs **outrank** children-zone proximity in the
+host merge. Cluster export of the merged warning:
+[`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md).
+Audio consumers: [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md).
 
 ### 1.7 OSM updates (opt-in)
 
@@ -196,9 +236,14 @@ Implemented capabilities today (`plugin-host/src/abi.rs`):
 
 Guest wrappers: `plugin-sdk` (`host_log`, `host_position`, `host_poi_query`, …).
 
-**Not implemented yet** (roadmap only — see [`plugins.md`](plugins.md)): track
-upsert, weather, incidents, CAT, ECU read, voice, route_read, i18n, cluster
-publish, etc. Specs under `docs/plugins/`.
+**Not implemented yet** (roadmap only — see [`plugins.md`](plugins.md)
+capability sketch): `track_upsert`, `weather_read`, `incident_*`, `cat_vfo_set`,
+`ecu_read`, `voice_speak` / `voice_pack_query`, `route_read`, `nav_guidance_read`,
+`vehicle_signal_publish`, i18n, `warning_event_subscribe`, `alert_sound_play` /
+`alert_sound_catalog`, `road_speed_state_read` (speed + applicable limit + HUD
+overspeed flag for
+[`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md)),
+etc. Specs under `docs/plugins/`.
 
 Guests must not open raw network or WASI filesystem; pack downloads are
 host/Tools actions.
@@ -209,8 +254,10 @@ host/Tools actions.
 
 | Surface | Location | Notes |
 |---|---|---|
-| Map HUD prefs (auto-zoom, tilt, 3D, metric) | `MapHudPrefs.kt` SharedPreferences | See [`codebase-map.md`](codebase-map.md) |
+| Map HUD prefs (auto-zoom, tilt, 3D, unit system) | `MapHudPrefs.kt` SharedPreferences | See [`codebase-map.md`](codebase-map.md) |
 | Compose HUD layout | `DriveHud.kt`, [`hud-layout.md`](hud-layout.md) | UI only |
+| Overspeed chrome | `OverspeedHud.isOverspeed` in `OverspeedHud.kt` | Display-only; not an alert engine ([`current-street.md`](current-street.md)) |
+| Adaptive speed warning | Spec only | [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) |
 | MapLibre camera / style | `MainActivity.kt`, `BasemapStyleResolver.kt` | Host rendering |
 | Live ECU polling | `core/src/ecu` types only | [`ECU.md`](ECU.md) — no UniFFI poll yet |
 | Voice guidance | Spec only | [`voice-guidance.md`](voice-guidance.md) |
@@ -224,6 +271,10 @@ host/Tools actions.
 |---|---|
 | [`PROTOCOLS.md`](PROTOCOLS.md) | UniFFI + plugins + ECU/APRS/CAT wire notes |
 | [`plugins.md`](plugins.md) | Host status, capability sketch, design rules |
+| [`current-street.md`](current-street.md) | HUD street label, speed/limit, overspeed chrome |
+| [`road-signs.md`](road-signs.md) | Road-sign catalogue, children-zone proximity, approach phases |
+| [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Cluster export of guidance + merged warnings |
+| [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) | Planned spoken overspeed (`overPct`, `road_speed_state_read`) |
 | [`ECU.md`](ECU.md) | OBD-II / J1939 / MegaSquirt / EV |
 | [`CAT.md`](CAT.md) | Repeater / VFO auto-tune (planned) |
 | [`mathematical-formulas.md`](mathematical-formulas.md) | Eco / fuel formulas behind costing |

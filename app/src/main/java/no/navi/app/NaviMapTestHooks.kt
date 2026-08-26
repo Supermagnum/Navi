@@ -138,6 +138,10 @@ object NaviMapTestHooks {
     @Volatile
     var lastMissingCoveragePath: String = ""
 
+    /** Last missing-coverage dialog body (instrumented tests). */
+    @Volatile
+    var lastMissingCoverageMessage: String = ""
+
     /** Whether the missing-coverage download dialog is visible. */
     @Volatile
     var missingCoveragePromptVisible: Boolean = false
@@ -278,6 +282,10 @@ object NaviMapTestHooks {
     @Volatile
     var lastManeuversJson: String = "[]"
 
+    /** Last planned simulation samples JSON (street labels along the corridor). */
+    @Volatile
+    var lastSimSamplesJson: String = "[]"
+
     /** Full overlay polyline from the last planned / injected route. */
     @Volatile
     var lastRoutePolyline: String = ""
@@ -293,6 +301,14 @@ object NaviMapTestHooks {
 
     @Volatile
     var lastSearchHitNames: List<String> = emptyList()
+
+    /** Non-empty when place search showed the building-index hint. */
+    @Volatile
+    var lastSearchIndexBuildingHint: String = ""
+
+    /** Immediate coord label from the last Use GPS tap (before roadLabelNear). */
+    @Volatile
+    var lastGpsImmediateCoord: String = ""
 
     /** When true, MainActivity clears the search query field (test helper). */
     @Volatile
@@ -589,9 +605,24 @@ object NaviMapTestHooks {
     @Volatile
     var lastGpsSpeedKmh: Double? = null
 
+    /** Last LocationManager provider that fed applyFix (gps/network/passive/sim). */
+    @Volatile
+    var lastGpsProvider: String = ""
+
     /** Last resolved applicable speed limit (km/h). */
     @Volatile
     var lastCurrentSpeedLimitKmh: Double? = null
+
+    /** Last bottom-HUD overspeed chrome flag (mirrored from MainActivity). */
+    @Volatile
+    var lastOverspeed: Boolean = false
+
+    /**
+     * Optional speed (km/h) for the next [pendingInjectFixLatLon] inject.
+     * Cleared after one shot.
+     */
+    @Volatile
+    var pendingInjectFixSpeedKmh: Double? = null
 
     /**
      * When set, MainActivity applies this as [DriveHudState.currentStreet] once
@@ -618,4 +649,63 @@ object NaviMapTestHooks {
     /** Approach box icon key stem last applied (e.g. nav_right_1). */
     @Volatile
     var lastApproachIconKey: String? = null
+
+    /** Last road-sign approach warning JSON from live/sim position (or `{}`). */
+    @Volatile
+    var lastRoadSignWarningJson: String = "{}"
+
+    /** Last school-proximity fallback warning JSON from live/sim position (or `{}`). */
+    @Volatile
+    var lastSchoolProximityWarningJson: String = "{}"
+
+    /** Number of school POIs inside the current planned route corridor (200 m band). */
+    @Volatile
+    var lastRouteSchoolPoiCount: Int = 0
+
+    /** Length of the in-memory school POI list after PBF load (`-1` = not loaded). */
+    @Volatile
+    var lastSchoolPoisIndexed: Int = -1
+
+    /** Length of the in-memory road-sign index after PBF load (`-1` = not loaded). */
+    @Volatile
+    var lastRoadSignsIndexed: Int = -1
+
+    /**
+     * When true (default), route-independent 300 m heading cone is used whenever there
+     * is no planned route. Set false for overhead A/B (feature-off baseline).
+     */
+    @Volatile
+    var liveHazardConeEnabled: Boolean = true
+
+    /** Compact live-hazard load stats from [ensureLiveHazardsLoaded] (`-1` = not loaded). */
+    @Volatile
+    var lastLiveHazardSigns: Int = -1
+
+    @Volatile
+    var lastLiveHazardChildren: Int = -1
+
+    @Volatile
+    var lastLiveHazardCameras: Int = -1
+
+    @Volatile
+    var lastLiveHazardBumps: Int = -1
+
+    @Volatile
+    var lastLiveHazardCompactUtf8: Long = -1
+
+    @Volatile
+    var lastLiveHazardConeM: Double = Double.NaN
+
+    /**
+     * One-shot: start route simulation along [liveConeSimCoordsJson] without a planned
+     * route (progress tracker cleared). Coords JSON: `[[lat,lon],…]`.
+     */
+    @Volatile
+    var requestStartLiveConeSimulation: Boolean = false
+
+    @Volatile
+    var liveConeSimCoordsJson: String? = null
+
+    @Volatile
+    var liveConeSimSpeedKmh: Double = 40.0
 }

@@ -16,7 +16,7 @@ Both drive bars are **collapsed by default**.
 | Bar | Collapsed content | Tap |
 |---|---|---|
 | Top (`TopDriveHud`) | Map label, altitude, rotation hint | Toggles `MapSettingsSheet` (rotation, Trip ETA, Breaks, Auto-zoom, experimental 3D) |
-| Bottom (`BottomDriveHud`) | Zoom −/+, **Recenter** (when the user has panned away from GPS follow), **current street** (`Currently on …`, low weight), trip ETA, eco leaf; **break countdown (time or distance) only when a route is planned** | Status area toggles `DriveSettingsSheet` (rest / fuel / eco / break display mode) |
+| Bottom (`BottomDriveHud`) | Zoom −/+, **Recenter** (when the user has panned away from GPS follow), **current street** (`Currently on …`, low weight), **speed / limit** (`hud_current_speed`; error colour when `OverspeedHud.isOverspeed`), trip ETA, eco leaf; **break countdown (time or distance) only when a route is planned** | Status area toggles `DriveSettingsSheet` (rest / fuel / eco / break display mode) |
 
 Altitude: when a DEM tile covers the fix, the HUD shows terrain height from
 on-disk Copernicus/SRTM (~MSL), not `Location.altitude` (AVD/network providers
@@ -49,6 +49,9 @@ adb logcat -s NaviRouting:I
 
 Lines include `planning_progress pct=… eco=…`, then after 100%
 `planning_done duration_ms=…` and `planning_pois count=… names=…`.
+The on-screen plan bar reads **plan** progress only (`planProgressSnapshot`);
+indexed-map convert and speed-limit cone use separate native channels so they
+do not move the plan percent.
 
 **Zoom:** the app owns **one** zoom −/+ set on the bottom bar. AAOS system chrome
 often shows separate climate − N + controls; those are not map zoom.

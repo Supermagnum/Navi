@@ -12,11 +12,13 @@ use pmtiles::{AsyncBackend, TileCoord, TileId};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::download::progress as download_progress;
 use crate::download::{timeout_for_bytes, DownloadControl};
-use crate::routing::basemap::http_backend::Reqwest012Backend;
+use crate::routing::basemap::http_backend::{Reqwest012Backend, RANGE_WRITE_PROGRESS_INTERVAL};
 use crate::routing::workers::WorkerPoolPlan;
 use crate::storage::{PmtilesJobStatus, PmtilesJobStore, Storage};
 use uuid::Uuid;
@@ -27,6 +29,84 @@ pub const DEFAULT_OVERFETCH: f32 = 0.05;
 /// Cap coalesced HTTP GETs so a single request fits realistic mobile Wi‑Fi + timeout.
 pub const MAX_HTTP_CHUNK_BYTES: u64 = 8 * 1024 * 1024;
 const CHUNK_RETRIES: u32 = 3;
+
+/// Tracks completed chunk bytes plus in-flight partial bytes for concurrent Range GETs.
+#[derive(Clone)]
+struct CoalesceDownloadProgress {
+    completed_bytes: Arc<AtomicU64>,
+    inflight: Arc<Mutex<HashMap<u64, u64>>>,
+    total_bytes: u64,
+    label: Arc<str>,
+    last_reported: Arc<AtomicU64>,
+    store: Option<(Storage, Uuid)>,
+}
+
+impl CoalesceDownloadProgress {
+    fn new(
+        initial_completed: u64,
+        total_bytes: u64,
+        label: &str,
+        store: Option<(Storage, Uuid)>,
+    ) -> Self {
+        Self {
+            completed_bytes: Arc::new(AtomicU64::new(initial_completed)),
+            inflight: Arc::new(Mutex::new(HashMap::new())),
+            total_bytes,
+            label: Arc::from(label),
+            last_reported: Arc::new(AtomicU64::new(initial_completed)),
+            store,
+        }
+    }
+
+    fn set_chunk_partial(&self, chunk_key: u64, partial: u64) {
+        if let Ok(mut map) = self.inflight.lock() {
+            map.insert(chunk_key, partial);
+        }
+        self.report_if_due(true);
+    }
+
+    fn finish_chunk(&self, chunk_key: u64, len: u64) {
+        if let Ok(mut map) = self.inflight.lock() {
+            map.remove(&chunk_key);
+        }
+        self.completed_bytes.fetch_add(len, Ordering::Relaxed);
+        self.report_if_due(true);
+    }
+
+    fn abandon_chunk(&self, chunk_key: u64) {
+        if let Ok(mut map) = self.inflight.lock() {
+            map.remove(&chunk_key);
+        }
+    }
+
+    fn current_bytes(&self) -> u64 {
+        let completed = self.completed_bytes.load(Ordering::Relaxed);
+        let inflight = self
+            .inflight
+            .lock()
+            .map(|m| m.values().copied().sum::<u64>())
+            .unwrap_or(0);
+        completed.saturating_add(inflight)
+    }
+
+    fn report_if_due(&self, force: bool) {
+        let current = self.current_bytes().min(self.total_bytes);
+        let last = self.last_reported.load(Ordering::Relaxed);
+        if !force && current.saturating_sub(last) < RANGE_WRITE_PROGRESS_INTERVAL {
+            return;
+        }
+        self.last_reported.store(current, Ordering::Relaxed);
+        download_progress::set(current, Some(self.total_bytes), &self.label);
+        if let Some((ref storage, job_id)) = self.store {
+            let _ =
+                PmtilesJobStore::new(storage).set_progress(job_id, current, Some(self.total_bytes));
+        }
+    }
+
+    fn force_report(&self) {
+        self.report_if_due(true);
+    }
+}
 
 /// Concurrent download workers sized from [`WorkerPoolPlan`] and planned transfer size.
 pub fn pmtiles_download_workers_for_bytes(planned_download_bytes: u64) -> usize {
@@ -311,16 +391,18 @@ pub async fn fetch_tiles_coalesced(
         }
         pending.push(chunk);
     }
-    let mut bytes_done: u64 = completed.iter().map(|c| c.length).sum();
-    if bytes_done > 0 {
-        download_progress::set(bytes_done, Some(total_bytes), progress_label);
-        if let Some((storage, job_id)) = store {
-            let _ =
-                PmtilesJobStore::new(storage).set_progress(job_id, bytes_done, Some(total_bytes));
-        }
+    let initial_bytes: u64 = completed.iter().map(|c| c.length).sum();
+    let progress = CoalesceDownloadProgress::new(
+        initial_bytes,
+        total_bytes,
+        progress_label,
+        store.map(|(s, id)| (s.clone(), id)),
+    );
+    if initial_bytes > 0 {
+        progress.force_report();
         log::info!(
             target: "NaviDownload",
-            "[NaviDownload] pmtiles coalesce resume chunks_ready={} bytes_already={bytes_done}/{total_bytes}",
+            "[NaviDownload] pmtiles coalesce resume chunks_ready={} bytes_already={initial_bytes}/{total_bytes}",
             completed.len()
         );
     }
@@ -331,7 +413,10 @@ pub async fn fetch_tiles_coalesced(
     let spawn_one = |chunk: OverfetchRange| {
         let backend = backend.clone();
         let staging_dir = staging_dir.to_path_buf();
-        async move { download_chunk_with_retry(&backend, data_offset, chunk, &staging_dir).await }
+        let progress = progress.clone();
+        async move {
+            download_chunk_with_retry(&backend, data_offset, chunk, &staging_dir, &progress).await
+        }
     };
 
     async fn honour_pause(
@@ -373,21 +458,10 @@ pub async fn fetch_tiles_coalesced(
     while let Some(res) = in_flight.next().await {
         let disk = res?;
         completed.push(disk);
-        bytes_done = completed.iter().map(|c| c.length).sum();
+        let bytes_done = progress.current_bytes();
         let chunks_done = completed.len();
 
-        download_progress::set(
-            bytes_done.min(total_bytes),
-            Some(total_bytes),
-            progress_label,
-        );
-        if let Some((storage, job_id)) = store {
-            let _ = PmtilesJobStore::new(storage).set_progress(
-                job_id,
-                bytes_done.min(total_bytes),
-                Some(total_bytes),
-            );
-        }
+        progress.force_report();
         if chunks_done == total_chunks || chunks_done % workers.max(1) == 0 {
             log::info!(
                 target: "NaviDownload",
@@ -441,22 +515,35 @@ async fn download_chunk_with_retry(
     data_offset: u64,
     chunk: OverfetchRange,
     staging_dir: &Path,
+    progress: &CoalesceDownloadProgress,
 ) -> anyhow::Result<ChunkOnDisk> {
     let path = chunk_path(staging_dir, chunk.src_offset, chunk.length);
     let abs = data_offset + chunk.src_offset;
     let timeout = timeout_for_chunk_bytes(chunk.length);
+    let chunk_key = chunk.src_offset;
     let mut last_err = None;
     for attempt in 1..=CHUNK_RETRIES {
+        progress.abandon_chunk(chunk_key);
         // Drop incomplete sibling before retry.
         let mut partial = path.as_os_str().to_owned();
         partial.push(".partial");
         let _ = std::fs::remove_file(std::path::Path::new(&partial));
 
+        let mut on_partial = |partial_written: u64| {
+            progress.set_chunk_partial(chunk_key, partial_written);
+        };
         match backend
-            .read_range_to_path(abs as usize, chunk.length as usize, &path, timeout)
+            .read_range_to_path(
+                abs as usize,
+                chunk.length as usize,
+                &path,
+                timeout,
+                Some(&mut on_partial),
+            )
             .await
         {
             Ok(_) => {
+                progress.finish_chunk(chunk_key, chunk.length);
                 if attempt > 1 {
                     log::info!(
                         target: "NaviDownload",
@@ -474,6 +561,7 @@ async fn download_chunk_with_retry(
                 });
             }
             Err(e) => {
+                progress.abandon_chunk(chunk_key);
                 log::warn!(
                     target: "NaviDownload",
                     "[NaviDownload] pmtiles chunk failed attempt={attempt}/{CHUNK_RETRIES} \
@@ -827,5 +915,18 @@ mod tests {
         assert_eq!(merged[0].length, 100);
         assert_eq!(merged[1].length, 1000);
         assert_eq!(merged[2].length, 5000);
+    }
+
+    #[test]
+    fn coalesce_progress_counts_inflight_and_completed() {
+        let progress = CoalesceDownloadProgress::new(1_000, 10_000, "test", None);
+        progress.set_chunk_partial(42, 512 * 1024);
+        assert_eq!(progress.current_bytes(), 1_000 + 512 * 1024);
+        progress.finish_chunk(42, 2 * 1024 * 1024);
+        assert_eq!(progress.current_bytes(), 1_000 + 2 * 1024 * 1024);
+        progress.abandon_chunk(99);
+        progress.set_chunk_partial(99, 256 * 1024);
+        progress.abandon_chunk(99);
+        assert_eq!(progress.current_bytes(), 1_000 + 2 * 1024 * 1024);
     }
 }

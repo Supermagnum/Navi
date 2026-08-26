@@ -9,7 +9,7 @@ ideas into working code and docs. The author still chose the product rules,
 reviewed the work, and ran the testing.
 It is written in rust,so as many as standard crates are used. The AI assistant has written minimum of code to "tie" them together.
 The crates used in the project is listed here:
-https://github.com/Supermagnum/Navi/blob/main/docs/crates.md
+https://github.com/Supermagnum/Navi/blob/dev/docs/crates.md
 
 
 # Testers wanted
@@ -19,7 +19,25 @@ phones. Reference checks so far: Samsung Galaxy Tab S6 Lite (**SM-P613**) and
 Google Pixel 9a (**tegu**, phone cutout / API 36+). Cars and other shapes still
 differ for GPS, maps, GPU, and layout. Checklist:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
-How to help: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
+On-device and emulator results:
+[`docs/android-test-results.md`](docs/android-test-results.md).
+
+**Translators wanted.** UI language packs are specified but not shipped
+(English-only chrome today). Fill or review the working table and follow the
+spec: [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md)
+(catalog: [`docs/plugins/translations.csv`](docs/plugins/translations.csv);
+word/phrase context:
+[`docs/plugins/translations-context.md`](docs/plugins/translations-context.md)).
+The English column header lists countries/regions; dialect columns use
+`country, - area, - dialect` (see the spec). Do not add a language toggle
+until that plugin exists.
+
+**How to help:** testers, docs, translations, and code all start in
+[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md). That page is the contribution
+guide: how to **fork the repo and work on `dev`** (not `main`), basic GitHub
+usage (clone your fork, sync with upstream, open a pull request against
+`dev`), and which kinds of help are useful. Hardware testers can follow the
+checklist above and file an issue; you do not need to write code.
 
 ## Table of contents
 
@@ -28,6 +46,7 @@ How to help: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
 3. [Features](#features)
    - [What you need to download](#what-you-need-to-download)
    - [Indexing (background after download)](#indexing-background-after-download)
+   - [Leaving a downloaded region](#leaving-a-downloaded-region)
    - [How to use](#how-to-use)
    - [How features work](#how-features-work)
 4. [Settings](#settings)
@@ -37,16 +56,19 @@ How to help: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md).
 8. [Screenshots](#screenshots)
 9. [Documents](#documents)
 10. [Plugins](#plugins)
+    - [Icons (where they live)](#icons-where-they-live)
 11. [Coding standards and contributing](#coding-standards-and-contributing)
 12. [Building and installing](#building-and-installing)
+    - [Install a prebuilt APK](#install-a-prebuilt-apk)
     - [Release build (APK / AAB)](#release-build-apk--aab)
 13. [Where the map data comes from](#where-the-map-data-comes-from)
 14. [Known issues](#known-issues)
 15. [TODO](#todo)
 
 More detail lives in linked docs (architecture, truck rest rules, map styles,
-debugging, and so on). Start with [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) if you
-want to help.
+debugging, and so on). To contribute, start with
+[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md): fork from **`dev`**, GitHub
+basics, and what to work on.
 
 # What this is
 
@@ -56,6 +78,7 @@ plan routes on the device without needing the internet for every trip.
 It can:
 
 - Plan routes for car, bicycle, e-bike, hiking, motorcycle, truck, and motorhome
+- For bicycle / e-bike, pick **Road / Gravel / MTB** so unsuitable tracks are skipped
 - Prefer gentler / less energy-hungry roads when **eco mode** is on (hills matter)
 - Suggest rest stops and overnight places along longer trips
 - Respect truck driving-time rules where it knows the country rules
@@ -91,28 +114,38 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **E-bike specs** | Battery size, motor torque, and wheel size help estimate battery use and steep climbs. Live cable telemetry is planned later. | Done (planning); live data later |
 | **Avoidances** | You can ask to avoid motorways (not trunk/primary), tolls, or ferries. | Done |
 | **Official trails** | For hiking/cycling, optionally prefer marked long-distance trails (off by default). Normal paths still work if the marked trail has a gap. | Done |
+| **Bike surface suitability** | Bicycle / e-bike Drive setting: **Road / Gravel / MTB**. Unsuitable OSM surfaces and tracks are hard-excluded after the graph loads (does not rebuild packs). Default is Gravel (trekking). | Done |
+| **Basemap POI icons** | Offline Protomaps amenity icons (fuel, hospital, alcohol shops, cycle/repair, and the rest of the allow-list) use dedicated sprites, not a generic dot. Kind list: [`docs/poi-icon-whitelist.md`](docs/poi-icon-whitelist.md). | Done |
+| **Peak heights** | Named mountain peaks show OSM elevation on the label (metres, or feet in the US unit profile — UK stays metres, same as HUD altitude). | Done |
+| **Glacier outlines** | Ice polygons get a teal dashed outline so they stay visible against pale fill (same dash as nature reserves, different colour). | Done |
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. A small leaf icon shows when eco is on. | Done |
 | **Offline planning** | Download a region once, then plan and see the route on the device. | Done |
-| **Indexing** | After a region download, a background job turns the OSM extract into compact routing packs so later plans are fast. You can plan while it runs. | Done |
-| **Place search** | Search places and set From / Via / To. | Done |
-| **Use GPS** | Fill From / Via / To from the live fix (nearby name within ~12 m, else coordinates). The field is the chip active when you tap — not whichever chip is selected after resolution finishes. | Done |
+| **Indexing** | After a region download, a background job turns the OSM extract into compact routing packs so later plans are fast. You can plan while it runs; convert and place-index **pause** during a foreground plan so the PBF fallback is not starved. | Done |
+| **Place search** | Search places and set From / Via / To. While the place index is still empty/building, search shows a building hint (coordinates and map tap still work). | Done |
+| **Use GPS** | Fill From / Via / To from the live fix: coordinates appear immediately, then an optional nearby road-name upgrade. The field is the chip active when you tap — not whichever chip is selected after resolution finishes. | Done |
 | **Map mark & saved places** | Hold on the map ~4 s to mark a point; set From / Via / To or save a named place (separate from Saved routes). | Done |
 | **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position (resolved start label); hiking prompts first. | Done |
-| **Breaks & rest** | Reminds you when a break is due and can suggest stops. Cars use hours between breaks; hiking/cycling use rest distances; trucks use legal driving-time rules where known. | Done |
-| **Drive bars** | Top: altitude (cutout-aware padding). Bottom: zoom, live GPS speed, posted limit when known, break timer, trip ETA, current street, eco leaf. | Done |
+| **Breaks & rest** | Reminds you when a break is due and can suggest stops. Cars use hours between breaks; hiking/cycling use rest distances; trucks use legal driving-time rules where known. What is searched and used as pause POIs: [`docs/poi.md`](docs/poi.md). | Done |
+| **Drive bars** | Top: altitude (cutout-aware padding; metres, or feet in the US unit profile). Bottom: zoom, live GPS speed, posted limit when known, break timer, trip ETA, current street, eco leaf. Speed and distance follow **Display units**. Speed line turns the error colour when GPS speed is over the applicable limit (display only — not a spoken nag). | Done |
+| **Display units** | Drive settings: **Metric** (km, km/h), **US** (ft / mi, mph, altitude ft), or **UK** (yd then mi, mph, altitude m). First install infers once from SIM/network country (GB → UK, US/LR/MM → US, else metric; emulators stay metric). The chips always override; the choice is never re-inferred on travel. Internal values stay metric. | Done |
 | **GPS follow** | Map follows you by default. Pan away, then tap **Recenter**. | Done |
 | **Map rotation** | North-up, compass, or direction of travel. | Done |
 | **Moving icons** | Can draw nearby tracked markers on the map. A live radio feed is not built in yet. | Partial |
 | **Seasonal road closures** | OSM `motor_vehicle:conditional` / `access:conditional` hard-filtered against the planned departure time (Car/Truck honour it; Hiking/Bicycle do not). Verified on Friisvegen (way `361797686`) on both bbox/PBF fallback and pack-hit (graph pack **v3**). Purely OSM-tag-driven — no jurisdiction pack. **v1 limitation:** multi-day trips that cross a season boundary are evaluated only at the planned departure instant (not re-evaluated day-by-day along the trip). | Done |
-| **Speed camera warnings** | Point cameras use the existing approach distance-phase UX; average-speed / section-control zones use a distinct enter/exit box. `maxspeed:conditional` is evaluated against live local time. Jurisdiction-gated like EC561 / allemannsretten: Norway/UK opt-in (OSM-sourced, may be incomplete); Germany/France/Switzerland and unknown jurisdictions decline — see [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). First-run opt-in dialog required (not silently enabled). | Done (display/warning only — no route-avoidance toggle, by deliberate product decision) |
-| **Map updates** | Only when you ask — check for OpenStreetMap updates or download a fresh region. Never silent. | Done |
-| **Diagnostic logging** | Tools toggle writes a session log (GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system) you can copy over USB/MTP — no adb required. Files: **Internal storage → Documents → debug** (`navi_session_*.log`). | Done |
+| **Norwegian road-sign warnings** | Vendored `NO:` catalogue approach icons in Norway; explicit OSM `traffic_sign` / `hazard` tags. Same 750 / 150 / 25 m approach phases as maneuvers. See [`docs/road-signs.md`](docs/road-signs.md). | Done |
+| **Look forward** | Without a planned route, GPS position + heading look ahead **300 m** (±60°) for catalogue road signs, speed humps (`NO:109`), children facilities (generic **142**), opted-in speed cameras, and an upcoming posted speed-limit plate from the existing road-label cell graph — same approach box (750 / 150 / 25 m) and jurisdiction gates as the route-corridor path. Dedicated 362 plates cover every-5 km/h values including 12 generated plates; odd OSM speeds still snap to the nearest shipped plate. Compact points load once per region. Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
+| **Children facilities nearby** | When no tagged children / school sign is active, schools, kindergartens, and playgrounds still trigger a generic **142 Children** approach warning (nearest facility wins; tagged `NO:142` outranks this fallback). **With a planned route:** facilities within **200 m** of the corridor. **Without a route:** covered by **Look forward** (300 m cone). Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
+| **Speed camera warnings** | Point cameras use the existing approach distance-phase UX; average-speed / section-control zones use a distinct enter/exit box. `maxspeed:conditional` is evaluated against live local time. Jurisdiction-gated like EC561 / allemannsretten: Norway/UK opt-in (OSM-sourced, may be incomplete); Germany/France/Switzerland and unknown jurisdictions decline — see [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). First-run opt-in dialog required (not silently enabled). Works on both planned-route corridor and **Look forward**. | Done (display/warning only — no route-avoidance toggle, by deliberate product decision) |
+| **Map updates** | Only when you ask — check for OpenStreetMap updates or download a fresh region. Never silent. On-screen copy is plain language (no internal planner dumps). | Done |
+| **Cross-region / cross-country prompts** | Destinations outside downloaded data (including another country, e.g. Sweden) show **Map data needed** with the correct Geofabrik extract — not a silent partial route. Evidence: [`android-test-results.md` Item 10](docs/android-test-results.md#item-10--osm-update-copy-cross-region-prompts-expanded-catalog-2026-08-19). | Done |
+| **Diagnostic logging** | **Tools → Diagnostic logging** (off by default). When on, writes a dated session log under **Internal storage → Documents → debug** (`navi_session_*.log`) for copy over USB/MTP — no adb required. Covers GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system. Not uploaded. **Export diagnostic log** shares the latest file. Detail: [Settings → Tools](#tools-downloads-and-diagnostic-logging) and [`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file). | Done |
 | **Plugins** | A safe sandbox for future add-ons exists; product plugins are not shipped yet. | Host ready |
 
 **Hardware note:** Real-device checks include Samsung Galaxy Tab S6 Lite
 (**SM-P613**) and Google Pixel 9a. Car head units still need more real-world
-testing before treating this as ship-ready. See [Screenshots](#screenshots) and
-[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
+testing before treating this as ship-ready. See [Screenshots](#screenshots),
+[`docs/real-hardware-testing.md`](docs/real-hardware-testing.md), and
+[`docs/android-test-results.md`](docs/android-test-results.md).
 
 ## What you need to download
 
@@ -138,6 +171,16 @@ plans are fast — see [Indexing (background after download)](#indexing-backgrou
 
 ## Indexing (background after download)
 
+**Be patient — this takes time.** After you **download a new region** or **update
+map data from the internet** (for example **Check for OSM updates** or a fresh
+region download), Navi must build two things from the OpenStreetMap extract:
+the **place index** (search names for From / Via / To) and, in the background,
+the **indexed routing packs**. Both scan the full region file and can run for
+many minutes on a large extract (Østlandet on a tablet is often on the order of
+tens of minutes, sometimes longer). That is expected; leave the app open or
+return to it later. You can still plan routes while work continues — planning
+is just slower until indexing finishes.
+
 When **Download region + build place index** has saved the OpenStreetMap
 extract, Navi starts a **background indexing** job. That is not the map picture
 on screen (basemap tiles) and not the raw `.osm.pbf` file itself — it is a
@@ -149,6 +192,14 @@ indexing is done, planning uses the slower raw `.osm.pbf` path. Tools shows
 progress as **Indexed maps (background)**; when it says **Indexed maps: ready
 (pack-hit)**, the next plan uses the packs — typically about 1.5–2 seconds on
 the reference tablet instead of tens of seconds.
+
+While a **Plan route** (or auto-reroute) is running on that PBF fallback,
+background convert and place-index **yield** so they do not contend for the
+same extract. GPS-triggered speed-limit cone / road-near bbox builds **skip**
+for that window (one missed HUD update) and resume on the next fix after the
+plan finishes. Plan progress uses its own channel so convert/cone labels do
+not move the plan bar. The UI may also remind you that planning is faster once
+background indexing finishes.
 
 What the background job writes:
 
@@ -167,11 +218,50 @@ maps (local PBF, background)** — no re-download. More detail:
 [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md). Memory
 margin on lower-end 4 GB devices during conversion: [Known issues](#known-issues).
 
+## Leaving a downloaded region
+
+A region download (OSM extract + indexed packs) and the offline basemap only
+cover that extract’s area. Navi does **not** silently invent roads or tiles
+outside it.
+
+**Planning a trip that leaves your data.** Before **Plan route**, From / Via /
+To are checked against the bounding boxes of downloaded Geofabrik extracts.
+
+- If any waypoint is outside every downloaded area, planning is **blocked**
+  (no partial or guessed route).
+- A **Map data needed** dialog offers a suggested download (for example
+  Vestlandet or Nord-Norge). You can download from there, or dismiss and pick
+  another destination.
+- If From and To need **different** landsdels (or similar splits), the prompt
+  prefers a **country** extract (e.g. Norway). The planner uses a **single**
+  region file and does not stitch two extracts into one trip.
+- Cross-border destinations (e.g. Sweden) get a **country-specific** suggestion
+  when the waypoint lies in another catalog entry — see
+  [`android-test-results.md` Item 10](docs/android-test-results.md#item-10--osm-update-copy-cross-region-prompts-expanded-catalog-2026-08-19).
+
+**Already navigating.** There is no continuous “you left the map” fence while
+you drive.
+
+- **Basemap:** tiles stop where the downloaded Protomaps region ends (or you
+  fall back to online Liberty if the network is available).
+- **Guidance:** keeps following the route you already planned while you stay
+  on it.
+- **Off-route recalculation:** uses the local region extract again. Outside
+  that extract, snap / pathfinding can fail; you do **not** get the planning
+  download dialog on auto-reroute. Download the covering region in Tools
+  before you need to replan there.
+
+Indexed packs match the extract they were built from. Leaving that area means
+no offline graph for new plans — not a soft fade-out.
+
 ## How to use
 
 Step-by-step end-user guide (planning, Tools, breaks, saved places/routes,
 per-mode options, pilgrim coverage):
 **[How to use Navi](docs/how-to-use.md)**.
+
+A worked example of a multi-region road trip (OSM cider producers, south to
+north): [`docs/cider-route.md`](docs/cider-route.md).
 
 ## How features work
 
@@ -184,8 +274,11 @@ and will not follow foot trails properly.
 **Eco vs shortest.** Shortest ignores hills. Eco makes steep climbs “cost” more.
 Electric modes get some credit for downhill recovery.
 
-**Official networks.** Optional soft preference for marked hiking/cycle routes.
-Ordinary paths remain available so a gap never traps you.
+**Official networks.** Optional soft preference for marked hiking/cycle routes
+(**Follow official hiking/cycling networks**). Ordinary paths remain available
+so a gap never traps you. Separate toggles control **networked cabins** as
+waypoints and whether you are a **network hut member** for overnight planning
+(see [Drive / vehicle](#drive--vehicle-tap-bottom-status)).
 
 **Places.** Search fills From / Via / To. What counts as a hut, rest area, and so
 on is documented in [`docs/poi.md`](docs/poi.md).
@@ -201,20 +294,51 @@ split into days with legal rest rules (EU or US packs where known). Long
 car/bike/hiking trips can suggest overnight stops. Hiking overnight sites are
 filtered away from buildings and glaciers (1 km to the glacier **polygon edge**);
 rejected pins show a clear reason (for example `Excluded: within 1 km of a
-glacier`). The bottom-bar **Breaks** toggle only shows or hides the reminder —
-it does not invent a new rest law.
+glacier`). With **Network hut member** off (default), overnight prefers
+non-network cabins; a DNT/STF-style network hut is only a last resort and is
+labelled as membership-required. Membership does **not** grant entry — it only
+changes overnight preference. The bottom-bar **Breaks** toggle only shows or
+hides the reminder — it does not invent a new rest law.
 
 **Map bars.** Tap the top bar for map/display settings. Tap the bottom status
 area for drive/vehicle settings (mode, break interval, fuel, e-bike, and so on).
+The bottom bar also shows **live GPS speed / posted limit** when a fix
+and an applicable limit are known (km/h or mph per **Display units**); overspeed is a colour change only today
+([`docs/current-street.md`](docs/current-street.md)). Spoken escalating
+warnings are a **plugin spec**, not shipped:
+[`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md).
+
+**Children facilities nearby.** If OSM has no tagged children / school warning
+sign, Navi still warns when a school, kindergarten, or playground is nearby —
+generic sign **142**, same approach box timing as other road-sign warnings.
+Along a **planned route** that means within **200 m** of the corridor; on a
+**live drive without a route**, **Look forward** covers them inside the
+**300 m** heading cone. An explicit tagged `NO:142` (or equivalent) wins over
+this fallback. See [`docs/road-signs.md`](docs/road-signs.md).
+
+**Look forward.** Without a planned route, GPS position + heading look ahead
+**300 m** (±60°) and drive the same approach chrome for catalogue signs, speed
+humps, children zones, opted-in cameras, and an upcoming posted speed-limit
+plate from the existing road-label cell graph. Compact point sets load once per
+region (not re-parsed every GPS tick). Detail:
+[`docs/road-signs.md`](docs/road-signs.md),
+[`docs/route-simulation.md`](docs/route-simulation.md).
 
 # Settings
 
 **Language:** the app chrome is **English only** today. There is no language
-menu yet. Docs may exist in Norwegian (`docs/Norwegian.md`); that is documentation,
-not an in-app language pack. A future translation plugin is described in
+menu yet, and Navi does **not** pick UI language from GPS or SIM country (that
+would override the language already set on the phone). Docs may exist in
+Norwegian (`docs/Norwegian.md`); that is documentation, not an in-app language
+pack. A future translation plugin (selectable packs, **fallback to English**
+when a key is missing) is described in
 [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
 A working CSV for translators lives next to that spec:
 [`docs/plugins/translations.csv`](docs/plugins/translations.csv).
+Sense notes for words and phrases:
+[`docs/plugins/translations-context.md`](docs/plugins/translations-context.md).
+English source strings list countries/regions in the column header; dialect
+headers use `country, - area, - dialect` (documented in the i18n spec).
 
 Settings are saved on the device (rest/fuel/vehicle in a small database; map
 display choices in app preferences).
@@ -236,17 +360,49 @@ display choices in app preferences).
 | Setting | Plain meaning |
 |---|---|
 | **Travel mode** | Car, bike, hiking, truck, … |
+| **Bike type** | Bicycle / e-bike: **Road / Gravel / MTB** surface capability (hard-excludes unsuitable tracks) |
+| **Follow official hiking/cycling networks** | Hiking / bicycle / e-bike: soft preference for waymarked networks (ordinary paths still usable) |
+| **Use networked cabins** | Hiking / bicycle / e-bike: allow DNT/STF-style **network** huts as auto-via / waypoint candidates (off by default). Does **not** change overnight membership rules |
+| **Network hut member (DNT/STF/…)** | Hiking only: when on, overnight may prefer network huts; when off (default), prefer non-network cabins and flag network stops as membership-required |
 | **Follow pilgrim routes** | Hiking only; soft preference (off by default), falls back to normal hiking |
 | **Hours between breaks** | How often you *want* a break (cars), or truck mandatory break-after time |
 | **Rest time** | How long a break should last (suggestion / truck continuous break) |
 | **Next break as Time / Distance** | Show break countdown in minutes, or as km/mi at an assumed cruising speed |
+| **Units** | Metric, US (ft / mph), or UK (mi / mph). First-install default from SIM/network country; always overridable. UK altitude stays metres (not US feet). |
 | **Eco mode** | Hill-aware energy costing (locked on for hiking/cycling) |
 | **POI search radius** | How far aside the planner may look for huts / stops |
 | **Vehicle limits** | Height/width/length/axle weight for clearance |
 
 Route planning chrome (**Route**): From / To / Via, Plan, Simulate, avoidances
 (**Avoid motorways** excludes `highway=motorway` / `motorway_link` only),
-saved routes. **Tools**: download region, basemap, DEM, OSM update check.
+saved routes.
+
+### Tools (downloads and diagnostic logging)
+
+Open **Tools** from the planning panel (same screen as region / basemap
+downloads).
+
+| Setting / action | Plain meaning |
+|---|---|
+| **Download region / basemap / DEM** | Offline map data (see [What you need to download](#what-you-need-to-download)) |
+| **Check for OSM updates** / **Apply pending** | Opt-in refresh; never silent auto-download |
+| **Weekly update reminder** | Optional nag only — does not download by itself |
+| **Diagnostic logging** | **Debug toggle** (off by default). When **on**, Navi appends a pipe-delimited **session log** on the device so you can diagnose planning, GPS, and setting changes without `adb logcat`. When **off**, no new session file is written and native per-stage route-plan timing stays gated off |
+| **Export diagnostic log** | Opens the Android share sheet for the latest session file (or tells you to turn logging on first) |
+
+**What the diagnostic log is for:** bug reports, planning timing (`ROUTE_PLAN` /
+`ROUTE_PLAN_STAGES`), and confirming toggles/settings on real hardware. It is
+**not** a crash dump mirror of logcat, and it is **not** uploaded by Navi.
+
+**Where the file lives** (USB file transfer / MTP — no adb required):
+
+```text
+Internal storage → Documents → debug → navi_session_YYYY-MM-DD_HH-mm-ss.log
+```
+
+(Fallback: `Download/debug`, then app-private storage if Documents is not
+writable.) Older sessions are rotated (last 10 kept). Full categories and
+retrieval steps: [`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file).
 
 Full control lists and truck/jurisdiction detail stay in the older deep docs
 linked from [Documents](#documents) when you need them.
@@ -399,14 +555,18 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 
 | Document | What it is for |
 |---|---|
-| [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | How to contribute |
+| [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | How to help: fork from **`dev`**, GitHub basics (PR against `dev`), testing, docs, plugins, CI |
 | [`docs/crates.md`](docs/crates.md) | First-party Rust crates created here, and unaltered crates.io dependencies |
 | [`docs/architecture.md`](docs/architecture.md) | How the pieces fit together |
 | [`docs/codebase-map.md`](docs/codebase-map.md) | Where to change code for a given feature |
 | [`docs/pictures.md`](docs/pictures.md) / [`docs/bilder.md`](docs/bilder.md) | Screenshot galleries |
+| [`docs/icons.md`](docs/icons.md) | Where icon files live, licensing, and how to add SVGs |
 | [`docs/map-styles.md`](docs/map-styles.md) | Online vs offline map look; 3D |
+| [`docs/poi-icon-whitelist.md`](docs/poi-icon-whitelist.md) | Which offline POI kinds draw, and which shop kinds are held back |
 | [`docs/poi.md`](docs/poi.md) | Place types and search |
 | [How to use Navi](docs/how-to-use.md) | End-user how-to (planning, Tools, breaks, saved places/routes, profiles) |
+| [`docs/cider-route.md`](docs/cider-route.md) | Suggested **Norwegian Cider Route** (Siderveien): OSM `brewery=cider` stops south→north, with Navi region/leg notes |
+| [`docs/road-signs.md`](docs/road-signs.md) | Norwegian road-sign catalogue, children-zone proximity, Look forward (300 m cone), approach phases |
 | [`docs/map-marking-saved-places.md`](docs/map-marking-saved-places.md) | Map long-press (4 s) and Saved places detail (Norwegian: [`kartmerking-lagrede-steder.md`](docs/kartmerking-lagrede-steder.md)) |
 | [`docs/ec-561-truck-rest.md`](docs/ec-561-truck-rest.md) | EU truck driving-time rules |
 | [`docs/fmcsa-truck-rest.md`](docs/fmcsa-truck-rest.md) | US truck hours-of-service |
@@ -418,10 +578,11 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/build-windows.md`](docs/build-windows.md) | Windows host: MSVC, tools, Android NDK, adb, Android install |
 | [`docs/debugging.md`](docs/debugging.md) | Debugging |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | Physical device checklist |
+| [`docs/android-test-results.md`](docs/android-test-results.md) | Chronological on-device / emulator instrumented evidence |
 | [`docs/status.md`](docs/status.md) | Which docs are live status vs historical evidence |
 | [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Tracked future-proofing / open risk items |
 | [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md) | Phased evaluation of preprocess-once indexed routing maps |
-| [`docs/plugins.md`](docs/plugins.md) | Plugin host and roadmap |
+| [`docs/plugins.md`](docs/plugins.md) | Plugin host and roadmap (enable/disable; USB/Bluetooth I/O) |
 
 See the `docs/` folder for more specialised topics (voice, APRS, ECU, formulas,
 and so on).
@@ -430,26 +591,48 @@ and so on).
 
 A sandboxed plugin host exists so future add-ons can run safely. **No product
 plugins ship in the app yet** — that is intentional. Overview:
-[`docs/plugins.md`](docs/plugins.md).
+[`docs/plugins.md`](docs/plugins.md). The system requires a per-plugin
+**enable/disable** control, and host-mediated **USB** / **Bluetooth** I/O for
+hardware-facing plugins.
 
 | Spec | Topic |
 |---|---|
-| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Future UI languages (English-only today). Translator table: [`translations.csv`](docs/plugins/translations.csv) |
+| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Future UI languages (English-only today). Translator table: [`translations.csv`](docs/plugins/translations.csv); context: [`translations-context.md`](docs/plugins/translations-context.md) |
 | [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Wild-camping suggestions (plugin, not core) |
 | [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Fuel/water resupply ideas |
-| [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state to instrument clusters |
+| [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state + approach warnings to instrument clusters |
 | [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Animated icons |
+| [`docs/plugins/custom-alert-sounds-spec.md`](docs/plugins/custom-alert-sounds-spec.md) | Short alert tones (road signs, cameras, overspeed earcon) |
+| [`docs/plugins/horse-trekking-spec.md`](docs/plugins/horse-trekking-spec.md) | Equestrian lookahead and access guidance (Hiking is the interim stopgap) |
+| [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md) | Spoken escalating overspeed (percentage tiers; not shipped) |
 
-## Icons (Navit)
+## Icons (where they live)
 
-POI / turn / status icons under `core/src/icons` are mostly from Navit
-(**GPL v2**). Custom maintainer-authored overrides (same mechanism) include
-`leaf.svg` (eco) and `speed_camera.svg` (speed-camera warnings) — see
+Map, turn, POI, and status icons are files in the repo — they are not generated
+at runtime. Authoring, resolution order, and licences:
+[`docs/icons.md`](docs/icons.md).
+
+| Path | What is there |
+|---|---|
+| [`core/src/icons/`](core/src/icons/) | **Full set** (source of truth for desktop / core). Mostly Navit (**GPL v2**). Custom Navi files here include `leaf.svg` (eco) and `speed_camera.svg`. |
+| [`app/src/main/assets/icons/`](app/src/main/assets/icons/) | Android **lean pack** — a size-trimmed copy shipped in every APK. Keys missing here fall back to `unknown.svg` on device. |
+| [`core/src/icons/road-signs/`](core/src/icons/road-signs/) | Norwegian traffic-sign SVGs (**NLOD 2.0**, not Navit). Android copy: [`app/src/main/assets/icons/road-signs/`](app/src/main/assets/icons/road-signs/). |
+| [`core/src/icons/aprs/`](core/src/icons/aprs/) | APRS moving-icon symbols. Android copy: [`app/src/main/assets/icons/aprs/`](app/src/main/assets/icons/aprs/). |
+| [`app/src/main/res/mipmap-*`](app/src/main/res/) | Android **launcher** (home screen / app drawer). Separate Navi brand art, not from Navit. |
+| [`docs/icons/open-app.svg`](docs/icons/open-app.svg) | Splash / open-app brand mark (Inkscape source). Android drawables: `app/src/main/res/drawable/ic_splash*.xml`. |
+
+To add or override a map/POI icon, put an SVG in `core/src/icons/` (and copy it
+into the Android lean pack if it must appear on device). See
 [`docs/icons.md`](docs/icons.md).
 
 # Coding standards and contributing
 
-Please read **[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)**.
+Please read **[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)** first. It covers
+how to **fork** [github.com/Supermagnum/Navi](https://github.com/Supermagnum/Navi),
+check out **`dev`**, keep your fork in sync, and open a pull request with
+**base branch `dev`**. Clone steps in [Building and installing](#building-and-installing)
+are for a local build; they are not a substitute for a fork if you want to send
+a change.
 
 Short version of CI expectations:
 
@@ -460,6 +643,49 @@ Short version of CI expectations:
 | Android | `./gradlew :app:assembleDebug` |
 
 # Building and installing
+
+Clone from GitHub first. Development is on **`dev`** (newest features); **`main`**
+is the default clone target (a plain `git clone` checks out `main`). Install Git
+if needed (`sudo apt install git` on Debian/Ubuntu — other systems in
+[`docs/build-linux.md`](docs/build-linux.md#getting-the-code)).
+
+**To build or install locally** (no pull request):
+
+```bash
+git clone https://github.com/Supermagnum/Navi.git
+cd Navi
+git checkout dev
+```
+
+**To contribute a change:** do not only clone this URL. Fork the repository,
+clone **your** fork, and work on **`dev`** — step-by-step in
+[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md#fork-from-dev-and-basic-github-usage).
+
+## Install a prebuilt APK
+
+A debug-signed APK is in [`compiled/navi-debug.apk`](compiled/navi-debug.apk)
+(arm64, same package as `./gradlew :app:assembleDebug`). You do not need a
+Rust/NDK toolchain to install it.
+
+1. On the device: enable **Developer options** and **USB debugging**.
+2. Connect with `adb devices` and confirm the device is listed.
+3. If an older Navi build with a **different signature** is already installed,
+   uninstall it first (`adb uninstall no.navi.app`).
+4. Install and launch:
+
+```bash
+adb install -r compiled/navi-debug.apk
+adb shell am start -n no.navi.app/.MainActivity
+```
+
+This APK is signed with the Android **debug** keystore. It is for testers, not
+a Play Store / F-Droid release. To rebuild from source, follow the sections
+below.
+
+You can also download
+[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-debug.apk)
+directly with your browser on the Android device and install it that way
+(allow installs from the browser if prompted).
 
 ## Android app (all host platforms)
 
@@ -568,7 +794,7 @@ adb shell am start -n no.navi.app/.MainActivity
    [`docs/android-api36-plan.md`](docs/android-api36-plan.md#aab-smoke-host).
 
 Current `versionName` / `versionCode` live in `app/build.gradle.kts`
-(`0.1.0` / `1` at time of writing). Bump those before a real store or tagged
+(`0.2.0` / `2` at time of writing). Bump those before a real store or tagged
 release. F-Droid-style Podman reproducibility:
 [`tools/fdroid-check/README.md`](tools/fdroid-check/README.md). Full shared
 recipe: [`docs/android-build.md`](docs/android-build.md).
@@ -583,9 +809,9 @@ recipe: [`docs/android-build.md`](docs/android-build.md).
 
 ### Workspace layout
 
-- `core/` — routing, places, rest rules, icons (Rust)
+- `core/` — routing, places, rest rules, icons (Rust). Icon SVGs: `core/src/icons/`
 - `navi-ffi/` — bridge to Android and other hosts
-- `app/` — Android UI (Kotlin)
+- `app/` — Android UI (Kotlin). On-device icon pack: `app/src/main/assets/icons/`
 - `plugin-host/` / `plugin-sdk/` / `plugins/` — future plugins
 - [`docs/architecture.md`](docs/architecture.md) — how it fits together
 
@@ -644,8 +870,11 @@ Country/region visual extracts can also be prepared with
   less free memory at the time conversion starts), remain an open risk. Region
   download and immediate use are unaffected (bbox/PBF fallback works
   immediately regardless); this risk is specific to the background
-  pack-conversion step. Further mitigation (e.g. smaller tile size, trading
-  more wall-clock time for wider memory margin) has not yet been implemented.
+  pack-conversion step. On ~4GB-class devices the tiled graph builder now spills
+  filtered ways to the app data dir and keeps only routing-relevant tags in RAM
+  (instead of holding every highway + full OSM tag map until the first tile),
+  which previously caused LMK with zero `.rkyv` written. Further margin work
+  (e.g. smaller tile cells) may still help on the tightest hardware.
   Cross-ref: [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md)
   and [Minimum hardware and storage](#minimum-hardware-and-storage).
 - **Cold / missing-pack planning is still data-loading-bound; pack-hit is not.**
@@ -657,11 +886,27 @@ Country/region visual extracts can also be prepared with
   Historical pre-pack Car Espa→Atnbrufossen (SM-P613): `plan_duration_ms=26835`
   with `graph_build_ms=17571`, `poi_barrier_ms=8045`, `astar_ms=378` — that
   ~15–27 s class remains the **fallback** when packs are missing, stale, or
-  still converting in the background. `.navigph` deprecated. Region-scale packs
-  now include tiled wetland + overnight buildings (POI/barrier v2): short
-  Atnbrufossen hike on SM-P613 **159 s → ~3.1 s** with `wetland_pack_hit` and
-  `overnight_buildings_pack_hit`. Reproduce stages with Diagnostic logging →
-  `ROUTE_PLAN` / `ROUTE_PLAN_STAGES`
+  still converting in the background. `.navigph` deprecated (ignored on every
+  plan — do not expect `.navigph` files to speed anything up).
+  **Host re-check (release, Ostlandet, 2026-08-24):** without packs, Car
+  Espa→Atnbrufossen ~**54 s** (`graph_build_ms≈29 s` + `poi_barrier_ms≈25 s`,
+  `astar_ms≈0.3 s`, `pack_hit=false` both back-to-back runs); with packs
+  ~**2.7 s** (`pack_hit=true`, `graph_build_ms≈1.5 s`, `poi_barrier_ms≈0.3 s`).
+  Hiking Skolla→Rondvassbu ~**104 s** without packs vs ~**25 s** with packs
+  (`pack_hit` / `wetland_pack_hit` / `poi_pack_hit` true; remaining time is
+  mostly `network_pref_ms` + `wetland_ms` + `multiday_ms`, not A*). Cabin
+  prefs (`use_networked_cabins`) do **not** invalidate the graph cache.
+  Region-scale packs now include tiled wetland + overnight buildings
+  (POI/barrier v2): short Atnbrufossen hike on SM-P613 **159 s → ~3.1 s** with
+  `wetland_pack_hit` and `overnight_buildings_pack_hit`. If planning feels
+  extremely slow across modes, check Diagnostic logging for `pack_hit=false`
+  and use **Tools → Rebuild indexed maps** (or wait for background convert
+  after download). The UI status also warns when a completed plan used the
+  PBF fallback. Concurrent convert / place-index / GPS cone PBF readers are
+  coordinated during a foreground plan (pause / skip — see
+  [Indexing](#indexing-background-after-download)); without that, pack-miss
+  plans on a large extract can stretch into many minutes. Reproduce stages
+  with Diagnostic logging → `ROUTE_PLAN` / `ROUTE_PLAN_STAGES`
   ([`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file)).
   See also [`docs/status.md`](docs/status.md).
 - **Rerouting after a detour is not instant.** Off-route (cross-track beyond
@@ -697,8 +942,9 @@ Country/region visual extracts can also be prepared with
   [`docs/poi.md`](docs/poi.md) and [`docs/map-styles.md`](docs/map-styles.md).
 - **Online Liberty has no named glacier labels.** OpenFreeMap Liberty /
   OpenMapTiles expose ice as fill only (`landcover_ice`); there is no glacier
-  POI name path to style. Offline Protomaps labels `pois.kind=glacier` from
-  ~z12. Not a Navi Liberty regression — see [`docs/map-styles.md`](docs/map-styles.md).
+  POI name path to style. Navi adds a dashed ice outline for visibility.
+  Offline Protomaps labels `pois.kind=glacier` from ~z12. Not a Navi Liberty
+  regression — see [`docs/map-styles.md`](docs/map-styles.md).
 - **Pilgrim stamp / credential offices have no stable OSM tag.** Official
   pilgrim centers (pilegrimspass / credencial stamp points) are tagged
   inconsistently: `tourism=information`+`information=office`, bare
@@ -719,57 +965,55 @@ Country/region visual extracts can also be prepared with
 
 # TODO
 
-## Integrate [Supermagnum/road-signs](https://github.com/Supermagnum/road-signs)
+(Future work only — shipped features are listed in the Features table above.)
 
-Official **Norwegian traffic-sign** SVG catalogue plus machine-readable JSON,
-maintained as a **separate** open repository (not shipped in Navi yet). Source
-graphics/metadata come from Statens vegvesen / Kartverket under
-[NLOD 2.0](https://data.norge.no/nlod/en/2.0) — keep that attribution when
-vendoring. Pipeline code in that repo rebuilds the catalogue; Navi should
-consume the **published artefacts**, not re-run NVDB downloads at runtime.
+**UI language packs** — chrome is English-only today. A future `i18n` /
+`ui_translation` plugin will add selectable languages with **fallback to
+English** when a translation or pack is missing. Spec:
+[`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
+Do **not** infer UI language from GPS or SIM country. Do not add a language
+toggle until that plugin exists.
 
-### What the catalogue provides (investigate snapshot)
+Display **units** (metric / US / UK) are shipped (Drive settings), including
+peak-height labels on the basemap. Norwegian speed-limit **pictograms** stay
+official km/h plates; mph *plate artwork* is still future (`new-signs/`).
 
-| Artefact | Role for Navi |
-|---|---|
-| `svg/fareskilt/`, `svg/speed_limit/`, `svg/serviceskilt/`, `svg/vegvisning/` | Vector art (~116 files across 121 NVDB codes; a few speed codes still lack graphics) |
-| `database/signs_en.json` / `signs.json` | English-primary / bilingual inventory (`code`, name, meaning, SVG path, status) |
-| `database/osm_tags.json` (+ `.md`) | Maps each code → `traffic_sign=NO:…`, companion tags (`hazard=*`, `maxspeed=*`, POI/destination tags), plus flags such as **usable as fixed navi symbol** (~93) and **usable as navi icon outside Norway** (~88), Vienna vs Norway-specific scope |
+**Historical Norwegian/Norse distance units** as a selectable display option
+(e.g. rast, dagsvei, fjerdingvei), alongside the existing Metric / US / UK
+profiles. Display-only historical/cultural mode, not a default or a serious
+alternative to metric/imperial for navigation — a novelty or
+regional-flavor toggle. Needs a design pass before implementation (which
+distance and speed fields it applies to, how it interacts with
+`DisplayUnits`, whether it is era-specific or one canonical conversion set).
 
-Categories today: warning triangles (100-series), speed-limit / related plates,
-service/tourist symbols (640/650), selected direction/route symbols (723 /
-755–780 / 790). Unresolved graphics remain listed with `"svg": null` — skip
-those until the upstream catalogue fills them.
+**Speed:** Old Norse **mil per hour** (using the younger Norse mile /
+rast ≈ 9,100.8 m) could replace kilometre per hour in HUD / limit chrome for
+this profile. **Smaller distances** (approach box, remaining distance under
+a mil, etc.) should use the finer traditional units — stone's throw,
+arrow's flight, fjerdingvei — not only mil / rast / dagsvei.
 
-### How it should plug into Navi (planned work)
+Context for whoever picks this up:
 
-1. **Asset pipeline** — Vendor a pinned snapshot (submodule, sparse checkout, or
-   copied tree) of the SVGs + `signs_en.json` + `osm_tags.json`. Rasterize into
-   the existing icon lean pack the same way other approach icons are prepared
-   (`docs/icons.md`), with a clear **NLOD** attribution note alongside the
-   current Navit **GPL v2** icon set (do not mix licence stories).
-2. **OSM matching** — On the planned corridor / approach path, match downloaded
-   OSM `traffic_sign=NO:…` (and companion `hazard=*`, `maxspeed=*`, etc.) using
-   `osm_tags.json`. Prefer entries marked usable as a fixed navi symbol; ignore
-   `not_for_navigation` / pure `variable_content` templates (digit plates,
-   distance stripes) until a dedicated variable renderer exists.
-3. **Guidance UX** — Surface upcoming matched signs in the approach / warning
-   chrome (same distance-phase family as speed-camera warnings), not as a
-   second basemap layer that fights MapLibre tiles. Speed plates should
-   **complement** the existing way-based posted-limit HUD, not replace edge
-   `maxspeed` parsing.
-4. **Jurisdiction** — First ship **Norway** (`NO:` IDs). For other Vienna
-   Convention countries, reuse only symbols/tags the mapping marks as safe
-   outside NO, and never stamp foreign roads with `traffic_sign=NO:…`. Nordic-
-   specific art (elk, reindeer, ski, …) stays optional outside that region.
-5. **Pack / offline** — Decide whether sign hits are scanned from the region
-   PBF at plan time, indexed into a small pack beside graph/POI packs, or
-   queried live from place/edge metadata — same offline-first rules as the rest
-   of routing (no silent network).
-6. **Gaps** — Upstream still missing a few speed-limit SVGs; forbud / vikeplikt
-   / underskilt packs were audited empty for the guidance set and are **out of
-   scope** until that catalogue grows. Do not invent new OSM `hazard=*` values
-   beyond what `osm_tags.json` already documents.
+- A **rast** was the distance traveled on foot before needing a rest ("rast,"
+  "pause"). It corresponded to a *mil* and was tied to the length of the ell,
+  and varied by region and era. In the 900s, a rast was about 192 stone
+  throws, divided into four **fjerdingvei** (quarter-ways), roughly
+  **9,100.8 m**. By the 12th century it was expressed as 16,000 ells (four
+  quarters of 8,000 feet), the same order of magnitude.
+- A **dagsvei** (day's journey) was the traditional distance walkable in a
+  day, commonly reckoned at about **40 km**.
+- A **stone's throw** was 120 ells (also called a "great hundred") — about
+  **56.88 m** (200 feet).
+- An **arrow's flight** was 4 stone's throws, ~480 ells — about **227.52 m**
+  (800 feet) around the year 900. Later in the Middle Ages, 10 arrow shots
+  made up a **fjerding** of a mile — **2,275.2 m** (8,000 feet), a quarter of
+  the younger Norse mile.
+- The **younger Norse mile** (rast / vei) was **9,100.8 m** (32,000 feet) —
+  the same order of magnitude as the 12th-century 16,000-ell figure above.
+  Speed display in this mode: **mil/h** derived from that mile length
+  (≈ 9.1008 km/h per mil/h), with sub-mil distances shown as stone's throw,
+  arrow's flight, and so on.
 
-Tracking / design detail can land later under `docs/` (icons + jurisdiction);
-this README entry is the product-level integration TODO until that work starts.
+Investigate if lake names can be displayed along the lake shore.
+
+

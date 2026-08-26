@@ -17,6 +17,10 @@ const EBIKE_CONFIG_KEY: &str = "ebike_config";
 const EV_CAR_CONFIG_KEY: &str = "ev_car_config";
 const PREFER_OFFICIAL_NETWORKS_KEY: &str = "prefer_official_networks";
 const PREFER_PILGRIM_ROUTES_KEY: &str = "prefer_pilgrim_routes";
+const USE_NETWORKED_CABINS_KEY: &str = "use_networked_cabins";
+const BIKE_CAPABILITY_KEY: &str = "bike_capability";
+/// User asserts DNT/STF/… membership — gates *overnight stay* preference only.
+const NETWORK_HUT_MEMBER_KEY: &str = "network_hut_member";
 const TRUCK_DRIVING_HISTORY_KEY: &str = "truck_driving_history";
 const PROFILE_POI_RADII_KEY: &str = "profile_poi_radii";
 
@@ -101,6 +105,35 @@ impl<'a> ConfigStore<'a> {
 
     pub fn save_prefer_pilgrim_routes(&self, prefer: bool) -> SqlResult<()> {
         self.save_json(PREFER_PILGRIM_ROUTES_KEY, &prefer)
+    }
+
+    /// Allow networked (DNT/STF/…) huts as hiking auto-via waypoints (off by default).
+    /// Geographic via only — does not imply membership or right of entry.
+    pub fn load_use_networked_cabins(&self) -> SqlResult<bool> {
+        self.load_json(USE_NETWORKED_CABINS_KEY, || false)
+    }
+
+    pub fn save_use_networked_cabins(&self, prefer: bool) -> SqlResult<()> {
+        self.save_json(USE_NETWORKED_CABINS_KEY, &prefer)
+    }
+
+    /// Bicycle / electric-cycle terrain capability (`road`, `trekking`, `mountain`).
+    pub fn load_bike_capability(&self) -> SqlResult<String> {
+        self.load_json(BIKE_CAPABILITY_KEY, || "trekking".to_string())
+    }
+
+    pub fn save_bike_capability(&self, cap: &str) -> SqlResult<()> {
+        self.save_json(BIKE_CAPABILITY_KEY, &cap)
+    }
+
+    /// Whether the user is a DNT/STF/… network hut member (off by default).
+    /// Gates overnight-stay preference for network huts only — not auto-via waypoints.
+    pub fn load_network_hut_member(&self) -> SqlResult<bool> {
+        self.load_json(NETWORK_HUT_MEMBER_KEY, || false)
+    }
+
+    pub fn save_network_hut_member(&self, is_member: bool) -> SqlResult<()> {
+        self.save_json(NETWORK_HUT_MEMBER_KEY, &is_member)
     }
 
     /// Rolling truck duty history for EC 561 weekly / fortnightly caps.

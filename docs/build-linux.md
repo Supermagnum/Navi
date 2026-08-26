@@ -15,7 +15,7 @@ Debugging loops: [`debugging.md`](debugging.md).
 Plugin build details: [`plugins.md`](plugins.md).  
 Map styles / offline PMTiles: [`map-styles.md`](map-styles.md).  
 gpsd / IMU on Linux: see [Sensors](#sensors-on-linux-gpsd--imu) below and
-[`imu-calibration.md`](imu-calibration.md).  
+[`imu-plugin.md`](plugins/imu-plugin.md).  
 ADB / device install from Linux: [Android Debug Bridge (adb)](#android-debug-bridge-adb).  
 macOS host: [`build-macos.md`](build-macos.md).  
 Windows host: [`build-windows.md`](build-windows.md).
@@ -24,17 +24,57 @@ Windows host: [`build-windows.md`](build-windows.md).
 
 ## Getting the code
 
-Clone the repository:
+You need **Git**. On Debian, Ubuntu, and Mint:
+
+```bash
+sudo apt update
+sudo apt install git
+```
+
+Other systems:
+
+| System | Install Git |
+|---|---|
+| Fedora / RHEL / CentOS Stream | `sudo dnf install git` |
+| Arch / Manjaro | `sudo pacman -S git` |
+| openSUSE | `sudo zypper install git` |
+| macOS | Xcode Command Line Tools (`xcode-select --install`) or `brew install git` — see [`build-macos.md`](build-macos.md) |
+| Windows | [Git for Windows](https://git-scm.com/download/win) — see [`build-windows.md`](build-windows.md) |
+
+Then clone and switch to the development branch:
 
 ```bash
 git clone https://github.com/Supermagnum/Navi.git
 cd Navi
+git checkout dev
 ```
 
-**Branch / tag:** Development happens on `main`. There is **no** formal release
-or stable-tag process yet — use `main` for the latest code. If tags appear later,
-prefer a documented release tag for a frozen checkout; until then, treat `main`
-as the only supported tip.
+Or clone `dev` in one step:
+
+```bash
+git clone -b dev https://github.com/Supermagnum/Navi.git
+cd Navi
+```
+
+### Updating an existing checkout
+
+If you already cloned the repo, pull the latest commits on your current branch:
+
+```bash
+cd Navi
+git checkout dev          # if you are not already on dev
+git pull origin dev
+```
+
+`git pull` fetches from the remote and merges into your local branch. If you have
+local uncommitted changes that conflict, either commit or stash them first
+(`git stash`, then `git pull`, then `git stash pop`).
+
+**Branch / tag:** Development happens on **`dev`** — that is where the newest
+features are. **`main`** is the GitHub default (a plain `git clone` checks it
+out). Use `main` only when you explicitly want that tip. There is **no** formal
+release or stable-tag process yet. If tags appear later, prefer a documented
+release tag for a frozen checkout.
 
 ---
 
@@ -559,7 +599,7 @@ Linux they should consume **real** gpsd course and/or IMU heading through the
 same rotation-mode wiring (`SensorBus` → host map bearing).
 
 Vehicle mounting pitch/roll zeroing for eco elevation correction is a **deferred**
-feature — see [`imu-calibration.md`](imu-calibration.md).
+feature — see [`imu-plugin.md`](plugins/imu-plugin.md).
 
 With a live gpsd and optional `--demo-imu`, `navi-linux` prints POS (course) and
 IMU (heading) lines — the same bus `navi-desktop` polls for the position marker.
@@ -592,7 +632,7 @@ integrations, gpsd/IMU bring-up, and WASM plugins** alongside Automotive UI work
 | `navi-linux` / desktop: gpsd loop ends / no `POS` | Install and start gpsd; verify with `gpspipe -w -n 5`. Use `--demo-imu` for IMU without a chip. |
 | Ignored integration test fails on missing PBF / HTTP error | Need network on first run, or prefetch extracts into `core/target/integration-fixtures/` ([fixtures](#ignored-integration-tests-and-fixtures)). Ensure ~1 GB free disk. |
 | First `api/plan` is very slow | Cold graph build from a large PBF; prefer a regional extract (e.g. Oppland) or wait for cache under `--cache-dir`. |
-| Odd compile errors after pulling `main` | `cargo clean` then rebuild; ensure rustup **stable** is current (`rustup update`). Do not hand-edit `Cargo.lock` unless resolving a deliberate pin — prefer `cargo update` / a clean tree from `main`. |
+| Odd compile errors after pulling `dev` or `main` | `cargo clean` then rebuild; ensure rustup **stable** is current (`rustup update`). Do not hand-edit `Cargo.lock` unless resolving a deliberate pin — prefer `cargo update` / a clean tree from `dev`. |
 | `pkg-config` errors from a transitive crate | Install `pkg-config` / `pkgconf` for your distro (see Prerequisites). |
 | `adb: command not found` | Install adb ([Android Debug Bridge](#android-debug-bridge-adb)): distro `adb` / `android-tools`, or `$ANDROID_HOME/platform-tools` on `PATH`. |
 | `adb devices` empty / `unauthorized` | Enable Developer options (tap **Build number** seven times under About phone/tablet), turn on **USB debugging**, accept the RSA prompt; install udev rules (`android-sdk-platform-tools-common` or equivalent); `adb kill-server && adb start-server`. |

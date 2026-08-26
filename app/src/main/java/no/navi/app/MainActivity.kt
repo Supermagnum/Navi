@@ -11,6 +11,7 @@ import android.location.LocationManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -52,6 +53,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
@@ -74,6 +76,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -122,6 +125,9 @@ import uniffi.navi.ecoModeDefault
 import uniffi.navi.ecoModeToggleable
 import uniffi.navi.elevationAt
 import uniffi.navi.ensurePlaceIndex
+import uniffi.navi.foregroundPlanActive
+import uniffi.navi.foregroundPlanEnter
+import uniffi.navi.foregroundPlanLeave
 import uniffi.navi.formatRouteAvoidanceReport
 import uniffi.navi.geofabrikLatestPbfUrl
 import uniffi.navi.indexedMapsStatus
@@ -132,6 +138,9 @@ import uniffi.navi.loadTruckRestSettings
 import uniffi.navi.loadVehicleLimits
 import uniffi.navi.nearbyPlaces
 import uniffi.navi.osmWeeklyReminderDue
+import uniffi.navi.placeIndexHasEntries
+import uniffi.navi.planProgressClear
+import uniffi.navi.planProgressSnapshot
 import uniffi.navi.pmtilesCancelJob
 import uniffi.navi.pmtilesDefaultBaseUrl
 import uniffi.navi.pmtilesGetJob
@@ -158,24 +167,46 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 import android.graphics.Paint as AndroidPaint
 
+/** Max time the cold-start splash may stay up on a normal launch (not capture hold). */
+private const val SPLASH_MAX_HOLD_MS = 2_000L
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // Splash Screen API (androidx.core:core-splashscreen) for API 26–30 compat
         // and native API 31+. Activity theme is Theme.Navi.Splash; post-splash
         // switches to Theme.Navi. Distinct from launcher mipmaps and any notify icon.
         // adb hold for capture: --ez navi_keep_splash true
+        // Normal launches: dismiss as soon as the first frame draws, and never hold
+        // the splash longer than 2s (heavy map init is deferred past that frame).
         val keepSplashForCapture =
             AtomicBoolean(intent?.getBooleanExtra("navi_keep_splash", false) == true)
-        installSplashScreen().setKeepOnScreenCondition { keepSplashForCapture.get() }
+        val splashStartedAtMs = SystemClock.uptimeMillis()
+        val firstFrameDrawn = AtomicBoolean(false)
+        installSplashScreen().setKeepOnScreenCondition {
+            if (keepSplashForCapture.get()) return@setKeepOnScreenCondition true
+            if (firstFrameDrawn.get()) return@setKeepOnScreenCondition false
+            SystemClock.uptimeMillis() - splashStartedAtMs < SPLASH_MAX_HOLD_MS
+        }
         super.onCreate(savedInstanceState)
         applyNaviLaunchExtras(intent)
         runCatching { uniffi.navi.initNativeLogging() }
-        MapLibre.getInstance(this)
         setContent {
+            var showMap by remember { mutableStateOf(false) }
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    NaviMapScreen()
+                    // Cheap first frame so the splash can exit within SPLASH_MAX_HOLD_MS
+                    // even while MapLibre / NaviMapScreen still warm up.
+                    if (showMap) {
+                        NaviMapScreen()
+                    }
                 }
+            }
+            SideEffect {
+                firstFrameDrawn.set(true)
+            }
+            LaunchedEffect(Unit) {
+                MapLibre.getInstance(this@MainActivity)
+                showMap = true
             }
         }
     }
@@ -326,6 +357,7 @@ private fun preDepartureEtaMinutes(
 private fun formatEbikePlanStatus(
     report: String,
     distanceKm: Double,
+    unitSystem: UnitSystem,
 ): String? {
     if (!report.contains("ebike_pct_of_capacity=") && !report.contains("ev_pct_of_capacity=")) {
         return null
@@ -337,7 +369,7 @@ private fun formatEbikePlanStatus(
             ?.getOrNull(1)
     val base =
         buildString {
-            append("Route planned · ${"%.1f".format(distanceKm)} km")
+            append(DisplayUnits.formatRoutePlanned(distanceKm, unitSystem))
             if (pct != null) {
                 append(" · ~${pct.toDoubleOrNull()?.toInt() ?: pct}% of battery")
             }
@@ -346,16 +378,39 @@ private fun formatEbikePlanStatus(
     return if (warn != null) "$base\n${warn.take(160)}" else base
 }
 
+/**
+ * When indexed packs are missing/stale, every plan rebuilds from the PBF
+ * (~tens of seconds). Surface that so "extreme slowness" is actionable.
+ */
+private fun indexedPackMissHint(report: String): String? {
+    if (!report.contains("pack_hit=false")) return null
+    return "Slow plan: indexed maps not ready (PBF fallback). " +
+        "Wait for background indexing, or Tools → Rebuild indexed maps."
+}
+
+private fun withIndexedPackMissHint(
+    statusLine: String,
+    report: String,
+): String {
+    val hint = indexedPackMissHint(report) ?: return statusLine
+    return if (statusLine.isBlank()) hint else "$statusLine\n$hint"
+}
+
 private fun userFacingStatus(raw: String): String {
     val t = raw.trim()
     if (t.isEmpty()) return ""
+    if (OsmUpdateUserCopy.looksTechnical(t)) {
+        return OsmUpdateUserCopy.sanitize(t)
+    }
     if (t.contains("TEST_KIND=") || t.contains("detected_cores=") || t.contains("DATA_SOURCE=")) {
         return when {
             t.contains("PASS") && t.contains("distance_km=") -> {
                 val km = Regex("""distance_km=([0-9.]+)""").find(t)?.groupValues?.getOrNull(1)
-                if (km != null) "Route planned · $km km" else "Route planned"
+                val base =
+                    if (km != null) "Route planned · $km km" else "Route planned"
+                withIndexedPackMissHint(base, t)
             }
-            t.contains("PASS") -> "Done"
+            t.contains("PASS") -> withIndexedPackMissHint("Done", t)
             t.lineSequence().any { it.startsWith("FAIL") } ->
                 t
                     .lineSequence()
@@ -398,6 +453,7 @@ private fun NaviMapScreen() {
     var query by remember { mutableStateOf("") }
     var hits by remember { mutableStateOf<List<PlaceHit>>(emptyList()) }
     var searchBusy by remember { mutableStateOf(false) }
+    var searchIndexHint by remember { mutableStateOf("") }
     var showTools by remember { mutableStateOf(false) }
     var diagnosticLogging by remember {
         mutableStateOf(MapHudPrefs.loadDiagnosticLogging(context))
@@ -439,6 +495,9 @@ private fun NaviMapScreen() {
     var avoidFerries by remember { mutableStateOf(false) }
     var preferOfficialNetworks by remember { mutableStateOf(false) }
     var preferPilgrimRoutes by remember { mutableStateOf(false) }
+    var useNetworkedCabins by remember { mutableStateOf(false) }
+    var bikeCapability by remember { mutableStateOf("trekking") }
+    var networkHutMember by remember { mutableStateOf(false) }
 
     /** Sticky manual bearing when snap-back is off; cleared by mode chip. */
     var manualRotationSticky by remember { mutableStateOf(false) }
@@ -469,11 +528,16 @@ private fun NaviMapScreen() {
     var showSpeedCameraPrompt by remember { mutableStateOf(false) }
     var speedCamerasJson by remember { mutableStateOf("[]") }
     var speedCameraWarning by remember { mutableStateOf(SpeedCameraWarningState()) }
+    var roadSignsJson by remember { mutableStateOf("[]") }
+    var schoolPoisJson by remember { mutableStateOf("[]") }
+    var routeSchoolPoisJson by remember { mutableStateOf("[]") }
+    var roadSignWarning by remember { mutableStateOf(RoadSignWarningState()) }
     var hideChrome by remember { mutableStateOf(false) }
     var hideSearch by remember { mutableStateOf(false) }
     var regionDownloadProgress by remember { mutableStateOf("") }
     var downloadPolling by remember { mutableStateOf(false) }
     var indexedMapsUiLine by remember { mutableStateOf("") }
+    var placeIndexUiLine by remember { mutableStateOf("") }
     var planningRoute by remember { mutableStateOf(false) }
     var routePlanProgress by remember { mutableStateOf("") }
 
@@ -502,6 +566,18 @@ private fun NaviMapScreen() {
             java.util.concurrent.atomic
                 .AtomicBoolean(false)
         }
+    val roadSignsJsonRef =
+        remember {
+            java.util.concurrent.atomic
+                .AtomicReference("[]")
+        }
+    roadSignsJsonRef.set(roadSignsJson)
+    val routeSchoolPoisJsonRef =
+        remember {
+            java.util.concurrent.atomic
+                .AtomicReference("[]")
+        }
+    routeSchoolPoisJsonRef.set(routeSchoolPoisJson)
     val applyFixRef =
         remember {
             java.util.concurrent.atomic
@@ -516,13 +592,16 @@ private fun NaviMapScreen() {
     var lastNearbyStreetLat by remember { mutableDoubleStateOf(Double.NaN) }
     var lastNearbyStreetLon by remember { mutableDoubleStateOf(Double.NaN) }
     val nearbyStreetInFlight = remember { AtomicBoolean(false) }
+
+    /** Cold PBF bbox build for [liveSpeedLimitConeJson] — must not run on main. */
+    val speedLimitConeInFlight = remember { AtomicBoolean(false) }
     var driveHud by remember {
         mutableStateOf(
             DriveHudState(
                 autoZoomLevel = MapHudPrefs.loadAutoZoomLevel(context),
                 autoZoomWhileMoving = MapHudPrefs.loadAutoZoomOn(context),
                 breakAsDistance = MapHudPrefs.loadBreakAsDistance(context),
-                preferMetric = MapHudPrefs.loadPreferMetric(context),
+                unitSystem = MapHudPrefs.loadUnitSystem(context),
                 optIn3d = MapHudPrefs.loadOptIn3d(context),
                 cameraTiltDeg = MapHudPrefs.loadCameraTiltDeg(context),
                 snapRotationBackToMode = MapHudPrefs.loadSnapRotationBack(context),
@@ -546,6 +625,9 @@ private fun NaviMapScreen() {
         mapState =
             mapState.copy(
                 polyline = "",
+                // Hiking corridors live in routeSegmentsJson; clearing polyline alone
+                // leaves applyRouteToStyle redrawing the stale on/off-trail layers.
+                routeSegmentsJson = "[]",
                 poiLat = 0.0,
                 poiLon = 0.0,
                 poiName = "",
@@ -876,10 +958,24 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastBreakPoiCount = breaks.size
         NaviMapTestHooks.lastManeuversJson =
             runCatching { pending.maneuversJson }.getOrDefault("[]")
+        NaviMapTestHooks.lastSimSamplesJson =
+            runCatching { pending.simSamplesJson }.getOrDefault("[]")
         routeSamples =
             parseRouteSimSamples(
                 runCatching { pending.simSamplesJson }.getOrDefault("[]"),
             )
+        routeSchoolPoisJson =
+            if (schoolPoisJson != "[]" && routeSamples.size >= 2) {
+                runCatching {
+                    uniffi.navi.schoolsNearRouteCorridorJson(
+                        schoolPoisJson,
+                        runCatching { pending.simSamplesJson }.getOrDefault("[]"),
+                        200.0,
+                    )
+                }.getOrDefault("[]")
+            } else {
+                "[]"
+            }
         routeManeuvers =
             parseRouteManeuvers(
                 runCatching { pending.maneuversJson }.getOrDefault("[]"),
@@ -908,7 +1004,7 @@ private fun NaviMapScreen() {
         status =
             userFacingStatus(
                 if (pending.distanceKm > 0.0) {
-                    "Route planned · ${"%.1f".format(pending.distanceKm)} km"
+                    DisplayUnits.formatRoutePlanned(pending.distanceKm, driveHud.unitSystem)
                 } else {
                     pending.report
                 },
@@ -938,6 +1034,9 @@ private fun NaviMapScreen() {
     LaunchedEffect(dataDir) {
         preferOfficialNetworks = uniffi.navi.loadPreferOfficialNetworks(dataDir.absolutePath)
         preferPilgrimRoutes = uniffi.navi.loadPreferPilgrimRoutes(dataDir.absolutePath)
+        useNetworkedCabins = uniffi.navi.loadUseNetworkedCabins(dataDir.absolutePath)
+        bikeCapability = uniffi.navi.loadBikeCapability(dataDir.absolutePath)
+        networkHutMember = uniffi.navi.loadNetworkHutMember(dataDir.absolutePath)
         NaviMapTestHooks.lastSnapRotationBack = driveHud.snapRotationBackToMode
     }
     val iconsDir =
@@ -945,8 +1044,10 @@ private fun NaviMapScreen() {
             File(context.filesDir, "icons").also { ensureIconsCopied(context, it) }
         }
 
+    fun placeIndexDbForWrite(): File = File(dataDir, "place_index.db")
+
     fun resolvePlaceIndexDb(): File {
-        val preferred = File(dataDir, "place_index.db")
+        val preferred = placeIndexDbForWrite()
         // Prefer the app-local copy. /data/local/tmp may look readable (canRead)
         // on the AVD but SQLite open still fails under the app sandbox.
         if (preferred.isFile && preferred.length() > 10_000L) {
@@ -971,16 +1072,115 @@ private fun NaviMapScreen() {
             showSpeedCameraPrompt = true
         }
     }
+    // Single effect for live-hazard layers + speed cameras: at most one PBF camera
+    // scan per (dataDir, opt-in) need. Cameras are never scanned when opt-in is false.
     LaunchedEffect(speedCameraOptIn, dataDir) {
         if (!speedCameraOptIn) {
             speedCamerasJson = "[]"
             speedCameraWarning = SpeedCameraWarningState()
-            return@LaunchedEffect
         }
         val pbf = resolveRegionPbf() ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            runCatching {
-                speedCamerasJson = uniffi.navi.loadSpeedCamerasJson(pbf.absolutePath)
+            fun readCache(name: String): String? {
+                val candidates =
+                    listOf(
+                        File(dataDir, "live_hazards_cache/${pbf.nameWithoutExtension}/$name"),
+                        File("/data/local/tmp/navi_fixtures/live_hazards_cache/${pbf.nameWithoutExtension}/$name"),
+                    )
+                return candidates.firstOrNull { it.isFile && it.length() > 2 }?.readText()
+            }
+            val cachedSigns = readCache("signs.json")
+            val cachedCams = readCache("cameras.json")
+            val cachedChildren = readCache("children.json")
+            val cachedBumps = readCache("bumps.json")
+            val signsRaw: String
+            val schoolRaw: String
+            val camsRaw: String
+            val bumpsRaw: String
+            val signsChildrenBumpsCached =
+                cachedSigns != null && cachedChildren != null && cachedBumps != null
+            if (signsChildrenBumpsCached && (!speedCameraOptIn || cachedCams != null)) {
+                signsRaw = cachedSigns!!
+                schoolRaw = cachedChildren!!
+                bumpsRaw = cachedBumps!!
+                camsRaw =
+                    when {
+                        speedCameraOptIn -> cachedCams!!
+                        else -> cachedCams ?: "[]"
+                    }
+            } else {
+                signsRaw =
+                    cachedSigns
+                        ?: runCatching { uniffi.navi.loadRoadSignsJson(pbf.absolutePath) }
+                            .getOrElse {
+                                NaviMapTestHooks.lastRoadSignsIndexed = -2
+                                return@withContext
+                            }
+                schoolRaw =
+                    cachedChildren
+                        ?: runCatching { uniffi.navi.loadSchoolPoisJson(pbf.absolutePath) }
+                            .getOrDefault("[]")
+                bumpsRaw =
+                    cachedBumps
+                        ?: runCatching { uniffi.navi.loadSpeedBumpsJson(pbf.absolutePath) }
+                            .getOrDefault("[]")
+                camsRaw =
+                    when {
+                        !speedCameraOptIn -> cachedCams ?: "[]"
+                        cachedCams != null -> cachedCams
+                        else ->
+                            runCatching { uniffi.navi.loadSpeedCamerasJson(pbf.absolutePath) }
+                                .getOrDefault("[]")
+                    }
+                // Persist compact layers. Never write cameras.json as a poisoned
+                // empty array when opt-in is false (that would skip a real scan later).
+                runCatching {
+                    val cacheDir =
+                        File(dataDir, "live_hazards_cache/${pbf.nameWithoutExtension}").also {
+                            it.mkdirs()
+                        }
+                    File(cacheDir, "signs.json").writeText(signsRaw)
+                    File(cacheDir, "children.json").writeText(schoolRaw)
+                    File(cacheDir, "bumps.json").writeText(bumpsRaw)
+                    if (speedCameraOptIn && !camsRaw.contains("\"error\"")) {
+                        File(cacheDir, "cameras.json").writeText(camsRaw)
+                    }
+                }
+            }
+            roadSignsJson = signsRaw
+            NaviMapTestHooks.lastRoadSignsIndexed =
+                if (signsRaw.contains("\"error\"")) {
+                    -3
+                } else {
+                    runCatching { org.json.JSONArray(signsRaw).length() }.getOrDefault(0)
+                }
+            NaviMapTestHooks.lastSchoolPoisIndexed =
+                if (schoolRaw.contains("\"error\"")) {
+                    -2
+                } else {
+                    runCatching { org.json.JSONArray(schoolRaw).length() }.getOrDefault(0)
+                }
+            schoolPoisJson = schoolRaw
+            if (speedCameraOptIn) {
+                speedCamerasJson = camsRaw
+            }
+            val liveStats =
+                runCatching {
+                    uniffi.navi.liveHazardsIngestFromJson(
+                        pbf.absolutePath,
+                        signsRaw,
+                        if (speedCameraOptIn) camsRaw else "[]",
+                        schoolRaw,
+                        bumpsRaw,
+                    )
+                }.getOrNull()
+            if (liveStats != null) {
+                NaviMapTestHooks.lastLiveHazardSigns = liveStats.signs.toInt()
+                NaviMapTestHooks.lastLiveHazardChildren = liveStats.children.toInt()
+                NaviMapTestHooks.lastLiveHazardCameras = liveStats.cameras.toInt()
+                NaviMapTestHooks.lastLiveHazardBumps = liveStats.bumps.toInt()
+                NaviMapTestHooks.lastLiveHazardCompactUtf8 = liveStats.compactJsonUtf8.toLong()
+                NaviMapTestHooks.lastLiveHazardConeM = liveStats.coneM
             }
         }
     }
@@ -1110,84 +1310,91 @@ private fun NaviMapScreen() {
             scope.launch {
                 recalculatingRoute = true
                 planningRoute = true
-                NaviMapTestHooks.reroutingActive = true
-                NaviMapTestHooks.autoRerouteTriggeredCount += 1
-                routePlanProgress = "Recalculating route…"
-                routePlanPct = 0
-                status = "Recalculating route… (may take several seconds)"
-                planIndexingHintVisible =
-                    withContext(Dispatchers.IO) {
-                        val planPbf = resolveRegionPbf()
-                        if (planPbf == null || !planPbf.isFile) {
-                            true
-                        } else {
-                            runCatching {
-                                indexedMapsStatus(planPbf.absolutePath, dataDir.absolutePath).trim()
-                            }.getOrDefault("missing") != "ready"
+                planProgressClear()
+                try {
+                    foregroundPlanEnter()
+                    NaviMapTestHooks.reroutingActive = true
+                    NaviMapTestHooks.autoRerouteTriggeredCount += 1
+                    routePlanProgress = "Recalculating route…"
+                    routePlanPct = 0
+                    status = "Recalculating route… (may take several seconds)"
+                    planIndexingHintVisible =
+                        withContext(Dispatchers.IO) {
+                            val planPbf = resolveRegionPbf()
+                            if (planPbf == null || !planPbf.isFile) {
+                                true
+                            } else {
+                                runCatching {
+                                    indexedMapsStatus(planPbf.absolutePath, dataDir.absolutePath).trim()
+                                }.getOrDefault("missing") != "ready"
+                            }
                         }
-                    }
-                val startWp =
-                    Waypoint(resolveRerouteStartLabel(lat, lon), lat, lon)
-                val pts =
-                    buildList {
-                        add(startWp)
-                        addAll(remainingVias)
-                        add(dest)
-                    }
-                val ecoForPlan = if (ecoModeToggleable(profile)) ecoEnabled else true
-                val vehicle =
-                    runCatching { loadVehicleLimits(dataDir.absolutePath) }
-                        .getOrElse {
-                            FfiVehicleLimits(null, null, null, null, null, null)
+                    val startWp =
+                        Waypoint(resolveRerouteStartLabel(lat, lon), lat, lon)
+                    val pts =
+                        buildList {
+                            add(startWp)
+                            addAll(remainingVias)
+                            add(dest)
                         }
-                val result =
-                    runCatching {
-                        RouteReplan.plan(
-                            dataDir = dataDir,
-                            profile = profile,
-                            waypoints = pts,
-                            useEco = ecoForPlan,
-                            avoidMotorways = avoidMotorways,
-                            avoidTolls = avoidTolls,
-                            avoidFerries = avoidFerries,
-                            vehicle = vehicle,
-                            preferOfficialNetworks = preferOfficialNetworks,
-                            preferPilgrimRoutes = preferPilgrimRoutes,
-                            onProgress = { pct, detail ->
-                                routePlanPct = pct
-                                routePlanProgress = "Recalculating route… $detail"
-                            },
-                        )
-                    }.getOrElse { e ->
-                        if (e is kotlinx.coroutines.CancellationException) throw e
-                        status = "Reroute failed: ${e.message}"
-                        recalculatingRoute = false
-                        planningRoute = false
-                        planIndexingHintVisible = false
-                        NaviMapTestHooks.reroutingActive = false
-                        routePlanProgress = ""
+                    val ecoForPlan = if (ecoModeToggleable(profile)) ecoEnabled else true
+                    val vehicle =
+                        runCatching { loadVehicleLimits(dataDir.absolutePath) }
+                            .getOrElse {
+                                FfiVehicleLimits(null, null, null, null, null, null)
+                            }
+                    val result =
+                        runCatching {
+                            RouteReplan.plan(
+                                dataDir = dataDir,
+                                profile = profile,
+                                waypoints = pts,
+                                useEco = ecoForPlan,
+                                avoidMotorways = avoidMotorways,
+                                avoidTolls = avoidTolls,
+                                avoidFerries = avoidFerries,
+                                vehicle = vehicle,
+                                preferOfficialNetworks = preferOfficialNetworks,
+                                preferPilgrimRoutes = preferPilgrimRoutes,
+                                onProgress = { pct, detail ->
+                                    routePlanPct = pct
+                                    routePlanProgress = "Recalculating route… $detail"
+                                },
+                            )
+                        }.getOrElse { e ->
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            status = "Reroute failed: ${e.message}"
+                            recalculatingRoute = false
+                            planningRoute = false
+                            planIndexingHintVisible = false
+                            NaviMapTestHooks.reroutingActive = false
+                            routePlanProgress = ""
+                            offRouteCoordinator.suppressUntilOnRoute()
+                            return@launch
+                        }
+                    if (!isActive) return@launch
+                    recalculatingRoute = false
+                    planningRoute = false
+                    planIndexingHintVisible = false
+                    NaviMapTestHooks.reroutingActive = false
+                    routePlanProgress = ""
+                    if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
+                        status = userFacingStatus(result.report).ifBlank { "Reroute failed" }
                         offRouteCoordinator.suppressUntilOnRoute()
                         return@launch
                     }
-                if (!isActive) return@launch
-                recalculatingRoute = false
-                planningRoute = false
-                planIndexingHintVisible = false
-                NaviMapTestHooks.reroutingActive = false
-                routePlanProgress = ""
-                if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
-                    status = userFacingStatus(result.report).ifBlank { "Reroute failed" }
-                    offRouteCoordinator.suppressUntilOnRoute()
-                    return@launch
+                    // Drop stale Plan-time hook labels so applyPlannedRoute uses
+                    // the live fromPoint name from resolveLabelAt.
+                    NaviMapTestHooks.routeStartLabel = ""
+                    fromPoint = startWp
+                    applyPlannedRoute(result)
+                    status =
+                        "Route updated · ${"%.1f".format(result.distanceKm)} km " +
+                        "(recalculated after detour)"
+                } finally {
+                    foregroundPlanLeave()
+                    planProgressClear()
                 }
-                // Drop stale Plan-time hook labels so applyPlannedRoute uses
-                // the live fromPoint name from resolveLabelAt.
-                NaviMapTestHooks.routeStartLabel = ""
-                fromPoint = startWp
-                applyPlannedRoute(result)
-                status =
-                    "Route updated · ${"%.1f".format(result.distanceKm)} km " +
-                    "(recalculated after detour)"
             }
     }
 
@@ -1235,6 +1442,7 @@ private fun NaviMapScreen() {
         return when {
             pct != null && total != null -> "$label $pct% ($done / $total)"
             pct != null -> "$label $pct%"
+            total == null -> label
             else -> "$label $done / ?"
         }
     }
@@ -1247,13 +1455,11 @@ private fun NaviMapScreen() {
                 val line = formatProgressPct(snap.unitsDone, snap.unitsTotal, snap.label)
                 if (snap.label.contains("map tiles", ignoreCase = true) ||
                     snap.label.contains("basemap", ignoreCase = true) ||
-                    snap.label.contains("DEM", ignoreCase = true)
+                    snap.label.contains("DEM", ignoreCase = true) ||
+                    snap.label.contains("Planning extract", ignoreCase = true) ||
+                    snap.label.contains("Writing map archive", ignoreCase = true)
                 ) {
                     pmtilesProgress = line
-                } else if (snap.label.contains("indexed", ignoreCase = true) ||
-                    snap.label.contains("Building indexed", ignoreCase = true)
-                ) {
-                    indexedMapsUiLine = "Indexed maps (background): $line"
                 } else {
                     regionDownloadProgress = line
                 }
@@ -1272,6 +1478,16 @@ private fun NaviMapScreen() {
         }
     }
 
+    // Rebuild a pre-context place index when the region PBF is already on device
+    // (app upgrade). Runs on a process-scoped job so composition restart cannot
+    // cancel the multi-minute PBF scan before place_index.db is written.
+    LaunchedEffect(dataDir) {
+        val pbf = resolveRegionPbf()
+        if (pbf != null && pbf.isFile) {
+            PlaceIndexBackground.ensureStarted(pbf, placeIndexDbForWrite())
+        }
+    }
+
     // Passive indexed-maps status; auto-start background rebuild when packs are stale.
     LaunchedEffect(Unit) {
         while (isActive) {
@@ -1283,22 +1499,30 @@ private fun NaviMapScreen() {
                 val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
                 IndexedMapsBackground.ensureStarted(scope, pbf, dataDir, elev)
                 indexedMapsUiLine = IndexedMapsBackground.uiLine(pbf, dataDir)
+                placeIndexUiLine =
+                    if (PlaceIndexBackground.isRunning()) {
+                        "Place index: building (background)"
+                    } else {
+                        val st = PlaceIndexBackground.statusLine()
+                        if (st == "idle") "" else "Place index: $st"
+                    }
             } else {
                 indexedMapsUiLine = ""
             }
-            delay(if (IndexedMapsBackground.isRunning()) 500 else 2_500)
+            delay(2_500)
         }
     }
 
     LaunchedEffect(planningRoute) {
         if (!planningRoute) return@LaunchedEffect
         while (isActive && planningRoute) {
-            val snap = runCatching { downloadProgressSnapshot() }.getOrNull()
-            if (snap != null && snap.label.startsWith("Planning route")) {
+            val snap = runCatching { planProgressSnapshot() }.getOrNull()
+            if (snap != null && snap.label.isNotBlank()) {
                 val line = formatProgressPct(snap.unitsDone, snap.unitsTotal, snap.label)
                 routePlanProgress = line
                 status = line
-                routePlanPct = snap.percent?.toInt() ?: -1
+                routePlanPct =
+                    monotonicPlanPercent(routePlanPct, snap.percent?.toInt())
             }
             delay(250)
         }
@@ -1328,7 +1552,7 @@ private fun NaviMapScreen() {
                     minutesToBreak = null,
                     distanceToTurnKm = null,
                     breakAsDistance = MapHudPrefs.loadBreakAsDistance(context),
-                    preferMetric = MapHudPrefs.loadPreferMetric(context),
+                    unitSystem = MapHudPrefs.loadUnitSystem(context),
                 )
         }
         if (!locationPermGranted) {
@@ -1434,6 +1658,7 @@ private fun NaviMapScreen() {
             if (NaviMapTestHooks.ignoreLiveGpsFixes && !testOrSim) return
             // Always update map GPS mark from a valid fix.
             if (loc.latitude != 0.0 || loc.longitude != 0.0) {
+                NaviMapTestHooks.lastGpsProvider = provider
                 // Mirror into native so lastGpsFix() / currentSpeedKmh() stay live.
                 val speedKmh =
                     if (loc.hasSpeed() && loc.speed.isFinite() && loc.speed >= 0f) {
@@ -1532,6 +1757,7 @@ private fun NaviMapScreen() {
                             OverspeedHud.isOverspeed(speedKmh, limit, speedAccKmh)
                         NaviMapTestHooks.lastCurrentStreet = road
                         NaviMapTestHooks.lastCurrentSpeedLimitKmh = limit
+                        NaviMapTestHooks.lastOverspeed = over
                         if (
                             driveHud.currentStreet != road ||
                             driveHud.currentSpeedKmh != speedKmh ||
@@ -1560,7 +1786,7 @@ private fun NaviMapScreen() {
                             ApproachGuidanceState(
                                 active = true,
                                 offRoute = true,
-                                preferMetric = driveHud.preferMetric,
+                                unitSystem = driveHud.unitSystem,
                             )
                         NaviMapTestHooks.lastApproachPhase = approachUiPhase(approachGuidance)
                         NaviMapTestHooks.lastApproachIconKey = null
@@ -1584,7 +1810,7 @@ private fun NaviMapScreen() {
                                 houseNumber = house,
                                 postcode = post,
                                 roundaboutExit = man.roundaboutExit,
-                                preferMetric = driveHud.preferMetric,
+                                unitSystem = driveHud.unitSystem,
                                 offRoute = false,
                             )
                         NaviMapTestHooks.lastApproachPhase = approachUiPhase(approachGuidance)
@@ -1604,11 +1830,53 @@ private fun NaviMapScreen() {
                             )
                         speedCameraWarning =
                             speedCameraWarningFromJson(warnJson).copy(
-                                preferMetric = driveHud.preferMetric,
+                                unitSystem = driveHud.unitSystem,
                             )
                     } else {
                         speedCameraWarning = SpeedCameraWarningState()
                     }
+                    val signJson =
+                        if (roadSignsJsonRef.get() != "[]" &&
+                            uniffi.navi.roadSignJurisdictionAllows(loc.latitude, loc.longitude)
+                        ) {
+                            uniffi.navi.nearestRoadSignWarningJson(
+                                roadSignsJsonRef.get(),
+                                loc.latitude,
+                                loc.longitude,
+                            )
+                        } else {
+                            "{}"
+                        }
+                    val schoolFallbackJson =
+                        if (routeSchoolPoisJsonRef.get() != "[]") {
+                            uniffi.navi.nearestSchoolProximityWarningJson(
+                                routeSchoolPoisJsonRef.get(),
+                                loc.latitude,
+                                loc.longitude,
+                            )
+                        } else {
+                            "{}"
+                        }
+                    val signState = roadSignWarningFromJson(signJson)
+                    val schoolState = roadSignWarningFromJson(schoolFallbackJson)
+                    val finalRoadSignJson =
+                        when {
+                            // Real mapped children warning (142) has priority over proximity fallback.
+                            signState.active && signState.code == "142" -> signJson
+                            // Proximity fallback when no explicit children-sign tag is active.
+                            schoolState.active -> schoolFallbackJson
+                            else -> signJson
+                        }
+                    roadSignWarning =
+                        roadSignWarningFromJson(finalRoadSignJson).copy(
+                            unitSystem = driveHud.unitSystem,
+                        )
+                    NaviMapTestHooks.lastRoadSignWarningJson =
+                        if (roadSignWarning.active) finalRoadSignJson else "{}"
+                    NaviMapTestHooks.lastSchoolProximityWarningJson = schoolFallbackJson
+                    NaviMapTestHooks.lastRouteSchoolPoiCount =
+                        runCatching { org.json.JSONArray(routeSchoolPoisJsonRef.get()).length() }
+                            .getOrDefault(0)
                     val offAction =
                         offRouteCoordinator.onFix(
                             offRoute = snap.offRoute,
@@ -1699,6 +1967,121 @@ private fun NaviMapScreen() {
                             }
                         }
                     }
+                } else if (
+                    NaviMapTestHooks.liveHazardConeEnabled &&
+                    progressTrackerRef.get() == null
+                ) {
+                    // Route-independent 300 m heading cone (no planned route / progress tracker).
+                    if (loc.hasBearing() && loc.bearing.isFinite()) {
+                        NaviMapTestHooks.gpsBearingDeg = loc.bearing.toDouble()
+                    }
+                    val headingDeg =
+                        if (loc.hasBearing() && loc.bearing.isFinite()) {
+                            loc.bearing.toDouble()
+                        } else {
+                            null
+                        }
+                    val camJson =
+                        if (speedCameraOptIn) {
+                            uniffi.navi.liveHazardConeSpeedCameraWarningJson(
+                                loc.latitude,
+                                loc.longitude,
+                                headingDeg,
+                                true,
+                            )
+                        } else {
+                            "{}"
+                        }
+                    speedCameraWarning =
+                        speedCameraWarningFromJson(camJson).copy(
+                            unitSystem = driveHud.unitSystem,
+                        )
+                    val signJson =
+                        uniffi.navi.liveHazardConeRoadSignWarningJson(
+                            loc.latitude,
+                            loc.longitude,
+                            headingDeg,
+                        )
+                    val schoolFallbackJson =
+                        uniffi.navi.liveHazardConeChildrenWarningJson(
+                            loc.latitude,
+                            loc.longitude,
+                            headingDeg,
+                        )
+                    val signState = roadSignWarningFromJson(signJson)
+                    val schoolState = roadSignWarningFromJson(schoolFallbackJson)
+                    var finalRoadSignJson =
+                        when {
+                            signState.active && signState.code == "142" -> signJson
+                            schoolState.active -> schoolFallbackJson
+                            else -> signJson
+                        }
+                    // Apply hazard/school plate immediately. Speed-limit cone may
+                    // cold-build a PBF bbox graph (tens of seconds) — never on main.
+                    roadSignWarning =
+                        roadSignWarningFromJson(finalRoadSignJson).copy(
+                            unitSystem = driveHud.unitSystem,
+                        )
+                    NaviMapTestHooks.lastRoadSignWarningJson =
+                        if (roadSignWarning.active) finalRoadSignJson else "{}"
+                    NaviMapTestHooks.lastSchoolProximityWarningJson = schoolFallbackJson
+                    NaviMapTestHooks.lastLiveHazardConeM =
+                        runCatching { uniffi.navi.liveHazardConeM() }.getOrDefault(300.0)
+                    if (!roadSignWarning.active) {
+                        val pbf = resolveRegionPbf()
+                        val skipGraph =
+                            skipLiveGraphWorkDuringForegroundPlan(
+                                runCatching { foregroundPlanActive() }
+                                    .getOrDefault(planningRoute),
+                            )
+                        if (pbf != null &&
+                            !skipGraph &&
+                            speedLimitConeInFlight.compareAndSet(false, true)
+                        ) {
+                            val fixLat = loc.latitude
+                            val fixLon = loc.longitude
+                            val heading = headingDeg
+                            val prof = profile
+                            val currentLimit = driveHud.currentSpeedLimitKmh
+                            val unit = driveHud.unitSystem
+                            val pbfPath = pbf.absolutePath
+                            val cachePath = graphCacheDirForPbf(pbf).absolutePath
+                            val elevPath = File(dataDir, "elevation").absolutePath
+                            scope.launch {
+                                try {
+                                    val limitJson =
+                                        withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                uniffi.navi.liveSpeedLimitConeJson(
+                                                    pbfPath,
+                                                    cachePath,
+                                                    elevPath,
+                                                    fixLat,
+                                                    fixLon,
+                                                    heading,
+                                                    prof,
+                                                    currentLimit,
+                                                )
+                                            }.getOrDefault("{}")
+                                        }
+                                    val plate =
+                                        runCatching {
+                                            org.json.JSONObject(limitJson).optJSONObject("road_sign")
+                                        }.getOrNull()
+                                    if (plate != null && plate.has("icon_key")) {
+                                        val plateJson = plate.toString()
+                                        roadSignWarning =
+                                            roadSignWarningFromJson(plateJson).copy(
+                                                unitSystem = unit,
+                                            )
+                                        NaviMapTestHooks.lastRoadSignWarningJson = plateJson
+                                    }
+                                } finally {
+                                    speedLimitConeInFlight.set(false)
+                                }
+                            }
+                        }
+                    }
                 }
                 if (!streetFromRoute) {
                     if (speedKmh != null && driveHud.currentSpeedKmh != speedKmh) {
@@ -1710,6 +2093,7 @@ private fun NaviMapScreen() {
                             )
                         driveHud =
                             driveHud.copy(currentSpeedKmh = speedKmh, overspeed = over)
+                        NaviMapTestHooks.lastOverspeed = over
                     }
                     // Idle GPS: nearest OSM way (bbox graph), place-index only as fallback.
                     val now = android.os.SystemClock.elapsedRealtime()
@@ -1756,6 +2140,13 @@ private fun NaviMapScreen() {
                             }
                             val nearInfo =
                                 withContext(Dispatchers.IO) {
+                                    if (skipLiveGraphWorkDuringForegroundPlan(
+                                            runCatching { foregroundPlanActive() }
+                                                .getOrDefault(false),
+                                        )
+                                    ) {
+                                        return@withContext null
+                                    }
                                     val pbf = resolveRegionPbf() ?: return@withContext null
                                     runCatching {
                                         roadNearInfo(
@@ -1789,6 +2180,7 @@ private fun NaviMapScreen() {
                                             currentSpeedLimitKmh = nearInfo.speedLimitKmh,
                                             overspeed = over,
                                         )
+                                    NaviMapTestHooks.lastOverspeed = over
                                 }
                                 interim == null && clearIfFar && driveHud.currentStreet != null -> {
                                     driveHud =
@@ -1799,6 +2191,7 @@ private fun NaviMapScreen() {
                                         )
                                     NaviMapTestHooks.lastCurrentStreet = null
                                     NaviMapTestHooks.lastCurrentSpeedLimitKmh = null
+                                    NaviMapTestHooks.lastOverspeed = false
                                 }
                             }
                         }
@@ -2037,6 +2430,28 @@ private fun NaviMapScreen() {
                                 startRouteSimulation()
                             }
                         }
+                        if (NaviMapTestHooks.requestStartLiveConeSimulation) {
+                            val coords = NaviMapTestHooks.liveConeSimCoordsJson
+                            if (!coords.isNullOrBlank()) {
+                                NaviMapTestHooks.requestStartLiveConeSimulation = false
+                                // No planned route: clear progress tracker so the live cone path runs.
+                                progressTrackerRef.set(null)
+                                NaviMapTestHooks.lastRoutePolyline = ""
+                                routeSchoolPoisJson = "[]"
+                                val samplesJson =
+                                    runCatching {
+                                        uniffi.navi.simSamplesJsonFromLatLon(
+                                            coords,
+                                            NaviMapTestHooks.liveConeSimSpeedKmh,
+                                        )
+                                    }.getOrDefault("[]")
+                                routeSamples = parseRouteSimSamples(samplesJson)
+                                NaviMapTestHooks.lastSimSamplesJson = samplesJson
+                                if (routeSamples.size >= 2) {
+                                    startRouteSimulation()
+                                }
+                            }
+                        }
                         if (NaviMapTestHooks.requestStopRouteSimulation) {
                             NaviMapTestHooks.requestStopRouteSimulation = false
                             stopRouteSimulation()
@@ -2061,7 +2476,11 @@ private fun NaviMapScreen() {
                                     longitude = inject.second
                                     time = System.currentTimeMillis()
                                     accuracy = 5f
+                                    NaviMapTestHooks.pendingInjectFixSpeedKmh?.let { kmh ->
+                                        speed = (kmh / 3.6).toFloat()
+                                    }
                                 }
+                            NaviMapTestHooks.pendingInjectFixSpeedKmh = null
                             applyFixRef.get().invoke(loc)
                         }
                         val hikeAns = NaviMapTestHooks.requestHikingRerouteAnswer
@@ -2084,8 +2503,25 @@ private fun NaviMapScreen() {
                         val seekCum = NaviMapTestHooks.requestSimSeekCumM
                         if (seekCum != null) {
                             NaviMapTestHooks.requestSimSeekCumM = null
-                            if (routeSimulator == null) {
-                                prepareRouteSimulation()
+                            if (routeSimulator == null && routeSamples.size >= 2) {
+                                if (progressTrackerRef.get() != null) {
+                                    prepareRouteSimulation()
+                                } else {
+                                    // Route-independent live-cone playback: no progress tracker.
+                                    routeSimulator =
+                                        RouteSimulator(
+                                            scope = scope,
+                                            samples = routeSamples,
+                                            onFix = { loc -> applyFixRef.get().invoke(loc) },
+                                            onSample = { s ->
+                                                NaviMapTestHooks.lastSimSpeedKmh = s.speedKmh
+                                                NaviMapTestHooks.lastSimHighway = s.highway
+                                                NaviMapTestHooks.lastSimMaxspeedPosted =
+                                                    s.maxspeedPosted
+                                            },
+                                            onFinished = {},
+                                        )
+                                }
                             }
                             // Mark as simulating so LM fixes stay suppressed during seeks.
                             simulating = true
@@ -2265,7 +2701,7 @@ private fun NaviMapScreen() {
                             breakRemindersEnabled = driveHud.breakRemindersEnabled,
                             minutesToBreak = driveHud.minutesToBreak,
                             breakAsDistance = driveHud.breakAsDistance,
-                            preferMetric = driveHud.preferMetric,
+                            unitSystem = driveHud.unitSystem,
                         ) != null
                         NaviMapTestHooks.lastHudAltitudeM = driveHud.altitudeM
 
@@ -2329,10 +2765,11 @@ private fun NaviMapScreen() {
         hit: PlaceHit,
         target: SearchTarget = searchTarget,
     ) {
+        val label = placeHitDisplayLabel(hit)
         val (street, house, post) = parseAddressDisplayLines(combined = hit.name)
         val wp =
             Waypoint(
-                name = hit.name,
+                name = label,
                 lat = hit.lat,
                 lon = hit.lon,
                 street = street,
@@ -2352,13 +2789,13 @@ private fun NaviMapScreen() {
                 cameraZoom = 12.0,
                 poiLat = hit.lat,
                 poiLon = hit.lon,
-                poiName = hit.name,
+                poiName = label,
                 layerEpoch = mapState.layerEpoch + 1,
             )
         NaviMapTestHooks.followGps = false
-        query = hit.name
+        query = label
         hits = emptyList()
-        status = userFacingStatus("Set ${target.name.lowercase()}: ${hit.name}")
+        status = userFacingStatus("Set ${target.name.lowercase()}: $label")
     }
 
     fun applyMarkAs(
@@ -2373,6 +2810,8 @@ private fun NaviMapScreen() {
                 kind = pending.kind,
                 lat = pending.lat,
                 lon = pending.lon,
+                subArea = "",
+                municipality = "",
             ),
             target = target,
         )
@@ -2384,6 +2823,7 @@ private fun NaviMapScreen() {
         val trimmed = q.trim()
         if (trimmed.length < 2) {
             hits = emptyList()
+            searchIndexHint = ""
             return
         }
         // Accept WGS84 "lat, lon" for From / Via / To without place FTS.
@@ -2397,21 +2837,25 @@ private fun NaviMapScreen() {
                         kind = "coordinate",
                         lat = lat,
                         lon = lon,
+                        subArea = "",
+                        municipality = "",
                     ),
                 )
             NaviMapTestHooks.lastSearchHitCount = 1
             NaviMapTestHooks.lastSearchQuery = trimmed
             NaviMapTestHooks.lastSearchHitNames = listOf(name)
             searchBusy = false
+            searchIndexHint = ""
             return
         }
         searchBusy = true
         searchJob =
             scope.launch {
                 delay(200)
+                val dbPath = resolvePlaceIndexDb().absolutePath
                 val list =
                     withContext(Dispatchers.IO) {
-                        searchPlaces(resolvePlaceIndexDb().absolutePath, trimmed, 20u)
+                        searchPlaces(dbPath, trimmed, 20u)
                     }
                 hits =
                     when (searchMode) {
@@ -2433,9 +2877,20 @@ private fun NaviMapScreen() {
                                     k.contains("highway") || k.contains("place") || k.contains("addr")
                                 }.ifEmpty { list }
                     }
+                val hasEntries =
+                    withContext(Dispatchers.IO) {
+                        runCatching { placeIndexHasEntries(dbPath) }.getOrDefault(false)
+                    }
+                searchIndexHint =
+                    placeSearchBuildingMessage(
+                        hits.isEmpty(),
+                        hasEntries,
+                        PlaceIndexBackground.isRunning(),
+                    ).orEmpty()
                 NaviMapTestHooks.lastSearchHitCount = hits.size
                 NaviMapTestHooks.lastSearchQuery = trimmed
-                NaviMapTestHooks.lastSearchHitNames = hits.map { it.name }
+                NaviMapTestHooks.lastSearchHitNames = hits.map { placeHitDisplayLabel(it) }
+                NaviMapTestHooks.lastSearchIndexBuildingHint = searchIndexHint
                 searchBusy = false
             }
     }
@@ -2478,6 +2933,7 @@ private fun NaviMapScreen() {
             prefer3d = driveHud.optIn3d,
             cameraTiltDeg = driveHud.cameraTiltDeg,
             vulkanAvailable = driveHud.vulkanAvailable,
+            unitSystem = driveHud.unitSystem,
             styleEpoch = styleEpoch,
             bearingEpoch = bearingApplyEpoch,
             modifier = Modifier.fillMaxSize(),
@@ -2775,7 +3231,7 @@ private fun NaviMapScreen() {
                                             withContext(Dispatchers.IO) {
                                                 ensurePlaceIndex(
                                                     pbf.absolutePath,
-                                                    resolvePlaceIndexDb().absolutePath,
+                                                    placeIndexDbForWrite().absolutePath,
                                                 )
                                             }
                                         } else {
@@ -2850,6 +3306,14 @@ private fun NaviMapScreen() {
                 )
                 SpeedCameraWarningBox(
                     state = speedCameraWarning,
+                    iconsDir = iconsDir.absolutePath,
+                    modifier =
+                        Modifier
+                            .align(Alignment.Start)
+                            .padding(bottom = 8.dp),
+                )
+                RoadSignWarningBox(
+                    state = roadSignWarning,
                     iconsDir = iconsDir.absolutePath,
                     modifier =
                         Modifier
@@ -2972,6 +3436,16 @@ private fun NaviMapScreen() {
                             if (searchBusy) {
                                 Text("Searching...", style = MaterialTheme.typography.bodySmall)
                             }
+                            if (searchIndexHint.isNotBlank() && hits.isEmpty() && !searchBusy) {
+                                Text(
+                                    searchIndexHint,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .testTag("search_index_building_hint"),
+                                )
+                            }
                             if (hits.isNotEmpty()) {
                                 hits.take(8).forEachIndexed { idx, hit ->
                                     Column(
@@ -2982,7 +3456,10 @@ private fun NaviMapScreen() {
                                                 .clickable { applyHit(hit) }
                                                 .padding(vertical = 6.dp, horizontal = 4.dp),
                                     ) {
-                                        Text(hit.name, style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            placeHitDisplayLabel(hit),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                        )
                                         Text(hit.kind, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
@@ -3037,6 +3514,7 @@ private fun NaviMapScreen() {
                                             NaviMapTestHooks.missingCoveragePromptVisible = true
                                             NaviMapTestHooks.lastMissingCoveragePath =
                                                 missing.suggestedGeofabrikPath
+                                            NaviMapTestHooks.lastMissingCoverageMessage = missing.message
                                             status = missing.message
                                             return@launch
                                         }
@@ -3075,26 +3553,28 @@ private fun NaviMapScreen() {
                                             endLon = pts.last().lon,
                                         )
                                         downloadProgressClear()
+                                        planProgressClear()
                                         planningRoute = true
                                         routePlanPct = 0
                                         routePlanProgress = "Planning route: starting…"
                                         status = routePlanProgress
-                                        planIndexingHintVisible =
-                                            withContext(Dispatchers.IO) {
-                                                val planPbf = pbf ?: resolveRegionPbf()
-                                                if (planPbf == null || !planPbf.isFile) {
-                                                    true
-                                                } else {
-                                                    runCatching {
-                                                        indexedMapsStatus(
-                                                            planPbf.absolutePath,
-                                                            dataDir.absolutePath,
-                                                        ).trim()
-                                                    }.getOrDefault("missing") != "ready"
-                                                }
-                                            }
                                         val result =
                                             try {
+                                                foregroundPlanEnter()
+                                                planIndexingHintVisible =
+                                                    withContext(Dispatchers.IO) {
+                                                        val planPbf = pbf ?: resolveRegionPbf()
+                                                        if (planPbf == null || !planPbf.isFile) {
+                                                            true
+                                                        } else {
+                                                            runCatching {
+                                                                indexedMapsStatus(
+                                                                    planPbf.absolutePath,
+                                                                    dataDir.absolutePath,
+                                                                ).trim()
+                                                            }.getOrDefault("missing") != "ready"
+                                                        }
+                                                    }
                                                 withContext(Dispatchers.IO) {
                                                     runCatching {
                                                         val stagedPoly =
@@ -3351,6 +3831,8 @@ private fun NaviMapScreen() {
                                                 routePlanPct = -1
                                                 routePlanProgress = ""
                                                 planIndexingHintVisible = false
+                                                planProgressClear()
+                                                foregroundPlanLeave()
                                                 downloadProgressClear()
                                             }
                                         val durationMs = System.currentTimeMillis() - planStarted
@@ -3367,12 +3849,6 @@ private fun NaviMapScreen() {
                                             return@launch
                                         }
                                         RoutingPlanLog.complete(result, ecoForPlan, durationMs)
-                                        if (result.offTrailAdvisory.isNotBlank()) {
-                                            status =
-                                                userFacingStatus(result.report)
-                                                    .ifBlank { "Route planned" } +
-                                                " · Off-trail: use judgment (terrain advisory)"
-                                        }
                                         NaviMapTestHooks.routeStartLabel = start.name
                                         NaviMapTestHooks.routeEndLabel = toPoint.name
                                         NaviMapTestHooks.routeViaLabel =
@@ -3382,14 +3858,32 @@ private fun NaviMapScreen() {
                                         // consume the hook and the visible map stays empty.
                                         applyPlannedRoute(result)
                                         prioritySharePct = result.priorityPathSharePct
-                                        status = formatEbikePlanStatus(result.report, result.distanceKm)
-                                            ?: (
-                                                formatRouteAvoidanceReport(
-                                                    avoidMotorways,
-                                                    avoidTolls,
-                                                    avoidFerries,
-                                                    prioritySharePct,
-                                                ) + "\nRoute planned · ${"%.1f".format(result.distanceKm)} km"
+                                        val planStatus =
+                                            formatEbikePlanStatus(
+                                                result.report,
+                                                result.distanceKm,
+                                                driveHud.unitSystem,
+                                            )
+                                                ?: (
+                                                    formatRouteAvoidanceReport(
+                                                        avoidMotorways,
+                                                        avoidTolls,
+                                                        avoidFerries,
+                                                        prioritySharePct,
+                                                    ) + "\n" +
+                                                        DisplayUnits.formatRoutePlanned(
+                                                            result.distanceKm,
+                                                            driveHud.unitSystem,
+                                                        )
+                                                )
+                                        status =
+                                            withIndexedPackMissHint(
+                                                if (result.offTrailAdvisory.isNotBlank()) {
+                                                    "$planStatus · Off-trail: use judgment (terrain advisory)"
+                                                } else {
+                                                    planStatus
+                                                },
+                                                result.report,
                                             )
                                     }
                                 },
@@ -3459,6 +3953,7 @@ private fun NaviMapScreen() {
                             }
                             MultiDayPlanCards(
                                 days = mapState.multiDayCards,
+                                unitSystem = driveHud.unitSystem,
                                 modifier =
                                     Modifier
                                         .fillMaxWidth()
@@ -3475,31 +3970,46 @@ private fun NaviMapScreen() {
                                         }
                                         val fixLat = mapState.gpsLat
                                         val fixLon = mapState.gpsLon
-                                        // Capture field at tap time — resolveLabelAt is async;
-                                        // do not re-read searchTarget after await (chip race).
                                         val targetAtClick = searchTarget
-                                        // Resolve a nearby address/name within 12 m; else GPS coords.
+                                        val immediate = gpsImmediateCoordHit(fixLat, fixLon)
+                                        applyHit(immediate, target = targetAtClick)
+                                        NaviMapTestHooks.lastGpsImmediateCoord =
+                                            formatCoordWaypointName(fixLat, fixLon)
                                         scope.launch {
                                             val (name, kind) = resolveLabelAt(fixLat, fixLon)
+                                            val current =
+                                                when (targetAtClick) {
+                                                    SearchTarget.From -> fromPoint
+                                                    SearchTarget.To -> toPoint
+                                                    SearchTarget.Via -> viaPoints.lastOrNull()
+                                                }
+                                            if (!gpsWaypointShouldUpgrade(
+                                                    current?.lat,
+                                                    current?.lon,
+                                                    current?.name,
+                                                    fixLat,
+                                                    fixLon,
+                                                    name,
+                                                    kind,
+                                                )
+                                            ) {
+                                                return@launch
+                                            }
                                             val hitKind =
                                                 when (kind) {
                                                     "map-resolved" -> "gps-resolved"
                                                     "map-mark" -> "gps"
                                                     else -> kind
                                                 }
-                                            val label =
-                                                if (hitKind == "gps") {
-                                                    formatGpsWaypointFallback(fixLat, fixLon)
-                                                } else {
-                                                    name
-                                                }
                                             applyHit(
                                                 PlaceHit(
                                                     osmId = 0L,
-                                                    name = label,
+                                                    name = name,
                                                     kind = hitKind,
                                                     lat = fixLat,
                                                     lon = fixLon,
+                                                    subArea = "",
+                                                    municipality = "",
                                                 ),
                                                 target = targetAtClick,
                                             )
@@ -3659,8 +4169,103 @@ private fun NaviMapScreen() {
                                             },
                                         )
                                     }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text("Use networked cabins")
+                                        Switch(
+                                            checked = useNetworkedCabins,
+                                            onCheckedChange = { on ->
+                                                useNetworkedCabins = on
+                                                uniffi.navi.saveUseNetworkedCabins(
+                                                    dataDir.absolutePath,
+                                                    on,
+                                                )
+                                                DiagnosticLog.logToggle(
+                                                    "use_networked_cabins",
+                                                    on,
+                                                    mapOf("profile" to profile.name),
+                                                )
+                                                DiagnosticLog.logSettingSaved(
+                                                    "use_networked_cabins",
+                                                    on,
+                                                )
+                                            },
+                                            modifier = Modifier.testTag("toggle_use_networked_cabins"),
+                                        )
+                                    }
+                                }
+                                if (profile == TravelProfile.BICYCLE ||
+                                    profile == TravelProfile.BICYCLE_ELECTRIC
+                                ) {
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        Text("Bike type (surface suitability)")
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            listOf(
+                                                "road" to "Road",
+                                                "trekking" to "Gravel",
+                                                "mountain" to "MTB",
+                                            ).forEach { (id, label) ->
+                                                TextButton(
+                                                    onClick = {
+                                                        bikeCapability = id
+                                                        uniffi.navi.saveBikeCapability(
+                                                            dataDir.absolutePath,
+                                                            id,
+                                                        )
+                                                        DiagnosticLog.logSettingSaved(
+                                                            "bike_capability",
+                                                            id,
+                                                        )
+                                                    },
+                                                ) {
+                                                    Text(
+                                                        label,
+                                                        fontWeight =
+                                                            if (bikeCapability == id) {
+                                                                FontWeight.Bold
+                                                            } else {
+                                                                FontWeight.Normal
+                                                            },
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                                 if (profile == TravelProfile.HIKING) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text("Network hut member (DNT/STF/…)")
+                                        Switch(
+                                            checked = networkHutMember,
+                                            onCheckedChange = { on ->
+                                                networkHutMember = on
+                                                uniffi.navi.saveNetworkHutMember(
+                                                    dataDir.absolutePath,
+                                                    on,
+                                                )
+                                                DiagnosticLog.logToggle(
+                                                    "network_hut_member",
+                                                    on,
+                                                    mapOf("profile" to profile.name),
+                                                )
+                                                DiagnosticLog.logSettingSaved(
+                                                    "network_hut_member",
+                                                    on,
+                                                )
+                                            },
+                                            modifier = Modifier.testTag("toggle_network_hut_member"),
+                                        )
+                                    }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
@@ -4098,6 +4703,8 @@ private fun NaviMapScreen() {
                                                                 kind = place.kind.ifBlank { "saved-place" },
                                                                 lat = place.lat,
                                                                 lon = place.lon,
+                                                                subArea = "",
+                                                                municipality = "",
                                                             ),
                                                         )
                                                     },
@@ -4113,6 +4720,8 @@ private fun NaviMapScreen() {
                                                                 kind = place.kind.ifBlank { "saved-place" },
                                                                 lat = place.lat,
                                                                 lon = place.lon,
+                                                                subArea = "",
+                                                                municipality = "",
                                                             ),
                                                         )
                                                     },
@@ -4128,6 +4737,8 @@ private fun NaviMapScreen() {
                                                                 kind = place.kind.ifBlank { "saved-place" },
                                                                 lat = place.lat,
                                                                 lon = place.lon,
+                                                                subArea = "",
+                                                                municipality = "",
                                                             ),
                                                         )
                                                     },
@@ -4361,9 +4972,7 @@ private fun NaviMapScreen() {
                         }
                     } else {
                         Text(
-                            "Sub-region chips are listed for Norway only today. " +
-                                "Enter a Geofabrik subpath in the field below " +
-                                "(e.g. europe/germany/bayern), or switch back to Country.",
+                            GeofabrikDownloadCatalog.regionGranularityNote(selectedGeofabrikPath),
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.testTag("region_chips_norway_only_note"),
                         )
@@ -4425,7 +5034,7 @@ private fun NaviMapScreen() {
                                             withContext(Dispatchers.IO) {
                                                 ensurePlaceIndex(
                                                     pbf.absolutePath,
-                                                    resolvePlaceIndexDb().absolutePath,
+                                                    placeIndexDbForWrite().absolutePath,
                                                 )
                                             }
                                         } else {
@@ -4490,6 +5099,13 @@ private fun NaviMapScreen() {
                             indexedMapsUiLine,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.testTag("indexed_maps_bg_status"),
+                        )
+                    }
+                    if (placeIndexUiLine.isNotBlank()) {
+                        Text(
+                            placeIndexUiLine,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("place_index_bg_status"),
                         )
                     }
                     if (regionDownloadProgress.isNotBlank()) {
@@ -4712,15 +5328,19 @@ private fun NaviMapScreen() {
                     Button(
                         onClick = {
                             scope.launch {
-                                status =
+                                val raw =
                                     withContext(Dispatchers.IO) {
                                         checkOsmUpdates(dataDir.absolutePath)
                                     }
-                                pendingUpdatePlan = status
+                                pendingUpdatePlan = raw
+                                status = OsmUpdateUserCopy.forCheckReport(raw)
                                 updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .testTag("btn_check_osm_updates"),
                     ) {
                         Text("Check for OSM updates")
                     }
@@ -4729,17 +5349,17 @@ private fun NaviMapScreen() {
                             scope.launch {
                                 val plan = pendingUpdatePlan
                                 if (plan.isNullOrBlank() || plan.contains("up to date", ignoreCase = true)) {
-                                    status = "Run Check for OSM updates first, or already up to date."
+                                    status = OsmUpdateUserCopy.NEED_CHECK
                                     return@launch
                                 }
                                 if (plan.contains("Unsupported", ignoreCase = true) ||
                                     plan.contains("unsupported", ignoreCase = true)
                                 ) {
-                                    status = "This extract has no Geofabrik binding. Bind a region or re-download."
+                                    status = OsmUpdateUserCopy.NO_BINDING
                                     return@launch
                                 }
-                                status = "Applying OSM update (user confirmed)..."
-                                status =
+                                status = OsmUpdateUserCopy.APPLYING
+                                val raw =
                                     withContext(Dispatchers.IO) {
                                         applyOsmUpdate(dataDir.absolutePath)
                                     }
@@ -4747,13 +5367,13 @@ private fun NaviMapScreen() {
                                 // applyOsmUpdate clears place_index + graph-cache and
                                 // fingerprints the new PBF so packs become stale_pbf.
                                 // Mirror the download button: rebuild index + queue packs.
-                                if (status.contains("PASS", ignoreCase = true)) {
+                                if (raw.contains("PASS", ignoreCase = true)) {
                                     val pbf = resolveRegionPbf()
                                     if (pbf != null && pbf.isFile) {
                                         withContext(Dispatchers.IO) {
                                             ensurePlaceIndex(
                                                 pbf.absolutePath,
-                                                resolvePlaceIndexDb().absolutePath,
+                                                placeIndexDbForWrite().absolutePath,
                                             )
                                         }
                                         val elevDir =
@@ -4764,14 +5384,19 @@ private fun NaviMapScreen() {
                                             dataDir,
                                             elevDir,
                                         )
-                                        status =
-                                            "$status | place index rebuild started; " +
-                                            "indexed maps: background"
+                                        status = OsmUpdateUserCopy.UPDATED_INDEXING
+                                    } else {
+                                        status = OsmUpdateUserCopy.UPDATED
                                     }
+                                } else {
+                                    status = OsmUpdateUserCopy.forApplyReport(raw)
                                 }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .testTag("btn_apply_osm_update"),
                         enabled = !pendingUpdatePlan.isNullOrBlank(),
                     ) {
                         Text("Apply pending OSM update")
@@ -4848,7 +5473,11 @@ private fun NaviMapScreen() {
                     ) {
                         Text("Export diagnostic log")
                     }
-                    Text(status, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        userFacingStatus(status),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("tools_status"),
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = {
@@ -5126,12 +5755,12 @@ private fun NaviMapScreen() {
                         DiagnosticLog.logToggle("break_as_distance", on)
                         DiagnosticLog.logSettingSaved("break_as_distance", on)
                     },
-                    preferMetric = driveHud.preferMetric,
-                    onPreferMetricChange = { on ->
-                        MapHudPrefs.savePreferMetric(context, on)
-                        driveHud = driveHud.copy(preferMetric = on)
-                        DiagnosticLog.logToggle("prefer_metric", on)
-                        DiagnosticLog.logSettingSaved("prefer_metric", on)
+                    unitSystem = driveHud.unitSystem,
+                    onUnitSystemChange = { system ->
+                        MapHudPrefs.saveUnitSystem(context, system)
+                        driveHud = driveHud.copy(unitSystem = system)
+                        DiagnosticLog.logToggle("unit_system", system.persistId)
+                        DiagnosticLog.logSettingSaved("unit_system", system.persistId)
                     },
                     onApplied = {
                         showDriveSettings = false
@@ -5163,7 +5792,7 @@ private fun NaviMapScreen() {
                                     ecoActive = ecoFromStore || ecoEnabled,
                                     minutesToBreak = minsLeft,
                                     breakAsDistance = MapHudPrefs.loadBreakAsDistance(context),
-                                    preferMetric = MapHudPrefs.loadPreferMetric(context),
+                                    unitSystem = MapHudPrefs.loadUnitSystem(context),
                                 )
                             ecoEnabled = ecoFromStore || ecoEnabled
                         }
@@ -5265,6 +5894,7 @@ private fun CorridorMapView(
     prefer3d: Boolean,
     cameraTiltDeg: Double,
     vulkanAvailable: Boolean,
+    unitSystem: UnitSystem,
     styleEpoch: Int,
     bearingEpoch: Int = 0,
     modifier: Modifier = Modifier,
@@ -5378,9 +6008,15 @@ private fun CorridorMapView(
             java.util.concurrent.atomic
                 .AtomicReference(cameraTiltDeg)
         }
+    val unitSystemRef =
+        remember {
+            java.util.concurrent.atomic
+                .AtomicReference(unitSystem)
+        }
     prefer3dRef.set(prefer3d)
     vulkanRef.set(vulkanAvailable)
     tiltRef.set(cameraTiltDeg)
+    unitSystemRef.set(unitSystem)
 
     fun effectiveTiltDeg(): Double {
         val liveVulkan = vulkanRef.get()
@@ -5472,6 +6108,8 @@ private fun CorridorMapView(
         BasemapPathPaint.apply(style)
         BasemapProtectedAreaStyle.apply(style)
         BasemapHousenumberStyle.apply(style)
+        BasemapGlacierOutlineStyle.apply(style)
+        BasemapPeakElevationStyle.apply(style, unitSystemRef.get())
         ensureRouteAboveHillshade(style)
         applyCameraTilt(map)
         styleReady.value = true
@@ -5694,6 +6332,15 @@ private fun CorridorMapView(
                 runCatching { mapView.onPause() }
                 runCatching { mapView.onStop() }
                 runCatching { mapView.onDestroy() }
+            }
+        }
+    }
+
+    LaunchedEffect(unitSystem, styleReady.value) {
+        if (!styleReady.value) return@LaunchedEffect
+        mapRef?.getStyle { style ->
+            if (style != null) {
+                BasemapPeakElevationStyle.apply(style, unitSystem)
             }
         }
     }
@@ -6494,6 +7141,9 @@ private fun applyRouteToStyle(
             (style.getSource("poi-src") as? GeoJsonSource)
                 ?.setGeoJson(FeatureCollection.fromFeature(feature))
         }
+    } else {
+        if (style.getLayer("poi-layer") != null) style.removeLayer("poi-layer")
+        if (style.getSource("poi-src") != null) style.removeSource("poi-src")
     }
 
     // Start / via / end place names — always drawn when coords are set so labels
@@ -6553,6 +7203,10 @@ private fun applyRouteToStyle(
         } else {
             (style.getSource("waypoints-src") as? GeoJsonSource)?.setGeoJson(collection)
         }
+    } else {
+        if (style.getLayer("waypoints-layer") != null) style.removeLayer("waypoints-layer")
+        if (style.getLayer("waypoints-dots") != null) style.removeLayer("waypoints-dots")
+        if (style.getSource("waypoints-src") != null) style.removeSource("waypoints-src")
     }
 
     // Current GPS / device position (dot only; no text label).
@@ -6794,6 +7448,16 @@ private fun ensureIconsCopied(
     runCatching {
         context.assets.open("icons/speed_camera.svg").use { input ->
             File(dest, "speed_camera.svg").outputStream().use { output -> input.copyTo(output) }
+        }
+    }
+    // Look-forward 20 km/h plate (Navi stand-in; upstream catalogue has svg=null).
+    runCatching {
+        val roadSigns = File(dest, "road-signs")
+        roadSigns.mkdirs()
+        context.assets.open("icons/road-signs/no_sign_362_20.svg").use { input ->
+            File(roadSigns, "no_sign_362_20.svg").outputStream().use { output ->
+                input.copyTo(output)
+            }
         }
     }
 }

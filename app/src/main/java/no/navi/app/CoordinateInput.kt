@@ -41,6 +41,42 @@ fun formatGpsWaypointFallback(
     lon: Double,
 ): String = "GPS (${formatCoordWaypointName(lat, lon)})"
 
+/** Immediate waypoint label when tapping Use GPS (same as typed lat, lon). */
+fun gpsImmediateCoordHit(
+    lat: Double,
+    lon: Double,
+): uniffi.navi.PlaceHit =
+    uniffi.navi.PlaceHit(
+        osmId = 0L,
+        name = formatCoordWaypointName(lat, lon),
+        kind = "coordinate",
+        lat = lat,
+        lon = lon,
+        subArea = "",
+        municipality = "",
+    )
+
+/**
+ * After a background [resolveLabelAt], upgrade the GPS waypoint only when the
+ * user has not replaced it and a real name was found.
+ */
+fun gpsWaypointShouldUpgrade(
+    currentLat: Double?,
+    currentLon: Double?,
+    currentName: String?,
+    expectedLat: Double,
+    expectedLon: Double,
+    resolvedName: String,
+    resolvedKind: String,
+): Boolean {
+    if (currentLat == null || currentLon == null) return false
+    if (currentLat != expectedLat || currentLon != expectedLon) return false
+    if (resolvedName.isBlank()) return false
+    if (resolvedKind == "map-mark" || resolvedKind == "gps") return false
+    if (resolvedName == currentName) return false
+    return true
+}
+
 /**
  * Preferred max distance (metres) between a chosen From / Via / To and its
  * on-route map pin. Pins are always projected onto the planned corridor so they
@@ -159,4 +195,25 @@ fun pickNearbyPlaceNameForGpsWaypoint(hits: List<uniffi.navi.PlaceHit>): String?
         }
     if (addr != null) return addr
     return hits.firstNotNullOfOrNull { usable(it) }
+}
+
+/**
+ * Search-result label: `Place, Sub-area, Municipality`. Empty and duplicate
+ * parts are omitted so unique names stay readable (`Espa, Stange`) while
+ * identical names stay distinguishable (`Båberg, Brattberg, Gjøvik`).
+ */
+fun placeHitDisplayLabel(hit: uniffi.navi.PlaceHit): String {
+    val parts = mutableListOf<String>()
+
+    fun add(raw: String) {
+        val t = raw.trim()
+        if (t.isEmpty()) return
+        if (parts.any { it.equals(t, ignoreCase = true) }) return
+        parts.add(t)
+    }
+
+    add(hit.name)
+    add(hit.subArea)
+    add(hit.municipality)
+    return parts.joinToString(", ")
 }

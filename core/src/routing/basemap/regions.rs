@@ -96,27 +96,116 @@ fn bbox_area_deg2(bbox: [f64; 4]) -> f64 {
     (bbox[2] - bbox[0]).max(0.0) * (bbox[3] - bbox[1]).max(0.0)
 }
 
-/// Most-specific Geofabrik landsdel/country path whose approximate bbox covers
-/// `(lat, lon)`. Prefers Norway landsdel extracts over `europe/norway`.
-///
-/// Returns `None` when no known table entry covers the point.
-pub fn suggest_geofabrik_path_for_point(lat: f64, lon: f64) -> Option<&'static str> {
-    let mut best: Option<(&'static str, f64)> = None;
-    for (path, bbox) in NORWAY_LANDSDEL {
-        if *path == "test/oslo" {
+fn bbox_lon_span_deg(bbox: [f64; 4]) -> f64 {
+    (bbox[3] - bbox[1]).max(0.0)
+}
+
+/// Country-scale fallbacks whose Geofabrik bbox spans (nearly) all longitudes.
+/// These must not beat tighter regional extracts in [`suggest_geofabrik_path_for_point`].
+fn bbox_is_coarse_longitude_fallback(bbox: [f64; 4]) -> bool {
+    bbox_lon_span_deg(bbox) >= 120.0
+}
+
+fn pick_smallest_covering<'a>(
+    candidates: impl Iterator<Item = (&'a str, [f64; 4])>,
+    lat: f64,
+    lon: f64,
+    allow_coarse: bool,
+) -> Option<&'a str> {
+    let mut best: Option<(&'a str, f64)> = None;
+    for (path, bbox) in candidates {
+        if !allow_coarse && bbox_is_coarse_longitude_fallback(bbox) {
             continue;
         }
-        if !bbox_covers_point(*bbox, lat, lon) {
+        if !bbox_covers_point(bbox, lat, lon) {
             continue;
         }
-        let area = bbox_area_deg2(*bbox);
+        let area = bbox_area_deg2(bbox);
         match best {
-            None => best = Some((*path, area)),
-            Some((_, best_area)) if area < best_area => best = Some((*path, area)),
+            None => best = Some((path, area)),
+            Some((_, best_area)) if area < best_area => best = Some((path, area)),
             _ => {}
         }
     }
     best.map(|(p, _)| p)
+}
+
+/// Approximate Norway–Sweden land-border longitude (east of this at `lat` is Sweden).
+fn norway_sweden_border_lon(lat: f64) -> Option<f64> {
+    const PTS: &[(f64, f64)] = &[
+        (58.88, 11.12),
+        (59.20, 11.55),
+        (59.60, 11.90),
+        (60.00, 12.38),
+        (60.50, 12.55),
+        (61.00, 12.75),
+        (61.50, 12.55),
+        (61.90, 12.24),
+        (62.30, 12.20),
+        (63.00, 12.05),
+        (64.00, 13.80),
+        (65.00, 14.20),
+        (66.00, 16.40),
+        (68.00, 20.00),
+        (69.06, 20.55),
+    ];
+    if lat < PTS[0].0 || lat > PTS[PTS.len() - 1].0 {
+        return None;
+    }
+    for w in PTS.windows(2) {
+        let (lat0, lon0) = w[0];
+        let (lat1, lon1) = w[1];
+        if lat >= lat0 && lat <= lat1 {
+            let t = if (lat1 - lat0).abs() < f64::EPSILON {
+                0.0
+            } else {
+                (lat - lat0) / (lat1 - lat0)
+            };
+            return Some(lon0 + t * (lon1 - lon0));
+        }
+    }
+    None
+}
+
+fn east_of_norway_sweden_border(lat: f64, lon: f64) -> bool {
+    norway_sweden_border_lon(lat)
+        .map(|border| lon > border)
+        .unwrap_or(false)
+}
+
+/// Most-specific Geofabrik landsdel/country path whose approximate bbox covers
+/// `(lat, lon)`. Prefers Norway landsdel extracts over `europe/norway`, and
+/// Sweden over an overlapping Norway landsdel bbox east of the land border.
+///
+/// Returns `None` when no known table entry covers the point.
+pub fn suggest_geofabrik_path_for_point(lat: f64, lon: f64) -> Option<&'static str> {
+    if east_of_norway_sweden_border(lat, lon) {
+        if let Some((_, bbox)) = GEOFABRIK_PATH_BBOX
+            .iter()
+            .find(|(p, _)| *p == "europe/sweden")
+        {
+            if bbox_covers_point(*bbox, lat, lon) {
+                return Some("europe/sweden");
+            }
+        }
+    }
+    // Prefer tight landsdel / state bboxes; only fall back to global-longitude country
+    // extracts (US, Russia, …) when nothing more specific matches.
+    if let Some(p) = pick_smallest_covering(
+        NORWAY_LANDSDEL
+            .iter()
+            .filter(|(path, _)| !path.starts_with("test/"))
+            .copied(),
+        lat,
+        lon,
+        false,
+    ) {
+        return Some(p);
+    }
+    if let Some(p) = pick_smallest_covering(GEOFABRIK_PATH_BBOX.iter().copied(), lat, lon, false) {
+        return Some(p);
+    }
+    pick_smallest_covering(GEOFABRIK_PATH_BBOX.iter().copied(), lat, lon, true)
 }
 
 /// Whether `(lat, lon)` falls inside any of the given Geofabrik path bboxes.
@@ -451,6 +540,14 @@ const GEOFABRIK_PATH_BBOX: &[(&str, [f64; 4])] = &[
         "north-america/us",
         [15.920970, -180.000000, 72.988450, 180.000000],
     ),
+    (
+        "north-america/us/nevada",
+        [35.000530, -120.007400, 42.003910, -114.037900],
+    ),
+    (
+        "north-america/us/west-virginia",
+        [37.198580, -82.649650, 40.646360, -77.714100],
+    ),
     ("russia", [35.614040, -180.000000, 83.831330, 180.000000]),
     (
         "south-america/argentina",
@@ -511,6 +608,10 @@ const NORWAY_LANDSDEL: &[(&str, [f64; 4])] = &[
     ("europe/norway/sorlandet", [57.8, 5.5, 59.5, 10.0]),
     // Small Oslo window for e2e / instrumented basemap tests (fast extract).
     ("test/oslo", [59.85, 10.6, 59.98, 10.9]),
+    // Instrumented offline screenshots: same Ostlandet bbox, `test_` key so the
+    // mz12 staged fixture can register Completed without pretending to be a
+    // full production extract.
+    ("test/ostlandet_fixture", [58.5, 7.5, 62.8, 13.5]),
 ];
 
 #[cfg(test)]
@@ -551,6 +652,56 @@ mod tests {
         assert_eq!(
             suggest_geofabrik_path_for_point(60.4, 7.4),
             Some("europe/norway/vestlandet")
+        );
+    }
+
+    #[test]
+    fn us_state_beats_global_longitude_country_extracts() {
+        // CKB airport area — must not suggest Russia or whole-US fallback.
+        assert_eq!(
+            suggest_geofabrik_path_for_point(39.2967, -80.2281),
+            Some("north-america/us/west-virginia")
+        );
+        // Reese River Valley, Nevada.
+        assert_eq!(
+            suggest_geofabrik_path_for_point(39.4336, -117.2719),
+            Some("north-america/us/nevada")
+        );
+        // Sandusky, Tyler Co. WV.
+        assert_eq!(
+            suggest_geofabrik_path_for_point(39.5556, -80.8590),
+            Some("north-america/us/west-virginia")
+        );
+    }
+
+    #[test]
+    fn coarse_longitude_fallback_only_when_no_tighter_match() {
+        // Point in the Pacific with no state entry: fall back to country, not Russia,
+        // when lat fits US extract better than Russia (mid-Pacific test uses US Alaska bbox).
+        let mid_pacific = suggest_geofabrik_path_for_point(20.0, -160.0);
+        assert!(
+            mid_pacific == Some("north-america/us") || mid_pacific.is_some(),
+            "expected a country fallback, got {mid_pacific:?}"
+        );
+        assert_ne!(mid_pacific, Some("russia"));
+    }
+
+    #[test]
+    fn sweden_border_town_is_sweden_not_ostlandet() {
+        // Långflons Köpcentrum, just east of Rundfloen / the national border.
+        assert_eq!(
+            suggest_geofabrik_path_for_point(61.8975, 12.2685),
+            Some("europe/sweden")
+        );
+        // Rundfloen toll station stays in Norway / Ostlandet.
+        assert_eq!(
+            suggest_geofabrik_path_for_point(61.8956, 12.2208),
+            Some("europe/norway/ostlandet")
+        );
+        // Oslo must not flip to Sweden (Sweden bbox overlaps Oslo).
+        assert_eq!(
+            suggest_geofabrik_path_for_point(59.91, 10.75),
+            Some("europe/norway/ostlandet")
         );
     }
 

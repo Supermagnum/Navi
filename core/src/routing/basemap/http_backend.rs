@@ -11,6 +11,9 @@ use reqwest::header::RANGE;
 use reqwest::{Client, StatusCode, Url};
 use tokio::io::AsyncWriteExt;
 
+/// Report incremental body bytes during a Range GET (same cadence as PBF downloads).
+pub const RANGE_WRITE_PROGRESS_INTERVAL: u64 = 256 * 1024;
+
 #[derive(Clone)]
 pub struct Reqwest012Backend {
     client: Client,
@@ -48,6 +51,7 @@ impl Reqwest012Backend {
         length: usize,
         dest: &Path,
         timeout: Duration,
+        mut on_partial: Option<&mut dyn FnMut(u64)>,
     ) -> anyhow::Result<u64> {
         if length == 0 {
             anyhow::bail!("range length is 0");
@@ -101,6 +105,7 @@ impl Reqwest012Backend {
             .map_err(|e| anyhow::anyhow!("create chunk file {}: {e}", partial_path.display()))?;
         let mut stream = response.bytes_stream();
         let mut written: u64 = 0;
+        let mut last_ui: u64 = 0;
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|e| {
                 anyhow::anyhow!(crate::download::format_reqwest_error(
@@ -117,6 +122,12 @@ impl Reqwest012Backend {
                 )
             })?;
             written += chunk.len() as u64;
+            if let Some(cb) = on_partial.as_deref_mut() {
+                if written - last_ui >= RANGE_WRITE_PROGRESS_INTERVAL || written == length as u64 {
+                    cb(written);
+                    last_ui = written;
+                }
+            }
             if written > length as u64 {
                 let _ = std::fs::remove_file(&partial_path);
                 anyhow::bail!("response body too long for {range}: got {written} > {length}");

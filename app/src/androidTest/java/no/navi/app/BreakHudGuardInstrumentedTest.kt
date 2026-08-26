@@ -193,13 +193,20 @@ class BreakHudGuardInstrumentedTest {
 
     @Test
     fun overspeedHud_marginRejectsSubHalfKmNoise() {
-        // Old +0.5 margin would flag 80.6 on an 80 limit; new floor must not.
+        // Old +0.5 margin would flag 80.6 on an 80 limit; hybrid must not.
+        // At 80 km/h: max(4.0, acc, 3.0) = 4.0 without accuracy.
         assertFalse(OverspeedHud.isOverspeed(80.4, 80.0))
-        assertFalse(OverspeedHud.isOverspeed(82.5, 80.0))
-        assertTrue(OverspeedHud.isOverspeed(83.1, 80.0))
+        assertFalse(OverspeedHud.isOverspeed(83.5, 80.0))
+        assertTrue(OverspeedHud.isOverspeed(84.1, 80.0))
+        // At 30 km/h: 5% is 1.5 → floor 3.0 wins.
+        assertFalse(OverspeedHud.isOverspeed(32.5, 30.0))
+        assertTrue(OverspeedHud.isOverspeed(33.1, 30.0))
         // Reported accuracy widens the gate.
         assertFalse(OverspeedHud.isOverspeed(84.0, 80.0, speedAccuracyKmh = 5.0))
         assertTrue(OverspeedHud.isOverspeed(86.0, 80.0, speedAccuracyKmh = 5.0))
+        assertEquals(4.0, OverspeedHud.effectiveMarginKmh(80.0), 1e-9)
+        assertEquals(3.0, OverspeedHud.effectiveMarginKmh(30.0), 1e-9)
+        assertEquals(5.5, OverspeedHud.effectiveMarginKmh(110.0), 1e-9)
     }
 
     @Test

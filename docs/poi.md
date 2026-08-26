@@ -24,7 +24,7 @@ General radius. Motor profiles require road-linked POIs; see
 | **Restroom** | General (or safety override) | `amenity=toilets` |
 | **Cabin** | 5 km (Drive hike/cycle: 10.5 km+) | `tourism` ∈ wilderness_hut, alpine_hut, hostel, camp_site, camp_pitch; **or** `amenity=shelter` |
 | **OvernightFacility** | same as Cabin | Assigned together with Cabin for the same overnight tags |
-| **NetworkHut** | 25 km (Drive save may set to slider km) | wilderness_hut / alpine_hut **and** `operator` or `network` contains DNT, STF, DAV, SAC, OeAV, or Metsähallitus |
+| **NetworkHut** | 25 km (Drive save may set to slider km) | wilderness_hut / alpine_hut **and** `operator` or `network` contains DNT, STF, DAV, SAC, OeAV, or Metsähallitus. **Use networked cabins** (Drive; hiking/cycle; off by default) gates auto-via candidacy. **Network hut member** (Hiking; off by default) gates overnight preference — see README Drive settings. |
 | **General** | 15 km (Drive hike/cycle: 10.5 km+) | `amenity` ∈ cafe, restaurant, fast_food, museum, gallery, zoo, aquarium, viewpoint, picnic_site; **or** `tourism` ∈ viewpoint, attraction, museum |
 | **CraftBrewery** | 15 km (General) | **OR** of: `microbrewery=yes`, `shop=alcohol`, `craft=brewery` |
 | **TentSite** | Cabin radius | `tourism` ∈ camp_site, camp_pitch; **or** `amenity=camping` |
@@ -41,7 +41,8 @@ hiking/cycling search): [`poi-search-defaults.md`](poi-search-defaults.md).
 From / Via / To points. At each hiking rast interval (~11.3 km) it picks a
 named cabin / network hut with the same near-corridor preference as pause pins
 (path-linked or ≤ ~800 m preferred; otherwise up to the Drive **POI cabin /
-search radius** slider for lateral offset). Detour allowance is
+search radius** slider for lateral offset). **NetworkHut** candidates are
+included only when **Use networked cabins** is on. Detour allowance is
 max(cabin radius, 15% of the containing user leg). Those huts are merged as
 intermediate vias and the corridor is **replanned once**. Tent / synthetic
 pause markers and multi-day overnight pins are not promoted to vias.
@@ -64,6 +65,11 @@ category system below is for **typed nearby / rest planning** queries
 Craft brewery / alcohol retail maps to semantic icon key `shop-alcohol`. Other
 POIs use `amenity-*`, `tourism-*`, `leisure-*`, etc. via `osm_icon_key` in
 `core/src/poi/icons.rs`. See [`icons.md`](icons.md).
+
+That index is for **rest / nearby planning**, not the visual basemap. Offline
+Protomaps labels `shop=alcohol` as `pois.kind=alcohol` (z16+, dedicated
+`alcohol` sprite) once the style allow-list includes that kind —
+[`map-styles.md`](map-styles.md), [`poi-icon-whitelist.md`](poi-icon-whitelist.md).
 
 ## Adding a POI category (example: fishing)
 
@@ -196,6 +202,12 @@ distance uses **polygon edge** geometry from the PBF / `.navi-poi-barrier` pack
 (`DangerBarrierIndex`), not basemap tiles. Rejected stops surface a clear reason
 in multi-day cards and pause labels (e.g. `Excluded: within 1 km of a glacier`,
 `Excluded: too close to a building`).
+
+**Network hut membership:** with Drive **Network hut member** off (default),
+`choose_hiking_overnight` prefers non-`NetworkHut` cabins; a network hut is only
+a last resort and is flagged `membership_required` for UI copy
+(“Network hut nearby (membership required)”). Membership does not imply the
+user can enter the hut.
 
 **PBF vs Protomaps skew:** the overnight pack and the offline basemap are
 independent extracts — see README [Known issues](../README.md#known-issues).

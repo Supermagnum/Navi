@@ -14,14 +14,18 @@ class RestoreOstlandetFixturesInstrumentedTest {
     fun restore_from_staging() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val dataDir = NaviAppData.resolve(context)
-        val report = OfflinePmtilesBootstrap.restoreOstlandetFromStaging(dataDir)
+        val report =
+            OfflinePmtilesBootstrap.restoreOstlandetFromStaging(
+                dataDir,
+                forInstrumentedTests = true,
+            )
         android.util.Log.i(TAG, "RESTORE_REPORT $report")
         assertTrue("restore failed: $report", report.startsWith("OK:"))
-        val basemap = File(dataDir, "pmtiles/europe_norway_ostlandet.pmtiles")
+        val basemap = File(dataDir, "pmtiles/test_ostlandet_fixture.pmtiles")
         val dem = File(dataDir, "pmtiles/europe_norway_ostlandet_dem.pmtiles")
         assertTrue("basemap missing", basemap.isFile && basemap.length() > 1_000_000L)
         assertTrue("dem missing", dem.isFile && dem.length() > 1_000_000L)
-        MapHudPrefs.rememberDownloadedPmtilesRegion(context, "europe_norway_ostlandet")
+        MapHudPrefs.rememberDownloadedPmtilesRegion(context, "test_ostlandet_fixture")
     }
 
     companion object {

@@ -28,7 +28,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 import uniffi.navi.FfiIconTheme
-import uniffi.navi.formatApproachDistance
 import uniffi.navi.rasterizeIconPng
 
 /**
@@ -44,7 +43,7 @@ data class SpeedCameraWarningState(
     val zoneRemainingM: Double? = null,
     val zoneTimeBudgetS: Double? = null,
     val label: String = "",
-    val preferMetric: Boolean = true,
+    val unitSystem: UnitSystem = UnitSystem.METRIC,
 )
 
 fun speedCameraWarningFromJson(raw: String): SpeedCameraWarningState {
@@ -78,6 +77,24 @@ fun speedCameraWarningFromJson(raw: String): SpeedCameraWarningState {
             label = o.optString("label", ""),
         )
     }.getOrDefault(SpeedCameraWarningState())
+}
+
+fun speedCameraTitle(state: SpeedCameraWarningState): String {
+    val speed =
+        state.limitKmh
+            ?.takeIf { it.isFinite() }
+            ?.let { DisplayUnits.formatSpeedKmh(it, state.unitSystem) }
+    val isZone = state.kind == "average_speed"
+    val entering = state.label.startsWith("Entering")
+    return when {
+        speed != null && entering -> "Entering average-speed zone $speed"
+        speed != null && isZone -> "Average-speed zone $speed"
+        speed != null -> "Speed camera $speed"
+        state.label.isNotBlank() -> state.label
+        entering -> "Entering average-speed zone"
+        isZone -> "Average-speed zone"
+        else -> "Speed camera"
+    }
 }
 
 @Composable
@@ -119,14 +136,11 @@ fun SpeedCameraWarningBox(
         }
     val dist =
         if (isZone && state.zoneRemainingM != null) {
-            formatApproachDistance(state.zoneRemainingM, state.preferMetric)
+            DisplayUnits.formatDistanceM(state.zoneRemainingM, state.unitSystem)
         } else {
-            formatApproachDistance(state.distanceM, state.preferMetric)
+            DisplayUnits.formatDistanceM(state.distanceM, state.unitSystem)
         }
-    val title =
-        state.label.ifBlank {
-            if (isZone) "Average-speed zone" else "Speed camera"
-        }
+    val title = speedCameraTitle(state)
     Box(
         modifier =
             modifier

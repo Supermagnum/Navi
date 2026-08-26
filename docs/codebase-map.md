@@ -37,7 +37,8 @@ Default Cargo workspace members: `core`, `plugin-host` (see root `Cargo.toml`).
 |---|---|
 | `MainActivity.kt` | App shell: MapLibre camera, GPS / sim `applyFix`, route planning calls, HUD state, settings sheets wiring |
 | `DriveHud.kt` | Top / bottom HUD bars, map settings sheet (auto-zoom, 3D, tilt), drive settings sheet |
-| `MapHudPrefs.kt` | SharedPreferences for HUD: default zoom, tilt presets, 3D opt-in, metric, Geofabrik path |
+| `OverspeedHud.kt` | Display-only overspeed gate (hybrid `max(limit×0.05, speedAccuracy, 3.0)`); used by bottom speed line |
+| `MapHudPrefs.kt` | SharedPreferences for HUD: default zoom, tilt presets, 3D opt-in, unit system, Geofabrik path |
 | `ApproachInstructionBox.kt` | Next-turn approach chrome (icon, distance, street / house / postcode layout) |
 | `RouteGuidanceModels.kt` | Kotlin models for maneuvers, samples, approach display helpers |
 | `RouteProgressTracker.kt` | Snap position → along-route progress, distance-to-maneuver, ETA, break elapsed hours |
@@ -71,7 +72,7 @@ Instrumented tests: `app/src/androidTest/java/no/navi/app/`.
 | `tracks/` | Moving-station store (APRS-style) | Timeout / range filter |
 | `icons/` | SVG → PNG raster | Wrong maneuver / POI glyph |
 | `ecu/` | Live energy types (no live UniFFI poll yet) | See [`ECU.md`](ECU.md) |
-| `download/` | Shared pause / resume / cancel progress | Provision / PMTiles job control |
+| `download/` | Shared pause / resume / cancel; **per-consumer progress** (`progress.rs`: Download / Plan / Convert / Cone); **PBF priority** (`pbf_priority.rs`: foreground-plan pause for convert/place-index; bbox-build skip/serialize) | Provision / Tools convert; pack-miss plan contention |
 | `sensors/` | Host-side sensor helpers (Linux path) | gpsd / IMU |
 | `bus/` | `WorldSnapshot` (position + profile + energy) | Plugin / future live energy |
 
@@ -130,10 +131,32 @@ next maneuver”).
 | Product rules / no-route policy | [`current-street.md`](current-street.md) |
 | Sample `street` + highway | `guidance_path::build_sim_samples` |
 | Class fallback labels | `eta::highway_class_display_label` (aligned with `highway_fallback_kmh`) |
-| Idle GPS nearest edge | `graph/road_near.rs` (`nearest_road_label`) + UniFFI `road_label_near` |
+| Idle GPS nearest edge | `graph/road_near.rs` (`nearest_road_label`) + UniFFI `road_label_near` / `road_near_info` |
+| Applicable limit | UniFFI `current_speed_limit_kmh`, `resolve_speed_limit_kmh`, `road_near_info` |
+| Pack-miss bbox contention | `graph/cache.rs` `load_or_build_reweighted_bbox` + `download/pbf_priority.rs` (skip non-plan while foreground plan active) |
+| Live GPS speed | `update_gps_fix` / Android `Location.speed` → `DriveHudState.currentSpeedKmh` |
+| Speed line text | `formatHudSpeedLine` in `DriveHud.kt` (`hud_current_speed`) |
+| Overspeed colour | `OverspeedHud.isOverspeed` (not `overspeed_delta_kmh` alone) |
+| Spoken escalating overspeed | Spec only: [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) |
 | Place-index interim | UniFFI `nearby_places` + `streetLabelFromNearbyPlaces` |
+| Empty-index search hint | `PlaceSearchHint.kt` + UniFFI `place_index_has_entries` |
 | Bottom HUD line | `BottomDriveHud` / `DriveHudState.currentStreet` |
 | Unicode pipeline notes | [`unicode-road-names.md`](unicode-road-names.md) |
+
+### Approach warnings (road signs / children zone / cameras)
+
+| What | Where |
+|---|---|
+| Product rules | [`road-signs.md`](road-signs.md), README Features (speed cameras / live cone) |
+| Catalogue + match | `core/src/routing/road_sign.rs`, `core/src/icons/road-signs/` |
+| Children-zone corridor fallback | `load_school_pois_json`, `schools_near_route_corridor_json`, `nearest_school_proximity_warning_json` |
+| Live hazard cone (no route) | `core/src/routing/live_hazard.rs`; UniFFI `live_hazard_cone_*`, `live_hazards_ingest_from_json`, `live_speed_limit_cone_json` (IO thread; skips pack-miss rebuild during foreground plan) |
+| Host extract (compact JSON) | `navi-ffi` bin `live-hazard-extract` |
+| Speed cameras | `core/src/routing/speed_camera.rs` + UniFFI `nearest_speed_camera_warning_json` |
+| Compose chrome | `RoadSignWarningBox.kt`, speed-camera box in `MainActivity.kt` |
+| Merge / host wiring | `MainActivity.kt` (corridor when progress tracker set; cone when null; explicit sign outranks proximity) |
+| Alert tones (planned) | [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md) |
+| Cluster export (planned) | [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) |
 
 ### Break countdown / trip ETA
 
@@ -144,6 +167,7 @@ next maneuver”).
 | Truck HOS packs | `core/src/routing/rest/` + [`ec-561-truck-rest.md`](ec-561-truck-rest.md) / [`fmcsa-truck-rest.md`](fmcsa-truck-rest.md) |
 | HUD break / ETA chrome | `DriveHud.kt` |
 | Pref: show break as distance | `MapHudPrefs.BREAK_DISPLAY_SPEED_KMH` + `loadBreakAsDistance` |
+| Pref: display units | `MapHudPrefs.loadUnitSystem` / `saveUnitSystem`; formatters in `DisplayUnits.kt` |
 
 ### Routing / planning
 
@@ -172,7 +196,7 @@ profiles use the road graph.
 
 | What | Where |
 |---|---|
-| FTS search API | UniFFI `ensure_place_index` / `search_places` |
+| FTS search API | UniFFI `ensure_place_index` / `place_index_has_entries` / `search_places` |
 | Categories / tags | `core/src/poi/`, [`poi.md`](poi.md) |
 | Icon raster | UniFFI `rasterize_icon_png`, `core/src/icons/` |
 | Map long-press (4 s) + mark sheet | `MapLongPress.kt`, `CorridorMapView` touch path in `MainActivity.kt` |
@@ -185,7 +209,8 @@ profiles use the road graph.
 | What | Where |
 |---|---|
 | Behaviour | [`route-simulation.md`](route-simulation.md) |
-| Engine | `RouteSimulator.kt` + `sim_samples_json` from FFI |
+| Engine | `RouteSimulator.kt` + `sim_samples_json` / `sim_samples_json_from_lat_lon` from FFI |
+| Live-cone hooks | `NaviMapTestHooks.liveConeSimCoordsJson`, `requestStartLiveConeSimulation` |
 | Banner / hooks | `MainActivity.kt`, `NaviMapTestHooks.kt` |
 
 ### Plugins
@@ -194,7 +219,7 @@ profiles use the road graph.
 |---|---|
 | Host + capabilities | `plugin-host/src/abi.rs`, [`plugins.md`](plugins.md) |
 | Guest helpers | `plugin-sdk/` |
-| Specs (not built) | `docs/plugins/*.md` |
+| Specs (not built) | `docs/plugins/*.md` — including custom alert sounds, horse trekking, adaptive speed warning; index in [`plugins.md`](plugins.md) |
 
 ---
 
@@ -230,4 +255,5 @@ Under the app data directory (see `NaviAppData.kt`):
 - Callable APIs: [`API.md`](API.md)
 - Wire / protocol index: [`PROTOCOLS.md`](PROTOCOLS.md)
 - HUD geometry: [`hud-layout.md`](hud-layout.md)
+- Current street / speed HUD: [`current-street.md`](current-street.md)
 - Approach product rules: [`approach-instructions.md`](approach-instructions.md)
