@@ -105,6 +105,7 @@ into a shipped binary.
 | `plugin-sdk` | `no_std` guest helpers (`host_log`, `host_position`, …) |
 | `plugins/log-hello` | Reference plugin: one log line |
 | `plugins/busy-loop` | Reference plugin: infinite loop (isolation tests) |
+| `plugins/weather/` | Weather plugin **assets only** — Meteocons SVG trees ([`plugins/weather-plugin.md`](plugins/weather-plugin.md)); no guest `.wasm` yet |
 
 ## Manifest (`plugin.json`)
 
@@ -276,11 +277,14 @@ that (no global dump onto the map).
 | | |
 |---|---|
 | **Benefit** | Current conditions / alerts along route (wind, precip, temp, pressure) |
+| **Docs** | [`plugins/weather-plugin.md`](plugins/weather-plugin.md) — asset layout, provider mapping. Icon purposes: [`plugins/weather-icons-reference.md`](plugins/weather-icons-reference.md) |
+| **Assets (vendored)** | `plugins/weather/icons/` (static, 2,076 SVGs) and `plugins/weather/animated-icons/` (SMIL, 1,900 SVGs); refresh via `scripts/vendor-meteocons.sh` |
 | **Providers** | Free/open APIs preferred (e.g. Open-Meteo, national met services). Weather Underground–class feeds only where Terms of Use and API keys allow; keys stay in host secrets, never in WASM. |
-| **Host duties** | HTTPS fetch (opt-in network), cache JSON in SQLite, rate-limit |
-| **Guest duties** | Select stations near route / position; format HUD chips |
+| **Host duties** | HTTPS fetch (opt-in network), cache JSON in SQLite, rate-limit; resolve `{style}/{slug}.svg` from vendored trees |
+| **Guest duties** | Select stations near route / position; map provider codes to Meteocons slugs; format HUD chips |
 | **Proposed caps** | `position_read`, `weather_read` (new), `log` |
 | **Offline** | Last-known cache only; no silent background refresh without user opt-in |
+| **Notes** | **Assets only** — no `plugin.json` / guest WASM / `weather_read` yet. Lottie pack not vendored. |
 
 APRS WX beacons (`b`/`t`/`h` keys) remain a radio-side path; this plugin is the
 internet weather overlay.

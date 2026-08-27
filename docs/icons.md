@@ -203,3 +203,34 @@ playground POIs → generic sign **142**) when no explicit children-warning tag
 exists. Details: [`road-signs.md`](road-signs.md).
 
 Refresh: `scripts/vendor-road-signs.sh [commit]`.
+
+## Meteocons weather icons (MIT — plugin assets)
+
+Static and SMIL-animated weather SVGs vendored from
+[Meteocons](https://github.com/basmilius/meteocons) (Bas Milius) for the planned
+`weather` plugin. **Not** part of the core Navit icon resolver — kept under
+`plugins/weather/` until the product plugin ships.
+
+| Path | Role | Count (v0.1.0) |
+|---|---|---|
+| `plugins/weather/icons/` | Static SVG (`@meteocons/svg-static`) | 2,076 (519 x 4 styles) |
+| `plugins/weather/animated-icons/` | SMIL animated SVG (`@meteocons/svg`) | 1,900 (475 x 4 styles) |
+
+Each tree includes `manifest.json` (icon slugs / categories) and `LICENSE`
+(MIT). Styles: `fill/`, `flat/`, `line/`, `monochrome/`.
+
+**Licence:** MIT — see `plugins/weather/icons/LICENSE` and
+`plugins/weather/animated-icons/LICENSE`.
+
+**Spec:** [`plugins/weather-plugin.md`](plugins/weather-plugin.md).
+
+**Icon catalog (human-readable, fill style):**
+[`plugins/weather-icons-reference.md`](plugins/weather-icons-reference.md).
+
+**Refresh:** `scripts/vendor-meteocons.sh [svg-static-version] [svg-version]`
+(default `0.1.0` / `0.1.0`). NPM tarballs are download sources only — no npm
+dependency is added to the project.
+
+**Not vendored:** `@meteocons/lottie` (JSON animation packs).
+
+Last verified: **2026-08-27**.
