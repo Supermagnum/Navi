@@ -107,6 +107,7 @@ class CycleRoutingWaterFollowupTest {
                 false,
                 EMPTY_VEHICLE,
                 true,
+                "",
             )
         Log.i(TAG, "ELVERUM_TYNSET audit_report=${audit.report.take(600)}")
         assertTrue(

@@ -439,6 +439,8 @@ object DiagnosticLog {
                 JSONArray(result.breakPoisJson.ifBlank { "[]" }).length()
             }.getOrDefault(0)
         val planMs = parseReportDouble(result.report, "plan_duration_ms")
+        val packHit = parseReportToken(result.report, "pack_hit")
+        val poiPackHit = parseReportToken(result.report, "poi_pack_hit")
         write(
             Category.ROUTE_PLAN,
             mapOf(
@@ -447,6 +449,8 @@ object DiagnosticLog {
                 "eta_min" to result.etaMinutes,
                 "breaks" to breaks,
                 "plan_duration_ms" to planMs,
+                "pack_hit" to packHit,
+                "poi_pack_hit" to poiPackHit,
             ).filterValues { it != null },
         )
         logRoutePlanStagesFromReport(result.report)

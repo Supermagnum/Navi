@@ -1,7 +1,7 @@
 //! Load + validate indexed packs (never interpret mismatched versions).
 
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use memmap2::Mmap;
 use rkyv::rancor::Error as RkyvError;
@@ -24,6 +24,39 @@ use crate::routing::wetland::WetlandIndex;
 use std::collections::{HashMap, HashSet};
 
 use rayon::prelude::*;
+
+/// PBF whose size/mtime decide Ready vs Stale for packs under `data_dir`.
+///
+/// Pack lookup is keyed by the planning PBF **filename** (logical extract). The
+/// fingerprint is always the copy in `data_dir` named `man.pbf_filename`, not
+/// `planning_pbf.parent()` — a fixture or other clone of the same extract must
+/// not silently send lookup to a directory with no manifest.
+///
+/// Returns [`PackLoadError::Missing`] when the planning filename does not match
+/// the manifest (different logical extract).
+pub fn fingerprint_pbf_for_packs(
+    data_dir: &Path,
+    planning_pbf: &Path,
+    man: &NaviManifest,
+) -> Result<PathBuf, PackLoadError> {
+    let planning_name = planning_pbf.file_name().ok_or(PackLoadError::Missing)?;
+    let declared = Path::new(&man.pbf_filename)
+        .file_name()
+        .ok_or(PackLoadError::Missing)?;
+    if planning_name != declared {
+        return Err(PackLoadError::Missing);
+    }
+    Ok(data_dir.join(&man.pbf_filename))
+}
+
+fn status_for_planning_pbf(
+    data_dir: &Path,
+    planning_pbf: &Path,
+    man: &NaviManifest,
+) -> Result<PackStatus, PackLoadError> {
+    let packed = fingerprint_pbf_for_packs(data_dir, planning_pbf, man)?;
+    Ok(man.status_for_pbf(data_dir, &packed))
+}
 
 #[derive(Debug, Error)]
 pub enum PackLoadError {
@@ -149,7 +182,7 @@ pub fn try_load_graph_for_plan_bbox(
         return Err(PackLoadError::Missing);
     }
     let man = NaviManifest::load(&man_path).map_err(|_| PackLoadError::Missing)?;
-    match man.status_for_pbf(data_dir, pbf) {
+    match status_for_planning_pbf(data_dir, pbf, &man)? {
         PackStatus::Ready => {}
         PackStatus::Missing => return Err(PackLoadError::Missing),
         PackStatus::StalePbf => return Err(PackLoadError::Stale),
@@ -233,7 +266,7 @@ pub fn try_load_poi_barrier_for_plan(
         return Err(PackLoadError::Missing);
     }
     let man = NaviManifest::load(&man_path).map_err(|_| PackLoadError::Missing)?;
-    match man.status_for_pbf(data_dir, pbf) {
+    match status_for_planning_pbf(data_dir, pbf, &man)? {
         PackStatus::Ready => {}
         PackStatus::Missing => return Err(PackLoadError::Missing),
         PackStatus::StalePbf => return Err(PackLoadError::Stale),
@@ -266,7 +299,7 @@ pub fn try_load_wetland_for_plan(
         return Err(PackLoadError::Missing);
     }
     let man = NaviManifest::load(&man_path).map_err(|_| PackLoadError::Missing)?;
-    match man.status_for_pbf(data_dir, pbf) {
+    match status_for_planning_pbf(data_dir, pbf, &man)? {
         PackStatus::Ready => {}
         PackStatus::Missing => return Err(PackLoadError::Missing),
         PackStatus::StalePbf => return Err(PackLoadError::Stale),
@@ -315,4 +348,57 @@ fn load_tiled_wetland(
         merged.extend_from(&pack);
     }
     Ok(merged.to_wetland_index(bbox))
+}
+
+#[cfg(test)]
+mod fingerprint_pbf_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    fn man_for(pbf_filename: &str) -> NaviManifest {
+        NaviManifest {
+            schema: NaviManifest::SCHEMA,
+            stem: "ostlandet-latest".into(),
+            pbf_filename: pbf_filename.into(),
+            pbf_size_bytes: 1,
+            pbf_modified_unix_secs: 1,
+            graph_files: BTreeMap::new(),
+            graph_tiles: BTreeMap::new(),
+            graph_format_version: GRAPH_FORMAT_VERSION,
+            poi_barrier_file: "ostlandet-latest.navi-poi-barrier.rkyv".into(),
+            poi_barrier_format_version: POI_BARRIER_FORMAT_VERSION,
+            wetland_file: None,
+            wetland_tiles: Vec::new(),
+            wetland_format_version: 0,
+            has_delta_h: false,
+            elev_dir: None,
+        }
+    }
+
+    #[test]
+    fn uses_data_dir_copy_when_filename_matches() {
+        let man = man_for("ostlandet-latest.osm.pbf");
+        let packed = fingerprint_pbf_for_packs(
+            Path::new("/data/user/0/no.navi.app/files"),
+            Path::new("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
+            &man,
+        )
+        .expect("same logical extract");
+        assert_eq!(
+            packed,
+            PathBuf::from("/data/user/0/no.navi.app/files/ostlandet-latest.osm.pbf")
+        );
+    }
+
+    #[test]
+    fn rejects_different_logical_extract() {
+        let man = man_for("ostlandet-latest.osm.pbf");
+        let err = fingerprint_pbf_for_packs(
+            Path::new("/data/user/0/no.navi.app/files"),
+            Path::new("/data/local/tmp/navi_fixtures/espa-atnbrufossen-corridor.osm.pbf"),
+            &man,
+        )
+        .unwrap_err();
+        assert!(matches!(err, PackLoadError::Missing));
+    }
 }

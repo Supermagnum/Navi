@@ -3643,6 +3643,7 @@ private fun NaviMapScreen() {
                                                                             wpsJson,
                                                                             preferOfficialNetworks,
                                                                             preferPilgrimRoutes,
+                                                                            dataDir.absolutePath,
                                                                         )
                                                                     RoutingPlanLog.progress(
                                                                         90,
@@ -3703,6 +3704,7 @@ private fun NaviMapScreen() {
                                                                                 avoidFerries,
                                                                                 loadVehicleLimits(dataDir.absolutePath),
                                                                                 preferOfficialNetworks,
+                                                                                dataDir.absolutePath,
                                                                             )
                                                                         if (!legRes.report.contains("PASS")) {
                                                                             return@runCatching legRes
@@ -3740,16 +3742,18 @@ private fun NaviMapScreen() {
                                                                         } else {
                                                                             base.priorityPathSharePct
                                                                         }
-                                                                    val multiReport =
+                                                                    val mergedReport =
                                                                         buildString {
-                                                                            appendLine("TEST_KIND=PLAN_MULTI")
-                                                                            appendLine("PASS")
-                                                                            appendLine("distance_km=$dist")
-                                                                            appendLine("priority_path_share_pct=$mergedShare")
+                                                                            append(base.report)
+                                                                            if (!base.report.endsWith("\n") &&
+                                                                                vehicleAvoidanceLines.isNotEmpty()
+                                                                            ) {
+                                                                                append('\n')
+                                                                            }
                                                                             vehicleAvoidanceLines.forEach { appendLine(it) }
                                                                         }
                                                                     uniffi.navi.CorridorRouteResult(
-                                                                        report = multiReport,
+                                                                        report = mergedReport,
                                                                         distanceKm = dist,
                                                                         etaMinutes = etaSum,
                                                                         cacheHit = base.cacheHit,

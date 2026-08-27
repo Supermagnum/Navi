@@ -133,6 +133,57 @@ class DeviceCompareDumpInstrumentedTest {
         line("--- native report ---")
         line(result.report)
 
+        val uiWaypoints =
+            listOf(
+                RegionCoverage.Waypoint("From", "Espa", 60.5621914, 11.2561239),
+                RegionCoverage.Waypoint("To", "Atnbrufossen", 61.85125, 10.233842),
+            )
+        val uiPbf = RegionCoverage.resolvePlanPbf(dataDir, uiWaypoints)
+        line("=== PLAN UI resolvePlanPbf + explicit dataDir (car, eco=false) ===")
+        line("resolvePlanPbf=${uiPbf?.absolutePath} bytes=${uiPbf?.length() ?: -1}")
+        val uiStatus =
+            if (uiPbf != null && uiPbf.isFile) {
+                runCatching { indexedMapsStatus(uiPbf.absolutePath, dataDir.absolutePath).trim() }
+                    .getOrElse { "error: ${it.message}" }
+            } else {
+                "no_pbf"
+            }
+        line("indexedMapsStatus_uiPbf=$uiStatus")
+        line("indexedMapsUiLine_appFirstPbf=${IndexedMapsBackground.uiLine(pbf, dataDir)}")
+        if (uiPbf != null && uiPbf.isFile) {
+            val cacheDir =
+                File(dataDir, "graph-cache-${uiPbf.nameWithoutExtension}-car")
+            cacheDir.mkdirs()
+            val tUi = System.currentTimeMillis()
+            val uiResult =
+                uniffi.navi.planCarRoute(
+                    uiPbf.absolutePath,
+                    File(dataDir, "elevation").absolutePath,
+                    cacheDir.absolutePath,
+                    60.5621914,
+                    11.2561239,
+                    61.85125,
+                    10.233842,
+                    false,
+                    TravelProfile.CAR,
+                    false,
+                    false,
+                    false,
+                    FfiVehicleLimits(null, null, null, null, null, null),
+                    false,
+                    dataDir.absolutePath,
+                )
+            val uiWallMs = System.currentTimeMillis() - tUi
+            RoutingPlanLog.complete(uiResult, ecoEnabled = false, durationMs = uiWallMs)
+            line("ui_wall_ms=$uiWallMs distance_km=${uiResult.distanceKm}")
+            line(
+                "ui_pack_hit=${uiResult.report.contains("pack_hit=true")} " +
+                    "ui_poi_pack_hit=${uiResult.report.contains("poi_pack_hit=true")}",
+            )
+            line("--- UI-path native report ---")
+            line(uiResult.report)
+        }
+
         DiagnosticLog.setEnabled(context, false)
         val session = DiagnosticLog.listSessionFiles(context).maxByOrNull { it.lastModified() }
         line("session_file=${session?.absolutePath} bytes=${session?.length() ?: -1}")

@@ -116,6 +116,7 @@ class ForegroundPlanConeSkipInstrumentedTest {
                     avoidFerries = false,
                     vehicle = EMPTY_VEHICLE,
                     preferOfficialNetworks = false,
+                    dataDir = "",
                 )
             } finally {
                 planRunning.set(false)

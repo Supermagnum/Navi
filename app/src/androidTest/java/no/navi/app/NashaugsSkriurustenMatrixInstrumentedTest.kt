@@ -112,6 +112,7 @@ class NashaugsSkriurustenMatrixInstrumentedTest {
                     waypointsJson = wps,
                     preferOfficialNetworks = official,
                     preferPilgrimRoutes = false,
+                    dataDir = "",
                 )
             val ms = (System.nanoTime() - t0) / 1_000_000L
             dump("c${num}_report.txt", "plan_wall_ms=$ms\n${hike.report}")

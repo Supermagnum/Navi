@@ -78,6 +78,7 @@ fn main() {
             WPS.to_string(),
             official,
             false, // pilgrim off
+            String::new(),
         );
         let elapsed = t0.elapsed();
         eprintln!("plan_wall_s={:.1}", elapsed.as_secs_f64());

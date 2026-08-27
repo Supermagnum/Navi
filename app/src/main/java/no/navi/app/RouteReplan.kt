@@ -64,6 +64,7 @@ object RouteReplan {
                         wpsJson,
                         preferOfficialNetworks,
                         preferPilgrimRoutes,
+                        dataDir.absolutePath,
                     )
                 onProgress(100, "hiking_done")
                 return@withContext hike
@@ -106,6 +107,7 @@ object RouteReplan {
                         avoidFerries = avoidFerries,
                         vehicle = vehicle,
                         preferOfficialNetworks = preferOfficialNetworks,
+                        dataDir = dataDir.absolutePath,
                     )
                 if (!leg.report.contains("PASS") || leg.routePolyline.isBlank()) {
                     return@withContext leg

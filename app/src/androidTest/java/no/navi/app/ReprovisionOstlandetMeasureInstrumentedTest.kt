@@ -163,6 +163,7 @@ class ReprovisionOstlandetMeasureInstrumentedTest {
                 avoidFerries = false,
                 vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                 preferOfficialNetworks = false,
+                dataDir = "",
             )
         val wallMs = System.currentTimeMillis() - t0
         RoutingPlanLog.complete(route, ecoEnabled = false, durationMs = wallMs)

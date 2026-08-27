@@ -18,9 +18,9 @@ pub use graph_pack::{FlatGraphPack, GRAPH_FORMAT_VERSION, MAGIC_GRAPH};
 pub use header::{read_preamble, Preamble, PREAMBLE_LEN};
 pub use io::{archive_payload_offset, write_archive_atomic};
 pub use load::{
-    load_graph_pack, load_graph_pack_bbox, load_poi_barrier_pack, load_wetland_pack,
-    try_load_graph_for_plan, try_load_graph_for_plan_bbox, try_load_poi_barrier_for_plan,
-    try_load_wetland_for_plan, PackLoadError, PackedPlanData,
+    fingerprint_pbf_for_packs, load_graph_pack, load_graph_pack_bbox, load_poi_barrier_pack,
+    load_wetland_pack, try_load_graph_for_plan, try_load_graph_for_plan_bbox,
+    try_load_poi_barrier_for_plan, try_load_wetland_for_plan, PackLoadError, PackedPlanData,
 };
 pub use manifest::{
     bbox_intersects, graph_pack_filename, graph_tile_filename, manifest_path,

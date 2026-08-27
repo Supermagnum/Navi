@@ -1923,6 +1923,19 @@ pub fn run_car_corridor_pipeline(
     }
 }
 
+/// Directory that holds `{stem}.navi-manifest.json` and indexed packs.
+/// Empty string: the planning PBF's parent (hosts that co-locate extract + packs).
+fn plan_pack_data_dir(pbf: &Path, data_dir: &str) -> PathBuf {
+    let trimmed = data_dir.trim();
+    if trimmed.is_empty() {
+        pbf.parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
+    } else {
+        PathBuf::from(trimmed)
+    }
+}
+
 /// Plan a motor / bicycle route between two WGS84 points using a local OSM `.pbf`.
 ///
 /// Always builds a **bbox-clipped** graph (`[min_lat,min_lon,max_lat,max_lon]` padded
@@ -1930,6 +1943,11 @@ pub fn run_car_corridor_pipeline(
 /// full Ostlandet extract into RAM. Hiking uses [`plan_hiking_route`] instead.
 ///
 /// [`TravelProfile::Hiking`] is rejected (call [`plan_hiking_route`]).
+///
+/// `data_dir` is the app data directory for pack/manifest lookup. It is **not**
+/// inferred from `pbf_path` (a fixture clone of the same extract must not send
+/// lookup to a directory with no packs). Pass `""` only when the PBF already
+/// lives next to the packs.
 #[uniffi::export]
 pub fn plan_car_route(
     pbf_path: String,
@@ -1946,6 +1964,7 @@ pub fn plan_car_route(
     avoid_ferries: bool,
     vehicle: FfiVehicleLimits,
     prefer_official_networks: bool,
+    data_dir: String,
 ) -> CorridorRouteResult {
     plan_car_route_at(
         pbf_path,
@@ -1963,6 +1982,7 @@ pub fn plan_car_route(
         vehicle,
         prefer_official_networks,
         None,
+        data_dir,
     )
 }
 
@@ -1987,6 +2007,7 @@ pub fn plan_car_route_at(
     vehicle: FfiVehicleLimits,
     prefer_official_networks: bool,
     departure_local_iso: Option<String>,
+    data_dir: String,
 ) -> CorridorRouteResult {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ch = driver_break_core::download::progress::ChannelGuard::enter(
@@ -2008,6 +2029,7 @@ pub fn plan_car_route_at(
             vehicle,
             prefer_official_networks,
             departure_local_iso,
+            data_dir,
         )
     })) {
         Ok(result) => result,
@@ -2043,6 +2065,7 @@ fn plan_car_route_inner(
     vehicle: FfiVehicleLimits,
     prefer_official_networks: bool,
     departure_local_iso: Option<String>,
+    data_dir: String,
 ) -> CorridorRouteResult {
     let empty = empty_corridor;
 
@@ -2130,10 +2153,7 @@ fn plan_car_route_inner(
 
     driver_break_core::download::progress::set(0, Some(5), "Planning route: building area graph…");
     let t_graph = Instant::now();
-    let data_dir = pbf
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
+    let data_dir = plan_pack_data_dir(pbf, &data_dir);
     let pack_try = driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
         &data_dir,
         pbf,
@@ -2790,6 +2810,9 @@ fn plan_car_route_inner(
 /// (lateral + absolute extra path; also 15% of the containing user leg). Pause
 /// stops prefer huts/cabins; otherwise camp pitches or a synthetic corridor
 /// tent (never mountain peak names).
+///
+/// `data_dir` is the app data directory for pack/manifest lookup (same as
+/// [`plan_car_route`]). Empty: PBF parent.
 #[uniffi::export]
 pub fn plan_hiking_route(
     pbf_path: String,
@@ -2798,6 +2821,7 @@ pub fn plan_hiking_route(
     waypoints_json: String,
     prefer_official_networks: bool,
     prefer_pilgrim_routes: bool,
+    data_dir: String,
 ) -> CorridorRouteResult {
     let _ch = driver_break_core::download::progress::ChannelGuard::enter(
         driver_break_core::download::progress::ProgressChannel::Plan,
@@ -2892,10 +2916,7 @@ pub fn plan_hiking_route(
         "Planning route: building hiking area graph…",
     );
     let t_graph = Instant::now();
-    let data_dir = pbf
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
+    let data_dir = plan_pack_data_dir(pbf, &data_dir);
     let pack_try = driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
         &data_dir,
         pbf,
@@ -3015,13 +3036,8 @@ pub fn plan_hiking_route(
     // Prefer indexed POI/barrier pack (v2 includes overnight buildings). Fall back
     // to the corridor PBF scan only when packs are missing/stale.
     let corridor_lat_lon = hybrid.full_coords();
-    let data_dir_poi = pbf
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
     let (poi_index, barriers, poi_pack_hit, overnight_buildings_pack_hit) =
-        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan(&data_dir_poi, pbf)
-        {
+        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan(&data_dir, pbf) {
             Ok((mut idx, pack_barriers)) => {
                 let had_buildings = !idx.overnight_buildings().is_empty();
                 if had_buildings {
@@ -3588,12 +3604,20 @@ pub fn indexed_maps_status(pbf_path: String, data_dir: String) -> String {
         return "missing\n".into();
     }
     match NaviManifest::load(&man_path) {
-        Ok(man) => match man.status_for_pbf(&data, &pbf) {
-            PackStatus::Ready => "ready\n".into(),
-            PackStatus::Missing => "missing\n".into(),
-            PackStatus::StalePbf => "stale_pbf\n".into(),
-            PackStatus::VersionMismatch => "version_mismatch\n".into(),
-        },
+        Ok(man) => {
+            let packed = match driver_break_core::routing::indexed::fingerprint_pbf_for_packs(
+                &data, &pbf, &man,
+            ) {
+                Ok(p) => p,
+                Err(_) => return "missing\n".into(),
+            };
+            match man.status_for_pbf(&data, &packed) {
+                PackStatus::Ready => "ready\n".into(),
+                PackStatus::Missing => "missing\n".into(),
+                PackStatus::StalePbf => "stale_pbf\n".into(),
+                PackStatus::VersionMismatch => "version_mismatch\n".into(),
+            }
+        }
         Err(e) => format!("error: {e:#}\n"),
     }
 }

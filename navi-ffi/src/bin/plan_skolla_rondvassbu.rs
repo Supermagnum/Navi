@@ -30,6 +30,7 @@ fn main() {
         wps.to_string(),
         true,  // prefer official hiking networks for this corridor helper
         false, // pilgrim soft-pref off for this helper
+        String::new(),
     );
     print!("{}", r.report);
     if !r.report.contains("PASS") {

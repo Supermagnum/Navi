@@ -88,6 +88,7 @@ class TruckMaxheightAvoidanceInstrumentedTest {
                     false,
                     FfiVehicleLimits(null, null, 2.8, null, null, null),
                     false,
+                    "",
                 )
             android.util.Log.i(
                 "TruckMaxheight",

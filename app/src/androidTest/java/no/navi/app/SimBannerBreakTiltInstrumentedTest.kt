@@ -104,6 +104,7 @@ class SimBannerBreakTiltInstrumentedTest {
                         avoidFerries = false,
                         vehicle = vehicle,
                         preferOfficialNetworks = false,
+                        dataDir = "",
                     )
                 assertTrue(
                     "leg ${i + 1} must PASS: ${leg.report.take(400)}",
