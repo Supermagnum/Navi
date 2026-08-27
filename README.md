@@ -20,6 +20,16 @@ much faster once packs are ready. Cold / missing-pack long-distance planning
 is still slow (PBF graph build). Pack-hit planning is much faster — see
 [Known issues](#known-issues).
 
+Navi does **not** currently ship with a ready-made national routing database
+the way many commercial GPS / head-unit products do (those usually include
+precomputed indexes from the vendor). Solving onboard convert cost may involve
+a server (example: **navi.app**) that distributes **precomputed index packs**
+for a region; when that server is unreachable, the natural fallback is what
+Navi already does — **local** pack convert and PBF planning from the
+downloaded extract. Precomputed **town-to-town** corridors (e.g. Haugesund→Bergen,
+Oslo→Fredrikstad) could speed popular trips further. Direction:
+[`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
+
 
 # Testers wanted
 
@@ -591,6 +601,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/status.md`](docs/status.md) | Which docs are live status vs historical evidence |
 | [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Tracked future-proofing / open risk items |
 | [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md) | Phased evaluation of preprocess-once indexed routing maps |
+| [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md) | Server / mirror of precomputed packs, commercial DB contrast, town-to-town route cache (direction; not shipped) |
 | [`docs/plugins.md`](docs/plugins.md) | Plugin host and roadmap (enable/disable; USB/Bluetooth I/O) |
 
 See the `docs/` folder for more specialised topics (voice, APRS, ECU, formulas,
@@ -866,7 +877,10 @@ Country/region visual extracts can also be prepared with
   car+foot PBF parse (host ~143 s → ~110 s). Remaining convert time is still
   dominated by POI + barrier extraction — that path has not been accelerated
   yet. You can still plan while indexing runs; plans are much faster once packs
-  are ready.
+  are ready. Longer-term relief (precomputed packs from a mirror such as
+  navi.app, plus optional town-to-town caches — Navi does not ship a commercial
+  vendor routing DB today):
+  [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
 - **Cold / missing-pack long-distance planning is still slow** (PBF graph build).
   **Pack-hit planning is much faster:** parallel tile mmap/deserialize cut host
   warm `graph_build_ms` by roughly **35–47%** on short/medium/long Ostlandet

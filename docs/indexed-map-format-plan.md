@@ -8,6 +8,7 @@ Related:
 - [`status.md`](status.md) (canonical doc map)
 - [`future-proofing-audit-2026-07.md`](future-proofing-audit-2026-07.md) (tracked open item)
 - README known issues (planning latency)
+- [`brouter-pack-miss-investigation.md`](brouter-pack-miss-investigation.md) (Phase 1: official `.rd5` is not a Navi pack-hit path; Phase 2 spec not written)
 - Route-start vs OsmAnd/Navit investigation (canvas)
 - Graph-cache audit (canvas)
 
@@ -563,3 +564,4 @@ shape before building the production path.
 | 2026-08-10 | SM-P613 Ostlandet pack-hit Friisvegen | summer `pack_hit=true` seasonal=0; winter `pack_hit=true` seasonal=36 |
 | 2026-08-10 | SM-P613 tiled wetland + overnight buildings | Convert `peak_rss_mb=1737.4`, `wetland_rings=366222`, 20 wetland tiles; short Atnbrufossen hike **159477→3105 ms** (`wetland_pack_hit=true`, `overnight_buildings_pack_hit=true`) |
 | 2026-08-24 | Pixel 9a pack-miss plan vs convert/cone | Foreground-plan yield for convert/place-index; cone/road-near bbox **skip** during plan; separate Plan/Convert/Cone progress channels; release Ostlandet Oslo OD ~**151 s** with GPS cone spam (was ~12–13 min) |
+| 2026-08-27 | BRouter `.rd5` pack-miss speedup (Phase 1) | Official `segments4` cover Ostlandet and include elevation, but are **not** Navi packs (no wetland/overnight/conditionals). **Gate not cleared**; no Phase 2 spec. See [`brouter-pack-miss-investigation.md`](brouter-pack-miss-investigation.md). |
