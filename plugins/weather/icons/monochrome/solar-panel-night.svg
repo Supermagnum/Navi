@@ -1,0 +1,22 @@
+<svg viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="solar-panel-night" clip-path="url(#clip0_3086_23315)">
+<g id="Mask group">
+<mask id="mask0_3086_23315" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="128" height="128">
+<path id="Solar Panel Mask" fill-rule="evenodd" clip-rule="evenodd" d="M128 128H0V0H128V128ZM52 35C46.4772 35 42 39.4772 42 45V83C42 88.5229 46.4772 93 52 93H76C81.5228 93 86 88.5228 86 83V45C86 39.4771 81.5228 35 76 35H52Z" fill="black"/>
+</mask>
+<g mask="url(#mask0_3086_23315)">
+<g id="Moon">
+<path id="Moon_2" d="M77.766 29C71.1498 29.714 66 35.241 66 41.9586C66 49.1608 71.918 55 79.2177 55C85.371 55 90.5267 50.8459 92 45.2293C83.2173 46.171 75.4773 37.7199 77.766 29Z" fill="currentColor"/>
+</g>
+</g>
+</g>
+<g id="Solar Panel">
+<path id="Subtract" d="M46 73.5H62.5V89H52C48.6863 89 46 86.3137 46 83V73.5ZM82 83C82 86.3137 79.3137 89 76 89H65.5V73.5H82V83ZM46 56.5H62.5V70.5H46V56.5ZM82 70.5H65.5V56.5H82V70.5ZM62.5 39V53.5H46V45C46 41.6863 48.6863 39 52 39H62.5ZM76 39C79.3137 39 82 41.6863 82 45V53.5H65.5V39H76Z" fill="currentColor"/>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_3086_23315">
+<rect width="128" height="128" fill="white"/>
+</clipPath>
+</defs>
+</svg>

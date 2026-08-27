@@ -1,0 +1,22 @@
+<svg viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="solar-panel-cloudy" clip-path="url(#clip0_3086_23320)">
+<g id="Mask group">
+<mask id="mask0_3086_23320" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="128" height="128">
+<path id="Solar Panel Mask" fill-rule="evenodd" clip-rule="evenodd" d="M128 128H0V0H128V128ZM52 35C46.4772 35 42 39.4772 42 45V83C42 88.5229 46.4772 93 52 93H76C81.5228 93 86 88.5228 86 83V45C86 39.4771 81.5228 35 76 35H52Z" fill="black"/>
+</mask>
+<g mask="url(#mask0_3086_23320)">
+<g id="Cloud">
+<path id="Cloud_2" d="M93.1943 41.5621C94.3665 37.05 91.7602 32.4225 87.5043 30.7133C83.1919 28.9813 77.9612 30.4743 75.4186 34.423C73.2648 33.1797 70.496 33.2496 68.4119 34.609C66.3808 35.934 65.2434 38.372 65.675 40.7789C62.2998 41.3911 59.6874 44.4688 60.0307 47.9561C60.3748 51.4511 63.5394 54.0008 66.9767 54C75.8126 54 84.6514 53.9925 93.4884 54C96.9105 54 100 51.2849 100 47.774C100 44.1428 96.7209 41.4142 93.1943 41.5621Z" fill="currentColor"/>
+</g>
+</g>
+</g>
+<g id="Solar Panel">
+<path id="Subtract" d="M46 73.5H62.5V89H52C48.6863 89 46 86.3137 46 83V73.5ZM82 83C82 86.3137 79.3137 89 76 89H65.5V73.5H82V83ZM46 56.5H62.5V70.5H46V56.5ZM82 70.5H65.5V56.5H82V70.5ZM62.5 39V53.5H46V45C46 41.6863 48.6863 39 52 39H62.5ZM76 39C79.3137 39 82 41.6863 82 45V53.5H65.5V39H76Z" fill="currentColor"/>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_3086_23320">
+<rect width="128" height="128" fill="white"/>
+</clipPath>
+</defs>
+</svg>
