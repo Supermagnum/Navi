@@ -9,6 +9,7 @@ mod header;
 mod io;
 mod load;
 mod manifest;
+mod poi_barrier_extract;
 mod poi_barrier_pack;
 mod wetland_pack;
 

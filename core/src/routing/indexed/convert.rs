@@ -1,12 +1,11 @@
 //! Region pack converter: local PBF (+ optional DEM) → graph + poi/barrier archives.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use osmpbf::Element;
 use rkyv::rancor::Error as RkyvError;
 
 use super::graph_pack::{FlatGraphPack, GRAPH_FORMAT_VERSION, MAGIC_GRAPH};
@@ -17,11 +16,11 @@ use super::manifest::{
     poi_barrier_pack_filename, profile_key, wetland_pack_filename, wetland_tile_filename,
     GraphTileEntry, NaviManifest,
 };
+use super::poi_barrier_extract::extract_poi_and_pbf_barriers;
 use super::poi_barrier_pack::{FlatPoiBarrierPack, MAGIC_POI_BARRIER, POI_BARRIER_FORMAT_VERSION};
 use super::wetland_pack::{FlatWetlandPack, MAGIC_WETLAND, WETLAND_FORMAT_VERSION};
 use crate::download::progress as download_progress;
 use crate::download::DownloadControl;
-use crate::poi::{classify_tags, osm_icon_key, PoiRecord};
 use crate::routing::elevation::{ElevationCache, ElevationService};
 use crate::routing::graph::{RouteGraph, RoutingProfile};
 use crate::routing::wetland::WetlandIndex;
@@ -75,9 +74,9 @@ pub struct ConvertReport {
     pub tile_assign_ms: BTreeMap<String, f64>,
     /// Per-profile parallel tile build+pack time (tiled convert only).
     pub tile_build_ms: BTreeMap<String, f64>,
-    /// Wall time for POI node collection.
+    /// Wall time for the shared POI + PBF-barrier 2-pass walk (plus centroids).
     pub poi_ms: f64,
-    /// Wall time for barrier way + node-coord extraction.
+    /// Wall time for barrier ring assembly + highway/trunk extras (PBF scans are in `poi_ms`).
     pub barrier_ms: f64,
     /// Wall time for overnight-building detection (0 when folded into POI).
     pub overnight_ms: f64,
@@ -106,227 +105,6 @@ fn pbf_node_bbox(pbf: &Path) -> anyhow::Result<[f64; 4]> {
     let raw = crate::download::pbf_priority::pbf_latlon_percentile_bounds(pbf, 0.005, 0.995)?;
     // Small pad so boundary ways are not clipped away.
     Ok([raw[0] - 0.02, raw[1] - 0.02, raw[2] + 0.02, raw[3] + 0.02])
-}
-
-fn tags_map_if_any<'a>(
-    tags: impl Iterator<Item = (&'a str, &'a str)>,
-) -> Option<HashMap<String, String>> {
-    let mut iter = tags;
-    let (k0, v0) = iter.next()?;
-    let mut map = HashMap::new();
-    map.insert(k0.to_string(), v0.to_string());
-    for (k, v) in iter {
-        map.insert(k.to_string(), v.to_string());
-    }
-    Some(map)
-}
-
-fn centroid_in_bbox(
-    coords: &HashMap<i64, (f64, f64)>,
-    refs: &[i64],
-    in_bbox: impl Fn(f64, f64) -> bool,
-) -> Option<(f64, f64)> {
-    let mut sum_lat = 0.0;
-    let mut sum_lon = 0.0;
-    let mut n = 0usize;
-    let mut any_in = false;
-    for id in refs {
-        let Some(&(lat, lon)) = coords.get(id) else {
-            continue;
-        };
-        if in_bbox(lat, lon) {
-            any_in = true;
-        }
-        sum_lat += lat;
-        sum_lon += lon;
-        n += 1;
-    }
-    if n == 0 || !any_in {
-        return None;
-    }
-    Some((sum_lat / n as f64, sum_lon / n as f64))
-}
-
-/// POI nodes plus overnight-building centroids in one pair of PBF scans
-/// (replaces a separate `PoiIndex::load_from_pbf_bbox_with_overnight_buildings`).
-type PoiCollectOut = (Vec<PoiRecord>, Vec<(f64, f64)>);
-
-fn collect_poi_records(pbf: &Path, bbox: [f64; 4]) -> anyhow::Result<PoiCollectOut> {
-    let in_bbox =
-        |lat: f64, lon: f64| lat >= bbox[0] && lat <= bbox[2] && lon >= bbox[1] && lon <= bbox[3];
-
-    let mut building_ways: Vec<Vec<i64>> = Vec::new();
-    let mut needed: HashSet<i64> = HashSet::new();
-    crate::download::pbf_priority::for_each_pbf_elements(pbf, |element| {
-        let Element::Way(way) = element else {
-            return;
-        };
-        let mut is_building = false;
-        for (k, v) in way.tags() {
-            if k == "building" && v != "no" {
-                is_building = true;
-                break;
-            }
-        }
-        if !is_building {
-            return;
-        }
-        let refs: Vec<i64> = way.refs().collect();
-        if refs.len() < 2 {
-            return;
-        }
-        for id in &refs {
-            needed.insert(*id);
-        }
-        building_ways.push(refs);
-    })?;
-
-    let mut out = Vec::new();
-    let mut overnight = Vec::new();
-    let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len().max(1024));
-    crate::download::pbf_priority::for_each_pbf_elements(pbf, |element| {
-        let (id, lat, lon, tags) = match element {
-            Element::Node(n) => (n.id(), n.lat(), n.lon(), tags_map_if_any(n.tags())),
-            Element::DenseNode(n) => (n.id, n.lat(), n.lon(), tags_map_if_any(n.tags())),
-            _ => return,
-        };
-        if needed.contains(&id) {
-            coords.insert(id, (lat, lon));
-        }
-        let Some(tags) = tags else {
-            return;
-        };
-        if in_bbox(lat, lon) && tags.get("building").is_some_and(|v| v != "no") {
-            overnight.push((lat, lon));
-        }
-        let categories = classify_tags(&tags);
-        if categories.is_empty() {
-            return;
-        }
-        out.push(PoiRecord {
-            osm_id: id,
-            lat,
-            lon,
-            categories,
-            icon_key: osm_icon_key(&tags),
-            name: tags.get("name").cloned(),
-            tags,
-        });
-    })?;
-
-    for refs in building_ways {
-        if let Some(pt) = centroid_in_bbox(&coords, &refs, in_bbox) {
-            overnight.push(pt);
-        }
-    }
-    Ok((out, overnight))
-}
-
-type BarrierLineBboxes = Vec<(f64, f64, f64, f64)>;
-type BarrierPolylines = Vec<Vec<[f64; 2]>>;
-
-fn extract_pbf_barrier_geometry(
-    pbf: &Path,
-) -> anyhow::Result<(BarrierLineBboxes, BarrierPolylines)> {
-    #[derive(Clone, Copy)]
-    enum Kind {
-        Line,
-        Glacier,
-    }
-
-    let mut ways: Vec<(Vec<i64>, Kind)> = Vec::new();
-    let mut needed: HashSet<i64> = HashSet::new();
-    {
-        crate::download::pbf_priority::for_each_pbf_elements(pbf, |element| {
-            let Element::Way(way) = element else {
-                return;
-            };
-            let tags: HashMap<String, String> = way
-                .tags()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
-                .collect();
-            let railway = tags.get("railway").map(String::as_str);
-            let waterway = tags.get("waterway").map(String::as_str);
-            let natural = tags.get("natural").map(String::as_str);
-            let kind = if matches!(
-                railway,
-                Some(r) if !matches!(r, "abandoned" | "disused" | "razed" | "dismantled")
-            ) || matches!(waterway, Some("river" | "canal"))
-                || matches!(natural, Some("cliff" | "arete"))
-            {
-                Some(Kind::Line)
-            } else if natural == Some("glacier") {
-                Some(Kind::Glacier)
-            } else {
-                None
-            };
-            let Some(kind) = kind else {
-                return;
-            };
-            let refs: Vec<i64> = way.refs().collect();
-            if refs.len() < 2 {
-                return;
-            }
-            for id in &refs {
-                needed.insert(*id);
-            }
-            ways.push((refs, kind));
-        })?;
-    }
-
-    let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
-    {
-        crate::download::pbf_priority::for_each_pbf_elements(pbf, |element| match element {
-            Element::Node(n) => {
-                if needed.contains(&n.id()) {
-                    coords.insert(n.id(), (n.lat(), n.lon()));
-                }
-            }
-            Element::DenseNode(n) => {
-                if needed.contains(&n.id()) {
-                    coords.insert(n.id(), (n.lat(), n.lon()));
-                }
-            }
-            _ => {}
-        })?;
-    }
-
-    let mut segs = Vec::new();
-    let mut glaciers = Vec::new();
-    for (refs, kind) in ways {
-        let mut ring: Vec<[f64; 2]> = Vec::with_capacity(refs.len());
-        for id in &refs {
-            let Some(&(lat, lon)) = coords.get(id) else {
-                continue;
-            };
-            ring.push([lon, lat]);
-        }
-        if ring.len() < 2 {
-            continue;
-        }
-        match kind {
-            Kind::Line => {
-                for w in ring.windows(2) {
-                    segs.push((w[0][0], w[0][1], w[1][0], w[1][1]));
-                }
-            }
-            Kind::Glacier => {
-                for w in ring.windows(2) {
-                    segs.push((w[0][0], w[0][1], w[1][0], w[1][1]));
-                }
-                if ring.len() >= 3 {
-                    let first = ring[0];
-                    let last = *ring.last().unwrap();
-                    if first != last {
-                        segs.push((last[0], last[1], first[0], first[1]));
-                        ring.push(first);
-                    }
-                    glaciers.push(ring);
-                }
-            }
-        }
-    }
-    Ok((segs, glaciers))
 }
 
 fn highway_barrier_segs(graph: &RouteGraph) -> Vec<(f64, f64, f64, f64)> {
@@ -687,13 +465,13 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
     crate::download::pbf_priority::yield_if_foreground_plan();
     note_rss(&mut peak_rss_mb, "poi_start");
     let t_poi = Instant::now();
-    let (records, overnight_buildings) = collect_poi_records(&opts.pbf, region_bbox)?;
-    let poi_ms = note_phase(&mut peak_rss_mb, "poi_collect", t_poi);
+    let (records, overnight_buildings, mut segs, glaciers) =
+        extract_poi_and_pbf_barriers(&opts.pbf, region_bbox)?;
+    let poi_ms = note_phase(&mut peak_rss_mb, "poi_barrier_shared", t_poi);
     let overnight_ms = 0.0;
     let t_barrier = Instant::now();
-    let (mut segs, glaciers) = extract_pbf_barrier_geometry(&opts.pbf)?;
     segs.extend(barrier_extra);
-    let barrier_ms = note_phase(&mut peak_rss_mb, "barrier", t_barrier);
+    let barrier_ms = note_phase(&mut peak_rss_mb, "barrier_highway_extra", t_barrier);
     let overnight_building_count = overnight_buildings.len();
     let poi_pack = FlatPoiBarrierPack::from_parts(&records, &segs, &glaciers, &overnight_buildings);
     drop(overnight_buildings);

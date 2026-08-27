@@ -14,16 +14,13 @@ https://github.com/Supermagnum/Navi/blob/dev/docs/crates.md
 
 # NOTE !
 Background indexing is still slow on region-scale extracts, but improved
-(Østlandet convert on SM-P613 ~14.8 → ~10.6 min). Of that ~10.6 min: graph
-build is the largest share (~41%), wetland extraction ~24%, POI extraction
-~22%, and barrier/danger-geometry extraction ~12% — POI and barrier
-together are about a third of the total, not "most" of it. Both POI and
-barrier extraction currently re-read the whole PBF with an unparallelized
-visitor (a mutex held across each block's visit); a measured fix exists —
-folding them into one shared parallel two-pass walk — that cuts POI+barrier
-from ~3.6 min to well under a minute (~6.8×) and would bring total convert
-time to roughly ~7.6 min. Not yet implemented in production. You can still
-plan while indexing runs; plans are much faster once packs are ready. Cold /
+(Østlandet convert on SM-P613 ~14.8 → ~10.6 → **~7.4 min**). Of the reduced
+~7.4 min total: graph build is the largest share (~58%), wetland extraction
+~32%, and a shared POI + barrier/danger-geometry two-pass parallel PBF walk
+~9% (~38 s; was ~3.6 min of mutex-wrapped re-reads). Those percentages are
+shares of the new total, not a comparison with the old ~41/~24/~34 split of
+10.6 min; POI+barrier dropped in absolute time. You can still plan while
+indexing runs; plans are much faster once packs are ready. Cold /
 missing-pack long-distance planning is still slow (PBF graph build). Pack-hit
 planning is much faster — see [Known issues](#known-issues).
 
@@ -881,15 +878,17 @@ Country/region visual extracts can also be prepared with
 - **Background indexing is still slow on region-scale extracts, but improved.**
   On the reference SM-P613, full Østlandet convert dropped from about **14.8 min
   to about 10.6 min** after wetland single-pass tile assignment and a shared
-  car+foot PBF parse (host ~143 s → ~110 s). Of that ~10.6 min: graph ~41%,
-  wetland ~24%, POI ~22%, barrier/danger-geometry ~12%. POI and barrier
-  together are about a third of the total. Both still re-read the whole PBF
-  with a mutex visitor; a measured shared parallel two-pass walk cuts them
-  from ~3.6 min to well under a minute (~6.8×, convert ~7.6 min) but is not
-  in production yet. You can still plan while indexing runs; plans are much
-  faster once packs are ready. Longer-term relief (precomputed packs from a
-  mirror such as navi.app, plus optional town-to-town caches — Navi does not
-  ship a commercial vendor routing DB today):
+  car+foot PBF parse (host ~143 s → ~110 s), then to about **7.4 min** after
+  folding POI and barrier/danger-geometry extraction into one shared
+  blob-parallel two-pass walk (`poi_ms≈38 s`, same 10870 POIs / 1073435
+  barrier segs as before; peak RSS **1569 MB**, vs 1563 MB). Of the reduced
+  ~7.4 min total: graph ~58%, wetland ~32%, POI+barrier walk ~9% (shares of
+  the new total; the old ~41/~24/~34 split was of 10.6 min — POI+barrier
+  dropped in absolute time, not relative to a slower extract). You can still
+  plan while indexing runs; plans are much faster once packs are ready.
+  Longer-term relief
+  (precomputed packs from a mirror such as navi.app, plus optional town-to-town
+  caches — Navi does not ship a commercial vendor routing DB today):
   [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
 - **Cold / missing-pack long-distance planning is still slow** (PBF graph build).
   **Pack-hit planning is much faster:** parallel tile mmap/deserialize cut host
