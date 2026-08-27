@@ -616,6 +616,7 @@ hardware-facing plugins.
 | [`docs/plugins/custom-alert-sounds-spec.md`](docs/plugins/custom-alert-sounds-spec.md) | Short alert tones (road signs, cameras, overspeed earcon) |
 | [`docs/plugins/horse-trekking-spec.md`](docs/plugins/horse-trekking-spec.md) | Equestrian lookahead and access guidance (Hiking is the interim stopgap) |
 | [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md) | Spoken escalating overspeed (percentage tiers; not shipped) |
+| [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic (location/speed/fuel/charge; not shipped) |
 
 ## Icons (where they live)
 

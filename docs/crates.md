@@ -151,6 +151,7 @@ If a fork is required later, document it here with an explicit `[patch]` entry.
 |---|---|
 | [`rtl-sdr-rs`](https://crates.io/crates/rtl-sdr-rs) | [`APRS-SDR.md`](APRS-SDR.md) |
 | [`rodio`](https://crates.io/crates/rodio) / [`cpal`](https://crates.io/crates/cpal) | [`voice-guidance.md`](voice-guidance.md) |
+| [`meshtastic`](https://crates.io/crates/meshtastic) (`bluetooth-le`, `tokio`) | [`plugins/lora-convoy-spec.md`](plugins/lora-convoy-spec.md) — host-native BLE client to a Meshtastic node |
 
 ## How to refresh
 

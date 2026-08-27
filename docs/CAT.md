@@ -5,7 +5,9 @@ defines the intended behaviour for a future `cat` plugin / host service so VFO
 programming stays safe and predictable while driving.
 
 Vehicle / energy telemetry is separate: see [`ECU.md`](ECU.md). Plugin overview:
-[`plugins.md`](plugins.md).
+[`plugins.md`](plugins.md). LoRa convoy status uses the same client/display
+split (Navi does not implement the RF layer) over Meshtastic BLE:
+[`plugins/lora-convoy-spec.md`](plugins/lora-convoy-spec.md).
 
 ---
 
