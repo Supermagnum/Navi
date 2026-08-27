@@ -34,6 +34,8 @@ downloaded extract. Precomputed town-to-town corridors (e.g. Haugesund→Bergen,
 Oslo→Fredrikstad) could speed popular trips further. Direction:
 [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
 
+Estimated server space needed:
+[https://github.com/Supermagnum/Navi/blob/main/docs/indexed-map-format-plan.md](https://github.com/Supermagnum/Navi/blob/main/docs/indexed-map-format-plan.md)
 
 # Testers wanted
 
