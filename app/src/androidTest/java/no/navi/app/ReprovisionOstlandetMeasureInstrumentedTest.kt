@@ -21,7 +21,7 @@ import uniffi.navi.pmtilesRunJob
 import java.io.File
 
 /**
- * Re-provision full Østlandet (PBF + place index + v4 packs + full basemap
+ * Re-provision full Østlandet (PBF + place index + v5 packs + full basemap
  * PMTiles) then measure Espa→Atnbrufossen with pack_hit required.
  *
  * Does not use [OfflinePmtilesBootstrap] for the basemap — staged fixtures are
@@ -128,9 +128,9 @@ class ReprovisionOstlandetMeasureInstrumentedTest {
         val man = File(dir, "ostlandet-latest.navi-manifest.json")
         assertTrue(man.isFile)
         assertTrue(
-            "expected graph_format_version 4 in ${man.readText().take(500)}",
-            man.readText().contains("\"graph_format_version\": 4") ||
-                man.readText().contains("\"graph_format_version\":4"),
+            "expected graph_format_version 5 in ${man.readText().take(500)}",
+            man.readText().contains("\"graph_format_version\": 5") ||
+                man.readText().contains("\"graph_format_version\":5"),
         )
     }
 

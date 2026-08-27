@@ -111,7 +111,7 @@ Dette er helt valgfri støtte, ikke en betalingsmur — Navi er og forblir grati
 | **Reisemåter** | Velg bil, sykkel, elsykkel, fottur, motorsykkel, lastebil eller bobil. | Ferdig |
 | **Kjøretøystørrelse** | Lagre høyde/bredde/lengde/vektgrenser så ruten unngår veier som er for trange. | Ferdig |
 | **Elsykkel-data** | Batteristørrelse, motormoment og hjulstørrelse hjelper til å anslå batteribruk og bratte bakker. Live kabel-telemetri er planlagt senere. | Ferdig (planlegging); live data senere |
-| **Unngåelser** | Du kan be om å unngå motorvei (ikke trunk/primary), bom eller ferge. | Ferdig |
+| **Unngåelser** | Du kan be om å unngå motorvei, bom eller ferge. Motorvei her betyr OSM `highway=motorway` / `motorway_link`, `motorroad=yes` / `expressway=yes`, eller tofelts enveiskjørt veg med `maxspeed>=90` — ikke all E-veg eller by-innfart. | Ferdig |
 | **Offisielle løyper** | For fottur/sykling kan du valgfritt foretrekke merkede langturer (av som standard). Vanlige stier fungerer fortsatt hvis merket løype har hull. | Ferdig |
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Et lite bladikon vises når øko er på. | Ferdig |
 | **Frakoblet planlegging** | Last ned en region én gang, planlegg og se ruten på enheten. | Ferdig |
@@ -353,7 +353,7 @@ kartvisning i app-preferanser).
 | **Vehicle limits** | Høyde/bredde/lengde/aksellast for frihøyde |
 
 Ruteplanlegging (**Route**): From / To / Via, Plan, Simulate, unngåelser
-(**Avoid motorways** ekskluderer bare `highway=motorway` / `motorway_link`),
+(**Avoid motorways** ekskluderer `highway=motorway` / `motorway_link`, `motorroad=yes` / `expressway=yes`, og tofelts enveiskjørt veg med `maxspeed>=90`; E-veg `ref` er bare visning),
 lagrede ruter.
 
 ### Tools (nedlastinger og diagnostisk logging)
@@ -546,6 +546,8 @@ og maskinvareplugins skal kunne snakke over **USB** / **Bluetooth** via verten.
 | [`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md) | Fremtidige UI-språk (bare engelsk i dag). Oversettertabell: [`translations.csv`](plugins/translations.csv); sammenheng: [`translations-context.md`](plugins/translations-context.md) |
 | [`plugins/right-to-roam-camping-spec.md`](plugins/right-to-roam-camping-spec.md) | Villcamping-forslag (plugin, ikke kjerne) |
 | [`plugins/safety-resupply.md`](plugins/safety-resupply.md) | Drivstoff-/vannforsyning |
+| [`plugins/weather-plugin.md`](plugins/weather-plugin.md) | Vær-overlay (Meteocons-ikoner levert; gjest ikke levert) |
+| [`plugins/weather-icons-reference.md`](plugins/weather-icons-reference.md) | Hva hvert vær-ikon betyr (fill-stil) |
 | [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Eksportere nav-tilstand og tilnærmingsvarsler til instrumentcluster |
 | [`plugins/animated-icons-spec.md`](plugins/animated-icons-spec.md) | Animerte ikoner |
 | [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md) | Korte varselyder (skilt, kamera, overskridelse-earcon) |

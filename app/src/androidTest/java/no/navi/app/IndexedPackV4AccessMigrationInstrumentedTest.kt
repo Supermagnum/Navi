@@ -373,11 +373,11 @@ class IndexedPackV4AccessMigrationConvertInstrumentedTest {
         assertTrue(pbf.lastModified() == beforeMtime)
 
         val man = File(dir, "ostlandet-latest.navi-manifest.json").readText()
-        assertTrue("manifest not v4: $man", man.contains("\"graph_format_version\": 4"))
+        assertTrue("manifest not v5: $man", man.contains("\"graph_format_version\": 5"))
         assertTrue("manifest missing graph_tiles:\n$man", man.contains("graph_tiles"))
         android.util.Log.i(TAG, "MANIFEST $man")
 
-        // Confirm on-disk archive preamble is NVRK v4 (access fields live in v4 body).
+        // Confirm on-disk archive preamble is NVRK v5 (motorway-grade tags live in v5 body).
         val tile =
             dir.listFiles()?.firstOrNull {
                 it.isFile &&
@@ -386,7 +386,7 @@ class IndexedPackV4AccessMigrationConvertInstrumentedTest {
             }
         assertTrue("missing car graph tile after convert", tile != null)
         val ver = graphPackFormatVersion(tile!!)
-        assertTrue("tile ${tile.name} format version=$ver want 4", ver == 4)
+        assertTrue("tile ${tile.name} format version=$ver want 5", ver == 5)
         android.util.Log.i(TAG, "TILE_PREAMBLE file=${tile.name} version=$ver")
     }
 
@@ -396,12 +396,12 @@ class IndexedPackV4AccessMigrationConvertInstrumentedTest {
         assumeTrue(pbf != null)
         val dir = dataDir()
         assumeTrue(
-            "packs must be ready/v4 (run b_ first); status=" +
+            "packs must be ready/v5 (run b_ first); status=" +
                 indexedMapsStatus(pbf!!.absolutePath, dir.absolutePath).trim(),
             indexedMapsStatus(pbf.absolutePath, dir.absolutePath).trim() == "ready",
         )
         val man = File(dir, "ostlandet-latest.navi-manifest.json").readText()
-        assertTrue(man.contains("\"graph_format_version\": 4"))
+        assertTrue(man.contains("\"graph_format_version\": 5"))
 
         val elevDir = File(dir, "elevation").absolutePath
         val cacheDir = File(dir, "graph-cache-ostlandet-access-v4").also { it.mkdirs() }.absolutePath

@@ -11,8 +11,8 @@ use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile};
 
 /// Little-endian ASCII "NVRK".
 pub const MAGIC_GRAPH: u32 = 0x4E_56_52_4B;
-/// v4: v3 + static access-forbid flags per edge and barrier-blocked nodes.
-pub const GRAPH_FORMAT_VERSION: u32 = 4;
+/// v5: v4 + motorroad / expressway / oneway / lanes for motorway-grade avoidance.
+pub const GRAPH_FORMAT_VERSION: u32 = 5;
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone)]
 pub struct FlatGraphPack {
@@ -34,6 +34,11 @@ pub struct FlatGraphPack {
     pub edge_maxspeed_kmh: Vec<f64>, // NaN = none
     pub edge_name: Vec<String>,
     pub edge_road_ref: Vec<String>,
+    pub edge_is_motorroad: Vec<u8>,
+    pub edge_is_expressway: Vec<u8>,
+    pub edge_is_oneway: Vec<u8>,
+    /// 0 = unset.
+    pub edge_lanes: Vec<u8>,
     pub edge_is_toll: Vec<u8>,
     pub edge_is_ferry: Vec<u8>,
     pub edge_is_roundabout: Vec<u8>,
@@ -84,6 +89,10 @@ impl FlatGraphPack {
         let mut edge_maxspeed_kmh = Vec::with_capacity(n);
         let mut edge_name = Vec::with_capacity(n);
         let mut edge_road_ref = Vec::with_capacity(n);
+        let mut edge_is_motorroad = Vec::with_capacity(n);
+        let mut edge_is_expressway = Vec::with_capacity(n);
+        let mut edge_is_oneway = Vec::with_capacity(n);
+        let mut edge_lanes = Vec::with_capacity(n);
         let mut edge_is_toll = Vec::with_capacity(n);
         let mut edge_is_ferry = Vec::with_capacity(n);
         let mut edge_is_roundabout = Vec::with_capacity(n);
@@ -116,6 +125,10 @@ impl FlatGraphPack {
             edge_maxspeed_kmh.push(e.maxspeed_kmh.unwrap_or(f64::NAN));
             edge_name.push(e.name.clone().unwrap_or_default());
             edge_road_ref.push(e.road_ref.clone().unwrap_or_default());
+            edge_is_motorroad.push(u8::from(e.is_motorroad));
+            edge_is_expressway.push(u8::from(e.is_expressway));
+            edge_is_oneway.push(u8::from(e.is_oneway));
+            edge_lanes.push(e.lanes.unwrap_or(0));
             edge_is_toll.push(u8::from(e.is_toll));
             edge_is_ferry.push(u8::from(e.is_ferry));
             edge_is_roundabout.push(u8::from(e.is_roundabout));
@@ -165,6 +178,10 @@ impl FlatGraphPack {
             edge_maxspeed_kmh,
             edge_name,
             edge_road_ref,
+            edge_is_motorroad,
+            edge_is_expressway,
+            edge_is_oneway,
+            edge_lanes,
             edge_is_toll,
             edge_is_ferry,
             edge_is_roundabout,
@@ -271,6 +288,17 @@ impl FlatGraphPack {
                     None
                 } else {
                     Some(road_ref.to_string())
+                },
+                is_motorroad: self.edge_is_motorroad.get(i).copied().unwrap_or(0) != 0,
+                is_expressway: self.edge_is_expressway.get(i).copied().unwrap_or(0) != 0,
+                is_oneway: self.edge_is_oneway.get(i).copied().unwrap_or(0) != 0,
+                lanes: {
+                    let n = self.edge_lanes.get(i).copied().unwrap_or(0);
+                    if n == 0 {
+                        None
+                    } else {
+                        Some(n)
+                    }
                 },
                 maxweight_t: None,
                 maxaxleload_t: None,
@@ -397,6 +425,10 @@ mod tests {
             maxspeed_kmh: Some(80.0),
             name: Some("Curvy".into()),
             road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
             maxweight_t: None,
             maxaxleload_t: None,
             maxbogieweight_t: None,
@@ -430,5 +462,24 @@ mod tests {
         let poly = back.path_overlay_polyline(&[NodeId(1), NodeId(2)]);
         // Endpoints + 3 shape points => denser than a pure chord (2 verts).
         assert!(poly.split(';').count() >= 5, "poly={poly}");
+    }
+
+    #[test]
+    fn pack_roundtrip_preserves_motorway_grade_tags() {
+        let mut graph = tiny_curved_graph();
+        graph.edges[0].is_motorroad = true;
+        graph.edges[0].is_expressway = true;
+        graph.edges[0].is_oneway = true;
+        graph.edges[0].lanes = Some(3);
+        let pack = FlatGraphPack::from_route_graph(&graph, None);
+        assert_eq!(pack.edge_is_motorroad, vec![1]);
+        assert_eq!(pack.edge_is_expressway, vec![1]);
+        assert_eq!(pack.edge_is_oneway, vec![1]);
+        assert_eq!(pack.edge_lanes, vec![3]);
+        let back = pack.to_route_graph(RoutingProfile::Car);
+        assert!(back.edges[0].is_motorroad);
+        assert!(back.edges[0].is_expressway);
+        assert!(back.edges[0].is_oneway);
+        assert_eq!(back.edges[0].lanes, Some(3));
     }
 }

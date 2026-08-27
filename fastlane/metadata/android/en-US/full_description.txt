@@ -1,6 +1,6 @@
 Navi is an offline-first navigation app. Download map data once, then plan and follow routes on the device without needing the internet for every trip.
 
-Travel modes include car, bicycle, e-bike, hiking, motorcycle, truck, and motorhome. Optional vehicle size limits skip roads that are too tight. Avoidances cover motorways (not trunk/primary), tolls, and ferries.
+Travel modes include car, bicycle, e-bike, hiking, motorcycle, truck, and motorhome. Optional vehicle size limits skip roads that are too tight. Avoidances cover motorways, tolls, and ferries. Avoid-motorways skips OSM motorways, `motorroad`/`expressway`, and dual carriageways at 90 km/h or faster — not every E-road or urban arterial.
 
 Eco routing prefers gentler, less energy-hungry roads by taking hills into account. Hiking and cycling can optionally prefer marked long-distance and pilgrim-style trails, with normal paths used when a marked trail has a gap.
 

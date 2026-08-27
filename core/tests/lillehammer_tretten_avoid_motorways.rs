@@ -1,6 +1,8 @@
 //! Lillehammer → Tretten with avoid-motorways on/off (Ostlandet extract).
 //!
-//! Confirms motorway-only exclusion: avoid-on may still use trunk/primary.
+//! Avoid-on must drop motorway-grade edges (`highway=motorway` / `motorway_link`,
+//! `motorroad` / `expressway`, or dual carriageway with maxspeed>=90). Ordinary
+//! E-road trunk without those tags may remain.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -8,7 +10,7 @@ use std::path::PathBuf;
 use driver_break_core::config::EcoConfig;
 use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
 use driver_break_core::routing::graph::{
-    highway_is_motorway, load_or_build_reweighted_bbox, RouteOptions, RoutingProfile,
+    edge_is_motorway_grade, load_or_build_reweighted_bbox, RouteOptions, RoutingProfile,
 };
 
 fn fixture_pbf() -> PathBuf {
@@ -40,7 +42,7 @@ fn motorway_edge_count(
 ) -> usize {
     path.windows(2)
         .filter_map(|w| graph.edge_index(w[0], w[1]))
-        .filter(|&i| highway_is_motorway(graph.edges[i].highway.as_deref()))
+        .filter(|&i| edge_is_motorway_grade(&graph.edges[i]))
         .count()
 }
 
@@ -122,7 +124,10 @@ fn lillehammer_to_tretten_avoid_motorways_on_off() {
     );
     eprintln!("ON  highway counts: {counts_on:?}");
 
-    assert_eq!(mw_on, 0, "avoid-on must not use motorway edges");
+    assert_eq!(
+        mw_on, 0,
+        "avoid-on must not use motorway-grade edges: {counts_on:?}"
+    );
     assert!(
         share_on + 1e-6 >= share_off,
         "non-motorway share should not drop when avoiding motorways"

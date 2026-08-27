@@ -100,6 +100,14 @@ struct CachedGraphEdge {
     name: Option<String>,
     #[serde(default)]
     road_ref: Option<String>,
+    #[serde(default)]
+    is_motorroad: bool,
+    #[serde(default)]
+    is_expressway: bool,
+    #[serde(default)]
+    is_oneway: bool,
+    #[serde(default)]
+    lanes: Option<u8>,
     maxweight_t: Option<f64>,
     maxaxleload_t: Option<f64>,
     maxbogieweight_t: Option<f64>,
@@ -193,6 +201,10 @@ pub fn save_reweighted_graph(
                 maxspeed_kmh: edge.maxspeed_kmh,
                 name: edge.name.clone(),
                 road_ref: edge.road_ref.clone(),
+                is_motorroad: edge.is_motorroad,
+                is_expressway: edge.is_expressway,
+                is_oneway: edge.is_oneway,
+                lanes: edge.lanes,
                 maxweight_t: edge.maxweight_t,
                 maxaxleload_t: edge.maxaxleload_t,
                 maxbogieweight_t: edge.maxbogieweight_t,
@@ -350,6 +362,10 @@ fn reconstruct_graph(payload: CachedRouteGraph) -> RouteGraph {
             maxspeed_kmh: edge.maxspeed_kmh,
             name: edge.name,
             road_ref: edge.road_ref,
+            is_motorroad: edge.is_motorroad,
+            is_expressway: edge.is_expressway,
+            is_oneway: edge.is_oneway,
+            lanes: edge.lanes,
             maxweight_t: edge.maxweight_t,
             maxaxleload_t: edge.maxaxleload_t,
             maxbogieweight_t: edge.maxbogieweight_t,
@@ -410,6 +426,10 @@ mod tests {
             maxspeed_kmh: None,
             name: None,
             road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
             maxweight_t: None,
             maxaxleload_t: None,
             maxbogieweight_t: None,

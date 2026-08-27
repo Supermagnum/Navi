@@ -26,9 +26,9 @@ pub use bike_suitability::{
     tags_unsuitable_for, way_id_from_edge_id, BikeCapability,
 };
 pub use builder::{
-    append_seasonal_closure_report, format_route_avoidance_report, highway_is_motorway,
-    max_waypoint_snap_m, GraphEdge, RouteGraph, RouteOptions, RoutingProfile, SnapTooFar,
-    WetlandApplyStats,
+    append_seasonal_closure_report, edge_is_motorway_grade, format_route_avoidance_report,
+    highway_is_motorway, max_waypoint_snap_m, GraphEdge, RouteGraph, RouteOptions, RoutingProfile,
+    SnapTooFar, WetlandApplyStats,
 };
 pub use cache::{
     graph_cache_path, load_or_build_reweighted, load_or_build_reweighted_bbox,

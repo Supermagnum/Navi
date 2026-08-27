@@ -893,7 +893,7 @@ fn reachable_without_barrier(
     }
     let opts = RouteOptions {
         avoid_ferries: true,
-        // Hiking: do not treat motorway walking as safe access to a break POI.
+        // Hiking: do not treat motorway-grade walking as safe POI access.
         avoid_motorways: matches!(graph.profile(), RoutingProfile::Foot),
         ..RouteOptions::default()
     };

@@ -117,7 +117,7 @@ These are easy to mistranslate. Use the **Navi sense**.
 | **Mandatory** | Truck **mandatory break after (hours)** (legal-style default pack). | Optional UI chrome |
 | **Mode** / **Modes** / **Travel mode** | Routing profile: Car, Truck, Bicycle, Hiking, … | Airplane mode; UI dark mode |
 | **Motor** | E-bike **motor torque (Nm)**. | Motorway abbreviation |
-| **Motorways** | Avoidance of OSM `highway=motorway` (and related high classes in some strings). | Any busy road |
+| **Motorways** | Avoidance of OSM motorway-grade roads (`highway=motorway` / `motorway_link`, `motorroad`/`expressway`, or dual carriageway at 90+ km/h). | Any busy road |
 | **Networks** | Official **hiking/cycling** waymarked networks (and related cabin networks in product docs). | Cellular network |
 | **Next** | **Next break** display (time vs distance). | “Next” wizard page only |
 | **N-up** | Map rotation: **north up** (north always top of screen). | “N” as variable; bed “n-up” |
@@ -217,7 +217,7 @@ Do not merge “break” wording into “ETA” wording in languages where one w
 ### Routing and modes
 
 - **Plan route**, **Simulate route**, **Saved routes**, **Delete route** / **Delete planned route** — planning and storage of the active line.
-- **Avoid ferries** / **Avoid toll roads** / **Avoid motorways/trunk/primary** — costing flags, not map filters that hide geometry.
+- **Avoid ferries** / **Avoid toll roads** / **Avoid motorways** — costing flags (OSM motorway class, `motorroad`/`expressway`, or dual carriageway with `lanes>=2` and `maxspeed>=90`), not map filters that hide geometry.
 - **Eco mode** / **Eco routing** — energy/effort-aware costing; may be locked on for some profiles.
 - **Follow official hiking/cycling networks** — soft preference for waymarked networks.
 - **Use networked cabins** — allow network (DNT/STF-style) huts as auto-via /

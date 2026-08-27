@@ -52,6 +52,10 @@ fn keep_way_tag(key: &str) -> bool {
             | "maxspeed"
             | "name"
             | "ref"
+            | "int_ref"
+            | "motorroad"
+            | "expressway"
+            | "lanes"
             | "maxweight"
             | "maxaxleload"
             | "maxbogieweight"
@@ -912,7 +916,26 @@ fn graph_from_raw_ways(
             .get("maxspeed")
             .and_then(|v| crate::routing::eta::parse_maxspeed_kmh(v));
         let name = way.tags.get("name").cloned();
-        let road_ref = way.tags.get("ref").cloned();
+        let road_ref = super::builder::combine_osm_road_refs(
+            way.tags.get("ref").cloned(),
+            way.tags.get("int_ref").cloned(),
+        );
+        let is_motorroad = way
+            .tags
+            .get("motorroad")
+            .is_some_and(|v| super::builder::is_truthy_tag(v));
+        let is_expressway = way
+            .tags
+            .get("expressway")
+            .is_some_and(|v| super::builder::is_truthy_tag(v));
+        let is_oneway = way
+            .tags
+            .get("oneway")
+            .is_some_and(|v| super::builder::is_oneway_yes_tag(v));
+        let lanes = way
+            .tags
+            .get("lanes")
+            .and_then(|v| super::builder::parse_lanes_tag(v));
         let maxweight_t = way.tags.get("maxweight").and_then(|v| parse_metric(v));
         let maxaxleload_t = way.tags.get("maxaxleload").and_then(|v| parse_metric(v));
         let maxbogieweight_t = way.tags.get("maxbogieweight").and_then(|v| parse_metric(v));
@@ -989,6 +1012,10 @@ fn graph_from_raw_ways(
                 maxspeed_kmh,
                 name.clone(),
                 road_ref.clone(),
+                is_motorroad,
+                is_expressway,
+                is_oneway,
+                lanes,
                 maxweight_t,
                 maxaxleload_t,
                 maxbogieweight_t,
@@ -1019,6 +1046,10 @@ fn graph_from_raw_ways(
                     maxspeed_kmh,
                     name.clone(),
                     road_ref.clone(),
+                    is_motorroad,
+                    is_expressway,
+                    is_oneway,
+                    lanes,
                     maxweight_t,
                     maxaxleload_t,
                     maxbogieweight_t,
@@ -1065,6 +1096,10 @@ fn bbox_edge(
     maxspeed_kmh: Option<f64>,
     name: Option<String>,
     road_ref: Option<String>,
+    is_motorroad: bool,
+    is_expressway: bool,
+    is_oneway: bool,
+    lanes: Option<u8>,
     maxweight_t: Option<f64>,
     maxaxleload_t: Option<f64>,
     maxbogieweight_t: Option<f64>,
@@ -1096,6 +1131,10 @@ fn bbox_edge(
         maxspeed_kmh,
         name,
         road_ref,
+        is_motorroad,
+        is_expressway,
+        is_oneway,
+        lanes,
         maxweight_t,
         maxaxleload_t,
         maxbogieweight_t,
