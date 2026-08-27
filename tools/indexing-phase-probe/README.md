@@ -11,6 +11,8 @@ cargo run --release --manifest-path tools/indexing-phase-probe/Cargo.toml -- \
   graph-profile /path/to/region.osm.pbf /tmp/spill-dir car
 cargo run --release --manifest-path tools/indexing-phase-probe/Cargo.toml -- \
   keep-stats /path/to/region.osm.pbf
+cargo run --release --manifest-path tools/indexing-phase-probe/Cargo.toml -- \
+  poi-barrier-profile /path/to/region.osm.pbf
 ```
 
 Depends on `driver-break-core` and the production `osmpbf` crate (same as the app).

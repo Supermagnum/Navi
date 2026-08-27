@@ -14,19 +14,26 @@ https://github.com/Supermagnum/Navi/blob/dev/docs/crates.md
 
 # NOTE !
 Background indexing is still slow on region-scale extracts, but improved
-(Østlandet convert on SM-P613 ~14.8 → ~10.6 min; remaining time is mostly
-POI + barrier extraction). You can still plan while indexing runs; plans are
-much faster once packs are ready. Cold / missing-pack long-distance planning
-is still slow (PBF graph build). Pack-hit planning is much faster — see
-[Known issues](#known-issues).
+(Østlandet convert on SM-P613 ~14.8 → ~10.6 min). Of that ~10.6 min: graph
+build is the largest share (~41%), wetland extraction ~24%, POI extraction
+~22%, and barrier/danger-geometry extraction ~12% — POI and barrier
+together are about a third of the total, not "most" of it. Both POI and
+barrier extraction currently re-read the whole PBF with an unparallelized
+visitor (a mutex held across each block's visit); a measured fix exists —
+folding them into one shared parallel two-pass walk — that cuts POI+barrier
+from ~3.6 min to well under a minute (~6.8×) and would bring total convert
+time to roughly ~7.6 min. Not yet implemented in production. You can still
+plan while indexing runs; plans are much faster once packs are ready. Cold /
+missing-pack long-distance planning is still slow (PBF graph build). Pack-hit
+planning is much faster — see [Known issues](#known-issues).
 
-Navi does **not** currently ship with a ready-made national routing database
+Navi does not currently ship with a ready-made national routing database
 the way many commercial GPS / head-unit products do (those usually include
 precomputed indexes from the vendor). Solving onboard convert cost may involve
-a server (example: **navi.app**) that distributes **precomputed index packs**
+a server (example: navi.app) that distributes precomputed index packs
 for a region; when that server is unreachable, the natural fallback is what
-Navi already does — **local** pack convert and PBF planning from the
-downloaded extract. Precomputed **town-to-town** corridors (e.g. Haugesund→Bergen,
+Navi already does — local pack convert and PBF planning from the
+downloaded extract. Precomputed town-to-town corridors (e.g. Haugesund→Bergen,
 Oslo→Fredrikstad) could speed popular trips further. Direction:
 [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
 
@@ -874,12 +881,15 @@ Country/region visual extracts can also be prepared with
 - **Background indexing is still slow on region-scale extracts, but improved.**
   On the reference SM-P613, full Østlandet convert dropped from about **14.8 min
   to about 10.6 min** after wetland single-pass tile assignment and a shared
-  car+foot PBF parse (host ~143 s → ~110 s). Remaining convert time is still
-  dominated by POI + barrier extraction — that path has not been accelerated
-  yet. You can still plan while indexing runs; plans are much faster once packs
-  are ready. Longer-term relief (precomputed packs from a mirror such as
-  navi.app, plus optional town-to-town caches — Navi does not ship a commercial
-  vendor routing DB today):
+  car+foot PBF parse (host ~143 s → ~110 s). Of that ~10.6 min: graph ~41%,
+  wetland ~24%, POI ~22%, barrier/danger-geometry ~12%. POI and barrier
+  together are about a third of the total. Both still re-read the whole PBF
+  with a mutex visitor; a measured shared parallel two-pass walk cuts them
+  from ~3.6 min to well under a minute (~6.8×, convert ~7.6 min) but is not
+  in production yet. You can still plan while indexing runs; plans are much
+  faster once packs are ready. Longer-term relief (precomputed packs from a
+  mirror such as navi.app, plus optional town-to-town caches — Navi does not
+  ship a commercial vendor routing DB today):
   [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
 - **Cold / missing-pack long-distance planning is still slow** (PBF graph build).
   **Pack-hit planning is much faster:** parallel tile mmap/deserialize cut host

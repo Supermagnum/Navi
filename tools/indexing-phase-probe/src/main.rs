@@ -5,6 +5,8 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::Instant;
 
+mod poi_barrier;
+
 use driver_break_core::download::pbf_priority::for_each_pbf_elements;
 use driver_break_core::routing::graph::{RouteGraph, RoutingProfile};
 use driver_break_core::routing::wetland::WetlandWayExtract;
@@ -541,12 +543,15 @@ fn cmd_graph_profile(path: &Path, profile: RoutingProfile, spill: &Path) -> anyh
 
 fn main() -> anyhow::Result<()> {
     let mut args = env::args().skip(1);
-    let cmd = args.next().expect("cmd: keep-stats | wetland-profile | graph-profile");
+    let cmd = args.next().expect(
+        "cmd: keep-stats | wetland-profile | graph-profile | poi-barrier-profile",
+    );
     let path = args.next().expect("pbf path");
     let path = Path::new(&path);
     match cmd.as_str() {
         "keep-stats" => cmd_keep_stats(path)?,
         "wetland-profile" => cmd_wetland_profile(path)?,
+        "poi-barrier-profile" => poi_barrier::cmd_poi_barrier_profile(path)?,
         "graph-profile" => {
             let spill = args
                 .next()
