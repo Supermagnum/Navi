@@ -181,6 +181,7 @@ class DiagnosticLogOnDeviceInstrumentedTest {
                 avoidFerries = false,
                 vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                 preferOfficialNetworks = false,
+                dataDir = "",
             )
         assertTrue("plan must PASS: ${result.report.take(800)}", result.report.contains("PASS"))
         assertTrue(
@@ -305,7 +306,8 @@ class DiagnosticLogOnDeviceInstrumentedTest {
                 it.contains("| ROUTE_PLAN |") &&
                     it.contains("status=complete") &&
                     it.contains("plan_duration_ms=") &&
-                    it.contains("distance_km=")
+                    it.contains("distance_km=") &&
+                    it.contains("pack_hit=false")
             },
         )
         val stagesLine = text.lines().first { it.contains("| ROUTE_PLAN_STAGES |") }

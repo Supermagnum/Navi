@@ -1,6 +1,6 @@
 # Documentation status map (canonical sources)
 
-Last updated: 2026-08-27.
+Last updated: 2026-08-28.
 
 Readers should not need to cross-reference half a dozen overlapping “status”
 documents. Use this map. Point-in-time reports stay as historical evidence;
@@ -37,6 +37,24 @@ they are **not** the live product status.
 3. **Audits stay tracked** — `docs/future-proofing-audit-*.md` action tables must
    get status + last-verified dates as work closes.
 4. **Do not duplicate** architecture or codebase maps into status reports.
+
+## Resolved (2026-08-28): Pixel UI multi-minute Espa→Atnbrufossen plans
+
+The Pixel UI Plan-button times in the ~4–5 minute class (including 36 min / 193 s /
+294 s / 314555 ms) were pack-miss PBF rebuilds: `RegionCoverage.resolvePlanPbf`
+could pick `/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf` while pack
+lookup used `pbf.parent()`, so the app-dir Ostlandet packs were never opened.
+Pack lookup now takes an explicit app `data_dir`; the Plan button keeps the
+native report (`pack_hit`, `ROUTE_PLAN_STAGES`) instead of replacing it with
+`PLAN_MULTI`. Dump-test / `IndexedMapsBg` pack-hit (~13 s class) was already
+correct.
+
+**Follow-up (lower priority, not part of that fix):** `resolvePlanPbf` still
+scores covering extracts by file size (`minBy`), so a smaller staged fixture
+PBF can be chosen for geometry even when the app-dir copy is the one with packs.
+Pack lookup is decoupled (explicit `data_dir`), so this is harmless for
+correctness but confusing for which PBF path the UI plans against — consider
+selection order / intent separately from pack-dir resolution.
 
 ## Resolved example (2026-07-29)
 

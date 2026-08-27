@@ -109,6 +109,7 @@ class WetlandTiledPackCloseGapTest {
                     """[{"name":"A","lat":61.85125,"lon":10.233842},{"name":"B","lat":61.8700,"lon":10.2500}]""",
                 preferOfficialNetworks = false,
                 preferPilgrimRoutes = false,
+                dataDir = "",
             )
         dump("short_hike_atnbrufossen.txt", hike.report)
         setRoutePlanTimingEnabled(false)

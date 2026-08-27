@@ -90,6 +90,7 @@ fn main() {
             total_weight_kg: None,
         },
         false,
+        String::new(),
     );
     println!("distance_km={:.3}", r.distance_km);
     println!("eta_minutes={:.1}", r.eta_minutes);

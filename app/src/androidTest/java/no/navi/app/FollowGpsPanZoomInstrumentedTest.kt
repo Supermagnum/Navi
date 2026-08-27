@@ -274,6 +274,7 @@ class FollowGpsPanZoomInstrumentedTest {
                     totalWeightKg = null,
                 ),
             preferOfficialNetworks = false,
+            dataDir = "",
         )
     }
 

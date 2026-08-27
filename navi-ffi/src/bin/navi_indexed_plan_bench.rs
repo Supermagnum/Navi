@@ -35,7 +35,15 @@ fn main() {
         let waypoints_json = format!(
             r#"[{{"name":"start","lat":{slat},"lon":{slon}}},{{"name":"end","lat":{elat},"lon":{elon}}}]"#
         );
-        let result = plan_hiking_route(pbf, elev, cache, waypoints_json, false, false);
+        let result = plan_hiking_route(
+            pbf,
+            elev,
+            cache,
+            waypoints_json,
+            false,
+            false,
+            String::new(),
+        );
         (
             result.distance_km,
             result.eta_minutes,
@@ -66,6 +74,7 @@ fn main() {
                 total_weight_kg: None,
             },
             false,
+            String::new(),
         );
         (
             result.distance_km,

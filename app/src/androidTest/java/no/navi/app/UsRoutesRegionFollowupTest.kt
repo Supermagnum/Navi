@@ -209,6 +209,7 @@ class UsRoutesRegionFollowupTest {
                     false,
                     EMPTY_VEHICLE,
                     false,
+                    dataDir = "",
                 )
             reports.appendLine(leg.report.take(300))
             assertTrue("leg plan failed:\n${leg.report.take(400)}", leg.report.contains("PASS"))

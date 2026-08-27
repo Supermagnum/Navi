@@ -957,8 +957,12 @@ Country/region visual extracts can also be prepared with
   `wetland_pack_hit` and `overnight_buildings_pack_hit`. If planning feels
   extremely slow across modes, check Diagnostic logging for `pack_hit=false`
   and use **Tools → Rebuild indexed maps** (or wait for background convert
-  after download). The UI status also warns when a completed plan used the
-  PBF fallback. Concurrent convert / place-index / GPS cone PBF readers are
+  after download). Plan-button session logs now include `pack_hit` /
+  `poi_pack_hit` and `ROUTE_PLAN_STAGES` (same as off-route recalculation).
+  Pixel UI multi-minute Espa→Atnbrufossen stalls (36 min / 193 s / 294 s /
+  314555 ms) were a fixture-PBF pack-dir miss, not a planner bug — see
+  [`docs/status.md`](docs/status.md) (2026-08-28). The UI status also warns
+  when a completed plan used the PBF fallback. Concurrent convert / place-index / GPS cone PBF readers are
   coordinated during a foreground plan (pause / skip — see
   [Indexing](#indexing-background-after-download)); without that, pack-miss
   plans on a large extract can stretch into many minutes. Reproduce stages

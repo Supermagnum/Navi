@@ -101,6 +101,8 @@ class DiagnosticLogTest {
                 "eta_min" to 127.0,
                 "breaks" to 0,
                 "plan_duration_ms" to 2234,
+                "pack_hit" to false,
+                "poi_pack_hit" to false,
             ),
         )
         DiagnosticLog.logRoutePlanStagesFromReport(
@@ -161,6 +163,8 @@ class DiagnosticLogTest {
             assertTrue("missing $c in:\n$text", text.contains("| $c |"))
         }
         assertTrue(text.contains("plan_duration_ms=2234"))
+        assertTrue(text.contains("pack_hit=false"))
+        assertTrue(text.contains("poi_pack_hit=false"))
         assertTrue(text.contains("graph_build_ms=1840"))
         assertTrue(text.contains("uphill_energy_j="))
         assertTrue(text.contains("downhill_energy_j="))

@@ -324,6 +324,7 @@ class IndexedPackV4AccessMigrationConvertInstrumentedTest {
                 false,
                 vehicle(),
                 false,
+                dataDir = "",
             )
         android.util.Log.i(TAG, "FALLBACK ${r.report}")
         assertTrue("fallback plan failed:\n${r.report}", r.report.contains("PASS"))
@@ -423,6 +424,7 @@ class IndexedPackV4AccessMigrationConvertInstrumentedTest {
                 false,
                 vehicle(),
                 false,
+                dataDir = "",
             )
         android.util.Log.i(TAG, "PACK_CAR_TORGGATA ${carTor.report}")
         assertTrue("Torggata car:\n${carTor.report}", carTor.report.contains("PASS"))
@@ -455,6 +457,7 @@ class IndexedPackV4AccessMigrationConvertInstrumentedTest {
                 false,
                 vehicle(),
                 false,
+                dataDir = "",
             )
         android.util.Log.i(TAG, "PACK_CAR_KIRKEBY ${carKirk.report}")
         assertTrue("Kirkeby car:\n${carKirk.report}", carKirk.report.contains("PASS"))
@@ -481,6 +484,7 @@ class IndexedPackV4AccessMigrationConvertInstrumentedTest {
                         """{"name":"B","lat":$KIRK_END_LAT,"lon":$KIRK_END_LON}]""",
                 preferOfficialNetworks = false,
                 preferPilgrimRoutes = false,
+                dataDir = "",
             )
         android.util.Log.i(TAG, "PACK_HIKE_KIRKEBY ${hike.report}")
         assertTrue("Kirkeby hike:\n${hike.report}", hike.report.contains("PASS"))

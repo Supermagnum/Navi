@@ -175,6 +175,7 @@ class TurnIconRoundaboutInstrumentedTest {
                     avoidFerries = false,
                     vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                     preferOfficialNetworks = false,
+                    dataDir = "",
                 )
             assertTrue("leg PASS: ${leg.report.take(200)}", leg.report.contains("PASS"))
             last = leg

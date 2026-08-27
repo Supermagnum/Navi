@@ -42,8 +42,8 @@ Package / module: `uniffi.navi` on Android.
 | `provision_region_data(data_dir, pbf_url, pbf_filename, elevation_tar_url?)` | `provisionRegionData` | Download/parse regional PBF (+ optional DEM tar); returns report string |
 | `run_car_corridor_pipeline(pbf, elev, cache, break_interval_hours)` | `runCarCorridorPipeline` | Fixture / smoke corridor → `CorridorRouteResult` |
 | `run_car_corridor_smoke_test(...)` | `runCarCorridorSmokeTest` | Same pipeline; returns `report` only |
-| `plan_car_route(pbf, elev, cache, start_lat/lon, end_lat/lon, use_eco, profile, avoid_*, vehicle, prefer_official_networks)` | `planCarRoute` | Motor / cycle corridor plan. **Rejects** `TravelProfile::Hiking` |
-| `plan_hiking_route(pbf, elev, cache, waypoints_json, prefer_official_networks)` | `planHikingRoute` | Multi-waypoint hiking; `waypoints_json` is `[{"name","lat","lon"}, …]` (≥ 2). Promotes near-corridor named rast huts to vias when the detour fits Drive **POI cabin radius**, then replans once |
+| `plan_car_route(pbf, elev, cache, start_lat/lon, end_lat/lon, use_eco, profile, avoid_*, vehicle, prefer_official_networks, data_dir)` | `planCarRoute` | Motor / cycle corridor plan. **Rejects** `TravelProfile::Hiking`. `data_dir` is the app data directory for pack/manifest lookup (empty = PBF parent). |
+| `plan_hiking_route(pbf, elev, cache, waypoints_json, prefer_official_networks, prefer_pilgrim_routes, data_dir)` | `planHikingRoute` | Multi-waypoint hiking; `waypoints_json` is `[{"name","lat","lon"}, …]` (≥ 2). Promotes near-corridor named rast huts to vias when the detour fits Drive **POI cabin radius**, then replans once. `data_dir` is pack/manifest lookup (empty = PBF parent). |
 
 **`CorridorRouteResult` (record)** — shared plan output:
 

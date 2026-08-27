@@ -68,6 +68,7 @@ class OstlandetV3TiledRebuildInstrumentedTest {
                 vehicle,
                 false,
                 "2026-07-15T12:00:00",
+                dataDir = "",
             )
         android.util.Log.i("OstlandetV3Tiled", "FALLBACK ${r.report}")
         assertTrue("fallback plan failed:\n${r.report}", r.report.contains("PASS"))
@@ -157,6 +158,7 @@ class OstlandetV3TiledRebuildInstrumentedTest {
                 vehicle,
                 false,
                 "2026-07-15T12:00:00",
+                dataDir = "",
             )
         android.util.Log.i("OstlandetV3Tiled", "SUMMER ${summer.report}")
         assertTrue("summer:\n${summer.report}", summer.report.contains("PASS"))
@@ -183,6 +185,7 @@ class OstlandetV3TiledRebuildInstrumentedTest {
                 vehicle,
                 false,
                 "2026-01-15T12:00:00",
+                dataDir = "",
             )
         android.util.Log.i("OstlandetV3Tiled", "WINTER ${winter.report}")
         assertTrue("winter pack_hit:\n${winter.report}", winter.report.contains("pack_hit=true"))

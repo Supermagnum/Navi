@@ -380,6 +380,7 @@ class OffRouteBehaviorInstrumentedTest {
             avoidFerries = false,
             vehicle = FfiVehicleLimits(null, null, null, null, null, null),
             preferOfficialNetworks = false,
+            dataDir = "",
         )
     }
 

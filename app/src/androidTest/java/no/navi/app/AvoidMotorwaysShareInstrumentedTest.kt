@@ -69,6 +69,7 @@ class AvoidMotorwaysShareInstrumentedTest {
                 avoidFerries = false,
                 vehicle = vehicle,
                 preferOfficialNetworks = false,
+                dataDir = "",
             )
         assertTrue("plan avoid=off must PASS: ${off.report}", off.report.contains("PASS"))
 
@@ -88,6 +89,7 @@ class AvoidMotorwaysShareInstrumentedTest {
                 avoidFerries = false,
                 vehicle = vehicle,
                 preferOfficialNetworks = false,
+                dataDir = "",
             )
         assertTrue("plan avoid=on must PASS: ${on.report}", on.report.contains("PASS"))
 
@@ -122,6 +124,7 @@ class AvoidMotorwaysShareInstrumentedTest {
                 avoidFerries = false,
                 vehicle = vehicle,
                 preferOfficialNetworks = false,
+                dataDir = "",
             )
         val hwyOn =
             planCarRoute(
@@ -139,6 +142,7 @@ class AvoidMotorwaysShareInstrumentedTest {
                 avoidFerries = false,
                 vehicle = vehicle,
                 preferOfficialNetworks = false,
+                dataDir = "",
             )
         assumeTrue("Hamar–Lillehammer plan off PASS", hwyOff.report.contains("PASS"))
         assumeTrue("Hamar–Lillehammer plan on PASS", hwyOn.report.contains("PASS"))
