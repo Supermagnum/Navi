@@ -1,160 +1,213 @@
-# Indexed pack storage at world scale
+# Server disk for world-coverage indexed packs
 
-Order-of-magnitude estimate of how much disk the Navi indexed pack set would
-need if every Geofabrik-style region a user can download in Tools carried
-prebuilt archives (graph, POI/barrier, wetland), with and without elevation
-(Δh) payload.
+Order-of-magnitude estimate of **how much server disk** would be needed to
+host:
 
-This document is a **space estimate only**. It does not describe an
+1. Prebuilt Navi indexed packs for every Geofabrik-style region (graph,
+   poi/barrier, wetland), **with and without** elevation Δh (`edge_delta_h_m`)
+2. An optional cache of **precomputed routes between major towns**
+
+This document is a **server space estimate only**. It does not describe an
 implementation plan or change runtime behaviour.
 
 ---
 
-## Measured convert ratios
+## What “server space” means here
 
-Anchor convert (Hedmark region):
+| Layer | Role |
+|---|---|
+| **Published pack tree** | Per-region `.navi-graph-*`, `.navi-poi-barrier`, `.navi-wetland` (+ manifest) |
+| **Town-to-town route cache** (optional) | Precomputed corridors between major places, versioned with the map/pack generation |
+| **Source OSM extracts** | Planet and/or Geofabrik `.osm.pbf` for weekly convert |
+| **Convert / bake scratch** | Temp space while rebuilding packs or route cache |
+| **DEM / terrain** | Only if graph packs or route profiles include elevation — **not sized** here |
+
+Packs and town routes are stored **per region** (or per region + cross-border
+pair list), matching Tools download granularity — **not** one world blob.
+Clients still download one region (plus any route-cache slice for that region)
+at a time.
+
+---
+
+## Measured convert ratios (pack inputs)
+
+Anchor convert (Hedmark):
 
 | Input / output | Size | Notes |
 |---|---|---|
-| Source `hedmark-latest.osm.pbf` | **≈ 90 MiB** | Geofabrik / OSM.fr extract used in indexed-convert work |
-| Graph packs (all profiles) | **39 MiB** | Profile-suffixed `.navi-graph-*.rkyv` set from one convert |
-| POI + barrier pack | **8.1 MiB** | `.navi-poi-barrier.rkyv` from the same convert |
-| Wetland pack on disk | **not measured** | Convert work logged ring counts and load times, not archive MiB |
-
-### Per-MiB-of-source-PBF ratios
+| Source `hedmark-latest.osm.pbf` | **≈ 90 MiB** | Geofabrik / OSM.fr |
+| Graph packs (all profiles) | **39 MiB** | Profile-suffixed `.navi-graph-*.rkyv` |
+| POI + barrier pack | **8.1 MiB** | `.navi-poi-barrier.rkyv` |
+| Wetland pack on disk | **not measured** | Rings known; archive MiB not logged |
 
 | Pack type | Ratio | Arithmetic | Status |
 |---|---|---|---|
-| Graph (all profiles, no Δh) | **0.433 MiB pack / MiB PBF** | 39 ÷ 90 | Measured on Hedmark |
-| POI + barrier | **0.090 MiB pack / MiB PBF** | 8.1 ÷ 90 | Measured on Hedmark |
-| Graph + POI/barrier | **0.523** | (39 + 8.1) ÷ 90 | Measured on Hedmark |
-| Wetland | **0.090 MiB pack / MiB PBF** | same number as poi-barrier | **Assumption / placeholder** — wetland archive MiB was never recorded; using poi-barrier as an order-of-magnitude stand-in until a real size is logged |
-| Δh overhead on graph | **× (8.5 ÷ 7.7) ≈ ×1.104** | trip-bbox archives 7.7 MiB without Δh → 8.5 MiB with `edge_delta_h_m` | Measured relative overhead on a trip-bbox archive; **assumption** that the same relative overhead applies to region-scale graph packs |
+| Graph (no Δh) | **0.433 MiB / MiB PBF** | 39 ÷ 90 | Measured |
+| POI + barrier | **0.090 MiB / MiB PBF** | 8.1 ÷ 90 | Measured |
+| Wetland | **0.090 MiB / MiB PBF** | same as poi-barrier | **Assumption / placeholder** |
+| Graph Δh overhead | **× (8.5 ÷ 7.7) ≈ ×1.104** | trip-bbox 7.7 → 8.5 MiB with `edge_delta_h_m` | Measured on trip bbox; **assumption** it applies to region graphs |
 
-Linear scaling from Hedmark density to other regions and to the full planet is
-an **estimate** (urban extracts can be denser; rural ones sparser).
-
-Illustrative cross-check (**estimate**): Ostlandet PBF is often treated as
-**~450 MiB** class → predicted graph ≈ 450 × 0.433 ≈ **195 MiB**, poi-barrier ≈
-450 × 0.090 ≈ **40.5 MiB**, wetland (placeholder) ≈ **40.5 MiB**.
+Planet input: `planet-latest.osm.pbf` listed **88G** on
+[planet.openstreetmap.org/pbf/](https://planet.openstreetmap.org/pbf/)
+(file dated **2026-08-27 11:00**). Arithmetic: **≈ 88 GiB = 90 112 MiB**
+(**assumption:** directory “88G” means GiB).
 
 ---
 
-## Planet source size
+## A — Indexed packs on the server (with vs without Δh)
 
-| Field | Value |
-|---|---|
-| File | `planet-latest.osm.pbf` |
-| Listed size | **88G** |
-| Source | [planet.openstreetmap.org/pbf/](https://planet.openstreetmap.org/pbf/) directory listing |
-| Listing date | File dated **2026-08-27 11:00** (same size class as `planet-260824.osm.pbf`) |
-| Unit used below | **≈ 88 GiB = 90 112 MiB** — **assumption** that the directory’s “88G” means GiB (1024³) |
+Extrapolated with Hedmark ratios × 90 112 MiB:
 
-Current planet dump only (not full-history).
+| Pack set | ≈ MiB | ≈ GiB |
+|---|---|---|
+| Graph **without** Δh | 90 112 × 0.433 = **39 049** | **~38.1** |
+| Graph **with** Δh | 90 112 × 0.433 × (8.5÷7.7) = **43 107** | **~42.1** |
+| POI + barrier | 90 112 × 0.090 = **8 110** | **~7.9** |
+| Wetland (placeholder) | 90 112 × 0.090 = **8 110** | **~7.9** |
+
+### Pack publish totals
+
+| Variant | Formula | **Server disk for packs** |
+|---|---|---|
+| **Without elevation (no Δh)** | 38.1 + 7.9 + 7.9 | **≈ 55 269 MiB ≈ 54 GiB** |
+| **With elevation (Δh on graph)** | 42.1 + 7.9 + 7.9 | **≈ 59 327 MiB ≈ 58 GiB** |
+| **Δh delta** | with − without | **≈ +4 058 MiB ≈ +4 GiB** |
+
+DEM tiles used to *build* Δh are **not** included. Wetland line is a
+**placeholder**; if real wetland MiB is 0.5× or 2× this, only that line moves.
+
+Per-region illustration: Hedmark-sized (~90 MiB PBF) → ~**55 MiB** packs without
+Δh / ~**59 MiB** with Δh (**estimate**; graph+poi portion measured at 47.1 MiB).
 
 ---
 
-## Download granularity
+## B — Precomputed routes between major towns (optional)
 
-Navi already downloads **per region** (Geofabrik-style country / sub-region),
-not one world blob. Packs follow that same unit: separate archives per category
-for the region the user picks in Tools.
+Not implemented; **no measured archive size**. All figures below are
+**assumptions** for server planning.
 
-Full planet coverage in the tables below means the **sum** of those per-region
-packs over a non-overlapping partition of the planet (about one planet-sized
-PBF of source data), **not** a single combined world file.
+### What would be stored
 
----
+Per OD pair (example content — not a format spec): profile id, origin/dest
+place ids, distance, duration, encoded shape (and optionally a coarse
+elevation sample along the path if the bake used Δh/DEM). Versioned against
+the same pack / extract generation so stale routes are dropped.
 
-## World totals (extrapolated)
+Hit = seed or short-circuit when the user plans near that pair; miss = normal
+on-device plan (packs or PBF). Does **not** replace indexed packs.
 
-Using Hedmark ratios × 90 112 MiB planet input:
+### Pair-count models (**assumptions**)
 
-| Pack set | Formula | ≈ MiB | ≈ GiB |
+Complete graphs among all “major” places explode; practical caches are sparse.
+
+| Model | Assumed pair count (world sum) | How it is built |
+|---|---|---|
+| **Sparse hub** | **~50 000** | ~5 000 majors × ~10 directed neighbors (or ~25 000 undirected) — **assumption** |
+| **Regional mesh** | **~600 000** | ~200 Geofabrik-class leaves × ~80 towns × 79/2 ≈ 632 000 undirected — **assumption** |
+| **Dense city mesh** | **~2 000 000** | ~2 000 world cities, undirected complete graph — **assumption** |
+
+### Bytes per stored route (**assumptions**)
+
+| Payload | ≈ size per OD | Notes |
+|---|---|---|
+| Shape + metadata, **no** elev samples | **~8 KiB** | ~500–1000 shape points compressed/quantized + ids; **assumption** (order of a mid-length corridor) |
+| Same **with** coarse elev along route | **~10 KiB** | **assumption** ≈ +25% for Δh samples / climb summary |
+| Extra routing profile (e.g. car + bicycle) | **×2** | If both baked; **assumption** that bicycle is stored separately |
+
+### Route-cache disk on the server (**estimate**)
+
+One profile, world sum:
+
+| Pair model | Without elev on route | With elev on route | Status |
 |---|---|---|---|
-| Graph (no Δh) | 90 112 × 0.433 | **39 049** | **~38.1** |
-| POI + barrier | 90 112 × 0.090 | **8 110** | **~7.9** |
-| Wetland (placeholder ratio) | 90 112 × 0.090 | **8 110** | **~7.9** |
-| Graph with Δh | 90 112 × 0.433 × (8.5 ÷ 7.7) | **43 107** | **~42.1** |
+| Sparse hub (~50k) | 50k × 8 KiB ≈ **0.4 GiB** | 50k × 10 KiB ≈ **0.5 GiB** | Assumption |
+| Regional mesh (~600k) | 600k × 8 KiB ≈ **4.6 GiB** | 600k × 10 KiB ≈ **5.7 GiB** | Assumption |
+| Dense city mesh (~2M) | 2M × 8 KiB ≈ **15.3 GiB** | 2M × 10 KiB ≈ **19.1 GiB** | Assumption |
 
-### Without elevation
+Two profiles (car + bicycle): multiply the chosen row by **~2** (**assumption**).
 
-Graph + poi/barrier + wetland (placeholder), no `edge_delta_h_m`:
+**Planning default used in combined totals below:** regional mesh, one profile
+→ **~5 GiB** without route elev / **~6 GiB** with route elev. Labelled
+**assumption**, not measured.
 
-| | |
-|---|---|
-| **Total packs** | **≈ 55 269 MiB ≈ 54 GiB** |
-| Breakdown | ~38.1 GiB graph + ~7.9 GiB poi/barrier + ~7.9 GiB wetland |
+---
 
-Source `.osm.pbf` files remain separate (still downloaded / kept as source of
-truth).
+## Combined server publish disk (packs ± Δh ± town routes)
 
-### With elevation
-
-Same set, graph includes Δh payload (DEM needed at convert time; DEM tiles are
-a separate data plane and are **not** included in these pack totals):
-
-| | |
-|---|---|
-| **Total packs** | **≈ 59 327 MiB ≈ 58 GiB** |
-| **Delta vs without elevation** | **≈ +4 058 MiB ≈ +4 GiB** (extrapolated Δh overhead on graph only) |
-
-### Per-region scale (same ratios)
-
-| Region class | Source PBF | Packs without Δh (**estimate**) | Packs with Δh (**estimate**) |
+| Configuration | Packs | Town routes | **Publish total** |
 |---|---|---|---|
-| Hedmark-sized | ~90 MiB | ~47 MiB graph+poi (**measured**) + ~8 MiB wetland (**assumption**) ≈ **55 MiB** | ~43 MiB graph + 8.1 + ~8 ≈ **59 MiB** |
-| Ostlandet-sized | ~450 MiB | ~5× Hedmark class ≈ **~275 MiB** | ≈ **~295 MiB** |
+| Packs **without** Δh, **no** town cache | ~54 GiB | — | **~54 GiB** |
+| Packs **with** Δh, **no** town cache | ~58 GiB | — | **~58 GiB** (~**+4 GiB** vs no Δh) |
+| Packs **without** Δh + town cache (no route elev) | ~54 GiB | ~5 GiB | **~59 GiB** |
+| Packs **with** Δh + town cache (with route elev) | ~58 GiB | ~6 GiB | **~64 GiB** |
+| Same as row above, but dense city mesh + route elev | ~58 GiB | ~19 GiB | **~77 GiB** |
 
-If real wetland packs are **0.5×** or **2×** the placeholder ratio, only the
-wetland line (and world totals) move by that factor; graph and poi-barrier
-lines stay as measured/extrapolated above.
+Sparse hub town cache only adds **~0.5 GiB** — noise next to packs.
+
+---
+
+## Full server footprint (publish + planet + ops)
+
+| Component | Packs no Δh | Packs with Δh | Status |
+|---|---|---|---|
+| Published packs | **~54 GiB** | **~58 GiB** | Extrapolated |
+| Town-route cache (regional mesh default) | **~5 / ~6 GiB** | same | Assumption |
+| Source planet PBF | **~88 GiB** | **~88 GiB** | Listed size |
+| Blue-green second pack tree | **~54 GiB** | **~58 GiB** | Ops assumption |
+| Scratch (convert + route bake) | **~20–50 GiB** | **~20–50 GiB** | Assumption |
+| DEM | — | **not estimated** | Needed to bake Δh |
+
+### Headline server budgets (**estimate**)
+
+| Scenario | Without pack Δh | With pack Δh | Δh delta |
+|---|---|---|---|
+| Publish packs only | **~54 GiB** | **~58 GiB** | **+4 GiB** |
+| Publish packs + town routes (regional mesh) | **~59 GiB** | **~64 GiB** | **+5 GiB** (pack Δh + route elev) |
+| Above + one planet PBF | **~147 GiB** | **~152 GiB** | **~+5 GiB** |
+| Above + blue-green second pack tree | **~201 GiB** | **~210 GiB** | **~+9 GiB** |
+
+Rough ballparks: **~60 GiB** publish with packs+towns, **~150 GiB** with planet
+kept for weekly rebuild, **~200 GiB** with blue-green pack trees. Scratch and
+DEM on top.
 
 ---
 
 ## Fallback (unchanged)
 
-Any region **without** a locally present, valid prebuilt pack is handled the
-same way Navi already does today: compute on the device from that region’s
-local `.osm.pbf`. This estimate does not change that behaviour.
+| Missing piece | Behaviour |
+|---|---|
+| No valid pack for region | On-device compute from local `.osm.pbf` (today) |
+| No town-route cache hit | Full on-device plan (packs or PBF) |
+| Server unreachable | Same local paths — no hard dependency on the mirror |
 
 ---
 
-## Investigation note — weekly server-side convert
+## Investigation note — weekly server-side bake
 
-Not a request to implement. Sketch only:
+Not a request to implement. A weekly cron could:
 
-A **weekly cron on a server** (not on-device) could:
+1. Pull planet / Geofabrik extracts  
+2. Convert per-region indexed packs (with or without Δh)  
+3. Optionally bake major-town OD routes for each region (and selected
+   cross-border pairs)  
+4. Publish packs + route-cache slices for Tools downloads  
 
-1. Pull planet / Geofabrik regional extracts on a weekly cadence.
-2. Run the same indexed convert pipeline used on-device to build per-region
-   graph, poi-barrier, and wetland archives.
-3. Stage those archives so a Tools region download can fetch them with (or
-   instead of waiting on local convert for) that region’s PBF.
-
-That would move **where** convert runs (ahead of time, on a server). It would
-not by itself change the pack format or the on-device fallback above.
-
-### Open questions (unresolved)
-
-| Topic | Question |
-|---|---|
-| Hosting / bandwidth | Cost of storing and serving ~50–60 GiB of packs (Variant class above), refreshed weekly, plus per-region fan-out |
-| Staleness | Gap between weekly builds and live OSM edits vs user expectations on “update region” |
-| Trust | How clients should verify server-built packs (checksums, signatures, etc.) |
-| Server unreachable | Must stay safe: same on-device convert / PBF plan path as today |
-| Farm sizing | Large-region convert is CPU- and RAM-heavy; server capacity is separate from tablet limits |
+Disk cost is the tables above. Open questions: hosting/egress cost, weekly
+staleness vs OSM edits, trust/signing, unreachable-server fallback (same as
+today), CPU/RAM for convert and multi-OD bake, which place set counts as
+“major town,” and whether eco/seasonal/via plans may use a cached geometry.
 
 ---
 
-## Summary
+## Summary — server space
 
-| Variant | World pack storage (**estimate**) |
-|---|---|
-| Without elevation | **~54 GiB** (sum of per-region packs) |
-| With elevation | **~58 GiB** |
-| Difference | **~+4 GiB** |
+| Question | Without elevation (no Δh) | With elevation (Δh) |
+|---|---|---|
+| Host full-planet **packs** | **~54 GiB** | **~58 GiB** (**+4 GiB**) |
+| Host packs + **town-to-town** cache (regional mesh **assumption**) | **~59 GiB** | **~64 GiB** |
+| Packs + towns + planet PBF | **~147 GiB** | **~152 GiB** |
+| Packs + towns + planet + blue-green packs | **~201 GiB** | **~210 GiB** |
 
-Inputs: Hedmark convert **39 + 8.1 MiB** packs from **~90 MiB** PBF; planet
-**88G** (2026-08-27); wetland ratio **assumed** equal to poi-barrier until
-measured.
+Town-route sizes are **assumed** (pair counts × ~8–10 KiB). Wetland pack MiB is
+a **placeholder**. Pack graph/poi ratios and planet **88G** (2026-08-27) are
+the measured/listed anchors.
