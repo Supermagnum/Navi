@@ -173,9 +173,10 @@ USB, CAT serial/USB, DIY e-bike USB-serial) may open the link and push snapshots
 into core; a future WASM guest then only calls `ecu_read` / `cat_vfo_set` /
 `ebike_telemetry_read`-class imports.
 
-Specs that need a cable or radio (**ECU**, **CAT**, **ebike_telemetry**, APRS
-TNC, future instruments) must document which transport(s) they use and that
-they honour enable/disable (sessions closed when off).
+Specs that need a cable or radio (**ECU**, **CAT**, **ebike_telemetry**,
+**lora_convoy**, APRS TNC, future instruments) must document which
+transport(s) they use and that they honour enable/disable (sessions closed
+when off).
 
 ## Debug files (USB/MTP)
 
@@ -314,6 +315,9 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 **150 km**, resolve output frequency, shift/offset, and CTCSS/DCS, then program
 **VFO 1** only.
 
+Same client/display split as the planned LoRa convoy plugin (Navi does not
+implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convoy-spec.md).
+
 ### 5. ECU / EV telemetry (`ecu`)
 
 | | |
@@ -437,6 +441,18 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | **Proposed caps** | `road_speed_state_read` (new), `voice_speak` / `voice_pack_query`, `alert_sound_play`, `plugin_kv` / `storage`, `admin_region_read` (optional), `log` |
 | **Notes** | Spec only — not implemented. Motor profiles only. Not a ticket predictor. HUD chrome stays display-only. |
 
+### 15. LoRa convoy status (`lora_convoy` / `convoy`)
+
+| | |
+|---|---|
+| **Benefit** | Share location, speed, fuel, and vehicle battery charge across a convoy over a LoRa mesh so low fuel is visible to the rest of the group without requiring direct radio range |
+| **Docs** | [`plugins/lora-convoy-spec.md`](plugins/lora-convoy-spec.md) — Meshtastic client/display split (same shape as CAT), private-portnum `VehicleStatus`, two independent BLE sessions (radio vs Android companion), seq/stale table |
+| **Host duties** | BLE central to a Meshtastic-flashed node (`meshtastic` crate, `bluetooth-le` + `tokio`); separate BLE session for passenger Android GATT writes; encode/decode; `convoy_store`; overlay + warn thresholds; close both sessions on disable |
+| **Guest duties** | Optional: chip formatting / list sort after wasmtime gate; must not open BLE |
+| **Proposed caps** | `accessory_*` (two BLE sessions), `convoy_status_read` (new), `position_read`, `ecu_read` / `ebike_telemetry_read` (optional onboard), `plugin_kv` / `storage`, `log` |
+| **Safety** | Driver does not enter fuel/battery on the Navi device while moving — companion is passenger-operable. Mesh TX only while the plugin is enabled. Informational overlay, not collision avoidance. |
+| **Notes** | Spec only — not implemented. Navi never talks to raw LoRa modules. Text messaging is a later arm on the same PortNum dispatch. |
+
 ### Capability sketch (not in ABI yet)
 
 | Proposed | Purpose |
@@ -468,6 +484,7 @@ Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 | `alert_sound_catalog` | List bundled + user override alert sound files |
 | `road_speed_state_read` | Speed, applicable limit, HUD overspeed flag, highway class, profile (adaptive speed warning) |
 | `accessory_list` / `accessory_open` / `accessory_read` / `accessory_write` / `accessory_close` | Host-mediated **USB** and **Bluetooth** (SPP/BLE) I/O for hardware plugins |
+| `convoy_status_read` | Last-known convoy table (position, speed, fuel/battery, seq, stale) for LoRa convoy UI |
 | `plugin_list` / `plugin_set_enabled` | Host-owned inventory and per-plugin enable/disable (UI + persistence) |
 
 Add a capability to `plugin-host` `Capability` enum + HostApi **before** shipping
