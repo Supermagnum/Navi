@@ -15,8 +15,9 @@ import java.io.File
 
 /**
  * Avoid-motorways report must use plan-derived non-motorway road share, not the
- * old demo constants 72.5 / 41.0. Share is 100% minus motorway length only
- * (trunk/primary count as non-motorway).
+ * old demo constants 72.5 / 41.0. Share is 100% minus motorway-grade length
+ * (`highway=motorway` / `motorway_link`, `motorroad` / `expressway`, or dual
+ * carriageway with maxspeed>=90).
  *
  * Corridor: Grimåsfeltet → Nysethvegen. Requires ostlandet/oppland PBF on device
  * or staged fixtures.

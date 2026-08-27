@@ -51,6 +51,10 @@ fn edge(
         maxspeed_kmh: None,
         name: None,
         road_ref: None,
+        is_motorroad: false,
+        is_expressway: false,
+        is_oneway: false,
+        lanes: None,
         maxweight_t: None,
         maxaxleload_t: None,
         maxbogieweight_t: None,
@@ -170,6 +174,130 @@ fn avoid_motorways_allows_trunk_and_primary() {
         (graph.non_motorway_share_pct(&avoided.0) - 100.0).abs() < 0.01,
         "trunk/primary count as non-motorway for priority share"
     );
+}
+
+/// Short E6 trunk without motorroad/dual+90 vs longer secondary: E-ref must stay usable.
+#[test]
+fn avoid_motorways_does_not_exclude_e_ref_without_motorroad() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let mut ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "trunk");
+    ab.road_ref = Some("E6".into());
+    let mut bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "trunk_link");
+    bc.road_ref = Some("E6".into());
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 200.0, "secondary");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 200.0, "secondary");
+    let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Car);
+
+    let avoided = graph
+        .shortest_path_with_options(
+            NodeId(1),
+            NodeId(3),
+            false,
+            &RouteOptions {
+                avoid_motorways: true,
+                ..Default::default()
+            },
+        )
+        .expect("path with E-ref trunk");
+    assert!(
+        avoided.0.contains(&NodeId(2)),
+        "E-ref without motorroad/dual+90 must remain usable: {:?}",
+        avoided.0
+    );
+}
+
+/// Short trunk with motorroad=yes vs longer secondary: avoid-motorways must take secondary.
+#[test]
+fn avoid_motorways_excludes_trunk_with_motorroad() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let mut ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "trunk");
+    ab.is_motorroad = true;
+    let mut bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "trunk_link");
+    bc.is_motorroad = true;
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 200.0, "secondary");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 200.0, "secondary");
+    let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Car);
+
+    let avoided = graph
+        .shortest_path_with_options(
+            NodeId(1),
+            NodeId(3),
+            false,
+            &RouteOptions {
+                avoid_motorways: true,
+                ..Default::default()
+            },
+        )
+        .expect("avoid-motorroad path");
+    assert!(
+        !avoided.0.contains(&NodeId(2)),
+        "avoid motorways must not use motorroad trunk via B: {:?}",
+        avoided.0
+    );
+    assert!(avoided.0.contains(&NodeId(4)));
+    assert!(
+        (graph.non_motorway_share_pct(&avoided.0) - 100.0).abs() < 0.01,
+        "secondary path should be 100% non-motorway-grade"
+    );
+}
+
+/// Dual carriageway + maxspeed>=90 (no motorroad) vs longer secondary: avoided via rule 3.
+#[test]
+fn avoid_motorways_excludes_dual_carriageway_90() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let mut ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "trunk");
+    ab.is_oneway = true;
+    ab.lanes = Some(2);
+    ab.maxspeed_kmh = Some(90.0);
+    let mut bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "trunk");
+    bc.is_oneway = true;
+    bc.lanes = Some(2);
+    bc.maxspeed_kmh = Some(110.0);
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 200.0, "secondary");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 200.0, "secondary");
+    let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Car);
+
+    let avoided = graph
+        .shortest_path_with_options(
+            NodeId(1),
+            NodeId(3),
+            false,
+            &RouteOptions {
+                avoid_motorways: true,
+                ..Default::default()
+            },
+        )
+        .expect("avoid-dual-90 path");
+    assert!(
+        !avoided.0.contains(&NodeId(2)),
+        "avoid motorways must not use dual+90 trunk via B: {:?}",
+        avoided.0
+    );
+    assert!(avoided.0.contains(&NodeId(4)));
 }
 
 #[test]

@@ -121,7 +121,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Travel modes** | Choose car, bike, e-bike, hiking, motorcycle, truck, or motorhome. | Done |
 | **Vehicle size** | Save height/width/length/weight limits so the route skips roads that are too tight. | Done |
 | **E-bike specs** | Battery size, motor torque, and wheel size help estimate battery use and steep climbs. Live cable telemetry is planned later. | Done (planning); live data later |
-| **Avoidances** | You can ask to avoid motorways (not trunk/primary), tolls, or ferries. | Done |
+| **Avoidances** | You can ask to avoid motorways, tolls, or ferries. Motorways here means OSM `highway=motorway` / `motorway_link`, `motorroad=yes` / `expressway=yes`, or a dual carriageway with `lanes>=2` and `maxspeed>=90` — not every E-road or urban arterial. | Done |
 | **Official trails** | For hiking/cycling, optionally prefer marked long-distance trails (off by default). Normal paths still work if the marked trail has a gap. | Done |
 | **Bike surface suitability** | Bicycle / e-bike Drive setting: **Road / Gravel / MTB**. Unsuitable OSM surfaces and tracks are hard-excluded after the graph loads (does not rebuild packs). Default is Gravel (trekking). | Done |
 | **Basemap POI icons** | Offline Protomaps amenity icons (fuel, hospital, alcohol shops, cycle/repair, and the rest of the allow-list) use dedicated sprites, not a generic dot. Kind list: [`docs/poi-icon-whitelist.md`](docs/poi-icon-whitelist.md). | Done |
@@ -383,7 +383,7 @@ display choices in app preferences).
 | **Vehicle limits** | Height/width/length/axle weight for clearance |
 
 Route planning chrome (**Route**): From / To / Via, Plan, Simulate, avoidances
-(**Avoid motorways** excludes `highway=motorway` / `motorway_link` only),
+(**Avoid motorways** excludes `highway=motorway` / `motorway_link`, `motorroad=yes` / `expressway=yes`, and dual carriageways with `lanes>=2` and `maxspeed>=90`; E-road `ref` is display-only),
 saved routes.
 
 ### Tools (downloads and diagnostic logging)
@@ -609,6 +609,8 @@ hardware-facing plugins.
 | [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Future UI languages (English-only today). Translator table: [`translations.csv`](docs/plugins/translations.csv); context: [`translations-context.md`](docs/plugins/translations-context.md) |
 | [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Wild-camping suggestions (plugin, not core) |
 | [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Fuel/water resupply ideas |
+| [`docs/plugins/weather-plugin.md`](docs/plugins/weather-plugin.md) | Weather overlay (Meteocons icons vendored; guest not shipped) |
+| [`docs/plugins/weather-icons-reference.md`](docs/plugins/weather-icons-reference.md) | What each weather icon slug means (fill style) |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state + approach warnings to instrument clusters |
 | [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Animated icons |
 | [`docs/plugins/custom-alert-sounds-spec.md`](docs/plugins/custom-alert-sounds-spec.md) | Short alert tones (road signs, cameras, overspeed earcon) |
@@ -627,6 +629,7 @@ at runtime. Authoring, resolution order, and licences:
 | [`app/src/main/assets/icons/`](app/src/main/assets/icons/) | Android **lean pack** — a size-trimmed copy shipped in every APK. Keys missing here fall back to `unknown.svg` on device. |
 | [`core/src/icons/road-signs/`](core/src/icons/road-signs/) | Norwegian traffic-sign SVGs (**NLOD 2.0**, not Navit). Android copy: [`app/src/main/assets/icons/road-signs/`](app/src/main/assets/icons/road-signs/). |
 | [`core/src/icons/aprs/`](core/src/icons/aprs/) | APRS moving-icon symbols. Android copy: [`app/src/main/assets/icons/aprs/`](app/src/main/assets/icons/aprs/). |
+| [`plugins/weather/icons/`](plugins/weather/icons/) | Meteocons **static** weather SVGs (**MIT**). Animated SMIL set: [`plugins/weather/animated-icons/`](plugins/weather/animated-icons/). Spec: [`docs/plugins/weather-plugin.md`](docs/plugins/weather-plugin.md). |
 | [`app/src/main/res/mipmap-*`](app/src/main/res/) | Android **launcher** (home screen / app drawer). Separate Navi brand art, not from Navit. |
 | [`docs/icons/open-app.svg`](docs/icons/open-app.svg) | Splash / open-app brand mark (Inkscape source). Android drawables: `app/src/main/res/drawable/ic_splash*.xml`. |
 

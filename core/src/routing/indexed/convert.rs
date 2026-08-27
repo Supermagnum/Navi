@@ -524,19 +524,19 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
         // then per-tile graphs built+written in parallel (coords shared read-only).
         let total_steps = (build_profiles.len() + 3) as u64;
         let barrier_arc = Arc::new(Mutex::new(barrier_extra));
-        for (pi, profile) in build_profiles.iter().enumerate() {
+        {
             crate::download::pbf_priority::yield_if_foreground_plan();
             if opts.control.is_cancelled() {
                 anyhow::bail!("cancelled");
             }
-            let key = profile_key(*profile).to_string();
             download_progress::set(
-                (pi + 1) as u64,
+                1,
                 Some(total_steps),
-                &format!("Building indexed maps: graph ({key}, tiled)…"),
+                "Building indexed maps: graphs (shared PBF, tiled)…",
             );
-            let t_graph = Instant::now();
-            let entries = Arc::new(Mutex::new(Vec::<GraphTileEntry>::new()));
+            let t_graphs = Instant::now();
+            let entries_by_profile: Arc<Mutex<BTreeMap<String, Vec<GraphTileEntry>>>> =
+                Arc::new(Mutex::new(BTreeMap::new()));
             let max_nodes = Arc::new(AtomicUsize::new(nodes));
             let max_edges = Arc::new(AtomicUsize::new(edges));
             let peak = Arc::new(Mutex::new(peak_rss_mb));
@@ -544,28 +544,27 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
             let tile_count_atomic = Arc::new(AtomicUsize::new(tile_count));
             let data_dir = opts.data_dir.clone();
             let stem_s = stem.clone();
-            let key_s = key.clone();
-            let profile_copy = *profile;
             let control = opts.control.clone();
-            let entries_cb = Arc::clone(&entries);
+            let entries_cb = Arc::clone(&entries_by_profile);
             let max_nodes_cb = Arc::clone(&max_nodes);
             let max_edges_cb = Arc::clone(&max_edges);
             let peak_cb = Arc::clone(&peak);
             let tile_count_cb = Arc::clone(&tile_count_atomic);
-            let (produced, tile_timings) = RouteGraph::build_tiled_from_pbf(
+            let profile_results = RouteGraph::build_tiled_from_pbf_profiles(
                 &opts.pbf,
-                *profile,
+                &build_profiles,
                 &tiles,
                 0.05,
                 &opts.data_dir,
-                move |row, col, logical, graph| {
+                move |profile, row, col, logical, graph| {
+                    let key_s = profile_key(profile).to_string();
                     max_nodes_cb.fetch_max(graph.nodes.len(), Ordering::Relaxed);
                     max_edges_cb.fetch_max(graph.edges.len(), Ordering::Relaxed);
                     {
                         let mut p = peak_cb.lock().unwrap_or_else(|e| e.into_inner());
                         note_rss(&mut p, &format!("graph_{key_s}_{row}_{col}"));
                     }
-                    if profile_copy == RoutingProfile::Car {
+                    if profile == RoutingProfile::Car {
                         barrier_cb
                             .lock()
                             .unwrap_or_else(|e| e.into_inner())
@@ -584,6 +583,8 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
                     entries_cb
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
+                        .entry(key_s)
+                        .or_default()
                         .push(GraphTileEntry {
                             file: name,
                             bbox: logical,
@@ -596,18 +597,35 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
             edges = max_edges.load(Ordering::Relaxed);
             peak_rss_mb = *peak.lock().unwrap_or_else(|e| e.into_inner());
             tile_count = tile_count_atomic.load(Ordering::Relaxed);
-            let mut profile_entries = entries.lock().unwrap_or_else(|e| e.into_inner());
-            profile_entries.sort_by(|a, b| a.file.cmp(&b.file));
-            if produced == 0 || profile_entries.is_empty() {
-                anyhow::bail!("tiled convert produced no {key} tiles");
+            let mut all_entries = entries_by_profile.lock().unwrap_or_else(|e| e.into_inner());
+            for (profile, _produced, tile_timings) in &profile_results {
+                let key = profile_key(*profile).to_string();
+                let mut profile_entries = all_entries.remove(&key).unwrap_or_default();
+                profile_entries.sort_by(|a, b| a.file.cmp(&b.file));
+                for e in &profile_entries {
+                    graph_files.insert(e.file.clone(), e.file.clone());
+                }
+                graph_tiles.insert(key.clone(), profile_entries);
+                tile_assign_ms.insert(key.clone(), tile_timings.tile_assign_ms);
+                tile_build_ms.insert(key.clone(), tile_timings.tile_build_ms);
             }
-            graph_ms.insert(
-                key.clone(),
-                note_phase(&mut peak_rss_mb, &format!("graph_{key}"), t_graph),
-            );
-            tile_assign_ms.insert(key.clone(), tile_timings.tile_assign_ms);
-            tile_build_ms.insert(key.clone(), tile_timings.tile_build_ms);
-            graph_tiles.insert(key, std::mem::take(&mut *profile_entries));
+            // Shared Pass1+Pass2 time is outside per-profile assign/build; attribute
+            // residual wall to each profile's graph_ms for continuity with reports.
+            let shared_wall = t_graphs.elapsed().as_secs_f64() * 1000.0;
+            let assign_build_sum: f64 =
+                tile_assign_ms.values().sum::<f64>() + tile_build_ms.values().sum::<f64>();
+            let shared_pass_ms = (shared_wall - assign_build_sum).max(0.0);
+            let n_prof = profile_results.len().max(1) as f64;
+            for (profile, _, tile_timings) in &profile_results {
+                let key = profile_key(*profile).to_string();
+                graph_ms.insert(
+                    key,
+                    tile_timings.tile_assign_ms
+                        + tile_timings.tile_build_ms
+                        + shared_pass_ms / n_prof,
+                );
+            }
+            note_phase(&mut peak_rss_mb, "graphs_shared_tiled", t_graphs);
         }
         barrier_extra = Arc::try_unwrap(barrier_arc)
             .map_err(|_| anyhow::anyhow!("barrier segments still shared"))?
@@ -719,12 +737,16 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
         match crate::routing::wetland::WetlandWayExtract::load(&opts.pbf) {
             Ok(extract) => {
                 note_rss(&mut peak_rss_mb, "wetland_extract");
+                // Single walk over wetland rings; assign each ring to every
+                // tile that contains at least one vertex (same rule as the
+                // former per-tile index_for_bbox rewalk).
+                let per_tile = extract.indexes_for_tiles(&tiles);
+                drop(extract);
                 let mut rings_total = 0usize;
-                for (row, col, logical) in &tiles {
+                for ((row, col, logical), idx) in tiles.iter().zip(per_tile.into_iter()) {
                     if opts.control.is_cancelled() {
                         anyhow::bail!("cancelled");
                     }
-                    let idx = extract.index_for_bbox(*logical);
                     let n = idx.ring_count();
                     if n == 0 {
                         continue;
@@ -754,7 +776,6 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
                         }
                     }
                 }
-                drop(extract);
                 note_rss(&mut peak_rss_mb, "wetland_done");
                 rings_total
             }

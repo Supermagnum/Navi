@@ -1,0 +1,6 @@
+Meteocons weather icon sets (Bas Milius)
+static: @meteocons/svg-static@0.1.0
+animated: @meteocons/svg@0.1.0
+license: MIT (see icons/LICENSE and animated-icons/LICENSE)
+upstream: https://github.com/basmilius/meteocons
+refresh: scripts/vendor-meteocons.sh 0.1.0 0.1.0

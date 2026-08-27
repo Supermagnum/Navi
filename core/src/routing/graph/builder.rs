@@ -96,8 +96,16 @@ pub struct GraphEdge {
     pub maxspeed_kmh: Option<f64>,
     /// OSM `name` (colloquial street name) when present.
     pub name: Option<String>,
-    /// OSM `ref` (systematic route number) when present.
+    /// OSM `ref` plus `int_ref` when they differ (display / guidance only).
     pub road_ref: Option<String>,
+    /// OSM `motorroad=yes` (Norwegian motortrafikkvei).
+    pub is_motorroad: bool,
+    /// OSM `expressway=yes`.
+    pub is_expressway: bool,
+    /// OSM `oneway=yes` / `true` / `1` (not `-1`).
+    pub is_oneway: bool,
+    /// First integer in OSM `lanes`, when parseable.
+    pub lanes: Option<u8>,
     pub maxweight_t: Option<f64>,
     pub maxaxleload_t: Option<f64>,
     pub maxbogieweight_t: Option<f64>,
@@ -127,7 +135,9 @@ pub struct GraphEdge {
 /// alternate path rather than failing hard when any restricted edge exists.
 #[derive(Debug, Clone, Default)]
 pub struct RouteOptions {
-    /// Exclude OSM `highway=motorway` / `motorway_link` only (not trunk/primary).
+    /// Exclude motorway-grade roads: `highway=motorway` / `motorway_link`,
+    /// `motorroad=yes` / `expressway=yes`, or oneway with `lanes>=2` and
+    /// `maxspeed>=90`. Not region-gated.
     pub avoid_motorways: bool,
     /// Exclude OSM toll roads (`toll=yes` and related). Default off.
     pub avoid_tolls: bool,
@@ -162,6 +172,11 @@ impl RouteGraph {
             .read_tag("maxspeed")
             .read_tag("name")
             .read_tag("ref")
+            .read_tag("int_ref")
+            .read_tag("motorroad")
+            .read_tag("expressway")
+            .read_tag("oneway")
+            .read_tag("lanes")
             .read_tag("maxweight")
             .read_tag("maxaxleload")
             .read_tag("maxbogieweight")
@@ -655,7 +670,7 @@ impl RouteGraph {
             let e = &self.edges[idx];
             let len = e.length_m.max(0.0);
             total_m += len;
-            if highway_is_motorway(e.highway.as_deref()) {
+            if edge_is_motorway_grade(e) {
                 motorway_m += len;
             }
         }
@@ -708,7 +723,7 @@ pub fn format_route_avoidance_report(
         ));
     }
     lines.push(format!(
-        "Non-motorway road share on last plan: {priority_path_share_pct_hint:.1}% (100% minus motorway length)"
+        "Non-motorway road share on last plan: {priority_path_share_pct_hint:.1}% (100% minus motorway-grade length)"
     ));
     lines.join("\n")
 }
@@ -737,6 +752,10 @@ type EdgeMeta = (
     Option<String>,
     Option<String>,
     bool,
+    bool,
+    bool,
+    bool,
+    Option<u8>,
 );
 
 fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
@@ -746,7 +765,20 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
         .get("maxspeed")
         .and_then(|s| crate::routing::eta::parse_maxspeed_kmh(s));
     let name = edge.tags.get("name").cloned();
-    let road_ref = edge.tags.get("ref").cloned();
+    let road_ref = combine_osm_road_refs(
+        edge.tags.get("ref").cloned(),
+        edge.tags.get("int_ref").cloned(),
+    );
+    let is_motorroad = edge.tags.get("motorroad").is_some_and(|s| is_truthy_tag(s));
+    let is_expressway = edge
+        .tags
+        .get("expressway")
+        .is_some_and(|s| is_truthy_tag(s));
+    let is_oneway = edge
+        .tags
+        .get("oneway")
+        .is_some_and(|s| is_oneway_yes_tag(s));
+    let lanes = edge.tags.get("lanes").and_then(|s| parse_lanes_tag(s));
     let maxweight_t = edge.tags.get("maxweight").and_then(|s| parse_metric(s));
     let maxaxleload_t = edge.tags.get("maxaxleload").and_then(|s| parse_metric(s));
     let maxbogieweight_t = edge
@@ -810,10 +842,27 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
         access_conditional,
         maxspeed_conditional,
         access_forbidden,
+        is_motorroad,
+        is_expressway,
+        is_oneway,
+        lanes,
     )
 }
 
-fn is_truthy_tag(raw: &str) -> bool {
+pub(crate) fn parse_lanes_tag(raw: &str) -> Option<u8> {
+    raw.split(|c: char| !c.is_ascii_digit())
+        .find(|s| !s.is_empty())
+        .and_then(|s| s.parse::<u8>().ok())
+}
+
+pub(crate) fn is_oneway_yes_tag(raw: &str) -> bool {
+    matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "yes" | "true" | "1"
+    )
+}
+
+pub(crate) fn is_truthy_tag(raw: &str) -> bool {
     matches!(
         raw.trim().to_ascii_lowercase().as_str(),
         "yes" | "true" | "1" | "toll"
@@ -850,6 +899,10 @@ fn push_directed_edge(
         maxspeed_kmh: meta.1,
         name: meta.2.clone(),
         road_ref: meta.3.clone(),
+        is_motorroad: meta.18,
+        is_expressway: meta.19,
+        is_oneway: meta.20,
+        lanes: meta.21,
         maxweight_t: meta.4,
         maxaxleload_t: meta.5,
         maxbogieweight_t: meta.6,
@@ -906,6 +959,61 @@ pub fn highway_is_motorway(highway: Option<&str>) -> bool {
     highway.is_some_and(is_motorway_highway)
 }
 
+/// Join OSM `ref` and `int_ref` for display / guidance (not avoidance).
+pub(crate) fn combine_osm_road_refs(
+    osm_ref: Option<String>,
+    int_ref: Option<String>,
+) -> Option<String> {
+    let trim_nonempty = |s: String| {
+        let t = s.trim();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t.to_string())
+        }
+    };
+    match (
+        osm_ref.and_then(trim_nonempty),
+        int_ref.and_then(trim_nonempty),
+    ) {
+        (Some(a), Some(b)) if !a.eq_ignore_ascii_case(&b) => Some(format!("{a};{b}")),
+        (a, b) => a.or(b),
+    }
+}
+
+/// Motorway-grade: OSM motorway class, motortrafikkvei/expressway, or dual+fast.
+pub fn edge_is_motorway_grade(edge: &GraphEdge) -> bool {
+    motorway_grade_from_parts(
+        edge.highway.as_deref(),
+        edge.is_motorroad,
+        edge.is_expressway,
+        edge.is_oneway,
+        edge.lanes,
+        edge.maxspeed_kmh,
+    )
+}
+
+pub(crate) fn motorway_grade_from_parts(
+    highway: Option<&str>,
+    is_motorroad: bool,
+    is_expressway: bool,
+    is_oneway: bool,
+    lanes: Option<u8>,
+    maxspeed_kmh: Option<f64>,
+) -> bool {
+    if highway_is_motorway(highway) {
+        return true;
+    }
+    if is_motorroad || is_expressway {
+        return true;
+    }
+    is_oneway && lanes.unwrap_or(0) >= 2 && maxspeed_kmh.is_some_and(|v| v >= 90.0)
+}
+
+fn edge_avoided_as_motorway(edge: &GraphEdge, options: &RouteOptions) -> bool {
+    options.avoid_motorways && edge_is_motorway_grade(edge)
+}
+
 fn edge_allowed_for_options(
     edge: &GraphEdge,
     options: &RouteOptions,
@@ -914,7 +1022,7 @@ fn edge_allowed_for_options(
     if edge.access_forbidden {
         return false;
     }
-    if options.avoid_motorways && edge.highway.as_deref().is_some_and(is_motorway_highway) {
+    if edge_avoided_as_motorway(edge, options) {
         return false;
     }
     if options.avoid_tolls && edge.is_toll {
@@ -1143,6 +1251,10 @@ mod tests {
             maxspeed_kmh: None,
             name: None,
             road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
             maxweight_t: None,
             maxaxleload_t: None,
             maxbogieweight_t: None,
@@ -1221,6 +1333,10 @@ mod tests {
             maxspeed_kmh: None,
             name: None,
             road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
             maxweight_t: None,
             maxaxleload_t: None,
             maxbogieweight_t: None,
@@ -1379,6 +1495,10 @@ mod tests {
             maxspeed_kmh: None,
             name: None,
             road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
             maxweight_t: None,
             maxaxleload_t: None,
             maxbogieweight_t: None,
@@ -1438,6 +1558,10 @@ mod tests {
             maxspeed_kmh: None,
             name: None,
             road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
             maxweight_t: None,
             maxaxleload_t: None,
             maxbogieweight_t: None,
@@ -1497,6 +1621,10 @@ mod tests {
             maxspeed_kmh: Some(80.0),
             name: Some("Friisvegen".into()),
             road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
             maxweight_t: None,
             maxaxleload_t: None,
             maxbogieweight_t: None,
@@ -1561,5 +1689,126 @@ mod tests {
             &winter,
             RoutingProfile::Foot
         ));
+    }
+
+    #[test]
+    fn avoid_motorways_blocks_motorway_class_motorroad_and_dual_fast_not_e_ref() {
+        let opts = RouteOptions {
+            avoid_motorways: true,
+            ..Default::default()
+        };
+        let mut edge = GraphEdge {
+            id: "mw".into(),
+            source: NodeId(1),
+            target: NodeId(2),
+            length_m: 100.0,
+            base_weight: 100.0,
+            eco_weight: None,
+            start_lat: 0.0,
+            start_lon: 0.0,
+            end_lat: 0.0,
+            end_lon: 0.0,
+            shape: Vec::new(),
+            highway: Some("motorway".into()),
+            maxspeed_kmh: None,
+            name: None,
+            road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+        };
+        assert!(!edge_allowed_for_options(&edge, &opts, RoutingProfile::Car));
+        edge.highway = Some("motorway_link".into());
+        assert!(!edge_allowed_for_options(&edge, &opts, RoutingProfile::Car));
+        edge.highway = Some("trunk".into());
+        assert!(
+            edge_allowed_for_options(&edge, &opts, RoutingProfile::Car),
+            "plain trunk must remain usable"
+        );
+        edge.road_ref = Some("E6".into());
+        assert!(
+            edge_allowed_for_options(&edge, &opts, RoutingProfile::Car),
+            "E-ref without motorroad/dual+90 must remain usable"
+        );
+        edge.is_motorroad = true;
+        assert!(!edge_allowed_for_options(&edge, &opts, RoutingProfile::Car));
+        edge.is_motorroad = false;
+        edge.is_expressway = true;
+        assert!(!edge_allowed_for_options(&edge, &opts, RoutingProfile::Car));
+        edge.is_expressway = false;
+        edge.is_oneway = true;
+        edge.lanes = Some(2);
+        edge.maxspeed_kmh = Some(90.0);
+        assert!(!edge_allowed_for_options(&edge, &opts, RoutingProfile::Car));
+        edge.maxspeed_kmh = Some(70.0);
+        assert!(
+            edge_allowed_for_options(&edge, &opts, RoutingProfile::Car),
+            "urban dual at 70 km/h without motorroad is not motorway-grade"
+        );
+    }
+
+    #[test]
+    fn motorway_grade_from_parts_and_lane_parse() {
+        assert!(motorway_grade_from_parts(
+            Some("motorway"),
+            false,
+            false,
+            false,
+            None,
+            None
+        ));
+        assert!(motorway_grade_from_parts(
+            Some("trunk"),
+            true,
+            false,
+            false,
+            None,
+            None
+        ));
+        assert!(!motorway_grade_from_parts(
+            Some("trunk"),
+            false,
+            false,
+            false,
+            None,
+            None
+        ));
+        assert!(!motorway_grade_from_parts(
+            Some("trunk"),
+            false,
+            false,
+            true,
+            Some(2),
+            Some(70.0)
+        ));
+        assert!(motorway_grade_from_parts(
+            Some("trunk"),
+            false,
+            false,
+            true,
+            Some(2),
+            Some(90.0)
+        ));
+        assert_eq!(parse_lanes_tag("2"), Some(2));
+        assert_eq!(parse_lanes_tag("2;2"), Some(2));
+        assert_eq!(
+            combine_osm_road_refs(Some("Rv15".into()), Some("E16".into())).as_deref(),
+            Some("Rv15;E16")
+        );
     }
 }

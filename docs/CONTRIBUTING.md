@@ -188,17 +188,21 @@ when rules are unclear — is a first-class contribution.
 
 The **plugin host is implemented and tested**; **product content plugins are
 not shipped yet on purpose**. Specs exist for contributors to pick up (camping /
-allemannsretten, safety resupply, instrument cluster / AGL, UI translation,
-animated icons, custom alert sounds, adaptive speed warning, horse trekking,
-voice, APRS/CAT, …). See [`plugins.md`](plugins.md)
-and files under [`plugins/`](plugins/). This is an open invitation, not
-an incomplete core feature.
+allemannsretten, safety resupply, **weather** (Meteocons assets under
+`plugins/weather/`), instrument cluster / AGL, UI translation, animated icons,
+custom alert sounds, adaptive speed warning, horse trekking, voice, APRS/CAT,
+…). See [`plugins.md`](plugins.md) and files under [`plugins/`](plugins/).
+Weather: [`plugins/weather-plugin.md`](plugins/weather-plugin.md),
+icon meanings: [`plugins/weather-icons-reference.md`](plugins/weather-icons-reference.md).
+This is an open invitation, not an incomplete core feature.
 
 ### Signs and icons
 
 Custom static icons: SVG / SVGZ, Inkscape workflow, semantic key naming —
-[`icons.md`](icons.md). Animated icons: Synfig → frame packs —
-[`plugins/animated-icons-spec.md`](plugins/animated-icons-spec.md).
+[`icons.md`](icons.md). Animated icons: Synfig frame packs —
+[`plugins/animated-icons-spec.md`](plugins/animated-icons-spec.md). Weather
+Meteocons icons: [`plugins/weather-plugin.md`](plugins/weather-plugin.md),
+[`plugins/weather-icons-reference.md`](plugins/weather-icons-reference.md).
 Regional road **warning / traffic sign** artwork and licensing review are
 welcome; any new asset must document provenance the same way as the Navit /
 APRS sets (see Licensing below).
