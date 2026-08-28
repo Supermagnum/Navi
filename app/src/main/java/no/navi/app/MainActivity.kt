@@ -787,6 +787,36 @@ private fun NaviMapScreen() {
         remember {
             NaviAppData.resolve(context)
         }
+
+    /** GeoTIFF DEM decode can take tens of seconds — never on the UI thread. */
+    val demSampleInFlight = remember { AtomicBoolean(false) }
+    val demAltitudeReady = remember { AtomicBoolean(false) }
+
+    fun enqueueDemAltitude(
+        lat: Double,
+        lon: Double,
+    ) {
+        if (NaviMapTestHooks.gpsAltitudeM != null) return
+        if (lat == 0.0 && lon == 0.0) return
+        if (!demSampleInFlight.compareAndSet(false, true)) return
+        val elevPath = File(dataDir, "elevation").absolutePath
+        scope.launch {
+            try {
+                val dem =
+                    withContext(Dispatchers.IO) {
+                        runCatching { elevationAt(elevPath, lat, lon) }.getOrNull()
+                    }
+                if (dem != null) {
+                    demAltitudeReady.set(true)
+                    driveHud = driveHud.copy(altitudeM = dem)
+                    NaviMapTestHooks.lastHudAltitudeM = dem
+                }
+            } finally {
+                demSampleInFlight.set(false)
+            }
+        }
+    }
+
     var offlineIntegrity by remember {
         mutableStateOf(OfflineDataIntegrity.inspect(context, dataDir))
     }
@@ -1629,24 +1659,6 @@ private fun NaviMapScreen() {
     DisposableEffect(locationPermGranted) {
         val lm = context.getSystemService(LocationManager::class.java)
 
-        // Terrain height from on-disk DEM. Prefer this over Location.altitude:
-        // AVD/network fixes often report a plausible but wrong height (e.g. ~420 m
-        // near Raufoss where Copernicus DEM is ~174 m MSL).
-        fun sampleDemAltitude(
-            lat: Double,
-            lon: Double,
-        ): Boolean {
-            if (NaviMapTestHooks.gpsAltitudeM != null) return false
-            if (lat == 0.0 && lon == 0.0) return false
-            val dem =
-                runCatching {
-                    elevationAt(File(dataDir, "elevation").absolutePath, lat, lon)
-                }.getOrNull() ?: return false
-            driveHud = driveHud.copy(altitudeM = dem)
-            NaviMapTestHooks.lastHudAltitudeM = dem
-            return true
-        }
-
         fun applyFix(loc: Location?) {
             if (loc == null) return
             val provider = loc.provider.orEmpty()
@@ -2239,7 +2251,9 @@ private fun NaviMapScreen() {
             // Test hook overrides live sensor in the poll loop.
             if (NaviMapTestHooks.gpsAltitudeM != null) return
             // Prefer DEM terrain height whenever a tile covers this fix.
-            if (sampleDemAltitude(loc.latitude, loc.longitude)) {
+            // Decode off-main; GPS altitude is only a stand-in until DEM returns.
+            enqueueDemAltitude(loc.latitude, loc.longitude)
+            if (demAltitudeReady.get()) {
                 return
             }
             if (!loc.hasAltitude()) {
@@ -2289,27 +2303,13 @@ private fun NaviMapScreen() {
             runCatching { lm.removeUpdates(listener) }
         }
     }
-    // Refresh DEM altitude when the map GPS position changes (tiles may arrive
-    // later; also replaces a stale GPS-altitude value after a move).
-    LaunchedEffect(mapState.gpsLat, mapState.gpsLon, locationPermGranted) {
-        if (mapState.gpsLat == 0.0 && mapState.gpsLon == 0.0) return@LaunchedEffect
-        if (NaviMapTestHooks.gpsAltitudeM != null) return@LaunchedEffect
+    // Refresh DEM altitude when tiles arrive later or the GPS point moves.
+    // Do not key on lat/lon: cancelling mid-decode would restart a tens-of-seconds
+    // GeoTIFF inflate on every fix.
+    LaunchedEffect(locationPermGranted) {
+        if (!locationPermGranted) return@LaunchedEffect
         while (isActive) {
-            val dem =
-                runCatching {
-                    elevationAt(
-                        File(dataDir, "elevation").absolutePath,
-                        mapState.gpsLat,
-                        mapState.gpsLon,
-                    )
-                }.getOrNull()
-            if (dem != null) {
-                val cur = driveHud.altitudeM
-                if (cur == null || kotlin.math.abs(cur - dem) > 0.5) {
-                    driveHud = driveHud.copy(altitudeM = dem)
-                    NaviMapTestHooks.lastHudAltitudeM = dem
-                }
-            }
+            enqueueDemAltitude(mapState.gpsLat, mapState.gpsLon)
             delay(5_000)
         }
     }

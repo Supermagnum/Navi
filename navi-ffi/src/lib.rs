@@ -4554,11 +4554,24 @@ pub fn save_ev_car_config(data_dir: String, config: FfiEvCarConfig) -> bool {
         .is_ok()
 }
 
+/// Process-wide DEM cache so HUD `elevation_at` does not re-inflate GeoTIFF
+/// tiles on every GPS fix.
+fn hud_elevation_service(elev_dir: &Path) -> ElevationService {
+    static SLOT: OnceLock<Mutex<std::collections::HashMap<PathBuf, ElevationCache>>> =
+        OnceLock::new();
+    let map = SLOT.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+    let mut guard = map.lock().unwrap_or_else(|e| e.into_inner());
+    let cache = guard
+        .entry(elev_dir.to_path_buf())
+        .or_insert_with(|| ElevationCache::new(elev_dir))
+        .clone();
+    ElevationService::new(cache)
+}
+
 /// Sample on-disk DEM elevation (meters) at a WGS84 point, or null if no tile.
 #[uniffi::export]
 pub fn elevation_at(elev_dir: String, lat: f64, lon: f64) -> Option<f64> {
-    let elev = ElevationService::new(ElevationCache::new(Path::new(&elev_dir)));
-    elev.get_elevation(lat, lon)
+    hud_elevation_service(Path::new(&elev_dir)).get_elevation(lat, lon)
 }
 
 /// Last GPS fix pushed from the Android host ([`update_gps_fix`]).
