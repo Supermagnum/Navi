@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use osmpbf::{Element, ElementReader};
+use osmpbf::Element;
 use rstar::{RTree, RTreeObject, AABB};
 
 use super::super::graph::RouteGraph;
@@ -167,9 +167,7 @@ impl DangerBarrierIndex {
         let mut ways: Vec<(Vec<i64>, BarrierKind)> = Vec::new();
         let mut needed: HashSet<i64> = HashSet::new();
         {
-            let file = std::fs::File::open(path)?;
-            let reader = ElementReader::new(file);
-            reader.for_each(|element| {
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
                 let Element::Way(way) = element else {
                     return;
                 };
@@ -190,12 +188,11 @@ impl DangerBarrierIndex {
                 ways.push((refs, kind));
             })?;
         }
+        crate::download::plan_cancel::abort_if_cancelled()?;
 
         let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
         {
-            let file = std::fs::File::open(path)?;
-            let reader = ElementReader::new(file);
-            reader.for_each(|element| match element {
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
                 Element::Node(n) => {
                     if needed.contains(&n.id()) {
                         coords.insert(n.id(), (n.lat(), n.lon()));

@@ -1002,6 +1002,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1028,6 +1030,8 @@ fun uniffi_navi_checksum_func_approach_phase_for_distance(
 fun uniffi_navi_checksum_func_approach_urgency_m(
 ): Short
 fun uniffi_navi_checksum_func_bind_geofabrik_region(
+): Short
+fun uniffi_navi_checksum_func_cancel_in_flight_plan(
 ): Short
 fun uniffi_navi_checksum_func_check_osm_updates(
 ): Short
@@ -1386,6 +1390,8 @@ fun uniffi_navi_fn_func_approach_urgency_m(uniffi_out_err: UniffiRustCallStatus,
 ): Double
 fun uniffi_navi_fn_func_bind_geofabrik_region(`dataDir`: RustBuffer.ByValue,`geofabrikRegion`: RustBuffer.ByValue,`pbfFilename`: RustBuffer.ByValue,`localSequence`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_cancel_in_flight_plan(uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 fun uniffi_navi_fn_func_check_osm_updates(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_convert_progress_clear(uniffi_out_err: UniffiRustCallStatus, 
@@ -1788,6 +1794,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_bind_geofabrik_region() != 54334.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_cancel_in_flight_plan() != 62065.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_check_osm_updates() != 15834.toShort()) {
@@ -4471,6 +4480,19 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
 }
     )
     }
+    
+
+        /**
+         * Ask the in-flight UniFFI plan to stop at the next checkpoint.
+         * Does not unwind JNI; [`plan_car_route`] / [`plan_hiking_route`] return
+         * `FAIL: cancelled` once a blob/stage/A* check observes the flag.
+         */ fun `cancelInFlightPlan`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_cancel_in_flight_plan(
+        _status)
+}
+    
     
 
         /**

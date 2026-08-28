@@ -4,6 +4,7 @@ mod control;
 mod fsutil;
 pub mod http;
 pub mod pbf_priority;
+pub mod plan_cancel;
 pub mod progress;
 
 pub use control::DownloadControl;

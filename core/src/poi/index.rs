@@ -226,9 +226,7 @@ impl PoiIndex {
         let mut building_ways: Vec<Vec<i64>> = Vec::new();
         let mut needed: HashSet<i64> = HashSet::new();
         if matches!(overnight, OvernightBuildings::BboxAll) {
-            let file = std::fs::File::open(path.as_ref())?;
-            let reader = ElementReader::new(file);
-            reader.for_each(|element| {
+            crate::download::pbf_priority::for_each_pbf_elements(path.as_ref(), |element| {
                 let Element::Way(way) = element else {
                     return;
                 };
@@ -251,52 +249,53 @@ impl PoiIndex {
                 }
                 building_ways.push(refs);
             })?;
+            crate::download::plan_cancel::abort_if_cancelled()?;
         }
 
         let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len().max(1024));
         {
-            let file = std::fs::File::open(path.as_ref())?;
-            let reader = ElementReader::new(file);
-            reader.for_each(|element| match element {
-                Element::Node(node) => {
-                    let lat = node.lat();
-                    let lon = node.lon();
-                    let id = node.id();
-                    Self::ingest_node(
-                        &mut index,
-                        &mut coords,
-                        &needed,
-                        &overnight,
-                        collect_buildings,
-                        in_bbox,
-                        id,
-                        lat,
-                        lon,
-                        node.tags()
-                            .map(|(k, v)| (k.to_string(), v.to_string()))
-                            .collect(),
-                    );
+            crate::download::pbf_priority::for_each_pbf_elements(path.as_ref(), |element| {
+                match element {
+                    Element::Node(node) => {
+                        let lat = node.lat();
+                        let lon = node.lon();
+                        let id = node.id();
+                        Self::ingest_node(
+                            &mut index,
+                            &mut coords,
+                            &needed,
+                            &overnight,
+                            collect_buildings,
+                            in_bbox,
+                            id,
+                            lat,
+                            lon,
+                            node.tags()
+                                .map(|(k, v)| (k.to_string(), v.to_string()))
+                                .collect(),
+                        );
+                    }
+                    Element::DenseNode(node) => {
+                        let lat = node.lat();
+                        let lon = node.lon();
+                        let id = node.id;
+                        Self::ingest_node(
+                            &mut index,
+                            &mut coords,
+                            &needed,
+                            &overnight,
+                            collect_buildings,
+                            in_bbox,
+                            id,
+                            lat,
+                            lon,
+                            node.tags()
+                                .map(|(k, v)| (k.to_string(), v.to_string()))
+                                .collect(),
+                        );
+                    }
+                    _ => {}
                 }
-                Element::DenseNode(node) => {
-                    let lat = node.lat();
-                    let lon = node.lon();
-                    let id = node.id;
-                    Self::ingest_node(
-                        &mut index,
-                        &mut coords,
-                        &needed,
-                        &overnight,
-                        collect_buildings,
-                        in_bbox,
-                        id,
-                        lat,
-                        lon,
-                        node.tags()
-                            .map(|(k, v)| (k.to_string(), v.to_string()))
-                            .collect(),
-                    );
-                }
-                _ => {}
             })?;
         }
 
@@ -330,66 +329,67 @@ impl PoiIndex {
         };
         let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(64_000);
         let t_pass = Instant::now();
-        let file = std::fs::File::open(path)?;
-        let reader = ElementReader::new(file);
-        reader.for_each(|element| match element {
-            Element::Node(node) => {
-                Self::ingest_near_corridor_node(
-                    &mut index,
-                    &mut coords,
-                    &band,
-                    &mut profile,
-                    in_bbox,
-                    node.id(),
-                    node.lat(),
-                    node.lon(),
-                    node.tags()
-                        .map(|(k, v)| (k.to_string(), v.to_string()))
-                        .collect(),
-                );
-            }
-            Element::DenseNode(node) => {
-                Self::ingest_near_corridor_node(
-                    &mut index,
-                    &mut coords,
-                    &band,
-                    &mut profile,
-                    in_bbox,
-                    node.id,
-                    node.lat(),
-                    node.lon(),
-                    node.tags()
-                        .map(|(k, v)| (k.to_string(), v.to_string()))
-                        .collect(),
-                );
-            }
-            Element::Way(way) => {
-                profile.ways_seen += 1;
-                let mut is_building = false;
-                for (k, v) in way.tags() {
-                    if k == "building" && v != "no" {
-                        is_building = true;
-                        break;
+        crate::download::pbf_priority::for_each_pbf_elements_serial(
+            path,
+            |element| match element {
+                Element::Node(node) => {
+                    Self::ingest_near_corridor_node(
+                        &mut index,
+                        &mut coords,
+                        &band,
+                        &mut profile,
+                        in_bbox,
+                        node.id(),
+                        node.lat(),
+                        node.lon(),
+                        node.tags()
+                            .map(|(k, v)| (k.to_string(), v.to_string()))
+                            .collect(),
+                    );
+                }
+                Element::DenseNode(node) => {
+                    Self::ingest_near_corridor_node(
+                        &mut index,
+                        &mut coords,
+                        &band,
+                        &mut profile,
+                        in_bbox,
+                        node.id,
+                        node.lat(),
+                        node.lon(),
+                        node.tags()
+                            .map(|(k, v)| (k.to_string(), v.to_string()))
+                            .collect(),
+                    );
+                }
+                Element::Way(way) => {
+                    profile.ways_seen += 1;
+                    let mut is_building = false;
+                    for (k, v) in way.tags() {
+                        if k == "building" && v != "no" {
+                            is_building = true;
+                            break;
+                        }
+                    }
+                    if !is_building {
+                        return;
+                    }
+                    profile.building_ways_seen += 1;
+                    let refs: Vec<i64> = way.refs().collect();
+                    let Some((lat, lon)) = centroid_in_bbox(&coords, &refs, in_bbox) else {
+                        return;
+                    };
+                    profile.building_ways_centroid_ok += 1;
+                    profile.corridor_contains_calls += 1;
+                    if band.contains(lat, lon) {
+                        profile.corridor_contains_hits += 1;
+                        profile.building_ways_kept += 1;
+                        index.overnight_buildings.push((lat, lon));
                     }
                 }
-                if !is_building {
-                    return;
-                }
-                profile.building_ways_seen += 1;
-                let refs: Vec<i64> = way.refs().collect();
-                let Some((lat, lon)) = centroid_in_bbox(&coords, &refs, in_bbox) else {
-                    return;
-                };
-                profile.building_ways_centroid_ok += 1;
-                profile.corridor_contains_calls += 1;
-                if band.contains(lat, lon) {
-                    profile.corridor_contains_hits += 1;
-                    profile.building_ways_kept += 1;
-                    index.overnight_buildings.push((lat, lon));
-                }
-            }
-            _ => {}
-        })?;
+                _ => {}
+            },
+        )?;
         // Entire scan is one pass; attribute to node_pass_ms for "parse" and leave
         // way_pass_ms as the share approximated by counters (0 here — combined).
         profile.node_pass_ms = t_pass.elapsed().as_secs_f64() * 1000.0;

@@ -149,6 +149,14 @@ pub fn foreground_plan_active() -> bool {
     driver_break_core::download::pbf_priority::foreground_plan_active()
 }
 
+/// Ask the in-flight UniFFI plan to stop at the next checkpoint.
+/// Does not unwind JNI; [`plan_car_route`] / [`plan_hiking_route`] return
+/// `FAIL: cancelled` once a blob/stage/A* check observes the flag.
+#[uniffi::export]
+pub fn cancel_in_flight_plan() {
+    driver_break_core::download::plan_cancel::request_cancel();
+}
+
 /// True when the place-index SQLite file has at least one searchable row.
 #[uniffi::export]
 pub fn place_index_has_entries(index_db_path: String) -> bool {
@@ -216,15 +224,23 @@ fn format_snap_too_far(label: &str, err: SnapTooFar, profile: RoutingProfile) ->
     )
 }
 
-fn load_break_barriers(graph: &RouteGraph, pbf: &Path, bbox: [f64; 4]) -> DangerBarrierIndex {
+fn load_break_barriers(
+    graph: &RouteGraph,
+    pbf: &Path,
+    bbox: [f64; 4],
+) -> Result<DangerBarrierIndex, bool> {
     let mut barriers = DangerBarrierIndex::from_graph(graph);
     match DangerBarrierIndex::load_from_pbf_bbox(pbf, bbox) {
-        Ok(extra) => barriers.merge(extra),
+        Ok(extra) => {
+            barriers.merge(extra);
+            Ok(barriers)
+        }
+        Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => Err(true),
         Err(e) => {
             log::warn!("danger barrier PBF load skipped: {e:#}");
+            Ok(barriers)
         }
     }
-    barriers
 }
 
 fn car_required_breaks(driving_hours: f64, max_interval_hours: f64) -> u32 {
@@ -329,6 +345,9 @@ fn apply_route_prefs_if_requested(
                 ));
                 ways.extend(w);
             }
+            Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
+                return;
+            }
             Err(e) => {
                 report.push_str(&format!("WARN: official network load failed: {e:#}\n"));
             }
@@ -342,6 +361,9 @@ fn apply_route_prefs_if_requested(
                     w.len()
                 ));
                 ways.extend(w);
+            }
+            Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
+                return;
             }
             Err(e) => {
                 report.push_str(&format!("WARN: pilgrim route load failed: {e:#}\n"));
@@ -523,6 +545,16 @@ fn append_route_plan_timing(report: &mut String, total_ms: u64, stages: &[(&str,
         report.push_str(&format!(" {k}={v}"));
     }
     report.push('\n');
+}
+
+fn plan_cancelled_result(
+    mut report: String,
+    timer: &PlanStageTimer,
+    stages: &[(&str, u64)],
+) -> CorridorRouteResult {
+    report.push_str("FAIL: cancelled\ncancelled=true\n");
+    append_route_plan_timing(&mut report, timer.total_ms(), stages);
+    empty_corridor(report)
 }
 
 fn truck_rest_kind_key(kind: TruckOvernightKind) -> &'static str {
@@ -1342,6 +1374,9 @@ fn hike_path_through_waypoints(
             format_snap_too_far(&format!("waypoint \"{}\"", pair[1].name), e, profile)
         })?;
         let Some((path, _cost)) = graph.shortest_path(s, g, false) else {
+            if driver_break_core::download::plan_cancel::is_cancelled() {
+                return Err("cancelled".into());
+            }
             return Err(format!(
                 "no foot route {} -> {}",
                 pair[0].name, pair[1].name
@@ -1865,7 +1900,8 @@ pub fn run_car_corridor_pipeline(
         break_at_km.max(15.0),
         12_000.0,
         &graph,
-        &load_break_barriers(&graph, pbf, [60.35, 9.95, 62.05, 11.65]),
+        &load_break_barriers(&graph, pbf, [60.35, 9.95, 62.05, 11.65])
+            .unwrap_or_else(|_| DangerBarrierIndex::from_graph(&graph)),
         &path,
         false,
         None,
@@ -2068,6 +2104,7 @@ fn plan_car_route_inner(
     data_dir: String,
 ) -> CorridorRouteResult {
     let empty = empty_corridor;
+    let _cancel_guard = driver_break_core::download::plan_cancel::begin_plan();
 
     if profile == TravelProfile::Hiking {
         return empty("TEST_KIND=PLAN_CAR_ROUTE\nFAIL: use plan_hiking_route for hiking\n".into());
@@ -2150,6 +2187,9 @@ fn plan_car_route_inner(
         bbox[0], bbox[1], bbox[2], bbox[3]
     ));
     let profile_map_ms = timer.lap_ms();
+    if driver_break_core::download::plan_cancel::is_cancelled() {
+        return plan_cancelled_result(report, &timer, &[("profile_map_ms", profile_map_ms)]);
+    }
 
     driver_break_core::download::progress::set(0, Some(5), "Planning route: building area graph…");
     let t_graph = Instant::now();
@@ -2176,6 +2216,13 @@ fn plan_car_route_inner(
             bbox,
         ) {
             Ok((g, hit)) => (g, hit, false),
+            Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
+                return plan_cancelled_result(
+                    report,
+                    &timer,
+                    &[("profile_map_ms", profile_map_ms)],
+                );
+            }
             Err(e) => {
                 report.push_str(&format!("FAIL: graph build: {e:#}\n"));
                 return empty(report);
@@ -2188,6 +2235,16 @@ fn plan_car_route_inner(
     }
     let build_s = t_graph.elapsed().as_secs_f64();
     let graph_build_ms = timer.lap_ms();
+    if driver_break_core::download::plan_cancel::is_cancelled() {
+        return plan_cancelled_result(
+            report,
+            &timer,
+            &[
+                ("profile_map_ms", profile_map_ms),
+                ("graph_build_ms", graph_build_ms),
+            ],
+        );
+    }
     if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
         && prefer_official_networks
     {
@@ -2222,6 +2279,16 @@ fn plan_car_route_inner(
                     bike_cap.as_str()
                 ));
             }
+            Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
+                return plan_cancelled_result(
+                    report,
+                    &timer,
+                    &[
+                        ("profile_map_ms", profile_map_ms),
+                        ("graph_build_ms", graph_build_ms),
+                    ],
+                );
+            }
             Err(e) => report.push_str(&format!("bike_suitability_err={e}\n")),
         }
     }
@@ -2235,6 +2302,18 @@ fn plan_car_route_inner(
     // snap, but the pack-hit graph still carries the closures we need to report.
     let seasonal_n = graph.seasonal_closure_excluded_in_graph(&route_opts);
     report.push_str(&format!("seasonal_closure_excluded_edges={seasonal_n}\n"));
+
+    if driver_break_core::download::plan_cancel::is_cancelled() {
+        return plan_cancelled_result(
+            report,
+            &timer,
+            &[
+                ("profile_map_ms", profile_map_ms),
+                ("graph_build_ms", graph_build_ms),
+                ("network_pref_ms", network_pref_ms),
+            ],
+        );
+    }
 
     driver_break_core::download::progress::set(3, Some(5), "Planning route: finding path…");
     let (s, snap_start_m) = match nearest(&graph, start_lat, start_lon) {
@@ -2270,6 +2349,17 @@ fn plan_car_route_inner(
         ));
     }
     let Some((path, cost)) = graph.shortest_path_with_options(s, g, use_eco, &route_opts) else {
+        if driver_break_core::download::plan_cancel::is_cancelled() {
+            return plan_cancelled_result(
+                report,
+                &timer,
+                &[
+                    ("profile_map_ms", profile_map_ms),
+                    ("graph_build_ms", graph_build_ms),
+                    ("network_pref_ms", network_pref_ms),
+                ],
+            );
+        }
         report.push_str("FAIL: no route between snapped nodes\n");
         return empty(report);
     };
@@ -2303,9 +2393,52 @@ fn plan_car_route_inner(
                 (poi, barriers, true)
             }
             Err(_) => {
-                let poi_index =
-                    PoiIndex::load_from_pbf_bbox(pbf, bbox).unwrap_or_else(|_| PoiIndex::new());
-                let barriers = load_break_barriers(&graph, pbf, bbox);
+                if driver_break_core::download::plan_cancel::is_cancelled() {
+                    return plan_cancelled_result(
+                        report,
+                        &timer,
+                        &[
+                            ("profile_map_ms", profile_map_ms),
+                            ("graph_build_ms", graph_build_ms),
+                            ("network_pref_ms", network_pref_ms),
+                            ("astar_ms", astar_ms),
+                            ("polyline_ms", polyline_ms),
+                        ],
+                    );
+                }
+                let poi_index = match PoiIndex::load_from_pbf_bbox(pbf, bbox) {
+                    Ok(idx) => idx,
+                    Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
+                        return plan_cancelled_result(
+                            report,
+                            &timer,
+                            &[
+                                ("profile_map_ms", profile_map_ms),
+                                ("graph_build_ms", graph_build_ms),
+                                ("network_pref_ms", network_pref_ms),
+                                ("astar_ms", astar_ms),
+                                ("polyline_ms", polyline_ms),
+                            ],
+                        );
+                    }
+                    Err(_) => PoiIndex::new(),
+                };
+                let barriers = match load_break_barriers(&graph, pbf, bbox) {
+                    Ok(b) => b,
+                    Err(_) => {
+                        return plan_cancelled_result(
+                            report,
+                            &timer,
+                            &[
+                                ("profile_map_ms", profile_map_ms),
+                                ("graph_build_ms", graph_build_ms),
+                                ("network_pref_ms", network_pref_ms),
+                                ("astar_ms", astar_ms),
+                                ("polyline_ms", polyline_ms),
+                            ],
+                        );
+                    }
+                };
                 (poi_index, barriers, false)
             }
         };
@@ -2834,6 +2967,7 @@ pub fn plan_hiking_route(
     }
 
     let mut timer = PlanStageTimer::start();
+    let _cancel_guard = driver_break_core::download::plan_cancel::begin_plan();
     let mut report = String::from("TEST_KIND=PLAN_HIKING_ROUTE\nDATA_SOURCE=real_pbf\n");
     report.push_str("profile=Hiking; use_eco=true\n");
     report.push_str(&format!(
@@ -2909,6 +3043,9 @@ pub fn plan_hiking_route(
     ));
     let _ = elevation.warm_bbox(bbox);
     let profile_map_ms = timer.lap_ms();
+    if driver_break_core::download::plan_cancel::is_cancelled() {
+        return plan_cancelled_result(report, &timer, &[("profile_map_ms", profile_map_ms)]);
+    }
 
     driver_break_core::download::progress::set(
         0,
@@ -2939,6 +3076,13 @@ pub fn plan_hiking_route(
             bbox,
         ) {
             Ok((g, hit)) => (g, hit, false),
+            Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
+                return plan_cancelled_result(
+                    report,
+                    &timer,
+                    &[("profile_map_ms", profile_map_ms)],
+                );
+            }
             Err(e) => {
                 report.push_str(&format!("FAIL: foot graph build: {e:#}\n"));
                 return empty_corridor(report);
@@ -2947,6 +3091,16 @@ pub fn plan_hiking_route(
     };
     let build_s = t_graph.elapsed().as_secs_f64();
     let graph_build_ms = timer.lap_ms();
+    if driver_break_core::download::plan_cancel::is_cancelled() {
+        return plan_cancelled_result(
+            report,
+            &timer,
+            &[
+                ("profile_map_ms", profile_map_ms),
+                ("graph_build_ms", graph_build_ms),
+            ],
+        );
+    }
     apply_route_prefs_if_requested(
         &mut graph,
         pbf,
@@ -2955,6 +3109,16 @@ pub fn plan_hiking_route(
         prefer_pilgrim_routes,
         &mut report,
     );
+    if driver_break_core::download::plan_cancel::is_cancelled() {
+        return plan_cancelled_result(
+            report,
+            &timer,
+            &[
+                ("profile_map_ms", profile_map_ms),
+                ("graph_build_ms", graph_build_ms),
+            ],
+        );
+    }
     apply_slow_road_preference(&mut graph);
     report.push_str("slow_road_preference=applied; profile=hiking\n");
     let network_pref_ms = timer.lap_ms();
@@ -2964,10 +3128,33 @@ pub fn plan_hiking_route(
         graph.edges.len()
     ));
 
+    if driver_break_core::download::plan_cancel::is_cancelled() {
+        return plan_cancelled_result(
+            report,
+            &timer,
+            &[
+                ("profile_map_ms", profile_map_ms),
+                ("graph_build_ms", graph_build_ms),
+                ("network_pref_ms", network_pref_ms),
+            ],
+        );
+    }
+
     // Prefer graph-first: if every leg snaps and connects on-trail, we still apply
     // wetlands then replan. If graph fails, refuse absurd crow-flies gaps before the
     // expensive wetland PBF scan (e.g. destination in open ocean).
     let graph_only_ok = hike_path_through_waypoints(&graph, &user_wps).is_ok();
+    if driver_break_core::download::plan_cancel::is_cancelled() {
+        return plan_cancelled_result(
+            report,
+            &timer,
+            &[
+                ("profile_map_ms", profile_map_ms),
+                ("graph_build_ms", graph_build_ms),
+                ("network_pref_ms", network_pref_ms),
+            ],
+        );
+    }
     if !graph_only_ok {
         for pair in user_wps.windows(2) {
             let crow = haversine_m(pair[0].lat, pair[0].lon, pair[1].lat, pair[1].lon);
@@ -2993,6 +3180,17 @@ pub fn plan_hiking_route(
             Ok(w) => (w, true),
             Err(_) => match WetlandIndex::load_from_pbf_bbox(pbf, bbox) {
                 Ok(w) => (w, false),
+                Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
+                    return plan_cancelled_result(
+                        report,
+                        &timer,
+                        &[
+                            ("profile_map_ms", profile_map_ms),
+                            ("graph_build_ms", graph_build_ms),
+                            ("network_pref_ms", network_pref_ms),
+                        ],
+                    );
+                }
                 Err(e) => {
                     report.push_str(&format!("WARN: wetland index: {e:#}\n"));
                     (WetlandIndex::default(), false)
@@ -3008,6 +3206,18 @@ pub fn plan_hiking_route(
         wet_stats.boardwalk_kept
     ));
     let wetland_ms = timer.lap_ms();
+    if driver_break_core::download::plan_cancel::is_cancelled() {
+        return plan_cancelled_result(
+            report,
+            &timer,
+            &[
+                ("profile_map_ms", profile_map_ms),
+                ("graph_build_ms", graph_build_ms),
+                ("network_pref_ms", network_pref_ms),
+                ("wetland_ms", wetland_ms),
+            ],
+        );
+    }
 
     let mut hybrid = match plan_hybrid_hiking_path(
         &graph,
@@ -3017,6 +3227,21 @@ pub fn plan_hiking_route(
         &to_hiking_waypoints(&user_wps),
     ) {
         Ok(h) => h,
+        Err(e)
+            if e.contains("cancelled")
+                || driver_break_core::download::plan_cancel::is_cancelled() =>
+        {
+            return plan_cancelled_result(
+                report,
+                &timer,
+                &[
+                    ("profile_map_ms", profile_map_ms),
+                    ("graph_build_ms", graph_build_ms),
+                    ("network_pref_ms", network_pref_ms),
+                    ("wetland_ms", wetland_ms),
+                ],
+            );
+        }
         Err(e) => {
             report.push_str(&format!("FAIL: {e}\n"));
             return empty_corridor(report);
@@ -3063,12 +3288,40 @@ pub fn plan_hiking_route(
                     OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M,
                 ) {
                     Ok(i) => i,
+                    Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
+                        return plan_cancelled_result(
+                            report,
+                            &timer,
+                            &[
+                                ("profile_map_ms", profile_map_ms),
+                                ("graph_build_ms", graph_build_ms),
+                                ("network_pref_ms", network_pref_ms),
+                                ("wetland_ms", wetland_ms),
+                                ("hybrid_path_ms", hybrid_path_ms),
+                            ],
+                        );
+                    }
                     Err(e) => {
                         report.push_str(&format!("FAIL: POI index: {e:#}\n"));
                         return empty_corridor(report);
                     }
                 };
-                let barriers = load_break_barriers(&graph, pbf, bbox);
+                let barriers = match load_break_barriers(&graph, pbf, bbox) {
+                    Ok(b) => b,
+                    Err(_) => {
+                        return plan_cancelled_result(
+                            report,
+                            &timer,
+                            &[
+                                ("profile_map_ms", profile_map_ms),
+                                ("graph_build_ms", graph_build_ms),
+                                ("network_pref_ms", network_pref_ms),
+                                ("wetland_ms", wetland_ms),
+                                ("hybrid_path_ms", hybrid_path_ms),
+                            ],
+                        );
+                    }
+                };
                 (idx, barriers, false, false)
             }
         };
@@ -4554,11 +4807,24 @@ pub fn save_ev_car_config(data_dir: String, config: FfiEvCarConfig) -> bool {
         .is_ok()
 }
 
+/// Process-wide DEM cache so HUD `elevation_at` does not re-inflate GeoTIFF
+/// tiles on every GPS fix.
+fn hud_elevation_service(elev_dir: &Path) -> ElevationService {
+    static SLOT: OnceLock<Mutex<std::collections::HashMap<PathBuf, ElevationCache>>> =
+        OnceLock::new();
+    let map = SLOT.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+    let mut guard = map.lock().unwrap_or_else(|e| e.into_inner());
+    let cache = guard
+        .entry(elev_dir.to_path_buf())
+        .or_insert_with(|| ElevationCache::new(elev_dir))
+        .clone();
+    ElevationService::new(cache)
+}
+
 /// Sample on-disk DEM elevation (meters) at a WGS84 point, or null if no tile.
 #[uniffi::export]
 pub fn elevation_at(elev_dir: String, lat: f64, lon: f64) -> Option<f64> {
-    let elev = ElevationService::new(ElevationCache::new(Path::new(&elev_dir)));
-    elev.get_elevation(lat, lon)
+    hud_elevation_service(Path::new(&elev_dir)).get_elevation(lat, lon)
 }
 
 /// Last GPS fix pushed from the Android host ([`update_gps_fix`]).

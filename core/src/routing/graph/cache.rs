@@ -295,6 +295,7 @@ pub fn load_or_build_reweighted_bbox(
     if crate::download::pbf_priority::skip_non_plan_bbox_build() {
         anyhow::bail!("{}", crate::download::pbf_priority::BBOX_BUILD_SKIPPED);
     }
+    crate::download::plan_cancel::abort_if_cancelled()?;
     // M5: do not read or write `.navigph` (see [`load_or_build_reweighted`]).
     let mut graph = RouteGraph::build_from_pbf_bbox(pbf, profile, bbox)?;
     graph.apply_eco_reweighting(elevation, eco);

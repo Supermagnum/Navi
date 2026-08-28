@@ -83,6 +83,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -116,6 +117,7 @@ import uniffi.navi.PlaceHit
 import uniffi.navi.TravelProfile
 import uniffi.navi.applyOsmUpdate
 import uniffi.navi.bindGeofabrikRegion
+import uniffi.navi.cancelInFlightPlan
 import uniffi.navi.checkOsmUpdates
 import uniffi.navi.deleteSavedPlace
 import uniffi.navi.deleteSavedRoute
@@ -396,6 +398,32 @@ private fun withIndexedPackMissHint(
     return if (statusLine.isBlank()) hint else "$statusLine\n$hint"
 }
 
+private fun planReportIsCancelled(report: String): Boolean =
+    report.contains("cancelled=true") ||
+        report.lineSequence().any { it.trim() == "FAIL: cancelled" }
+
+private fun cancelledCorridorResult(): uniffi.navi.CorridorRouteResult =
+    uniffi.navi.CorridorRouteResult(
+        report = "FAIL: cancelled\ncancelled=true\n",
+        distanceKm = 0.0,
+        etaMinutes = 0.0,
+        cacheHit = false,
+        coldBuildS = 0.0,
+        warmLoadS = 0.0,
+        routePolyline = "",
+        poiLat = 0.0,
+        poiLon = 0.0,
+        poiName = "",
+        poiIconKey = "",
+        breakPoisJson = "[]",
+        daysJson = "[]",
+        simSamplesJson = "[]",
+        maneuversJson = "[]",
+        priorityPathSharePct = 0.0,
+        routeSegmentsJson = "[]",
+        offTrailAdvisory = "",
+    )
+
 private fun userFacingStatus(raw: String): String {
     val t = raw.trim()
     if (t.isEmpty()) return ""
@@ -404,6 +432,7 @@ private fun userFacingStatus(raw: String): String {
     }
     if (t.contains("TEST_KIND=") || t.contains("detected_cores=") || t.contains("DATA_SOURCE=")) {
         return when {
+            planReportIsCancelled(t) -> "Planning cancelled"
             t.contains("PASS") && t.contains("distance_km=") -> {
                 val km = Regex("""distance_km=([0-9.]+)""").find(t)?.groupValues?.getOrNull(1)
                 val base =
@@ -547,6 +576,11 @@ private fun NaviMapScreen() {
     var showHikingReroutePrompt by remember { mutableStateOf(false) }
     var missingCoveragePrompt by remember { mutableStateOf<MissingRegionCoverage?>(null) }
     var rerouteJob by remember { mutableStateOf<Job?>(null) }
+    val planAbort =
+        remember {
+            java.util.concurrent.atomic
+                .AtomicBoolean(false)
+        }
     val offRouteCoordinator = remember { OffRouteCoordinator() }
     var routePlanPct by remember { mutableIntStateOf(-1) }
     var weeklyReminder by remember { mutableStateOf(false) }
@@ -787,6 +821,36 @@ private fun NaviMapScreen() {
         remember {
             NaviAppData.resolve(context)
         }
+
+    /** GeoTIFF DEM decode can take tens of seconds — never on the UI thread. */
+    val demSampleInFlight = remember { AtomicBoolean(false) }
+    val demAltitudeReady = remember { AtomicBoolean(false) }
+
+    fun enqueueDemAltitude(
+        lat: Double,
+        lon: Double,
+    ) {
+        if (NaviMapTestHooks.gpsAltitudeM != null) return
+        if (lat == 0.0 && lon == 0.0) return
+        if (!demSampleInFlight.compareAndSet(false, true)) return
+        val elevPath = File(dataDir, "elevation").absolutePath
+        scope.launch {
+            try {
+                val dem =
+                    withContext(Dispatchers.IO) {
+                        runCatching { elevationAt(elevPath, lat, lon) }.getOrNull()
+                    }
+                if (dem != null) {
+                    demAltitudeReady.set(true)
+                    driveHud = driveHud.copy(altitudeM = dem)
+                    NaviMapTestHooks.lastHudAltitudeM = dem
+                }
+            } finally {
+                demSampleInFlight.set(false)
+            }
+        }
+    }
+
     var offlineIntegrity by remember {
         mutableStateOf(OfflineDataIntegrity.inspect(context, dataDir))
     }
@@ -1306,6 +1370,8 @@ private fun NaviMapScreen() {
                 idx > NaviMapTestHooks.lastViaIndex
             }
         rerouteJob?.cancel()
+        cancelInFlightPlan()
+        planAbort.set(false)
         rerouteJob =
             scope.launch {
                 recalculatingRoute = true
@@ -1378,6 +1444,20 @@ private fun NaviMapScreen() {
                     planIndexingHintVisible = false
                     NaviMapTestHooks.reroutingActive = false
                     routePlanProgress = ""
+                    if (planAbort.get() || planReportIsCancelled(result.report)) {
+                        NaviMapTestHooks.lastPlanReport = result.report
+                        RoutingPlanLog.cancelled(
+                            ecoEnabled = ecoForPlan,
+                            durationMs = 0,
+                            reason = "cancelled",
+                            report = result.report,
+                        )
+                        offRouteCoordinator.suppressUntilOnRoute()
+                        if (status != "Kept original route") {
+                            status = "Kept original route"
+                        }
+                        return@launch
+                    }
                     if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
                         status = userFacingStatus(result.report).ifBlank { "Reroute failed" }
                         offRouteCoordinator.suppressUntilOnRoute()
@@ -1628,24 +1708,6 @@ private fun NaviMapScreen() {
 
     DisposableEffect(locationPermGranted) {
         val lm = context.getSystemService(LocationManager::class.java)
-
-        // Terrain height from on-disk DEM. Prefer this over Location.altitude:
-        // AVD/network fixes often report a plausible but wrong height (e.g. ~420 m
-        // near Raufoss where Copernicus DEM is ~174 m MSL).
-        fun sampleDemAltitude(
-            lat: Double,
-            lon: Double,
-        ): Boolean {
-            if (NaviMapTestHooks.gpsAltitudeM != null) return false
-            if (lat == 0.0 && lon == 0.0) return false
-            val dem =
-                runCatching {
-                    elevationAt(File(dataDir, "elevation").absolutePath, lat, lon)
-                }.getOrNull() ?: return false
-            driveHud = driveHud.copy(altitudeM = dem)
-            NaviMapTestHooks.lastHudAltitudeM = dem
-            return true
-        }
 
         fun applyFix(loc: Location?) {
             if (loc == null) return
@@ -2239,7 +2301,9 @@ private fun NaviMapScreen() {
             // Test hook overrides live sensor in the poll loop.
             if (NaviMapTestHooks.gpsAltitudeM != null) return
             // Prefer DEM terrain height whenever a tile covers this fix.
-            if (sampleDemAltitude(loc.latitude, loc.longitude)) {
+            // Decode off-main; GPS altitude is only a stand-in until DEM returns.
+            enqueueDemAltitude(loc.latitude, loc.longitude)
+            if (demAltitudeReady.get()) {
                 return
             }
             if (!loc.hasAltitude()) {
@@ -2289,27 +2353,13 @@ private fun NaviMapScreen() {
             runCatching { lm.removeUpdates(listener) }
         }
     }
-    // Refresh DEM altitude when the map GPS position changes (tiles may arrive
-    // later; also replaces a stale GPS-altitude value after a move).
-    LaunchedEffect(mapState.gpsLat, mapState.gpsLon, locationPermGranted) {
-        if (mapState.gpsLat == 0.0 && mapState.gpsLon == 0.0) return@LaunchedEffect
-        if (NaviMapTestHooks.gpsAltitudeM != null) return@LaunchedEffect
+    // Refresh DEM altitude when tiles arrive later or the GPS point moves.
+    // Do not key on lat/lon: cancelling mid-decode would restart a tens-of-seconds
+    // GeoTIFF inflate on every fix.
+    LaunchedEffect(locationPermGranted) {
+        if (!locationPermGranted) return@LaunchedEffect
         while (isActive) {
-            val dem =
-                runCatching {
-                    elevationAt(
-                        File(dataDir, "elevation").absolutePath,
-                        mapState.gpsLat,
-                        mapState.gpsLon,
-                    )
-                }.getOrNull()
-            if (dem != null) {
-                val cur = driveHud.altitudeM
-                if (cur == null || kotlin.math.abs(cur - dem) > 0.5) {
-                    driveHud = driveHud.copy(altitudeM = dem)
-                    NaviMapTestHooks.lastHudAltitudeM = dem
-                }
-            }
+            enqueueDemAltitude(mapState.gpsLat, mapState.gpsLon)
             delay(5_000)
         }
     }
@@ -3076,18 +3126,22 @@ private fun NaviMapScreen() {
                     .padding(top = 64.dp),
         )
         RecalculatingRouteBanner(
-            active = recalculatingRoute,
+            active = planningRoute || recalculatingRoute,
+            title = if (recalculatingRoute) "Recalculating route…" else "Planning route…",
             onCancel = {
-                // Cancel mid-recompute: keep original plan, suppress until back on route.
-                // Native plan may still finish on a worker; ignore result via Job cancel.
-                rerouteJob?.cancel()
-                rerouteJob = null
+                val wasReroute = recalculatingRoute
+                planAbort.set(true)
+                cancelInFlightPlan()
                 recalculatingRoute = false
                 planningRoute = false
                 NaviMapTestHooks.reroutingActive = false
                 routePlanProgress = ""
-                offRouteCoordinator.suppressUntilOnRoute()
-                status = "Kept original route"
+                if (wasReroute) {
+                    offRouteCoordinator.suppressUntilOnRoute()
+                    status = "Kept original route"
+                } else {
+                    status = "Planning cancelled"
+                }
             },
             modifier =
                 Modifier
@@ -3541,6 +3595,7 @@ private fun NaviMapScreen() {
                                             }
                                         val ecoForPlan =
                                             if (ecoModeToggleable(profile)) ecoEnabled else true
+                                        planAbort.set(false)
                                         val planStarted = System.currentTimeMillis()
                                         RoutingPlanLog.start(
                                             profile = profile.name.lowercase(),
@@ -3630,6 +3685,9 @@ private fun NaviMapScreen() {
                                                         } else {
                                                             when (profile) {
                                                                 TravelProfile.HIKING -> {
+                                                                    if (planAbort.get()) {
+                                                                        return@runCatching cancelledCorridorResult()
+                                                                    }
                                                                     RoutingPlanLog.progress(
                                                                         10,
                                                                         ecoForPlan,
@@ -3680,6 +3738,10 @@ private fun NaviMapScreen() {
                                                                             "graph-cache-${pbf!!.nameWithoutExtension}-$graphTag",
                                                                         )
                                                                     for (i in 0 until legTotal) {
+                                                                        if (planAbort.get()) {
+                                                                            return@runCatching last
+                                                                                ?: cancelledCorridorResult()
+                                                                        }
                                                                         val a = pts[i]
                                                                         val b = pts[i + 1]
                                                                         val pct = ((i * 100) / legTotal).coerceIn(0, 99)
@@ -3807,6 +3869,7 @@ private fun NaviMapScreen() {
                                                             }
                                                         }
                                                     }.getOrElse { e ->
+                                                        if (e is CancellationException) throw e
                                                         android.util.Log.e("NaviRoute", "plan failed", e)
                                                         uniffi.navi.CorridorRouteResult(
                                                             report = "FAIL: ${e.message ?: e.javaClass.simpleName}\n",
@@ -3830,6 +3893,17 @@ private fun NaviMapScreen() {
                                                         )
                                                     }
                                                 }
+                                            } catch (e: CancellationException) {
+                                                RoutingPlanLog.cancelled(
+                                                    ecoForPlan,
+                                                    System.currentTimeMillis() - planStarted,
+                                                    reason = "cancelled",
+                                                    report = "",
+                                                )
+                                                if (status != "Planning cancelled") {
+                                                    status = "Planning cancelled"
+                                                }
+                                                throw e
                                             } finally {
                                                 planningRoute = false
                                                 routePlanPct = -1
@@ -3840,6 +3914,21 @@ private fun NaviMapScreen() {
                                                 downloadProgressClear()
                                             }
                                         val durationMs = System.currentTimeMillis() - planStarted
+                                        if (planAbort.get() || planReportIsCancelled(result.report)) {
+                                            NaviMapTestHooks.lastPlanReport = result.report
+                                            NaviMapTestHooks.lastRoutePolylineChars = 0
+                                            NaviMapTestHooks.lastRoutePolyline = ""
+                                            RoutingPlanLog.cancelled(
+                                                ecoForPlan,
+                                                durationMs,
+                                                reason = "cancelled",
+                                                report = result.report,
+                                            )
+                                            if (status != "Planning cancelled") {
+                                                status = "Planning cancelled"
+                                            }
+                                            return@launch
+                                        }
                                         if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
                                             NaviMapTestHooks.lastPlanReport = result.report
                                             NaviMapTestHooks.lastRoutePolylineChars = 0
@@ -5852,6 +5941,7 @@ private fun SimulatingBannerOverlay(
 @Composable
 private fun RecalculatingRouteBanner(
     active: Boolean,
+    title: String,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -5871,14 +5961,14 @@ private fun RecalculatingRouteBanner(
         modifier =
             modifier
                 .testTag("rerouting_banner")
-                .semantics { contentDescription = "Recalculating route" },
+                .semantics { contentDescription = title },
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
         ) {
             Text(
-                "Recalculating route…",
+                title,
                 color = Color.White,
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(end = 8.dp),

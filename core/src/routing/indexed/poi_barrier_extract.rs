@@ -302,6 +302,7 @@ pub(crate) fn extract_poi_and_pbf_barriers(
     })?;
     let pass1 = pass1_acc.into_inner().unwrap_or_else(|e| e.into_inner());
     let pass1_ms = t_p1.elapsed().as_secs_f64() * 1000.0;
+    crate::download::plan_cancel::abort_if_cancelled()?;
 
     let t_p2 = Instant::now();
     let poi_needed = pass1.poi_needed;
