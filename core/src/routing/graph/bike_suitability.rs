@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use osmpbf::{Element, ElementReader};
+use osmpbf::Element;
 
 use super::builder::RouteGraph;
 
@@ -212,9 +212,7 @@ pub fn load_way_terrain_tags(
         "highway",
     ];
     let mut out = HashMap::new();
-    let file = std::fs::File::open(pbf)?;
-    let reader = ElementReader::new(file);
-    reader.for_each(|element| {
+    crate::download::pbf_priority::for_each_pbf_elements(pbf, |element| {
         let Element::Way(way) = element else {
             return;
         };

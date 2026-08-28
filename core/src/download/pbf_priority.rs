@@ -149,11 +149,13 @@ pub fn for_each_pbf_data_block<F>(path: &Path, f: F) -> anyhow::Result<()>
 where
     F: Fn(&PrimitiveBlock) -> anyhow::Result<()> + Send + Sync,
 {
+    let plan_id = super::plan_cancel::current_plan_id();
     let yield_to_plan = BACKGROUND_INDEXER.with(|c| c.get());
     let blobs = BlobReader::from_path(path)?;
     blobs
         .par_bridge()
         .try_for_each(|blob| -> anyhow::Result<()> {
+            super::plan_cancel::abort_if_cancelled_id(plan_id)?;
             if yield_to_plan {
                 while foreground_plan_active() {
                     thread::sleep(Duration::from_millis(20));
@@ -161,7 +163,10 @@ where
             }
             match blob?.decode() {
                 Ok(BlobDecode::OsmHeader(_)) | Ok(BlobDecode::Unknown(_)) => Ok(()),
-                Ok(BlobDecode::OsmData(block)) => f(&block),
+                Ok(BlobDecode::OsmData(block)) => {
+                    f(&block)?;
+                    super::plan_cancel::abort_if_cancelled_id(plan_id)
+                }
                 Err(e) => Err(e.into()),
             }
         })?;
@@ -252,6 +257,7 @@ fn scan_blob_latlon_samples(
     blob: Result<osmpbf::Blob, osmpbf::Error>,
     yield_to_plan: bool,
 ) -> anyhow::Result<()> {
+    super::plan_cancel::abort_if_cancelled()?;
     if yield_to_plan {
         while foreground_plan_active() {
             thread::sleep(Duration::from_millis(20));
@@ -316,12 +322,14 @@ pub fn for_each_pbf_elements<F>(path: &Path, f: F) -> anyhow::Result<()>
 where
     F: for<'a> FnMut(Element<'a>) + Send,
 {
+    let plan_id = super::plan_cancel::current_plan_id();
     let yield_to_plan = BACKGROUND_INDEXER.with(|c| c.get());
     let blobs = BlobReader::from_path(path)?;
     let f = Mutex::new(f);
     blobs
         .par_bridge()
         .try_for_each(|blob| -> anyhow::Result<()> {
+            super::plan_cancel::abort_if_cancelled_id(plan_id)?;
             if yield_to_plan {
                 while foreground_plan_active() {
                     thread::sleep(Duration::from_millis(20));
@@ -332,11 +340,35 @@ where
                 Ok(BlobDecode::OsmData(block)) => {
                     let mut guard = f.lock().unwrap_or_else(|e| e.into_inner());
                     block.for_each_element(&mut *guard);
+                    drop(guard);
+                    super::plan_cancel::abort_if_cancelled_id(plan_id)?;
                     Ok(())
                 }
                 Err(e) => Err(e.into()),
             }
         })?;
+    Ok(())
+}
+
+/// Sequential blob walk (file order). Use when a later element depends on
+/// earlier ones in the same scan (e.g. way centroids after nodes).
+pub fn for_each_pbf_elements_serial<F>(path: &Path, mut f: F) -> anyhow::Result<()>
+where
+    F: for<'a> FnMut(Element<'a>),
+{
+    let plan_id = super::plan_cancel::current_plan_id();
+    let blobs = BlobReader::from_path(path)?;
+    for blob in blobs {
+        super::plan_cancel::abort_if_cancelled_id(plan_id)?;
+        match blob?.decode() {
+            Ok(BlobDecode::OsmHeader(_)) | Ok(BlobDecode::Unknown(_)) => {}
+            Ok(BlobDecode::OsmData(block)) => {
+                block.for_each_element(&mut f);
+                super::plan_cancel::abort_if_cancelled_id(plan_id)?;
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
     Ok(())
 }
 
@@ -431,6 +463,71 @@ mod tests {
         assert!(
             (0.85..=1.15).contains(&ratio),
             "kept={kept} expected~{expected} ratio={ratio}"
+        );
+    }
+
+    #[test]
+    fn cancelled_plan_aborts_pbf_element_scan() {
+        // Serial walk: do not share the global Rayon pool with Ostlandet bbox
+        // tests (those can occupy every worker for >60s and flake a parallel
+        // abort assertion).
+        let path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/motor-access-hamar-gjovik.osm.pbf"
+        ));
+        if !path.is_file() {
+            return;
+        }
+        let blobs = std::sync::atomic::AtomicU32::new(0);
+        let g = crate::download::plan_cancel::begin_plan();
+        crate::download::plan_cancel::request_cancel_id(g.id());
+        assert!(crate::download::plan_cancel::is_cancelled_id(g.id()));
+        let t0 = Instant::now();
+        let err = for_each_pbf_elements_serial(path, |_| {
+            blobs.fetch_add(1, Ordering::Relaxed);
+        })
+        .expect_err("cancelled scan should not complete");
+        let elapsed = t0.elapsed();
+        assert!(crate::download::plan_cancel::is_cancel_err(&err), "{err:#}");
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "pre-scan cancel should stop immediately: {elapsed:?}"
+        );
+        assert_eq!(
+            blobs.load(Ordering::Relaxed),
+            0,
+            "cancelled before first blob should not visit elements"
+        );
+    }
+
+    #[test]
+    fn cancel_during_blob_aborts_after_that_blob() {
+        let path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/motor-access-hamar-gjovik.osm.pbf"
+        ));
+        if !path.is_file() {
+            return;
+        }
+        let seen = std::sync::atomic::AtomicU32::new(0);
+        let g = crate::download::plan_cancel::begin_plan();
+        let id = g.id();
+        let t0 = Instant::now();
+        let err = for_each_pbf_elements_serial(path, |_| {
+            if seen.fetch_add(1, Ordering::Relaxed) == 0 {
+                crate::download::plan_cancel::request_cancel_id(id);
+            }
+        })
+        .expect_err("cancel mid-blob should fail the scan after the blob");
+        let elapsed = t0.elapsed();
+        assert!(crate::download::plan_cancel::is_cancel_err(&err), "{err:#}");
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "mid-blob cancel should not finish the file: {elapsed:?}"
+        );
+        assert!(
+            seen.load(Ordering::Relaxed) > 0,
+            "at least the blob in flight should have been visited"
         );
     }
 }

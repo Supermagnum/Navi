@@ -70,6 +70,19 @@ object RoutingPlanLog {
         DiagnosticLog.logRoutePlanFailed(reason)
     }
 
+    fun cancelled(
+        ecoEnabled: Boolean,
+        durationMs: Long,
+        reason: String = "cancelled",
+        report: String = "",
+    ) {
+        Log.i(
+            TAG,
+            "planning_cancelled eco=$ecoEnabled duration_ms=$durationMs reason=$reason",
+        )
+        DiagnosticLog.logRoutePlanCancelled(reason, report)
+    }
+
     fun logPois(breakPoisJson: String) {
         val names = mutableListOf<String>()
         val kinds = mutableListOf<String>()

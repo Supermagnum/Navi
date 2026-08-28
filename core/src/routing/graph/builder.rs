@@ -573,9 +573,17 @@ impl RouteGraph {
         use_eco: bool,
         options: &RouteOptions,
     ) -> Option<(Vec<NodeId>, f64)> {
+        let plan_id = crate::download::plan_cancel::current_plan_id();
+        let expansions = std::sync::atomic::AtomicU32::new(0);
         let result = astar(
             &start,
             |node| {
+                if plan_id != 0 {
+                    let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if n & 2047 == 0 && crate::download::plan_cancel::is_cancelled_id(plan_id) {
+                        return Vec::new();
+                    }
+                }
                 // Node-scoped barrier block: may arrive as destination, but must
                 // not continue through unless this node was the path start.
                 if self.access_blocked_nodes.contains(node) && node != &start {
@@ -610,6 +618,9 @@ impl RouteGraph {
             },
             |node| node == &goal,
         );
+        if crate::download::plan_cancel::is_cancelled_id(plan_id) {
+            return None;
+        }
         result.map(|(path, cost)| (path, cost as f64 / 1000.0))
     }
 

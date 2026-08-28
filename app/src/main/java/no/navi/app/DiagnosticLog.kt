@@ -503,6 +503,23 @@ object DiagnosticLog {
         write(Category.ROUTE_PLAN, mapOf("status" to "failed", "reason" to reason))
     }
 
+    fun logRoutePlanCancelled(
+        reason: String,
+        report: String,
+    ) {
+        write(
+            Category.ROUTE_PLAN,
+            mapOf(
+                "status" to "cancelled",
+                "reason" to reason,
+                "plan_duration_ms" to parseReportDouble(report, "plan_duration_ms"),
+                "pack_hit" to parseReportToken(report, "pack_hit"),
+                "poi_pack_hit" to parseReportToken(report, "poi_pack_hit"),
+            ).filterValues { it != null },
+        )
+        logRoutePlanStagesFromReport(report)
+    }
+
     fun logFuelAdded(
         amount: Double,
         unit: String,

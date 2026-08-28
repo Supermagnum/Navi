@@ -426,6 +426,7 @@ impl RouteGraph {
         // Pass 1: node ids inside bbox (ids only — storing every coord OOMs on large extracts).
         let mut in_bbox_ids: HashSet<i64> = HashSet::new();
         {
+            crate::download::plan_cancel::abort_if_cancelled()?;
             crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
                 Element::Node(n) => {
                     if in_bbox(n.lat(), n.lon(), bbox) {
@@ -441,6 +442,7 @@ impl RouteGraph {
             })?;
         }
 
+        crate::download::plan_cancel::abort_if_cancelled()?;
         crate::download::progress::set(1, Some(4), "Planning route: reading roads…");
         // Pass 2: highway ways that reference at least one in-bbox node.
         let mut ways: Vec<RawWay> = Vec::new();
@@ -480,6 +482,7 @@ impl RouteGraph {
         }
         drop(in_bbox_ids);
 
+        crate::download::plan_cancel::abort_if_cancelled()?;
         crate::download::progress::set(2, Some(4), "Planning route: loading geometry…");
         // Pass 3: coords + barrier access tags for nodes referenced by kept ways.
         let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
@@ -515,6 +518,7 @@ impl RouteGraph {
         }
         drop(needed);
 
+        crate::download::plan_cancel::abort_if_cancelled()?;
         crate::download::progress::set(3, Some(4), "Planning route: linking graph…");
         let arcs: Vec<Arc<RawWay>> = ways.into_iter().map(Arc::new).collect();
         let graph = graph_from_raw_ways(&arcs, &coords, profile, &barrier_tags)?;

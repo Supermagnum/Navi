@@ -166,6 +166,9 @@ fn plan_leg(
     let snap_a = graph.nearest_routable(a.lat, a.lon).ok();
     let snap_b = graph.nearest_routable(b.lat, b.lon).ok();
 
+    if crate::download::plan_cancel::is_cancelled() {
+        return Err("cancelled".into());
+    }
     if let (Some((sa, _)), Some((sb, _))) = (snap_a, snap_b) {
         if let Some((path, _)) = graph.shortest_path(sa, sb, false) {
             if path.len() >= 2 {
@@ -180,6 +183,8 @@ fn plan_leg(
                     path_nodes: path,
                 });
             }
+        } else if crate::download::plan_cancel::is_cancelled() {
+            return Err("cancelled".into());
         }
     }
 
@@ -197,6 +202,9 @@ fn gap_fill_leg(
     snap_a: Option<(NodeId, f64)>,
     snap_b: Option<(NodeId, f64)>,
 ) -> Result<LegResult, String> {
+    if crate::download::plan_cancel::is_cancelled() {
+        return Err("cancelled".into());
+    }
     let crow = haversine_m(a.lat, a.lon, b.lat, b.lon);
     if crow > TERRAIN_MAX_GAP_M {
         return Err(format!(
