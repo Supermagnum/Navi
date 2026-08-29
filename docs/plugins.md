@@ -60,8 +60,8 @@ snapshots into the core; WASM guests must not get raw sockets.
   - **Link:** `android_isolation_smoke` cross-compiles for
     `aarch64-linux-android` (NDK) in CI job `plugin-host-android-aarch64`
     and via `scripts/plugin-host-android-aarch64-smoke.sh`.
-  - **Execute (Cranelift aarch64 ISA):** the same isolation checks run as a
-    static `aarch64-unknown-linux-musl` binary under **QEMU user-mode** in CI
+  - **Execute (Cranelift aarch64 ISA):** the same isolation checks run as an
+    `aarch64-unknown-linux-gnu` binary under **QEMU user-mode** in CI
     (`--qemu`) so Cranelift’s **aarch64** backend is exercised (the
     `RUSTSEC-2026-0096` class). Host-triple `cargo test` alone is not this check.
   - **Execute (Bionic / on-device):** verified **2026-08-29** on Samsung
@@ -71,10 +71,11 @@ snapshots into the core; WASM guests must not get raw sockets.
     NDK-linked `aarch64-linux-android` binary to `/data/local/tmp` and ran it
     under real Bionic; output `android_isolation_smoke: all checks passed`
     (capability deny, `log-hello` load/call, busy-loop fuel/timeout kill —
-    matched the musl+QEMU result; no crash, hang, or trap misclassification).
+    matched the GNU+QEMU result; no crash, hang, or trap misclassification).
     Note: modern x86_64 Android emulators refuse arm64 system images, and the
     NDK does not ship `/system/bin/linker64` for Bionic user-mode QEMU — hence
-    CI keeps `--qemu` (musl) while on-device `--adb` covers Bionic.
+    CI keeps `--qemu` (GNU aarch64 via apt `gcc-aarch64-linux-gnu`) while
+    on-device `--adb` covers Bionic.
 - **Advisory coverage:** `deny.toml` `[graph].targets` includes
   `aarch64-linux-android` / `x86_64-linux-android`; CI also runs
   `cargo deny check advisories --target aarch64-linux-android` and

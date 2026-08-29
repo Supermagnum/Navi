@@ -3,7 +3,7 @@
 #
 # 1) Cross-compile for aarch64-linux-android (NDK) — proves the Android ABI link.
 # 2) Execute isolation smoke on aarch64 Cranelift codegen via either:
-#      --qemu  : static aarch64-unknown-linux-musl binary under qemu-aarch64-static
+#      --qemu  : aarch64-unknown-linux-gnu binary under qemu-aarch64-static
 #                (same Cranelift aarch64 backend; validates RUSTSEC-2026-0096 class)
 #      --adb   : push the aarch64-linux-android binary to an arm64-v8a device/emulator
 #
@@ -73,7 +73,7 @@ export PATH="$NDK_BIN:$PATH"
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CLANG"
 
 ANDROID_TARGET=aarch64-linux-android
-MUSL_TARGET=aarch64-unknown-linux-musl
+GNU_TARGET=aarch64-unknown-linux-gnu
 CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
 export CARGO_TARGET_DIR
 
@@ -126,21 +126,18 @@ if [[ "$MODE" == "build-only" ]]; then
   exit 0
 fi
 
-ensure_musl_cross() {
-  local musl_root="$CARGO_TARGET_DIR/aarch64-linux-musl-cross"
-  if [[ ! -x "$musl_root/bin/aarch64-linux-musl-gcc" ]]; then
-    echo "==> fetch aarch64-linux-musl-cross toolchain (musl.cc)"
-    local tmp
-    tmp="$(mktemp -d)"
-    curl -fsSL -o "$tmp/aarch64-linux-musl-cross.tgz" \
-      https://musl.cc/aarch64-linux-musl-cross.tgz
-    tar -xzf "$tmp/aarch64-linux-musl-cross.tgz" -C "$tmp"
-    rm -rf "$musl_root"
-    mv "$tmp/aarch64-linux-musl-cross" "$musl_root"
-    rm -rf "$tmp"
+ensure_gnu_cross() {
+  if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+    echo "error: aarch64-linux-gnu-gcc not found; install gcc-aarch64-linux-gnu" >&2
+    exit 1
   fi
-  export PATH="$musl_root/bin:$PATH"
-  export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-gcc
+  export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+  local sysroot="${QEMU_LD_PREFIX:-/usr/aarch64-linux-gnu}"
+  if [[ ! -e "$sysroot/lib/ld-linux-aarch64.so.1" ]]; then
+    echo "error: aarch64 GNU loader not found under $sysroot (install libc6-dev-arm64-cross)" >&2
+    exit 1
+  fi
+  export QEMU_AARCH64_SYSROOT="$sysroot"
 }
 
 run_qemu() {
@@ -156,21 +153,22 @@ run_qemu() {
 
   # Bionic user-mode needs /system/bin/linker64 (not shipped in the NDK). Modern
   # x86_64 Android emulators also refuse arm64 system images. Execute the same
-  # isolation checks on a static aarch64 musl binary under QEMU so Cranelift's
+  # isolation checks on an aarch64 GNU binary under QEMU so Cranelift's
   # aarch64 backend (RUSTSEC-2026-0096 class) is actually run — not host x86_64.
-  ensure_musl_cross
-  rustup target add "$MUSL_TARGET" >/dev/null
-  echo "==> build android_isolation_smoke ($MUSL_TARGET) for QEMU aarch64 exec"
+  # Distro gcc-aarch64-linux-gnu is used instead of musl.cc (unreliable from CI).
+  ensure_gnu_cross
+  rustup target add "$GNU_TARGET" >/dev/null
+  echo "==> build android_isolation_smoke ($GNU_TARGET) for QEMU aarch64 exec"
   cargo build -p navi-plugin-host --bin android_isolation_smoke \
-    --target "$MUSL_TARGET" --release
-  local musl_bin="$CARGO_TARGET_DIR/$MUSL_TARGET/release/android_isolation_smoke"
-  echo "==> run under $qemu (aarch64 Cranelift codegen)"
-  file "$musl_bin" || true
-  "$qemu" "$musl_bin" \
+    --target "$GNU_TARGET" --release
+  local gnu_bin="$CARGO_TARGET_DIR/$GNU_TARGET/release/android_isolation_smoke"
+  echo "==> run under $qemu -L $QEMU_AARCH64_SYSROOT (aarch64 Cranelift codegen)"
+  file "$gnu_bin" || true
+  "$qemu" -L "$QEMU_AARCH64_SYSROOT" "$gnu_bin" \
     "$STAGE_ROOT/log-hello" \
     "$STAGE_ROOT/busy-loop"
   echo "note: Android ABI link was verified via $ANDROID_TARGET cross-compile;"
-  echo "      execution used $MUSL_TARGET under QEMU (same Cranelift aarch64 ISA)."
+  echo "      execution used $GNU_TARGET under QEMU (same Cranelift aarch64 ISA)."
   echo "      Use --adb on an arm64-v8a device for full Bionic process execution."
 }
 

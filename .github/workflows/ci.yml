@@ -159,7 +159,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.98.0"
-          targets: wasm32-unknown-unknown,aarch64-linux-android,aarch64-unknown-linux-musl
+          targets: wasm32-unknown-unknown,aarch64-linux-android,aarch64-unknown-linux-gnu
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
@@ -171,12 +171,11 @@ jobs:
         id: setup-ndk
         with:
           ndk-version: r27c
-          link-as-installed-locally: true
 
-      - name: Install qemu-user-static
+      - name: Install qemu-user-static + aarch64 GNU cross
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-user-static curl
+          sudo apt-get install -y qemu-user-static gcc-aarch64-linux-gnu libc6-dev-arm64-cross
 
       - name: Cross-compile Android aarch64 + QEMU Cranelift aarch64 smoke
         env:
