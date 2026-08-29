@@ -219,7 +219,7 @@ profiles use the road graph.
 |---|---|
 | Host + capabilities | `plugin-host/src/abi.rs`, [`plugins.md`](plugins.md) |
 | Guest helpers | `plugin-sdk/` |
-| Specs (not built) | `docs/plugins/*.md` — including custom alert sounds, horse trekking, adaptive speed warning; index in [`plugins.md`](plugins.md) |
+| Specs (not built) | `docs/plugins/*.md` — including custom alert sounds, horse trekking, adaptive speed warning, voice command; index in [`plugins.md`](plugins.md) |
 
 ---
 

@@ -29,10 +29,14 @@ maneuver trigger logic.
 
 **Scope boundary:** this plugin covers **turn-by-turn maneuver speech**. It does
 **not** own road-sign / children-zone / speed-camera alerts (see
-[`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md)) or
+[`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md)),
 escalating overspeed nags (see
-[`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md)).
-Those may share the host audio device but use different phrase / clip families.
+[`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md)),
+or **spoken command-and-control** (navigate / save place / nearest POI — see
+[`plugins/voice-command.md`](plugins/voice-command.md)). Those may share the
+host audio device but use different phrase / clip families. Voice command's
+on-device TTS pipeline is also distinct from Chatterbox-authored “Bitchin'
+Betty” alert clips (authoring-only; not loaded at runtime).
 
 ---
 
@@ -254,7 +258,8 @@ unaffected when the setting is empty/off.
 | [`architecture.md`](architecture.md) | Thread tiers (T2 UI/audio); keep guidance off the routing pool |
 | [`android-build.md`](android-build.md) | ABI / NDK constraints for any native audio or ONNX spike |
 | [`icons.md`](icons.md) | GPL bundling decision shared with Piper |
-| [`plugins.md`](plugins.md) | Optional future: voice as `voice_guidance` plugin ([§6](plugins.md#6-voice-guidance-voice--voice_guidance)) |
+| [`plugins.md`](plugins.md) | Optional future: voice as `voice_guidance` plugin ([§6](plugins.md#6-voice-guidance-voice--voice_guidance)); voice command is [§16](plugins.md#16-voice-command-voice_command--voice_cmd) |
+| [`plugins/voice-command.md`](plugins/voice-command.md) | Conversational navigate/save/POI — separate sandbox TTS; not maneuver clips |
 | [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) | Spoken overspeed tiers reuse `voice_speak` / the same playback stack |
 | [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md) | Road-sign / camera / children-zone **tones** — not turn-by-turn phrases |
 | [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Exports the same maneuver + warning state to clusters (no audio) |

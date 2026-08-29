@@ -261,6 +261,7 @@ host/Tools actions.
 | MapLibre camera / style | `MainActivity.kt`, `BasemapStyleResolver.kt` | Host rendering |
 | Live ECU polling | `core/src/ecu` types only | [`ECU.md`](ECU.md) — no UniFFI poll yet |
 | Voice guidance | Spec only | [`voice-guidance.md`](voice-guidance.md) |
+| Voice command | Spec only | [`plugins/voice-command.md`](plugins/voice-command.md) |
 | Documentation languages | `README.md` / `docs/Norwegian.md` | Not in-app i18n ([`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md)) |
 
 ---
@@ -275,6 +276,7 @@ host/Tools actions.
 | [`road-signs.md`](road-signs.md) | Road-sign catalogue, children-zone proximity, approach phases |
 | [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Cluster export of guidance + merged warnings |
 | [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) | Planned spoken overspeed (`overPct`, `road_speed_state_read`) |
+| [`plugins/voice-command.md`](plugins/voice-command.md) | Planned offline voice command (sandboxed ASR/TTS, no network import) |
 | [`ECU.md`](ECU.md) | OBD-II / J1939 / MegaSquirt / EV |
 | [`CAT.md`](CAT.md) | Repeater / VFO auto-tune (planned) |
 | [`mathematical-formulas.md`](mathematical-formulas.md) | Eco / fuel formulas behind costing |
