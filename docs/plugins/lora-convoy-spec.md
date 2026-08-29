@@ -127,8 +127,8 @@ is the natural fit on Android head units that expose a USB host port (OTG).
 
 ### Meshstick (USB, recommended for head units)
 
-**Meshstick USB-To-SPI SX1262 TCXO LoRa USB Stick** — USB plug-and-play
-Meshtastic / LoRa mesh node (SX1262 + TCXO).
+**[Meshstick USB-To-SPI SX1262 TCXO LoRa USB Stick](https://www.elecrow.com/meshstick-usb-to-spi-sx1262-tcxo-lora-usb-stick-usb-plug-and-play-meshtastic-lora-mesh-node.html)**
+(Elecrow) — USB plug-and-play Meshtastic / LoRa mesh node (SX1262 + TCXO).
 
 | Property | Why it matters for convoy |
 |---|---|
