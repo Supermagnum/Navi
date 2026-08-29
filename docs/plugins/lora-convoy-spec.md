@@ -108,7 +108,7 @@ the clamp is an upper bound, not a promise of mesh diameter.
 
 | Piece | Role |
 |---|---|
-| Rust crate [`meshtastic`](https://crates.io/crates/meshtastic) (`meshtastic/rust`) | Device API client. Enable **`bluetooth-le`** and **`tokio`**. Deployment target is a radio paired over BLE, not wired serial. USB serial and TCP remain available in the crate for bench/debug; they are not the convoy path. |
+| Rust crate [`meshtastic`](https://crates.io/crates/meshtastic) (`meshtastic/rust`) | Device API client. Enable **`bluetooth-le`** and **`tokio`**. Default convoy deployment: BLE to a Meshtastic node (tablets/phones). **USB serial** (e.g. Meshstick on a USB-host head unit) uses the same crate path; TCP remains for bench only. |
 | Meshtastic firmware | Flashed on the LoRa radio (any currently supported Meshtastic board). This plugin talks to that node's device API. |
 | Android companion app (out of tree) | Passenger-operable BLE writer for manual `fuel_pct` / `battery_pct`. Not the Meshtastic Android app. |
 | Host BLE central | Opens two separate GATT sessions (radio vs companion). WASM never opens BLE. |
@@ -116,6 +116,39 @@ the clamp is an upper bound, not a promise of mesh diameter.
 The `meshtastic` crate is **not** in the workspace today. When implementation
 starts, add it as an unaltered crates.io dependency (host-native service, not
 inside WASM) and list it under Planned in [`crates.md`](../crates.md).
+
+---
+
+## Recommended radio hardware
+
+The convoy path is a **Meshtastic-flashed node** paired to Navi over the
+device API. BLE is the default deployment on tablets and phones; **USB serial**
+is the natural fit on Android head units that expose a USB host port (OTG).
+
+### Meshstick (USB, recommended for head units)
+
+**[Meshstick USB-To-SPI SX1262 TCXO LoRa USB Stick](https://www.elecrow.com/meshstick-usb-to-spi-sx1262-tcxo-lora-usb-stick-usb-plug-and-play-meshtastic-lora-mesh-node.html)**
+(Elecrow) — USB plug-and-play Meshtastic / LoRa mesh node (SX1262 + TCXO).
+
+| Property | Why it matters for convoy |
+|---|---|
+| USB plug-and-play | Suits car head units and other Android hosts with USB host; no separate BLE pairing step for the radio link when wired. |
+| SX1262 + TCXO | Current-generation LoRa modem with stable frequency reference for mesh timing. |
+| Unique device identity | Each stick has a distinct identity suitable for Meshtastic node id / convoy store keys. |
+| Secure traceability | Factory or supply-chain traceability supports fleet inventory and accountability (which physical node belongs to which vehicle). |
+| Flat mounting face | One flat side is well suited to a windscreen or other flat surface with a sticky pad — practical in-cab placement without a bulky bracket. |
+
+Confirm Meshtastic firmware support and the exact USB serial device path on
+the target head unit at implementation time. Bench/debug may use the same
+stick on a desktop host via USB serial (`meshtastic` crate).
+
+### BLE Meshtastic boards (tablets / phones)
+
+Any Meshtastic-supported board with a working **BLE device API** remains
+valid for convoy use (e.g. common ESP32-based nodes). Prefer boards with
+stable GATT MTU and documented Meshtastic BLE behaviour. Mounting is
+board-specific; the Meshstick’s flat face is called out above as a deliberate
+vehicle-mounting advantage.
 
 ---
 
@@ -437,8 +470,10 @@ TX, not CAT PTT; still no TX when disabled.
 3. Should manual Android fuel/battery input override onboard readings, or
    only fill in when no onboard source exists? First pass is last-write-wins;
    this question is the later refinement.
-4. Which Meshtastic-supported radio hardware the convoy will actually use
-   (BLE behaviour varies slightly by board).
+4. Recommended radio hardware is documented in
+   [Recommended radio hardware](#recommended-radio-hardware) (Meshstick USB
+   for head units; BLE boards for tablets). Confirm BLE vs USB session wiring
+   and MTU on the actual board at implementation time.
 5. Frozen GATT UUIDs and whether Navi stays BLE central for the companion.
 6. Whether outgoing Position is always the node's GNSS or may use the host
    GNSS when the node has no GPS module.

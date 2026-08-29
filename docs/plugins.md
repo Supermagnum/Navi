@@ -451,7 +451,7 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 | **Guest duties** | Optional: chip formatting / list sort after wasmtime gate; must not open BLE |
 | **Proposed caps** | `accessory_*` (two BLE sessions), `convoy_status_read` (new), `position_read`, `ecu_read` / `ebike_telemetry_read` (optional onboard), `plugin_kv` / `storage`, `log` |
 | **Safety** | Driver does not enter fuel/battery on the Navi device while moving — companion is passenger-operable. Mesh TX only while the plugin is enabled. Informational overlay, not collision avoidance. |
-| **Notes** | Spec only — not implemented. Navi never talks to raw LoRa modules. Text messaging is a later arm on the same PortNum dispatch. |
+| **Notes** | Spec only — not implemented. Navi never talks to raw LoRa modules. Recommended radio: [**Meshstick**](https://www.elecrow.com/meshstick-usb-to-spi-sx1262-tcxo-lora-usb-stick-usb-plug-and-play-meshtastic-lora-mesh-node.html) USB SX1262 TCXO stick (USB head units; unique identity, traceability, flat mount face) or BLE Meshtastic boards (tablets). Text messaging is a later arm on the same PortNum dispatch. |
 
 ### Capability sketch (not in ABI yet)
 
