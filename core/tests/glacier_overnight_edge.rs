@@ -65,13 +65,12 @@ fn gjende_glacier_edge_distance_probes() {
             "inside_approx" | "south_edge_out_200m" => {
                 assert!(exclude, "{name} should exclude (edge < 1 km), d={d:.1}");
             }
-            "far_3km_south" => {
+            "far_3km_south"
                 // May still exclude if another glacier is nearer than 1 km; only
                 // assert when the nearest edge is clearly beyond the threshold.
-                if d >= 1_000.0 {
+                if d >= 1_000.0 => {
                     assert!(!exclude, "{name} should allow when edge>={d:.1}");
                 }
-            }
             _ => {}
         }
     }

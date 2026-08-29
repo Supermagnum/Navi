@@ -41,7 +41,7 @@ tags yet. One-step: `git clone -b dev https://github.com/Supermagnum/Navi.git`.
 | Tool | Required for | Notes |
 |---|---|---|
 | **Xcode Command Line Tools** | Rust native builds | Provides `clang`, `git`, headers |
-| **Rust (rustup)** | Everything Rust | Channel pin **1.88** (`rust-toolchain.toml`) |
+| **Rust (rustup)** | Everything Rust | Channel pin **1.98** (`rust-toolchain.toml`) |
 | **wasm32-unknown-unknown** | WASM plugins / isolation tests | `rustup target add …` |
 | **Homebrew** (recommended) | Optional package installs | [https://brew.sh](https://brew.sh) |
 | **JDK 17** | Android Gradle / Kotlin | Temurin or Android Studio’s JDK |
@@ -73,8 +73,9 @@ cargo --version
 Distro/Homebrew Rust packages exist; **rustup** is recommended so Android and
 WASM targets stay easy to add.
 
-**Toolchain pin:** workspace channel **1.88** is for **reproducibility**, not a
-proven MSRV matrix (same policy as Linux).
+**Toolchain pin:** workspace channel **1.98** is for **reproducibility**, not a
+proven MSRV matrix (same policy as Linux). Raised from 1.88 because wasmtime 48
+requires Rust >= 1.95.
 
 ### WASM target (plugins)
 

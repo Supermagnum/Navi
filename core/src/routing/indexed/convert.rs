@@ -521,7 +521,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
                 let per_tile = extract.indexes_for_tiles(&tiles);
                 drop(extract);
                 let mut rings_total = 0usize;
-                for ((row, col, logical), idx) in tiles.iter().zip(per_tile.into_iter()) {
+                for ((row, col, logical), idx) in tiles.iter().zip(per_tile) {
                     if opts.control.is_cancelled() {
                         anyhow::bail!("cancelled");
                     }

@@ -101,11 +101,12 @@ Android and WASM targets cleanly (see [`android-build.md`](android-build.md) and
 below).
 
 **Toolchain pin:** Workspace `rust-version` / `rust-toolchain.toml` channel is
-**1.88**. That pin is for **build reproducibility** (CI and local rustup install
+**1.98**. That pin is for **build reproducibility** (CI and local rustup install
 the exact channel). It is **not** a formally verified minimum: there is no CI
-matrix job building an older claimed MSRV. Do not lower the pin without proving
-the dependency set still compiles; do not claim “MSRV verified” without adding
-that matrix.
+matrix job building an older claimed MSRV. Raised from 1.88 because wasmtime 48
+(plugin-host) requires Rust >= 1.95. Do not lower the pin without proving the
+dependency set still compiles; do not claim “MSRV verified” without adding that
+matrix.
 
 ### WASM target (plugins)
 

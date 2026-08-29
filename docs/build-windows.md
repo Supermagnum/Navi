@@ -44,7 +44,7 @@ and other bash scripts. Gradle can run from PowerShell via `.\gradlew.bat`.
 |---|---|---|
 | **Git for Windows** | Clone / bash scripts | Includes Git Bash |
 | **Visual Studio Build Tools** (MSVC) | Rust `x86_64-pc-windows-msvc` | “Desktop development with C++” workload |
-| **Rust (rustup)** | Everything Rust | Default host **MSVC**; channel pin **1.88** |
+| **Rust (rustup)** | Everything Rust | Default host **MSVC**; channel pin **1.98** |
 | **wasm32-unknown-unknown** | WASM plugins / isolation tests | `rustup target add …` |
 | **JDK 17** | Android Gradle / Kotlin | Temurin or Android Studio’s JDK |
 | **Android SDK** API **36** | APK build | `compileSdk` / `targetSdk` 36; `minSdk` 26 |
@@ -79,8 +79,9 @@ cargo --version
 Choose the default host **`x86_64-pc-windows-msvc`** (recommended). The GNU ABI
 is possible but not what this project documents.
 
-**Toolchain pin:** workspace channel **1.88** is for **reproducibility**, not a
-proven MSRV matrix (same policy as Linux).
+**Toolchain pin:** workspace channel **1.98** is for **reproducibility**, not a
+proven MSRV matrix (same policy as Linux). Raised from 1.88 because wasmtime 48
+requires Rust >= 1.95.
 
 ### WASM target (plugins)
 
