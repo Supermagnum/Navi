@@ -38,7 +38,9 @@ use serde::{Deserialize, Serialize};
 /// Travel / routing profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum Profile {
+    #[default]
     Car,
     /// Battery-electric car (enum present; not a primary menu chip).
     CarElectric,
@@ -54,12 +56,6 @@ pub enum Profile {
     Motorcycle,
     /// Electric motorcycle / scooter class (enum present; not a primary menu chip).
     MotorcycleElectric,
-}
-
-impl Default for Profile {
-    fn default() -> Self {
-        Self::Car
-    }
 }
 
 impl Profile {

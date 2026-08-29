@@ -105,7 +105,7 @@ if [[ ! -x /home/vagrant/gradlew-fdroid/gradlew-fdroid ]]; then
 fi
 if ! command -v rustc >/dev/null 2>&1; then
   curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
-    | bash -s -- -y --default-toolchain 1.88.0 --profile minimal --no-modify-path
+    | bash -s -- -y --default-toolchain 1.98.0 --profile minimal --no-modify-path
 fi
 # shellcheck disable=SC1091
 . "${CARGO_HOME}/env" 2>/dev/null || true

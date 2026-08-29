@@ -364,10 +364,8 @@ pub(crate) fn load_admin_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Vec<
                     coords.insert(n.id(), (n.lat(), n.lon()));
                 }
             }
-            Element::DenseNode(n) => {
-                if needed_nodes.contains(&n.id) {
-                    coords.insert(n.id, (n.lat(), n.lon()));
-                }
+            Element::DenseNode(n) if needed_nodes.contains(&n.id) => {
+                coords.insert(n.id, (n.lat(), n.lon()));
             }
             _ => {}
         })?;

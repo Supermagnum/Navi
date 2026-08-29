@@ -370,8 +370,9 @@ cargo audit
 #   --tests no.navi.app.OfflineDataIntegrityRestoreTest
 ```
 
-Rust toolchain is pinned by `rust-toolchain.toml` (**1.88** reproducibility
+Rust toolchain is pinned by `rust-toolchain.toml` (**1.98** reproducibility
 pin — not a proven MSRV matrix; see [`build-linux.md`](build-linux.md)).
+Raised from 1.88 because wasmtime 48 requires Rust >= 1.95.
 
 ## Dependency maintenance watch
 

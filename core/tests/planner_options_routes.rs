@@ -528,9 +528,15 @@ fn overnight_filter_excludes_tent_near_building_for_ffi_path() {
     assert!(check_overnight_candidate(61.0, 10.0, &safety, &hut, &[building], &[]).is_some());
     // Glacier override for established hut.
     let glacier = tiny_ring(61.005, 10.005);
-    assert!(
-        check_overnight_candidate(61.0, 10.0, &safety, &hut, &[], &[glacier.clone()]).is_none()
-    );
+    assert!(check_overnight_candidate(
+        61.0,
+        10.0,
+        &safety,
+        &hut,
+        &[],
+        std::slice::from_ref(&glacier)
+    )
+    .is_none());
     assert!(check_overnight_candidate(61.0, 10.0, &safety, &tent, &[], &[glacier]).is_some());
 }
 

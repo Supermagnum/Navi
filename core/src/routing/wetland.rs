@@ -252,10 +252,8 @@ impl WetlandWayExtract {
                     coords.insert(n.id(), (n.lat(), n.lon()));
                 }
             }
-            Element::DenseNode(n) => {
-                if needed.contains(&n.id()) {
-                    coords.insert(n.id(), (n.lat(), n.lon()));
-                }
+            Element::DenseNode(n) if needed.contains(&n.id()) => {
+                coords.insert(n.id(), (n.lat(), n.lon()));
             }
             _ => {}
         })?;

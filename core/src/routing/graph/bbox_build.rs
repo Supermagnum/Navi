@@ -433,10 +433,8 @@ impl RouteGraph {
                         in_bbox_ids.insert(n.id());
                     }
                 }
-                Element::DenseNode(n) => {
-                    if in_bbox(n.lat(), n.lon(), bbox) {
-                        in_bbox_ids.insert(n.id());
-                    }
+                Element::DenseNode(n) if in_bbox(n.lat(), n.lon(), bbox) => {
+                    in_bbox_ids.insert(n.id());
                 }
                 _ => {}
             })?;
@@ -501,16 +499,14 @@ impl RouteGraph {
                         }
                     }
                 }
-                Element::DenseNode(n) => {
-                    if needed.contains(&n.id()) {
-                        coords.insert(n.id(), (n.lat(), n.lon()));
-                        let tags: HashMap<String, String> = n
-                            .tags()
-                            .map(|(k, v)| (k.to_string(), v.to_string()))
-                            .collect();
-                        if tags.contains_key("barrier") {
-                            barrier_tags.insert(n.id(), filter_barrier_tags(tags));
-                        }
+                Element::DenseNode(n) if needed.contains(&n.id()) => {
+                    coords.insert(n.id(), (n.lat(), n.lon()));
+                    let tags: HashMap<String, String> = n
+                        .tags()
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect();
+                    if tags.contains_key("barrier") {
+                        barrier_tags.insert(n.id(), filter_barrier_tags(tags));
                     }
                 }
                 _ => {}
@@ -643,16 +639,14 @@ impl RouteGraph {
                         }
                     }
                 }
-                Element::DenseNode(n) => {
-                    if needed.contains(&n.id()) {
-                        coords.insert(n.id(), (n.lat(), n.lon()));
-                        let tags: HashMap<String, String> = n
-                            .tags()
-                            .map(|(k, v)| (k.to_string(), v.to_string()))
-                            .collect();
-                        if tags.contains_key("barrier") {
-                            barrier_tags.insert(n.id(), filter_barrier_tags(tags));
-                        }
+                Element::DenseNode(n) if needed.contains(&n.id()) => {
+                    coords.insert(n.id(), (n.lat(), n.lon()));
+                    let tags: HashMap<String, String> = n
+                        .tags()
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect();
+                    if tags.contains_key("barrier") {
+                        barrier_tags.insert(n.id(), filter_barrier_tags(tags));
                     }
                 }
                 _ => {}

@@ -286,11 +286,11 @@ async fn stream_get_to_file_once(
         }
         if written - last_logged >= 5 * 1024 * 1024 || expected.is_some_and(|t| written >= t) {
             let pct = expected.map(|t| {
-                if t == 0 {
-                    100
-                } else {
-                    (written.saturating_mul(100) / t).min(100)
-                }
+                written
+                    .saturating_mul(100)
+                    .checked_div(t)
+                    .map(|p| p.min(100))
+                    .unwrap_or(100)
             });
             log::info!(
                 target: "NaviDownload",

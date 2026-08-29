@@ -190,9 +190,14 @@ mod tests {
             !rgba.iter().all(|&b| b == 0),
             "expected at least one non-zero byte"
         );
-        let alpha_sum: u64 = rgba.chunks_exact(4).map(|px| px[3] as u64).sum();
+        let alpha_sum: u64 = rgba.as_chunks::<4>().0.iter().map(|px| px[3] as u64).sum();
         assert!(alpha_sum > 0, "expected non-trivial alpha channel");
-        let alpha_pixels = rgba.chunks_exact(4).filter(|px| px[3] > 0).count();
+        let alpha_pixels = rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|px| px[3] > 0)
+            .count();
         assert!(alpha_pixels > 0, "expected pixels with non-zero alpha");
     }
 

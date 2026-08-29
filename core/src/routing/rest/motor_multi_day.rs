@@ -181,9 +181,8 @@ pub fn plan_motor_multi_day(
     let mut remaining = day_units_total;
     let mut km_cursor = 0.0;
     let mut days = Vec::new();
-    let mut day_index = 1u32;
 
-    for _ in 0..40 {
+    for day_index in (1u32..).take(40) {
         if remaining <= 1e-6 {
             break;
         }
@@ -218,7 +217,6 @@ pub fn plan_motor_multi_day(
             distance_km: end_km - start_km,
             overnight,
         });
-        day_index += 1;
 
         if km_cursor >= total_dist_km - 1e-6 && remaining <= 1e-6 {
             break;

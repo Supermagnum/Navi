@@ -540,10 +540,8 @@ pub fn load_named_route_entries(path: impl AsRef<Path>) -> anyhow::Result<Vec<Na
                     node_coord.insert(n.id(), (n.lat(), n.lon()));
                 }
             }
-            Element::DenseNode(n) => {
-                if needed_nodes.contains(&n.id) {
-                    node_coord.insert(n.id, (n.lat(), n.lon()));
-                }
+            Element::DenseNode(n) if needed_nodes.contains(&n.id) => {
+                node_coord.insert(n.id, (n.lat(), n.lon()));
             }
             _ => {}
         })?;

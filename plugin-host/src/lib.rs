@@ -7,6 +7,7 @@
 mod abi;
 mod host;
 mod manifest;
+pub mod smoke;
 
 pub use abi::{Capability, HostApi, PoiWrite, Position};
 pub use host::{CallOutcome, PluginError, PluginHost, PluginLimits};

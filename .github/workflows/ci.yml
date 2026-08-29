@@ -36,9 +36,9 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           # Matches rust-toolchain.toml / workspace rust-version (MSRV pin).
-          toolchain: "1.88.0"
+          toolchain: "1.98.0"
           components: rustfmt, clippy
-          targets: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown,aarch64-linux-android
 
       - name: System deps (pkg-config / OpenSSL)
         run: |
@@ -100,11 +100,88 @@ jobs:
       - name: Plugin host isolation tests (fuel/timeout sandbox)
         run: cargo test -p navi-plugin-host --test isolation
 
+      - name: Plugin-host gate guards (no premature link + wasmtime features)
+        run: bash scripts/check-plugin-host-gate.sh
+
       - name: cargo deny check
         run: cargo deny check
 
+      - name: cargo deny advisories (aarch64-linux-android target filter)
+        # deny.toml [graph].targets already lists Android; this explicit pass
+        # fails the job if target-gated advisories regress for that triple alone.
+        # Note: --target is a cargo-deny global flag (before `check`).
+        run: cargo deny --target aarch64-linux-android check advisories
+
       - name: cargo audit
         run: cargo audit
+
+      - name: cargo audit (aarch64 / android filters)
+        run: cargo audit --target-arch aarch64 --target-os android
+
+  # Path filter so PRs that do not touch the plugin host / lockfile skip the
+  # NDK+QEMU aarch64 smoke; pushes to main/dev always run it.
+  plugin-host-android-paths:
+    name: plugin-host-android-paths
+    runs-on: ubuntu-latest
+    outputs:
+      run_smoke: ${{ steps.filter.outputs.smoke }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            smoke:
+              - 'plugin-host/**'
+              - 'plugins/log-hello/**'
+              - 'plugins/busy-loop/**'
+              - 'plugin-sdk/**'
+              - 'Cargo.lock'
+              - 'Cargo.toml'
+              - 'rust-toolchain.toml'
+              - 'deny.toml'
+              - '.cargo/audit.toml'
+              - 'scripts/plugin-host-android-aarch64-smoke.sh'
+              - 'scripts/check-plugin-host-gate.sh'
+              - '.github/workflows/ci.yml'
+
+  plugin-host-android-aarch64:
+    name: plugin-host-android-aarch64
+    needs: plugin-host-android-paths
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'push' ||
+      needs.plugin-host-android-paths.outputs.run_smoke == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.0"
+          targets: wasm32-unknown-unknown,aarch64-linux-android,aarch64-unknown-linux-musl
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: plugin-host-android-aarch64
+
+      - name: Setup Android NDK r27c
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
+          link-as-installed-locally: true
+
+      - name: Install qemu-user-static
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static curl
+
+      - name: Cross-compile Android aarch64 + QEMU Cranelift aarch64 smoke
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: bash scripts/plugin-host-android-aarch64-smoke.sh --qemu
 
   linux-build:
     name: linux-build
@@ -115,7 +192,7 @@ jobs:
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.88.0"
+          toolchain: "1.98.0"
           targets: wasm32-unknown-unknown
 
       - name: System deps (linker / pkg-config)
@@ -183,7 +260,7 @@ jobs:
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.88.0"
+          toolchain: "1.98.0"
 
       - name: System deps (pkg-config / OpenSSL)
         run: |

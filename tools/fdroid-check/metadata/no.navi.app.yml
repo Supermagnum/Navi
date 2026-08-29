@@ -33,7 +33,7 @@ Builds:
       - update-java-alternatives -a || true
       - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs
         | bash -s -- -y --default-toolchain stable
-      - bash -lc 'source "$HOME/.cargo/env" && rustup toolchain install 1.88.0 --profile minimal && rustup default 1.88.0 && rustup target add aarch64-linux-android x86_64-linux-android'
+      - bash -lc 'source "$HOME/.cargo/env" && rustup toolchain install 1.98.0 --profile minimal && rustup default 1.98.0 && rustup target add aarch64-linux-android x86_64-linux-android'
     prebuild:
       - |
         export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${CARGO_HOME:-$HOME/.cargo}/bin:${PATH:-}"

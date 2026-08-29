@@ -462,7 +462,7 @@ pub async fn fetch_tiles_coalesced(
         let chunks_done = completed.len();
 
         progress.force_report();
-        if chunks_done == total_chunks || chunks_done % workers.max(1) == 0 {
+        if chunks_done == total_chunks || chunks_done.is_multiple_of(workers.max(1)) {
             log::info!(
                 target: "NaviDownload",
                 "[NaviDownload] pmtiles coalesce download chunks={chunks_done}/{total_chunks} \
@@ -828,7 +828,7 @@ fn merge_ranges(ranges: &[SrcRange], overfetch: f32, max_chunk: u64) -> Vec<Over
     }
 
     // Smallest first: early progress + avoid front-loading the riskiest GETs.
-    items.sort_by(|a, b| a.rng.length.cmp(&b.rng.length));
+    items.sort_by_key(|a| a.rng.length);
     items
         .into_iter()
         .map(|it| OverfetchRange {

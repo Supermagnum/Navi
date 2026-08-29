@@ -134,11 +134,10 @@ fn snapshot_slot(s: &Slot) -> Snapshot {
         Some(total_raw)
     };
     let percent = total.map(|t| {
-        if t == 0 {
-            100
-        } else {
-            ((done.saturating_mul(100)) / t).min(100) as u32
-        }
+        done.saturating_mul(100)
+            .checked_div(t)
+            .map(|p| p.min(100) as u32)
+            .unwrap_or(100)
     });
     let label = s.label.lock().map(|g| g.clone()).unwrap_or_default();
     Snapshot {

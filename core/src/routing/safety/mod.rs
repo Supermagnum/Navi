@@ -201,8 +201,12 @@ mod tests {
         // ~500 m south of south edge
         let candidate_lat = south_edge - (500.0 / 111_320.0);
         let candidate_lon = 10.005;
-        let d = min_distance_to_glacier_rings_m(candidate_lat, candidate_lon, &[ring.clone()])
-            .expect("dist");
+        let d = min_distance_to_glacier_rings_m(
+            candidate_lat,
+            candidate_lon,
+            std::slice::from_ref(&ring),
+        )
+        .expect("dist");
         assert!(
             (400.0..700.0).contains(&d),
             "expected ~500 m to south edge, got {d}"

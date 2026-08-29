@@ -1,9 +1,10 @@
 # Pinned toolchain for local builds and CI (not floating "stable").
 # rust-version in Cargo.toml matches this channel for *build reproducibility*.
 # It is NOT a formally verified minimum (no lower-bound CI matrix yet).
-# Raised to 1.88 because current deps (osmpbf, pmtiles, time, home) require it.
+# Raised to 1.98 because wasmtime 48 (plugin-host) requires Rust >= 1.95 to build.
+# aarch64-linux-android: plugin-host Cranelift smoke / future libnavi.so link.
 [toolchain]
-channel = "1.88.0"
+channel = "1.98.0"
 components = ["rustfmt", "clippy"]
-targets = ["wasm32-unknown-unknown"]
+targets = ["wasm32-unknown-unknown", "aarch64-linux-android"]
 profile = "minimal"

@@ -52,7 +52,7 @@ Base: `registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie`
 | Bake step | Why |
 |---|---|
 | `build-essential` | Host `cc` for Rust build-scripts / proc-macros |
-| rustup + **Rust 1.88.0** + `aarch64-linux-android` / `x86_64-linux-android` | Matches `rust-toolchain.toml` + `scripts/build-android-native.sh` |
+| rustup + **Rust 1.98.0** + `aarch64-linux-android` / `x86_64-linux-android` | Matches `rust-toolchain.toml` + `scripts/build-android-native.sh` |
 | Clone of [`gradlew-fdroid`](https://gitlab.com/fdroid/gradlew-fdroid) | Upstream image only has broken symlinks under `/usr/local/bin`; F-Droid deletes the project Gradle wrapper and calls `gradlew-fdroid` |
 | `platforms;android-36`, `build-tools;35.0.0`, `ndk;27.2.12479018` | compileSdk 36 / metadata `ndk: r27c` |
 

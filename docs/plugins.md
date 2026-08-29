@@ -33,69 +33,76 @@ snapshots into the core; WASM guests must not get raw sockets.
 
 **Source of truth for this gate.** `docs/status.md` only points here.
 
-### Current state (2026-08 triage)
+### Current state (2026-08)
 
-- `plugin-host` pins **wasmtime** major **`29`** (lockfile **`29.0.1`**), with
+- `plugin-host` pins **wasmtime** major **`48`** (lockfile **`48.0.1`**), with
   features `cranelift` + `runtime` + `gc-drc` only (not Winch).
 - **No shipped artifact links `plugin-host` today.** `navi-ffi` (Android
   `libnavi.so`), `navi-desktop`, `navi-linux`, and `driver-break-core` do not
   depend on `navi-plugin-host` / wasmtime. Example guests (`log-hello`,
-  `busy-loop`) run only under CI / local isolation tests.
-- Known wasmtime advisories for that pin are **suppressed in**
-  [`deny.toml`](../deny.toml) on that basis (temporary until an upgrade, not a
-  permanent “N/A forever” waiver). Suppressed RustSec IDs and GHSA aliases:
-
-| RustSec | GHSA |
-|---|---|
-| `RUSTSEC-2025-0046` | [GHSA-fm79-3f68-h2fc](https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-fm79-3f68-h2fc) |
-| `RUSTSEC-2025-0118` | [GHSA-hc7m-r6v8-hg9q](https://github.com/advisories/GHSA-hc7m-r6v8-hg9q) |
-| `RUSTSEC-2026-0006` | [GHSA-vc8c-j3xm-xj73](https://github.com/advisories/GHSA-vc8c-j3xm-xj73) |
-| `RUSTSEC-2026-0020` | [GHSA-852m-cvvp-9p4w](https://github.com/advisories/GHSA-852m-cvvp-9p4w) |
-| `RUSTSEC-2026-0021` | [GHSA-243v-98vx-264h](https://github.com/advisories/GHSA-243v-98vx-264h) |
-| `RUSTSEC-2026-0085` | [GHSA-m758-wjhj-p3jq](https://github.com/advisories/GHSA-m758-wjhj-p3jq) |
-| `RUSTSEC-2026-0086` | [GHSA-m9w2-8782-2946](https://github.com/advisories/GHSA-m9w2-8782-2946) |
-| `RUSTSEC-2026-0087` | [GHSA-qqfj-4vcm-26hv](https://github.com/advisories/GHSA-qqfj-4vcm-26hv) |
-| `RUSTSEC-2026-0088` | [GHSA-6wgr-89rj-399p](https://github.com/advisories/GHSA-6wgr-89rj-399p) |
-| `RUSTSEC-2026-0089` | [GHSA-q49f-xg75-m9xw](https://github.com/advisories/GHSA-q49f-xg75-m9xw) |
-| `RUSTSEC-2026-0091` | [GHSA-394w-hwhg-8vgm](https://github.com/advisories/GHSA-394w-hwhg-8vgm) |
-| `RUSTSEC-2026-0092` | [GHSA-jxhv-7h78-9775](https://github.com/advisories/GHSA-jxhv-7h78-9775) |
-| `RUSTSEC-2026-0093` | [GHSA-hx6p-xpx3-jvvv](https://github.com/advisories/GHSA-hx6p-xpx3-jvvv) |
-| `RUSTSEC-2026-0094` | [GHSA-f984-pcp8-v2p7](https://github.com/advisories/GHSA-f984-pcp8-v2p7) |
-| `RUSTSEC-2026-0095` | [GHSA-xx5w-cvp6-jv83](https://github.com/advisories/GHSA-xx5w-cvp6-jv83) |
-| `RUSTSEC-2026-0096` | [GHSA-jhxm-h53p-jm7w](https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-jhxm-h53p-jm7w) |
-| `RUSTSEC-2026-0222` | [GHSA-hgjw-h833-99q9](https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-hgjw-h833-99q9) |
-
-(Example-guest `wee_alloc` unmaintained advisory `RUSTSEC-2022-0054` /
-[GHSA-rc23-xxgq-x27g](https://github.com/advisories/GHSA-rc23-xxgq-x27g) is
-allowlisted separately; replace or drop that allocator before shipping
-production guests that need a custom alloc.)
+  `busy-loop`) run under host-triple CI isolation tests and the Android
+  **aarch64** smoke (`scripts/plugin-host-android-aarch64-smoke.sh`).
+- The wasmtime 29-era RustSec ignores have been **cleared from**
+  [`deny.toml`](../deny.toml) (and the matching `.cargo/audit.toml` list).
+  Remaining ignores are unrelated: `bincode` unmaintained (`RUSTSEC-2025-0141`)
+  and example-guest `wee_alloc` (`RUSTSEC-2022-0054` /
+  [GHSA-rc23-xxgq-x27g](https://github.com/advisories/GHSA-rc23-xxgq-x27g)).
+  Replace or drop that allocator before shipping production guests that need a
+  custom alloc.
+- **Feature / backend confirmation (2026-08-29):** `cargo tree -p
+  navi-plugin-host -e features -i wasmtime` shows only `cranelift`, `runtime`,
+  and `gc-drc` (plus transitive internals those enable). No `wasi`,
+  `component-model`, `winch`, or `pooling-allocator`. Only `plugin-host`
+  declares a `wasmtime` dependency in the workspace, so a future
+  `navi-ffi` → `navi-plugin-host` link will not pull alternate wasmtime
+  features via another crate (guarded by `scripts/check-plugin-host-gate.sh`).
+- **Android aarch64 verification (2026-08-29):**
+  - **Link:** `android_isolation_smoke` cross-compiles for
+    `aarch64-linux-android` (NDK) in CI job `plugin-host-android-aarch64`
+    and via `scripts/plugin-host-android-aarch64-smoke.sh`.
+  - **Execute (Cranelift aarch64 ISA):** the same isolation checks run as a
+    static `aarch64-unknown-linux-musl` binary under **QEMU user-mode** in CI
+    (`--qemu`) so Cranelift’s **aarch64** backend is exercised (the
+    `RUSTSEC-2026-0096` class). Host-triple `cargo test` alone is not this check.
+  - **Execute (Bionic / on-device):** verified **2026-08-29** on Samsung
+    **SM-P613** (Galaxy Tab A7 Lite Wi-Fi), `ro.product.cpu.abi=arm64-v8a`,
+    Android **14** (API **34**), serial `R52TB0JQEDE`, via
+    `scripts/plugin-host-android-aarch64-smoke.sh --adb`. Pushed the
+    NDK-linked `aarch64-linux-android` binary to `/data/local/tmp` and ran it
+    under real Bionic; output `android_isolation_smoke: all checks passed`
+    (capability deny, `log-hello` load/call, busy-loop fuel/timeout kill —
+    matched the musl+QEMU result; no crash, hang, or trap misclassification).
+    Note: modern x86_64 Android emulators refuse arm64 system images, and the
+    NDK does not ship `/system/bin/linker64` for Bionic user-mode QEMU — hence
+    CI keeps `--qemu` (musl) while on-device `--adb` covers Bionic.
+- **Advisory coverage:** `deny.toml` `[graph].targets` includes
+  `aarch64-linux-android` / `x86_64-linux-android`; CI also runs
+  `cargo deny check advisories --target aarch64-linux-android` and
+  `cargo audit --target-arch aarch64 --target-os android`.
 
 ### Required before linking into a shipped binary
 
+The version bump (wasmtime 29 → 48.0.1), deny/audit ignore cleanup, feature
+graph confirmation, and Android **aarch64** isolation smoke are **done**.
 **Before** depending on `navi-plugin-host` from `navi-ffi`, the Android native
 build / APK packaging path, or `navi-desktop` (or any other user-facing
 artifact) for a real product plugin (APRS, Wikipedia, camping aids, …):
 
-1. **Migrate wasmtime from major 29 to at least `36.0.7`** (or a newer
-   maintained line that includes those fixes). This is a **breaking embedder
-   API migration**, not a lockfile-only patch bump within 29.x. Prefer
-   clearing the matching `deny.toml` ignores in the same change once CI
-   `cargo deny` / `cargo audit` are clean on the new pin.
-2. **Re-verify feature / backend assumptions** at migration time — do not
-   assume the 2026-08 triage still holds. Today’s host uses Cranelift only,
-   classic `Module`/`Linker`, no WASI, no Component Model, no pooling
-   allocator, no Winch. Under that config, several Dependabot “critical”
-   items (e.g. Winch sandbox escape) and many WASI/component advisories are
-   not exercised; Cranelift x86-64 codegen issues are mainly relevant to
-   CI/dev host-triple isolation, not the current APK/desktop link. Those
-   conclusions must be re-checked against the new wasmtime version, enabled
-   features, and the architectures the linked host will run on (including
-   Android **aarch64**, where Cranelift guest-heap advisories such as
-   `RUSTSEC-2026-0096` would matter once the host is in `libnavi.so`).
+1. **Keep the aarch64 smoke green** on the wasmtime pin you intend to ship —
+   CI job `plugin-host-android-aarch64` /
+   `scripts/plugin-host-android-aarch64-smoke.sh` (Android NDK link + QEMU
+   aarch64 Cranelift exec). Bionic on-device execution was already verified
+   once (SM-P613 / Android 14 / arm64-v8a, 2026-08-29); re-run `--adb` after
+   wasmtime or host embedder changes that touch fuel/epoch/trap paths.
+2. **Re-run** `scripts/check-plugin-host-gate.sh` after any wasmtime or
+   workspace dependency change so WASI / Component Model / Winch features
+   cannot appear via feature unification.
+3. Then remove the premature-link guard in that script (and this gate section)
+   in the same change that adds the `navi-ffi` / desktop dependency.
 
-Until that migration lands, treat “product plugins not shipped” as a
-**temporary** mitigation that **expires** the moment `plugin-host` is linked
-into a shipped binary.
+Until a product link lands, treat “product plugins not shipped” as intentional;
+the premature-link CI guard fails the build if `navi-ffi`, `navi-desktop`, or
+`navi-linux` grows a `navi-plugin-host` dependency early.
 
 ## Crates
 
@@ -494,9 +501,10 @@ via UniFFI without WASM.
 ## Design rules for all plugins
 
 1. **Wasmtime ship gate:** do not link `plugin-host` into `navi-ffi`, the
-   Android APK, or `navi-desktop` until the
+   Android APK, or `navi-desktop` until the remaining steps in the
    [wasmtime upgrade gate](#gate-upgrade-wasmtime-before-shipping-any-product-plugin)
-   is done (29 → ≥36.0.7+; breaking embedder migration).
+   are done (aarch64 smoke kept green; gate script updated when linking).
+   The crate pin is 48.0.1 with Cranelift-only features confirmed.
 2. **Offline-first:** network is opt-in; core routing must work with plugins
    disabled.
 3. **Enable / disable:** every plugin has a user-facing on/off control; disabled

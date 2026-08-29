@@ -256,13 +256,13 @@ pub async fn extract_bbox_to_file(
             .add_raw_tile(staged.coord, &bytes)
             .map_err(|e| anyhow::anyhow!("add tile: {e}"))?;
         done += 1;
-        if done % 32 == 0 || done == wrote_total {
+        if done.is_multiple_of(32) || done == wrote_total {
             if let Some((storage, job_id)) = store {
                 PmtilesJobStore::new(storage).set_progress(job_id, done, Some(wrote_total))?;
             }
             download_progress::set(done, Some(wrote_total), "Writing map archive…");
         }
-        if done % 256 == 0 || done == wrote_total {
+        if done.is_multiple_of(256) || done == wrote_total {
             let pct = if wrote_total == 0 {
                 100
             } else {
@@ -279,7 +279,7 @@ pub async fn extract_bbox_to_file(
                 crate::download::available_bytes(dest)
             );
         }
-        if done % 512 == 0 {
+        if done.is_multiple_of(512) {
             wait_if_paused_or_cancelled(control, store, &partial, &staging).await?;
         }
     }
