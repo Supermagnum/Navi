@@ -193,12 +193,24 @@ async fn stream_get_to_file_once(
         return Ok(None);
     }
     if resume_from > 0 && status != StatusCode::PARTIAL_CONTENT && status != StatusCode::OK {
-        // Server rejected resume — restart from scratch on next attempt.
-        let _ = std::fs::remove_file(&partial_path);
+        // 5xx / 429: keep the .partial — a transient gateway error is not a
+        // Range rejection. 416 and other 4xx still discard so the next attempt
+        // can start a fresh GET.
+        let keep_partial = status.is_server_error()
+            || status == StatusCode::TOO_MANY_REQUESTS
+            || status == StatusCode::REQUEST_TIMEOUT;
+        if !keep_partial {
+            let _ = std::fs::remove_file(&partial_path);
+        }
         return Err(anyhow!(
-            "{} resume rejected for {} (got {status}); will retry from 0",
+            "{} resume rejected for {} (got {status}); will retry {}",
             describe_status(status),
-            short_url(opts.url)
+            short_url(opts.url),
+            if keep_partial {
+                "keeping partial"
+            } else {
+                "from 0"
+            }
         ));
     }
     if resume_from == 0 && !status.is_success() {
@@ -264,7 +276,8 @@ async fn stream_get_to_file_once(
     let mut written = resume_from;
     let mut last_logged = resume_from;
     let mut last_ui = resume_from;
-    download_progress::set(written, expected, opts.progress_label);
+    let ui_label = progress_label_for_resume(opts.progress_label, resume_from);
+    download_progress::set(written, expected, &ui_label);
 
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
@@ -281,7 +294,7 @@ async fn stream_get_to_file_once(
         }
         written += chunk.len() as u64;
         if written - last_ui >= 256 * 1024 || expected.is_some_and(|t| written >= t) {
-            download_progress::set(written, expected, opts.progress_label);
+            download_progress::set(written, expected, &ui_label);
             last_ui = written;
         }
         if written - last_logged >= 5 * 1024 * 1024 || expected.is_some_and(|t| written >= t) {
@@ -320,7 +333,7 @@ async fn stream_get_to_file_once(
     }
 
     std::fs::rename(&partial_path, opts.dest).map_err(|e| enrich_io_error(e, opts.dest))?;
-    download_progress::set(written, Some(written), opts.progress_label);
+    download_progress::set(written, Some(written), &ui_label);
     log::info!(
         target: "NaviDownload",
         "[NaviDownload] complete dest={} bytes={written}",
@@ -354,6 +367,17 @@ pub fn bearer_headers(token: &str) -> anyhow::Result<HeaderMap> {
         HeaderValue::from_str(&format!("Bearer {token}"))?,
     );
     Ok(headers)
+}
+
+/// User-visible label: distinguish a Range resume from a fresh GET.
+pub fn progress_label_for_resume(label: &str, resume_from: u64) -> String {
+    if resume_from == 0 {
+        return label.to_string();
+    }
+    if label.to_ascii_lowercase().contains("resum") {
+        return label.to_string();
+    }
+    "Resuming download…".to_string()
 }
 
 fn short_url(url: &str) -> String {
@@ -405,6 +429,30 @@ mod tests {
         let s = short_url("https://example.com/a/b/c/file.tif");
         assert!(s.contains("example.com"));
         assert!(s.contains("file.tif"));
+    }
+
+    #[test]
+    fn resume_progress_label_switches_when_offset_nonzero() {
+        assert_eq!(
+            progress_label_for_resume("Downloading region…", 0),
+            "Downloading region…"
+        );
+        assert_eq!(
+            progress_label_for_resume("Downloading region…", 1_048_576),
+            "Resuming download…"
+        );
+        assert_eq!(
+            progress_label_for_resume("Resuming download of ostlandet…", 99),
+            "Resuming download of ostlandet…"
+        );
+    }
+
+    #[test]
+    fn keep_partial_on_transient_http() {
+        assert!(StatusCode::BAD_GATEWAY.is_server_error());
+        assert!(StatusCode::SERVICE_UNAVAILABLE.is_server_error());
+        assert!(!StatusCode::RANGE_NOT_SATISFIABLE.is_server_error());
+        assert!(!StatusCode::FORBIDDEN.is_server_error());
     }
 
     #[tokio::test]

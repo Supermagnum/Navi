@@ -116,7 +116,6 @@ import uniffi.navi.FfiVehicleLimits
 import uniffi.navi.PlaceHit
 import uniffi.navi.TravelProfile
 import uniffi.navi.applyOsmUpdate
-import uniffi.navi.bindGeofabrikRegion
 import uniffi.navi.cancelInFlightPlan
 import uniffi.navi.checkOsmUpdates
 import uniffi.navi.deleteSavedPlace
@@ -150,7 +149,6 @@ import uniffi.navi.pmtilesPauseJob
 import uniffi.navi.pmtilesQueueRegion
 import uniffi.navi.pmtilesResumeJob
 import uniffi.navi.pmtilesRunJob
-import uniffi.navi.provisionRegionData
 import uniffi.navi.renameSavedPlace
 import uniffi.navi.resolveSpeedLimitKmh
 import uniffi.navi.roadLabelNear
@@ -1527,9 +1525,40 @@ private fun NaviMapScreen() {
         }
     }
 
+    fun startRegionDownload(path: String) {
+        val leaf = path.substringAfterLast('/')
+        val filename = "$leaf-latest.osm.pbf"
+        val url = geofabrikLatestPbfUrl(path)
+        val already = RegionDownloadBackground.partialBytes(dataDir, filename)
+        regionDownloadProgress =
+            if (already > 0L) "Resuming download…" else "Downloading region… 0%"
+        downloadPolling = true
+        status =
+            if (already > 0L) {
+                "Resuming download of $path…"
+            } else {
+                "Downloading $path..."
+            }
+        MapHudPrefs.saveGeofabrikPath(context, path)
+        RegionDownloadBackground.ensureStarted(
+            context,
+            dataDir,
+            url,
+            filename,
+            path,
+        )
+    }
+
     LaunchedEffect(downloadPolling, pmtilesJobId) {
-        if (!downloadPolling) return@LaunchedEffect
-        while (isActive && downloadPolling) {
+        while (isActive) {
+            val regionRunning = RegionDownloadBackground.isRunning()
+            if (!downloadPolling && !regionRunning && pmtilesJobId == null) {
+                delay(400)
+                continue
+            }
+            if (regionRunning) {
+                downloadPolling = true
+            }
             val snap = runCatching { downloadProgressSnapshot() }.getOrNull()
             if (snap != null && snap.label.isNotBlank()) {
                 val line = formatProgressPct(snap.unitsDone, snap.unitsTotal, snap.label)
@@ -1542,6 +1571,15 @@ private fun NaviMapScreen() {
                     pmtilesProgress = line
                 } else {
                     regionDownloadProgress = line
+                    if (regionRunning && !planningRoute) {
+                        status = line
+                    }
+                }
+            } else if (regionRunning) {
+                val line = RegionDownloadBackground.uiLine()
+                if (line.isNotBlank()) {
+                    regionDownloadProgress = line
+                    if (!planningRoute) status = line
                 }
             }
             pmtilesJobId?.let { id ->
@@ -1554,14 +1592,26 @@ private fun NaviMapScreen() {
                     pmtilesProgress = formatProgressPct(job.bytesReceived, job.totalBytes, label)
                 }
             }
+            if (!regionRunning && downloadPolling && pmtilesJobId == null) {
+                val leftover = RegionDownloadBackground.statusLine()
+                if (leftover == "done" || leftover.startsWith("failed")) {
+                    downloadPolling = false
+                }
+            }
             delay(400)
         }
     }
 
-    // Rebuild a pre-context place index when the region PBF is already on device
-    // (app upgrade). Runs on a process-scoped job so composition restart cannot
-    // cancel the multi-minute PBF scan before place_index.db is written.
     LaunchedEffect(dataDir) {
+        RegionDownloadBackground.ensureStartedFromPending(context, dataDir)
+        if (RegionDownloadBackground.isRunning() || RegionDownloadBackground.discoverPending(dataDir) != null) {
+            downloadPolling = true
+            showTools = true
+            val pending = RegionDownloadBackground.discoverPending(dataDir)
+            if (pending != null && pending.geofabrikPath.isNotBlank()) {
+                selectedGeofabrikPath = pending.geofabrikPath
+            }
+        }
         val pbf = resolveRegionPbf()
         if (pbf != null && pbf.isFile) {
             PlaceIndexBackground.ensureStarted(pbf, placeIndexDbForWrite())
@@ -1579,6 +1629,13 @@ private fun NaviMapScreen() {
                 val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
                 IndexedMapsBackground.ensureStarted(scope, pbf, dataDir, elev)
                 indexedMapsUiLine = IndexedMapsBackground.uiLine(pbf, dataDir)
+                if (IndexedMapsBackground.isRunning() &&
+                    !planningRoute &&
+                    !RegionDownloadBackground.isRunning()
+                ) {
+                    val line = indexedMapsUiLine
+                    if (line.isNotBlank()) status = line
+                }
                 placeIndexUiLine =
                     if (PlaceIndexBackground.isRunning()) {
                         "Place index: building (background)"
@@ -3250,61 +3307,7 @@ private fun NaviMapScreen() {
                                 countryHit != null &&
                                 countryHit.path == path.trim().trim('/')
                             showTools = true
-                            scope.launch {
-                                val leaf = path.substringAfterLast('/')
-                                val filename = "$leaf-latest.osm.pbf"
-                                val url = geofabrikLatestPbfUrl(path)
-                                downloadProgressClear()
-                                regionDownloadProgress = "Downloading region… 0%"
-                                downloadPolling = true
-                                status = "Downloading $path..."
-                                val report =
-                                    withContext(Dispatchers.IO) {
-                                        provisionRegionData(
-                                            dataDir = dataDir.absolutePath,
-                                            pbfUrl = url,
-                                            pbfFilename = filename,
-                                            elevationTarUrl = null,
-                                        )
-                                    }
-                                downloadPolling = false
-                                status = report
-                                if (report.contains("PASS")) {
-                                    val bind =
-                                        withContext(Dispatchers.IO) {
-                                            bindGeofabrikRegion(
-                                                dataDir = dataDir.absolutePath,
-                                                geofabrikRegion = path,
-                                                pbfFilename = filename,
-                                                localSequence = null,
-                                            )
-                                        }
-                                    val pbf = File(dataDir, filename)
-                                    val indexReport =
-                                        if (pbf.isFile) {
-                                            withContext(Dispatchers.IO) {
-                                                ensurePlaceIndex(
-                                                    pbf.absolutePath,
-                                                    placeIndexDbForWrite().absolutePath,
-                                                )
-                                            }
-                                        } else {
-                                            "PBF missing after download"
-                                        }
-                                    if (pbf.isFile) {
-                                        val elevDir =
-                                            File(dataDir, "elevation").takeIf { it.isDirectory }
-                                        IndexedMapsBackground.ensureStarted(
-                                            scope,
-                                            pbf,
-                                            dataDir,
-                                            elevDir,
-                                        )
-                                    }
-                                    status =
-                                        "$report | $bind | $indexReport | indexed maps: background"
-                                }
-                            }
+                            startRegionDownload(path)
                         },
                         modifier = Modifier.testTag("btn_missing_coverage_download"),
                     ) { Text("Download ${RegionCoverage.displayName(missing.suggestedGeofabrikPath)}") }
@@ -5082,72 +5085,11 @@ private fun NaviMapScreen() {
                     )
                     Button(
                         onClick = {
-                            scope.launch {
-                                val path = selectedGeofabrikPath.trim().trim('/')
-                                if (path.isEmpty()) {
-                                    status = "Enter a Geofabrik path (e.g. europe/norway/ostlandet)."
-                                    return@launch
-                                }
-                                val leaf = path.substringAfterLast('/')
-                                val filename = "$leaf-latest.osm.pbf"
-                                val url = geofabrikLatestPbfUrl(path)
-                                downloadProgressClear()
-                                regionDownloadProgress = "Downloading region… 0%"
-                                downloadPolling = true
-                                status = "Downloading $path..."
-                                val report =
-                                    withContext(Dispatchers.IO) {
-                                        provisionRegionData(
-                                            dataDir = dataDir.absolutePath,
-                                            pbfUrl = url,
-                                            pbfFilename = filename,
-                                            elevationTarUrl = null,
-                                        )
-                                    }
-                                downloadPolling = false
-                                val snap = runCatching { downloadProgressSnapshot() }.getOrNull()
-                                if (snap?.percent != null) {
-                                    regionDownloadProgress =
-                                        formatProgressPct(snap.unitsDone, snap.unitsTotal, "Downloading region…")
-                                }
-                                status = report
-                                if (report.contains("PASS")) {
-                                    val bind =
-                                        withContext(Dispatchers.IO) {
-                                            bindGeofabrikRegion(
-                                                dataDir = dataDir.absolutePath,
-                                                geofabrikRegion = path,
-                                                pbfFilename = filename,
-                                                localSequence = null,
-                                            )
-                                        }
-                                    val pbf = File(dataDir, filename)
-                                    val indexReport =
-                                        if (pbf.isFile) {
-                                            withContext(Dispatchers.IO) {
-                                                ensurePlaceIndex(
-                                                    pbf.absolutePath,
-                                                    placeIndexDbForWrite().absolutePath,
-                                                )
-                                            }
-                                        } else {
-                                            "PBF missing after download"
-                                        }
-                                    // Region is usable immediately via PBF fallback.
-                                    // Pack conversion upgrades to pack-hit in the background.
-                                    if (pbf.isFile) {
-                                        val elevDir =
-                                            File(dataDir, "elevation").takeIf { it.isDirectory }
-                                        IndexedMapsBackground.ensureStarted(
-                                            scope,
-                                            pbf,
-                                            dataDir,
-                                            elevDir,
-                                        )
-                                    }
-                                    status =
-                                        "$report | $bind | $indexReport | indexed maps: background"
-                                }
+                            val path = selectedGeofabrikPath.trim().trim('/')
+                            if (path.isEmpty()) {
+                                status = "Enter a Geofabrik path (e.g. europe/norway/ostlandet)."
+                            } else {
+                                startRegionDownload(path)
                             }
                         },
                         modifier =

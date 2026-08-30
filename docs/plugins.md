@@ -304,6 +304,7 @@ internet weather overlay.
 |---|---|
 | **Benefit** | Closed roads, mountain convoy schedules, accidents / temporary hazards |
 | **Sources** | National road authorities, DATEX-II style feeds, OSM notes/`highway=*` diffs, user reports — always opt-in network |
+| **Research** | [`plugins/traffic-information.md`](plugins/traffic-information.md) — why a free / global / ~1-minute source does not exist today; RTL-SDR RDS-TMC / DAB-TPEG alternative under consideration |
 | **Host duties** | Fetch + validate; store incidents with bbox + expiry |
 | **Core effect** | Soft or hard edge penalties / avoid flags during A* (future graph hook) |
 | **Proposed caps** | `position_read`, `incident_query` / `incident_write` (new), `log` |

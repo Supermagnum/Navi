@@ -22,9 +22,9 @@ import java.util.concurrent.atomic.AtomicReference
  * Uses a **process-scoped** [CoroutineScope] (same pattern as [PlaceIndexBackground])
  * so conversion survives Compose recomposition / Activity recreation. It does
  * **not** use WorkManager: a force-stop or process death still kills the job.
- * There is no on-disk checkpoint — convert restarts from scratch on next
- * [ensureStarted], after deleting prior `{stem}.navi-graph-*.rkyv` at the
- * beginning of a tiled rebuild (see core `convert_region_packs`).
+ * Convert progress is persisted to `{stem}.navi-convert-progress.json` so the
+ * next [ensureStarted] skips completed graph/POI/wetland archives instead of
+ * deleting them and rebuilding from scratch (see core `convert_region_packs`).
  */
 object IndexedMapsBackground {
     private const val TAG = "IndexedMapsBg"
