@@ -80,15 +80,16 @@ checklist above and file an issue; you do not need to write code.
 7. [Minimum hardware and storage](#minimum-hardware-and-storage)
 8. [Screenshots](#screenshots)
 9. [Documents](#documents)
-10. [Plugins](#plugins)
+10. [Code inspection / CI tests](#code-inspection--ci-tests)
+11. [Plugins](#plugins)
     - [Icons (where they live)](#icons-where-they-live)
-11. [Coding standards and contributing](#coding-standards-and-contributing)
-12. [Building and installing](#building-and-installing)
+12. [Coding standards and contributing](#coding-standards-and-contributing)
+13. [Building and installing](#building-and-installing)
     - [Install a prebuilt APK](#install-a-prebuilt-apk)
     - [Release build (APK / AAB)](#release-build-apk--aab)
-13. [Where the map data comes from](#where-the-map-data-comes-from)
-14. [Known issues](#known-issues)
-15. [TODO](#todo)
+14. [Where the map data comes from](#where-the-map-data-comes-from)
+15. [Known issues](#known-issues)
+16. [TODO](#todo)
 
 More detail lives in linked docs (architecture, truck rest rules, map styles,
 debugging, and so on). To contribute, start with
@@ -581,6 +582,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | Document | What it is for |
 |---|---|
 | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | How to help: fork from **`dev`**, GitHub basics (PR against `dev`), testing, docs, plugins, CI |
+| [`CodeInspection.md`](CodeInspection.md) | Complete list of per-PR CI jobs and what each Rust/Kotlin test suite checks |
 | [`docs/crates.md`](docs/crates.md) | First-party Rust crates created here, and unaltered crates.io dependencies |
 | [`docs/architecture.md`](docs/architecture.md) | How the pieces fit together |
 | [`docs/codebase-map.md`](docs/codebase-map.md) | Where to change code for a given feature |
@@ -613,6 +615,12 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 
 See the `docs/` folder for more specialised topics (voice, APRS, ECU, formulas,
 and so on).
+
+# Code inspection / CI tests
+
+Per-PR GitHub Actions jobs and what each Rust / Kotlin test suite checks:
+[`CodeInspection.md`](CodeInspection.md). Local commands before a PR:
+[`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md#ci-expectations-github-actions).
 
 # Plugins
 

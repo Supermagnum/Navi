@@ -376,6 +376,8 @@ fn avoid_ferry_changes_planned_route() {
 
 #[test]
 fn vehicle_height_limit_changes_planned_route() {
+    // In-memory GraphEdge path only. Indexed FlatGraphPack round-trip coverage
+    // lives in `indexed::graph_pack::tests::pack_roundtrip_height_limit_changes_planned_route`.
     let mut nodes = HashMap::new();
     for (id, n) in [
         node(1, 60.0, 10.0),
