@@ -635,6 +635,7 @@ hardware-facing plugins.
 | [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Future UI languages (English-only today). Translator table: [`translations.csv`](docs/plugins/translations.csv); context: [`translations-context.md`](docs/plugins/translations-context.md) |
 | [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Wild-camping suggestions (plugin, not core) |
 | [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Fuel/water resupply ideas |
+| [`docs/plugins/traffic-information.md`](docs/plugins/traffic-information.md) | Traffic data sourcing research (DATEX II limits, RTL-SDR TMC/TPEG; not shipped) |
 | [`docs/plugins/weather-plugin.md`](docs/plugins/weather-plugin.md) | Weather overlay (Meteocons icons vendored; guest not shipped) |
 | [`docs/plugins/weather-icons-reference.md`](docs/plugins/weather-icons-reference.md) | What each weather icon slug means (fill style) |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state + approach warnings to instrument clusters |
