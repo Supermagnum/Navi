@@ -1,3 +1,5 @@
 Initial 0.1.0 release.
 
 Offline-first routing for car, bike, e-bike, hiking, motorcycle, truck, and motorhome. Terrain-aware eco mode, official/pilgrim trail preference for hiking/cycling, regional OSM download with background pack indexing, offline basemap and optional DEM, place search, drive HUD, breaks/rest (including truck rules where known), off-route reroute, and user-triggered map updates only. No ads or tracking.
+
+Graph pack format v6: OSM vehicle physical limits (maxheight, maxweight, maxwidth, maxlength, maxaxleload, maxbogieweight) are stored in indexed packs and enforced when planning. Until this fix those tags were silently dropped on every pack load, so height/weight/width/length/axle/bogie restrictions never applied for pack-hit routing. Existing installs need an indexed-map rebuild (Tools → Rebuild indexed maps, or the automatic background convert when packs report outdated) so packs regenerate at format v6.

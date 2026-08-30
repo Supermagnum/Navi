@@ -11,8 +11,8 @@ use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile};
 
 /// Little-endian ASCII "NVRK".
 pub const MAGIC_GRAPH: u32 = 0x4E_56_52_4B;
-/// v5: v4 + motorroad / expressway / oneway / lanes for motorway-grade avoidance.
-pub const GRAPH_FORMAT_VERSION: u32 = 5;
+/// v6: v5 + vehicle physical limits (maxheight/weight/width/length/axle/bogie).
+pub const GRAPH_FORMAT_VERSION: u32 = 6;
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone)]
 pub struct FlatGraphPack {
@@ -39,6 +39,18 @@ pub struct FlatGraphPack {
     pub edge_is_oneway: Vec<u8>,
     /// 0 = unset.
     pub edge_lanes: Vec<u8>,
+    /// Tonnes; NaN = none. OSM `maxweight`.
+    pub edge_maxweight_t: Vec<f64>,
+    /// Tonnes; NaN = none. OSM `maxaxleload`.
+    pub edge_maxaxleload_t: Vec<f64>,
+    /// Tonnes; NaN = none. OSM `maxbogieweight`.
+    pub edge_maxbogieweight_t: Vec<f64>,
+    /// Metres; NaN = none. OSM `maxheight`.
+    pub edge_maxheight_m: Vec<f64>,
+    /// Metres; NaN = none. OSM `maxwidth`.
+    pub edge_maxwidth_m: Vec<f64>,
+    /// Metres; NaN = none. OSM `maxlength`.
+    pub edge_maxlength_m: Vec<f64>,
     pub edge_is_toll: Vec<u8>,
     pub edge_is_ferry: Vec<u8>,
     pub edge_is_roundabout: Vec<u8>,
@@ -59,6 +71,16 @@ pub struct FlatGraphPack {
     pub edge_access_forbidden: Vec<u8>,
     /// Parallel to `node_ids`: `1` when the node is a profile access-blocked barrier.
     pub node_access_blocked: Vec<u8>,
+}
+
+/// Pack optional finite metric; `None` / non-finite → NaN (matches `edge_maxspeed_kmh`).
+fn pack_opt_metric(v: Option<f64>) -> f64 {
+    v.filter(|x| x.is_finite()).unwrap_or(f64::NAN)
+}
+
+/// Unpack NaN-sentinel metric vector entry.
+fn unpack_opt_metric(vals: &[f64], i: usize) -> Option<f64> {
+    vals.get(i).copied().filter(|v| v.is_finite())
 }
 
 impl FlatGraphPack {
@@ -93,6 +115,12 @@ impl FlatGraphPack {
         let mut edge_is_expressway = Vec::with_capacity(n);
         let mut edge_is_oneway = Vec::with_capacity(n);
         let mut edge_lanes = Vec::with_capacity(n);
+        let mut edge_maxweight_t = Vec::with_capacity(n);
+        let mut edge_maxaxleload_t = Vec::with_capacity(n);
+        let mut edge_maxbogieweight_t = Vec::with_capacity(n);
+        let mut edge_maxheight_m = Vec::with_capacity(n);
+        let mut edge_maxwidth_m = Vec::with_capacity(n);
+        let mut edge_maxlength_m = Vec::with_capacity(n);
         let mut edge_is_toll = Vec::with_capacity(n);
         let mut edge_is_ferry = Vec::with_capacity(n);
         let mut edge_is_roundabout = Vec::with_capacity(n);
@@ -129,6 +157,12 @@ impl FlatGraphPack {
             edge_is_expressway.push(u8::from(e.is_expressway));
             edge_is_oneway.push(u8::from(e.is_oneway));
             edge_lanes.push(e.lanes.unwrap_or(0));
+            edge_maxweight_t.push(pack_opt_metric(e.maxweight_t));
+            edge_maxaxleload_t.push(pack_opt_metric(e.maxaxleload_t));
+            edge_maxbogieweight_t.push(pack_opt_metric(e.maxbogieweight_t));
+            edge_maxheight_m.push(pack_opt_metric(e.maxheight_m));
+            edge_maxwidth_m.push(pack_opt_metric(e.maxwidth_m));
+            edge_maxlength_m.push(pack_opt_metric(e.maxlength_m));
             edge_is_toll.push(u8::from(e.is_toll));
             edge_is_ferry.push(u8::from(e.is_ferry));
             edge_is_roundabout.push(u8::from(e.is_roundabout));
@@ -182,6 +216,12 @@ impl FlatGraphPack {
             edge_is_expressway,
             edge_is_oneway,
             edge_lanes,
+            edge_maxweight_t,
+            edge_maxaxleload_t,
+            edge_maxbogieweight_t,
+            edge_maxheight_m,
+            edge_maxwidth_m,
+            edge_maxlength_m,
             edge_is_toll,
             edge_is_ferry,
             edge_is_roundabout,
@@ -300,12 +340,12 @@ impl FlatGraphPack {
                         Some(n)
                     }
                 },
-                maxweight_t: None,
-                maxaxleload_t: None,
-                maxbogieweight_t: None,
-                maxheight_m: None,
-                maxwidth_m: None,
-                maxlength_m: None,
+                maxweight_t: unpack_opt_metric(&self.edge_maxweight_t, i),
+                maxaxleload_t: unpack_opt_metric(&self.edge_maxaxleload_t, i),
+                maxbogieweight_t: unpack_opt_metric(&self.edge_maxbogieweight_t, i),
+                maxheight_m: unpack_opt_metric(&self.edge_maxheight_m, i),
+                maxwidth_m: unpack_opt_metric(&self.edge_maxwidth_m, i),
+                maxlength_m: unpack_opt_metric(&self.edge_maxlength_m, i),
                 is_toll: self.edge_is_toll[i] != 0,
                 is_ferry: self.edge_is_ferry[i] != 0,
                 is_boardwalk_crossing: self.edge_is_boardwalk[i] != 0,
@@ -481,5 +521,172 @@ mod tests {
         assert!(back.edges[0].is_expressway);
         assert!(back.edges[0].is_oneway);
         assert_eq!(back.edges[0].lanes, Some(3));
+    }
+
+    fn diamond_edge(
+        id: &str,
+        source: NodeId,
+        target: NodeId,
+        start_lat: f64,
+        start_lon: f64,
+        end_lat: f64,
+        end_lon: f64,
+        length_m: f64,
+        maxheight_m: Option<f64>,
+    ) -> GraphEdge {
+        GraphEdge {
+            id: id.into(),
+            source,
+            target,
+            length_m,
+            base_weight: length_m,
+            eco_weight: Some(length_m),
+            start_lat,
+            start_lon,
+            end_lat,
+            end_lon,
+            shape: Vec::new(),
+            highway: Some("primary".into()),
+            maxspeed_kmh: None,
+            name: None,
+            road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+        }
+    }
+
+    #[test]
+    fn pack_roundtrip_preserves_vehicle_physical_limits() {
+        let mut graph = tiny_curved_graph();
+        graph.edges[0].maxheight_m = Some(2.4);
+        graph.edges[0].maxweight_t = Some(7.5);
+        graph.edges[0].maxwidth_m = Some(2.55);
+        graph.edges[0].maxlength_m = Some(12.0);
+        graph.edges[0].maxaxleload_t = Some(10.0);
+        graph.edges[0].maxbogieweight_t = Some(18.0);
+        let pack = FlatGraphPack::from_route_graph(&graph, None);
+        assert_eq!(pack.edge_maxheight_m[0], 2.4);
+        assert_eq!(pack.edge_maxweight_t[0], 7.5);
+        assert_eq!(pack.edge_maxwidth_m[0], 2.55);
+        assert_eq!(pack.edge_maxlength_m[0], 12.0);
+        assert_eq!(pack.edge_maxaxleload_t[0], 10.0);
+        assert_eq!(pack.edge_maxbogieweight_t[0], 18.0);
+        assert!(pack.edge_maxspeed_kmh[0].is_finite()); // unrelated field still set
+
+        // Full rkyv serialize → deserialize (on-disk body), not just from/to_route_graph.
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&pack).expect("serialize pack");
+        let archived =
+            rkyv::access::<ArchivedFlatGraphPack, rkyv::rancor::Error>(&bytes[..]).expect("access");
+        let restored: FlatGraphPack =
+            rkyv::deserialize::<FlatGraphPack, rkyv::rancor::Error>(archived).expect("deserialize");
+        let back = restored.to_route_graph(RoutingProfile::Car);
+        assert_eq!(back.edges[0].maxheight_m, Some(2.4));
+        assert_eq!(back.edges[0].maxweight_t, Some(7.5));
+        assert_eq!(back.edges[0].maxwidth_m, Some(2.55));
+        assert_eq!(back.edges[0].maxlength_m, Some(12.0));
+        assert_eq!(back.edges[0].maxaxleload_t, Some(10.0));
+        assert_eq!(back.edges[0].maxbogieweight_t, Some(18.0));
+    }
+
+    /// Height-restricted short edge must be rejected after FlatGraphPack round-trip
+    /// when the vehicle is taller than the posted limit (production pack path).
+    #[test]
+    fn pack_roundtrip_height_limit_changes_planned_route() {
+        use crate::config::VehicleLimits;
+        use crate::routing::graph::RouteOptions;
+
+        let n1 = NodeId(1);
+        let n2 = NodeId(2);
+        let n3 = NodeId(3);
+        let n4 = NodeId(4);
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [
+            (n1, 60.0, 10.0),
+            (n2, 60.0, 10.01),
+            (n3, 60.0, 10.02),
+            (n4, 60.01, 10.01),
+        ] {
+            nodes.insert(
+                id,
+                Node {
+                    id,
+                    coord: Coord { x: lon, y: lat },
+                    uses: 2,
+                },
+            );
+        }
+        let graph = RouteGraph::from_parts(
+            nodes,
+            vec![
+                diamond_edge("low", n1, n2, 60.0, 10.0, 60.0, 10.01, 100.0, Some(2.4)),
+                diamond_edge("bc", n2, n3, 60.0, 10.01, 60.0, 10.02, 100.0, None),
+                diamond_edge("ad", n1, n4, 60.0, 10.0, 60.01, 10.01, 220.0, None),
+                diamond_edge("dc", n4, n3, 60.01, 10.01, 60.0, 10.02, 220.0, None),
+            ],
+            RoutingProfile::Truck,
+        );
+
+        let pack = FlatGraphPack::from_route_graph(&graph, None);
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&pack).expect("serialize");
+        let archived =
+            rkyv::access::<ArchivedFlatGraphPack, rkyv::rancor::Error>(&bytes[..]).expect("access");
+        let restored: FlatGraphPack =
+            rkyv::deserialize::<FlatGraphPack, rkyv::rancor::Error>(archived).expect("deserialize");
+        let back = restored.to_route_graph(RoutingProfile::Truck);
+        let low = back
+            .edges
+            .iter()
+            .find(|e| e.source == n1 && e.target == n2)
+            .expect("low bridge edge");
+        assert_eq!(
+            low.maxheight_m,
+            Some(2.4),
+            "maxheight must survive pack round-trip"
+        );
+
+        let unrestricted = back.shortest_path(n1, n3, false).expect("unrestricted");
+        assert!(
+            unrestricted.0.contains(&n2),
+            "without height limit, short path via n2: {:?}",
+            unrestricted.0
+        );
+
+        let limited = back
+            .shortest_path_with_options(
+                n1,
+                n3,
+                false,
+                &RouteOptions {
+                    vehicle: Some(VehicleLimits {
+                        height_m: Some(2.8),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .expect("height-limited path");
+        assert!(
+            !limited.0.contains(&n2),
+            "2.8m vehicle must avoid maxheight=2.4 edge via n2: {:?}",
+            limited.0
+        );
+        assert!(limited.0.contains(&n4));
+        assert_ne!(unrestricted.0, limited.0);
     }
 }
