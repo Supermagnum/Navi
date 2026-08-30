@@ -7,7 +7,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use super::header::{write_preamble, Preamble, PREAMBLE_LEN};
+use super::header::{read_preamble, write_preamble, Preamble, PREAMBLE_LEN};
 
 pub fn partial_path(final_path: &Path) -> PathBuf {
     let mut s = final_path.as_os_str().to_os_string();
@@ -52,6 +52,17 @@ pub fn discard_partial(final_path: &Path) {
     let _ = fs::remove_file(partial_path(final_path));
 }
 
+/// True when `path` is a complete archive with this magic + format version.
+pub fn archive_matches_preamble(path: &Path, magic: u32, format_version: u32) -> bool {
+    let Ok(mut f) = File::open(path) else {
+        return false;
+    };
+    let Ok(p) = read_preamble(&mut f) else {
+        return false;
+    };
+    p.magic == magic && p.format_version == format_version
+}
+
 /// Byte offset of the rkyv payload after the fixed preamble.
 #[must_use]
 pub const fn archive_payload_offset() -> usize {
@@ -72,5 +83,8 @@ mod tests {
         assert!(!partial_path(&dest).exists());
         let bytes = fs::read(&dest).unwrap();
         assert_eq!(&bytes[8..], b"payload");
+        assert!(archive_matches_preamble(&dest, 1, 1));
+        assert!(!archive_matches_preamble(&dest, 1, 99));
+        assert!(!archive_matches_preamble(&dir.path().join("missing"), 1, 1));
     }
 }

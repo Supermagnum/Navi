@@ -539,12 +539,14 @@ impl RouteGraph {
         spill_dir: impl AsRef<Path>,
         on_tile: impl Fn(usize, usize, [f64; 4], Self) -> anyhow::Result<()> + Send + Sync,
     ) -> anyhow::Result<(usize, TiledBuildTimings)> {
+        let skip = HashSet::new();
         let results = Self::build_tiled_from_pbf_profiles(
             path,
             &[profile],
             tiles,
             pad_deg,
             spill_dir,
+            &skip,
             move |_profile, row, col, logical, g| on_tile(row, col, logical, g),
         )?;
         results
@@ -555,12 +557,17 @@ impl RouteGraph {
     }
 
     /// Shared Pass 1/2 for all `profiles`, then per-profile tile-assign + build.
+    ///
+    /// `skip_tiles` is `(profile, row, col)` for archives already on disk from a
+    /// crashed convert. Pass 1/2 still run (way spill is not checkpointed); the
+    /// matching tile-build jobs are omitted.
     pub fn build_tiled_from_pbf_profiles(
         path: impl AsRef<Path>,
         profiles: &[RoutingProfile],
         tiles: &[(usize, usize, [f64; 4])],
         pad_deg: f64,
         spill_dir: impl AsRef<Path>,
+        skip_tiles: &HashSet<(RoutingProfile, usize, usize)>,
         on_tile: impl Fn(RoutingProfile, usize, usize, [f64; 4], Self) -> anyhow::Result<()>
             + Send
             + Sync,
@@ -738,8 +745,19 @@ impl RouteGraph {
             let mut produced = 0usize;
             let mut pending: Vec<usize> = (0..tiles.len())
                 .filter(|&i| tile_way_counts[i] > 0)
+                .filter(|&i| {
+                    let (row, col, _) = tiles[i];
+                    !skip_tiles.contains(&(profile, row, col))
+                })
                 .collect();
             let pending_total = pending.len();
+            let skipped = skip_tiles.iter().filter(|(p, _, _)| *p == profile).count();
+            if skipped > 0 {
+                log::info!(
+                    target: "NaviConvert",
+                    "CONVERT_PHASE resume skip tiles ({profile_key}) kept={skipped} remaining={pending_total}"
+                );
+            }
             log::info!(
                 target: "NaviConvert",
                 "CONVERT_PHASE step3 start ({profile_key}) tiles={pending_total} concurrency={TILE_BUILD_CONCURRENCY}"
