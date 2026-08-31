@@ -202,6 +202,10 @@ panel.
 ### Car / Car electric
 
 - Road network planning.
+- Soft **surface preference** (default **Car**): prefers good driveable surfaces
+  for waypoint snaps and route legs; untagged `highway=track` is treated
+  cautiously. No on-screen surface warnings. **Offroad** / 4×4 mode disables
+  the weighting (config key `surface_routing_mode` via API — no UI toggle yet).
 - **Vehicle** panel: **Height (m)** (cars).
 - **Avoid motorways** / **Avoid toll roads** / **Avoid ferries**.
 - **Eco mode** toggle (hill-aware energy costing). Car electric also has battery
@@ -212,6 +216,7 @@ panel.
 ### Motorcycle / Motorcycle electric
 
 - Plans on the **car** road graph (same builder class as Car).
+- Same silent **surface preference** as Car (default **Car** mode).
 - Avoidances like other motor profiles.
 - **Eco mode** uses **motorcycle-specific** physics defaults (drag, frontal area,
   mass) — not the car Passat baseline.
@@ -239,6 +244,8 @@ panel.
 
 ### Bicycle / Electric cycle
 
+- **Bike type** (Drive settings): **Road / Gravel / MTB** — hard-excludes OSM
+  ways whose `surface`, `tracktype`, or MTB tags exceed the selected capability.
 - Same **Follow official hiking/cycling networks** and **Use networked cabins**
   toggles as Hiking.
 - **Network hut member** and **Follow pilgrim routes** are **not** shown for
@@ -250,6 +257,7 @@ panel.
 
 ### Truck / Truck electric
 
+- Same **surface preference** as Car (default **Car** mode; **Offroad** via config).
 - **Vehicle** panel: axle / bogie weight, height, width, length.
 - Avoid motorways / tolls / ferries.
 - EC 561-oriented break fields (and automatic FMCSA / unknown pack selection by
@@ -262,10 +270,16 @@ panel.
 
 | Toggle | Profiles in UI | Behaviour |
 |---|---|---|
+| **Bike type** | Bicycle, Electric cycle | Hard filter by OSM surface / tracktype / MTB difficulty (`road` / `trekking` / `mountain`). |
 | **Follow official hiking/cycling networks** | Hiking, Bicycle, Electric cycle | Soft cost preference for marked network ways; not a hard lock. Gaps fall back to ordinary paths. |
 | **Use networked cabins** | Hiking, Bicycle, Electric cycle | Allow network huts as auto-via / waypoint candidates (off by default). Does not imply membership or overnight preference. |
 | **Network hut member (DNT/STF/…)** | Hiking only | Overnight may prefer network huts when on; when off (default), prefer non-network and flag network overnight as membership-required. |
 | **Follow pilgrim routes** | Hiking only | Soft preference for pilgrim route ways; falls back to normal hiking. |
+
+Motor profiles (Car, Truck, Motorcycle, Mobile home) apply a separate silent
+**surface routing mode** (`car` default, or `offroad` / `4x4` via config API).
+That is soft costing for driveable surfaces — not shown in this toggle table
+because there is no Drive-menu chip yet.
 
 Search for a **named** route (including pilgrim route names) in **From** / **Via** /
 **To** when that name is in your place index — independent of the toggle.

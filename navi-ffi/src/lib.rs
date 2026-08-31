@@ -19,10 +19,11 @@ use driver_break_core::poi::{rest_area_suitable_for_weekly, PoiCategory, PoiInde
 use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
 use driver_break_core::routing::graph::{
     apply_bike_suitability_from_pbf, apply_official_network_preference, apply_slow_road_preference,
-    difficulty_notes_for_path, load_official_network_way_ids, load_or_build_reweighted,
-    load_or_build_reweighted_bbox, load_pilgrim_route_way_ids, load_way_difficulty_tags,
-    max_waypoint_snap_m, BikeCapability, OfficialNetworkKind, RoadLabelSticky, RoadNodeIndex,
-    RouteGraph, RouteOptions, RoutingProfile, SnapTooFar,
+    apply_surface_preference, apply_surface_quality_from_pbf, difficulty_notes_for_path,
+    load_official_network_way_ids, load_or_build_reweighted, load_or_build_reweighted_bbox,
+    load_pilgrim_route_way_ids, load_way_difficulty_tags, max_waypoint_snap_m, BikeCapability,
+    OfficialNetworkKind, RoadLabelSticky, RoadNodeIndex, RouteGraph, RouteOptions, RoutingProfile,
+    SnapTooFar, SurfaceRoutingMode,
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::safety::{
@@ -2292,6 +2293,24 @@ fn plan_car_route_inner(
             Err(e) => report.push_str(&format!("bike_suitability_err={e}\n")),
         }
     }
+    if matches!(routing_profile, RoutingProfile::Car | RoutingProfile::Truck) {
+        let surface_mode =
+            match driver_break_core::storage::Storage::open(routes_db(&data_dir.to_string_lossy()))
+            {
+                Ok(storage) => {
+                    let store = driver_break_core::storage::ConfigStore::new(&storage);
+                    SurfaceRoutingMode::parse(
+                        &store
+                            .load_surface_routing_mode()
+                            .unwrap_or_else(|_| "car".to_string()),
+                    )
+                }
+                Err(_) => SurfaceRoutingMode::Car,
+            };
+        graph.surface_routing_mode = surface_mode;
+        let _ = apply_surface_quality_from_pbf(&mut graph, pbf);
+        apply_surface_preference(&mut graph, surface_mode);
+    }
     let network_pref_ms = timer.lap_ms();
     report.push_str(&format!(
         "build_s={build_s:.2}; cache_hit={cache_hit}; pack_hit={pack_hit}; nodes={}; edges={}\n",
@@ -4412,6 +4431,28 @@ pub fn save_bike_capability(data_dir: String, capability: String) -> bool {
     let store = driver_break_core::storage::ConfigStore::new(&storage);
     let cap = BikeCapability::parse(&capability);
     store.save_bike_capability(cap.as_str()).is_ok()
+}
+
+/// Motor surface routing strictness: `car` (default) or `offroad` / `4x4`.
+#[uniffi::export]
+pub fn load_surface_routing_mode(data_dir: String) -> String {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return SurfaceRoutingMode::Car.as_str().to_string();
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store
+        .load_surface_routing_mode()
+        .unwrap_or_else(|_| SurfaceRoutingMode::Car.as_str().to_string())
+}
+
+#[uniffi::export]
+pub fn save_surface_routing_mode(data_dir: String, mode: String) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    let parsed = SurfaceRoutingMode::parse(&mode);
+    store.save_surface_routing_mode(parsed.as_str()).is_ok()
 }
 
 /// Load whether the user is a DNT/STF/… network hut member (default false).

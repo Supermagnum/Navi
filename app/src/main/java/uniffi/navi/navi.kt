@@ -1004,6 +1004,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1149,6 +1153,8 @@ fun uniffi_navi_checksum_func_load_speed_bumps_json(
 ): Short
 fun uniffi_navi_checksum_func_load_speed_cameras_json(
 ): Short
+fun uniffi_navi_checksum_func_load_surface_routing_mode(
+): Short
 fun uniffi_navi_checksum_func_load_truck_rest_settings(
 ): Short
 fun uniffi_navi_checksum_func_load_use_networked_cabins(
@@ -1262,6 +1268,8 @@ fun uniffi_navi_checksum_func_save_prefer_official_networks(
 fun uniffi_navi_checksum_func_save_prefer_pilgrim_routes(
 ): Short
 fun uniffi_navi_checksum_func_save_profile_poi_radii(
+): Short
+fun uniffi_navi_checksum_func_save_surface_routing_mode(
 ): Short
 fun uniffi_navi_checksum_func_save_truck_rest_settings(
 ): Short
@@ -1508,6 +1516,8 @@ fun uniffi_navi_fn_func_load_speed_bumps_json(`pbfPath`: RustBuffer.ByValue,unif
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_speed_cameras_json(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_load_surface_routing_mode(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_truck_rest_settings(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_load_use_networked_cabins(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1621,6 +1631,8 @@ fun uniffi_navi_fn_func_save_prefer_official_networks(`dataDir`: RustBuffer.ByVa
 fun uniffi_navi_fn_func_save_prefer_pilgrim_routes(`dataDir`: RustBuffer.ByValue,`prefer`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_save_profile_poi_radii(`dataDir`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_navi_fn_func_save_surface_routing_mode(`dataDir`: RustBuffer.ByValue,`mode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_save_truck_rest_settings(`dataDir`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
@@ -1973,6 +1985,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_load_speed_cameras_json() != 9336.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_load_surface_routing_mode() != 55503.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_load_truck_rest_settings() != 11002.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2142,6 +2157,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_save_profile_poi_radii() != 26840.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_save_surface_routing_mode() != 63261.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_save_truck_rest_settings() != 32221.toShort()) {
@@ -5166,6 +5184,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
+
+        /**
+         * Motor surface routing strictness: `car` (default) or `offroad` / `4x4`.
+         */ fun `loadSurfaceRoutingMode`(`dataDir`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_load_surface_routing_mode(
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
  fun `loadTruckRestSettings`(`dataDir`: kotlin.String): FfiTruckRestSettings {
             return FfiConverterTypeFfiTruckRestSettings.lift(
     uniffiRustCall() { _status ->
@@ -5811,6 +5841,15 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_save_profile_poi_radii(
         FfiConverterString.lower(`dataDir`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterTypeFfiProfilePoiRadii.lower(`settings`),_status)
+}
+    )
+    }
+    
+ fun `saveSurfaceRoutingMode`(`dataDir`: kotlin.String, `mode`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_save_surface_routing_mode(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`mode`),_status)
 }
     )
     }

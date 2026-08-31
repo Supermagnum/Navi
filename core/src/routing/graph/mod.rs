@@ -19,6 +19,7 @@ mod cache;
 mod network_pref;
 mod reweight;
 mod road_near;
+mod surface_quality;
 
 pub use bbox_build::TiledBuildTimings;
 pub use bike_suitability::{
@@ -45,4 +46,11 @@ pub use reweight::reweight_graph_for_eco;
 pub use road_near::{
     edge_distance_m, nearest_road_hit, nearest_road_label, NearestRoadHit, RoadLabelSticky,
     RoadNodeIndex,
+};
+pub use surface_quality::{
+    apply_surface_preference, apply_surface_quality_from_pbf, best_incident_surface,
+    classify_surface_tags, edge_surface_multiplier, infer_surface_from_highway,
+    surface_transition_cost_m, worst_incident_surface, SurfaceQuality, SurfaceRoutingMode,
+    SNAP_VIRTUAL_APPROACH_SURFACE, SURFACE_MARGINAL_EDGE_PENALTY, SURFACE_POOR_EDGE_PENALTY,
+    SURFACE_TRANSITION_MAX_CLASS_DROP, SURFACE_TRANSITION_PENALTY_M,
 };

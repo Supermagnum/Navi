@@ -26,6 +26,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
+use super::surface_quality::classify_surface_tags;
 use crate::routing::access;
 use crate::routing::wetland::tags_map_indicate_boardwalk;
 
@@ -966,6 +967,11 @@ fn graph_from_raw_ways(
         let motor_vehicle_conditional = way.tags.get("motor_vehicle:conditional").cloned();
         let access_conditional = way.tags.get("access:conditional").cloned();
         let maxspeed_conditional = way.tags.get("maxspeed:conditional").cloned();
+        let surface_quality = classify_surface_tags(
+            highway.as_deref(),
+            way.tags.get("surface").map(String::as_str),
+            way.tags.get("tracktype").map(String::as_str),
+        );
 
         for id in &way.nodes {
             let Some(&(lat, lon)) = coords.get(id) else {
@@ -1046,6 +1052,7 @@ fn graph_from_raw_ways(
                 access_conditional.clone(),
                 maxspeed_conditional.clone(),
                 false,
+                surface_quality,
             ));
             if !forward_only {
                 edges.push(bbox_edge(
@@ -1080,6 +1087,7 @@ fn graph_from_raw_ways(
                     access_conditional.clone(),
                     maxspeed_conditional.clone(),
                     false,
+                    surface_quality,
                 ));
             }
             source = Some(tgt);
@@ -1130,6 +1138,7 @@ fn bbox_edge(
     access_conditional: Option<String>,
     maxspeed_conditional: Option<String>,
     access_forbidden: bool,
+    surface_quality: super::surface_quality::SurfaceQuality,
 ) -> GraphEdge {
     GraphEdge {
         id,
@@ -1165,6 +1174,7 @@ fn bbox_edge(
         access_conditional,
         maxspeed_conditional,
         access_forbidden,
+        surface_quality,
     }
 }
 

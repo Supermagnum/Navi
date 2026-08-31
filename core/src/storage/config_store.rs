@@ -19,6 +19,7 @@ const PREFER_OFFICIAL_NETWORKS_KEY: &str = "prefer_official_networks";
 const PREFER_PILGRIM_ROUTES_KEY: &str = "prefer_pilgrim_routes";
 const USE_NETWORKED_CABINS_KEY: &str = "use_networked_cabins";
 const BIKE_CAPABILITY_KEY: &str = "bike_capability";
+const SURFACE_ROUTING_MODE_KEY: &str = "surface_routing_mode";
 /// User asserts DNT/STF/… membership — gates *overnight stay* preference only.
 const NETWORK_HUT_MEMBER_KEY: &str = "network_hut_member";
 const TRUCK_DRIVING_HISTORY_KEY: &str = "truck_driving_history";
@@ -124,6 +125,15 @@ impl<'a> ConfigStore<'a> {
 
     pub fn save_bike_capability(&self, cap: &str) -> SqlResult<()> {
         self.save_json(BIKE_CAPABILITY_KEY, &cap)
+    }
+
+    /// Motor surface strictness (`car` vs `offroad` / `4x4`).
+    pub fn load_surface_routing_mode(&self) -> SqlResult<String> {
+        self.load_json(SURFACE_ROUTING_MODE_KEY, || "car".to_string())
+    }
+
+    pub fn save_surface_routing_mode(&self, mode: &str) -> SqlResult<()> {
+        self.save_json(SURFACE_ROUTING_MODE_KEY, &mode)
     }
 
     /// Whether the user is a DNT/STF/… network hut member (off by default).

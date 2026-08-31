@@ -17,6 +17,11 @@ use crate::routing::wetland::{
     tags_indicate_boardwalk, WetlandClass, WetlandIndex, WETLAND_SOFT_COST_MULT,
 };
 
+use super::surface_quality::{
+    classify_surface_tags, surface_transition_cost_m, worst_incident_surface, SurfaceQuality,
+    SurfaceRoutingMode, SNAP_VIRTUAL_APPROACH_SURFACE,
+};
+
 /// Routing profile derived from travel mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RoutingProfile {
@@ -127,6 +132,8 @@ pub struct GraphEdge {
     /// Static OSM access forbids this graph's profile (`motor_vehicle`/`access`/
     /// `foot`/`bicycle` with tag specificity). Independent of dimension limits.
     pub access_forbidden: bool,
+    /// Driveability from OSM `surface` / `tracktype` (motor routing preference).
+    pub surface_quality: SurfaceQuality,
 }
 
 /// Per-query routing filters (avoid motorways, tolls/ferries, vehicle limits).
@@ -163,6 +170,8 @@ pub struct RouteGraph {
     component_root: HashMap<NodeId, NodeId>,
     /// Root of the largest weakly-connected component, if any.
     giant_root: Option<NodeId>,
+    /// Surface strictness for motor snap preference and transition penalties.
+    pub surface_routing_mode: SurfaceRoutingMode,
 }
 
 impl RouteGraph {
@@ -188,6 +197,7 @@ impl RouteGraph {
             .read_tag("ferry")
             .read_tag("bridge")
             .read_tag("surface")
+            .read_tag("tracktype")
             .read_tag("junction")
             .read_tag("motor_vehicle")
             .read_tag("access")
@@ -208,6 +218,7 @@ impl RouteGraph {
             incident: HashSet::new(),
             component_root: HashMap::new(),
             giant_root: None,
+            surface_routing_mode: SurfaceRoutingMode::default(),
         };
         for edge in filtered {
             let start = graph
@@ -310,6 +321,7 @@ impl RouteGraph {
             incident: HashSet::new(),
             component_root: HashMap::new(),
             giant_root: None,
+            surface_routing_mode: SurfaceRoutingMode::default(),
         };
         graph.rebuild_adjacency();
         graph
@@ -364,16 +376,30 @@ impl RouteGraph {
         };
         let mut nearest_any: Option<(&Node, f64)> = None;
         let mut nearest_giant: Option<(&Node, f64)> = None;
+        let use_surface_snap = self.surface_routing_mode == SurfaceRoutingMode::Car
+            && matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
+        let mut best_surface_giant: Option<(&Node, f64)> = None;
         for n in pool {
             let dist = haversine_point_m(lat, lon, n);
             if nearest_any.is_none_or(|(_, d)| dist < d) {
                 nearest_any = Some((n, dist));
             }
-            if dist <= max_m
-                && self.in_giant_component(n.id)
-                && nearest_giant.is_none_or(|(_, d)| dist < d)
-            {
-                nearest_giant = Some((n, dist));
+            if dist <= max_m && self.in_giant_component(n.id) {
+                if use_surface_snap {
+                    let sq = worst_incident_surface(self, n.id);
+                    let replace = match best_surface_giant {
+                        None => true,
+                        Some((prev_n, prev_d)) => {
+                            let prev_sq = worst_incident_surface(self, prev_n.id);
+                            sq < prev_sq || (sq == prev_sq && dist < prev_d)
+                        }
+                    };
+                    if replace {
+                        best_surface_giant = Some((n, dist));
+                    }
+                } else if nearest_giant.is_none_or(|(_, d)| dist < d) {
+                    nearest_giant = Some((n, dist));
+                }
             }
         }
         let Some((best_any, nearest_m)) = nearest_any else {
@@ -382,7 +408,11 @@ impl RouteGraph {
                 max_m,
             });
         };
-        if let Some((n, dist)) = nearest_giant {
+        if let Some((n, dist)) = if use_surface_snap {
+            best_surface_giant
+        } else {
+            nearest_giant
+        } {
             return Ok((n.id, dist));
         }
         if nearest_m > max_m {
@@ -575,6 +605,70 @@ impl RouteGraph {
     ) -> Option<(Vec<NodeId>, f64)> {
         let plan_id = crate::download::plan_cancel::current_plan_id();
         let expansions = std::sync::atomic::AtomicU32::new(0);
+        let use_surface_transitions = self.surface_routing_mode == SurfaceRoutingMode::Car
+            && matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
+        let surface_mode = self.surface_routing_mode;
+
+        if use_surface_transitions {
+            let result = astar(
+                &(start, Some(SNAP_VIRTUAL_APPROACH_SURFACE)),
+                |state| {
+                    let (node, prev_surface) = *state;
+                    if plan_id != 0 {
+                        let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if n & 2047 == 0 && crate::download::plan_cancel::is_cancelled_id(plan_id) {
+                            return Vec::new();
+                        }
+                    }
+                    if self.access_blocked_nodes.contains(&node) && node != start {
+                        return Vec::new();
+                    }
+                    self.adjacency
+                        .get(&node)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|&edge_idx| {
+                            let edge = &self.edges[edge_idx];
+                            if !edge_allowed_for_options(edge, options, self.profile) {
+                                return None;
+                            }
+                            let base = if use_eco {
+                                edge.eco_weight.unwrap_or(edge.base_weight)
+                            } else {
+                                edge.base_weight
+                            };
+                            let transition = surface_transition_cost_m(
+                                prev_surface,
+                                edge.surface_quality,
+                                surface_mode,
+                            );
+                            let cost = cost_to_u64(base + transition);
+                            Some(((edge.target, Some(edge.surface_quality)), cost))
+                        })
+                        .collect::<Vec<_>>()
+                },
+                |state| {
+                    cost_to_u64(
+                        self.nodes
+                            .get(&state.0)
+                            .and_then(|n| self.nodes.get(&goal).map(|g| haversine_m(n, g)))
+                            .unwrap_or(0.0)
+                            * 0.1,
+                    )
+                },
+                |state| state.0 == goal,
+            );
+            if crate::download::plan_cancel::is_cancelled_id(plan_id) {
+                return None;
+            }
+            return result.map(|(path, cost)| {
+                (
+                    path.into_iter().map(|(n, _)| n).collect(),
+                    cost as f64 / 1000.0,
+                )
+            });
+        }
+
         let result = astar(
             &start,
             |node| {
@@ -767,6 +861,7 @@ type EdgeMeta = (
     bool,
     bool,
     Option<u8>,
+    SurfaceQuality,
 );
 
 fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
@@ -834,6 +929,11 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
         edge.tags.get("foot").map(String::as_str),
         edge.tags.get("bicycle").map(String::as_str),
     );
+    let surface_quality = classify_surface_tags(
+        highway.as_deref(),
+        edge.tags.get("surface").map(String::as_str),
+        edge.tags.get("tracktype").map(String::as_str),
+    );
     (
         highway,
         maxspeed_kmh,
@@ -857,6 +957,7 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
         is_expressway,
         is_oneway,
         lanes,
+        surface_quality,
     )
 }
 
@@ -928,6 +1029,7 @@ fn push_directed_edge(
         access_conditional: meta.15.clone(),
         maxspeed_conditional: meta.16.clone(),
         access_forbidden: meta.17,
+        surface_quality: meta.22,
     });
     graph.adjacency.entry(source).or_default().push(idx);
 }
@@ -1222,6 +1324,7 @@ fn uf_union(
 mod tests {
     use super::*;
     use crate::config::HIKING_MAX_WAYPOINT_SNAP_M;
+    use crate::routing::graph::apply_surface_preference;
     use geo_types::Coord;
 
     #[test]
@@ -1280,6 +1383,7 @@ mod tests {
             access_conditional: None,
             maxspeed_conditional: None,
             access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot)
     }
@@ -1362,6 +1466,7 @@ mod tests {
             access_conditional: None,
             maxspeed_conditional: None,
             access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
         }
     }
 
@@ -1390,6 +1495,294 @@ mod tests {
             edges.push(test_edge(t, s, elat, elon, slat, slon));
         }
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
+    }
+
+    fn test_edge_with_surface(
+        source: i64,
+        target: i64,
+        slat: f64,
+        slon: f64,
+        elat: f64,
+        elon: f64,
+        highway: &str,
+        surface_quality: SurfaceQuality,
+    ) -> GraphEdge {
+        let mut edge = test_edge(source, target, slat, slon, elat, elon);
+        edge.highway = Some(highway.into());
+        edge.surface_quality = surface_quality;
+        edge
+    }
+
+    #[test]
+    fn nearest_routable_prefers_better_surface_within_snap_budget() {
+        // POI at (60, 10). Nearby 2-node track island ~30 m north; 3-node paved component ~400 m north.
+        let poi_lat = 60.0;
+        let track_lat = 60.0 + (30.0 / 111_320.0);
+        let paved_lat = 60.0 + (400.0 / 111_320.0);
+        let mut nodes = HashMap::new();
+        for (id, n) in [
+            test_node(1, track_lat, 10.0),
+            test_node(2, track_lat, 10.001),
+            test_node(10, paved_lat, 10.0),
+            test_node(11, paved_lat, 10.002),
+            test_node(12, paved_lat, 10.004),
+        ] {
+            nodes.insert(id, n);
+        }
+        let edges = vec![
+            test_edge_with_surface(
+                1,
+                2,
+                track_lat,
+                10.0,
+                track_lat,
+                10.001,
+                "track",
+                SurfaceQuality::Poor,
+            ),
+            test_edge_with_surface(
+                2,
+                1,
+                track_lat,
+                10.001,
+                track_lat,
+                10.0,
+                "track",
+                SurfaceQuality::Poor,
+            ),
+            test_edge_with_surface(
+                10,
+                11,
+                paved_lat,
+                10.0,
+                paved_lat,
+                10.002,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+            test_edge_with_surface(
+                11,
+                10,
+                paved_lat,
+                10.002,
+                paved_lat,
+                10.0,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+            test_edge_with_surface(
+                11,
+                12,
+                paved_lat,
+                10.002,
+                paved_lat,
+                10.004,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+            test_edge_with_surface(
+                12,
+                11,
+                paved_lat,
+                10.004,
+                paved_lat,
+                10.002,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+        ];
+        let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        graph.surface_routing_mode = SurfaceRoutingMode::Car;
+        let (id, dist) = graph
+            .nearest_routable(poi_lat, 10.0)
+            .expect("paved network within car snap budget");
+        assert_eq!(
+            id,
+            NodeId(10),
+            "must prefer paved giant over nearby track island"
+        );
+        assert!(dist > 350.0 && dist < 450.0, "dist_m={dist}");
+    }
+
+    #[test]
+    fn nearest_routable_prefers_good_surface_on_same_component() {
+        // Single network: track stub junction near POI, paved continuation farther along same graph.
+        let poi_lat = 60.0;
+        let track_lat = 60.0 + (30.0 / 111_320.0);
+        let paved_lat = 60.0 + (400.0 / 111_320.0);
+        let mut nodes = HashMap::new();
+        for (id, n) in [
+            test_node(1, track_lat, 10.0),
+            test_node(2, track_lat, 10.001),
+            test_node(3, paved_lat, 10.0),
+        ] {
+            nodes.insert(id, n);
+        }
+        let edges = vec![
+            test_edge_with_surface(
+                1,
+                2,
+                track_lat,
+                10.0,
+                track_lat,
+                10.001,
+                "track",
+                SurfaceQuality::Poor,
+            ),
+            test_edge_with_surface(
+                2,
+                1,
+                track_lat,
+                10.001,
+                track_lat,
+                10.0,
+                "track",
+                SurfaceQuality::Poor,
+            ),
+            test_edge_with_surface(
+                2,
+                3,
+                track_lat,
+                10.001,
+                paved_lat,
+                10.0,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+            test_edge_with_surface(
+                3,
+                2,
+                paved_lat,
+                10.0,
+                track_lat,
+                10.001,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+        ];
+        let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        graph.surface_routing_mode = SurfaceRoutingMode::Car;
+        let (id, dist) = graph
+            .nearest_routable(poi_lat, 10.0)
+            .expect("paved junction within car snap budget");
+        assert_eq!(
+            id,
+            NodeId(3),
+            "must prefer good-surface junction over nearer track"
+        );
+        assert!(dist > 350.0 && dist < 450.0, "dist_m={dist}");
+    }
+
+    #[test]
+    fn shortest_path_avoids_paved_to_poor_transition_when_alternate_exists() {
+        // Diamond: A --good--> B --poor--> D vs A --good--> C --good--> D
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [
+            (1, 60.0, 10.0),
+            (2, 60.001, 10.0),
+            (3, 60.001, 10.002),
+            (4, 60.002, 10.001),
+        ] {
+            let (nid, n) = test_node(id, lat, lon);
+            nodes.insert(nid, n);
+        }
+        let edges = vec![
+            test_edge_with_surface(
+                1,
+                2,
+                60.0,
+                10.0,
+                60.001,
+                10.0,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+            test_edge_with_surface(
+                2,
+                1,
+                60.001,
+                10.0,
+                60.0,
+                10.0,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+            test_edge_with_surface(
+                1,
+                3,
+                60.0,
+                10.0,
+                60.001,
+                10.002,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+            test_edge_with_surface(
+                3,
+                1,
+                60.001,
+                10.002,
+                60.0,
+                10.0,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+            test_edge_with_surface(
+                2,
+                4,
+                60.001,
+                10.0,
+                60.002,
+                10.001,
+                "track",
+                SurfaceQuality::Poor,
+            ),
+            test_edge_with_surface(
+                4,
+                2,
+                60.002,
+                10.001,
+                60.001,
+                10.0,
+                "track",
+                SurfaceQuality::Poor,
+            ),
+            test_edge_with_surface(
+                3,
+                4,
+                60.001,
+                10.002,
+                60.002,
+                10.001,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+            test_edge_with_surface(
+                4,
+                3,
+                60.002,
+                10.001,
+                60.001,
+                10.002,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+        ];
+        let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        graph.surface_routing_mode = SurfaceRoutingMode::Car;
+        apply_surface_preference(&mut graph, SurfaceRoutingMode::Car);
+        let path = graph
+            .shortest_path(NodeId(1), NodeId(4), false)
+            .expect("route exists")
+            .0;
+        assert!(
+            path.contains(&NodeId(3)),
+            "expected good-surface detour via node 3, got {path:?}"
+        );
+        assert!(
+            !path.contains(&NodeId(2)),
+            "should avoid poor track stub via node 2, got {path:?}"
+        );
     }
 
     #[test]
@@ -1524,6 +1917,7 @@ mod tests {
             access_conditional: None,
             maxspeed_conditional: None,
             access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
         };
         let edges = vec![
             edge("low", 1, 2, 60.0, 10.0, 60.0, 10.01, Some(3.0)),
@@ -1587,6 +1981,7 @@ mod tests {
             access_conditional: None,
             maxspeed_conditional: None,
             access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
         };
         assert!(!edge_allowed_for_options(
             &edge,
@@ -1650,6 +2045,7 @@ mod tests {
             access_conditional: None,
             maxspeed_conditional: None,
             access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
         };
         let jan = NaiveDate::from_ymd_opt(2026, 1, 15)
             .unwrap()
@@ -1742,6 +2138,7 @@ mod tests {
             access_conditional: None,
             maxspeed_conditional: None,
             access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
         };
         assert!(!edge_allowed_for_options(&edge, &opts, RoutingProfile::Car));
         edge.highway = Some("motorway_link".into());

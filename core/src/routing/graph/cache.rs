@@ -11,6 +11,7 @@ use crate::config::EcoConfig;
 use crate::routing::elevation::ElevationService;
 
 use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
+use super::surface_quality::infer_surface_from_highway;
 
 // Deprecated trip-bbox cache format (NAVIGPH7 + bincode). Planning no longer
 // reads or writes these files (M5, 2026-08); indexed region packs replace them.
@@ -347,40 +348,44 @@ fn reconstruct_graph(payload: CachedRouteGraph) -> RouteGraph {
     let edges: Vec<GraphEdge> = payload
         .edges
         .into_iter()
-        .map(|edge| GraphEdge {
-            id: edge.id,
-            source: NodeId(edge.source),
-            target: NodeId(edge.target),
-            length_m: edge.length_m,
-            base_weight: edge.base_weight,
-            eco_weight: edge.eco_weight,
-            start_lat: edge.start_lat,
-            start_lon: edge.start_lon,
-            end_lat: edge.end_lat,
-            end_lon: edge.end_lon,
-            shape: edge.shape,
-            highway: edge.highway,
-            maxspeed_kmh: edge.maxspeed_kmh,
-            name: edge.name,
-            road_ref: edge.road_ref,
-            is_motorroad: edge.is_motorroad,
-            is_expressway: edge.is_expressway,
-            is_oneway: edge.is_oneway,
-            lanes: edge.lanes,
-            maxweight_t: edge.maxweight_t,
-            maxaxleload_t: edge.maxaxleload_t,
-            maxbogieweight_t: edge.maxbogieweight_t,
-            maxheight_m: edge.maxheight_m,
-            maxwidth_m: edge.maxwidth_m,
-            maxlength_m: edge.maxlength_m,
-            is_toll: edge.is_toll,
-            is_ferry: edge.is_ferry,
-            is_boardwalk_crossing: edge.is_boardwalk_crossing,
-            is_roundabout: edge.is_roundabout,
-            motor_vehicle_conditional: edge.motor_vehicle_conditional,
-            access_conditional: edge.access_conditional,
-            maxspeed_conditional: edge.maxspeed_conditional,
-            access_forbidden: edge.access_forbidden,
+        .map(|edge| {
+            let surface_quality = infer_surface_from_highway(edge.highway.as_deref());
+            GraphEdge {
+                id: edge.id,
+                source: NodeId(edge.source),
+                target: NodeId(edge.target),
+                length_m: edge.length_m,
+                base_weight: edge.base_weight,
+                eco_weight: edge.eco_weight,
+                start_lat: edge.start_lat,
+                start_lon: edge.start_lon,
+                end_lat: edge.end_lat,
+                end_lon: edge.end_lon,
+                shape: edge.shape,
+                highway: edge.highway,
+                maxspeed_kmh: edge.maxspeed_kmh,
+                name: edge.name,
+                road_ref: edge.road_ref,
+                is_motorroad: edge.is_motorroad,
+                is_expressway: edge.is_expressway,
+                is_oneway: edge.is_oneway,
+                lanes: edge.lanes,
+                maxweight_t: edge.maxweight_t,
+                maxaxleload_t: edge.maxaxleload_t,
+                maxbogieweight_t: edge.maxbogieweight_t,
+                maxheight_m: edge.maxheight_m,
+                maxwidth_m: edge.maxwidth_m,
+                maxlength_m: edge.maxlength_m,
+                is_toll: edge.is_toll,
+                is_ferry: edge.is_ferry,
+                is_boardwalk_crossing: edge.is_boardwalk_crossing,
+                is_roundabout: edge.is_roundabout,
+                motor_vehicle_conditional: edge.motor_vehicle_conditional,
+                access_conditional: edge.access_conditional,
+                maxspeed_conditional: edge.maxspeed_conditional,
+                access_forbidden: edge.access_forbidden,
+                surface_quality,
+            }
         })
         .collect();
 
@@ -445,6 +450,7 @@ mod tests {
             access_conditional: None,
             maxspeed_conditional: None,
             access_forbidden: false,
+            surface_quality: crate::routing::graph::SurfaceQuality::Good,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
     }

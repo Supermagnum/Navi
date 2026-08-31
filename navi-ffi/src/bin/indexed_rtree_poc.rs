@@ -302,6 +302,7 @@ fn load_graph_from_rtree(db: &Path, bbox: [f64; 4]) -> RouteGraph {
                 access_conditional: None,
                 maxspeed_conditional: None,
                 access_forbidden: false,
+                surface_quality: driver_break_core::routing::graph::SurfaceQuality::Good,
             });
         }
     }

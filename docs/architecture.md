@@ -118,7 +118,7 @@ the default working set on ~4 GB devices.
 
 | Module | Role |
 |---|---|
-| `routing` | OSM graph build, eco reweight, A*, workers, OSM updates, elevation, PMTiles basemap jobs |
+| `routing` | OSM graph build, eco reweight, A*, surface/tracktype soft preferences (motor), workers, OSM updates, elevation, PMTiles basemap jobs |
 | `poi` | Categories, classifier, R-tree index, icons |
 | `search` | FTS5 name index + saved `routes` table helpers |
 | `storage` | SQLite `Storage`, migrations, config + elevation + pmtiles job stores |
@@ -150,7 +150,8 @@ Opened via `driver_break_core::storage::Storage::open(path)`. Migration in
 | `routes` | Saved route endpoints, profile, via JSON, break/overnight hints |
 
 `ConfigStore` keys (JSON values): `rest_config`, `safety_config`, `eco_config`,
-`vehicle_limits`, `fuel_config`, `ebike_config`, `ev_car_config`, `truck_driving_history` (EC 561 day rows /
+`vehicle_limits`, `fuel_config`, `ebike_config`, `ev_car_config`,
+`bike_capability`, `surface_routing_mode`, `truck_driving_history` (EC 561 day rows /
 extensions — see [`ec-561-truck-rest.md`](ec-561-truck-rest.md)).
 
 Access is serialized with `Arc<Mutex<Connection>>` (T4). UniFFI load/save

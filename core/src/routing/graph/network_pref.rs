@@ -746,6 +746,7 @@ mod tests {
                 access_conditional: None,
                 maxspeed_conditional: None,
                 access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
             },
             GraphEdge {
                 id: "20".into(),
@@ -781,6 +782,7 @@ mod tests {
                 access_conditional: None,
                 maxspeed_conditional: None,
                 access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
             },
         ];
         let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot);
@@ -861,6 +863,7 @@ mod tests {
                 access_conditional: None,
                 maxspeed_conditional: None,
                 access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
             },
             GraphEdge {
                 id: "200".into(),
@@ -896,6 +899,7 @@ mod tests {
                 access_conditional: None,
                 maxspeed_conditional: None,
                 access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
             },
         ];
         let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot);
@@ -952,6 +956,7 @@ mod tests {
                 access_conditional: None,
                 maxspeed_conditional: None,
                 access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
             },
             GraphEdge {
                 id: "20".into(),
@@ -987,6 +992,7 @@ mod tests {
                 access_conditional: None,
                 maxspeed_conditional: None,
                 access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
             },
             GraphEdge {
                 id: "21".into(),
@@ -1022,6 +1028,7 @@ mod tests {
                 access_conditional: None,
                 maxspeed_conditional: None,
                 access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
             },
         ];
         let plain = RouteGraph::from_parts(HashMap::new(), edges.clone(), RoutingProfile::Foot);
@@ -1077,6 +1084,7 @@ mod tests {
                 access_conditional: None,
                 maxspeed_conditional: None,
                 access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
             },
             GraphEdge {
                 id: "237a".into(),
@@ -1112,6 +1120,7 @@ mod tests {
                 access_conditional: None,
                 maxspeed_conditional: None,
                 access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
             },
             GraphEdge {
                 id: "237b".into(),
@@ -1147,6 +1156,7 @@ mod tests {
                 access_conditional: None,
                 maxspeed_conditional: None,
                 access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
             },
         ]
     }
