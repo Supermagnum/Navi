@@ -31,7 +31,8 @@ use driver_break_core::routing::safety::{
 };
 use driver_break_core::routing::workers::WorkerPoolPlan;
 use driver_break_core::routing::{
-    build_maneuvers, build_sim_samples, build_sim_samples_from_lat_lon, maneuvers_to_json,
+    build_maneuvers, build_maneuvers_from_edges, build_sim_samples, build_sim_samples_from_edges,
+    build_sim_samples_from_lat_lon, maneuvers_to_json, motor_path_minutes_from_edges,
     plan_hybrid_hiking_path, samples_to_json, HikingWaypoint, WetlandIndex, OFF_TRAIL_ADVISORY,
 };
 use driver_break_core::routing::{
@@ -930,7 +931,7 @@ fn reachable_without_barrier(
         avoid_motorways: matches!(graph.profile(), RoutingProfile::Foot),
         ..RouteOptions::default()
     };
-    let Some((path, _)) = graph.shortest_path_with_options(start, goal, false, &opts) else {
+    let Some((path, _, _)) = graph.shortest_path_with_options(start, goal, false, &opts) else {
         return false;
     };
     let path_m = path_length_m(graph, &path);
@@ -1348,7 +1349,7 @@ fn snapped_path_length_m(
 ) -> Option<f64> {
     let (s, _) = nearest(graph, a_lat, a_lon).ok()?;
     let (g, _) = nearest(graph, b_lat, b_lon).ok()?;
-    let (path, _) = graph.shortest_path(s, g, false)?;
+    let (path, _, _) = graph.shortest_path(s, g, false)?;
     if path.len() < 2 {
         return Some(0.0);
     }
@@ -1374,7 +1375,7 @@ fn hike_path_through_waypoints(
         let (g, _) = nearest(graph, pair[1].lat, pair[1].lon).map_err(|e| {
             format_snap_too_far(&format!("waypoint \"{}\"", pair[1].name), e, profile)
         })?;
-        let Some((path, _cost)) = graph.shortest_path(s, g, false) else {
+        let Some((path, _, _cost)) = graph.shortest_path(s, g, false) else {
             if driver_break_core::download::plan_cancel::is_cancelled() {
                 return Err("cancelled".into());
             }
@@ -1812,7 +1813,7 @@ pub fn run_car_corridor_pipeline(
         "snap_start_m={snap_start_m:.0}; snap_end_m={snap_end_m:.0}; snap_max_m={:.0}\n",
         max_waypoint_snap_m(graph.profile())
     ));
-    let Some((path, cost)) = graph.shortest_path(s, g, true) else {
+    let Some((path, _, cost)) = graph.shortest_path(s, g, true) else {
         report.push_str("FAIL: no route\n");
         return empty(report);
     };
@@ -2367,7 +2368,9 @@ fn plan_car_route_inner(
             max_waypoint_snap_m(graph.profile())
         ));
     }
-    let Some((path, cost)) = graph.shortest_path_with_options(s, g, use_eco, &route_opts) else {
+    let Some((path, path_edges, cost)) =
+        graph.shortest_path_with_options(s, g, use_eco, &route_opts)
+    else {
         if driver_break_core::download::plan_cancel::is_cancelled() {
             return plan_cancelled_result(
                 report,
@@ -2389,18 +2392,17 @@ fn plan_car_route_inner(
     let astar_ms = timer.lap_ms();
 
     let mut distance_m = 0.0;
-    for w in path.windows(2) {
-        if let Some(idx) = graph.edge_index(w[0], w[1]) {
-            distance_m += graph.edges[idx].length_m;
-        }
+    for &idx in &path_edges {
+        distance_m += graph.edges[idx].length_m;
     }
     // Full OSM edge shape (not junction chords) so MapLibre follows the road.
-    let polyline = graph.path_overlay_polyline(&path);
+    let polyline = graph.path_overlay_polyline_from_edges(&path_edges);
 
     let dist_km = distance_m / 1000.0;
-    let eta_minutes = motor_path_minutes(&graph, &path);
-    let sim_samples_json = samples_to_json(&build_sim_samples(&graph, &path));
-    let maneuvers_json = maneuvers_to_json(&build_maneuvers(&graph, &path));
+    let eta_minutes = motor_path_minutes_from_edges(&graph, &path_edges);
+    let sim_samples_json =
+        samples_to_json(&build_sim_samples_from_edges(&graph, &path, &path_edges));
+    let maneuvers_json = maneuvers_to_json(&build_maneuvers_from_edges(&graph, &path, &path_edges));
     let path_nodes = path.len();
     let polyline_ms = timer.lap_ms();
     driver_break_core::download::progress::set(4, Some(5), "Planning route: break stops…");

@@ -170,7 +170,7 @@ fn plan_leg(
         return Err("cancelled".into());
     }
     if let (Some((sa, _)), Some((sb, _))) = (snap_a, snap_b) {
-        if let Some((path, _)) = graph.shortest_path(sa, sb, false) {
+        if let Some((path, _path_edges, _)) = graph.shortest_path(sa, sb, false) {
             if path.len() >= 2 {
                 let coords = graph.path_coords_lat_lon(&path);
                 let length_m = path_length_m(graph, &path);
@@ -217,7 +217,7 @@ fn gap_fill_leg(
     if let Some((sa, _)) = snap_a {
         if let Some((tb, tdist)) = graph.nearest_linked_unbounded(b.lat, b.lon) {
             if tdist <= TERRAIN_MAX_GAP_M {
-                if let Some((path, _)) = graph.shortest_path(sa, tb, false) {
+                if let Some((path, _path_edges, _)) = graph.shortest_path(sa, tb, false) {
                     if path.len() >= 2 {
                         let mut segments = Vec::new();
                         let on_coords = graph.path_coords_lat_lon(&path);
@@ -252,7 +252,7 @@ fn gap_fill_leg(
     if let Some((sb, _)) = snap_b {
         if let Some((ta, tdist)) = graph.nearest_linked_unbounded(a.lat, a.lon) {
             if tdist <= TERRAIN_MAX_GAP_M {
-                if let Some((path, _)) = graph.shortest_path(ta, sb, false) {
+                if let Some((path, _path_edges, _)) = graph.shortest_path(ta, sb, false) {
                     if path.len() >= 2 {
                         let mut segments = Vec::new();
                         let (tlat, tlon) = node_latlon(graph, ta);

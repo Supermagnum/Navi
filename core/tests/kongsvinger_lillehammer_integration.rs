@@ -222,7 +222,7 @@ fn run_integration() -> anyhow::Result<()> {
         .shortest_path(start.0, goal.0, true)
         .ok_or_else(|| anyhow::anyhow!("no route found (elevation-aware)"))?;
     assert!(path1.0.len() >= 2, "zero-length route");
-    assert!(path1.1 > 1000.0, "route cost suspiciously low");
+    assert!(path1.2 > 1000.0, "route cost suspiciously low");
 
     let edge_idxs = path_edge_indices(&graph_elev, &path1.0);
     assert!(!edge_idxs.is_empty(), "path has no edges");
@@ -248,7 +248,7 @@ fn run_integration() -> anyhow::Result<()> {
         metrics1.total_climb_m > 0.0,
         "expected climb through Gudbrandsdalen"
     );
-    report.log_route_metrics("Elevation-aware", &metrics1, path1.1);
+    report.log_route_metrics("Elevation-aware", &metrics1, path1.2);
 
     // --- Test 2: without elevation awareness ---
     report.section("Test 2 — Without elevation awareness");
@@ -265,7 +265,7 @@ fn run_integration() -> anyhow::Result<()> {
     );
 
     let metrics2 = route_metrics(&graph_flat, &edge_idxs2, &elevation, &eco, false);
-    report.log_route_metrics("Flat-weight", &metrics2, path2.1);
+    report.log_route_metrics("Flat-weight", &metrics2, path2.2);
 
     let same_path = compare_paths(&path1.0, &path2.0);
     let paths_differ = !same_path;
@@ -273,7 +273,7 @@ fn run_integration() -> anyhow::Result<()> {
     report.line(&format!(
         "Path identical: {same_path} (distance delta {:.1} m, cost delta {:.0})",
         (metrics1.distance_m - metrics2.distance_m).abs(),
-        (path1.1 - path2.1).abs()
+        (path1.2 - path2.2).abs()
     ));
     report.line(&format!(
         "Energy cost (physics eco sum): {:.0} J vs flat base_weight sum {:.0} J",

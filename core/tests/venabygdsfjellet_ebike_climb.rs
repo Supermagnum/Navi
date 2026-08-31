@@ -112,7 +112,7 @@ fn venabygdsfjellet_ebike_climb_and_ev_car_range() {
 
     let s = nearest(&graph_bike, START_LAT, START_LON);
     let g = nearest(&graph_bike, END_LAT, END_LON);
-    let (path, _cost) = graph_bike
+    let (path, _, _cost) = graph_bike
         .shortest_path(s, g, true)
         .expect("ebike route Venabygdsfjellet");
     assert!(path.len() >= 2, "path too short");
@@ -298,7 +298,7 @@ fn venabygdsfjellet_ebike_climb_and_ev_car_range() {
     ));
     let sc = nearest(&graph_car, START_LAT, START_LON);
     let gc = nearest(&graph_car, END_LAT, END_LON);
-    let (path_car, _) = graph_car
+    let (path_car, _, _) = graph_car
         .shortest_path(sc, gc, true)
         .expect("car route Venabygdsfjellet");
     let ev = EvCarConfig::default();

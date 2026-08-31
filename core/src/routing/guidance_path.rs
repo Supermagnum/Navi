@@ -519,15 +519,36 @@ pub fn build_sim_samples_from_lat_lon(
 }
 
 pub fn build_sim_samples(graph: &RouteGraph, path: &[NodeId]) -> Vec<SimSample> {
+    build_sim_samples_with_options(
+        graph,
+        path,
+        false,
+        &crate::routing::graph::RouteOptions::default(),
+    )
+}
+
+pub fn build_sim_samples_with_options(
+    graph: &RouteGraph,
+    path: &[NodeId],
+    use_eco: bool,
+    options: &crate::routing::graph::RouteOptions,
+) -> Vec<SimSample> {
+    let edge_indices = graph.path_edge_indices_with_options(path, use_eco, options);
+    build_sim_samples_from_edges(graph, path, &edge_indices)
+}
+
+/// Build simulation samples from A*-recorded edge indices (preferred).
+pub fn build_sim_samples_from_edges(
+    graph: &RouteGraph,
+    path: &[NodeId],
+    edge_indices: &[usize],
+) -> Vec<SimSample> {
     let mut out = Vec::new();
-    if path.len() < 2 {
+    if path.len() < 2 || edge_indices.is_empty() {
         return out;
     }
     let mut cum = 0.0;
-    for w in path.windows(2) {
-        let Some(idx) = graph.edge_index(w[0], w[1]) else {
-            continue;
-        };
+    for &idx in edge_indices {
         let e = &graph.edges[idx];
         let speed = edge_speed_kmh(e).max(1.0);
         let posted = e
@@ -581,10 +602,7 @@ pub fn build_sim_samples(graph: &RouteGraph, path: &[NodeId]) -> Vec<SimSample> 
         cum += e.length_m;
     }
     if let Some(last) = path.last().and_then(|id| graph.nodes.get(id)) {
-        let e_last = path
-            .windows(2)
-            .rev()
-            .find_map(|w| graph.edge_index(w[0], w[1]).map(|i| &graph.edges[i]));
+        let e_last = edge_indices.last().map(|&i| &graph.edges[i]);
         out.push(SimSample {
             lat: last.coord.y,
             lon: last.coord.x,
@@ -644,8 +662,32 @@ fn point_along_verts(verts: &[(f64, f64)], seg_lens: &[f64], along_m: f64) -> (f
 /// changes along the ring (and the leave turn) are not emitted as separate
 /// left/right maneuvers.
 pub fn build_maneuvers(graph: &RouteGraph, path: &[NodeId]) -> Vec<RouteManeuver> {
+    build_maneuvers_with_options(
+        graph,
+        path,
+        false,
+        &crate::routing::graph::RouteOptions::default(),
+    )
+}
+
+pub fn build_maneuvers_with_options(
+    graph: &RouteGraph,
+    path: &[NodeId],
+    use_eco: bool,
+    options: &crate::routing::graph::RouteOptions,
+) -> Vec<RouteManeuver> {
+    let edge_indices = graph.path_edge_indices_with_options(path, use_eco, options);
+    build_maneuvers_from_edges(graph, path, &edge_indices)
+}
+
+/// Build maneuvers from A*-recorded edge indices (preferred).
+pub fn build_maneuvers_from_edges(
+    graph: &RouteGraph,
+    path: &[NodeId],
+    edge_indices: &[usize],
+) -> Vec<RouteManeuver> {
     let mut out = Vec::new();
-    if path.len() < 2 {
+    if path.len() < 2 || edge_indices.is_empty() {
         return out;
     }
     let spans = find_roundabout_spans(graph, path);
@@ -654,21 +696,23 @@ pub fn build_maneuvers(graph: &RouteGraph, path: &[NodeId]) -> Vec<RouteManeuver
         let n0 = path[i];
         let n1 = path[i + 1];
         let n2 = path[i + 2];
-        let Some(e_in) = graph.edge_index(n0, n1).map(|idx| &graph.edges[idx]) else {
+        let Some(&idx_in) = edge_indices.get(i) else {
             continue;
         };
-        let Some(e_out) = graph.edge_index(n1, n2).map(|idx| &graph.edges[idx]) else {
-            cum += e_in.length_m;
+        let Some(&idx_out) = edge_indices.get(i + 1) else {
+            cum += graph.edges[idx_in].length_m;
             continue;
         };
+        let e_in = &graph.edges[idx_in];
+        let e_out = &graph.edges[idx_out];
         cum += e_in.length_m;
         let turn_node_idx = i + 1;
 
         if let Some(span) = spans.iter().find(|s| s.entry_idx == turn_node_idx) {
             let street = if span.leave_idx + 1 < path.len() {
-                graph
-                    .edge_index(path[span.leave_idx], path[span.leave_idx + 1])
-                    .map(|idx| &graph.edges[idx])
+                edge_indices
+                    .get(span.leave_idx)
+                    .map(|&idx| &graph.edges[idx])
                     .and_then(|e| prefer_street_label(e.name.as_deref(), e.road_ref.as_deref()))
             } else {
                 None

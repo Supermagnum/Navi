@@ -152,6 +152,16 @@ pub fn fixed_pace_minutes(distance_km: f64, min_per_km: f64) -> f64 {
     distance_km * min_per_km
 }
 
+/// Sum motor pre-departure time along A*-recorded edge indices.
+pub fn motor_path_minutes_from_edges(graph: &RouteGraph, edge_indices: &[usize]) -> f64 {
+    let mut hours = 0.0;
+    for &idx in edge_indices {
+        let e = &graph.edges[idx];
+        hours += hours_for_segment(e.length_m, edge_speed_kmh(e));
+    }
+    hours * 60.0
+}
+
 /// Sum motor pre-departure time along a node path using per-edge maxspeed / fallback.
 pub fn motor_path_minutes(graph: &RouteGraph, path: &[NodeId]) -> f64 {
     if path.len() < 2 {

@@ -468,7 +468,7 @@ fn official_network_preference_changes_path_cost_and_choice() {
     );
     assert_ne!(before.0, after.0);
     // Soft: non-network still reachable (gap fallback) — path exists either way.
-    assert!(after.1 < before.1 * NON_NETWORK_PENALTY + 1.0 || after.0 != before.0);
+    assert!(after.2 < before.2 * NON_NETWORK_PENALTY + 1.0 || after.0 != before.0);
 }
 
 #[test]

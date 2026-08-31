@@ -120,13 +120,11 @@ pub fn nearest_node(graph: &RouteGraph, lat: f64, lon: f64) -> (NodeId, f64, f64
 }
 
 pub fn path_edge_indices(graph: &RouteGraph, path: &[NodeId]) -> Vec<usize> {
-    let mut out = Vec::with_capacity(path.len().saturating_sub(1));
-    for w in path.windows(2) {
-        if let Some(idx) = graph.edge_index(w[0], w[1]) {
-            out.push(idx);
-        }
-    }
-    out
+    graph.path_edge_indices_with_options(
+        path,
+        false,
+        &driver_break_core::routing::graph::RouteOptions::default(),
+    )
 }
 
 pub fn route_metrics(

@@ -85,7 +85,7 @@ jobs:
         #   flat_pack_preserves_hard_over_soft_precedence
         # - download::pbf_priority (cone/plan skip — ForegroundPlanConeSkip host logic)
         # - basemap::extract::validate_rejects_mz12_large_region_fixture
-        # motor_access_barrier / wetland_apply_identity / wetland_pack_identity
+        # motor_access_barrier / budorvegen_service_detour / wetland_apply_identity / wetland_pack_identity
         # pack-vs-PBF now use checked-in mini PBFs under core/tests/fixtures/
         # and are also asserted explicitly in the regression-guards job.
         # Exclude navi-desktop: default features need WebKitGTK (separate linux-build path).
@@ -303,6 +303,7 @@ jobs:
         # Do not point these at core/target/integration-fixtures.
         run: |
           cargo test -p driver-break-core --test motor_access_barrier -- --nocapture
+          cargo test -p driver-break-core --test budorvegen_service_detour -- --nocapture
           cargo test -p driver-break-core --test wetland_apply_identity -- --nocapture
           cargo test -p driver-break-core --test wetland_pack_identity -- --nocapture
 

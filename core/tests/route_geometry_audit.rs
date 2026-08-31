@@ -254,8 +254,8 @@ fn run() -> anyhow::Result<()> {
     ));
     report.line(&format!(
         "Leg split: start->Atnosen {:.2} km + Atnosen->goal {:.2} km",
-        a.1 / 1000.0,
-        b.1 / 1000.0
+        a.2 / 1000.0,
+        b.2 / 1000.0
     ));
 
     // OSRM
@@ -498,8 +498,8 @@ fn run() -> anyhow::Result<()> {
     let eco = passat_eco();
     let m_dir = route_metrics(&graph, &direct_edges, &elev, &eco, true);
     let m_via = route_metrics(&graph, &via_edges, &elev, &eco, true);
-    report.log_route_metrics("Direct", &m_dir, direct.1);
-    report.log_route_metrics("Via Atnosen", &m_via, a.1 + b.1);
+    report.log_route_metrics("Direct", &m_dir, direct.2);
+    report.log_route_metrics("Via Atnosen", &m_via, a.2 + b.2);
     report.line(&format!(
         "Energy delta via-direct: {:+.0} J ({:+.2} kWh)",
         m_via.energy_j - m_dir.energy_j,

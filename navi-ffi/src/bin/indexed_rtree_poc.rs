@@ -334,7 +334,7 @@ fn load_graph_from_rtree(db: &Path, bbox: [f64; 4]) -> RouteGraph {
 fn plan_on(graph: &RouteGraph, slat: f64, slon: f64, elat: f64, elon: f64) -> (f64, f64, usize) {
     let (s, _) = graph.nearest_routable(slat, slon).expect("snap start");
     let (g, _) = graph.nearest_routable(elat, elon).expect("snap end");
-    let (path, _cost) = graph.shortest_path(s, g, false).expect("no path");
+    let (path, _, _cost) = graph.shortest_path(s, g, false).expect("no path");
     let mut dist = 0.0;
     for w in path.windows(2) {
         if let Some(idx) = graph.edge_index(w[0], w[1]) {

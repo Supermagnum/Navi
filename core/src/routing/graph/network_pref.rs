@@ -908,7 +908,7 @@ mod tests {
         apply_official_network_preference(&mut graph, &pilgrim);
         assert!((graph.edges[0].base_weight - 100.0).abs() < 1e-9);
         assert!(graph.edges[1].base_weight > 100.0);
-        let (path, _cost) = graph
+        let (path, _, _cost) = graph
             .shortest_path(NodeId(1), NodeId(3), false)
             .expect("soft pref must not block gap on ordinary path");
         assert!(path.len() >= 2);
@@ -1032,7 +1032,7 @@ mod tests {
             },
         ];
         let plain = RouteGraph::from_parts(HashMap::new(), edges.clone(), RoutingProfile::Foot);
-        let (path_plain, _) = plain
+        let (path_plain, _, _) = plain
             .shortest_path(NodeId(1), NodeId(3), false)
             .expect("plain");
         assert_eq!(path_plain, vec![NodeId(1), NodeId(3)]);
@@ -1042,7 +1042,7 @@ mod tests {
         pilgrim.insert(20);
         pilgrim.insert(21);
         apply_official_network_preference(&mut preferred, &pilgrim);
-        let (path_pref, _) = preferred
+        let (path_pref, _, _) = preferred
             .shortest_path(NodeId(1), NodeId(3), false)
             .expect("preferred");
         assert_eq!(path_pref, vec![NodeId(1), NodeId(2), NodeId(3)]);
@@ -1166,7 +1166,7 @@ mod tests {
         use super::super::builder::RoutingProfile;
         let plain =
             RouteGraph::from_parts(HashMap::new(), rv3_vs_237_edges(), RoutingProfile::Foot);
-        let (path_plain, _) = plain
+        let (path_plain, _, _) = plain
             .shortest_path(NodeId(1), NodeId(3), false)
             .expect("plain");
         assert_eq!(
@@ -1178,7 +1178,7 @@ mod tests {
         let mut preferred =
             RouteGraph::from_parts(HashMap::new(), rv3_vs_237_edges(), RoutingProfile::Foot);
         apply_slow_road_preference(&mut preferred);
-        let (path_pref, _) = preferred
+        let (path_pref, _, _) = preferred
             .shortest_path(NodeId(1), NodeId(3), false)
             .expect("preferred");
         assert_eq!(
@@ -1195,7 +1195,7 @@ mod tests {
         let mut graph = RouteGraph::from_parts(HashMap::new(), edges, RoutingProfile::Foot);
         apply_slow_road_preference(&mut graph);
         assert!(graph.edges[0].base_weight > 1000.0);
-        let (path, _) = graph
+        let (path, _, _) = graph
             .shortest_path(NodeId(1), NodeId(3), false)
             .expect("must still route on high-speed when only option");
         assert_eq!(path, vec![NodeId(1), NodeId(3)]);
@@ -1206,7 +1206,7 @@ mod tests {
         use super::super::builder::RoutingProfile;
         // Car graph without apply_slow_road_preference — caller responsibility.
         let graph = RouteGraph::from_parts(HashMap::new(), rv3_vs_237_edges(), RoutingProfile::Car);
-        let (path, _) = graph
+        let (path, _, _) = graph
             .shortest_path(NodeId(1), NodeId(3), false)
             .expect("car");
         assert_eq!(path, vec![NodeId(1), NodeId(3)]);

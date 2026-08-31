@@ -155,10 +155,10 @@ fn pack_path_fokholgutua_maxheight_finds_detour() {
     );
     assert_ne!(open.0, limited.0);
     assert!(
-        limited.1 > open.1,
+        limited.2 > open.2,
         "detour should be longer: open={:.0} lim={:.0}",
-        open.1,
-        limited.1
+        open.2,
+        limited.2
     );
 }
 
@@ -209,7 +209,7 @@ fn pack_path_atna_maxlength_finds_detour() {
         )
         .expect("length-limited detour");
     assert!(!path_uses_named(&g.edges, &limited.0, "Atna hengebru"));
-    assert!(limited.1 > open.1);
+    assert!(limited.2 > open.2);
 }
 
 /// Atna hengebru maxweight=7.5 t: 10 t vehicle must detour.
@@ -251,7 +251,7 @@ fn pack_path_atna_maxweight_finds_detour() {
         )
         .expect("weight-limited detour");
     assert!(!path_uses_named(&g.edges, &limited.0, "Atna hengebru"));
-    assert!(limited.1 > open.1);
+    assert!(limited.2 > open.2);
 }
 
 /// Stai bru (way 34106197): maxwidth=3.5 / maxaxleload=6 survive pack load and
@@ -327,7 +327,7 @@ fn pack_path_stai_maxwidth_and_maxaxleload_enforced() {
     );
     assert!(
         wide.as_ref()
-            .map(|(p, _)| !path_uses_named(&g.edges, p, "Stai bru"))
+            .map(|(p, _, _)| !path_uses_named(&g.edges, p, "Stai bru"))
             .unwrap_or(true),
         "width 4.0 m must not use maxwidth=3.5 Stai bru (got {wide:?})"
     );
@@ -346,7 +346,7 @@ fn pack_path_stai_maxwidth_and_maxaxleload_enforced() {
     );
     assert!(
         axle.as_ref()
-            .map(|(p, _)| !path_uses_named(&g.edges, p, "Stai bru"))
+            .map(|(p, _, _)| !path_uses_named(&g.edges, p, "Stai bru"))
             .unwrap_or(true),
         "axle 8 t must not use maxaxleload=6 Stai bru (got {axle:?})"
     );
@@ -422,7 +422,7 @@ fn pack_path_liabrue_maxbogieweight_enforced() {
     assert!(
         limited
             .as_ref()
-            .map(|(p, _)| !path_uses_bogie_span(&g.edges, p))
+            .map(|(p, _, _)| !path_uses_bogie_span(&g.edges, p))
             .unwrap_or(true),
         "bogie 10 t must not use maxbogieweight=7.5 Liabrue (got {limited:?})"
     );
