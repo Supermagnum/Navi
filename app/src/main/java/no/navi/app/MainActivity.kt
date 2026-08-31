@@ -635,6 +635,7 @@ private fun NaviMapScreen() {
                 breakAsDistance = MapHudPrefs.loadBreakAsDistance(context),
                 unitSystem = MapHudPrefs.loadUnitSystem(context),
                 optIn3d = MapHudPrefs.loadOptIn3d(context),
+                contoursEnabled = MapHudPrefs.loadContoursEnabled(context),
                 cameraTiltDeg = MapHudPrefs.loadCameraTiltDeg(context),
                 snapRotationBackToMode = MapHudPrefs.loadSnapRotationBack(context),
                 vulkanAvailable = MapHudPrefs.vulkanRendererAvailable(),
@@ -3038,6 +3039,7 @@ private fun NaviMapScreen() {
             state = mapState,
             dataDir = dataDir,
             prefer3d = driveHud.optIn3d,
+            contoursEnabled = driveHud.contoursEnabled,
             cameraTiltDeg = driveHud.cameraTiltDeg,
             vulkanAvailable = driveHud.vulkanAvailable,
             unitSystem = driveHud.unitSystem,
@@ -5719,6 +5721,12 @@ private fun NaviMapScreen() {
                         MapHudPrefs.saveOptIn3d(context, on)
                         styleEpoch += 1
                     },
+                    onToggleContours = { on ->
+                        DiagnosticLog.logToggle("contours_enabled", on)
+                        driveHud = driveHud.copy(contoursEnabled = on)
+                        MapHudPrefs.saveContoursEnabled(context, on)
+                        styleEpoch += 1
+                    },
                     onCameraTiltChange = { deg ->
                         val next =
                             if (driveHud.vulkanAvailable) {
@@ -5739,9 +5747,11 @@ private fun NaviMapScreen() {
                             enabled = driveHud.autoZoomWhileMoving,
                         )
                         MapHudPrefs.saveOptIn3d(context, driveHud.optIn3d)
+                        MapHudPrefs.saveContoursEnabled(context, driveHud.contoursEnabled)
                         MapHudPrefs.saveCameraTiltDeg(context, driveHud.cameraTiltDeg)
                         DiagnosticLog.logSettingSaved("map_hud_auto_zoom_level", driveHud.autoZoomLevel)
                         DiagnosticLog.logSettingSaved("map_hud_opt_in_3d", driveHud.optIn3d)
+                        DiagnosticLog.logSettingSaved("map_hud_contours_enabled", driveHud.contoursEnabled)
                         DiagnosticLog.logSettingSaved("map_hud_camera_tilt_deg", driveHud.cameraTiltDeg)
                         // Re-apply basemap so Save after toggling 3D always refreshes
                         // hillshade/tilt (toggle alone can race the style callback).
@@ -5928,6 +5938,7 @@ private fun CorridorMapView(
     state: MapRouteState,
     dataDir: java.io.File,
     prefer3d: Boolean,
+    contoursEnabled: Boolean,
     cameraTiltDeg: Double,
     vulkanAvailable: Boolean,
     unitSystem: UnitSystem,
@@ -6034,6 +6045,11 @@ private fun CorridorMapView(
             java.util.concurrent.atomic
                 .AtomicReference(prefer3d)
         }
+    val contoursEnabledRef =
+        remember {
+            java.util.concurrent.atomic
+                .AtomicReference(contoursEnabled)
+        }
     val vulkanRef =
         remember {
             java.util.concurrent.atomic
@@ -6050,6 +6066,7 @@ private fun CorridorMapView(
                 .AtomicReference(unitSystem)
         }
     prefer3dRef.set(prefer3d)
+    contoursEnabledRef.set(contoursEnabled)
     vulkanRef.set(vulkanAvailable)
     tiltRef.set(cameraTiltDeg)
     unitSystemRef.set(unitSystem)
@@ -6134,8 +6151,24 @@ private fun CorridorMapView(
             MapterhornTerrain.detach(style)
             terrainOk = false
         }
+        var contoursOk = false
+        if (contoursEnabledRef.get()) {
+            val config = DemTileFetcher.Config.fromResolved(context, resolved)
+            if (config != null) {
+                contoursOk = MapterhornContours.attach(style, DemTileFetcher(config), unitSystemRef.get())
+                if (!contoursOk) {
+                    onStyleNote("Contour lines unavailable")
+                }
+            } else {
+                MapterhornContours.detach(style)
+                onStyleNote("Contour lines need Mapterhorn DEM (download terrain or go online)")
+            }
+        } else {
+            MapterhornContours.detach(style)
+        }
         if (applyGen != styleApplyGen.get()) return
         NaviMapTestHooks.lastTerrainAttached = terrainOk
+        NaviMapTestHooks.lastContoursAttached = contoursOk
         // setStyle / offline 3D JSON wipe GeoJSON overlays — re-apply immediately
         // so the corridor is not missing while layerEpoch catches up.
         applyRouteToStyle(style, stateRef.get())
@@ -6146,6 +6179,7 @@ private fun CorridorMapView(
         BasemapHousenumberStyle.apply(style)
         BasemapGlacierOutlineStyle.apply(style)
         BasemapPeakElevationStyle.apply(style, unitSystemRef.get())
+        BasemapContourLabelStyle.apply(style, unitSystemRef.get())
         ensureRouteAboveHillshade(style)
         applyCameraTilt(map)
         styleReady.value = true
@@ -6197,7 +6231,10 @@ private fun CorridorMapView(
                 val tiltMatches = kotlin.math.abs(tilt - wantTilt) <= 1.0
                 val wantTerrain = MapterhornTerrain.wantHillshadeAttached(resolved)
                 val terrainMatches = attached == wantTerrain
-                if (terrainMatches && tiltMatches) return@getStyle
+                val wantContours = contoursEnabledRef.get()
+                val contoursAttached = MapterhornContours.isAttached(style)
+                val contoursMatches = contoursAttached == wantContours
+                if (terrainMatches && tiltMatches && contoursMatches) return@getStyle
                 val applyGen = styleApplyGen.incrementAndGet()
                 applyTerrainAndPitch(map, style, resolved, applyGen)
             }
@@ -6377,6 +6414,7 @@ private fun CorridorMapView(
         mapRef?.getStyle { style ->
             if (style != null) {
                 BasemapPeakElevationStyle.apply(style, unitSystem)
+                BasemapContourLabelStyle.apply(style, unitSystem)
             }
         }
     }
@@ -6705,21 +6743,22 @@ private fun CorridorMapView(
         }
     }
 
-    LaunchedEffect(styleEpoch, prefer3d, vulkanAvailable, cameraTiltDeg) {
+    LaunchedEffect(styleEpoch, prefer3d, contoursEnabled, vulkanAvailable, cameraTiltDeg) {
         val map = mapRef ?: return@LaunchedEffect
         applyResolvedStyle(map, force = true)
     }
 
-    LaunchedEffect(state.cameraLat, state.cameraLon, prefer3d, cameraTiltDeg) {
+    LaunchedEffect(state.cameraLat, state.cameraLon, prefer3d, contoursEnabled, cameraTiltDeg) {
         val map = mapRef ?: return@LaunchedEffect
         if (state.cameraLat != null && state.cameraLon != null) {
             applyResolvedStyle(map, force = false)
         }
     }
 
-    LaunchedEffect(state.layerEpoch, styleReady.value, prefer3d, vulkanAvailable, cameraTiltDeg) {
+    LaunchedEffect(state.layerEpoch, styleReady.value, prefer3d, contoursEnabled, vulkanAvailable, cameraTiltDeg) {
         if (!styleReady.value) return@LaunchedEffect
         val want3d = prefer3dRef.get() && vulkanRef.get()
+        val wantContours = contoursEnabledRef.get()
         val pitch = effectiveTiltDeg()
         mapView.getMapAsync { map ->
             mapRef = map
@@ -6729,6 +6768,10 @@ private fun CorridorMapView(
                 if (!want3d) {
                     MapterhornTerrain.detach(style)
                     NaviMapTestHooks.lastTerrainAttached = false
+                }
+                if (!wantContours) {
+                    MapterhornContours.detach(style)
+                    NaviMapTestHooks.lastContoursAttached = false
                 }
                 applyRouteToStyle(style, latest)
                 applyTracksToStyle(style, latest.tracks, mapView.context)

@@ -215,6 +215,8 @@ data class DriveHudState(
     val altitudeM: Double? = null,
     /** Opt-in Mapterhorn DEM hillshade 3D (online). Never default-on. */
     val optIn3d: Boolean = false,
+    /** Opt-in elevation contour lines from Mapterhorn DEM. Independent of hillshade. */
+    val contoursEnabled: Boolean = false,
     /** Camera tilt in degrees; snapped to [MapHudPrefs.CAMERA_TILT_PRESETS]. */
     val cameraTiltDeg: Double = MapHudPrefs.DEFAULT_CAMERA_TILT_DEG,
     /** Vulkan SDK linked — gate for offering 3D. */
@@ -368,6 +370,7 @@ fun MapSettingsSheet(
     onToggleAutoZoom: (Boolean) -> Unit,
     onAutoZoomLevelChange: (Double) -> Unit,
     onToggle3d: (Boolean) -> Unit = {},
+    onToggleContours: (Boolean) -> Unit = {},
     onCameraTiltChange: (Double) -> Unit = {},
     onSave: () -> Unit,
     onClose: () -> Unit,
@@ -512,6 +515,18 @@ fun MapSettingsSheet(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Contours", style = MaterialTheme.typography.bodySmall)
+                Switch(
+                    checked = state.contoursEnabled,
+                    onCheckedChange = onToggleContours,
+                    modifier = Modifier.testTag("toggle_basemap_contours"),
+                )
             }
             Column(
                 modifier =

@@ -25,6 +25,7 @@ import java.io.File
  */
 object MapterhornTerrain {
     const val TILEJSON_URL = "https://tiles.mapterhorn.com/tilejson.json"
+    const val ONLINE_TILE_TEMPLATE = "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp"
     const val MAPTERHORN_PLANET_URL = "https://download.mapterhorn.com/planet.pmtiles"
     const val TERRAIN_SOURCE_ID = "terrainSource"
     const val HILLSHADE_SOURCE_ID = "hillshadeSource"
