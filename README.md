@@ -109,6 +109,7 @@ It can:
 - Suggest rest stops and overnight places along longer trips
 - Respect truck driving-time rules where it knows the country rules
 - Show a simple map with your route, turns, and place names
+- Optional elevation **contours** and **hillshade** from Mapterhorn terrain (independent toggles)
 
 The map picture on screen comes from MapLibre. Online it can use OpenFreeMap
 Liberty tiles; offline it uses a downloaded regional map file (Protomaps).
@@ -145,6 +146,8 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Basemap POI icons** | Offline Protomaps amenity icons (fuel, hospital, alcohol shops, cycle/repair, and the rest of the allow-list) use dedicated sprites, not a generic dot. Kind list: [`docs/poi-icon-whitelist.md`](docs/poi-icon-whitelist.md). | Done |
 | **Peak heights** | Named mountain peaks show OSM elevation on the label (metres, or feet in the US unit profile — UK stays metres, same as HUD altitude). | Done |
 | **Glacier outlines** | Ice polygons get a teal dashed outline so they stay visible against pale fill (same dash as nature reserves, different colour). | Done |
+| **Elevation contours** | Opt-in brown isolines from the same Mapterhorn DEM as hillshade (not OSM contour vectors). Independent of **3D**. Spacing follows Kartverket map-series intervals (minor / index 5×). Index lines labelled with elevation (metres, or feet in the US unit profile). Needs DEM: online tiles, or **Download terrain DEM** for offline. Off by default. Detail: [`docs/map-styles.md`](docs/map-styles.md#elevation-contour-lines-opt-in-independent-of-hillshade). | Done |
+| **3D hillshade** | Optional hill shading from Mapterhorn DEM. Independent of contours — either, both, or neither. Offline needs **Download terrain DEM**. | Done |
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. A small leaf icon shows when eco is on. | Done |
 | **Offline planning** | Download a region once, then plan and see the route on the device. | Done |
 | **Indexing** | After a region download, a background job turns the OSM extract into compact routing packs so later plans are fast. You can plan while it runs; convert and place-index **pause** during a foreground plan so the PBF fallback is not starved. | Done |
@@ -152,6 +155,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Use GPS** | Fill From / Via / To from the live fix: coordinates appear immediately, then an optional nearby road-name upgrade. The field is the chip active when you tap — not whichever chip is selected after resolution finishes. | Done |
 | **Map mark & saved places** | Hold on the map ~4 s to mark a point; set From / Via / To or save a named place (separate from Saved routes). | Done |
 | **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position (resolved start label); hiking prompts first. | Done |
+| **Cancel planning** | While **Planning route…** or **Recalculating route…** is shown, **Cancel** stops the in-flight native plan. Recalc cancel keeps the original route. | Done |
 | **Breaks & rest** | Reminds you when a break is due and can suggest stops. Cars use hours between breaks; hiking/cycling use rest distances; trucks use legal driving-time rules where known. What is searched and used as pause POIs: [`docs/poi.md`](docs/poi.md). | Done |
 | **Drive bars** | Top: altitude (cutout-aware padding; metres, or feet in the US unit profile). Bottom: zoom, live GPS speed, posted limit when known, break timer, trip ETA, current street, eco leaf. Speed and distance follow **Display units**. Speed line turns the error colour when GPS speed is over the applicable limit (display only — not a spoken nag). | Done |
 | **Display units** | Drive settings: **Metric** (km, km/h), **US** (ft / mi, mph, altitude ft), or **UK** (yd then mi, mph, altitude m). First install infers once from SIM/network country (GB → UK, US/LR/MM → US, else metric; emulators stay metric). The chips always override; the choice is never re-inferred on travel. Internal values stay metric. | Done |
@@ -184,7 +188,7 @@ you can go offline.
 | **Map region (roads & places)** | **Yes** for routing and search | OpenStreetMap extract from [Geofabrik](https://download.geofabrik.de/) (example path: `europe/norway/ostlandet`) | **Download region + build place index** |
 | **Elevation** | Strongly recommended for eco / hills | Height data for the area | Usually comes with region provision |
 | **Offline basemap** | Needed for map graphics without internet | Visual map tiles (Protomaps) | **Download basemap (PMTiles)** |
-| **3D terrain** | Optional | Extra height tiles for hillshade | **Download terrain DEM (Mapterhorn)** |
+| **3D terrain** | Optional | Height tiles for hillshade **and** elevation contours | **Download terrain DEM (Mapterhorn)** |
 | **OSM updates** | Optional | Fresher roads/POIs | **Check for OSM updates** (never automatic) |
 
 **Minimum to plan a route:** region download + place index.  
@@ -296,7 +300,8 @@ north): [`docs/cider-route.md`](docs/cider-route.md).
 mode, then **Plan route**. From is often set with **Use GPS** (select the
 **From** / **To** / **Via** chip first; the button label follows the chip).
 Hiking paths need the **Hiking** mode — planning with Car uses the road network
-and will not follow foot trails properly.
+and will not follow foot trails properly. A **Planning route…** banner includes
+**Cancel** if you want to stop an in-flight plan.
 
 **Eco vs shortest.** Shortest ignores hills. Eco makes steep climbs “cost” more.
 Electric modes get some credit for downhill recovery.
@@ -315,6 +320,12 @@ This is silent — no pop-ups or log lines about surface class. Default mode is
 **Car** (strict); **Offroad** / 4×4 turns the weighting off. Today the mode is
 stored via the config API (`surface_routing_mode`); a Drive-settings chip is
 not shipped yet.
+
+**Contours and hillshade.** Tap the top bar: **Contours** draws elevation
+isolines; **3D (experimental)** draws hillshade. They are independent — either,
+both, or neither. Both use the same Mapterhorn DEM (online tiles, or
+**Download terrain DEM** for offline). Interval ladder, index labels, and
+flat-terrain limits: [`docs/map-styles.md`](docs/map-styles.md#elevation-contour-lines-opt-in-independent-of-hillshade).
 
 **Places.** Search fills From / Via / To. What counts as a hut, rest area, and so
 on is documented in [`docs/poi.md`](docs/poi.md).
@@ -388,7 +399,8 @@ display choices in app preferences).
 | **Trip ETA** | Show time left to the destination on the bottom bar |
 | **Breaks** | Show the “Break in …” reminder line (does not change how stops are planned) |
 | **Auto-zoom** | Keep a chosen zoom while moving |
-| **3D (experimental)** | Optional hill shading on the map |
+| **3D (experimental)** | Optional hill shading on the map (independent of contours) |
+| **Contours** | Opt-in elevation isolines from the Mapterhorn DEM (independent of 3D; off by default) |
 | **Map tilt** | Tip the camera (0° / 35° / 45° / 60°) |
 
 ### Drive / vehicle (tap bottom status)
@@ -422,6 +434,7 @@ downloads).
 | Setting / action | Plain meaning |
 |---|---|
 | **Download region / basemap / DEM** | Offline map data (see [What you need to download](#what-you-need-to-download)) |
+| **Pause / Resume / Cancel** | Control an in-progress download. Region downloads also **resume after a force-stop** (HTTP Range from the `.partial` file) instead of starting over |
 | **Check for OSM updates** / **Apply pending** | Opt-in refresh; never silent auto-download |
 | **Weekly update reminder** | Optional nag only — does not download by itself |
 | **Diagnostic logging** | **Debug toggle** (off by default). When **on**, Navi appends a pipe-delimited **session log** on the device so you can diagnose planning, GPS, and setting changes without `adb logcat`. When **off**, no new session file is written and native per-stage route-plan timing stays gated off |
@@ -599,7 +612,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/codebase-map.md`](docs/codebase-map.md) | Where to change code for a given feature |
 | [`docs/pictures.md`](docs/pictures.md) / [`docs/bilder.md`](docs/bilder.md) | Screenshot galleries |
 | [`docs/icons.md`](docs/icons.md) | Where icon files live, licensing, and how to add SVGs |
-| [`docs/map-styles.md`](docs/map-styles.md) | Online vs offline map look; 3D |
+| [`docs/map-styles.md`](docs/map-styles.md) | Online vs offline map look; 3D hillshade; elevation contours |
 | [`docs/poi-icon-whitelist.md`](docs/poi-icon-whitelist.md) | Which offline POI kinds draw, and which shop kinds are held back |
 | [`docs/poi.md`](docs/poi.md) | Place types and search |
 | [How to use Navi](docs/how-to-use.md) | End-user how-to (planning, Tools, breaks, saved places/routes, profiles) |
@@ -655,6 +668,7 @@ hardware-facing plugins.
 | [`docs/plugins/horse-trekking-spec.md`](docs/plugins/horse-trekking-spec.md) | Equestrian lookahead and access guidance (Hiking is the interim stopgap) |
 | [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md) | Spoken escalating overspeed (percentage tiers; not shipped) |
 | [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic — Meshstick USB SX1262 stick or BLE node; location/speed/fuel/charge (not shipped) |
+| [`docs/plugins/voice-command.md`](docs/plugins/voice-command.md) | Spoken navigate / save-place / nearest-POI alternative (on-device ASR/TTS; not shipped). Distinct from turn-by-turn [`docs/voice-guidance.md`](docs/voice-guidance.md) |
 
 ## Icons (where they live)
 
@@ -888,7 +902,7 @@ or update.
 |---|---|---|
 | Roads & places | OpenStreetMap via Geofabrik `.osm.pbf` | Routing and search |
 | Map updates | Geofabrik diffs / fresh extract | Opt-in refresh only |
-| Elevation | Public DEM tiles | Eco / hills |
+| Elevation | Public DEM tiles | Eco / hills; Mapterhorn DEM also drives hillshade and contours |
 | Map picture | OpenFreeMap Liberty (online) or Protomaps PMTiles (offline) | What you see on screen |
 | Position | Device GPS (or gpsd on Linux) | Where you are |
 | Icons | Mostly Navit-derived SVG; custom `leaf` / `speed_camera` | Markers and turns |
@@ -1021,6 +1035,11 @@ Country/region visual extracts can also be prepared with
   so the decision stays legible when map and pack disagree. Future consideration
   (not built): optional “refresh basemap after OSM update” prompt. See
   [`docs/poi.md`](docs/poi.md) and [`docs/map-styles.md`](docs/map-styles.md).
+- **Finest contour interval on flat terrain is not fully verified.** At close
+  zoom the 5 m / 25 m ladder can look sparse or miss rings on genuinely flat
+  sites (DEM sample spacing vs isoline threshold). Mountainous areas (for
+  example Gjendebu) are the regression site. Detail:
+  [`docs/map-styles.md`](docs/map-styles.md#elevation-contour-lines-opt-in-independent-of-hillshade).
 - **Online Liberty has no named glacier labels.** OpenFreeMap Liberty /
   OpenMapTiles expose ice as fill only (`landcover_ice`); there is no glacier
   POI name path to style. Navi adds a dashed ice outline for visibility.

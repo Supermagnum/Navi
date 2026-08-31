@@ -11,6 +11,9 @@ that bar ([`current-street.md`](current-street.md)) and follow **Units** in Driv
 settings; spoken overspeed nags are
 not in the app yet
 ([`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md)).
+**Contours** (elevation isolines) and **3D (experimental)** (hillshade) are
+independent toggles in map/display settings; both use the Mapterhorn DEM
+([`map-styles.md`](map-styles.md#elevation-contour-lines-opt-in-independent-of-hillshade)).
 
 ---
 
@@ -54,6 +57,8 @@ Tap **Plan route**.
   to download a region (e.g. Østlandet) first.
 - While planning, the button shows **Planning…** and a progress line/bar may
   appear (plan-only progress — convert / cone work use separate channels).
+  A **Planning route…** banner includes **Cancel**, which stops the in-flight
+  native planner.
 - If the place index is still empty, searching a name shows
   **Place index is still building…**; use coordinates, map tap, or **Use GPS**
   meanwhile.
@@ -136,7 +141,7 @@ Open **Tools** from the planning panel (toggles to **Hide tools**).
 | **Download region + build place index** | Downloads the Geofabrik PBF, binds the region, builds the place search index, and builds indexed routing maps when possible. |
 | **Rebuild indexed maps (local PBF)** | Rebuilds preprocess packs from a PBF already on the device. |
 | **Download basemap (PMTiles)** | Offline Protomaps basemap for the selected region. |
-| **Download terrain DEM (Mapterhorn)** | Offline hillshade DEM beside the basemap. |
+| **Download terrain DEM (Mapterhorn)** | Offline hillshade and elevation contours beside the basemap. Independent of the **3D** / **Contours** map toggles — download once, enable either or both. |
 | **Pause / Resume / Cancel** | Controls an in-progress download job. |
 | **Check for OSM updates** | Opt-in Geofabrik update check (never silent). |
 | **Apply pending OSM update** | Applies a previously checked update after you confirm. |

@@ -81,6 +81,7 @@ Den kan:
 - Foreslå rastestopp og overnatting på lengre turer
 - Respektere lastebilers kjøre-/hviletidsregler der den kjenner landets regler
 - Vise et enkelt kart med rute, svinger og stedsnavn
+- Valgfrie høyde**kurver** og **bakkeskygge** fra Mapterhorn-terreng (uavhengige brytere)
 
 Kartbildet på skjermen tegnes med MapLibre. På nett kan det bruke OpenFreeMap
 Liberty-fliser; frakoblet brukes en nedlastet regional kartfil (Protomaps).
@@ -115,6 +116,11 @@ Dette er helt valgfri støtte, ikke en betalingsmur — Navi er og forblir grati
 | **Offisielle løyper** | For fottur/sykling kan du valgfritt foretrekke merkede langturer (av som standard). Vanlige stier fungerer fortsatt hvis merket løype har hull. | Ferdig |
 | **Sykkel-underlag** | Sykkel / elsykkel i Kjøre-innstillinger: **Road / Gravel / MTB**. Uegnede OSM-underlag og stier hard-filtreres etter at grafen er lastet (bygger ikke pakker på nytt). Standard er Gravel (trekking). | Ferdig |
 | **Motor-underlagspreferanse** | Bil, lastebil, bobil og motorsykkel: myk preferanse for gode kjørbare underlag (`surface` / `tracktype`) på snap-punkter og langs ruten; utaggede `highway=track` behandles forsiktig. Kun intern kostnad — ingen varsler i UI. Standard **Car**; **Offroad** / 4×4 slakker vektingen (config; ingen bryter i Kjøre-menyen ennå). | Ferdig |
+| **Grunnkart-POI-ikoner** | Frakoblede Protomaps-fasilitetsikoner (drivstoff, sykehus, alkoholutsalg, sykkel/reparasjon og resten av tillatelseslisten) bruker egne sprites, ikke en generisk prikk. Liste: [`poi-icon-whitelist.md`](poi-icon-whitelist.md). | Ferdig |
+| **Topphøyder** | Navngitte fjelltopper viser OSM-høyde på etiketten (meter, eller fot i US-enhetsprofilen — UK forblir meter, samme som HUD-høyde). | Ferdig |
+| **Isbreomriss** | Is-polygoner får en blågrønn stiplet kant så de synes mot blek fyll (samme strek som naturreservat, annen farge). | Ferdig |
+| **Høydekurver** | Valgfrie brune isolinjer fra samme Mapterhorn-DEM som bakkeskygge (ikke OSM-konturvektorer). Uavhengig av **3D**. Avstand følger Kartverkets kartserier (ekvidistanse / tellekurve 5×). Tellekurver merkes med høyde (meter, eller fot i US-enhetsprofilen). Trenger DEM: nettfliser, eller **Download terrain DEM** frakoblet. Av som standard. Detalj: [`map-styles.md`](map-styles.md#elevation-contour-lines-opt-in-independent-of-hillshade). | Ferdig |
+| **3D-bakkeskygge** | Valgfri skyggelegging fra Mapterhorn-DEM. Uavhengig av høydekurver — én, begge eller ingen. Frakoblet trenger **Download terrain DEM**. | Ferdig |
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Et lite bladikon vises når øko er på. | Ferdig |
 | **Frakoblet planlegging** | Last ned en region én gang, planlegg og se ruten på enheten. | Ferdig |
 | **Indeksering** | Etter regionsnedlasting gjør en bakgrunnsjobb OSM-uttrekket om til kompakte rutingpakker, så senere planer går raskt. Du kan planlegge mens den kjører; konvertering og stedsindeks **pauser** under en forgrunnsplan, slik at PBF-reservestien ikke sulter. | Ferdig |
@@ -122,17 +128,20 @@ Dette er helt valgfri støtte, ikke en betalingsmur — Navi er og forblir grati
 | **Bruk GPS** | Fyll Fra / Via / Til fra live-posisjon: koordinater kommer med en gang, deretter eventuelt oppgradering til veiknavn i nærheten. Feltet er chipen som var aktiv da du trykket — ikke den som er valgt etter at oppslaget er ferdig. | Ferdig |
 | **Kartmerke og lagrede steder** | Hold på kartet ~4 s for å merke et punkt; sett Fra / Via / Til eller lagre et navngitt sted (skilt fra Lagrede ruter). | Ferdig |
 | **Avvik / omberegning** | Vedvarende avvik viser **Off route**; motorprofiler omplanlegger automatisk fra live posisjon; fottur spør først. | Ferdig |
+| **Avbryt planlegging** | Mens **Planning route…** eller **Recalculating route…** vises, stopper **Cancel** den pågående native-planen. Avbrutt omberegning beholder opprinnelig rute. | Ferdig |
 | **Pauser og hvile** | Påminner når pause er «forfalt» og kan foreslå stopp. Bil bruker timer mellom pauser; fottur/sykling bruker rasteavstander; lastebil bruker juridiske kjøretidsregler der de er kjent. | Ferdig |
 | **Kjørefelt** | Topp: høyde (tilpasset kamerahull; meter, eller fot i US-enhetsprofilen). Bunn: zoom, live GPS-fart, skiltet fartsgrense når kjent, pauseteller, tur-ETA, veinavn, økoblad. Fart og avstand følger **enheter**. Fartslinjen bruker feilfarge ved overskridelse (kun visning — ikke taleskjenning). | Ferdig |
 | **Enheter** | Kjøreinnstillinger: **Metric** (km, km/t), **US** (ft / mi, mph, høyde i fot), eller **UK** (yd deretter mi, mph, høyde i meter). Første installasjon utledes én gang fra SIM/nettverksland (GB → UK, US/LR/MM → US, ellers metrisk; emulatorer forblir metriske). Brikkene overstyrer alltid. | Ferdig |
 | **GPS-følge** | Kartet følger deg som standard. Panorer bort, trykk deretter **Recenter**. | Ferdig |
 | **Kartrotasjon** | Nord opp, kompass eller kjøreretning. | Ferdig |
 | **Bevegelige ikoner** | Kan tegne nærliggende spormarkører på kartet. Live radiomating er ikke innebygd ennå. | Delvis |
+| **Sesongstengte veier** | OSM `motor_vehicle:conditional` / `access:conditional` hard-filtreres mot planlagt avreisetid (Car/Truck; Hiking/Bicycle ikke). Rent OSM-tag-drevet. **v1:** flerdagersturer som krysser sesonggrense vurderes bare ved avreiseøyeblikket. | Ferdig |
 | **Norske vegskiltvarsler** | Vendoret `NO:`-katalog for tilnærmingsikoner i Norge; eksplisitte OSM `traffic_sign` / `hazard`-tagger. Samme 750 / 150 / 25 m-faser som svinginstruksjoner. Se [`road-signs.md`](road-signs.md). | Ferdig |
 | **Look forward / Se fremover** | Uten planlagt rute ser GPS-posisjon + heading **300 m** fremover (±60°) etter katalogskilt, fartshumper (`NO:109`), barnefasiliteter (generisk **142**), opt-in fartskamera og kommende skiltet fartsgrense fra eksisterende veinavn-/cellegraf — samme tilnærmingsboks (750 / 150 / 25 m) og jurisdiksjonsregler som rute-korridoren. Kompakte punkter lastes én gang per region. Detaljer: [`road-signs.md`](road-signs.md). | Ferdig |
 | **Barnefasiliteter i nærheten** | Når ingen tagget barn-/skolevarselskilt er aktivt, gir skoler, barnehager og lekeplasser fortsatt et generisk **142 Barn**-tilnærmingsvarsel (nærmeste anlegg; tagget `NO:142` går foran). **Med planlagt rute:** innen **200 m** fra korridoren. **Uten rute:** dekkes av **Look forward** (300 m kjegle). Detaljer: [`road-signs.md`](road-signs.md). | Ferdig |
 | **Fartskameravarsler** | Punktkamera bruker samme tilnærmingsfaser; snittfart / strekningskontroll har egen inn-/utboks. Jurisdiksjonsstyrt (Norge/UK opt-in; flere land avslår) — se [`jurisdiction-rules.md`](jurisdiction-rules.md). Første-gangs opt-in-dialog. Virker både på planlagt-rute-korridor og **Look forward**. | Ferdig (kun visning/varsel) |
 | **Kartoppdateringer** | Bare når du ber om det — sjekk OpenStreetMap-oppdateringer eller last en fersk region. Aldri i det stille. | Ferdig |
+| **Kryss-region / kryss-land** | Destinasjoner utenfor nedlastet data (inkludert annet land, f.eks. Sverige) viser **Map data needed** med riktig Geofabrik-uttrekk — ikke en stille delvis rute. | Ferdig |
 | **Diagnostisk logging** | **Tools → Diagnostic logging** (av som standard). Når på, skrives en datert øktlogg under **Intern lagring → Documents → debug** (`navi_session_*.log`) for kopiering over USB/MTP — adb trengs ikke. Dekker GPS, kamera, brytere, ruteplan/trinn, øko, POI, pauser, instruksjoner, drivstoff, system. Lastes ikke opp. **Export diagnostic log** deler siste fil. Detalj: [Innstillinger → Tools](#tools-nedlastinger-og-diagnostisk-logging) og [`debugging.md`](debugging.md#3b-diagnostic-session-log-on-device-file). | Ferdig |
 | **Plugins** | En trygg sandkasse for fremtidige tillegg finnes; produktplugins er ikke levert ennå. | Vert klar |
 
@@ -152,7 +161,7 @@ kan du gå frakoblet.
 | **Kartregion (veier og steder)** | **Ja** for ruting og søk | OpenStreetMap-uttrekk fra [Geofabrik](https://download.geofabrik.de/) (eksempel: `europe/norway/ostlandet`) | **Download region + build place index** |
 | **Høyde** | Sterkt anbefalt for øko / bakker | Høydedata for området | Følger vanligvis med regionsnedlasting |
 | **Frakoblet grunnkart** | Trengs for kartgrafikk uten nett | Visuelle kartfliser (Protomaps) | **Download basemap (PMTiles)** |
-| **3D-terreng** | Valgfritt | Ekstra høydefliser for skyggelegging | **Download terrain DEM (Mapterhorn)** |
+| **3D-terreng** | Valgfritt | Høydefliser for bakkeskygge **og** høydekurver | **Download terrain DEM (Mapterhorn)** |
 | **OSM-oppdateringer** | Valgfritt | Ferskere veier/POI-er | **Check for OSM updates** (aldri automatisk) |
 
 **Minimum for å planlegge rute:** regionsnedlasting + stedsindeks.  
@@ -252,7 +261,8 @@ Et eksempel på en flersone-biltur (OSM ciderprodusenter, sør til nord):
 reisemåte, deretter **Plan route**. From settes ofte med **Use GPS** (velg
 **From** / **To** / **Via**-chip først; knappeetiketten følger chipen).
 Fotstier krever **Hiking**-modus — planlegging med Car bruker veinettet og
-følger ikke stier skikkelig.
+følger ikke stier skikkelig. Et banner **Planning route…** har **Cancel** hvis
+du vil stoppe en pågående plan.
 
 **Øko vs kortest.** Kortest ignorerer bakker. Øko gjør bratte stigninger
 «dyrere». Elektriske modi får noe kreditt for energi tilbake i nedoverbakke.
@@ -262,6 +272,13 @@ følger ikke stier skikkelig.
 tilgjengelige, så et hull aldri stenger hele turen. Egne brytere styrer
 **nettverkshytter** som via-punkter og om du er **nettverkshytte-medlem** for
 overnatting (se [Kjøring / kjøretøy](#kjøring--kjøretøy-trykk-bunnstatus)).
+
+**Høydekurver og bakkeskygge.** Trykk toppstripen: **Contours** tegner
+høydeisolinjer; **3D (experimental)** tegner bakkeskygge. De er uavhengige —
+én, begge eller ingen. Begge bruker samme Mapterhorn-DEM (nettfliser, eller
+**Download terrain DEM** frakoblet). Intervallstige, tellekurve-etiketter og
+begrensninger i flatt terreng:
+[`map-styles.md`](map-styles.md#elevation-contour-lines-opt-in-independent-of-hillshade).
 
 **Steder.** Søk fyller Fra / Via / Til. Hva som teller som hytte, rasteplass
 osv. er beskrevet i [`poi.md`](poi.md).
@@ -334,7 +351,8 @@ kartvisning i app-preferanser).
 | **Trip ETA** | Vis tid igjen til målet i bunnstripen |
 | **Breaks** | Vis linjen «Break in …» (endrer ikke hvordan stopp planlegges) |
 | **Auto-zoom** | Hold valgt zoom mens du beveger deg |
-| **3D (experimental)** | Valgfri bakkeskygge på kartet |
+| **3D (experimental)** | Valgfri bakkeskygge på kartet (uavhengig av høydekurver) |
+| **Contours** | Valgfrie høydeisolinjer fra Mapterhorn-DEM (uavhengig av 3D; av som standard) |
 | **Map tilt** | Tippe kameraet (0° / 35° / 45° / 60°) |
 
 ### Kjøring / kjøretøy (trykk bunnstatus)
@@ -368,6 +386,7 @@ nedlasting).
 | Innstilling / handling | Enkel forklaring |
 |---|---|
 | **Download region / basemap / DEM** | Frakoblede kartdata (se hva du må laste ned ovenfor) |
+| **Pause / Resume / Cancel** | Styr en pågående nedlasting. Regionsnedlasting **gjenopptas etter force-stop** (HTTP Range fra `.partial`-filen) i stedet for å starte på nytt |
 | **Check for OSM updates** / **Apply pending** | Valgfri oppdatering; aldri stille autodownload |
 | **Weekly update reminder** | Valgfri påminnelse — laster ikke ned selv |
 | **Diagnostic logging** | **Debug-bryter** (av som standard). Når **på**, skriver Navi en rør-separert **øktlogg** på enheten så du kan feilsøke planlegging, GPS og innstillinger uten `adb logcat`. Når **av**, skrives ingen ny øktfil, og native per-trinns ruteplan-timing er også av |
@@ -513,7 +532,7 @@ Fullt galleri: [`bilder.md`](bilder.md) (engelsk:
 | [`codebase-map.md`](codebase-map.md) | Hvor man endrer kode for en gitt funksjon |
 | [`bilder.md`](bilder.md) / [`pictures.md`](pictures.md) | Skjermbildegallerier |
 | [`icons.md`](icons.md) | Hvor ikonfilene ligger, lisens og hvordan man legger til SVG |
-| [`map-styles.md`](map-styles.md) | Online vs frakoblet kartutseende; 3D |
+| [`map-styles.md`](map-styles.md) | Online vs frakoblet kartutseende; 3D-bakkeskygge; høydekurver |
 | [`poi.md`](poi.md) | Stedstyper og søk |
 | [How to use Navi](how-to-use.md) | Brukerveiledning (planlegging, Tools, pauser, lagrede steder/ruter, profiler) — engelsk |
 | [`cider-route.md`](cider-route.md) | Forslag til **Siderveien** (norsk cider-rute): OSM `brewery=cider`-stopp sør→nord, med Navi-region/etappe-notater — engelsk |
@@ -557,6 +576,8 @@ og maskinvareplugins skal kunne snakke over **USB** / **Bluetooth** via verten.
 | [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md) | Korte varselyder (skilt, kamera, overskridelse-earcon) |
 | [`plugins/horse-trekking-spec.md`](plugins/horse-trekking-spec.md) | Ridning: forsyning og adgangsveiledning (Hiking er midlertidig stopgap) |
 | [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) | Talt, eskalerende fartsvarsel (prosenttrinn; ikke levert) |
+| [`plugins/lora-convoy-spec.md`](plugins/lora-convoy-spec.md) | LoRa-konvoistatus over Meshtastic (Meshstick USB / BLE; ikke levert) |
+| [`plugins/voice-command.md`](plugins/voice-command.md) | Talt navigere / lagre sted / nærmeste POI (ASR/TTS på enheten; ikke levert). Skilt fra sving-for-sving [`voice-guidance.md`](voice-guidance.md) |
 
 ## Ikoner (hvor de ligger)
 
@@ -773,7 +794,7 @@ eller oppdatere.
 |---|---|---|
 | Veier og steder | OpenStreetMap via Geofabrik `.osm.pbf` | Ruting og søk |
 | Kartoppdateringer | Geofabrik-diff / ferskt uttrekk | Bare valgfri oppdatering |
-| Høyde | Offentlige DEM-fliser | Øko / bakker |
+| Høyde | Offentlige DEM-fliser | Øko / bakker; Mapterhorn-DEM styrer også bakkeskygge og høydekurver |
 | Kartbilde | OpenFreeMap Liberty (online) eller Protomaps PMTiles (frakoblet) | Det du ser på skjermen |
 | Posisjon | Enhetens GPS (eller gpsd på Linux) | Hvor du er |
 | Ikoner | Medfølgende Navit-avledet SVG | Markører og svinger |
@@ -810,6 +831,11 @@ Land-/regionvisuelle uttrekk kan også lages med
   [Indeksering](#indeksering-bakgrunn-etter-nedlasting)).
 - **Pauseteller ≠ tur-ETA:** med vilje — se
   [Pauseteller vs tur-ETA](#pauseteller-vs-tur-eta).
+- **Fineste høydekurveintervall i flatt terreng er ikke fullt verifisert.**
+  På nær-zoom kan 5 m / 25 m-stigen se sparsom ut eller mangle ringer på
+  virkelig flate steder (DEM-prøveavstand vs isolinje-terskel). Fjellområder
+  (for eksempel Gjendebu) er regresjonsstedet. Detalj:
+  [`map-styles.md`](map-styles.md#elevation-contour-lines-opt-in-independent-of-hillshade).
 - **Ikke implementert ennå:** sjekk av om koden kan optimaliseres for
   tegning/rendering.
 
