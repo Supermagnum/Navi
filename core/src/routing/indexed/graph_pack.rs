@@ -7,7 +7,7 @@ use osm4routing::{Node, NodeId};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
 use crate::routing::elevation::ElevationService;
-use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile};
+use crate::routing::graph::{infer_surface_from_highway, GraphEdge, RouteGraph, RoutingProfile};
 
 /// Little-endian ASCII "NVRK".
 pub const MAGIC_GRAPH: u32 = 0x4E_56_52_4B;
@@ -387,6 +387,11 @@ impl FlatGraphPack {
                     }
                 },
                 access_forbidden: self.edge_access_forbidden.get(i).copied().unwrap_or(0) != 0,
+                surface_quality: infer_surface_from_highway(if hw.is_empty() {
+                    None
+                } else {
+                    Some(hw)
+                }),
             });
         }
         let mut blocked = std::collections::HashSet::new();
@@ -424,7 +429,7 @@ impl FlatGraphPack {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile};
+    use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile, SurfaceQuality};
     use geo_types::Coord;
     use osm4routing::{Node, NodeId};
     use std::collections::HashMap;
@@ -483,6 +488,7 @@ mod tests {
             access_conditional: None,
             maxspeed_conditional: None,
             access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
     }
@@ -568,6 +574,7 @@ mod tests {
             access_conditional: None,
             maxspeed_conditional: None,
             access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
         }
     }
 

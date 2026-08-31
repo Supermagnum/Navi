@@ -55,6 +55,7 @@ fn edge(id: &str, source: i64, target: i64, length_m: f64, highway: &str) -> Gra
         access_conditional: None,
         maxspeed_conditional: None,
         access_forbidden: false,
+        surface_quality: driver_break_core::routing::graph::SurfaceQuality::Good,
     }
 }
 

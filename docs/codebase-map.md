@@ -177,7 +177,9 @@ next maneuver”).
 | Hiking multi-waypoint | UniFFI `plan_hiking_route` (rejects using `plan_car_route` with Hiking) |
 | Fixture corridor smoke | `run_car_corridor_pipeline` |
 | Graph build / eco | `core/src/routing/graph/` |
+| Motor surface quality (car/truck) | `core/src/routing/graph/surface_quality.rs` — edge multipliers, snap preference, transition penalties; `surface_routing_mode` config (`car` / `offroad`) |
 | Official hiking/cycle networks | `network_pref.rs` + `prefer_official_networks` flag |
+| Bicycle surface hard-filter | `bike_suitability.rs` + `bike_capability` config (`road` / `trekking` / `mountain`) |
 | Kotlin call sites | `MainActivity.kt` (search `planCarRoute` / `planHikingRoute`) |
 
 Hiking foot routes require **Hiking** travel mode in drive settings; other

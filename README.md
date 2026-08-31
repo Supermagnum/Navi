@@ -141,6 +141,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Avoidances** | You can ask to avoid motorways, tolls, or ferries. Motorways here means OSM `highway=motorway` / `motorway_link`, `motorroad=yes` / `expressway=yes`, or a dual carriageway with `lanes>=2` and `maxspeed>=90` — not every E-road or urban arterial. | Done |
 | **Official trails** | For hiking/cycling, optionally prefer marked long-distance trails (off by default). Normal paths still work if the marked trail has a gap. | Done |
 | **Bike surface suitability** | Bicycle / e-bike Drive setting: **Road / Gravel / MTB**. Unsuitable OSM surfaces and tracks are hard-excluded after the graph loads (does not rebuild packs). Default is Gravel (trekking). | Done |
+| **Motor surface preference** | Car, truck, motorhome, and motorcycle: soft preference for good driveable surfaces (`surface` / `tracktype`) on connector snaps and along the route; untagged `highway=track` is treated cautiously. Internal costing only — no warnings in the UI. Default **Car**; **Offroad** / 4×4 relaxes the weighting (stored in config; no Drive-menu toggle yet). | Done |
 | **Basemap POI icons** | Offline Protomaps amenity icons (fuel, hospital, alcohol shops, cycle/repair, and the rest of the allow-list) use dedicated sprites, not a generic dot. Kind list: [`docs/poi-icon-whitelist.md`](docs/poi-icon-whitelist.md). | Done |
 | **Peak heights** | Named mountain peaks show OSM elevation on the label (metres, or feet in the US unit profile — UK stays metres, same as HUD altitude). | Done |
 | **Glacier outlines** | Ice polygons get a teal dashed outline so they stay visible against pale fill (same dash as nature reserves, different colour). | Done |
@@ -306,6 +307,15 @@ so a gap never traps you. Separate toggles control **networked cabins** as
 waypoints and whether you are a **network hut member** for overnight planning
 (see [Drive / vehicle](#drive--vehicle-tap-bottom-status)).
 
+**Motor surface quality.** For car-like profiles (car, truck, motorhome,
+motorcycle), the planner prefers paved or well-graded connectors when a
+better-surfaced snap point exists within budget, and applies soft edge costs
+plus transition penalties when the route drops onto poor or unknown tracks.
+This is silent — no pop-ups or log lines about surface class. Default mode is
+**Car** (strict); **Offroad** / 4×4 turns the weighting off. Today the mode is
+stored via the config API (`surface_routing_mode`); a Drive-settings chip is
+not shipped yet.
+
 **Places.** Search fills From / Via / To. What counts as a hut, rest area, and so
 on is documented in [`docs/poi.md`](docs/poi.md).
 
@@ -387,6 +397,7 @@ display choices in app preferences).
 |---|---|
 | **Travel mode** | Car, bike, hiking, truck, … |
 | **Bike type** | Bicycle / e-bike: **Road / Gravel / MTB** surface capability (hard-excludes unsuitable tracks) |
+| **Surface routing mode** | Car / truck / motorhome / motorcycle only: **`car`** (default) prefers good surfaces; **`offroad`** / **`4x4`** relaxes surface costing. Config/API today — not a Drive-menu chip yet |
 | **Follow official hiking/cycling networks** | Hiking / bicycle / e-bike: soft preference for waymarked networks (ordinary paths still usable) |
 | **Use networked cabins** | Hiking / bicycle / e-bike: allow DNT/STF-style **network** huts as auto-via / waypoint candidates (off by default). Does **not** change overnight membership rules |
 | **Network hut member (DNT/STF/…)** | Hiking only: when on, overnight may prefer network huts; when off (default), prefer non-network cabins and flag network stops as membership-required |

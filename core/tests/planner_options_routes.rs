@@ -69,6 +69,7 @@ fn edge(
         access_conditional: None,
         maxspeed_conditional: None,
         access_forbidden: false,
+        surface_quality: driver_break_core::routing::graph::SurfaceQuality::Good,
     }
 }
 

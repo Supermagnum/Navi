@@ -99,6 +99,8 @@ used by truck / restriction costing (see record in `navi-ffi`).
 | `list_saved_places` / `save_named_place` / `rename_saved_place` / `delete_saved_place` | Named single coordinates (`FfiSavedPlace`) — distinct from routes |
 | `load_vehicle_limits` / `save_vehicle_limits` | `FfiVehicleLimits` |
 | `load_prefer_official_networks` / `save_prefer_official_networks` | Hiking/cycle network preference |
+| `load_bike_capability` / `save_bike_capability` | Bicycle / electric-cycle terrain filter (`road` / `trekking` / `mountain`) |
+| `load_surface_routing_mode` / `save_surface_routing_mode` | Motor surface strictness (`car` default, or `offroad` / `4x4` to relax costing) |
 | `load_car_rest_settings` / `save_car_rest_settings` | `FfiCarRestSettings` |
 | `load_truck_rest_settings` / `save_truck_rest_settings` | `FfiTruckRestSettings` |
 | `set_truck_exceptional_extension_armed` | EC 561 exceptional extension arming |

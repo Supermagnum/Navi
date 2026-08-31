@@ -113,6 +113,8 @@ Dette er helt valgfri støtte, ikke en betalingsmur — Navi er og forblir grati
 | **Elsykkel-data** | Batteristørrelse, motormoment og hjulstørrelse hjelper til å anslå batteribruk og bratte bakker. Live kabel-telemetri er planlagt senere. | Ferdig (planlegging); live data senere |
 | **Unngåelser** | Du kan be om å unngå motorvei, bom eller ferge. Motorvei her betyr OSM `highway=motorway` / `motorway_link`, `motorroad=yes` / `expressway=yes`, eller tofelts enveiskjørt veg med `maxspeed>=90` — ikke all E-veg eller by-innfart. | Ferdig |
 | **Offisielle løyper** | For fottur/sykling kan du valgfritt foretrekke merkede langturer (av som standard). Vanlige stier fungerer fortsatt hvis merket løype har hull. | Ferdig |
+| **Sykkel-underlag** | Sykkel / elsykkel i Kjøre-innstillinger: **Road / Gravel / MTB**. Uegnede OSM-underlag og stier hard-filtreres etter at grafen er lastet (bygger ikke pakker på nytt). Standard er Gravel (trekking). | Ferdig |
+| **Motor-underlagspreferanse** | Bil, lastebil, bobil og motorsykkel: myk preferanse for gode kjørbare underlag (`surface` / `tracktype`) på snap-punkter og langs ruten; utaggede `highway=track` behandles forsiktig. Kun intern kostnad — ingen varsler i UI. Standard **Car**; **Offroad** / 4×4 slakker vektingen (config; ingen bryter i Kjøre-menyen ennå). | Ferdig |
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Et lite bladikon vises når øko er på. | Ferdig |
 | **Frakoblet planlegging** | Last ned en region én gang, planlegg og se ruten på enheten. | Ferdig |
 | **Indeksering** | Etter regionsnedlasting gjør en bakgrunnsjobb OSM-uttrekket om til kompakte rutingpakker, så senere planer går raskt. Du kan planlegge mens den kjører; konvertering og stedsindeks **pauser** under en forgrunnsplan, slik at PBF-reservestien ikke sulter. | Ferdig |
@@ -340,6 +342,8 @@ kartvisning i app-preferanser).
 | Innstilling | Enkel forklaring |
 |---|---|
 | **Travel mode** | Bil, sykkel, fottur, lastebil, … |
+| **Bike type** | Sykkel / elsykkel: **Road / Gravel / MTB** (hard-filtrerer uegnede stier) |
+| **Surface routing mode** | Bare bil / lastebil / bobil / motorsykkel: **`car`** (standard) foretrekker gode underlag; **`offroad`** / **`4x4`** slakker vekting. Config/API i dag — ikke bryter i Kjøre-menyen ennå |
 | **Follow official hiking/cycling networks** | Fottur / sykkel / elsykkel: myk preferanse for merkede nettverk (vanlige stier fortsatt brukbare) |
 | **Use networked cabins** | Fottur / sykkel / elsykkel: tillat DNT/STF-lignende **nettverkshytter** som auto-via / via-kandidater (av som standard). Endrer **ikke** overnattingsmedlemskapsregler |
 | **Network hut member (DNT/STF/…)** | Bare fottur: når på, kan overnatting foretrekke nettverkshytter; når av (standard), foretrekk ikke-nettverk og merk nettverkstopp som medlemskapskrevd |

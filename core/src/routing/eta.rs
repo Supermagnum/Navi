@@ -308,6 +308,7 @@ mod tests {
             access_conditional: None,
             maxspeed_conditional: None,
             access_forbidden: false,
+            surface_quality: crate::routing::graph::SurfaceQuality::Good,
         }];
         let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
         let mins = motor_path_minutes(&graph, &[NodeId(1), NodeId(2)]);
@@ -369,6 +370,7 @@ mod tests {
             access_conditional: None,
             maxspeed_conditional: None,
             access_forbidden: false,
+            surface_quality: crate::routing::graph::SurfaceQuality::Good,
         }];
         let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
         let mins = motor_path_minutes(&graph, &[NodeId(1), NodeId(2)]);

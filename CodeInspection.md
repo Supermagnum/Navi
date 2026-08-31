@@ -58,6 +58,7 @@ unit tests inside `driver-break-core`, `navi-ffi`, etc.). Names are cargo
 |---|---|
 | `bike_suitability_route` | Road-bike profile avoids a short MTB-scaled leg when a longer paved detour exists |
 | `friisvegen_seasonal_closure` | Friisvegen seasonal motor closure (needs Ostlandet under integration-fixtures when run fully; may skip if missing) |
+| `slow_road_osterdalen` | Hiking/cycling slow-road preference when Ostlandet fixture present |
 | `glacier_overnight_edge` | Glacier overnight edge-distance (not centroid) near Gjende |
 | `graph_pack_v5_to_v6_regen` | Planted v5 FlatGraphPack → `VersionMismatch` → `convert_region_packs` rebuilds v6 with vehicle physical limits (Stai bru fixture) |
 | `innlandet_real_world_limits` | Indexed-pack path: Fokholgutua maxheight, Atna maxlength/maxweight, Stai maxwidth/maxaxleload, Liabrue maxbogieweight (with under-limit positive controls) |
@@ -82,6 +83,8 @@ unit tests inside `driver-break-core`, `navi-ffi`, etc.). Names are cargo
 **Library unit tests** (examples called out in CI comments; not exhaustive):
 `download::pbf_priority` (foreground plan / cone skip),
 `basemap::extract::validate_rejects_mz12_large_region_fixture`,
+`routing::graph::surface_quality` (OSM surface/tracktype classes, transition penalties),
+`routing::graph::builder` (surface-aware snap + A* transition preference),
 `routing::indexed::graph_pack` round-trips (shape, motorway-grade tags, vehicle
 limits, height-limited plan after rkyv), wetland Soft/Hard tag logic.
 

@@ -461,6 +461,7 @@ mod tests {
             access_conditional: None,
             maxspeed_conditional: maxspeed_conditional.map(|s| s.into()),
             access_forbidden: false,
+            surface_quality: crate::routing::graph::SurfaceQuality::Good,
         }
     }
 
