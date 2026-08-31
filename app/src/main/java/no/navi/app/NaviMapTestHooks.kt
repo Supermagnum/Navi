@@ -122,6 +122,28 @@ object NaviMapTestHooks {
     @Volatile
     var lastTerrainAttached: Boolean = false
 
+    /** True when Mapterhorn DEM contour attach succeeded for the current style. */
+    @Volatile
+    var lastContoursAttached: Boolean = false
+
+    /** True when index-contour elevation label layer is on the style. */
+    @Volatile
+    var lastContourLabelsAttached: Boolean = false
+
+    /** Contour DEM grid cache hits (decoded terrarium tiles). */
+    @Volatile
+    var contourDemCacheHits: Long = 0
+
+    @Volatile
+    var contourDemCacheMiss: Long = 0
+
+    /** Contour marching-squares cache hits (per DEM tile + map zoom). */
+    @Volatile
+    var contourGenCacheHits: Long = 0
+
+    @Volatile
+    var contourGenCacheMiss: Long = 0
+
     /** Last MapLibre camera pitch/tilt (degrees); viewing aid with hillshade 3D. */
     @Volatile
     var lastCameraPitch: Double = 0.0

@@ -310,6 +310,143 @@ tilt stays at the user’s map-tilt preset**. Without Vulkan, tilt is forced to
 0° (same gate as other non-zero camera angles on the former GLES crash path).
 Never a blank map from the Kotlin attach path.
 
+## Elevation contour lines (opt-in, independent of hillshade)
+
+**Toggle:** Map settings → **Contours** (`MapHudPrefs.contours_enabled`). Fully
+decoupled from **3D (experimental)** / `opt_in_3d`. Either, both, or neither may
+be on; toggling one never changes the other.
+
+**Data source:** Contours are **derived on-device from the same Mapterhorn
+terrarium DEM** used for hillshade — not pre-rendered OSM contour vectors and not
+a separate fetch pipeline. MapLibre Native has no built-in `contour` source type
+([maplibre-native#4283](https://github.com/maplibre/maplibre-native/issues/4283));
+Navi uses `CustomGeometrySource` + marching squares (`ContourGenerator`) over
+512×512 terrarium tiles (online CDN WebP, offline `{region}_dem.pmtiles` via
+`pmtilesGetTile` / `LocalDemTileServer` loopback). Contours draw from camera
+zoom **9–20** (same ceiling as [MapHudPrefs.MAX_ZOOM]); DEM native max zoom
+remains **12** (parent-tile oversample at higher zoom). The former **15** layer
+cap hid lines at street/farm zoom (~16–18).
+
+**Interval ladder (Kartverket-aligned):** Minor (ekvidistanse) and index
+(tellekurve) spacing follow [Statens kartverk](https://www.kartverket.no/) map-series
+conventions. Index spacing is always **5×** minor — the same ratio as Kartverket
+index contours and Navi's existing `major` flag in [ContourGenerator]. Values
+are chosen from the official scale-dependent table, mapped to Navi camera zoom
+using ground scale at ~61°N (Web Mercator m/px × cos(lat); same latitude band as
+the default Ostlandet extract):
+
+| Navi zoom | Approx. ground scale (~61°N) | Kartverket series | Minor (m) | Index (m) |
+|-----------|------------------------------|-------------------|-----------|-----------|
+| 9–10 | ~1:580k – 1:290k | Older 1:100 000 | 30 | 150 |
+| 11–12 | ~1:145k – 1:72k | N50 1:50 000 | 20 | 100 |
+| 13–14 | ~1:36k – 1:18k | N20 1:20 000 | 10 | 50 |
+| 15–20 | ~1:9k and closer | N5 1:5 000 | 5 | 25 |
+
+Zoom **13** sits between N50 and N20 on the ground; **10 m / 50 m** (N20) is
+used so close-in hiking views match Kartverket N20 Kartdata rather than the
+coarser N50 interval. Kartverket sometimes uses a finer interval in very flat
+terrain (e.g. 2 m instead of 5 m on N5) as an editorial relief choice — not
+implemented in v1; would need cheap slope/relief input.
+
+**DEM resolution vs finest interval:** Terrarium decode ([LocalDemTileServer.terrariumElevM])
+stores elevation as a `Double` with sub-metre precision (RGB → metres, no integer
+quantization). At z15 the marching-squares grid is resampled to **160×160**
+([DemTileFetcher.sampleDimForZoom]) over each native z12 512×512 parent tile
+(~4–5 km wide at Innlandet latitudes → ~25–30 m between samples). On **typical
+relief** that horizontal spacing vs a 5 m vertical interval is a reasonable ratio
+— contours should appear at expected density.
+
+On **genuinely flat terrain** (fjord-bottom farmland, flat valley floors — the
+case Kartverket addresses with an optional finer interval, e.g. 2 m on N5), two
+distinct failure modes apply and should not be conflated:
+
+| Failure mode | What the user sees | Cause |
+|---|---|---|
+| **Sparse** | Some 5 m rings appear, but fewer than a paper N5 sheet would show | Low relief per grid step; marching squares still crosses thresholds at some cells |
+| **Silently absent** | A 5 m rise that exists on the ground produces **no** contour ring | The whole resampled cell (or adjacent cells) straddle an isoline threshold without any sample catching the crossing — a grid-sampling miss, not just thin spacing |
+
+The flat-terrain editorial override remains future work (needs cheap slope/relief
+input). Until then, z15 / 5 m intervals are **not fully verified** for flat sites.
+
+**Validation gap:** Gjendebu (Besseggen/Jotunheimen) is mountainous and exercises
+N20/N50 tiers well but **does not** surface the flat-terrain edge case. Before
+calling the finest-interval tier production-ready, field-check a known-flat site
+at **z15** and compare against Kartverket N5 or a trusted 1:5 000 sheet.
+
+**Flat-site reference:** **Skriverhaugen**, Søndre Land (Innlandet) —
+`60.715°N, 10.456°E` (OSM `natural=peak` / `hill` node in low-relief farmland
+near Randsfjorden, inside the Ostlandet extract). Use camera zoom **15** with
+contours + 3D/hillshade on. Gjendebu remains the mountainous regression site;
+Skriverhaugen is the flat-tier (5 m / 25 m) check — separate from reinstalling
+the same build at Gjendebu.
+
+**Style:** Minor contours `#7A5C44` (1.0 px, 62% opacity); major `#3D2914`
+(1.6 px, 82% opacity) — warm browns chosen to stay legible over hillshade
+shadow/highlight when both are active.
+
+**Feature properties:** Each contour segment carries `ele` (elevation in metres)
+and `major` (index contour boolean) from [ContourGenerator]. Line layers
+filter on `major`; labels are not drawn from properties alone.
+
+**Index labels:** `navi-contours-label` ([BasemapContourLabelStyle]) — symbol
+layer on the same source, `symbol-placement: line`, **major contours only**,
+min zoom **11**, zoom-interpolated `symbol-spacing` (280 px at z11 → 120 px at
+z15). Text follows line bearing (`text-rotation-alignment: map`). Units follow
+[UnitSystem] (metres default; feet for `IMPERIAL_US` only, same as peak labels).
+Stacked at the **bottom** of the basemap symbol block (below road/place/POI
+text, above contour line layers).
+
+**Persistence:** Same SharedPreferences file as other map HUD prefs
+(`navi_map_hud`).
+
+### Layer stack (bottom → top)
+
+Standing rule unchanged: **all fill/line layers precede all symbol (label/icon)
+layers** (`BasemapLayerOrder`). Route/GPS/waypoint overlays are re-stacked on
+top after basemap mutations (`ensureRouteAboveHillshade`).
+
+| # | Layer (group) | Hillshade OFF / Contours OFF | Hillshade ON / Contours OFF | Hillshade OFF / Contours ON | Both ON |
+|---|---|---|---|---|---|
+| 1 | Background + landcover/landuse fills | yes | yes | yes | yes |
+| 2 | Hillshade (`navi-hills`) | — | yes (below hydro) | — | yes (below hydro) |
+| 3 | Water / waterway (hydro) | yes | yes | yes | yes |
+| 4 | Other fills (wetland, sand, glacier fill, …) | yes | yes | yes | yes |
+| 5 | Glacier / protected outlines (line) | yes | yes | yes | yes |
+| 6 | **Contour lines** (`navi-contours-*`) | — | — | yes | yes |
+| 7 | Roads / paths / tunnels / bridges (line) | yes | yes | yes | yes |
+| 8 | **Symbol block** — contour index elevations (`navi-contours-label`, bottom of block), road names, shields, housenumbers, place/farm/peak/POI labels, icons | **topmost basemap** | **topmost basemap** | **topmost basemap** | **topmost basemap** |
+| 9 | Navi route / GPS / track overlays | above basemap | above basemap | above basemap | above basemap |
+
+**Label guarantee:** In all four toggle combinations, housenumbers, house/place
+names, road names, and POI/peak labels remain **above** hillshade and contour
+line layers (rows 8–9). Hillshade sits under hydro (row 3) so water fill is not
+darkened; contours sit under roads (row 7) so navigation linework stays crisp.
+
+**Performance (pan/zoom):** Marching squares runs when MapLibre
+`CustomGeometrySource` requests a **new** geometry tile (pan into unseen area,
+zoom change, or invalidation) — not every frame. Hillshade is cheaper because
+MapLibre paints pre-decoded raster-DEM; contours add CPU work per new tile.
+Mitigations:
+
+- **DEM grid LRU** (64 entries): decoded 512×512 terrarium tiles keyed by
+  `z/x/y` — shared across viewport tiles and revisits (`NaviMapTestHooks`
+  `contourDemCacheHits` / `contourDemCacheMiss`).
+- **Contour feature LRU** (72 entries): marching-squares output keyed by
+  `demZ/tx/ty@mapZoom` before clipping to the viewport tile
+  (`contourGenCacheHits` / `contourGenCacheMiss`).
+- **Zoom LOD:** interval ladder + resample dimension (`sampleDimForZoom`) cap
+  grid work at low zoom (48–160 px per axis).
+
+**Offline / online parity:** Interval ladder and LOD are pure functions of map
+zoom ([ContourGenerator], [DemTileFetcher.sampleDimForZoom]) — not of fetch
+path. Both online (CDN WebP) and offline (`pmtilesGetTile` terrarium WebP, or
+loopback PNG from [LocalDemTileServer]) decode through the same terrarium RGB
+path ([DemElevationGridDecoder]). When a viewport tile crosses a DEM tile
+boundary, [DemTileCover] + [DemElevationGridDecoder.stitch] mosaic intersecting
+512×512 parents before resampling so marching squares does not split at DEM
+seams (remaining sub-pixel gaps at geometry-tile edges are possible but much
+less visible than per-viewport-tile parent mismatch).
+
 ## UniFFI
 
 `pmtilesPlanetUrl`, `pmtilesQueueRegion`, `pmtilesQueueDemRegion`,

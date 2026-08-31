@@ -14,6 +14,7 @@ object MapHudPrefs {
     private const val KEY_PREFER_METRIC = "prefer_metric"
     private const val KEY_UNIT_SYSTEM = "unit_system"
     private const val KEY_OPT_IN_3D = "opt_in_3d"
+    private const val KEY_CONTOURS_ENABLED = "contours_enabled"
     private const val KEY_SPEED_CAMERA_OPT_IN = "speed_camera_opt_in"
     private const val KEY_SPEED_CAMERA_PROMPT_SHOWN = "speed_camera_prompt_shown"
     private const val KEY_CAMERA_TILT = "camera_tilt_deg"
@@ -226,6 +227,23 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_OPT_IN_3D, enabled)
+            .apply()
+    }
+
+    /** Opt-in elevation contour lines (Mapterhorn DEM). Independent of hillshade. */
+    fun loadContoursEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CONTOURS_ENABLED, false)
+
+    fun saveContoursEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CONTOURS_ENABLED, enabled)
             .apply()
     }
 
