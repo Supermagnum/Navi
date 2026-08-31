@@ -298,7 +298,9 @@ impl FlatGraphPack {
             let maxspeed = self.edge_maxspeed_kmh[i];
             let shape = self.shape_for_edge(i);
             edges.push(GraphEdge {
-                id: format!("{}-{}", src.0, tgt.0),
+                // Pack edge index keeps parallel edges distinct (tile merge and
+                // adjacency both need unique ids; way id is not stored in v6 packs).
+                id: format!("{}-{}-{}", src.0, tgt.0, i),
                 source: src,
                 target: tgt,
                 length_m: self.edge_length_m[i],

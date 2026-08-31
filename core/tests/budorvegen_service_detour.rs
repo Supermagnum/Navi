@@ -7,7 +7,8 @@ use driver_break_core::routing::graph::{
     apply_surface_preference, apply_surface_quality_from_pbf, way_id_from_edge_id, RouteGraph,
     RouteOptions, RoutingProfile, SurfaceRoutingMode,
 };
-use std::path::PathBuf;
+use driver_break_core::routing::indexed::{load_graph_pack_bbox, merge_tile_graphs};
+use std::path::{Path, PathBuf};
 
 const SECONDARY_WAY: &str = "1037045908";
 const SERVICE_WAY: &str = "332640378";
@@ -27,6 +28,20 @@ fn fixture_pbf() -> PathBuf {
 
 fn bbox() -> [f64; 4] {
     [60.878, 11.30, 60.890, 11.32]
+}
+
+fn assert_no_service_parallel_geometry(graph: &RouteGraph, path_edges: &[usize]) {
+    let coords = graph.path_coords_lat_lon_from_edges(path_edges);
+    assert!(
+        coords.len() <= 4,
+        "secondary chord geometry should be short; service loop has many vertices (got {})",
+        coords.len()
+    );
+    let poly = graph.path_overlay_polyline_from_edges(path_edges);
+    assert!(
+        !poly.contains("11.3153482"),
+        "service-road shape must not appear in overlay polyline"
+    );
 }
 
 fn build_car_graph(pbf: &std::path::Path) -> RouteGraph {
@@ -84,18 +99,106 @@ fn budorvegen_path_geometry_uses_secondary_not_service_parallel() {
         }
     }
 
-    let coords = graph.path_coords_lat_lon_from_edges(&path_edges);
+    assert_no_service_parallel_geometry(&graph, &path_edges);
+}
+
+/// Indexed-pack path (device Ostlandet tiles). Run locally after staging:
+/// `/tmp/navi-device-data/ostlandet-latest.navi-graph-car.t2_4.rkyv`.
+#[test]
+#[ignore = "needs staged Ostlandet car tile under /tmp/navi-device-data"]
+fn budorvegen_indexed_pack_geometry_uses_secondary_not_service_parallel() {
+    let tile = Path::new("/tmp/navi-device-data/ostlandet-latest.navi-graph-car.t2_4.rkyv");
+    if !tile.is_file() {
+        eprintln!("skip: missing {}", tile.display());
+        return;
+    }
+    let mut graph =
+        load_graph_pack_bbox(tile, RoutingProfile::Car, Some(bbox())).expect("indexed car tile");
+    graph.surface_routing_mode = SurfaceRoutingMode::Car;
+    apply_surface_preference(&mut graph, SurfaceRoutingMode::Car);
+    let opts = RouteOptions::default();
+
+    let start = (60.88416, 11.3125);
+    let end = (60.88360, 11.3155);
+    let (s, _) = graph
+        .nearest_routable(start.0, start.1)
+        .expect("snap start");
+    let (g, _) = graph.nearest_routable(end.0, end.1).expect("snap end");
+
+    let (path, path_edges, cost) = graph
+        .shortest_path_with_options(s, g, false, &opts)
+        .expect("route must exist");
     assert!(
-        coords.len() <= 4,
-        "secondary chord geometry should be short; service loop has many vertices (got {})",
-        coords.len()
+        (cost - 64.6).abs() < 1.5,
+        "A* must use ~64.6 m secondary chord, got cost {cost}"
+    );
+    assert_eq!(
+        path_edges.len(),
+        path.len().saturating_sub(1),
+        "recorded edge count must match node path"
     );
 
-    let poly = graph.path_overlay_polyline_from_edges(&path_edges);
+    for &idx in &path_edges {
+        let e = &graph.edges[idx];
+        if e.source.0 == JUNCTION_A && e.target.0 == JUNCTION_B
+            || e.source.0 == JUNCTION_B && e.target.0 == JUNCTION_A
+        {
+            assert_eq!(
+                e.highway.as_deref(),
+                Some("secondary"),
+                "parallel junction must use Budorvegen secondary, got {:?}",
+                e.highway
+            );
+        }
+    }
+    assert_no_service_parallel_geometry(&graph, &path_edges);
+}
+
+/// Device path loads packs via [`merge_tile_graphs`], not raw single-tile unpack.
+#[test]
+#[ignore = "needs staged Ostlandet car tile under /tmp/navi-device-data"]
+fn budorvegen_tiled_merge_geometry_uses_secondary_not_service_parallel() {
+    let tile = Path::new("/tmp/navi-device-data/ostlandet-latest.navi-graph-car.t2_4.rkyv");
+    if !tile.is_file() {
+        eprintln!("skip: missing {}", tile.display());
+        return;
+    }
+    let tile_graph =
+        load_graph_pack_bbox(tile, RoutingProfile::Car, Some(bbox())).expect("indexed car tile");
+    let mut graph = merge_tile_graphs(vec![tile_graph], RoutingProfile::Car);
+    graph.surface_routing_mode = SurfaceRoutingMode::Car;
+    apply_surface_preference(&mut graph, SurfaceRoutingMode::Car);
+    let opts = RouteOptions::default();
+
+    let parallel: Vec<_> = graph
+        .edges
+        .iter()
+        .filter(|e| {
+            (e.source.0 == JUNCTION_A && e.target.0 == JUNCTION_B)
+                || (e.source.0 == JUNCTION_B && e.target.0 == JUNCTION_A)
+        })
+        .collect();
     assert!(
-        !poly.contains("11.3153482"),
-        "service-road shape must not appear in overlay polyline"
+        parallel.len() >= 2,
+        "tiled merge must keep both parallel edges, got {}",
+        parallel.len()
     );
+
+    let start = (60.88416, 11.3125);
+    let end = (60.88360, 11.3155);
+    let (s, _) = graph
+        .nearest_routable(start.0, start.1)
+        .expect("snap start");
+    let (g, _) = graph.nearest_routable(end.0, end.1).expect("snap end");
+
+    let (_path, path_edges, cost) = graph
+        .shortest_path_with_options(s, g, false, &opts)
+        .expect("route must exist");
+    assert!(
+        (cost - 64.6).abs() < 1.5,
+        "A* must use ~64.6 m secondary chord, got cost {cost}"
+    );
+    assert_no_service_parallel_geometry(&graph, &path_edges);
 }
 
 #[test]

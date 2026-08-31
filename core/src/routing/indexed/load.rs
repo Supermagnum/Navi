@@ -18,7 +18,7 @@ use super::wetland_pack::{
     ArchivedFlatWetlandPack, FlatWetlandPack, MAGIC_WETLAND, WETLAND_FORMAT_VERSION,
 };
 use crate::poi::PoiIndex;
-use crate::routing::graph::{RouteGraph, RoutingProfile};
+use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile};
 use crate::routing::safety::DangerBarrierIndex;
 use crate::routing::wetland::WetlandIndex;
 use std::collections::{HashMap, HashSet};
@@ -197,6 +197,39 @@ pub fn try_load_graph_for_plan_bbox(
     load_graph_pack_bbox(&path, profile, bbox)
 }
 
+/// Key for deduplicating the same physical edge repeated on adjacent tile boundaries.
+/// Must not collapse parallel edges that share endpoints (indexed packs use
+/// `src-tgt` string ids that collide for those pairs).
+fn graph_edge_tile_merge_key(edge: &GraphEdge) -> (i64, i64, u64, u64, u64, u64, u64) {
+    (
+        edge.source.0,
+        edge.target.0,
+        edge.length_m.to_bits(),
+        edge.start_lat.to_bits(),
+        edge.start_lon.to_bits(),
+        edge.end_lat.to_bits(),
+        edge.end_lon.to_bits(),
+    )
+}
+
+/// Merge tile-local graphs into one routable graph (deterministic order).
+pub fn merge_tile_graphs(graphs: Vec<RouteGraph>, profile: RoutingProfile) -> RouteGraph {
+    let mut nodes = HashMap::new();
+    let mut edges = Vec::new();
+    let mut seen_edge_keys = HashSet::new();
+    for g in graphs {
+        for (id, node) in g.nodes {
+            nodes.insert(id, node);
+        }
+        for e in g.edges {
+            if seen_edge_keys.insert(graph_edge_tile_merge_key(&e)) {
+                edges.push(e);
+            }
+        }
+    }
+    RouteGraph::from_parts(nodes, edges, profile)
+}
+
 fn load_tiled_graph(
     data_dir: &Path,
     tiles: &[super::manifest::GraphTileEntry],
@@ -227,24 +260,14 @@ fn load_tiled_graph(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let mut nodes = HashMap::new();
-    let mut edges = Vec::new();
-    let mut seen_edge_ids = HashSet::new();
-    // Merge in the same sorted order as the sequential path used.
-    for g in graphs {
-        for (id, node) in g.nodes {
-            nodes.insert(id, node);
-        }
-        for e in g.edges {
-            if seen_edge_ids.insert(e.id.clone()) {
-                edges.push(e);
-            }
-        }
-    }
-    if edges.is_empty() {
+    if graphs.iter().all(|g| g.edges.is_empty()) {
         return Err(PackLoadError::Missing);
     }
-    Ok(RouteGraph::from_parts(nodes, edges, profile))
+    let merged = merge_tile_graphs(graphs, profile);
+    if merged.edges.is_empty() {
+        return Err(PackLoadError::Missing);
+    }
+    Ok(merged)
 }
 
 pub fn try_load_poi_barrier_for_plan(
@@ -348,6 +371,104 @@ fn load_tiled_wetland(
         merged.extend_from(&pack);
     }
     Ok(merged.to_wetland_index(bbox))
+}
+
+#[cfg(test)]
+mod merge_tile_graphs_tests {
+    use super::*;
+    use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile, SurfaceQuality};
+    use geo_types::Coord;
+    use osm4routing::{Node, NodeId};
+
+    fn stub_edge(id: &str, src: i64, tgt: i64, len: f64, hw: &str) -> GraphEdge {
+        GraphEdge {
+            id: id.into(),
+            source: NodeId(src),
+            target: NodeId(tgt),
+            length_m: len,
+            base_weight: len,
+            eco_weight: Some(len),
+            start_lat: 60.0,
+            start_lon: 11.0,
+            end_lat: 60.0,
+            end_lon: 11.001,
+            shape: Vec::new(),
+            highway: Some(hw.into()),
+            maxspeed_kmh: None,
+            name: None,
+            road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
+        }
+    }
+
+    #[test]
+    fn merge_keeps_parallel_edges_with_colliding_string_ids() {
+        let mut nodes = HashMap::new();
+        for id in [1_i64, 2] {
+            nodes.insert(
+                NodeId(id),
+                Node {
+                    id: NodeId(id),
+                    coord: Coord { x: 11.0, y: 60.0 },
+                    uses: 2,
+                },
+            );
+        }
+        let g = RouteGraph::from_parts(
+            nodes,
+            vec![
+                stub_edge("1-2", 1, 2, 200.0, "service"),
+                stub_edge("1-2", 1, 2, 64.6, "secondary"),
+            ],
+            RoutingProfile::Car,
+        );
+        let merged = merge_tile_graphs(vec![g], RoutingProfile::Car);
+        assert_eq!(merged.edges.len(), 2, "parallel edges must survive merge");
+    }
+
+    #[test]
+    fn merge_dedupes_identical_tile_boundary_edge() {
+        let mut nodes = HashMap::new();
+        nodes.insert(
+            NodeId(1),
+            Node {
+                id: NodeId(1),
+                coord: Coord { x: 11.0, y: 60.0 },
+                uses: 2,
+            },
+        );
+        nodes.insert(
+            NodeId(2),
+            Node {
+                id: NodeId(2),
+                coord: Coord { x: 11.001, y: 60.0 },
+                uses: 2,
+            },
+        );
+        let edge = stub_edge("1-2-0", 1, 2, 100.0, "secondary");
+        let g1 = RouteGraph::from_parts(nodes.clone(), vec![edge.clone()], RoutingProfile::Car);
+        let g2 = RouteGraph::from_parts(nodes, vec![edge], RoutingProfile::Car);
+        let merged = merge_tile_graphs(vec![g1, g2], RoutingProfile::Car);
+        assert_eq!(merged.edges.len(), 1, "boundary duplicate must dedupe");
+    }
 }
 
 #[cfg(test)]

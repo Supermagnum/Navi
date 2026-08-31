@@ -19,7 +19,7 @@ pub use header::{read_preamble, Preamble, PREAMBLE_LEN};
 pub use io::{archive_payload_offset, write_archive_atomic};
 pub use load::{
     fingerprint_pbf_for_packs, load_graph_pack, load_graph_pack_bbox, load_poi_barrier_pack,
-    load_wetland_pack, try_load_graph_for_plan, try_load_graph_for_plan_bbox,
+    load_wetland_pack, merge_tile_graphs, try_load_graph_for_plan, try_load_graph_for_plan_bbox,
     try_load_poi_barrier_for_plan, try_load_wetland_for_plan, PackLoadError, PackedPlanData,
 };
 pub use manifest::{
