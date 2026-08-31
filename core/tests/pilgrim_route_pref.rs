@@ -55,9 +55,16 @@ fn ostlandet_pilgrim_pref_and_gap_and_fts() {
     let _ = std::fs::create_dir_all(&elev_dir);
     let elev = ElevationService::new(ElevationCache::new(&elev_dir));
     let eco = EcoConfig::default();
-    let (mut graph, _cached) =
-        load_or_build_reweighted_bbox(&pbf, &cache, RoutingProfile::Foot, &elev, &eco, bbox)
-            .expect("build foot bbox graph");
+    let (mut graph, _cached) = load_or_build_reweighted_bbox(
+        &pbf,
+        &cache,
+        &cache,
+        RoutingProfile::Foot,
+        &elev,
+        &eco,
+        bbox,
+    )
+    .expect("build foot bbox graph");
 
     // Collect pilgrim edges in the clipped graph.
     let mut pilgrim_edges: Vec<(usize, NodeId, NodeId)> = Vec::new();

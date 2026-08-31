@@ -14,6 +14,7 @@ pub mod indexed;
 pub mod live_hazard;
 pub mod osm_update;
 pub mod region;
+pub mod region_lock;
 pub mod rest;
 pub mod road_sign;
 pub mod safety;
@@ -65,6 +66,12 @@ pub use osm_update::{
 };
 pub use region::{
     provision_region, provision_region_with_elev_tar, RegionProvision, CORRIDOR_BBOX,
+};
+pub use region_lock::{
+    acquire_plan_fallback, cleanup_spills_for_pid, convert_lock_held,
+    holding_convert_lock_on_thread, is_convert_in_progress_err, recover_stale, region_id_for_pbf,
+    region_lock_path, try_acquire_convert, ConvertAcquire, RegionLockGuard, RegionLockKind,
+    RegionLockPhase, REGION_CONVERT_IN_PROGRESS,
 };
 pub use rest::{
     car_break_interval_hours, car_style_daily_hours, choose_daily_overnight_rest,

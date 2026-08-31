@@ -135,10 +135,11 @@ object IndexedMapsBackground {
                         elevDir?.takeIf { it.isDirectory }?.absolutePath,
                     )
                 lastStatus.set(
-                    if (report.contains("PASS")) {
-                        "done"
-                    } else {
-                        "failed"
+                    when {
+                        report.contains("PASS") -> "done"
+                        report.contains("skipped=convert_in_progress") ||
+                            report.contains("region convert already in progress") -> "waiting (convert already running)"
+                        else -> "failed"
                     },
                 )
                 Log.i(TAG, "finished: $report")

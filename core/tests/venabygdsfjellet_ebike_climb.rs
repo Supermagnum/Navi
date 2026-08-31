@@ -98,6 +98,7 @@ fn venabygdsfjellet_ebike_climb_and_ev_car_range() {
     let (graph_bike, hit) = load_or_build_reweighted_bbox(
         &pbf,
         &cache,
+        &cache,
         RoutingProfile::Bicycle,
         &elevation,
         &eco_bike,
@@ -284,6 +285,7 @@ fn venabygdsfjellet_ebike_climb_and_ev_car_range() {
     eco_car.mass_kg = 1500.0;
     let (graph_car, hit_car) = load_or_build_reweighted_bbox(
         &pbf,
+        &cache,
         &cache,
         RoutingProfile::Car,
         &elevation,

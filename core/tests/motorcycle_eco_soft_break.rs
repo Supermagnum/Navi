@@ -75,18 +75,22 @@ fn lillehammer_tretten_motorcycle_eco_net_below_car() {
     };
     let moto_eco = EcoConfig::for_profile(Profile::Motorcycle);
 
+    let car_cache = cache.join("car");
     let (graph_car, _) = load_or_build_reweighted_bbox(
         &pbf,
-        &cache.join("car"),
+        &car_cache,
+        &car_cache,
         RoutingProfile::Car,
         &elev,
         &car_eco,
         bbox,
     )
     .expect("car graph");
+    let moto_cache = cache.join("moto");
     let (graph_moto, _) = load_or_build_reweighted_bbox(
         &pbf,
-        &cache.join("moto"),
+        &moto_cache,
+        &moto_cache,
         RoutingProfile::Car, // motorcycle maps to car road graph
         &elev,
         &moto_eco,
@@ -149,7 +153,7 @@ fn soft_pause_spacing_follows_car_rest_hours_on_corridor_eta() {
     ];
     let eco = EcoConfig::for_profile(Profile::Car);
     let (graph, _) =
-        load_or_build_reweighted_bbox(&pbf, &cache, RoutingProfile::Car, &elev, &eco, bbox)
+        load_or_build_reweighted_bbox(&pbf, &cache, &cache, RoutingProfile::Car, &elev, &eco, bbox)
             .expect("graph");
     let s = graph.nearest_routable(START.0, START.1).expect("start").0;
     let g = graph.nearest_routable(END.0, END.1).expect("end").0;

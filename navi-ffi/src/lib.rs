@@ -2211,6 +2211,7 @@ fn plan_car_route_inner(
         Ok(g) => (g, false, true),
         Err(_) => match load_or_build_reweighted_bbox(
             pbf,
+            &data_dir,
             &cache,
             routing_profile,
             &elevation,
@@ -3090,6 +3091,7 @@ pub fn plan_hiking_route(
         Ok(g) => (g, false, true),
         Err(_) => match load_or_build_reweighted_bbox(
             pbf,
+            &data_dir,
             &cache,
             RoutingProfile::Foot,
             &elevation,
@@ -3846,6 +3848,11 @@ pub fn ensure_indexed_maps(pbf_path: String, data_dir: String, elev_dir: Option<
             r.peak_rss_mb,
             r.manifest_file
         ),
+        Err(e)
+            if driver_break_core::routing::region_lock::is_convert_in_progress_err(&e) =>
+        {
+            "PASS\nskipped=convert_in_progress\n".to_string()
+        }
         Err(e) => format!("FAIL: indexed convert: {e:#}\n"),
     }
 }
@@ -6002,6 +6009,7 @@ pub fn road_near_info(
         Ok(g) => (g, true),
         Err(_) => match load_or_build_reweighted_bbox(
             pbf,
+            &data_dir,
             &cache,
             routing_profile,
             &elevation,
