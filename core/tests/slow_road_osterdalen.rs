@@ -52,9 +52,16 @@ fn osterdalen_hiking_prefers_fv237_over_rv3_when_both_connect() {
         .parent()
         .unwrap_or(std::path::Path::new("."))
         .join("graph-cache-osterdalen-slow-road-test");
-    let (mut graph, _) =
-        load_or_build_reweighted_bbox(&pbf, &cache, RoutingProfile::Foot, &elev, &eco, bbox)
-            .expect("foot graph");
+    let (mut graph, _) = load_or_build_reweighted_bbox(
+        &pbf,
+        &cache,
+        &cache,
+        RoutingProfile::Foot,
+        &elev,
+        &eco,
+        bbox,
+    )
+    .expect("foot graph");
     apply_slow_road_preference(&mut graph);
     let (s, _) = graph
         .nearest_routable(start_lat, start_lon)

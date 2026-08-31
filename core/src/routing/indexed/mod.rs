@@ -13,6 +13,12 @@ mod poi_barrier_extract;
 mod poi_barrier_pack;
 mod wetland_pack;
 
+pub use crate::routing::region_lock::{
+    acquire_plan_fallback, cleanup_spills_for_pid, convert_lock_held,
+    holding_convert_lock_on_thread, is_convert_in_progress_err, region_id_for_pbf,
+    try_acquire_convert, ConvertAcquire, RegionLockGuard, RegionLockKind, RegionLockPhase,
+    REGION_CONVERT_IN_PROGRESS,
+};
 pub use convert::{convert_region_packs, ConvertOptions, ConvertReport};
 pub use graph_pack::{FlatGraphPack, GRAPH_FORMAT_VERSION, MAGIC_GRAPH};
 pub use header::{read_preamble, Preamble, PREAMBLE_LEN};

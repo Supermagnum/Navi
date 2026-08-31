@@ -801,9 +801,11 @@ fn primary_ra4_bbox_matches_plan_car_route() {
     let mut all_ra = Vec::new();
     for (label, a, b) in [("start→via", start, via), ("via→end", via, end)] {
         let bbox = trip_bbox(a, b);
+        let leg_cache = cache.join(label.replace('→', "_"));
         let (graph, hit) = load_or_build_reweighted_bbox(
             &pbf,
-            &cache.join(label.replace('→', "_")),
+            &leg_cache,
+            &leg_cache,
             RoutingProfile::Car,
             &elevation,
             &eco,

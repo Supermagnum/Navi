@@ -71,7 +71,7 @@ fn lillehammer_to_tretten_avoid_motorways_on_off() {
         start.1.max(end.1) + pad,
     ];
     let (graph, _) =
-        load_or_build_reweighted_bbox(&pbf, &cache, RoutingProfile::Car, &elev, &eco, bbox)
+        load_or_build_reweighted_bbox(&pbf, &cache, &cache, RoutingProfile::Car, &elev, &eco, bbox)
             .expect("graph");
 
     let (s, _) = graph

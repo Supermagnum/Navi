@@ -277,8 +277,12 @@ pub fn load_or_build_reweighted(
 /// Like [`load_or_build_reweighted`], but builds only the road network inside `bbox`
 /// (`[min_lat, min_lon, max_lat, max_lon]`). Used by on-device `plan_car_route` so a
 /// full Ostlandet graph is never loaded into a memory-constrained process.
+///
+/// `pack_data_dir` is where indexed packs and region locks live (app `files/`, not the
+/// fixture path). Plan callers wait on convert; other callers skip when convert holds.
 pub fn load_or_build_reweighted_bbox(
     pbf: &Path,
+    pack_data_dir: &Path,
     cache_dir: &Path,
     profile: RoutingProfile,
     elevation: &ElevationService,
@@ -286,6 +290,18 @@ pub fn load_or_build_reweighted_bbox(
     bbox: [f64; 4],
 ) -> anyhow::Result<(RouteGraph, bool)> {
     let _ = cache_dir;
+    use crate::download::progress::{current_channel, ProgressChannel};
+    use crate::routing::region_lock::{
+        acquire_plan_fallback, convert_lock_held, holding_convert_lock_on_thread,
+    };
+
+    if !holding_convert_lock_on_thread() {
+        if current_channel() == ProgressChannel::Plan {
+            let _region = acquire_plan_fallback(pack_data_dir, pbf)?;
+        } else if convert_lock_held(pack_data_dir, pbf) {
+            anyhow::bail!("{}", crate::download::pbf_priority::BBOX_BUILD_SKIPPED);
+        }
+    }
     // Skip GPS/cone/road-near builds while a foreground plan owns the PBF.
     // Plan callers (ProgressChannel::Plan) pass through. Skip rather than
     // queue: one missed cone update is cheaper than stretching the plan.
@@ -547,6 +563,7 @@ mod tests {
         let skipped = match load_or_build_reweighted_bbox(
             missing,
             dir.path(),
+            dir.path(),
             RoutingProfile::Car,
             &elev,
             &eco,
@@ -563,6 +580,7 @@ mod tests {
         let plan_err = match with_channel(ProgressChannel::Plan, || {
             load_or_build_reweighted_bbox(
                 missing,
+                dir.path(),
                 dir.path(),
                 RoutingProfile::Car,
                 &elev,
@@ -581,6 +599,7 @@ mod tests {
         drop(_fg);
         let after = match load_or_build_reweighted_bbox(
             missing,
+            dir.path(),
             dir.path(),
             RoutingProfile::Car,
             &elev,

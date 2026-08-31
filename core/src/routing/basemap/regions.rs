@@ -230,9 +230,11 @@ pub fn pbf_stem_to_geofabrik_path(stem: &str) -> Option<String> {
     }
     match leaf.as_str() {
         "norway" => Some("europe/norway".into()),
+        // Geofabrik renamed Oppland → Ostlandet; legacy downloads still use oppland-latest.
         "ostlandet" | "oppland" => Some("europe/norway/ostlandet".into()),
         "vestlandet" => Some("europe/norway/vestlandet".into()),
         "trondelag" => Some("europe/norway/trondelag".into()),
+        // Underscore variant from some tooling; same region, not a merge.
         "nord-norge" | "nord_norge" => Some("europe/norway/nord-norge".into()),
         "sorlandet" => Some("europe/norway/sorlandet".into()),
         other => {

@@ -930,6 +930,17 @@ Country/region visual extracts can also be prepared with
   (precomputed packs from a mirror such as navi.app, plus optional town-to-town
   caches — Navi does not ship a commercial vendor routing DB today):
   [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
+- **Indexed-map progress bar is phase-based, not continuous.** Tools shows
+  `Indexed maps (background): …` with a percentage that jumps once when each
+  convert phase **starts** (graph tiling, POI + barriers at ~90%, wetlands at
+  ~95%), not as work proceeds inside the phase. A new percentage means that
+  phase has begun, not that it is actively advancing; a wedged phase leaves
+  the bar frozen with no visual distinction from “almost done”. On the reference
+  SM-P613 Østlandet convert, typical phase walls are roughly **POI + barriers
+  ~38 s** and **wetlands a couple of minutes** (see the background-indexing
+  bullet above); much longer at the same label usually means memory pressure or
+  a competing PBF walk — force-stop and relaunch, or wait for pack-hit before
+  planning.
 - **Cold / missing-pack long-distance planning is still slow** (PBF graph build).
   **Pack-hit planning is much faster:** parallel tile mmap/deserialize cut host
   warm `graph_build_ms` by roughly **35–47%** on short/medium/long Ostlandet

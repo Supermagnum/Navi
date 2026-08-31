@@ -25,6 +25,10 @@ use crate::download::progress as download_progress;
 use crate::download::DownloadControl;
 use crate::routing::elevation::{ElevationCache, ElevationService};
 use crate::routing::graph::{RouteGraph, RoutingProfile};
+use crate::routing::region_lock::{
+    region_id_for_pbf, try_acquire_convert, ConvertAcquire, RegionLockGuard, RegionLockKind,
+    RegionLockPhase, REGION_CONVERT_IN_PROGRESS,
+};
 use crate::routing::wetland::WetlandIndex;
 
 #[derive(Clone)]
@@ -113,6 +117,17 @@ struct ConvertCheckpoint {
     wetland_file: Option<String>,
     wetland_tiles: Vec<GraphTileEntry>,
     wetland_rings: usize,
+    /// Geofabrik-style region identity (same for fixture vs production PBF names).
+    #[serde(default)]
+    region_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner_pid: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner_kind: Option<RegionLockKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner_phase: Option<RegionLockPhase>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner_started_unix_secs: Option<u64>,
 }
 
 impl ConvertCheckpoint {
@@ -200,6 +215,39 @@ impl ConvertCheckpoint {
                 WETLAND_FORMAT_VERSION,
             )
         })
+    }
+}
+
+fn sync_checkpoint_owner(ck: &mut ConvertCheckpoint, ck_path: &Path, guard: &RegionLockGuard) {
+    ck.region_id = guard.region_id().to_string();
+    ck.owner_pid = Some(guard.pid());
+    ck.owner_kind = Some(guard.kind());
+    ck.owner_phase = Some(guard.phase());
+    ck.owner_started_unix_secs = Some(guard.started_unix_secs());
+    let _ = ck.save(ck_path);
+}
+
+fn enter_convert_phase(
+    guard: &mut Option<RegionLockGuard>,
+    opts: &ConvertOptions,
+    ck: &mut ConvertCheckpoint,
+    ck_path: &Path,
+    phase: RegionLockPhase,
+) -> anyhow::Result<()> {
+    if let Some(g) = guard.as_mut() {
+        g.set_phase(phase);
+        sync_checkpoint_owner(ck, ck_path, g);
+        return Ok(());
+    }
+    match try_acquire_convert(&opts.data_dir, &opts.pbf, phase)? {
+        ConvertAcquire::Held(g) => {
+            sync_checkpoint_owner(ck, ck_path, &g);
+            *guard = Some(g);
+            Ok(())
+        }
+        ConvertAcquire::AlreadyConverting => {
+            anyhow::bail!(REGION_CONVERT_IN_PROGRESS)
+        }
     }
 }
 
@@ -387,6 +435,9 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
     let t0 = Instant::now();
     let mut peak_rss_mb = rss_mb();
     let stem = stem_of(&opts.pbf);
+    let region_id = region_id_for_pbf(&opts.pbf);
+    crate::routing::region_lock::recover_stale(&opts.data_dir, &region_id);
+    let mut convert_lock: Option<RegionLockGuard> = None;
     let (pbf_sz, pbf_mtime) = pbf_fingerprint(&opts.pbf)?;
     let pbf_filename = opts
         .pbf
@@ -420,9 +471,13 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
         poi_barrier_format_version: POI_BARRIER_FORMAT_VERSION,
         wetland_format_version: WETLAND_FORMAT_VERSION,
         region_bbox,
+        region_id: region_id.clone(),
         ..Default::default()
     });
     ck.region_bbox = region_bbox;
+    if ck.region_id.is_empty() {
+        ck.region_id = region_id.clone();
+    }
     let _ = ck.save(&ck_path);
 
     // Never warm the full-region DEM into RAM (echoes the earlier DEM-downloader
@@ -508,6 +563,13 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
             edges = ck.edges;
             tile_count = graph_tiles.values().map(|v| v.len()).sum();
         } else {
+            enter_convert_phase(
+                &mut convert_lock,
+                opts,
+                &mut ck,
+                &ck_path,
+                RegionLockPhase::Graphs,
+            )?;
             // POI / barrier / wetland are extracted once below — not per profile.
             // Graph tiling: 2 PBF passes per profile with ways spilled to data_dir,
             // then per-tile graphs built+written in parallel (coords shared read-only).
@@ -670,6 +732,13 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
             nodes = ck.nodes;
             edges = ck.edges;
         } else {
+            enter_convert_phase(
+                &mut convert_lock,
+                opts,
+                &mut ck,
+                &ck_path,
+                RegionLockPhase::Graphs,
+            )?;
             for (i, profile) in build_profiles.iter().enumerate() {
                 crate::download::pbf_priority::yield_if_foreground_plan();
                 if opts.control.is_cancelled() {
@@ -752,6 +821,13 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
         );
         (0.0, 0.0, 0usize)
     } else {
+        enter_convert_phase(
+            &mut convert_lock,
+            opts,
+            &mut ck,
+            &ck_path,
+            RegionLockPhase::PoiBarrier,
+        )?;
         download_progress::set(90, Some(100), "Building indexed maps: POI + barriers…");
         crate::download::pbf_priority::yield_if_foreground_plan();
         note_rss(&mut peak_rss_mb, "poi_start");
@@ -806,6 +882,13 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
         );
         (ck.wetland_tiles.clone(), ck.wetland_rings, 0.0)
     } else {
+        enter_convert_phase(
+            &mut convert_lock,
+            opts,
+            &mut ck,
+            &ck_path,
+            RegionLockPhase::Wetland,
+        )?;
         download_progress::set(95, Some(100), "Building indexed maps: wetlands…");
         crate::download::pbf_priority::yield_if_foreground_plan();
         if let Ok(rd) = std::fs::read_dir(&opts.data_dir) {
