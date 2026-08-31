@@ -60,7 +60,7 @@ fn osterdalen_hiking_prefers_fv237_over_rv3_when_both_connect() {
         .nearest_routable(start_lat, start_lon)
         .expect("snap start");
     let (g, _) = graph.nearest_routable(end_lat, end_lon).expect("snap end");
-    let (path, _) = graph
+    let (path, _, _) = graph
         .shortest_path(s, g, true)
         .expect("route must exist (fallback on high-speed ok)");
     let refs = path_road_refs(&graph, &path);

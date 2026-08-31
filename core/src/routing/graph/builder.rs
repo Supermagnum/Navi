@@ -22,6 +22,9 @@ use super::surface_quality::{
     SurfaceRoutingMode, SNAP_VIRTUAL_APPROACH_SURFACE,
 };
 
+/// Sentinel `incoming_edge` on the A* start state (no prior graph edge).
+const NO_INCOMING_EDGE: usize = usize::MAX;
+
 /// Routing profile derived from travel mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RoutingProfile {
@@ -153,6 +156,19 @@ pub struct RouteOptions {
     pub vehicle: Option<crate::config::VehicleLimits>,
     /// Planned departure (local naive). `None` → evaluate seasonal closures at now.
     pub departure_local: Option<chrono::NaiveDateTime>,
+}
+
+/// Counts directed `(source, target)` pairs with multiple profile edges.
+#[derive(Debug, Clone, Default)]
+pub struct ParallelEdgeCensus {
+    pub total_directed_edges: usize,
+    pub parallel_directed_pairs: usize,
+    /// Edges beyond the first per parallel pair (`sum(len-1)`).
+    pub extra_parallel_edges: usize,
+    /// Pairs where adjacency-first `edge_index` would not pick min `base_weight`.
+    pub old_edge_index_would_mismatch: usize,
+    /// Parallel pairs whose edges span two or more distinct `highway=*` values.
+    pub mixed_highway_class_pairs: usize,
 }
 
 pub struct RouteGraph {
@@ -327,11 +343,78 @@ impl RouteGraph {
         graph
     }
 
+    /// Cheapest parallel edge between `from` and `to` under the same costing model as
+    /// [`Self::shortest_path_with_options`] (base/eco weight plus surface transition).
+    pub fn best_edge_index_between(
+        &self,
+        from: NodeId,
+        to: NodeId,
+        prev_surface: Option<SurfaceQuality>,
+        use_eco: bool,
+        options: &RouteOptions,
+    ) -> Option<usize> {
+        let use_surface_transitions = self.surface_routing_mode == SurfaceRoutingMode::Car
+            && matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
+        let surface_mode = self.surface_routing_mode;
+        let mut best: Option<(usize, u64)> = None;
+        for &idx in self.outgoing_edge_indices(from) {
+            let edge = &self.edges[idx];
+            if edge.target != to || !edge_allowed_for_options(edge, options, self.profile) {
+                continue;
+            }
+            let base = if use_eco {
+                edge.eco_weight.unwrap_or(edge.base_weight)
+            } else {
+                edge.base_weight
+            };
+            let transition = if use_surface_transitions {
+                surface_transition_cost_m(prev_surface, edge.surface_quality, surface_mode)
+            } else {
+                0.0
+            };
+            let cost = cost_to_u64(base + transition);
+            if best.map(|(_, c)| cost < c).unwrap_or(true) {
+                best = Some((idx, cost));
+            }
+        }
+        best.map(|(idx, _)| idx)
+    }
+
+    /// Edge indices along a node path, matching the edges A* would have taken.
+    pub fn path_edge_indices_with_options(
+        &self,
+        path: &[NodeId],
+        use_eco: bool,
+        options: &RouteOptions,
+    ) -> Vec<usize> {
+        let use_surface = self.surface_routing_mode == SurfaceRoutingMode::Car
+            && matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
+        let mut prev_surface = if use_surface {
+            Some(SNAP_VIRTUAL_APPROACH_SURFACE)
+        } else {
+            None
+        };
+        let mut out = Vec::with_capacity(path.len().saturating_sub(1));
+        for w in path.windows(2) {
+            let Some(idx) =
+                self.best_edge_index_between(w[0], w[1], prev_surface, use_eco, options)
+            else {
+                continue;
+            };
+            if use_surface {
+                prev_surface = Some(self.edges[idx].surface_quality);
+            }
+            out.push(idx);
+        }
+        out
+    }
+
     /// Fast edge lookup using adjacency (O(degree), not O(edges)).
+    ///
+    /// When several parallel edges share the same endpoints, returns the cheapest
+    /// under default route options (no eco, no surface approach seed).
     pub fn edge_index(&self, from: NodeId, to: NodeId) -> Option<usize> {
-        self.adjacency
-            .get(&from)
-            .and_then(|idxs| idxs.iter().copied().find(|&i| self.edges[i].target == to))
+        self.best_edge_index_between(from, to, None, false, &RouteOptions::default())
     }
 
     /// True if this node has at least one outgoing edge for the active profile.
@@ -533,6 +616,11 @@ impl RouteGraph {
 
     /// Map overlay polyline (`lon,lat;…`) following each edge’s OSM shape when present.
     pub fn path_overlay_polyline(&self, path: &[NodeId]) -> String {
+        self.path_overlay_polyline_with_options(path, false, &RouteOptions::default())
+    }
+
+    /// Like [`Self::path_overlay_polyline`] using A*-recorded edge indices (preferred).
+    pub fn path_overlay_polyline_from_edges(&self, edge_indices: &[usize]) -> String {
         let mut out = String::new();
         let mut last: Option<(f64, f64)> = None;
         let mut push = |lon: f64, lat: f64| {
@@ -546,10 +634,39 @@ impl RouteGraph {
             }
             last = Some((lon, lat));
         };
-        for w in path.windows(2) {
-            let Some(idx) = self.edge_index(w[0], w[1]) else {
-                continue;
-            };
+        for &idx in edge_indices {
+            let e = &self.edges[idx];
+            push(e.start_lon, e.start_lat);
+            for &(lon, lat) in &e.shape {
+                push(lon, lat);
+            }
+            push(e.end_lon, e.end_lat);
+        }
+        out
+    }
+
+    /// Like [`Self::path_overlay_polyline`] with explicit costing (eco / avoidance).
+    /// Prefer [`Self::path_overlay_polyline_from_edges`] when edge indices came from A*.
+    pub fn path_overlay_polyline_with_options(
+        &self,
+        path: &[NodeId],
+        use_eco: bool,
+        options: &RouteOptions,
+    ) -> String {
+        let mut out = String::new();
+        let mut last: Option<(f64, f64)> = None;
+        let mut push = |lon: f64, lat: f64| {
+            if last == Some((lon, lat)) {
+                return;
+            }
+            if out.is_empty() {
+                out.push_str(&format!("{lon},{lat}"));
+            } else {
+                out.push_str(&format!(";{lon},{lat}"));
+            }
+            last = Some((lon, lat));
+        };
+        for idx in self.path_edge_indices_with_options(path, use_eco, options) {
             let e = &self.edges[idx];
             push(e.start_lon, e.start_lat);
             for &(lon, lat) in &e.shape {
@@ -562,11 +679,35 @@ impl RouteGraph {
 
     /// `(lat, lon)` vertices along the path including edge shape (for overnight / samples).
     pub fn path_coords_lat_lon(&self, path: &[NodeId]) -> Vec<(f64, f64)> {
+        self.path_coords_lat_lon_with_options(path, false, &RouteOptions::default())
+    }
+
+    /// Like [`Self::path_coords_lat_lon`] using A*-recorded edge indices (preferred).
+    pub fn path_coords_lat_lon_from_edges(&self, edge_indices: &[usize]) -> Vec<(f64, f64)> {
         let mut out = Vec::new();
-        for w in path.windows(2) {
-            let Some(idx) = self.edge_index(w[0], w[1]) else {
-                continue;
-            };
+        for &idx in edge_indices {
+            let e = &self.edges[idx];
+            if out.is_empty() {
+                out.push((e.start_lat, e.start_lon));
+            }
+            for &(lon, lat) in &e.shape {
+                out.push((lat, lon));
+            }
+            out.push((e.end_lat, e.end_lon));
+        }
+        out
+    }
+
+    /// Like [`Self::path_coords_lat_lon`] with explicit costing (eco / avoidance).
+    /// Prefer [`Self::path_coords_lat_lon_from_edges`] when edge indices came from A*.
+    pub fn path_coords_lat_lon_with_options(
+        &self,
+        path: &[NodeId],
+        use_eco: bool,
+        options: &RouteOptions,
+    ) -> Vec<(f64, f64)> {
+        let mut out = Vec::new();
+        for idx in self.path_edge_indices_with_options(path, use_eco, options) {
             let e = &self.edges[idx];
             if out.is_empty() {
                 out.push((e.start_lat, e.start_lon));
@@ -592,7 +733,7 @@ impl RouteGraph {
         start: NodeId,
         goal: NodeId,
         use_eco: bool,
-    ) -> Option<(Vec<NodeId>, f64)> {
+    ) -> Option<(Vec<NodeId>, Vec<usize>, f64)> {
         self.shortest_path_with_options(start, goal, use_eco, &RouteOptions::default())
     }
 
@@ -602,7 +743,7 @@ impl RouteGraph {
         goal: NodeId,
         use_eco: bool,
         options: &RouteOptions,
-    ) -> Option<(Vec<NodeId>, f64)> {
+    ) -> Option<(Vec<NodeId>, Vec<usize>, f64)> {
         let plan_id = crate::download::plan_cancel::current_plan_id();
         let expansions = std::sync::atomic::AtomicU32::new(0);
         let use_surface_transitions = self.surface_routing_mode == SurfaceRoutingMode::Car
@@ -611,9 +752,9 @@ impl RouteGraph {
 
         if use_surface_transitions {
             let result = astar(
-                &(start, Some(SNAP_VIRTUAL_APPROACH_SURFACE)),
+                &(start, Some(SNAP_VIRTUAL_APPROACH_SURFACE), NO_INCOMING_EDGE),
                 |state| {
-                    let (node, prev_surface) = *state;
+                    let (node, prev_surface, _) = *state;
                     if plan_id != 0 {
                         let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         if n & 2047 == 0 && crate::download::plan_cancel::is_cancelled_id(plan_id) {
@@ -643,7 +784,7 @@ impl RouteGraph {
                                 surface_mode,
                             );
                             let cost = cost_to_u64(base + transition);
-                            Some(((edge.target, Some(edge.surface_quality)), cost))
+                            Some(((edge.target, Some(edge.surface_quality), edge_idx), cost))
                         })
                         .collect::<Vec<_>>()
                 },
@@ -661,17 +802,13 @@ impl RouteGraph {
             if crate::download::plan_cancel::is_cancelled_id(plan_id) {
                 return None;
             }
-            return result.map(|(path, cost)| {
-                (
-                    path.into_iter().map(|(n, _)| n).collect(),
-                    cost as f64 / 1000.0,
-                )
-            });
+            return result.map(|(path, cost)| decode_recorded_path(path, cost));
         }
 
         let result = astar(
-            &start,
-            |node| {
+            &(start, NO_INCOMING_EDGE),
+            |state| {
+                let (node, _) = *state;
                 if plan_id != 0 {
                     let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     if n & 2047 == 0 && crate::download::plan_cancel::is_cancelled_id(plan_id) {
@@ -680,11 +817,11 @@ impl RouteGraph {
                 }
                 // Node-scoped barrier block: may arrive as destination, but must
                 // not continue through unless this node was the path start.
-                if self.access_blocked_nodes.contains(node) && node != &start {
+                if self.access_blocked_nodes.contains(&node) && node != start {
                     return Vec::new();
                 }
                 self.adjacency
-                    .get(node)
+                    .get(&node)
                     .into_iter()
                     .flatten()
                     .filter_map(|&edge_idx| {
@@ -697,25 +834,25 @@ impl RouteGraph {
                         } else {
                             edge.base_weight
                         };
-                        Some((edge.target, cost_to_u64(cost)))
+                        Some(((edge.target, edge_idx), cost_to_u64(cost)))
                     })
                     .collect::<Vec<_>>()
             },
-            |node| {
+            |state| {
                 cost_to_u64(
                     self.nodes
-                        .get(node)
+                        .get(&state.0)
                         .and_then(|n| self.nodes.get(&goal).map(|g| haversine_m(n, g)))
                         .unwrap_or(0.0)
                         * 0.1,
                 )
             },
-            |node| node == &goal,
+            |(node, _)| *node == goal,
         );
         if crate::download::plan_cancel::is_cancelled_id(plan_id) {
             return None;
         }
-        result.map(|(path, cost)| (path, cost as f64 / 1000.0))
+        result.map(|(path, cost)| decode_recorded_path_simple(path, cost))
     }
 
     /// Count edges on a path that would be excluded by vehicle/avoidance options.
@@ -766,12 +903,19 @@ impl RouteGraph {
 
     /// Distance-weighted share (%) of path length on motorway / motorway_link.
     pub fn motorway_share_pct(&self, path: &[NodeId]) -> f64 {
+        self.motorway_share_pct_with_options(path, false, &RouteOptions::default())
+    }
+
+    /// Like [`Self::motorway_share_pct`] with explicit costing (eco / avoidance).
+    pub fn motorway_share_pct_with_options(
+        &self,
+        path: &[NodeId],
+        use_eco: bool,
+        options: &RouteOptions,
+    ) -> f64 {
         let mut total_m = 0.0;
         let mut motorway_m = 0.0;
-        for w in path.windows(2) {
-            let Some(idx) = self.edge_index(w[0], w[1]) else {
-                continue;
-            };
+        for idx in self.path_edge_indices_with_options(path, use_eco, options) {
             let e = &self.edges[idx];
             let len = e.length_m.max(0.0);
             total_m += len;
@@ -789,6 +933,49 @@ impl RouteGraph {
     /// metric for motor profiles — higher when motorways are avoided).
     pub fn non_motorway_share_pct(&self, path: &[NodeId]) -> f64 {
         (100.0 - self.motorway_share_pct(path)).clamp(0.0, 100.0)
+    }
+
+    /// Statistics on directed node pairs with more than one graph edge (parallel edges).
+    pub fn parallel_edge_census(&self) -> ParallelEdgeCensus {
+        let mut by_pair: HashMap<(NodeId, NodeId), Vec<usize>> = HashMap::new();
+        for (idx, edge) in self.edges.iter().enumerate() {
+            by_pair
+                .entry((edge.source, edge.target))
+                .or_default()
+                .push(idx);
+        }
+        let mut census = ParallelEdgeCensus {
+            total_directed_edges: self.edges.len(),
+            ..Default::default()
+        };
+        for ((from, to), indices) in &by_pair {
+            if indices.len() < 2 {
+                continue;
+            }
+            census.parallel_directed_pairs += 1;
+            census.extra_parallel_edges += indices.len() - 1;
+            let first_adj = self
+                .adjacency
+                .get(from)
+                .and_then(|adj| adj.iter().copied().find(|&i| self.edges[i].target == *to));
+            let cheapest = indices.iter().copied().min_by(|&a, &b| {
+                self.edges[a]
+                    .base_weight
+                    .partial_cmp(&self.edges[b].base_weight)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            if first_adj != cheapest {
+                census.old_edge_index_would_mismatch += 1;
+            }
+            let hw_set: HashSet<_> = indices
+                .iter()
+                .filter_map(|&i| self.edges[i].highway.as_deref())
+                .collect();
+            if hw_set.len() >= 2 {
+                census.mixed_highway_class_pairs += 1;
+            }
+        }
+        census
     }
 
     /// Human-readable summary of what a route avoided / how many restricted segments.
@@ -1187,6 +1374,24 @@ fn edge_allowed_for_options(
         }
     }
     true
+}
+
+fn decode_recorded_path(
+    path: Vec<(NodeId, Option<SurfaceQuality>, usize)>,
+    cost: u64,
+) -> (Vec<NodeId>, Vec<usize>, f64) {
+    let nodes: Vec<NodeId> = path.iter().map(|(n, _, _)| *n).collect();
+    let edges: Vec<usize> = path.iter().skip(1).map(|(_, _, e)| *e).collect();
+    (nodes, edges, cost as f64 / 1000.0)
+}
+
+fn decode_recorded_path_simple(
+    path: Vec<(NodeId, usize)>,
+    cost: u64,
+) -> (Vec<NodeId>, Vec<usize>, f64) {
+    let nodes: Vec<NodeId> = path.iter().map(|(n, _)| *n).collect();
+    let edges: Vec<usize> = path.iter().skip(1).map(|(_, e)| *e).collect();
+    (nodes, edges, cost as f64 / 1000.0)
 }
 
 fn cost_to_u64(cost: f64) -> u64 {
@@ -1782,6 +1987,89 @@ mod tests {
         assert!(
             !path.contains(&NodeId(2)),
             "should avoid poor track stub via node 2, got {path:?}"
+        );
+    }
+
+    #[test]
+    #[ignore = "ostlandet PBF census probe — run with --ignored --nocapture"]
+    fn census_parallel_edges_ostlandet_car() {
+        let pbf = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/target/integration-fixtures/ostlandet-latest.osm.pbf"
+        ));
+        if !pbf.is_file() {
+            eprintln!("skip: missing {pbf:?}");
+            return;
+        }
+        let graph = RouteGraph::build_from_pbf(pbf, RoutingProfile::Car).expect("car graph");
+        let c = graph.parallel_edge_census();
+        eprintln!("parallel_edge_census_ostlandet_car: {c:?}");
+        eprintln!(
+            "parallel_pair_rate={:.4}% extra_edge_rate={:.4}% mismatch_rate={:.1}%",
+            100.0 * c.parallel_directed_pairs as f64 / c.total_directed_edges as f64,
+            100.0 * c.extra_parallel_edges as f64 / c.total_directed_edges as f64,
+            if c.parallel_directed_pairs > 0 {
+                100.0 * c.old_edge_index_would_mismatch as f64 / c.parallel_directed_pairs as f64
+            } else {
+                0.0
+            }
+        );
+    }
+
+    #[test]
+    fn parallel_edges_resolve_to_cheapest_for_path_geometry() {
+        // Same endpoints as Budorvegen: secondary chord vs longer service loop.
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [
+            (3397900348_i64, 60.8841608, 11.3138178),
+            (3397900317, 60.8836048, 11.3134738),
+        ] {
+            let (nid, n) = test_node(id, lat, lon);
+            nodes.insert(nid, n);
+        }
+        let edges = vec![
+            test_edge_with_surface(
+                3397900348,
+                3397900317,
+                60.8841608,
+                11.3138178,
+                60.8836048,
+                11.3134738,
+                "service",
+                SurfaceQuality::Good,
+            ),
+            {
+                let mut e = test_edge_with_surface(
+                    3397900348,
+                    3397900317,
+                    60.8841608,
+                    11.3138178,
+                    60.8836048,
+                    11.3134738,
+                    "secondary",
+                    SurfaceQuality::Good,
+                );
+                e.length_m = 64.6;
+                e.base_weight = 64.6;
+                e.id = "1037045908-1".into();
+                e
+            },
+        ];
+        let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        graph.surface_routing_mode = SurfaceRoutingMode::Car;
+        let (_path, path_edges, _) = graph
+            .shortest_path(NodeId(3397900348), NodeId(3397900317), false)
+            .expect("parallel chord route");
+        assert_eq!(path_edges.len(), 1);
+        assert!(
+            graph.edges[path_edges[0]].id.contains("1037045908"),
+            "A* must record cheapest secondary edge, not parallel service"
+        );
+        let coords = graph.path_coords_lat_lon_from_edges(&path_edges);
+        assert!(
+            coords.len() <= 3,
+            "secondary chord should be direct, service loop has many shape points: {}",
+            coords.len()
         );
     }
 

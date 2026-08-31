@@ -56,7 +56,7 @@ fn write_fondsbu_spiterstulen_polyline() {
 
     let (s, _, _) = nearest_node(&graph, start.lat, start.lon);
     let (g, _, _) = nearest_node(&graph, end.lat, end.lon);
-    let (path, _cost) = graph
+    let (path, _, _cost) = graph
         .shortest_path(s, g, false)
         .expect("no foot route Fondsbu->Spiterstulen");
     assert!(path.len() >= 2);

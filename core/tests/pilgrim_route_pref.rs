@@ -84,7 +84,7 @@ fn ostlandet_pilgrim_pref_and_gap_and_fts() {
                 if n == a {
                     continue;
                 }
-                let Some((path, cost)) = graph.shortest_path(a, n, false) else {
+                let Some((path, _, cost)) = graph.shortest_path(a, n, false) else {
                     continue;
                 };
                 if path.len() < 4 || path.len() > 40 {
@@ -103,13 +103,13 @@ fn ostlandet_pilgrim_pref_and_gap_and_fts() {
         (a, g)
     };
 
-    let (path_plain, cost_plain) = graph
+    let (path_plain, _, cost_plain) = graph
         .shortest_path(start, goal, false)
         .expect("plain route");
     let plain_pilgrim = count_pilgrim_hops(&graph, &path_plain, &pilgrim_ways);
 
     apply_official_network_preference(&mut graph, &pilgrim_ways);
-    let (path_pref, cost_pref) = graph
+    let (path_pref, _, cost_pref) = graph
         .shortest_path(start, goal, false)
         .expect("preferred route");
     let pref_pilgrim = count_pilgrim_hops(&graph, &path_pref, &pilgrim_ways);

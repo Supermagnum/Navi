@@ -36,5 +36,12 @@
 #     --dst core/tests/fixtures/liabrue-bogie-limits.osm.pbf \
 #     --bbox 8.620,61.820,8.760,61.900
 #
+# Parallel-edge geometry (Budorvegen secondary vs service loop):
+#
+#   python3 scripts/cut-corridor-extract.py \
+#     --src core/target/integration-fixtures/ostlandet-latest.osm.pbf \
+#     --dst core/tests/fixtures/budorvegen-service-detour.osm.pbf \
+#     --bbox 11.30,60.878,11.32,60.890
+#
 # Sizes stay under a few MiB so they can live in git (unlike
 # core/target/integration-fixtures/*.pbf which are gitignored).

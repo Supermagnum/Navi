@@ -70,7 +70,7 @@ fn torggata_motor_vehicle_no_excluded_for_car() {
     let opts = RouteOptions::default();
     let (s, _) = car.nearest_routable(start.0, start.1).expect("car start");
     let (g, _) = car.nearest_routable(end.0, end.1).expect("car end");
-    let (path, cost) = car
+    let (path, _, cost) = car
         .shortest_path_with_options(s, g, false, &opts)
         .expect("car must find a detour around Torggata");
     assert!(
@@ -134,7 +134,7 @@ fn kirkebyskogen_bollard_blocks_car_not_foot_bike() {
     let opts = RouteOptions::default();
     let (fs, _) = foot.nearest_routable(start.0, start.1).expect("foot start");
     let (fg, _) = foot.nearest_routable(end.0, end.1).expect("foot end");
-    let (fpath, _) = foot
+    let (fpath, _, _) = foot
         .shortest_path_with_options(fs, fg, false, &opts)
         .expect("foot path through Kirkebyskogen");
     assert!(
@@ -146,7 +146,7 @@ fn kirkebyskogen_bollard_blocks_car_not_foot_bike() {
 
     let (bs, _) = bike.nearest_routable(start.0, start.1).expect("bike start");
     let (bg, _) = bike.nearest_routable(end.0, end.1).expect("bike end");
-    let (bpath, _) = bike
+    let (bpath, _, _) = bike
         .shortest_path_with_options(bs, bg, false, &opts)
         .expect("bike path through Kirkebyskogen");
     assert!(

@@ -66,7 +66,7 @@ fn plan_grimafeltet_to_nysethvegen() {
 
     let s = nearest(&graph, start_lat, start_lon);
     let g = nearest(&graph, end_lat, end_lon);
-    let (path, _cost) = graph
+    let (path, _, _cost) = graph
         .shortest_path(s, g, false)
         .expect("route Grimåsfeltet → Nysethvegen");
     assert!(path.len() >= 2, "path too short: {}", path.len());

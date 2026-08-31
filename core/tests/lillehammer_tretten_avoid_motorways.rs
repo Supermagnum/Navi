@@ -79,10 +79,10 @@ fn lillehammer_to_tretten_avoid_motorways_on_off() {
         .expect("snap start");
     let (g, _) = graph.nearest_routable(end.0, end.1).expect("snap end");
 
-    let (path_off, cost_off) = graph
+    let (path_off, _, cost_off) = graph
         .shortest_path_with_options(s, g, false, &RouteOptions::default())
         .expect("route avoid=off");
-    let (path_on, cost_on) = graph
+    let (path_on, _, cost_on) = graph
         .shortest_path_with_options(
             s,
             g,

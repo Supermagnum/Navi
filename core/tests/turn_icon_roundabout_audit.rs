@@ -117,7 +117,7 @@ fn plan_leg(
 ) -> (Vec<NodeId>, f64) {
     let s = nearest(graph, a.0, a.1);
     let g = nearest(graph, b.0, b.1);
-    let (path, _cost) = graph
+    let (path, _, _cost) = graph
         .shortest_path(s, g, false)
         .unwrap_or_else(|| panic!("no path {:.5},{:.5} -> {:.5},{:.5}", a.0, a.1, b.0, b.1));
     let mut dist = 0.0;

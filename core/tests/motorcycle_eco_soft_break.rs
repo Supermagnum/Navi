@@ -100,7 +100,7 @@ fn lillehammer_tretten_motorcycle_eco_net_below_car() {
         .expect("start")
         .0;
     let g = graph_car.nearest_routable(END.0, END.1).expect("end").0;
-    let (path, _) = graph_car
+    let (path, _, _) = graph_car
         .shortest_path_with_options(s, g, true, &opts)
         .expect("car path");
     assert!(path.len() >= 2);
@@ -153,7 +153,7 @@ fn soft_pause_spacing_follows_car_rest_hours_on_corridor_eta() {
             .expect("graph");
     let s = graph.nearest_routable(START.0, START.1).expect("start").0;
     let g = graph.nearest_routable(END.0, END.1).expect("end").0;
-    let (path, _) = graph
+    let (path, _, _) = graph
         .shortest_path_with_options(s, g, false, &RouteOptions::default())
         .expect("path");
 

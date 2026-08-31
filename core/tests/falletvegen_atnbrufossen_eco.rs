@@ -195,7 +195,7 @@ fn run() -> anyhow::Result<()> {
     let kwh_off = m_off.energy_j / J_PER_KWH;
     let kw_off = avg_power_kw(m_off.energy_j, m_off.distance_m, 90.0);
     let kwh_per_100_off = kwh_off * 100.0 / (m_off.distance_m / 1000.0);
-    report.log_route_metrics("Eco-off path", &m_off, path_off.1);
+    report.log_route_metrics("Eco-off path", &m_off, path_off.2);
     report.line(&format!(
         "  Mean |gradient| proxy: {:.2}% (climb+descent)/distance",
         mean_gradient_pct(m_off.total_climb_m, m_off.total_descent_m, m_off.distance_m)
@@ -232,7 +232,7 @@ fn run() -> anyhow::Result<()> {
         eco_some,
         eco_share * 100.0
     ));
-    report.log_route_metrics("Eco-on path", &m_on, path_on.1);
+    report.log_route_metrics("Eco-on path", &m_on, path_on.2);
     report.line(&format!(
         "  Mean |gradient| proxy: {:.2}%",
         mean_gradient_pct(m_on.total_climb_m, m_on.total_descent_m, m_on.distance_m)
@@ -303,7 +303,7 @@ fn run() -> anyhow::Result<()> {
             let via_edges = path_edge_indices(&graph_flat, &via_nodes);
             let m_via = route_metrics(&graph_flat, &via_edges, &elevation, &eco, true);
             let kwh_via = m_via.energy_j / J_PER_KWH;
-            report.log_route_metrics("Diagnostic via-Atnosen geometry", &m_via, a.1 + b.1);
+            report.log_route_metrics("Diagnostic via-Atnosen geometry", &m_via, a.2 + b.2);
             report.line(&format!(
                 "  Energy: {kwh_via:.2} kWh total · climb {:.0} m · descent {:.0} m",
                 m_via.total_climb_m, m_via.total_descent_m
