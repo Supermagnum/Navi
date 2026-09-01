@@ -55,8 +55,7 @@ On-device and emulator results:
 installable release APK** (upload keystore; not the debug build). Current build:
 **v0.2.0-alpha** (`versionName` 0.2.0, `versionCode` 2). Download from the
 [`v0.2.0-alpha` tag](https://github.com/Supermagnum/Navi/tree/v0.2.0-alpha)
-or the latest
-[`dev` branch](https://github.com/Supermagnum/Navi/tree/dev) copy. Android
+ Android
 validates the APK signature on install; the separate GPG files
 ([`compiled/SHA256SUMS`](compiled/SHA256SUMS),
 [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc)) are optional provenance
@@ -1140,6 +1139,8 @@ English** when a translation or pack is missing. Spec:
 [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
 Do **not** infer UI language from GPS or SIM country. Do not add a language
 toggle until that plugin exists.
+
+Figure out why railway lines is not showing.
 
 Display **units** (metric / US / UK) are shipped (Drive settings), including
 peak-height labels on the basemap. Norwegian speed-limit **pictograms** stay
