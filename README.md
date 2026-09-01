@@ -62,6 +62,9 @@ validates the APK signature on install; the separate GPG files
 only — not a substitute for APK signing. Install steps:
 [Install a prebuilt APK](#install-a-prebuilt-apk).
 
+The prebuilt apk's will be removed from this repo when this closes as it then will be available by F-droid.
+https://gitlab.com/fdroid/fdroiddata/-/merge_requests/45644
+
 **Translators wanted.** UI language packs are specified but not shipped
 (English-only chrome today). Fill or review the working table and follow the
 spec: [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md)
