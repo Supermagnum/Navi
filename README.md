@@ -47,6 +47,19 @@ differ for GPS, maps, GPU, and layout. Checklist:
 On-device and emulator results:
 [`docs/android-test-results.md`](docs/android-test-results.md).
 
+**Install the signed release APK.** Testers should download and sideload
+[`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
+installable release APK** (upload keystore; not the debug build). Current build:
+**v0.2.0-alpha** (`versionName` 0.2.0, `versionCode` 2). Download from the
+[`v0.2.0-alpha` tag](https://github.com/Supermagnum/Navi/tree/v0.2.0-alpha)
+or the latest
+[`dev` branch](https://github.com/Supermagnum/Navi/tree/dev) copy. Android
+validates the APK signature on install; the separate GPG files
+([`compiled/SHA256SUMS`](compiled/SHA256SUMS),
+[`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc)) are optional provenance
+only — not a substitute for APK signing. Install steps:
+[Install a prebuilt APK](#install-a-prebuilt-apk).
+
 **Translators wanted.** UI language packs are specified but not shipped
 (English-only chrome today). Fill or review the working table and follow the
 spec: [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md)
@@ -728,31 +741,67 @@ clone **your** fork, and work on **`dev`** — step-by-step in
 
 ## Install a prebuilt APK
 
-A debug-signed APK is in [`compiled/navi-debug.apk`](compiled/navi-debug.apk)
-(arm64, same package as `./gradlew :app:assembleDebug`). You do not need a
-Rust/NDK toolchain to install it.
+### Release APK (for testers)
 
-1. On the device: enable **Developer options** and **USB debugging**.
-2. Connect with `adb devices` and confirm the device is listed.
-3. If an older Navi build with a **different signature** is already installed,
-   uninstall it first (`adb uninstall no.navi.app`).
-4. Install and launch:
+Use the **signed release** build — this is what hardware testers should
+install. The APK is signed with the project upload keystore so Android accepts
+it as a normal install (not an unsigned or debug-only package).
+
+| Artifact | Role |
+|---|---|
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.2.0 / tag **v0.2.0-alpha**) |
+| [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
+| [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
+
+You do not need a Rust/NDK toolchain to install it.
+
+1. On the device: enable **Developer options** and allow installs from your
+   browser or file manager (USB debugging only needed for `adb`).
+2. Download
+   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.2.0-alpha/compiled/navi-release.apk)
+   (pinned tag) or the latest
+   [`dev` copy](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-release.apk).
+3. Optional integrity check on a PC:
+
+```bash
+cd compiled
+sha256sum -c SHA256SUMS
+gpg --verify SHA256SUMS.asc SHA256SUMS
+```
+
+4. If an older Navi build with a **different signature** is already installed,
+   uninstall it first (`adb uninstall no.navi.app` or Settings → Apps).
+5. Install and launch:
+
+```bash
+adb install -r compiled/navi-release.apk
+adb shell am start -n no.navi.app/.MainActivity
+```
+
+On the device you can also open the raw download link in the browser and tap
+the downloaded APK (allow installs from the browser if prompted).
+
+This APK is signed with the project **upload** keystore (local sideload key —
+not Play production signing). It is the intended tester build, not the debug
+keystore.
+
+### Debug APK (developers only)
+
+A **debug-signed** APK remains in [`compiled/navi-debug.apk`](compiled/navi-debug.apk)
+(arm64, same package as `./gradlew :app:assembleDebug`). Use it only for quick
+local smoke tests when you are not exercising the release signing path.
 
 ```bash
 adb install -r compiled/navi-debug.apk
 adb shell am start -n no.navi.app/.MainActivity
 ```
 
-This APK is signed with the Android **debug** keystore. It is for testers, not
-a Play Store / F-Droid release. To rebuild from source, follow the sections
-below.
+Browser download:
+[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/blob/dev/compiled/navi-debug.apk)
+or
+[`raw/dev/compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-debug.apk).
 
-You can also download
-[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/blob/main/compiled/navi-debug.apk)
-directly with your browser on the Android device and install it that way
-(allow installs from the browser if prompted). Use the download button on that
-page, or the raw file at
-[`raw/main/compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/main/compiled/navi-debug.apk).
+To rebuild from source, follow the sections below.
 
 ## Android app (all host platforms)
 
@@ -812,6 +861,10 @@ or `adb install -r app\build\outputs\apk\debug\app-debug.apk`.
 
 Debug installs use the Android **debug** keystore. A **release** package is what
 you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
+
+A prebuilt upload-key-signed release APK for testers is committed at
+[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.2.0-alpha**;
+see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
 
