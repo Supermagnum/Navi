@@ -13,6 +13,22 @@ https://github.com/Supermagnum/Navi/blob/dev/docs/crates.md
 
 
 # NOTE !
+
+Navi does not currently ship with a ready-made international routing database
+the way many commercial GPS / head-unit products do (those usually include
+precomputed indexes from the vendor).
+Computing this on device takes anywhere from 8 minutes and up to 25 minutes, it needs to be done when you download or update map data for your region.
+Solving onboard convert cost may involve
+a server (example: navi.app) that distributes precomputed index packs
+for a region; when that server is unreachable, the natural fallback is what
+Navi already does — local pack convert and PBF planning from the
+downloaded extract. Precomputed town-to-town corridors (e.g. Haugesund→Bergen,
+Oslo→Fredrikstad) could speed popular trips further. Direction:
+[`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
+
+Estimated server space needed:
+[https://github.com/Supermagnum/Navi/blob/main/docs/indexed-map-format-plan.md](https://github.com/Supermagnum/Navi/blob/main/docs/indexed-map-format-plan.md)
+
 Background indexing is still slow on region-scale extracts, but improved
 (Østlandet convert on SM-P613 ~14.8 → ~10.6 → **~7.4 min**). Of the reduced
 ~7.4 min total: graph build is the largest share (~58%), wetland extraction
@@ -23,19 +39,6 @@ shares of the new total, not a comparison with the old ~41/~24/~34 split of
 indexing runs; plans are much faster once packs are ready. Cold /
 missing-pack long-distance planning is still slow (PBF graph build). Pack-hit
 planning is much faster — see [Known issues](#known-issues).
-
-Navi does not currently ship with a ready-made national routing database
-the way many commercial GPS / head-unit products do (those usually include
-precomputed indexes from the vendor). Solving onboard convert cost may involve
-a server (example: navi.app) that distributes precomputed index packs
-for a region; when that server is unreachable, the natural fallback is what
-Navi already does — local pack convert and PBF planning from the
-downloaded extract. Precomputed town-to-town corridors (e.g. Haugesund→Bergen,
-Oslo→Fredrikstad) could speed popular trips further. Direction:
-[`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
-
-Estimated server space needed:
-[https://github.com/Supermagnum/Navi/blob/main/docs/indexed-map-format-plan.md](https://github.com/Supermagnum/Navi/blob/main/docs/indexed-map-format-plan.md)
 
 # Testers wanted
 
@@ -1137,6 +1140,8 @@ English** when a translation or pack is missing. Spec:
 [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md).
 Do **not** infer UI language from GPS or SIM country. Do not add a language
 toggle until that plugin exists.
+
+Figure out why railway lines is not showing.
 
 Display **units** (metric / US / UK) are shipped (Drive settings), including
 peak-height labels on the basemap. Norwegian speed-limit **pictograms** stay
