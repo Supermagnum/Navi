@@ -22,7 +22,9 @@ Solving onboard convert cost may involve
 a server (example: navi.app) that distributes precomputed index packs
 for a region; when that server is unreachable, the natural fallback is what
 Navi already does — local pack convert and PBF planning from the
-downloaded extract. Precomputed town-to-town corridors (e.g. Haugesund→Bergen,
+downloaded extract. Related server work lives in
+[Supermagnum/navi-server](https://github.com/Supermagnum/navi-server/tree/main).
+Precomputed town-to-town corridors (e.g. Haugesund→Bergen,
 Oslo→Fredrikstad) could speed popular trips further. Direction:
 [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
 
