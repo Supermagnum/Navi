@@ -4090,6 +4090,8 @@ pub struct FfiSavedRoute {
     pub last_break_lat: Option<f64>,
     pub last_break_lon: Option<f64>,
     pub summary_json: String,
+    /// JSON array of via waypoints: `[{"name","lat","lon"}, ...]`.
+    pub via_json: String,
 }
 
 #[derive(uniffi::Record, Debug, Clone)]
@@ -4182,6 +4184,7 @@ pub fn list_saved_routes(data_dir: String) -> Vec<FfiSavedRoute> {
             last_break_lat: r.last_break_lat,
             last_break_lon: r.last_break_lon,
             summary_json: r.summary_json,
+            via_json: r.via_json,
         })
         .collect()
 }

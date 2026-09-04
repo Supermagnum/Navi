@@ -3591,7 +3591,11 @@ data class FfiSavedRoute (
     var `endLon`: kotlin.Double, 
     var `lastBreakLat`: kotlin.Double?, 
     var `lastBreakLon`: kotlin.Double?, 
-    var `summaryJson`: kotlin.String
+    var `summaryJson`: kotlin.String, 
+    /**
+     * JSON array of via waypoints: `[{"name","lat","lon"}, ...]`.
+     */
+    var `viaJson`: kotlin.String
 ) {
     
     companion object
@@ -3615,6 +3619,7 @@ public object FfiConverterTypeFfiSavedRoute: FfiConverterRustBuffer<FfiSavedRout
             FfiConverterOptionalDouble.read(buf),
             FfiConverterOptionalDouble.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -3630,7 +3635,8 @@ public object FfiConverterTypeFfiSavedRoute: FfiConverterRustBuffer<FfiSavedRout
             FfiConverterDouble.allocationSize(value.`endLon`) +
             FfiConverterOptionalDouble.allocationSize(value.`lastBreakLat`) +
             FfiConverterOptionalDouble.allocationSize(value.`lastBreakLon`) +
-            FfiConverterString.allocationSize(value.`summaryJson`)
+            FfiConverterString.allocationSize(value.`summaryJson`) +
+            FfiConverterString.allocationSize(value.`viaJson`)
     )
 
     override fun write(value: FfiSavedRoute, buf: ByteBuffer) {
@@ -3646,6 +3652,7 @@ public object FfiConverterTypeFfiSavedRoute: FfiConverterRustBuffer<FfiSavedRout
             FfiConverterOptionalDouble.write(value.`lastBreakLat`, buf)
             FfiConverterOptionalDouble.write(value.`lastBreakLon`, buf)
             FfiConverterString.write(value.`summaryJson`, buf)
+            FfiConverterString.write(value.`viaJson`, buf)
     }
 }
 

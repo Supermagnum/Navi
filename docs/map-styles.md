@@ -42,6 +42,11 @@ bundled Protomaps style. Attribution: OpenStreetMap (+ Protomaps when offline);
 when 3D is active, MapLibre also shows **© Mapterhorn** from the DEM TileJSON
 ([attribution sources](https://mapterhorn.com/attribution)).
 
+**Railways (offline):** Protomaps stores physical rail in `roads` with
+`kind=rail`. The offline light template paints them as `roads_rail` /
+`roads_rail_hatch` (from ~z11 / z13). Online Liberty already draws rail via
+OpenMapTiles transportation layers. PMTiles bbox extracts do not filter out rail.
+
 MapLibre’s **offline pack** API does **not** support PMTiles. Navi builds a local
 `.pmtiles` via HTTP **range extract** from Protomaps’ public planet file — no
 MapLibre OfflineManager, no project-hosted cutouts, no GitHub Releases.

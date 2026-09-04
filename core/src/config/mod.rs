@@ -95,7 +95,24 @@ impl Profile {
         )
     }
 
-    /// Motor profiles that expose avoid-toll / avoid-ferry toggles.
+    /// Profiles that expose the avoid-toll toggle (includes bike/hike for mode-specific tolls).
+    pub fn supports_toll_avoid(self) -> bool {
+        matches!(
+            self,
+            Profile::Car
+                | Profile::CarElectric
+                | Profile::Truck
+                | Profile::TruckElectric
+                | Profile::MobileHome
+                | Profile::Motorcycle
+                | Profile::MotorcycleElectric
+                | Profile::Hiking
+                | Profile::Cycling
+                | Profile::CyclingElectric
+        )
+    }
+
+    /// Motor profiles that expose avoid-ferry (and historically shared with toll UI).
     pub fn supports_toll_ferry_avoid(self) -> bool {
         matches!(
             self,
@@ -115,6 +132,11 @@ impl Profile {
             self,
             Profile::Hiking | Profile::Cycling | Profile::CyclingElectric
         )
+    }
+
+    /// Motor profiles that expose avoid-ferry.
+    pub fn supports_ferry_avoid(self) -> bool {
+        self.supports_toll_ferry_avoid()
     }
 
     /// Profiles that apply full vehicle dimension/weight clearance filters.
