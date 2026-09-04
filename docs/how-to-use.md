@@ -189,12 +189,14 @@ In the current UI under **Saved routes**:
 - **Save** — stores the current From (or a fallback start), To, and vias.
   Requires a **To** destination (`Set a To destination first` otherwise).
 - List of saved rows with profile and time.
+- **Load** — restores From/To/vias, profile, and saved avoid flags, then
+  **replans** on the map (geometry is not stored; only waypoints).
 - **Delete route** per row.
 - **Delete planned route** clears the **active** map corridor only.
 
-There is **no** “Load” / “Select” button today that restores a saved row into
-From/To and replans. **Continue from last stop** (planning panel) can reuse a
-saved route’s last break coordinates when present.
+Routes live in app internal storage as SQLite rows in `navi.db` (table
+`routes`), not as GPX files. **Continue from last stop** (planning panel) can
+reuse a saved route’s last break coordinates when present.
 
 ---
 

@@ -328,6 +328,47 @@ data class Waypoint(
     val postcode: String? = null,
 )
 
+private fun travelProfileFromSavedName(raw: String): TravelProfile? {
+    val key = raw.trim().lowercase().replace('-', '_')
+    return TravelProfile.entries.firstOrNull { it.name.lowercase() == key }
+}
+
+private fun parseSavedViaPoints(viaJson: String): List<Waypoint> {
+    if (viaJson.isBlank()) return emptyList()
+    return runCatching {
+        val arr = org.json.JSONArray(viaJson)
+        buildList {
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                add(
+                    Waypoint(
+                        name = o.optString("name", "Via"),
+                        lat = o.optDouble("lat", Double.NaN),
+                        lon = o.optDouble("lon", Double.NaN),
+                    ),
+                )
+            }
+        }.filter { it.lat.isFinite() && it.lon.isFinite() }
+    }.getOrDefault(emptyList())
+}
+
+private fun applySavedRouteSummaryJson(
+    summaryJson: String,
+    onAvoidMotorways: (Boolean) -> Unit,
+    onAvoidTolls: (Boolean) -> Unit,
+    onAvoidFerries: (Boolean) -> Unit,
+    onPriorityShare: (Double) -> Unit,
+) {
+    if (summaryJson.isBlank()) return
+    runCatching {
+        val o = org.json.JSONObject(summaryJson)
+        if (o.has("avoid_motorways")) onAvoidMotorways(o.optBoolean("avoid_motorways"))
+        if (o.has("avoid_tolls")) onAvoidTolls(o.optBoolean("avoid_tolls"))
+        if (o.has("avoid_ferries")) onAvoidFerries(o.optBoolean("avoid_ferries"))
+        if (o.has("priority_share_pct")) onPriorityShare(o.optDouble("priority_share_pct"))
+    }
+}
+
 private enum class SearchTarget { From, To, Via }
 
 private enum class SearchMode { Place, Address }
@@ -566,6 +607,7 @@ private fun NaviMapScreen() {
     var indexedMapsUiLine by remember { mutableStateOf("") }
     var placeIndexUiLine by remember { mutableStateOf("") }
     var planningRoute by remember { mutableStateOf(false) }
+    var planKick by remember { mutableIntStateOf(0) }
     var routePlanProgress by remember { mutableStateOf("") }
 
     /** True while planning when indexed packs are not ready (slow PBF path). */
@@ -3529,462 +3571,462 @@ private fun NaviMapScreen() {
                                     modifier = Modifier.testTag("btn_clear_vias"),
                                 ) { Text("Clear vias (${viaPoints.size})") }
                             }
-                            Button(
-                                onClick = {
-                                    scope.launch {
-                                        val start = fromPoint
-                                        if (start == null || toPoint.name.isBlank()) {
-                                            status = "Set From and To first"
-                                            return@launch
-                                        }
-                                        val coverageWaypoints =
-                                            buildList {
-                                                add(
-                                                    RegionCoverage.Waypoint(
-                                                        "From",
-                                                        start.name,
-                                                        start.lat,
-                                                        start.lon,
-                                                    ),
-                                                )
-                                                viaPoints.forEach { v ->
-                                                    add(
-                                                        RegionCoverage.Waypoint(
-                                                            "Via",
-                                                            v.name,
-                                                            v.lat,
-                                                            v.lon,
-                                                        ),
-                                                    )
-                                                }
-                                                add(
-                                                    RegionCoverage.Waypoint(
-                                                        "To",
-                                                        toPoint.name,
-                                                        toPoint.lat,
-                                                        toPoint.lon,
-                                                    ),
-                                                )
-                                            }
-                                        val missing =
-                                            RegionCoverage.missingCoverage(coverageWaypoints, dataDir)
-                                        if (missing != null) {
-                                            missingCoveragePrompt = missing
-                                            NaviMapTestHooks.missingCoveragePromptVisible = true
-                                            NaviMapTestHooks.lastMissingCoveragePath =
-                                                missing.suggestedGeofabrikPath
-                                            NaviMapTestHooks.lastMissingCoverageMessage = missing.message
-                                            status = missing.message
-                                            return@launch
-                                        }
-                                        val pts =
-                                            buildList {
-                                                add(start)
-                                                addAll(viaPoints)
-                                                add(toPoint)
-                                            }
-                                        // Prefer a single downloaded extract that covers the trip.
-                                        val pbf =
-                                            RegionCoverage.resolvePlanPbf(dataDir, coverageWaypoints)
-                                        val stagedOk =
-                                            profile == TravelProfile.HIKING &&
-                                                NaviMapTestHooks.preferStagedHikingRoute &&
-                                                File("/data/local/tmp/navi_fixtures/skolla_rondvassbu.polyline.txt").isFile
-                                        if (pbf == null && !stagedOk) {
-                                            status = "No region PBF — download a region in Tools first"
-                                            return@launch
-                                        }
-                                        val wpsJson =
-                                            pts.joinToString(",", "[", "]") {
-                                                """{"name":${org.json.JSONObject.quote(it.name)},"lat":${it.lat},"lon":${it.lon}}"""
-                                            }
-                                        val ecoForPlan =
-                                            if (ecoModeToggleable(profile)) ecoEnabled else true
-                                        planAbort.set(false)
-                                        val planStarted = System.currentTimeMillis()
-                                        RoutingPlanLog.start(
-                                            profile = profile.name.lowercase(),
-                                            ecoEnabled = ecoForPlan,
-                                            legCount = (pts.size - 1).coerceAtLeast(1),
-                                            waypointNames = pts.map { it.name },
-                                            startLat = pts.first().lat,
-                                            startLon = pts.first().lon,
-                                            endLat = pts.last().lat,
-                                            endLon = pts.last().lon,
+                            LaunchedEffect(planKick) {
+                                if (planKick == 0) return@LaunchedEffect
+                                val start = fromPoint
+                                if (start == null || toPoint.name.isBlank()) {
+                                    status = "Set From and To first"
+                                    return@LaunchedEffect
+                                }
+                                val coverageWaypoints =
+                                    buildList {
+                                        add(
+                                            RegionCoverage.Waypoint(
+                                                "From",
+                                                start.name,
+                                                start.lat,
+                                                start.lon,
+                                            ),
                                         )
-                                        downloadProgressClear()
-                                        planProgressClear()
-                                        planningRoute = true
-                                        routePlanPct = 0
-                                        routePlanProgress = "Planning route: starting…"
-                                        status = routePlanProgress
-                                        val result =
-                                            try {
-                                                foregroundPlanEnter()
-                                                planIndexingHintVisible =
-                                                    withContext(Dispatchers.IO) {
-                                                        val planPbf = pbf ?: resolveRegionPbf()
-                                                        if (planPbf == null || !planPbf.isFile) {
-                                                            true
-                                                        } else {
-                                                            runCatching {
-                                                                indexedMapsStatus(
-                                                                    planPbf.absolutePath,
-                                                                    dataDir.absolutePath,
-                                                                ).trim()
-                                                            }.getOrDefault("missing") != "ready"
-                                                        }
-                                                    }
-                                                withContext(Dispatchers.IO) {
+                                        viaPoints.forEach { v ->
+                                            add(
+                                                RegionCoverage.Waypoint(
+                                                    "Via",
+                                                    v.name,
+                                                    v.lat,
+                                                    v.lon,
+                                                ),
+                                            )
+                                        }
+                                        add(
+                                            RegionCoverage.Waypoint(
+                                                "To",
+                                                toPoint.name,
+                                                toPoint.lat,
+                                                toPoint.lon,
+                                            ),
+                                        )
+                                    }
+                                val missing =
+                                    RegionCoverage.missingCoverage(coverageWaypoints, dataDir)
+                                if (missing != null) {
+                                    missingCoveragePrompt = missing
+                                    NaviMapTestHooks.missingCoveragePromptVisible = true
+                                    NaviMapTestHooks.lastMissingCoveragePath =
+                                        missing.suggestedGeofabrikPath
+                                    NaviMapTestHooks.lastMissingCoverageMessage = missing.message
+                                    status = missing.message
+                                    return@LaunchedEffect
+                                }
+                                val pts =
+                                    buildList {
+                                        add(start)
+                                        addAll(viaPoints)
+                                        add(toPoint)
+                                    }
+                                // Prefer a single downloaded extract that covers the trip.
+                                val pbf =
+                                    RegionCoverage.resolvePlanPbf(dataDir, coverageWaypoints)
+                                val stagedOk =
+                                    profile == TravelProfile.HIKING &&
+                                        NaviMapTestHooks.preferStagedHikingRoute &&
+                                        File("/data/local/tmp/navi_fixtures/skolla_rondvassbu.polyline.txt").isFile
+                                if (pbf == null && !stagedOk) {
+                                    status = "No region PBF — download a region in Tools first"
+                                    return@LaunchedEffect
+                                }
+                                val wpsJson =
+                                    pts.joinToString(",", "[", "]") {
+                                        """{"name":${org.json.JSONObject.quote(it.name)},"lat":${it.lat},"lon":${it.lon}}"""
+                                    }
+                                val ecoForPlan =
+                                    if (ecoModeToggleable(profile)) ecoEnabled else true
+                                planAbort.set(false)
+                                val planStarted = System.currentTimeMillis()
+                                RoutingPlanLog.start(
+                                    profile = profile.name.lowercase(),
+                                    ecoEnabled = ecoForPlan,
+                                    legCount = (pts.size - 1).coerceAtLeast(1),
+                                    waypointNames = pts.map { it.name },
+                                    startLat = pts.first().lat,
+                                    startLon = pts.first().lon,
+                                    endLat = pts.last().lat,
+                                    endLon = pts.last().lon,
+                                )
+                                downloadProgressClear()
+                                planProgressClear()
+                                planningRoute = true
+                                routePlanPct = 0
+                                routePlanProgress = "Planning route: starting…"
+                                status = routePlanProgress
+                                val result =
+                                    try {
+                                        foregroundPlanEnter()
+                                        planIndexingHintVisible =
+                                            withContext(Dispatchers.IO) {
+                                                val planPbf = pbf ?: resolveRegionPbf()
+                                                if (planPbf == null || !planPbf.isFile) {
+                                                    true
+                                                } else {
                                                     runCatching {
-                                                        val stagedPoly =
-                                                            File(
-                                                                "/data/local/tmp/navi_fixtures/skolla_rondvassbu.polyline.txt",
+                                                        indexedMapsStatus(
+                                                            planPbf.absolutePath,
+                                                            dataDir.absolutePath,
+                                                        ).trim()
+                                                    }.getOrDefault("missing") != "ready"
+                                                }
+                                            }
+                                        withContext(Dispatchers.IO) {
+                                            runCatching {
+                                                val stagedPoly =
+                                                    File(
+                                                        "/data/local/tmp/navi_fixtures/skolla_rondvassbu.polyline.txt",
+                                                    )
+                                                val stagedBreaks =
+                                                    File(
+                                                        "/data/local/tmp/navi_fixtures/skolla_rondvassbu.breaks.json",
+                                                    )
+                                                if (profile == TravelProfile.HIKING &&
+                                                    NaviMapTestHooks.preferStagedHikingRoute &&
+                                                    stagedPoly.isFile
+                                                ) {
+                                                    RoutingPlanLog.progress(50, ecoForPlan, detail = "staged")
+                                                    val poly = stagedPoly.readText().trim()
+                                                    val breaks =
+                                                        if (stagedBreaks.isFile) {
+                                                            stagedBreaks.readText().trim()
+                                                        } else {
+                                                            "[]"
+                                                        }
+                                                    val stagedSamples =
+                                                        File(
+                                                            "/data/local/tmp/navi_fixtures/skolla_rondvassbu.sim_samples.json",
+                                                        )
+                                                    val samplesJson =
+                                                        if (stagedSamples.isFile) {
+                                                            stagedSamples.readText().trim()
+                                                        } else {
+                                                            "[]"
+                                                        }
+                                                    uniffi.navi.CorridorRouteResult(
+                                                        report = "TEST_KIND=STAGED_HIKE\nPASS\ndistance_km=112.5\n",
+                                                        distanceKm = 112.5,
+                                                        etaMinutes = 112.5 * 16.0,
+                                                        cacheHit = true,
+                                                        coldBuildS = 0.0,
+                                                        warmLoadS = 0.0,
+                                                        routePolyline = poly,
+                                                        poiLat = toPoint.lat,
+                                                        poiLon = toPoint.lon,
+                                                        poiName = toPoint.name,
+                                                        poiIconKey = "cabin",
+                                                        breakPoisJson = breaks,
+                                                        daysJson = "[]",
+                                                        simSamplesJson = samplesJson,
+                                                        maneuversJson = "[]",
+                                                        priorityPathSharePct = 0.0,
+                                                        routeSegmentsJson = "[]",
+                                                        offTrailAdvisory = "",
+                                                    )
+                                                } else {
+                                                    when (profile) {
+                                                        TravelProfile.HIKING -> {
+                                                            if (planAbort.get()) {
+                                                                return@runCatching cancelledCorridorResult()
+                                                            }
+                                                            RoutingPlanLog.progress(
+                                                                10,
+                                                                ecoForPlan,
+                                                                detail = "hiking_graph",
                                                             )
-                                                        val stagedBreaks =
-                                                            File(
-                                                                "/data/local/tmp/navi_fixtures/skolla_rondvassbu.breaks.json",
-                                                            )
-                                                        if (profile == TravelProfile.HIKING &&
-                                                            NaviMapTestHooks.preferStagedHikingRoute &&
-                                                            stagedPoly.isFile
-                                                        ) {
-                                                            RoutingPlanLog.progress(50, ecoForPlan, detail = "staged")
-                                                            val poly = stagedPoly.readText().trim()
-                                                            val breaks =
-                                                                if (stagedBreaks.isFile) {
-                                                                    stagedBreaks.readText().trim()
-                                                                } else {
-                                                                    "[]"
-                                                                }
-                                                            val stagedSamples =
-                                                                File(
-                                                                    "/data/local/tmp/navi_fixtures/skolla_rondvassbu.sim_samples.json",
+                                                            val hike =
+                                                                uniffi.navi.planHikingRoute(
+                                                                    pbf!!.absolutePath,
+                                                                    File(dataDir, "elevation").absolutePath,
+                                                                    File(dataDir, "graph-cache-foot").absolutePath,
+                                                                    wpsJson,
+                                                                    preferOfficialNetworks,
+                                                                    preferPilgrimRoutes,
+                                                                    dataDir.absolutePath,
                                                                 )
-                                                            val samplesJson =
-                                                                if (stagedSamples.isFile) {
-                                                                    stagedSamples.readText().trim()
+                                                            RoutingPlanLog.progress(
+                                                                90,
+                                                                ecoForPlan,
+                                                                detail = "hiking_path",
+                                                            )
+                                                            hike
+                                                        }
+                                                        else -> {
+                                                            // Multi-leg motor/bike: bbox-clipped graph per profile.
+                                                            var poly = ""
+                                                            var dist = 0.0
+                                                            var etaSum = 0.0
+                                                            var shareWeighted = 0.0
+                                                            var last: uniffi.navi.CorridorRouteResult? = null
+                                                            val legSamples = mutableListOf<List<RouteSimSample>>()
+                                                            val legManeuvers = mutableListOf<List<RouteManeuver>>()
+                                                            val vehicleAvoidanceLines = linkedSetOf<String>()
+                                                            val legTotal = pts.size - 1
+                                                            val graphTag =
+                                                                when (profile) {
+                                                                    TravelProfile.BICYCLE,
+                                                                    TravelProfile.BICYCLE_ELECTRIC,
+                                                                    -> "bicycle"
+                                                                    TravelProfile.TRUCK,
+                                                                    TravelProfile.TRUCK_ELECTRIC,
+                                                                    TravelProfile.MOBILE_HOME,
+                                                                    -> "truck"
+                                                                    else -> "car"
+                                                                }
+                                                            val cacheDir =
+                                                                File(
+                                                                    dataDir,
+                                                                    "graph-cache-${pbf!!.nameWithoutExtension}-$graphTag",
+                                                                )
+                                                            for (i in 0 until legTotal) {
+                                                                if (planAbort.get()) {
+                                                                    return@runCatching last
+                                                                        ?: cancelledCorridorResult()
+                                                                }
+                                                                val a = pts[i]
+                                                                val b = pts[i + 1]
+                                                                val pct = ((i * 100) / legTotal).coerceIn(0, 99)
+                                                                RoutingPlanLog.progress(
+                                                                    pct,
+                                                                    ecoForPlan,
+                                                                    detail = "leg_${i + 1}_of_$legTotal",
+                                                                )
+                                                                val legRes =
+                                                                    uniffi.navi.planCarRoute(
+                                                                        pbf.absolutePath,
+                                                                        File(dataDir, "elevation").absolutePath,
+                                                                        cacheDir.absolutePath,
+                                                                        a.lat,
+                                                                        a.lon,
+                                                                        b.lat,
+                                                                        b.lon,
+                                                                        ecoForPlan,
+                                                                        profile,
+                                                                        avoidMotorways,
+                                                                        avoidTolls,
+                                                                        avoidFerries,
+                                                                        loadVehicleLimits(dataDir.absolutePath),
+                                                                        preferOfficialNetworks,
+                                                                        dataDir.absolutePath,
+                                                                    )
+                                                                if (!legRes.report.contains("PASS")) {
+                                                                    return@runCatching legRes
+                                                                }
+                                                                legRes.report.lineSequence().forEach { line ->
+                                                                    if (line.contains(
+                                                                            "weight/height/width/length-restricted",
+                                                                            ignoreCase = true,
+                                                                        )
+                                                                    ) {
+                                                                        vehicleAvoidanceLines += line.trim()
+                                                                    }
+                                                                }
+                                                                dist += legRes.distanceKm
+                                                                etaSum += legRes.etaMinutes
+                                                                shareWeighted += legRes.priorityPathSharePct * legRes.distanceKm
+                                                                poly =
+                                                                    if (poly.isEmpty()) {
+                                                                        legRes.routePolyline
+                                                                    } else {
+                                                                        poly + ";" +
+                                                                            legRes.routePolyline
+                                                                                .substringAfter(';')
+                                                                    }
+                                                                legSamples.add(parseRouteSimSamples(legRes.simSamplesJson))
+                                                                legManeuvers.add(parseRouteManeuvers(legRes.maneuversJson))
+                                                                last = legRes
+                                                            }
+                                                            val base = last!!
+                                                            val mergedSamples = mergeSimSamples(legSamples)
+                                                            val mergedManeuvers = mergeManeuvers(legManeuvers)
+                                                            val mergedShare =
+                                                                if (dist > 0.0) {
+                                                                    shareWeighted / dist
                                                                 } else {
-                                                                    "[]"
+                                                                    base.priorityPathSharePct
+                                                                }
+                                                            val mergedReport =
+                                                                buildString {
+                                                                    append(base.report)
+                                                                    if (!base.report.endsWith("\n") &&
+                                                                        vehicleAvoidanceLines.isNotEmpty()
+                                                                    ) {
+                                                                        append('\n')
+                                                                    }
+                                                                    vehicleAvoidanceLines.forEach { appendLine(it) }
                                                                 }
                                                             uniffi.navi.CorridorRouteResult(
-                                                                report = "TEST_KIND=STAGED_HIKE\nPASS\ndistance_km=112.5\n",
-                                                                distanceKm = 112.5,
-                                                                etaMinutes = 112.5 * 16.0,
-                                                                cacheHit = true,
-                                                                coldBuildS = 0.0,
-                                                                warmLoadS = 0.0,
+                                                                report = mergedReport,
+                                                                distanceKm = dist,
+                                                                etaMinutes = etaSum,
+                                                                cacheHit = base.cacheHit,
+                                                                coldBuildS = base.coldBuildS,
+                                                                warmLoadS = base.warmLoadS,
                                                                 routePolyline = poly,
                                                                 poiLat = toPoint.lat,
                                                                 poiLon = toPoint.lon,
                                                                 poiName = toPoint.name,
-                                                                poiIconKey = "cabin",
-                                                                breakPoisJson = breaks,
-                                                                daysJson = "[]",
-                                                                simSamplesJson = samplesJson,
-                                                                maneuversJson = "[]",
-                                                                priorityPathSharePct = 0.0,
+                                                                poiIconKey = base.poiIconKey,
+                                                                breakPoisJson = base.breakPoisJson,
+                                                                daysJson = base.daysJson,
+                                                                simSamplesJson =
+                                                                    org.json
+                                                                        .JSONArray(
+                                                                            mergedSamples.map { s ->
+                                                                                org.json
+                                                                                    .JSONObject()
+                                                                                    .put("lat", s.lat)
+                                                                                    .put("lon", s.lon)
+                                                                                    .put("cum_m", s.cumM)
+                                                                                    .put("speed_kmh", s.speedKmh)
+                                                                                    .put("highway", s.highway)
+                                                                                    .put("maxspeed_posted", s.maxspeedPosted)
+                                                                            },
+                                                                        ).toString(),
+                                                                maneuversJson =
+                                                                    org.json
+                                                                        .JSONArray(
+                                                                            mergedManeuvers.map { m ->
+                                                                                org.json
+                                                                                    .JSONObject()
+                                                                                    .put("lat", m.lat)
+                                                                                    .put("lon", m.lon)
+                                                                                    .put("cum_m", m.cumM)
+                                                                                    .put("kind", m.kind)
+                                                                                    .put("street", m.street)
+                                                                                    .put("roundabout_exit", m.roundaboutExit)
+                                                                                    .also { jo ->
+                                                                                        if (m.icon != null) {
+                                                                                            jo.put("icon", m.icon)
+                                                                                        }
+                                                                                    }
+                                                                            },
+                                                                        ).toString(),
+                                                                priorityPathSharePct = mergedShare,
                                                                 routeSegmentsJson = "[]",
                                                                 offTrailAdvisory = "",
                                                             )
-                                                        } else {
-                                                            when (profile) {
-                                                                TravelProfile.HIKING -> {
-                                                                    if (planAbort.get()) {
-                                                                        return@runCatching cancelledCorridorResult()
-                                                                    }
-                                                                    RoutingPlanLog.progress(
-                                                                        10,
-                                                                        ecoForPlan,
-                                                                        detail = "hiking_graph",
-                                                                    )
-                                                                    val hike =
-                                                                        uniffi.navi.planHikingRoute(
-                                                                            pbf!!.absolutePath,
-                                                                            File(dataDir, "elevation").absolutePath,
-                                                                            File(dataDir, "graph-cache-foot").absolutePath,
-                                                                            wpsJson,
-                                                                            preferOfficialNetworks,
-                                                                            preferPilgrimRoutes,
-                                                                            dataDir.absolutePath,
-                                                                        )
-                                                                    RoutingPlanLog.progress(
-                                                                        90,
-                                                                        ecoForPlan,
-                                                                        detail = "hiking_path",
-                                                                    )
-                                                                    hike
-                                                                }
-                                                                else -> {
-                                                                    // Multi-leg motor/bike: bbox-clipped graph per profile.
-                                                                    var poly = ""
-                                                                    var dist = 0.0
-                                                                    var etaSum = 0.0
-                                                                    var shareWeighted = 0.0
-                                                                    var last: uniffi.navi.CorridorRouteResult? = null
-                                                                    val legSamples = mutableListOf<List<RouteSimSample>>()
-                                                                    val legManeuvers = mutableListOf<List<RouteManeuver>>()
-                                                                    val vehicleAvoidanceLines = linkedSetOf<String>()
-                                                                    val legTotal = pts.size - 1
-                                                                    val graphTag =
-                                                                        when (profile) {
-                                                                            TravelProfile.BICYCLE,
-                                                                            TravelProfile.BICYCLE_ELECTRIC,
-                                                                            -> "bicycle"
-                                                                            TravelProfile.TRUCK,
-                                                                            TravelProfile.TRUCK_ELECTRIC,
-                                                                            TravelProfile.MOBILE_HOME,
-                                                                            -> "truck"
-                                                                            else -> "car"
-                                                                        }
-                                                                    val cacheDir =
-                                                                        File(
-                                                                            dataDir,
-                                                                            "graph-cache-${pbf!!.nameWithoutExtension}-$graphTag",
-                                                                        )
-                                                                    for (i in 0 until legTotal) {
-                                                                        if (planAbort.get()) {
-                                                                            return@runCatching last
-                                                                                ?: cancelledCorridorResult()
-                                                                        }
-                                                                        val a = pts[i]
-                                                                        val b = pts[i + 1]
-                                                                        val pct = ((i * 100) / legTotal).coerceIn(0, 99)
-                                                                        RoutingPlanLog.progress(
-                                                                            pct,
-                                                                            ecoForPlan,
-                                                                            detail = "leg_${i + 1}_of_$legTotal",
-                                                                        )
-                                                                        val legRes =
-                                                                            uniffi.navi.planCarRoute(
-                                                                                pbf.absolutePath,
-                                                                                File(dataDir, "elevation").absolutePath,
-                                                                                cacheDir.absolutePath,
-                                                                                a.lat,
-                                                                                a.lon,
-                                                                                b.lat,
-                                                                                b.lon,
-                                                                                ecoForPlan,
-                                                                                profile,
-                                                                                avoidMotorways,
-                                                                                avoidTolls,
-                                                                                avoidFerries,
-                                                                                loadVehicleLimits(dataDir.absolutePath),
-                                                                                preferOfficialNetworks,
-                                                                                dataDir.absolutePath,
-                                                                            )
-                                                                        if (!legRes.report.contains("PASS")) {
-                                                                            return@runCatching legRes
-                                                                        }
-                                                                        legRes.report.lineSequence().forEach { line ->
-                                                                            if (line.contains(
-                                                                                    "weight/height/width/length-restricted",
-                                                                                    ignoreCase = true,
-                                                                                )
-                                                                            ) {
-                                                                                vehicleAvoidanceLines += line.trim()
-                                                                            }
-                                                                        }
-                                                                        dist += legRes.distanceKm
-                                                                        etaSum += legRes.etaMinutes
-                                                                        shareWeighted += legRes.priorityPathSharePct * legRes.distanceKm
-                                                                        poly =
-                                                                            if (poly.isEmpty()) {
-                                                                                legRes.routePolyline
-                                                                            } else {
-                                                                                poly + ";" +
-                                                                                    legRes.routePolyline
-                                                                                        .substringAfter(';')
-                                                                            }
-                                                                        legSamples.add(parseRouteSimSamples(legRes.simSamplesJson))
-                                                                        legManeuvers.add(parseRouteManeuvers(legRes.maneuversJson))
-                                                                        last = legRes
-                                                                    }
-                                                                    val base = last!!
-                                                                    val mergedSamples = mergeSimSamples(legSamples)
-                                                                    val mergedManeuvers = mergeManeuvers(legManeuvers)
-                                                                    val mergedShare =
-                                                                        if (dist > 0.0) {
-                                                                            shareWeighted / dist
-                                                                        } else {
-                                                                            base.priorityPathSharePct
-                                                                        }
-                                                                    val mergedReport =
-                                                                        buildString {
-                                                                            append(base.report)
-                                                                            if (!base.report.endsWith("\n") &&
-                                                                                vehicleAvoidanceLines.isNotEmpty()
-                                                                            ) {
-                                                                                append('\n')
-                                                                            }
-                                                                            vehicleAvoidanceLines.forEach { appendLine(it) }
-                                                                        }
-                                                                    uniffi.navi.CorridorRouteResult(
-                                                                        report = mergedReport,
-                                                                        distanceKm = dist,
-                                                                        etaMinutes = etaSum,
-                                                                        cacheHit = base.cacheHit,
-                                                                        coldBuildS = base.coldBuildS,
-                                                                        warmLoadS = base.warmLoadS,
-                                                                        routePolyline = poly,
-                                                                        poiLat = toPoint.lat,
-                                                                        poiLon = toPoint.lon,
-                                                                        poiName = toPoint.name,
-                                                                        poiIconKey = base.poiIconKey,
-                                                                        breakPoisJson = base.breakPoisJson,
-                                                                        daysJson = base.daysJson,
-                                                                        simSamplesJson =
-                                                                            org.json
-                                                                                .JSONArray(
-                                                                                    mergedSamples.map { s ->
-                                                                                        org.json
-                                                                                            .JSONObject()
-                                                                                            .put("lat", s.lat)
-                                                                                            .put("lon", s.lon)
-                                                                                            .put("cum_m", s.cumM)
-                                                                                            .put("speed_kmh", s.speedKmh)
-                                                                                            .put("highway", s.highway)
-                                                                                            .put("maxspeed_posted", s.maxspeedPosted)
-                                                                                    },
-                                                                                ).toString(),
-                                                                        maneuversJson =
-                                                                            org.json
-                                                                                .JSONArray(
-                                                                                    mergedManeuvers.map { m ->
-                                                                                        org.json
-                                                                                            .JSONObject()
-                                                                                            .put("lat", m.lat)
-                                                                                            .put("lon", m.lon)
-                                                                                            .put("cum_m", m.cumM)
-                                                                                            .put("kind", m.kind)
-                                                                                            .put("street", m.street)
-                                                                                            .put("roundabout_exit", m.roundaboutExit)
-                                                                                            .also { jo ->
-                                                                                                if (m.icon != null) {
-                                                                                                    jo.put("icon", m.icon)
-                                                                                                }
-                                                                                            }
-                                                                                    },
-                                                                                ).toString(),
-                                                                        priorityPathSharePct = mergedShare,
-                                                                        routeSegmentsJson = "[]",
-                                                                        offTrailAdvisory = "",
-                                                                    )
-                                                                }
-                                                            }
                                                         }
-                                                    }.getOrElse { e ->
-                                                        if (e is CancellationException) throw e
-                                                        android.util.Log.e("NaviRoute", "plan failed", e)
-                                                        uniffi.navi.CorridorRouteResult(
-                                                            report = "FAIL: ${e.message ?: e.javaClass.simpleName}\n",
-                                                            distanceKm = 0.0,
-                                                            etaMinutes = 0.0,
-                                                            cacheHit = false,
-                                                            coldBuildS = 0.0,
-                                                            warmLoadS = 0.0,
-                                                            routePolyline = "",
-                                                            poiLat = 0.0,
-                                                            poiLon = 0.0,
-                                                            poiName = "",
-                                                            poiIconKey = "",
-                                                            breakPoisJson = "[]",
-                                                            daysJson = "[]",
-                                                            simSamplesJson = "[]",
-                                                            maneuversJson = "[]",
-                                                            priorityPathSharePct = 0.0,
-                                                            routeSegmentsJson = "[]",
-                                                            offTrailAdvisory = "",
-                                                        )
                                                     }
                                                 }
-                                            } catch (e: CancellationException) {
-                                                RoutingPlanLog.cancelled(
-                                                    ecoForPlan,
-                                                    System.currentTimeMillis() - planStarted,
-                                                    reason = "cancelled",
-                                                    report = "",
+                                            }.getOrElse { e ->
+                                                if (e is CancellationException) throw e
+                                                android.util.Log.e("NaviRoute", "plan failed", e)
+                                                uniffi.navi.CorridorRouteResult(
+                                                    report = "FAIL: ${e.message ?: e.javaClass.simpleName}\n",
+                                                    distanceKm = 0.0,
+                                                    etaMinutes = 0.0,
+                                                    cacheHit = false,
+                                                    coldBuildS = 0.0,
+                                                    warmLoadS = 0.0,
+                                                    routePolyline = "",
+                                                    poiLat = 0.0,
+                                                    poiLon = 0.0,
+                                                    poiName = "",
+                                                    poiIconKey = "",
+                                                    breakPoisJson = "[]",
+                                                    daysJson = "[]",
+                                                    simSamplesJson = "[]",
+                                                    maneuversJson = "[]",
+                                                    priorityPathSharePct = 0.0,
+                                                    routeSegmentsJson = "[]",
+                                                    offTrailAdvisory = "",
                                                 )
-                                                if (status != "Planning cancelled") {
-                                                    status = "Planning cancelled"
-                                                }
-                                                throw e
-                                            } finally {
-                                                planningRoute = false
-                                                routePlanPct = -1
-                                                routePlanProgress = ""
-                                                planIndexingHintVisible = false
-                                                planProgressClear()
-                                                foregroundPlanLeave()
-                                                downloadProgressClear()
                                             }
-                                        val durationMs = System.currentTimeMillis() - planStarted
-                                        if (planAbort.get() || planReportIsCancelled(result.report)) {
-                                            NaviMapTestHooks.lastPlanReport = result.report
-                                            NaviMapTestHooks.lastRoutePolylineChars = 0
-                                            NaviMapTestHooks.lastRoutePolyline = ""
-                                            RoutingPlanLog.cancelled(
-                                                ecoForPlan,
-                                                durationMs,
-                                                reason = "cancelled",
-                                                report = result.report,
-                                            )
-                                            if (status != "Planning cancelled") {
-                                                status = "Planning cancelled"
-                                            }
-                                            return@launch
                                         }
-                                        if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
-                                            NaviMapTestHooks.lastPlanReport = result.report
-                                            NaviMapTestHooks.lastRoutePolylineChars = 0
-                                            NaviMapTestHooks.lastRoutePolyline = ""
-                                            RoutingPlanLog.failed(
-                                                ecoForPlan,
-                                                durationMs,
-                                                userFacingStatus(result.report).ifBlank { "Routing failed" },
-                                            )
-                                            status = userFacingStatus(result.report).ifBlank { "Routing failed" }
-                                            return@launch
+                                    } catch (e: CancellationException) {
+                                        RoutingPlanLog.cancelled(
+                                            ecoForPlan,
+                                            System.currentTimeMillis() - planStarted,
+                                            reason = "cancelled",
+                                            report = "",
+                                        )
+                                        if (status != "Planning cancelled") {
+                                            status = "Planning cancelled"
                                         }
-                                        RoutingPlanLog.complete(result, ecoForPlan, durationMs)
-                                        NaviMapTestHooks.routeStartLabel = start.name
-                                        NaviMapTestHooks.routeEndLabel = toPoint.name
-                                        NaviMapTestHooks.routeViaLabel =
-                                            viaPoints.joinToString(", ") { it.name }
-                                        // Apply on this composition immediately. Do not only stash
-                                        // into pendingRoute — a non-resumed sibling activity can
-                                        // consume the hook and the visible map stays empty.
-                                        applyPlannedRoute(result)
-                                        prioritySharePct = result.priorityPathSharePct
-                                        val planStatus =
-                                            formatEbikePlanStatus(
-                                                result.report,
-                                                result.distanceKm,
-                                                driveHud.unitSystem,
-                                            )
-                                                ?: (
-                                                    formatRouteAvoidanceReport(
-                                                        avoidMotorways,
-                                                        avoidTolls,
-                                                        avoidFerries,
-                                                        prioritySharePct,
-                                                    ) + "\n" +
-                                                        DisplayUnits.formatRoutePlanned(
-                                                            result.distanceKm,
-                                                            driveHud.unitSystem,
-                                                        )
-                                                )
-                                        status =
-                                            withIndexedPackMissHint(
-                                                if (result.offTrailAdvisory.isNotBlank()) {
-                                                    "$planStatus · Off-trail: use judgment (terrain advisory)"
-                                                } else {
-                                                    planStatus
-                                                },
-                                                result.report,
-                                            )
+                                        throw e
+                                    } finally {
+                                        planningRoute = false
+                                        routePlanPct = -1
+                                        routePlanProgress = ""
+                                        planIndexingHintVisible = false
+                                        planProgressClear()
+                                        foregroundPlanLeave()
+                                        downloadProgressClear()
                                     }
-                                },
+                                val durationMs = System.currentTimeMillis() - planStarted
+                                if (planAbort.get() || planReportIsCancelled(result.report)) {
+                                    NaviMapTestHooks.lastPlanReport = result.report
+                                    NaviMapTestHooks.lastRoutePolylineChars = 0
+                                    NaviMapTestHooks.lastRoutePolyline = ""
+                                    RoutingPlanLog.cancelled(
+                                        ecoForPlan,
+                                        durationMs,
+                                        reason = "cancelled",
+                                        report = result.report,
+                                    )
+                                    if (status != "Planning cancelled") {
+                                        status = "Planning cancelled"
+                                    }
+                                    return@LaunchedEffect
+                                }
+                                if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
+                                    NaviMapTestHooks.lastPlanReport = result.report
+                                    NaviMapTestHooks.lastRoutePolylineChars = 0
+                                    NaviMapTestHooks.lastRoutePolyline = ""
+                                    RoutingPlanLog.failed(
+                                        ecoForPlan,
+                                        durationMs,
+                                        userFacingStatus(result.report).ifBlank { "Routing failed" },
+                                    )
+                                    status = userFacingStatus(result.report).ifBlank { "Routing failed" }
+                                    return@LaunchedEffect
+                                }
+                                RoutingPlanLog.complete(result, ecoForPlan, durationMs)
+                                NaviMapTestHooks.routeStartLabel = start.name
+                                NaviMapTestHooks.routeEndLabel = toPoint.name
+                                NaviMapTestHooks.routeViaLabel =
+                                    viaPoints.joinToString(", ") { it.name }
+                                // Apply on this composition immediately. Do not only stash
+                                // into pendingRoute — a non-resumed sibling activity can
+                                // consume the hook and the visible map stays empty.
+                                applyPlannedRoute(result)
+                                prioritySharePct = result.priorityPathSharePct
+                                val planStatus =
+                                    formatEbikePlanStatus(
+                                        result.report,
+                                        result.distanceKm,
+                                        driveHud.unitSystem,
+                                    )
+                                        ?: (
+                                            formatRouteAvoidanceReport(
+                                                avoidMotorways,
+                                                avoidTolls,
+                                                avoidFerries,
+                                                prioritySharePct,
+                                            ) + "\n" +
+                                                DisplayUnits.formatRoutePlanned(
+                                                    result.distanceKm,
+                                                    driveHud.unitSystem,
+                                                )
+                                        )
+                                status =
+                                    withIndexedPackMissHint(
+                                        if (result.offTrailAdvisory.isNotBlank()) {
+                                            "$planStatus · Off-trail: use judgment (terrain advisory)"
+                                        } else {
+                                            planStatus
+                                        },
+                                        result.report,
+                                    )
+                            }
+                            Button(
+                                onClick = { planKick += 1 },
                                 enabled = !planningRoute,
                                 modifier =
                                     Modifier
@@ -4668,6 +4710,58 @@ private fun NaviMapScreen() {
                                                     style = MaterialTheme.typography.bodySmall,
                                                 )
                                             }
+                                            TextButton(
+                                                onClick = {
+                                                    val loadedProfile =
+                                                        travelProfileFromSavedName(route.profile)
+                                                    if (loadedProfile == null) {
+                                                        status =
+                                                            "Unknown profile in saved route: ${route.profile}"
+                                                        return@TextButton
+                                                    }
+                                                    fromPoint =
+                                                        Waypoint(
+                                                            name =
+                                                                route.startName.ifBlank {
+                                                                    "Start"
+                                                                },
+                                                            lat = route.startLat,
+                                                            lon = route.startLon,
+                                                        )
+                                                    toPoint =
+                                                        Waypoint(
+                                                            name =
+                                                                route.endName.ifBlank {
+                                                                    "Destination"
+                                                                },
+                                                            lat = route.endLat,
+                                                            lon = route.endLon,
+                                                        )
+                                                    viaPoints = parseSavedViaPoints(route.viaJson)
+                                                    profile = loadedProfile
+                                                    ecoEnabled = ecoModeDefault(loadedProfile)
+                                                    applySavedRouteSummaryJson(
+                                                        route.summaryJson,
+                                                        onAvoidMotorways = { avoidMotorways = it },
+                                                        onAvoidTolls = { avoidTolls = it },
+                                                        onAvoidFerries = { avoidFerries = it },
+                                                        onPriorityShare = { prioritySharePct = it },
+                                                    )
+                                                    // Bike / hike: motorways are unsuitable — keep lock semantics.
+                                                    if (loadedProfile == TravelProfile.BICYCLE ||
+                                                        loadedProfile == TravelProfile.BICYCLE_ELECTRIC ||
+                                                        loadedProfile == TravelProfile.HIKING
+                                                    ) {
+                                                        avoidMotorways = true
+                                                    }
+                                                    showRoutesPanel = true
+                                                    status =
+                                                        "Loaded ${route.startName} -> ${route.endName}; planning…"
+                                                    planKick += 1
+                                                },
+                                                enabled = !planningRoute,
+                                                modifier = Modifier.testTag("btn_load_saved_route"),
+                                            ) { Text("Load") }
                                             TextButton(
                                                 onClick = {
                                                     if (deleteSavedRoute(dataDir.absolutePath, route.id)) {
