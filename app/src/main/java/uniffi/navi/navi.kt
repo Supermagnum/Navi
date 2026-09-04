@@ -1010,6 +1010,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1074,6 +1078,8 @@ fun uniffi_navi_checksum_func_ensure_indexed_maps(
 fun uniffi_navi_checksum_func_ensure_live_hazards_loaded(
 ): Short
 fun uniffi_navi_checksum_func_ensure_place_index(
+): Short
+fun uniffi_navi_checksum_func_export_saved_route_gpx(
 ): Short
 fun uniffi_navi_checksum_func_ffi_linkage_smoke_test(
 ): Short
@@ -1242,6 +1248,8 @@ fun uniffi_navi_checksum_func_road_near_info(
 fun uniffi_navi_checksum_func_road_sign_jurisdiction_allows(
 ): Short
 fun uniffi_navi_checksum_func_route_plan_timing_enabled(
+): Short
+fun uniffi_navi_checksum_func_route_to_gpx(
 ): Short
 fun uniffi_navi_checksum_func_routing_worker_count(
 ): Short
@@ -1440,6 +1448,8 @@ fun uniffi_navi_fn_func_ensure_live_hazards_loaded(`pbfPath`: RustBuffer.ByValue
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_export_saved_route_gpx(`dataDir`: RustBuffer.ByValue,`routeId`: RustBuffer.ByValue,`routePolyline`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ffi_linkage_smoke_test(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_foreground_plan_active(uniffi_out_err: UniffiRustCallStatus, 
@@ -1608,6 +1618,8 @@ fun uniffi_navi_fn_func_road_sign_jurisdiction_allows(`lat`: Double,`lon`: Doubl
 ): Byte
 fun uniffi_navi_fn_func_route_plan_timing_enabled(uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_route_to_gpx(`name`: RustBuffer.ByValue,`timeIso`: RustBuffer.ByValue,`rteJson`: RustBuffer.ByValue,`routePolyline`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_routing_worker_count(uniffi_out_err: UniffiRustCallStatus, 
 ): Int
 fun uniffi_navi_fn_func_run_car_corridor_pipeline(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`breakIntervalHours`: Double,uniffi_out_err: UniffiRustCallStatus, 
@@ -1871,6 +1883,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_ensure_place_index() != 50894.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_export_saved_route_gpx() != 14845.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_ffi_linkage_smoke_test() != 11010.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2121,6 +2136,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_route_plan_timing_enabled() != 55311.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_route_to_gpx() != 25085.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_routing_worker_count() != 4016.toShort()) {
@@ -4738,6 +4756,21 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Look up a saved route, rebuild `<rte>` from stored waypoints, and serialize GPX
+         * using a caller-supplied replan polyline (Option A — geometry is not stored in DB).
+         *
+         * Returns GPX XML on success, or a string starting with `FAIL:`.
+         */ fun `exportSavedRouteGpx`(`dataDir`: kotlin.String, `routeId`: kotlin.String, `routePolyline`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_export_saved_route_gpx(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`routeId`),FfiConverterString.lower(`routePolyline`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Fast FFI/worker-pool smoke test. Does **not** validate routing.
          *
          * Report always contains `TEST_KIND=SMOKE` and `DATA_SOURCE=none`.
@@ -5712,6 +5745,25 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_route_plan_timing_enabled(
         _status)
+}
+    )
+    }
+    
+
+        /**
+         * Serialize a planned corridor to GPX 1.1.
+         *
+         * * `rte_json` — full route-point list including start and end:
+         * `[{"name","lat","lon"}, …]` (same shape as saved `via_json`, but must include
+         * the endpoints when used standalone).
+         * * `route_polyline` — Navi corridor string `"lon,lat;lon,lat;…"`.
+         *
+         * Returns GPX XML on success, or a string starting with `FAIL:`.
+         */ fun `routeToGpx`(`name`: kotlin.String, `timeIso`: kotlin.String, `rteJson`: kotlin.String, `routePolyline`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_route_to_gpx(
+        FfiConverterString.lower(`name`),FfiConverterString.lower(`timeIso`),FfiConverterString.lower(`rteJson`),FfiConverterString.lower(`routePolyline`),_status)
 }
     )
     }

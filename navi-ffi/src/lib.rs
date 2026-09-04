@@ -4240,6 +4240,88 @@ pub fn save_named_route(
     }
 }
 
+/// Serialize a planned corridor to GPX 1.1.
+///
+/// * `rte_json` — full route-point list including start and end:
+///   `[{"name","lat","lon"}, …]` (same shape as saved `via_json`, but must include
+///   the endpoints when used standalone).
+/// * `route_polyline` — Navi corridor string `"lon,lat;lon,lat;…"`.
+///
+/// Returns GPX XML on success, or a string starting with `FAIL:`.
+#[uniffi::export]
+pub fn route_to_gpx(
+    name: String,
+    time_iso: String,
+    rte_json: String,
+    route_polyline: String,
+) -> String {
+    let route_points = driver_break_core::export::parse_via_json(&rte_json);
+    if route_points.len() < 2 {
+        return "FAIL: rte_json needs at least start and end points".into();
+    }
+    let track = driver_break_core::export::parse_route_polyline(&route_polyline);
+    let name_opt = {
+        let t = name.trim();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    };
+    let time_opt = {
+        let t = time_iso.trim();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    };
+    driver_break_core::export::to_gpx(name_opt, time_opt, &route_points, &track)
+}
+
+/// Look up a saved route, rebuild `<rte>` from stored waypoints, and serialize GPX
+/// using a caller-supplied replan polyline (Option A — geometry is not stored in DB).
+///
+/// Returns GPX XML on success, or a string starting with `FAIL:`.
+#[uniffi::export]
+pub fn export_saved_route_gpx(
+    data_dir: String,
+    route_id: String,
+    route_polyline: String,
+) -> String {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return "FAIL: open db".into();
+    };
+    let store = driver_break_core::search::RouteStore::new(&storage);
+    let Ok(Some(route)) = store.get(&route_id) else {
+        return "FAIL: saved route not found".into();
+    };
+    if route_polyline.trim().is_empty() {
+        return "FAIL: empty route polyline (replan before export)".into();
+    }
+    let route_points = driver_break_core::export::route_points_from_saved(
+        route.start_lat,
+        route.start_lon,
+        route.start_name.as_deref(),
+        route.end_lat,
+        route.end_lon,
+        route.end_name.as_deref(),
+        &route.via_json,
+    );
+    let track = driver_break_core::export::parse_route_polyline(&route_polyline);
+    if track.is_empty() {
+        return "FAIL: could not parse route polyline".into();
+    }
+    let name = format!(
+        "{} -> {}",
+        route.start_name.as_deref().unwrap_or("Start"),
+        route.end_name.as_deref().unwrap_or("Destination"),
+    );
+    let time = route.created_at.trim();
+    let time_opt = if time.is_empty() { None } else { Some(time) };
+    driver_break_core::export::to_gpx(Some(&name), time_opt, &route_points, &track)
+}
+
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct FfiSavedPlace {
     pub id: String,
