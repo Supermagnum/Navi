@@ -408,6 +408,49 @@ impl NameIndex {
         scored.sort_by(|a, b| a.0.total_cmp(&b.0));
         Ok(scored.into_iter().take(limit).map(|(_, h)| h).collect())
     }
+
+    /// Named places of an exact `kind` inside a lat/lon bbox (inclusive).
+    pub fn places_of_kind_in_bbox(
+        &self,
+        kind: &str,
+        min_lat: f64,
+        min_lon: f64,
+        max_lat: f64,
+        max_lon: f64,
+        limit: usize,
+    ) -> SqlResult<Vec<NameHit>> {
+        let limit = limit.max(1);
+        let mut stmt = self.conn.prepare(
+            "
+            SELECT osm_id, name, kind, lat, lon, sub_area, municipality
+            FROM name_entries
+            WHERE kind = ?1
+              AND lat BETWEEN ?2 AND ?3
+              AND lon BETWEEN ?4 AND ?5
+            ORDER BY name
+            LIMIT ?6
+            ",
+        )?;
+        let rows = stmt.query_map(
+            params![kind, min_lat, max_lat, min_lon, max_lon, limit as i64],
+            |row| {
+                Ok(NameHit {
+                    osm_id: row.get(0)?,
+                    name: row.get(1)?,
+                    kind: row.get(2)?,
+                    lat: row.get(3)?,
+                    lon: row.get(4)?,
+                    sub_area: row.get(5)?,
+                    municipality: row.get(6)?,
+                })
+            },
+        )?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
 }
 
 fn classify_named<'a>(

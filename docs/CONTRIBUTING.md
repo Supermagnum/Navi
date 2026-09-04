@@ -357,10 +357,12 @@ Run at least:
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets \
-  --exclude navi-plugin-log-hello --exclude navi-plugin-busy-loop --exclude navi-desktop \
+  --exclude navi-plugin-log-hello --exclude navi-plugin-busy-loop \
+  --exclude navi-plugin-weather --exclude navi-desktop \
   -- -D warnings
 cargo test --workspace \
-  --exclude navi-desktop --exclude navi-plugin-log-hello --exclude navi-plugin-busy-loop
+  --exclude navi-desktop --exclude navi-plugin-log-hello \
+  --exclude navi-plugin-busy-loop --exclude navi-plugin-weather
 cargo test -p navi-plugin-host --test isolation
 cargo deny check
 cargo audit

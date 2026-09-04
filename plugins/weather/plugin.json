@@ -1,0 +1,9 @@
+{
+  "name": "weather",
+  "version": "0.1.0",
+  "entry": "plugin_main",
+  "capabilities": ["log", "position_read", "weather_read"],
+  "fuel_limit": 8000000,
+  "timeout_ms": 800,
+  "wasm": "plugin.wasm"
+}
