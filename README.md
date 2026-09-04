@@ -18,6 +18,8 @@ Navi does not currently ship with a ready-made international routing database
 the way many commercial GPS / head-unit products do (those usually include
 precomputed indexes from the vendor).
 Computing this on device takes anywhere from 8 minutes and up to 25 minutes, it needs to be done when you download or update map data for your region.
+These processes might appear to be stuck, but be patient!
+
 Solving onboard convert cost may involve
 a server (example: navi.app) that distributes precomputed index packs
 for a region; when that server is unreachable, the natural fallback is what
