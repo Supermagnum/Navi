@@ -191,12 +191,19 @@ In the current UI under **Saved routes**:
 - List of saved rows with profile and time.
 - **Load** — restores From/To/vias, profile, and saved avoid flags, then
   **replans** on the map (geometry is not stored; only waypoints).
+- **Export** — same restore + replan as Load, then writes a GPX 1.1 file
+  (`<rte>` waypoints + `<trk>` geometry from the replan) via the system
+  document picker. Geometry can differ slightly from an older plan if map
+  data changed since the route was saved.
+- **Export planned GPX** — when a corridor is already on the map, export that
+  geometry without a second replan.
 - **Delete route** per row.
 - **Delete planned route** clears the **active** map corridor only.
 
 Routes live in app internal storage as SQLite rows in `navi.db` (table
-`routes`), not as GPX files. **Continue from last stop** (planning panel) can
-reuse a saved route’s last break coordinates when present.
+`routes`). GPX export is for sharing/archiving; Navi does not import GPX yet.
+**Continue from last stop** (planning panel) can reuse a saved route’s last
+break coordinates when present.
 
 ---
 

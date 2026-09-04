@@ -9,6 +9,7 @@ pub mod bus;
 pub mod config;
 pub mod download;
 pub mod ecu;
+pub mod export;
 pub mod icons;
 pub mod nav;
 pub mod poi;
