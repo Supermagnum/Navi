@@ -47,6 +47,30 @@ idea as “DATEX-II style feeds.”
 **Conclusion:** DATEX II can work for **curated national** deployments but does
 not solve “free + global + uniform” in one integration.
 
+#### Norway — Statens vegvesen DATEX II (concrete case)
+
+Resolves the generic "fragmented, per-feed licensing" caveat above for the
+Norwegian curated deployment specifically:
+
+| Aspect | Finding |
+|---|---|
+| Publications | Weather (10 min), weather prognosis (hourly), webcams, travel times (5 min, city/E-road corridors only), road traffic situations (nationwide) — all pull services |
+| Licensing | [NLOD](https://data.norge.no/nlod/en/) (Norwegian Licence for Open Government Data) — explicit on the [DATEX traffic information](https://www.vegvesen.no/en/fag/technology/open-data/a-selection-of-open-data/what-is-datex/) page; permits copy, redistribute, modify, combine, and commercial use |
+| Access gate | Self-service [request access](https://www.vegvesen.no/en/fag/technology/open-data/a-selection-of-open-data/what-is-datex/get-access/) form — registers you as a DATEX user for update/outage notices, not an approval/eligibility process. No published rate limit (contrast: the separate vehicle-lookup API caps at 50,000 calls/key/day) |
+| Reuse model | *Vegvesen trafikk* (the official app) is itself just a DATEX client — confirmed on the same page ("it publishes DATEX data in maps"). A Navi plugin sits at the same tier |
+
+**Implication for `road_info` / this plugin:** the credential itself should not
+ship inside the plugin (registration is presumably per-registrant, and sharing
+a key across unknown installs is a separate question from the data licence).
+Instead, reuse the mirror pattern from
+[`precomputed-index-and-route-cache.md`](../precomputed-index-and-route-cache.md#direction-a-server-example-naviapp-with-precomputed-indexes):
+a `navi.app`-class server holds the one registered credential, polls the
+DATEX endpoints (`If-Modified-Since` supported for cheap polling), and
+re-publishes normalized incident/weather/camera data to plugin installs under
+NLOD — same shape as the precomputed map-pack mirror, same trust boundary as
+`navi.app` pack downloads in
+[`voice-command.md`](voice-command.md#10-explicit-non-goals--boundaries-with-other-navi-features).
+
 ### Commercial global APIs (TomTom, HERE, …)
 
 | Aspect | Finding |
@@ -135,6 +159,7 @@ avoid flags during A* (future graph hook); map banners + route recalc prompt.
 | Doc | Link |
 |---|---|
 | `road_info` plugin idea | [`plugins.md` §3](../plugins.md#3-road-info-road_info) — this file explains why DATEX-II-style network feeds are hard to source **free and globally**, and records RTL-SDR as the leading **free** alternative |
+| NPRA DATEX II v3.1 client | [`datex-npra-client.md`](datex-npra-client.md) — access request, Basic Auth, GetSituation / travel-time / weather / CCTV pull URLs (spec only) |
 | APRS SDR pipeline | [`APRS-SDR.md`](../APRS-SDR.md) — shared RTL-SDR IQ capture, host-owned USB, `rtl-sdr-rs` |
 | APRS plugin split | [`plugins.md` §1](../plugins.md#1-aprs-aprs--aprs_sdr) — same host decodes / guest consumes pattern |
 

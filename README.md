@@ -22,7 +22,9 @@ Solving onboard convert cost may involve
 a server (example: navi.app) that distributes precomputed index packs
 for a region; when that server is unreachable, the natural fallback is what
 Navi already does — local pack convert and PBF planning from the
-downloaded extract. Precomputed town-to-town corridors (e.g. Haugesund→Bergen,
+downloaded extract. Related server work lives in
+[Supermagnum/navi-server](https://github.com/Supermagnum/navi-server/tree/main).
+Precomputed town-to-town corridors (e.g. Haugesund→Bergen,
 Oslo→Fredrikstad) could speed popular trips further. Direction:
 [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
 
@@ -676,6 +678,7 @@ hardware-facing plugins.
 | [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Wild-camping suggestions (plugin, not core) |
 | [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Fuel/water resupply ideas |
 | [`docs/plugins/traffic-information.md`](docs/plugins/traffic-information.md) | Traffic data sourcing research (DATEX II limits, RTL-SDR TMC/TPEG; not shipped) |
+| [`docs/plugins/datex-npra-client.md`](docs/plugins/datex-npra-client.md) | NPRA DATEX II v3.1 pull client (access, Basic Auth, endpoints; not shipped) |
 | [`docs/plugins/weather-plugin.md`](docs/plugins/weather-plugin.md) | Weather overlay (Meteocons icons vendored; guest not shipped) |
 | [`docs/plugins/weather-icons-reference.md`](docs/plugins/weather-icons-reference.md) | What each weather icon slug means (fill style) |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state + approach warnings to instrument clusters |
