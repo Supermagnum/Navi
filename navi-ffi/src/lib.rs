@@ -2121,6 +2121,9 @@ fn plan_car_route_inner(
 
     let vehicle_limits = ffi_vehicle_to_limits(&vehicle);
     let departure_local = parse_departure_local(departure_local_iso.as_deref());
+    // Bicycle / e-bike: motorways are illegal or unsuitable — force avoid regardless of UI.
+    let avoid_motorways = avoid_motorways
+        || driver_break_core::routing::graph::profile_locks_avoid_motorways(routing_profile);
     let route_opts = RouteOptions {
         avoid_motorways,
         avoid_tolls,
@@ -2995,6 +2998,7 @@ pub fn plan_hiking_route(
     report.push_str(&format!(
         "prefer_official_networks={prefer_official_networks}; prefer_pilgrim_routes={prefer_pilgrim_routes}\n"
     ));
+    report.push_str("avoid_motorways=true (locked for hiking)\n");
     let use_networked_cabins = load_use_networked_cabins_near_cache(&PathBuf::from(&cache_dir));
     report.push_str(&format!("use_networked_cabins={use_networked_cabins}\n"));
     let network_hut_member = load_network_hut_member_near_cache(&PathBuf::from(&cache_dir));
@@ -4060,6 +4064,12 @@ pub fn eco_mode_toggleable(profile: TravelProfile) -> bool {
     profile.to_core().eco_mode_user_toggle()
 }
 
+/// Whether avoid-motorways is forced on and locked for this profile (bike / e-bike / hiking).
+#[uniffi::export]
+pub fn travel_profile_locks_avoid_motorways(profile: TravelProfile) -> bool {
+    profile.to_core().locks_avoid_motorways()
+}
+
 /// Default eco enabled for profile.
 #[uniffi::export]
 pub fn eco_mode_default(profile: TravelProfile) -> bool {
@@ -4080,6 +4090,8 @@ pub struct FfiSavedRoute {
     pub last_break_lat: Option<f64>,
     pub last_break_lon: Option<f64>,
     pub summary_json: String,
+    /// JSON array of via waypoints: `[{"name","lat","lon"}, ...]`.
+    pub via_json: String,
 }
 
 #[derive(uniffi::Record, Debug, Clone)]
@@ -4172,6 +4184,7 @@ pub fn list_saved_routes(data_dir: String) -> Vec<FfiSavedRoute> {
             last_break_lat: r.last_break_lat,
             last_break_lon: r.last_break_lon,
             summary_json: r.summary_json,
+            via_json: r.via_json,
         })
         .collect()
 }

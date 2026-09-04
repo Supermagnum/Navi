@@ -137,6 +137,49 @@ fn avoid_motorways_changes_planned_route() {
     );
 }
 
+/// Bicycle / foot always avoid motorway-grade edges even when avoid_motorways is false.
+#[test]
+fn bicycle_and_foot_lock_avoid_motorways() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "motorway");
+    let bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "motorway");
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 200.0, "secondary");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 200.0, "secondary");
+    let opts_off = RouteOptions {
+        avoid_motorways: false,
+        ..Default::default()
+    };
+
+    for profile in [RoutingProfile::Bicycle, RoutingProfile::Foot] {
+        let graph = RouteGraph::from_parts(
+            nodes.clone(),
+            vec![ab.clone(), bc.clone(), ad.clone(), dc.clone()],
+            profile,
+        );
+        let path = graph
+            .shortest_path_with_options(NodeId(1), NodeId(3), false, &opts_off)
+            .unwrap_or_else(|| panic!("{profile:?} must find non-motorway path"));
+        assert!(
+            !path.0.contains(&NodeId(2)),
+            "{profile:?} must lock avoid-motorways (no B): {:?}",
+            path.0
+        );
+        assert!(
+            path.0.contains(&NodeId(4)),
+            "{profile:?} must use secondary via D: {:?}",
+            path.0
+        );
+    }
+}
+
 /// Short trunk vs longer secondary: avoid-motorways must still be allowed to use trunk.
 #[test]
 fn avoid_motorways_allows_trunk_and_primary() {

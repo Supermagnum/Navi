@@ -64,6 +64,12 @@ fn keep_way_tag(key: &str) -> bool {
             | "maxwidth"
             | "maxlength"
             | "toll"
+            | "toll:motor_vehicle"
+            | "toll:motorcar"
+            | "toll:motorcycle"
+            | "toll:hgv"
+            | "toll:bicycle"
+            | "toll:foot"
             | "route"
             | "ferry"
             | "bridge"
@@ -341,6 +347,11 @@ fn car_highway_ok(highway: &str) -> bool {
     )
 }
 
+fn non_motorway_car_highway_ok(highway: &str) -> bool {
+    car_highway_ok(highway)
+        && !matches!(highway, "motorway" | "motorway_link" | "motorway_junction")
+}
+
 fn highway_ok_for_profile(highway: &str, profile: RoutingProfile) -> bool {
     match profile {
         RoutingProfile::Car | RoutingProfile::Truck => car_highway_ok(highway),
@@ -360,10 +371,12 @@ fn highway_ok_for_profile(highway: &str, profile: RoutingProfile) -> bool {
                     | "secondary"
                     | "primary"
                     | "cycleway"
-            ) || car_highway_ok(highway)
+            ) || non_motorway_car_highway_ok(highway)
         }
+        // Never ingest motorway-class ways into bicycle graphs (illegal / unsuitable).
         RoutingProfile::Bicycle => {
-            car_highway_ok(highway) || matches!(highway, "cycleway" | "path" | "footway")
+            non_motorway_car_highway_ok(highway)
+                || matches!(highway, "cycleway" | "path" | "footway")
         }
     }
 }
@@ -959,7 +972,9 @@ fn graph_from_raw_ways(
         let maxheight_m = way.tags.get("maxheight").and_then(|v| parse_metric(v));
         let maxwidth_m = way.tags.get("maxwidth").and_then(|v| parse_metric(v));
         let maxlength_m = way.tags.get("maxlength").and_then(|v| parse_metric(v));
-        let is_toll = way.tags.get("toll").is_some_and(|v| v == "yes");
+        let is_toll = crate::routing::toll::toll_applies_for_profile(profile, |k| {
+            way.tags.get(k).map(String::as_str)
+        });
         let is_ferry =
             way.tags.get("route").is_some_and(|v| v == "ferry") || way.tags.contains_key("ferry");
         let is_boardwalk_crossing = tags_map_indicate_boardwalk(&way.tags);

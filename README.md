@@ -55,15 +55,13 @@ On-device and emulator results:
 installable release APK** (upload keystore; not the debug build). Current build:
 **v0.2.0-alpha** (`versionName` 0.2.0, `versionCode` 2). Download from the
 [`v0.2.0-alpha` tag](https://github.com/Supermagnum/Navi/tree/v0.2.0-alpha)
- Android
+or the latest
+[`dev` branch](https://github.com/Supermagnum/Navi/tree/dev) copy. Android
 validates the APK signature on install; the separate GPG files
 ([`compiled/SHA256SUMS`](compiled/SHA256SUMS),
 [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc)) are optional provenance
 only — not a substitute for APK signing. Install steps:
 [Install a prebuilt APK](#install-a-prebuilt-apk).
-
-The prebuilt apk's will be removed from this repo when this closes as it then will be available by F-droid.
-https://gitlab.com/fdroid/fdroiddata/-/merge_requests/45644
 
 **Translators wanted.** UI language packs are specified but not shipped
 (English-only chrome today). Fill or review the working table and follow the

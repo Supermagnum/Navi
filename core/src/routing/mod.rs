@@ -20,6 +20,7 @@ pub mod road_sign;
 pub mod safety;
 pub mod speed_camera;
 pub mod terrain;
+pub mod toll;
 pub mod wetland;
 pub mod workers;
 
