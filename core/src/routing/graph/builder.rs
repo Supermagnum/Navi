@@ -209,6 +209,12 @@ impl RouteGraph {
             .read_tag("maxwidth")
             .read_tag("maxlength")
             .read_tag("toll")
+            .read_tag("toll:motor_vehicle")
+            .read_tag("toll:motorcar")
+            .read_tag("toll:motorcycle")
+            .read_tag("toll:hgv")
+            .read_tag("toll:bicycle")
+            .read_tag("toll:foot")
             .read_tag("route")
             .read_tag("ferry")
             .read_tag("bridge")
@@ -1081,11 +1087,9 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
     let maxheight_m = edge.tags.get("maxheight").and_then(|s| parse_metric(s));
     let maxwidth_m = edge.tags.get("maxwidth").and_then(|s| parse_metric(s));
     let maxlength_m = edge.tags.get("maxlength").and_then(|s| parse_metric(s));
-    let is_toll = edge
-        .tags
-        .get("toll")
-        .map(|s| is_truthy_tag(s))
-        .unwrap_or(false);
+    let is_toll = crate::routing::toll::toll_applies_for_profile(profile, |k| {
+        edge.tags.get(k).map(String::as_str)
+    });
     let is_ferry = edge
         .tags
         .get("route")

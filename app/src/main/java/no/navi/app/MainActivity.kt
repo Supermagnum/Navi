@@ -4439,7 +4439,10 @@ private fun NaviMapScreen() {
                                                 profile == TravelProfile.MOTORCYCLE ||
                                                 profile == TravelProfile.CAR_ELECTRIC ||
                                                 profile == TravelProfile.TRUCK_ELECTRIC ||
-                                                profile == TravelProfile.MOTORCYCLE_ELECTRIC,
+                                                profile == TravelProfile.MOTORCYCLE_ELECTRIC ||
+                                                profile == TravelProfile.BICYCLE ||
+                                                profile == TravelProfile.BICYCLE_ELECTRIC ||
+                                                profile == TravelProfile.HIKING,
                                     )
                                 }
                                 Row(
