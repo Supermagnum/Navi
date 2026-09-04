@@ -1008,6 +1008,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1294,6 +1296,8 @@ fun uniffi_navi_checksum_func_speed_camera_jurisdiction_allows(
 fun uniffi_navi_checksum_func_station_timeout_max_s(
 ): Short
 fun uniffi_navi_checksum_func_suggest_geofabrik_path(
+): Short
+fun uniffi_navi_checksum_func_travel_profile_locks_avoid_motorways(
 ): Short
 fun uniffi_navi_checksum_func_travel_profile_menu_focus(
 ): Short
@@ -1658,6 +1662,8 @@ fun uniffi_navi_fn_func_station_timeout_max_s(uniffi_out_err: UniffiRustCallStat
 ): Long
 fun uniffi_navi_fn_func_suggest_geofabrik_path(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_travel_profile_locks_avoid_motorways(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_travel_profile_menu_focus(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_update_gps_fix(`lat`: Double,`lon`: Double,`available`: Byte,`speedKmh`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -2196,6 +2202,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_suggest_geofabrik_path() != 33163.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_travel_profile_locks_avoid_motorways() != 17065.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_travel_profile_menu_focus() != 46717.toShort()) {
@@ -5982,6 +5991,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_suggest_geofabrik_path(
         FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Whether avoid-motorways is forced on and locked for this profile (bike / e-bike / hiking).
+         */ fun `travelProfileLocksAvoidMotorways`(`profile`: TravelProfile): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_travel_profile_locks_avoid_motorways(
+        FfiConverterTypeTravelProfile.lower(`profile`),_status)
 }
     )
     }

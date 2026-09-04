@@ -160,6 +160,7 @@ import uniffi.navi.saveTruckRestSettings
 import uniffi.navi.saveVehicleLimits
 import uniffi.navi.searchPlaces
 import uniffi.navi.setOsmWeeklyReminder
+import uniffi.navi.travelProfileLocksAvoidMotorways
 import uniffi.navi.travelProfileMenuFocus
 import uniffi.navi.updateGpsFix
 import java.io.File
@@ -4192,6 +4193,9 @@ private fun NaviMapScreen() {
                                             onClick = {
                                                 profile = p
                                                 ecoEnabled = ecoModeDefault(p)
+                                                if (travelProfileLocksAvoidMotorways(p)) {
+                                                    avoidMotorways = true
+                                                }
                                                 status = "Profile: ${p.name.lowercase()}"
                                             },
                                             label = {
@@ -4397,10 +4401,21 @@ private fun NaviMapScreen() {
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text("Avoid motorways")
+                                    Text(
+                                        if (travelProfileLocksAvoidMotorways(profile)) {
+                                            "Avoid motorways (locked for this profile)"
+                                        } else {
+                                            "Avoid motorways"
+                                        },
+                                    )
                                     Switch(
-                                        checked = avoidMotorways,
+                                        checked =
+                                            avoidMotorways ||
+                                                travelProfileLocksAvoidMotorways(profile),
                                         onCheckedChange = { on ->
+                                            if (travelProfileLocksAvoidMotorways(profile)) {
+                                                return@Switch
+                                            }
                                             avoidMotorways = on
                                             DiagnosticLog.logToggle("avoid_motorways", on)
                                             status =
@@ -4411,6 +4426,8 @@ private fun NaviMapScreen() {
                                                     prioritySharePct,
                                                 )
                                         },
+                                        enabled = !travelProfileLocksAvoidMotorways(profile),
+                                        modifier = Modifier.testTag("toggle_avoid_motorways"),
                                     )
                                 }
                                 Row(

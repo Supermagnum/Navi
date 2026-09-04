@@ -109,6 +109,14 @@ impl Profile {
         )
     }
 
+    /// Non-motor profiles: avoid-motorways is forced on and not user-toggleable.
+    pub fn locks_avoid_motorways(self) -> bool {
+        matches!(
+            self,
+            Profile::Hiking | Profile::Cycling | Profile::CyclingElectric
+        )
+    }
+
     /// Profiles that apply full vehicle dimension/weight clearance filters.
     pub fn uses_vehicle_clearance_limits(self) -> bool {
         matches!(
