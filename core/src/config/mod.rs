@@ -126,6 +126,14 @@ impl Profile {
         )
     }
 
+    /// Non-motor profiles: avoid-motorways is forced on and not user-toggleable.
+    pub fn locks_avoid_motorways(self) -> bool {
+        matches!(
+            self,
+            Profile::Hiking | Profile::Cycling | Profile::CyclingElectric
+        )
+    }
+
     /// Motor profiles that expose avoid-ferry.
     pub fn supports_ferry_avoid(self) -> bool {
         self.supports_toll_ferry_avoid()

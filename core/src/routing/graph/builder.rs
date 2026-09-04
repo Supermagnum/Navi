@@ -1314,8 +1314,18 @@ pub(crate) fn motorway_grade_from_parts(
     is_oneway && lanes.unwrap_or(0) >= 2 && maxspeed_kmh.is_some_and(|v| v >= 90.0)
 }
 
-fn edge_avoided_as_motorway(edge: &GraphEdge, options: &RouteOptions) -> bool {
-    options.avoid_motorways && edge_is_motorway_grade(edge)
+/// Foot and bicycle graphs must never use motorway-grade edges (illegal / unsuitable).
+pub fn profile_locks_avoid_motorways(profile: RoutingProfile) -> bool {
+    matches!(profile, RoutingProfile::Foot | RoutingProfile::Bicycle)
+}
+
+fn edge_avoided_as_motorway(
+    edge: &GraphEdge,
+    options: &RouteOptions,
+    profile: RoutingProfile,
+) -> bool {
+    let avoid = options.avoid_motorways || profile_locks_avoid_motorways(profile);
+    avoid && edge_is_motorway_grade(edge)
 }
 
 fn edge_allowed_for_options(
@@ -1326,7 +1336,7 @@ fn edge_allowed_for_options(
     if edge.access_forbidden {
         return false;
     }
-    if edge_avoided_as_motorway(edge, options) {
+    if edge_avoided_as_motorway(edge, options, profile) {
         return false;
     }
     if options.avoid_tolls && edge.is_toll {
@@ -2298,6 +2308,67 @@ mod tests {
             &RouteOptions::default(),
             RoutingProfile::Car,
         ));
+    }
+
+    #[test]
+    fn foot_and_bicycle_always_avoid_motorway_grade() {
+        let edge = GraphEdge {
+            id: "mw".into(),
+            source: NodeId(1),
+            target: NodeId(2),
+            length_m: 100.0,
+            base_weight: 100.0,
+            eco_weight: None,
+            start_lat: 0.0,
+            start_lon: 0.0,
+            end_lat: 0.0,
+            end_lon: 0.0,
+            shape: Vec::new(),
+            highway: Some("motorway".into()),
+            maxspeed_kmh: None,
+            name: None,
+            road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
+        };
+        let opts = RouteOptions {
+            avoid_motorways: false,
+            ..Default::default()
+        };
+        assert!(
+            edge_allowed_for_options(&edge, &opts, RoutingProfile::Car),
+            "car may use motorway when avoid flag is off"
+        );
+        assert!(!edge_allowed_for_options(
+            &edge,
+            &opts,
+            RoutingProfile::Bicycle
+        ));
+        assert!(!edge_allowed_for_options(
+            &edge,
+            &opts,
+            RoutingProfile::Foot
+        ));
+        assert!(profile_locks_avoid_motorways(RoutingProfile::Bicycle));
+        assert!(profile_locks_avoid_motorways(RoutingProfile::Foot));
+        assert!(!profile_locks_avoid_motorways(RoutingProfile::Car));
     }
 
     #[test]

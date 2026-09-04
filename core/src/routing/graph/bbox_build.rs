@@ -347,6 +347,11 @@ fn car_highway_ok(highway: &str) -> bool {
     )
 }
 
+fn non_motorway_car_highway_ok(highway: &str) -> bool {
+    car_highway_ok(highway)
+        && !matches!(highway, "motorway" | "motorway_link" | "motorway_junction")
+}
+
 fn highway_ok_for_profile(highway: &str, profile: RoutingProfile) -> bool {
     match profile {
         RoutingProfile::Car | RoutingProfile::Truck => car_highway_ok(highway),
@@ -366,10 +371,12 @@ fn highway_ok_for_profile(highway: &str, profile: RoutingProfile) -> bool {
                     | "secondary"
                     | "primary"
                     | "cycleway"
-            ) || car_highway_ok(highway)
+            ) || non_motorway_car_highway_ok(highway)
         }
+        // Never ingest motorway-class ways into bicycle graphs (illegal / unsuitable).
         RoutingProfile::Bicycle => {
-            car_highway_ok(highway) || matches!(highway, "cycleway" | "path" | "footway")
+            non_motorway_car_highway_ok(highway)
+                || matches!(highway, "cycleway" | "path" | "footway")
         }
     }
 }
