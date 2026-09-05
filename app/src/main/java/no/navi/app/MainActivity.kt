@@ -601,6 +601,15 @@ private fun NaviMapScreen() {
     var schoolPoisJson by remember { mutableStateOf("[]") }
     var routeSchoolPoisJson by remember { mutableStateOf("[]") }
     var roadSignWarning by remember { mutableStateOf(RoadSignWarningState()) }
+    var weatherPluginEnabled by remember {
+        mutableStateOf(MapHudPrefs.loadWeatherPluginEnabled(context))
+    }
+    var weatherMapSymbolsEnabled by remember {
+        mutableStateOf(MapHudPrefs.loadWeatherMapSymbolsEnabled(context))
+    }
+    var weatherHud by remember { mutableStateOf(WeatherHudState()) }
+    var weatherAppActive by remember { mutableStateOf(true) }
+    var weatherMapEpoch by remember { mutableIntStateOf(0) }
     var hideChrome by remember { mutableStateOf(false) }
     var hideSearch by remember { mutableStateOf(false) }
     var regionDownloadProgress by remember { mutableStateOf("") }
@@ -1149,6 +1158,53 @@ private fun NaviMapScreen() {
         remember {
             File(context.filesDir, "icons").also { ensureIconsCopied(context, it) }
         }
+
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer =
+            androidx.lifecycle.LifecycleEventObserver { _, event ->
+                when (event) {
+                    androidx.lifecycle.Lifecycle.Event.ON_RESUME -> weatherAppActive = true
+                    androidx.lifecycle.Lifecycle.Event.ON_STOP -> weatherAppActive = false
+                    else -> {}
+                }
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(weatherPluginEnabled, weatherAppActive, dataDir) {
+        if (!weatherPluginEnabled) {
+            weatherHud = WeatherHudState()
+            return@LaunchedEffect
+        }
+        // Periodic check while active; host enforces 30–60 min throttle + jitter.
+        while (true) {
+            if (!weatherPluginEnabled) break
+            if (weatherAppActive) {
+                val lat = mapState.cameraLat ?: mapState.gpsLat
+                val lon = mapState.cameraLon ?: mapState.gpsLon
+                val raw =
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            uniffi.navi.weatherRefreshJson(
+                                dataDir.absolutePath,
+                                lat,
+                                lon,
+                                true,
+                                true,
+                                false,
+                            )
+                        }.getOrDefault("{}")
+                    }
+                weatherHud = weatherHudFromRefreshJson(raw)
+                android.util.Log.i("NaviWeather", "refresh: $raw")
+            } else {
+                android.util.Log.i("NaviWeather", "skip fetch: app backgrounded")
+            }
+            delay(60_000L)
+        }
+    }
 
     fun placeIndexDbForWrite(): File = File(dataDir, "place_index.db")
 
@@ -3088,6 +3144,12 @@ private fun NaviMapScreen() {
             unitSystem = driveHud.unitSystem,
             styleEpoch = styleEpoch,
             bearingEpoch = bearingApplyEpoch,
+            weatherPluginEnabled = weatherPluginEnabled,
+            weatherMapSymbolsEnabled = weatherMapSymbolsEnabled,
+            weatherAppActive = weatherAppActive,
+            weatherIconsDir = File(iconsDir, "weather").absolutePath,
+            placeIndexDbPath = resolvePlaceIndexDb().absolutePath,
+            weatherMapEpoch = weatherMapEpoch,
             modifier = Modifier.fillMaxSize(),
             onLayerCount = { mapLayerCount = it },
             onUserPan = {
@@ -3393,7 +3455,10 @@ private fun NaviMapScreen() {
                     expanded = showMapSettings,
                     onToggleExpanded = {
                         showMapSettings = !showMapSettings
-                        if (showMapSettings) showDriveSettings = false
+                        if (showMapSettings) {
+                            showDriveSettings = false
+                            showTools = false
+                        }
                     },
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
@@ -3422,6 +3487,33 @@ private fun NaviMapScreen() {
                             .align(Alignment.Start)
                             .padding(bottom = 8.dp),
                 )
+                if (weatherPluginEnabled) {
+                    WeatherHudChip(
+                        state = weatherHud,
+                        weatherIconsDir = File(iconsDir, "weather").absolutePath,
+                        onRefresh = {
+                            val lat = mapState.cameraLat ?: mapState.gpsLat
+                            val lon = mapState.cameraLon ?: mapState.gpsLon
+                            val raw =
+                                runCatching {
+                                    uniffi.navi.weatherRefreshJson(
+                                        dataDir.absolutePath,
+                                        lat,
+                                        lon,
+                                        true,
+                                        weatherAppActive,
+                                        true,
+                                    )
+                                }.getOrDefault("{}")
+                            weatherHud = weatherHudFromRefreshJson(raw)
+                            android.util.Log.i("NaviWeather", "manual refresh: $raw")
+                        },
+                        modifier =
+                            Modifier
+                                .align(Alignment.Start)
+                                .padding(bottom = 8.dp),
+                    )
+                }
                 if (!hideSearch) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -5046,6 +5138,38 @@ private fun NaviMapScreen() {
                             .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    PluginSettingsSection(
+                        weatherPluginEnabled = weatherPluginEnabled,
+                        onWeatherPluginChange = { on ->
+                            weatherPluginEnabled = on
+                            MapHudPrefs.saveWeatherPluginEnabled(context, on)
+                            DiagnosticLog.logToggle("weather_plugin", on)
+                            if (!on) {
+                                weatherHud = WeatherHudState()
+                                weatherMapSymbolsEnabled = false
+                                MapHudPrefs.saveWeatherMapSymbolsEnabled(context, false)
+                                weatherMapEpoch += 1
+                                status = "Weather overlay off"
+                            } else {
+                                status = "Weather overlay on — fetch when active"
+                            }
+                        },
+                        weatherMapSymbolsEnabled = weatherMapSymbolsEnabled,
+                        onWeatherMapSymbolsChange = { on ->
+                            weatherMapSymbolsEnabled = on
+                            MapHudPrefs.saveWeatherMapSymbolsEnabled(context, on)
+                            DiagnosticLog.logToggle("weather_map_symbols", on)
+                            weatherMapEpoch += 1
+                            status =
+                                if (on) {
+                                    "Map weather symbols on (cities, zoom ≤ ${weatherMapZoomMaxForUi().toInt()})"
+                                } else {
+                                    "Map weather symbols off"
+                                }
+                        },
+                        weatherAttribution = uniffi.navi.weatherAttributionText(),
+                        mapSymbolsZoomMax = weatherMapZoomMaxForUi().toInt(),
+                    )
                     Text("Region", style = MaterialTheme.typography.titleSmall)
                     Text("Map layers: $mapLayerCount", style = MaterialTheme.typography.bodySmall)
                     if (updateReminderDue) {
@@ -5854,6 +5978,36 @@ private fun NaviMapScreen() {
                         // Do not write lastCameraPitch here — only MapLibre camera state may.
                         styleEpoch += 1
                     },
+                    weatherPluginEnabled = weatherPluginEnabled,
+                    onWeatherPluginChange = { on ->
+                        weatherPluginEnabled = on
+                        MapHudPrefs.saveWeatherPluginEnabled(context, on)
+                        DiagnosticLog.logToggle("weather_plugin", on)
+                        if (!on) {
+                            weatherHud = WeatherHudState()
+                            weatherMapSymbolsEnabled = false
+                            MapHudPrefs.saveWeatherMapSymbolsEnabled(context, false)
+                            weatherMapEpoch += 1
+                            status = "Weather overlay off"
+                        } else {
+                            status = "Weather overlay on — fetch when active"
+                        }
+                    },
+                    weatherMapSymbolsEnabled = weatherMapSymbolsEnabled,
+                    onWeatherMapSymbolsChange = { on ->
+                        weatherMapSymbolsEnabled = on
+                        MapHudPrefs.saveWeatherMapSymbolsEnabled(context, on)
+                        DiagnosticLog.logToggle("weather_map_symbols", on)
+                        weatherMapEpoch += 1
+                        status =
+                            if (on) {
+                                "Map weather symbols on (cities, zoom ≤ ${weatherMapZoomMaxForUi().toInt()})"
+                            } else {
+                                "Map weather symbols off"
+                            }
+                    },
+                    weatherAttribution = uniffi.navi.weatherAttributionText(),
+                    mapSymbolsZoomMax = weatherMapZoomMaxForUi().toInt(),
                     onSave = {
                         MapHudPrefs.saveAutoZoom(
                             context,
@@ -6058,6 +6212,12 @@ private fun CorridorMapView(
     unitSystem: UnitSystem,
     styleEpoch: Int,
     bearingEpoch: Int = 0,
+    weatherPluginEnabled: Boolean = false,
+    weatherMapSymbolsEnabled: Boolean = false,
+    weatherAppActive: Boolean = true,
+    weatherIconsDir: String = "",
+    placeIndexDbPath: String = "",
+    weatherMapEpoch: Int = 0,
     modifier: Modifier = Modifier,
     onLayerCount: (Int) -> Unit,
     onUserPan: () -> Unit = {},
@@ -6295,6 +6455,18 @@ private fun CorridorMapView(
         BasemapPeakElevationStyle.apply(style, unitSystemRef.get())
         BasemapContourLabelStyle.apply(style, unitSystemRef.get())
         ensureRouteAboveHillshade(style)
+        // Weather city symbols are also wiped by setStyle — re-paint from cache.
+        if (weatherPluginEnabled && weatherMapSymbolsEnabled) {
+            refreshWeatherMapOnMain(
+                map = map,
+                dataDir = dataDir.absolutePath,
+                placeIndexDb = placeIndexDbPath,
+                weatherIconsDir = weatherIconsDir,
+                weatherPluginEnabled = weatherPluginEnabled,
+                mapSymbolsEnabled = weatherMapSymbolsEnabled,
+                appActive = weatherAppActive,
+            )
+        }
         applyCameraTilt(map)
         styleReady.value = true
         NaviMapTestHooks.styleReady = true
@@ -6860,6 +7032,36 @@ private fun CorridorMapView(
     LaunchedEffect(styleEpoch, prefer3d, contoursEnabled, vulkanAvailable, cameraTiltDeg) {
         val map = mapRef ?: return@LaunchedEffect
         applyResolvedStyle(map, force = true)
+    }
+
+    LaunchedEffect(
+        weatherMapEpoch,
+        weatherPluginEnabled,
+        weatherMapSymbolsEnabled,
+        weatherAppActive,
+        styleReady.value,
+        state.cameraZoom,
+        state.cameraLat,
+        state.cameraLon,
+    ) {
+        if (!styleReady.value) return@LaunchedEffect
+        while (true) {
+            val map = mapRef
+            if (map != null && styleReady.value) {
+                // MapLibre style APIs must run on the main thread; at most one
+                // HTTPS fetch occurs inside UniFFI per tick (paced).
+                refreshWeatherMapOnMain(
+                    map = map,
+                    dataDir = dataDir.absolutePath,
+                    placeIndexDb = placeIndexDbPath,
+                    weatherIconsDir = weatherIconsDir,
+                    weatherPluginEnabled = weatherPluginEnabled,
+                    mapSymbolsEnabled = weatherMapSymbolsEnabled,
+                    appActive = weatherAppActive,
+                )
+            }
+            delay(15_000L)
+        }
     }
 
     LaunchedEffect(state.cameraLat, state.cameraLon, prefer3d, contoursEnabled, cameraTiltDeg) {
@@ -7652,6 +7854,10 @@ private fun ensureIconsCopied(
                 input.copyTo(output)
             }
         }
+    }
+    // Weather fill icons (also covered by copyAssetDir; force-refresh for upgrades).
+    runCatching {
+        copyAssetDir(context.assets, "icons/weather", File(dest, "weather"))
     }
 }
 

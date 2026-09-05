@@ -17,6 +17,12 @@ android {
         versionCode = 2
         versionName = "0.2.0"
         testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
+        // Ship only 64-bit ABIs used by device (arm64) and emulator (x86_64).
+        // Dropping armeabi-v7a / x86 / mips MapLibre+JNI copies keeps the
+        // committed debug APK under GitHub's 50 MB soft-size advisory.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     // Omit Google Play dependency metadata from APK/AAB (F-Droid / reproducible

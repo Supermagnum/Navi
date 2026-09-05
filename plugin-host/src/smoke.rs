@@ -45,6 +45,7 @@ fn full_policy() -> HashSet<Capability> {
         Capability::PositionRead,
         Capability::PoiQuery,
         Capability::PoiWrite,
+        Capability::WeatherRead,
     ]
     .into_iter()
     .collect()

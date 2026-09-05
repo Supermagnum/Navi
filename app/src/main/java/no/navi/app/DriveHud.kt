@@ -357,6 +357,67 @@ fun TopDriveHud(
 }
 
 /**
+ * Per-plugin enable toggles shared by Map settings and Tools.
+ * Weather is the only shipped host-owned plugin control today.
+ */
+@Composable
+fun PluginSettingsSection(
+    weatherPluginEnabled: Boolean,
+    onWeatherPluginChange: (Boolean) -> Unit,
+    weatherMapSymbolsEnabled: Boolean,
+    onWeatherMapSymbolsChange: (Boolean) -> Unit,
+    weatherAttribution: String,
+    mapSymbolsZoomMax: Int,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth().testTag("plugin_settings_section"),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            "Plugins",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.testTag("plugin_settings_title"),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("Weather overlay")
+            Switch(
+                checked = weatherPluginEnabled,
+                onCheckedChange = onWeatherPluginChange,
+                modifier = Modifier.testTag("toggle_weather_plugin"),
+            )
+        }
+        if (weatherPluginEnabled) {
+            Text(
+                weatherAttribution,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("weather_attribution"),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Show weather symbols on map")
+                Switch(
+                    checked = weatherMapSymbolsEnabled,
+                    onCheckedChange = onWeatherMapSymbolsChange,
+                    modifier = Modifier.testTag("toggle_weather_map_symbols"),
+                )
+            }
+            Text(
+                "Cities only at zoom ≤ $mapSymbolsZoomMax when both toggles are on.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+/**
  * Map / display settings opened from the collapsed top bar.
  * Toggles apply immediately; Save persists prefs and closes; Close dismisses.
  */
@@ -372,6 +433,12 @@ fun MapSettingsSheet(
     onToggle3d: (Boolean) -> Unit = {},
     onToggleContours: (Boolean) -> Unit = {},
     onCameraTiltChange: (Double) -> Unit = {},
+    weatherPluginEnabled: Boolean = false,
+    onWeatherPluginChange: (Boolean) -> Unit = {},
+    weatherMapSymbolsEnabled: Boolean = false,
+    onWeatherMapSymbolsChange: (Boolean) -> Unit = {},
+    weatherAttribution: String = "",
+    mapSymbolsZoomMax: Int = 8,
     onSave: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -574,6 +641,14 @@ fun MapSettingsSheet(
                     )
                 }
             }
+            PluginSettingsSection(
+                weatherPluginEnabled = weatherPluginEnabled,
+                onWeatherPluginChange = onWeatherPluginChange,
+                weatherMapSymbolsEnabled = weatherMapSymbolsEnabled,
+                onWeatherMapSymbolsChange = onWeatherMapSymbolsChange,
+                weatherAttribution = weatherAttribution,
+                mapSymbolsZoomMax = mapSymbolsZoomMax,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = onSave,
