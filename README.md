@@ -18,6 +18,8 @@ Navi does not currently ship with a ready-made international routing database
 the way many commercial GPS / head-unit products do (those usually include
 precomputed indexes from the vendor).
 Computing this on device takes anywhere from 8 minutes and up to 25 minutes, it needs to be done when you download or update map data for your region.
+These processes might appear to be stuck, but be patient!
+
 Solving onboard convert cost may involve
 a server (example: navi.app) that distributes precomputed index packs
 for a region; when that server is unreachable, the natural fallback is what
@@ -1150,8 +1152,6 @@ English** when a translation or pack is missing. Spec:
 Do **not** infer UI language from GPS or SIM country. Do not add a language
 toggle until that plugin exists.
 
-Figure out why railway lines is not showing.
-
 Display **units** (metric / US / UK) are shipped (Drive settings), including
 peak-height labels on the basemap. Norwegian speed-limit **pictograms** stay
 official km/h plates; mph *plate artwork* is still future (`new-signs/`).
@@ -1192,6 +1192,5 @@ Context for whoever picks this up:
   (≈ 9.1008 km/h per mil/h), with sub-mil distances shown as stone's throw,
   arrow's flight, and so on.
 
-Investigate if lake names can be displayed along the lake shore.
 
 

@@ -126,6 +126,7 @@ import uniffi.navi.ecoModeDefault
 import uniffi.navi.ecoModeToggleable
 import uniffi.navi.elevationAt
 import uniffi.navi.ensurePlaceIndex
+import uniffi.navi.exportSavedRouteGpx
 import uniffi.navi.foregroundPlanActive
 import uniffi.navi.foregroundPlanEnter
 import uniffi.navi.foregroundPlanLeave
@@ -153,6 +154,7 @@ import uniffi.navi.renameSavedPlace
 import uniffi.navi.resolveSpeedLimitKmh
 import uniffi.navi.roadLabelNear
 import uniffi.navi.roadNearInfo
+import uniffi.navi.routeToGpx
 import uniffi.navi.saveCarRestSettings
 import uniffi.navi.saveNamedPlace
 import uniffi.navi.saveNamedRoute
@@ -370,6 +372,32 @@ private fun applySavedRouteSummaryJson(
     }
 }
 
+/** Safe default filename for ACTION_CREATE_DOCUMENT GPX export. */
+private fun gpxExportFileName(
+    startName: String,
+    endName: String,
+): String {
+    fun slug(raw: String): String =
+        raw
+            .lowercase()
+            .replace(Regex("[^a-z0-9]+"), "-")
+            .trim('-')
+            .ifBlank { "route" }
+    return "navi-${slug(startName)}-${slug(endName)}.gpx".take(96)
+}
+
+/** Full `<rte>` JSON including start and end (same shape as via_json entries). */
+private fun waypointsToRteJson(
+    start: Waypoint,
+    vias: List<Waypoint>,
+    end: Waypoint,
+): String {
+    val all = listOf(start) + vias + listOf(end)
+    return all.joinToString(",", "[", "]") {
+        """{"name":${org.json.JSONObject.quote(it.name)},"lat":${it.lat},"lon":${it.lon}}"""
+    }
+}
+
 private enum class SearchTarget { From, To, Via }
 
 private enum class SearchMode { Place, Address }
@@ -577,6 +605,11 @@ private fun NaviMapScreen() {
     var pendingRotationSnap by remember { mutableStateOf<Runnable?>(null) }
     var prioritySharePct by remember { mutableDoubleStateOf(0.0) }
     var savedRoutes by remember { mutableStateOf<List<FfiSavedRoute>>(emptyList()) }
+
+    /** When set, the next successful plan triggers a GPX export for this saved route id. */
+    var pendingGpxExportRouteId by remember { mutableStateOf<String?>(null) }
+    var pendingGpxExportText by remember { mutableStateOf<String?>(null) }
+    var pendingGpxExportFileName by remember { mutableStateOf("navi-route.gpx") }
     var axleKg by remember { mutableStateOf("") }
     var bogieKg by remember { mutableStateOf("") }
     var heightM by remember { mutableStateOf("") }
@@ -867,6 +900,28 @@ private fun NaviMapScreen() {
         ) { result ->
             locationPermGranted = result.values.any { it }
         }
+    val createGpxLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/gpx+xml"),
+        ) { uri ->
+            val text = pendingGpxExportText
+            pendingGpxExportText = null
+            if (uri == null) {
+                status = "GPX export cancelled"
+                return@rememberLauncherForActivityResult
+            }
+            if (text == null) {
+                status = "GPX export failed: no content"
+                return@rememberLauncherForActivityResult
+            }
+            val ok =
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { os ->
+                        os.write(text.toByteArray(Charsets.UTF_8))
+                    } ?: error("no output stream")
+                }.isSuccess
+            status = if (ok) "Exported GPX" else "GPX export failed"
+        }
 
     val dataDir =
         remember {
@@ -1143,6 +1198,31 @@ private fun NaviMapScreen() {
             }
         } else {
             driveHud = driveHud.copy(minutesToBreak = null, tripEtaMinutes = null)
+        }
+        pendingGpxExportRouteId?.let { exportId ->
+            pendingGpxExportRouteId = null
+            if (pending.routePolyline.isBlank()) {
+                status = "GPX export failed: plan produced no geometry"
+                return
+            }
+            val gpx =
+                exportSavedRouteGpx(
+                    dataDir.absolutePath,
+                    exportId,
+                    pending.routePolyline,
+                )
+            if (gpx.startsWith("FAIL")) {
+                status = gpx
+                return
+            }
+            val row = savedRoutes.firstOrNull { it.id == exportId }
+            pendingGpxExportFileName =
+                gpxExportFileName(
+                    row?.startName.orEmpty().ifBlank { "Start" },
+                    row?.endName.orEmpty().ifBlank { "Destination" },
+                )
+            pendingGpxExportText = gpx
+            createGpxLauncher.launch(pendingGpxExportFileName)
         }
     }
 
@@ -4057,6 +4137,7 @@ private fun NaviMapScreen() {
                                     NaviMapTestHooks.lastPlanReport = result.report
                                     NaviMapTestHooks.lastRoutePolylineChars = 0
                                     NaviMapTestHooks.lastRoutePolyline = ""
+                                    pendingGpxExportRouteId = null
                                     RoutingPlanLog.cancelled(
                                         ecoForPlan,
                                         durationMs,
@@ -4072,12 +4153,20 @@ private fun NaviMapScreen() {
                                     NaviMapTestHooks.lastPlanReport = result.report
                                     NaviMapTestHooks.lastRoutePolylineChars = 0
                                     NaviMapTestHooks.lastRoutePolyline = ""
+                                    if (pendingGpxExportRouteId != null) {
+                                        pendingGpxExportRouteId = null
+                                        status =
+                                            "GPX export failed: " +
+                                            userFacingStatus(result.report).ifBlank { "Routing failed" }
+                                    } else {
+                                        status =
+                                            userFacingStatus(result.report).ifBlank { "Routing failed" }
+                                    }
                                     RoutingPlanLog.failed(
                                         ecoForPlan,
                                         durationMs,
                                         userFacingStatus(result.report).ifBlank { "Routing failed" },
                                     )
-                                    status = userFacingStatus(result.report).ifBlank { "Routing failed" }
                                     return@LaunchedEffect
                                 }
                                 RoutingPlanLog.complete(result, ecoForPlan, durationMs)
@@ -4799,6 +4888,53 @@ private fun NaviMapScreen() {
                                     ) {
                                         Text("Delete planned route")
                                     }
+                                    TextButton(
+                                        onClick = {
+                                            val start =
+                                                fromPoint
+                                                    ?: Waypoint(
+                                                        mapState.startName.ifBlank { "Start" },
+                                                        mapState.startLat,
+                                                        mapState.startLon,
+                                                    )
+                                            val end =
+                                                toPoint.takeIf { it.name.isNotBlank() || it.lat != 0.0 }
+                                                    ?: Waypoint(
+                                                        mapState.endName.ifBlank { "Destination" },
+                                                        mapState.endLat,
+                                                        mapState.endLon,
+                                                    )
+                                            val vias =
+                                                if (viaPoints.isNotEmpty()) {
+                                                    viaPoints
+                                                } else {
+                                                    mapState.viaPoints
+                                                }
+                                            val name =
+                                                "${start.name.ifBlank { "Start" }} -> ${end.name.ifBlank { "Destination" }}"
+                                            val gpx =
+                                                routeToGpx(
+                                                    name = name,
+                                                    timeIso = "",
+                                                    rteJson = waypointsToRteJson(start, vias, end),
+                                                    routePolyline = mapState.polyline,
+                                                )
+                                            if (gpx.startsWith("FAIL")) {
+                                                status = gpx
+                                            } else {
+                                                pendingGpxExportFileName =
+                                                    gpxExportFileName(start.name, end.name)
+                                                pendingGpxExportText = gpx
+                                                createGpxLauncher.launch(pendingGpxExportFileName)
+                                            }
+                                        },
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .testTag("btn_export_planned_gpx"),
+                                    ) {
+                                        Text("Export planned GPX")
+                                    }
                                 }
                                 if (savedRoutes.isEmpty()) {
                                     Text("No saved routes", style = MaterialTheme.typography.bodySmall)
@@ -4874,6 +5010,58 @@ private fun NaviMapScreen() {
                                                 enabled = !planningRoute,
                                                 modifier = Modifier.testTag("btn_load_saved_route"),
                                             ) { Text("Load") }
+                                            TextButton(
+                                                onClick = {
+                                                    val loadedProfile =
+                                                        travelProfileFromSavedName(route.profile)
+                                                    if (loadedProfile == null) {
+                                                        status =
+                                                            "Unknown profile in saved route: ${route.profile}"
+                                                        return@TextButton
+                                                    }
+                                                    fromPoint =
+                                                        Waypoint(
+                                                            name =
+                                                                route.startName.ifBlank {
+                                                                    "Start"
+                                                                },
+                                                            lat = route.startLat,
+                                                            lon = route.startLon,
+                                                        )
+                                                    toPoint =
+                                                        Waypoint(
+                                                            name =
+                                                                route.endName.ifBlank {
+                                                                    "Destination"
+                                                                },
+                                                            lat = route.endLat,
+                                                            lon = route.endLon,
+                                                        )
+                                                    viaPoints = parseSavedViaPoints(route.viaJson)
+                                                    profile = loadedProfile
+                                                    ecoEnabled = ecoModeDefault(loadedProfile)
+                                                    applySavedRouteSummaryJson(
+                                                        route.summaryJson,
+                                                        onAvoidMotorways = { avoidMotorways = it },
+                                                        onAvoidTolls = { avoidTolls = it },
+                                                        onAvoidFerries = { avoidFerries = it },
+                                                        onPriorityShare = { prioritySharePct = it },
+                                                    )
+                                                    if (loadedProfile == TravelProfile.BICYCLE ||
+                                                        loadedProfile == TravelProfile.BICYCLE_ELECTRIC ||
+                                                        loadedProfile == TravelProfile.HIKING
+                                                    ) {
+                                                        avoidMotorways = true
+                                                    }
+                                                    pendingGpxExportRouteId = route.id
+                                                    showRoutesPanel = true
+                                                    status =
+                                                        "Exporting ${route.startName} -> ${route.endName}; planning…"
+                                                    planKick += 1
+                                                },
+                                                enabled = !planningRoute,
+                                                modifier = Modifier.testTag("btn_export_saved_route_gpx"),
+                                            ) { Text("Export") }
                                             TextButton(
                                                 onClick = {
                                                     if (deleteSavedRoute(dataDir.absolutePath, route.id)) {
