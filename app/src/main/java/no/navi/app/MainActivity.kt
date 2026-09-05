@@ -131,6 +131,8 @@ import uniffi.navi.foregroundPlanActive
 import uniffi.navi.foregroundPlanEnter
 import uniffi.navi.foregroundPlanLeave
 import uniffi.navi.formatRouteAvoidanceReport
+import uniffi.navi.decideRegionAcquisition
+import uniffi.navi.defaultPackServerBaseUrl
 import uniffi.navi.geofabrikLatestPbfUrl
 import uniffi.navi.indexedMapsStatus
 import uniffi.navi.listSavedPlaces
@@ -1708,6 +1710,23 @@ private fun NaviMapScreen() {
     fun startRegionDownload(path: String) {
         val leaf = path.substringAfterLast('/')
         val filename = "$leaf-latest.osm.pbf"
+        // Soft pack-server probe (routing decision). Pack-fetch stub always
+        // falls through to Geofabrik URL + on-device convert.
+        val acquisition =
+            runCatching {
+                decideRegionAcquisition(
+                    regionId = path,
+                    packServerBaseUrl = defaultPackServerBaseUrl(),
+                )
+            }.getOrNull()
+        if (acquisition != null) {
+            android.util.Log.i(
+                "NaviPack",
+                "startRegionDownload path=$path source=${acquisition.source} " +
+                    "execute_local=${acquisition.executeLocalConvert} " +
+                    "reason=${acquisition.reason}",
+            )
+        }
         val url = geofabrikLatestPbfUrl(path)
         val already = RegionDownloadBackground.partialBytes(dataDir, filename)
         regionDownloadProgress =

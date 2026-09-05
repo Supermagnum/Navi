@@ -6169,6 +6169,74 @@ pub fn current_speed_limit_kmh(
     Some(info.speed_limit_kmh)
 }
 
+/// Pack-server vs local Geofabrik routing for region acquisition.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FfiRegionSourceKind {
+    /// Region is listed as ready on the pack host (pack-fetch path when built).
+    Server,
+    /// Fall back to Geofabrik/OSM extract download + on-device convert.
+    Local,
+}
+
+/// Decision from [`decide_region_acquisition`]: routing result + execute hint.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiRegionAcquisitionDecision {
+    pub source: FfiRegionSourceKind,
+    pub region_id: String,
+    /// Why this path was chosen (also logged under tag `NaviPack`).
+    pub reason: String,
+    /// Whether callers should run Geofabrik download + on-device convert now.
+    ///
+    /// TODO: always `true` until pack-fetch is implemented — including when
+    /// `source == Server`. That means "stub deferred to local", not "server
+    /// fetch + local convert". Flip per-branch once `try_fetch_region_packs`
+    /// is real (`false` on successful Server fetch).
+    pub execute_local_convert: bool,
+    pub region_generation: Option<String>,
+    pub catalog_generation: Option<String>,
+}
+
+/// Default pack host base URL (`NAVI_PACK_SERVER_BASE_URL` or LAN default).
+#[uniffi::export]
+pub fn default_pack_server_base_url() -> String {
+    driver_break_core::pack_server::pack_server_base_url()
+}
+
+/// Consult pack host and decide Server vs Local for `region_id`.
+///
+/// Soft-fail: unreachable / missing region / stub pack-fetch all yield
+/// `execute_local_convert = true` with a clear `reason`. Never panics.
+/// Optional `pack_server_base_url` overrides env/default (LAN test IP).
+#[uniffi::export]
+pub fn decide_region_acquisition(
+    region_id: String,
+    pack_server_base_url: Option<String>,
+) -> FfiRegionAcquisitionDecision {
+    ensure_native_logging();
+    let base = pack_server_base_url
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(driver_break_core::pack_server::pack_server_base_url);
+    let plan = driver_break_core::pack_server::plan_region_acquisition(&region_id, &base);
+    let (source, region_generation) = match &plan.source {
+        driver_break_core::pack_server::RegionSource::Server {
+            generation,
+            ..
+        } => (FfiRegionSourceKind::Server, generation.clone()),
+        driver_break_core::pack_server::RegionSource::Local { .. } => {
+            (FfiRegionSourceKind::Local, None)
+        }
+    };
+    FfiRegionAcquisitionDecision {
+        source,
+        region_id: driver_break_core::pack_server::normalize_region_id(&region_id),
+        reason: plan.log_message,
+        execute_local_convert: plan.execute_local_convert,
+        region_generation,
+        catalog_generation: plan.catalog_generation,
+    }
+}
+
 /// Canonical Geofabrik `-latest.osm.pbf` URL for a region path
 /// (e.g. `europe/norway/ostlandet`). Prefer this over host-side URL string
 /// interpolation so Android and core share one builder.

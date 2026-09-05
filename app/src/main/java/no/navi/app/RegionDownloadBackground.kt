@@ -10,6 +10,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import uniffi.navi.bindGeofabrikRegion
+import uniffi.navi.decideRegionAcquisition
+import uniffi.navi.defaultPackServerBaseUrl
 import uniffi.navi.downloadProgressSnapshot
 import uniffi.navi.geofabrikLatestPbfUrl
 import uniffi.navi.geofabrikPathForPbfName
@@ -176,6 +178,34 @@ object RegionDownloadBackground {
                 }
             if (!shouldRun) return@launch
             try {
+                // Pack-server discovery: Server vs Local. Pack-fetch is stubbed —
+                // always execute existing Geofabrik provision + on-device convert.
+                val pathForDecision = geofabrikPath.ifBlank {
+                    geofabrikPathForPbfName(filename)
+                }
+                if (pathForDecision.isNotBlank()) {
+                    val decision =
+                        runCatching {
+                            decideRegionAcquisition(
+                                regionId = pathForDecision,
+                                packServerBaseUrl = defaultPackServerBaseUrl(),
+                            )
+                        }.getOrElse { t ->
+                            Log.i(
+                                TAG,
+                                "pack routing failed soft: ${t.message}; using local convert",
+                            )
+                            null
+                        }
+                    if (decision != null) {
+                        Log.i(
+                            TAG,
+                            "pack routing source=${decision.source} " +
+                                "execute_local=${decision.executeLocalConvert} " +
+                                "reason=${decision.reason}",
+                        )
+                    }
+                }
                 val report =
                     provisionRegionData(
                         dataDir = dataDir.absolutePath,
