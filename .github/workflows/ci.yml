@@ -235,6 +235,10 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Default "tools platform-tools" installs obsolete SDK Tools, which can
+          # fail on GH runners pulling Android Emulator ("ZipFile unknown archive").
+          packages: platform-tools
 
       - name: Cache Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -282,6 +286,9 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # See kotlin-checks: skip obsolete "tools" (emulator zip failures on runners).
+          packages: platform-tools
 
       - name: Cache Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -324,6 +331,9 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # See kotlin-checks: skip obsolete "tools" (emulator zip failures on runners).
+          packages: platform-tools
 
       - name: Cache Gradle
         uses: gradle/actions/setup-gradle@v4
