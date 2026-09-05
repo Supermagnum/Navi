@@ -293,7 +293,7 @@ that (no global dump onto the map).
 | **Guest duties** | Scaffolded WASM guest (`plugin.json`); product APK does not load plugin-host yet |
 | **Caps** | `position_read`, `weather_read`, `log` (in ABI; unused by product until wasmtime gate lifts) |
 | **Offline** | Last-known cache only; no silent background refresh without user opt-in |
-| **Shipped UI** | Tools → **Weather overlay** (default OFF); nested **Show weather symbols on map** (default OFF; `place:city`, zoom ≤ 8, cap 10, 56 px, nearest-to-center) |
+| **Shipped UI** | **Map settings → Plugins** and **Tools → Plugins**: **Weather overlay** (default OFF); nested **Show weather symbols on map** (default OFF; `place:city`, zoom ≤ 8, cap 10, 56 px, nearest-to-center) |
 | **Not shipped** | SMIL / other icon styles; town/village tiers; viewport-batching; corridor overlay; safety-resupply WBGT hookup; product plugin-host link |
 
 APRS WX beacons (`b`/`t`/`h` keys) remain a radio-side path; this plugin is the

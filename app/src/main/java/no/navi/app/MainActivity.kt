@@ -3455,7 +3455,10 @@ private fun NaviMapScreen() {
                     expanded = showMapSettings,
                     onToggleExpanded = {
                         showMapSettings = !showMapSettings
-                        if (showMapSettings) showDriveSettings = false
+                        if (showMapSettings) {
+                            showDriveSettings = false
+                            showTools = false
+                        }
                     },
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
@@ -5135,6 +5138,38 @@ private fun NaviMapScreen() {
                             .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    PluginSettingsSection(
+                        weatherPluginEnabled = weatherPluginEnabled,
+                        onWeatherPluginChange = { on ->
+                            weatherPluginEnabled = on
+                            MapHudPrefs.saveWeatherPluginEnabled(context, on)
+                            DiagnosticLog.logToggle("weather_plugin", on)
+                            if (!on) {
+                                weatherHud = WeatherHudState()
+                                weatherMapSymbolsEnabled = false
+                                MapHudPrefs.saveWeatherMapSymbolsEnabled(context, false)
+                                weatherMapEpoch += 1
+                                status = "Weather overlay off"
+                            } else {
+                                status = "Weather overlay on — fetch when active"
+                            }
+                        },
+                        weatherMapSymbolsEnabled = weatherMapSymbolsEnabled,
+                        onWeatherMapSymbolsChange = { on ->
+                            weatherMapSymbolsEnabled = on
+                            MapHudPrefs.saveWeatherMapSymbolsEnabled(context, on)
+                            DiagnosticLog.logToggle("weather_map_symbols", on)
+                            weatherMapEpoch += 1
+                            status =
+                                if (on) {
+                                    "Map weather symbols on (cities, zoom ≤ ${weatherMapZoomMaxForUi().toInt()})"
+                                } else {
+                                    "Map weather symbols off"
+                                }
+                        },
+                        weatherAttribution = uniffi.navi.weatherAttributionText(),
+                        mapSymbolsZoomMax = weatherMapZoomMaxForUi().toInt(),
+                    )
                     Text("Region", style = MaterialTheme.typography.titleSmall)
                     Text("Map layers: $mapLayerCount", style = MaterialTheme.typography.bodySmall)
                     if (updateReminderDue) {
@@ -5668,61 +5703,6 @@ private fun NaviMapScreen() {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text("Weather overlay")
-                        Switch(
-                            checked = weatherPluginEnabled,
-                            onCheckedChange = { on ->
-                                weatherPluginEnabled = on
-                                MapHudPrefs.saveWeatherPluginEnabled(context, on)
-                                DiagnosticLog.logToggle("weather_plugin", on)
-                                if (!on) {
-                                    weatherHud = WeatherHudState()
-                                    weatherMapSymbolsEnabled = false
-                                    MapHudPrefs.saveWeatherMapSymbolsEnabled(context, false)
-                                    weatherMapEpoch += 1
-                                    status = "Weather overlay off"
-                                } else {
-                                    status = "Weather overlay on — fetch when active"
-                                }
-                            },
-                            modifier = Modifier.testTag("toggle_weather_plugin"),
-                        )
-                    }
-                    if (weatherPluginEnabled) {
-                        Text(
-                            uniffi.navi.weatherAttributionText(),
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.testTag("weather_attribution"),
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text("Show weather symbols on map")
-                            Switch(
-                                checked = weatherMapSymbolsEnabled,
-                                onCheckedChange = { on ->
-                                    weatherMapSymbolsEnabled = on
-                                    MapHudPrefs.saveWeatherMapSymbolsEnabled(context, on)
-                                    DiagnosticLog.logToggle("weather_map_symbols", on)
-                                    weatherMapEpoch += 1
-                                    status =
-                                        if (on) {
-                                            "Map weather symbols on (cities, zoom ≤ ${weatherMapZoomMaxForUi().toInt()})"
-                                        } else {
-                                            "Map weather symbols off"
-                                        }
-                                },
-                                modifier = Modifier.testTag("toggle_weather_map_symbols"),
-                            )
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
                         Text("Diagnostic logging")
                         Switch(
                             checked = diagnosticLogging,
@@ -5998,6 +5978,36 @@ private fun NaviMapScreen() {
                         // Do not write lastCameraPitch here — only MapLibre camera state may.
                         styleEpoch += 1
                     },
+                    weatherPluginEnabled = weatherPluginEnabled,
+                    onWeatherPluginChange = { on ->
+                        weatherPluginEnabled = on
+                        MapHudPrefs.saveWeatherPluginEnabled(context, on)
+                        DiagnosticLog.logToggle("weather_plugin", on)
+                        if (!on) {
+                            weatherHud = WeatherHudState()
+                            weatherMapSymbolsEnabled = false
+                            MapHudPrefs.saveWeatherMapSymbolsEnabled(context, false)
+                            weatherMapEpoch += 1
+                            status = "Weather overlay off"
+                        } else {
+                            status = "Weather overlay on — fetch when active"
+                        }
+                    },
+                    weatherMapSymbolsEnabled = weatherMapSymbolsEnabled,
+                    onWeatherMapSymbolsChange = { on ->
+                        weatherMapSymbolsEnabled = on
+                        MapHudPrefs.saveWeatherMapSymbolsEnabled(context, on)
+                        DiagnosticLog.logToggle("weather_map_symbols", on)
+                        weatherMapEpoch += 1
+                        status =
+                            if (on) {
+                                "Map weather symbols on (cities, zoom ≤ ${weatherMapZoomMaxForUi().toInt()})"
+                            } else {
+                                "Map weather symbols off"
+                            }
+                    },
+                    weatherAttribution = uniffi.navi.weatherAttributionText(),
+                    mapSymbolsZoomMax = weatherMapZoomMaxForUi().toInt(),
                     onSave = {
                         MapHudPrefs.saveAutoZoom(
                             context,

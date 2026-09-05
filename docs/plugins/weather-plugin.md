@@ -33,7 +33,7 @@ WBGT / heat model).
 | `manifest.json` + MIT `LICENSE` | **Present** in both asset trees |
 | `plugin.json` / guest `.wasm` | Scaffold present; **not linked** into product APK |
 | Host weather fetch / cache | **Implemented** (MET Norway → Open-Meteo, throttle, SQLite) |
-| HUD chip | **Implemented** — Tools → Weather overlay (default OFF) |
+| HUD chip | **Implemented** — Map settings / Tools → Plugins → Weather overlay (default OFF) |
 | City map symbols | **Implemented** — Tools → Show weather symbols on map (default OFF); `place:city`, zoom ≤ 8, cap 10, 56 px spacing, nearest-to-center priority |
 | Corridor map overlay | **Not implemented** (separate stub) |
 | Town / village map tiers | **Not implemented** |
