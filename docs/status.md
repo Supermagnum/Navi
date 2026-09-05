@@ -1,6 +1,6 @@
 # Documentation status map (canonical sources)
 
-Last updated: 2026-08-28.
+Last updated: 2026-09-05.
 
 Readers should not need to cross-reference half a dozen overlapping “status”
 documents. Use this map. Point-in-time reports stay as historical evidence;
@@ -18,7 +18,8 @@ they are **not** the live product status.
 | Android / emulator instrumented evidence | [`android-test-results.md`](android-test-results.md) | Chronological evidence; later Items win over earlier contradictory rows. |
 | Point-in-time closing / audit reports | e.g. [`closing-pass-report.md`](closing-pass-report.md), [`future-proofing-audit-2026-07.md`](future-proofing-audit-2026-07.md) | Keep for history; do **not** treat as live status unless the audit table is actively maintained. |
 | Indexed map format evaluation (phased) | [`indexed-map-format-plan.md`](indexed-map-format-plan.md) | **Live** phase status for preprocess-once routing index work; update when phases complete. Includes pack-miss PBF priority / cone-skip evidence (2026-08-24). |
-| Precomputed packs / town-to-town cache (direction) | [`precomputed-index-and-route-cache.md`](precomputed-index-and-route-cache.md) | **Not shipped.** Mirror (e.g. navi.app) of Navi packs; local convert as offline fallback; optional city-pair route cache. Contrast with commercial bundled DBs. |
+| Pack-server client (discovery / soft fallback) | [`pack-server-client.md`](pack-server-client.md) | **Partial.** `current.json` probe + Server/Local routing wired; pack-fetch / verify still TODO. |
+| Precomputed packs / town-to-town cache (direction) | [`precomputed-index-and-route-cache.md`](precomputed-index-and-route-cache.md) | **Not shipped** (beyond discovery). Mirror of Navi packs; local convert as offline fallback; optional city-pair route cache. |
 | BRouter tiles as pack-miss speedup | [`brouter-pack-miss-investigation.md`](brouter-pack-miss-investigation.md) | **Phase 1 only (2026-08-27).** Gate not cleared — `.rd5` is not a Navi pack; no Phase 2 spec. |
 | BRouter as alternate engine (car/bike miss) | [`brouter-engine-substitution-investigation.md`](brouter-engine-substitution-investigation.md) | **2026-08-27 (Gaps 1–2 closed on SM-P613).** AIDL cold ~1.3 s car / ~1.6 s bike vs ~54 s miss; warm holds/improves vs HTTP. **Car gate fail** (Friisvegen / no departure date). **Bike gate pass** → [`brouter-bike-aidl-fallback-spec.md`](brouter-bike-aidl-fallback-spec.md). |
 | Plugin host vs product plugins | [`plugins.md`](plugins.md) + specs under `docs/plugins/` | Host is implemented (wasmtime **48.0.1**; deny ignores cleared; aarch64 Cranelift QEMU + Bionic on-device smoke on SM-P613). Product plugins remain spec-only. **Do not** link `plugin-host` into shipped binaries until the remaining steps in the [wasmtime upgrade gate](plugins.md#gate-upgrade-wasmtime-before-shipping-any-product-plugin) are done (source of truth in `plugins.md`). |

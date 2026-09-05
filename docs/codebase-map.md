@@ -48,6 +48,8 @@ Default Cargo workspace members: `core`, `plugin-host` (see root `Cargo.toml`).
 | `MultiDayPlanCards.kt` | Day-card UI from `days_json` |
 | `CoordinateInput.kt` | Lat/lon entry helpers |
 | `NaviAppData.kt` | Data-dir paths under the app sandbox |
+| `RegionDownloadBackground.kt` | Process-scoped Geofabrik PBF download; pack-server routing probe before `provisionRegionData` |
+| `IndexedMapsBackground.kt` | Background `ensureIndexedMaps` / on-device convert after provision |
 | `NaviMapTestHooks.kt` | Instrumentation hooks (camera, sim, banner) — debug / tests |
 | `RoutingPlanLog.kt` | Plan logging helpers |
 
@@ -73,6 +75,7 @@ Instrumented tests: `app/src/androidTest/java/no/navi/app/`.
 | `icons/` | SVG → PNG raster | Wrong maneuver / POI glyph |
 | `ecu/` | Live energy types (no live UniFFI poll yet) | See [`ECU.md`](ECU.md) |
 | `download/` | Shared pause / resume / cancel; **per-consumer progress** (`progress.rs`: Download / Plan / Convert / Cone); **PBF priority** (`pbf_priority.rs`: foreground-plan pause for convert/place-index; bbox-build skip/serialize) | Provision / Tools convert; pack-miss plan contention |
+| `pack_server/` | navi-server connectivity + `resolve_region_source` / `plan_region_acquisition` | Soft Geofabrik fallback; see [`pack-server-client.md`](pack-server-client.md) |
 | `sensors/` | Host-side sensor helpers (Linux path) | gpsd / IMU |
 | `bus/` | `WorldSnapshot` (position + profile + energy) | Plugin / future live energy |
 

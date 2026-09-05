@@ -20,14 +20,15 @@ precomputed indexes from the vendor).
 Computing this on device takes anywhere from 8 minutes and up to 25 minutes, it needs to be done when you download or update map data for your region.
 These processes might appear to be stuck, but be patient!
 
-Solving onboard convert cost may involve
-a server (example: navi.app) that distributes precomputed index packs
-for a region; when that server is unreachable, the natural fallback is what
-Navi already does — local pack convert and PBF planning from the
-downloaded extract. Related server work lives in
-[Supermagnum/navi-server](https://github.com/Supermagnum/navi-server/tree/main).
-Precomputed town-to-town corridors (e.g. Haugesund→Bergen,
-Oslo→Fredrikstad) could speed popular trips further. Direction:
+Solving onboard convert cost involves
+[Supermagnum/navi-server](https://github.com/Supermagnum/navi-server/tree/main)
+distributing precomputed index packs. The Android client already **discovers**
+ready regions (`GET /current.json`) before a Tools region download and
+**soft-falls back** to Geofabrik extract + on-device convert when the host is
+unreachable, the region is not published, or pack-fetch is not implemented yet
+(pack download / verify still TODO). Client contract and code map:
+[`docs/pack-server-client.md`](docs/pack-server-client.md). Broader direction
+(town-to-town caches, mirrors):
 [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
 
 Estimated server space needed:
@@ -658,7 +659,8 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/status.md`](docs/status.md) | Which docs are live status vs historical evidence |
 | [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Tracked future-proofing / open risk items |
 | [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md) | Phased evaluation of preprocess-once indexed routing maps |
-| [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md) | Server / mirror of precomputed packs, commercial DB contrast, town-to-town route cache (direction; not shipped) |
+| [`docs/pack-server-client.md`](docs/pack-server-client.md) | navi-server client: `current.json` discovery, Server vs Local routing, soft Geofabrik fallback (pack-fetch still TODO) |
+| [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md) | Server / mirror of precomputed packs, commercial DB contrast, town-to-town route cache (direction; pack-fetch not shipped) |
 | [`docs/plugins.md`](docs/plugins.md) | Plugin host and roadmap (enable/disable; USB/Bluetooth I/O) |
 | [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic (Meshstick USB / BLE radio; not shipped) |
 
@@ -967,7 +969,7 @@ or update.
 
 | Data | Source | Used for |
 |---|---|---|
-| Roads & places | OpenStreetMap via Geofabrik `.osm.pbf` | Routing and search |
+| Roads & places | OpenStreetMap via Geofabrik `.osm.pbf` (default). Optional pre-baked packs from [navi-server](https://github.com/Supermagnum/navi-server) when listed in `/current.json` — discovery is wired; pack-fetch not yet | Routing and search |
 | Map updates | Geofabrik diffs / fresh extract | Opt-in refresh only |
 | Elevation | Public DEM tiles | Eco / hills; Mapterhorn DEM also drives hillshade and contours |
 | Map picture | OpenFreeMap Liberty (online) or Protomaps PMTiles (offline) | What you see on screen |
@@ -991,8 +993,10 @@ Country/region visual extracts can also be prepared with
   dropped in absolute time, not relative to a slower extract). You can still
   plan while indexing runs; plans are much faster once packs are ready.
   Longer-term relief
-  (precomputed packs from a mirror such as navi.app, plus optional town-to-town
-  caches — Navi does not ship a commercial vendor routing DB today):
+  (precomputed packs from navi-server / a mirror — **discovery is wired**, pack
+  download still TODO — plus optional town-to-town caches; Navi does not ship a
+  commercial vendor routing DB today):
+  [`docs/pack-server-client.md`](docs/pack-server-client.md),
   [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
 - **Indexed-map progress bar is phase-based, not continuous.** Tools shows
   `Indexed maps (background): …` with a percentage that jumps once when each

@@ -33,7 +33,8 @@ Default workspace members for a plain `cargo build` / `cargo test`:
 `driver-break-core`, `navi-plugin-host`.
 
 Core modules under `core/src/` (`routing/`, `poi/`, `search/`, `storage/`,
-`config/`, `tracks/`, `icons/`, `download/`, `sensors/`, `ecu/`, `bus/`, `nav/`)
+`config/`, `tracks/`, `icons/`, `download/`, `pack_server/`, `sensors/`, `ecu/`,
+`bus/`, `nav/`)
 are original Navi code. Upstream crates supply primitives; Navi owns algorithms
 and schemas.
 

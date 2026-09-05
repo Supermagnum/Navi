@@ -27,9 +27,11 @@ Workspace members are declared in the root `Cargo.toml`. Default members:
 Core routing, rest planning, and POI queries work fully offline once a region
 extract is on disk. Network access is an **opt-in enhancement layer** (DEM
 tiles, Geofabrik update checks, fixture downloads, optional PMTiles basemap
-download, live OpenFreeMap tiles when no local PMTiles cover the camera). Map
+download, optional **navi-server pack discovery** before region download with
+silent Geofabrik fallback — [`pack-server-client.md`](pack-server-client.md),
+live OpenFreeMap tiles when no local PMTiles cover the camera). Map
 data is never replaced silently in the background — see
-[`docs/osm-updates.md`](docs/osm-updates.md) and [`docs/map-styles.md`](docs/map-styles.md).
+[`osm-updates.md`](osm-updates.md) and [`map-styles.md`](map-styles.md).
 
 ## Thread priority tiers
 
@@ -104,7 +106,7 @@ the default working set on ~4 GB devices.
 
 | User action | Path |
 |---|---|
-| Provision region | App → UniFFI `provisionRegionData` → download/parse `.pbf` + DEM → graph build/reweight → cache on disk |
+| Provision region | App → `decideRegionAcquisition` (pack host probe; soft Local fallback) → UniFFI `provisionRegionData` (Geofabrik PBF today) → bind / place index → `ensureIndexedMaps` / `convert_region_packs` |
 | Download basemap | App Tools → `pmtilesQueueRegion` / `pmtilesRunJob` → `{dataDir}/pmtiles/*.pmtiles` → MapLibre `pmtiles://file://` |
 | Download terrain DEM | App Tools → `pmtilesQueueDemRegion` / `pmtilesRunJob` → `{dataDir}/pmtiles/{region}_dem.pmtiles` (Mapterhorn) |
 | Search place | App → `searchPlaces` → `NameIndex` FTS5 DB |
@@ -123,6 +125,7 @@ the default working set on ~4 GB devices.
 | `search` | FTS5 name index + saved `routes` table helpers |
 | `storage` | SQLite `Storage`, migrations, config + elevation + pmtiles job stores |
 | `download` | Shared `DownloadControl` (pause / resume / cancel) |
+| `pack_server` | navi-server `current.json` discovery + Server/Local acquisition routing (pack-fetch stub) |
 | `config` | Profiles, rest/eco/safety/fuel/vehicle limits |
 | `tracks` | APRS-style station upsert / range / timeout |
 | `ecu` | `LiveEnergyProvider` / `refine_energy_cost` (no polling yet) |

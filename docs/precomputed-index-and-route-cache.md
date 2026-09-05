@@ -1,10 +1,13 @@
 # Precomputed indexes, mirrors, and town-to-town routes
 
-**Status:** product direction / architecture note — not implemented.  
-**Date:** 2026-08-27  
+**Status:** product direction — **partially started**. Client **discovery +
+soft Geofabrik fallback** is wired (`package-test` / `docs/pack-server-client.md`);
+**pack download / verify and town-to-town cache are not shipped**.  
+**Date:** 2026-09-05 (was 2026-08-27)  
 **Path:** `docs/precomputed-index-and-route-cache.md`
 
 Related live status: [README Known issues](../README.md#known-issues),
+[`pack-server-client.md`](pack-server-client.md),
 [`indexed-map-format-plan.md`](indexed-map-format-plan.md).
 
 ---
@@ -20,7 +23,9 @@ to scanning the raw `.osm.pbf` (tens of seconds to minutes). Once packs are
 ready, pack-hit planning is typically a few seconds.
 
 Navi’s APK does **not** ship with a ready-made national or continental routing
-database. You download extracts and (today) convert them locally.
+database. You download extracts and (today) convert them locally. The client
+may first probe a navi-server catalog; until pack-fetch exists it still always
+executes that local Geofabrik + convert path.
 
 ---
 

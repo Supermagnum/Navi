@@ -842,7 +842,7 @@ eller oppdatere.
 
 | Data | Kilde | Brukes til |
 |---|---|---|
-| Veier og steder | OpenStreetMap via Geofabrik `.osm.pbf` | Ruting og søk |
+| Veier og steder | OpenStreetMap via Geofabrik `.osm.pbf` (standard). Valgfri forhåndsbakte pakker fra [navi-server](https://github.com/Supermagnum/navi-server) når regionen er listet i `/current.json` — oppdagelse er koblet inn; pakke-nedlasting ikke ferdig ennå (se [`pack-server-client.md`](pack-server-client.md)) | Ruting og søk |
 | Kartoppdateringer | Geofabrik-diff / ferskt uttrekk | Bare valgfri oppdatering |
 | Høyde | Offentlige DEM-fliser | Øko / bakker; Mapterhorn-DEM styrer også bakkeskygge og høydekurver |
 | Kartbilde | OpenFreeMap Liberty (online) eller Protomaps PMTiles (frakoblet) | Det du ser på skjermen |
