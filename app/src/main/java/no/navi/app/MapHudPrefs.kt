@@ -23,6 +23,20 @@ object MapHudPrefs {
     private const val KEY_DIAGNOSTIC_LOGGING = "diagnostic_logging"
     private const val KEY_DOWNLOADED_PMTILES_REGIONS = "downloaded_pmtiles_regions"
     private const val KEY_SNAP_ROTATION_BACK = "snap_rotation_back"
+    private const val KEY_WEATHER_PLUGIN_ENABLED = "weather_plugin_enabled"
+    private const val KEY_WEATHER_MAP_SYMBOLS = "weather_map_symbols_enabled"
+
+    /**
+     * Product default for the weather plugin enable toggle.
+     * Must remain false (opt-in). [WeatherPluginDefaultOffTest] fails the build if flipped.
+     */
+    const val WEATHER_PLUGIN_DEFAULT_ENABLED = false
+
+    /**
+     * Independent map city-weather symbols toggle. Must remain false even when
+     * the main weather plugin is enabled. [MapWeatherSymbolsDefaultOffTest].
+     */
+    const val WEATHER_MAP_SYMBOLS_DEFAULT_ENABLED = false
     const val DEFAULT_AUTO_ZOOM_LEVEL = 16.5
     const val MIN_ZOOM = 3.0
     const val MAX_ZOOM = 20.0
@@ -381,5 +395,39 @@ object MapHudPrefs {
         val next = prefs.getStringSet(KEY_DOWNLOADED_PMTILES_REGIONS, emptySet())!!.toMutableSet()
         next.add(key)
         prefs.edit().putStringSet(KEY_DOWNLOADED_PMTILES_REGIONS, next).apply()
+    }
+
+    /** Weather overlay plugin — defaults OFF per plugins.md. */
+    fun loadWeatherPluginEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_WEATHER_PLUGIN_ENABLED, WEATHER_PLUGIN_DEFAULT_ENABLED)
+
+    fun saveWeatherPluginEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_WEATHER_PLUGIN_ENABLED, enabled)
+            .apply()
+    }
+
+    /** Low-zoom city weather symbols — defaults OFF independently of the plugin. */
+    fun loadWeatherMapSymbolsEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_WEATHER_MAP_SYMBOLS, WEATHER_MAP_SYMBOLS_DEFAULT_ENABLED)
+
+    fun saveWeatherMapSymbolsEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_WEATHER_MAP_SYMBOLS, enabled)
+            .apply()
     }
 }

@@ -1,13 +1,14 @@
 # Weather plugin (`weather`)
 
-**Status:** specification + **vendored icon assets** — guest WASM, host fetch
-cache, and HUD integration are **not implemented**.
+**Status:** host-owned HUD chip + optional city map symbols **implemented**
+(default OFF). Meteocons fill icons vendored. WASM guest scaffold exists under
+`plugins/weather/` but is **not linked** into the product APK (wasmtime gate).
 
 **Path:** `docs/plugins/weather-plugin.md`  
 **Assets:** `plugins/weather/` (Meteocons SVG sets, MIT)  
-**Architecture:** planned WASM guest on `plugin-host` with host-owned HTTPS
-fetch and SQLite cache ([`plugins.md`](../plugins.md)). Icon lookup stays in the
-host; guests map API codes to semantic slugs.
+**Architecture:** host HTTPS fetch + SQLite cache via UniFFI for Android; planned
+WASM guest on `plugin-host` for sandboxed guests ([`plugins.md`](../plugins.md)).
+Icon lookup stays in the host; guests map API codes to semantic slugs.
 
 **System requirements** (all plugins): user **enable/disable** toggle; any device
 link uses host-mediated **USB** / **Bluetooth**
@@ -27,13 +28,16 @@ WBGT / heat model).
 
 | Layer | Status |
 |---|---|
-| Meteocons static SVGs | **Vendored** — `plugins/weather/icons/` |
-| Meteocons animated SVGs (SMIL) | **Vendored** — `plugins/weather/animated-icons/` |
+| Meteocons static SVGs | **Vendored** — `plugins/weather/icons/` (fill used in product; flat/line/monochrome not wired) |
+| Meteocons animated SVGs (SMIL) | **Vendored** — `plugins/weather/animated-icons/` (not wired) |
 | `manifest.json` + MIT `LICENSE` | **Present** in both asset trees |
-| `plugin.json` / guest `.wasm` | **Not present** |
-| Host weather fetch / cache | **Not implemented** |
-| HUD chips / map overlay | **Not implemented** |
-| `weather_read` HostApi capability | **Not in ABI** |
+| `plugin.json` / guest `.wasm` | Scaffold present; **not linked** into product APK |
+| Host weather fetch / cache | **Implemented** (MET Norway → Open-Meteo, throttle, SQLite) |
+| HUD chip | **Implemented** — Map settings / Tools → Plugins → Weather overlay (default OFF) |
+| City map symbols | **Implemented** — Tools → Show weather symbols on map (default OFF); `place:city`, zoom ≤ 8, cap 10, 56 px spacing, nearest-to-center priority |
+| Corridor map overlay | **Not implemented** (separate stub) |
+| Town / village map tiers | **Not implemented** |
+| `weather_read` HostApi capability | **In ABI** / SDK; product app does not load plugin-host yet |
 
 APRS WX beacons (`b` / `t` / `h` keys) remain a separate radio-side path
 ([`APRS.md`](../APRS.md)). This plugin is the internet weather overlay.

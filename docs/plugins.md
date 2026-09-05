@@ -113,7 +113,7 @@ the premature-link CI guard fails the build if `navi-ffi`, `navi-desktop`, or
 | `plugin-sdk` | `no_std` guest helpers (`host_log`, `host_position`, …) |
 | `plugins/log-hello` | Reference plugin: one log line |
 | `plugins/busy-loop` | Reference plugin: infinite loop (isolation tests) |
-| `plugins/weather/` | Weather plugin **assets only** — Meteocons SVG trees ([`plugins/weather-plugin.md`](plugins/weather-plugin.md)); no guest `.wasm` yet |
+| `plugins/weather/` | Weather plugin — Meteocons assets + guest scaffold; product HUD/map use host UniFFI ([`plugins/weather-plugin.md`](plugins/weather-plugin.md)) |
 
 ## Manifest (`plugin.json`)
 
@@ -287,13 +287,14 @@ that (no global dump onto the map).
 |---|---|
 | **Benefit** | Current conditions / alerts along route (wind, precip, temp, pressure) |
 | **Docs** | [`plugins/weather-plugin.md`](plugins/weather-plugin.md) — asset layout, provider mapping. Icon purposes: [`plugins/weather-icons-reference.md`](plugins/weather-icons-reference.md) |
-| **Assets (vendored)** | `plugins/weather/icons/` (static, 2,076 SVGs) and `plugins/weather/animated-icons/` (SMIL, 1,900 SVGs); refresh via `scripts/vendor-meteocons.sh` |
-| **Providers** | Free/open APIs preferred (e.g. Open-Meteo, national met services). Weather Underground–class feeds only where Terms of Use and API keys allow; keys stay in host secrets, never in WASM. |
-| **Host duties** | HTTPS fetch (opt-in network), cache JSON in SQLite, rate-limit; resolve `{style}/{slug}.svg` from vendored trees |
-| **Guest duties** | Select stations near route / position; map provider codes to Meteocons slugs; format HUD chips |
-| **Proposed caps** | `position_read`, `weather_read` (new), `log` |
+| **Assets (vendored)** | `plugins/weather/icons/` (static) and `plugins/weather/animated-icons/` (SMIL); refresh via `scripts/vendor-meteocons.sh` |
+| **Providers** | MET Norway Locationforecast (primary) → Open-Meteo failover. Attribution without the “Yr” brand. |
+| **Host duties** | HTTPS fetch (opt-in), SQLite cache, rate-limit / Expires+IMS; resolve `fill/{slug}.svg`; HUD chip + optional city map symbols |
+| **Guest duties** | Scaffolded WASM guest (`plugin.json`); product APK does not load plugin-host yet |
+| **Caps** | `position_read`, `weather_read`, `log` (in ABI; unused by product until wasmtime gate lifts) |
 | **Offline** | Last-known cache only; no silent background refresh without user opt-in |
-| **Notes** | **Assets only** — no `plugin.json` / guest WASM / `weather_read` yet. Lottie pack not vendored. |
+| **Shipped UI** | **Map settings → Plugins** and **Tools → Plugins**: **Weather overlay** (default OFF); nested **Show weather symbols on map** (default OFF; `place:city`, zoom ≤ 8, cap 10, 56 px, nearest-to-center) |
+| **Not shipped** | SMIL / other icon styles; town/village tiers; viewport-batching; corridor overlay; safety-resupply WBGT hookup; product plugin-host link |
 
 APRS WX beacons (`b`/`t`/`h` keys) remain a radio-side path; this plugin is the
 internet weather overlay.

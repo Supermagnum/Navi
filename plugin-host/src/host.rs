@@ -305,6 +305,29 @@ fn install_imports(
         )?;
     }
 
+    if allowed.contains(&Capability::WeatherRead) {
+        linker.func_wrap(
+            "navi",
+            "weather_read",
+            |mut caller: Caller<'_, StoreData>,
+             lat_bits: u64,
+             lon_bits: u64,
+             radius_m_bits: u64,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let lat = f64::from_bits(lat_bits);
+                let lon = f64::from_bits(lon_bits);
+                let radius_m = f64::from_bits(radius_m_bits);
+                let hits = caller.data().api.weather_read(lat, lon, radius_m);
+                let json = serde_json::to_string(&hits)
+                    .map_err(|e| wasmtime::Error::msg(format!("serialize weather_read: {e}")))?;
+                let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
+                Ok(written as i32)
+            },
+        )?;
+    }
+
     // Always provide a no-op alloc helper so guests can request scratch space
     // without WASI. Guests that ship their own allocator ignore this.
     linker.func_wrap(
