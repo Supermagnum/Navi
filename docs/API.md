@@ -39,8 +39,8 @@ Package / module: `uniffi.navi` on Android.
 
 | Rust | Kotlin | Purpose |
 |---|---|---|
-| `default_pack_server_base_url()` | `defaultPackServerBaseUrl` | Pack host base URL (`NAVI_PACK_SERVER_BASE_URL` or LAN default) |
-| `decide_region_acquisition(region_id, pack_server_base_url?)` | `decideRegionAcquisition` | Soft Server vs Local routing (`FfiRegionAcquisitionDecision`); pack-fetch stub always sets `execute_local_convert=true` today. See [`pack-server-client.md`](pack-server-client.md) |
+| `default_pack_server_base_url()` | `defaultPackServerBaseUrl` | Pack host base URL: `NAVI_PACK_SERVER_BASE_URL` if set, else `DEFAULT_PACK_SERVER_BASE_URL` (`http://192.168.1.195`). How to override: [`pack-server-client.md`](pack-server-client.md#changing-the-pack-server-address) |
+| `decide_region_acquisition(region_id, pack_server_base_url?)` | `decideRegionAcquisition` | Soft Server vs Local routing (`FfiRegionAcquisitionDecision`). Pass `pack_server_base_url` to override env/default for that call; pack-fetch stub always sets `execute_local_convert=true` today. See [`pack-server-client.md`](pack-server-client.md) |
 | `provision_region_data(data_dir, pbf_url, pbf_filename, elevation_tar_url?)` | `provisionRegionData` | Download/parse regional PBF (+ optional DEM tar); returns report string |
 | `run_car_corridor_pipeline(pbf, elev, cache, break_interval_hours)` | `runCarCorridorPipeline` | Fixture / smoke corridor → `CorridorRouteResult` |
 | `run_car_corridor_smoke_test(...)` | `runCarCorridorSmokeTest` | Same pipeline; returns `report` only |

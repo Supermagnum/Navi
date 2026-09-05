@@ -26,8 +26,9 @@ distributing precomputed index packs. The Android client already **discovers**
 ready regions (`GET /current.json`) before a Tools region download and
 **soft-falls back** to Geofabrik extract + on-device convert when the host is
 unreachable, the region is not published, or pack-fetch is not implemented yet
-(pack download / verify still TODO). Client contract and code map:
-[`docs/pack-server-client.md`](docs/pack-server-client.md). Broader direction
+(pack download / verify still TODO). Client contract, code map, and **how to
+change the pack server address** (`NAVI_PACK_SERVER_BASE_URL` / CLI / default
+constant): [`docs/pack-server-client.md`](docs/pack-server-client.md). Broader direction
 (town-to-town caches, mirrors):
 [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
 

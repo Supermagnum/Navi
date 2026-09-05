@@ -31,16 +31,27 @@ against the pack host. Logs: tag `NaviPack` / `RegionDownloadBg`.
 
 ---
 
-## Base URL
+## Changing the pack server address
 
-| Source | Value |
+The client never assumes a fixed public hostname in call sites. Resolution
+order for the base URL (no trailing slash required; `/current.json` is
+appended):
+
+1. Explicit argument (CLI / UniFFI `packServerBaseUrl`)
+2. Environment variable `NAVI_PACK_SERVER_BASE_URL`
+3. Compile-time default `DEFAULT_PACK_SERVER_BASE_URL` in
+   `core/src/pack_server/mod.rs` (currently `http://192.168.1.195`)
+
+| How | Example |
 |---|---|
-| Default (LAN / current branch) | `http://192.168.1.195` |
-| Env override | `NAVI_PACK_SERVER_BASE_URL` |
-| UniFFI | `defaultPackServerBaseUrl()` / optional arg to `decideRegionAcquisition` |
+| **Host CLI (one-shot)** | `cargo run -p driver-break-core --bin pack-server-check -- http://192.168.1.50` |
+| **Host env (CLI / tests)** | `NAVI_PACK_SERVER_BASE_URL=https://navigate-me.duckdns.org cargo run -p driver-break-core --bin pack-server-check` |
+| **Ignored live unit test** | `NAVI_PACK_SERVER_BASE_URL=http://… cargo test -p driver-break-core --lib pack_server::tests::live_pack_host_discovery -- --ignored --nocapture` |
+| **Android / UniFFI** | App calls `defaultPackServerBaseUrl()` then `decideRegionAcquisition(regionId, packServerBaseUrl)`. There is **no Tools UI field yet** — to point a device build at another host, either change `DEFAULT_PACK_SERVER_BASE_URL` and rebuild native + APK, or pass a non-null `packServerBaseUrl` from Kotlin (tests already do this for the unreachable case). |
+| **Future public host** | Intended later: `https://navigate-me.duckdns.org` (ports not forwarded yet). Prefer env / argument over baking that string into call sites. |
 
-Do **not** hardcode the future public host in call sites. Intended later:
-`https://navigate-me.duckdns.org` (ports not forwarded yet).
+When the host is unreachable or wrong, acquisition **soft-falls back** to
+Geofabrik — changing the address does not risk a hard download failure.
 
 ---
 
