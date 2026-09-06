@@ -6820,10 +6820,15 @@ pub fn weather_refresh_json(
         }
     };
     let result = refresh_if_allowed(&cache, lat, lon, enabled, app_active, manual, now);
+    let next_fetch_unix = cache
+        .meta()
+        .ok()
+        .and_then(|m| m.throttle.next_scheduled_unix);
     serde_json::json!({
         "fetched": result.fetched,
         "reason": result.reason,
         "provider": result.provider.map(|p| p.as_diag_str()),
+        "next_fetch_unix": next_fetch_unix,
         "sample": result.sample.as_ref().map(|s| serde_json::from_str::<serde_json::Value>(&sample_to_json(s)).unwrap_or_default()),
     })
     .to_string()

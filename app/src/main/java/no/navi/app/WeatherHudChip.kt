@@ -25,13 +25,17 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 import uniffi.navi.rasterizeWeatherIconPng
+import java.text.DateFormat
+import java.util.Date
+import java.util.Locale
 
 data class WeatherHudState(
     val active: Boolean = false,
     val iconSlug: String = "",
     val tempC: Double? = null,
     val summary: String = "",
-    val stale: Boolean = false,
+    val fetchedAtUnix: Long? = null,
+    val nextFetchUnix: Long? = null,
     val providerDiag: String = "",
 )
 
@@ -50,7 +54,8 @@ fun weatherHudFromRefreshJson(raw: String): WeatherHudState {
                     null
                 },
             summary = sample.optString("summary", ""),
-            stale = sample.optBoolean("stale", false) || !o.optBoolean("fetched", false),
+            fetchedAtUnix = unixOrNull(sample, "fetched_at_unix"),
+            nextFetchUnix = unixOrNull(o, "next_fetch_unix"),
             providerDiag = o.optString("provider", sample.optString("provider", "")),
         )
     }.getOrDefault(WeatherHudState())
@@ -72,17 +77,58 @@ fun weatherHudFromSampleJson(raw: String): WeatherHudState {
                     null
                 },
             summary = sample.optString("summary", ""),
-            stale = sample.optBoolean("stale", true),
+            fetchedAtUnix = unixOrNull(sample, "fetched_at_unix"),
+            nextFetchUnix = unixOrNull(sample, "next_fetch_unix"),
             providerDiag = sample.optString("provider", ""),
         )
     }.getOrDefault(WeatherHudState())
 }
+
+/**
+ * Timing line for the GPS weather pill: prefer upcoming refresh time, else last
+ * fetch. Never mentions stale / throttled / offline.
+ */
+fun weatherHudTimingLabel(
+    fetchedAtUnix: Long?,
+    nextFetchUnix: Long?,
+    nowUnix: Long,
+    locale: Locale = Locale.getDefault(),
+): String? {
+    if (nextFetchUnix != null && nextFetchUnix > nowUnix) {
+        return "Next update ${formatHudClock(nextFetchUnix, locale)}"
+    }
+    if (fetchedAtUnix != null && fetchedAtUnix > 0L) {
+        return "Updated ${formatHudClock(fetchedAtUnix, locale)}"
+    }
+    return null
+}
+
+private fun unixOrNull(
+    o: JSONObject,
+    key: String,
+): Long? {
+    if (!o.has(key) || o.isNull(key)) return null
+    val v = o.optLong(key, 0L)
+    return if (v > 0L) v else null
+}
+
+private fun formatHudClock(
+    unix: Long,
+    locale: Locale,
+): String {
+    val fmt = DateFormat.getTimeInstance(DateFormat.SHORT, locale)
+    return fmt.format(Date(unix * 1000L))
+}
+
+private val WeatherHudFill = Color(0xE8C8E6C9)
+private val WeatherHudBorder = Color(0xFF81C784)
 
 @Composable
 fun WeatherHudChip(
     state: WeatherHudState,
     weatherIconsDir: String,
     onRefresh: (() -> Unit)? = null,
+    nowUnix: Long = System.currentTimeMillis() / 1000L,
     modifier: Modifier = Modifier,
 ) {
     if (!state.active || state.iconSlug.isBlank()) return
@@ -106,25 +152,24 @@ fun WeatherHudChip(
             val rounded = kotlin.math.round(t).toInt()
             "$rounded°C"
         } ?: ""
-    val label =
-        buildString {
-            append(temp)
-            if (state.stale) {
-                if (isNotEmpty()) append(" · ")
-                append("Stale")
-            }
-        }.ifBlank { state.summary.ifBlank { "Weather" } }
+    val timing =
+        weatherHudTimingLabel(
+            fetchedAtUnix = state.fetchedAtUnix,
+            nextFetchUnix = state.nextFetchUnix,
+            nowUnix = nowUnix,
+        )
+    val label = temp.ifBlank { state.summary.ifBlank { "Weather" } }
     val desc =
         buildString {
             append("Weather")
             if (temp.isNotEmpty()) append(" $temp")
-            if (state.stale) append(", stale data")
+            if (timing != null) append(", $timing")
         }
     Row(
         modifier =
             modifier
-                .background(Color(0xE6FFFFFF), RoundedCornerShape(8.dp))
-                .border(1.dp, Color(0xFF90A4AE), RoundedCornerShape(8.dp))
+                .background(WeatherHudFill, RoundedCornerShape(8.dp))
+                .border(1.dp, WeatherHudBorder, RoundedCornerShape(8.dp))
                 .padding(horizontal = 10.dp, vertical = 6.dp)
                 .testTag("weather_hud_chip")
                 .semantics { contentDescription = desc },
@@ -140,12 +185,12 @@ fun WeatherHudChip(
         }
         Column {
             Text(label, style = MaterialTheme.typography.titleSmall)
-            if (state.stale) {
+            if (timing != null) {
                 Text(
-                    "Last known — offline or throttled",
+                    timing,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF546E7A),
-                    modifier = Modifier.testTag("weather_stale_label"),
+                    color = Color(0xFF2E7D32),
+                    modifier = Modifier.testTag("weather_timing_label"),
                 )
             }
         }
