@@ -52,7 +52,13 @@ object RoutingPlanLog {
             TAG,
             "planning_done eco=$ecoEnabled duration_ms=$durationMs " +
                 "distance_km=${"%.3f".format(result.distanceKm)} " +
-                "polyline_chars=${result.routePolyline.length}",
+                "polyline_chars=${result.routePolyline.length} " +
+                "toll_policy=${result.tollPolicy} " +
+                "pads=${result.padAttemptsJson} " +
+                "expansions=${result.searchExpansions} " +
+                "terminate=${result.searchTerminateReason} " +
+                "toll_incomplete=${result.tollAvoidanceIncomplete} " +
+                "route_uses_tolls=${result.routeUsesTolls}",
         )
         logPois(result.breakPoisJson)
         DiagnosticLog.logRoutePlanComplete(result)
@@ -62,12 +68,24 @@ object RoutingPlanLog {
         ecoEnabled: Boolean,
         durationMs: Long,
         reason: String,
+        result: CorridorRouteResult? = null,
     ) {
+        val diag =
+            if (result == null) {
+                ""
+            } else {
+                " toll_policy=${result.tollPolicy}" +
+                    " pads=${result.padAttemptsJson}" +
+                    " expansions=${result.searchExpansions}" +
+                    " terminate=${result.searchTerminateReason}" +
+                    " toll_incomplete=${result.tollAvoidanceIncomplete}" +
+                    " route_uses_tolls=${result.routeUsesTolls}"
+            }
         Log.w(
             TAG,
-            "planning_failed eco=$ecoEnabled duration_ms=$durationMs reason=$reason",
+            "planning_failed eco=$ecoEnabled duration_ms=$durationMs reason=$reason$diag",
         )
-        DiagnosticLog.logRoutePlanFailed(reason)
+        DiagnosticLog.logRoutePlanFailed(reason, result)
     }
 
     fun cancelled(

@@ -65,7 +65,7 @@ class AvoidMotorwaysShareInstrumentedTest {
                 useEco = false,
                 profile = TravelProfile.CAR,
                 avoidMotorways = false,
-                avoidTolls = false,
+                tollPolicy = uniffi.navi.FfiTollPolicy.ALLOW,
                 avoidFerries = false,
                 vehicle = vehicle,
                 preferOfficialNetworks = false,
@@ -85,7 +85,7 @@ class AvoidMotorwaysShareInstrumentedTest {
                 useEco = false,
                 profile = TravelProfile.CAR,
                 avoidMotorways = true,
-                avoidTolls = false,
+                tollPolicy = uniffi.navi.FfiTollPolicy.ALLOW,
                 avoidFerries = false,
                 vehicle = vehicle,
                 preferOfficialNetworks = false,
@@ -120,7 +120,7 @@ class AvoidMotorwaysShareInstrumentedTest {
                 useEco = false,
                 profile = TravelProfile.CAR,
                 avoidMotorways = false,
-                avoidTolls = false,
+                tollPolicy = uniffi.navi.FfiTollPolicy.ALLOW,
                 avoidFerries = false,
                 vehicle = vehicle,
                 preferOfficialNetworks = false,
@@ -138,7 +138,7 @@ class AvoidMotorwaysShareInstrumentedTest {
                 useEco = false,
                 profile = TravelProfile.CAR,
                 avoidMotorways = true,
-                avoidTolls = false,
+                tollPolicy = uniffi.navi.FfiTollPolicy.ALLOW,
                 avoidFerries = false,
                 vehicle = vehicle,
                 preferOfficialNetworks = false,
@@ -159,7 +159,13 @@ class AvoidMotorwaysShareInstrumentedTest {
             allShares.distinct().size >= 2 || allShares.all { it in 0.0..100.0 },
         )
 
-        val report = formatRouteAvoidanceReport(true, false, false, hwyOn.priorityPathSharePct)
+        val report =
+            formatRouteAvoidanceReport(
+                true,
+                uniffi.navi.FfiTollPolicy.ALLOW,
+                false,
+                hwyOn.priorityPathSharePct,
+            )
         assertTrue(report.contains("Avoid motorways: ON"))
         assertTrue(report.contains("Non-motorway road share on last plan"))
         assertFalse(report.contains("trunk/primary"))

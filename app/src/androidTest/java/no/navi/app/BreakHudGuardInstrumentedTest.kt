@@ -105,6 +105,12 @@ class BreakHudGuardInstrumentedTest {
                 priorityPathSharePct = 0.0,
                 routeSegmentsJson = "[]",
                 offTrailAdvisory = "",
+                tollPolicy = "allow",
+                padAttemptsJson = "[]",
+                searchExpansions = 0u,
+                searchTerminateReason = "fail",
+                tollAvoidanceIncomplete = false,
+                routeUsesTolls = false,
             )
         NaviMapTestHooks.pendingCamera = Triple(60.722, 10.613, 13.0)
         Thread.sleep(1_800)

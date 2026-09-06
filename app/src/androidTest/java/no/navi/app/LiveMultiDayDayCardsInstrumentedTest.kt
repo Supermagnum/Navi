@@ -152,7 +152,7 @@ class LiveMultiDayDayCardsInstrumentedTest {
                     useEco = false,
                     profile = TravelProfile.TRUCK,
                     avoidMotorways = false,
-                    avoidTolls = false,
+                    tollPolicy = uniffi.navi.FfiTollPolicy.ALLOW,
                     avoidFerries = false,
                     vehicle = vehicle,
                     preferOfficialNetworks = false,

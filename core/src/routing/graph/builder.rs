@@ -141,21 +141,32 @@ pub struct GraphEdge {
 
 /// Per-query routing filters (avoid motorways, tolls/ferries, vehicle limits).
 ///
-/// Clearance: violating edges are **excluded** from A*; the router searches an
-/// alternate path rather than failing hard when any restricted edge exists.
+/// Clearance / motorway / ferry / [`TollPolicy::NeverUse`]: violating edges are
+/// **excluded** from A*. [`TollPolicy::Penalize`] keeps toll edges but multiplies
+/// their cost by [`crate::routing::toll::TOLL_AVOID_PENALTY_MULT`].
 #[derive(Debug, Clone, Default)]
 pub struct RouteOptions {
     /// Exclude motorway-grade roads: `highway=motorway` / `motorway_link`,
     /// `motorroad=yes` / `expressway=yes`, or oneway with `lanes>=2` and
     /// `maxspeed>=90`. Not region-gated.
     pub avoid_motorways: bool,
-    /// Exclude OSM toll roads (`toll=yes` and related). Default off.
-    pub avoid_tolls: bool,
+    /// How to treat OSM toll roads. Replaces the former `avoid_tolls: bool`
+    /// (`false`→[`TollPolicy::Allow`], `true`→[`TollPolicy::Penalize`]).
+    pub toll_policy: crate::routing::toll::TollPolicy,
     /// Exclude ferry connections. Default off.
     pub avoid_ferries: bool,
     pub vehicle: Option<crate::config::VehicleLimits>,
     /// Planned departure (local naive). `None` → evaluate seasonal closures at now.
     pub departure_local: Option<chrono::NaiveDateTime>,
+}
+
+/// Outcome of one A* attempt (path may be absent).
+#[derive(Debug, Clone)]
+pub struct PathSearchStats {
+    pub path: Option<(Vec<NodeId>, Vec<usize>, f64)>,
+    pub expansions: u64,
+    /// `found`, `disconnected`, or `cancelled`.
+    pub terminate_reason: &'static str,
 }
 
 /// Counts directed `(source, target)` pairs with multiple profile edges.
@@ -453,7 +464,22 @@ impl RouteGraph {
     /// [`max_waypoint_snap_m`] — callers must treat that as unreachable, not
     /// silently substitute a distant network node.
     pub fn nearest_routable(&self, lat: f64, lon: f64) -> Result<(NodeId, f64), SnapTooFar> {
+        self.nearest_routable_with_options(lat, lon, &RouteOptions::default())
+    }
+
+    /// Nearest routable node that remains usable under `options` (hard filters).
+    ///
+    /// Prefer the largest weakly-connected component formed only by edges that
+    /// pass [`edge_allowed_for_options`], so avoid-toll / avoid-motorway / ferry
+    /// / clearance settings cannot snap onto an island that A* cannot leave.
+    pub fn nearest_routable_with_options(
+        &self,
+        lat: f64,
+        lon: f64,
+        options: &RouteOptions,
+    ) -> Result<(NodeId, f64), SnapTooFar> {
         let max_m = max_waypoint_snap_m(self.profile);
+        let (filtered_root, filtered_giant) = self.option_filtered_components(options);
         let linked = self.nodes.values().filter(|n| self.is_linked(n.id));
         let pool: Vec<&Node> = {
             let v: Vec<_> = linked.collect();
@@ -469,11 +495,18 @@ impl RouteGraph {
             && matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
         let mut best_surface_giant: Option<(&Node, f64)> = None;
         for n in pool {
+            if !self.node_has_allowed_incident(n.id, options) {
+                continue;
+            }
             let dist = haversine_point_m(lat, lon, n);
             if nearest_any.is_none_or(|(_, d)| dist < d) {
                 nearest_any = Some((n, dist));
             }
-            if dist <= max_m && self.in_giant_component(n.id) {
+            let in_filtered_giant = match (filtered_giant, filtered_root.get(&n.id)) {
+                (Some(giant), Some(root)) => *root == giant,
+                _ => self.in_giant_component(n.id),
+            };
+            if dist <= max_m && in_filtered_giant {
                 if use_surface_snap {
                     let sq = worst_incident_surface(self, n.id);
                     let replace = match best_surface_giant {
@@ -508,6 +541,56 @@ impl RouteGraph {
             return Err(SnapTooFar { nearest_m, max_m });
         }
         Ok((best_any.id, nearest_m))
+    }
+
+    fn node_has_allowed_incident(&self, id: NodeId, options: &RouteOptions) -> bool {
+        self.adjacency
+            .get(&id)
+            .into_iter()
+            .flatten()
+            .any(|&idx| edge_allowed_for_options(&self.edges[idx], options, self.profile))
+            || self
+                .edges
+                .iter()
+                .any(|e| e.target == id && edge_allowed_for_options(e, options, self.profile))
+    }
+
+    /// Weak components using only edges allowed under `options`.
+    fn option_filtered_components(
+        &self,
+        options: &RouteOptions,
+    ) -> (HashMap<NodeId, NodeId>, Option<NodeId>) {
+        let mut parent: HashMap<NodeId, NodeId> = HashMap::new();
+        let mut size: HashMap<NodeId, usize> = HashMap::new();
+        let mut incident: HashSet<NodeId> = HashSet::new();
+        for edge in &self.edges {
+            if !edge_allowed_for_options(edge, options, self.profile) {
+                continue;
+            }
+            incident.insert(edge.source);
+            incident.insert(edge.target);
+        }
+        for &id in &incident {
+            parent.insert(id, id);
+            size.insert(id, 1);
+        }
+        for edge in &self.edges {
+            if !edge_allowed_for_options(edge, options, self.profile) {
+                continue;
+            }
+            uf_union(&mut parent, &mut size, edge.source, edge.target);
+        }
+        let mut roots = HashMap::new();
+        let mut giant: Option<(NodeId, usize)> = None;
+        for &id in &incident {
+            let root = uf_find(&mut parent, id);
+            roots.insert(id, root);
+            let n = size.get(&root).copied().unwrap_or(1);
+            if giant.is_none_or(|(_, s)| n > s) {
+                giant = Some((root, n));
+            }
+        }
+        (roots, giant.map(|(r, _)| r))
     }
 
     fn in_giant_component(&self, id: NodeId) -> bool {
@@ -750,8 +833,20 @@ impl RouteGraph {
         use_eco: bool,
         options: &RouteOptions,
     ) -> Option<(Vec<NodeId>, Vec<usize>, f64)> {
+        self.shortest_path_with_options_stats(start, goal, use_eco, options)
+            .path
+    }
+
+    /// Like [`Self::shortest_path_with_options`] with expansion count and terminate reason.
+    pub fn shortest_path_with_options_stats(
+        &self,
+        start: NodeId,
+        goal: NodeId,
+        use_eco: bool,
+        options: &RouteOptions,
+    ) -> PathSearchStats {
         let plan_id = crate::download::plan_cancel::current_plan_id();
-        let expansions = std::sync::atomic::AtomicU32::new(0);
+        let expansions = std::sync::atomic::AtomicU64::new(0);
         let use_surface_transitions = self.surface_routing_mode == SurfaceRoutingMode::Car
             && matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
         let surface_mode = self.surface_routing_mode;
@@ -761,11 +856,12 @@ impl RouteGraph {
                 &(start, Some(SNAP_VIRTUAL_APPROACH_SURFACE), NO_INCOMING_EDGE),
                 |state| {
                     let (node, prev_surface, _) = *state;
-                    if plan_id != 0 {
-                        let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        if n & 2047 == 0 && crate::download::plan_cancel::is_cancelled_id(plan_id) {
-                            return Vec::new();
-                        }
+                    let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if plan_id != 0
+                        && n & 2047 == 0
+                        && crate::download::plan_cancel::is_cancelled_id(plan_id)
+                    {
+                        return Vec::new();
                     }
                     if self.access_blocked_nodes.contains(&node) && node != start {
                         return Vec::new();
@@ -779,11 +875,7 @@ impl RouteGraph {
                             if !edge_allowed_for_options(edge, options, self.profile) {
                                 return None;
                             }
-                            let base = if use_eco {
-                                edge.eco_weight.unwrap_or(edge.base_weight)
-                            } else {
-                                edge.base_weight
-                            };
+                            let base = edge_travel_cost(edge, use_eco, options);
                             let transition = surface_transition_cost_m(
                                 prev_surface,
                                 edge.surface_quality,
@@ -805,24 +897,37 @@ impl RouteGraph {
                 },
                 |state| state.0 == goal,
             );
+            let expansions = expansions.load(std::sync::atomic::Ordering::Relaxed);
             if crate::download::plan_cancel::is_cancelled_id(plan_id) {
-                return None;
+                return PathSearchStats {
+                    path: None,
+                    expansions,
+                    terminate_reason: "cancelled",
+                };
             }
-            return result.map(|(path, cost)| decode_recorded_path(path, cost));
+            let path = result.map(|(path, cost)| decode_recorded_path(path, cost));
+            return PathSearchStats {
+                terminate_reason: if path.is_some() {
+                    "found"
+                } else {
+                    "disconnected"
+                },
+                path,
+                expansions,
+            };
         }
 
         let result = astar(
             &(start, NO_INCOMING_EDGE),
             |state| {
                 let (node, _) = *state;
-                if plan_id != 0 {
-                    let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    if n & 2047 == 0 && crate::download::plan_cancel::is_cancelled_id(plan_id) {
-                        return Vec::new();
-                    }
+                let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if plan_id != 0
+                    && n & 2047 == 0
+                    && crate::download::plan_cancel::is_cancelled_id(plan_id)
+                {
+                    return Vec::new();
                 }
-                // Node-scoped barrier block: may arrive as destination, but must
-                // not continue through unless this node was the path start.
                 if self.access_blocked_nodes.contains(&node) && node != start {
                     return Vec::new();
                 }
@@ -835,11 +940,7 @@ impl RouteGraph {
                         if !edge_allowed_for_options(edge, options, self.profile) {
                             return None;
                         }
-                        let cost = if use_eco {
-                            edge.eco_weight.unwrap_or(edge.base_weight)
-                        } else {
-                            edge.base_weight
-                        };
+                        let cost = edge_travel_cost(edge, use_eco, options);
                         Some(((edge.target, edge_idx), cost_to_u64(cost)))
                     })
                     .collect::<Vec<_>>()
@@ -855,10 +956,24 @@ impl RouteGraph {
             },
             |(node, _)| *node == goal,
         );
+        let expansions = expansions.load(std::sync::atomic::Ordering::Relaxed);
         if crate::download::plan_cancel::is_cancelled_id(plan_id) {
-            return None;
+            return PathSearchStats {
+                path: None,
+                expansions,
+                terminate_reason: "cancelled",
+            };
         }
-        result.map(|(path, cost)| decode_recorded_path_simple(path, cost))
+        let path = result.map(|(path, cost)| decode_recorded_path_simple(path, cost));
+        PathSearchStats {
+            terminate_reason: if path.is_some() {
+                "found"
+            } else {
+                "disconnected"
+            },
+            path,
+            expansions,
+        }
     }
 
     /// Count edges on a path that would be excluded by vehicle/avoidance options.
@@ -867,6 +982,11 @@ impl RouteGraph {
             .iter()
             .filter(|&&i| !edge_allowed_for_options(&self.edges[i], options, self.profile))
             .count()
+    }
+
+    /// True when any edge on the path is flagged as toll.
+    pub fn path_uses_tolls(&self, edge_indices: &[usize]) -> bool {
+        edge_indices.iter().any(|&i| self.edges[i].is_toll)
     }
 
     /// Count edges excluded specifically by seasonal access conditionals at departure.
@@ -1009,7 +1129,11 @@ pub fn format_route_avoidance_report(
     ));
     lines.push(format!(
         "Avoid toll roads: {}",
-        if options.avoid_tolls { "ON" } else { "OFF" }
+        match options.toll_policy {
+            crate::routing::toll::TollPolicy::Allow => "OFF",
+            crate::routing::toll::TollPolicy::Penalize => "ON (penalize)",
+            crate::routing::toll::TollPolicy::NeverUse => "ON (never use)",
+        }
     ));
     lines.push(format!(
         "Avoid ferries: {}",
@@ -1339,7 +1463,7 @@ fn edge_allowed_for_options(
     if edge_avoided_as_motorway(edge, options, profile) {
         return false;
     }
-    if options.avoid_tolls && edge.is_toll {
+    if options.toll_policy == crate::routing::toll::TollPolicy::NeverUse && edge.is_toll {
         return false;
     }
     if options.avoid_ferries && edge.is_ferry {
@@ -1388,6 +1512,18 @@ fn edge_allowed_for_options(
         }
     }
     true
+}
+
+fn edge_travel_cost(edge: &GraphEdge, use_eco: bool, options: &RouteOptions) -> f64 {
+    let mut cost = if use_eco {
+        edge.eco_weight.unwrap_or(edge.base_weight)
+    } else {
+        edge.base_weight
+    };
+    if options.toll_policy == crate::routing::toll::TollPolicy::Penalize && edge.is_toll {
+        cost *= crate::routing::toll::TOLL_AVOID_PENALTY_MULT;
+    }
+    cost
 }
 
 fn decode_recorded_path(
@@ -2288,7 +2424,16 @@ mod tests {
         assert!(!edge_allowed_for_options(
             &edge,
             &RouteOptions {
-                avoid_tolls: true,
+                toll_policy: crate::routing::toll::TollPolicy::NeverUse,
+                ..Default::default()
+            },
+            RoutingProfile::Car,
+        ));
+        // Penalize keeps the edge searchable (cost multiplier only).
+        assert!(edge_allowed_for_options(
+            &edge,
+            &RouteOptions {
+                toll_policy: crate::routing::toll::TollPolicy::Penalize,
                 ..Default::default()
             },
             RoutingProfile::Car,
@@ -2580,6 +2725,39 @@ mod tests {
         assert_eq!(
             combine_osm_road_refs(Some("Rv15".into()), Some("E16".into())).as_deref(),
             Some("Rv15;E16")
+        );
+    }
+
+    #[test]
+    fn format_route_avoidance_report_reflects_all_toll_policies() {
+        let base = RouteOptions::default();
+        let allow = format_route_avoidance_report(&base, 0, 50.0);
+        assert!(allow.contains("Avoid toll roads: OFF"), "{allow}");
+
+        let penalize = format_route_avoidance_report(
+            &RouteOptions {
+                toll_policy: crate::routing::toll::TollPolicy::Penalize,
+                ..Default::default()
+            },
+            0,
+            50.0,
+        );
+        assert!(
+            penalize.contains("Avoid toll roads: ON (penalize)"),
+            "{penalize}"
+        );
+
+        let never = format_route_avoidance_report(
+            &RouteOptions {
+                toll_policy: crate::routing::toll::TollPolicy::NeverUse,
+                ..Default::default()
+            },
+            0,
+            50.0,
+        );
+        assert!(
+            never.contains("Avoid toll roads: ON (never use)"),
+            "{never}"
         );
     }
 }

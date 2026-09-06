@@ -78,6 +78,12 @@ class MultiDayDayCardsScreenshotTest {
             priorityPathSharePct = 0.0,
             routeSegmentsJson = "[]",
             offTrailAdvisory = "",
+            tollPolicy = "allow",
+            padAttemptsJson = "[]",
+            searchExpansions = 0u,
+            searchTerminateReason = "fail",
+            tollAvoidanceIncomplete = false,
+            routeUsesTolls = false,
         )
     }
 
@@ -114,6 +120,12 @@ class MultiDayDayCardsScreenshotTest {
             priorityPathSharePct = 0.0,
             routeSegmentsJson = "[]",
             offTrailAdvisory = "",
+            tollPolicy = "allow",
+            padAttemptsJson = "[]",
+            searchExpansions = 0u,
+            searchTerminateReason = "fail",
+            tollAvoidanceIncomplete = false,
+            routeUsesTolls = false,
         )
     }
 
@@ -271,6 +283,12 @@ class MultiDayDayCardsScreenshotTest {
             priorityPathSharePct = 0.0,
             routeSegmentsJson = "[]",
             offTrailAdvisory = "",
+            tollPolicy = "allow",
+            padAttemptsJson = "[]",
+            searchExpansions = 0u,
+            searchTerminateReason = "fail",
+            tollAvoidanceIncomplete = false,
+            routeUsesTolls = false,
         )
     }
 

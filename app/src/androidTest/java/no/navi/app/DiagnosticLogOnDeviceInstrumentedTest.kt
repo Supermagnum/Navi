@@ -177,7 +177,7 @@ class DiagnosticLogOnDeviceInstrumentedTest {
                 useEco = true,
                 profile = TravelProfile.CAR,
                 avoidMotorways = false,
-                avoidTolls = false,
+                tollPolicy = uniffi.navi.FfiTollPolicy.ALLOW,
                 avoidFerries = false,
                 vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                 preferOfficialNetworks = false,

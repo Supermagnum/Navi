@@ -84,7 +84,7 @@ class TruckMaxheightAvoidanceInstrumentedTest {
                     false,
                     TravelProfile.TRUCK,
                     false,
-                    false,
+                    uniffi.navi.FfiTollPolicy.ALLOW,
                     false,
                     FfiVehicleLimits(null, null, 2.8, null, null, null),
                     false,

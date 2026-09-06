@@ -155,8 +155,32 @@ export — planned HostApi `road_speed_state_read` + `voice_speak` in
 | `format_current_road_label(name?, ref?, highway?)` | Bottom-HUD current-road string |
 | `road_label_near(pbf, cache_dir, elev_dir, lat, lon, profile, max_m)` | Idle-GPS nearest-edge street label (bbox graph); thin wrapper over `road_near_info` |
 | `road_near_info(...)` | Same sticky snap as `road_label_near`, plus applicable speed limit. On pack-miss, bbox build skips while a foreground plan is active |
-| `format_avoid_motorways_report` / `format_route_avoidance_report` | Avoidance summary strings |
+| `format_avoid_motorways_report` / `format_route_avoidance_report` | Avoidance summary strings (`format_route_avoidance_report` takes `FfiTollPolicy`, not a bool) |
 
+### 1.5b Toll policy (`RouteOptions.toll_policy`)
+
+Replaces the former `avoid_tolls: bool` on the planning path (no dual field on
+`RouteOptions`):
+
+| Legacy `avoid_tolls` | `TollPolicy` / `FfiTollPolicy` | Behaviour |
+|---|---|---|
+| `false` | `Allow` | Toll edges at normal weight |
+| `true` | `Penalize` (UI “Avoid toll roads”) | Multiply toll-edge A* cost by `TOLL_AVOID_PENALTY_MULT` |
+| — | `NeverUse` | Hard-exclude toll edges; adaptive bbox widen; if still none, return best Penalize route with `toll_avoidance_incomplete` / `route_uses_tolls` |
+
+**UI decision (this pass):** the Android “Avoid toll roads” toggle maps
+`on → Penalize`, `off → Allow` only. **`NeverUse` is available via FFI / UniFFI
+only; there is no UI control yet** (intentionally deferred, not an oversight).
+Saved-route / summary JSON may still carry a legacy `avoid_tolls` bool for
+back-compat readers; new writes always include `toll_policy`, and restore
+prefers `toll_policy` when present (mapping `never_use` → toggle on / Penalize
+until a three-state UI exists).
+
+Failure and success paths populate typed diagnostics on `CorridorRouteResult`:
+`toll_policy`, `pad_attempts_json`, `search_expansions`, `search_terminate_reason`,
+`toll_avoidance_incomplete`, `route_uses_tolls`. The Android host logs these via
+`RoutingPlanLog` / `DiagnosticLog` and surfaces incomplete NeverUse fallbacks in
+the plan status string.
 Product rules: [`approach-instructions.md`](approach-instructions.md),
 [`current-street.md`](current-street.md).
 
