@@ -156,6 +156,44 @@ class BasemapPoiStyleTest {
     }
 
     @Test
+    fun civicSpringAndMilitaryPoisAreWhitelistedWithSprites() {
+        val pois = layerJson("pois")
+        val kinds = kindWhitelist(pois)
+        val sprites = spriteKeys()
+        val floors = kindZoomFloors(pois)
+
+        for (kind in listOf("police", "fire_station", "place_of_worship", "spring")) {
+            assertTrue("$kind must be in the pois kind whitelist", kinds.contains(kind))
+            assertEquals(kind, iconForKind(pois, kind))
+            assertTrue("$kind sprite missing from light.json", sprites.contains(kind))
+            assertEquals(16.0, floors[kind] ?: floors.getValue("__default"), 0.0)
+            assertFalse(passesPoisFilter(kinds, floors, kind = kind, minZoom = 16.0, zoom = 15.0))
+            assertTrue(passesPoisFilter(kinds, floors, kind = kind, minZoom = 16.0, zoom = 16.0))
+        }
+
+        assertTrue("christian sprite required for kind_detail=christian", sprites.contains("christian"))
+        assertTrue(
+            "place_of_worship must prefer christian sprite when kind_detail=christian",
+            pois.contains("\"kind_detail\"") && pois.contains("\"christian\""),
+        )
+        assertTrue(
+            "icon-optional so place_of_worship names still draw when a sprite is missing",
+            pois.contains("\"icon-optional\": true") || pois.contains("\"icon-optional\":true"),
+        )
+
+        assertTrue("military must be whitelisted for name labels", kinds.contains("military"))
+        assertEquals(12.0, floors["military"] ?: error("military zoom floor missing"), 0.0)
+        assertEquals("park", iconForKind(pois, "military"))
+        assertTrue(
+            "military icon must be hidden (name-only, same pattern as glacier)",
+            iconOpacityForKind(pois, "military") == 0.0,
+        )
+        assertTrue(
+            passesPoisFilter(kinds, floors, kind = "military", minZoom = 11.0, zoom = 12.0),
+        )
+    }
+
+    @Test
     fun whitelistedKindsDoNotFallBackToTownspot() {
         val pois = layerJson("pois")
         val kinds = kindWhitelist(pois)
@@ -231,7 +269,18 @@ class BasemapPoiStyleTest {
         kind: String,
     ): String {
         val layoutAt = pois.indexOf("\"icon-image\"")
-        val match = arraySlice(pois, pois.indexOf('[', layoutAt))
+        // icon-image may be wrapped in a case (christian place_of_worship); use the
+        // kind→sprite match that ends with the townspot fallback.
+        val townspotAt = pois.indexOf("\"townspot\"", layoutAt)
+        require(townspotAt >= 0) { "icon-image missing townspot fallback" }
+        var matchStart = townspotAt
+        while (matchStart > layoutAt && pois.substring(matchStart, matchStart + 7) != "\"match\"") {
+            matchStart--
+        }
+        require(pois.substring(matchStart, matchStart + 7) == "\"match\"") {
+            "could not find kind icon-image match"
+        }
+        val match = arraySlice(pois, pois.lastIndexOf('[', matchStart))
         val tokens = matchTokens(match).drop(1)
         require(tokens.first().startsWith("["))
         val rest = tokens.drop(1)
@@ -241,6 +290,24 @@ class BasemapPoiStyleTest {
             i += 2
         }
         return unquote(rest.last())
+    }
+
+    private fun iconOpacityForKind(
+        pois: String,
+        kind: String,
+    ): Double {
+        val paintAt = pois.indexOf("\"icon-opacity\"")
+        require(paintAt >= 0)
+        val match = arraySlice(pois, pois.indexOf('[', paintAt))
+        val tokens = matchTokens(match).drop(1)
+        require(tokens.first().startsWith("["))
+        val rest = tokens.drop(1)
+        var i = 0
+        while (i + 1 < rest.size) {
+            if (unquote(rest[i]) == kind) return rest[i + 1].toDouble()
+            i += 2
+        }
+        return rest.last().toDouble()
     }
 
     private fun spriteKeys(): Set<String> {

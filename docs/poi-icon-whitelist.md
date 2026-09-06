@@ -63,13 +63,19 @@ Every kind in the offline `pois` allow-list maps to a named sprite in
 | `hill` | `peak` | shared peak sprite; kind floor z13 |
 | `glacier` | `peak` | icon opacity 0; name-only from z12 |
 | `wetland` | `park` | icon opacity 0; name-only from z12 |
+| `police` | `police` | OSM Carto `amenity/police.svg` |
+| `fire_station` | `fire_station` | OSM Carto `amenity/firestation.svg` (filename has no underscore) |
+| `place_of_worship` | `place_of_worship` / `christian` | OSM Carto generic + `religion/christian.svg` when `kind_detail=christian`; `icon-optional` so the **name** still draws if no matching sprite resolves |
+| `spring` | `spring` | OSM Carto `natural/spring.svg` (stroke forced black for light basemap); Protomaps `natural=spring` |
+| `military` | `park` | icon opacity 0; name-only from z12 (named `landuse=military` polygons as `pois.kind=military`) |
 
-Default kind floor is **z16**. Exceptions: `glacier` / `wetland` / `station` →
-12, `peak` / `hill` → 13, `townhall` → 15. Peaks cannot stay at the default
-z16 floor: offline region extracts are native maxzoom 15, so a z16 gate never
-shows. Railway stations use z12 so named stops (e.g. Hamar, Lillehammer)
+Default kind floor is **z16**. Exceptions: `glacier` / `wetland` / `station` /
+`military` → 12, `peak` / `hill` → 13, `townhall` → 15. Peaks cannot stay at the
+default z16 floor: offline region extracts are native maxzoom 15, so a z16 gate
+never shows. Railway stations use z12 so named stops (e.g. Hamar, Lillehammer)
 appear at town overview zoom; tile `min_zoom` from Protomaps QRank still
-hides minor stops until their packed floor.
+hides minor stops until their packed floor. Military area **names** use the same
+name-only pattern as glacier/wetland (fill already comes from `landuse`).
 
 ## 2. Whitelisted kinds still using generic fallback
 
@@ -146,10 +152,13 @@ retail audit. They remain long-standing:
 `bus_stop`, `station`, `parking`, `attraction`, `museum`, `cafe`, `restaurant`,
 `fast_food`, `hospital`, `pharmacy`, `library`, `post_office`, `toilets`,
 `drinking_water`, `bench`, `playground`, `park`, `zoo`, `theatre`, `cinema`,
-`hotel`, `townhall`, `peak`, `hill`, `glacier`, `wetland`.
+`hotel`, `townhall`, `peak`, `hill`, `glacier`, `wetland`, `police`,
+`fire_station`, `place_of_worship`, `spring`, `military`.
 
 Grocery (`convenience`, `supermarket`, `grocery`) was already in that core
 set before the alcohol/shop audit. `alcohol` and the vehicle-repair kinds
 were added later; see [`map-styles.md`](map-styles.md). `station` (railway
 station names/icons) was missing from the allow-list until a later pass —
 tiles already carried `pois.kind=station` from OSM `railway=station`.
+`police` / `fire_station` / `place_of_worship` / `spring` icons and `military`
+name-only labels were added the same way (tiles already carried the kinds).

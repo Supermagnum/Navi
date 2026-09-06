@@ -13,9 +13,11 @@ import org.maplibre.android.style.layers.SymbolLayer
  * - zoom ≥ 13: motorway labels/shields
  * - zoom ≥ 14: + secondary road names
  * - zoom ≥ 15: + other major (primary/tertiary/trunk) and minor street names
- * - zoom ≥ 16: basemap amenity POI icons (schools, fuel, shops, …)
+ * - zoom ≥ 16: basemap amenity POI icons (schools, fuel, shops, police,
+ *   fire stations, places of worship, springs, …)
  * - offline Protomaps: glacier and wetland names from ~z12 (`pois.kind`);
  *   railway station names (`pois.kind=station`) from ~z12;
+ *   military area names (`pois.kind=military`) from ~z12 (fill is `landuse`);
  *   peak/hill names from ~z13 (OSM Carto / openstreetmap.org peak floor);
  *   other amenity `pois` kinds still gated to z16 via style filter
  *   (extract native maxzoom is 15, so peaks cannot wait until z16)
