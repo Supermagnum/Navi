@@ -19,6 +19,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--out-json", type=Path, required=True)
     p.add_argument("--out-png", type=Path, required=True)
     p.add_argument("--padding", type=int, default=1)
+    p.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="Skip add-pack keys that already exist in the base atlas (idempotent re-runs).",
+    )
     return p.parse_args()
 
 
@@ -34,6 +39,15 @@ def main() -> None:
     args = parse_args()
     base_meta: dict[str, dict] = json.loads(args.base_json.read_text())
     add_meta: dict[str, dict] = json.loads(args.add_json.read_text())
+
+    if args.skip_existing:
+        skipped = sorted(k for k in add_meta if k in base_meta)
+        add_meta = {k: v for k, v in add_meta.items() if k not in base_meta}
+        if skipped:
+            print(f"skip-existing: omitting {', '.join(skipped)}")
+        if not add_meta:
+            print("skip-existing: nothing new to merge")
+            return
 
     base_img = Image.open(args.base_png).convert("RGBA")
     add_img = Image.open(args.add_png).convert("RGBA")

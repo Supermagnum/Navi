@@ -227,7 +227,7 @@ object BasemapStyleResolver {
         if (!pmFile.isFile) return null
 
         val outRoot = File(context.filesDir, PREPARED_DIR)
-        val assetEpoch = "v17-railway-station-pois"
+        val assetEpoch = "v19-poi-gaps-icon-optional-spring-dark"
         val epochFile = File(outRoot, ".asset_epoch")
         val needCopy =
             !outRoot.exists() ||
