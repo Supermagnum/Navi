@@ -232,9 +232,18 @@ class MainActivity : ComponentActivity() {
         if (intent.getBooleanExtra("navi_force_online_basemap", false)) {
             NaviMapTestHooks.forceOnlineBasemap = true
         }
-        if (intent.getBooleanExtra("navi_hide_chrome", false)) {
-            NaviMapTestHooks.hideUiChrome = true
-            NaviMapTestHooks.hideSearchChrome = true
+        // hideUiChrome sticks in-process after adb --ez navi_hide_chrome true.
+        // Explicit extra sets it; a normal launcher MAIN clears a leftover hide.
+        when {
+            intent.hasExtra("navi_hide_chrome") -> {
+                val hide = intent.getBooleanExtra("navi_hide_chrome", false)
+                NaviMapTestHooks.hideUiChrome = hide
+                NaviMapTestHooks.hideSearchChrome = hide
+            }
+            intent.action == Intent.ACTION_MAIN -> {
+                NaviMapTestHooks.hideUiChrome = false
+                NaviMapTestHooks.hideSearchChrome = false
+            }
         }
         val camLat = intentDoubleExtra(intent, "navi_camera_lat")
         val camLon = intentDoubleExtra(intent, "navi_camera_lon")
@@ -247,6 +256,8 @@ class MainActivity : ComponentActivity() {
             NaviMapTestHooks.disableGpsFollow = true
             NaviMapTestHooks.followGps = false
             NaviMapTestHooks.pendingCamera = Triple(camLat, camLon, camZoom)
+        } else if (intent.action == Intent.ACTION_MAIN) {
+            NaviMapTestHooks.disableGpsFollow = false
         }
     }
 

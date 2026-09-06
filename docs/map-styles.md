@@ -681,6 +681,10 @@ not these tiles — see README known issues (PBF/PMTiles skew) and
 Glacier **names** are a separate fix on the `pois` symbol layer (`kind=glacier`
 from ~z12) — see [Basemap road names and amenity POIs](#basemap-road-names-and-amenity-pois-zoom-ladder).
 Do not label `landuse`/`landcover` glacier fills (no `name` property).
+
+Military **names** follow the same pattern: `landuse.kind=military` provides the
+fill; named polygons are also emitted as `pois.kind=military` (with `name`) and
+drawn name-only from ~z12 (`icon-opacity` 0).
 Dashed glacier outlines (`landcover_glacier_outline` / `landuse_glacier_outline`,
 and Liberty `landcover_ice_outline`) use teal `#2a6e70` and the same
 `line-dasharray` `[2, 1.5]` as nature reserves, so ice edges stay visible
