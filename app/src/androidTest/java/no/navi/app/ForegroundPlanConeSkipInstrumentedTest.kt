@@ -112,7 +112,7 @@ class ForegroundPlanConeSkipInstrumentedTest {
                     useEco = false,
                     profile = TravelProfile.CAR,
                     avoidMotorways = false,
-                    avoidTolls = false,
+                    tollPolicy = uniffi.navi.FfiTollPolicy.ALLOW,
                     avoidFerries = false,
                     vehicle = EMPTY_VEHICLE,
                     preferOfficialNetworks = false,

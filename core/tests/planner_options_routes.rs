@@ -372,7 +372,7 @@ fn avoid_toll_changes_planned_route() {
             NodeId(3),
             false,
             &RouteOptions {
-                avoid_tolls: true,
+                toll_policy: driver_break_core::routing::toll::TollPolicy::Penalize,
                 ..Default::default()
             },
         )

@@ -149,6 +149,12 @@ class HikingRouteMapScreenshotTest {
                 priorityPathSharePct = 0.0,
                 routeSegmentsJson = "[]",
                 offTrailAdvisory = "",
+                tollPolicy = "allow",
+                padAttemptsJson = "[]",
+                searchExpansions = 0u,
+                searchTerminateReason = "fail",
+                tollAvoidanceIncomplete = false,
+                routeUsesTolls = false,
             )
 
         // Apply via the live composition handler when available — pendingRoute alone

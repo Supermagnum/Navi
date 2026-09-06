@@ -9,8 +9,8 @@
 use std::env;
 
 use navi::{
-    plan_car_route, plan_hiking_route, set_route_plan_timing_enabled, FfiVehicleLimits,
-    TravelProfile,
+    plan_car_route, plan_hiking_route, set_route_plan_timing_enabled, FfiTollPolicy,
+    FfiVehicleLimits, TravelProfile,
 };
 
 fn main() {
@@ -63,7 +63,7 @@ fn main() {
             false,
             profile,
             false,
-            false,
+            FfiTollPolicy::Allow,
             false,
             FfiVehicleLimits {
                 axle_weight_kg: None,

@@ -366,7 +366,16 @@ private fun applySavedRouteSummaryJson(
     runCatching {
         val o = org.json.JSONObject(summaryJson)
         if (o.has("avoid_motorways")) onAvoidMotorways(o.optBoolean("avoid_motorways"))
-        if (o.has("avoid_tolls")) onAvoidTolls(o.optBoolean("avoid_tolls"))
+        if (o.has("toll_policy")) {
+            onAvoidTolls(
+                when (o.optString("toll_policy")) {
+                    "penalize", "never_use", "avoid" -> true
+                    else -> false
+                },
+            )
+        } else if (o.has("avoid_tolls")) {
+            onAvoidTolls(o.optBoolean("avoid_tolls"))
+        }
         if (o.has("avoid_ferries")) onAvoidFerries(o.optBoolean("avoid_ferries"))
         if (o.has("priority_share_pct")) onPriorityShare(o.optDouble("priority_share_pct"))
     }
@@ -490,6 +499,12 @@ private fun cancelledCorridorResult(): uniffi.navi.CorridorRouteResult =
         priorityPathSharePct = 0.0,
         routeSegmentsJson = "[]",
         offTrailAdvisory = "",
+        tollPolicy = "allow",
+        padAttemptsJson = "[]",
+        searchExpansions = 0u,
+        searchTerminateReason = "fail",
+        tollAvoidanceIncomplete = false,
+        routeUsesTolls = false,
     )
 
 private fun userFacingStatus(raw: String): String {
@@ -505,7 +520,13 @@ private fun userFacingStatus(raw: String): String {
                 val km = Regex("""distance_km=([0-9.]+)""").find(t)?.groupValues?.getOrNull(1)
                 val base =
                     if (km != null) "Route planned · $km km" else "Route planned"
-                withIndexedPackMissHint(base, t)
+                val withToll =
+                    if (t.contains("toll_avoidance_incomplete=true")) {
+                        "$base · could not fully avoid tolls"
+                    } else {
+                        base
+                    }
+                withIndexedPackMissHint(withToll, t)
             }
             t.contains("PASS") -> withIndexedPackMissHint("Done", t)
             t.lineSequence().any { it.startsWith("FAIL") } ->
@@ -3900,6 +3921,12 @@ private fun NaviMapScreen() {
                                                         priorityPathSharePct = 0.0,
                                                         routeSegmentsJson = "[]",
                                                         offTrailAdvisory = "",
+                                                        tollPolicy = "allow",
+                                                        padAttemptsJson = "[]",
+                                                        searchExpansions = 0u,
+                                                        searchTerminateReason = "fail",
+                                                        tollAvoidanceIncomplete = false,
+                                                        routeUsesTolls = false,
                                                     )
                                                 } else {
                                                     when (profile) {
@@ -3981,7 +4008,11 @@ private fun NaviMapScreen() {
                                                                         ecoForPlan,
                                                                         profile,
                                                                         avoidMotorways,
-                                                                        avoidTolls,
+                                                                        if (avoidTolls) {
+                                                                            uniffi.navi.FfiTollPolicy.PENALIZE
+                                                                        } else {
+                                                                            uniffi.navi.FfiTollPolicy.ALLOW
+                                                                        },
                                                                         avoidFerries,
                                                                         loadVehicleLimits(dataDir.absolutePath),
                                                                         preferOfficialNetworks,
@@ -4083,6 +4114,12 @@ private fun NaviMapScreen() {
                                                                 priorityPathSharePct = mergedShare,
                                                                 routeSegmentsJson = "[]",
                                                                 offTrailAdvisory = "",
+                                                                tollPolicy = "allow",
+                                                                padAttemptsJson = "[]",
+                                                                searchExpansions = 0u,
+                                                                searchTerminateReason = "fail",
+                                                                tollAvoidanceIncomplete = false,
+                                                                routeUsesTolls = false,
                                                             )
                                                         }
                                                     }
@@ -4109,6 +4146,12 @@ private fun NaviMapScreen() {
                                                     priorityPathSharePct = 0.0,
                                                     routeSegmentsJson = "[]",
                                                     offTrailAdvisory = "",
+                                                    tollPolicy = "allow",
+                                                    padAttemptsJson = "[]",
+                                                    searchExpansions = 0u,
+                                                    searchTerminateReason = "fail",
+                                                    tollAvoidanceIncomplete = false,
+                                                    routeUsesTolls = false,
                                                 )
                                             }
                                         }
@@ -4166,6 +4209,7 @@ private fun NaviMapScreen() {
                                         ecoForPlan,
                                         durationMs,
                                         userFacingStatus(result.report).ifBlank { "Routing failed" },
+                                        result,
                                     )
                                     return@LaunchedEffect
                                 }
@@ -4188,7 +4232,11 @@ private fun NaviMapScreen() {
                                         ?: (
                                             formatRouteAvoidanceReport(
                                                 avoidMotorways,
-                                                avoidTolls,
+                                                if (avoidTolls) {
+                                                    uniffi.navi.FfiTollPolicy.PENALIZE
+                                                } else {
+                                                    uniffi.navi.FfiTollPolicy.ALLOW
+                                                },
                                                 avoidFerries,
                                                 prioritySharePct,
                                             ) + "\n" +
@@ -4199,10 +4247,18 @@ private fun NaviMapScreen() {
                                         )
                                 status =
                                     withIndexedPackMissHint(
-                                        if (result.offTrailAdvisory.isNotBlank()) {
-                                            "$planStatus · Off-trail: use judgment (terrain advisory)"
-                                        } else {
-                                            planStatus
+                                        run {
+                                            val base =
+                                                if (result.offTrailAdvisory.isNotBlank()) {
+                                                    "$planStatus · Off-trail: use judgment (terrain advisory)"
+                                                } else {
+                                                    planStatus
+                                                }
+                                            if (result.tollAvoidanceIncomplete) {
+                                                "$base · could not fully avoid tolls"
+                                            } else {
+                                                base
+                                            }
                                         },
                                         result.report,
                                     )
@@ -4644,7 +4700,11 @@ private fun NaviMapScreen() {
                                             status =
                                                 formatRouteAvoidanceReport(
                                                     avoidMotorways,
-                                                    avoidTolls,
+                                                    if (avoidTolls) {
+                                                        uniffi.navi.FfiTollPolicy.PENALIZE
+                                                    } else {
+                                                        uniffi.navi.FfiTollPolicy.ALLOW
+                                                    },
                                                     avoidFerries,
                                                     prioritySharePct,
                                                 )
@@ -4660,6 +4720,7 @@ private fun NaviMapScreen() {
                                 ) {
                                     Text("Avoid toll roads")
                                     Switch(
+                                        // UI is Allow/Penalize only; NeverUse is FFI-only (docs/API.md).
                                         checked = avoidTolls,
                                         onCheckedChange = { on ->
                                             avoidTolls = on
@@ -4667,7 +4728,11 @@ private fun NaviMapScreen() {
                                             status =
                                                 formatRouteAvoidanceReport(
                                                     avoidMotorways,
-                                                    avoidTolls,
+                                                    if (avoidTolls) {
+                                                        uniffi.navi.FfiTollPolicy.PENALIZE
+                                                    } else {
+                                                        uniffi.navi.FfiTollPolicy.ALLOW
+                                                    },
                                                     avoidFerries,
                                                     prioritySharePct,
                                                 )
@@ -4699,7 +4764,11 @@ private fun NaviMapScreen() {
                                             status =
                                                 formatRouteAvoidanceReport(
                                                     avoidMotorways,
-                                                    avoidTolls,
+                                                    if (avoidTolls) {
+                                                        uniffi.navi.FfiTollPolicy.PENALIZE
+                                                    } else {
+                                                        uniffi.navi.FfiTollPolicy.ALLOW
+                                                    },
                                                     avoidFerries,
                                                     prioritySharePct,
                                                 )
@@ -4717,7 +4786,11 @@ private fun NaviMapScreen() {
                                 Text(
                                     formatRouteAvoidanceReport(
                                         avoidMotorways,
-                                        avoidTolls,
+                                        if (avoidTolls) {
+                                            uniffi.navi.FfiTollPolicy.PENALIZE
+                                        } else {
+                                            uniffi.navi.FfiTollPolicy.ALLOW
+                                        },
                                         avoidFerries,
                                         prioritySharePct,
                                     ),
@@ -5102,7 +5175,7 @@ private fun NaviMapScreen() {
                                                 endName = toPoint.name,
                                                 viaJson = viaJson,
                                                 profile = profile.name.lowercase(),
-                                                summaryJson = """{"avoid_motorways":$avoidMotorways,"avoid_tolls":$avoidTolls,"avoid_ferries":$avoidFerries,"priority_share_pct":$prioritySharePct}""",
+                                                summaryJson = """{"avoid_motorways":$avoidMotorways,"toll_policy":"${if (avoidTolls) "penalize" else "allow"}","avoid_tolls":$avoidTolls,"avoid_ferries":$avoidFerries,"priority_share_pct":$prioritySharePct}""",
                                             )
                                         refreshRoutes()
                                         status = report

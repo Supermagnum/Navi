@@ -267,6 +267,12 @@ class HikingSearchRouteScreenshotTest {
                 priorityPathSharePct = 0.0,
                 routeSegmentsJson = "[]",
                 offTrailAdvisory = "",
+                tollPolicy = "allow",
+                padAttemptsJson = "[]",
+                searchExpansions = 0u,
+                searchTerminateReason = "fail",
+                tollAvoidanceIncomplete = false,
+                routeUsesTolls = false,
             )
         NaviMapTestHooks.pendingRoute = route()
         val deadline = System.currentTimeMillis() + 60_000

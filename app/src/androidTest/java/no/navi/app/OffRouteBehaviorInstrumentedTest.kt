@@ -213,6 +213,12 @@ class OffRouteBehaviorInstrumentedTest {
                 priorityPathSharePct = 100.0,
                 routeSegmentsJson = "[]",
                 offTrailAdvisory = "",
+                tollPolicy = "allow",
+                padAttemptsJson = "[]",
+                searchExpansions = 0u,
+                searchTerminateReason = "fail",
+                tollAvoidanceIncomplete = false,
+                routeUsesTolls = false,
             )
         NaviMapTestHooks.rerouteResultOverride =
             fake.copy(distanceKm = 101.0, routePolyline = poly + ";9.8,61.9")
@@ -376,7 +382,7 @@ class OffRouteBehaviorInstrumentedTest {
             useEco = false,
             profile = TravelProfile.CAR,
             avoidMotorways = false,
-            avoidTolls = false,
+            tollPolicy = uniffi.navi.FfiTollPolicy.ALLOW,
             avoidFerries = false,
             vehicle = FfiVehicleLimits(null, null, null, null, null, null),
             preferOfficialNetworks = false,

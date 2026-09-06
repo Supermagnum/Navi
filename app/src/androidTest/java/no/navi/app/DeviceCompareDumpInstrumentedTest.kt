@@ -167,7 +167,7 @@ class DeviceCompareDumpInstrumentedTest {
                     false,
                     TravelProfile.CAR,
                     false,
-                    false,
+                    uniffi.navi.FfiTollPolicy.ALLOW,
                     false,
                     FfiVehicleLimits(null, null, null, null, null, null),
                     false,

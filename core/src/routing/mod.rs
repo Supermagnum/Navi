@@ -13,6 +13,7 @@ pub mod hiking_hybrid;
 pub mod indexed;
 pub mod live_hazard;
 pub mod osm_update;
+pub mod plan_bbox;
 pub mod region;
 pub mod region_lock;
 pub mod rest;
@@ -45,8 +46,8 @@ pub use eta::{
 };
 pub use graph::{
     apply_official_network_preference, format_route_avoidance_report, max_waypoint_snap_m,
-    GraphEdge, RouteGraph, RouteOptions, RoutingProfile, SnapTooFar, WetlandApplyStats,
-    NON_NETWORK_PENALTY,
+    GraphEdge, PathSearchStats, RouteGraph, RouteOptions, RoutingProfile, SnapTooFar,
+    WetlandApplyStats, NON_NETWORK_PENALTY,
 };
 pub use guidance_path::{
     build_maneuvers, build_maneuvers_from_edges, build_maneuvers_with_options, build_sim_samples,
@@ -96,6 +97,7 @@ pub use safety::{
     OvernightProximityIndex, OvernightRejectReason,
 };
 pub use terrain::{least_cost_path, TerrainPath, TERRAIN_CELL_M, TERRAIN_MAX_GAP_M};
+pub use toll::{toll_applies_for_profile, TollPolicy, TOLL_AVOID_PENALTY_MULT};
 pub use wetland::{
     classify_wetland_value, tags_indicate_boardwalk, WetlandClass, WetlandIndex,
     WETLAND_SOFT_COST_MULT,

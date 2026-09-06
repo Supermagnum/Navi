@@ -454,6 +454,18 @@ pub struct CorridorRouteResult {
     pub route_segments_json: String,
     /// Non-empty when the route includes an off-trail terrain segment (advisory).
     pub off_trail_advisory: String,
+    /// `allow` / `penalize` / `never_use` for this plan attempt.
+    pub toll_policy: String,
+    /// JSON array of bbox pad degrees tried, e.g. `[0.35,0.7,1.4,2.8,5.0]`.
+    pub pad_attempts_json: String,
+    /// A* node expansions on the last search attempt (0 when not run).
+    pub search_expansions: u64,
+    /// `found` / `disconnected` / `bbox_exhausted` / `cancelled` / `snap_failed` / `ok`.
+    pub search_terminate_reason: String,
+    /// True when NeverUse could not find a free path and a toll-using route was returned.
+    pub toll_avoidance_incomplete: bool,
+    /// True when the returned path includes at least one toll edge.
+    pub route_uses_tolls: bool,
 }
 
 fn empty_corridor(msg: String) -> CorridorRouteResult {
@@ -476,6 +488,12 @@ fn empty_corridor(msg: String) -> CorridorRouteResult {
         priority_path_share_pct: 0.0,
         route_segments_json: String::from("[]"),
         off_trail_advisory: String::new(),
+        toll_policy: String::from("allow"),
+        pad_attempts_json: String::from("[]"),
+        search_expansions: 0,
+        search_terminate_reason: String::from("fail"),
+        toll_avoidance_incomplete: false,
+        route_uses_tolls: false,
     }
 }
 
@@ -1958,6 +1976,12 @@ pub fn run_car_corridor_pipeline(
         priority_path_share_pct,
         route_segments_json: String::from("[]"),
         off_trail_advisory: String::new(),
+        toll_policy: String::from("allow"),
+        pad_attempts_json: String::from("[]"),
+        search_expansions: 0,
+        search_terminate_reason: String::from("ok"),
+        toll_avoidance_incomplete: false,
+        route_uses_tolls: false,
     }
 }
 
@@ -1998,7 +2022,7 @@ pub fn plan_car_route(
     use_eco: bool,
     profile: TravelProfile,
     avoid_motorways: bool,
-    avoid_tolls: bool,
+    toll_policy: FfiTollPolicy,
     avoid_ferries: bool,
     vehicle: FfiVehicleLimits,
     prefer_official_networks: bool,
@@ -2015,7 +2039,7 @@ pub fn plan_car_route(
         use_eco,
         profile,
         avoid_motorways,
-        avoid_tolls,
+        toll_policy,
         avoid_ferries,
         vehicle,
         prefer_official_networks,
@@ -2040,7 +2064,7 @@ pub fn plan_car_route_at(
     use_eco: bool,
     profile: TravelProfile,
     avoid_motorways: bool,
-    avoid_tolls: bool,
+    toll_policy: FfiTollPolicy,
     avoid_ferries: bool,
     vehicle: FfiVehicleLimits,
     prefer_official_networks: bool,
@@ -2062,7 +2086,7 @@ pub fn plan_car_route_at(
             use_eco,
             profile,
             avoid_motorways,
-            avoid_tolls,
+            toll_policy,
             avoid_ferries,
             vehicle,
             prefer_official_networks,
@@ -2098,7 +2122,7 @@ fn plan_car_route_inner(
     use_eco: bool,
     profile: TravelProfile,
     avoid_motorways: bool,
-    avoid_tolls: bool,
+    toll_policy: FfiTollPolicy,
     avoid_ferries: bool,
     vehicle: FfiVehicleLimits,
     prefer_official_networks: bool,
@@ -2124,9 +2148,10 @@ fn plan_car_route_inner(
     // Bicycle / e-bike: motorways are illegal or unsuitable — force avoid regardless of UI.
     let avoid_motorways = avoid_motorways
         || driver_break_core::routing::graph::profile_locks_avoid_motorways(routing_profile);
+    let toll_policy = driver_break_core::routing::toll::TollPolicy::from(toll_policy);
     let route_opts = RouteOptions {
         avoid_motorways,
-        avoid_tolls,
+        toll_policy,
         avoid_ferries,
         vehicle: vehicle_limits.clone(),
         departure_local,
@@ -2138,7 +2163,8 @@ fn plan_car_route_inner(
         "profile={profile:?}; routing={routing_profile:?}; start={start_lat:.6},{start_lon:.6}; end={end_lat:.6},{end_lon:.6}; use_eco={use_eco}\n"
     ));
     report.push_str(&format!(
-        "avoid_motorways={avoid_motorways}; avoid_tolls={avoid_tolls}; avoid_ferries={avoid_ferries}; vehicle_limits={}\n",
+        "avoid_motorways={avoid_motorways}; toll_policy={}; avoid_ferries={avoid_ferries}; vehicle_limits={}\n",
+        toll_policy.as_diag_str(),
         vehicle_limits.is_some()
     ));
     report.push_str(&format!(
@@ -2176,98 +2202,115 @@ fn plan_car_route_inner(
 
     // Clip to the trip bbox so we never load a full country graph into RAM
     // (that OOMs 4GB Automotive AVDs). Still reads the same region .pbf.
-    // Pad scales with corridor span: a fixed 0.35° is enough for Ostlandet-scale
-    // trips but clips long northbound legs (E6 swings west through Trondheim).
-    let lat_span = (start_lat - end_lat).abs();
-    let lon_span = (start_lon - end_lon).abs();
-    let pad = (lat_span.max(lon_span) * 0.35).clamp(0.35, 2.5);
-    let bbox = [
-        start_lat.min(end_lat) - pad,
-        start_lon.min(end_lon) - pad,
-        start_lat.max(end_lat) + pad,
-        start_lon.max(end_lon) + pad,
-    ];
-    report.push_str(&format!(
-        "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}\n",
-        bbox[0], bbox[1], bbox[2], bbox[3]
-    ));
+    // Pad starts from the historical span clamp, then doubles up to a hard cap
+    // when A* finds no path (avoids false "no route" for long avoid-detours).
+    let pad_schedule = driver_break_core::routing::plan_bbox::plan_bbox_pad_schedule(
+        start_lat, start_lon, end_lat, end_lon,
+    );
+    let mut pad_attempts: Vec<f64> = Vec::new();
+    let mut last_expansions: u64 = 0;
+    let mut last_terminate = "bbox_exhausted";
+    let mut graph = None;
+    let mut cache_hit = false;
+    let mut pack_hit = false;
+    let mut build_s = 0.0;
+    let mut path = Vec::new();
+    let mut path_edges = Vec::new();
+    let mut cost = 0.0;
+    let mut snap_start_m = 0.0;
+    let mut snap_end_m = 0.0;
+    let mut s = osm4routing::NodeId(0);
+    let mut g = osm4routing::NodeId(0);
+    let mut used_opts = route_opts.clone();
+    let mut toll_avoidance_incomplete = false;
+    let mut bbox = [0.0; 4];
+
     let profile_map_ms = timer.lap_ms();
     if driver_break_core::download::plan_cancel::is_cancelled() {
         return plan_cancelled_result(report, &timer, &[("profile_map_ms", profile_map_ms)]);
     }
 
-    driver_break_core::download::progress::set(0, Some(5), "Planning route: building area graph…");
-    let t_graph = Instant::now();
-    let data_dir = plan_pack_data_dir(pbf, &data_dir);
-    let pack_try = driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
-        &data_dir,
-        pbf,
-        routing_profile,
-        Some(bbox),
-    );
-    let _pause_bg = if pack_try.is_err() {
-        Some(driver_break_core::download::ForegroundPlanGuard::acquire())
-    } else {
-        None
-    };
-    let (mut graph, cache_hit, pack_hit) = match pack_try {
-        Ok(g) => (g, false, true),
-        Err(_) => match load_or_build_reweighted_bbox(
-            pbf,
+    'pads: for &pad in &pad_schedule {
+        pad_attempts.push(pad);
+        bbox = driver_break_core::routing::plan_bbox::trip_bbox(
+            start_lat, start_lon, end_lat, end_lon, pad,
+        );
+        report.push_str(&format!(
+            "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}\n",
+            bbox[0], bbox[1], bbox[2], bbox[3]
+        ));
+
+        driver_break_core::download::progress::set(
+            0,
+            Some(5),
+            "Planning route: building area graph…",
+        );
+        let t_graph = Instant::now();
+        let data_dir = plan_pack_data_dir(pbf, &data_dir);
+        let pack_try = driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
             &data_dir,
-            &cache,
-            routing_profile,
-            &elevation,
-            &eco,
-            bbox,
-        ) {
-            Ok((g, hit)) => (g, hit, false),
-            Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
-                return plan_cancelled_result(
-                    report,
-                    &timer,
-                    &[("profile_map_ms", profile_map_ms)],
-                );
-            }
-            Err(e) => {
-                report.push_str(&format!("FAIL: graph build: {e:#}\n"));
-                return empty(report);
-            }
-        },
-    };
-    // Pack path skips load_or_build eco; apply DEM reweight when eco is on.
-    if pack_hit && use_eco {
-        graph.apply_eco_reweighting(&elevation, &eco);
-    }
-    let build_s = t_graph.elapsed().as_secs_f64();
-    let graph_build_ms = timer.lap_ms();
-    if driver_break_core::download::plan_cancel::is_cancelled() {
-        return plan_cancelled_result(
-            report,
-            &timer,
-            &[
-                ("profile_map_ms", profile_map_ms),
-                ("graph_build_ms", graph_build_ms),
-            ],
-        );
-    }
-    if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
-        && prefer_official_networks
-    {
-        apply_network_pref_if_requested(
-            &mut graph,
             pbf,
-            OfficialNetworkKind::Cycling,
-            true,
-            &mut report,
+            routing_profile,
+            Some(bbox),
         );
-    }
-    if profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric {
-        apply_slow_road_preference(&mut graph);
-        report.push_str("slow_road_preference=applied; profile=bicycle\n");
-        let bike_cap =
-            match driver_break_core::storage::Storage::open(routes_db(&data_dir.to_string_lossy()))
-            {
+        let _pause_bg = if pack_try.is_err() {
+            Some(driver_break_core::download::ForegroundPlanGuard::acquire())
+        } else {
+            None
+        };
+        let (mut built, hit, phit) = match pack_try {
+            Ok(g) => (g, false, true),
+            Err(_) => match load_or_build_reweighted_bbox(
+                pbf,
+                &data_dir,
+                &cache,
+                routing_profile,
+                &elevation,
+                &eco,
+                bbox,
+            ) {
+                Ok((g, hit)) => (g, hit, false),
+                Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
+                    return plan_cancelled_result(
+                        report,
+                        &timer,
+                        &[("profile_map_ms", profile_map_ms)],
+                    );
+                }
+                Err(e) => {
+                    report.push_str(&format!("FAIL: graph build: {e:#}\n"));
+                    let mut r = empty(report);
+                    r.toll_policy = toll_policy.as_diag_str().into();
+                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                    r.search_terminate_reason = "graph_build".into();
+                    return r;
+                }
+            },
+        };
+        if phit && use_eco {
+            built.apply_eco_reweighting(&elevation, &eco);
+        }
+        build_s = t_graph.elapsed().as_secs_f64();
+        cache_hit = hit;
+        pack_hit = phit;
+
+        // Apply preference filters once per pad attempt (same as historical single-shot).
+        if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
+            && prefer_official_networks
+        {
+            apply_network_pref_if_requested(
+                &mut built,
+                pbf,
+                OfficialNetworkKind::Cycling,
+                true,
+                &mut report,
+            );
+        }
+        if profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric {
+            apply_slow_road_preference(&mut built);
+            let bike_cap = match driver_break_core::storage::Storage::open(routes_db(
+                &data_dir.to_string_lossy(),
+            )) {
                 Ok(storage) => {
                     let store = driver_break_core::storage::ConfigStore::new(&storage);
                     BikeCapability::parse(
@@ -2278,30 +2321,12 @@ fn plan_car_route_inner(
                 }
                 Err(_) => BikeCapability::Trekking,
             };
-        match apply_bike_suitability_from_pbf(&mut graph, pbf, bike_cap) {
-            Ok(removed) => {
-                report.push_str(&format!(
-                    "bike_capability={}; bike_suitability_removed={removed}\n",
-                    bike_cap.as_str()
-                ));
-            }
-            Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
-                return plan_cancelled_result(
-                    report,
-                    &timer,
-                    &[
-                        ("profile_map_ms", profile_map_ms),
-                        ("graph_build_ms", graph_build_ms),
-                    ],
-                );
-            }
-            Err(e) => report.push_str(&format!("bike_suitability_err={e}\n")),
+            let _ = apply_bike_suitability_from_pbf(&mut built, pbf, bike_cap);
         }
-    }
-    if matches!(routing_profile, RoutingProfile::Car | RoutingProfile::Truck) {
-        let surface_mode =
-            match driver_break_core::storage::Storage::open(routes_db(&data_dir.to_string_lossy()))
-            {
+        if matches!(routing_profile, RoutingProfile::Car | RoutingProfile::Truck) {
+            let surface_mode = match driver_break_core::storage::Storage::open(routes_db(
+                &data_dir.to_string_lossy(),
+            )) {
                 Ok(storage) => {
                     let store = driver_break_core::storage::ConfigStore::new(&storage);
                     SurfaceRoutingMode::parse(
@@ -2312,54 +2337,135 @@ fn plan_car_route_inner(
                 }
                 Err(_) => SurfaceRoutingMode::Car,
             };
-        graph.surface_routing_mode = surface_mode;
-        let _ = apply_surface_quality_from_pbf(&mut graph, pbf);
-        apply_surface_preference(&mut graph, surface_mode);
+            built.surface_routing_mode = surface_mode;
+            let _ = apply_surface_quality_from_pbf(&mut built, pbf);
+            apply_surface_preference(&mut built, surface_mode);
+        }
+
+        if driver_break_core::download::plan_cancel::is_cancelled() {
+            return plan_cancelled_result(report, &timer, &[("profile_map_ms", profile_map_ms)]);
+        }
+
+        let (ss, sdist) =
+            match built.nearest_routable_with_options(start_lat, start_lon, &route_opts) {
+                Ok(v) => v,
+                Err(e) => {
+                    last_terminate = "snap_failed";
+                    report.push_str(&format!(
+                        "snap_fail_start pad={pad:.2}: {}\n",
+                        format_snap_too_far("start", e, built.profile())
+                    ));
+                    continue 'pads;
+                }
+            };
+        let (gg, gdist) = match built.nearest_routable_with_options(end_lat, end_lon, &route_opts) {
+            Ok(v) => v,
+            Err(e) => {
+                last_terminate = "snap_failed";
+                report.push_str(&format!(
+                    "snap_fail_end pad={pad:.2}: {}\n",
+                    format_snap_too_far("destination", e, built.profile())
+                ));
+                continue 'pads;
+            }
+        };
+
+        let stats = built.shortest_path_with_options_stats(ss, gg, use_eco, &route_opts);
+        last_expansions = stats.expansions;
+        last_terminate = stats.terminate_reason;
+        if let Some((p, e, c)) = stats.path {
+            if p.len() >= 2 {
+                path = p;
+                path_edges = e;
+                cost = c;
+                s = ss;
+                g = gg;
+                snap_start_m = sdist;
+                snap_end_m = gdist;
+                graph = Some(built);
+                used_opts = route_opts.clone();
+                break 'pads;
+            }
+        }
+        report.push_str(&format!(
+            "no_route pad={pad:.2} expansions={} reason={}\n",
+            stats.expansions, stats.terminate_reason
+        ));
+        graph = Some(built);
     }
-    let network_pref_ms = timer.lap_ms();
+
+    // NeverUse last resort: allow tolls (Penalize) on the widest graph so UI can
+    // show a route with toll_avoidance_incomplete rather than hard failure.
+    if path.is_empty() && toll_policy == driver_break_core::routing::toll::TollPolicy::NeverUse {
+        if let Some(built) = graph.as_ref() {
+            let mut fallback_opts = route_opts.clone();
+            fallback_opts.toll_policy = driver_break_core::routing::toll::TollPolicy::Penalize;
+            if let (Ok((ss, sdist)), Ok((gg, gdist))) = (
+                built.nearest_routable_with_options(start_lat, start_lon, &fallback_opts),
+                built.nearest_routable_with_options(end_lat, end_lon, &fallback_opts),
+            ) {
+                let stats = built.shortest_path_with_options_stats(ss, gg, use_eco, &fallback_opts);
+                last_expansions = stats.expansions;
+                if let Some((p, e, c)) = stats.path {
+                    if p.len() >= 2 {
+                        path = p;
+                        path_edges = e;
+                        cost = c;
+                        s = ss;
+                        g = gg;
+                        snap_start_m = sdist;
+                        snap_end_m = gdist;
+                        used_opts = fallback_opts;
+                        toll_avoidance_incomplete = true;
+                        last_terminate = "found_with_toll_fallback";
+                        report.push_str(
+                            "toll_avoidance_incomplete=true; returned_penalize_fallback_after_never_use\n",
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    let Some(graph) = graph else {
+        let mut r = empty(report);
+        r.toll_policy = toll_policy.as_diag_str().into();
+        r.pad_attempts_json = serde_json::to_string(&pad_attempts).unwrap_or_else(|_| "[]".into());
+        r.search_expansions = last_expansions;
+        r.search_terminate_reason = last_terminate.into();
+        return r;
+    };
+
+    if path.is_empty() {
+        if driver_break_core::download::plan_cancel::is_cancelled() {
+            return plan_cancelled_result(report, &timer, &[("profile_map_ms", profile_map_ms)]);
+        }
+        report.push_str(&format!(
+            "FAIL: no route between snapped nodes; terminate={last_terminate}; expansions={last_expansions}; pads={pad_attempts:?}\n"
+        ));
+        let mut r = empty(report);
+        r.toll_policy = toll_policy.as_diag_str().into();
+        r.pad_attempts_json = serde_json::to_string(&pad_attempts).unwrap_or_else(|_| "[]".into());
+        r.search_expansions = last_expansions;
+        r.search_terminate_reason = if last_terminate == "disconnected" {
+            "bbox_exhausted".into()
+        } else {
+            last_terminate.into()
+        };
+        return r;
+    }
+
+    let data_dir = plan_pack_data_dir(pbf, &data_dir);
+    let graph_build_ms = timer.lap_ms();
+    let network_pref_ms = 0u64;
     report.push_str(&format!(
-        "build_s={build_s:.2}; cache_hit={cache_hit}; pack_hit={pack_hit}; nodes={}; edges={}\n",
+        "build_s={build_s:.2}; cache_hit={cache_hit}; pack_hit={pack_hit}; nodes={}; edges={}; pad_attempts={:?}\n",
         graph.nodes.len(),
-        graph.edges.len()
+        graph.edges.len(),
+        pad_attempts
     ));
-    // Emit before snap/A*: winter OD on a seasonally closed mountain road can fail
-    // snap, but the pack-hit graph still carries the closures we need to report.
-    let seasonal_n = graph.seasonal_closure_excluded_in_graph(&route_opts);
+    let seasonal_n = graph.seasonal_closure_excluded_in_graph(&used_opts);
     report.push_str(&format!("seasonal_closure_excluded_edges={seasonal_n}\n"));
-
-    if driver_break_core::download::plan_cancel::is_cancelled() {
-        return plan_cancelled_result(
-            report,
-            &timer,
-            &[
-                ("profile_map_ms", profile_map_ms),
-                ("graph_build_ms", graph_build_ms),
-                ("network_pref_ms", network_pref_ms),
-            ],
-        );
-    }
-
-    driver_break_core::download::progress::set(3, Some(5), "Planning route: finding path…");
-    let (s, snap_start_m) = match nearest(&graph, start_lat, start_lon) {
-        Ok(v) => v,
-        Err(e) => {
-            report.push_str(&format!(
-                "FAIL: {}\n",
-                format_snap_too_far("start", e, graph.profile())
-            ));
-            return empty(report);
-        }
-    };
-    let (g, snap_end_m) = match nearest(&graph, end_lat, end_lon) {
-        Ok(v) => v,
-        Err(e) => {
-            report.push_str(&format!(
-                "FAIL: {}\n",
-                format_snap_too_far("destination", e, graph.profile())
-            ));
-            return empty(report);
-        }
-    };
     {
         let sn = &graph.nodes[&s];
         let gn = &graph.nodes[&g];
@@ -2372,27 +2478,7 @@ fn plan_car_route_inner(
             max_waypoint_snap_m(graph.profile())
         ));
     }
-    let Some((path, path_edges, cost)) =
-        graph.shortest_path_with_options(s, g, use_eco, &route_opts)
-    else {
-        if driver_break_core::download::plan_cancel::is_cancelled() {
-            return plan_cancelled_result(
-                report,
-                &timer,
-                &[
-                    ("profile_map_ms", profile_map_ms),
-                    ("graph_build_ms", graph_build_ms),
-                    ("network_pref_ms", network_pref_ms),
-                ],
-            );
-        }
-        report.push_str("FAIL: no route between snapped nodes\n");
-        return empty(report);
-    };
-    if path.len() < 2 {
-        report.push_str("FAIL: zero-length route\n");
-        return empty(report);
-    }
+    let route_uses_tolls = graph.path_uses_tolls(&path_edges);
     let astar_ms = timer.lap_ms();
 
     let mut distance_m = 0.0;
@@ -2956,6 +3042,16 @@ fn plan_car_route_inner(
         priority_path_share_pct,
         route_segments_json: String::from("[]"),
         off_trail_advisory: String::new(),
+        toll_policy: used_opts.toll_policy.as_diag_str().into(),
+        pad_attempts_json: serde_json::to_string(&pad_attempts).unwrap_or_else(|_| "[]".into()),
+        search_expansions: last_expansions,
+        search_terminate_reason: if toll_avoidance_incomplete {
+            "found_with_toll_fallback".into()
+        } else {
+            "found".into()
+        },
+        toll_avoidance_incomplete,
+        route_uses_tolls,
     }
 }
 
@@ -3645,6 +3741,12 @@ pub fn plan_hiking_route(
         priority_path_share_pct,
         route_segments_json,
         off_trail_advisory,
+        toll_policy: String::from("allow"),
+        pad_attempts_json: String::from("[]"),
+        search_expansions: 0,
+        search_terminate_reason: String::from("ok"),
+        toll_avoidance_incomplete: false,
+        route_uses_tolls: false,
     }
 }
 
@@ -4018,6 +4120,23 @@ pub fn nearby_places(
             municipality: h.municipality,
         })
         .collect()
+}
+
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FfiTollPolicy {
+    Allow,
+    Penalize,
+    NeverUse,
+}
+
+impl From<FfiTollPolicy> for driver_break_core::routing::toll::TollPolicy {
+    fn from(p: FfiTollPolicy) -> Self {
+        match p {
+            FfiTollPolicy::Allow => Self::Allow,
+            FfiTollPolicy::Penalize => Self::Penalize,
+            FfiTollPolicy::NeverUse => Self::NeverUse,
+        }
+    }
 }
 
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
@@ -5062,20 +5181,27 @@ pub fn format_avoid_motorways_report(
     avoid_motorways: bool,
     priority_path_share_pct: f64,
 ) -> String {
-    format_route_avoidance_report(avoid_motorways, false, false, priority_path_share_pct)
+    format_route_avoidance_report(
+        avoid_motorways,
+        FfiTollPolicy::Allow,
+        false,
+        priority_path_share_pct,
+    )
 }
 
-/// Extended avoidance report (motorways + tolls + ferries). Defaults for toll/ferry: off.
+/// Extended avoidance report (motorways + tolls + ferries).
+///
+/// `toll_policy` replaces the former `avoid_tolls: bool` (`false`→Allow, `true`→Penalize).
 #[uniffi::export]
 pub fn format_route_avoidance_report(
     avoid_motorways: bool,
-    avoid_tolls: bool,
+    toll_policy: FfiTollPolicy,
     avoid_ferries: bool,
     priority_path_share_pct: f64,
 ) -> String {
     let opts = driver_break_core::RouteOptions {
         avoid_motorways,
-        avoid_tolls,
+        toll_policy: driver_break_core::routing::toll::TollPolicy::from(toll_policy),
         avoid_ferries,
         vehicle: None,
         departure_local: None,

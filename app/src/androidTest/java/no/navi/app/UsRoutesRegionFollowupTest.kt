@@ -205,7 +205,7 @@ class UsRoutesRegionFollowupTest {
                     false,
                     TravelProfile.CAR,
                     false,
-                    false,
+                    uniffi.navi.FfiTollPolicy.ALLOW,
                     false,
                     EMPTY_VEHICLE,
                     false,
