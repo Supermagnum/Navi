@@ -24,6 +24,23 @@ class BasemapPoiStyleTest {
         )
 
     @Test
+    fun railwayStationIsWhitelistedWithDedicatedSprite() {
+        val pois = layerJson("pois")
+        val kinds = kindWhitelist(pois)
+        assertTrue("station must be in the pois kind whitelist", kinds.contains("station"))
+        assertEquals("station", iconForKind(pois, "station"))
+        assertTrue(spriteKeys().contains("station"))
+        val floors = kindZoomFloors(pois)
+        assertEquals(12.0, floors["station"] ?: error("station zoom floor missing"), 0.0)
+        assertFalse(
+            passesPoisFilter(kinds, floors, kind = "station", minZoom = 10.0, zoom = 11.0),
+        )
+        assertTrue(
+            passesPoisFilter(kinds, floors, kind = "station", minZoom = 10.0, zoom = 12.0),
+        )
+    }
+
+    @Test
     fun alcoholHasDedicatedSprite() {
         val pois = layerJson("pois")
         val kinds = kindWhitelist(pois)

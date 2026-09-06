@@ -15,6 +15,7 @@ import org.maplibre.android.style.layers.SymbolLayer
  * - zoom ≥ 15: + other major (primary/tertiary/trunk) and minor street names
  * - zoom ≥ 16: basemap amenity POI icons (schools, fuel, shops, …)
  * - offline Protomaps: glacier and wetland names from ~z12 (`pois.kind`);
+ *   railway station names (`pois.kind=station`) from ~z12;
  *   peak/hill names from ~z13 (OSM Carto / openstreetmap.org peak floor);
  *   other amenity `pois` kinds still gated to z16 via style filter
  *   (extract native maxzoom is 15, so peaks cannot wait until z16)
@@ -109,8 +110,8 @@ object BasemapLabelPolicy {
         style.getLayer("roads_label_secondary")?.setMinZoom(SECONDARY_MIN_ZOOM.toFloat())
         style.getLayer("roads_label_major")?.setMinZoom(MAJOR_MINOR_MIN_ZOOM.toFloat())
         style.getLayer("roads_label_minor")?.setMinZoom(MAJOR_MINOR_MIN_ZOOM.toFloat())
-        // Layer floor z12 so glacier/wetland labels can appear; peak/hill use
-        // a z13 kind floor in the style filter. Other amenity kinds stay at
+        // Layer floor z12 so glacier/wetland/station labels can appear; peak/hill
+        // use a z13 kind floor in the style filter. Other amenity kinds stay at
         // z16 via that same per-kind match.
         style.getLayer("pois")?.setMinZoom(12f)
         return true

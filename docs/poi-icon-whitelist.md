@@ -38,6 +38,7 @@ Every kind in the offline `pois` allow-list maps to a named sprite in
 | `bicycle_repair` | `bicycle_repair` | OSM Carto `shop/bicycle.svg` (no Carto bicycle_repair) |
 | `bicycle_repair_station` | `bicycle_repair_station` | same Carto `shop/bicycle.svg` |
 | `bus_stop` | `bus_stop` | |
+| `station` | `station` | Protomaps `railway=station`; kind floor z12; sprite from Navit `rail_station.svg` (GPL v2) |
 | `parking` | `parking` | OSM Carto |
 | `attraction` | `attraction` | |
 | `museum` | `museum` | |
@@ -63,9 +64,12 @@ Every kind in the offline `pois` allow-list maps to a named sprite in
 | `glacier` | `peak` | icon opacity 0; name-only from z12 |
 | `wetland` | `park` | icon opacity 0; name-only from z12 |
 
-Default kind floor is **z16**. Exceptions: `glacier` / `wetland` / `peak` /
-`hill` → 12, `townhall` → 15. Peaks cannot stay at the default z16 floor:
-offline region extracts are native maxzoom 15, so a z16 gate never shows.
+Default kind floor is **z16**. Exceptions: `glacier` / `wetland` / `station` →
+12, `peak` / `hill` → 13, `townhall` → 15. Peaks cannot stay at the default
+z16 floor: offline region extracts are native maxzoom 15, so a z16 gate never
+shows. Railway stations use z12 so named stops (e.g. Hamar, Lillehammer)
+appear at town overview zoom; tile `min_zoom` from Protomaps QRank still
+hides minor stops until their packed floor.
 
 ## 2. Whitelisted kinds still using generic fallback
 
@@ -139,11 +143,13 @@ These were the original amenity / civic / nature allow-list, not part of the
 retail audit. They remain long-standing:
 
 `school`, `university`, `college`, `kindergarten`, `fuel`, `charging_station`,
-`bus_stop`, `parking`, `attraction`, `museum`, `cafe`, `restaurant`,
+`bus_stop`, `station`, `parking`, `attraction`, `museum`, `cafe`, `restaurant`,
 `fast_food`, `hospital`, `pharmacy`, `library`, `post_office`, `toilets`,
 `drinking_water`, `bench`, `playground`, `park`, `zoo`, `theatre`, `cinema`,
 `hotel`, `townhall`, `peak`, `hill`, `glacier`, `wetland`.
 
 Grocery (`convenience`, `supermarket`, `grocery`) was already in that core
 set before the alcohol/shop audit. `alcohol` and the vehicle-repair kinds
-were added later; see [`map-styles.md`](map-styles.md).
+were added later; see [`map-styles.md`](map-styles.md). `station` (railway
+station names/icons) was missing from the allow-list until a later pass —
+tiles already carried `pois.kind=station` from OSM `railway=station`.
