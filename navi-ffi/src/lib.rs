@@ -4240,6 +4240,88 @@ pub fn save_named_route(
     }
 }
 
+/// Serialize a planned corridor to GPX 1.1.
+///
+/// * `rte_json` — full route-point list including start and end:
+///   `[{"name","lat","lon"}, …]` (same shape as saved `via_json`, but must include
+///   the endpoints when used standalone).
+/// * `route_polyline` — Navi corridor string `"lon,lat;lon,lat;…"`.
+///
+/// Returns GPX XML on success, or a string starting with `FAIL:`.
+#[uniffi::export]
+pub fn route_to_gpx(
+    name: String,
+    time_iso: String,
+    rte_json: String,
+    route_polyline: String,
+) -> String {
+    let route_points = driver_break_core::export::parse_via_json(&rte_json);
+    if route_points.len() < 2 {
+        return "FAIL: rte_json needs at least start and end points".into();
+    }
+    let track = driver_break_core::export::parse_route_polyline(&route_polyline);
+    let name_opt = {
+        let t = name.trim();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    };
+    let time_opt = {
+        let t = time_iso.trim();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    };
+    driver_break_core::export::to_gpx(name_opt, time_opt, &route_points, &track)
+}
+
+/// Look up a saved route, rebuild `<rte>` from stored waypoints, and serialize GPX
+/// using a caller-supplied replan polyline (Option A — geometry is not stored in DB).
+///
+/// Returns GPX XML on success, or a string starting with `FAIL:`.
+#[uniffi::export]
+pub fn export_saved_route_gpx(
+    data_dir: String,
+    route_id: String,
+    route_polyline: String,
+) -> String {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return "FAIL: open db".into();
+    };
+    let store = driver_break_core::search::RouteStore::new(&storage);
+    let Ok(Some(route)) = store.get(&route_id) else {
+        return "FAIL: saved route not found".into();
+    };
+    if route_polyline.trim().is_empty() {
+        return "FAIL: empty route polyline (replan before export)".into();
+    }
+    let route_points = driver_break_core::export::route_points_from_saved(
+        route.start_lat,
+        route.start_lon,
+        route.start_name.as_deref(),
+        route.end_lat,
+        route.end_lon,
+        route.end_name.as_deref(),
+        &route.via_json,
+    );
+    let track = driver_break_core::export::parse_route_polyline(&route_polyline);
+    if track.is_empty() {
+        return "FAIL: could not parse route polyline".into();
+    }
+    let name = format!(
+        "{} -> {}",
+        route.start_name.as_deref().unwrap_or("Start"),
+        route.end_name.as_deref().unwrap_or("Destination"),
+    );
+    let time = route.created_at.trim();
+    let time_opt = if time.is_empty() { None } else { Some(time) };
+    driver_break_core::export::to_gpx(Some(&name), time_opt, &route_points, &track)
+}
+
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct FfiSavedPlace {
     pub id: String,
@@ -6648,6 +6730,300 @@ pub fn pmtiles_get_tile(path: String, z: u8, x: u32, y: u32) -> Option<Vec<u8>> 
             None
         }
     }
+}
+
+// --- Weather plugin (host fetch/cache; fill-style icons) ---
+
+/// Hard-coded product default: weather plugin must ship disabled.
+#[uniffi::export]
+pub fn weather_plugin_default_enabled() -> bool {
+    driver_break_core::weather::WEATHER_PLUGIN_DEFAULT_ENABLED
+}
+
+/// CC BY attribution string (never includes the "Yr" brand name).
+#[uniffi::export]
+pub fn weather_attribution_text() -> String {
+    driver_break_core::weather::WEATHER_ATTRIBUTION.to_string()
+}
+
+/// Relative icon path for a Meteocons slug (`fill/{slug}.svg` in v1).
+#[uniffi::export]
+pub fn weather_icon_relative_path(slug: String) -> String {
+    driver_break_core::weather::weather_icon_relative_path(&slug)
+}
+
+/// Rasterize a weather fill-style SVG under `weather_icons_dir` to PNG.
+#[uniffi::export]
+pub fn rasterize_weather_icon_png(
+    slug: String,
+    width: u32,
+    height: u32,
+    weather_icons_dir: String,
+) -> Vec<u8> {
+    use driver_break_core::icons::rasterize_svg_file_png;
+    use driver_break_core::weather::resolve_weather_icon_path;
+    let path = resolve_weather_icon_path(Path::new(&weather_icons_dir), &slug);
+    rasterize_svg_file_png(&path, width, height).unwrap_or_default()
+}
+
+fn weather_db_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("weather_cache.sqlite")
+}
+
+fn sample_to_json(s: &driver_break_core::weather::WeatherSample) -> String {
+    serde_json::json!({
+        "lat": s.lat,
+        "lon": s.lon,
+        "icon_slug": s.icon_slug,
+        "temp_c": s.temp_c,
+        "wind_ms": s.wind_ms,
+        "precip_mm": s.precip_mm,
+        "pressure_hpa": s.pressure_hpa,
+        "provider": s.provider,
+        "fetched_at_unix": s.fetched_at_unix,
+        "observation_unix": s.observation_unix,
+        "stale": s.stale,
+        "summary": s.summary,
+    })
+    .to_string()
+}
+
+/// Refresh weather when enabled + active (or manual), else return last cache.
+///
+/// `manual` bypasses the active interval but is still rate-limited (2–5 min).
+/// When `app_active` is false and `manual` is false, no network fetch occurs.
+#[uniffi::export]
+pub fn weather_refresh_json(
+    data_dir: String,
+    lat: f64,
+    lon: f64,
+    enabled: bool,
+    app_active: bool,
+    manual: bool,
+) -> String {
+    use driver_break_core::weather::{refresh_if_allowed, WeatherCache};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let path = weather_db_path(Path::new(&data_dir));
+    let cache = match WeatherCache::open(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            return serde_json::json!({
+                "fetched": false,
+                "reason": format!("cache_open:{e}"),
+                "sample": null,
+            })
+            .to_string();
+        }
+    };
+    let result = refresh_if_allowed(&cache, lat, lon, enabled, app_active, manual, now);
+    serde_json::json!({
+        "fetched": result.fetched,
+        "reason": result.reason,
+        "provider": result.provider.map(|p| p.as_diag_str()),
+        "sample": result.sample.as_ref().map(|s| serde_json::from_str::<serde_json::Value>(&sample_to_json(s)).unwrap_or_default()),
+    })
+    .to_string()
+}
+
+/// Read cached weather near lat/lon (HostApi `weather_read` surface for Android).
+#[uniffi::export]
+pub fn weather_read_json(data_dir: String, lat: f64, lon: f64, radius_m: f64) -> String {
+    use driver_break_core::weather::WeatherCache;
+    let path = weather_db_path(Path::new(&data_dir));
+    let Ok(cache) = WeatherCache::open(&path) else {
+        return "[]".into();
+    };
+    match cache.nearest(lat, lon, radius_m) {
+        Some(s) => format!("[{}]", sample_to_json(&s)),
+        None => "[]".into(),
+    }
+}
+
+/// Default for the independent "Show weather symbols on map" toggle.
+#[uniffi::export]
+pub fn weather_map_symbols_default_enabled() -> bool {
+    driver_break_core::weather::MAP_WEATHER_SYMBOLS_DEFAULT_ENABLED
+}
+
+#[uniffi::export]
+pub fn weather_map_zoom_max() -> f64 {
+    driver_break_core::weather::MAP_WEATHER_ZOOM_MAX
+}
+
+#[uniffi::export]
+pub fn weather_map_min_pixel_spacing() -> f64 {
+    driver_break_core::weather::MAP_WEATHER_MIN_PIXEL_SPACING
+}
+
+#[uniffi::export]
+pub fn weather_map_max_symbols() -> u32 {
+    driver_break_core::weather::MAP_WEATHER_MAX_SYMBOLS as u32
+}
+
+#[uniffi::export]
+pub fn weather_map_place_kind() -> String {
+    driver_break_core::weather::MAP_WEATHER_PLACE_KIND.to_string()
+}
+
+/// List `place:city` entries in a map bbox, then refresh/cache weather and declutter.
+///
+/// Returns JSON: `{ "zoom":.., "visible_cities":N, "symbols":[...], "fetches":N, "reasons":[...] }`
+/// No network when `weather_plugin_enabled` or `map_symbols_enabled` is false, or when
+/// `app_active` is false (cache-only). Symbols are empty when zoom > MAP_WEATHER_ZOOM_MAX.
+#[uniffi::export]
+pub fn weather_map_symbols_json(
+    data_dir: String,
+    index_db_path: String,
+    min_lat: f64,
+    min_lon: f64,
+    max_lat: f64,
+    max_lon: f64,
+    zoom: f64,
+    weather_plugin_enabled: bool,
+    map_symbols_enabled: bool,
+    app_active: bool,
+) -> String {
+    use driver_break_core::search::NameIndex;
+    use driver_break_core::weather::{
+        refresh_place_if_allowed, select_map_weather_places, WeatherPlaceCache,
+        MAP_WEATHER_MAX_SYMBOLS, MAP_WEATHER_MIN_PIXEL_SPACING, MAP_WEATHER_PLACE_KIND,
+        MAP_WEATHER_ZOOM_MAX,
+    };
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    if !weather_plugin_enabled || !map_symbols_enabled {
+        return serde_json::json!({
+            "zoom": zoom,
+            "visible_cities": 0,
+            "symbols": [],
+            "fetches": 0,
+            "reasons": ["map_weather_disabled"],
+        })
+        .to_string();
+    }
+    if zoom > MAP_WEATHER_ZOOM_MAX {
+        return serde_json::json!({
+            "zoom": zoom,
+            "visible_cities": 0,
+            "symbols": [],
+            "fetches": 0,
+            "reasons": [format!("zoom_above_max:{MAP_WEATHER_ZOOM_MAX}")],
+        })
+        .to_string();
+    }
+
+    let Ok(idx) = NameIndex::open(Path::new(&index_db_path)) else {
+        return serde_json::json!({
+            "zoom": zoom,
+            "visible_cities": 0,
+            "symbols": [],
+            "fetches": 0,
+            "reasons": ["place_index_unavailable"],
+        })
+        .to_string();
+    };
+    let cities = idx
+        .places_of_kind_in_bbox(
+            MAP_WEATHER_PLACE_KIND,
+            min_lat,
+            min_lon,
+            max_lat,
+            max_lon,
+            64,
+        )
+        .unwrap_or_default();
+    let visible = cities.len();
+    let ranked: Vec<(i64, String, f64, f64)> = cities
+        .iter()
+        .map(|h| (h.osm_id, h.name.clone(), h.lat, h.lon))
+        .collect();
+    let center_lat = (min_lat + max_lat) * 0.5;
+    let center_lon = (min_lon + max_lon) * 0.5;
+    let mut kept = select_map_weather_places(
+        &ranked,
+        center_lat,
+        center_lon,
+        zoom,
+        MAP_WEATHER_MIN_PIXEL_SPACING,
+        MAP_WEATHER_MAX_SYMBOLS,
+    );
+    let path = weather_db_path(Path::new(&data_dir));
+    let Ok(cache) = WeatherPlaceCache::open(&path) else {
+        return serde_json::json!({
+            "zoom": zoom,
+            "visible_cities": visible,
+            "symbols": [],
+            "fetches": 0,
+            "reasons": ["place_cache_open_failed"],
+        })
+        .to_string();
+    };
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    // Prefer fetching cities that are due / missing first.
+    kept.sort_by_key(|(id, _, _, _)| match cache.get(*id) {
+        None => 0,
+        Some(p) if now >= p.next_fetch_unix => 1,
+        Some(_) => 2,
+    });
+
+    let mut symbols = Vec::new();
+    let mut fetches = 0u32;
+    let mut reasons = Vec::new();
+    let mut network_budget = if app_active { 1u32 } else { 0u32 };
+    for (osm_id, name, lat, lon) in &kept {
+        let allow_network = network_budget > 0;
+        let result = refresh_place_if_allowed(
+            &cache,
+            *osm_id,
+            name,
+            MAP_WEATHER_PLACE_KIND,
+            *lat,
+            *lon,
+            weather_plugin_enabled,
+            map_symbols_enabled,
+            app_active,
+            allow_network,
+            now,
+        );
+        if result.fetched {
+            fetches += 1;
+            network_budget = 0;
+        }
+        reasons.push(format!("{name}:{}", result.reason));
+        if let Some(place) = result.place {
+            symbols.push(serde_json::json!({
+                "place_osm_id": place.place_osm_id,
+                "name": place.name,
+                "lat": place.sample.lat,
+                "lon": place.sample.lon,
+                "icon_slug": place.sample.icon_slug,
+                "temp_c": place.sample.temp_c,
+                "stale": place.sample.stale,
+                "provider": place.sample.provider,
+                "fetched_at_unix": place.sample.fetched_at_unix,
+                "next_fetch_unix": place.next_fetch_unix,
+            }));
+        }
+    }
+
+    serde_json::json!({
+        "zoom": zoom,
+        "visible_cities": visible,
+        "kept_after_declutter": kept.len(),
+        "symbols": symbols,
+        "fetches": fetches,
+        "reasons": reasons,
+        "zoom_max": MAP_WEATHER_ZOOM_MAX,
+        "min_pixel_spacing": MAP_WEATHER_MIN_PIXEL_SPACING,
+    })
+    .to_string()
 }
 
 #[cfg(test)]

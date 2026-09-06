@@ -408,6 +408,49 @@ impl NameIndex {
         scored.sort_by(|a, b| a.0.total_cmp(&b.0));
         Ok(scored.into_iter().take(limit).map(|(_, h)| h).collect())
     }
+
+    /// Named places of an exact `kind` inside a lat/lon bbox (inclusive).
+    pub fn places_of_kind_in_bbox(
+        &self,
+        kind: &str,
+        min_lat: f64,
+        min_lon: f64,
+        max_lat: f64,
+        max_lon: f64,
+        limit: usize,
+    ) -> SqlResult<Vec<NameHit>> {
+        let limit = limit.max(1);
+        let mut stmt = self.conn.prepare(
+            "
+            SELECT osm_id, name, kind, lat, lon, sub_area, municipality
+            FROM name_entries
+            WHERE kind = ?1
+              AND lat BETWEEN ?2 AND ?3
+              AND lon BETWEEN ?4 AND ?5
+            ORDER BY name
+            LIMIT ?6
+            ",
+        )?;
+        let rows = stmt.query_map(
+            params![kind, min_lat, max_lat, min_lon, max_lon, limit as i64],
+            |row| {
+                Ok(NameHit {
+                    osm_id: row.get(0)?,
+                    name: row.get(1)?,
+                    kind: row.get(2)?,
+                    lat: row.get(3)?,
+                    lon: row.get(4)?,
+                    sub_area: row.get(5)?,
+                    municipality: row.get(6)?,
+                })
+            },
+        )?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
 }
 
 fn classify_named<'a>(
@@ -516,6 +559,39 @@ impl<'a> RouteStore<'a> {
         self.storage.with_conn(|conn| {
             conn.execute("DELETE FROM routes WHERE id = ?1", params![id])?;
             Ok(())
+        })
+    }
+
+    pub fn get(&self, id: &str) -> SqlResult<Option<SavedRoute>> {
+        self.storage.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, start_lat, start_lon, start_name, end_lat, end_lon, end_name,
+                        via_json, profile, vehicle_json, summary_json, created_at,
+                        last_break_lat, last_break_lon, last_overnight_lat, last_overnight_lon
+                 FROM routes WHERE id = ?1",
+            )?;
+            let mut rows = stmt.query(params![id])?;
+            let Some(row) = rows.next()? else {
+                return Ok(None);
+            };
+            Ok(Some(SavedRoute {
+                id: row.get(0)?,
+                start_lat: row.get(1)?,
+                start_lon: row.get(2)?,
+                start_name: row.get(3)?,
+                end_lat: row.get(4)?,
+                end_lon: row.get(5)?,
+                end_name: row.get(6)?,
+                via_json: row.get(7)?,
+                profile: row.get(8)?,
+                vehicle_json: row.get(9)?,
+                summary_json: row.get(10)?,
+                created_at: row.get(11)?,
+                last_break_lat: row.get(12)?,
+                last_break_lon: row.get(13)?,
+                last_overnight_lat: row.get(14)?,
+                last_overnight_lon: row.get(15)?,
+            }))
         })
     }
 
@@ -775,6 +851,58 @@ mod tests {
         assert_eq!(store.list().unwrap()[0].name, "Atnbrufossen lookout");
         store.delete("p1").unwrap();
         assert!(store.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn route_store_get_and_gpx_export_roundtrip() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("navi.db");
+        let storage = crate::storage::Storage::open(&db).expect("open");
+        let store = RouteStore::new(&storage);
+        let via_json = r#"[{"name":"Via","lat":61.2,"lon":10.4}]"#;
+        store
+            .insert(&SavedRoute {
+                id: "r1".into(),
+                start_lat: 61.1,
+                start_lon: 10.5,
+                start_name: Some("Start".into()),
+                end_lat: 61.3,
+                end_lon: 10.2,
+                end_name: Some("End".into()),
+                via_json: via_json.into(),
+                profile: "car".into(),
+                vehicle_json: "{}".into(),
+                summary_json: "{}".into(),
+                created_at: "2026-09-04T08:00:00Z".into(),
+                last_break_lat: None,
+                last_break_lon: None,
+                last_overnight_lat: None,
+                last_overnight_lon: None,
+            })
+            .unwrap();
+        let got = store.get("r1").unwrap().expect("row");
+        assert_eq!(got.start_name.as_deref(), Some("Start"));
+        let rte = crate::export::route_points_from_saved(
+            got.start_lat,
+            got.start_lon,
+            got.start_name.as_deref(),
+            got.end_lat,
+            got.end_lon,
+            got.end_name.as_deref(),
+            &got.via_json,
+        );
+        assert_eq!(rte.len(), 3);
+        let poly = "10.500000,61.100000;10.400000,61.200000;10.200000,61.300000";
+        let track = crate::export::parse_route_polyline(poly);
+        let xml = crate::export::to_gpx(Some("Start -> End"), Some(&got.created_at), &rte, &track);
+        assert!(xml.contains("<rtept"));
+        assert_eq!(xml.matches("<rtept").count(), 3);
+        assert_eq!(xml.matches("<trkpt").count(), 3);
+        for pt in &rte {
+            let needle = format!(r#"lat="{:.6}" lon="{:.6}""#, pt.lat, pt.lon);
+            assert!(xml.contains(&needle), "missing {needle}");
+        }
+        assert!(store.get("missing").unwrap().is_none());
     }
 
     #[test]

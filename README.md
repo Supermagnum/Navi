@@ -18,6 +18,8 @@ Navi does not currently ship with a ready-made international routing database
 the way many commercial GPS / head-unit products do (those usually include
 precomputed indexes from the vendor).
 Computing this on device takes anywhere from 8 minutes and up to 25 minutes, it needs to be done when you download or update map data for your region.
+These processes might appear to be stuck, but be patient!
+
 Solving onboard convert cost may involve
 a server (example: navi.app) that distributes precomputed index packs
 for a region; when that server is unreachable, the natural fallback is what
@@ -188,7 +190,9 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Map updates** | Only when you ask — check for OpenStreetMap updates or download a fresh region. Never silent. On-screen copy is plain language (no internal planner dumps). | Done |
 | **Cross-region / cross-country prompts** | Destinations outside downloaded data (including another country, e.g. Sweden) show **Map data needed** with the correct Geofabrik extract — not a silent partial route. Evidence: [`android-test-results.md` Item 10](docs/android-test-results.md#item-10--osm-update-copy-cross-region-prompts-expanded-catalog-2026-08-19). | Done |
 | **Diagnostic logging** | **Tools → Diagnostic logging** (off by default). When on, writes a dated session log under **Internal storage → Documents → debug** (`navi_session_*.log`) for copy over USB/MTP — no adb required. Covers GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system. Not uploaded. **Export diagnostic log** shares the latest file. Detail: [Settings → Tools](#tools-downloads-and-diagnostic-logging) and [`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file). | Done |
-| **Plugins** | A safe sandbox for future add-ons exists; product plugins are not shipped yet. | Host ready |
+| **Weather overlay (HUD)** | **Map → Plugins → Weather overlay** (also under **Tools → Plugins**; off by default). Opt-in MET Norway → Open-Meteo fetch with SQLite cache, fill-style Meteocons icons, stale labeling when offline/throttled. Host UniFFI path; product does not yet link the WASM plugin-host. | Done |
+| **Weather symbols on map** | Nested **Show weather symbols on map** under Plugins (off by default; inert unless Weather overlay is on). `place:city` only at MapLibre zoom ≤ 8; max 10 symbols; 56 px min spacing; nearest-to-viewport-center priority. Town/village tiers and corridor overlay not shipped. | Done |
+| **Plugins** | A safe sandbox for future add-ons exists; most product plugins are not shipped yet. Weather uses the host cache today (see rows above). | Host ready |
 
 **Hardware note:** Real-device checks include Samsung Galaxy Tab S6 Lite
 (**SM-P613**) and Google Pixel 9a. Car head units still need more real-world
@@ -420,6 +424,7 @@ display choices in app preferences).
 | **3D (experimental)** | Optional hill shading on the map (independent of contours) |
 | **Contours** | Opt-in elevation isolines from the Mapterhorn DEM (independent of 3D; off by default) |
 | **Map tilt** | Tip the camera (0° / 35° / 45° / 60°) |
+| **Plugins** | Per-plugin enable toggles (Weather overlay + optional map city symbols; off by default) |
 
 ### Drive / vehicle (tap bottom status)
 
@@ -457,6 +462,8 @@ downloads).
 | **Weekly update reminder** | Optional nag only — does not download by itself |
 | **Diagnostic logging** | **Debug toggle** (off by default). When **on**, Navi appends a pipe-delimited **session log** on the device so you can diagnose planning, GPS, and setting changes without `adb logcat`. When **off**, no new session file is written and native per-stage route-plan timing stays gated off |
 | **Export diagnostic log** | Opens the Android share sheet for the latest session file (or tells you to turn logging on first) |
+| **Weather overlay** | Opt-in internet weather under **Plugins** (off by default). Shows a HUD chip near your position with fill-style icons; MET Norway primary, Open-Meteo failover; throttled ~45 min; last-known cache when offline |
+| **Show weather symbols on map** | Independent toggle under Plugins / Weather overlay (also off by default). When both are on, draws city weather icons at zoom ≤ 8 (`place:city` only, cap 10, 56 px spacing). Turning Weather overlay off clears map symbols too |
 
 **What the diagnostic log is for:** bug reports, planning timing (`ROUTE_PLAN` /
 `ROUTE_PLAN_STAGES`), and confirming toggles/settings on real hardware. It is
@@ -666,11 +673,12 @@ Per-PR GitHub Actions jobs and what each Rust / Kotlin test suite checks:
 
 # Plugins
 
-A sandboxed plugin host exists so future add-ons can run safely. **No product
-plugins ship in the app yet** — that is intentional. Overview:
-[`docs/plugins.md`](docs/plugins.md). The system requires a per-plugin
-**enable/disable** control, and host-mediated **USB** / **Bluetooth** I/O for
-hardware-facing plugins.
+A sandboxed plugin host exists so future add-ons can run safely. **Most product
+plugins do not ship in the app yet** — that is intentional. Weather conditions
+are available today via a **host-owned** path (Tools toggles), not via a linked
+WASM guest. Overview: [`docs/plugins.md`](docs/plugins.md). The system requires a
+per-plugin **enable/disable** control, and host-mediated **USB** / **Bluetooth**
+I/O for hardware-facing plugins.
 
 | Spec | Topic |
 |---|---|
@@ -679,7 +687,7 @@ hardware-facing plugins.
 | [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Fuel/water resupply ideas |
 | [`docs/plugins/traffic-information.md`](docs/plugins/traffic-information.md) | Traffic data sourcing research (DATEX II limits, RTL-SDR TMC/TPEG; not shipped) |
 | [`docs/plugins/datex-npra-client.md`](docs/plugins/datex-npra-client.md) | NPRA DATEX II v3.1 pull client (access, Basic Auth, endpoints; not shipped) |
-| [`docs/plugins/weather-plugin.md`](docs/plugins/weather-plugin.md) | Weather overlay (Meteocons icons vendored; guest not shipped) |
+| [`docs/plugins/weather-plugin.md`](docs/plugins/weather-plugin.md) | Weather overlay — HUD chip + optional city map symbols (host UniFFI; WASM guest scaffolded, not linked into the product APK) |
 | [`docs/plugins/weather-icons-reference.md`](docs/plugins/weather-icons-reference.md) | What each weather icon slug means (fill style) |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state + approach warnings to instrument clusters |
 | [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Animated icons |
@@ -1144,8 +1152,6 @@ English** when a translation or pack is missing. Spec:
 Do **not** infer UI language from GPS or SIM country. Do not add a language
 toggle until that plugin exists.
 
-Figure out why railway lines is not showing.
-
 Display **units** (metric / US / UK) are shipped (Drive settings), including
 peak-height labels on the basemap. Norwegian speed-limit **pictograms** stay
 official km/h plates; mph *plate artwork* is still future (`new-signs/`).
@@ -1186,6 +1192,5 @@ Context for whoever picks this up:
   (≈ 9.1008 km/h per mil/h), with sub-mil distances shown as stone's throw,
   arrow's flight, and so on.
 
-Investigate if lake names can be displayed along the lake shore.
 
 

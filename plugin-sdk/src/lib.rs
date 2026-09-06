@@ -22,6 +22,13 @@ extern "C" {
         out_cap: u32,
     ) -> i32;
     fn poi_write(ptr: u32, len: u32) -> i32;
+    fn weather_read(
+        lat_bits: u64,
+        lon_bits: u64,
+        radius_m_bits: u64,
+        out_ptr: u32,
+        out_cap: u32,
+    ) -> i32;
     fn host_nop();
 }
 
@@ -73,6 +80,24 @@ pub fn host_poi_write_json(json: &str) -> Result<(), i32> {
         Ok(())
     } else {
         Err(rc)
+    }
+}
+
+/// Read cached weather samples near a point; returns raw JSON bytes (may truncate).
+pub fn host_weather_read(lat: f64, lon: f64, radius_m: f64, out: &mut [u8]) -> usize {
+    let n = unsafe {
+        weather_read(
+            lat.to_bits(),
+            lon.to_bits(),
+            radius_m.to_bits(),
+            out.as_mut_ptr() as u32,
+            out.len() as u32,
+        )
+    };
+    if n < 0 {
+        0
+    } else {
+        n as usize
     }
 }
 

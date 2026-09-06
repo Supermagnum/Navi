@@ -102,6 +102,11 @@ fn rasterize_file_png(path: &Path, width: u32, height: u32) -> Result<Vec<u8>> {
     pixmap.encode_png().context("encode rasterized icon as PNG")
 }
 
+/// Public PNG rasterize for absolute SVG paths (weather icons, etc.).
+pub fn rasterize_svg_file_png(path: &Path, width: u32, height: u32) -> Result<Vec<u8>> {
+    rasterize_file_png(path, width, height)
+}
+
 fn render_to_pixmap(
     svg_bytes: &[u8],
     resources_dir: Option<&Path>,

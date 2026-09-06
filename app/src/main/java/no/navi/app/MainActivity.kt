@@ -126,6 +126,7 @@ import uniffi.navi.ecoModeDefault
 import uniffi.navi.ecoModeToggleable
 import uniffi.navi.elevationAt
 import uniffi.navi.ensurePlaceIndex
+import uniffi.navi.exportSavedRouteGpx
 import uniffi.navi.foregroundPlanActive
 import uniffi.navi.foregroundPlanEnter
 import uniffi.navi.foregroundPlanLeave
@@ -153,6 +154,7 @@ import uniffi.navi.renameSavedPlace
 import uniffi.navi.resolveSpeedLimitKmh
 import uniffi.navi.roadLabelNear
 import uniffi.navi.roadNearInfo
+import uniffi.navi.routeToGpx
 import uniffi.navi.saveCarRestSettings
 import uniffi.navi.saveNamedPlace
 import uniffi.navi.saveNamedRoute
@@ -370,6 +372,32 @@ private fun applySavedRouteSummaryJson(
     }
 }
 
+/** Safe default filename for ACTION_CREATE_DOCUMENT GPX export. */
+private fun gpxExportFileName(
+    startName: String,
+    endName: String,
+): String {
+    fun slug(raw: String): String =
+        raw
+            .lowercase()
+            .replace(Regex("[^a-z0-9]+"), "-")
+            .trim('-')
+            .ifBlank { "route" }
+    return "navi-${slug(startName)}-${slug(endName)}.gpx".take(96)
+}
+
+/** Full `<rte>` JSON including start and end (same shape as via_json entries). */
+private fun waypointsToRteJson(
+    start: Waypoint,
+    vias: List<Waypoint>,
+    end: Waypoint,
+): String {
+    val all = listOf(start) + vias + listOf(end)
+    return all.joinToString(",", "[", "]") {
+        """{"name":${org.json.JSONObject.quote(it.name)},"lat":${it.lat},"lon":${it.lon}}"""
+    }
+}
+
 private enum class SearchTarget { From, To, Via }
 
 private enum class SearchMode { Place, Address }
@@ -577,6 +605,11 @@ private fun NaviMapScreen() {
     var pendingRotationSnap by remember { mutableStateOf<Runnable?>(null) }
     var prioritySharePct by remember { mutableDoubleStateOf(0.0) }
     var savedRoutes by remember { mutableStateOf<List<FfiSavedRoute>>(emptyList()) }
+
+    /** When set, the next successful plan triggers a GPX export for this saved route id. */
+    var pendingGpxExportRouteId by remember { mutableStateOf<String?>(null) }
+    var pendingGpxExportText by remember { mutableStateOf<String?>(null) }
+    var pendingGpxExportFileName by remember { mutableStateOf("navi-route.gpx") }
     var axleKg by remember { mutableStateOf("") }
     var bogieKg by remember { mutableStateOf("") }
     var heightM by remember { mutableStateOf("") }
@@ -601,6 +634,15 @@ private fun NaviMapScreen() {
     var schoolPoisJson by remember { mutableStateOf("[]") }
     var routeSchoolPoisJson by remember { mutableStateOf("[]") }
     var roadSignWarning by remember { mutableStateOf(RoadSignWarningState()) }
+    var weatherPluginEnabled by remember {
+        mutableStateOf(MapHudPrefs.loadWeatherPluginEnabled(context))
+    }
+    var weatherMapSymbolsEnabled by remember {
+        mutableStateOf(MapHudPrefs.loadWeatherMapSymbolsEnabled(context))
+    }
+    var weatherHud by remember { mutableStateOf(WeatherHudState()) }
+    var weatherAppActive by remember { mutableStateOf(true) }
+    var weatherMapEpoch by remember { mutableIntStateOf(0) }
     var hideChrome by remember { mutableStateOf(false) }
     var hideSearch by remember { mutableStateOf(false) }
     var regionDownloadProgress by remember { mutableStateOf("") }
@@ -857,6 +899,28 @@ private fun NaviMapScreen() {
             ActivityResultContracts.RequestMultiplePermissions(),
         ) { result ->
             locationPermGranted = result.values.any { it }
+        }
+    val createGpxLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/gpx+xml"),
+        ) { uri ->
+            val text = pendingGpxExportText
+            pendingGpxExportText = null
+            if (uri == null) {
+                status = "GPX export cancelled"
+                return@rememberLauncherForActivityResult
+            }
+            if (text == null) {
+                status = "GPX export failed: no content"
+                return@rememberLauncherForActivityResult
+            }
+            val ok =
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { os ->
+                        os.write(text.toByteArray(Charsets.UTF_8))
+                    } ?: error("no output stream")
+                }.isSuccess
+            status = if (ok) "Exported GPX" else "GPX export failed"
         }
 
     val dataDir =
@@ -1135,6 +1199,31 @@ private fun NaviMapScreen() {
         } else {
             driveHud = driveHud.copy(minutesToBreak = null, tripEtaMinutes = null)
         }
+        pendingGpxExportRouteId?.let { exportId ->
+            pendingGpxExportRouteId = null
+            if (pending.routePolyline.isBlank()) {
+                status = "GPX export failed: plan produced no geometry"
+                return
+            }
+            val gpx =
+                exportSavedRouteGpx(
+                    dataDir.absolutePath,
+                    exportId,
+                    pending.routePolyline,
+                )
+            if (gpx.startsWith("FAIL")) {
+                status = gpx
+                return
+            }
+            val row = savedRoutes.firstOrNull { it.id == exportId }
+            pendingGpxExportFileName =
+                gpxExportFileName(
+                    row?.startName.orEmpty().ifBlank { "Start" },
+                    row?.endName.orEmpty().ifBlank { "Destination" },
+                )
+            pendingGpxExportText = gpx
+            createGpxLauncher.launch(pendingGpxExportFileName)
+        }
     }
 
     LaunchedEffect(dataDir) {
@@ -1149,6 +1238,53 @@ private fun NaviMapScreen() {
         remember {
             File(context.filesDir, "icons").also { ensureIconsCopied(context, it) }
         }
+
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer =
+            androidx.lifecycle.LifecycleEventObserver { _, event ->
+                when (event) {
+                    androidx.lifecycle.Lifecycle.Event.ON_RESUME -> weatherAppActive = true
+                    androidx.lifecycle.Lifecycle.Event.ON_STOP -> weatherAppActive = false
+                    else -> {}
+                }
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(weatherPluginEnabled, weatherAppActive, dataDir) {
+        if (!weatherPluginEnabled) {
+            weatherHud = WeatherHudState()
+            return@LaunchedEffect
+        }
+        // Periodic check while active; host enforces 30–60 min throttle + jitter.
+        while (true) {
+            if (!weatherPluginEnabled) break
+            if (weatherAppActive) {
+                val lat = mapState.cameraLat ?: mapState.gpsLat
+                val lon = mapState.cameraLon ?: mapState.gpsLon
+                val raw =
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            uniffi.navi.weatherRefreshJson(
+                                dataDir.absolutePath,
+                                lat,
+                                lon,
+                                true,
+                                true,
+                                false,
+                            )
+                        }.getOrDefault("{}")
+                    }
+                weatherHud = weatherHudFromRefreshJson(raw)
+                android.util.Log.i("NaviWeather", "refresh: $raw")
+            } else {
+                android.util.Log.i("NaviWeather", "skip fetch: app backgrounded")
+            }
+            delay(60_000L)
+        }
+    }
 
     fun placeIndexDbForWrite(): File = File(dataDir, "place_index.db")
 
@@ -3088,6 +3224,12 @@ private fun NaviMapScreen() {
             unitSystem = driveHud.unitSystem,
             styleEpoch = styleEpoch,
             bearingEpoch = bearingApplyEpoch,
+            weatherPluginEnabled = weatherPluginEnabled,
+            weatherMapSymbolsEnabled = weatherMapSymbolsEnabled,
+            weatherAppActive = weatherAppActive,
+            weatherIconsDir = File(iconsDir, "weather").absolutePath,
+            placeIndexDbPath = resolvePlaceIndexDb().absolutePath,
+            weatherMapEpoch = weatherMapEpoch,
             modifier = Modifier.fillMaxSize(),
             onLayerCount = { mapLayerCount = it },
             onUserPan = {
@@ -3393,7 +3535,10 @@ private fun NaviMapScreen() {
                     expanded = showMapSettings,
                     onToggleExpanded = {
                         showMapSettings = !showMapSettings
-                        if (showMapSettings) showDriveSettings = false
+                        if (showMapSettings) {
+                            showDriveSettings = false
+                            showTools = false
+                        }
                     },
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
@@ -3422,6 +3567,33 @@ private fun NaviMapScreen() {
                             .align(Alignment.Start)
                             .padding(bottom = 8.dp),
                 )
+                if (weatherPluginEnabled) {
+                    WeatherHudChip(
+                        state = weatherHud,
+                        weatherIconsDir = File(iconsDir, "weather").absolutePath,
+                        onRefresh = {
+                            val lat = mapState.cameraLat ?: mapState.gpsLat
+                            val lon = mapState.cameraLon ?: mapState.gpsLon
+                            val raw =
+                                runCatching {
+                                    uniffi.navi.weatherRefreshJson(
+                                        dataDir.absolutePath,
+                                        lat,
+                                        lon,
+                                        true,
+                                        weatherAppActive,
+                                        true,
+                                    )
+                                }.getOrDefault("{}")
+                            weatherHud = weatherHudFromRefreshJson(raw)
+                            android.util.Log.i("NaviWeather", "manual refresh: $raw")
+                        },
+                        modifier =
+                            Modifier
+                                .align(Alignment.Start)
+                                .padding(bottom = 8.dp),
+                    )
+                }
                 if (!hideSearch) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -3965,6 +4137,7 @@ private fun NaviMapScreen() {
                                     NaviMapTestHooks.lastPlanReport = result.report
                                     NaviMapTestHooks.lastRoutePolylineChars = 0
                                     NaviMapTestHooks.lastRoutePolyline = ""
+                                    pendingGpxExportRouteId = null
                                     RoutingPlanLog.cancelled(
                                         ecoForPlan,
                                         durationMs,
@@ -3980,12 +4153,20 @@ private fun NaviMapScreen() {
                                     NaviMapTestHooks.lastPlanReport = result.report
                                     NaviMapTestHooks.lastRoutePolylineChars = 0
                                     NaviMapTestHooks.lastRoutePolyline = ""
+                                    if (pendingGpxExportRouteId != null) {
+                                        pendingGpxExportRouteId = null
+                                        status =
+                                            "GPX export failed: " +
+                                            userFacingStatus(result.report).ifBlank { "Routing failed" }
+                                    } else {
+                                        status =
+                                            userFacingStatus(result.report).ifBlank { "Routing failed" }
+                                    }
                                     RoutingPlanLog.failed(
                                         ecoForPlan,
                                         durationMs,
                                         userFacingStatus(result.report).ifBlank { "Routing failed" },
                                     )
-                                    status = userFacingStatus(result.report).ifBlank { "Routing failed" }
                                     return@LaunchedEffect
                                 }
                                 RoutingPlanLog.complete(result, ecoForPlan, durationMs)
@@ -4707,6 +4888,53 @@ private fun NaviMapScreen() {
                                     ) {
                                         Text("Delete planned route")
                                     }
+                                    TextButton(
+                                        onClick = {
+                                            val start =
+                                                fromPoint
+                                                    ?: Waypoint(
+                                                        mapState.startName.ifBlank { "Start" },
+                                                        mapState.startLat,
+                                                        mapState.startLon,
+                                                    )
+                                            val end =
+                                                toPoint.takeIf { it.name.isNotBlank() || it.lat != 0.0 }
+                                                    ?: Waypoint(
+                                                        mapState.endName.ifBlank { "Destination" },
+                                                        mapState.endLat,
+                                                        mapState.endLon,
+                                                    )
+                                            val vias =
+                                                if (viaPoints.isNotEmpty()) {
+                                                    viaPoints
+                                                } else {
+                                                    mapState.viaPoints
+                                                }
+                                            val name =
+                                                "${start.name.ifBlank { "Start" }} -> ${end.name.ifBlank { "Destination" }}"
+                                            val gpx =
+                                                routeToGpx(
+                                                    name = name,
+                                                    timeIso = "",
+                                                    rteJson = waypointsToRteJson(start, vias, end),
+                                                    routePolyline = mapState.polyline,
+                                                )
+                                            if (gpx.startsWith("FAIL")) {
+                                                status = gpx
+                                            } else {
+                                                pendingGpxExportFileName =
+                                                    gpxExportFileName(start.name, end.name)
+                                                pendingGpxExportText = gpx
+                                                createGpxLauncher.launch(pendingGpxExportFileName)
+                                            }
+                                        },
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .testTag("btn_export_planned_gpx"),
+                                    ) {
+                                        Text("Export planned GPX")
+                                    }
                                 }
                                 if (savedRoutes.isEmpty()) {
                                     Text("No saved routes", style = MaterialTheme.typography.bodySmall)
@@ -4782,6 +5010,58 @@ private fun NaviMapScreen() {
                                                 enabled = !planningRoute,
                                                 modifier = Modifier.testTag("btn_load_saved_route"),
                                             ) { Text("Load") }
+                                            TextButton(
+                                                onClick = {
+                                                    val loadedProfile =
+                                                        travelProfileFromSavedName(route.profile)
+                                                    if (loadedProfile == null) {
+                                                        status =
+                                                            "Unknown profile in saved route: ${route.profile}"
+                                                        return@TextButton
+                                                    }
+                                                    fromPoint =
+                                                        Waypoint(
+                                                            name =
+                                                                route.startName.ifBlank {
+                                                                    "Start"
+                                                                },
+                                                            lat = route.startLat,
+                                                            lon = route.startLon,
+                                                        )
+                                                    toPoint =
+                                                        Waypoint(
+                                                            name =
+                                                                route.endName.ifBlank {
+                                                                    "Destination"
+                                                                },
+                                                            lat = route.endLat,
+                                                            lon = route.endLon,
+                                                        )
+                                                    viaPoints = parseSavedViaPoints(route.viaJson)
+                                                    profile = loadedProfile
+                                                    ecoEnabled = ecoModeDefault(loadedProfile)
+                                                    applySavedRouteSummaryJson(
+                                                        route.summaryJson,
+                                                        onAvoidMotorways = { avoidMotorways = it },
+                                                        onAvoidTolls = { avoidTolls = it },
+                                                        onAvoidFerries = { avoidFerries = it },
+                                                        onPriorityShare = { prioritySharePct = it },
+                                                    )
+                                                    if (loadedProfile == TravelProfile.BICYCLE ||
+                                                        loadedProfile == TravelProfile.BICYCLE_ELECTRIC ||
+                                                        loadedProfile == TravelProfile.HIKING
+                                                    ) {
+                                                        avoidMotorways = true
+                                                    }
+                                                    pendingGpxExportRouteId = route.id
+                                                    showRoutesPanel = true
+                                                    status =
+                                                        "Exporting ${route.startName} -> ${route.endName}; planning…"
+                                                    planKick += 1
+                                                },
+                                                enabled = !planningRoute,
+                                                modifier = Modifier.testTag("btn_export_saved_route_gpx"),
+                                            ) { Text("Export") }
                                             TextButton(
                                                 onClick = {
                                                     if (deleteSavedRoute(dataDir.absolutePath, route.id)) {
@@ -5046,6 +5326,38 @@ private fun NaviMapScreen() {
                             .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    PluginSettingsSection(
+                        weatherPluginEnabled = weatherPluginEnabled,
+                        onWeatherPluginChange = { on ->
+                            weatherPluginEnabled = on
+                            MapHudPrefs.saveWeatherPluginEnabled(context, on)
+                            DiagnosticLog.logToggle("weather_plugin", on)
+                            if (!on) {
+                                weatherHud = WeatherHudState()
+                                weatherMapSymbolsEnabled = false
+                                MapHudPrefs.saveWeatherMapSymbolsEnabled(context, false)
+                                weatherMapEpoch += 1
+                                status = "Weather overlay off"
+                            } else {
+                                status = "Weather overlay on — fetch when active"
+                            }
+                        },
+                        weatherMapSymbolsEnabled = weatherMapSymbolsEnabled,
+                        onWeatherMapSymbolsChange = { on ->
+                            weatherMapSymbolsEnabled = on
+                            MapHudPrefs.saveWeatherMapSymbolsEnabled(context, on)
+                            DiagnosticLog.logToggle("weather_map_symbols", on)
+                            weatherMapEpoch += 1
+                            status =
+                                if (on) {
+                                    "Map weather symbols on (cities, zoom ≤ ${weatherMapZoomMaxForUi().toInt()})"
+                                } else {
+                                    "Map weather symbols off"
+                                }
+                        },
+                        weatherAttribution = uniffi.navi.weatherAttributionText(),
+                        mapSymbolsZoomMax = weatherMapZoomMaxForUi().toInt(),
+                    )
                     Text("Region", style = MaterialTheme.typography.titleSmall)
                     Text("Map layers: $mapLayerCount", style = MaterialTheme.typography.bodySmall)
                     if (updateReminderDue) {
@@ -5854,6 +6166,36 @@ private fun NaviMapScreen() {
                         // Do not write lastCameraPitch here — only MapLibre camera state may.
                         styleEpoch += 1
                     },
+                    weatherPluginEnabled = weatherPluginEnabled,
+                    onWeatherPluginChange = { on ->
+                        weatherPluginEnabled = on
+                        MapHudPrefs.saveWeatherPluginEnabled(context, on)
+                        DiagnosticLog.logToggle("weather_plugin", on)
+                        if (!on) {
+                            weatherHud = WeatherHudState()
+                            weatherMapSymbolsEnabled = false
+                            MapHudPrefs.saveWeatherMapSymbolsEnabled(context, false)
+                            weatherMapEpoch += 1
+                            status = "Weather overlay off"
+                        } else {
+                            status = "Weather overlay on — fetch when active"
+                        }
+                    },
+                    weatherMapSymbolsEnabled = weatherMapSymbolsEnabled,
+                    onWeatherMapSymbolsChange = { on ->
+                        weatherMapSymbolsEnabled = on
+                        MapHudPrefs.saveWeatherMapSymbolsEnabled(context, on)
+                        DiagnosticLog.logToggle("weather_map_symbols", on)
+                        weatherMapEpoch += 1
+                        status =
+                            if (on) {
+                                "Map weather symbols on (cities, zoom ≤ ${weatherMapZoomMaxForUi().toInt()})"
+                            } else {
+                                "Map weather symbols off"
+                            }
+                    },
+                    weatherAttribution = uniffi.navi.weatherAttributionText(),
+                    mapSymbolsZoomMax = weatherMapZoomMaxForUi().toInt(),
                     onSave = {
                         MapHudPrefs.saveAutoZoom(
                             context,
@@ -6058,6 +6400,12 @@ private fun CorridorMapView(
     unitSystem: UnitSystem,
     styleEpoch: Int,
     bearingEpoch: Int = 0,
+    weatherPluginEnabled: Boolean = false,
+    weatherMapSymbolsEnabled: Boolean = false,
+    weatherAppActive: Boolean = true,
+    weatherIconsDir: String = "",
+    placeIndexDbPath: String = "",
+    weatherMapEpoch: Int = 0,
     modifier: Modifier = Modifier,
     onLayerCount: (Int) -> Unit,
     onUserPan: () -> Unit = {},
@@ -6295,6 +6643,18 @@ private fun CorridorMapView(
         BasemapPeakElevationStyle.apply(style, unitSystemRef.get())
         BasemapContourLabelStyle.apply(style, unitSystemRef.get())
         ensureRouteAboveHillshade(style)
+        // Weather city symbols are also wiped by setStyle — re-paint from cache.
+        if (weatherPluginEnabled && weatherMapSymbolsEnabled) {
+            refreshWeatherMapOnMain(
+                map = map,
+                dataDir = dataDir.absolutePath,
+                placeIndexDb = placeIndexDbPath,
+                weatherIconsDir = weatherIconsDir,
+                weatherPluginEnabled = weatherPluginEnabled,
+                mapSymbolsEnabled = weatherMapSymbolsEnabled,
+                appActive = weatherAppActive,
+            )
+        }
         applyCameraTilt(map)
         styleReady.value = true
         NaviMapTestHooks.styleReady = true
@@ -6860,6 +7220,36 @@ private fun CorridorMapView(
     LaunchedEffect(styleEpoch, prefer3d, contoursEnabled, vulkanAvailable, cameraTiltDeg) {
         val map = mapRef ?: return@LaunchedEffect
         applyResolvedStyle(map, force = true)
+    }
+
+    LaunchedEffect(
+        weatherMapEpoch,
+        weatherPluginEnabled,
+        weatherMapSymbolsEnabled,
+        weatherAppActive,
+        styleReady.value,
+        state.cameraZoom,
+        state.cameraLat,
+        state.cameraLon,
+    ) {
+        if (!styleReady.value) return@LaunchedEffect
+        while (true) {
+            val map = mapRef
+            if (map != null && styleReady.value) {
+                // MapLibre style APIs must run on the main thread; at most one
+                // HTTPS fetch occurs inside UniFFI per tick (paced).
+                refreshWeatherMapOnMain(
+                    map = map,
+                    dataDir = dataDir.absolutePath,
+                    placeIndexDb = placeIndexDbPath,
+                    weatherIconsDir = weatherIconsDir,
+                    weatherPluginEnabled = weatherPluginEnabled,
+                    mapSymbolsEnabled = weatherMapSymbolsEnabled,
+                    appActive = weatherAppActive,
+                )
+            }
+            delay(15_000L)
+        }
     }
 
     LaunchedEffect(state.cameraLat, state.cameraLon, prefer3d, contoursEnabled, cameraTiltDeg) {
@@ -7652,6 +8042,10 @@ private fun ensureIconsCopied(
                 input.copyTo(output)
             }
         }
+    }
+    // Weather fill icons (also covered by copyAssetDir; force-refresh for upgrades).
+    runCatching {
+        copyAssetDir(context.assets, "icons/weather", File(dest, "weather"))
     }
 }
 

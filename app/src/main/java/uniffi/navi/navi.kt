@@ -1010,6 +1010,34 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1074,6 +1102,8 @@ fun uniffi_navi_checksum_func_ensure_indexed_maps(
 fun uniffi_navi_checksum_func_ensure_live_hazards_loaded(
 ): Short
 fun uniffi_navi_checksum_func_ensure_place_index(
+): Short
+fun uniffi_navi_checksum_func_export_saved_route_gpx(
 ): Short
 fun uniffi_navi_checksum_func_ffi_linkage_smoke_test(
 ): Short
@@ -1229,6 +1259,8 @@ fun uniffi_navi_checksum_func_rasterize_icon_check(
 ): Short
 fun uniffi_navi_checksum_func_rasterize_icon_png(
 ): Short
+fun uniffi_navi_checksum_func_rasterize_weather_icon_png(
+): Short
 fun uniffi_navi_checksum_func_regions_cover_point(
 ): Short
 fun uniffi_navi_checksum_func_rename_saved_place(
@@ -1242,6 +1274,8 @@ fun uniffi_navi_checksum_func_road_near_info(
 fun uniffi_navi_checksum_func_road_sign_jurisdiction_allows(
 ): Short
 fun uniffi_navi_checksum_func_route_plan_timing_enabled(
+): Short
+fun uniffi_navi_checksum_func_route_to_gpx(
 ): Short
 fun uniffi_navi_checksum_func_routing_worker_count(
 ): Short
@@ -1304,6 +1338,28 @@ fun uniffi_navi_checksum_func_travel_profile_menu_focus(
 fun uniffi_navi_checksum_func_update_gps_fix(
 ): Short
 fun uniffi_navi_checksum_func_water_pois_along_polyline(
+): Short
+fun uniffi_navi_checksum_func_weather_attribution_text(
+): Short
+fun uniffi_navi_checksum_func_weather_icon_relative_path(
+): Short
+fun uniffi_navi_checksum_func_weather_map_max_symbols(
+): Short
+fun uniffi_navi_checksum_func_weather_map_min_pixel_spacing(
+): Short
+fun uniffi_navi_checksum_func_weather_map_place_kind(
+): Short
+fun uniffi_navi_checksum_func_weather_map_symbols_default_enabled(
+): Short
+fun uniffi_navi_checksum_func_weather_map_symbols_json(
+): Short
+fun uniffi_navi_checksum_func_weather_map_zoom_max(
+): Short
+fun uniffi_navi_checksum_func_weather_plugin_default_enabled(
+): Short
+fun uniffi_navi_checksum_func_weather_read_json(
+): Short
+fun uniffi_navi_checksum_func_weather_refresh_json(
 ): Short
 fun uniffi_navi_checksum_method_ffitrackstore_all(
 ): Short
@@ -1439,6 +1495,8 @@ fun uniffi_navi_fn_func_ensure_indexed_maps(`pbfPath`: RustBuffer.ByValue,`dataD
 fun uniffi_navi_fn_func_ensure_live_hazards_loaded(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_export_saved_route_gpx(`dataDir`: RustBuffer.ByValue,`routeId`: RustBuffer.ByValue,`routePolyline`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ffi_linkage_smoke_test(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1594,6 +1652,8 @@ fun uniffi_navi_fn_func_rasterize_icon_check(`key`: RustBuffer.ByValue,`theme`: 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_rasterize_icon_png(`key`: RustBuffer.ByValue,`theme`: RustBuffer.ByValue,`width`: Int,`height`: Int,`bundledDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_rasterize_weather_icon_png(`slug`: RustBuffer.ByValue,`width`: Int,`height`: Int,`weatherIconsDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_regions_cover_point(`geofabrikPathsCsv`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_rename_saved_place(`dataDir`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1608,6 +1668,8 @@ fun uniffi_navi_fn_func_road_sign_jurisdiction_allows(`lat`: Double,`lon`: Doubl
 ): Byte
 fun uniffi_navi_fn_func_route_plan_timing_enabled(uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+fun uniffi_navi_fn_func_route_to_gpx(`name`: RustBuffer.ByValue,`timeIso`: RustBuffer.ByValue,`rteJson`: RustBuffer.ByValue,`routePolyline`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_routing_worker_count(uniffi_out_err: UniffiRustCallStatus, 
 ): Int
 fun uniffi_navi_fn_func_run_car_corridor_pipeline(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`breakIntervalHours`: Double,uniffi_out_err: UniffiRustCallStatus, 
@@ -1669,6 +1731,28 @@ fun uniffi_navi_fn_func_travel_profile_menu_focus(`profile`: RustBuffer.ByValue,
 fun uniffi_navi_fn_func_update_gps_fix(`lat`: Double,`lon`: Double,`available`: Byte,`speedKmh`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 fun uniffi_navi_fn_func_water_pois_along_polyline(`dataDir`: RustBuffer.ByValue,`pbfPath`: RustBuffer.ByValue,`polyline`: RustBuffer.ByValue,`sampleStepKm`: Double,`radiusM`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_weather_attribution_text(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_weather_icon_relative_path(`slug`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_weather_map_max_symbols(uniffi_out_err: UniffiRustCallStatus, 
+): Int
+fun uniffi_navi_fn_func_weather_map_min_pixel_spacing(uniffi_out_err: UniffiRustCallStatus, 
+): Double
+fun uniffi_navi_fn_func_weather_map_place_kind(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_weather_map_symbols_default_enabled(uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_navi_fn_func_weather_map_symbols_json(`dataDir`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,`minLat`: Double,`minLon`: Double,`maxLat`: Double,`maxLon`: Double,`zoom`: Double,`weatherPluginEnabled`: Byte,`mapSymbolsEnabled`: Byte,`appActive`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_weather_map_zoom_max(uniffi_out_err: UniffiRustCallStatus, 
+): Double
+fun uniffi_navi_fn_func_weather_plugin_default_enabled(uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_navi_fn_func_weather_read_json(`dataDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_weather_refresh_json(`dataDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`enabled`: Byte,`appActive`: Byte,`manual`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1869,6 +1953,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_ensure_place_index() != 50894.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_export_saved_route_gpx() != 14845.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_ffi_linkage_smoke_test() != 11010.toShort()) {
@@ -2102,6 +2189,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_rasterize_icon_png() != 19569.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_rasterize_weather_icon_png() != 42236.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_regions_cover_point() != 25316.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2121,6 +2211,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_route_plan_timing_enabled() != 55311.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_route_to_gpx() != 25085.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_routing_worker_count() != 4016.toShort()) {
@@ -2214,6 +2307,39 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_water_pois_along_polyline() != 62262.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_weather_attribution_text() != 20259.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_weather_icon_relative_path() != 496.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_weather_map_max_symbols() != 53339.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_weather_map_min_pixel_spacing() != 32098.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_weather_map_place_kind() != 32924.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_weather_map_symbols_default_enabled() != 46133.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_weather_map_symbols_json() != 18957.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_weather_map_zoom_max() != 10176.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_weather_plugin_default_enabled() != 13304.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_weather_read_json() != 54007.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_weather_refresh_json() != 24395.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_method_ffitrackstore_all() != 9523.toShort()) {
@@ -4738,6 +4864,21 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Look up a saved route, rebuild `<rte>` from stored waypoints, and serialize GPX
+         * using a caller-supplied replan polyline (Option A — geometry is not stored in DB).
+         *
+         * Returns GPX XML on success, or a string starting with `FAIL:`.
+         */ fun `exportSavedRouteGpx`(`dataDir`: kotlin.String, `routeId`: kotlin.String, `routePolyline`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_export_saved_route_gpx(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`routeId`),FfiConverterString.lower(`routePolyline`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Fast FFI/worker-pool smoke test. Does **not** validate routing.
          *
          * Report always contains `TEST_KIND=SMOKE` and `DATA_SOURCE=none`.
@@ -5628,6 +5769,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Rasterize a weather fill-style SVG under `weather_icons_dir` to PNG.
+         */ fun `rasterizeWeatherIconPng`(`slug`: kotlin.String, `width`: kotlin.UInt, `height`: kotlin.UInt, `weatherIconsDir`: kotlin.String): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_rasterize_weather_icon_png(
+        FfiConverterString.lower(`slug`),FfiConverterUInt.lower(`width`),FfiConverterUInt.lower(`height`),FfiConverterString.lower(`weatherIconsDir`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Whether any of the comma-separated Geofabrik paths' bboxes cover `(lat, lon)`.
          */ fun `regionsCoverPoint`(`geofabrikPathsCsv`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double): kotlin.Boolean {
             return FfiConverterBoolean.lift(
@@ -5712,6 +5865,25 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_route_plan_timing_enabled(
         _status)
+}
+    )
+    }
+    
+
+        /**
+         * Serialize a planned corridor to GPX 1.1.
+         *
+         * * `rte_json` — full route-point list including start and end:
+         * `[{"name","lat","lon"}, …]` (same shape as saved `via_json`, but must include
+         * the endpoints when used standalone).
+         * * `route_polyline` — Navi corridor string `"lon,lat;lon,lat;…"`.
+         *
+         * Returns GPX XML on success, or a string starting with `FAIL:`.
+         */ fun `routeToGpx`(`name`: kotlin.String, `timeIso`: kotlin.String, `rteJson`: kotlin.String, `routePolyline`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_route_to_gpx(
+        FfiConverterString.lower(`name`),FfiConverterString.lower(`timeIso`),FfiConverterString.lower(`rteJson`),FfiConverterString.lower(`routePolyline`),_status)
 }
     )
     }
@@ -6049,6 +6221,133 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_water_pois_along_polyline(
         FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`polyline`),FfiConverterDouble.lower(`sampleStepKm`),FfiConverterDouble.lower(`radiusM`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * CC BY attribution string (never includes the "Yr" brand name).
+         */ fun `weatherAttributionText`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_weather_attribution_text(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Relative icon path for a Meteocons slug (`fill/{slug}.svg` in v1).
+         */ fun `weatherIconRelativePath`(`slug`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_weather_icon_relative_path(
+        FfiConverterString.lower(`slug`),_status)
+}
+    )
+    }
+    
+ fun `weatherMapMaxSymbols`(): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_weather_map_max_symbols(
+        _status)
+}
+    )
+    }
+    
+ fun `weatherMapMinPixelSpacing`(): kotlin.Double {
+            return FfiConverterDouble.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_weather_map_min_pixel_spacing(
+        _status)
+}
+    )
+    }
+    
+ fun `weatherMapPlaceKind`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_weather_map_place_kind(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Default for the independent "Show weather symbols on map" toggle.
+         */ fun `weatherMapSymbolsDefaultEnabled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_weather_map_symbols_default_enabled(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * List `place:city` entries in a map bbox, then refresh/cache weather and declutter.
+         *
+         * Returns JSON: `{ "zoom":.., "visible_cities":N, "symbols":[...], "fetches":N, "reasons":[...] }`
+         * No network when `weather_plugin_enabled` or `map_symbols_enabled` is false, or when
+         * `app_active` is false (cache-only). Symbols are empty when zoom > MAP_WEATHER_ZOOM_MAX.
+         */ fun `weatherMapSymbolsJson`(`dataDir`: kotlin.String, `indexDbPath`: kotlin.String, `minLat`: kotlin.Double, `minLon`: kotlin.Double, `maxLat`: kotlin.Double, `maxLon`: kotlin.Double, `zoom`: kotlin.Double, `weatherPluginEnabled`: kotlin.Boolean, `mapSymbolsEnabled`: kotlin.Boolean, `appActive`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_weather_map_symbols_json(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`indexDbPath`),FfiConverterDouble.lower(`minLat`),FfiConverterDouble.lower(`minLon`),FfiConverterDouble.lower(`maxLat`),FfiConverterDouble.lower(`maxLon`),FfiConverterDouble.lower(`zoom`),FfiConverterBoolean.lower(`weatherPluginEnabled`),FfiConverterBoolean.lower(`mapSymbolsEnabled`),FfiConverterBoolean.lower(`appActive`),_status)
+}
+    )
+    }
+    
+ fun `weatherMapZoomMax`(): kotlin.Double {
+            return FfiConverterDouble.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_weather_map_zoom_max(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Hard-coded product default: weather plugin must ship disabled.
+         */ fun `weatherPluginDefaultEnabled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_weather_plugin_default_enabled(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Read cached weather near lat/lon (HostApi `weather_read` surface for Android).
+         */ fun `weatherReadJson`(`dataDir`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double, `radiusM`: kotlin.Double): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_weather_read_json(
+        FfiConverterString.lower(`dataDir`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterDouble.lower(`radiusM`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Refresh weather when enabled + active (or manual), else return last cache.
+         *
+         * `manual` bypasses the active interval but is still rate-limited (2–5 min).
+         * When `app_active` is false and `manual` is false, no network fetch occurs.
+         */ fun `weatherRefreshJson`(`dataDir`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double, `enabled`: kotlin.Boolean, `appActive`: kotlin.Boolean, `manual`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_weather_refresh_json(
+        FfiConverterString.lower(`dataDir`),FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterBoolean.lower(`enabled`),FfiConverterBoolean.lower(`appActive`),FfiConverterBoolean.lower(`manual`),_status)
 }
     )
     }

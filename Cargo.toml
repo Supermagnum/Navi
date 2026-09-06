@@ -9,6 +9,7 @@ members = [
     "plugin-sdk",
     "plugins/log-hello",
     "plugins/busy-loop",
+    "plugins/weather",
 ]
 default-members = ["core", "plugin-host"]
 
