@@ -225,11 +225,11 @@ offline Protomaps template (`roads_label_*`, `pois`):
 |---|---|---|
 | ≥ 9 | (roads unchanged below) | Lake point names (`water_label_lake`; tile `min_zoom` often 9) |
 | ≥ 10 | Same | + river line names (`water_label_river`; tile `min_zoom` often 10) |
-| ≥ 12 | (roads unchanged below) | Glacier + wetland names (`pois.kind=glacier` / `wetland`) when tile `min_zoom` allows |
+| ≥ 12 | (roads unchanged below) | Glacier + wetland names (`pois.kind=glacier` / `wetland`); railway station names (`pois.kind=station`, OSM `railway=station`) when tile `min_zoom` allows |
 | ≥ 13 | Motorways | + peak/hill name+elevation (`pois.kind=peak` / `hill`; OSM Carto / osm.org peak floor) when tile `min_zoom` allows |
 | ≥ 14 | + secondary | Same |
 | ≥ 15 | + other majors and minor streets | + townhall names (`pois.kind=townhall`; feature `min_zoom` often 15) |
-| ≥ 16 | Same | Urban amenities (`pois` kinds other than glacier/wetland/townhall/peak/hill) |
+| ≥ 16 | Same | Urban amenities (`pois` kinds other than glacier/wetland/station/townhall/peak/hill) |
 
 Offline Protomaps peaks live in the `pois` source-layer (`kind=peak` / `hill`),
 not only `places`. Glacier **names** are also `pois` points (`kind=glacier`,
@@ -238,12 +238,16 @@ Wetland **names** are likewise `pois` points (`kind=wetland`, ~z12); wetland
 **polygons** in `landuse` carry no `name`. Lake/river names sit on the mixed
 `water` layer (Point vs LineString) and use dedicated symbol layers — fill/line
 geometry filters are unchanged (shard fix stays labeling-orthogonal). The
-`pois` layer keeps a **per-kind** zoom floor (`glacier`/`wetland` → 12,
+`pois` layer keeps a **per-kind** zoom floor (`glacier`/`wetland`/`station` → 12,
 `peak`/`hill` → 13, `townhall` → 15, everything else → 16) so enabling
-glacier/peak labels does not pull schools/fuel/etc. down to z12. Peak/hill
+glacier/peak/station labels does not pull schools/fuel/etc. down to z12. Peak/hill
 use **z13** (same floor as openstreetmap.org / OSM Carto peak names), not the
 default z16: offline extracts are native **maxzoom 15**, so a z16 gate never
-draws. The baked style also pins the vector source `maxzoom` to the PMTiles
+draws. Railway stations (`kind=station`) were missing from the allow-list
+entirely until whitelisted — tiles already had the features; the style filter
+dropped them. Station icons use the Navit `rail_station` sprite packed into
+the Protomaps atlas (see [`poi-icon-whitelist.md`](poi-icon-whitelist.md)).
+The baked style also pins the vector source `maxzoom` to the PMTiles
 header so camera z16–z18 overzooms z15 tiles instead of requesting empty ones.
 Peak/hill labels append OSM elevation when the tile carries it: Protomaps
 exposes numeric `elevation` (metres), not `ele`.

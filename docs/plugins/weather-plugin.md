@@ -127,7 +127,7 @@ provider's own rules, to keep cellular data usage low:
 | Background | **No fetch** while the app is backgrounded / not in active use — consistent with [Offline behaviour](#offline-behaviour) |
 | Jitter | Small random jitter on scheduled fetch times (per Yr.no traffic guidance; apply to **both** providers) |
 | Manual refresh | User **“refresh now”** bypasses the interval but remains rate-limited (e.g. no more than once per **2–5 minutes**) |
-| Cache-first | Serve **last-known cache** (labelled stale per Offline behaviour) when the throttle window has not elapsed, rather than blocking on a fresh fetch |
+| Cache-first | Serve **last-known cache** when the throttle window has not elapsed; GPS pill shows Updated / Next update times |
 
 ---
 
@@ -276,8 +276,9 @@ from settings.
 ## Offline behaviour
 
 - Routing and core HUD must work with the weather plugin **disabled**.
-- With the plugin enabled but offline: show **last-known cache** only; label
-  stale data in UI.
+- With the plugin enabled but offline: show **last-known cache** only. The GPS
+  weather pill shows **Updated** / **Next update** clock times — not
+  stale / throttled / offline wording.
 - No silent background refresh — network fetch requires user opt-in consistent
   with Navi's offline-first rules ([`plugins.md`](../plugins.md)).
 
@@ -301,7 +302,7 @@ from settings.
 3. Map provider condition codes → Meteocons slugs via manifest (Yr.no primary,
    Open-Meteo fallback).
 4. Host icon resolver: `{style}/{slug}.svg` with static fallback.
-5. HUD chips + optional corridor overlay; stale-data labelling.
+5. HUD chips + optional corridor overlay; timing labels (Updated / Next update).
 6. SMIL playback path + reduce-motion → static icon.
 7. Wire optional `weather_read` into safety-resupply heat model.
 8. Ship icons in Android assets or load from plugin tree when product plugin

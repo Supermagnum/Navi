@@ -424,7 +424,7 @@ async fn api_plan(State(state): State<AppState>, Json(body): Json<PlanBody>) -> 
             use_eco,
             profile,
             false,
-            false,
+            navi::FfiTollPolicy::Allow,
             false,
             vehicle,
             false,

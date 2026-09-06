@@ -262,7 +262,7 @@ class FollowGpsPanZoomInstrumentedTest {
             useEco = false,
             profile = TravelProfile.CAR,
             avoidMotorways = false,
-            avoidTolls = false,
+            tollPolicy = uniffi.navi.FfiTollPolicy.ALLOW,
             avoidFerries = false,
             vehicle =
                 FfiVehicleLimits(

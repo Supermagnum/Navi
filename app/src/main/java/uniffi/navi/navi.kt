@@ -1512,7 +1512,7 @@ fun uniffi_navi_fn_func_format_avoid_motorways_report(`avoidMotorways`: Byte,`pr
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_format_current_road_label(`name`: RustBuffer.ByValue,`roadRef`: RustBuffer.ByValue,`highway`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_navi_fn_func_format_route_avoidance_report(`avoidMotorways`: Byte,`avoidTolls`: Byte,`avoidFerries`: Byte,`priorityPathSharePct`: Double,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_navi_fn_func_format_route_avoidance_report(`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`priorityPathSharePct`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_geofabrik_latest_pbf_url(`geofabrikRegion`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1604,9 +1604,9 @@ fun uniffi_navi_fn_func_overspeed_delta_kmh(`speedKmh`: RustBuffer.ByValue,`limi
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_place_index_has_entries(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
-fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`avoidTolls`: Byte,`avoidFerries`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_navi_fn_func_plan_car_route_at(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`avoidTolls`: Byte,`avoidFerries`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`departureLocalIso`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_navi_fn_func_plan_car_route_at(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`departureLocalIso`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_plan_hiking_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`waypointsJson`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`preferPilgrimRoutes`: Byte,`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1979,7 +1979,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_format_current_road_label() != 3965.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_format_route_avoidance_report() != 48174.toShort()) {
+    if (lib.uniffi_navi_checksum_func_format_route_avoidance_report() != 24595.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_geofabrik_latest_pbf_url() != 13066.toShort()) {
@@ -2117,10 +2117,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_place_index_has_entries() != 5091.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_plan_car_route() != 29651.toShort()) {
+    if (lib.uniffi_navi_checksum_func_plan_car_route() != 30094.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_plan_car_route_at() != 22062.toShort()) {
+    if (lib.uniffi_navi_checksum_func_plan_car_route_at() != 62304.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_plan_hiking_route() != 30904.toShort()) {
@@ -3115,7 +3115,31 @@ data class CorridorRouteResult (
     /**
      * Non-empty when the route includes an off-trail terrain segment (advisory).
      */
-    var `offTrailAdvisory`: kotlin.String
+    var `offTrailAdvisory`: kotlin.String, 
+    /**
+     * `allow` / `penalize` / `never_use` for this plan attempt.
+     */
+    var `tollPolicy`: kotlin.String, 
+    /**
+     * JSON array of bbox pad degrees tried, e.g. `[0.35,0.7,1.4,2.8,5.0]`.
+     */
+    var `padAttemptsJson`: kotlin.String, 
+    /**
+     * A* node expansions on the last search attempt (0 when not run).
+     */
+    var `searchExpansions`: kotlin.ULong, 
+    /**
+     * `found` / `disconnected` / `bbox_exhausted` / `cancelled` / `snap_failed` / `ok`.
+     */
+    var `searchTerminateReason`: kotlin.String, 
+    /**
+     * True when NeverUse could not find a free path and a toll-using route was returned.
+     */
+    var `tollAvoidanceIncomplete`: kotlin.Boolean, 
+    /**
+     * True when the returned path includes at least one toll edge.
+     */
+    var `routeUsesTolls`: kotlin.Boolean
 ) {
     
     companion object
@@ -3145,6 +3169,12 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterDouble.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -3166,7 +3196,13 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterString.allocationSize(value.`maneuversJson`) +
             FfiConverterDouble.allocationSize(value.`priorityPathSharePct`) +
             FfiConverterString.allocationSize(value.`routeSegmentsJson`) +
-            FfiConverterString.allocationSize(value.`offTrailAdvisory`)
+            FfiConverterString.allocationSize(value.`offTrailAdvisory`) +
+            FfiConverterString.allocationSize(value.`tollPolicy`) +
+            FfiConverterString.allocationSize(value.`padAttemptsJson`) +
+            FfiConverterULong.allocationSize(value.`searchExpansions`) +
+            FfiConverterString.allocationSize(value.`searchTerminateReason`) +
+            FfiConverterBoolean.allocationSize(value.`tollAvoidanceIncomplete`) +
+            FfiConverterBoolean.allocationSize(value.`routeUsesTolls`)
     )
 
     override fun write(value: CorridorRouteResult, buf: ByteBuffer) {
@@ -3188,6 +3224,12 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
             FfiConverterDouble.write(value.`priorityPathSharePct`, buf)
             FfiConverterString.write(value.`routeSegmentsJson`, buf)
             FfiConverterString.write(value.`offTrailAdvisory`, buf)
+            FfiConverterString.write(value.`tollPolicy`, buf)
+            FfiConverterString.write(value.`padAttemptsJson`, buf)
+            FfiConverterULong.write(value.`searchExpansions`, buf)
+            FfiConverterString.write(value.`searchTerminateReason`, buf)
+            FfiConverterBoolean.write(value.`tollAvoidanceIncomplete`, buf)
+            FfiConverterBoolean.write(value.`routeUsesTolls`, buf)
     }
 }
 
@@ -4091,6 +4133,37 @@ public object FfiConverterTypeFfiIconTheme: FfiConverterRustBuffer<FfiIconTheme>
 
 
 
+enum class FfiTollPolicy {
+    
+    ALLOW,
+    PENALIZE,
+    NEVER_USE;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiTollPolicy: FfiConverterRustBuffer<FfiTollPolicy> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiTollPolicy.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiTollPolicy) = 4UL
+
+    override fun write(value: FfiTollPolicy, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
 enum class TravelProfile {
     
     CAR,
@@ -4960,12 +5033,14 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * Extended avoidance report (motorways + tolls + ferries). Defaults for toll/ferry: off.
-         */ fun `formatRouteAvoidanceReport`(`avoidMotorways`: kotlin.Boolean, `avoidTolls`: kotlin.Boolean, `avoidFerries`: kotlin.Boolean, `priorityPathSharePct`: kotlin.Double): kotlin.String {
+         * Extended avoidance report (motorways + tolls + ferries).
+         *
+         * `toll_policy` replaces the former `avoid_tolls: bool` (`false`→Allow, `true`→Penalize).
+         */ fun `formatRouteAvoidanceReport`(`avoidMotorways`: kotlin.Boolean, `tollPolicy`: FfiTollPolicy, `avoidFerries`: kotlin.Boolean, `priorityPathSharePct`: kotlin.Double): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_format_route_avoidance_report(
-        FfiConverterBoolean.lower(`avoidMotorways`),FfiConverterBoolean.lower(`avoidTolls`),FfiConverterBoolean.lower(`avoidFerries`),FfiConverterDouble.lower(`priorityPathSharePct`),_status)
+        FfiConverterBoolean.lower(`avoidMotorways`),FfiConverterTypeFfiTollPolicy.lower(`tollPolicy`),FfiConverterBoolean.lower(`avoidFerries`),FfiConverterDouble.lower(`priorityPathSharePct`),_status)
 }
     )
     }
@@ -5499,11 +5574,11 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
          * inferred from `pbf_path` (a fixture clone of the same extract must not send
          * lookup to a directory with no packs). Pass `""` only when the PBF already
          * lives next to the packs.
-         */ fun `planCarRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean, `profile`: TravelProfile, `avoidMotorways`: kotlin.Boolean, `avoidTolls`: kotlin.Boolean, `avoidFerries`: kotlin.Boolean, `vehicle`: FfiVehicleLimits, `preferOfficialNetworks`: kotlin.Boolean, `dataDir`: kotlin.String): CorridorRouteResult {
+         */ fun `planCarRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean, `profile`: TravelProfile, `avoidMotorways`: kotlin.Boolean, `tollPolicy`: FfiTollPolicy, `avoidFerries`: kotlin.Boolean, `vehicle`: FfiVehicleLimits, `preferOfficialNetworks`: kotlin.Boolean, `dataDir`: kotlin.String): CorridorRouteResult {
             return FfiConverterTypeCorridorRouteResult.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_plan_car_route(
-        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`elevDir`),FfiConverterString.lower(`cacheDir`),FfiConverterDouble.lower(`startLat`),FfiConverterDouble.lower(`startLon`),FfiConverterDouble.lower(`endLat`),FfiConverterDouble.lower(`endLon`),FfiConverterBoolean.lower(`useEco`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterBoolean.lower(`avoidMotorways`),FfiConverterBoolean.lower(`avoidTolls`),FfiConverterBoolean.lower(`avoidFerries`),FfiConverterTypeFfiVehicleLimits.lower(`vehicle`),FfiConverterBoolean.lower(`preferOfficialNetworks`),FfiConverterString.lower(`dataDir`),_status)
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`elevDir`),FfiConverterString.lower(`cacheDir`),FfiConverterDouble.lower(`startLat`),FfiConverterDouble.lower(`startLon`),FfiConverterDouble.lower(`endLat`),FfiConverterDouble.lower(`endLon`),FfiConverterBoolean.lower(`useEco`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterBoolean.lower(`avoidMotorways`),FfiConverterTypeFfiTollPolicy.lower(`tollPolicy`),FfiConverterBoolean.lower(`avoidFerries`),FfiConverterTypeFfiVehicleLimits.lower(`vehicle`),FfiConverterBoolean.lower(`preferOfficialNetworks`),FfiConverterString.lower(`dataDir`),_status)
 }
     )
     }
@@ -5514,11 +5589,11 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
          *
          * `departure_local_iso` accepts `YYYY-MM-DDTHH:MM:SS` (no timezone). When `None`,
          * the planner uses the device local clock (same as [`plan_car_route`]).
-         */ fun `planCarRouteAt`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean, `profile`: TravelProfile, `avoidMotorways`: kotlin.Boolean, `avoidTolls`: kotlin.Boolean, `avoidFerries`: kotlin.Boolean, `vehicle`: FfiVehicleLimits, `preferOfficialNetworks`: kotlin.Boolean, `departureLocalIso`: kotlin.String?, `dataDir`: kotlin.String): CorridorRouteResult {
+         */ fun `planCarRouteAt`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean, `profile`: TravelProfile, `avoidMotorways`: kotlin.Boolean, `tollPolicy`: FfiTollPolicy, `avoidFerries`: kotlin.Boolean, `vehicle`: FfiVehicleLimits, `preferOfficialNetworks`: kotlin.Boolean, `departureLocalIso`: kotlin.String?, `dataDir`: kotlin.String): CorridorRouteResult {
             return FfiConverterTypeCorridorRouteResult.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_plan_car_route_at(
-        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`elevDir`),FfiConverterString.lower(`cacheDir`),FfiConverterDouble.lower(`startLat`),FfiConverterDouble.lower(`startLon`),FfiConverterDouble.lower(`endLat`),FfiConverterDouble.lower(`endLon`),FfiConverterBoolean.lower(`useEco`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterBoolean.lower(`avoidMotorways`),FfiConverterBoolean.lower(`avoidTolls`),FfiConverterBoolean.lower(`avoidFerries`),FfiConverterTypeFfiVehicleLimits.lower(`vehicle`),FfiConverterBoolean.lower(`preferOfficialNetworks`),FfiConverterOptionalString.lower(`departureLocalIso`),FfiConverterString.lower(`dataDir`),_status)
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`elevDir`),FfiConverterString.lower(`cacheDir`),FfiConverterDouble.lower(`startLat`),FfiConverterDouble.lower(`startLon`),FfiConverterDouble.lower(`endLat`),FfiConverterDouble.lower(`endLon`),FfiConverterBoolean.lower(`useEco`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterBoolean.lower(`avoidMotorways`),FfiConverterTypeFfiTollPolicy.lower(`tollPolicy`),FfiConverterBoolean.lower(`avoidFerries`),FfiConverterTypeFfiVehicleLimits.lower(`vehicle`),FfiConverterBoolean.lower(`preferOfficialNetworks`),FfiConverterOptionalString.lower(`departureLocalIso`),FfiConverterString.lower(`dataDir`),_status)
 }
     )
     }

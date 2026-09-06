@@ -1050,6 +1050,8 @@
             13,
             "townhall",
             15,
+            "station",
+            12,
             16
           ]
         ],
@@ -1077,6 +1079,7 @@
             "bicycle_repair_station",
             "bicycle",
             "bus_stop",
+            "station",
             "parking",
             "attraction",
             "museum",
@@ -1129,6 +1132,8 @@
           "fast_food",
           "bus_stop",
           "bus_stop",
+          "station",
+          "station",
           "convenience",
           "convenience",
           "supermarket",

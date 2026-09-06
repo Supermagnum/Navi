@@ -23,6 +23,17 @@ set.
 | `bicycle_repair` | `shop/bicycle.svg` (Carto has no `shop/bicycle_repair.svg`) |
 | `bicycle_repair_station` | `shop/bicycle.svg` (same) |
 
+## Railway station sprite (offline basemap)
+
+Protomaps `pois.kind=station` (OSM `railway=station`) uses the Navit
+`rail_station.svg` icon packed into the same atlas as sprite key `station`.
+OSM Carto renders stations as a generic square, not a pictorial symbol, so
+there is no Carto SVG to reuse.
+
+- **Source:** [`core/src/icons/rail_station.svg`](core/src/icons/rail_station.svg)
+- **License:** GPL v2 (Navit-derived; same family as other Navi overlay icons —
+  see [`docs/icons.md`](docs/icons.md))
+
 The bundled Protomaps light atlas baseline remains from
 [protomaps/basemaps-assets](https://github.com/protomaps/basemaps-assets) (v4).
 

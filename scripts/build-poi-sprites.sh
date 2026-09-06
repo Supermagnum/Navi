@@ -76,3 +76,4 @@ python3 "${REPO_ROOT}/scripts/merge_sprite_atlas.py" \
   --out-png "${SPRITE_DIR}/light@2x.png"
 
 echo "Done. Updated ${SPRITE_DIR}/light*.json/png — bump BasemapStyleResolver assetEpoch and style.template.json icon-image mappings."
+echo "Note: railway station (kind=station) uses Navit rail_station.svg packed separately into the atlas — not from Carto (see CREDITS.md)."

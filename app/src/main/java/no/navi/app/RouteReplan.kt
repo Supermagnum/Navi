@@ -3,6 +3,7 @@ package no.navi.app
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uniffi.navi.CorridorRouteResult
+import uniffi.navi.FfiTollPolicy
 import uniffi.navi.FfiVehicleLimits
 import uniffi.navi.TravelProfile
 import uniffi.navi.planCarRoute
@@ -103,7 +104,12 @@ object RouteReplan {
                         useEco = useEco,
                         profile = profile,
                         avoidMotorways = avoidMotorways,
-                        avoidTolls = avoidTolls,
+                        tollPolicy =
+                            if (avoidTolls) {
+                                FfiTollPolicy.PENALIZE
+                            } else {
+                                FfiTollPolicy.ALLOW
+                            },
                         avoidFerries = avoidFerries,
                         vehicle = vehicle,
                         preferOfficialNetworks = preferOfficialNetworks,
@@ -143,6 +149,12 @@ object RouteReplan {
                 priorityPathSharePct = share,
                 routeSegmentsJson = merged.routeSegmentsJson,
                 offTrailAdvisory = merged.offTrailAdvisory,
+                tollPolicy = merged.tollPolicy,
+                padAttemptsJson = merged.padAttemptsJson,
+                searchExpansions = merged.searchExpansions,
+                searchTerminateReason = merged.searchTerminateReason,
+                tollAvoidanceIncomplete = merged.tollAvoidanceIncomplete,
+                routeUsesTolls = merged.routeUsesTolls,
             )
         }
 

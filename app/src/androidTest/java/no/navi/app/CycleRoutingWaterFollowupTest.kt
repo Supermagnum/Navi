@@ -103,7 +103,7 @@ class CycleRoutingWaterFollowupTest {
                 false,
                 TravelProfile.BICYCLE,
                 false,
-                false,
+                uniffi.navi.FfiTollPolicy.ALLOW,
                 false,
                 EMPTY_VEHICLE,
                 true,

@@ -451,6 +451,12 @@ object DiagnosticLog {
                 "plan_duration_ms" to planMs,
                 "pack_hit" to packHit,
                 "poi_pack_hit" to poiPackHit,
+                "toll_policy" to result.tollPolicy,
+                "pad_attempts_json" to result.padAttemptsJson,
+                "search_expansions" to result.searchExpansions.toLong(),
+                "search_terminate_reason" to result.searchTerminateReason,
+                "toll_avoidance_incomplete" to result.tollAvoidanceIncomplete,
+                "route_uses_tolls" to result.routeUsesTolls,
             ).filterValues { it != null },
         )
         logRoutePlanStagesFromReport(result.report)
@@ -499,8 +505,25 @@ object DiagnosticLog {
         }
     }
 
-    fun logRoutePlanFailed(reason: String) {
-        write(Category.ROUTE_PLAN, mapOf("status" to "failed", "reason" to reason))
+    fun logRoutePlanFailed(
+        reason: String,
+        result: CorridorRouteResult? = null,
+    ) {
+        write(
+            Category.ROUTE_PLAN,
+            buildMap {
+                put("status", "failed")
+                put("reason", reason)
+                if (result != null) {
+                    put("toll_policy", result.tollPolicy)
+                    put("pad_attempts_json", result.padAttemptsJson)
+                    put("search_expansions", result.searchExpansions.toLong())
+                    put("search_terminate_reason", result.searchTerminateReason)
+                    put("toll_avoidance_incomplete", result.tollAvoidanceIncomplete)
+                    put("route_uses_tolls", result.routeUsesTolls)
+                }
+            },
+        )
     }
 
     fun logRoutePlanCancelled(

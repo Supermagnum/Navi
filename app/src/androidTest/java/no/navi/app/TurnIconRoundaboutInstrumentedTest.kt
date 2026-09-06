@@ -171,7 +171,7 @@ class TurnIconRoundaboutInstrumentedTest {
                     useEco = false,
                     profile = TravelProfile.CAR,
                     avoidMotorways = false,
-                    avoidTolls = false,
+                    tollPolicy = uniffi.navi.FfiTollPolicy.ALLOW,
                     avoidFerries = false,
                     vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                     preferOfficialNetworks = false,
@@ -222,6 +222,12 @@ class TurnIconRoundaboutInstrumentedTest {
             priorityPathSharePct = merged.priorityPathSharePct,
             routeSegmentsJson = merged.routeSegmentsJson,
             offTrailAdvisory = merged.offTrailAdvisory,
+            tollPolicy = merged.tollPolicy,
+            padAttemptsJson = merged.padAttemptsJson,
+            searchExpansions = merged.searchExpansions,
+            searchTerminateReason = merged.searchTerminateReason,
+            tollAvoidanceIncomplete = merged.tollAvoidanceIncomplete,
+            routeUsesTolls = merged.routeUsesTolls,
         )
     }
 
