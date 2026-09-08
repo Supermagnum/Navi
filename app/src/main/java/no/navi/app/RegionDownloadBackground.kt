@@ -20,9 +20,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Process-scoped region PBF download. Survives Compose cancellation; a
- * force-stop still kills the HTTP stream, but [JOB_FILE] plus the sibling
- * `.partial` let the next launch resume via HTTP Range instead of restarting.
+ * Process-scoped region download. Survives Compose cancellation.
+ *
+ * When the pack server lists the region as ready, installs published packs
+ * (no place-index / on-device convert). Otherwise downloads Geofabrik PBF and
+ * builds packs + place index locally. A force-stop still kills the HTTP stream,
+ * but [JOB_FILE] plus the sibling `.partial` let the next Geofabrik launch
+ * resume via HTTP Range.
  */
 object RegionDownloadBackground {
     const val JOB_FILE = "region-download.json"
@@ -177,18 +181,18 @@ object RegionDownloadBackground {
                 }
             if (!shouldRun) return@launch
             try {
-                // Pack-server discovery: LAN → duckdns → local. Pack-fetch is
-                // stubbed — always execute existing Geofabrik provision + convert.
                 val pathForDecision =
                     geofabrikPath.ifBlank {
                         geofabrikPathForPbfName(filename)
                     }
                 if (pathForDecision.isNotBlank()) {
+                    lastStatus.set("Checking pack server…")
                     val decision =
                         runCatching {
                             decideRegionAcquisition(
                                 regionId = pathForDecision,
                                 packServerBaseUrl = null,
+                                dataDir = dataDir.absolutePath,
                             )
                         }.getOrElse { t ->
                             Log.i(
@@ -205,8 +209,29 @@ object RegionDownloadBackground {
                                 "execute_local=${decision.executeLocalConvert} " +
                                 "reason=${decision.reason}",
                         )
+                        if (!decision.executeLocalConvert) {
+                            lastStatus.set("Installing packs from ${decision.dataSource}…")
+                            runCatching {
+                                bindGeofabrikRegion(
+                                    dataDir = dataDir.absolutePath,
+                                    geofabrikRegion = pathForDecision,
+                                    pbfFilename = filename,
+                                    localSequence = null,
+                                )
+                            }
+                            if (geofabrikPath.isNotBlank()) {
+                                MapHudPrefs.saveGeofabrikPath(context, geofabrikPath)
+                            }
+                            clearJob(dataDir)
+                            lastStatus.set("done")
+                            Log.i(TAG, "pack server install finished for $pathForDecision")
+                            return@launch
+                        }
                     }
                 }
+                lastStatus.set(
+                    if (resuming.get()) "Resuming Geofabrik download…" else "Downloading region… 0%",
+                )
                 val report =
                     provisionRegionData(
                         dataDir = dataDir.absolutePath,
@@ -230,7 +255,7 @@ object RegionDownloadBackground {
                         }
                     }
                     val pbf = File(dataDir, filename)
-                    if (pbf.isFile) {
+                    if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
                         PlaceIndexBackground.ensureStarted(pbf, File(dataDir, "place_index.db"))
                         val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
                         IndexedMapsBackground.ensureStarted(pbf, dataDir, elev)

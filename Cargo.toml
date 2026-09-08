@@ -59,3 +59,5 @@ chrono = { version = "0.4", default-features = true, features = ["clock"] }
 # 1.4.x: stable Rust. 2.x needs nightly (`push_mut`).
 opening-hours = "=1.4.0"
 roxmltree = "0.20"
+sha2 = "0.10"
+hex = "0.4"

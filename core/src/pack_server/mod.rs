@@ -33,12 +33,15 @@
 //!   `/packs/<region_id>/<generation>/`. Use this for cache invalidation.
 
 mod acquisition;
+mod fetch;
 
 pub use acquisition::{
-    normalize_region_id, pack_server_base_url, pack_server_discovery_bases,
-    plan_region_acquisition, resolve_region_source, try_fetch_region_packs, PackDataSource,
-    RegionAcquisitionPlan, RegionSource,
+    discover_pack_catalog, leaf_stem_for_region_id, normalize_region_id, pack_server_base_url,
+    pack_server_discovery_bases, path_covered_by_ready_ids, plan_region_acquisition,
+    resolve_region_source, PackCatalogSnapshot, PackDataSource, RegionAcquisitionPlan,
+    RegionSource,
 };
+pub use fetch::{try_fetch_region_packs, ServerInstallStamp};
 
 use std::time::Duration;
 

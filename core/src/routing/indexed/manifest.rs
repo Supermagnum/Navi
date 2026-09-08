@@ -86,6 +86,17 @@ pub fn wetland_tile_filename(stem: &str, row: usize, col: usize) -> String {
     format!("{stem}.navi-wetland.t{row}_{col}.rkyv")
 }
 
+/// Sidecar written beside leaf-stem packs after a verified pack-server install.
+pub const SERVER_INSTALL_SUFFIX: &str = ".navi-server-install.json";
+
+pub fn server_install_path(data_dir: &Path, leaf_stem: &str) -> PathBuf {
+    data_dir.join(format!("{leaf_stem}{SERVER_INSTALL_SUFFIX}"))
+}
+
+pub fn server_install_present(data_dir: &Path, leaf_stem: &str) -> bool {
+    server_install_path(data_dir, leaf_stem).is_file()
+}
+
 pub fn profile_key(profile: RoutingProfile) -> &'static str {
     match profile {
         RoutingProfile::Car => GRAPH_PROFILE_CAR,
@@ -142,6 +153,13 @@ impl NaviManifest {
         if sz != self.pbf_size_bytes || mtime != self.pbf_modified_unix_secs {
             return PackStatus::StalePbf;
         }
+        self.status_pack_files(data_dir)
+    }
+
+    /// File + format-version readiness without a matching source PBF.
+    ///
+    /// Used for pack-server installs (no published `.osm.pbf` in the tree).
+    pub fn status_pack_files(&self, data_dir: &Path) -> PackStatus {
         if self.graph_format_version != GRAPH_FORMAT_VERSION
             || self.poi_barrier_format_version != POI_BARRIER_FORMAT_VERSION
             || self.schema != Self::SCHEMA

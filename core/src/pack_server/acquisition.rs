@@ -1,9 +1,11 @@
 //! Pure region-source routing + acquisition planning (Geofabrik fallback).
 //!
-//! Host chain: LAN → duckdns → local-bake. Pack binary fetch
-//! ([`try_fetch_region_packs`]) is still stubbed pending review of the merged
-//! module; when unimplemented it soft-fails to local convert.
+//! Host chain: LAN → duckdns → local-bake. Pack binary fetch lives in
+//! [`super::fetch`]; on failure the planner soft-falls to local convert.
 
+use std::path::Path;
+
+use super::fetch::try_fetch_region_packs;
 use super::{
     check_connectivity_blocking, check_connectivity_chain_blocking, Connectivity, ReadyRegion,
     DEFAULT_PACK_SERVER_BASE_URL, FALLBACK_PACK_SERVER_BASE_URL,
@@ -30,7 +32,7 @@ impl PackDataSource {
 /// Where to acquire a region after consulting the pack catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegionSource {
-    /// Pack host lists this region as ready. Prefer pack-fetch when implemented.
+    /// Pack host lists this region as ready. Prefer pack-fetch when available.
     Server {
         region_id: String,
         generation: Option<String>,
@@ -66,6 +68,13 @@ impl RegionSource {
 /// Normalize a Geofabrik-style region path for catalog lookup.
 pub fn normalize_region_id(region_id: &str) -> String {
     region_id.trim().trim_matches('/').to_string()
+}
+
+/// Device-side pack stem for a Geofabrik path (`europe/monaco` → `monaco-latest`).
+pub fn leaf_stem_for_region_id(region_id: &str) -> String {
+    let id = normalize_region_id(region_id);
+    let leaf = id.rsplit('/').next().unwrap_or(id.as_str());
+    format!("{leaf}-latest")
 }
 
 /// Pure routing decision: no I/O. Unit-test without a network.
@@ -156,31 +165,93 @@ pub fn pack_server_discovery_bases() -> Vec<(PackDataSource, String)> {
     ]
 }
 
-/// Future pack download + manifest verify. Always soft-fails until implemented.
+/// Whether [path] is covered by a ready-region id from `current.json`.
 ///
-/// Next step (after merge review): GET `manifest.json` / files under
-/// `/packs/<region_id>/<generation>/`, verify sha256, atomic install into
-/// `data_dir`, confirm local loaders accept the packs.
-pub fn try_fetch_region_packs(
-    _ready: &ReadyRegion,
-    _base_url: &str,
-    _data_dir: Option<&std::path::Path>,
-) -> Result<(), String> {
-    Err("pack fetch not implemented".to_string())
+/// Matches exact id, a published child (`europe/norway` covers
+/// `europe/norway/ostlandet`), or a published parent covering a deeper chip.
+pub fn path_covered_by_ready_ids(path: &str, ready_ids: &[String]) -> bool {
+    let p = normalize_region_id(path);
+    if p.is_empty() {
+        return false;
+    }
+    ready_ids.iter().any(|raw| {
+        let r = normalize_region_id(raw);
+        if r.is_empty() {
+            return false;
+        }
+        r == p || r.starts_with(&(p.clone() + "/")) || p.starts_with(&(r.clone() + "/"))
+    })
+}
+
+/// Snapshot of pack-host discovery for UI (region-pill greens).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackCatalogSnapshot {
+    pub data_source: PackDataSource,
+    pub ready_region_ids: Vec<String>,
+    pub catalog_generation: Option<String>,
+    pub served_from: Option<String>,
+    pub unreachable_reason: Option<String>,
+}
+
+/// Probe LAN → duckdns (or override) and return ready region ids for pill UI.
+///
+/// Soft-fail: unreachable hosts yield an empty ready list and
+/// [`PackDataSource::LocalBake`] with a reason — never panics.
+pub fn discover_pack_catalog(base_url_override: Option<&str>) -> PackCatalogSnapshot {
+    let (connectivity, hop) = if let Some(base) = base_url_override
+        .map(|s| s.trim().trim_end_matches('/'))
+        .filter(|s| !s.is_empty())
+    {
+        let tag = if base == DEFAULT_PACK_SERVER_BASE_URL {
+            PackDataSource::ServerLan
+        } else if base == FALLBACK_PACK_SERVER_BASE_URL {
+            PackDataSource::ServerDuckdns
+        } else {
+            PackDataSource::ServerLan
+        };
+        let conn = check_connectivity_blocking(base);
+        let hop = if conn.is_ready() { Some(tag) } else { None };
+        (conn, hop)
+    } else {
+        let bases = pack_server_discovery_bases();
+        check_connectivity_chain_blocking(&bases)
+    };
+
+    match connectivity {
+        Connectivity::Ready(catalog) => {
+            let data_source = hop.unwrap_or(PackDataSource::ServerLan);
+            PackCatalogSnapshot {
+                data_source,
+                ready_region_ids: catalog
+                    .regions
+                    .into_iter()
+                    .map(|r| normalize_region_id(&r.region_id))
+                    .filter(|s| !s.is_empty())
+                    .collect(),
+                catalog_generation: Some(catalog.catalog_generation),
+                served_from: Some(catalog.served_from),
+                unreachable_reason: None,
+            }
+        }
+        Connectivity::Unreachable { reason } => PackCatalogSnapshot {
+            data_source: PackDataSource::LocalBake,
+            ready_region_ids: Vec::new(),
+            catalog_generation: None,
+            served_from: None,
+            unreachable_reason: Some(reason),
+        },
+    }
 }
 
 /// Outcome of acquisition planning (routing decision + what to execute now).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegionAcquisitionPlan {
-    /// Pure routing result ([`RegionSource::Server`] even when pack-fetch is stubbed).
+    /// Pure routing result ([`RegionSource::Server`] even when pack-fetch fails).
     pub source: RegionSource,
     /// Whether callers should run Geofabrik download + on-device convert now.
     ///
-    /// TODO: always `true` until [`try_fetch_region_packs`] is implemented —
-    /// including when [`source`](RegionAcquisitionPlan::source) is
-    /// [`RegionSource::Server`]. That means "stub deferred to local", not
-    /// "server fetch succeeded and local convert also runs". Once pack-fetch
-    /// is real, set this `false` on the Server Ok branch.
+    /// `false` after a successful [`try_fetch_region_packs`]; `true` on Local
+    /// or when pack-fetch soft-fails.
     pub execute_local_convert: bool,
     pub log_message: String,
     pub catalog_generation: Option<String>,
@@ -189,13 +260,14 @@ pub struct RegionAcquisitionPlan {
 }
 
 /// Check pack hosts (LAN → duckdns unless `base_url_override`), resolve source,
-/// stub pack-fetch, fall back to local convert.
+/// fetch packs into `data_dir` when Server, else fall back to local convert.
 ///
 /// When `base_url_override` is `Some`, only that host is probed (tests /
 /// UniFFI explicit URL). Silent automatic fallback — never panics.
 pub fn plan_region_acquisition(
     region_id: &str,
     base_url_override: Option<&str>,
+    data_dir: Option<&Path>,
 ) -> RegionAcquisitionPlan {
     let region_id = normalize_region_id(region_id);
 
@@ -242,10 +314,10 @@ pub fn plan_region_acquisition(
                         .and_then(|r| r.manifest_url.clone())
                 }),
             };
-            match try_fetch_region_packs(&ready, base_url, None) {
+            match try_fetch_region_packs(&ready, base_url, data_dir) {
                 Ok(()) => {
                     let log_message = format!(
-                        "source={} pack server ready for {rid}; using pack fetch (generation={generation:?})",
+                        "source={} pack server ready for {rid}; installed packs (generation={generation:?})",
                         data_source.as_str()
                     );
                     log::info!(target: "NaviPack", "{log_message}");
@@ -257,15 +329,14 @@ pub fn plan_region_acquisition(
                         data_source,
                     }
                 }
-                Err(stub_reason) => {
+                Err(fetch_reason) => {
                     let log_message = format!(
-                        "source={} pack server has region {rid} (generation={generation:?}); {stub_reason} — using local convert",
+                        "source={} pack server has region {rid} (generation={generation:?}); pack fetch failed ({fetch_reason}) — using local convert",
                         data_source.as_str()
                     );
                     log::info!(target: "NaviPack", "{log_message}");
                     RegionAcquisitionPlan {
                         source,
-                        // TODO: always true while try_fetch_region_packs is a stub.
                         execute_local_convert: true,
                         log_message,
                         catalog_generation,
@@ -292,6 +363,22 @@ pub fn plan_region_acquisition(
 mod tests {
     use super::*;
     use crate::pack_server::PackCatalog;
+
+    #[test]
+    fn path_covered_exact_and_child() {
+        let ready = vec![
+            "europe/norway/ostlandet".into(),
+            "europe/norway/vestlandet".into(),
+        ];
+        assert!(path_covered_by_ready_ids("europe/norway/ostlandet", &ready));
+        assert!(path_covered_by_ready_ids("europe/norway", &ready));
+        assert!(path_covered_by_ready_ids("europe", &ready));
+        assert!(!path_covered_by_ready_ids("europe/sweden", &ready));
+        assert!(!path_covered_by_ready_ids(
+            "europe/norway/trondelag",
+            &ready
+        ));
+    }
 
     #[test]
     fn data_source_tags() {
@@ -426,5 +513,14 @@ mod tests {
             assert_eq!(bases[1].0, PackDataSource::ServerDuckdns);
             assert_eq!(bases[1].1, FALLBACK_PACK_SERVER_BASE_URL);
         }
+    }
+
+    #[test]
+    fn leaf_stem_helpers() {
+        assert_eq!(leaf_stem_for_region_id("europe/monaco"), "monaco-latest");
+        assert_eq!(
+            leaf_stem_for_region_id("/europe/norway/ostlandet/"),
+            "ostlandet-latest"
+        );
     }
 }

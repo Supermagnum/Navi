@@ -1,11 +1,29 @@
-# Pack server client (connectivity + acquisition routing)
+# Pack server client (connectivity + acquisition + install)
 
-**Status (branch `map-data`):** discovery, LAN → duckdns host chain, and soft
-routing are merged from `package-test` with DATEX HTTP helpers preserved.
-**Pack download / manifest verify are not implemented yet** —
-[`try_fetch_region_packs`](../core/src/pack_server/acquisition.rs) still
-soft-fails; when the host lists a region as ready, Navi falls through to
-Geofabrik extract download + on-device convert (`local-bake`).
+**Status (branch `map-data`):** discovery, LAN → duckdns host chain, region-pill
+greens, and **pack download / sha256 verify / leaf-stem install** are in.
+[`try_fetch_region_packs`](../core/src/pack_server/fetch.rs) GETs
+`manifest.json` + files under `/packs/<region_id>/<generation>/`, remaps bake
+stems (`europe_monaco-latest`) to Geofabrik leaf stems (`monaco-latest`), and
+writes a `{leaf}.navi-server-install.json` sidecar so planners treat packs as
+Ready without a real extract PBF.
+
+On any fetch failure (network, 404, checksum, missing `data_dir`), Navi falls
+through to Geofabrik extract download + on-device convert + place index
+(`local-bake`).
+
+### Region pills + Download buttons (Tools)
+
+| State | Appearance / label |
+|---|---|
+| Listed in `current.json` (path or child) **or** local `{leaf}-latest.navi-manifest.json` | Green chip |
+| Pack server lists selected path | **Download region** (green button) — install packs only |
+| Not on pack server | **Download region + build place index** — Geofabrik + convert + place index |
+| Selected path pill-ready | **Check for OSM updates** also green |
+| Basemap / DEM buttons | Unchanged |
+
+`discover_pack_catalog` / UniFFI `discoverPackCatalog` feeds the ready-id list.
+Use **Refresh pack availability** to re-probe without leaving Tools.
 
 Server contract (ops / URL layout):
 [Supermagnum/navi-server `docs/client-fetch.md`](https://github.com/Supermagnum/navi-server/blob/main/docs/client-fetch.md).
@@ -31,8 +49,9 @@ single host for tests/ops.
 | `check_connectivity` / `_blocking` | Catalog-aware discovery → `Connectivity` |
 | `check_connectivity_chain` | LAN → duckdns ordered probe |
 | `probe_current_json` | DATEX-era bool liveness probe (renamed; does not shadow catalog API) |
-| `http_get_text` / `http_get_bytes` / `base_url` / `USER_AGENT` / `PackServerError` | Shared HTTP helpers (DATEX + future pack fetch) |
-| `plan_region_acquisition` | Routing + stub fetch + `data_source` tag |
+| `http_get_text` / `http_get_bytes` / `base_url` / `USER_AGENT` / `PackServerError` | Shared HTTP helpers (DATEX + pack fetch) |
+| `try_fetch_region_packs` | Manifest + file GET, sha256, leaf remap, install |
+| `plan_region_acquisition` | Routing + fetch + `data_source` tag |
 
 ---
 
@@ -42,9 +61,10 @@ Before a Tools **Download region** run:
 
 1. Probe the host chain for `current.json`.
 2. `resolve_region_source` → `RegionSource::Server` or `Local`.
-3. If Server → stub `try_fetch_region_packs` → fall through to Local.
-4. Local path: Geofabrik `-latest.osm.pbf` via `provisionRegionData` → bind →
-   place index → `ensureIndexedMaps`.
+3. If Server + `data_dir` → `try_fetch_region_packs` (install). On success,
+   `execute_local_convert = false` (skip place index / local bake).
+4. Else Local path: Geofabrik `-latest.osm.pbf` via `provisionRegionData` →
+   bind → place index → `ensureIndexedMaps`.
 
 Logs: tag `NaviPack` / `RegionDownloadBg`, including `data_source=…`.
 

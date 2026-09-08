@@ -37,6 +37,7 @@ class PackServerRoutingInstrumentedTest {
             decideRegionAcquisition(
                 regionId = OSTLANDET,
                 packServerBaseUrl = null,
+                dataDir = null,
             )
         Log.i(
             TAG,
@@ -50,13 +51,12 @@ class PackServerRoutingInstrumentedTest {
         )
         when (d.source) {
             FfiRegionSourceKind.SERVER -> {
+                // Without dataDir, fetch cannot install — falls through to local.
+                assertTrue(d.executeLocalConvert)
                 assertTrue(
-                    "stub must still execute local convert until pack-fetch exists",
-                    d.executeLocalConvert,
-                )
-                assertTrue(
-                    d.reason.contains("pack fetch not implemented") ||
-                        d.reason.contains("local convert"),
+                    d.reason.contains("pack fetch failed") ||
+                        d.reason.contains("local convert") ||
+                        d.reason.contains("data_dir"),
                 )
             }
             FfiRegionSourceKind.LOCAL -> {
@@ -73,6 +73,7 @@ class PackServerRoutingInstrumentedTest {
             decideRegionAcquisition(
                 regionId = VESTLANDET,
                 packServerBaseUrl = null,
+                dataDir = null,
             )
         Log.i(
             TAG,
@@ -93,6 +94,7 @@ class PackServerRoutingInstrumentedTest {
             decideRegionAcquisition(
                 regionId = OSTLANDET,
                 packServerBaseUrl = UNREACHABLE_BASE,
+                dataDir = null,
             )
         Log.i(TAG, "unreachable source=${d.source} data_source=${d.dataSource} reason=${d.reason}")
         assertEquals(FfiRegionSourceKind.LOCAL, d.source)
@@ -109,6 +111,7 @@ class PackServerRoutingInstrumentedTest {
             decideRegionAcquisition(
                 regionId = OSTLANDET,
                 packServerBaseUrl = UNREACHABLE_BASE,
+                dataDir = null,
             )
         assertEquals("local-bake", d.dataSource)
         Log.i(TAG, "default_base=${defaultPackServerBaseUrl()}")
@@ -126,6 +129,7 @@ class PackServerRoutingInstrumentedTest {
             decideRegionAcquisition(
                 regionId = path,
                 packServerBaseUrl = UNREACHABLE_BASE,
+                dataDir = null,
             )
         Log.i(TAG, "faroe routing source=${decision.source} reason=${decision.reason}")
         assertEquals(FfiRegionSourceKind.LOCAL, decision.source)

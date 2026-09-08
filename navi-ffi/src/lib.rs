@@ -3924,9 +3924,13 @@ pub fn ensure_indexed_maps(pbf_path: String, data_dir: String, elev_dir: Option<
     let man_path = manifest_path(&data, &stem);
     if man_path.is_file() {
         if let Ok(man) = NaviManifest::load(&man_path) {
-            // Ready requires graph + POI/barrier v2 + wetland (tiled or monolith).
-            // Packs built before wetland tiling / overnight buildings regenerate.
-            if man.status_for_pbf(&data, &pbf) == PackStatus::Ready {
+            use driver_break_core::routing::indexed::server_install_present;
+            let ready = if server_install_present(&data, &stem) {
+                man.status_pack_files(&data) == PackStatus::Ready
+            } else {
+                man.status_for_pbf(&data, &pbf) == PackStatus::Ready
+            };
+            if ready {
                 return format!("PASS\ncache_hit=true\nmanifest={}\n", man_path.display());
             }
         }
@@ -3993,6 +3997,15 @@ pub fn indexed_maps_status(pbf_path: String, data_dir: String) -> String {
     }
     match NaviManifest::load(&man_path) {
         Ok(man) => {
+            use driver_break_core::routing::indexed::server_install_present;
+            if server_install_present(&data, &stem) {
+                return match man.status_pack_files(&data) {
+                    PackStatus::Ready => "ready\n".into(),
+                    PackStatus::Missing => "missing\n".into(),
+                    PackStatus::StalePbf => "stale_pbf\n".into(),
+                    PackStatus::VersionMismatch => "version_mismatch\n".into(),
+                };
+            }
             let packed = match driver_break_core::routing::indexed::fingerprint_pbf_for_packs(
                 &data, &pbf, &man,
             ) {
@@ -6315,10 +6328,8 @@ pub struct FfiRegionAcquisitionDecision {
     pub reason: String,
     /// Whether callers should run Geofabrik download + on-device convert now.
     ///
-    /// TODO: always `true` until pack-fetch is implemented — including when
-    /// `source == Server`. That means "stub deferred to local", not
-    /// "server fetch + local convert". Flip per-branch once `try_fetch_region_packs`
-    /// is real (`false` on successful Server fetch).
+    /// `false` after a successful pack-server install; `true` when falling
+    /// through to Geofabrik + local bake.
     pub execute_local_convert: bool,
     pub region_generation: Option<String>,
     pub catalog_generation: Option<String>,
@@ -6335,22 +6346,67 @@ pub fn default_pack_server_base_url() -> String {
     driver_break_core::pack_server::pack_server_base_url()
 }
 
+/// Pack-host catalog snapshot for region-pill availability coloring.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiPackCatalogSnapshot {
+    /// `server-lan` / `server-duckdns` / `local-bake` (unreachable → local-bake).
+    pub data_source: String,
+    pub ready_region_ids: Vec<String>,
+    pub catalog_generation: Option<String>,
+    pub served_from: Option<String>,
+    pub unreachable_reason: Option<String>,
+}
+
+/// Probe LAN → duckdns (or override) and list ready region ids for pill greens.
+///
+/// Soft-fail: empty `ready_region_ids` when hosts are unreachable.
+#[uniffi::export]
+pub fn discover_pack_catalog(pack_server_base_url: Option<String>) -> FfiPackCatalogSnapshot {
+    ensure_native_logging();
+    let override_base = pack_server_base_url
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+    let snap = driver_break_core::pack_server::discover_pack_catalog(override_base);
+    FfiPackCatalogSnapshot {
+        data_source: snap.data_source.as_str().to_string(),
+        ready_region_ids: snap.ready_region_ids,
+        catalog_generation: snap.catalog_generation,
+        served_from: snap.served_from,
+        unreachable_reason: snap.unreachable_reason,
+    }
+}
+
+/// Whether a Geofabrik-style path is covered by a ready-region id list.
+#[uniffi::export]
+pub fn pack_path_covered_by_ready_ids(path: String, ready_region_ids: Vec<String>) -> bool {
+    driver_break_core::pack_server::path_covered_by_ready_ids(&path, &ready_region_ids)
+}
+
 /// Consult pack hosts (LAN → duckdns unless overridden) and decide Server vs Local.
 ///
-/// Soft-fail: unreachable / missing region / stub pack-fetch all yield
-/// `execute_local_convert = true` with a clear `reason`. Never panics.
+/// When `data_dir` is set and the region is Server-ready, attempts pack install
+/// into that directory. Soft-fail: unreachable / missing region / fetch errors
+/// all yield `execute_local_convert = true` with a clear `reason`. Never panics.
 /// Optional `pack_server_base_url` forces a single host (tests).
 #[uniffi::export]
 pub fn decide_region_acquisition(
     region_id: String,
     pack_server_base_url: Option<String>,
+    data_dir: Option<String>,
 ) -> FfiRegionAcquisitionDecision {
     ensure_native_logging();
     let override_base = pack_server_base_url
         .as_deref()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty());
-    let plan = driver_break_core::pack_server::plan_region_acquisition(&region_id, override_base);
+    let data = data_dir
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(Path::new);
+    let plan =
+        driver_break_core::pack_server::plan_region_acquisition(&region_id, override_base, data);
     let (source, region_generation) = match &plan.source {
         driver_break_core::pack_server::RegionSource::Server { generation, .. } => {
             (FfiRegionSourceKind::Server, generation.clone())

@@ -171,7 +171,7 @@ kan du gå frakoblet.
 
 | Nedlasting | Trengs? | Hva det er | Knapp i Tools |
 |---|---|---|---|
-| **Kartregion (veier og steder)** | **Ja** for ruting og søk | OpenStreetMap-uttrekk fra [Geofabrik](https://download.geofabrik.de/) (eksempel: `europe/norway/ostlandet`) | **Download region + build place index** |
+| **Kartregion (veier og steder)** | **Ja** for ruting og søk | OpenStreetMap-uttrekk fra [Geofabrik](https://download.geofabrik.de/) (eksempel: `europe/norway/ostlandet`), eller publiserte pakker fra pack-server når regionen er listet | **Download region** (grønn når pack-server har stien) eller **Download region + build place index** |
 | **Høyde** | Sterkt anbefalt for øko / bakker | Høydedata for området | Følger vanligvis med regionsnedlasting |
 | **Frakoblet grunnkart** | Trengs for kartgrafikk uten nett | Visuelle kartfliser (Protomaps) | **Download basemap (PMTiles)** |
 | **3D-terreng** | Valgfritt | Høydefliser for bakkeskygge **og** høydekurver | **Download terrain DEM (Mapterhorn)** |

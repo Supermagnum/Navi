@@ -1054,6 +1054,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1114,6 +1118,8 @@ fun uniffi_navi_checksum_func_delete_saved_place(
 fun uniffi_navi_checksum_func_delete_saved_route(
 ): Short
 fun uniffi_navi_checksum_func_detected_parallelism(
+): Short
+fun uniffi_navi_checksum_func_discover_pack_catalog(
 ): Short
 fun uniffi_navi_checksum_func_display_range_max_km(
 ): Short
@@ -1240,6 +1246,8 @@ fun uniffi_navi_checksum_func_osm_update_staleness_days(
 fun uniffi_navi_checksum_func_osm_weekly_reminder_due(
 ): Short
 fun uniffi_navi_checksum_func_overspeed_delta_kmh(
+): Short
+fun uniffi_navi_checksum_func_pack_path_covered_by_ready_ids(
 ): Short
 fun uniffi_navi_checksum_func_place_index_has_entries(
 ): Short
@@ -1514,7 +1522,7 @@ fun uniffi_navi_fn_func_datex_settings_default_port(uniffi_out_err: UniffiRustCa
 ): Int
 fun uniffi_navi_fn_func_datex_wifi_only_default(uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
-fun uniffi_navi_fn_func_decide_region_acquisition(`regionId`: RustBuffer.ByValue,`packServerBaseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_navi_fn_func_decide_region_acquisition(`regionId`: RustBuffer.ByValue,`packServerBaseUrl`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_default_pack_server_base_url(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1524,6 +1532,8 @@ fun uniffi_navi_fn_func_delete_saved_route(`dataDir`: RustBuffer.ByValue,`id`: R
 ): Byte
 fun uniffi_navi_fn_func_detected_parallelism(uniffi_out_err: UniffiRustCallStatus, 
 ): Int
+fun uniffi_navi_fn_func_discover_pack_catalog(`packServerBaseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_display_range_max_km(uniffi_out_err: UniffiRustCallStatus, 
 ): Double
 fun uniffi_navi_fn_func_display_range_min_km(uniffi_out_err: UniffiRustCallStatus, 
@@ -1650,6 +1660,8 @@ fun uniffi_navi_fn_func_osm_weekly_reminder_due(`dataDir`: RustBuffer.ByValue,un
 ): Byte
 fun uniffi_navi_fn_func_overspeed_delta_kmh(`speedKmh`: RustBuffer.ByValue,`limitKmh`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_pack_path_covered_by_ready_ids(`path`: RustBuffer.ByValue,`readyRegionIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_place_index_has_entries(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1982,7 +1994,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_datex_wifi_only_default() != 40447.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_decide_region_acquisition() != 52742.toShort()) {
+    if (lib.uniffi_navi_checksum_func_decide_region_acquisition() != 64920.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_default_pack_server_base_url() != 42568.toShort()) {
@@ -1995,6 +2007,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_detected_parallelism() != 47010.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_discover_pack_catalog() != 26217.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_display_range_max_km() != 10899.toShort()) {
@@ -2184,6 +2199,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_overspeed_delta_kmh() != 44096.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_pack_path_covered_by_ready_ids() != 19556.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_place_index_has_entries() != 5091.toShort()) {
@@ -3593,6 +3611,56 @@ public object FfiConverterTypeFfiLiveHazardLoadStats: FfiConverterRustBuffer<Ffi
 
 
 
+/**
+ * Pack-host catalog snapshot for region-pill availability coloring.
+ */
+data class FfiPackCatalogSnapshot (
+    /**
+     * `server-lan` / `server-duckdns` / `local-bake` (unreachable → local-bake).
+     */
+    var `dataSource`: kotlin.String, 
+    var `readyRegionIds`: List<kotlin.String>, 
+    var `catalogGeneration`: kotlin.String?, 
+    var `servedFrom`: kotlin.String?, 
+    var `unreachableReason`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiPackCatalogSnapshot: FfiConverterRustBuffer<FfiPackCatalogSnapshot> {
+    override fun read(buf: ByteBuffer): FfiPackCatalogSnapshot {
+        return FfiPackCatalogSnapshot(
+            FfiConverterString.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiPackCatalogSnapshot) = (
+            FfiConverterString.allocationSize(value.`dataSource`) +
+            FfiConverterSequenceString.allocationSize(value.`readyRegionIds`) +
+            FfiConverterOptionalString.allocationSize(value.`catalogGeneration`) +
+            FfiConverterOptionalString.allocationSize(value.`servedFrom`) +
+            FfiConverterOptionalString.allocationSize(value.`unreachableReason`)
+    )
+
+    override fun write(value: FfiPackCatalogSnapshot, buf: ByteBuffer) {
+            FfiConverterString.write(value.`dataSource`, buf)
+            FfiConverterSequenceString.write(value.`readyRegionIds`, buf)
+            FfiConverterOptionalString.write(value.`catalogGeneration`, buf)
+            FfiConverterOptionalString.write(value.`servedFrom`, buf)
+            FfiConverterOptionalString.write(value.`unreachableReason`, buf)
+    }
+}
+
+
+
 data class FfiPmtilesJob (
     var `id`: kotlin.String, 
     var `regionKey`: kotlin.String, 
@@ -3728,10 +3796,8 @@ data class FfiRegionAcquisitionDecision (
     /**
      * Whether callers should run Geofabrik download + on-device convert now.
      *
-     * TODO: always `true` until pack-fetch is implemented — including when
-     * `source == Server`. That means "stub deferred to local", not
-     * "server fetch + local convert". Flip per-branch once `try_fetch_region_packs`
-     * is real (`false` on successful Server fetch).
+     * `false` after a successful pack-server install; `true` when falling
+     * through to Geofabrik + local bake.
      */
     var `executeLocalConvert`: kotlin.Boolean, 
     var `regionGeneration`: kotlin.String?, 
@@ -5051,14 +5117,15 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         /**
          * Consult pack hosts (LAN → duckdns unless overridden) and decide Server vs Local.
          *
-         * Soft-fail: unreachable / missing region / stub pack-fetch all yield
-         * `execute_local_convert = true` with a clear `reason`. Never panics.
+         * When `data_dir` is set and the region is Server-ready, attempts pack install
+         * into that directory. Soft-fail: unreachable / missing region / fetch errors
+         * all yield `execute_local_convert = true` with a clear `reason`. Never panics.
          * Optional `pack_server_base_url` forces a single host (tests).
-         */ fun `decideRegionAcquisition`(`regionId`: kotlin.String, `packServerBaseUrl`: kotlin.String?): FfiRegionAcquisitionDecision {
+         */ fun `decideRegionAcquisition`(`regionId`: kotlin.String, `packServerBaseUrl`: kotlin.String?, `dataDir`: kotlin.String?): FfiRegionAcquisitionDecision {
             return FfiConverterTypeFfiRegionAcquisitionDecision.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_decide_region_acquisition(
-        FfiConverterString.lower(`regionId`),FfiConverterOptionalString.lower(`packServerBaseUrl`),_status)
+        FfiConverterString.lower(`regionId`),FfiConverterOptionalString.lower(`packServerBaseUrl`),FfiConverterOptionalString.lower(`dataDir`),_status)
 }
     )
     }
@@ -5104,6 +5171,20 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_detected_parallelism(
         _status)
+}
+    )
+    }
+    
+
+        /**
+         * Probe LAN → duckdns (or override) and list ready region ids for pill greens.
+         *
+         * Soft-fail: empty `ready_region_ids` when hosts are unreachable.
+         */ fun `discoverPackCatalog`(`packServerBaseUrl`: kotlin.String?): FfiPackCatalogSnapshot {
+            return FfiConverterTypeFfiPackCatalogSnapshot.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_discover_pack_catalog(
+        FfiConverterOptionalString.lower(`packServerBaseUrl`),_status)
 }
     )
     }
@@ -5836,6 +5917,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_overspeed_delta_kmh(
         FfiConverterOptionalDouble.lower(`speedKmh`),FfiConverterOptionalDouble.lower(`limitKmh`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Whether a Geofabrik-style path is covered by a ready-region id list.
+         */ fun `packPathCoveredByReadyIds`(`path`: kotlin.String, `readyRegionIds`: List<kotlin.String>): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_pack_path_covered_by_ready_ids(
+        FfiConverterString.lower(`path`),FfiConverterSequenceString.lower(`readyRegionIds`),_status)
 }
     )
     }

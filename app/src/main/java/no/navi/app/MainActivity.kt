@@ -42,7 +42,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -121,6 +123,7 @@ import uniffi.navi.checkOsmUpdates
 import uniffi.navi.decideRegionAcquisition
 import uniffi.navi.deleteSavedPlace
 import uniffi.navi.deleteSavedRoute
+import uniffi.navi.discoverPackCatalog
 import uniffi.navi.downloadProgressClear
 import uniffi.navi.downloadProgressSnapshot
 import uniffi.navi.ecoModeDefault
@@ -620,6 +623,11 @@ private fun NaviMapScreen() {
     var downloadContinent by remember {
         mutableStateOf(GeofabrikDownloadCatalog.continentForPath(selectedGeofabrikPath))
     }
+    var packCatalogProbing by remember { mutableStateOf(true) }
+    var packServerReadyIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var packCatalogDataSource by remember { mutableStateOf("local-bake") }
+    var packCatalogUnreachable by remember { mutableStateOf<String?>(null) }
+    var packCatalogEpoch by remember { mutableIntStateOf(0) }
     LaunchedEffect(selectedGeofabrikPath) {
         NaviMapTestHooks.lastSelectedGeofabrikPath = selectedGeofabrikPath
     }
@@ -996,6 +1004,52 @@ private fun NaviMapScreen() {
     val dataDir =
         remember {
             NaviAppData.resolve(context)
+        }
+
+    LaunchedEffect(packCatalogEpoch) {
+        packCatalogProbing = true
+        val snap =
+            withContext(Dispatchers.IO) {
+                runCatching { discoverPackCatalog(packServerBaseUrl = null) }.getOrNull()
+            }
+        if (snap != null) {
+            packServerReadyIds = snap.readyRegionIds
+            packCatalogDataSource = snap.dataSource
+            packCatalogUnreachable = snap.unreachableReason
+            android.util.Log.i(
+                "NaviPack",
+                "catalog probe source=${snap.dataSource} ready=${snap.readyRegionIds.size} " +
+                    "served=${snap.servedFrom} unreachable=${snap.unreachableReason}",
+            )
+        } else {
+            packServerReadyIds = emptyList()
+            packCatalogDataSource = "local-bake"
+            packCatalogUnreachable = "discover_failed"
+        }
+        packCatalogProbing = false
+    }
+
+    val norwayChildPaths =
+        remember {
+            GeofabrikDownloadCatalog.norwayRegions.map { (slug, _) -> "europe/norway/$slug" }
+        }
+
+    fun pathPillReady(path: String): Boolean =
+        PackRegionAvailability.pillReady(
+            path = path,
+            serverReadyIds = packServerReadyIds,
+            dataDir = dataDir,
+            childPathsForLocal =
+                if (GeofabrikDownloadCatalog.hasRegionChips(path)) {
+                    norwayChildPaths
+                } else {
+                    emptyList()
+                },
+        )
+
+    fun continentPillReady(continent: GeofabrikContinent): Boolean =
+        GeofabrikDownloadCatalog.countriesIn(continent).any { country ->
+            pathPillReady(country.path)
         }
 
     /** GeoTIFF DEM decode can take tens of seconds — never on the UI thread. */
@@ -1831,13 +1885,14 @@ private fun NaviMapScreen() {
     fun startRegionDownload(path: String) {
         val leaf = path.substringAfterLast('/')
         val filename = "$leaf-latest.osm.pbf"
-        // Soft pack-server probe (LAN → duckdns → local). Pack-fetch is still
-        // stubbed and falls through to Geofabrik URL + on-device convert.
+        // Soft pack-server probe for status copy only (no install). Real fetch
+        // runs in RegionDownloadBackground with dataDir set.
         val acquisition =
             runCatching {
                 decideRegionAcquisition(
                     regionId = path,
                     packServerBaseUrl = null,
+                    dataDir = null,
                 )
             }.getOrNull()
         if (acquisition != null) {
@@ -1851,14 +1906,24 @@ private fun NaviMapScreen() {
         }
         val url = geofabrikLatestPbfUrl(path)
         val already = RegionDownloadBackground.partialBytes(dataDir, filename)
+        val serverReady =
+            PackRegionAvailability.pathCoveredByReadyIds(path, packServerReadyIds)
         regionDownloadProgress =
-            if (already > 0L) "Resuming download…" else "Downloading region… 0%"
+            if (already > 0L) {
+                "Resuming download…"
+            } else if (serverReady) {
+                "Fetching packs from pack server…"
+            } else {
+                "Downloading region… 0%"
+            }
         downloadPolling = true
         status =
-            if (already > 0L) {
-                "Resuming download of $path…"
-            } else {
-                "Downloading $path..."
+            when {
+                already > 0L -> "Resuming download of $path…"
+                serverReady ->
+                    "Pack server has $path (${acquisition?.dataSource ?: packCatalogDataSource}); " +
+                        "installing published packs…"
+                else -> "Downloading $path and building place index…"
             }
         MapHudPrefs.saveGeofabrikPath(context, path)
         RegionDownloadBackground.ensureStarted(
@@ -1917,6 +1982,9 @@ private fun NaviMapScreen() {
                 val leftover = RegionDownloadBackground.statusLine()
                 if (leftover == "done" || leftover.startsWith("failed")) {
                     downloadPolling = false
+                    if (leftover == "done") {
+                        packCatalogEpoch += 1
+                    }
                 }
             }
             delay(400)
@@ -5599,9 +5667,38 @@ private fun NaviMapScreen() {
                     Text(
                         "Countries and bboxes come from Geofabrik's published index. " +
                             "Central America extracts are listed under North America. " +
-                            "Jurisdiction packs still follow GPS, not this picker.",
+                            "Jurisdiction packs still follow GPS, not this picker. " +
+                            "Green pills = published on the pack server or already indexed on device. " +
+                            "Green Download = install packs only; otherwise Download builds a place index.",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    val readyChipGreen = Color(0xFF2E7D32)
+                    val readyChipMuted = readyChipGreen.copy(alpha = 0.30f)
+
+                    @Composable
+                    fun readyChipColors(ready: Boolean) =
+                        FilterChipDefaults.filterChipColors(
+                            containerColor =
+                                if (ready) {
+                                    readyChipMuted
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHighest
+                                },
+                            selectedContainerColor =
+                                if (ready) {
+                                    readyChipGreen
+                                } else {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                },
+                            labelColor = MaterialTheme.colorScheme.onSurface,
+                            selectedLabelColor =
+                                if (ready) {
+                                    Color.White
+                                } else {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                },
+                        )
+
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
                             selected = downloadScopeCountry,
@@ -5657,6 +5754,7 @@ private fun NaviMapScreen() {
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             GeofabrikDownloadCatalog.continents.forEach { continent ->
+                                val ready = continentPillReady(continent)
                                 FilterChip(
                                     selected = downloadContinent == continent,
                                     onClick = {
@@ -5667,6 +5765,7 @@ private fun NaviMapScreen() {
                                             ?.let { selectedGeofabrikPath = it.path }
                                     },
                                     label = { Text(continent.label) },
+                                    colors = readyChipColors(ready),
                                     modifier = Modifier.testTag(continent.testTag),
                                 )
                             }
@@ -5686,10 +5785,12 @@ private fun NaviMapScreen() {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 continentCountries.forEach { country ->
+                                    val ready = pathPillReady(country.path)
                                     FilterChip(
                                         selected = selectedGeofabrikPath == country.path,
                                         onClick = { selectedGeofabrikPath = country.path },
                                         label = { Text(country.label) },
+                                        colors = readyChipColors(ready),
                                         modifier = Modifier.testTag(country.testTag),
                                     )
                                 }
@@ -5713,10 +5814,13 @@ private fun NaviMapScreen() {
                         ) {
                             GeofabrikDownloadCatalog.norwayRegions.forEach { (slug, label) ->
                                 val path = "europe/norway/$slug"
+                                val ready = pathPillReady(path)
                                 FilterChip(
                                     selected = selectedGeofabrikPath == path,
                                     onClick = { selectedGeofabrikPath = path },
                                     label = { Text(label) },
+                                    colors = readyChipColors(ready),
+                                    modifier = Modifier.testTag("chip_norway_$slug"),
                                 )
                             }
                         }
@@ -5726,6 +5830,29 @@ private fun NaviMapScreen() {
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.testTag("region_chips_norway_only_note"),
                         )
+                    }
+                    val packStatus =
+                        PackRegionAvailability.statusLine(
+                            selectedPath = selectedGeofabrikPath,
+                            serverReadyIds = packServerReadyIds,
+                            dataSource = packCatalogDataSource,
+                            unreachableReason = packCatalogUnreachable,
+                            probing = packCatalogProbing,
+                            dataDir = dataDir,
+                        )
+                    if (packStatus.isNotBlank()) {
+                        Text(
+                            packStatus,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("pack_region_availability_status"),
+                        )
+                    }
+                    TextButton(
+                        onClick = { packCatalogEpoch += 1 },
+                        enabled = !packCatalogProbing,
+                        modifier = Modifier.testTag("btn_refresh_pack_catalog"),
+                    ) {
+                        Text(if (packCatalogProbing) "Checking pack server…" else "Refresh pack availability")
                     }
                     OutlinedTextField(
                         value = selectedGeofabrikPath,
@@ -5737,6 +5864,11 @@ private fun NaviMapScreen() {
                                 .fillMaxWidth()
                                 .testTag("field_geofabrik_path"),
                     )
+                    val selectedServerReady =
+                        PackRegionAvailability.pathCoveredByReadyIds(
+                            selectedGeofabrikPath,
+                            packServerReadyIds,
+                        )
                     Button(
                         onClick = {
                             val path = selectedGeofabrikPath.trim().trim('/')
@@ -5746,12 +5878,23 @@ private fun NaviMapScreen() {
                                 startRegionDownload(path)
                             }
                         },
+                        colors =
+                            if (PackRegionAvailability.downloadRegionUsesReadyStyle(selectedServerReady)) {
+                                ButtonDefaults.buttonColors(
+                                    containerColor = readyChipGreen,
+                                    contentColor = Color.White,
+                                )
+                            } else {
+                                ButtonDefaults.buttonColors()
+                            },
                         modifier =
                             Modifier
                                 .fillMaxWidth()
                                 .testTag("btn_download_region"),
                     ) {
-                        Text("Download region + build place index")
+                        Text(
+                            PackRegionAvailability.downloadRegionButtonLabel(selectedServerReady),
+                        )
                     }
                     Button(
                         onClick = {
@@ -6014,6 +6157,7 @@ private fun NaviMapScreen() {
                         "OSM updates (Geofabrik) — opt-in, never silent",
                         style = MaterialTheme.typography.labelLarge,
                     )
+                    val osmCheckReady = pathPillReady(selectedGeofabrikPath)
                     Button(
                         onClick = {
                             scope.launch {
@@ -6026,6 +6170,15 @@ private fun NaviMapScreen() {
                                 updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
                             }
                         },
+                        colors =
+                            if (PackRegionAvailability.osmCheckUsesReadyStyle(osmCheckReady)) {
+                                ButtonDefaults.buttonColors(
+                                    containerColor = readyChipGreen,
+                                    contentColor = Color.White,
+                                )
+                            } else {
+                                ButtonDefaults.buttonColors()
+                            },
                         modifier =
                             Modifier
                                 .fillMaxWidth()

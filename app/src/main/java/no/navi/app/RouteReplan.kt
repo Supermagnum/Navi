@@ -2,6 +2,7 @@ package no.navi.app
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import uniffi.navi.CorridorRouteResult
 import uniffi.navi.FfiTollPolicy
 import uniffi.navi.FfiVehicleLimits
@@ -20,14 +21,37 @@ object RouteReplan {
             val f = File(path)
             if (f.isFile) return f
         }
-        return listOf(
-            File(dataDir, "ostlandet-latest.osm.pbf"),
-            File(dataDir, "espa-atnbrufossen-corridor.osm.pbf"),
-            File(dataDir, "oppland-latest.osm.pbf"),
-            File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
-            File("/data/local/tmp/navi_fixtures/espa-atnbrufossen-corridor.osm.pbf"),
-            File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"),
-        ).firstOrNull { it.isFile && it.length() > 10_000L }
+        val preferred =
+            listOf(
+                File(dataDir, "ostlandet-latest.osm.pbf"),
+                File(dataDir, "espa-atnbrufossen-corridor.osm.pbf"),
+                File(dataDir, "oppland-latest.osm.pbf"),
+                File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
+                File("/data/local/tmp/navi_fixtures/espa-atnbrufossen-corridor.osm.pbf"),
+                File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"),
+            ).firstOrNull { it.isFile && it.length() > 10_000L }
+        if (preferred != null) return preferred
+
+        // Pack-server installs leave a small stub PBF + leaf-stem packs.
+        val meta = File(dataDir, "region_meta.json")
+        if (meta.isFile) {
+            runCatching {
+                val name =
+                    JSONObject(meta.readText())
+                        .optString("pbf_filename")
+                        .trim()
+                if (name.isNotEmpty()) {
+                    val f = File(dataDir, name)
+                    if (f.isFile) return f
+                }
+            }
+        }
+        return dataDir.listFiles()?.firstOrNull { f ->
+            f.isFile &&
+                f.name.endsWith(".osm.pbf") &&
+                f.length() > 10_000L &&
+                File(dataDir, f.name.removeSuffix(".osm.pbf") + ".navi-manifest.json").isFile
+        }
     }
 
     suspend fun plan(

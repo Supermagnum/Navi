@@ -207,7 +207,7 @@ you can go offline.
 
 | Download | Need it? | What it is | Button in Tools |
 |---|---|---|---|
-| **Map region (roads & places)** | **Yes** for routing and search | OpenStreetMap extract from [Geofabrik](https://download.geofabrik.de/) (example path: `europe/norway/ostlandet`) | **Download region + build place index** |
+| **Map region (roads & places)** | **Yes** for routing and search | OpenStreetMap extract from [Geofabrik](https://download.geofabrik.de/) (example path: `europe/norway/ostlandet`), or published packs from the pack server when listed | **Download region** (green, when pack server has the path) or **Download region + build place index** |
 | **Elevation** | Strongly recommended for eco / hills | Height data for the area | Usually comes with region provision |
 | **Offline basemap** | Needed for map graphics without internet | Visual map tiles (Protomaps) | **Download basemap (PMTiles)** |
 | **3D terrain** | Optional | Height tiles for hillshade **and** elevation contours | **Download terrain DEM (Mapterhorn)** |
@@ -235,7 +235,10 @@ return to it later. You can still plan routes while work continues — planning
 is just slower until indexing finishes.
 
 When **Download region + build place index** has saved the OpenStreetMap
-extract, Navi starts a **background indexing** job. That is not the map picture
+extract (Geofabrik path), or **Download region** has installed published packs
+from the pack server, Navi starts a **background indexing** job when a real
+extract is present. Pack-server installs skip the place-index build (packs are
+already baked). That is not the map picture
 on screen (basemap tiles) and not the raw `.osm.pbf` file itself — it is a
 one-time conversion of that extract into compact **indexed packs** the planner
 can load quickly instead of scanning the whole extract on every trip.
