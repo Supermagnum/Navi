@@ -146,8 +146,9 @@ pub struct GraphEdge {
 /// their cost by [`crate::routing::toll::TOLL_AVOID_PENALTY_MULT`].
 ///
 /// Active DATEX constraints ([`crate::datex::planner_impacts`]): [`DatexImpact::Block`]
-/// hard-excludes nearby edges; [`DatexImpact::Penalize`] multiplies cost by
-/// [`crate::datex::DATEX_PENALIZE_MULT`]. Pass **active-only** situations.
+/// hard-excludes nearby edges; [`DatexImpact::Penalize`] multiplies cost by the
+/// constraint's `penalize_mult` (delay-scaled when present, else
+/// [`crate::datex::DATEX_PENALIZE_MULT`]). Pass **active-only** situations.
 #[derive(Debug, Clone, Default)]
 pub struct RouteOptions {
     /// Exclude motorway-grade roads: `highway=motorway` / `motorway_link`,
@@ -1483,11 +1484,14 @@ fn edge_blocked_by_datex(edge: &GraphEdge, options: &RouteOptions) -> bool {
         .any(|c| c.impact == crate::datex::DatexImpact::Block && edge_hit_by_datex(edge, c))
 }
 
-fn edge_penalized_by_datex(edge: &GraphEdge, options: &RouteOptions) -> bool {
+/// Strongest Penalize multiplier among DATEX constraints that hit this edge.
+fn datex_penalize_multiplier(edge: &GraphEdge, options: &RouteOptions) -> Option<f64> {
     options
         .datex_impacts
         .iter()
-        .any(|c| c.impact == crate::datex::DatexImpact::Penalize && edge_hit_by_datex(edge, c))
+        .filter(|c| c.impact == crate::datex::DatexImpact::Penalize && edge_hit_by_datex(edge, c))
+        .map(|c| c.penalize_mult.max(1.0))
+        .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
 }
 
 fn edge_allowed_for_options(
@@ -1564,8 +1568,8 @@ fn edge_travel_cost(edge: &GraphEdge, use_eco: bool, options: &RouteOptions) -> 
     if options.toll_policy == crate::routing::toll::TollPolicy::Penalize && edge.is_toll {
         cost *= crate::routing::toll::TOLL_AVOID_PENALTY_MULT;
     }
-    if edge_penalized_by_datex(edge, options) {
-        cost *= crate::datex::DATEX_PENALIZE_MULT;
+    if let Some(mult) = datex_penalize_multiplier(edge, options) {
+        cost *= mult;
     }
     cost
 }

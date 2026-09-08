@@ -29,8 +29,11 @@ pub use fetch::{
 };
 pub use filter::{corridor_view, filter_near_route, split_active_inactive, DatexCorridorView};
 pub use impact::{
-    classify_impact, planner_impacts, DatexImpact, DatexPlannerConstraint, DATEX_IMPACT_RADIUS_M,
-    DATEX_PENALIZE_MULT,
+    classify_impact, delay_penalize_mult, is_known_situation_xsi_type, is_structurally_ignore,
+    planner_impacts, text_indicates_closure, wind_penalize_mult, DatexClassification,
+    DatexClassifyFields, DatexImpact, DatexPlannerConstraint, CLOSURE_PHRASES,
+    CLOSURE_RISK_EXCLUSIONS, DATEX_IMPACT_RADIUS_M, DATEX_PENALIZE_MULT, DATEX_PENALIZE_MULT_MAX,
+    DATEX_PENALIZE_MULT_MIN, NPRA_LIVE_XSI_TYPES, SCHEMA_VALID_UNUSED_XSI_TYPES,
 };
 pub use parse::{parse_situation_publication, DatexSituation, SituationKind};
 pub use session::{reset_session_for_tests, with_session, DatexSession};

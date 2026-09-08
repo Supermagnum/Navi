@@ -7421,7 +7421,12 @@ fn situation_to_json(s: &driver_break_core::datex::DatexSituation) -> serde_json
         "comment": s.comment,
         "severity": s.severity,
         "lanes_restricted": s.lanes_restricted,
+        "delay_time_secs": s.delay_time_secs,
+        "delays_present": s.delays_present,
+        "wind_speed": s.wind_speed,
         "impact": s.impact.as_str(),
+        "penalize_mult": s.penalize_mult,
+        "unrecognized_xsi_type": s.unrecognized_xsi_type,
     })
 }
 
