@@ -63,25 +63,115 @@ Each parsed situation gets an `impact` bucket used by the route planner
 | Bucket | Planner effect |
 |---|---|
 | `Ignore` | No graph change (overlay only) |
-| `Penalize` | Nearby edges keep searchable; cost × `DATEX_PENALIZE_MULT` (50) |
+| `Penalize` | Nearby edges keep searchable; cost × `penalize_mult` (delay-scaled when `delayTimeValue` is present, else `DATEX_PENALIZE_MULT` = 50) |
 | `Block` | Nearby edges hard-excluded from A* |
 
-**Field → bucket mapping** (first match wins), implemented in
-[`classify_impact`](../../core/src/datex/impact.rs):
+Classification is **type-aware**: `xsi:type` selects the rule, then structured
+fields and a narrow free-text check refine it. Implemented in
+[`classify_impact`](../../core/src/datex/impact.rs).
 
-| Priority | Condition | Bucket |
+These defaults come from one live GetSituation snapshot (2797 records). Counts
+below are **relative frequency**, not a guarantee that every type appears in every
+poll. Treat them as a starting mapping, not verified ground truth.
+
+### NPRA live types (17)
+
+| `xsi:type` | Default classification | Reasoning / override |
 |---|---|---|
-| 1 | Free-text `comment` or `locationDescription` contains a closure cue: `stengt`, `sperret`, `road closed`, `carriageway closed`, `fully closed`, or `closed` together with `road` / `vegen` / `vei` (case-insensitive) | **Block** |
-| 2 | `impact/numberOfLanesRestricted` ≥ 2 | **Block** |
-| 3 | `impact/numberOfLanesRestricted` ≥ 1 | **Penalize** |
-| 4 | Record `severity` ∈ {`medium`, `high`, `highest`} | **Penalize** |
-| 5 | Otherwise (e.g. `severity=none` / `low` with 0 lanes) | **Ignore** |
+| `RoadOrCarriagewayOrLaneManagement` | **Penalize** (scale by `delayTimeValue` when present, else lanes/severity) | Only type with real numeric delay data in the snapshot. If `delays` is present but `delayTimeValue` is absent, fall back to the lane/severity heuristic (may Ignore). Closure text still **Block**. |
+| `MaintenanceWorks` | **Penalize** when `lanes>0` or `severity` ∈ {medium, high, highest}, else **Ignore** | Severity always populated in the snapshot. Closure text (**Block**) is an adjustment vs the starting table: the Espa fixture Oslo E6 record is this type with “vegen er stengt”. |
+| `GeneralNetworkManagement` | **Penalize** when `lanes>0`, else **Ignore** | Mostly temporary traffic lights / manual directing — usually passable but slower |
+| `SpeedManagement` | **Ignore** (structurally exempt) | Speed-limit change alone must not reroute, even if future records add severity/lanes/closure text |
+| `ReroutingManagement` | **Penalize** | `followDiversionSigns` implies the direct route is already compromised |
+| `ConstructionWorks` | **Block** if free-text indicates closure, else **Penalize** | Lanes always 0 in the sample — cannot rely on lane count |
+| `EnvironmentalObstruction` | **Block** | Rockfall / fallen trees / landslip — treat as unpredictable full blockage |
+| `PublicEvent` | **Block** if `lanes>0` or free-text says closed, else **Penalize** | Sample includes a lanes=2 / closed case |
+| `TransitInformation` | **Ignore** (structurally exempt) | Ferry timetables; not road-related. Must not surface to routing even if future records add severity/lanes |
+| `InfrastructureDamageObstruction` | **Block** if strong closure text or `lanes>=2`, else **Penalize** | Softened after national-snapshot review: traffic lights + reduced speed, or “kan passere” partial reopen, must not hard-exclude |
+| `NonWeatherRelatedRoadConditions` | **Penalize** | `slipperyRoad` — real hazard, not a closure |
+| `AnimalPresenceObstruction` | **Penalize** | `animalsOnTheRoad` — caution/slowdown, not blockage |
+| `GeneralObstruction` | **Penalize**, **Block** if free-text suggests full blockage | `objectOnTheRoad` — ambiguous by nature |
+| `Accident` | **Block** | Sparse structured data (`severity=unknown` typical). Presence of the record is enough |
+| `VehicleObstruction` | **Penalize** | `brokenDownVehicle` — usually one lane, not full closure |
+| `PoorEnvironmentConditions` | **Penalize**, scale with `windSpeed` (m/s) when present | `strongWinds` example — relevant mainly for high-profile / vulnerable routing |
+| `RoadsideAssistance` | **Ignore** (structurally exempt) | `vehicleRecovery` — informational, not a hazard to the general route |
 
-Fixture examples (`espa-atnbru-getsituation.xml`):
+`planner_impacts` drops **Ignore**. `SpeedManagement`, `TransitInformation`, and
+`RoadsideAssistance` never escalate.
+
+### Delay scaling (`RoadOrCarriagewayOrLaneManagement`)
+
+DATEX `delayTimeValue` is seconds. When present it sets `penalize_mult` via
+[`delay_penalize_mult`](../../core/src/datex/impact.rs):
+
+- 30 seconds → about ×5.75 (cheap)
+- 30 minutes (1800 s) → ×50 (`DATEX_PENALIZE_MULT`)
+- longer delays continue up to ×150
+
+When `delays` exists without `delayTimeValue`, use the lane/severity heuristic
+for that record instead of the type-default Penalize.
+
+### Free-text closure phrases
+
+Narrow keyword check (case-insensitive substring) on `comment` and
+`locationDescription`. **Not** a general NLP pass. List:
+[`CLOSURE_PHRASES`](../../core/src/datex/impact.rs) — extend when live comments
+surface variants:
+
+| Phrase | Notes |
+|---|---|
+| `vegen er stengt` | Canonical NPRA Norwegian phrasing |
+| `veien er stengt` | Bokmal spelling variant |
+| `vegen stengt` / `veien stengt` | Shorter full-road forms |
+| `stengt i periode` | Intermittent full closure windows |
+| `helt stengt` / `helstengt` | Explicit total closure |
+| `sperret` | Blocked / barricaded |
+| `road closed` / `carriageway closed` / `fully closed` | English |
+| `closed` together with `road` / `vegen` / `vei` | Combined English/Norwegian |
+
+**Not matched:** bare `stengt` (over-matches `ett stengt kjørefelt` / `Et felt stengt`).
+
+**Risk exclusions** ([`CLOSURE_RISK_EXCLUSIONS`](../../core/src/datex/impact.rs)) — never Block from text alone; fall through to the type’s non-closure rule:
+
+| Exclusion | Notes |
+|---|---|
+| `fare for stengt` | Risk of closure (e.g. strong wind), not closed now |
+| `kan bli stengt` / `kunne bli stengt` | Conditional / possible closure |
+| `kan bli helt stengt` / `kunne bli helt stengt` | Same, total-closure wording |
+
+Applied as a **Block** override on types that are allowed to escalate. Types that
+need free-text because structured fields are insufficient:
+`ConstructionWorks`, `PublicEvent`, `GeneralObstruction`, and (with lanes≥2
+also enough) `InfrastructureDamageObstruction`. It also applies to
+`MaintenanceWorks` (see Oslo E6 fixture). Structurally exempt types skip this
+check.
+
+### Schema-valid types that NPRA does not publish
+
+`AbnormalTraffic` and `WeatherRelatedRoadConditions` are schema-valid but have
+not appeared in NPRA's live feed. They are classified with the generic
+lane/severity/closure heuristic so an unexpected record does not panic. Do not
+design routing behaviour around them showing up.
+
+**Unrecognized / future `xsi:type`:** parse succeeds, record is kept for overlay,
+impact is **Ignore**, `unrecognized_xsi_type=true`, and a `NaviDatex` warning is
+logged. The record is not dropped without trace.
+
+### Convoy / escort (not supported)
+
+NPRA's GetSituation feed has **no** convoy or escort concept: no
+`AuthorityOperation` convoy payload, no `WinterDrivingManagement`, and no
+convoy-type enum values. This plugin does **not** implement convoy or
+chain-requirement handling against DATEX. If that information is wanted later,
+it needs a different data source.
+
+### Corridor fixture examples (`espa-atnbru-getsituation.xml`)
+
+All five records in this fixture are `MaintenanceWorks`:
 
 | Situation | Key fields | Impact |
 |---|---|---|
-| Oslo “vegen er stengt” | lanes=2, text `stengt` | Block |
+| Oslo “vegen er stengt” | lanes=2, text `vegen er stengt` | Block (free-text) |
 | Ellingrud moving works | lanes=1, severity=low | Penalize |
 | Espatunnelen / Akselstua / Langmoen | lanes=0, severity=none | Ignore |
 
@@ -106,5 +196,6 @@ active corridor slice, then set `RouteOptions.datex_impacts`. Edges within
 ```bash
 cargo test -p driver-break-core --test datex_espa_atnbru
 cargo test -p driver-break-core --test datex_host_chain
+cargo test -p driver-break-core --test datex_classify_types
 cargo test -p driver-break-core datex::impact
 ```

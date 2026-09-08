@@ -3,7 +3,7 @@
 use chrono::{DateTime, FixedOffset, Utc};
 use roxmltree::Document;
 
-use super::impact::{classify_impact, DatexImpact};
+use super::impact::{classify_impact, DatexClassifyFields, DatexImpact};
 
 /// Coarse situation class derived from the DATEX `xsi:type` local name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -25,11 +25,12 @@ impl SituationKind {
             | "AnimalPresenceObstruction"
             | "EnvironmentalObstruction"
             | "GeneralObstruction"
-            | "AbnormalTraffic" => Self::Incident,
-            "RoadOrCarriagewayOrLaneManagement" | "AuthorityOperation" => {
-                // Closures / lane management often use this type; refine via comment later.
-                Self::Closure
-            }
+            | "InfrastructureDamageObstruction"
+            | "NonWeatherRelatedRoadConditions"
+            | "PoorEnvironmentConditions"
+            | "AbnormalTraffic"
+            | "WeatherRelatedRoadConditions" => Self::Incident,
+            "RoadOrCarriagewayOrLaneManagement" | "AuthorityOperation" => Self::Closure,
             "SpeedManagement" => Self::SpeedManagement,
             "ReroutingManagement" => Self::Rerouting,
             _ => Self::Other,
@@ -65,8 +66,18 @@ pub struct DatexSituation {
     pub severity: Option<String>,
     /// DATEX `impact/numberOfLanesRestricted` when present.
     pub lanes_restricted: Option<u32>,
-    /// Planner classification from severity / lanes / free-text.
+    /// DATEX `impact/delays/delayTimeValue` in seconds (DATEX Seconds).
+    pub delay_time_secs: Option<f64>,
+    /// True when an `impact/delays` element exists (numeric value may be absent).
+    pub delays_present: bool,
+    /// DATEX `windSpeed` (m/s) when present.
+    pub wind_speed: Option<f64>,
+    /// Planner classification from `xsi:type` plus fields.
     pub impact: DatexImpact,
+    /// Cost multiplier used when [`DatexImpact::Penalize`].
+    pub penalize_mult: f64,
+    /// True when `xsi:type` is not in the known inventory (defaults to Ignore).
+    pub unrecognized_xsi_type: bool,
 }
 
 impl DatexSituation {
@@ -151,12 +162,22 @@ fn parse_situation_record(node: roxmltree::Node<'_, '_>) -> Option<DatexSituatio
     let severity = first_text_local(node, "severity");
     let lanes_restricted =
         first_text_local(node, "numberOfLanesRestricted").and_then(|s| s.parse::<u32>().ok());
-    let impact = classify_impact(
+    let delay_time_secs =
+        first_text_local(node, "delayTimeValue").and_then(|s| s.parse::<f64>().ok());
+    let delays_present = node
+        .descendants()
+        .any(|n| local_name(n.tag_name().name()) == "delays");
+    let wind_speed = first_text_local(node, "windSpeed").and_then(|s| s.parse::<f64>().ok());
+    let classified = classify_impact(&DatexClassifyFields {
+        xsi_type: &xsi_type,
         lanes_restricted,
-        severity.as_deref(),
-        comment.as_deref(),
-        location_description.as_deref(),
-    );
+        severity: severity.as_deref(),
+        comment: comment.as_deref(),
+        location_description: location_description.as_deref(),
+        delay_time_secs,
+        delays_present,
+        wind_speed,
+    });
 
     Some(DatexSituation {
         id,
@@ -170,7 +191,12 @@ fn parse_situation_record(node: roxmltree::Node<'_, '_>) -> Option<DatexSituatio
         comment,
         severity,
         lanes_restricted,
-        impact,
+        delay_time_secs,
+        delays_present,
+        wind_speed,
+        impact: classified.impact,
+        penalize_mult: classified.penalize_mult,
+        unrecognized_xsi_type: classified.unrecognized_xsi_type,
     })
 }
 
@@ -236,10 +262,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn kind_mapping_roadworks() {
+    fn kind_mapping_covers_live_and_unused_types() {
         assert_eq!(
             SituationKind::from_xsi_type("MaintenanceWorks"),
             SituationKind::Roadworks
+        );
+        assert_eq!(
+            SituationKind::from_xsi_type("Accident"),
+            SituationKind::Incident
+        );
+        assert_eq!(
+            SituationKind::from_xsi_type("RoadOrCarriagewayOrLaneManagement"),
+            SituationKind::Closure
+        );
+        assert_eq!(
+            SituationKind::from_xsi_type("SpeedManagement"),
+            SituationKind::SpeedManagement
+        );
+        assert_eq!(
+            SituationKind::from_xsi_type("ReroutingManagement"),
+            SituationKind::Rerouting
+        );
+        assert_eq!(
+            SituationKind::from_xsi_type("TransitInformation"),
+            SituationKind::Other
+        );
+        assert_eq!(
+            SituationKind::from_xsi_type("WeatherRelatedRoadConditions"),
+            SituationKind::Incident
+        );
+        assert_eq!(
+            SituationKind::from_xsi_type("CompletelyFutureSituationType"),
+            SituationKind::Other
         );
     }
 }
