@@ -2155,6 +2155,7 @@ fn plan_car_route_inner(
         avoid_ferries,
         vehicle: vehicle_limits.clone(),
         departure_local,
+        datex_impacts: Vec::new(),
     };
 
     let mut report = String::new();
@@ -3923,9 +3924,13 @@ pub fn ensure_indexed_maps(pbf_path: String, data_dir: String, elev_dir: Option<
     let man_path = manifest_path(&data, &stem);
     if man_path.is_file() {
         if let Ok(man) = NaviManifest::load(&man_path) {
-            // Ready requires graph + POI/barrier v2 + wetland (tiled or monolith).
-            // Packs built before wetland tiling / overnight buildings regenerate.
-            if man.status_for_pbf(&data, &pbf) == PackStatus::Ready {
+            use driver_break_core::routing::indexed::server_install_present;
+            let ready = if server_install_present(&data, &stem) {
+                man.status_pack_files(&data) == PackStatus::Ready
+            } else {
+                man.status_for_pbf(&data, &pbf) == PackStatus::Ready
+            };
+            if ready {
                 return format!("PASS\ncache_hit=true\nmanifest={}\n", man_path.display());
             }
         }
@@ -3992,6 +3997,15 @@ pub fn indexed_maps_status(pbf_path: String, data_dir: String) -> String {
     }
     match NaviManifest::load(&man_path) {
         Ok(man) => {
+            use driver_break_core::routing::indexed::server_install_present;
+            if server_install_present(&data, &stem) {
+                return match man.status_pack_files(&data) {
+                    PackStatus::Ready => "ready\n".into(),
+                    PackStatus::Missing => "missing\n".into(),
+                    PackStatus::StalePbf => "stale_pbf\n".into(),
+                    PackStatus::VersionMismatch => "version_mismatch\n".into(),
+                };
+            }
             let packed = match driver_break_core::routing::indexed::fingerprint_pbf_for_packs(
                 &data, &pbf, &man,
             ) {
@@ -5205,6 +5219,7 @@ pub fn format_route_avoidance_report(
         avoid_ferries,
         vehicle: None,
         departure_local: None,
+        datex_impacts: Vec::new(),
     };
     driver_break_core::format_route_avoidance_report(&opts, 0, priority_path_share_pct)
 }
@@ -6295,6 +6310,122 @@ pub fn current_speed_limit_kmh(
     Some(info.speed_limit_kmh)
 }
 
+/// Pack-server vs local Geofabrik routing for region acquisition.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FfiRegionSourceKind {
+    /// Region is listed as ready on the pack host (pack-fetch path when built).
+    Server,
+    /// Fall back to Geofabrik/OSM extract download + on-device convert.
+    Local,
+}
+
+/// Decision from [`decide_region_acquisition`]: routing result + execute hint.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiRegionAcquisitionDecision {
+    pub source: FfiRegionSourceKind,
+    pub region_id: String,
+    /// Why this path was chosen (also logged under tag `NaviPack`).
+    pub reason: String,
+    /// Whether callers should run Geofabrik download + on-device convert now.
+    ///
+    /// `false` after a successful pack-server install; `true` when falling
+    /// through to Geofabrik + local bake.
+    pub execute_local_convert: bool,
+    pub region_generation: Option<String>,
+    pub catalog_generation: Option<String>,
+    /// Final hop: `server-lan` / `server-duckdns` / `local-bake`.
+    pub data_source: String,
+}
+
+/// Default pack host base URL (`NAVI_PACK_SERVER_BASE_URL` or LAN default).
+///
+/// Prefer the discovery chain inside [`decide_region_acquisition`] (pass
+/// `None` for `pack_server_base_url`) over assuming a single host.
+#[uniffi::export]
+pub fn default_pack_server_base_url() -> String {
+    driver_break_core::pack_server::pack_server_base_url()
+}
+
+/// Pack-host catalog snapshot for region-pill availability coloring.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiPackCatalogSnapshot {
+    /// `server-lan` / `server-duckdns` / `local-bake` (unreachable → local-bake).
+    pub data_source: String,
+    pub ready_region_ids: Vec<String>,
+    pub catalog_generation: Option<String>,
+    pub served_from: Option<String>,
+    pub unreachable_reason: Option<String>,
+}
+
+/// Probe LAN → duckdns (or override) and list ready region ids for pill greens.
+///
+/// Soft-fail: empty `ready_region_ids` when hosts are unreachable.
+#[uniffi::export]
+pub fn discover_pack_catalog(pack_server_base_url: Option<String>) -> FfiPackCatalogSnapshot {
+    ensure_native_logging();
+    let override_base = pack_server_base_url
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+    let snap = driver_break_core::pack_server::discover_pack_catalog(override_base);
+    FfiPackCatalogSnapshot {
+        data_source: snap.data_source.as_str().to_string(),
+        ready_region_ids: snap.ready_region_ids,
+        catalog_generation: snap.catalog_generation,
+        served_from: snap.served_from,
+        unreachable_reason: snap.unreachable_reason,
+    }
+}
+
+/// Whether a Geofabrik-style path is covered by a ready-region id list.
+#[uniffi::export]
+pub fn pack_path_covered_by_ready_ids(path: String, ready_region_ids: Vec<String>) -> bool {
+    driver_break_core::pack_server::path_covered_by_ready_ids(&path, &ready_region_ids)
+}
+
+/// Consult pack hosts (LAN → duckdns unless overridden) and decide Server vs Local.
+///
+/// When `data_dir` is set and the region is Server-ready, attempts pack install
+/// into that directory. Soft-fail: unreachable / missing region / fetch errors
+/// all yield `execute_local_convert = true` with a clear `reason`. Never panics.
+/// Optional `pack_server_base_url` forces a single host (tests).
+#[uniffi::export]
+pub fn decide_region_acquisition(
+    region_id: String,
+    pack_server_base_url: Option<String>,
+    data_dir: Option<String>,
+) -> FfiRegionAcquisitionDecision {
+    ensure_native_logging();
+    let override_base = pack_server_base_url
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+    let data = data_dir
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(Path::new);
+    let plan =
+        driver_break_core::pack_server::plan_region_acquisition(&region_id, override_base, data);
+    let (source, region_generation) = match &plan.source {
+        driver_break_core::pack_server::RegionSource::Server { generation, .. } => {
+            (FfiRegionSourceKind::Server, generation.clone())
+        }
+        driver_break_core::pack_server::RegionSource::Local { .. } => {
+            (FfiRegionSourceKind::Local, None)
+        }
+    };
+    FfiRegionAcquisitionDecision {
+        source,
+        region_id: driver_break_core::pack_server::normalize_region_id(&region_id),
+        reason: plan.log_message,
+        execute_local_convert: plan.execute_local_convert,
+        region_generation,
+        catalog_generation: plan.catalog_generation,
+        data_source: plan.data_source.as_str().to_string(),
+    }
+}
+
 /// Canonical Geofabrik `-latest.osm.pbf` URL for a region path
 /// (e.g. `europe/norway/ostlandet`). Prefer this over host-side URL string
 /// interpolation so Android and core share one builder.
@@ -7239,6 +7370,130 @@ mod hiking_auto_via_tests {
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[1].name, "Eldåbu");
     }
+}
+
+// --- DATEX plugin (host GET of navi-server cached NPRA snapshots; default OFF) ---
+
+/// Hard-coded product default: DATEX overlay must ship disabled.
+#[uniffi::export]
+pub fn datex_plugin_default_enabled() -> bool {
+    driver_break_core::datex::DATEX_PLUGIN_DEFAULT_ENABLED
+}
+
+/// Settings default host string (LAN navi-server). Discovery prefers the pack
+/// server chain unless the caller disables it.
+#[uniffi::export]
+pub fn datex_settings_default_host() -> String {
+    driver_break_core::datex::DATEX_SETTINGS_DEFAULT_HOST.to_string()
+}
+
+/// Settings default HTTP port.
+#[uniffi::export]
+pub fn datex_settings_default_port() -> u32 {
+    u32::from(driver_break_core::datex::DATEX_SETTINGS_DEFAULT_PORT)
+}
+
+/// Default Wi-Fi-only preference for DATEX pulls.
+#[uniffi::export]
+pub fn datex_wifi_only_default() -> bool {
+    driver_break_core::datex::DATEX_WIFI_ONLY_DEFAULT
+}
+
+/// Server Situation cache TTL / client poll floor (seconds).
+#[uniffi::export]
+pub fn datex_server_poll_secs() -> u64 {
+    driver_break_core::datex::DATEX_SERVER_SITUATION_POLL_SECS
+}
+
+fn situation_to_json(s: &driver_break_core::datex::DatexSituation) -> serde_json::Value {
+    let (lat, lon) = s.primary_lat_lon().unwrap_or((0.0, 0.0));
+    serde_json::json!({
+        "id": s.id,
+        "kind": s.kind.as_str(),
+        "xsi_type": s.xsi_type,
+        "lat": lat,
+        "lon": lon,
+        "geometry": s.geometry.iter().map(|(a,b)| serde_json::json!([a, b])).collect::<Vec<_>>(),
+        "valid_from": s.valid_from.map(|t| t.to_rfc3339()),
+        "valid_to": s.valid_to.map(|t| t.to_rfc3339()),
+        "road_number": s.road_number,
+        "location_description": s.location_description,
+        "comment": s.comment,
+        "severity": s.severity,
+        "lanes_restricted": s.lanes_restricted,
+        "impact": s.impact.as_str(),
+    })
+}
+
+/// Refresh DATEX for a route corridor polyline.
+///
+/// Uses the pack_server LAN → duckdns discovery chain by default (`use_discovery_chain`).
+/// `route_lat_lon_json` is a JSON array of `[lat, lon]` pairs. When `enabled` is
+/// false, no network I/O occurs. Failures return `overlay_enabled: false` and a
+/// `warning` string — they never throw into Kotlin.
+///
+/// `data_source` mirrors pack acquisition tags: `server-lan` / `server-duckdns` /
+/// `none` (never `local-bake` for traffic).
+#[uniffi::export]
+pub fn datex_refresh_json(
+    enabled: bool,
+    host: String,
+    port: u32,
+    route_lat_lon_json: String,
+    wifi_only: bool,
+    on_wifi: bool,
+    use_discovery_chain: bool,
+    cache_dir: Option<String>,
+) -> String {
+    use driver_break_core::datex::{refresh_for_route, DatexConfig};
+    use std::path::PathBuf;
+
+    let port = u16::try_from(port).unwrap_or(80);
+    let config = DatexConfig {
+        enabled,
+        use_discovery_chain,
+        host,
+        port,
+        wifi_only,
+        on_wifi,
+        cache_dir: cache_dir
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from),
+        ..DatexConfig::default()
+    };
+
+    let route: Vec<(f64, f64)> = match serde_json::from_str::<Vec<(f64, f64)>>(&route_lat_lon_json)
+    {
+        Ok(v) => v,
+        Err(e) => {
+            return serde_json::json!({
+                "overlay_enabled": false,
+                "active": [],
+                "inactive": [],
+                "situations_on_route": [],
+                "attribution": null,
+                "warning": format!("route_json:{e}"),
+                "data_source": "none",
+            })
+            .to_string();
+        }
+    };
+
+    let now = chrono::Utc::now();
+    let result = refresh_for_route(&config, &route, now);
+    serde_json::json!({
+        "overlay_enabled": result.overlay_enabled,
+        "active": result.active.iter().map(situation_to_json).collect::<Vec<_>>(),
+        "inactive": result.inactive.iter().map(situation_to_json).collect::<Vec<_>>(),
+        "situations_on_route": result.situations_on_route.iter().map(situation_to_json).collect::<Vec<_>>(),
+        "attribution": result.attribution,
+        "warning": result.warning,
+        "active_count": result.active.len(),
+        "inactive_count": result.inactive.len(),
+        "data_source": result.data_source,
+    })
+    .to_string()
 }
 
 #[cfg(test)]

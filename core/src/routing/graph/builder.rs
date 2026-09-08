@@ -144,6 +144,10 @@ pub struct GraphEdge {
 /// Clearance / motorway / ferry / [`TollPolicy::NeverUse`]: violating edges are
 /// **excluded** from A*. [`TollPolicy::Penalize`] keeps toll edges but multiplies
 /// their cost by [`crate::routing::toll::TOLL_AVOID_PENALTY_MULT`].
+///
+/// Active DATEX constraints ([`crate::datex::planner_impacts`]): [`DatexImpact::Block`]
+/// hard-excludes nearby edges; [`DatexImpact::Penalize`] multiplies cost by
+/// [`crate::datex::DATEX_PENALIZE_MULT`]. Pass **active-only** situations.
 #[derive(Debug, Clone, Default)]
 pub struct RouteOptions {
     /// Exclude motorway-grade roads: `highway=motorway` / `motorway_link`,
@@ -158,6 +162,9 @@ pub struct RouteOptions {
     pub vehicle: Option<crate::config::VehicleLimits>,
     /// Planned departure (local naive). `None` → evaluate seasonal closures at now.
     pub departure_local: Option<chrono::NaiveDateTime>,
+    /// Active DATEX planner constraints (empty = no DATEX effect). Prefer
+    /// [`crate::datex::planner_impacts`] on the active corridor slice only.
+    pub datex_impacts: Vec<crate::datex::DatexPlannerConstraint>,
 }
 
 /// Outcome of one A* attempt (path may be absent).
@@ -1139,6 +1146,19 @@ pub fn format_route_avoidance_report(
         "Avoid ferries: {}",
         if options.avoid_ferries { "ON" } else { "OFF" }
     ));
+    let datex_blocks = options
+        .datex_impacts
+        .iter()
+        .filter(|c| c.impact == crate::datex::DatexImpact::Block)
+        .count();
+    let datex_penalize = options
+        .datex_impacts
+        .iter()
+        .filter(|c| c.impact == crate::datex::DatexImpact::Penalize)
+        .count();
+    lines.push(format!(
+        "DATEX impacts: {datex_blocks} block, {datex_penalize} penalize"
+    ));
     if options.vehicle.is_some() {
         lines.push(format!(
             "Route avoids {avoided_on_reference} weight/height/width/length-restricted segments (vs unrestricted reference)"
@@ -1452,6 +1472,24 @@ fn edge_avoided_as_motorway(
     avoid && edge_is_motorway_grade(edge)
 }
 
+fn edge_hit_by_datex(edge: &GraphEdge, c: &crate::datex::DatexPlannerConstraint) -> bool {
+    crate::routing::graph::edge_distance_m(edge, c.lat, c.lon) <= c.radius_m
+}
+
+fn edge_blocked_by_datex(edge: &GraphEdge, options: &RouteOptions) -> bool {
+    options
+        .datex_impacts
+        .iter()
+        .any(|c| c.impact == crate::datex::DatexImpact::Block && edge_hit_by_datex(edge, c))
+}
+
+fn edge_penalized_by_datex(edge: &GraphEdge, options: &RouteOptions) -> bool {
+    options
+        .datex_impacts
+        .iter()
+        .any(|c| c.impact == crate::datex::DatexImpact::Penalize && edge_hit_by_datex(edge, c))
+}
+
 fn edge_allowed_for_options(
     edge: &GraphEdge,
     options: &RouteOptions,
@@ -1464,6 +1502,9 @@ fn edge_allowed_for_options(
         return false;
     }
     if options.toll_policy == crate::routing::toll::TollPolicy::NeverUse && edge.is_toll {
+        return false;
+    }
+    if edge_blocked_by_datex(edge, options) {
         return false;
     }
     if options.avoid_ferries && edge.is_ferry {
@@ -1522,6 +1563,9 @@ fn edge_travel_cost(edge: &GraphEdge, use_eco: bool, options: &RouteOptions) -> 
     };
     if options.toll_policy == crate::routing::toll::TollPolicy::Penalize && edge.is_toll {
         cost *= crate::routing::toll::TOLL_AVOID_PENALTY_MULT;
+    }
+    if edge_penalized_by_datex(edge, options) {
+        cost *= crate::datex::DATEX_PENALIZE_MULT;
     }
     cost
 }

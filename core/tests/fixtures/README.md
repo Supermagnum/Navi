@@ -45,3 +45,9 @@
 #
 # Sizes stay under a few MiB so they can live in git (unlike
 # core/target/integration-fixtures/*.pbf which are gitignored).
+
+# DATEX
+#
+#   core/tests/fixtures/datex/espa-atnbru-getsituation.xml
+#     Espa→Åtnbrua corridor subset from a live navi-server GetSituation cache
+#     (GML linestrings stripped). Used by `datex_espa_atnbru` tests.

@@ -42,7 +42,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -118,8 +120,10 @@ import uniffi.navi.TravelProfile
 import uniffi.navi.applyOsmUpdate
 import uniffi.navi.cancelInFlightPlan
 import uniffi.navi.checkOsmUpdates
+import uniffi.navi.decideRegionAcquisition
 import uniffi.navi.deleteSavedPlace
 import uniffi.navi.deleteSavedRoute
+import uniffi.navi.discoverPackCatalog
 import uniffi.navi.downloadProgressClear
 import uniffi.navi.downloadProgressSnapshot
 import uniffi.navi.ecoModeDefault
@@ -553,6 +557,31 @@ private fun userFacingStatus(raw: String): String {
     return t.take(120)
 }
 
+private fun datexIsOnWifi(context: android.content.Context): Boolean {
+    val cm =
+        context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+            as? android.net.ConnectivityManager
+            ?: return false
+    val network = cm.activeNetwork ?: return false
+    val caps = cm.getNetworkCapabilities(network) ?: return false
+    return caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) ||
+        caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)
+}
+
+private fun datexStatusLineForHud(
+    enabled: Boolean,
+    hud: DatexHudState,
+): String =
+    when {
+        !enabled -> ""
+        hud.warning == "no_route" -> "Plan a route to load corridor roadworks"
+        hud.warning == "wifi_only" -> "DATEX: Wi-Fi required (source=none)"
+        hud.warning != null -> "DATEX: ${hud.warning} (source=${hud.dataSource})"
+        hud.overlayEnabled ->
+            "Active ${hud.activeCount} · upcoming ${hud.inactiveCount} · ${hud.dataSource}"
+        else -> "DATEX idle (source=${hud.dataSource})"
+    }
+
 @Composable
 private fun NaviMapScreen() {
     val context = LocalContext.current
@@ -594,6 +623,11 @@ private fun NaviMapScreen() {
     var downloadContinent by remember {
         mutableStateOf(GeofabrikDownloadCatalog.continentForPath(selectedGeofabrikPath))
     }
+    var packCatalogProbing by remember { mutableStateOf(true) }
+    var packServerReadyIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var packCatalogDataSource by remember { mutableStateOf("local-bake") }
+    var packCatalogUnreachable by remember { mutableStateOf<String?>(null) }
+    var packCatalogEpoch by remember { mutableIntStateOf(0) }
     LaunchedEffect(selectedGeofabrikPath) {
         NaviMapTestHooks.lastSelectedGeofabrikPath = selectedGeofabrikPath
     }
@@ -675,6 +709,18 @@ private fun NaviMapScreen() {
     var weatherHud by remember { mutableStateOf(WeatherHudState()) }
     var weatherAppActive by remember { mutableStateOf(true) }
     var weatherMapEpoch by remember { mutableIntStateOf(0) }
+    var datexPluginEnabled by remember {
+        mutableStateOf(MapHudPrefs.loadDatexPluginEnabled(context))
+    }
+    var datexHost by remember { mutableStateOf(MapHudPrefs.loadDatexHost(context)) }
+    var datexPortText by remember {
+        mutableStateOf(MapHudPrefs.loadDatexPort(context).toString())
+    }
+    var datexWifiOnly by remember {
+        mutableStateOf(MapHudPrefs.loadDatexWifiOnly(context))
+    }
+    var datexHud by remember { mutableStateOf(DatexHudState()) }
+    var datexEpoch by remember { mutableIntStateOf(0) }
     var hideChrome by remember { mutableStateOf(false) }
     var hideSearch by remember { mutableStateOf(false) }
     var regionDownloadProgress by remember { mutableStateOf("") }
@@ -958,6 +1004,52 @@ private fun NaviMapScreen() {
     val dataDir =
         remember {
             NaviAppData.resolve(context)
+        }
+
+    LaunchedEffect(packCatalogEpoch) {
+        packCatalogProbing = true
+        val snap =
+            withContext(Dispatchers.IO) {
+                runCatching { discoverPackCatalog(packServerBaseUrl = null) }.getOrNull()
+            }
+        if (snap != null) {
+            packServerReadyIds = snap.readyRegionIds
+            packCatalogDataSource = snap.dataSource
+            packCatalogUnreachable = snap.unreachableReason
+            android.util.Log.i(
+                "NaviPack",
+                "catalog probe source=${snap.dataSource} ready=${snap.readyRegionIds.size} " +
+                    "served=${snap.servedFrom} unreachable=${snap.unreachableReason}",
+            )
+        } else {
+            packServerReadyIds = emptyList()
+            packCatalogDataSource = "local-bake"
+            packCatalogUnreachable = "discover_failed"
+        }
+        packCatalogProbing = false
+    }
+
+    val norwayChildPaths =
+        remember {
+            GeofabrikDownloadCatalog.norwayRegions.map { (slug, _) -> "europe/norway/$slug" }
+        }
+
+    fun pathPillReady(path: String): Boolean =
+        PackRegionAvailability.pillReady(
+            path = path,
+            serverReadyIds = packServerReadyIds,
+            dataDir = dataDir,
+            childPathsForLocal =
+                if (GeofabrikDownloadCatalog.hasRegionChips(path)) {
+                    norwayChildPaths
+                } else {
+                    emptyList()
+                },
+        )
+
+    fun continentPillReady(continent: GeofabrikContinent): Boolean =
+        GeofabrikDownloadCatalog.countriesIn(continent).any { country ->
+            pathPillReady(country.path)
         }
 
     /** GeoTIFF DEM decode can take tens of seconds — never on the UI thread. */
@@ -1315,6 +1407,59 @@ private fun NaviMapScreen() {
                 android.util.Log.i("NaviWeather", "skip fetch: app backgrounded")
             }
             delay(60_000L)
+        }
+    }
+
+    LaunchedEffect(datexPluginEnabled, datexWifiOnly, routeSamples, datexEpoch) {
+        if (!datexPluginEnabled) {
+            datexHud = DatexHudState()
+            return@LaunchedEffect
+        }
+        if (routeSamples.size < 2) {
+            datexHud =
+                DatexHudState(
+                    warning = "no_route",
+                    attribution = datexHud.attribution,
+                    dataSource = datexHud.dataSource,
+                )
+            return@LaunchedEffect
+        }
+        val host = datexHost.trim().ifBlank { MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST }
+        val port =
+            datexPortText.trim().toIntOrNull()?.coerceIn(1, 65535)
+                ?: MapHudPrefs.DATEX_SETTINGS_DEFAULT_PORT
+        val routeJson = routeSamplesToLatLonJson(routeSamples)
+        val cacheDir = File(dataDir, "datex_cache").absolutePath
+        while (true) {
+            if (!datexPluginEnabled) break
+            val onWifi = datexIsOnWifi(context)
+            val raw =
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        uniffi.navi.datexRefreshJson(
+                            enabled = true,
+                            host = host,
+                            port = port.toUInt(),
+                            routeLatLonJson = routeJson,
+                            wifiOnly = datexWifiOnly,
+                            onWifi = onWifi,
+                            useDiscoveryChain = true,
+                            cacheDir = cacheDir,
+                        )
+                    }.getOrElse { e ->
+                        android.util.Log.w("NaviDatex", "refresh failed: ${e.message}")
+                        """{"overlay_enabled":false,"active":[],"inactive":[],"warning":"exception:${e.message}","data_source":"none"}"""
+                    }
+                }
+            datexHud = datexHudFromRefreshJson(raw)
+            android.util.Log.i(
+                "NaviDatex",
+                "refresh source=${datexHud.dataSource} overlay=${datexHud.overlayEnabled} " +
+                    "active=${datexHud.activeCount} inactive=${datexHud.inactiveCount} " +
+                    "warn=${datexHud.warning}",
+            )
+            // Match server Situation poll cadence (~300 s); fail soft between polls.
+            delay(300_000L)
         }
     }
 
@@ -1740,16 +1885,45 @@ private fun NaviMapScreen() {
     fun startRegionDownload(path: String) {
         val leaf = path.substringAfterLast('/')
         val filename = "$leaf-latest.osm.pbf"
+        // Soft pack-server probe for status copy only (no install). Real fetch
+        // runs in RegionDownloadBackground with dataDir set.
+        val acquisition =
+            runCatching {
+                decideRegionAcquisition(
+                    regionId = path,
+                    packServerBaseUrl = null,
+                    dataDir = null,
+                )
+            }.getOrNull()
+        if (acquisition != null) {
+            android.util.Log.i(
+                "NaviPack",
+                "startRegionDownload path=$path source=${acquisition.source} " +
+                    "data_source=${acquisition.dataSource} " +
+                    "execute_local=${acquisition.executeLocalConvert} " +
+                    "reason=${acquisition.reason}",
+            )
+        }
         val url = geofabrikLatestPbfUrl(path)
         val already = RegionDownloadBackground.partialBytes(dataDir, filename)
+        val serverReady =
+            PackRegionAvailability.pathCoveredByReadyIds(path, packServerReadyIds)
         regionDownloadProgress =
-            if (already > 0L) "Resuming download…" else "Downloading region… 0%"
+            if (already > 0L) {
+                "Resuming download…"
+            } else if (serverReady) {
+                "Fetching packs from pack server…"
+            } else {
+                "Downloading region… 0%"
+            }
         downloadPolling = true
         status =
-            if (already > 0L) {
-                "Resuming download of $path…"
-            } else {
-                "Downloading $path..."
+            when {
+                already > 0L -> "Resuming download of $path…"
+                serverReady ->
+                    "Pack server has $path (${acquisition?.dataSource ?: packCatalogDataSource}); " +
+                        "installing published packs…"
+                else -> "Downloading $path and building place index…"
             }
         MapHudPrefs.saveGeofabrikPath(context, path)
         RegionDownloadBackground.ensureStarted(
@@ -1808,6 +1982,9 @@ private fun NaviMapScreen() {
                 val leftover = RegionDownloadBackground.statusLine()
                 if (leftover == "done" || leftover.startsWith("failed")) {
                     downloadPolling = false
+                    if (leftover == "done") {
+                        packCatalogEpoch += 1
+                    }
                 }
             }
             delay(400)
@@ -3262,6 +3439,8 @@ private fun NaviMapScreen() {
             weatherIconsDir = File(iconsDir, "weather").absolutePath,
             placeIndexDbPath = resolvePlaceIndexDb().absolutePath,
             weatherMapEpoch = weatherMapEpoch,
+            datexHud = datexHud,
+            datexEpoch = datexEpoch,
             modifier = Modifier.fillMaxSize(),
             onLayerCount = { mapLayerCount = it },
             onUserPan = {
@@ -5441,6 +5620,37 @@ private fun NaviMapScreen() {
                         },
                         weatherAttribution = uniffi.navi.weatherAttributionText(),
                         mapSymbolsZoomMax = weatherMapZoomMaxForUi().toInt(),
+                        datexPluginEnabled = datexPluginEnabled,
+                        onDatexPluginChange = { on ->
+                            datexPluginEnabled = on
+                            MapHudPrefs.saveDatexPluginEnabled(context, on)
+                            DiagnosticLog.logToggle("datex_plugin", on)
+                            if (!on) {
+                                datexHud = DatexHudState()
+                                datexEpoch += 1
+                                status = "DATEX overlay off"
+                            } else {
+                                datexEpoch += 1
+                                status = "DATEX overlay on — fetch when a route is planned"
+                            }
+                        },
+                        datexHost = datexHost,
+                        onDatexHostChange = { h ->
+                            datexHost = h
+                            MapHudPrefs.saveDatexHost(context, h)
+                        },
+                        datexPort = datexPortText,
+                        onDatexPortChange = { p ->
+                            datexPortText = p
+                            p.toIntOrNull()?.let { MapHudPrefs.saveDatexPort(context, it) }
+                        },
+                        datexWifiOnly = datexWifiOnly,
+                        onDatexWifiOnlyChange = { on ->
+                            datexWifiOnly = on
+                            MapHudPrefs.saveDatexWifiOnly(context, on)
+                            datexEpoch += 1
+                        },
+                        datexStatusLine = datexStatusLineForHud(datexPluginEnabled, datexHud),
                     )
                     Text("Region", style = MaterialTheme.typography.titleSmall)
                     Text("Map layers: $mapLayerCount", style = MaterialTheme.typography.bodySmall)
@@ -5457,9 +5667,38 @@ private fun NaviMapScreen() {
                     Text(
                         "Countries and bboxes come from Geofabrik's published index. " +
                             "Central America extracts are listed under North America. " +
-                            "Jurisdiction packs still follow GPS, not this picker.",
+                            "Jurisdiction packs still follow GPS, not this picker. " +
+                            "Green pills = published on the pack server or already indexed on device. " +
+                            "Green Download = install packs only; otherwise Download builds a place index.",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    val readyChipGreen = Color(0xFF2E7D32)
+                    val readyChipMuted = readyChipGreen.copy(alpha = 0.30f)
+
+                    @Composable
+                    fun readyChipColors(ready: Boolean) =
+                        FilterChipDefaults.filterChipColors(
+                            containerColor =
+                                if (ready) {
+                                    readyChipMuted
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHighest
+                                },
+                            selectedContainerColor =
+                                if (ready) {
+                                    readyChipGreen
+                                } else {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                },
+                            labelColor = MaterialTheme.colorScheme.onSurface,
+                            selectedLabelColor =
+                                if (ready) {
+                                    Color.White
+                                } else {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                },
+                        )
+
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
                             selected = downloadScopeCountry,
@@ -5515,6 +5754,7 @@ private fun NaviMapScreen() {
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             GeofabrikDownloadCatalog.continents.forEach { continent ->
+                                val ready = continentPillReady(continent)
                                 FilterChip(
                                     selected = downloadContinent == continent,
                                     onClick = {
@@ -5525,6 +5765,7 @@ private fun NaviMapScreen() {
                                             ?.let { selectedGeofabrikPath = it.path }
                                     },
                                     label = { Text(continent.label) },
+                                    colors = readyChipColors(ready),
                                     modifier = Modifier.testTag(continent.testTag),
                                 )
                             }
@@ -5544,10 +5785,12 @@ private fun NaviMapScreen() {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 continentCountries.forEach { country ->
+                                    val ready = pathPillReady(country.path)
                                     FilterChip(
                                         selected = selectedGeofabrikPath == country.path,
                                         onClick = { selectedGeofabrikPath = country.path },
                                         label = { Text(country.label) },
+                                        colors = readyChipColors(ready),
                                         modifier = Modifier.testTag(country.testTag),
                                     )
                                 }
@@ -5571,10 +5814,13 @@ private fun NaviMapScreen() {
                         ) {
                             GeofabrikDownloadCatalog.norwayRegions.forEach { (slug, label) ->
                                 val path = "europe/norway/$slug"
+                                val ready = pathPillReady(path)
                                 FilterChip(
                                     selected = selectedGeofabrikPath == path,
                                     onClick = { selectedGeofabrikPath = path },
                                     label = { Text(label) },
+                                    colors = readyChipColors(ready),
+                                    modifier = Modifier.testTag("chip_norway_$slug"),
                                 )
                             }
                         }
@@ -5584,6 +5830,29 @@ private fun NaviMapScreen() {
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.testTag("region_chips_norway_only_note"),
                         )
+                    }
+                    val packStatus =
+                        PackRegionAvailability.statusLine(
+                            selectedPath = selectedGeofabrikPath,
+                            serverReadyIds = packServerReadyIds,
+                            dataSource = packCatalogDataSource,
+                            unreachableReason = packCatalogUnreachable,
+                            probing = packCatalogProbing,
+                            dataDir = dataDir,
+                        )
+                    if (packStatus.isNotBlank()) {
+                        Text(
+                            packStatus,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("pack_region_availability_status"),
+                        )
+                    }
+                    TextButton(
+                        onClick = { packCatalogEpoch += 1 },
+                        enabled = !packCatalogProbing,
+                        modifier = Modifier.testTag("btn_refresh_pack_catalog"),
+                    ) {
+                        Text(if (packCatalogProbing) "Checking pack server…" else "Refresh pack availability")
                     }
                     OutlinedTextField(
                         value = selectedGeofabrikPath,
@@ -5595,6 +5864,11 @@ private fun NaviMapScreen() {
                                 .fillMaxWidth()
                                 .testTag("field_geofabrik_path"),
                     )
+                    val selectedServerReady =
+                        PackRegionAvailability.pathCoveredByReadyIds(
+                            selectedGeofabrikPath,
+                            packServerReadyIds,
+                        )
                     Button(
                         onClick = {
                             val path = selectedGeofabrikPath.trim().trim('/')
@@ -5604,12 +5878,23 @@ private fun NaviMapScreen() {
                                 startRegionDownload(path)
                             }
                         },
+                        colors =
+                            if (PackRegionAvailability.downloadRegionUsesReadyStyle(selectedServerReady)) {
+                                ButtonDefaults.buttonColors(
+                                    containerColor = readyChipGreen,
+                                    contentColor = Color.White,
+                                )
+                            } else {
+                                ButtonDefaults.buttonColors()
+                            },
                         modifier =
                             Modifier
                                 .fillMaxWidth()
                                 .testTag("btn_download_region"),
                     ) {
-                        Text("Download region + build place index")
+                        Text(
+                            PackRegionAvailability.downloadRegionButtonLabel(selectedServerReady),
+                        )
                     }
                     Button(
                         onClick = {
@@ -5872,6 +6157,7 @@ private fun NaviMapScreen() {
                         "OSM updates (Geofabrik) — opt-in, never silent",
                         style = MaterialTheme.typography.labelLarge,
                     )
+                    val osmCheckReady = pathPillReady(selectedGeofabrikPath)
                     Button(
                         onClick = {
                             scope.launch {
@@ -5884,6 +6170,15 @@ private fun NaviMapScreen() {
                                 updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
                             }
                         },
+                        colors =
+                            if (PackRegionAvailability.osmCheckUsesReadyStyle(osmCheckReady)) {
+                                ButtonDefaults.buttonColors(
+                                    containerColor = readyChipGreen,
+                                    contentColor = Color.White,
+                                )
+                            } else {
+                                ButtonDefaults.buttonColors()
+                            },
                         modifier =
                             Modifier
                                 .fillMaxWidth()
@@ -6280,6 +6575,37 @@ private fun NaviMapScreen() {
                     },
                     weatherAttribution = uniffi.navi.weatherAttributionText(),
                     mapSymbolsZoomMax = weatherMapZoomMaxForUi().toInt(),
+                    datexPluginEnabled = datexPluginEnabled,
+                    onDatexPluginChange = { on ->
+                        datexPluginEnabled = on
+                        MapHudPrefs.saveDatexPluginEnabled(context, on)
+                        DiagnosticLog.logToggle("datex_plugin", on)
+                        if (!on) {
+                            datexHud = DatexHudState()
+                            datexEpoch += 1
+                            status = "DATEX overlay off"
+                        } else {
+                            datexEpoch += 1
+                            status = "DATEX overlay on — fetch when a route is planned"
+                        }
+                    },
+                    datexHost = datexHost,
+                    onDatexHostChange = { h ->
+                        datexHost = h
+                        MapHudPrefs.saveDatexHost(context, h)
+                    },
+                    datexPort = datexPortText,
+                    onDatexPortChange = { ptxt ->
+                        datexPortText = ptxt
+                        ptxt.toIntOrNull()?.let { MapHudPrefs.saveDatexPort(context, it) }
+                    },
+                    datexWifiOnly = datexWifiOnly,
+                    onDatexWifiOnlyChange = { on ->
+                        datexWifiOnly = on
+                        MapHudPrefs.saveDatexWifiOnly(context, on)
+                        datexEpoch += 1
+                    },
+                    datexStatusLine = datexStatusLineForHud(datexPluginEnabled, datexHud),
                     onSave = {
                         MapHudPrefs.saveAutoZoom(
                             context,
@@ -6490,6 +6816,8 @@ private fun CorridorMapView(
     weatherIconsDir: String = "",
     placeIndexDbPath: String = "",
     weatherMapEpoch: Int = 0,
+    datexHud: DatexHudState = DatexHudState(),
+    datexEpoch: Int = 0,
     modifier: Modifier = Modifier,
     onLayerCount: (Int) -> Unit,
     onUserPan: () -> Unit = {},
@@ -6739,6 +7067,7 @@ private fun CorridorMapView(
                 appActive = weatherAppActive,
             )
         }
+        applyDatexOverlay(style, datexHud)
         applyCameraTilt(map)
         styleReady.value = true
         NaviMapTestHooks.styleReady = true
@@ -7304,6 +7633,14 @@ private fun CorridorMapView(
     LaunchedEffect(styleEpoch, prefer3d, contoursEnabled, vulkanAvailable, cameraTiltDeg) {
         val map = mapRef ?: return@LaunchedEffect
         applyResolvedStyle(map, force = true)
+    }
+
+    LaunchedEffect(datexEpoch, datexHud, styleReady.value) {
+        if (!styleReady.value) return@LaunchedEffect
+        val map = mapRef ?: return@LaunchedEffect
+        map.getStyle { style ->
+            applyDatexOverlay(style, datexHud)
+        }
     }
 
     LaunchedEffect(

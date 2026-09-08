@@ -114,6 +114,7 @@ the premature-link CI guard fails the build if `navi-ffi`, `navi-desktop`, or
 | `plugins/log-hello` | Reference plugin: one log line |
 | `plugins/busy-loop` | Reference plugin: infinite loop (isolation tests) |
 | `plugins/weather/` | Weather plugin — Meteocons assets + guest scaffold; product HUD/map use host UniFFI ([`plugins/weather-plugin.md`](plugins/weather-plugin.md)) |
+| `plugins/datex/` | DATEX guest scaffold; host client in `driver-break-core::datex` ([`plugins/datex-plugin.md`](plugins/datex-plugin.md)) |
 
 ## Manifest (`plugin.json`)
 
@@ -299,16 +300,31 @@ that (no global dump onto the map).
 APRS WX beacons (`b`/`t`/`h` keys) remain a radio-side path; this plugin is the
 internet weather overlay.
 
+### 2b. DATEX road situations (`datex`)
+
+| | |
+|---|---|
+| **Benefit** | Roadworks / closures / incidents along the planned corridor from NPRA DATEX II |
+| **Docs** | [`plugins/datex-plugin.md`](plugins/datex-plugin.md) — navi-server client contract, config, active vs inactive |
+| **Server** | navi-server optional DATEX redistributor (`--apply-datex`); caches XML; clients GET `/datex/` only |
+| **Host duties** | Plain HTTP GET (`pack_server`); parse; classify `DatexImpact`; `CorridorBand` filter; overlay active; planner via `planner_impacts` |
+| **Guest duties** | Scaffolded WASM guest (`plugins/datex/`); product APK does not load plugin-host yet |
+| **Caps** | `log`, `position_read` (scaffold); future `incident_*` when ABI lands |
+| **Default** | **OFF** (`DATEX_PLUGIN_DEFAULT_ENABLED = false`) |
+| **Offline / failure** | Warn + disable overlay for the session; never block routing |
+
 ### 3. Road info (`road_info`)
+
 
 | | |
 |---|---|
 | **Benefit** | Closed roads, mountain convoy schedules, accidents / temporary hazards |
 | **Sources** | National road authorities, DATEX-II style feeds, OSM notes/`highway=*` diffs, user reports — always opt-in network |
 | **Research** | [`plugins/traffic-information.md`](plugins/traffic-information.md) — why a free / global / ~1-minute source does not exist today; RTL-SDR RDS-TMC / DAB-TPEG alternative under consideration |
-| **NPRA DATEX client** | [`plugins/datex-npra-client.md`](plugins/datex-npra-client.md) — Norway DATEX II v3.1 pull (access form, Basic Auth, snapshot endpoints; not shipped) |
-| **Host duties** | Fetch + validate; store incidents with bbox + expiry |
-| **Core effect** | Soft or hard edge penalties / avoid flags during A* (future graph hook) |
+| **NPRA DATEX (via navi-server)** | [`plugins/datex-plugin.md`](plugins/datex-plugin.md) — host GET of cached `/datex/GetSituation.xml` (default OFF; no NPRA credentials on device) |
+| **Legacy direct-NPRA sketch** | [`plugins/datex-npra-client.md`](plugins/datex-npra-client.md) — do **not** use for product; credentials stay server-side |
+| **Host duties** | Fetch + validate; store incidents with bbox + expiry; DATEX uses `pack_server` read-only GET |
+| **Core effect** | DATEX: `DatexImpact::{Ignore,Penalize,Block}` on active situations → `RouteOptions.datex_impacts` (see datex-plugin.md) |
 | **Proposed caps** | `position_read`, `incident_query` / `incident_write` (new), `log` |
 | **UI** | Map banners + route recalc prompt; never rewrite the `.pbf` silently |
 

@@ -138,12 +138,12 @@ Open **Tools** from the planning panel (toggles to **Hide tools**).
 |---|---|
 | **Download scope** | Chips **Country** vs **Region in country**. Country mode is a **continent → country** picker using the standard seven continents. Country paths and bboxes come from Geofabrik’s published index (`index-v1.json`); Central America extracts appear under North America in the UI while keeping `central-america/…` download paths. Antarctica is listed (Geofabrik root extract). Selecting a country shows an honest support note (most are maps-only; HOS/cameras only where packs exist). Region chips remain Norway landsdels only. Country-scale downloads warn about low-RAM devices. |
 | **Geofabrik path** | Editable path (e.g. `europe/norway/ostlandet`, `europe/sweden`, `north-america/us`). |
-| **Download region + build place index** | Downloads the Geofabrik PBF, binds the region, builds the place search index, and builds indexed routing maps when possible. |
+| **Download region** / **Download region + build place index** | When the pack server lists the selected path (green pill), the button is green and labeled **Download region** — installs published packs only (no place-index build). Otherwise it stays the default color and runs Geofabrik PBF download + place index + local pack bake. |
 | **Rebuild indexed maps (local PBF)** | Rebuilds preprocess packs from a PBF already on the device. |
 | **Download basemap (PMTiles)** | Offline Protomaps basemap for the selected region. |
 | **Download terrain DEM (Mapterhorn)** | Offline hillshade and elevation contours beside the basemap. Independent of the **3D** / **Contours** map toggles — download once, enable either or both. |
 | **Pause / Resume / Cancel** | Controls an in-progress download job. |
-| **Check for OSM updates** | Opt-in Geofabrik update check (never silent). |
+| **Check for OSM updates** | Opt-in Geofabrik update check (never silent). Green when the selected path is pack-ready (same readiness as region pills). |
 | **Apply pending OSM update** | Applies a previously checked update after you confirm. |
 | **Diagnostic logging** | **Debug toggle** (off by default). When on, writes a dated pipe-delimited session log under **Internal storage → Documents → debug** (`navi_session_*.log`) for USB/MTP copy — no adb required. Categories: GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system. Not uploaded; when off, no new file and native per-stage plan timing stays gated off. |
 | **Export diagnostic log** | Share-sheet export of the latest session file (enable logging first if none exists). |

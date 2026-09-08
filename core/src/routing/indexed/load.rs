@@ -54,6 +54,11 @@ fn status_for_planning_pbf(
     planning_pbf: &Path,
     man: &NaviManifest,
 ) -> Result<PackStatus, PackLoadError> {
+    // Pack-server installs ship graphs without a real extract. A sidecar stamp
+    // means digests were verified at install time — skip PBF fingerprint.
+    if super::manifest::server_install_present(data_dir, &man.stem) {
+        return Ok(man.status_pack_files(data_dir));
+    }
     let packed = fingerprint_pbf_for_packs(data_dir, planning_pbf, man)?;
     Ok(man.status_for_pbf(data_dir, &packed))
 }
