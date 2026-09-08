@@ -25,6 +25,10 @@ object MapHudPrefs {
     private const val KEY_SNAP_ROTATION_BACK = "snap_rotation_back"
     private const val KEY_WEATHER_PLUGIN_ENABLED = "weather_plugin_enabled"
     private const val KEY_WEATHER_MAP_SYMBOLS = "weather_map_symbols_enabled"
+    private const val KEY_DATEX_PLUGIN_ENABLED = "datex_plugin_enabled"
+    private const val KEY_DATEX_HOST = "datex_host"
+    private const val KEY_DATEX_PORT = "datex_port"
+    private const val KEY_DATEX_WIFI_ONLY = "datex_wifi_only"
 
     /**
      * Product default for the weather plugin enable toggle.
@@ -37,6 +41,17 @@ object MapHudPrefs {
      * the main weather plugin is enabled. [MapWeatherSymbolsDefaultOffTest].
      */
     const val WEATHER_MAP_SYMBOLS_DEFAULT_ENABLED = false
+
+    /**
+     * Product default for DATEX overlay. Must remain false (opt-in).
+     * [DatexPluginDefaultOffTest] fails the build if flipped.
+     */
+    const val DATEX_PLUGIN_DEFAULT_ENABLED = false
+
+    /** Settings default host; discovery prefers LAN→duckdns unless overridden. */
+    const val DATEX_SETTINGS_DEFAULT_HOST = "192.168.1.195"
+    const val DATEX_SETTINGS_DEFAULT_PORT = 80
+    const val DATEX_WIFI_ONLY_DEFAULT = true
     const val DEFAULT_AUTO_ZOOM_LEVEL = 16.5
     const val MIN_ZOOM = 3.0
     const val MAX_ZOOM = 20.0
@@ -428,6 +443,75 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_WEATHER_MAP_SYMBOLS, enabled)
+            .apply()
+    }
+
+    /** DATEX overlay plugin — defaults OFF per plugins.md. */
+    fun loadDatexPluginEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_DATEX_PLUGIN_ENABLED, DATEX_PLUGIN_DEFAULT_ENABLED)
+
+    fun saveDatexPluginEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_DATEX_PLUGIN_ENABLED, enabled)
+            .apply()
+    }
+
+    fun loadDatexHost(context: Context): String =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_DATEX_HOST, DATEX_SETTINGS_DEFAULT_HOST)
+            ?.trim()
+            ?.ifBlank { DATEX_SETTINGS_DEFAULT_HOST }
+            ?: DATEX_SETTINGS_DEFAULT_HOST
+
+    fun saveDatexHost(
+        context: Context,
+        host: String,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_DATEX_HOST, host.trim().ifBlank { DATEX_SETTINGS_DEFAULT_HOST })
+            .apply()
+    }
+
+    fun loadDatexPort(context: Context): Int =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_DATEX_PORT, DATEX_SETTINGS_DEFAULT_PORT)
+
+    fun saveDatexPort(
+        context: Context,
+        port: Int,
+    ) {
+        val p = port.coerceIn(1, 65535)
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_DATEX_PORT, p)
+            .apply()
+    }
+
+    fun loadDatexWifiOnly(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_DATEX_WIFI_ONLY, DATEX_WIFI_ONLY_DEFAULT)
+
+    fun saveDatexWifiOnly(
+        context: Context,
+        wifiOnly: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_DATEX_WIFI_ONLY, wifiOnly)
             .apply()
     }
 }

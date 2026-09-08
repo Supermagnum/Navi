@@ -1038,6 +1038,22 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1076,6 +1092,22 @@ fun uniffi_navi_checksum_func_convert_progress_snapshot(
 fun uniffi_navi_checksum_func_current_speed_kmh(
 ): Short
 fun uniffi_navi_checksum_func_current_speed_limit_kmh(
+): Short
+fun uniffi_navi_checksum_func_datex_plugin_default_enabled(
+): Short
+fun uniffi_navi_checksum_func_datex_refresh_json(
+): Short
+fun uniffi_navi_checksum_func_datex_server_poll_secs(
+): Short
+fun uniffi_navi_checksum_func_datex_settings_default_host(
+): Short
+fun uniffi_navi_checksum_func_datex_settings_default_port(
+): Short
+fun uniffi_navi_checksum_func_datex_wifi_only_default(
+): Short
+fun uniffi_navi_checksum_func_decide_region_acquisition(
+): Short
+fun uniffi_navi_checksum_func_default_pack_server_base_url(
 ): Short
 fun uniffi_navi_checksum_func_delete_saved_place(
 ): Short
@@ -1469,6 +1501,22 @@ fun uniffi_navi_fn_func_convert_progress_snapshot(uniffi_out_err: UniffiRustCall
 fun uniffi_navi_fn_func_current_speed_kmh(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_current_speed_limit_kmh(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`maxM`: Double,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_datex_plugin_default_enabled(uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_navi_fn_func_datex_refresh_json(`enabled`: Byte,`host`: RustBuffer.ByValue,`port`: Int,`routeLatLonJson`: RustBuffer.ByValue,`wifiOnly`: Byte,`onWifi`: Byte,`useDiscoveryChain`: Byte,`cacheDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_datex_server_poll_secs(uniffi_out_err: UniffiRustCallStatus, 
+): Long
+fun uniffi_navi_fn_func_datex_settings_default_host(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_datex_settings_default_port(uniffi_out_err: UniffiRustCallStatus, 
+): Int
+fun uniffi_navi_fn_func_datex_wifi_only_default(uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_navi_fn_func_decide_region_acquisition(`regionId`: RustBuffer.ByValue,`packServerBaseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_default_pack_server_base_url(uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_delete_saved_place(`dataDir`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
@@ -1914,6 +1962,30 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_current_speed_limit_kmh() != 27880.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_datex_plugin_default_enabled() != 30233.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_datex_refresh_json() != 2633.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_datex_server_poll_secs() != 2368.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_datex_settings_default_host() != 50041.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_datex_settings_default_port() != 45606.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_datex_wifi_only_default() != 40447.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_decide_region_acquisition() != 52742.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_default_pack_server_base_url() != 42568.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_delete_saved_place() != 42612.toShort()) {
@@ -3643,6 +3715,75 @@ public object FfiConverterTypeFfiProfilePoiRadii: FfiConverterRustBuffer<FfiProf
 
 
 
+/**
+ * Decision from [`decide_region_acquisition`]: routing result + execute hint.
+ */
+data class FfiRegionAcquisitionDecision (
+    var `source`: FfiRegionSourceKind, 
+    var `regionId`: kotlin.String, 
+    /**
+     * Why this path was chosen (also logged under tag `NaviPack`).
+     */
+    var `reason`: kotlin.String, 
+    /**
+     * Whether callers should run Geofabrik download + on-device convert now.
+     *
+     * TODO: always `true` until pack-fetch is implemented — including when
+     * `source == Server`. That means "stub deferred to local", not
+     * "server fetch + local convert". Flip per-branch once `try_fetch_region_packs`
+     * is real (`false` on successful Server fetch).
+     */
+    var `executeLocalConvert`: kotlin.Boolean, 
+    var `regionGeneration`: kotlin.String?, 
+    var `catalogGeneration`: kotlin.String?, 
+    /**
+     * Final hop: `server-lan` / `server-duckdns` / `local-bake`.
+     */
+    var `dataSource`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiRegionAcquisitionDecision: FfiConverterRustBuffer<FfiRegionAcquisitionDecision> {
+    override fun read(buf: ByteBuffer): FfiRegionAcquisitionDecision {
+        return FfiRegionAcquisitionDecision(
+            FfiConverterTypeFfiRegionSourceKind.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiRegionAcquisitionDecision) = (
+            FfiConverterTypeFfiRegionSourceKind.allocationSize(value.`source`) +
+            FfiConverterString.allocationSize(value.`regionId`) +
+            FfiConverterString.allocationSize(value.`reason`) +
+            FfiConverterBoolean.allocationSize(value.`executeLocalConvert`) +
+            FfiConverterOptionalString.allocationSize(value.`regionGeneration`) +
+            FfiConverterOptionalString.allocationSize(value.`catalogGeneration`) +
+            FfiConverterString.allocationSize(value.`dataSource`)
+    )
+
+    override fun write(value: FfiRegionAcquisitionDecision, buf: ByteBuffer) {
+            FfiConverterTypeFfiRegionSourceKind.write(value.`source`, buf)
+            FfiConverterString.write(value.`regionId`, buf)
+            FfiConverterString.write(value.`reason`, buf)
+            FfiConverterBoolean.write(value.`executeLocalConvert`, buf)
+            FfiConverterOptionalString.write(value.`regionGeneration`, buf)
+            FfiConverterOptionalString.write(value.`catalogGeneration`, buf)
+            FfiConverterString.write(value.`dataSource`, buf)
+    }
+}
+
+
+
 data class FfiRoadNearInfo (
     /**
      * Street label (name → ref → highway class), empty when no edge in range.
@@ -4124,6 +4265,45 @@ public object FfiConverterTypeFfiIconTheme: FfiConverterRustBuffer<FfiIconTheme>
     override fun allocationSize(value: FfiIconTheme) = 4UL
 
     override fun write(value: FfiIconTheme, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Pack-server vs local Geofabrik routing for region acquisition.
+ */
+
+enum class FfiRegionSourceKind {
+    
+    /**
+     * Region is listed as ready on the pack host (pack-fetch path when built).
+     */
+    SERVER,
+    /**
+     * Fall back to Geofabrik/OSM extract download + on-device convert.
+     */
+    LOCAL;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiRegionSourceKind: FfiConverterRustBuffer<FfiRegionSourceKind> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiRegionSourceKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiRegionSourceKind) = 4UL
+
+    override fun write(value: FfiRegionSourceKind, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -4782,6 +4962,118 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_current_speed_limit_kmh(
         FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`cacheDir`),FfiConverterString.lower(`elevDir`),FfiConverterTypeTravelProfile.lower(`profile`),FfiConverterDouble.lower(`maxM`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Hard-coded product default: DATEX overlay must ship disabled.
+         */ fun `datexPluginDefaultEnabled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_datex_plugin_default_enabled(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Refresh DATEX for a route corridor polyline.
+         *
+         * Uses the pack_server LAN → duckdns discovery chain by default (`use_discovery_chain`).
+         * `route_lat_lon_json` is a JSON array of `[lat, lon]` pairs. When `enabled` is
+         * false, no network I/O occurs. Failures return `overlay_enabled: false` and a
+         * `warning` string — they never throw into Kotlin.
+         *
+         * `data_source` mirrors pack acquisition tags: `server-lan` / `server-duckdns` /
+         * `none` (never `local-bake` for traffic).
+         */ fun `datexRefreshJson`(`enabled`: kotlin.Boolean, `host`: kotlin.String, `port`: kotlin.UInt, `routeLatLonJson`: kotlin.String, `wifiOnly`: kotlin.Boolean, `onWifi`: kotlin.Boolean, `useDiscoveryChain`: kotlin.Boolean, `cacheDir`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_datex_refresh_json(
+        FfiConverterBoolean.lower(`enabled`),FfiConverterString.lower(`host`),FfiConverterUInt.lower(`port`),FfiConverterString.lower(`routeLatLonJson`),FfiConverterBoolean.lower(`wifiOnly`),FfiConverterBoolean.lower(`onWifi`),FfiConverterBoolean.lower(`useDiscoveryChain`),FfiConverterOptionalString.lower(`cacheDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Server Situation cache TTL / client poll floor (seconds).
+         */ fun `datexServerPollSecs`(): kotlin.ULong {
+            return FfiConverterULong.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_datex_server_poll_secs(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Settings default host string (LAN navi-server). Discovery prefers the pack
+         * server chain unless the caller disables it.
+         */ fun `datexSettingsDefaultHost`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_datex_settings_default_host(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Settings default HTTP port.
+         */ fun `datexSettingsDefaultPort`(): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_datex_settings_default_port(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Default Wi-Fi-only preference for DATEX pulls.
+         */ fun `datexWifiOnlyDefault`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_datex_wifi_only_default(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Consult pack hosts (LAN → duckdns unless overridden) and decide Server vs Local.
+         *
+         * Soft-fail: unreachable / missing region / stub pack-fetch all yield
+         * `execute_local_convert = true` with a clear `reason`. Never panics.
+         * Optional `pack_server_base_url` forces a single host (tests).
+         */ fun `decideRegionAcquisition`(`regionId`: kotlin.String, `packServerBaseUrl`: kotlin.String?): FfiRegionAcquisitionDecision {
+            return FfiConverterTypeFfiRegionAcquisitionDecision.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_decide_region_acquisition(
+        FfiConverterString.lower(`regionId`),FfiConverterOptionalString.lower(`packServerBaseUrl`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Default pack host base URL (`NAVI_PACK_SERVER_BASE_URL` or LAN default).
+         *
+         * Prefer the discovery chain inside [`decide_region_acquisition`] (pass
+         * `None` for `pack_server_base_url`) over assuming a single host.
+         */ fun `defaultPackServerBaseUrl`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_default_pack_server_base_url(
+        _status)
 }
     )
     }

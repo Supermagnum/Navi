@@ -358,7 +358,7 @@ fun TopDriveHud(
 
 /**
  * Per-plugin enable toggles shared by Map settings and Tools.
- * Weather is the only shipped host-owned plugin control today.
+ * Weather and DATEX are the shipped host-owned plugin controls (both default OFF).
  */
 @Composable
 fun PluginSettingsSection(
@@ -368,6 +368,15 @@ fun PluginSettingsSection(
     onWeatherMapSymbolsChange: (Boolean) -> Unit,
     weatherAttribution: String,
     mapSymbolsZoomMax: Int,
+    datexPluginEnabled: Boolean = false,
+    onDatexPluginChange: (Boolean) -> Unit = {},
+    datexHost: String = MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST,
+    onDatexHostChange: (String) -> Unit = {},
+    datexPort: String = MapHudPrefs.DATEX_SETTINGS_DEFAULT_PORT.toString(),
+    onDatexPortChange: (String) -> Unit = {},
+    datexWifiOnly: Boolean = MapHudPrefs.DATEX_WIFI_ONLY_DEFAULT,
+    onDatexWifiOnlyChange: (Boolean) -> Unit = {},
+    datexStatusLine: String = "",
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -414,6 +423,58 @@ fun PluginSettingsSection(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("DATEX roadworks")
+            Switch(
+                checked = datexPluginEnabled,
+                onCheckedChange = onDatexPluginChange,
+                modifier = Modifier.testTag("toggle_datex_plugin"),
+            )
+        }
+        if (datexPluginEnabled) {
+            Text(
+                "Cached NPRA situations via navi-server chain " +
+                    "(LAN then duckdns). No NPRA credentials on device.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedTextField(
+                value = datexHost,
+                onValueChange = onDatexHostChange,
+                label = { Text("Override host (optional)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag("datex_host_field"),
+            )
+            OutlinedTextField(
+                value = datexPort,
+                onValueChange = onDatexPortChange,
+                label = { Text("Override port") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag("datex_port_field"),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Wi-Fi only")
+                Switch(
+                    checked = datexWifiOnly,
+                    onCheckedChange = onDatexWifiOnlyChange,
+                    modifier = Modifier.testTag("toggle_datex_wifi_only"),
+                )
+            }
+            if (datexStatusLine.isNotBlank()) {
+                Text(
+                    datexStatusLine,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("datex_status_line"),
+                )
+            }
+        }
     }
 }
 
@@ -439,6 +500,15 @@ fun MapSettingsSheet(
     onWeatherMapSymbolsChange: (Boolean) -> Unit = {},
     weatherAttribution: String = "",
     mapSymbolsZoomMax: Int = 8,
+    datexPluginEnabled: Boolean = false,
+    onDatexPluginChange: (Boolean) -> Unit = {},
+    datexHost: String = MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST,
+    onDatexHostChange: (String) -> Unit = {},
+    datexPort: String = MapHudPrefs.DATEX_SETTINGS_DEFAULT_PORT.toString(),
+    onDatexPortChange: (String) -> Unit = {},
+    datexWifiOnly: Boolean = MapHudPrefs.DATEX_WIFI_ONLY_DEFAULT,
+    onDatexWifiOnlyChange: (Boolean) -> Unit = {},
+    datexStatusLine: String = "",
     onSave: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -648,6 +718,15 @@ fun MapSettingsSheet(
                 onWeatherMapSymbolsChange = onWeatherMapSymbolsChange,
                 weatherAttribution = weatherAttribution,
                 mapSymbolsZoomMax = mapSymbolsZoomMax,
+                datexPluginEnabled = datexPluginEnabled,
+                onDatexPluginChange = onDatexPluginChange,
+                datexHost = datexHost,
+                onDatexHostChange = onDatexHostChange,
+                datexPort = datexPort,
+                onDatexPortChange = onDatexPortChange,
+                datexWifiOnly = datexWifiOnly,
+                onDatexWifiOnlyChange = onDatexWifiOnlyChange,
+                datexStatusLine = datexStatusLine,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
