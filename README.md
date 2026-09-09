@@ -23,7 +23,7 @@ map data for your region. These steps can look stuck in Tools — **be patient**
 
 In **Tools**, region chips (pills) show how the download will run:
 
-- **Green pills** — the path is published on the pack server (or already
+- **Green pills** — the region is published on the pack server (or already
   indexed on the device). **Download region** is green and installs published
   routing packs first, then still fetches a real Geofabrik extract and builds
   the **place index** on device (search). That place-index step is still
