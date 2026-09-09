@@ -70,6 +70,39 @@ pub fn normalize_region_id(region_id: &str) -> String {
     region_id.trim().trim_matches('/').to_string()
 }
 
+/// Alternate pack-catalog `region_id`s for a client path (and the reverse).
+///
+/// **Permanent client-only exception — not a general hyphen/underscore
+/// normalizer.** navi-server publishes Västra Götaland as
+/// `europe/sweden/vastra_gotaland` (underscore). Canonical client / PMT /
+/// Tools chip identity is `europe/sweden/vastra-gotaland` (hyphen). The server
+/// path will not be renamed for this mismatch; keep this alias so chips,
+/// `resolve_region_source`, and ready-id coverage keep working. If the
+/// published `region_id` is ever corrected independently, this mapping (and
+/// the Kotlin mirror in `PackRegionAvailability`) can be removed.
+pub fn pack_catalog_region_id_aliases(region_id: &str) -> Vec<&'static str> {
+    match normalize_region_id(region_id).as_str() {
+        "europe/sweden/vastra-gotaland" => vec!["europe/sweden/vastra_gotaland"],
+        "europe/sweden/vastra_gotaland" => vec!["europe/sweden/vastra-gotaland"],
+        _ => vec![],
+    }
+}
+
+/// True when two region ids are the same path or a known catalog alias pair.
+pub fn region_ids_match_for_catalog(a: &str, b: &str) -> bool {
+    let a = normalize_region_id(a);
+    let b = normalize_region_id(b);
+    if a == b {
+        return true;
+    }
+    pack_catalog_region_id_aliases(&a)
+        .iter()
+        .any(|alias| *alias == b)
+        || pack_catalog_region_id_aliases(&b)
+            .iter()
+            .any(|alias| *alias == a)
+}
+
 /// Device-side pack stem for a Geofabrik path (`europe/monaco` → `monaco-latest`).
 pub fn leaf_stem_for_region_id(region_id: &str) -> String {
     let id = normalize_region_id(region_id);
@@ -82,6 +115,10 @@ pub fn leaf_stem_for_region_id(region_id: &str) -> String {
 /// - [`Connectivity::Ready`] + region present -> [`RegionSource::Server`]
 /// - Ready but region missing / empty catalog -> [`RegionSource::Local`]
 /// - [`Connectivity::Unreachable`] -> Local
+///
+/// On a catalog hit (including [`pack_catalog_region_id_aliases`]), the
+/// returned [`RegionSource::Server::region_id`] is the **published** catalog
+/// id (may differ from the client/chip path for the Västra Götaland alias).
 pub fn resolve_region_source(
     region_id: &str,
     connectivity: &Connectivity,
@@ -101,10 +138,12 @@ pub fn resolve_region_source(
             match catalog
                 .regions
                 .iter()
-                .find(|r| normalize_region_id(&r.region_id) == region_id)
+                .find(|r| region_ids_match_for_catalog(&r.region_id, &region_id))
             {
                 Some(ready) => RegionSource::Server {
-                    region_id: ready.region_id.clone(),
+                    // Prefer the catalog's published id so pack URLs / stems
+                    // match DocumentRoot (e.g. vastra_gotaland).
+                    region_id: normalize_region_id(&ready.region_id),
                     generation: ready.generation.clone(),
                     bytes: ready.bytes,
                     data_source,
@@ -167,8 +206,9 @@ pub fn pack_server_discovery_bases() -> Vec<(PackDataSource, String)> {
 
 /// Whether [path] is covered by a ready-region id from `current.json`.
 ///
-/// Matches exact id, a published child (`europe/norway` covers
-/// `europe/norway/ostlandet`), or a published parent covering a deeper chip.
+/// Matches exact id (including [`pack_catalog_region_id_aliases`]), a published
+/// child (`europe/norway` covers `europe/norway/ostlandet`), or a published
+/// parent covering a deeper chip.
 pub fn path_covered_by_ready_ids(path: &str, ready_ids: &[String]) -> bool {
     let p = normalize_region_id(path);
     if p.is_empty() {
@@ -179,7 +219,9 @@ pub fn path_covered_by_ready_ids(path: &str, ready_ids: &[String]) -> bool {
         if r.is_empty() {
             return false;
         }
-        r == p || r.starts_with(&(p.clone() + "/")) || p.starts_with(&(r.clone() + "/"))
+        region_ids_match_for_catalog(&r, &p)
+            || r.starts_with(&(p.clone() + "/"))
+            || p.starts_with(&(r.clone() + "/"))
     })
 }
 
@@ -320,7 +362,7 @@ pub fn plan_region_acquisition(
                 manifest_url: connectivity.catalog().and_then(|c| {
                     c.regions
                         .iter()
-                        .find(|r| normalize_region_id(&r.region_id) == *rid)
+                        .find(|r| region_ids_match_for_catalog(&r.region_id, rid))
                         .and_then(|r| r.manifest_url.clone())
                 }),
             };
@@ -541,6 +583,53 @@ mod tests {
         assert_eq!(
             leaf_stem_for_region_id("/europe/norway/ostlandet/"),
             "ostlandet-latest"
+        );
+    }
+
+    #[test]
+    fn vastra_gotaland_catalog_alias_resolves_to_published_underscore_id() {
+        // Client/PMT chip: hyphen. navi-server publishes underscore permanently.
+        let conn = Connectivity::Ready(PackCatalog {
+            catalog_generation: "g".into(),
+            served_from: "http://192.168.1.195".into(),
+            regions: vec![ReadyRegion {
+                region_id: "europe/sweden/vastra_gotaland".into(),
+                generation: Some("bake".into()),
+                bytes: Some(42),
+                manifest_url: Some(
+                    "/packs/europe/sweden/vastra_gotaland/bake/manifest.json".into(),
+                ),
+            }],
+        });
+        match resolve_region_source(
+            "europe/sweden/vastra-gotaland",
+            &conn,
+            PackDataSource::ServerLan,
+        ) {
+            RegionSource::Server {
+                region_id,
+                generation,
+                bytes,
+                ..
+            } => {
+                assert_eq!(region_id, "europe/sweden/vastra_gotaland");
+                assert_eq!(generation.as_deref(), Some("bake"));
+                assert_eq!(bytes, Some(42));
+            }
+            RegionSource::Local { reason, .. } => panic!("expected Server via alias: {reason}"),
+        }
+        let ready = vec!["europe/sweden/vastra_gotaland".into()];
+        assert!(path_covered_by_ready_ids(
+            "europe/sweden/vastra-gotaland",
+            &ready
+        ));
+        assert!(region_ids_match_for_catalog(
+            "europe/sweden/vastra-gotaland",
+            "europe/sweden/vastra_gotaland"
+        ));
+        assert_eq!(
+            pack_catalog_region_id_aliases("europe/sweden/vastra-gotaland"),
+            vec!["europe/sweden/vastra_gotaland"]
         );
     }
 }

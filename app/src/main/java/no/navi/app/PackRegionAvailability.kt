@@ -11,7 +11,35 @@ import java.io.File
  * `current.json`. Green means "published / local packs exist".
  */
 object PackRegionAvailability {
-    /** Same rules as core `path_covered_by_ready_ids`. */
+    /**
+     * Mirrors core `pack_catalog_region_id_aliases` /
+     * `region_ids_match_for_catalog` in `acquisition.rs`.
+     *
+     * Permanent client-only exception: navi-server publishes Västra Götaland as
+     * `europe/sweden/vastra_gotaland` (underscore); Tools / PMT chips use
+     * `vastra-gotaland` (hyphen). Not a general hyphen↔underscore normalizer —
+     * do not expand this list casually. Remove only if the published
+     * `region_id` is corrected independently.
+     */
+    fun packCatalogRegionIdAliases(path: String): List<String> =
+        when (normalize(path)) {
+            "europe/sweden/vastra-gotaland" -> listOf("europe/sweden/vastra_gotaland")
+            "europe/sweden/vastra_gotaland" -> listOf("europe/sweden/vastra-gotaland")
+            else -> emptyList()
+        }
+
+    fun regionIdsMatchForCatalog(
+        a: String,
+        b: String,
+    ): Boolean {
+        val na = normalize(a)
+        val nb = normalize(b)
+        if (na == nb) return true
+        return packCatalogRegionIdAliases(na).any { it == nb } ||
+            packCatalogRegionIdAliases(nb).any { it == na }
+    }
+
+    /** Same rules as core `path_covered_by_ready_ids` (includes catalog aliases). */
     fun pathCoveredByReadyIds(
         path: String,
         readyIds: Collection<String>,
@@ -20,7 +48,12 @@ object PackRegionAvailability {
         if (p.isEmpty()) return false
         return readyIds.any { raw ->
             val r = normalize(raw)
-            r.isNotEmpty() && (r == p || r.startsWith("$p/") || p.startsWith("$r/"))
+            r.isNotEmpty() &&
+                (
+                    regionIdsMatchForCatalog(r, p) ||
+                        r.startsWith("$p/") ||
+                        p.startsWith("$r/")
+                )
         }
     }
 
@@ -36,8 +69,14 @@ object PackRegionAvailability {
         dataDir: File,
         geofabrikPath: String,
     ): Boolean {
-        val stem = localStem(geofabrikPath)
-        return File(dataDir, "$stem.navi-manifest.json").isFile
+        val candidates =
+            buildList {
+                add(normalize(geofabrikPath))
+                addAll(packCatalogRegionIdAliases(geofabrikPath))
+            }
+        return candidates.any { path ->
+            File(dataDir, "${localStem(path)}.navi-manifest.json").isFile
+        }
     }
 
     /**

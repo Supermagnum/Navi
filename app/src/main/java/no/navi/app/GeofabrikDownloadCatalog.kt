@@ -796,7 +796,8 @@ object GeofabrikDownloadCatalog {
                 continent = GeofabrikContinent.Europe,
                 iso = "se",
                 supportNote =
-                    "Offline maps (country extract). Truck HOS: EC 561 from GPS. Speed cameras: decline (not allow-listed).",
+                    "Offline maps: prefer a län under Region in country (pack server). " +
+                        "Truck HOS: EC 561 from GPS. Speed cameras: decline (not allow-listed).",
                 testTag = "chip_country_europe_sweden",
             ),
             GeofabrikCountry(
@@ -910,11 +911,37 @@ object GeofabrikDownloadCatalog {
 
     fun continentForPath(path: String): GeofabrikContinent = findByPath(path)?.continent ?: GeofabrikContinent.Europe
 
-    /** Norway is the only country with landsdel region chips in Tools today. */
+    /** Norway landsdeler and Sweden län have sub-region chips in Tools. */
     fun hasRegionChips(path: String): Boolean {
         val norm = path.trim().trim('/').lowercase()
-        return norm == "europe/norway" || norm.startsWith("europe/norway/")
+        return regionChipBasePath(norm) != null
     }
+
+    /** Parent path for chip rows (`europe/norway` / `europe/sweden`), or null. */
+    fun regionChipBasePath(path: String): String? {
+        val norm = path.trim().trim('/').lowercase()
+        return when {
+            norm == "europe/norway" || norm.startsWith("europe/norway/") -> "europe/norway"
+            norm == "europe/sweden" || norm.startsWith("europe/sweden/") -> "europe/sweden"
+            else -> null
+        }
+    }
+
+    /** Default leaf when switching Country → Region in country. */
+    fun defaultRegionChipPath(path: String): String? =
+        when (regionChipBasePath(path)) {
+            "europe/norway" -> "europe/norway/ostlandet"
+            "europe/sweden" -> "europe/sweden/stockholm"
+            else -> null
+        }
+
+    /** Slug → display label for the active country's region chips. */
+    fun regionChipsFor(path: String): List<Pair<String, String>>? =
+        when (regionChipBasePath(path)) {
+            "europe/norway" -> norwayRegions
+            "europe/sweden" -> swedenRegions
+            else -> null
+        }
 
     val norwayRegions: List<Pair<String, String>> =
         listOf(
@@ -923,6 +950,40 @@ object GeofabrikDownloadCatalog {
             "trondelag" to "Trøndelag",
             "nord-norge" to "Nord-Norge",
             "sorlandet" to "Sørlandet",
+        )
+
+    /**
+     * Sweden län chips (canonical hyphenated slugs / PMT-splitter).
+     *
+     * Pack-server lookup for Västra Götaland uses a one-off alias to the
+     * published underscore id `europe/sweden/vastra_gotaland` — see
+     * [PackRegionAvailability.packCatalogRegionIdAliases] and Rust
+     * `pack_catalog_region_id_aliases` in `acquisition.rs`. Keep the chip
+     * identity as `vastra-gotaland` in UI.
+     */
+    val swedenRegions: List<Pair<String, String>> =
+        listOf(
+            "stockholm" to "Stockholm",
+            "uppsala" to "Uppsala",
+            "sodermanland" to "Södermanland",
+            "ostergotland" to "Östergötland",
+            "jonkoping" to "Jönköping",
+            "kronoberg" to "Kronoberg",
+            "kalmar" to "Kalmar",
+            "gotland" to "Gotland",
+            "blekinge" to "Blekinge",
+            "skane" to "Skåne",
+            "halland" to "Halland",
+            "vastra-gotaland" to "Västra Götaland",
+            "varmland" to "Värmland",
+            "orebro" to "Örebro",
+            "vastmanland" to "Västmanland",
+            "dalarna" to "Dalarna",
+            "gavleborg" to "Gävleborg",
+            "vasternorrland" to "Västernorrland",
+            "jamtland" to "Jämtland",
+            "vasterbotten" to "Västerbotten",
+            "norrbotten" to "Norrbotten",
         )
 
     const val EMPTY_CONTINENT_NOTE =
@@ -935,8 +996,6 @@ object GeofabrikDownloadCatalog {
     fun regionGranularityNote(path: String): String {
         val country = findByPath(path)?.path
         return when (country) {
-            "europe/sweden" ->
-                "Sweden is available as a country extract only — Geofabrik does not publish län-level files. Switch back to Country to download Sweden."
             "north-america/us" ->
                 "US states are published by Geofabrik, but this picker lists the country extract. Enter a state path such as north-america/us/west-virginia, or switch back to Country."
             "europe/germany" ->
@@ -944,7 +1003,7 @@ object GeofabrikDownloadCatalog {
             "russia" ->
                 "Geofabrik publishes Russian federal-district extracts, but this picker lists the country extract only. Enter a district path such as russia/kaliningrad, or switch back to Country."
             else ->
-                "Sub-region chips are listed for Norway only today. " +
+                "Sub-region chips are listed for Norway (landsdeler) and Sweden (län) today. " +
                     "Enter a Geofabrik subpath in the field below " +
                     "(e.g. europe/germany/bayern), or switch back to Country."
         }

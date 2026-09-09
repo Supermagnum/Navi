@@ -243,10 +243,14 @@ class OsmUpdateCatalogRoutingFollowupTest {
         clickTag("chip_continent_europe")
         clickTag("chip_country_europe_sweden")
         clickTag("chip_download_region")
-        val swedenNote = taggedText("region_chips_norway_only_note")
-        Log.i(TAG, "CATALOG sweden_note='$swedenNote'")
-        assertTrue(swedenNote.contains("län") || swedenNote.contains("lan"))
-        assertTrue(swedenNote.contains("country extract", ignoreCase = true))
+        // Sweden now has län chips (same pattern as Norway landsdeler).
+        composeRule
+            .onNodeWithTag("chip_sweden_stockholm", useUnmergedTree = true)
+            .assertExists()
+        composeRule
+            .onNodeWithTag("chip_sweden_vastra-gotaland", useUnmergedTree = true)
+            .assertExists()
+        assertEquals("europe/sweden/stockholm", NaviMapTestHooks.lastSelectedGeofabrikPath)
         val kronoberg = head("europe/sweden/kronobergs-lan")
         val swedenCountry = head("europe/sweden")
         Log.i(TAG, "HEAD sweden/kronobergs-lan=$kronoberg sweden=$swedenCountry")
