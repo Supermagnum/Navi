@@ -1,15 +1,19 @@
 # Pack server client (connectivity + acquisition + install)
 
-**Status (branch `map-data`):** discovery, LAN → duckdns host chain, region-pill
-greens, and **pack download / sha256 verify / leaf-stem install** are in.
+**Status (branch `dev`):** discovery, LAN → duckdns host chain, region-pill
+greens, **pack download / sha256 verify / leaf-stem install**, then **on-device
+Geofabrik PBF download + place-index build** (same `NameIndex` path as local
+convert). navi-server does **not** publish a place index or a real PBF.
 [`try_fetch_region_packs`](../core/src/pack_server/fetch.rs) GETs
 `manifest.json` + files under `/packs/<region_id>/<generation>/`, remaps bake
 stems (`europe_monaco-latest`) to Geofabrik leaf stems (`monaco-latest`), and
 writes a `{leaf}.navi-server-install.json` sidecar so planners treat packs as
-Ready without a real extract PBF.
+Ready. [`ensure_place_index_after_pack_install`](../core/src/pack_server/place_index_after.rs)
+then fetches `https://download.geofabrik.de/<region>-latest.osm.pbf` (replacing
+the pack-install stub) and builds `place_index.db`.
 
-On any fetch failure (network, 404, checksum, missing `data_dir`), Navi falls
-through to Geofabrik extract download + on-device convert + place index
+On any pack fetch failure (network, 404, checksum, missing `data_dir`), Navi
+falls through to Geofabrik extract download + on-device convert + place index
 (`local-bake`).
 
 ### Region pills + Download buttons (Tools)
@@ -17,7 +21,7 @@ through to Geofabrik extract download + on-device convert + place index
 | State | Appearance / label |
 |---|---|
 | Listed in `current.json` (path or child) **or** local `{leaf}-latest.navi-manifest.json` | Green chip |
-| Pack server lists selected path | **Download region** (green button) — install packs only |
+| Pack server lists selected path | **Download region** (green) — install packs, then Geofabrik PBF + place index |
 | Not on pack server | **Download region + build place index** — Geofabrik + convert + place index |
 | Selected path pill-ready | **Check for OSM updates** also green |
 | Basemap / DEM buttons | Unchanged |
@@ -42,31 +46,30 @@ single host for tests/ops.
 
 ---
 
-## API merge notes (DATEX + package-test)
-
-| Symbol | Role |
-|---|---|
-| `check_connectivity` / `_blocking` | Catalog-aware discovery → `Connectivity` |
-| `check_connectivity_chain` | LAN → duckdns ordered probe |
-| `probe_current_json` | DATEX-era bool liveness probe (renamed; does not shadow catalog API) |
-| `http_get_text` / `http_get_bytes` / `base_url` / `USER_AGENT` / `PackServerError` | Shared HTTP helpers (DATEX + pack fetch) |
-| `try_fetch_region_packs` | Manifest + file GET, sha256, leaf remap, install |
-| `plan_region_acquisition` | Routing + fetch + `data_source` tag |
-
----
-
 ## What the client does today
 
 Before a Tools **Download region** run:
 
 1. Probe the host chain for `current.json`.
 2. `resolve_region_source` → `RegionSource::Server` or `Local`.
-3. If Server + `data_dir` → `try_fetch_region_packs` (install). On success,
-   `execute_local_convert = false` (skip place index / local bake).
+3. If Server + `data_dir` → `try_fetch_region_packs` (install packs). On
+   success, `execute_local_convert = false`, then
+   `ensure_place_index_after_pack_install` (Geofabrik PBF + `place_index.db`,
+   `force_rebuild` on every pack-server install/update).
 4. Else Local path: Geofabrik `-latest.osm.pbf` via `provisionRegionData` →
    bind → place index → `ensureIndexedMaps`.
 
-Logs: tag `NaviPack` / `RegionDownloadBg`, including `data_source=…`.
+**Tradeoff:** pack-server installs still pull a full Geofabrik extract for
+search (on top of published packs). That can be hundreds of MB–GB per region
+but is required for a complete place index without server-side FTS publish.
+
+Logs: tag `NaviPack` / `RegionDownloadBg`, including `data_source=…`,
+`connectivity_ms` / `fetch_ms`, and place-index `pbf_ms` / `index_ms`.
+
+**UI:** while `decideRegionAcquisition(dataDir=…)` runs, Tools shows
+“Fetching from pack server…”. After packs land, status becomes
+“Downloading extract + building place index…” until
+`ensurePackRegionPlaceIndex` returns.
 
 ---
 
@@ -84,4 +87,6 @@ Logs: tag `NaviPack` / `RegionDownloadBg`, including `data_source=…`.
 ```bash
 cargo run -p driver-break-core --bin pack-server-check
 cargo test -p driver-break-core --lib pack_server
+# Live pack + Geofabrik place-index (network, large downloads):
+cargo test -p driver-break-core --test pack_server_place_index_live -- --ignored --nocapture
 ```

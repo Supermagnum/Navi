@@ -269,8 +269,10 @@ pub fn plan_region_acquisition(
     base_url_override: Option<&str>,
     data_dir: Option<&Path>,
 ) -> RegionAcquisitionPlan {
+    let t0 = std::time::Instant::now();
     let region_id = normalize_region_id(region_id);
 
+    let t_conn = std::time::Instant::now();
     let (connectivity, hop) = if let Some(base) = base_url_override
         .map(|s| s.trim().trim_end_matches('/'))
         .filter(|s| !s.is_empty())
@@ -289,11 +291,19 @@ pub fn plan_region_acquisition(
         let bases = pack_server_discovery_bases();
         check_connectivity_chain_blocking(&bases)
     };
+    let connectivity_ms = t_conn.elapsed().as_secs_f64() * 1000.0;
 
     let catalog_generation = connectivity.catalog().map(|c| c.catalog_generation.clone());
     let hop_for_resolve = hop.unwrap_or(PackDataSource::LocalBake);
     let source = resolve_region_source(&region_id, &connectivity, hop_for_resolve);
     let data_source = source.data_source();
+    log::info!(
+        target: "NaviPack",
+        "plan_region_acquisition region={region_id} connectivity_ms={connectivity_ms:.1} \
+         source_kind={} data_dir={}",
+        if source.is_server() { "server" } else { "local" },
+        data_dir.is_some()
+    );
 
     match &source {
         RegionSource::Server {
@@ -314,10 +324,14 @@ pub fn plan_region_acquisition(
                         .and_then(|r| r.manifest_url.clone())
                 }),
             };
+            let t_fetch = std::time::Instant::now();
             match try_fetch_region_packs(&ready, base_url, data_dir) {
                 Ok(()) => {
+                    let fetch_ms = t_fetch.elapsed().as_secs_f64() * 1000.0;
+                    let total_ms = t0.elapsed().as_secs_f64() * 1000.0;
                     let log_message = format!(
-                        "source={} pack server ready for {rid}; installed packs (generation={generation:?})",
+                        "source={} pack server ready for {rid}; installed packs (generation={generation:?}) \
+                         connectivity_ms={connectivity_ms:.1} fetch_ms={fetch_ms:.1} total_ms={total_ms:.1}",
                         data_source.as_str()
                     );
                     log::info!(target: "NaviPack", "{log_message}");
@@ -330,8 +344,10 @@ pub fn plan_region_acquisition(
                     }
                 }
                 Err(fetch_reason) => {
+                    let fetch_ms = t_fetch.elapsed().as_secs_f64() * 1000.0;
                     let log_message = format!(
-                        "source={} pack server has region {rid} (generation={generation:?}); pack fetch failed ({fetch_reason}) — using local convert",
+                        "source={} pack server has region {rid} (generation={generation:?}); pack fetch failed ({fetch_reason}) — using local convert \
+                         connectivity_ms={connectivity_ms:.1} fetch_ms={fetch_ms:.1}",
                         data_source.as_str()
                     );
                     log::info!(target: "NaviPack", "{log_message}");
@@ -346,7 +362,11 @@ pub fn plan_region_acquisition(
             }
         }
         RegionSource::Local { reason, .. } => {
-            let log_message = format!("source={} {reason}", PackDataSource::LocalBake.as_str());
+            let total_ms = t0.elapsed().as_secs_f64() * 1000.0;
+            let log_message = format!(
+                "source={} {reason} connectivity_ms={connectivity_ms:.1} total_ms={total_ms:.1}",
+                PackDataSource::LocalBake.as_str()
+            );
             log::info!(target: "NaviPack", "{log_message}");
             RegionAcquisitionPlan {
                 source,

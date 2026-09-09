@@ -12,6 +12,7 @@ import org.json.JSONObject
 import uniffi.navi.bindGeofabrikRegion
 import uniffi.navi.decideRegionAcquisition
 import uniffi.navi.downloadProgressSnapshot
+import uniffi.navi.ensurePackRegionPlaceIndex
 import uniffi.navi.geofabrikLatestPbfUrl
 import uniffi.navi.geofabrikPathForPbfName
 import uniffi.navi.provisionRegionData
@@ -22,11 +23,12 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * Process-scoped region download. Survives Compose cancellation.
  *
- * When the pack server lists the region as ready, installs published packs
- * (no place-index / on-device convert). Otherwise downloads Geofabrik PBF and
- * builds packs + place index locally. A force-stop still kills the HTTP stream,
- * but [JOB_FILE] plus the sibling `.partial` let the next Geofabrik launch
- * resume via HTTP Range.
+ * When the pack server lists the region as ready, installs published packs,
+ * then downloads the real Geofabrik PBF and builds `place_index.db` (same
+ * NameIndex path as local convert). Otherwise downloads Geofabrik PBF and
+ * builds packs + place index locally. A force-stop still kills the HTTP
+ * stream, but [JOB_FILE] plus the sibling `.partial` let the next Geofabrik
+ * launch resume via HTTP Range.
  */
 object RegionDownloadBackground {
     const val JOB_FILE = "region-download.json"
@@ -186,7 +188,10 @@ object RegionDownloadBackground {
                         geofabrikPathForPbfName(filename)
                     }
                 if (pathForDecision.isNotBlank()) {
-                    lastStatus.set("Checking pack server…")
+                    // decideRegionAcquisition(dataDir=…) probes the catalog and,
+                    // when published, downloads/installs all pack files.
+                    val checkStarted = System.nanoTime()
+                    lastStatus.set("Fetching from pack server…")
                     val decision =
                         runCatching {
                             decideRegionAcquisition(
@@ -201,13 +206,15 @@ object RegionDownloadBackground {
                             )
                             null
                         }
+                    val checkMs = (System.nanoTime() - checkStarted) / 1_000_000L
                     if (decision != null) {
                         Log.i(
                             TAG,
                             "pack routing source=${decision.source} " +
                                 "data_source=${decision.dataSource} " +
                                 "execute_local=${decision.executeLocalConvert} " +
-                                "reason=${decision.reason}",
+                                "reason=${decision.reason} " +
+                                "decide_region_acquisition_ms=$checkMs",
                         )
                         if (!decision.executeLocalConvert) {
                             lastStatus.set("Installing packs from ${decision.dataSource}…")
@@ -222,9 +229,42 @@ object RegionDownloadBackground {
                             if (geofabrikPath.isNotBlank()) {
                                 MapHudPrefs.saveGeofabrikPath(context, geofabrikPath)
                             }
+                            // Packs are ready; still need a real Geofabrik PBF +
+                            // on-device place index (server does not ship either).
+                            // force_rebuild=true covers first install and update.
+                            lastStatus.set("Downloading extract + building place index…")
+                            Log.i(
+                                TAG,
+                                "pack server packs installed; starting Geofabrik PBF + " +
+                                    "place index for $pathForDecision",
+                            )
+                            val placeReport =
+                                runCatching {
+                                    ensurePackRegionPlaceIndex(
+                                        dataDir = dataDir.absolutePath,
+                                        regionId = pathForDecision,
+                                        forceRebuild = true,
+                                    )
+                                }.getOrElse { t ->
+                                    Log.e(TAG, "ensurePackRegionPlaceIndex crashed", t)
+                                    "FAIL: ${t.message}\n"
+                                }
+                            Log.i(TAG, "pack region place index: ${placeReport.take(400)}")
+                            if (!placeReport.contains("PASS")) {
+                                lastStatus.set("failed: place index")
+                                return@launch
+                            }
+                            // Keep PlaceIndexBackground status line in sync for Tools UI.
+                            val pbf = File(dataDir, filename)
+                            if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
+                                PlaceIndexBackground.ensureStarted(
+                                    pbf,
+                                    File(dataDir, "place_index.db"),
+                                )
+                            }
                             clearJob(dataDir)
                             lastStatus.set("done")
-                            Log.i(TAG, "pack server install finished for $pathForDecision")
+                            Log.i(TAG, "pack server install + place index finished for $pathForDecision")
                             return@launch
                         }
                     }

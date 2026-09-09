@@ -236,12 +236,13 @@ is just slower until indexing finishes.
 
 When **Download region + build place index** has saved the OpenStreetMap
 extract (Geofabrik path), or **Download region** has installed published packs
-from the pack server, Navi starts a **background indexing** job when a real
-extract is present. Pack-server installs skip the place-index build (packs are
-already baked). That is not the map picture
-on screen (basemap tiles) and not the raw `.osm.pbf` file itself — it is a
-one-time conversion of that extract into compact **indexed packs** the planner
-can load quickly instead of scanning the whole extract on every trip.
+from the pack server, Navi also ensures a real Geofabrik extract is on disk and
+builds the **place index** (From / Via / To search) with the same on-device
+pipeline as local convert. Pack-server installs skip on-device **routing pack**
+rebuild (packs are already baked) but still fetch the extract for place search.
+That is not the map picture
+on screen (basemap tiles) and not the raw `.osm.pbf` file itself alone — routing
+uses the published packs; search uses the place index built from the extract.
 
 You can search and tap **Plan route** as soon as the download finishes. Until
 indexing is done, planning uses the slower raw `.osm.pbf` path. Tools shows

@@ -324,8 +324,10 @@ Every push to **`main`** or **`dev`**, and every PR, runs
 | `rust-checks` | `cargo fmt --check`, Clippy (`-D warnings`), `cargo test --workspace` (default set only; excludes `navi-desktop` and wasm example guests), plugin-host `isolation` tests, `cargo deny`, `cargo audit` |
 | `linux-build` | Workspace `cargo build` on Linux (headless `navi-desktop` features; excludes WebKit and wasm guests) |
 | `kotlin-checks` | ktlint, detekt, `./gradlew :app:testDebugUnitTest` |
-| `regression-guards` | Curated host JVM guards for past download/restore bugs (parallel; no emulator). See below. |
+| `regression-guards` | Curated host JVM + Rust guards for past download/restore/search bugs (parallel; no emulator). See below. |
+| `winter-road-closure` | Friisvegen-style `motor_vehicle:conditional` winter exclusion (car/truck blocked; foot/bike not). |
 | `android-build` | `./gradlew :app:assembleDebug` |
+| `plugin-host-android-paths` | Path filter for optional NDK+QEMU aarch64 smoke (smoke runs only when plugin-host paths change). |
 
 **`regression-guards`** (per-PR, distinct job so rust/kotlin are not serialized behind it):
 
@@ -333,6 +335,7 @@ Every push to **`main`** or **`dev`**, and every PR, runs
 - `CoordinateInputTest` — lat/lon parse (was instrumented-only).
 - `PlaceSearchHintTest` — skip live graph work while a foreground plan is active.
 - `motor_access_barrier` / `wetland_apply_identity` / `wetland_pack_identity` — Torggata/Kirkebyskogen access and wetland pack-vs-PBF against checked-in mini PBFs under `core/tests/fixtures/`.
+- `pack_server::place_index_after` — offline guards for post-pack Geofabrik PBF leaf naming + place-index report/error paths.
 
 Rust counterparts already in `rust-checks` / `regression-guards` (not `#[ignore]`): `bike_suitability_route`, wetland tag/precedence unit tests, `download::pbf_priority` (cone/plan skip), `basemap::extract::validate_rejects_mz12_large_region_fixture`, `motor_access_barrier`, and wetland pack-vs-PBF (`wetland_apply_identity` / `wetland_pack_identity`) against checked-in mini PBFs under `core/tests/fixtures/` (~1.6 MiB; regenerate via `scripts/cut-corridor-extract.py`).
 

@@ -1058,6 +1058,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1138,6 +1140,8 @@ fun uniffi_navi_checksum_func_elevation_at(
 fun uniffi_navi_checksum_func_ensure_indexed_maps(
 ): Short
 fun uniffi_navi_checksum_func_ensure_live_hazards_loaded(
+): Short
+fun uniffi_navi_checksum_func_ensure_pack_region_place_index(
 ): Short
 fun uniffi_navi_checksum_func_ensure_place_index(
 ): Short
@@ -1551,6 +1555,8 @@ fun uniffi_navi_fn_func_elevation_at(`elevDir`: RustBuffer.ByValue,`lat`: Double
 fun uniffi_navi_fn_func_ensure_indexed_maps(`pbfPath`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ensure_live_hazards_loaded(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_ensure_pack_region_place_index(`dataDir`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,`forceRebuild`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -2037,6 +2043,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_ensure_live_hazards_loaded() != 1961.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_ensure_pack_region_place_index() != 58649.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_ensure_place_index() != 50894.toShort()) {
@@ -5291,6 +5300,20 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_ensure_live_hazards_loaded(
         FfiConverterString.lower(`pbfPath`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * After pack-server install: download a real Geofabrik PBF (replacing the
+         * stub) and build `place_index.db` via the same NameIndex path as
+         * [`ensure_place_index`]. Use `force_rebuild=true` on region update.
+         */ fun `ensurePackRegionPlaceIndex`(`dataDir`: kotlin.String, `regionId`: kotlin.String, `forceRebuild`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_ensure_pack_region_place_index(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`regionId`),FfiConverterBoolean.lower(`forceRebuild`),_status)
 }
     )
     }
