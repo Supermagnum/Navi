@@ -1,16 +1,34 @@
 package no.navi.app
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GeofabrikDownloadCatalogTest {
     @Test
-    fun sweden_region_note_says_country_only() {
-        val note = GeofabrikDownloadCatalog.regionGranularityNote("europe/sweden")
-        assertTrue(note.contains("country extract", ignoreCase = true))
-        assertTrue(note.contains("län", ignoreCase = true))
-        assertFalse(note.contains("kronoberg", ignoreCase = true))
+    fun sweden_has_lan_region_chips() {
+        assertTrue(GeofabrikDownloadCatalog.hasRegionChips("europe/sweden"))
+        assertTrue(GeofabrikDownloadCatalog.hasRegionChips("europe/sweden/stockholm"))
+        assertEquals(21, GeofabrikDownloadCatalog.swedenRegions.size)
+        assertEquals(
+            "europe/sweden/stockholm",
+            GeofabrikDownloadCatalog.defaultRegionChipPath("europe/sweden"),
+        )
+        assertTrue(
+            GeofabrikDownloadCatalog.swedenRegions.any { it.first == "vastra-gotaland" },
+        )
+        assertFalse(
+            GeofabrikDownloadCatalog.swedenRegions.any { it.first == "vastra_gotaland" },
+        )
+    }
+
+    @Test
+    fun sweden_no_longer_uses_country_only_granularity_note() {
+        // Sweden has chips; the note path is for countries without chips.
+        val note = GeofabrikDownloadCatalog.regionGranularityNote("europe/denmark")
+        assertTrue(note.contains("Sweden", ignoreCase = true) || note.contains("län"))
+        assertTrue(note.contains("Norway", ignoreCase = true))
     }
 
     @Test

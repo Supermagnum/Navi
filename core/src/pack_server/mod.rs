@@ -37,8 +37,9 @@ mod fetch;
 mod place_index_after;
 
 pub use acquisition::{
-    discover_pack_catalog, leaf_stem_for_region_id, normalize_region_id, pack_server_base_url,
-    pack_server_discovery_bases, path_covered_by_ready_ids, plan_region_acquisition,
+    discover_pack_catalog, leaf_stem_for_region_id, normalize_region_id,
+    pack_catalog_region_id_aliases, pack_server_base_url, pack_server_discovery_bases,
+    path_covered_by_ready_ids, plan_region_acquisition, region_ids_match_for_catalog,
     resolve_region_source, PackCatalogSnapshot, PackDataSource, RegionAcquisitionPlan,
     RegionSource,
 };

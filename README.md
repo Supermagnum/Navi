@@ -33,10 +33,10 @@ In **Tools**, region chips (pills) show how the download will run:
   full **local bake**: Geofabrik PBF download, on-device pack convert, and
   place index (the slower path).
 
-**Fallback chain** (automatic; you do not pick hosts by hand): try the LAN
-pack host, then the public pack host
+**Fallback chain** (automatic; you do not pick hosts by hand): try the public
+pack host
 ([navi-server](https://github.com/Supermagnum/navi-server/tree/main) /
-navigate-me.duckdns.org). If neither answers or the region is missing,
+navigate-me.duckdns.org). If it does not answer or the region is missing,
 Navi uses Geofabrik + on-device convert (`local-bake`). Same idea if a pack
 fetch fails mid-download (network, checksum, etc.). Details:
 [`docs/pack-server-client.md`](docs/pack-server-client.md).

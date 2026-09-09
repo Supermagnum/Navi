@@ -19,6 +19,44 @@ class PackRegionAvailabilityTest {
     }
 
     @Test
+    fun pathCovered_vastra_gotaland_hyphen_chip_matches_underscore_catalog() {
+        val ready = listOf("europe/sweden/vastra_gotaland")
+        assertTrue(
+            PackRegionAvailability.pathCoveredByReadyIds(
+                "europe/sweden/vastra-gotaland",
+                ready,
+            ),
+        )
+        assertTrue(
+            PackRegionAvailability.regionIdsMatchForCatalog(
+                "europe/sweden/vastra-gotaland",
+                "europe/sweden/vastra_gotaland",
+            ),
+        )
+        assertEquals(
+            listOf("europe/sweden/vastra_gotaland"),
+            PackRegionAvailability.packCatalogRegionIdAliases("europe/sweden/vastra-gotaland"),
+        )
+    }
+
+    @Test
+    fun localBakeReady_manifest_also_checks_catalog_alias_stem() {
+        val dir = createTempDirectory("navi-pill-alias").toFile()
+        try {
+            assertFalse(
+                PackRegionAvailability.localBakeReady(dir, "europe/sweden/vastra-gotaland"),
+            )
+            // Packs install under the published underscore leaf stem.
+            File(dir, "vastra_gotaland-latest.navi-manifest.json").writeText("{}")
+            assertTrue(
+                PackRegionAvailability.localBakeReady(dir, "europe/sweden/vastra-gotaland"),
+            )
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun localBakeReady_manifest() {
         val dir = createTempDirectory("navi-pill").toFile()
         try {
