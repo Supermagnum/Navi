@@ -53,11 +53,21 @@ object MapterhornTerrain {
             .put("hillshade-highlight-color", HILLSHADE_HIGHLIGHT_COLOR)
             .put("hillshade-illumination-direction", HILLSHADE_ILLUMINATION_DEG.toDouble())
 
-    /** Local DEM beside a completed basemap PMTiles path, if present. */
+    /**
+     * Local DEM beside a completed **vector** basemap PMTiles path, if present.
+     * Returns null when [basemapPmtilesPath] is already a DEM archive so callers
+     * never look for a double-suffixed `{name}_dem_dem.pmtiles`.
+     */
     fun localDemBesideBasemap(basemapPmtilesPath: String): File? {
         val base = File(basemapPmtilesPath)
         if (!base.isFile) return null
-        val dem = File(base.parentFile, base.nameWithoutExtension + "_dem.pmtiles")
+        val name = base.name.lowercase()
+        if (name.endsWith(DEM_FILE_SUFFIX) ||
+            base.nameWithoutExtension.lowercase().endsWith("_dem")
+        ) {
+            return null
+        }
+        val dem = File(base.parentFile, base.nameWithoutExtension + DEM_FILE_SUFFIX)
         return dem.takeIf { it.isFile && it.length() > 1000L }
     }
 

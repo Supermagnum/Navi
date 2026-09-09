@@ -80,6 +80,32 @@ object BasemapStyleResolver {
     }
 
     /**
+     * True when [regionKey] / [localPath] names a Mapterhorn DEM archive
+     * (`*_dem` / `*_dem.pmtiles`). Those must never be used as the vector
+     * Protomaps style source — MapLibre would parse raster bytes as MVT and
+     * paint a blank map.
+     */
+    fun isDemArchive(
+        regionKey: String,
+        localPath: String = "",
+    ): Boolean {
+        val key = regionKey.trim().lowercase()
+        if (key.endsWith("_dem")) return true
+        val name = File(localPath).name.lowercase()
+        return name.endsWith(MapterhornTerrain.DEM_FILE_SUFFIX) ||
+            name.contains("_dem.pmtiles")
+    }
+
+    /**
+     * First completed covering job eligible as the **vector** offline basemap.
+     * DEM jobs are skipped even when they are newer (`created_at DESC`).
+     */
+    fun selectVectorCoveringJob(coveringJobs: List<FfiPmtilesJob>): FfiPmtilesJob? =
+        coveringJobs.firstOrNull { job ->
+            !isDemArchive(job.regionKey, job.localPath) && File(job.localPath).isFile
+        }
+
+    /**
      * Prefer local PMTiles when a completed job covers [lat]/[lon].
      * Opt-in 3D with a local `{region}_dem.pmtiles` beside the basemap uses
      * **downloaded Protomaps + Mapterhorn DEM hillshade** (no network).
@@ -101,9 +127,13 @@ object BasemapStyleResolver {
                 runCatching {
                     pmtilesListCovering(dataDir.absolutePath, lat, lon)
                 }.getOrDefault(emptyList())
-            val covering = coveringJobs.firstOrNull { File(it.localPath).isFile }
+            val covering = selectVectorCoveringJob(coveringJobs)
             val missingCovering =
-                coveringJobs.filter { it.localPath.isNotBlank() && !File(it.localPath).isFile }
+                coveringJobs.filter { job ->
+                    !isDemArchive(job.regionKey, job.localPath) &&
+                        job.localPath.isNotBlank() &&
+                        !File(job.localPath).isFile
+                }
 
             if (covering != null) {
                 val localDem = MapterhornTerrain.localDemBesideBasemap(covering.localPath)

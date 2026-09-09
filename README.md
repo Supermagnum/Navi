@@ -78,8 +78,8 @@ On-device and emulator results:
 **Install the signed release APK.** Testers should download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
-**v0.3.0-alpha** (`versionName` 0.3.0, `versionCode` 3). Download from the
-[`v0.3.0-alpha` tag](https://github.com/Supermagnum/Navi/tree/v0.3.0-alpha)
+**v0.3.1-alpha** (`versionName` 0.3.1, `versionCode` 4). Download from the
+[`v0.3.1-alpha` tag](https://github.com/Supermagnum/Navi/tree/v0.3.1-alpha)
 or the latest
 [`dev` branch](https://github.com/Supermagnum/Navi/tree/dev) copy. Android
 validates the APK signature on install; the separate GPG files
@@ -252,7 +252,7 @@ you can go offline.
 |---|---|---|---|
 | **Map region (roads & places)** | **Yes** for routing and search | OpenStreetMap extract from [Geofabrik](https://download.geofabrik.de/) (example path: `europe/norway/ostlandet`), or published packs from the pack server when listed | **Download region** (green, when pack server has the path) or **Download region + build place index** |
 | **Elevation** | Strongly recommended for eco / hills | Height data for the area | Usually comes with region provision |
-| **Offline basemap** | Needed for map graphics without internet | Visual map tiles (Protomaps) | Included in **Download region** (after packs, **before** place index) |
+| **Offline basemap** | Needed for map graphics without internet | Visual map tiles (Protomaps) | Included in **Download region** (**after** packs + place index; does not block routing/search) |
 | **3D terrain** | Optional | Height tiles for hillshade **and** elevation contours | **Download terrain DEM (Mapterhorn)** |
 | **OSM updates** | Optional | Fresher roads/POIs | **Check for OSM updates** (never automatic) |
 
@@ -279,21 +279,31 @@ is just slower until indexing finishes.
 
 When **Download region + build place index** has saved the OpenStreetMap
 extract (Geofabrik path), or **Download region** has installed published packs
-from the pack server, Navi pulls the **offline basemap** next, then ensures a
-real Geofabrik extract is on disk and builds the **place index** (From / Via /
-To search) with the same on-device pipeline as local convert. Pack-server
-installs skip on-device **routing pack** rebuild (packs are already baked) but
-still fetch the extract for place search. That is not the map picture on screen
-(basemap tiles) and not the raw `.osm.pbf` file itself alone — routing uses the
-published packs; search uses the place index built from the extract.
+from the pack server, Navi ensures a real Geofabrik extract is on disk and
+builds the **place index** (From / Via / To search) next — that is when the
+region becomes usable for routing and search. The **offline basemap** extract
+(including **Writing map archive…**) runs **after** place index so it does not
+block usability. Pack-server installs skip on-device **routing pack** rebuild
+(packs are already baked) but still fetch the extract for place search. That is
+not the map picture on screen (basemap tiles) and not the raw `.osm.pbf` file
+itself alone — routing uses the published packs; search uses the place index
+built from the extract.
 
-You can search and tap **Plan route** as soon as the download finishes. Until
-indexing is done, planning uses the slower raw `.osm.pbf` path. Tools shows
-progress as **Indexed maps (background)**; when it says **Indexed maps: ready
-(pack-hit)**, the next plan uses the packs — typically about 1.5–2 seconds on
-the reference tablet instead of tens of seconds. Live labels and percent for
-these jobs are listed under
+You can search and tap **Plan route** as soon as packs + place index finish
+(Tools may say **Place index ready — downloading basemap…** while the optional
+basemap extract continues). Until indexing is done, planning uses the slower
+raw `.osm.pbf` path. Tools shows progress as **Indexed maps (background)**;
+when it says **Indexed maps: ready (pack-hit)**, the next plan uses the packs —
+typically about 1.5–2 seconds on the reference tablet instead of tens of
+seconds. Live labels and percent for these jobs are listed under
 [Progress status box](#progress-status-box-pale-yellow).
+
+If you leave or force-stop the app mid-download, the next launch resumes from
+`region-download.json` (phase: packs, place index, or basemap) and any
+`.partial` Geofabrik file — Tools shows **Resuming download of…** / **Resuming
+place index…** without needing to tap Download again. Pack install restarts
+from the current file when mid-file resume is unavailable; place index and
+basemap reuse existing on-disk work where the pipeline already supports it.
 
 While a **Plan route** (or auto-reroute) is running on that PBF fallback,
 background convert and place-index **yield** so they do not contend for the
@@ -312,10 +322,10 @@ What the background job writes:
 | **Wetland** | Marsh and water polygons hiking uses to stay out of bogs (boardwalks stay on the graph). |
 
 A separate **place index** (names for From / Via / To search) is built as part
-of the download button (after basemap on both pack-server and local-bake paths).
-On the local-bake path, **indexed routing packs** may start converting in the
-background around the same time; on the pack-server path those packs are already
-installed.
+of the download button (**before** basemap on both pack-server and local-bake
+paths). On the local-bake path, **indexed routing packs** may start converting
+in the background around the same time; on the pack-server path those packs are
+already installed.
 
 If packs are missing, stale, or still converting, planning still works via the
 PBF fallback. Rebuild from a file already on the device with **Rebuild indexed
@@ -327,20 +337,28 @@ margin on lower-end 4 GB devices during conversion: [Known issues](#known-issues
 
 Long-running work shows a **pale yellow / translucent status chip** near the
 bottom-right of the map, with a short label and often a **percent done**. The
-same text is mirrored at the bottom of **Tools** when that panel is open. While
-**Download region** is running, Tools keeps **one** progress line for that job
-(place-index / indexed-maps duplicate lines are hidden so you do not see two
-competing percents).
+same text is mirrored in a **pinned footer at the bottom of Tools** (outside the
+scrollable region picker), in a fixed order: region download → basemap/DEM →
+place index → indexed maps. You do not need to scroll Tools to find active job
+status. When every tracked phase for the current download session has finished
+(packs + place index + basemap/DEM — fully done, not merely usable), that footer
+shows **Ready!** instead of the per-process lines.
+
+While **Download region** is running, Tools keeps **one** progress line for the
+non-basemap phases of that job (place-index / indexed-maps duplicate lines are
+hidden so you do not see two competing percents); basemap/DEM labels use the
+PMTiles line in the same footer.
 
 The chip **clears when the job finishes** (it must not stay stuck at 100%).
-Idle / **Ready** does not show the box.
+Idle does not show the pale yellow box; Tools may still show **Ready!** until
+you start another download.
 
 Every process that drives this progress UI:
 
 | Process | How you start it | Typical labels you will see | Where else it appears |
 |---|---|---|---|
-| **Download region (pack server)** — green **Download region** when the path is published | Tools → region chip → **Download region** | **Checking pack server…** → **Fetching packs (N files)…** / per-file fetch → **Installing packs…** → basemap (**Downloading map tiles…** / **Planning extract…** / **Writing map archive…**) → **Downloading extract + building place index…** then **Place index:** phases (below) | Tools region-download progress line; basemap/DEM-style labels may also show on the PMTiles line |
-| **Download region (local bake)** — blue / default button when packs are missing or the server is down | Tools → **Download region + build place index** | **Downloading region…** (or **Resuming…**) with byte % → optional **Downloading elevation…** → basemap labels as above → **Place index:** phases; then **Indexed maps (background):** convert phases | Same Tools progress line during the download; indexed-maps line after the download job ends |
+| **Download region (pack server)** — green **Download region** when the path is published | Tools → region chip → **Download region** | **Checking pack server…** → **Fetching packs (N files)…** / per-file fetch → **Installing packs…** → **Downloading extract + building place index…** then **Place index:** phases → (**usable**) → basemap (**Downloading map tiles…** / **Planning extract…** / **Writing map archive…**) | Tools region-download progress line; basemap/DEM-style labels may also show on the PMTiles line |
+| **Download region (local bake)** — blue / default button when packs are missing or the server is down | Tools → **Download region + build place index** | **Downloading region…** (or **Resuming…**) with byte % → optional **Downloading elevation…** → **Place index:** phases → (**usable**) → basemap labels as above; **Indexed maps (background):** convert may run in parallel after the PBF lands | Same Tools progress line during the download; indexed-maps line after the download job ends |
 | **Place index** (search names) | Part of **Download region**, or a background rebuild after an OSM update / local PBF | **Place index: starting…** / **admin boundaries…** / **scanning ways…** / **scanning nodes…** / **named routes…** / **resolving context…** / **writing database…** / **Place index ready** (phase-based %) | Tools place-index line when *not* inside an active region download |
 | **Indexed maps convert** (routing packs) | Auto after local-bake download; **Tools → Rebuild indexed maps**; or when packs are stale | **Building indexed maps:** scanning bounds / graph tiling / **POI + barriers…** (~90%) / **wetlands…** (~95%) / **Indexed maps ready**; Tools idle text **Indexed maps: ready (pack-hit)** | Tools indexed-maps line; phase % jumps when a phase *starts*, not continuously inside the phase |
 | **Offline basemap only** (PMTiles extract) | Included in **Download region**; also covered when that job writes map-tile labels | **Downloading map tiles for region…**, **Planning extract…**, **Writing map archive…** | Tools PMTiles progress line when those labels are active |
@@ -880,7 +898,7 @@ it as a normal install (not an unsigned or debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.3.0 / tag **v0.3.0-alpha**) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.3.1 / tag **v0.3.1-alpha**) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
@@ -889,7 +907,7 @@ You do not need a Rust/NDK toolchain to install it.
 1. On the device: enable **Developer options** and allow installs from your
    browser or file manager (USB debugging only needed for `adb`).
 2. Download
-   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.3.0-alpha/compiled/navi-release.apk)
+   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.3.1-alpha/compiled/navi-release.apk)
    (pinned tag) or the latest
    [`dev` copy](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-release.apk).
 3. Optional integrity check on a PC:
@@ -994,7 +1012,7 @@ Debug installs use the Android **debug** keystore. A **release** package is what
 you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
 
 A prebuilt upload-key-signed release APK for testers is committed at
-[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.3.0-alpha**;
+[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.3.1-alpha**;
 see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
@@ -1045,7 +1063,7 @@ adb shell am start -n no.navi.app/.MainActivity
    [`docs/android-api36-plan.md`](docs/android-api36-plan.md#aab-smoke-host).
 
 Current `versionName` / `versionCode` live in `app/build.gradle.kts`
-(`0.3.0` / `3` at time of writing). Bump those before a real store or tagged
+(`0.3.1` / `4` at time of writing). Bump those before a real store or tagged
 release. F-Droid-style Podman reproducibility:
 [`tools/fdroid-check/README.md`](tools/fdroid-check/README.md). Full shared
 recipe: [`docs/android-build.md`](docs/android-build.md).
