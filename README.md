@@ -16,16 +16,31 @@ https://github.com/Supermagnum/Navi/blob/dev/docs/crates.md
 
 Navi does not currently ship with a ready-made international routing database
 the way many commercial GPS / head-unit products do (those usually include
-precomputed indexes from the vendor).
-Computing this on device takes anywhere from 8 minutes and up to 25 minutes, it needs to be done when you download or update map data for your region.
-These processes might appear to be stuck, but be patient!
+precomputed indexes from the vendor). Computing place search and routing
+indexes on device takes anywhere from about **8 minutes up to 25 minutes**
+(larger regions take longer). It must be done when you **download or update**
+map data for your region. These steps can look stuck in Tools — **be patient**.
 
-Solving onboard convert cost may involve
-a server (example: navi.app) that distributes precomputed index packs
-for a region; when that server is unreachable, the natural fallback is what
-Navi already does — local pack convert and PBF planning from the
-downloaded extract. Related server work lives in
-[Supermagnum/navi-server](https://github.com/Supermagnum/navi-server/tree/main).
+In **Tools**, region chips (pills) show how the download will run:
+
+- **Green pills** — the path is published on the pack server (or already
+  indexed on the device). **Download region** is green and installs published
+  routing packs first, then still fetches a real Geofabrik extract and builds
+  the **place index** on device (search). That place-index step is still
+  minutes of work; leave the app alone until status shows done.
+- **Blue / default pills** — the path is **not** on the pack server. The
+  button reads **Download region + build place index** and falls back to a
+  full **local bake**: Geofabrik PBF download, on-device pack convert, and
+  place index (the slower path).
+
+**Fallback chain** (automatic; you do not pick hosts by hand): try the LAN
+pack host, then the public pack host
+([navi-server](https://github.com/Supermagnum/navi-server/tree/main) /
+navigate-me.duckdns.org). If neither answers or the region is missing,
+Navi uses Geofabrik + on-device convert (`local-bake`). Same idea if a pack
+fetch fails mid-download (network, checksum, etc.). Details:
+[`docs/pack-server-client.md`](docs/pack-server-client.md).
+
 Precomputed town-to-town corridors (e.g. Haugesund→Bergen,
 Oslo→Fredrikstad) could speed popular trips further. Direction:
 [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
