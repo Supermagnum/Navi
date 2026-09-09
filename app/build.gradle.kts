@@ -14,8 +14,8 @@ android {
         applicationId = "no.navi.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
         testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
         // Ship only 64-bit ABIs used by device (arm64) and emulator (x86_64).
         // Dropping armeabi-v7a / x86 / mips MapLibre+JNI copies keeps the

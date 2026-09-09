@@ -1,0 +1,1 @@
+v0.3.0-alpha: pack-server region install with on-device place index, DATEX routing impact, Sweden län chips, POI discovery CI guard, and measured pack / PBF size docs. Offline-first routing for car, bike, e-bike, hiking, motorcycle, truck, and motorhome as before.

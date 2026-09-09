@@ -49,6 +49,11 @@ Estimated server space needed (includes **measured** pack / ops figures, not
 only order-of-magnitude guesses):
 [https://github.com/Supermagnum/Navi/blob/main/docs/indexed-map-format-plan.md](https://github.com/Supermagnum/Navi/blob/main/docs/indexed-map-format-plan.md)
 
+Geofabrik source PBF sizes vs Navi baked pack sizes (complete per-country
+tables, continent and global totals, coverage gaps, and a sampled annualized
+PBF growth rate with a decade projection):
+[`docs/pbf-source-sizes.md`](docs/pbf-source-sizes.md).
+
 Background indexing is still slow on region-scale extracts, but improved
 (Østlandet convert on SM-P613 ~14.8 → ~10.6 → **~7.4 min**). Of the reduced
 ~7.4 min total: graph build is the largest share (~58%), wetland extraction
@@ -73,8 +78,8 @@ On-device and emulator results:
 **Install the signed release APK.** Testers should download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
-**v0.2.0-alpha** (`versionName` 0.2.0, `versionCode` 2). Download from the
-[`v0.2.0-alpha` tag](https://github.com/Supermagnum/Navi/tree/v0.2.0-alpha)
+**v0.3.0-alpha** (`versionName` 0.3.0, `versionCode` 3). Download from the
+[`v0.3.0-alpha` tag](https://github.com/Supermagnum/Navi/tree/v0.3.0-alpha)
 or the latest
 [`dev` branch](https://github.com/Supermagnum/Navi/tree/dev) copy. Android
 validates the APK signature on install; the separate GPG files
@@ -82,6 +87,27 @@ validates the APK signature on install; the separate GPG files
 [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc)) are optional provenance
 only — not a substitute for APK signing. Install steps:
 [Install a prebuilt APK](#install-a-prebuilt-apk).
+
+**How to report a bug.** Prefer a GitHub issue so it is tracked in public:
+
+1. **Register a free GitHub account** (if you do not have one): open
+   [github.com/signup](https://github.com/signup), choose a username, password,
+   and an email you can access, then confirm the account from the email GitHub
+   sends. Optional but recommended:
+   [two-factor authentication](https://docs.github.com/en/authentication/securing-your-account-with-two-factor-authentication-2fa).
+   Official walkthrough:
+   [Creating an account on GitHub](https://docs.github.com/en/get-started/start-your-journey/creating-an-account-on-github).
+2. Sign in, open
+   [github.com/Supermagnum/Navi/issues](https://github.com/Supermagnum/Navi/issues),
+   and click **New issue**.
+3. Describe what you expected, what happened, device model / OS, Navi version
+   (tag or `versionName`), and steps to reproduce. Attach screenshots or a
+   diagnostic log when you can
+   ([Tools → Diagnostic logging](docs/debugging.md#3b-diagnostic-session-log-on-device-file)).
+
+An **email address for bug reports** will be provided at a later time for
+people who cannot use GitHub. Until then, please use GitHub issues (or ask
+someone with an account to file one for you).
 
 **Translators wanted.** UI language packs are specified but not shipped
 (English-only chrome today). Fill or review the working table and follow the
@@ -787,7 +813,7 @@ it as a normal install (not an unsigned or debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.2.0 / tag **v0.2.0-alpha**) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.3.0 / tag **v0.3.0-alpha**) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
@@ -796,7 +822,7 @@ You do not need a Rust/NDK toolchain to install it.
 1. On the device: enable **Developer options** and allow installs from your
    browser or file manager (USB debugging only needed for `adb`).
 2. Download
-   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.2.0-alpha/compiled/navi-release.apk)
+   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.3.0-alpha/compiled/navi-release.apk)
    (pinned tag) or the latest
    [`dev` copy](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-release.apk).
 3. Optional integrity check on a PC:
@@ -901,7 +927,7 @@ Debug installs use the Android **debug** keystore. A **release** package is what
 you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
 
 A prebuilt upload-key-signed release APK for testers is committed at
-[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.2.0-alpha**;
+[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.3.0-alpha**;
 see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
@@ -952,7 +978,7 @@ adb shell am start -n no.navi.app/.MainActivity
    [`docs/android-api36-plan.md`](docs/android-api36-plan.md#aab-smoke-host).
 
 Current `versionName` / `versionCode` live in `app/build.gradle.kts`
-(`0.2.0` / `2` at time of writing). Bump those before a real store or tagged
+(`0.3.0` / `3` at time of writing). Bump those before a real store or tagged
 release. F-Droid-style Podman reproducibility:
 [`tools/fdroid-check/README.md`](tools/fdroid-check/README.md). Full shared
 recipe: [`docs/android-build.md`](docs/android-build.md).
