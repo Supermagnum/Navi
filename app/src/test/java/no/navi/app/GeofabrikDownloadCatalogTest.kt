@@ -7,7 +7,16 @@ import org.junit.Test
 
 class GeofabrikDownloadCatalogTest {
     @Test
-    fun sweden_has_lan_region_chips() {
+    fun norway_and_sweden_region_chips_match_pack_catalog_slugs() {
+        assertTrue(GeofabrikDownloadCatalog.hasRegionChips("europe/norway"))
+        assertEquals(6, GeofabrikDownloadCatalog.norwayRegions.size)
+        assertTrue(
+            GeofabrikDownloadCatalog.norwayRegions.any { it.first == "svalbard-janmayen" },
+        )
+        assertTrue(
+            GeofabrikDownloadCatalog.norwayRegions.any { it.first == "ostlandet" },
+        )
+
         assertTrue(GeofabrikDownloadCatalog.hasRegionChips("europe/sweden"))
         assertTrue(GeofabrikDownloadCatalog.hasRegionChips("europe/sweden/stockholm"))
         assertEquals(21, GeofabrikDownloadCatalog.swedenRegions.size)
@@ -15,11 +24,12 @@ class GeofabrikDownloadCatalogTest {
             "europe/sweden/stockholm",
             GeofabrikDownloadCatalog.defaultRegionChipPath("europe/sweden"),
         )
+        // Chip slug matches published current.json id (underscore).
         assertTrue(
-            GeofabrikDownloadCatalog.swedenRegions.any { it.first == "vastra-gotaland" },
+            GeofabrikDownloadCatalog.swedenRegions.any { it.first == "vastra_gotaland" },
         )
         assertFalse(
-            GeofabrikDownloadCatalog.swedenRegions.any { it.first == "vastra_gotaland" },
+            GeofabrikDownloadCatalog.swedenRegions.any { it.first == "vastra-gotaland" },
         )
     }
 

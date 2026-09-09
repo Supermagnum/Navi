@@ -49,7 +49,7 @@ object MapHudPrefs {
     const val DATEX_PLUGIN_DEFAULT_ENABLED = false
 
     /** Settings default host; discovery prefers LAN→duckdns unless overridden. */
-    const val DATEX_SETTINGS_DEFAULT_HOST = "192.168.1.195"
+    const val DATEX_SETTINGS_DEFAULT_HOST = "navigate-me.duckdns.org"
     const val DATEX_SETTINGS_DEFAULT_PORT = 80
     const val DATEX_WIFI_ONLY_DEFAULT = true
     const val DEFAULT_AUTO_ZOOM_LEVEL = 16.5

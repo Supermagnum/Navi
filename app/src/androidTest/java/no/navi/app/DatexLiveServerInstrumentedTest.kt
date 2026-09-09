@@ -107,8 +107,8 @@ class DatexLiveServerInstrumentedTest {
         )
         val src = o.optString("data_source")
         assertTrue(
-            "expected server-lan or server-duckdns, got $src",
-            src == "server-lan" || src == "server-duckdns",
+            "expected server-duckdns, got $src",
+            src == "server-duckdns",
         )
         val active = o.getJSONArray("active")
         val inactive = o.getJSONArray("inactive")

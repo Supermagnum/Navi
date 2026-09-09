@@ -1,9 +1,10 @@
 # Pack server client (connectivity + acquisition + install)
 
-**Status (branch `dev`):** discovery, LAN → duckdns host chain, region-pill
-greens, **pack download / sha256 verify / leaf-stem install**, then **on-device
-Geofabrik PBF download + place-index build** (same `NameIndex` path as local
-convert). navi-server does **not** publish a place index or a real PBF.
+**Status (branch `dev`):** discovery against the public pack host, region-pill
+greens, **pack download / sha256 verify / leaf-stem install** (with download
+progress), then **on-device Geofabrik PBF download + place-index build** (same
+`NameIndex` path as local convert, with phase progress). navi-server does
+**not** publish a place index or a real PBF.
 [`try_fetch_region_packs`](../core/src/pack_server/fetch.rs) GETs
 `manifest.json` + files under `/packs/<region_id>/<generation>/`, remaps bake
 stems (`europe_monaco-latest`) to Geofabrik leaf stems (`monaco-latest`), and
@@ -36,13 +37,12 @@ Server contract (ops / URL layout):
 
 ## Host fallback chain
 
-1. `http://192.168.1.195` — tag `server-lan`
-2. `https://navigate-me.duckdns.org` — tag `server-duckdns`
-3. Geofabrik + on-device convert — tag `local-bake`
+1. `https://navigate-me.duckdns.org` — tag `server-duckdns`
+2. Geofabrik + on-device convert — tag `local-bake`
 
 Per-host connect / discovery timeout: **3s** (`CONNECTIVITY_TIMEOUT`).
-`NAVI_PACK_SERVER_BASE_URL` (or UniFFI override) collapses the chain to a
-single host for tests/ops.
+`NAVI_PACK_SERVER_BASE_URL` (or UniFFI override) forces a single host for
+tests/ops.
 
 ---
 
@@ -50,12 +50,14 @@ single host for tests/ops.
 
 Before a Tools **Download region** run:
 
-1. Probe the host chain for `current.json`.
+1. Probe the pack host for `current.json` (inside the background job only).
 2. `resolve_region_source` → `RegionSource::Server` or `Local`.
-3. If Server + `data_dir` → `try_fetch_region_packs` (install packs). On
-   success, `execute_local_convert = false`, then
+3. If Server + `data_dir` → `try_fetch_region_packs` (install packs; reports
+   byte progress via `download_progress`). On success,
+   `execute_local_convert = false`, then
    `ensure_place_index_after_pack_install` (Geofabrik PBF + `place_index.db`,
-   `force_rebuild` on every pack-server install/update).
+   `force_rebuild` on every pack-server install/update; place-index phases
+   report progress).
 4. Else Local path: Geofabrik `-latest.osm.pbf` via `provisionRegionData` →
    bind → place index → `ensureIndexedMaps`.
 
@@ -66,10 +68,10 @@ but is required for a complete place index without server-side FTS publish.
 Logs: tag `NaviPack` / `RegionDownloadBg`, including `data_source=…`,
 `connectivity_ms` / `fetch_ms`, and place-index `pbf_ms` / `index_ms`.
 
-**UI:** while `decideRegionAcquisition(dataDir=…)` runs, Tools shows
-“Fetching from pack server…”. After packs land, status becomes
-“Downloading extract + building place index…” until
-`ensurePackRegionPlaceIndex` returns.
+**UI:** while packs download, Tools shows `downloadProgressSnapshot` labels
+such as “Fetching packs (3/74): …”. After packs land, status becomes
+“Downloading extract + building place index…” with Geofabrik byte progress,
+then place-index phase labels until `ensurePackRegionPlaceIndex` returns.
 
 ---
 

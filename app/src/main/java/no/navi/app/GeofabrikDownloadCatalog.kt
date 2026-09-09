@@ -945,45 +945,46 @@ object GeofabrikDownloadCatalog {
 
     val norwayRegions: List<Pair<String, String>> =
         listOf(
-            "ostlandet" to "Østlandet",
-            "vestlandet" to "Vestlandet",
-            "trondelag" to "Trøndelag",
+            // Slugs match navi-server `current.json` region_id leaves under europe/norway.
             "nord-norge" to "Nord-Norge",
+            "ostlandet" to "Østlandet",
             "sorlandet" to "Sørlandet",
+            "svalbard-janmayen" to "Svalbard / Jan Mayen",
+            "trondelag" to "Trøndelag",
+            "vestlandet" to "Vestlandet",
         )
 
     /**
-     * Sweden län chips (canonical hyphenated slugs / PMT-splitter).
+     * Sweden län chips — slugs match published `current.json` `region_id` leaves
+     * under `europe/sweden` (including `vastra_gotaland` with underscore).
      *
-     * Pack-server lookup for Västra Götaland uses a one-off alias to the
-     * published underscore id `europe/sweden/vastra_gotaland` — see
+     * Typed/legacy hyphen path `europe/sweden/vastra-gotaland` still resolves via
      * [PackRegionAvailability.packCatalogRegionIdAliases] and Rust
-     * `pack_catalog_region_id_aliases` in `acquisition.rs`. Keep the chip
-     * identity as `vastra-gotaland` in UI.
+     * `pack_catalog_region_id_aliases`.
      */
     val swedenRegions: List<Pair<String, String>> =
         listOf(
-            "stockholm" to "Stockholm",
-            "uppsala" to "Uppsala",
-            "sodermanland" to "Södermanland",
-            "ostergotland" to "Östergötland",
-            "jonkoping" to "Jönköping",
-            "kronoberg" to "Kronoberg",
-            "kalmar" to "Kalmar",
-            "gotland" to "Gotland",
             "blekinge" to "Blekinge",
-            "skane" to "Skåne",
-            "halland" to "Halland",
-            "vastra-gotaland" to "Västra Götaland",
-            "varmland" to "Värmland",
-            "orebro" to "Örebro",
-            "vastmanland" to "Västmanland",
             "dalarna" to "Dalarna",
             "gavleborg" to "Gävleborg",
-            "vasternorrland" to "Västernorrland",
+            "gotland" to "Gotland",
+            "halland" to "Halland",
             "jamtland" to "Jämtland",
-            "vasterbotten" to "Västerbotten",
+            "jonkoping" to "Jönköping",
+            "kalmar" to "Kalmar",
+            "kronoberg" to "Kronoberg",
             "norrbotten" to "Norrbotten",
+            "orebro" to "Örebro",
+            "ostergotland" to "Östergötland",
+            "skane" to "Skåne",
+            "sodermanland" to "Södermanland",
+            "stockholm" to "Stockholm",
+            "uppsala" to "Uppsala",
+            "varmland" to "Värmland",
+            "vasterbotten" to "Västerbotten",
+            "vasternorrland" to "Västernorrland",
+            "vastmanland" to "Västmanland",
+            "vastra_gotaland" to "Västra Götaland",
         )
 
     const val EMPTY_CONTINENT_NOTE =

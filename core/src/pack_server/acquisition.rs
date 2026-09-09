@@ -1,6 +1,6 @@
 //! Pure region-source routing + acquisition planning (Geofabrik fallback).
 //!
-//! Host chain: LAN → duckdns → local-bake. Pack binary fetch lives in
+//! Host chain: public pack host → local-bake. Pack binary fetch lives in
 //! [`super::fetch`]; on failure the planner soft-falls to local convert.
 
 use std::path::Path;
@@ -8,13 +8,12 @@ use std::path::Path;
 use super::fetch::try_fetch_region_packs;
 use super::{
     check_connectivity_blocking, check_connectivity_chain_blocking, Connectivity, ReadyRegion,
-    DEFAULT_PACK_SERVER_BASE_URL, FALLBACK_PACK_SERVER_BASE_URL,
+    DEFAULT_PACK_SERVER_BASE_URL,
 };
 
 /// Which hop ultimately supplied catalog data (or local bake).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PackDataSource {
-    ServerLan,
     ServerDuckdns,
     LocalBake,
 }
@@ -22,7 +21,6 @@ pub enum PackDataSource {
 impl PackDataSource {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::ServerLan => "server-lan",
             Self::ServerDuckdns => "server-duckdns",
             Self::LocalBake => "local-bake",
         }
@@ -74,12 +72,11 @@ pub fn normalize_region_id(region_id: &str) -> String {
 ///
 /// **Permanent client-only exception — not a general hyphen/underscore
 /// normalizer.** navi-server publishes Västra Götaland as
-/// `europe/sweden/vastra_gotaland` (underscore). Canonical client / PMT /
-/// Tools chip identity is `europe/sweden/vastra-gotaland` (hyphen). The server
-/// path will not be renamed for this mismatch; keep this alias so chips,
-/// `resolve_region_source`, and ready-id coverage keep working. If the
-/// published `region_id` is ever corrected independently, this mapping (and
-/// the Kotlin mirror in `PackRegionAvailability`) can be removed.
+/// `europe/sweden/vastra_gotaland` (underscore); Tools chips use that same
+/// published id. Keep the hyphen alias so typed / legacy
+/// `europe/sweden/vastra-gotaland` still resolves. If the published
+/// `region_id` is ever corrected independently, this mapping (and the Kotlin
+/// mirror in `PackRegionAvailability`) can be removed.
 pub fn pack_catalog_region_id_aliases(region_id: &str) -> Vec<&'static str> {
     match normalize_region_id(region_id).as_str() {
         "europe/sweden/vastra-gotaland" => vec!["europe/sweden/vastra_gotaland"],
@@ -160,9 +157,9 @@ pub fn resolve_region_source(
     }
 }
 
-/// Resolve a single override base URL: `NAVI_PACK_SERVER_BASE_URL` env, else LAN default.
+/// Resolve a single override base URL: `NAVI_PACK_SERVER_BASE_URL` env, else public default.
 ///
-/// Prefer [`pack_server_discovery_bases`] for the full LAN → duckdns chain.
+/// Prefer [`pack_server_discovery_bases`] for discovery (same host unless overridden).
 pub fn pack_server_base_url() -> String {
     std::env::var("NAVI_PACK_SERVER_BASE_URL")
         .ok()
@@ -173,35 +170,23 @@ pub fn pack_server_base_url() -> String {
 
 /// Ordered discovery bases for the host fallback chain.
 ///
-/// If `NAVI_PACK_SERVER_BASE_URL` is set, only that host is probed (tagged
-/// `server-lan` when it matches the LAN default, otherwise `server-duckdns`
-/// when it matches the public fallback, else `server-lan` as a custom override
-/// tag for logging).
+/// Default: public pack host only. If `NAVI_PACK_SERVER_BASE_URL` is set, only
+/// that host is probed (tagged [`PackDataSource::ServerDuckdns`]).
 pub fn pack_server_discovery_bases() -> Vec<(PackDataSource, String)> {
     if let Ok(env) = std::env::var("NAVI_PACK_SERVER_BASE_URL") {
         let base = env.trim().trim_end_matches('/').to_string();
         if !base.is_empty() {
-            let tag = if base == DEFAULT_PACK_SERVER_BASE_URL {
-                PackDataSource::ServerLan
-            } else if base == FALLBACK_PACK_SERVER_BASE_URL {
-                PackDataSource::ServerDuckdns
-            } else {
-                // Custom override: treat as primary hop for logging.
-                PackDataSource::ServerLan
-            };
-            return vec![(tag, base)];
+            return vec![(PackDataSource::ServerDuckdns, base)];
         }
     }
-    vec![
-        (
-            PackDataSource::ServerLan,
-            DEFAULT_PACK_SERVER_BASE_URL.to_string(),
-        ),
-        (
-            PackDataSource::ServerDuckdns,
-            FALLBACK_PACK_SERVER_BASE_URL.to_string(),
-        ),
-    ]
+    vec![(
+        PackDataSource::ServerDuckdns,
+        DEFAULT_PACK_SERVER_BASE_URL.to_string(),
+    )]
+}
+
+fn hop_tag_for_override_base(_base: &str) -> PackDataSource {
+    PackDataSource::ServerDuckdns
 }
 
 /// Whether [path] is covered by a ready-region id from `current.json`.
@@ -235,7 +220,7 @@ pub struct PackCatalogSnapshot {
     pub unreachable_reason: Option<String>,
 }
 
-/// Probe LAN → duckdns (or override) and return ready region ids for pill UI.
+/// Probe the public pack host (or override) and return ready region ids for pill UI.
 ///
 /// Soft-fail: unreachable hosts yield an empty ready list and
 /// [`PackDataSource::LocalBake`] with a reason — never panics.
@@ -244,13 +229,7 @@ pub fn discover_pack_catalog(base_url_override: Option<&str>) -> PackCatalogSnap
         .map(|s| s.trim().trim_end_matches('/'))
         .filter(|s| !s.is_empty())
     {
-        let tag = if base == DEFAULT_PACK_SERVER_BASE_URL {
-            PackDataSource::ServerLan
-        } else if base == FALLBACK_PACK_SERVER_BASE_URL {
-            PackDataSource::ServerDuckdns
-        } else {
-            PackDataSource::ServerLan
-        };
+        let tag = hop_tag_for_override_base(base);
         let conn = check_connectivity_blocking(base);
         let hop = if conn.is_ready() { Some(tag) } else { None };
         (conn, hop)
@@ -261,7 +240,7 @@ pub fn discover_pack_catalog(base_url_override: Option<&str>) -> PackCatalogSnap
 
     match connectivity {
         Connectivity::Ready(catalog) => {
-            let data_source = hop.unwrap_or(PackDataSource::ServerLan);
+            let data_source = hop.unwrap_or(PackDataSource::ServerDuckdns);
             PackCatalogSnapshot {
                 data_source,
                 ready_region_ids: catalog
@@ -297,11 +276,11 @@ pub struct RegionAcquisitionPlan {
     pub execute_local_convert: bool,
     pub log_message: String,
     pub catalog_generation: Option<String>,
-    /// Final hop tag for UI / logs (`server-lan` / `server-duckdns` / `local-bake`).
+    /// Final hop tag for UI / logs (`server-duckdns` / `local-bake`).
     pub data_source: PackDataSource,
 }
 
-/// Check pack hosts (LAN → duckdns unless `base_url_override`), resolve source,
+/// Check the pack host (or `base_url_override`), resolve source,
 /// fetch packs into `data_dir` when Server, else fall back to local convert.
 ///
 /// When `base_url_override` is `Some`, only that host is probed (tests /
@@ -314,18 +293,13 @@ pub fn plan_region_acquisition(
     let t0 = std::time::Instant::now();
     let region_id = normalize_region_id(region_id);
 
+    crate::download::progress::set(0, None, "Checking pack server…");
     let t_conn = std::time::Instant::now();
     let (connectivity, hop) = if let Some(base) = base_url_override
         .map(|s| s.trim().trim_end_matches('/'))
         .filter(|s| !s.is_empty())
     {
-        let tag = if base == DEFAULT_PACK_SERVER_BASE_URL {
-            PackDataSource::ServerLan
-        } else if base == FALLBACK_PACK_SERVER_BASE_URL {
-            PackDataSource::ServerDuckdns
-        } else {
-            PackDataSource::ServerLan
-        };
+        let tag = hop_tag_for_override_base(base);
         let conn = check_connectivity_blocking(base);
         let hop = if conn.is_ready() { Some(tag) } else { None };
         (conn, hop)
@@ -444,7 +418,6 @@ mod tests {
 
     #[test]
     fn data_source_tags() {
-        assert_eq!(PackDataSource::ServerLan.as_str(), "server-lan");
         assert_eq!(PackDataSource::ServerDuckdns.as_str(), "server-duckdns");
         assert_eq!(PackDataSource::LocalBake.as_str(), "local-bake");
     }
@@ -453,7 +426,7 @@ mod tests {
     fn resolve_reachable_region_ready() {
         let conn = Connectivity::Ready(PackCatalog {
             catalog_generation: "migrate-geofabrik-paths".into(),
-            served_from: "http://192.168.1.195".into(),
+            served_from: "https://navigate-me.duckdns.org".into(),
             regions: vec![ReadyRegion {
                 region_id: "australia-oceania/australia/christmas-island".into(),
                 generation: Some("20260904T113616Z".into()),
@@ -464,7 +437,7 @@ mod tests {
         match resolve_region_source(
             "australia-oceania/australia/christmas-island",
             &conn,
-            PackDataSource::ServerLan,
+            PackDataSource::ServerDuckdns,
         ) {
             RegionSource::Server {
                 region_id,
@@ -476,8 +449,8 @@ mod tests {
                 assert_eq!(region_id, "australia-oceania/australia/christmas-island");
                 assert_eq!(generation.as_deref(), Some("20260904T113616Z"));
                 assert_eq!(bytes, Some(1_074_714));
-                assert_eq!(data_source, PackDataSource::ServerLan);
-                assert_eq!(base_url, "http://192.168.1.195");
+                assert_eq!(data_source, PackDataSource::ServerDuckdns);
+                assert_eq!(base_url, "https://navigate-me.duckdns.org");
             }
             RegionSource::Local { reason, .. } => panic!("expected Server: {reason}"),
         }
@@ -517,7 +490,7 @@ mod tests {
         let conn = Connectivity::Unreachable {
             reason: "timeout".into(),
         };
-        match resolve_region_source("europe/monaco", &conn, PackDataSource::ServerLan) {
+        match resolve_region_source("europe/monaco", &conn, PackDataSource::ServerDuckdns) {
             RegionSource::Local {
                 reason,
                 data_source,
@@ -533,10 +506,10 @@ mod tests {
     fn resolve_empty_catalog() {
         let conn = Connectivity::Ready(PackCatalog {
             catalog_generation: "migrate-geofabrik-paths".into(),
-            served_from: "http://192.168.1.195".into(),
+            served_from: "https://navigate-me.duckdns.org".into(),
             regions: vec![],
         });
-        match resolve_region_source("europe/monaco", &conn, PackDataSource::ServerLan) {
+        match resolve_region_source("europe/monaco", &conn, PackDataSource::ServerDuckdns) {
             RegionSource::Local { reason, .. } => {
                 assert!(
                     reason.contains("empty") || reason.contains("not published"),
@@ -551,7 +524,7 @@ mod tests {
     fn resolve_normalizes_slashes() {
         let conn = Connectivity::Ready(PackCatalog {
             catalog_generation: "g".into(),
-            served_from: "http://192.168.1.195".into(),
+            served_from: "https://navigate-me.duckdns.org".into(),
             regions: vec![ReadyRegion {
                 region_id: "europe/monaco".into(),
                 generation: None,
@@ -560,7 +533,8 @@ mod tests {
             }],
         });
         assert!(
-            resolve_region_source("/europe/monaco/", &conn, PackDataSource::ServerLan).is_server()
+            resolve_region_source("/europe/monaco/", &conn, PackDataSource::ServerDuckdns)
+                .is_server()
         );
     }
 
@@ -569,11 +543,9 @@ mod tests {
         // Clear override for this process if present — only assert defaults when unset.
         if std::env::var("NAVI_PACK_SERVER_BASE_URL").is_err() {
             let bases = pack_server_discovery_bases();
-            assert_eq!(bases.len(), 2);
-            assert_eq!(bases[0].0, PackDataSource::ServerLan);
+            assert_eq!(bases.len(), 1);
+            assert_eq!(bases[0].0, PackDataSource::ServerDuckdns);
             assert_eq!(bases[0].1, DEFAULT_PACK_SERVER_BASE_URL);
-            assert_eq!(bases[1].0, PackDataSource::ServerDuckdns);
-            assert_eq!(bases[1].1, FALLBACK_PACK_SERVER_BASE_URL);
         }
     }
 
@@ -591,7 +563,7 @@ mod tests {
         // Client/PMT chip: hyphen. navi-server publishes underscore permanently.
         let conn = Connectivity::Ready(PackCatalog {
             catalog_generation: "g".into(),
-            served_from: "http://192.168.1.195".into(),
+            served_from: "https://navigate-me.duckdns.org".into(),
             regions: vec![ReadyRegion {
                 region_id: "europe/sweden/vastra_gotaland".into(),
                 generation: Some("bake".into()),
@@ -604,7 +576,7 @@ mod tests {
         match resolve_region_source(
             "europe/sweden/vastra-gotaland",
             &conn,
-            PackDataSource::ServerLan,
+            PackDataSource::ServerDuckdns,
         ) {
             RegionSource::Server {
                 region_id,

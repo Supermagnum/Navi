@@ -141,6 +141,7 @@ pub fn build_place_index_from_pbf(
         }
     }
     let t0 = Instant::now();
+    crate::download::progress::set(0, Some(6), "Place index: starting…");
     let mut idx = NameIndex::open(index_db).map_err(|e| format!("open index: {e}"))?;
     let n = idx
         .load_from_pbf(pbf_path)

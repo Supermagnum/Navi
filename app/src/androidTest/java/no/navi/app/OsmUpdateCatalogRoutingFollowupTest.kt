@@ -248,7 +248,7 @@ class OsmUpdateCatalogRoutingFollowupTest {
             .onNodeWithTag("chip_sweden_stockholm", useUnmergedTree = true)
             .assertExists()
         composeRule
-            .onNodeWithTag("chip_sweden_vastra-gotaland", useUnmergedTree = true)
+            .onNodeWithTag("chip_sweden_vastra_gotaland", useUnmergedTree = true)
             .assertExists()
         assertEquals("europe/sweden/stockholm", NaviMapTestHooks.lastSelectedGeofabrikPath)
         val kronoberg = head("europe/sweden/kronobergs-lan")

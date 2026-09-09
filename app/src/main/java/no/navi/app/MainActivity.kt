@@ -120,7 +120,6 @@ import uniffi.navi.TravelProfile
 import uniffi.navi.applyOsmUpdate
 import uniffi.navi.cancelInFlightPlan
 import uniffi.navi.checkOsmUpdates
-import uniffi.navi.decideRegionAcquisition
 import uniffi.navi.deleteSavedPlace
 import uniffi.navi.deleteSavedRoute
 import uniffi.navi.discoverPackCatalog
@@ -1889,25 +1888,9 @@ private fun NaviMapScreen() {
     fun startRegionDownload(path: String) {
         val leaf = path.substringAfterLast('/')
         val filename = "$leaf-latest.osm.pbf"
-        // Soft pack-server probe for status copy only (no install). Real fetch
-        // runs in RegionDownloadBackground with dataDir set.
-        val acquisition =
-            runCatching {
-                decideRegionAcquisition(
-                    regionId = path,
-                    packServerBaseUrl = null,
-                    dataDir = null,
-                )
-            }.getOrNull()
-        if (acquisition != null) {
-            android.util.Log.i(
-                "NaviPack",
-                "startRegionDownload path=$path source=${acquisition.source} " +
-                    "data_source=${acquisition.dataSource} " +
-                    "execute_local=${acquisition.executeLocalConvert} " +
-                    "reason=${acquisition.reason}",
-            )
-        }
+        // Real pack fetch runs in RegionDownloadBackground (catalog + install).
+        // Do not probe decideRegionAcquisition here — that duplicated discovery
+        // and could stall the UI thread for the full host timeout.
         val url = geofabrikLatestPbfUrl(path)
         val already = RegionDownloadBackground.partialBytes(dataDir, filename)
         val serverReady =
@@ -1925,8 +1908,7 @@ private fun NaviMapScreen() {
             when {
                 already > 0L -> "Resuming download of $path…"
                 serverReady ->
-                    "Pack server has $path (${acquisition?.dataSource ?: packCatalogDataSource}); " +
-                        "installing published packs…"
+                    "Pack server has $path ($packCatalogDataSource); installing published packs…"
                 else -> "Downloading $path and building place index…"
             }
         MapHudPrefs.saveGeofabrikPath(context, path)
@@ -1950,7 +1932,7 @@ private fun NaviMapScreen() {
                 downloadPolling = true
             }
             val snap = runCatching { downloadProgressSnapshot() }.getOrNull()
-            if (snap != null && snap.label.isNotBlank()) {
+            if (regionRunning && snap != null && snap.label.isNotBlank()) {
                 val line = formatProgressPct(snap.unitsDone, snap.unitsTotal, snap.label)
                 if (snap.label.contains("map tiles", ignoreCase = true) ||
                     snap.label.contains("basemap", ignoreCase = true) ||
@@ -1961,7 +1943,7 @@ private fun NaviMapScreen() {
                     pmtilesProgress = line
                 } else {
                     regionDownloadProgress = line
-                    if (regionRunning && !planningRoute) {
+                    if (!planningRoute) {
                         status = line
                     }
                 }
@@ -1970,6 +1952,19 @@ private fun NaviMapScreen() {
                 if (line.isNotBlank()) {
                     regionDownloadProgress = line
                     if (!planningRoute) status = line
+                }
+            } else if (!regionRunning && !downloadPolling) {
+                // Idle: do not keep a finished percent line on screen.
+                if (regionDownloadProgress.isNotBlank() &&
+                    (
+                        regionDownloadProgress.contains("100%") ||
+                            regionDownloadProgress.contains("Fetching packs") ||
+                            regionDownloadProgress.contains("Downloading region") ||
+                            regionDownloadProgress.contains("Downloading extract") ||
+                            regionDownloadProgress.contains("Place index")
+                    )
+                ) {
+                    regionDownloadProgress = ""
                 }
             }
             pmtilesJobId?.let { id ->
@@ -1986,8 +1981,15 @@ private fun NaviMapScreen() {
                 val leftover = RegionDownloadBackground.statusLine()
                 if (leftover == "done" || leftover.startsWith("failed")) {
                     downloadPolling = false
+                    regionDownloadProgress = ""
+                    runCatching { downloadProgressClear() }
                     if (leftover == "done") {
                         packCatalogEpoch += 1
+                        if (!planningRoute) {
+                            status = "Ready"
+                        }
+                    } else if (!planningRoute) {
+                        status = leftover.take(120)
                     }
                 }
             }
@@ -2031,7 +2033,12 @@ private fun NaviMapScreen() {
                 }
                 placeIndexUiLine =
                     if (PlaceIndexBackground.isRunning()) {
-                        "Place index: building (background)"
+                        val st = PlaceIndexBackground.statusLine()
+                        if (st.isNotBlank() && st != "idle") {
+                            if (st.startsWith("Place index", ignoreCase = true)) st else "Place index: $st"
+                        } else {
+                            "Place index: building (background)"
+                        }
                     } else {
                         val st = PlaceIndexBackground.statusLine()
                         if (st == "idle") "" else "Place index: $st"

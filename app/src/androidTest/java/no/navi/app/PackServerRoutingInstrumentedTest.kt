@@ -18,8 +18,8 @@ import java.io.File
 /**
  * Device checks for pack-server routing vs Geofabrik fallback.
  *
- * Default discovery uses LAN → duckdns. Pass an explicit base URL to force a
- * single hop (unreachable / catalog probes).
+ * Default discovery uses the public pack host (duckdns). Pass an explicit base
+ * URL to force a single hop (unreachable / catalog probes).
  */
 @RunWith(AndroidJUnit4::class)
 class PackServerRoutingInstrumentedTest {
@@ -45,9 +45,8 @@ class PackServerRoutingInstrumentedTest {
                 "execute_local=${d.executeLocalConvert} reason=${d.reason}",
         )
         assertTrue(
-            d.dataSource == "server-lan" ||
-                d.dataSource == "server-duckdns" ||
-                d.dataSource == "local-bake",
+            "unexpected data_source=${d.dataSource}",
+            d.dataSource == "server-duckdns" || d.dataSource == "local-bake",
         )
         when (d.source) {
             FfiRegionSourceKind.SERVER -> {
@@ -80,9 +79,8 @@ class PackServerRoutingInstrumentedTest {
             "vestlandet source=${d.source} data_source=${d.dataSource} reason=${d.reason}",
         )
         assertTrue(
-            d.dataSource == "server-lan" ||
-                d.dataSource == "server-duckdns" ||
-                d.dataSource == "local-bake",
+            "unexpected data_source=${d.dataSource}",
+            d.dataSource == "server-duckdns" || d.dataSource == "local-bake",
         )
         assertTrue(d.executeLocalConvert)
     }

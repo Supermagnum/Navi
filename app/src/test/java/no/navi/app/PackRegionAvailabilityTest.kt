@@ -19,7 +19,7 @@ class PackRegionAvailabilityTest {
     }
 
     @Test
-    fun pathCovered_vastra_gotaland_hyphen_chip_matches_underscore_catalog() {
+    fun pathCovered_vastra_gotaland_hyphen_legacy_matches_underscore_catalog() {
         val ready = listOf("europe/sweden/vastra_gotaland")
         assertTrue(
             PackRegionAvailability.pathCoveredByReadyIds(
@@ -81,12 +81,12 @@ class PackRegionAvailabilityTest {
             PackRegionAvailability.statusLine(
                 selectedPath = "europe/norway/ostlandet",
                 serverReadyIds = listOf("europe/norway/ostlandet"),
-                dataSource = "server-lan",
+                dataSource = "server-duckdns",
                 unreachableReason = null,
                 probing = false,
                 dataDir = null,
             )
-        assertTrue(line.contains("server-lan"))
+        assertTrue(line.contains("server-duckdns"))
         assertTrue(line.contains("published packs") || line.contains("pack server"))
         assertEquals(
             "Checking pack server…",

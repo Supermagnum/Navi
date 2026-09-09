@@ -14,13 +14,13 @@
 //!
 //! ## Host fallback chain
 //!
-//! [`check_connectivity_chain`] / [`plan_region_acquisition`] try, in order:
-//! 1. LAN — [`DEFAULT_PACK_SERVER_BASE_URL`] (`http://192.168.1.195`)
-//! 2. Public — [`FALLBACK_PACK_SERVER_BASE_URL`] (`https://navigate-me.duckdns.org`)
-//! 3. Callers then run local Geofabrik + on-device convert (`local-bake`)
+//! [`check_connectivity_chain`] / [`plan_region_acquisition`] probe:
+//! 1. Public pack host — [`DEFAULT_PACK_SERVER_BASE_URL`]
+//!    (`https://navigate-me.duckdns.org`)
+//! 2. Callers then run local Geofabrik + on-device convert (`local-bake`)
 //!
 //! Per-host connect timeout is [`CONNECTIVITY_TIMEOUT`] (3s). Resolved source
-//! tags: `server-lan` / `server-duckdns` / `local-bake` ([`PackDataSource`]).
+//! tags: `server-duckdns` / `local-bake` ([`PackDataSource`]).
 //!
 //! ## Generation fields
 //!
@@ -57,11 +57,8 @@ use thiserror::Error;
 /// Identifying User-Agent for pack / DATEX GETs against a navi-server.
 pub const USER_AGENT: &str = "Navi/0.1.0 https://github.com/Supermagnum/Navi";
 
-/// Default LAN pack host (primary in the discovery chain).
-pub const DEFAULT_PACK_SERVER_BASE_URL: &str = "http://192.168.1.195";
-
-/// Public fallback when the LAN host is unreachable.
-pub const FALLBACK_PACK_SERVER_BASE_URL: &str = "https://navigate-me.duckdns.org";
+/// Public pack / DATEX host (sole default in the discovery chain).
+pub const DEFAULT_PACK_SERVER_BASE_URL: &str = "https://navigate-me.duckdns.org";
 
 /// Per-host connect + discovery GET timeout (short so the chain stays snappy).
 pub const CONNECTIVITY_TIMEOUT: Duration = Duration::from_secs(3);
@@ -577,13 +574,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn chain_uses_second_host_when_first_down() {
+    async fn chain_skips_dead_first_host() {
         let ok = serve_once(
             "HTTP/1.1 200 OK",
             r#"{"generation":"g2","regions":[{"region_id":"europe/norway/ostlandet"}]}"#,
         );
         let bases = [
-            (PackDataSource::ServerLan, "http://192.0.2.1:9".to_string()),
+            (
+                PackDataSource::ServerDuckdns,
+                "http://192.0.2.1:9".to_string(),
+            ),
             (PackDataSource::ServerDuckdns, ok),
         ];
         let (conn, src) = check_connectivity_chain(&bases).await;
@@ -596,7 +596,7 @@ mod tests {
         }
     }
 
-    /// Manual check against the LAN pack host (or `NAVI_PACK_SERVER_BASE_URL`).
+    /// Manual check against the public pack host (or `NAVI_PACK_SERVER_BASE_URL`).
     #[tokio::test]
     #[ignore = "network: live navi-server pack host"]
     async fn live_pack_host_discovery() {

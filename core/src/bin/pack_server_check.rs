@@ -2,11 +2,11 @@
 //!
 //! Usage:
 //!   cargo run -p driver-break-core --bin pack-server-check
-//!   cargo run -p driver-break-core --bin pack-server-check -- http://192.168.1.195
+//!   cargo run -p driver-break-core --bin pack-server-check -- https://navigate-me.duckdns.org
 //!   NAVI_PACK_SERVER_BASE_URL=https://navigate-me.duckdns.org \
 //!     cargo run -p driver-break-core --bin pack-server-check
 //!
-//! With no args, probes the LAN → duckdns chain. Exit 0 always for
+//! With no args, probes the default public pack host. Exit 0 always for
 //! unreachable/not-ready (soft fail). Exit 2 only on bad args.
 
 use driver_break_core::pack_server::{
@@ -22,7 +22,7 @@ fn main() {
         eprintln!(
             "usage: pack-server-check [base_url]\n\
              env:   NAVI_PACK_SERVER_BASE_URL\n\
-             default chain: LAN http://192.168.1.195 then https://navigate-me.duckdns.org"
+             default: https://navigate-me.duckdns.org"
         );
         std::process::exit(2);
     }
@@ -31,13 +31,7 @@ fn main() {
         println!("pack server base_url={base} (single-host override)");
         let c = check_connectivity_blocking(&base);
         let hop = if c.is_ready() {
-            Some(
-                if base.trim_end_matches('/') == "https://navigate-me.duckdns.org" {
-                    PackDataSource::ServerDuckdns
-                } else {
-                    PackDataSource::ServerLan
-                },
-            )
+            Some(PackDataSource::ServerDuckdns)
         } else {
             None
         };

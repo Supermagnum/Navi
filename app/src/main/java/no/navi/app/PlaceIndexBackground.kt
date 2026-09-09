@@ -7,6 +7,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import uniffi.navi.downloadProgressSnapshot
 import uniffi.navi.ensurePlaceIndex
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -26,7 +27,27 @@ object PlaceIndexBackground {
 
     fun isRunning(): Boolean = running.get()
 
-    fun statusLine(): String = lastStatus.get()
+    fun statusLine(): String {
+        if (running.get()) {
+            val snap = runCatching { downloadProgressSnapshot() }.getOrNull()
+            if (snap != null && snap.label.isNotBlank()) {
+                val tot = snap.unitsTotal
+                val done = snap.unitsDone
+                val pct =
+                    if (tot != null && tot > 0uL) {
+                        ((done.toDouble() * 100.0) / tot.toDouble()).toInt().coerceIn(0, 100)
+                    } else {
+                        null
+                    }
+                return when {
+                    pct != null && tot != null -> "${snap.label} $pct% ($done / $tot)"
+                    pct != null -> "${snap.label} $pct%"
+                    else -> snap.label
+                }
+            }
+        }
+        return lastStatus.get()
+    }
 
     fun ensureStarted(
         pbf: File,
