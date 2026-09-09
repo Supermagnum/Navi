@@ -638,6 +638,19 @@ impl PoiIndex {
     pub fn is_empty(&self) -> bool {
         self.records.is_empty()
     }
+
+    /// Merge another index (e.g. a second landsdel POI pack) without rebuilding.
+    /// Existing `osm_id`s win; overnight building samples are appended.
+    pub fn extend_from(&mut self, other: &Self) {
+        for rec in other.records.values() {
+            if self.records.contains_key(&rec.osm_id) {
+                continue;
+            }
+            self.insert_record(rec.clone());
+        }
+        self.overnight_buildings
+            .extend_from_slice(&other.overnight_buildings);
+    }
 }
 
 enum OvernightBuildings {

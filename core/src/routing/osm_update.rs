@@ -205,10 +205,13 @@ fn http_get_text(url: &str) -> Result<String> {
         .enable_all()
         .build()?;
     rt.block_on(async {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(900))
-            .build()?;
-        let resp = client.get(url).send().await.context("HTTP GET")?;
+        let client = crate::download::shared_http_client();
+        let resp = client
+            .get(url)
+            .timeout(Duration::from_secs(60))
+            .send()
+            .await
+            .context("HTTP GET")?;
         if !resp.status().is_success() {
             bail!("HTTP {} for {url}", resp.status());
         }
@@ -255,35 +258,241 @@ pub fn weekly_reminder_due(meta: &RegionExtractMeta) -> bool {
     days_between(meta.last_check_unix, now_unix()) >= WEEKLY_CHECK_REMINDER_DAYS
 }
 
-/// Compare local meta to Geofabrik remote state and return a user-visible plan.
+/// Compare local installs to pack-server `current.json` first, then Geofabrik.
 ///
-/// Updates `last_check_unix` so weekly reminders reset after an explicit check.
+/// Updates `last_check_unix` on `region_meta.json` when present so weekly
+/// reminders reset after an explicit check.
 pub fn check_for_updates(data_dir: &Path) -> Result<UpdatePlan> {
-    let Some(mut meta) = RegionExtractMeta::load(data_dir)? else {
+    let installed = discover_installed_regions(data_dir);
+    if installed.is_empty() {
         return Ok(UpdatePlan::Unsupported {
-            reason: "No region_meta.json — bind a Geofabrik region first, or this extract is a custom cut without replication metadata.".into(),
-        });
-    };
-    if meta.geofabrik_region.trim().is_empty() {
-        return Ok(UpdatePlan::Unsupported {
-            reason: "region_meta.json has empty geofabrik_region".into(),
+            reason: "No region_meta.json or pack install stamps — bind a Geofabrik region first, or this extract is a custom cut without replication metadata.".into(),
         });
     }
 
-    let remote = fetch_geofabrik_state(&meta.geofabrik_region)?;
-    meta.last_check_unix = now_unix();
-    meta.save(data_dir)?;
+    // Touch last_check on legacy single meta when present.
+    if let Some(mut meta) = RegionExtractMeta::load(data_dir)? {
+        meta.last_check_unix = now_unix();
+        let _ = meta.save(data_dir);
+    }
 
-    let days_behind = days_between(meta.local_updated_unix, now_unix());
+    let bases = crate::pack_server::pack_server_discovery_bases();
+    let (connectivity, _source) = crate::pack_server::check_connectivity_chain_blocking(&bases);
 
+    if let Some(catalog) = connectivity.catalog() {
+        let mut lines = Vec::new();
+        let mut first_actionable: Option<UpdatePlan> = None;
+        for region in &installed {
+            let ready = catalog.regions.iter().find(|r| {
+                crate::pack_server::region_ids_match_for_catalog(&r.region_id, &region.region_id)
+            });
+            match ready {
+                Some(r) => {
+                    let remote_gen = r.generation.clone().unwrap_or_default();
+                    let local_gen = region.pack_generation.clone().unwrap_or_default();
+                    if !remote_gen.is_empty() && (local_gen.is_empty() || remote_gen != local_gen) {
+                        let plan = UpdatePlan::FullRedownload {
+                            reason: format!(
+                                "Pack server generation newer for {} (data_source=server-duckdns): local={local_gen:?} remote={remote_gen}",
+                                region.region_id
+                            ),
+                            latest_pbf_url: geofabrik_latest_pbf_url(&region.region_id),
+                            remote_timestamp: remote_gen.clone(),
+                            remote_sequence: 0,
+                            days_behind: None,
+                        };
+                        lines.push(format!(
+                            "region={} update available (pack generation {local_gen:?} -> {remote_gen})",
+                            region.region_id
+                        ));
+                        if first_actionable.is_none() {
+                            first_actionable = Some(plan);
+                        }
+                    } else {
+                        lines.push(format!(
+                            "region={} up to date on pack server (generation={remote_gen})",
+                            region.region_id
+                        ));
+                    }
+                }
+                None => {
+                    lines.push(format!(
+                        "region={} not in pack catalog — will use Geofabrik for this region",
+                        region.region_id
+                    ));
+                    if let Ok(plan) = check_geofabrik_for_region(data_dir, region) {
+                        if !matches!(plan, UpdatePlan::UpToDate { .. })
+                            && first_actionable.is_none()
+                        {
+                            first_actionable = Some(plan);
+                        }
+                    }
+                }
+            }
+        }
+        let plan = first_actionable.unwrap_or_else(|| UpdatePlan::UpToDate {
+            local_sequence: installed.first().and_then(|r| r.local_sequence),
+            remote_sequence: 0,
+            remote_timestamp: format!("pack-server ok; {}", lines.join("; ")),
+        });
+        // Annotate UpToDate / FullRedownload format via pending; for UpToDate inject summary.
+        let mut plan = plan;
+        if let UpdatePlan::UpToDate {
+            remote_timestamp, ..
+        } = &mut plan
+        {
+            if remote_timestamp.starts_with("pack-server") {
+                // already set
+            } else {
+                *remote_timestamp = format!("pack-server; {}", lines.join("; "));
+            }
+        }
+        save_pending_plan(data_dir, &plan)?;
+        return Ok(plan);
+    }
+
+    // Pack server unreachable — Geofabrik fallback for each installed region.
+    let unreachable_reason = match &connectivity {
+        crate::pack_server::Connectivity::Unreachable { reason } => reason.clone(),
+        _ => "unreachable".into(),
+    };
+    let mut chosen: Option<UpdatePlan> = None;
+    let mut any_checked = false;
+    for region in &installed {
+        match check_geofabrik_for_region(data_dir, region) {
+            Ok(plan) => {
+                any_checked = true;
+                let actionable = !matches!(plan, UpdatePlan::UpToDate { .. });
+                match &chosen {
+                    None => chosen = Some(plan),
+                    Some(UpdatePlan::UpToDate { .. }) if actionable => chosen = Some(plan),
+                    Some(_) if actionable => {
+                        // Keep the first actionable plan.
+                    }
+                    _ => {}
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "Geofabrik update check failed for {}: {e:#}",
+                    region.region_id
+                );
+            }
+        }
+    }
+    if !any_checked {
+        return Ok(UpdatePlan::Unsupported {
+            reason: format!(
+                "Pack server unreachable ({unreachable_reason}) and Geofabrik checks failed for all regions"
+            ),
+        });
+    }
+    let plan = chosen.unwrap_or(UpdatePlan::Unsupported {
+        reason: "no Geofabrik plan".into(),
+    });
+    save_pending_plan(data_dir, &plan)?;
+    Ok(plan)
+}
+
+#[derive(Debug, Clone)]
+struct InstalledRegion {
+    region_id: String,
+    pbf_filename: String,
+    pack_generation: Option<String>,
+    local_sequence: Option<u64>,
+    local_updated_unix: u64,
+}
+
+fn discover_installed_regions(data_dir: &Path) -> Vec<InstalledRegion> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    if let Ok(rd) = fs::read_dir(data_dir) {
+        for ent in rd.flatten() {
+            let name = ent.file_name();
+            let name = name.to_string_lossy();
+            let Some(leaf) = name.strip_suffix(crate::routing::indexed::SERVER_INSTALL_SUFFIX)
+            else {
+                continue;
+            };
+            if let Ok(stamp) = crate::pack_server::ServerInstallStamp::load_for_leaf(data_dir, leaf)
+            {
+                if seen.insert(stamp.region_id.clone()) {
+                    out.push(InstalledRegion {
+                        region_id: stamp.region_id,
+                        pbf_filename: format!("{leaf}.osm.pbf"),
+                        pack_generation: stamp.generation,
+                        local_sequence: None,
+                        local_updated_unix: now_unix(),
+                    });
+                }
+            }
+        }
+    }
+    if let Ok(Some(meta)) = RegionExtractMeta::load(data_dir) {
+        if !meta.geofabrik_region.trim().is_empty() && seen.insert(meta.geofabrik_region.clone()) {
+            out.push(InstalledRegion {
+                region_id: meta.geofabrik_region,
+                pbf_filename: meta.pbf_filename,
+                pack_generation: None,
+                local_sequence: meta.local_sequence,
+                local_updated_unix: meta.local_updated_unix,
+            });
+        } else if let Some(existing) = out
+            .iter_mut()
+            .find(|r| r.region_id == meta.geofabrik_region)
+        {
+            existing.local_sequence = meta.local_sequence.or(existing.local_sequence);
+            existing.local_updated_unix = meta.local_updated_unix;
+            if existing.pbf_filename.is_empty() {
+                existing.pbf_filename = meta.pbf_filename;
+            }
+        }
+    }
+    if out.is_empty() {
+        if let Ok(rd) = fs::read_dir(data_dir) {
+            for ent in rd.flatten() {
+                let name = ent.file_name();
+                let name = name.to_string_lossy();
+                let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+                    continue;
+                };
+                if let Some(path) = crate::routing::pbf_stem_to_geofabrik_path(stem) {
+                    if seen.insert(path.clone()) {
+                        out.push(InstalledRegion {
+                            region_id: path,
+                            pbf_filename: format!("{stem}.osm.pbf"),
+                            pack_generation: None,
+                            local_sequence: None,
+                            local_updated_unix: now_unix(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+fn check_geofabrik_for_region(data_dir: &Path, region: &InstalledRegion) -> Result<UpdatePlan> {
+    let remote = fetch_geofabrik_state(&region.region_id)?;
+    let days_behind = days_between(region.local_updated_unix, now_unix());
     let plan = decide_update_plan(
-        &meta.geofabrik_region,
-        meta.local_sequence,
+        &region.region_id,
+        region.local_sequence,
         days_behind,
         &remote,
         osmium_available(),
     );
-    save_pending_plan(data_dir, &plan)?;
+    // Keep pending binder in sync for apply (single-slot meta).
+    if RegionExtractMeta::load(data_dir)?.is_none() {
+        let _ = bind_geofabrik_extract(
+            data_dir,
+            &region.region_id,
+            &region.pbf_filename,
+            region.local_sequence,
+            None,
+        );
+    }
     Ok(plan)
 }
 
@@ -434,10 +643,8 @@ fn invalidate_derived(data_dir: &Path) -> Result<()> {
         let _ = fs::remove_dir_all(&cache);
         fs::create_dir_all(&cache)?;
     }
-    let place = data_dir.join("place_index.db");
-    if place.is_file() {
-        let _ = fs::remove_file(&place);
-    }
+    // Do not delete the shared place_index.db — region re-index is additive by
+    // region_id; Apply callers rebuild the bound region via ensure_place_index.
     Ok(())
 }
 
@@ -629,7 +836,7 @@ pub fn format_update_plan(plan: &UpdatePlan) -> String {
             remote_sequence,
             remote_timestamp,
         } => format!(
-            "OSM extract is up to date.\nlocal_sequence={local_sequence:?}\nremote_sequence={remote_sequence}\nremote_timestamp={remote_timestamp}\n"
+            "OSM extract is up to date.\nlocal_sequence={local_sequence:?}\nremote_sequence={remote_sequence}\nremote_timestamp={remote_timestamp}\ndata_source=pack-server-or-geofabrik\n"
         ),
         UpdatePlan::DiffUpdate {
             from_sequence,
@@ -638,7 +845,7 @@ pub fn format_update_plan(plan: &UpdatePlan) -> String {
             osc_urls,
             days_behind,
         } => format!(
-            "Update available via Geofabrik .osc.gz diffs (opt-in).\nfrom_sequence={from_sequence}\nto_sequence={to_sequence}\ndiffs={}\ndays_behind={days_behind}\nremote_timestamp={remote_timestamp}\nstaleness_threshold_days={}\nConfirm Apply to download and merge.\n",
+            "Update available via Geofabrik .osc.gz diffs (opt-in).\nfrom_sequence={from_sequence}\nto_sequence={to_sequence}\ndiffs={}\ndays_behind={days_behind}\nremote_timestamp={remote_timestamp}\nstaleness_threshold_days={}\ndata_source=geofabrik\nConfirm Apply to download and merge.\n",
             osc_urls.len(),
             STALENESS_FULL_REDOWNLOAD_DAYS
         ),
@@ -938,5 +1145,24 @@ timestamp=2024-01-15T01\\:02\\:03Z
         let dir = tempfile::tempdir().unwrap();
         let plan = check_for_updates(dir.path()).unwrap();
         assert!(matches!(plan, UpdatePlan::Unsupported { .. }));
+    }
+
+    #[test]
+    fn discover_installed_regions_from_server_stamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let stamp = crate::pack_server::ServerInstallStamp {
+            schema: crate::pack_server::ServerInstallStamp::SCHEMA,
+            region_id: "europe/norway/ostlandet".into(),
+            generation: Some("bake-1".into()),
+            bake_stem: "europe_norway_ostlandet-latest".into(),
+            leaf_stem: "ostlandet-latest".into(),
+            base_url: "https://example.test".into(),
+        };
+        let path = crate::routing::indexed::server_install_path(dir.path(), "ostlandet-latest");
+        std::fs::write(&path, serde_json::to_vec_pretty(&stamp).unwrap()).unwrap();
+        let found = discover_installed_regions(dir.path());
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].region_id, "europe/norway/ostlandet");
+        assert_eq!(found[0].pack_generation.as_deref(), Some("bake-1"));
     }
 }

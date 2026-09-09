@@ -1,5 +1,6 @@
 package no.navi.app
 
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -15,11 +16,14 @@ import org.junit.runner.RunWith
 import uniffi.navi.pmtilesCancelJob
 import uniffi.navi.pmtilesListCovering
 import uniffi.navi.pmtilesListJobs
+import uniffi.navi.pmtilesQueueRegion
+import uniffi.navi.pmtilesRunJob
 import java.io.File
 
 /**
- * Exercises the real Tools UI download buttons (not UniFFI-only shortcuts).
- * Uses `test/oslo` for a fast Protomaps extract via the on-screen controls.
+ * Tools UI: standalone basemap button is gone; Download region owns packs+basemap.
+ * DEM remains a separate control. Uses FFI for a fast Oslo PMTiles covering check
+ * (`test/oslo` is not a Geofabrik extract).
  */
 @RunWith(AndroidJUnit4::class)
 class ToolsDownloadUiInstrumentedTest {
@@ -65,7 +69,7 @@ class ToolsDownloadUiInstrumentedTest {
     }
 
     @Test
-    fun tools_basemap_download_button_completes_oslo_extract() {
+    fun tools_region_download_owns_basemap_dem_still_separate() {
         waitForToolsButton()
         Thread.sleep(1_000)
 
@@ -81,31 +85,26 @@ class ToolsDownloadUiInstrumentedTest {
             .performScrollTo()
             .assertIsDisplayed()
 
-        NaviMapTestHooks.pendingGeofabrikPath = "test/oslo"
-        Thread.sleep(800)
+        composeRule
+            .onNodeWithTag("btn_download_region", useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
 
         composeRule
             .onNodeWithTag("btn_download_pmtiles", useUnmergedTree = true)
-            .performScrollTo()
-            .performClick()
+            .assertDoesNotExist()
 
-        val deadline = System.currentTimeMillis() + 180_000
-        var completed = false
-        while (System.currentTimeMillis() < deadline) {
-            val jobs = pmtilesListJobs(dataDir.absolutePath)
-            if (jobs.any { it.regionKey.contains("oslo") && it.status == "completed" }) {
-                completed = true
-                break
-            }
-            Thread.sleep(1_000)
-        }
-        assertTrue(
-            "basemap download via Tools button did not complete for test/oslo",
-            completed,
-        )
+        NaviMapTestHooks.pendingGeofabrikPath = "test/oslo"
+        Thread.sleep(800)
+
+        // Fast covering check via FFI (same extract Download region runs after packs).
+        val job = pmtilesQueueRegion(dataDir.absolutePath, "test/oslo", null)
+        assertTrue("queue failed: ${job.status}", job.id.isNotBlank())
+        val done = pmtilesRunJob(dataDir.absolutePath, job.id)
+        assertTrue("extract failed: ${done.status}", done.status == "completed")
         val covering = pmtilesListCovering(dataDir.absolutePath, 59.91, 10.75)
         assertTrue(
-            "Oslo camera should be covered after UI download",
+            "Oslo camera should be covered after PMTiles extract",
             covering.any { File(it.localPath).isFile },
         )
 
@@ -121,8 +120,8 @@ class ToolsDownloadUiInstrumentedTest {
             "DEM download should create a job for oslo dem",
             demJobs.any { it.regionKey.contains("oslo") && it.regionKey.contains("dem") },
         )
-        demJobs.firstOrNull { it.regionKey.contains("dem") && it.id.isNotBlank() }?.let { job ->
-            pmtilesCancelJob(job.id)
+        demJobs.firstOrNull { it.regionKey.contains("dem") && it.id.isNotBlank() }?.let { jobDem ->
+            pmtilesCancelJob(jobDem.id)
         }
 
         shell("screencap -p /data/local/tmp/tools_download_basemap_done.png")

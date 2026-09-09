@@ -16,9 +16,9 @@ This is a **suggested example**, not a built-in saved route in the app.
 ## Using this in Navi
 
 1. Download the covering **map regions** in **Tools** (plus basemap if you
-   want the map picture offline). The planner uses a **single** Geofabrik
-   extract per plan and does **not** stitch two landsdels into one trip —
-   split the corridor into legs, or you will get **Map data needed**. See
+   want the map picture offline). A corridor that spans several already-installed
+   landsdels loads tiles from each Ready pack in one pass. If a needed landsdel
+   is missing, **Plan route** shows **Map data needed** for that region. See
    README [Leaving a downloaded region](../README.md#leaving-a-downloaded-region).
 2. For each day's From / Via / To, paste coordinates from the table as
    `lat, lon` in **Place** search (same format as

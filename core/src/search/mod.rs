@@ -50,7 +50,8 @@ impl NameIndex {
                 lat REAL NOT NULL,
                 lon REAL NOT NULL,
                 sub_area TEXT NOT NULL DEFAULT '',
-                municipality TEXT NOT NULL DEFAULT ''
+                municipality TEXT NOT NULL DEFAULT '',
+                region_id TEXT NOT NULL DEFAULT ''
             );
             CREATE VIRTUAL TABLE IF NOT EXISTS name_fts USING fts5(
                 name,
@@ -66,12 +67,14 @@ impl NameIndex {
     fn ensure_context_columns(conn: &Connection) -> SqlResult<()> {
         let mut has_sub = false;
         let mut has_muni = false;
+        let mut has_region = false;
         let mut stmt = conn.prepare("PRAGMA table_info(name_entries)")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
         for r in rows {
             match r?.as_str() {
                 "sub_area" => has_sub = true,
                 "municipality" => has_muni = true,
+                "region_id" => has_region = true,
                 _ => {}
             }
         }
@@ -87,6 +90,15 @@ impl NameIndex {
                 [],
             )?;
         }
+        if !has_region {
+            conn.execute(
+                "ALTER TABLE name_entries ADD COLUMN region_id TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_name_entries_region_id ON name_entries(region_id);",
+        )?;
         Ok(())
     }
 
@@ -106,6 +118,26 @@ impl NameIndex {
             .is_ok()
     }
 
+    /// True when this DB already has at least one row for `region_id`.
+    pub fn has_entries_for_region(path: impl AsRef<Path>, region_id: &str) -> bool {
+        let path = path.as_ref();
+        let region_id = region_id.trim().trim_matches('/');
+        if !path.is_file() || region_id.is_empty() {
+            return false;
+        }
+        let Ok(conn) =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        else {
+            return false;
+        };
+        conn.query_row(
+            "SELECT 1 FROM name_entries WHERE region_id = ?1 LIMIT 1",
+            params![region_id],
+            |_| Ok(()),
+        )
+        .is_ok()
+    }
+
     /// True when this DB was built by a context-aware `load_from_pbf`.
     pub fn is_current_schema(path: impl AsRef<Path>) -> bool {
         let Ok(conn) = Connection::open(path.as_ref()) else {
@@ -117,9 +149,23 @@ impl NameIndex {
         v >= PLACE_INDEX_SCHEMA_VERSION
     }
 
+    /// Full-file rebuild with empty `region_id` (legacy / single-extract callers).
     pub fn load_from_pbf(&mut self, path: impl AsRef<Path>) -> anyhow::Result<usize> {
+        self.load_from_pbf_for_region(path, "")
+    }
+
+    /// Index one region's PBF into the shared DB without wiping other regions.
+    ///
+    /// When `region_id` is non-empty, only that region's rows are replaced.
+    /// When empty, the whole table is cleared (legacy single-extract path).
+    pub fn load_from_pbf_for_region(
+        &mut self,
+        path: impl AsRef<Path>,
+        region_id: &str,
+    ) -> anyhow::Result<usize> {
         let _bg = crate::download::pbf_priority::BackgroundIndexerGuard::enter();
         let path = path.as_ref();
+        let region_id = region_id.trim().trim_matches('/').to_string();
         let mut batch: Vec<(i64, String, String, f64, f64)> = Vec::new();
         const PHASES: u64 = 6;
         crate::download::progress::set(0, Some(PHASES), "Place index: admin boundaries…");
@@ -245,18 +291,28 @@ impl NameIndex {
 
         crate::download::progress::set(5, Some(PHASES), "Place index: writing database…");
         let tx = self.conn.unchecked_transaction()?;
-        tx.execute_batch(
-            "
-            DELETE FROM name_entries;
-            INSERT INTO name_fts(name_fts) VALUES('delete-all');
-            ",
-        )?;
+        Self::clear_region_rows(&tx, &region_id)?;
         for (osm_id, name, kind, lat, lon) in &batch {
             let ctx = resolver.resolve(*osm_id, name, kind, *lat, *lon);
+            // osm_id may already exist from another region at a landsdel border —
+            // replace and refresh FTS for that id.
+            let _ = tx.execute(
+                "INSERT INTO name_fts(name_fts, rowid, name, kind) VALUES('delete', ?1, NULL, NULL)",
+                params![osm_id],
+            );
             tx.execute(
-                "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
-                params![osm_id, name, kind, lat, lon, ctx.sub_area, ctx.municipality],
+                "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![
+                    osm_id,
+                    name,
+                    kind,
+                    lat,
+                    lon,
+                    ctx.sub_area,
+                    ctx.municipality,
+                    region_id
+                ],
             )?;
             tx.execute(
                 "INSERT INTO name_fts(rowid, name, kind) VALUES (?1,?2,?3)",
@@ -269,6 +325,45 @@ impl NameIndex {
         tx.commit()?;
         crate::download::progress::set(PHASES, Some(PHASES), "Place index ready");
         Ok(batch.len())
+    }
+
+    /// Remove all place rows for one region (or the entire index when `region_id` is empty).
+    pub fn clear_region(&mut self, region_id: &str) -> SqlResult<()> {
+        let region_id = region_id.trim().trim_matches('/');
+        let tx = self.conn.unchecked_transaction()?;
+        Self::clear_region_rows(&tx, region_id)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn clear_region_rows(tx: &rusqlite::Transaction<'_>, region_id: &str) -> SqlResult<()> {
+        if region_id.is_empty() {
+            tx.execute_batch(
+                "
+                DELETE FROM name_entries;
+                INSERT INTO name_fts(name_fts) VALUES('delete-all');
+                ",
+            )?;
+            return Ok(());
+        }
+        {
+            let mut stmt = tx.prepare("SELECT osm_id FROM name_entries WHERE region_id = ?1")?;
+            let ids: Vec<i64> = stmt
+                .query_map(params![region_id], |row| row.get(0))?
+                .collect::<SqlResult<Vec<_>>>()?;
+            drop(stmt);
+            for osm_id in ids {
+                let _ = tx.execute(
+                    "INSERT INTO name_fts(name_fts, rowid, name, kind) VALUES('delete', ?1, NULL, NULL)",
+                    params![osm_id],
+                );
+            }
+        }
+        tx.execute(
+            "DELETE FROM name_entries WHERE region_id = ?1",
+            params![region_id],
+        )?;
+        Ok(())
     }
 
     /// Insert or replace one name row (tests / incremental updates).
@@ -293,10 +388,33 @@ impl NameIndex {
         sub_area: String,
         municipality: String,
     ) -> SqlResult<()> {
+        self.upsert_entry_with_region(
+            osm_id,
+            name,
+            kind,
+            lat,
+            lon,
+            sub_area,
+            municipality,
+            String::new(),
+        )
+    }
+
+    pub fn upsert_entry_with_region(
+        &mut self,
+        osm_id: i64,
+        name: String,
+        kind: String,
+        lat: f64,
+        lon: f64,
+        sub_area: String,
+        municipality: String,
+        region_id: String,
+    ) -> SqlResult<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality)
-             VALUES (?1,?2,?3,?4,?5,?6,?7)",
-            params![osm_id, name, kind, lat, lon, sub_area, municipality],
+            "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![osm_id, name, kind, lat, lon, sub_area, municipality, region_id],
         )?;
         // Rebuild FTS row for this id (delete + insert keeps content sync).
         let _ = self.conn.execute(
@@ -986,6 +1104,73 @@ mod tests {
         assert_eq!(hits[0].name, "Tangen");
         assert_eq!(hits[0].municipality, "");
         assert_eq!(hits[0].sub_area, "");
+    }
+
+    #[test]
+    fn multi_region_index_is_additive_and_reindex_preserves_other() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("place_index.db");
+        let mut idx = NameIndex::open(&db).expect("open");
+        idx.upsert_entry_with_region(
+            101,
+            "Lillehammer".into(),
+            "place:town".into(),
+            61.11,
+            10.46,
+            String::new(),
+            String::new(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            201,
+            "Bergen".into(),
+            "place:city".into(),
+            60.39,
+            5.32,
+            String::new(),
+            String::new(),
+            "europe/norway/vestlandet".into(),
+        )
+        .unwrap();
+        drop(idx);
+
+        assert!(NameIndex::has_entries_for_region(
+            &db,
+            "europe/norway/ostlandet"
+        ));
+        assert!(NameIndex::has_entries_for_region(
+            &db,
+            "europe/norway/vestlandet"
+        ));
+
+        // Simulate re-index of region A: clear A then re-upsert.
+        let mut idx = NameIndex::open(&db).expect("reopen");
+        idx.clear_region("europe/norway/ostlandet").unwrap();
+        idx.upsert_entry_with_region(
+            102,
+            "Gjøvik".into(),
+            "place:town".into(),
+            60.80,
+            10.69,
+            String::new(),
+            String::new(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+
+        let ost = idx.search("Gjøvik", 8).unwrap();
+        assert!(ost.iter().any(|h| h.name == "Gjøvik"), "got {ost:?}");
+        let vest = idx.search("Bergen", 8).unwrap();
+        assert!(
+            vest.iter().any(|h| h.name == "Bergen"),
+            "vestlandet wiped: {vest:?}"
+        );
+        let old = idx.search("Lillehammer", 8).unwrap();
+        assert!(
+            old.iter().all(|h| h.name != "Lillehammer"),
+            "old ostlandet row should be gone"
+        );
     }
 
     #[test]

@@ -134,6 +134,7 @@ checklist above and file an issue; you do not need to write code.
    - [What you need to download](#what-you-need-to-download)
    - [Indexing (background after download)](#indexing-background-after-download)
    - [Leaving a downloaded region](#leaving-a-downloaded-region)
+   - [Why route planning can take a while](#why-route-planning-can-take-a-while)
    - [How to use](#how-to-use)
    - [How features work](#how-features-work)
 4. [Settings](#settings)
@@ -251,13 +252,13 @@ you can go offline.
 |---|---|---|---|
 | **Map region (roads & places)** | **Yes** for routing and search | OpenStreetMap extract from [Geofabrik](https://download.geofabrik.de/) (example path: `europe/norway/ostlandet`), or published packs from the pack server when listed | **Download region** (green, when pack server has the path) or **Download region + build place index** |
 | **Elevation** | Strongly recommended for eco / hills | Height data for the area | Usually comes with region provision |
-| **Offline basemap** | Needed for map graphics without internet | Visual map tiles (Protomaps) | **Download basemap (PMTiles)** |
+| **Offline basemap** | Needed for map graphics without internet | Visual map tiles (Protomaps) | Included in **Download region** (after packs / place index) |
 | **3D terrain** | Optional | Height tiles for hillshade **and** elevation contours | **Download terrain DEM (Mapterhorn)** |
 | **OSM updates** | Optional | Fresher roads/POIs | **Check for OSM updates** (never automatic) |
 
 **Minimum to plan a route:** region download + place index.  
-**Minimum for a usable offline map picture:** that plus basemap PMTiles (or stay
-online for Liberty).  
+**Minimum for a usable offline map picture:** **Download region** also pulls
+basemap PMTiles (or stay online for Liberty).  
 Prefer a **region** (not a whole huge country) on tablets with limited RAM —
 see [Minimum hardware and storage](#minimum-hardware-and-storage).
 
@@ -331,9 +332,12 @@ To are checked against the bounding boxes of downloaded Geofabrik extracts.
 - A **Map data needed** dialog offers a suggested download (for example
   Vestlandet or Nord-Norge). You can download from there, or dismiss and pick
   another destination.
-- If From and To need **different** landsdels (or similar splits), the prompt
-  prefers a **country** extract (e.g. Norway). The planner uses a **single**
-  region file and does not stitch two extracts into one trip.
+- If From and To need **different** landsdels and those packs are already
+  installed, planning uses the same corridor tile loader as a single landsdel:
+  intersecting tiles are loaded from each Ready pack in one pass (no country
+  extract and no separate stitch job).
+- If a destination landsdel is **not** downloaded, the prompt suggests that
+  missing region — not a full-country fallback.
 - Cross-border destinations (e.g. Sweden) get a **country-specific** suggestion
   when the waypoint lies in another catalog entry — see
   [`android-test-results.md` Item 10](docs/android-test-results.md#item-10--osm-update-copy-cross-region-prompts-expanded-catalog-2026-08-19).
@@ -352,6 +356,32 @@ you drive.
 
 Indexed packs match the extract they were built from. Leaving that area means
 no offline graph for new plans — not a soft fade-out.
+
+## Why route planning can take a while
+
+Before Navi can search for a path, it **builds an area graph** for the corridor
+your trip needs: it loads the map tiles that cover the regions the route passes
+through and joins them into one routable network. That is normal preparation,
+not a hang — the progress line under **Plan route** (and the top banner while
+planning) explains what is happening.
+
+Time depends on how much map data the corridor needs, not only on crow-flies
+distance:
+
+- A **short local** trip inside one downloaded region typically plans in a
+  **few seconds**.
+- A **long** corridor (large bounding box / generous search pad) loads more
+  tiles from that region and can take **longer**, even when From and To look
+  close on a map.
+- A trip that **crosses between region packs** (for example Østlandet and
+  Vestlandet) loads tiles from each installed pack in the same step and joins
+  them. That can take **several seconds up to roughly half a minute** on
+  current devices for long cross-region corridors — still the same kind of
+  work as a single-region plan, just more tiles.
+
+If a needed region is not downloaded, planning stops with **Map data needed**
+instead of trying to parse a whole-country extract. Download the missing
+region in Tools, then plan again.
 
 ## How to use
 

@@ -93,11 +93,22 @@ fn describe_status(status: StatusCode) -> String {
 
 /// Build a default client with a high ceiling; per-request timeouts still apply.
 pub fn http_client() -> anyhow::Result<Client> {
-    Ok(Client::builder()
-        .timeout(Duration::from_secs(900))
-        .tcp_keepalive(Duration::from_secs(30))
-        .pool_idle_timeout(Duration::from_secs(90))
-        .build()?)
+    Ok(shared_http_client().clone())
+}
+
+/// Process-wide pooled client (idle connections reused across pack/OSM/DATEX probes).
+pub fn shared_http_client() -> &'static Client {
+    static CLIENT: std::sync::OnceLock<Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        Client::builder()
+            .timeout(Duration::from_secs(900))
+            .connect_timeout(Duration::from_secs(15))
+            .tcp_keepalive(Duration::from_secs(30))
+            .pool_idle_timeout(Duration::from_secs(90))
+            .pool_max_idle_per_host(8)
+            .build()
+            .expect("shared reqwest Client")
+    })
 }
 
 /// Stream `opts.url` to `opts.dest` with retries and durable `.partial` progress.

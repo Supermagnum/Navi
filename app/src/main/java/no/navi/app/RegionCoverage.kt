@@ -151,6 +151,13 @@ object RegionCoverage {
                         add(f)
                     }
                 }
+                // Pack-server installs may have Ready manifests without a large PBF.
+                dataDir.listFiles()?.forEach { f ->
+                    if (f.isFile && f.name.endsWith(".navi-manifest.json")) {
+                        val stem = f.name.removeSuffix(".navi-manifest.json")
+                        add(File(dataDir, "$stem.osm.pbf"))
+                    }
+                }
                 // Same fixture fallback Plan route can use.
                 listOf(
                     File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
@@ -194,8 +201,10 @@ object RegionCoverage {
 
     /**
      * If any waypoint lies outside all downloaded region bboxes, return a
-     * download suggestion. Prefer a country extract when From and To need
-     * different landsdels (single-PBF planner cannot stitch extracts).
+     * download suggestion for the missing landsdel/country that covers that
+     * point. Cross-landsdel trips that are already covered by multiple
+     * installed extracts do not prompt — the corridor tile loader sources
+     * tiles from each Ready pack in one pass.
      */
     fun missingCoverage(
         waypoints: List<Waypoint>,
@@ -215,27 +224,15 @@ object RegionCoverage {
                 .distinct()
         val crossRegion = needed.size > 1
         val first = uncovered.first()
-        val destSuggest = suggestGeofabrikPath(first.lat, first.lon) ?: "europe/norway"
-        val norwayInternal =
-            needed.all { it == "europe/norway" || it.startsWith("europe/norway/") }
-        val suggested =
-            if (crossRegion &&
-                norwayInternal &&
-                downloaded.none { it == "europe/norway" }
-            ) {
-                "europe/norway"
-            } else {
-                destSuggest
-            }
+        // Always suggest the region that covers the uncovered waypoint — never
+        // a country-scale fallback when landsdels are the product unit.
+        val suggested = suggestGeofabrikPath(first.lat, first.lon) ?: "europe/norway"
         val label = displayName(suggested)
         val place = first.name.ifBlank { "${first.lat}, ${first.lon}" }
         val message =
             when {
                 suggested == "europe/sweden" ->
                     "$place is in Sweden, which is not downloaded. Download Sweden to plan this trip."
-                crossRegion && suggested == "europe/norway" ->
-                    "This trip leaves your downloaded map data ($place). " +
-                        "Download $label so the whole corridor is covered."
                 else ->
                     "$place is not in any downloaded area. Download $label to plan here."
             }
@@ -251,8 +248,10 @@ object RegionCoverage {
     }
 
     /**
-     * Pick the best local region PBF for a trip: prefer a single extract that
-     * covers every waypoint; else legacy Ostlandet names / first available.
+     * Pick a local region PBF for the trip. Prefer a single extract that covers
+     * every waypoint; otherwise any extract that covers at least one waypoint
+     * (multi-stem tile load covers the rest). Country extracts are demoted so
+     * landsdel packs are preferred when both exist.
      */
     fun resolvePlanPbf(
         dataDir: File,
@@ -274,18 +273,32 @@ object RegionCoverage {
 
         fun coversAll(path: String): Boolean = waypoints.all { wp -> pointCovered(wp.lat, wp.lon, listOf(path)) }
 
-        val scored =
+        fun coversAny(path: String): Boolean = waypoints.isEmpty() || waypoints.any { wp -> pointCovered(wp.lat, wp.lon, listOf(path)) }
+
+        fun areaRank(
+            f: File,
+            path: String,
+        ): Double =
+            when {
+                path == "europe/norway" -> 1_000_000.0
+                else -> f.length().toDouble()
+            }
+
+        val fullCover =
             candidates.mapNotNull { f ->
                 val path = geofabrikPathForPbfName(f.name) ?: return@mapNotNull null
                 if (!coversAll(path)) return@mapNotNull null
-                val areaRank =
-                    when {
-                        path == "europe/norway" -> 1_000_000.0
-                        else -> f.length().toDouble()
-                    }
-                f to areaRank
+                f to areaRank(f, path)
             }
-        scored.minByOrNull { it.second }?.let { return it.first }
+        fullCover.minByOrNull { it.second }?.let { return it.first }
+
+        val partialCover =
+            candidates.mapNotNull { f ->
+                val path = geofabrikPathForPbfName(f.name) ?: return@mapNotNull null
+                if (!coversAny(path)) return@mapNotNull null
+                f to areaRank(f, path)
+            }
+        partialCover.minByOrNull { it.second }?.let { return it.first }
 
         return listOf(
             "ostlandet-latest.osm.pbf",

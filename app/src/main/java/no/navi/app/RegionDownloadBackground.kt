@@ -15,6 +15,8 @@ import uniffi.navi.downloadProgressSnapshot
 import uniffi.navi.ensurePackRegionPlaceIndex
 import uniffi.navi.geofabrikLatestPbfUrl
 import uniffi.navi.geofabrikPathForPbfName
+import uniffi.navi.pmtilesQueueRegion
+import uniffi.navi.pmtilesRunJob
 import uniffi.navi.provisionRegionData
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -25,9 +27,10 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * When the pack server lists the region as ready, installs published packs,
  * then downloads the real Geofabrik PBF and builds `place_index.db` (same
- * NameIndex path as local convert). Otherwise downloads Geofabrik PBF and
- * builds packs + place index locally. A force-stop still kills the HTTP
- * stream, but [JOB_FILE] plus the sibling `.partial` let the next Geofabrik
+ * NameIndex path as local convert), then range-extracts the Protomaps basemap
+ * for the same Geofabrik path. Otherwise downloads Geofabrik PBF and builds
+ * packs + place index locally, then the basemap. A force-stop still kills the
+ * HTTP stream, but [JOB_FILE] plus the sibling `.partial` let the next Geofabrik
  * launch resume via HTTP Range.
  */
 object RegionDownloadBackground {
@@ -47,11 +50,16 @@ object RegionDownloadBackground {
     private val lastStatus = AtomicReference("")
     private val resuming = AtomicBoolean(false)
 
+    /** Last successful region path (for UI style refresh after `done`). */
+    private val lastCompletedPath = AtomicReference("")
+
     fun isRunning(): Boolean = running.get()
 
     fun isResuming(): Boolean = resuming.get()
 
     fun statusLine(): String = lastStatus.get()
+
+    fun takeLastCompletedPath(): String = lastCompletedPath.getAndSet("")
 
     fun jobFile(dataDir: File): File = File(dataDir, JOB_FILE)
 
@@ -231,7 +239,8 @@ object RegionDownloadBackground {
                             }
                             // Packs are ready; still need a real Geofabrik PBF +
                             // on-device place index (server does not ship either).
-                            // force_rebuild=true covers first install and update.
+                            // force_rebuild=true re-indexes this region only
+                            // (additive across regions in the shared DB).
                             lastStatus.set("Downloading extract + building place index…")
                             Log.i(
                                 TAG,
@@ -260,11 +269,20 @@ object RegionDownloadBackground {
                                 PlaceIndexBackground.ensureStarted(
                                     pbf,
                                     File(dataDir, "place_index.db"),
+                                    pathForDecision,
                                 )
                             }
+                            if (!downloadBasemapPmtiles(context, dataDir, pathForDecision)) {
+                                lastStatus.set("failed: basemap")
+                                return@launch
+                            }
                             clearJob(dataDir)
+                            lastCompletedPath.set(pathForDecision)
                             lastStatus.set("done")
-                            Log.i(TAG, "pack server install + place index finished for $pathForDecision")
+                            Log.i(
+                                TAG,
+                                "pack server install + place index + basemap finished for $pathForDecision",
+                            )
                             return@launch
                         }
                     }
@@ -279,10 +297,8 @@ object RegionDownloadBackground {
                         pbfFilename = filename,
                         elevationTarUrl = null,
                     )
-                lastStatus.set(if (report.contains("PASS")) "done" else "failed")
                 Log.i(TAG, "finished: ${report.take(240)}")
                 if (report.contains("PASS")) {
-                    clearJob(dataDir)
                     if (geofabrikPath.isNotBlank()) {
                         MapHudPrefs.saveGeofabrikPath(context, geofabrikPath)
                         runCatching {
@@ -296,10 +312,26 @@ object RegionDownloadBackground {
                     }
                     val pbf = File(dataDir, filename)
                     if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
-                        PlaceIndexBackground.ensureStarted(pbf, File(dataDir, "place_index.db"))
+                        PlaceIndexBackground.ensureStarted(
+                            pbf,
+                            File(dataDir, "place_index.db"),
+                            geofabrikPath.ifBlank { pathForDecision }.ifBlank { null },
+                        )
                         val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
                         IndexedMapsBackground.ensureStarted(pbf, dataDir, elev)
                     }
+                    val basemapPath = geofabrikPath.ifBlank { pathForDecision }
+                    if (basemapPath.isNotBlank()) {
+                        if (!downloadBasemapPmtiles(context, dataDir, basemapPath)) {
+                            lastStatus.set("failed: basemap")
+                            return@launch
+                        }
+                    }
+                    clearJob(dataDir)
+                    lastCompletedPath.set(basemapPath)
+                    lastStatus.set("done")
+                } else {
+                    lastStatus.set("failed")
                 }
             } catch (t: Throwable) {
                 lastStatus.set("failed: ${t.message}")
@@ -309,5 +341,55 @@ object RegionDownloadBackground {
                 resuming.set(false)
             }
         }
+    }
+
+    /**
+     * Range-extract Protomaps basemap for [geofabrikPath]. Returns false on
+     * queue/run failure. Skips the network extract when the file already exists.
+     */
+    private fun downloadBasemapPmtiles(
+        context: Context,
+        dataDir: File,
+        geofabrikPath: String,
+    ): Boolean {
+        val path = geofabrikPath.trim().trim('/')
+        if (path.isEmpty()) return false
+        if (PackRegionAvailability.localPmtilesReady(dataDir, path)) {
+            val key = PackRegionAvailability.geofabrikPathToRegionKey(path)
+            MapHudPrefs.rememberDownloadedPmtilesRegion(context, key)
+            Log.i(TAG, "basemap already present for $path ($key)")
+            return true
+        }
+        lastStatus.set("Downloading basemap (PMTiles)…")
+        Log.i(TAG, "starting PMTiles extract for $path")
+        val job =
+            runCatching {
+                pmtilesQueueRegion(dataDir.absolutePath, path, null)
+            }.getOrElse { t ->
+                Log.e(TAG, "pmtilesQueueRegion failed", t)
+                return false
+            }
+        if (job.id.isBlank() || job.status.startsWith("failed")) {
+            Log.e(TAG, "pmtiles queue failed: ${job.status}")
+            return false
+        }
+        val done =
+            runCatching {
+                pmtilesRunJob(dataDir.absolutePath, job.id)
+            }.getOrElse { t ->
+                Log.e(TAG, "pmtilesRunJob crashed", t)
+                return false
+            }
+        if (done.status != "completed") {
+            Log.e(TAG, "pmtiles job not completed: ${done.status} path=${done.localPath}")
+            return false
+        }
+        val key =
+            done.regionKey.ifBlank {
+                PackRegionAvailability.geofabrikPathToRegionKey(path)
+            }
+        MapHudPrefs.rememberDownloadedPmtilesRegion(context, key)
+        Log.i(TAG, "basemap ready region_key=$key path=${done.localPath}")
+        return true
     }
 }

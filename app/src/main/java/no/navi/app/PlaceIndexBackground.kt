@@ -17,6 +17,9 @@ import java.util.concurrent.atomic.AtomicReference
  * Place-index rebuild that outlives Compose [LaunchedEffect] cancellation.
  * Indexing a regional PBF takes minutes; tying it to composition cancelled the
  * work before `place_index.db` was created.
+ *
+ * When [regionId] is non-blank, rows are merged under that Geofabrik path so
+ * other regions already in the shared DB stay searchable.
  */
 object PlaceIndexBackground {
     private const val TAG = "PlaceIndexBg"
@@ -52,6 +55,7 @@ object PlaceIndexBackground {
     fun ensureStarted(
         pbf: File,
         indexDb: File,
+        regionId: String? = null,
     ) {
         if (!pbf.isFile) return
         scope.launch {
@@ -62,9 +66,18 @@ object PlaceIndexBackground {
                 }
                 running.set(true)
                 lastStatus.set("building")
-                Log.i(TAG, "start ensurePlaceIndex pbf=${pbf.absolutePath} db=${indexDb.absolutePath}")
+                val rid = regionId?.trim()?.trim('/')?.ifBlank { null }
+                Log.i(
+                    TAG,
+                    "start ensurePlaceIndex pbf=${pbf.absolutePath} db=${indexDb.absolutePath} region=$rid",
+                )
                 try {
-                    val report = ensurePlaceIndex(pbf.absolutePath, indexDb.absolutePath)
+                    val report =
+                        ensurePlaceIndex(
+                            pbf.absolutePath,
+                            indexDb.absolutePath,
+                            rid,
+                        )
                     val bytes = if (indexDb.isFile) indexDb.length() else 0L
                     lastStatus.set(
                         if (report.contains("PASS")) {

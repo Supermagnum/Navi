@@ -3,7 +3,8 @@
 //! Pack installs leave only a tiny stub `.osm.pbf` (graphs come from published
 //! packs). Place search still needs a full extract — same Geofabrik URL and
 //! [`crate::search::NameIndex`] path as the local-convert / `ensure_place_index`
-//! flow. This module does **not** re-bake routing packs.
+//! flow. Indexing is **additive by `region_id`** so downloading region B does
+//! not wipe region A's places. This module does **not** re-bake routing packs.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -113,9 +114,14 @@ pub fn ensure_geofabrik_pbf_for_region(
 }
 
 /// Build or rebuild `place_index.db` from a PBF (same schema as on-device local convert).
+///
+/// When `region_id` is non-empty, only that region's rows are replaced — other
+/// regions in the shared DB are preserved. `force_rebuild` forces a re-index of
+/// this region even if it already has entries; it never deletes the whole DB file.
 pub fn build_place_index_from_pbf(
     pbf_path: &Path,
     index_db: &Path,
+    region_id: &str,
     force_rebuild: bool,
 ) -> Result<(usize, bool, f64), String> {
     if !pbf_path.is_file() {
@@ -124,18 +130,15 @@ pub fn build_place_index_from_pbf(
     if let Some(parent) = index_db.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    if force_rebuild && index_db.is_file() {
-        let _ = fs::remove_file(index_db);
-        // SQLite sidecars
-        let _ = fs::remove_file(PathBuf::from(format!("{}-wal", index_db.display())));
-        let _ = fs::remove_file(PathBuf::from(format!("{}-shm", index_db.display())));
-    }
+    let region_id = region_id.trim().trim_matches('/');
     if !force_rebuild && index_db.is_file() {
         if let Ok(meta) = fs::metadata(index_db) {
-            if meta.len() > 10_000
-                && NameIndex::is_current_schema(index_db)
-                && NameIndex::has_entries(index_db)
-            {
+            let region_ok = if region_id.is_empty() {
+                NameIndex::has_entries(index_db)
+            } else {
+                NameIndex::has_entries_for_region(index_db, region_id)
+            };
+            if meta.len() > 10_000 && NameIndex::is_current_schema(index_db) && region_ok {
                 return Ok((0, true, 0.0));
             }
         }
@@ -144,7 +147,7 @@ pub fn build_place_index_from_pbf(
     crate::download::progress::set(0, Some(6), "Place index: starting…");
     let mut idx = NameIndex::open(index_db).map_err(|e| format!("open index: {e}"))?;
     let n = idx
-        .load_from_pbf(pbf_path)
+        .load_from_pbf_for_region(pbf_path, region_id)
         .map_err(|e| format!("index load: {e:#}"))?;
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
     if n == 0 || !NameIndex::has_entries(index_db) {
@@ -158,7 +161,7 @@ pub fn build_place_index_from_pbf(
 
 /// Pack-server follow-up: real Geofabrik PBF + full place index.
 ///
-/// `force_rebuild` clears an existing `place_index.db` (region update path).
+/// `force_rebuild` re-indexes this region’s rows only (additive across regions).
 pub fn ensure_place_index_after_pack_install(
     data_dir: &Path,
     region_id: &str,
@@ -174,7 +177,7 @@ pub fn ensure_place_index_after_pack_install(
         pbf_path.display()
     );
     let (indexed, cache_hit, index_ms) =
-        build_place_index_from_pbf(&pbf_path, &index_db, force_rebuild)?;
+        build_place_index_from_pbf(&pbf_path, &index_db, &region_id, force_rebuild)?;
     let report = PackPlaceIndexReport {
         region_id,
         pbf_path,
@@ -227,7 +230,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let pbf = dir.join("missing.osm.pbf");
         let db = dir.join(PLACE_INDEX_DB_NAME);
-        let err = build_place_index_from_pbf(&pbf, &db, true).unwrap_err();
+        let err = build_place_index_from_pbf(&pbf, &db, "europe/test", true).unwrap_err();
         assert!(err.contains("PBF missing"), "{err}");
         let _ = fs::remove_dir_all(&dir);
     }
@@ -256,7 +259,7 @@ mod tests {
         );
         drop(opened);
         // Without rows, cache hit must not trigger (falls through to load_from_pbf).
-        let err = build_place_index_from_pbf(&pbf, &db, false);
+        let err = build_place_index_from_pbf(&pbf, &db, "europe/test", false);
         assert!(
             err.is_err(),
             "expected load failure on stub PBF, got {err:?}"

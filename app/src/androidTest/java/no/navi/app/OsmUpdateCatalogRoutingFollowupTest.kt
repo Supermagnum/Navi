@@ -137,7 +137,7 @@ class OsmUpdateCatalogRoutingFollowupTest {
                     62.5747,
                     11.3840,
                     expectPrompt = true,
-                    expectedPath = "europe/norway",
+                    expectedPath = "europe/norway/trondelag",
                 ),
                 RouteCase(
                     "Fagernes",
