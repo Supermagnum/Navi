@@ -1,8 +1,9 @@
 package no.navi.app
 
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -91,8 +92,8 @@ class ToolsDownloadUiInstrumentedTest {
             .assertIsDisplayed()
 
         composeRule
-            .onNodeWithTag("btn_download_pmtiles", useUnmergedTree = true)
-            .assertDoesNotExist()
+            .onAllNodesWithTag("btn_download_pmtiles", useUnmergedTree = true)
+            .assertCountEquals(0)
 
         NaviMapTestHooks.pendingGeofabrikPath = "test/oslo"
         Thread.sleep(800)

@@ -1,0 +1,1 @@
+v0.3.1-alpha: blank offline map fix (DEM vs vector basemap), download-region order packs then place index then basemap, launch-time resume for incomplete phases, Tools process footer with Ready!, and Route menu no longer restarts planning.

@@ -5,9 +5,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import uniffi.navi.FfiPmtilesJob
 import uniffi.navi.pmtilesCancelJob
 import uniffi.navi.pmtilesListCovering
 import uniffi.navi.pmtilesPauseJob
@@ -21,6 +23,144 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class BasemapStyleResolverInstrumentedTest {
+    @Test
+    fun select_vector_ignores_newer_dem_in_covering_list() {
+        // Pure selection regression (no network). DEM listed first mimics
+        // pmtiles_jobs ORDER BY created_at DESC after a DEM extract completes.
+        val dir = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "dem-filter")
+        dir.mkdirs()
+        val vector =
+            File(dir, "europe_norway_ostlandet.pmtiles").also {
+                it.writeBytes(ByteArray(2000) { 1 })
+            }
+        val dem =
+            File(dir, "europe_norway_ostlandet_dem.pmtiles").also {
+                it.writeBytes(ByteArray(2000) { 2 })
+            }
+        val jobs =
+            listOf(
+                FfiPmtilesJob(
+                    id = "dem",
+                    regionKey = "europe_norway_ostlandet_dem",
+                    url = "https://example.invalid",
+                    localPath = dem.absolutePath,
+                    bytesReceived = 1uL,
+                    totalBytes = 1uL,
+                    status = "completed",
+                    paused = false,
+                    minLat = 59.0,
+                    minLon = 10.0,
+                    maxLat = 61.0,
+                    maxLon = 12.0,
+                ),
+                FfiPmtilesJob(
+                    id = "vector",
+                    regionKey = "europe_norway_ostlandet",
+                    url = "https://example.invalid",
+                    localPath = vector.absolutePath,
+                    bytesReceived = 1uL,
+                    totalBytes = 1uL,
+                    status = "completed",
+                    paused = false,
+                    minLat = 59.0,
+                    minLon = 10.0,
+                    maxLat = 61.0,
+                    maxLon = 12.0,
+                ),
+            )
+        val picked = BasemapStyleResolver.selectVectorCoveringJob(jobs)
+        assertEquals("vector", picked?.id)
+        assertFalse(BasemapStyleResolver.isDemArchive(picked!!.regionKey, picked.localPath))
+        assertNull(MapterhornTerrain.localDemBesideBasemap(dem.absolutePath))
+        // Sibling DEM beside a real vector path still resolves for hillshade.
+        assertEquals(
+            dem.absolutePath,
+            MapterhornTerrain.localDemBesideBasemap(vector.absolutePath)?.absolutePath,
+        )
+    }
+
+    @Test
+    fun resolve_uses_vector_when_newer_dem_covers_same_point() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val dataDir = NaviAppData.resolve(context)
+        val pm = File(dataDir, "pmtiles").also { it.mkdirs() }
+        val vector =
+            File(pm, "test_dem_filter_vector.pmtiles").also {
+                it.writeBytes(ByteArray(2048) { 1 })
+            }
+        val dem =
+            File(pm, "test_dem_filter_vector_dem.pmtiles").also {
+                it.writeBytes(ByteArray(2048) { 2 })
+            }
+        // Minimal PMTiles magic so maxzoom reader does not crash prepareOfflineStyle.
+        vector.outputStream().use { out ->
+            out.write("PMTiles".toByteArray())
+            out.write(ByteArray(120))
+            out.write(byteArrayOf(10)) // maxzoom at offset 101
+            out.write(ByteArray(1900))
+        }
+        // Queue via FFI is heavy; exercise selectVectorCoveringJob + localDem path
+        // that resolve() uses after pmtilesListCovering.
+        val covering =
+            listOf(
+                FfiPmtilesJob(
+                    id = "dem-new",
+                    regionKey = "test_dem_filter_vector_dem",
+                    url = "https://example.invalid",
+                    localPath = dem.absolutePath,
+                    bytesReceived = 1uL,
+                    totalBytes = 1uL,
+                    status = "completed",
+                    paused = false,
+                    minLat = 59.8,
+                    minLon = 10.5,
+                    maxLat = 60.0,
+                    maxLon = 11.0,
+                ),
+                FfiPmtilesJob(
+                    id = "vec-old",
+                    regionKey = "test_dem_filter_vector",
+                    url = "https://example.invalid",
+                    localPath = vector.absolutePath,
+                    bytesReceived = 1uL,
+                    totalBytes = 1uL,
+                    status = "completed",
+                    paused = false,
+                    minLat = 59.8,
+                    minLon = 10.5,
+                    maxLat = 60.0,
+                    maxLon = 11.0,
+                ),
+            )
+        val basemap = BasemapStyleResolver.selectVectorCoveringJob(covering)
+        assertEquals("vec-old", basemap?.id)
+        val hillshade = MapterhornTerrain.localDemBesideBasemap(basemap!!.localPath)
+        assertNotNull(hillshade)
+        assertEquals(dem.absolutePath, hillshade!!.absolutePath)
+        val styleUri =
+            BasemapStyleResolver.prepareOfflineStyle(
+                context,
+                basemap.localPath,
+                demFor3d = hillshade,
+            )
+        assertNotNull(styleUri)
+        val text = File(styleUri!!.removePrefix("file://")).readText()
+        assertTrue(
+            "vector basemap must be the protomaps source",
+            text.contains(vector.absolutePath) || text.contains(vector.name),
+        )
+        // Hillshade may reference the DEM via loopback TileJSON; the vector
+        // source URI must still be the non-DEM archive.
+        val pmUrl =
+            org.json
+                .JSONObject(text)
+                .getJSONObject("sources")
+                .getJSONObject("protomaps")
+                .optString("url")
+        assertTrue(pmUrl.contains("test_dem_filter_vector.pmtiles"))
+        assertFalse(pmUrl.contains("_dem.pmtiles"))
+    }
+
     @Test
     fun resolve_falls_back_to_liberty_without_pmtiles() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -116,19 +256,16 @@ class BasemapStyleResolverInstrumentedTest {
             )
         val out = MapterhornTerrain.augmentStyleJson(base)
         val sources = out.getJSONObject("sources")
-        assertTrue(sources.has(MapterhornTerrain.TERRAIN_SOURCE_ID))
         assertTrue(sources.has(MapterhornTerrain.HILLSHADE_SOURCE_ID))
         assertEquals(
             "raster-dem",
             sources.getJSONObject(MapterhornTerrain.HILLSHADE_SOURCE_ID).getString("type"),
         )
         val demSrc = sources.getJSONObject(MapterhornTerrain.HILLSHADE_SOURCE_ID)
-        assertEquals("terrarium", demSrc.getString("encoding"))
         assertEquals(512, demSrc.getInt("tileSize"))
-        assertTrue(demSrc.has("tiles"))
-        assertTrue(
-            demSrc.getJSONArray("tiles").getString(0).contains("mapterhorn.com"),
-        )
+        // Online TileJSON path uses `url` (encoding comes from the TileJSON).
+        assertTrue(demSrc.has("url"))
+        assertTrue(demSrc.getString("url").contains("mapterhorn.com"))
         assertTrue(
             demSrc.getString("attribution").contains("Mapterhorn"),
         )

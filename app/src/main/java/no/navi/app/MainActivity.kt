@@ -725,6 +725,9 @@ private fun NaviMapScreen() {
     var downloadPolling by remember { mutableStateOf(false) }
     var indexedMapsUiLine by remember { mutableStateOf("") }
     var placeIndexUiLine by remember { mutableStateOf("") }
+
+    /** After a tracked Tools process finishes fully, show pinned "Ready!" until the next job. */
+    var toolsProcessReady by remember { mutableStateOf(false) }
     var planningRoute by remember { mutableStateOf(false) }
     var planKick by remember { mutableIntStateOf(0) }
     var routePlanProgress by remember { mutableStateOf("") }
@@ -1903,12 +1906,13 @@ private fun NaviMapScreen() {
                 "Downloading region… 0%"
             }
         downloadPolling = true
+        toolsProcessReady = false
         status =
             when {
                 already > 0L -> "Resuming download of $path…"
                 serverReady ->
-                    "Pack server has $path ($packCatalogDataSource); installing packs + basemap…"
-                else -> "Downloading $path (packs/index + basemap)…"
+                    "Pack server has $path ($packCatalogDataSource); installing packs + place index…"
+                else -> "Downloading $path (packs/index, then basemap)…"
             }
         MapHudPrefs.saveGeofabrikPath(context, path)
         RegionDownloadBackground.ensureStarted(
@@ -1929,6 +1933,7 @@ private fun NaviMapScreen() {
             }
             if (regionRunning) {
                 downloadPolling = true
+                toolsProcessReady = false
             }
             val snap = runCatching { downloadProgressSnapshot() }.getOrNull()
             if (regionRunning && snap != null && snap.label.isNotBlank()) {
@@ -1966,6 +1971,23 @@ private fun NaviMapScreen() {
                     regionDownloadProgress = ""
                 }
             }
+            // Packs + place index usable while basemap may still run.
+            if (regionRunning) {
+                RegionDownloadBackground.takeLastUsablePath().let { path ->
+                    if (path.isNotBlank()) {
+                        packCatalogEpoch += 1
+                        MapHudPrefs.rememberDownloadedPmtilesRegion(
+                            context,
+                            PackRegionAvailability.geofabrikPathToRegionKey(path),
+                        )
+                        offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
+                        if (!planningRoute) {
+                            status =
+                                "Region ready for routing and search — basemap still downloading"
+                        }
+                    }
+                }
+            }
             pmtilesJobId?.let { id ->
                 runCatching { pmtilesGetJob(dataDir.absolutePath, id) }.getOrNull()?.let { job ->
                     val label =
@@ -1997,8 +2019,11 @@ private fun NaviMapScreen() {
                         }
                         offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
                         styleEpoch += 1
+                        pmtilesProgress = ""
+                        // Full pipeline finished (including basemap) — not merely usable.
+                        toolsProcessReady = leftover == "done"
                         if (!planningRoute) {
-                            status = "Ready"
+                            status = if (leftover == "done") "Ready" else leftover.take(120)
                         }
                     } else if (!planningRoute) {
                         status = leftover.take(120)
@@ -2010,11 +2035,23 @@ private fun NaviMapScreen() {
     }
 
     LaunchedEffect(dataDir) {
-        RegionDownloadBackground.ensureStartedFromPending(context, dataDir)
-        if (RegionDownloadBackground.isRunning() || RegionDownloadBackground.discoverPending(dataDir) != null) {
+        // Resume incomplete packs / place-index / basemap from region-download.json
+        // (or synthesize from packs-on-disk when place index / basemap still missing).
+        RegionDownloadBackground.ensureStartedFromPending(
+            context,
+            dataDir,
+            selectedGeofabrikPath,
+        )
+        val pending =
+            RegionDownloadBackground.discoverPending(dataDir)
+                ?: RegionDownloadBackground.discoverIncompleteForPath(
+                    dataDir,
+                    selectedGeofabrikPath,
+                )
+        if (RegionDownloadBackground.isRunning() || pending != null) {
             downloadPolling = true
+            toolsProcessReady = false
             showTools = true
-            val pending = RegionDownloadBackground.discoverPending(dataDir)
             if (pending != null && pending.geofabrikPath.isNotBlank()) {
                 selectedGeofabrikPath = pending.geofabrikPath
             }
@@ -2103,6 +2140,507 @@ private fun NaviMapScreen() {
             }
             delay(250)
         }
+    }
+
+    // Keep outside hideSearch: reopening Route must not re-fire planning
+    // when planKick is already > 0 from an earlier Plan route / Load.
+    LaunchedEffect(planKick) {
+        if (planKick == 0) return@LaunchedEffect
+        val start = fromPoint
+        if (start == null || toPoint.name.isBlank()) {
+            status = "Set From and To first"
+            return@LaunchedEffect
+        }
+        val coverageWaypoints =
+            buildList {
+                add(
+                    RegionCoverage.Waypoint(
+                        "From",
+                        start.name,
+                        start.lat,
+                        start.lon,
+                    ),
+                )
+                viaPoints.forEach { v ->
+                    add(
+                        RegionCoverage.Waypoint(
+                            "Via",
+                            v.name,
+                            v.lat,
+                            v.lon,
+                        ),
+                    )
+                }
+                add(
+                    RegionCoverage.Waypoint(
+                        "To",
+                        toPoint.name,
+                        toPoint.lat,
+                        toPoint.lon,
+                    ),
+                )
+            }
+        val missing =
+            RegionCoverage.missingCoverage(coverageWaypoints, dataDir)
+        if (missing != null) {
+            missingCoveragePrompt = missing
+            NaviMapTestHooks.missingCoveragePromptVisible = true
+            NaviMapTestHooks.lastMissingCoveragePath =
+                missing.suggestedGeofabrikPath
+            NaviMapTestHooks.lastMissingCoverageMessage = missing.message
+            status = missing.message
+            return@LaunchedEffect
+        }
+        val pts =
+            buildList {
+                add(start)
+                addAll(viaPoints)
+                add(toPoint)
+            }
+        // Prefer a single downloaded extract that covers the trip.
+        val pbf =
+            RegionCoverage.resolvePlanPbf(dataDir, coverageWaypoints)
+        val stagedOk =
+            profile == TravelProfile.HIKING &&
+                NaviMapTestHooks.preferStagedHikingRoute &&
+                File("/data/local/tmp/navi_fixtures/skolla_rondvassbu.polyline.txt").isFile
+        if (pbf == null && !stagedOk) {
+            status = "No region PBF — download a region in Tools first"
+            return@LaunchedEffect
+        }
+        val wpsJson =
+            pts.joinToString(",", "[", "]") {
+                """{"name":${org.json.JSONObject.quote(it.name)},"lat":${it.lat},"lon":${it.lon}}"""
+            }
+        val ecoForPlan =
+            if (ecoModeToggleable(profile)) ecoEnabled else true
+        planAbort.set(false)
+        val planStarted = System.currentTimeMillis()
+        RoutingPlanLog.start(
+            profile = profile.name.lowercase(),
+            ecoEnabled = ecoForPlan,
+            legCount = (pts.size - 1).coerceAtLeast(1),
+            waypointNames = pts.map { it.name },
+            startLat = pts.first().lat,
+            startLon = pts.first().lon,
+            endLat = pts.last().lat,
+            endLon = pts.last().lon,
+        )
+        downloadProgressClear()
+        planProgressClear()
+        planningRoute = true
+        routePlanPct = 0
+        routePlanProgress = "Planning route: starting…"
+        status = routePlanProgress
+        val result =
+            try {
+                foregroundPlanEnter()
+                planIndexingHintVisible =
+                    withContext(Dispatchers.IO) {
+                        val planPbf = pbf ?: resolveRegionPbf()
+                        if (planPbf == null || !planPbf.isFile) {
+                            true
+                        } else {
+                            runCatching {
+                                indexedMapsStatus(
+                                    planPbf.absolutePath,
+                                    dataDir.absolutePath,
+                                ).trim()
+                            }.getOrDefault("missing") != "ready"
+                        }
+                    }
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        val stagedPoly =
+                            File(
+                                "/data/local/tmp/navi_fixtures/skolla_rondvassbu.polyline.txt",
+                            )
+                        val stagedBreaks =
+                            File(
+                                "/data/local/tmp/navi_fixtures/skolla_rondvassbu.breaks.json",
+                            )
+                        if (profile == TravelProfile.HIKING &&
+                            NaviMapTestHooks.preferStagedHikingRoute &&
+                            stagedPoly.isFile
+                        ) {
+                            RoutingPlanLog.progress(50, ecoForPlan, detail = "staged")
+                            val poly = stagedPoly.readText().trim()
+                            val breaks =
+                                if (stagedBreaks.isFile) {
+                                    stagedBreaks.readText().trim()
+                                } else {
+                                    "[]"
+                                }
+                            val stagedSamples =
+                                File(
+                                    "/data/local/tmp/navi_fixtures/skolla_rondvassbu.sim_samples.json",
+                                )
+                            val samplesJson =
+                                if (stagedSamples.isFile) {
+                                    stagedSamples.readText().trim()
+                                } else {
+                                    "[]"
+                                }
+                            uniffi.navi.CorridorRouteResult(
+                                report = "TEST_KIND=STAGED_HIKE\nPASS\ndistance_km=112.5\n",
+                                distanceKm = 112.5,
+                                etaMinutes = 112.5 * 16.0,
+                                cacheHit = true,
+                                coldBuildS = 0.0,
+                                warmLoadS = 0.0,
+                                routePolyline = poly,
+                                poiLat = toPoint.lat,
+                                poiLon = toPoint.lon,
+                                poiName = toPoint.name,
+                                poiIconKey = "cabin",
+                                breakPoisJson = breaks,
+                                daysJson = "[]",
+                                simSamplesJson = samplesJson,
+                                maneuversJson = "[]",
+                                priorityPathSharePct = 0.0,
+                                routeSegmentsJson = "[]",
+                                offTrailAdvisory = "",
+                                tollPolicy = "allow",
+                                padAttemptsJson = "[]",
+                                searchExpansions = 0u,
+                                searchTerminateReason = "fail",
+                                tollAvoidanceIncomplete = false,
+                                routeUsesTolls = false,
+                            )
+                        } else {
+                            when (profile) {
+                                TravelProfile.HIKING -> {
+                                    if (planAbort.get()) {
+                                        return@runCatching cancelledCorridorResult()
+                                    }
+                                    RoutingPlanLog.progress(
+                                        10,
+                                        ecoForPlan,
+                                        detail = "hiking_graph",
+                                    )
+                                    val hike =
+                                        uniffi.navi.planHikingRoute(
+                                            pbf!!.absolutePath,
+                                            File(dataDir, "elevation").absolutePath,
+                                            File(dataDir, "graph-cache-foot").absolutePath,
+                                            wpsJson,
+                                            preferOfficialNetworks,
+                                            preferPilgrimRoutes,
+                                            dataDir.absolutePath,
+                                        )
+                                    RoutingPlanLog.progress(
+                                        90,
+                                        ecoForPlan,
+                                        detail = "hiking_path",
+                                    )
+                                    hike
+                                }
+                                else -> {
+                                    // Multi-leg motor/bike: bbox-clipped graph per profile.
+                                    var poly = ""
+                                    var dist = 0.0
+                                    var etaSum = 0.0
+                                    var shareWeighted = 0.0
+                                    var last: uniffi.navi.CorridorRouteResult? = null
+                                    val legSamples = mutableListOf<List<RouteSimSample>>()
+                                    val legManeuvers = mutableListOf<List<RouteManeuver>>()
+                                    val vehicleAvoidanceLines = linkedSetOf<String>()
+                                    val legTotal = pts.size - 1
+                                    val graphTag =
+                                        when (profile) {
+                                            TravelProfile.BICYCLE,
+                                            TravelProfile.BICYCLE_ELECTRIC,
+                                            -> "bicycle"
+                                            TravelProfile.TRUCK,
+                                            TravelProfile.TRUCK_ELECTRIC,
+                                            TravelProfile.MOBILE_HOME,
+                                            -> "truck"
+                                            else -> "car"
+                                        }
+                                    val cacheDir =
+                                        File(
+                                            dataDir,
+                                            "graph-cache-${pbf!!.nameWithoutExtension}-$graphTag",
+                                        )
+                                    for (i in 0 until legTotal) {
+                                        if (planAbort.get()) {
+                                            return@runCatching last
+                                                ?: cancelledCorridorResult()
+                                        }
+                                        val a = pts[i]
+                                        val b = pts[i + 1]
+                                        val pct = ((i * 100) / legTotal).coerceIn(0, 99)
+                                        RoutingPlanLog.progress(
+                                            pct,
+                                            ecoForPlan,
+                                            detail = "leg_${i + 1}_of_$legTotal",
+                                        )
+                                        val legRes =
+                                            uniffi.navi.planCarRoute(
+                                                pbf.absolutePath,
+                                                File(dataDir, "elevation").absolutePath,
+                                                cacheDir.absolutePath,
+                                                a.lat,
+                                                a.lon,
+                                                b.lat,
+                                                b.lon,
+                                                ecoForPlan,
+                                                profile,
+                                                avoidMotorways,
+                                                if (avoidTolls) {
+                                                    uniffi.navi.FfiTollPolicy.PENALIZE
+                                                } else {
+                                                    uniffi.navi.FfiTollPolicy.ALLOW
+                                                },
+                                                avoidFerries,
+                                                loadVehicleLimits(dataDir.absolutePath),
+                                                preferOfficialNetworks,
+                                                dataDir.absolutePath,
+                                            )
+                                        if (!legRes.report.contains("PASS")) {
+                                            return@runCatching legRes
+                                        }
+                                        legRes.report.lineSequence().forEach { line ->
+                                            if (line.contains(
+                                                    "weight/height/width/length-restricted",
+                                                    ignoreCase = true,
+                                                )
+                                            ) {
+                                                vehicleAvoidanceLines += line.trim()
+                                            }
+                                        }
+                                        dist += legRes.distanceKm
+                                        etaSum += legRes.etaMinutes
+                                        shareWeighted += legRes.priorityPathSharePct * legRes.distanceKm
+                                        poly =
+                                            if (poly.isEmpty()) {
+                                                legRes.routePolyline
+                                            } else {
+                                                poly + ";" +
+                                                    legRes.routePolyline
+                                                        .substringAfter(';')
+                                            }
+                                        legSamples.add(parseRouteSimSamples(legRes.simSamplesJson))
+                                        legManeuvers.add(parseRouteManeuvers(legRes.maneuversJson))
+                                        last = legRes
+                                    }
+                                    val base = last!!
+                                    val mergedSamples = mergeSimSamples(legSamples)
+                                    val mergedManeuvers = mergeManeuvers(legManeuvers)
+                                    val mergedShare =
+                                        if (dist > 0.0) {
+                                            shareWeighted / dist
+                                        } else {
+                                            base.priorityPathSharePct
+                                        }
+                                    val mergedReport =
+                                        buildString {
+                                            append(base.report)
+                                            if (!base.report.endsWith("\n") &&
+                                                vehicleAvoidanceLines.isNotEmpty()
+                                            ) {
+                                                append('\n')
+                                            }
+                                            vehicleAvoidanceLines.forEach { appendLine(it) }
+                                        }
+                                    uniffi.navi.CorridorRouteResult(
+                                        report = mergedReport,
+                                        distanceKm = dist,
+                                        etaMinutes = etaSum,
+                                        cacheHit = base.cacheHit,
+                                        coldBuildS = base.coldBuildS,
+                                        warmLoadS = base.warmLoadS,
+                                        routePolyline = poly,
+                                        poiLat = toPoint.lat,
+                                        poiLon = toPoint.lon,
+                                        poiName = toPoint.name,
+                                        poiIconKey = base.poiIconKey,
+                                        breakPoisJson = base.breakPoisJson,
+                                        daysJson = base.daysJson,
+                                        simSamplesJson =
+                                            org.json
+                                                .JSONArray(
+                                                    mergedSamples.map { s ->
+                                                        org.json
+                                                            .JSONObject()
+                                                            .put("lat", s.lat)
+                                                            .put("lon", s.lon)
+                                                            .put("cum_m", s.cumM)
+                                                            .put("speed_kmh", s.speedKmh)
+                                                            .put("highway", s.highway)
+                                                            .put("maxspeed_posted", s.maxspeedPosted)
+                                                    },
+                                                ).toString(),
+                                        maneuversJson =
+                                            org.json
+                                                .JSONArray(
+                                                    mergedManeuvers.map { m ->
+                                                        org.json
+                                                            .JSONObject()
+                                                            .put("lat", m.lat)
+                                                            .put("lon", m.lon)
+                                                            .put("cum_m", m.cumM)
+                                                            .put("kind", m.kind)
+                                                            .put("street", m.street)
+                                                            .put("roundabout_exit", m.roundaboutExit)
+                                                            .also { jo ->
+                                                                if (m.icon != null) {
+                                                                    jo.put("icon", m.icon)
+                                                                }
+                                                            }
+                                                    },
+                                                ).toString(),
+                                        priorityPathSharePct = mergedShare,
+                                        routeSegmentsJson = "[]",
+                                        offTrailAdvisory = "",
+                                        tollPolicy = "allow",
+                                        padAttemptsJson = "[]",
+                                        searchExpansions = 0u,
+                                        searchTerminateReason = "fail",
+                                        tollAvoidanceIncomplete = false,
+                                        routeUsesTolls = false,
+                                    )
+                                }
+                            }
+                        }
+                    }.getOrElse { e ->
+                        if (e is CancellationException) throw e
+                        android.util.Log.e("NaviRoute", "plan failed", e)
+                        uniffi.navi.CorridorRouteResult(
+                            report = "FAIL: ${e.message ?: e.javaClass.simpleName}\n",
+                            distanceKm = 0.0,
+                            etaMinutes = 0.0,
+                            cacheHit = false,
+                            coldBuildS = 0.0,
+                            warmLoadS = 0.0,
+                            routePolyline = "",
+                            poiLat = 0.0,
+                            poiLon = 0.0,
+                            poiName = "",
+                            poiIconKey = "",
+                            breakPoisJson = "[]",
+                            daysJson = "[]",
+                            simSamplesJson = "[]",
+                            maneuversJson = "[]",
+                            priorityPathSharePct = 0.0,
+                            routeSegmentsJson = "[]",
+                            offTrailAdvisory = "",
+                            tollPolicy = "allow",
+                            padAttemptsJson = "[]",
+                            searchExpansions = 0u,
+                            searchTerminateReason = "fail",
+                            tollAvoidanceIncomplete = false,
+                            routeUsesTolls = false,
+                        )
+                    }
+                }
+            } catch (e: CancellationException) {
+                RoutingPlanLog.cancelled(
+                    ecoForPlan,
+                    System.currentTimeMillis() - planStarted,
+                    reason = "cancelled",
+                    report = "",
+                )
+                if (status != "Planning cancelled") {
+                    status = "Planning cancelled"
+                }
+                throw e
+            } finally {
+                planningRoute = false
+                routePlanPct = -1
+                routePlanProgress = ""
+                planIndexingHintVisible = false
+                planProgressClear()
+                foregroundPlanLeave()
+                downloadProgressClear()
+            }
+        val durationMs = System.currentTimeMillis() - planStarted
+        if (planAbort.get() || planReportIsCancelled(result.report)) {
+            NaviMapTestHooks.lastPlanReport = result.report
+            NaviMapTestHooks.lastRoutePolylineChars = 0
+            NaviMapTestHooks.lastRoutePolyline = ""
+            pendingGpxExportRouteId = null
+            RoutingPlanLog.cancelled(
+                ecoForPlan,
+                durationMs,
+                reason = "cancelled",
+                report = result.report,
+            )
+            if (status != "Planning cancelled") {
+                status = "Planning cancelled"
+            }
+            return@LaunchedEffect
+        }
+        if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
+            NaviMapTestHooks.lastPlanReport = result.report
+            NaviMapTestHooks.lastRoutePolylineChars = 0
+            NaviMapTestHooks.lastRoutePolyline = ""
+            if (pendingGpxExportRouteId != null) {
+                pendingGpxExportRouteId = null
+                status =
+                    "GPX export failed: " +
+                    userFacingStatus(result.report).ifBlank { "Routing failed" }
+            } else {
+                status =
+                    userFacingStatus(result.report).ifBlank { "Routing failed" }
+            }
+            RoutingPlanLog.failed(
+                ecoForPlan,
+                durationMs,
+                userFacingStatus(result.report).ifBlank { "Routing failed" },
+                result,
+            )
+            return@LaunchedEffect
+        }
+        RoutingPlanLog.complete(result, ecoForPlan, durationMs)
+        NaviMapTestHooks.routeStartLabel = start.name
+        NaviMapTestHooks.routeEndLabel = toPoint.name
+        NaviMapTestHooks.routeViaLabel =
+            viaPoints.joinToString(", ") { it.name }
+        // Apply on this composition immediately. Do not only stash
+        // into pendingRoute — a non-resumed sibling activity can
+        // consume the hook and the visible map stays empty.
+        applyPlannedRoute(result)
+        prioritySharePct = result.priorityPathSharePct
+        val planStatus =
+            formatEbikePlanStatus(
+                result.report,
+                result.distanceKm,
+                driveHud.unitSystem,
+            )
+                ?: (
+                    formatRouteAvoidanceReport(
+                        avoidMotorways,
+                        if (avoidTolls) {
+                            uniffi.navi.FfiTollPolicy.PENALIZE
+                        } else {
+                            uniffi.navi.FfiTollPolicy.ALLOW
+                        },
+                        avoidFerries,
+                        prioritySharePct,
+                    ) + "\n" +
+                        DisplayUnits.formatRoutePlanned(
+                            result.distanceKm,
+                            driveHud.unitSystem,
+                        )
+                )
+        status =
+            withIndexedPackMissHint(
+                run {
+                    val base =
+                        if (result.offTrailAdvisory.isNotBlank()) {
+                            "$planStatus · Off-trail: use judgment (terrain advisory)"
+                        } else {
+                            planStatus
+                        }
+                    if (result.tollAvoidanceIncomplete) {
+                        "$base · could not fully avoid tolls"
+                    } else {
+                        base
+                    }
+                },
+                result.report,
+            )
     }
 
     LaunchedEffect(Unit) {
@@ -4022,504 +4560,6 @@ private fun NaviMapScreen() {
                                     modifier = Modifier.testTag("btn_clear_vias"),
                                 ) { Text("Clear vias (${viaPoints.size})") }
                             }
-                            LaunchedEffect(planKick) {
-                                if (planKick == 0) return@LaunchedEffect
-                                val start = fromPoint
-                                if (start == null || toPoint.name.isBlank()) {
-                                    status = "Set From and To first"
-                                    return@LaunchedEffect
-                                }
-                                val coverageWaypoints =
-                                    buildList {
-                                        add(
-                                            RegionCoverage.Waypoint(
-                                                "From",
-                                                start.name,
-                                                start.lat,
-                                                start.lon,
-                                            ),
-                                        )
-                                        viaPoints.forEach { v ->
-                                            add(
-                                                RegionCoverage.Waypoint(
-                                                    "Via",
-                                                    v.name,
-                                                    v.lat,
-                                                    v.lon,
-                                                ),
-                                            )
-                                        }
-                                        add(
-                                            RegionCoverage.Waypoint(
-                                                "To",
-                                                toPoint.name,
-                                                toPoint.lat,
-                                                toPoint.lon,
-                                            ),
-                                        )
-                                    }
-                                val missing =
-                                    RegionCoverage.missingCoverage(coverageWaypoints, dataDir)
-                                if (missing != null) {
-                                    missingCoveragePrompt = missing
-                                    NaviMapTestHooks.missingCoveragePromptVisible = true
-                                    NaviMapTestHooks.lastMissingCoveragePath =
-                                        missing.suggestedGeofabrikPath
-                                    NaviMapTestHooks.lastMissingCoverageMessage = missing.message
-                                    status = missing.message
-                                    return@LaunchedEffect
-                                }
-                                val pts =
-                                    buildList {
-                                        add(start)
-                                        addAll(viaPoints)
-                                        add(toPoint)
-                                    }
-                                // Prefer a single downloaded extract that covers the trip.
-                                val pbf =
-                                    RegionCoverage.resolvePlanPbf(dataDir, coverageWaypoints)
-                                val stagedOk =
-                                    profile == TravelProfile.HIKING &&
-                                        NaviMapTestHooks.preferStagedHikingRoute &&
-                                        File("/data/local/tmp/navi_fixtures/skolla_rondvassbu.polyline.txt").isFile
-                                if (pbf == null && !stagedOk) {
-                                    status = "No region PBF — download a region in Tools first"
-                                    return@LaunchedEffect
-                                }
-                                val wpsJson =
-                                    pts.joinToString(",", "[", "]") {
-                                        """{"name":${org.json.JSONObject.quote(it.name)},"lat":${it.lat},"lon":${it.lon}}"""
-                                    }
-                                val ecoForPlan =
-                                    if (ecoModeToggleable(profile)) ecoEnabled else true
-                                planAbort.set(false)
-                                val planStarted = System.currentTimeMillis()
-                                RoutingPlanLog.start(
-                                    profile = profile.name.lowercase(),
-                                    ecoEnabled = ecoForPlan,
-                                    legCount = (pts.size - 1).coerceAtLeast(1),
-                                    waypointNames = pts.map { it.name },
-                                    startLat = pts.first().lat,
-                                    startLon = pts.first().lon,
-                                    endLat = pts.last().lat,
-                                    endLon = pts.last().lon,
-                                )
-                                downloadProgressClear()
-                                planProgressClear()
-                                planningRoute = true
-                                routePlanPct = 0
-                                routePlanProgress = "Planning route: starting…"
-                                status = routePlanProgress
-                                val result =
-                                    try {
-                                        foregroundPlanEnter()
-                                        planIndexingHintVisible =
-                                            withContext(Dispatchers.IO) {
-                                                val planPbf = pbf ?: resolveRegionPbf()
-                                                if (planPbf == null || !planPbf.isFile) {
-                                                    true
-                                                } else {
-                                                    runCatching {
-                                                        indexedMapsStatus(
-                                                            planPbf.absolutePath,
-                                                            dataDir.absolutePath,
-                                                        ).trim()
-                                                    }.getOrDefault("missing") != "ready"
-                                                }
-                                            }
-                                        withContext(Dispatchers.IO) {
-                                            runCatching {
-                                                val stagedPoly =
-                                                    File(
-                                                        "/data/local/tmp/navi_fixtures/skolla_rondvassbu.polyline.txt",
-                                                    )
-                                                val stagedBreaks =
-                                                    File(
-                                                        "/data/local/tmp/navi_fixtures/skolla_rondvassbu.breaks.json",
-                                                    )
-                                                if (profile == TravelProfile.HIKING &&
-                                                    NaviMapTestHooks.preferStagedHikingRoute &&
-                                                    stagedPoly.isFile
-                                                ) {
-                                                    RoutingPlanLog.progress(50, ecoForPlan, detail = "staged")
-                                                    val poly = stagedPoly.readText().trim()
-                                                    val breaks =
-                                                        if (stagedBreaks.isFile) {
-                                                            stagedBreaks.readText().trim()
-                                                        } else {
-                                                            "[]"
-                                                        }
-                                                    val stagedSamples =
-                                                        File(
-                                                            "/data/local/tmp/navi_fixtures/skolla_rondvassbu.sim_samples.json",
-                                                        )
-                                                    val samplesJson =
-                                                        if (stagedSamples.isFile) {
-                                                            stagedSamples.readText().trim()
-                                                        } else {
-                                                            "[]"
-                                                        }
-                                                    uniffi.navi.CorridorRouteResult(
-                                                        report = "TEST_KIND=STAGED_HIKE\nPASS\ndistance_km=112.5\n",
-                                                        distanceKm = 112.5,
-                                                        etaMinutes = 112.5 * 16.0,
-                                                        cacheHit = true,
-                                                        coldBuildS = 0.0,
-                                                        warmLoadS = 0.0,
-                                                        routePolyline = poly,
-                                                        poiLat = toPoint.lat,
-                                                        poiLon = toPoint.lon,
-                                                        poiName = toPoint.name,
-                                                        poiIconKey = "cabin",
-                                                        breakPoisJson = breaks,
-                                                        daysJson = "[]",
-                                                        simSamplesJson = samplesJson,
-                                                        maneuversJson = "[]",
-                                                        priorityPathSharePct = 0.0,
-                                                        routeSegmentsJson = "[]",
-                                                        offTrailAdvisory = "",
-                                                        tollPolicy = "allow",
-                                                        padAttemptsJson = "[]",
-                                                        searchExpansions = 0u,
-                                                        searchTerminateReason = "fail",
-                                                        tollAvoidanceIncomplete = false,
-                                                        routeUsesTolls = false,
-                                                    )
-                                                } else {
-                                                    when (profile) {
-                                                        TravelProfile.HIKING -> {
-                                                            if (planAbort.get()) {
-                                                                return@runCatching cancelledCorridorResult()
-                                                            }
-                                                            RoutingPlanLog.progress(
-                                                                10,
-                                                                ecoForPlan,
-                                                                detail = "hiking_graph",
-                                                            )
-                                                            val hike =
-                                                                uniffi.navi.planHikingRoute(
-                                                                    pbf!!.absolutePath,
-                                                                    File(dataDir, "elevation").absolutePath,
-                                                                    File(dataDir, "graph-cache-foot").absolutePath,
-                                                                    wpsJson,
-                                                                    preferOfficialNetworks,
-                                                                    preferPilgrimRoutes,
-                                                                    dataDir.absolutePath,
-                                                                )
-                                                            RoutingPlanLog.progress(
-                                                                90,
-                                                                ecoForPlan,
-                                                                detail = "hiking_path",
-                                                            )
-                                                            hike
-                                                        }
-                                                        else -> {
-                                                            // Multi-leg motor/bike: bbox-clipped graph per profile.
-                                                            var poly = ""
-                                                            var dist = 0.0
-                                                            var etaSum = 0.0
-                                                            var shareWeighted = 0.0
-                                                            var last: uniffi.navi.CorridorRouteResult? = null
-                                                            val legSamples = mutableListOf<List<RouteSimSample>>()
-                                                            val legManeuvers = mutableListOf<List<RouteManeuver>>()
-                                                            val vehicleAvoidanceLines = linkedSetOf<String>()
-                                                            val legTotal = pts.size - 1
-                                                            val graphTag =
-                                                                when (profile) {
-                                                                    TravelProfile.BICYCLE,
-                                                                    TravelProfile.BICYCLE_ELECTRIC,
-                                                                    -> "bicycle"
-                                                                    TravelProfile.TRUCK,
-                                                                    TravelProfile.TRUCK_ELECTRIC,
-                                                                    TravelProfile.MOBILE_HOME,
-                                                                    -> "truck"
-                                                                    else -> "car"
-                                                                }
-                                                            val cacheDir =
-                                                                File(
-                                                                    dataDir,
-                                                                    "graph-cache-${pbf!!.nameWithoutExtension}-$graphTag",
-                                                                )
-                                                            for (i in 0 until legTotal) {
-                                                                if (planAbort.get()) {
-                                                                    return@runCatching last
-                                                                        ?: cancelledCorridorResult()
-                                                                }
-                                                                val a = pts[i]
-                                                                val b = pts[i + 1]
-                                                                val pct = ((i * 100) / legTotal).coerceIn(0, 99)
-                                                                RoutingPlanLog.progress(
-                                                                    pct,
-                                                                    ecoForPlan,
-                                                                    detail = "leg_${i + 1}_of_$legTotal",
-                                                                )
-                                                                val legRes =
-                                                                    uniffi.navi.planCarRoute(
-                                                                        pbf.absolutePath,
-                                                                        File(dataDir, "elevation").absolutePath,
-                                                                        cacheDir.absolutePath,
-                                                                        a.lat,
-                                                                        a.lon,
-                                                                        b.lat,
-                                                                        b.lon,
-                                                                        ecoForPlan,
-                                                                        profile,
-                                                                        avoidMotorways,
-                                                                        if (avoidTolls) {
-                                                                            uniffi.navi.FfiTollPolicy.PENALIZE
-                                                                        } else {
-                                                                            uniffi.navi.FfiTollPolicy.ALLOW
-                                                                        },
-                                                                        avoidFerries,
-                                                                        loadVehicleLimits(dataDir.absolutePath),
-                                                                        preferOfficialNetworks,
-                                                                        dataDir.absolutePath,
-                                                                    )
-                                                                if (!legRes.report.contains("PASS")) {
-                                                                    return@runCatching legRes
-                                                                }
-                                                                legRes.report.lineSequence().forEach { line ->
-                                                                    if (line.contains(
-                                                                            "weight/height/width/length-restricted",
-                                                                            ignoreCase = true,
-                                                                        )
-                                                                    ) {
-                                                                        vehicleAvoidanceLines += line.trim()
-                                                                    }
-                                                                }
-                                                                dist += legRes.distanceKm
-                                                                etaSum += legRes.etaMinutes
-                                                                shareWeighted += legRes.priorityPathSharePct * legRes.distanceKm
-                                                                poly =
-                                                                    if (poly.isEmpty()) {
-                                                                        legRes.routePolyline
-                                                                    } else {
-                                                                        poly + ";" +
-                                                                            legRes.routePolyline
-                                                                                .substringAfter(';')
-                                                                    }
-                                                                legSamples.add(parseRouteSimSamples(legRes.simSamplesJson))
-                                                                legManeuvers.add(parseRouteManeuvers(legRes.maneuversJson))
-                                                                last = legRes
-                                                            }
-                                                            val base = last!!
-                                                            val mergedSamples = mergeSimSamples(legSamples)
-                                                            val mergedManeuvers = mergeManeuvers(legManeuvers)
-                                                            val mergedShare =
-                                                                if (dist > 0.0) {
-                                                                    shareWeighted / dist
-                                                                } else {
-                                                                    base.priorityPathSharePct
-                                                                }
-                                                            val mergedReport =
-                                                                buildString {
-                                                                    append(base.report)
-                                                                    if (!base.report.endsWith("\n") &&
-                                                                        vehicleAvoidanceLines.isNotEmpty()
-                                                                    ) {
-                                                                        append('\n')
-                                                                    }
-                                                                    vehicleAvoidanceLines.forEach { appendLine(it) }
-                                                                }
-                                                            uniffi.navi.CorridorRouteResult(
-                                                                report = mergedReport,
-                                                                distanceKm = dist,
-                                                                etaMinutes = etaSum,
-                                                                cacheHit = base.cacheHit,
-                                                                coldBuildS = base.coldBuildS,
-                                                                warmLoadS = base.warmLoadS,
-                                                                routePolyline = poly,
-                                                                poiLat = toPoint.lat,
-                                                                poiLon = toPoint.lon,
-                                                                poiName = toPoint.name,
-                                                                poiIconKey = base.poiIconKey,
-                                                                breakPoisJson = base.breakPoisJson,
-                                                                daysJson = base.daysJson,
-                                                                simSamplesJson =
-                                                                    org.json
-                                                                        .JSONArray(
-                                                                            mergedSamples.map { s ->
-                                                                                org.json
-                                                                                    .JSONObject()
-                                                                                    .put("lat", s.lat)
-                                                                                    .put("lon", s.lon)
-                                                                                    .put("cum_m", s.cumM)
-                                                                                    .put("speed_kmh", s.speedKmh)
-                                                                                    .put("highway", s.highway)
-                                                                                    .put("maxspeed_posted", s.maxspeedPosted)
-                                                                            },
-                                                                        ).toString(),
-                                                                maneuversJson =
-                                                                    org.json
-                                                                        .JSONArray(
-                                                                            mergedManeuvers.map { m ->
-                                                                                org.json
-                                                                                    .JSONObject()
-                                                                                    .put("lat", m.lat)
-                                                                                    .put("lon", m.lon)
-                                                                                    .put("cum_m", m.cumM)
-                                                                                    .put("kind", m.kind)
-                                                                                    .put("street", m.street)
-                                                                                    .put("roundabout_exit", m.roundaboutExit)
-                                                                                    .also { jo ->
-                                                                                        if (m.icon != null) {
-                                                                                            jo.put("icon", m.icon)
-                                                                                        }
-                                                                                    }
-                                                                            },
-                                                                        ).toString(),
-                                                                priorityPathSharePct = mergedShare,
-                                                                routeSegmentsJson = "[]",
-                                                                offTrailAdvisory = "",
-                                                                tollPolicy = "allow",
-                                                                padAttemptsJson = "[]",
-                                                                searchExpansions = 0u,
-                                                                searchTerminateReason = "fail",
-                                                                tollAvoidanceIncomplete = false,
-                                                                routeUsesTolls = false,
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }.getOrElse { e ->
-                                                if (e is CancellationException) throw e
-                                                android.util.Log.e("NaviRoute", "plan failed", e)
-                                                uniffi.navi.CorridorRouteResult(
-                                                    report = "FAIL: ${e.message ?: e.javaClass.simpleName}\n",
-                                                    distanceKm = 0.0,
-                                                    etaMinutes = 0.0,
-                                                    cacheHit = false,
-                                                    coldBuildS = 0.0,
-                                                    warmLoadS = 0.0,
-                                                    routePolyline = "",
-                                                    poiLat = 0.0,
-                                                    poiLon = 0.0,
-                                                    poiName = "",
-                                                    poiIconKey = "",
-                                                    breakPoisJson = "[]",
-                                                    daysJson = "[]",
-                                                    simSamplesJson = "[]",
-                                                    maneuversJson = "[]",
-                                                    priorityPathSharePct = 0.0,
-                                                    routeSegmentsJson = "[]",
-                                                    offTrailAdvisory = "",
-                                                    tollPolicy = "allow",
-                                                    padAttemptsJson = "[]",
-                                                    searchExpansions = 0u,
-                                                    searchTerminateReason = "fail",
-                                                    tollAvoidanceIncomplete = false,
-                                                    routeUsesTolls = false,
-                                                )
-                                            }
-                                        }
-                                    } catch (e: CancellationException) {
-                                        RoutingPlanLog.cancelled(
-                                            ecoForPlan,
-                                            System.currentTimeMillis() - planStarted,
-                                            reason = "cancelled",
-                                            report = "",
-                                        )
-                                        if (status != "Planning cancelled") {
-                                            status = "Planning cancelled"
-                                        }
-                                        throw e
-                                    } finally {
-                                        planningRoute = false
-                                        routePlanPct = -1
-                                        routePlanProgress = ""
-                                        planIndexingHintVisible = false
-                                        planProgressClear()
-                                        foregroundPlanLeave()
-                                        downloadProgressClear()
-                                    }
-                                val durationMs = System.currentTimeMillis() - planStarted
-                                if (planAbort.get() || planReportIsCancelled(result.report)) {
-                                    NaviMapTestHooks.lastPlanReport = result.report
-                                    NaviMapTestHooks.lastRoutePolylineChars = 0
-                                    NaviMapTestHooks.lastRoutePolyline = ""
-                                    pendingGpxExportRouteId = null
-                                    RoutingPlanLog.cancelled(
-                                        ecoForPlan,
-                                        durationMs,
-                                        reason = "cancelled",
-                                        report = result.report,
-                                    )
-                                    if (status != "Planning cancelled") {
-                                        status = "Planning cancelled"
-                                    }
-                                    return@LaunchedEffect
-                                }
-                                if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
-                                    NaviMapTestHooks.lastPlanReport = result.report
-                                    NaviMapTestHooks.lastRoutePolylineChars = 0
-                                    NaviMapTestHooks.lastRoutePolyline = ""
-                                    if (pendingGpxExportRouteId != null) {
-                                        pendingGpxExportRouteId = null
-                                        status =
-                                            "GPX export failed: " +
-                                            userFacingStatus(result.report).ifBlank { "Routing failed" }
-                                    } else {
-                                        status =
-                                            userFacingStatus(result.report).ifBlank { "Routing failed" }
-                                    }
-                                    RoutingPlanLog.failed(
-                                        ecoForPlan,
-                                        durationMs,
-                                        userFacingStatus(result.report).ifBlank { "Routing failed" },
-                                        result,
-                                    )
-                                    return@LaunchedEffect
-                                }
-                                RoutingPlanLog.complete(result, ecoForPlan, durationMs)
-                                NaviMapTestHooks.routeStartLabel = start.name
-                                NaviMapTestHooks.routeEndLabel = toPoint.name
-                                NaviMapTestHooks.routeViaLabel =
-                                    viaPoints.joinToString(", ") { it.name }
-                                // Apply on this composition immediately. Do not only stash
-                                // into pendingRoute — a non-resumed sibling activity can
-                                // consume the hook and the visible map stays empty.
-                                applyPlannedRoute(result)
-                                prioritySharePct = result.priorityPathSharePct
-                                val planStatus =
-                                    formatEbikePlanStatus(
-                                        result.report,
-                                        result.distanceKm,
-                                        driveHud.unitSystem,
-                                    )
-                                        ?: (
-                                            formatRouteAvoidanceReport(
-                                                avoidMotorways,
-                                                if (avoidTolls) {
-                                                    uniffi.navi.FfiTollPolicy.PENALIZE
-                                                } else {
-                                                    uniffi.navi.FfiTollPolicy.ALLOW
-                                                },
-                                                avoidFerries,
-                                                prioritySharePct,
-                                            ) + "\n" +
-                                                DisplayUnits.formatRoutePlanned(
-                                                    result.distanceKm,
-                                                    driveHud.unitSystem,
-                                                )
-                                        )
-                                status =
-                                    withIndexedPackMissHint(
-                                        run {
-                                            val base =
-                                                if (result.offTrailAdvisory.isNotBlank()) {
-                                                    "$planStatus · Off-trail: use judgment (terrain advisory)"
-                                                } else {
-                                                    planStatus
-                                                }
-                                            if (result.tollAvoidanceIncomplete) {
-                                                "$base · could not fully avoid tolls"
-                                            } else {
-                                                base
-                                            }
-                                        },
-                                        result.report,
-                                    )
-                            }
                             Button(
                                 onClick = { planKick += 1 },
                                 enabled = !planningRoute,
@@ -5649,706 +5689,731 @@ private fun NaviMapScreen() {
                         .zIndex(2f)
                         .testTag("tools_menu"),
             ) {
+                val toolsScroll = rememberScrollState()
                 Column(
                     modifier =
                         Modifier
-                            .padding(12.dp)
-                            .verticalScroll(rememberScrollState()),
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                            .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    PluginSettingsSection(
-                        weatherPluginEnabled = weatherPluginEnabled,
-                        onWeatherPluginChange = { on ->
-                            weatherPluginEnabled = on
-                            MapHudPrefs.saveWeatherPluginEnabled(context, on)
-                            DiagnosticLog.logToggle("weather_plugin", on)
-                            if (!on) {
-                                weatherHud = WeatherHudState()
-                                weatherMapSymbolsEnabled = false
-                                MapHudPrefs.saveWeatherMapSymbolsEnabled(context, false)
+                    Column(
+                        modifier =
+                            Modifier
+                                .weight(1f, fill = false)
+                                .verticalScroll(toolsScroll),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        PluginSettingsSection(
+                            weatherPluginEnabled = weatherPluginEnabled,
+                            onWeatherPluginChange = { on ->
+                                weatherPluginEnabled = on
+                                MapHudPrefs.saveWeatherPluginEnabled(context, on)
+                                DiagnosticLog.logToggle("weather_plugin", on)
+                                if (!on) {
+                                    weatherHud = WeatherHudState()
+                                    weatherMapSymbolsEnabled = false
+                                    MapHudPrefs.saveWeatherMapSymbolsEnabled(context, false)
+                                    weatherMapEpoch += 1
+                                    status = "Weather overlay off"
+                                } else {
+                                    status = "Weather overlay on — fetch when active"
+                                }
+                            },
+                            weatherMapSymbolsEnabled = weatherMapSymbolsEnabled,
+                            onWeatherMapSymbolsChange = { on ->
+                                weatherMapSymbolsEnabled = on
+                                MapHudPrefs.saveWeatherMapSymbolsEnabled(context, on)
+                                DiagnosticLog.logToggle("weather_map_symbols", on)
                                 weatherMapEpoch += 1
-                                status = "Weather overlay off"
-                            } else {
-                                status = "Weather overlay on — fetch when active"
-                            }
-                        },
-                        weatherMapSymbolsEnabled = weatherMapSymbolsEnabled,
-                        onWeatherMapSymbolsChange = { on ->
-                            weatherMapSymbolsEnabled = on
-                            MapHudPrefs.saveWeatherMapSymbolsEnabled(context, on)
-                            DiagnosticLog.logToggle("weather_map_symbols", on)
-                            weatherMapEpoch += 1
-                            status =
-                                if (on) {
-                                    "Map weather symbols on (cities, zoom ≤ ${weatherMapZoomMaxForUi().toInt()})"
-                                } else {
-                                    "Map weather symbols off"
-                                }
-                        },
-                        weatherAttribution = uniffi.navi.weatherAttributionText(),
-                        mapSymbolsZoomMax = weatherMapZoomMaxForUi().toInt(),
-                        datexPluginEnabled = datexPluginEnabled,
-                        onDatexPluginChange = { on ->
-                            datexPluginEnabled = on
-                            MapHudPrefs.saveDatexPluginEnabled(context, on)
-                            DiagnosticLog.logToggle("datex_plugin", on)
-                            if (!on) {
-                                datexHud = DatexHudState()
-                                datexEpoch += 1
-                                status = "DATEX overlay off"
-                            } else {
-                                datexEpoch += 1
-                                status = "DATEX overlay on — fetch when a route is planned"
-                            }
-                        },
-                        datexHost = datexHost,
-                        onDatexHostChange = { h ->
-                            datexHost = h
-                            MapHudPrefs.saveDatexHost(context, h)
-                        },
-                        datexPort = datexPortText,
-                        onDatexPortChange = { p ->
-                            datexPortText = p
-                            p.toIntOrNull()?.let { MapHudPrefs.saveDatexPort(context, it) }
-                        },
-                        datexWifiOnly = datexWifiOnly,
-                        onDatexWifiOnlyChange = { on ->
-                            datexWifiOnly = on
-                            MapHudPrefs.saveDatexWifiOnly(context, on)
-                            datexEpoch += 1
-                        },
-                        datexStatusLine = datexStatusLineForHud(datexPluginEnabled, datexHud),
-                    )
-                    Text("Region", style = MaterialTheme.typography.titleSmall)
-                    Text("Map layers: $mapLayerCount", style = MaterialTheme.typography.bodySmall)
-                    if (updateReminderDue) {
-                        Text(
-                            "Weekly OSM update check is due (opt-in reminder — nothing was downloaded).",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Text(
-                        "Download scope (Geofabrik)",
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                    Text(
-                        "Countries and bboxes come from Geofabrik's published index. " +
-                            "Central America extracts are listed under North America. " +
-                            "Jurisdiction packs still follow GPS, not this picker. " +
-                            "Green pills = published on the pack server or already indexed on device. " +
-                            "Green Download = install packs only; otherwise Download builds a place index.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    val readyChipGreen = Color(0xFF2E7D32)
-                    val readyChipMuted = readyChipGreen.copy(alpha = 0.30f)
-
-                    @Composable
-                    fun readyChipColors(ready: Boolean) =
-                        FilterChipDefaults.filterChipColors(
-                            containerColor =
-                                if (ready) {
-                                    readyChipMuted
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHighest
-                                },
-                            selectedContainerColor =
-                                if (ready) {
-                                    readyChipGreen
-                                } else {
-                                    MaterialTheme.colorScheme.secondaryContainer
-                                },
-                            labelColor = MaterialTheme.colorScheme.onSurface,
-                            selectedLabelColor =
-                                if (ready) {
-                                    Color.White
-                                } else {
-                                    MaterialTheme.colorScheme.onSecondaryContainer
-                                },
-                        )
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = downloadScopeCountry,
-                            onClick = {
-                                downloadScopeCountry = true
-                                val current =
-                                    GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)
-                                val pick =
-                                    current
-                                        ?: GeofabrikDownloadCatalog
-                                            .countriesIn(downloadContinent)
-                                            .firstOrNull()
-                                        ?: GeofabrikDownloadCatalog.countries.first()
-                                downloadContinent = pick.continent
-                                selectedGeofabrikPath = pick.path
-                            },
-                            label = { Text("Country") },
-                            modifier = Modifier.testTag("chip_download_country"),
-                        )
-                        FilterChip(
-                            selected = !downloadScopeCountry,
-                            onClick = {
-                                downloadScopeCountry = false
-                                if (GeofabrikDownloadCatalog.hasRegionChips(selectedGeofabrikPath)) {
-                                    val base =
-                                        GeofabrikDownloadCatalog.regionChipBasePath(
-                                            selectedGeofabrikPath,
-                                        )
-                                    val defaultPath =
-                                        GeofabrikDownloadCatalog.defaultRegionChipPath(
-                                            selectedGeofabrikPath,
-                                        )
-                                    if (base != null &&
-                                        defaultPath != null &&
-                                        (
-                                            selectedGeofabrikPath == base ||
-                                                !selectedGeofabrikPath.startsWith("$base/")
-                                        )
-                                    ) {
-                                        selectedGeofabrikPath = defaultPath
-                                    }
-                                } else {
-                                    // Keep country path; sub-region chips are
-                                    // Norway landsdeler + Sweden län only.
-                                    val country =
-                                        GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)
-                                    if (country != null) {
-                                        selectedGeofabrikPath = country.path
-                                    }
-                                }
-                            },
-                            label = { Text("Region in country") },
-                            modifier = Modifier.testTag("chip_download_region"),
-                        )
-                    }
-                    if (downloadScopeCountry) {
-                        Text(
-                            "Country-scale extracts may be slow or fail on low-RAM devices " +
-                                "(~4 GB). Prefer a region in country when possible.",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.testTag("country_download_low_ram_warning"),
-                        )
-                        Text("Continent", style = MaterialTheme.typography.labelMedium)
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            GeofabrikDownloadCatalog.continents.forEach { continent ->
-                                val ready = continentPillReady(continent)
-                                FilterChip(
-                                    selected = downloadContinent == continent,
-                                    onClick = {
-                                        downloadContinent = continent
-                                        GeofabrikDownloadCatalog
-                                            .countriesIn(continent)
-                                            .firstOrNull()
-                                            ?.let { selectedGeofabrikPath = it.path }
-                                    },
-                                    label = { Text(continent.label) },
-                                    colors = readyChipColors(ready),
-                                    modifier = Modifier.testTag(continent.testTag),
-                                )
-                            }
-                        }
-                        Text("Country", style = MaterialTheme.typography.labelMedium)
-                        val continentCountries =
-                            GeofabrikDownloadCatalog.countriesIn(downloadContinent)
-                        if (continentCountries.isEmpty()) {
-                            Text(
-                                GeofabrikDownloadCatalog.EMPTY_CONTINENT_NOTE,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.testTag("continent_empty_note"),
-                            )
-                        } else {
-                            Row(
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                continentCountries.forEach { country ->
-                                    val ready = pathPillReady(country.path)
-                                    FilterChip(
-                                        selected = selectedGeofabrikPath == country.path,
-                                        onClick = { selectedGeofabrikPath = country.path },
-                                        label = { Text(country.label) },
-                                        colors = readyChipColors(ready),
-                                        modifier = Modifier.testTag(country.testTag),
-                                    )
-                                }
-                            }
-                            GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)?.let { country ->
-                                if (country.path == selectedGeofabrikPath.trim().trim('/') &&
-                                    country.continent == downloadContinent
-                                ) {
-                                    Text(
-                                        country.supportNote,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.testTag("country_support_note"),
-                                    )
-                                }
-                            }
-                        }
-                    } else if (GeofabrikDownloadCatalog.hasRegionChips(selectedGeofabrikPath)) {
-                        val chipBase =
-                            GeofabrikDownloadCatalog.regionChipBasePath(selectedGeofabrikPath)
-                        val chips =
-                            GeofabrikDownloadCatalog.regionChipsFor(selectedGeofabrikPath)
-                        if (chipBase != null && chips != null) {
-                            val tagPrefix =
-                                when (chipBase) {
-                                    "europe/norway" -> "chip_norway"
-                                    "europe/sweden" -> "chip_sweden"
-                                    else -> "chip_region"
-                                }
-                            Row(
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                chips.forEach { (slug, label) ->
-                                    val path = "$chipBase/$slug"
-                                    val ready = pathPillReady(path)
-                                    FilterChip(
-                                        selected = selectedGeofabrikPath == path,
-                                        onClick = { selectedGeofabrikPath = path },
-                                        label = { Text(label) },
-                                        colors = readyChipColors(ready),
-                                        modifier = Modifier.testTag("${tagPrefix}_$slug"),
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        Text(
-                            GeofabrikDownloadCatalog.regionGranularityNote(selectedGeofabrikPath),
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.testTag("region_chips_norway_only_note"),
-                        )
-                    }
-                    val packStatus =
-                        PackRegionAvailability.statusLine(
-                            selectedPath = selectedGeofabrikPath,
-                            serverReadyIds = packServerReadyIds,
-                            dataSource = packCatalogDataSource,
-                            unreachableReason = packCatalogUnreachable,
-                            probing = packCatalogProbing,
-                            dataDir = dataDir,
-                        )
-                    if (packStatus.isNotBlank()) {
-                        Text(
-                            packStatus,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.testTag("pack_region_availability_status"),
-                        )
-                    }
-                    TextButton(
-                        onClick = { packCatalogEpoch += 1 },
-                        enabled = !packCatalogProbing,
-                        modifier = Modifier.testTag("btn_refresh_pack_catalog"),
-                    ) {
-                        Text(if (packCatalogProbing) "Checking pack server…" else "Refresh pack availability")
-                    }
-                    OutlinedTextField(
-                        value = selectedGeofabrikPath,
-                        onValueChange = { selectedGeofabrikPath = it.trim() },
-                        label = { Text("Geofabrik path") },
-                        singleLine = true,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .testTag("field_geofabrik_path"),
-                    )
-                    val selectedServerReady =
-                        PackRegionAvailability.pathCoveredByReadyIds(
-                            selectedGeofabrikPath,
-                            packServerReadyIds,
-                        )
-                    Button(
-                        onClick = {
-                            val path = selectedGeofabrikPath.trim().trim('/')
-                            if (path.isEmpty()) {
-                                status = "Enter a Geofabrik path (e.g. europe/norway/ostlandet)."
-                            } else {
-                                startRegionDownload(path)
-                            }
-                        },
-                        colors =
-                            if (PackRegionAvailability.downloadRegionUsesReadyStyle(selectedServerReady)) {
-                                ButtonDefaults.buttonColors(
-                                    containerColor = readyChipGreen,
-                                    contentColor = Color.White,
-                                )
-                            } else {
-                                ButtonDefaults.buttonColors()
-                            },
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .testTag("btn_download_region"),
-                    ) {
-                        Text(
-                            PackRegionAvailability.downloadRegionButtonLabel(selectedServerReady),
-                        )
-                    }
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                val pbf =
-                                    dataDir.listFiles()?.firstOrNull {
-                                        it.isFile && it.name.endsWith(".osm.pbf")
-                                    }
-                                if (pbf == null) {
-                                    status = "No local region PBF to rebuild indexed maps from"
-                                    return@launch
-                                }
-                                val elevDir =
-                                    File(dataDir, "elevation").takeIf { it.isDirectory }
-                                val before =
-                                    withContext(Dispatchers.IO) {
-                                        indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath)
-                                    }
-                                IndexedMapsBackground.ensureStarted(scope, pbf, dataDir, elevDir)
                                 status =
-                                    "indexed before=$before — rebuild started in background " +
-                                    "(region stays usable via PBF fallback)"
+                                    if (on) {
+                                        "Map weather symbols on (cities, zoom ≤ ${weatherMapZoomMaxForUi().toInt()})"
+                                    } else {
+                                        "Map weather symbols off"
+                                    }
+                            },
+                            weatherAttribution = uniffi.navi.weatherAttributionText(),
+                            mapSymbolsZoomMax = weatherMapZoomMaxForUi().toInt(),
+                            datexPluginEnabled = datexPluginEnabled,
+                            onDatexPluginChange = { on ->
+                                datexPluginEnabled = on
+                                MapHudPrefs.saveDatexPluginEnabled(context, on)
+                                DiagnosticLog.logToggle("datex_plugin", on)
+                                if (!on) {
+                                    datexHud = DatexHudState()
+                                    datexEpoch += 1
+                                    status = "DATEX overlay off"
+                                } else {
+                                    datexEpoch += 1
+                                    status = "DATEX overlay on — fetch when a route is planned"
+                                }
+                            },
+                            datexHost = datexHost,
+                            onDatexHostChange = { h ->
+                                datexHost = h
+                                MapHudPrefs.saveDatexHost(context, h)
+                            },
+                            datexPort = datexPortText,
+                            onDatexPortChange = { p ->
+                                datexPortText = p
+                                p.toIntOrNull()?.let { MapHudPrefs.saveDatexPort(context, it) }
+                            },
+                            datexWifiOnly = datexWifiOnly,
+                            onDatexWifiOnlyChange = { on ->
+                                datexWifiOnly = on
+                                MapHudPrefs.saveDatexWifiOnly(context, on)
+                                datexEpoch += 1
+                            },
+                            datexStatusLine = datexStatusLineForHud(datexPluginEnabled, datexHud),
+                        )
+                        Text("Region", style = MaterialTheme.typography.titleSmall)
+                        Text("Map layers: $mapLayerCount", style = MaterialTheme.typography.bodySmall)
+                        if (updateReminderDue) {
+                            Text(
+                                "Weekly OSM update check is due (opt-in reminder — nothing was downloaded).",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Text(
+                            "Download scope (Geofabrik)",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Text(
+                            "Countries and bboxes come from Geofabrik's published index. " +
+                                "Central America extracts are listed under North America. " +
+                                "Jurisdiction packs still follow GPS, not this picker. " +
+                                "Green pills = published on the pack server or already indexed on device. " +
+                                "Green Download = install packs only; otherwise Download builds a place index.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        val readyChipGreen = Color(0xFF2E7D32)
+                        val readyChipMuted = readyChipGreen.copy(alpha = 0.30f)
+
+                        @Composable
+                        fun readyChipColors(ready: Boolean) =
+                            FilterChipDefaults.filterChipColors(
+                                containerColor =
+                                    if (ready) {
+                                        readyChipMuted
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHighest
+                                    },
+                                selectedContainerColor =
+                                    if (ready) {
+                                        readyChipGreen
+                                    } else {
+                                        MaterialTheme.colorScheme.secondaryContainer
+                                    },
+                                labelColor = MaterialTheme.colorScheme.onSurface,
+                                selectedLabelColor =
+                                    if (ready) {
+                                        Color.White
+                                    } else {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    },
+                            )
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = downloadScopeCountry,
+                                onClick = {
+                                    downloadScopeCountry = true
+                                    val current =
+                                        GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)
+                                    val pick =
+                                        current
+                                            ?: GeofabrikDownloadCatalog
+                                                .countriesIn(downloadContinent)
+                                                .firstOrNull()
+                                            ?: GeofabrikDownloadCatalog.countries.first()
+                                    downloadContinent = pick.continent
+                                    selectedGeofabrikPath = pick.path
+                                },
+                                label = { Text("Country") },
+                                modifier = Modifier.testTag("chip_download_country"),
+                            )
+                            FilterChip(
+                                selected = !downloadScopeCountry,
+                                onClick = {
+                                    downloadScopeCountry = false
+                                    if (GeofabrikDownloadCatalog.hasRegionChips(selectedGeofabrikPath)) {
+                                        val base =
+                                            GeofabrikDownloadCatalog.regionChipBasePath(
+                                                selectedGeofabrikPath,
+                                            )
+                                        val defaultPath =
+                                            GeofabrikDownloadCatalog.defaultRegionChipPath(
+                                                selectedGeofabrikPath,
+                                            )
+                                        if (base != null &&
+                                            defaultPath != null &&
+                                            (
+                                                selectedGeofabrikPath == base ||
+                                                    !selectedGeofabrikPath.startsWith("$base/")
+                                            )
+                                        ) {
+                                            selectedGeofabrikPath = defaultPath
+                                        }
+                                    } else {
+                                        // Keep country path; sub-region chips are
+                                        // Norway landsdeler + Sweden län only.
+                                        val country =
+                                            GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)
+                                        if (country != null) {
+                                            selectedGeofabrikPath = country.path
+                                        }
+                                    }
+                                },
+                                label = { Text("Region in country") },
+                                modifier = Modifier.testTag("chip_download_region"),
+                            )
+                        }
+                        if (downloadScopeCountry) {
+                            Text(
+                                "Country-scale extracts may be slow or fail on low-RAM devices " +
+                                    "(~4 GB). Prefer a region in country when possible.",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.testTag("country_download_low_ram_warning"),
+                            )
+                            Text("Continent", style = MaterialTheme.typography.labelMedium)
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                GeofabrikDownloadCatalog.continents.forEach { continent ->
+                                    val ready = continentPillReady(continent)
+                                    FilterChip(
+                                        selected = downloadContinent == continent,
+                                        onClick = {
+                                            downloadContinent = continent
+                                            GeofabrikDownloadCatalog
+                                                .countriesIn(continent)
+                                                .firstOrNull()
+                                                ?.let { selectedGeofabrikPath = it.path }
+                                        },
+                                        label = { Text(continent.label) },
+                                        colors = readyChipColors(ready),
+                                        modifier = Modifier.testTag(continent.testTag),
+                                    )
+                                }
                             }
-                        },
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .testTag("btn_rebuild_indexed_maps"),
-                    ) {
-                        Text("Rebuild indexed maps (local PBF, background)")
-                    }
-                    if (indexedMapsUiLine.isNotBlank()) {
-                        Text(
-                            indexedMapsUiLine,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.testTag("indexed_maps_bg_status"),
+                            Text("Country", style = MaterialTheme.typography.labelMedium)
+                            val continentCountries =
+                                GeofabrikDownloadCatalog.countriesIn(downloadContinent)
+                            if (continentCountries.isEmpty()) {
+                                Text(
+                                    GeofabrikDownloadCatalog.EMPTY_CONTINENT_NOTE,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.testTag("continent_empty_note"),
+                                )
+                            } else {
+                                Row(
+                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    continentCountries.forEach { country ->
+                                        val ready = pathPillReady(country.path)
+                                        FilterChip(
+                                            selected = selectedGeofabrikPath == country.path,
+                                            onClick = { selectedGeofabrikPath = country.path },
+                                            label = { Text(country.label) },
+                                            colors = readyChipColors(ready),
+                                            modifier = Modifier.testTag(country.testTag),
+                                        )
+                                    }
+                                }
+                                GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)?.let { country ->
+                                    if (country.path == selectedGeofabrikPath.trim().trim('/') &&
+                                        country.continent == downloadContinent
+                                    ) {
+                                        Text(
+                                            country.supportNote,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.testTag("country_support_note"),
+                                        )
+                                    }
+                                }
+                            }
+                        } else if (GeofabrikDownloadCatalog.hasRegionChips(selectedGeofabrikPath)) {
+                            val chipBase =
+                                GeofabrikDownloadCatalog.regionChipBasePath(selectedGeofabrikPath)
+                            val chips =
+                                GeofabrikDownloadCatalog.regionChipsFor(selectedGeofabrikPath)
+                            if (chipBase != null && chips != null) {
+                                val tagPrefix =
+                                    when (chipBase) {
+                                        "europe/norway" -> "chip_norway"
+                                        "europe/sweden" -> "chip_sweden"
+                                        else -> "chip_region"
+                                    }
+                                Row(
+                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    chips.forEach { (slug, label) ->
+                                        val path = "$chipBase/$slug"
+                                        val ready = pathPillReady(path)
+                                        FilterChip(
+                                            selected = selectedGeofabrikPath == path,
+                                            onClick = { selectedGeofabrikPath = path },
+                                            label = { Text(label) },
+                                            colors = readyChipColors(ready),
+                                            modifier = Modifier.testTag("${tagPrefix}_$slug"),
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Text(
+                                GeofabrikDownloadCatalog.regionGranularityNote(selectedGeofabrikPath),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.testTag("region_chips_norway_only_note"),
+                            )
+                        }
+                        val packStatus =
+                            PackRegionAvailability.statusLine(
+                                selectedPath = selectedGeofabrikPath,
+                                serverReadyIds = packServerReadyIds,
+                                dataSource = packCatalogDataSource,
+                                unreachableReason = packCatalogUnreachable,
+                                probing = packCatalogProbing,
+                                dataDir = dataDir,
+                            )
+                        if (packStatus.isNotBlank()) {
+                            Text(
+                                packStatus,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.testTag("pack_region_availability_status"),
+                            )
+                        }
+                        TextButton(
+                            onClick = { packCatalogEpoch += 1 },
+                            enabled = !packCatalogProbing,
+                            modifier = Modifier.testTag("btn_refresh_pack_catalog"),
+                        ) {
+                            Text(if (packCatalogProbing) "Checking pack server…" else "Refresh pack availability")
+                        }
+                        OutlinedTextField(
+                            value = selectedGeofabrikPath,
+                            onValueChange = { selectedGeofabrikPath = it.trim() },
+                            label = { Text("Geofabrik path") },
+                            singleLine = true,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag("field_geofabrik_path"),
                         )
-                    }
-                    if (placeIndexUiLine.isNotBlank()) {
-                        Text(
-                            placeIndexUiLine,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.testTag("place_index_bg_status"),
-                        )
-                    }
-                    if (regionDownloadProgress.isNotBlank()) {
-                        Text(
-                            regionDownloadProgress,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.testTag("region_download_progress"),
-                        )
-                    }
-                    Text(
-                        "Basemap (PMTiles) — included in Download region; DEM is optional",
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                    OutlinedTextField(
-                        value = pmtilesBaseUrl,
-                        onValueChange = {
-                            pmtilesBaseUrl = it.trim()
-                            MapHudPrefs.savePmtilesBaseUrl(context, pmtilesBaseUrl)
-                        },
-                        label = { Text("Planet PMTiles URL (blank = latest Protomaps)") },
-                        singleLine = true,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .testTag("field_pmtiles_base_url"),
-                    )
-                    if (offlineIntegrity.canRestoreFromStaging) {
-                        Text(
-                            offlineIntegrity.userMessage()
-                                ?: "Staged offline map files are available to restore.",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.testTag("offline_data_mismatch_msg"),
-                        )
+                        val selectedServerReady =
+                            PackRegionAvailability.pathCoveredByReadyIds(
+                                selectedGeofabrikPath,
+                                packServerReadyIds,
+                            )
+                        Button(
+                            onClick = {
+                                val path = selectedGeofabrikPath.trim().trim('/')
+                                if (path.isEmpty()) {
+                                    status = "Enter a Geofabrik path (e.g. europe/norway/ostlandet)."
+                                } else {
+                                    startRegionDownload(path)
+                                }
+                            },
+                            colors =
+                                if (PackRegionAvailability.downloadRegionUsesReadyStyle(selectedServerReady)) {
+                                    ButtonDefaults.buttonColors(
+                                        containerColor = readyChipGreen,
+                                        contentColor = Color.White,
+                                    )
+                                } else {
+                                    ButtonDefaults.buttonColors()
+                                },
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag("btn_download_region"),
+                        ) {
+                            Text(
+                                PackRegionAvailability.downloadRegionButtonLabel(selectedServerReady),
+                            )
+                        }
                         Button(
                             onClick = {
                                 scope.launch {
-                                    status = "Restoring staged offline maps…"
-                                    val report =
-                                        withContext(Dispatchers.IO) {
-                                            OfflinePmtilesBootstrap.restoreOstlandetFromStaging(dataDir)
+                                    val pbf =
+                                        dataDir.listFiles()?.firstOrNull {
+                                            it.isFile && it.name.endsWith(".osm.pbf")
                                         }
-                                    status = report
-                                    if (report.startsWith("OK:")) {
+                                    if (pbf == null) {
+                                        status = "No local region PBF to rebuild indexed maps from"
+                                        return@launch
+                                    }
+                                    val elevDir =
+                                        File(dataDir, "elevation").takeIf { it.isDirectory }
+                                    val before =
+                                        withContext(Dispatchers.IO) {
+                                            indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath)
+                                        }
+                                    IndexedMapsBackground.ensureStarted(scope, pbf, dataDir, elevDir)
+                                    status =
+                                        "indexed before=$before — rebuild started in background " +
+                                        "(region stays usable via PBF fallback)"
+                                }
+                            },
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag("btn_rebuild_indexed_maps"),
+                        ) {
+                            Text("Rebuild indexed maps (local PBF, background)")
+                        }
+                        Text(
+                            "Basemap (PMTiles) — included in Download region; DEM is optional",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        OutlinedTextField(
+                            value = pmtilesBaseUrl,
+                            onValueChange = {
+                                pmtilesBaseUrl = it.trim()
+                                MapHudPrefs.savePmtilesBaseUrl(context, pmtilesBaseUrl)
+                            },
+                            label = { Text("Planet PMTiles URL (blank = latest Protomaps)") },
+                            singleLine = true,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag("field_pmtiles_base_url"),
+                        )
+                        if (offlineIntegrity.canRestoreFromStaging) {
+                            Text(
+                                offlineIntegrity.userMessage()
+                                    ?: "Staged offline map files are available to restore.",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.testTag("offline_data_mismatch_msg"),
+                            )
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        status = "Restoring staged offline maps…"
+                                        val report =
+                                            withContext(Dispatchers.IO) {
+                                                OfflinePmtilesBootstrap.restoreOstlandetFromStaging(dataDir)
+                                            }
+                                        status = report
+                                        if (report.startsWith("OK:")) {
+                                            MapHudPrefs.rememberDownloadedPmtilesRegion(
+                                                context,
+                                                "europe_norway_ostlandet",
+                                            )
+                                            offlineIntegrity =
+                                                OfflineDataIntegrity.inspect(context, dataDir)
+                                            styleEpoch += 1
+                                        }
+                                    }
+                                },
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .testTag("btn_restore_staged_pmtiles"),
+                            ) {
+                                Text("Restore staged offline maps")
+                            }
+                        }
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    val path = selectedGeofabrikPath.trim().trim('/')
+                                    if (path.isEmpty()) {
+                                        status = "Select a Geofabrik path first."
+                                        return@launch
+                                    }
+                                    downloadProgressClear()
+                                    toolsProcessReady = false
+                                    status = "Extracting Mapterhorn DEM for $path..."
+                                    val job =
+                                        withContext(Dispatchers.IO) {
+                                            uniffi.navi.pmtilesQueueDemRegion(
+                                                dataDir.absolutePath,
+                                                path,
+                                            )
+                                        }
+                                    if (job.id.isBlank() || job.status.startsWith("failed")) {
+                                        status = "DEM queue failed: ${job.status}"
+                                        return@launch
+                                    }
+                                    pmtilesJobId = job.id
+                                    pmtilesProgress = "Downloading terrain DEM… 0%"
+                                    downloadPolling = true
+                                    val done =
+                                        withContext(Dispatchers.IO) {
+                                            pmtilesRunJob(dataDir.absolutePath, job.id)
+                                        }
+                                    downloadPolling = false
+                                    pmtilesProgress =
+                                        formatProgressPct(
+                                            done.bytesReceived,
+                                            done.totalBytes,
+                                            "Downloading terrain DEM…",
+                                        )
+                                    status = "DEM ${done.status}: ${done.localPath}"
+                                    if (done.status == "completed") {
                                         MapHudPrefs.rememberDownloadedPmtilesRegion(
                                             context,
-                                            "europe_norway_ostlandet",
+                                            done.regionKey.ifBlank {
+                                                File(done.localPath).nameWithoutExtension
+                                            },
                                         )
-                                        offlineIntegrity =
-                                            OfflineDataIntegrity.inspect(context, dataDir)
+                                        offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
                                         styleEpoch += 1
+                                        pmtilesProgress = ""
+                                        pmtilesJobId = null
+                                        toolsProcessReady = true
                                     }
                                 }
                             },
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
-                                    .testTag("btn_restore_staged_pmtiles"),
+                                    .testTag("btn_download_dem"),
                         ) {
-                            Text("Restore staged offline maps")
+                            Text("Download terrain DEM (Mapterhorn)")
                         }
-                    }
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                val path = selectedGeofabrikPath.trim().trim('/')
-                                if (path.isEmpty()) {
-                                    status = "Select a Geofabrik path first."
-                                    return@launch
-                                }
-                                downloadProgressClear()
-                                status = "Extracting Mapterhorn DEM for $path..."
-                                val job =
-                                    withContext(Dispatchers.IO) {
-                                        uniffi.navi.pmtilesQueueDemRegion(
-                                            dataDir.absolutePath,
-                                            path,
-                                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(
+                                onClick = {
+                                    pmtilesJobId?.let { id ->
+                                        pmtilesPauseJob(id)
+                                        status = "PMTiles paused"
                                     }
-                                if (job.id.isBlank() || job.status.startsWith("failed")) {
-                                    status = "DEM queue failed: ${job.status}"
-                                    return@launch
-                                }
-                                pmtilesJobId = job.id
-                                pmtilesProgress = "Downloading terrain DEM… 0%"
-                                downloadPolling = true
-                                val done =
-                                    withContext(Dispatchers.IO) {
-                                        pmtilesRunJob(dataDir.absolutePath, job.id)
+                                },
+                                enabled = pmtilesJobId != null,
+                                modifier = Modifier.testTag("btn_pmtiles_pause"),
+                            ) { Text("Pause") }
+                            TextButton(
+                                onClick = {
+                                    val id = pmtilesJobId ?: return@TextButton
+                                    // Only clear the pause flag — do not start a second run_job
+                                    // (that raced the paused extract and prevented resume).
+                                    pmtilesResumeJob(id)
+                                    status = "PMTiles resuming…"
+                                    downloadPolling = true
+                                },
+                                enabled = pmtilesJobId != null,
+                                modifier = Modifier.testTag("btn_pmtiles_resume"),
+                            ) { Text("Resume") }
+                            TextButton(
+                                onClick = {
+                                    pmtilesJobId?.let { id ->
+                                        pmtilesCancelJob(id)
+                                        status = "PMTiles cancel requested"
                                     }
-                                downloadPolling = false
-                                pmtilesProgress =
-                                    formatProgressPct(
-                                        done.bytesReceived,
-                                        done.totalBytes,
-                                        "Downloading terrain DEM…",
-                                    )
-                                status = "DEM ${done.status}: ${done.localPath}"
-                                if (done.status == "completed") {
-                                    MapHudPrefs.rememberDownloadedPmtilesRegion(
-                                        context,
-                                        done.regionKey.ifBlank {
-                                            File(done.localPath).nameWithoutExtension
-                                        },
-                                    )
-                                    offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
-                                    styleEpoch += 1
-                                }
-                            }
-                        },
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .testTag("btn_download_dem"),
-                    ) {
-                        Text("Download terrain DEM (Mapterhorn)")
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(
-                            onClick = {
-                                pmtilesJobId?.let { id ->
-                                    pmtilesPauseJob(id)
-                                    status = "PMTiles paused"
-                                }
-                            },
-                            enabled = pmtilesJobId != null,
-                            modifier = Modifier.testTag("btn_pmtiles_pause"),
-                        ) { Text("Pause") }
-                        TextButton(
-                            onClick = {
-                                val id = pmtilesJobId ?: return@TextButton
-                                // Only clear the pause flag — do not start a second run_job
-                                // (that raced the paused extract and prevented resume).
-                                pmtilesResumeJob(id)
-                                status = "PMTiles resuming…"
-                                downloadPolling = true
-                            },
-                            enabled = pmtilesJobId != null,
-                            modifier = Modifier.testTag("btn_pmtiles_resume"),
-                        ) { Text("Resume") }
-                        TextButton(
-                            onClick = {
-                                pmtilesJobId?.let { id ->
-                                    pmtilesCancelJob(id)
-                                    status = "PMTiles cancel requested"
-                                }
-                            },
-                            enabled = pmtilesJobId != null,
-                            modifier = Modifier.testTag("btn_pmtiles_cancel"),
-                        ) { Text("Cancel") }
-                    }
-                    if (pmtilesProgress.isNotBlank()) {
+                                },
+                                enabled = pmtilesJobId != null,
+                                modifier = Modifier.testTag("btn_pmtiles_cancel"),
+                            ) { Text("Cancel") }
+                        }
                         Text(
-                            pmtilesProgress,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.testTag("pmtiles_progress"),
+                            "OSM updates — pack server first, Geofabrik if unreachable (opt-in)",
+                            style = MaterialTheme.typography.labelLarge,
                         )
-                    }
-                    Text(
-                        "OSM updates — pack server first, Geofabrik if unreachable (opt-in)",
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                    val osmCheckReady = pathPillReady(selectedGeofabrikPath)
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                val raw =
-                                    withContext(Dispatchers.IO) {
-                                        checkOsmUpdates(dataDir.absolutePath)
-                                    }
-                                pendingUpdatePlan = raw
-                                status = OsmUpdateUserCopy.forCheckReport(raw)
-                                updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
-                            }
-                        },
-                        colors =
-                            if (PackRegionAvailability.osmCheckUsesReadyStyle(osmCheckReady)) {
-                                ButtonDefaults.buttonColors(
-                                    containerColor = readyChipGreen,
-                                    contentColor = Color.White,
-                                )
-                            } else {
-                                ButtonDefaults.buttonColors()
-                            },
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .testTag("btn_check_osm_updates"),
-                    ) {
-                        Text("Check for OSM updates")
-                    }
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                val plan = pendingUpdatePlan
-                                if (plan.isNullOrBlank() || plan.contains("up to date", ignoreCase = true)) {
-                                    status = OsmUpdateUserCopy.NEED_CHECK
-                                    return@launch
-                                }
-                                if (plan.contains("Unsupported", ignoreCase = true) ||
-                                    plan.contains("unsupported", ignoreCase = true)
-                                ) {
-                                    status = OsmUpdateUserCopy.NO_BINDING
-                                    return@launch
-                                }
-                                status = OsmUpdateUserCopy.APPLYING
-                                val raw =
-                                    withContext(Dispatchers.IO) {
-                                        applyOsmUpdate(dataDir.absolutePath)
-                                    }
-                                pendingUpdatePlan = null
-                                // applyOsmUpdate clears place_index + graph-cache and
-                                // fingerprints the new PBF so packs become stale_pbf.
-                                // Mirror the download button: rebuild index + queue packs.
-                                if (raw.contains("PASS", ignoreCase = true)) {
-                                    val pbf = resolveRegionPbf()
-                                    if (pbf != null && pbf.isFile) {
+                        val osmCheckReady = pathPillReady(selectedGeofabrikPath)
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    val raw =
                                         withContext(Dispatchers.IO) {
-                                            ensurePlaceIndex(
-                                                pbf.absolutePath,
-                                                placeIndexDbForWrite().absolutePath,
-                                                selectedGeofabrikPath.ifBlank { null },
-                                            )
+                                            checkOsmUpdates(dataDir.absolutePath)
                                         }
-                                        val elevDir =
-                                            File(dataDir, "elevation").takeIf { it.isDirectory }
-                                        IndexedMapsBackground.ensureStarted(
-                                            scope,
-                                            pbf,
-                                            dataDir,
-                                            elevDir,
-                                        )
-                                        status = OsmUpdateUserCopy.UPDATED_INDEXING
-                                    } else {
-                                        status = OsmUpdateUserCopy.UPDATED
-                                    }
-                                } else {
-                                    status = OsmUpdateUserCopy.forApplyReport(raw)
+                                    pendingUpdatePlan = raw
+                                    status = OsmUpdateUserCopy.forCheckReport(raw)
+                                    updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
                                 }
-                            }
-                        },
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .testTag("btn_apply_osm_update"),
-                        enabled = !pendingUpdatePlan.isNullOrBlank(),
-                    ) {
-                        Text("Apply pending OSM update")
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text("Weekly update reminder (no auto-download)")
-                        Switch(
-                            checked = weeklyReminder,
-                            onCheckedChange = { on ->
-                                weeklyReminder = on
-                                setOsmWeeklyReminder(dataDir.absolutePath, on)
-                                updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
-                                status =
-                                    if (on) {
-                                        "Weekly OSM check reminder enabled"
-                                    } else {
-                                        "Weekly OSM check reminder disabled"
-                                    }
                             },
-                        )
-                    }
-                    Text("Diagnostics", style = MaterialTheme.typography.titleSmall)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text("Diagnostic logging")
-                        Switch(
-                            checked = diagnosticLogging,
-                            onCheckedChange = { on ->
-                                DiagnosticLog.setEnabled(context, on)
-                                diagnosticLogging = on
-                                if (on) {
-                                    DiagnosticLog.maybeLogSystem(context.filesDir, nowMs = 0L)
+                            colors =
+                                if (PackRegionAvailability.osmCheckUsesReadyStyle(osmCheckReady)) {
+                                    ButtonDefaults.buttonColors(
+                                        containerColor = readyChipGreen,
+                                        contentColor = Color.White,
+                                    )
+                                } else {
+                                    ButtonDefaults.buttonColors()
+                                },
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag("btn_check_osm_updates"),
+                        ) {
+                            Text("Check for OSM updates")
+                        }
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    val plan = pendingUpdatePlan
+                                    if (plan.isNullOrBlank() || plan.contains("up to date", ignoreCase = true)) {
+                                        status = OsmUpdateUserCopy.NEED_CHECK
+                                        return@launch
+                                    }
+                                    if (plan.contains("Unsupported", ignoreCase = true) ||
+                                        plan.contains("unsupported", ignoreCase = true)
+                                    ) {
+                                        status = OsmUpdateUserCopy.NO_BINDING
+                                        return@launch
+                                    }
+                                    status = OsmUpdateUserCopy.APPLYING
+                                    val raw =
+                                        withContext(Dispatchers.IO) {
+                                            applyOsmUpdate(dataDir.absolutePath)
+                                        }
+                                    pendingUpdatePlan = null
+                                    // applyOsmUpdate clears place_index + graph-cache and
+                                    // fingerprints the new PBF so packs become stale_pbf.
+                                    // Mirror the download button: rebuild index + queue packs.
+                                    if (raw.contains("PASS", ignoreCase = true)) {
+                                        val pbf = resolveRegionPbf()
+                                        if (pbf != null && pbf.isFile) {
+                                            withContext(Dispatchers.IO) {
+                                                ensurePlaceIndex(
+                                                    pbf.absolutePath,
+                                                    placeIndexDbForWrite().absolutePath,
+                                                    selectedGeofabrikPath.ifBlank { null },
+                                                )
+                                            }
+                                            val elevDir =
+                                                File(dataDir, "elevation").takeIf { it.isDirectory }
+                                            IndexedMapsBackground.ensureStarted(
+                                                scope,
+                                                pbf,
+                                                dataDir,
+                                                elevDir,
+                                            )
+                                            status = OsmUpdateUserCopy.UPDATED_INDEXING
+                                        } else {
+                                            status = OsmUpdateUserCopy.UPDATED
+                                        }
+                                    } else {
+                                        status = OsmUpdateUserCopy.forApplyReport(raw)
+                                    }
+                                }
+                            },
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag("btn_apply_osm_update"),
+                            enabled = !pendingUpdatePlan.isNullOrBlank(),
+                        ) {
+                            Text("Apply pending OSM update")
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text("Weekly update reminder (no auto-download)")
+                            Switch(
+                                checked = weeklyReminder,
+                                onCheckedChange = { on ->
+                                    weeklyReminder = on
+                                    setOsmWeeklyReminder(dataDir.absolutePath, on)
+                                    updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
                                     status =
-                                        "Diagnostic logging on — " +
-                                        DiagnosticLog.publicLocationDescription()
-                                } else {
-                                    status = "Diagnostic logging off"
-                                }
-                            },
-                            modifier = Modifier.testTag("toggle_diagnostic_logging"),
+                                        if (on) {
+                                            "Weekly OSM check reminder enabled"
+                                        } else {
+                                            "Weekly OSM check reminder disabled"
+                                        }
+                                },
+                            )
+                        }
+                        Text("Diagnostics", style = MaterialTheme.typography.titleSmall)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text("Diagnostic logging")
+                            Switch(
+                                checked = diagnosticLogging,
+                                onCheckedChange = { on ->
+                                    DiagnosticLog.setEnabled(context, on)
+                                    diagnosticLogging = on
+                                    if (on) {
+                                        DiagnosticLog.maybeLogSystem(context.filesDir, nowMs = 0L)
+                                        status =
+                                            "Diagnostic logging on — " +
+                                            DiagnosticLog.publicLocationDescription()
+                                    } else {
+                                        status = "Diagnostic logging off"
+                                    }
+                                },
+                                modifier = Modifier.testTag("toggle_diagnostic_logging"),
+                            )
+                        }
+                        Text(
+                            "Writes a dated session log under Documents/debug " +
+                                "(USB/MTP: Internal storage → Documents → debug). " +
+                                "GPS, toggles, route plan, eco, POIs, pauses, instructions, " +
+                                "fuel, system. Off by default; not uploaded.",
+                            style = MaterialTheme.typography.bodySmall,
                         )
-                    }
-                    Text(
-                        "Writes a dated session log under Documents/debug " +
-                            "(USB/MTP: Internal storage → Documents → debug). " +
-                            "GPS, toggles, route plan, eco, POIs, pauses, instructions, " +
-                            "fuel, system. Off by default; not uploaded.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Button(
-                        onClick = {
-                            val ok = DiagnosticLog.shareLatest(context)
-                            status =
-                                if (ok) {
-                                    "Share sheet opened for diagnostic log"
-                                } else {
-                                    "No diagnostic log file yet — turn logging on first"
-                                }
-                        },
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .testTag("btn_export_diagnostic_log"),
-                        enabled =
-                            diagnosticLogging ||
-                                DiagnosticLog.listSessionFiles(context).isNotEmpty(),
-                    ) {
-                        Text("Export diagnostic log")
+                        Button(
+                            onClick = {
+                                val ok = DiagnosticLog.shareLatest(context)
+                                status =
+                                    if (ok) {
+                                        "Share sheet opened for diagnostic log"
+                                    } else {
+                                        "No diagnostic log file yet — turn logging on first"
+                                    }
+                            },
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag("btn_export_diagnostic_log"),
+                            enabled =
+                                diagnosticLogging ||
+                                    DiagnosticLog.listSessionFiles(context).isNotEmpty(),
+                        ) {
+                            Text("Export diagnostic log")
+                        }
+                    } // end scrollable Tools body
+
+                    // Pinned process footer — always at the bottom of the Tools surface
+                    // so active jobs are visible without scrolling the region picker.
+                    val processLines =
+                        buildList {
+                            // Stable order: region download → basemap/DEM → place index → convert.
+                            if (regionDownloadProgress.isNotBlank()) {
+                                add("region_download_progress" to regionDownloadProgress)
+                            }
+                            if (pmtilesProgress.isNotBlank()) {
+                                add("pmtiles_progress" to pmtilesProgress)
+                            }
+                            if (placeIndexUiLine.isNotBlank()) {
+                                add("place_index_bg_status" to placeIndexUiLine)
+                            }
+                            if (indexedMapsUiLine.isNotBlank()) {
+                                add("indexed_maps_bg_status" to indexedMapsUiLine)
+                            }
+                        }
+                    if (processLines.isNotEmpty()) {
+                        Text(
+                            "In progress",
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.testTag("tools_process_footer_label"),
+                        )
+                        processLines.forEach { (tag, line) ->
+                            Text(
+                                line,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.testTag(tag),
+                            )
+                        }
+                    } else if (toolsProcessReady) {
+                        Text(
+                            "Ready!",
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.testTag("tools_process_ready"),
+                        )
                     }
                     Text(
                         userFacingStatus(status),
