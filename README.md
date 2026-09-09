@@ -252,7 +252,7 @@ you can go offline.
 |---|---|---|---|
 | **Map region (roads & places)** | **Yes** for routing and search | OpenStreetMap extract from [Geofabrik](https://download.geofabrik.de/) (example path: `europe/norway/ostlandet`), or published packs from the pack server when listed | **Download region** (green, when pack server has the path) or **Download region + build place index** |
 | **Elevation** | Strongly recommended for eco / hills | Height data for the area | Usually comes with region provision |
-| **Offline basemap** | Needed for map graphics without internet | Visual map tiles (Protomaps) | Included in **Download region** (after packs / place index) |
+| **Offline basemap** | Needed for map graphics without internet | Visual map tiles (Protomaps) | Included in **Download region** (after packs, **before** place index) |
 | **3D terrain** | Optional | Height tiles for hillshade **and** elevation contours | **Download terrain DEM (Mapterhorn)** |
 | **OSM updates** | Optional | Fresher roads/POIs | **Check for OSM updates** (never automatic) |
 
@@ -279,19 +279,21 @@ is just slower until indexing finishes.
 
 When **Download region + build place index** has saved the OpenStreetMap
 extract (Geofabrik path), or **Download region** has installed published packs
-from the pack server, Navi also ensures a real Geofabrik extract is on disk and
-builds the **place index** (From / Via / To search) with the same on-device
-pipeline as local convert. Pack-server installs skip on-device **routing pack**
-rebuild (packs are already baked) but still fetch the extract for place search.
-That is not the map picture
-on screen (basemap tiles) and not the raw `.osm.pbf` file itself alone — routing
-uses the published packs; search uses the place index built from the extract.
+from the pack server, Navi pulls the **offline basemap** next, then ensures a
+real Geofabrik extract is on disk and builds the **place index** (From / Via /
+To search) with the same on-device pipeline as local convert. Pack-server
+installs skip on-device **routing pack** rebuild (packs are already baked) but
+still fetch the extract for place search. That is not the map picture on screen
+(basemap tiles) and not the raw `.osm.pbf` file itself alone — routing uses the
+published packs; search uses the place index built from the extract.
 
 You can search and tap **Plan route** as soon as the download finishes. Until
 indexing is done, planning uses the slower raw `.osm.pbf` path. Tools shows
 progress as **Indexed maps (background)**; when it says **Indexed maps: ready
 (pack-hit)**, the next plan uses the packs — typically about 1.5–2 seconds on
-the reference tablet instead of tens of seconds.
+the reference tablet instead of tens of seconds. Live labels and percent for
+these jobs are listed under
+[Progress status box](#progress-status-box-pale-yellow).
 
 While a **Plan route** (or auto-reroute) is running on that PBF fallback,
 background convert and place-index **yield** so they do not contend for the
@@ -310,13 +312,46 @@ What the background job writes:
 | **Wetland** | Marsh and water polygons hiking uses to stay out of bogs (boardwalks stay on the graph). |
 
 A separate **place index** (names for From / Via / To search) is built as part
-of the download button, before this background job starts.
+of the download button (after basemap on both pack-server and local-bake paths).
+On the local-bake path, **indexed routing packs** may start converting in the
+background around the same time; on the pack-server path those packs are already
+installed.
 
 If packs are missing, stale, or still converting, planning still works via the
 PBF fallback. Rebuild from a file already on the device with **Rebuild indexed
 maps (local PBF, background)** — no re-download. More detail:
 [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md). Memory
 margin on lower-end 4 GB devices during conversion: [Known issues](#known-issues).
+
+## Progress status box (pale yellow)
+
+Long-running work shows a **pale yellow / translucent status chip** near the
+bottom-right of the map, with a short label and often a **percent done**. The
+same text is mirrored at the bottom of **Tools** when that panel is open. While
+**Download region** is running, Tools keeps **one** progress line for that job
+(place-index / indexed-maps duplicate lines are hidden so you do not see two
+competing percents).
+
+The chip **clears when the job finishes** (it must not stay stuck at 100%).
+Idle / **Ready** does not show the box.
+
+Every process that drives this progress UI:
+
+| Process | How you start it | Typical labels you will see | Where else it appears |
+|---|---|---|---|
+| **Download region (pack server)** — green **Download region** when the path is published | Tools → region chip → **Download region** | **Checking pack server…** → **Fetching packs (N files)…** / per-file fetch → **Installing packs…** → basemap (**Downloading map tiles…** / **Planning extract…** / **Writing map archive…**) → **Downloading extract + building place index…** then **Place index:** phases (below) | Tools region-download progress line; basemap/DEM-style labels may also show on the PMTiles line |
+| **Download region (local bake)** — blue / default button when packs are missing or the server is down | Tools → **Download region + build place index** | **Downloading region…** (or **Resuming…**) with byte % → optional **Downloading elevation…** → basemap labels as above → **Place index:** phases; then **Indexed maps (background):** convert phases | Same Tools progress line during the download; indexed-maps line after the download job ends |
+| **Place index** (search names) | Part of **Download region**, or a background rebuild after an OSM update / local PBF | **Place index: starting…** / **admin boundaries…** / **scanning ways…** / **scanning nodes…** / **named routes…** / **resolving context…** / **writing database…** / **Place index ready** (phase-based %) | Tools place-index line when *not* inside an active region download |
+| **Indexed maps convert** (routing packs) | Auto after local-bake download; **Tools → Rebuild indexed maps**; or when packs are stale | **Building indexed maps:** scanning bounds / graph tiling / **POI + barriers…** (~90%) / **wetlands…** (~95%) / **Indexed maps ready**; Tools idle text **Indexed maps: ready (pack-hit)** | Tools indexed-maps line; phase % jumps when a phase *starts*, not continuously inside the phase |
+| **Offline basemap only** (PMTiles extract) | Included in **Download region**; also covered when that job writes map-tile labels | **Downloading map tiles for region…**, **Planning extract…**, **Writing map archive…** | Tools PMTiles progress line when those labels are active |
+| **Terrain DEM** | Tools → **Download terrain DEM (Mapterhorn)** | **Downloading terrain DEM…** with byte % | Tools PMTiles/DEM progress line; Pause / Resume / Cancel apply to this job |
+| **Plan route** | Route panel → **Plan route** | **Loading map data for this route…** / **Combining map data from multiple regions…** / **Planning route:** indexing area, reading roads, loading geometry, linking graph, break stops, done | Progress line + bar under **Plan route**; orange top banner **Planning route…** (Cancel); status chip |
+| **Recalculate / off-route replan** | Auto (motor) or confirm (hiking) after leaving the route | Same plan labels; UI title **Recalculating route…** | Orange top banner with Cancel; status chip |
+| **Apply pending OSM update** | Tools → **Check for OSM updates** then **Apply pending OSM update** | **Download in progress…**, then **Map data updated. Preparing search and routes in the background.** (place index + indexed maps continue as above) | Status chip / Tools status |
+
+**Related but not percent chips:** the red **SIMULATING** banner is only for route simulation playback. Short one-shot messages (settings saved, profile changed, and so on) use the same chip briefly without a lasting percent.
+
+**Be patient.** Place index and indexed-map convert on a large region can run for many minutes; the percent may sit still during a long phase. That is expected — see [Indexing](#indexing-background-after-download) and [Known issues](#known-issues).
 
 ## Leaving a downloaded region
 
@@ -362,8 +397,9 @@ no offline graph for new plans — not a soft fade-out.
 Before Navi can search for a path, it **builds an area graph** for the corridor
 your trip needs: it loads the map tiles that cover the regions the route passes
 through and joins them into one routable network. That is normal preparation,
-not a hang — the progress line under **Plan route** (and the top banner while
-planning) explains what is happening.
+not a hang — the progress line under **Plan route**, the orange top banner while
+planning, and the pale yellow status chip all explain what is happening (full
+label list: [Progress status box](#progress-status-box-pale-yellow)).
 
 Time depends on how much map data the corridor needs, not only on crow-flies
 distance:
@@ -399,7 +435,8 @@ mode, then **Plan route**. From is often set with **Use GPS** (select the
 **From** / **To** / **Via** chip first; the button label follows the chip).
 Hiking paths need the **Hiking** mode — planning with Car uses the road network
 and will not follow foot trails properly. A **Planning route…** banner includes
-**Cancel** if you want to stop an in-flight plan.
+**Cancel** if you want to stop an in-flight plan. Percent and stage labels are
+documented under [Progress status box](#progress-status-box-pale-yellow).
 
 **Eco vs shortest.** Shortest ignores hills. Eco makes steep climbs “cost” more.
 Electric modes get some credit for downhill recovery.
@@ -532,7 +569,7 @@ downloads).
 
 | Setting / action | Plain meaning |
 |---|---|
-| **Download region / basemap / DEM** | Offline map data (see [What you need to download](#what-you-need-to-download)) |
+| **Download region / basemap / DEM** | Offline map data (see [What you need to download](#what-you-need-to-download)). Progress labels and percent: [Progress status box](#progress-status-box-pale-yellow) |
 | **Pause / Resume / Cancel** | Control an in-progress download. Region downloads also **resume after a force-stop** (HTTP Range from the `.partial` file) instead of starting over |
 | **Check for OSM updates** / **Apply pending** | Opt-in refresh; never silent auto-download |
 | **Weekly update reminder** | Optional nag only — does not download by itself |
