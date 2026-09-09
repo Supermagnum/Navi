@@ -4,11 +4,12 @@ import java.io.File
 
 /**
  * Region-pill availability: green when the pack host lists the path (or a child)
- * in `current.json`, or when a successful local bake already exists under
- * [dataDir].
+ * in `current.json`, or when a successful local install already exists under
+ * [dataDir] (packs **and** basemap PMTiles).
  *
  * Pack **download** from the host installs published packs when listed in
- * `current.json`. Green means "published / local packs exist".
+ * `current.json`. Server green means "published packs exist". Device-local green
+ * means packs + offline basemap are verified on disk.
  */
 object PackRegionAvailability {
     /**
@@ -64,6 +65,37 @@ object PackRegionAvailability {
         return "$leaf-latest"
     }
 
+    /**
+     * Same stem as core `geofabrik_path_to_region_key`
+     * (`europe/norway/ostlandet` → `europe_norway_ostlandet`).
+     */
+    fun geofabrikPathToRegionKey(path: String): String {
+        val trimmed = normalize(path)
+        if (trimmed.isEmpty()) return "unknown"
+        return trimmed
+            .replace('/', '_')
+            .map { c ->
+                if (c.isLetterOrDigit() || c == '_' || c == '-') c else '_'
+            }.joinToString("")
+            .trim('_')
+            .lowercase()
+    }
+
+    fun localPmtilesReady(
+        dataDir: File,
+        geofabrikPath: String,
+    ): Boolean {
+        val candidates =
+            buildList {
+                add(normalize(geofabrikPath))
+                addAll(packCatalogRegionIdAliases(geofabrikPath))
+            }
+        return candidates.any { path ->
+            val key = geofabrikPathToRegionKey(path)
+            File(dataDir, "pmtiles/$key.pmtiles").isFile
+        }
+    }
+
     fun localBakeReady(
         dataDir: File,
         geofabrikPath: String,
@@ -78,9 +110,15 @@ object PackRegionAvailability {
         }
     }
 
+    /** Packs + basemap present on device for this Geofabrik path. */
+    fun localInstalledReady(
+        dataDir: File,
+        geofabrikPath: String,
+    ): Boolean = localBakeReady(dataDir, geofabrikPath) && localPmtilesReady(dataDir, geofabrikPath)
+
     /**
      * Country / continent chips: also green when any landsdel under the path is
-     * baked locally.
+     * fully installed locally (packs + PMTiles).
      */
     fun localBakeReadyUnderPrefix(
         dataDir: File,
@@ -88,10 +126,10 @@ object PackRegionAvailability {
         childPaths: Iterable<String>,
     ): Boolean {
         val prefix = normalize(pathPrefix)
-        if (localBakeReady(dataDir, prefix)) return true
+        if (localInstalledReady(dataDir, prefix)) return true
         return childPaths.any { child ->
             val c = normalize(child)
-            (c == prefix || c.startsWith("$prefix/")) && localBakeReady(dataDir, c)
+            (c == prefix || c.startsWith("$prefix/")) && localInstalledReady(dataDir, c)
         }
     }
 
@@ -106,7 +144,7 @@ object PackRegionAvailability {
         if (childPathsForLocal.any()) {
             return localBakeReadyUnderPrefix(dir, path, childPathsForLocal)
         }
-        return localBakeReady(dir, path)
+        return localInstalledReady(dir, path)
     }
 
     fun statusLine(
@@ -120,15 +158,20 @@ object PackRegionAvailability {
         if (probing) return "Checking pack server…"
         val path = normalize(selectedPath)
         val onServer = pathCoveredByReadyIds(path, serverReadyIds)
-        val onDevice = dataDir != null && localBakeReady(dataDir, path)
+        val onDevice = dataDir != null && localInstalledReady(dataDir, path)
+        val packsOnly =
+            dataDir != null && localBakeReady(dataDir, path) && !localPmtilesReady(dataDir, path)
         return when {
             onServer && onDevice ->
-                "Ready on pack server ($dataSource) and indexed on device."
+                "Ready on pack server ($dataSource) and on device (packs + basemap)."
+            onServer && packsOnly ->
+                "Ready on pack server ($dataSource); packs on device — basemap still missing."
             onServer ->
-                "Ready on pack server ($dataSource). Download installs published packs (no place-index build)."
-            onDevice -> "Indexed locally on device."
+                "Ready on pack server ($dataSource). Download installs packs + basemap."
+            onDevice -> "Packs and basemap installed on device."
+            packsOnly -> "Packs on device — basemap still missing (use Download region)."
             !unreachableReason.isNullOrBlank() && serverReadyIds.isEmpty() ->
-                "Pack server offline — Geofabrik download + place index."
+                "Pack server offline — Geofabrik download + place index + basemap."
             else -> ""
         }
     }

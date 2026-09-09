@@ -1558,7 +1558,7 @@ fun uniffi_navi_fn_func_ensure_live_hazards_loaded(`pbfPath`: RustBuffer.ByValue
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ensure_pack_region_place_index(`dataDir`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,`forceRebuild`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_export_saved_route_gpx(`dataDir`: RustBuffer.ByValue,`routeId`: RustBuffer.ByValue,`routePolyline`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -2048,7 +2048,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_ensure_pack_region_place_index() != 58649.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_ensure_place_index() != 50894.toShort()) {
+    if (lib.uniffi_navi_checksum_func_ensure_place_index() != 16197.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_export_saved_route_gpx() != 14845.toShort()) {
@@ -5321,12 +5321,15 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
 
         /**
          * Build or open the offline FTS name index for a region PBF.
-         * Returns number of indexed named features (0 on failure; check report string).
-         */ fun `ensurePlaceIndex`(`pbfPath`: kotlin.String, `indexDbPath`: kotlin.String): kotlin.String {
+         *
+         * When `region_id` is non-empty, rows are merged into the shared DB under that
+         * id (other regions are preserved). Empty `region_id` keeps the legacy
+         * whole-DB cache-hit / full-rebuild behaviour.
+         */ fun `ensurePlaceIndex`(`pbfPath`: kotlin.String, `indexDbPath`: kotlin.String, `regionId`: kotlin.String?): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_ensure_place_index(
-        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`indexDbPath`),_status)
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`indexDbPath`),FfiConverterOptionalString.lower(`regionId`),_status)
 }
     )
     }

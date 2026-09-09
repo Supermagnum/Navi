@@ -139,15 +139,14 @@ pub fn http_get_bytes(url: &str, timeout: Duration) -> Result<Vec<u8>, PackServe
 }
 
 async fn http_get_bytes_async(url: &str, timeout: Duration) -> Result<Vec<u8>, PackServerError> {
-    let connect = timeout.min(CONNECTIVITY_TIMEOUT);
-    let client = reqwest::Client::builder()
+    let client = crate::download::shared_http_client();
+    let resp = client
+        .get(url)
         .timeout(timeout.max(BODY_TIMEOUT))
-        .connect_timeout(connect)
-        .user_agent(USER_AGENT)
-        .build()
-        .map_err(|e| PackServerError::Other(e.to_string()))?;
-
-    let resp = client.get(url).send().await.map_err(map_reqwest_err)?;
+        .header(reqwest::header::USER_AGENT, USER_AGENT)
+        .send()
+        .await
+        .map_err(map_reqwest_err)?;
     let status = resp.status();
     if !status.is_success() {
         return Err(PackServerError::Http(status.as_u16()));
@@ -282,17 +281,15 @@ pub async fn check_connectivity(base_url: &str) -> Connectivity {
     let t0 = std::time::Instant::now();
     let base = base_url.trim().trim_end_matches('/');
     let url = current_json_url(base);
-    let client = match reqwest::Client::builder()
-        .timeout(CONNECTIVITY_TIMEOUT)
-        .connect_timeout(CONNECTIVITY_TIMEOUT)
-        .user_agent(USER_AGENT)
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => return unreachable(format!("http client: {e}")),
-    };
+    let client = crate::download::shared_http_client();
 
-    let response = match client.get(&url).timeout(CONNECTIVITY_TIMEOUT).send().await {
+    let response = match client
+        .get(&url)
+        .timeout(CONNECTIVITY_TIMEOUT)
+        .header(reqwest::header::USER_AGENT, USER_AGENT)
+        .send()
+        .await
+    {
         Ok(r) => r,
         Err(e) => {
             let kind = if e.is_timeout() {

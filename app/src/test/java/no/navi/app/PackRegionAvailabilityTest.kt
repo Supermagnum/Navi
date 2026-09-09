@@ -63,12 +63,24 @@ class PackRegionAvailabilityTest {
             assertFalse(PackRegionAvailability.localBakeReady(dir, "europe/norway/ostlandet"))
             File(dir, "ostlandet-latest.navi-manifest.json").writeText("{}")
             assertTrue(PackRegionAvailability.localBakeReady(dir, "europe/norway/ostlandet"))
+            assertFalse(
+                PackRegionAvailability.localInstalledReady(dir, "europe/norway/ostlandet"),
+            )
+            File(dir, "pmtiles").mkdirs()
+            File(dir, "pmtiles/europe_norway_ostlandet.pmtiles").writeText("stub")
+            assertTrue(
+                PackRegionAvailability.localInstalledReady(dir, "europe/norway/ostlandet"),
+            )
             assertTrue(
                 PackRegionAvailability.localBakeReadyUnderPrefix(
                     dir,
                     "europe/norway",
                     listOf("europe/norway/ostlandet"),
                 ),
+            )
+            assertEquals(
+                "europe_norway_ostlandet",
+                PackRegionAvailability.geofabrikPathToRegionKey("europe/norway/ostlandet"),
             )
         } finally {
             dir.deleteRecursively()

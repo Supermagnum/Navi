@@ -52,6 +52,15 @@ pub struct ServerInstallStamp {
 
 impl ServerInstallStamp {
     pub const SCHEMA: u32 = 1;
+
+    pub fn load(path: &Path) -> Result<Self, String> {
+        let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&text).map_err(|e| format!("parse server install stamp: {e}"))
+    }
+
+    pub fn load_for_leaf(data_dir: &Path, leaf_stem: &str) -> Result<Self, String> {
+        Self::load(&server_install_path(data_dir, leaf_stem))
+    }
 }
 
 fn join_url(base: &str, path_or_url: &str) -> String {

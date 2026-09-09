@@ -1,6 +1,6 @@
 //! Load + validate indexed packs (never interpret mismatched versions).
 
-use std::fs::File;
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
 use memmap2::Mmap;
@@ -10,7 +10,9 @@ use thiserror::Error;
 use super::graph_pack::{ArchivedFlatGraphPack, FlatGraphPack, GRAPH_FORMAT_VERSION, MAGIC_GRAPH};
 use super::header::Preamble;
 use super::io::archive_payload_offset;
-use super::manifest::{bbox_intersects, manifest_path, NaviManifest, PackStatus};
+use super::manifest::{
+    bbox_intersects, manifest_path, server_install_present, NaviManifest, PackStatus,
+};
 use super::poi_barrier_pack::{
     ArchivedFlatPoiBarrierPack, FlatPoiBarrierPack, MAGIC_POI_BARRIER, POI_BARRIER_FORMAT_VERSION,
 };
@@ -18,6 +20,7 @@ use super::wetland_pack::{
     ArchivedFlatWetlandPack, FlatWetlandPack, MAGIC_WETLAND, WETLAND_FORMAT_VERSION,
 };
 use crate::poi::PoiIndex;
+use crate::routing::basemap::{pbf_stem_to_geofabrik_path, region_bbox};
 use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile};
 use crate::routing::safety::DangerBarrierIndex;
 use crate::routing::wetland::WetlandIndex;
@@ -56,11 +59,119 @@ fn status_for_planning_pbf(
 ) -> Result<PackStatus, PackLoadError> {
     // Pack-server installs ship graphs without a real extract. A sidecar stamp
     // means digests were verified at install time — skip PBF fingerprint.
-    if super::manifest::server_install_present(data_dir, &man.stem) {
+    if server_install_present(data_dir, &man.stem) {
         return Ok(man.status_pack_files(data_dir));
     }
     let packed = fingerprint_pbf_for_packs(data_dir, planning_pbf, man)?;
     Ok(man.status_for_pbf(data_dir, &packed))
+}
+
+/// Ready check for a stem that is not the planning PBF (multi-stem corridor).
+fn stem_pack_ready(data_dir: &Path, man: &NaviManifest) -> bool {
+    if server_install_present(data_dir, &man.stem) {
+        return man.status_pack_files(data_dir) == PackStatus::Ready;
+    }
+    let packed = data_dir.join(&man.pbf_filename);
+    if packed.is_file() {
+        return man.status_for_pbf(data_dir, &packed) == PackStatus::Ready;
+    }
+    man.status_pack_files(data_dir) == PackStatus::Ready
+}
+
+fn planning_stem(pbf: &Path) -> Result<String, PackLoadError> {
+    pbf.file_name()
+        .and_then(|s| s.to_str())
+        .map(|name| {
+            name.strip_suffix(".osm.pbf")
+                .or_else(|| name.strip_suffix(".pbf"))
+                .unwrap_or(name)
+                .to_string()
+        })
+        .ok_or(PackLoadError::Missing)
+}
+
+/// True when `inner` lies entirely inside `outer` (`[min_lat, min_lon, max_lat, max_lon]`).
+fn bbox_contained(inner: [f64; 4], outer: [f64; 4]) -> bool {
+    inner[0] >= outer[0] && inner[1] >= outer[1] && inner[2] <= outer[2] && inner[3] <= outer[3]
+}
+
+/// Corridor needs tiles beyond the planning stem when the plan bbox is not
+/// fully inside that stem's published region bbox (cross-landsdel pad).
+fn corridor_needs_extra_stems(primary_stem: &str, bbox: Option<[f64; 4]>) -> bool {
+    let Some(bbox) = bbox else {
+        return false;
+    };
+    match pbf_stem_to_geofabrik_path(primary_stem).and_then(|p| region_bbox(&p)) {
+        Some(region) => !bbox_contained(bbox, region),
+        // Unknown stem mapping: keep single-stem behaviour (no surprise loads).
+        None => false,
+    }
+}
+
+fn load_ready_manifest(data_dir: &Path, stem: &str) -> Result<NaviManifest, PackLoadError> {
+    let man_path = manifest_path(data_dir, stem);
+    if !man_path.is_file() {
+        return Err(PackLoadError::Missing);
+    }
+    NaviManifest::load(&man_path).map_err(|_| PackLoadError::Missing)
+}
+
+/// Other installed Ready manifests whose region bbox intersects `bbox`.
+fn extra_corridor_manifests(
+    data_dir: &Path,
+    primary_stem: &str,
+    bbox: [f64; 4],
+) -> Vec<NaviManifest> {
+    let Ok(entries) = fs::read_dir(data_dir) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for ent in entries.flatten() {
+        let name = ent.file_name();
+        let name = name.to_string_lossy();
+        let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+            continue;
+        };
+        if stem == primary_stem {
+            continue;
+        }
+        let Ok(man) = NaviManifest::load(&ent.path()) else {
+            continue;
+        };
+        if !stem_pack_ready(data_dir, &man) {
+            continue;
+        }
+        let Some(path) = pbf_stem_to_geofabrik_path(&man.stem) else {
+            continue;
+        };
+        let Some(region) = region_bbox(&path) else {
+            continue;
+        };
+        if !bbox_intersects(region, bbox) {
+            continue;
+        }
+        out.push(man);
+    }
+    out.sort_by(|a, b| a.stem.cmp(&b.stem));
+    out
+}
+
+fn append_intersecting_tile_files(
+    files: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+    tiles: &[super::manifest::GraphTileEntry],
+    bbox: Option<[f64; 4]>,
+) {
+    for t in tiles {
+        if let Some(b) = bbox {
+            if !bbox_intersects(t.bbox, b) {
+                continue;
+            }
+        }
+        if seen.insert(t.file.clone()) {
+            files.push(t.file.clone());
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -172,34 +283,76 @@ pub fn try_load_graph_for_plan_bbox(
     profile: RoutingProfile,
     bbox: Option<[f64; 4]>,
 ) -> Result<RouteGraph, PackLoadError> {
-    let stem = pbf
-        .file_name()
-        .and_then(|s| s.to_str())
-        .map(|name| {
-            name.strip_suffix(".osm.pbf")
-                .or_else(|| name.strip_suffix(".pbf"))
-                .unwrap_or(name)
-                .to_string()
-        })
-        .ok_or(PackLoadError::Missing)?;
-    let man_path = manifest_path(data_dir, &stem);
-    if !man_path.is_file() {
-        return Err(PackLoadError::Missing);
-    }
-    let man = NaviManifest::load(&man_path).map_err(|_| PackLoadError::Missing)?;
+    let stem = planning_stem(pbf)?;
+    let man = load_ready_manifest(data_dir, &stem)?;
     match status_for_planning_pbf(data_dir, pbf, &man)? {
         PackStatus::Ready => {}
         PackStatus::Missing => return Err(PackLoadError::Missing),
         PackStatus::StalePbf => return Err(PackLoadError::Stale),
         PackStatus::VersionMismatch => return Err(PackLoadError::VersionMismatch),
     }
-    if let Some(tiles) = man.graph_tiles_for(profile) {
-        return load_tiled_graph(data_dir, tiles, profile, bbox);
+
+    let need_extra = corridor_needs_extra_stems(&stem, bbox);
+    let extras = if need_extra {
+        if let Some(b) = bbox {
+            extra_corridor_manifests(data_dir, &stem, b)
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+    if !extras.is_empty() {
+        // Same progress channel as plan UI — no extra instrumentation.
+        crate::download::progress::set(0, Some(5), "Combining map data from multiple regions…");
     }
+
+    // Collect corridor tile files (same pass as today's single-stem load).
+    let mut seen = HashSet::new();
+    let mut tile_files = Vec::new();
+    if let Some(tiles) = man.graph_tiles_for(profile) {
+        append_intersecting_tile_files(&mut tile_files, &mut seen, tiles, bbox);
+    }
+    for extra in &extras {
+        if let Some(tiles) = extra.graph_tiles_for(profile) {
+            append_intersecting_tile_files(&mut tile_files, &mut seen, tiles, bbox);
+        }
+    }
+
+    if !tile_files.is_empty() {
+        return load_tiled_graph_files(data_dir, tile_files, profile, bbox);
+    }
+
+    // Monolithic primary (no tiles). Still merge any intersecting extra tiles.
+    let mut graphs = Vec::new();
     let path = man
         .graph_path(data_dir, profile)
         .ok_or(PackLoadError::Missing)?;
-    load_graph_pack_bbox(&path, profile, bbox)
+    graphs.push(load_graph_pack_bbox(&path, profile, bbox)?);
+    if !extras.is_empty() {
+        let mut extra_files = Vec::new();
+        let mut extra_seen = HashSet::new();
+        for extra in &extras {
+            if let Some(tiles) = extra.graph_tiles_for(profile) {
+                append_intersecting_tile_files(&mut extra_files, &mut extra_seen, tiles, bbox);
+            } else if let Some(ep) = extra.graph_path(data_dir, profile) {
+                graphs.push(load_graph_pack_bbox(&ep, profile, bbox)?);
+            }
+        }
+        if !extra_files.is_empty() {
+            graphs.push(load_tiled_graph_files(
+                data_dir,
+                extra_files,
+                profile,
+                bbox,
+            )?);
+        }
+    }
+    let merged = merge_tile_graphs(graphs, profile);
+    if merged.edges.is_empty() {
+        return Err(PackLoadError::Missing);
+    }
+    Ok(merged)
 }
 
 /// Key for deduplicating the same physical edge repeated on adjacent tile boundaries.
@@ -235,32 +388,25 @@ pub fn merge_tile_graphs(graphs: Vec<RouteGraph>, profile: RoutingProfile) -> Ro
     RouteGraph::from_parts(nodes, edges, profile)
 }
 
-fn load_tiled_graph(
+fn load_tiled_graph_files(
     data_dir: &Path,
-    tiles: &[super::manifest::GraphTileEntry],
+    mut tile_files: Vec<String>,
     profile: RoutingProfile,
     bbox: Option<[f64; 4]>,
 ) -> Result<RouteGraph, PackLoadError> {
-    let mut selected: Vec<&super::manifest::GraphTileEntry> = match bbox {
-        Some(b) => tiles
-            .iter()
-            .filter(|t| bbox_intersects(t.bbox, b))
-            .collect(),
-        None => tiles.iter().collect(),
-    };
-    if selected.is_empty() {
+    if tile_files.is_empty() {
         return Err(PackLoadError::Missing);
     }
     // Deterministic merge order: sort by tile filename before parallel load so
     // HashMap insert / edge-id first-wins matches the prior sequential path.
-    selected.sort_by(|a, b| a.file.cmp(&b.file));
+    tile_files.sort();
 
     // Parallel mmap/deserialize. Rayon uses available parallelism (min-spec
     // floor is 8 cores); merge below stays sorted for deterministic first-wins.
-    let graphs: Vec<RouteGraph> = selected
+    let graphs: Vec<RouteGraph> = tile_files
         .par_iter()
-        .map(|t| {
-            let path = data_dir.join(&t.file);
+        .map(|file| {
+            let path = data_dir.join(file);
             load_graph_pack_bbox(&path, profile, bbox)
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -279,54 +425,57 @@ pub fn try_load_poi_barrier_for_plan(
     data_dir: &Path,
     pbf: &Path,
 ) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
-    let stem = pbf
-        .file_name()
-        .and_then(|s| s.to_str())
-        .map(|name| {
-            name.strip_suffix(".osm.pbf")
-                .or_else(|| name.strip_suffix(".pbf"))
-                .unwrap_or(name)
-                .to_string()
-        })
-        .ok_or(PackLoadError::Missing)?;
-    let man_path = manifest_path(data_dir, &stem);
-    if !man_path.is_file() {
-        return Err(PackLoadError::Missing);
-    }
-    let man = NaviManifest::load(&man_path).map_err(|_| PackLoadError::Missing)?;
+    try_load_poi_barrier_for_plan_bbox(data_dir, pbf, None)
+}
+
+/// Load POI/barrier packs for the planning stem, and when `bbox` spills outside
+/// that stem's region, also merge Ready packs from other installed stems that
+/// intersect the corridor (same gate as graph tile multi-stem load).
+pub fn try_load_poi_barrier_for_plan_bbox(
+    data_dir: &Path,
+    pbf: &Path,
+    bbox: Option<[f64; 4]>,
+) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
+    let stem = planning_stem(pbf)?;
+    let man = load_ready_manifest(data_dir, &stem)?;
     match status_for_planning_pbf(data_dir, pbf, &man)? {
         PackStatus::Ready => {}
         PackStatus::Missing => return Err(PackLoadError::Missing),
         PackStatus::StalePbf => return Err(PackLoadError::Stale),
         PackStatus::VersionMismatch => return Err(PackLoadError::VersionMismatch),
     }
-    load_poi_barrier_pack(&man.poi_barrier_path(data_dir))
+    let (mut poi, mut barriers) = load_poi_barrier_pack(&man.poi_barrier_path(data_dir))?;
+    if corridor_needs_extra_stems(&stem, bbox) {
+        if let Some(b) = bbox {
+            for extra in extra_corridor_manifests(data_dir, &stem, b) {
+                let path = extra.poi_barrier_path(data_dir);
+                if !path.is_file() {
+                    continue;
+                }
+                let Ok((epoi, ebar)) = load_poi_barrier_pack(&path) else {
+                    continue;
+                };
+                poi.extend_from(&epoi);
+                barriers.merge(ebar);
+            }
+        }
+    }
+    Ok((poi, barriers))
 }
 
 /// Prefer indexed wetland pack when present and valid; else `Err` → PBF fallback.
 ///
 /// Region-scale packs may store wetland as spatial tiles (`wetland_tiles`); those
 /// are merged for the plan bbox. Monolith corridors use a single `wetland_file`.
+/// When the corridor bbox leaves the planning stem's region, intersecting wetland
+/// tiles/files from other Ready stems are included in the same merge pass.
 pub fn try_load_wetland_for_plan(
     data_dir: &Path,
     pbf: &Path,
     bbox: Option<[f64; 4]>,
 ) -> Result<WetlandIndex, PackLoadError> {
-    let stem = pbf
-        .file_name()
-        .and_then(|s| s.to_str())
-        .map(|name| {
-            name.strip_suffix(".osm.pbf")
-                .or_else(|| name.strip_suffix(".pbf"))
-                .unwrap_or(name)
-                .to_string()
-        })
-        .ok_or(PackLoadError::Missing)?;
-    let man_path = manifest_path(data_dir, &stem);
-    if !man_path.is_file() {
-        return Err(PackLoadError::Missing);
-    }
-    let man = NaviManifest::load(&man_path).map_err(|_| PackLoadError::Missing)?;
+    let stem = planning_stem(pbf)?;
+    let man = load_ready_manifest(data_dir, &stem)?;
     match status_for_planning_pbf(data_dir, pbf, &man)? {
         PackStatus::Ready => {}
         PackStatus::Missing => return Err(PackLoadError::Missing),
@@ -336,36 +485,39 @@ pub fn try_load_wetland_for_plan(
     if man.wetland_format_version != WETLAND_FORMAT_VERSION {
         return Err(PackLoadError::VersionMismatch);
     }
-    if man.uses_wetland_tiles() {
-        return load_tiled_wetland(data_dir, man.wetland_tiles(), bbox);
-    }
-    let Some(path) = man.wetland_path(data_dir) else {
-        return Err(PackLoadError::Missing);
-    };
-    if !path.is_file() {
-        return Err(PackLoadError::Missing);
-    }
-    load_wetland_pack(&path, bbox)
-}
 
-fn load_tiled_wetland(
-    data_dir: &Path,
-    tiles: &[super::manifest::GraphTileEntry],
-    bbox: Option<[f64; 4]>,
-) -> Result<WetlandIndex, PackLoadError> {
-    let selected: Vec<&super::manifest::GraphTileEntry> = match bbox {
-        Some(b) => tiles
-            .iter()
-            .filter(|t| bbox_intersects(t.bbox, b))
-            .collect(),
-        None => tiles.iter().collect(),
-    };
-    if selected.is_empty() {
+    let mut manifests = vec![man];
+    if corridor_needs_extra_stems(&stem, bbox) {
+        if let Some(b) = bbox {
+            for extra in extra_corridor_manifests(data_dir, &stem, b) {
+                if extra.wetland_format_version == WETLAND_FORMAT_VERSION {
+                    manifests.push(extra);
+                }
+            }
+        }
+    }
+
+    let mut seen = HashSet::new();
+    let mut tile_files = Vec::new();
+    let mut monolith_paths = Vec::new();
+    for m in &manifests {
+        if m.uses_wetland_tiles() {
+            append_intersecting_tile_files(&mut tile_files, &mut seen, m.wetland_tiles(), bbox);
+        } else if let Some(path) = m.wetland_path(data_dir) {
+            if path.is_file() {
+                monolith_paths.push(path);
+            }
+        }
+    }
+
+    if tile_files.is_empty() && monolith_paths.is_empty() {
         return Err(PackLoadError::Missing);
     }
+
     let mut merged = FlatWetlandPack::empty();
-    for t in selected {
-        let path = data_dir.join(&t.file);
+    tile_files.sort();
+    for file in &tile_files {
+        let path = data_dir.join(file);
         let mmap = map_file(&path)?;
         check_preamble(&mmap, MAGIC_WETLAND, WETLAND_FORMAT_VERSION)?;
         let body = &mmap[archive_payload_offset()..];
@@ -375,7 +527,15 @@ fn load_tiled_wetland(
             .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
         merged.extend_from(&pack);
     }
-    Ok(merged.to_wetland_index(bbox))
+
+    let mut index = merged.to_wetland_index(bbox);
+    for path in &monolith_paths {
+        let w = load_wetland_pack(path, bbox)?;
+        let mut parts = index.rings_as_parts();
+        parts.extend(w.rings_as_parts());
+        index = WetlandIndex::from_parts(parts);
+    }
+    Ok(index)
 }
 
 #[cfg(test)]
@@ -473,6 +633,35 @@ mod merge_tile_graphs_tests {
         let g2 = RouteGraph::from_parts(nodes, vec![edge], RoutingProfile::Car);
         let merged = merge_tile_graphs(vec![g1, g2], RoutingProfile::Car);
         assert_eq!(merged.edges.len(), 1, "boundary duplicate must dedupe");
+    }
+}
+
+#[cfg(test)]
+mod multi_stem_corridor_tests {
+    use super::{bbox_contained, corridor_needs_extra_stems};
+
+    #[test]
+    fn bbox_contained_requires_full_inclusion() {
+        let outer = [58.5, 7.5, 62.8, 13.5];
+        assert!(bbox_contained([60.0, 10.0, 61.0, 11.0], outer));
+        assert!(!bbox_contained([60.0, 10.0, 63.2, 11.0], outer)); // spills north
+        assert!(!bbox_contained([60.0, 6.0, 61.0, 11.0], outer)); // spills west
+    }
+
+    #[test]
+    fn corridor_needs_extra_only_when_bbox_leaves_primary_region() {
+        // Entirely inside Ostlandet → single-stem (no regression).
+        assert!(!corridor_needs_extra_stems(
+            "ostlandet-latest",
+            Some([60.0, 10.0, 61.0, 11.0]),
+        ));
+        // Raufoss→Aga class pad leaves Ostlandet → multi-stem.
+        assert!(corridor_needs_extra_stems(
+            "ostlandet-latest",
+            Some([58.9, 5.2, 62.1, 12.0]),
+        ));
+        // No bbox → never pull extras.
+        assert!(!corridor_needs_extra_stems("ostlandet-latest", None));
     }
 }
 

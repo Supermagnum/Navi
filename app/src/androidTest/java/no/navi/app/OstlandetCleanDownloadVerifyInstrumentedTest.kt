@@ -19,12 +19,12 @@ import java.io.File
 import java.io.FileInputStream
 
 /**
- * Clean-slate verification: Tools → Download basemap (PMTiles) for
- * `europe/norway/ostlandet` must produce a maxzoom-15 extract (~1.16 GB),
- * not the staged maxzoom-12 fixture (~192 MB).
+ * Clean-slate verification: Tools → Download region for
+ * `europe/norway/ostlandet` must produce packs + a maxzoom-15 basemap extract
+ * (~1.16 GB), not the staged maxzoom-12 fixture (~192 MB).
  *
- * Drives the real Tools button ([btn_download_pmtiles]), not
- * [OfflinePmtilesBootstrap].
+ * Drives the real Tools button ([btn_download_region]); basemap is no longer
+ * a separate Tools control.
  */
 @RunWith(AndroidJUnit4::class)
 class OstlandetCleanDownloadVerifyInstrumentedTest {
@@ -83,7 +83,7 @@ class OstlandetCleanDownloadVerifyInstrumentedTest {
 
         val started = System.currentTimeMillis()
         composeRule
-            .onNodeWithTag("btn_download_pmtiles", useUnmergedTree = true)
+            .onNodeWithTag("btn_download_region", useUnmergedTree = true)
             .performScrollTo()
             .performClick()
 

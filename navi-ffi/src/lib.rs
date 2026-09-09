@@ -2241,11 +2241,7 @@ fn plan_car_route_inner(
             bbox[0], bbox[1], bbox[2], bbox[3]
         ));
 
-        driver_break_core::download::progress::set(
-            0,
-            Some(5),
-            "Planning route: building area graph…",
-        );
+        driver_break_core::download::progress::set(0, Some(5), "Loading map data for this route…");
         let t_graph = Instant::now();
         let data_dir = plan_pack_data_dir(pbf, &data_dir);
         let pack_try = driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
@@ -2499,7 +2495,11 @@ fn plan_car_route_inner(
     driver_break_core::download::progress::set(4, Some(5), "Planning route: break stops…");
     // Clip POI load to the same trip bbox (never a full Ostlandet POI scan).
     let (poi_index, barriers, poi_pack_hit) =
-        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan(&data_dir, pbf) {
+        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan_bbox(
+            &data_dir,
+            pbf,
+            Some(bbox),
+        ) {
             Ok((poi, barriers)) => {
                 // Pack is region-wide; nearest queries already radius-limited.
                 (poi, barriers, true)
@@ -3170,11 +3170,7 @@ pub fn plan_hiking_route(
         return plan_cancelled_result(report, &timer, &[("profile_map_ms", profile_map_ms)]);
     }
 
-    driver_break_core::download::progress::set(
-        0,
-        Some(5),
-        "Planning route: building hiking area graph…",
-    );
+    driver_break_core::download::progress::set(0, Some(5), "Loading map data for this route…");
     let t_graph = Instant::now();
     let data_dir = plan_pack_data_dir(pbf, &data_dir);
     let pack_try = driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
@@ -3386,7 +3382,11 @@ pub fn plan_hiking_route(
     // to the corridor PBF scan only when packs are missing/stale.
     let corridor_lat_lon = hybrid.full_coords();
     let (poi_index, barriers, poi_pack_hit, overnight_buildings_pack_hit) =
-        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan(&data_dir, pbf) {
+        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan_bbox(
+            &data_dir,
+            pbf,
+            Some(bbox),
+        ) {
             Ok((mut idx, pack_barriers)) => {
                 let had_buildings = !idx.overnight_buildings().is_empty();
                 if had_buildings {
@@ -3858,9 +3858,16 @@ pub struct PlaceHit {
 }
 
 /// Build or open the offline FTS name index for a region PBF.
-/// Returns number of indexed named features (0 on failure; check report string).
+///
+/// When `region_id` is non-empty, rows are merged into the shared DB under that
+/// id (other regions are preserved). Empty `region_id` keeps the legacy
+/// whole-DB cache-hit / full-rebuild behaviour.
 #[uniffi::export]
-pub fn ensure_place_index(pbf_path: String, index_db_path: String) -> String {
+pub fn ensure_place_index(
+    pbf_path: String,
+    index_db_path: String,
+    region_id: Option<String>,
+) -> String {
     let pbf = Path::new(&pbf_path);
     if !pbf.is_file() {
         return format!("FAIL: PBF missing: {pbf_path}\n");
@@ -3869,17 +3876,37 @@ pub fn ensure_place_index(pbf_path: String, index_db_path: String) -> String {
     if let Some(parent) = db.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    // Reuse existing index if non-trivial and built with area-context schema.
+    let region = region_id
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .trim_matches('/')
+        .to_string();
+    // Reuse existing index when this region (or any rows for legacy empty id)
+    // is already present at the current schema.
     if db.is_file() {
         if let Ok(meta) = std::fs::metadata(db) {
-            if meta.len() > 10_000 && driver_break_core::search::NameIndex::is_current_schema(db) {
-                return format!("PASS\ncache_hit=true\nindex_db={index_db_path}\n");
+            let region_ok = if region.is_empty() {
+                meta.len() > 10_000
+                    && driver_break_core::search::NameIndex::is_current_schema(db)
+                    && driver_break_core::search::NameIndex::has_entries(db)
+            } else {
+                meta.len() > 10_000
+                    && driver_break_core::search::NameIndex::is_current_schema(db)
+                    && driver_break_core::search::NameIndex::has_entries_for_region(db, &region)
+            };
+            if region_ok {
+                return format!(
+                    "PASS\ncache_hit=true\nregion_id={region}\nindex_db={index_db_path}\n"
+                );
             }
         }
     }
     match driver_break_core::search::NameIndex::open(db) {
-        Ok(mut idx) => match idx.load_from_pbf(pbf) {
-            Ok(n) => format!("PASS\ncache_hit=false\nindexed={n}\nindex_db={index_db_path}\n"),
+        Ok(mut idx) => match idx.load_from_pbf_for_region(pbf, &region) {
+            Ok(n) => format!(
+                "PASS\ncache_hit=false\nindexed={n}\nregion_id={region}\nindex_db={index_db_path}\n"
+            ),
             Err(e) => format!("FAIL: index load: {e:#}\n"),
         },
         Err(e) => format!("FAIL: open index: {e}\n"),

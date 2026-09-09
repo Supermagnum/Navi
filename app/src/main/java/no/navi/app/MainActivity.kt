@@ -150,7 +150,6 @@ import uniffi.navi.pmtilesCancelJob
 import uniffi.navi.pmtilesDefaultBaseUrl
 import uniffi.navi.pmtilesGetJob
 import uniffi.navi.pmtilesPauseJob
-import uniffi.navi.pmtilesQueueRegion
 import uniffi.navi.pmtilesResumeJob
 import uniffi.navi.pmtilesRunJob
 import uniffi.navi.renameSavedPlace
@@ -1908,8 +1907,8 @@ private fun NaviMapScreen() {
             when {
                 already > 0L -> "Resuming download of $path…"
                 serverReady ->
-                    "Pack server has $path ($packCatalogDataSource); installing published packs…"
-                else -> "Downloading $path and building place index…"
+                    "Pack server has $path ($packCatalogDataSource); installing packs + basemap…"
+                else -> "Downloading $path (packs/index + basemap)…"
             }
         MapHudPrefs.saveGeofabrikPath(context, path)
         RegionDownloadBackground.ensureStarted(
@@ -1985,6 +1984,16 @@ private fun NaviMapScreen() {
                     runCatching { downloadProgressClear() }
                     if (leftover == "done") {
                         packCatalogEpoch += 1
+                        RegionDownloadBackground.takeLastCompletedPath().let { path ->
+                            if (path.isNotBlank()) {
+                                MapHudPrefs.rememberDownloadedPmtilesRegion(
+                                    context,
+                                    PackRegionAvailability.geofabrikPathToRegionKey(path),
+                                )
+                            }
+                        }
+                        offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
+                        styleEpoch += 1
                         if (!planningRoute) {
                             status = "Ready"
                         }
@@ -2009,7 +2018,11 @@ private fun NaviMapScreen() {
         }
         val pbf = resolveRegionPbf()
         if (pbf != null && pbf.isFile) {
-            PlaceIndexBackground.ensureStarted(pbf, placeIndexDbForWrite())
+            PlaceIndexBackground.ensureStarted(
+                pbf,
+                placeIndexDbForWrite(),
+                selectedGeofabrikPath.ifBlank { null },
+            )
         }
     }
 
@@ -3594,6 +3607,22 @@ private fun NaviMapScreen() {
         RecalculatingRouteBanner(
             active = planningRoute || recalculatingRoute,
             title = if (recalculatingRoute) "Recalculating route…" else "Planning route…",
+            subtitle =
+                routePlanProgress.takeIf { it.isNotBlank() }?.let { line ->
+                    // Prefer the native progress label (e.g. map-data load) over a
+                    // bare duplicate of the banner title.
+                    val cleaned =
+                        line
+                            .removePrefix("Planning route: ")
+                            .removePrefix("Recalculating route… ")
+                            .trim()
+                    cleaned.takeIf {
+                        it.isNotBlank() &&
+                            !it.equals("Planning route…", ignoreCase = true) &&
+                            !it.equals("Recalculating route…", ignoreCase = true) &&
+                            !it.equals("starting…", ignoreCase = true)
+                    }
+                },
             onCancel = {
                 val wasReroute = recalculatingRoute
                 planAbort.set(true)
@@ -5984,7 +6013,7 @@ private fun NaviMapScreen() {
                         )
                     }
                     Text(
-                        "Basemap (PMTiles) — range-extract from Protomaps planet",
+                        "Basemap (PMTiles) — included in Download region; DEM is optional",
                         style = MaterialTheme.typography.labelLarge,
                     )
                     OutlinedTextField(
@@ -6034,64 +6063,6 @@ private fun NaviMapScreen() {
                         ) {
                             Text("Restore staged offline maps")
                         }
-                    }
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                val path = selectedGeofabrikPath.trim().trim('/')
-                                if (path.isEmpty()) {
-                                    status = "Select a Geofabrik path first."
-                                    return@launch
-                                }
-                                val base = pmtilesBaseUrl.ifBlank { null }
-                                downloadProgressClear()
-                                status = "Extracting PMTiles for $path from Protomaps..."
-                                val job =
-                                    withContext(Dispatchers.IO) {
-                                        pmtilesQueueRegion(
-                                            dataDir.absolutePath,
-                                            path,
-                                            base,
-                                        )
-                                    }
-                                if (job.id.isBlank() || job.status.startsWith("failed")) {
-                                    status = "PMTiles queue failed: ${job.status}"
-                                    return@launch
-                                }
-                                pmtilesJobId = job.id
-                                pmtilesProgress = "Downloading map tiles for region… 0%"
-                                downloadPolling = true
-                                status = "Downloading basemap ${job.regionKey} (range extract)..."
-                                val done =
-                                    withContext(Dispatchers.IO) {
-                                        pmtilesRunJob(dataDir.absolutePath, job.id)
-                                    }
-                                downloadPolling = false
-                                pmtilesProgress =
-                                    formatProgressPct(
-                                        done.bytesReceived,
-                                        done.totalBytes,
-                                        "Downloading map tiles for region…",
-                                    )
-                                status = "PMTiles ${done.status}: ${done.localPath}"
-                                if (done.status == "completed") {
-                                    MapHudPrefs.rememberDownloadedPmtilesRegion(
-                                        context,
-                                        done.regionKey.ifBlank {
-                                            File(done.localPath).nameWithoutExtension
-                                        },
-                                    )
-                                    offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
-                                    styleEpoch += 1
-                                }
-                            }
-                        },
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .testTag("btn_download_pmtiles"),
-                    ) {
-                        Text("Download basemap (PMTiles)")
                     }
                     Button(
                         onClick = {
@@ -6190,7 +6161,7 @@ private fun NaviMapScreen() {
                         )
                     }
                     Text(
-                        "OSM updates (Geofabrik) — opt-in, never silent",
+                        "OSM updates — pack server first, Geofabrik if unreachable (opt-in)",
                         style = MaterialTheme.typography.labelLarge,
                     )
                     val osmCheckReady = pathPillReady(selectedGeofabrikPath)
@@ -6252,6 +6223,7 @@ private fun NaviMapScreen() {
                                             ensurePlaceIndex(
                                                 pbf.absolutePath,
                                                 placeIndexDbForWrite().absolutePath,
+                                                selectedGeofabrikPath.ifBlank { null },
                                             )
                                         }
                                         val elevDir =
@@ -6798,6 +6770,7 @@ private fun RecalculatingRouteBanner(
     title: String,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
 ) {
     var hookActive by remember { mutableStateOf(NaviMapTestHooks.reroutingActive) }
     LaunchedEffect(Unit) {
@@ -6821,12 +6794,21 @@ private fun RecalculatingRouteBanner(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
         ) {
-            Text(
-                title,
-                color = Color.White,
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(end = 8.dp),
-            )
+            Column(modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp)) {
+                Text(
+                    title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                if (!subtitle.isNullOrBlank()) {
+                    Text(
+                        subtitle,
+                        color = Color.White.copy(alpha = 0.92f),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("rerouting_banner_subtitle"),
+                    )
+                }
+            }
             TextButton(onClick = onCancel, modifier = Modifier.testTag("btn_cancel_reroute")) {
                 Text("Cancel", color = Color.White)
             }

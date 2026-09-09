@@ -18,7 +18,8 @@ use rstar::{RTree, RTreeObject, AABB};
 use crate::tracks::haversine_km;
 
 /// Schema bump written at the end of a context-aware `load_from_pbf`.
-pub const PLACE_INDEX_SCHEMA_VERSION: i32 = 2;
+/// v3: `region_id` column so multi-region indexes are additive.
+pub const PLACE_INDEX_SCHEMA_VERSION: i32 = 3;
 
 const SUB_AREA_MAX_M: f64 = 4_000.0;
 const SUB_AREA_VILLAGE_MAX_M: f64 = 2_000.0;

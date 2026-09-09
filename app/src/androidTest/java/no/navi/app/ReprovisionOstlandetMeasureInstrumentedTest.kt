@@ -109,7 +109,8 @@ class ReprovisionOstlandetMeasureInstrumentedTest {
         ensureFullBasemapPmtiles()
 
         val placeDb = File(dir, "place_index.db")
-        val indexReport = ensurePlaceIndex(pbf.absolutePath, placeDb.absolutePath)
+        val indexReport =
+            ensurePlaceIndex(pbf.absolutePath, placeDb.absolutePath, "europe/norway/ostlandet")
         Log.i(TAG, "ensurePlaceIndex=$indexReport place_bytes=${placeDb.length()}")
         assertTrue("place index must exist", placeDb.isFile && placeDb.length() > 10_000L)
 

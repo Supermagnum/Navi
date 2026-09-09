@@ -84,10 +84,9 @@ class OutsideRegionRoutingInstrumentedTest {
                     dataDir,
                 )
             requireNotNull(missing)
-            assertTrue(
-                "cross-region should suggest country or nord-norge: ${missing.suggestedGeofabrikPath}",
-                missing.suggestedGeofabrikPath == "europe/norway" ||
-                    missing.suggestedGeofabrikPath == "europe/norway/nord-norge",
+            assertEquals(
+                "europe/norway/nord-norge",
+                missing.suggestedGeofabrikPath,
             )
             Log.i(TAG, "coverage_ok suggest=${missing.suggestedGeofabrikPath}")
         }
