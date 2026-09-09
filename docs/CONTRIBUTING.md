@@ -334,10 +334,10 @@ Every push to **`main`** or **`dev`**, and every PR, runs
 - `OfflinePmtilesBootstrapTest` / `OfflineDataIntegrityRestoreTest` — mz12 fixture must not complete or offer production restore (the download-completion gap).
 - `CoordinateInputTest` — lat/lon parse (was instrumented-only).
 - `PlaceSearchHintTest` — skip live graph work while a foreground plan is active.
-- `motor_access_barrier` / `wetland_apply_identity` / `wetland_pack_identity` — Torggata/Kirkebyskogen access and wetland pack-vs-PBF against checked-in mini PBFs under `core/tests/fixtures/`.
+- `motor_access_barrier` / `wetland_apply_identity` / `wetland_pack_identity` / `poi_discovery` — Torggata/Kirkebyskogen access, wetland pack-vs-PBF, and typed POI `nearest` discovery (Hamar amenities) against checked-in mini PBFs under `core/tests/fixtures/`.
 - `pack_server::place_index_after` — offline guards for post-pack Geofabrik PBF leaf naming + place-index report/error paths.
 
-Rust counterparts already in `rust-checks` / `regression-guards` (not `#[ignore]`): `bike_suitability_route`, wetland tag/precedence unit tests, `download::pbf_priority` (cone/plan skip), `basemap::extract::validate_rejects_mz12_large_region_fixture`, `motor_access_barrier`, and wetland pack-vs-PBF (`wetland_apply_identity` / `wetland_pack_identity`) against checked-in mini PBFs under `core/tests/fixtures/` (~1.6 MiB; regenerate via `scripts/cut-corridor-extract.py`).
+Rust counterparts already in `rust-checks` / `regression-guards` (not `#[ignore]`): `bike_suitability_route`, wetland tag/precedence unit tests, `download::pbf_priority` (cone/plan skip), `basemap::extract::validate_rejects_mz12_large_region_fixture`, `motor_access_barrier`, `poi_discovery`, and wetland pack-vs-PBF (`wetland_apply_identity` / `wetland_pack_identity`) against checked-in mini PBFs under `core/tests/fixtures/` (~1.6 MiB; regenerate via `scripts/cut-corridor-extract.py`).
 
 **Not** in the per-PR gate (run locally or via manual workflow dispatch):
 
@@ -367,6 +367,11 @@ cargo test --workspace \
   --exclude navi-desktop --exclude navi-plugin-log-hello \
   --exclude navi-plugin-busy-loop --exclude navi-plugin-weather
 cargo test -p navi-plugin-host --test isolation
+# Explicit regression-guards Rust subset (also in rust-checks workspace run):
+cargo test -p driver-break-core --test motor_access_barrier -- --nocapture
+cargo test -p driver-break-core --test wetland_apply_identity -- --nocapture
+cargo test -p driver-break-core --test wetland_pack_identity -- --nocapture
+cargo test -p driver-break-core --test poi_discovery -- --nocapture
 cargo deny check
 cargo audit
 ./gradlew :app:ktlintCheck :app:detekt :app:testDebugUnitTest :app:assembleDebug

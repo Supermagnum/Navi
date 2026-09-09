@@ -43,6 +43,9 @@
 #     --dst core/tests/fixtures/budorvegen-service-detour.osm.pbf \
 #     --bbox 11.30,60.878,11.32,60.890
 #
+# POI discovery (`poi_discovery.rs`) reuses motor-access-hamar-gjovik.osm.pbf
+# (downtown Hamar amenities: Peppes Pizza, Home Hotel Astoria, toilets, fountain).
+#
 # Sizes stay under a few MiB so they can live in git (unlike
 # core/target/integration-fixtures/*.pbf which are gitignored).
 

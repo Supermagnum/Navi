@@ -45,6 +45,7 @@ For how to run the same gate locally before opening a PR, see
 | `motor_access_barrier` | Torggata `motor_vehicle=no` + Kirkebyskogen bollard — Car excluded; Foot/Bike retained |
 | `wetland_apply_identity` | Wetland Soft/Hard apply identity on Atnbrufossen mini extract |
 | `wetland_pack_identity` | Pack vs PBF wetland Soft/Hard + boardwalk carve-out counters |
+| `poi_discovery` | Typed `PoiIndex::nearest` from Hamar mini PBF (General / Lodging / Restroom / Water) — host stand-in for corridor POI discovery |
 
 ---
 
@@ -65,6 +66,7 @@ unit tests inside `driver-break-core`, `navi-ffi`, etc.). Names are cargo
 | `lillehammer_tretten_avoid_motorways` | Avoid-motorways on/off Lillehammer→Tretten (motorway-grade tags) |
 | `maneuver_icon_assets` | Every maneuver icon key has SVG in Android lean pack and core icon set |
 | `motor_access_barrier` | Same as regression-guards (Torggata / Kirkebyskogen mini PBF) |
+| `poi_discovery` | Same as regression-guards (Hamar amenity nearest queries) |
 | `motorcycle_eco_soft_break` | Motorcycle eco ≠ car Passat; soft pause vs truck HOS spacing |
 | `planner_options_routes` | Planner options (avoid motorways/tolls/ferries, vehicle height, network preference, …) change path/cost on synthetic graphs |
 | `raufoss_approach_route` | Host plan Grimåsfeltet → Nysethvegen / Tollerud |

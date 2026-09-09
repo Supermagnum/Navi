@@ -301,14 +301,17 @@ jobs:
           --tests no.navi.app.CoordinateInputTest
           --tests no.navi.app.PlaceSearchHintTest
 
-      - name: Motor-access + wetland pack-vs-PBF (checked-in mini PBFs)
+      - name: Motor-access + wetland pack-vs-PBF + POI discovery (checked-in mini PBFs)
         # Must execute (not skip). Fixtures under core/tests/fixtures/ (~1.6 MiB).
         # Do not point these at core/target/integration-fixtures.
+        # poi_discovery: host stand-in for OfflineInnlandetScreenshotTest corridor
+        # POI nearest check (Hamar amenities in motor-access mini PBF).
         run: |
           cargo test -p driver-break-core --test motor_access_barrier -- --nocapture
           cargo test -p driver-break-core --test budorvegen_service_detour -- --nocapture
           cargo test -p driver-break-core --test wetland_apply_identity -- --nocapture
           cargo test -p driver-break-core --test wetland_pack_identity -- --nocapture
+          cargo test -p driver-break-core --test poi_discovery -- --nocapture
 
       - name: Pack-server place-index host guards (offline)
         # On-device Geofabrik PBF + NameIndex path after pack install (no network).
