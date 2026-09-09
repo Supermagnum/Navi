@@ -36,6 +36,9 @@ impl NameIndex {
 
     pub fn open(path: impl AsRef<Path>) -> SqlResult<Self> {
         let conn = Connection::open(path)?;
+        // Region download and PlaceIndexBackground can contend briefly; wait
+        // instead of failing open with SQLITE_BUSY ("database is locked").
+        conn.busy_timeout(std::time::Duration::from_secs(30))?;
         Self::migrate(&conn)?;
         Ok(Self { conn })
     }

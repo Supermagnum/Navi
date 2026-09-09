@@ -237,14 +237,19 @@ object RegionDownloadBackground {
                             if (geofabrikPath.isNotBlank()) {
                                 MapHudPrefs.saveGeofabrikPath(context, geofabrikPath)
                             }
-                            // Packs are ready; still need a real Geofabrik PBF +
-                            // on-device place index (server does not ship either).
-                            // force_rebuild=true re-indexes this region only
-                            // (additive across regions in the shared DB).
+                            // Packs are ready. Fetch offline basemap next (independent of
+                            // place search), then Geofabrik PBF + place index. Previously
+                            // place-index ran first and a concurrent PlaceIndexBackground
+                            // open could fail with "database is locked", aborting before
+                            // PMTiles — leaving packs installed but no offline tiles.
+                            if (!downloadBasemapPmtiles(context, dataDir, pathForDecision)) {
+                                lastStatus.set("failed: basemap")
+                                return@launch
+                            }
                             lastStatus.set("Downloading extract + building place index…")
                             Log.i(
                                 TAG,
-                                "pack server packs installed; starting Geofabrik PBF + " +
+                                "pack server packs + basemap ready; starting Geofabrik PBF + " +
                                     "place index for $pathForDecision",
                             )
                             val placeReport =
@@ -260,20 +265,15 @@ object RegionDownloadBackground {
                                 }
                             Log.i(TAG, "pack region place index: ${placeReport.take(400)}")
                             if (!placeReport.contains("PASS")) {
-                                lastStatus.set("failed: place index")
-                                return@launch
-                            }
-                            // Keep PlaceIndexBackground status line in sync for Tools UI.
-                            val pbf = File(dataDir, filename)
-                            if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
-                                PlaceIndexBackground.ensureStarted(
-                                    pbf,
-                                    File(dataDir, "place_index.db"),
-                                    pathForDecision,
+                                // Basemap is already on disk; surface place-index failure
+                                // without discarding the successful pack+tile install.
+                                lastStatus.set("done (place index failed)")
+                                clearJob(dataDir)
+                                lastCompletedPath.set(pathForDecision)
+                                Log.e(
+                                    TAG,
+                                    "place index failed after packs+basemap; leaving basemap in place",
                                 )
-                            }
-                            if (!downloadBasemapPmtiles(context, dataDir, pathForDecision)) {
-                                lastStatus.set("failed: basemap")
                                 return@launch
                             }
                             clearJob(dataDir)
@@ -281,7 +281,7 @@ object RegionDownloadBackground {
                             lastStatus.set("done")
                             Log.i(
                                 TAG,
-                                "pack server install + place index + basemap finished for $pathForDecision",
+                                "pack server install + basemap + place index finished for $pathForDecision",
                             )
                             return@launch
                         }
@@ -312,11 +312,6 @@ object RegionDownloadBackground {
                     }
                     val pbf = File(dataDir, filename)
                     if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
-                        PlaceIndexBackground.ensureStarted(
-                            pbf,
-                            File(dataDir, "place_index.db"),
-                            geofabrikPath.ifBlank { pathForDecision }.ifBlank { null },
-                        )
                         val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
                         IndexedMapsBackground.ensureStarted(pbf, dataDir, elev)
                     }
@@ -326,6 +321,14 @@ object RegionDownloadBackground {
                             lastStatus.set("failed: basemap")
                             return@launch
                         }
+                    }
+                    // Place index after basemap so a locked DB cannot block offline tiles.
+                    if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
+                        PlaceIndexBackground.ensureStarted(
+                            pbf,
+                            File(dataDir, "place_index.db"),
+                            geofabrikPath.ifBlank { pathForDecision }.ifBlank { null },
+                        )
                     }
                     clearJob(dataDir)
                     lastCompletedPath.set(basemapPath)

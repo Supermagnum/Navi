@@ -1978,11 +1978,14 @@ private fun NaviMapScreen() {
             }
             if (!regionRunning && downloadPolling && pmtilesJobId == null) {
                 val leftover = RegionDownloadBackground.statusLine()
-                if (leftover == "done" || leftover.startsWith("failed")) {
+                if (leftover == "done" ||
+                    leftover.startsWith("done ") ||
+                    leftover.startsWith("failed")
+                ) {
                     downloadPolling = false
                     regionDownloadProgress = ""
                     runCatching { downloadProgressClear() }
-                    if (leftover == "done") {
+                    if (leftover == "done" || leftover.startsWith("done ")) {
                         packCatalogEpoch += 1
                         RegionDownloadBackground.takeLastCompletedPath().let { path ->
                             if (path.isNotBlank()) {
@@ -2017,7 +2020,12 @@ private fun NaviMapScreen() {
             }
         }
         val pbf = resolveRegionPbf()
-        if (pbf != null && pbf.isFile) {
+        // Avoid racing RegionDownloadBackground's place-index open (SQLite
+        // "database is locked") while a Download region job is in flight.
+        if (pbf != null &&
+            pbf.isFile &&
+            !RegionDownloadBackground.isRunning()
+        ) {
             PlaceIndexBackground.ensureStarted(
                 pbf,
                 placeIndexDbForWrite(),
@@ -2035,29 +2043,48 @@ private fun NaviMapScreen() {
                 }
             if (pbf != null) {
                 val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
-                IndexedMapsBackground.ensureStarted(scope, pbf, dataDir, elev)
-                indexedMapsUiLine = IndexedMapsBackground.uiLine(pbf, dataDir)
+                val regionDownloading = RegionDownloadBackground.isRunning()
+                // Do not kick a second convert while Download region is already
+                // installing packs / indexing — that doubles progress UI and
+                // fights the pack-server install path.
+                if (!regionDownloading) {
+                    IndexedMapsBackground.ensureStarted(scope, pbf, dataDir, elev)
+                }
+                indexedMapsUiLine =
+                    if (regionDownloading) {
+                        ""
+                    } else {
+                        IndexedMapsBackground.uiLine(pbf, dataDir)
+                    }
                 if (IndexedMapsBackground.isRunning() &&
                     !planningRoute &&
-                    !RegionDownloadBackground.isRunning()
+                    !regionDownloading
                 ) {
                     val line = indexedMapsUiLine
                     if (line.isNotBlank()) status = line
                 }
                 placeIndexUiLine =
-                    if (PlaceIndexBackground.isRunning()) {
-                        val st = PlaceIndexBackground.statusLine()
-                        if (st.isNotBlank() && st != "idle") {
-                            if (st.startsWith("Place index", ignoreCase = true)) st else "Place index: $st"
-                        } else {
-                            "Place index: building (background)"
+                    when {
+                        // Region download owns place-index progress via regionDownloadProgress
+                        // (same downloadProgressSnapshot labels) — do not show a second line.
+                        regionDownloading -> ""
+                        PlaceIndexBackground.isRunning() -> {
+                            val st = PlaceIndexBackground.statusLine()
+                            if (st.isNotBlank() && st != "idle") {
+                                if (st.startsWith("Place index", ignoreCase = true)) {
+                                    st
+                                } else {
+                                    "Place index: $st"
+                                }
+                            } else {
+                                "Place index: building (background)"
+                            }
                         }
-                    } else {
-                        val st = PlaceIndexBackground.statusLine()
-                        if (st == "idle") "" else "Place index: $st"
+                        else -> ""
                     }
             } else {
                 indexedMapsUiLine = ""
+                placeIndexUiLine = ""
             }
             delay(2_500)
         }
