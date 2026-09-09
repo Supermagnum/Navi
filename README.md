@@ -41,11 +41,12 @@ Navi uses Geofabrik + on-device convert (`local-bake`). Same idea if a pack
 fetch fails mid-download (network, checksum, etc.). Details:
 [`docs/pack-server-client.md`](docs/pack-server-client.md).
 
-Precomputed town-to-town corridors (e.g. Haugesund→Bergen,
-Oslo→Fredrikstad) could speed popular trips further. Direction:
+Precomputed town-to-town corridors and globe disk ballparks (packs from live
+`current.json`, plus optional highway OD caches):
 [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
 
-Estimated server space needed:
+Estimated server space needed (includes **measured** pack / ops figures, not
+only order-of-magnitude guesses):
 [https://github.com/Supermagnum/Navi/blob/main/docs/indexed-map-format-plan.md](https://github.com/Supermagnum/Navi/blob/main/docs/indexed-map-format-plan.md)
 
 Background indexing is still slow on region-scale extracts, but improved
@@ -705,7 +706,8 @@ I/O for hardware-facing plugins.
 | [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Wild-camping suggestions (plugin, not core) |
 | [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Fuel/water resupply ideas |
 | [`docs/plugins/traffic-information.md`](docs/plugins/traffic-information.md) | Traffic data sourcing research (DATEX II limits, RTL-SDR TMC/TPEG; not shipped) |
-| [`docs/plugins/datex-npra-client.md`](docs/plugins/datex-npra-client.md) | NPRA DATEX II v3.1 pull client (access, Basic Auth, endpoints; not shipped) |
+| [`docs/plugins/datex-plugin.md`](docs/plugins/datex-plugin.md) | DATEX road situations via navi-server (**Norway / NPRA only** today; default OFF). How to enable services + poll cadence on the server |
+| [`docs/plugins/datex-npra-client.md`](docs/plugins/datex-npra-client.md) | NPRA DATEX II v3.1 pull client sketch (access, Basic Auth, endpoints; **not** used by the product APK — credentials stay on navi-server) |
 | [`docs/plugins/weather-plugin.md`](docs/plugins/weather-plugin.md) | Weather overlay — HUD chip + optional city map symbols (host UniFFI; WASM guest scaffolded, not linked into the product APK) |
 | [`docs/plugins/weather-icons-reference.md`](docs/plugins/weather-icons-reference.md) | What each weather icon slug means (fill style) |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state + approach warnings to instrument clusters |

@@ -305,7 +305,8 @@ internet weather overlay.
 | | |
 |---|---|
 | **Benefit** | Roadworks / closures / incidents along the planned corridor from NPRA DATEX II |
-| **Docs** | [`plugins/datex-plugin.md`](plugins/datex-plugin.md) — navi-server client contract, config, active vs inactive |
+| **Coverage** | **Norway only** today (NPRA). Other national DATEX feeds are not integrated |
+| **Docs** | [`plugins/datex-plugin.md`](plugins/datex-plugin.md) — client contract, **how to add DATEX services / cadence**, active vs inactive |
 | **Server** | navi-server optional DATEX redistributor (`--apply-datex`); caches XML; clients GET `/datex/` only |
 | **Host duties** | Plain HTTP GET (`pack_server`); parse; classify `DatexImpact`; `CorridorBand` filter; overlay active; planner via `planner_impacts` |
 | **Guest duties** | Scaffolded WASM guest (`plugins/datex/`); product APK does not load plugin-host yet |
