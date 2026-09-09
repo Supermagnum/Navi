@@ -121,6 +121,8 @@ impl NameIndex {
         let _bg = crate::download::pbf_priority::BackgroundIndexerGuard::enter();
         let path = path.as_ref();
         let mut batch: Vec<(i64, String, String, f64, f64)> = Vec::new();
+        const PHASES: u64 = 6;
+        crate::download::progress::set(0, Some(PHASES), "Place index: admin boundaries…");
 
         // Admin polygons use their own PBF passes (relations → ways → nodes).
         let admin_rings = place_context::load_admin_from_pbf(path).unwrap_or_else(|e| {
@@ -130,6 +132,7 @@ impl NameIndex {
 
         // Pass 1: collect named closed/open ways that need node centroids
         // (tourism=zoo, amenity areas, etc. are often ways, not nodes).
+        crate::download::progress::set(1, Some(PHASES), "Place index: scanning ways…");
         let mut way_jobs: Vec<(i64, String, String, Vec<i64>)> = Vec::new();
         let mut needed_nodes: std::collections::HashSet<i64> = std::collections::HashSet::new();
         {
@@ -166,6 +169,7 @@ impl NameIndex {
         }
 
         // Pass 2: nodes (search hits) + coords for way centroids.
+        crate::download::progress::set(2, Some(PHASES), "Place index: scanning nodes…");
         let mut node_coords: std::collections::HashMap<i64, (f64, f64)> =
             std::collections::HashMap::with_capacity(needed_nodes.len());
         {
@@ -216,6 +220,7 @@ impl NameIndex {
         // Official hiking/cycling route relations (name/ref/operator) for To/Via search.
         // Relation ids are distinct from node ids in OSM; store relation id as-is
         // (FTS rowid = osm_id).
+        crate::download::progress::set(3, Some(PHASES), "Place index: named routes…");
         crate::download::pbf_priority::yield_if_foreground_plan();
         match crate::routing::graph::load_named_route_entries(path) {
             Ok(routes) => {
@@ -228,6 +233,7 @@ impl NameIndex {
             }
         }
 
+        crate::download::progress::set(4, Some(PHASES), "Place index: resolving context…");
         let sub_areas = batch
             .iter()
             .filter_map(|(osm_id, name, kind, lat, lon)| {
@@ -237,6 +243,7 @@ impl NameIndex {
         let resolver =
             place_context::ContextResolver::from_admin_and_sub_areas(admin_rings, sub_areas);
 
+        crate::download::progress::set(5, Some(PHASES), "Place index: writing database…");
         let tx = self.conn.unchecked_transaction()?;
         tx.execute_batch(
             "
@@ -260,6 +267,7 @@ impl NameIndex {
             "PRAGMA user_version = {PLACE_INDEX_SCHEMA_VERSION};"
         ))?;
         tx.commit()?;
+        crate::download::progress::set(PHASES, Some(PHASES), "Place index ready");
         Ok(batch.len())
     }
 

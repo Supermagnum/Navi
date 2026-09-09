@@ -1,8 +1,8 @@
 //! Host-owned DATEX II client for cached NPRA snapshots on navi-server.
 //!
 //! Host discovery reuses [`crate::pack_server::check_connectivity_chain`]
-//! (LAN → duckdns, 3s/host, `server-lan` / `server-duckdns` tags). There is
-//! **no** local-bake equivalent for live traffic — both hosts failing yields
+//! (public pack host, 3s timeout, `server-duckdns` tag). There is
+//! **no** local-bake equivalent for live traffic — host failing yields
 //! `data_source = none` and no overlay.
 //!
 //! DATEX availability on a resolved host uses
@@ -56,7 +56,7 @@ pub struct DatexRefreshResult {
     pub inactive: Vec<DatexSituation>,
     pub attribution: Option<String>,
     pub warning: Option<String>,
-    /// `server-lan` / `server-duckdns` / `none` (never `local-bake` for DATEX).
+    /// `server-duckdns` / `none` (never `local-bake` for DATEX).
     pub data_source: String,
 }
 
@@ -100,11 +100,7 @@ fn resolve_datex_host(
 ) -> Result<Option<(PackDataSource, String)>, DatexFetchError> {
     if !config.use_discovery_chain {
         let base = pack_server::base_url(&config.host, config.port);
-        let tag = if base.trim_end_matches('/') == pack_server::FALLBACK_PACK_SERVER_BASE_URL {
-            PackDataSource::ServerDuckdns
-        } else {
-            PackDataSource::ServerLan
-        };
+        let tag = PackDataSource::ServerDuckdns;
         match probe_datex_source(&base) {
             Ok(true) => {
                 with_session(|s| s.remember_host(tag, base.clone()));
@@ -245,7 +241,7 @@ pub fn refresh_for_route(
                 .sticky
                 .as_ref()
                 .map(|(t, _)| *t)
-                .unwrap_or(PackDataSource::ServerLan);
+                .unwrap_or(PackDataSource::ServerDuckdns);
             match parse_situation_publication(xml) {
                 Ok(all) => {
                     let view = corridor_view(&all, route_lat_lon, config.corridor_margin_m(), now);

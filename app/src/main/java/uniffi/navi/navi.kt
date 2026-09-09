@@ -1985,7 +1985,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_datex_plugin_default_enabled() != 30233.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_datex_refresh_json() != 2633.toShort()) {
+    if (lib.uniffi_navi_checksum_func_datex_refresh_json() != 33876.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_datex_server_poll_secs() != 2368.toShort()) {
@@ -2000,7 +2000,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_datex_wifi_only_default() != 40447.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_decide_region_acquisition() != 64920.toShort()) {
+    if (lib.uniffi_navi_checksum_func_decide_region_acquisition() != 10950.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_default_pack_server_base_url() != 42568.toShort()) {
@@ -2015,7 +2015,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_detected_parallelism() != 47010.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_discover_pack_catalog() != 26217.toShort()) {
+    if (lib.uniffi_navi_checksum_func_discover_pack_catalog() != 4410.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_display_range_max_km() != 10899.toShort()) {
@@ -3625,7 +3625,7 @@ public object FfiConverterTypeFfiLiveHazardLoadStats: FfiConverterRustBuffer<Ffi
  */
 data class FfiPackCatalogSnapshot (
     /**
-     * `server-lan` / `server-duckdns` / `local-bake` (unreachable → local-bake).
+     * `server-duckdns` / `local-bake` (unreachable → local-bake).
      */
     var `dataSource`: kotlin.String, 
     var `readyRegionIds`: List<kotlin.String>, 
@@ -3812,7 +3812,7 @@ data class FfiRegionAcquisitionDecision (
     var `regionGeneration`: kotlin.String?, 
     var `catalogGeneration`: kotlin.String?, 
     /**
-     * Final hop: `server-lan` / `server-duckdns` / `local-bake`.
+     * Final hop: `server-duckdns` / `local-bake`.
      */
     var `dataSource`: kotlin.String
 ) {
@@ -5057,12 +5057,12 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         /**
          * Refresh DATEX for a route corridor polyline.
          *
-         * Uses the pack_server LAN → duckdns discovery chain by default (`use_discovery_chain`).
+         * Uses the pack_server discovery chain by default (`use_discovery_chain`).
          * `route_lat_lon_json` is a JSON array of `[lat, lon]` pairs. When `enabled` is
          * false, no network I/O occurs. Failures return `overlay_enabled: false` and a
          * `warning` string — they never throw into Kotlin.
          *
-         * `data_source` mirrors pack acquisition tags: `server-lan` / `server-duckdns` /
+         * `data_source` mirrors pack acquisition tags: `server-duckdns` /
          * `none` (never `local-bake` for traffic).
          */ fun `datexRefreshJson`(`enabled`: kotlin.Boolean, `host`: kotlin.String, `port`: kotlin.UInt, `routeLatLonJson`: kotlin.String, `wifiOnly`: kotlin.Boolean, `onWifi`: kotlin.Boolean, `useDiscoveryChain`: kotlin.Boolean, `cacheDir`: kotlin.String?): kotlin.String {
             return FfiConverterString.lift(
@@ -5124,7 +5124,7 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * Consult pack hosts (LAN → duckdns unless overridden) and decide Server vs Local.
+         * Consult the pack host (or override) and decide Server vs Local.
          *
          * When `data_dir` is set and the region is Server-ready, attempts pack install
          * into that directory. Soft-fail: unreachable / missing region / fetch errors
@@ -5186,7 +5186,7 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * Probe LAN → duckdns (or override) and list ready region ids for pill greens.
+         * Probe the public pack host (or override) and list ready region ids for pill greens.
          *
          * Soft-fail: empty `ready_region_ids` when hosts are unreachable.
          */ fun `discoverPackCatalog`(`packServerBaseUrl`: kotlin.String?): FfiPackCatalogSnapshot {

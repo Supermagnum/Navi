@@ -3,7 +3,7 @@
 **Status:** host-owned client in `driver-break-core::datex` with UniFFI +
 Android Tools/Map Plugins UI (default **OFF**). Host discovery reuses
 [`pack_server::check_connectivity_chain`](../../core/src/pack_server/mod.rs)
-(LAN → duckdns). WASM guest scaffold under `plugins/datex/` is **not linked**
+(public pack host). WASM guest scaffold under `plugins/datex/` is **not linked**
 into the product APK.
 
 **Coverage today: Norway only.** The live feed is NPRA DATEX II (Statens
@@ -20,14 +20,13 @@ navi-server redistributor is polling NPRA.
 
 | Order | Base | `data_source` tag |
 |---|---|---|
-| 1 | `http://192.168.1.195` | `server-lan` |
-| 2 | `https://navigate-me.duckdns.org` | `server-duckdns` |
+| 1 | `https://navigate-me.duckdns.org` | `server-duckdns` |
 | fail | (no traffic this session) | `none` |
 
 There is **no** `local-bake` path for live traffic. Per-host connect timeout is
 3s ([`CONNECTIVITY_TIMEOUT`](../../core/src/pack_server/mod.rs)). After a hop
 succeeds, DATEX **sticks** to that base for the process until it fails, then
-re-runs the chain.
+re-runs discovery.
 
 DATEX availability on a resolved host uses
 [`probe_path`](../../core/src/pack_server/mod.rs) on `/datex/source.json`
@@ -107,7 +106,7 @@ still apply (see [Network economy](#network-economy)).
 | Field | Default | Meaning |
 |---|---|---|
 | `enabled` | **`false`** | Master switch |
-| `use_discovery_chain` | `true` | LAN → duckdns (override host/port when false) |
+| `use_discovery_chain` | `true` | Public pack host (override host/port when false) |
 | `wifi_only` | `true` | Skip pull off Wi-Fi |
 | `min_poll_interval_secs` | `300` | Clamped ≥ server TTL |
 | `cache_dir` | optional | Persist last snapshot |

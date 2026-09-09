@@ -15,11 +15,10 @@ object PackRegionAvailability {
      * Mirrors core `pack_catalog_region_id_aliases` /
      * `region_ids_match_for_catalog` in `acquisition.rs`.
      *
-     * Permanent client-only exception: navi-server publishes Västra Götaland as
-     * `europe/sweden/vastra_gotaland` (underscore); Tools / PMT chips use
-     * `vastra-gotaland` (hyphen). Not a general hyphen↔underscore normalizer —
-     * do not expand this list casually. Remove only if the published
-     * `region_id` is corrected independently.
+     * Permanent client-only exception: navi-server and Tools chips use
+     * `europe/sweden/vastra_gotaland` (underscore). Keep the hyphen alias so
+     * typed / legacy `vastra-gotaland` paths still match. Not a general
+     * hyphen↔underscore normalizer — do not expand this list casually.
      */
     fun packCatalogRegionIdAliases(path: String): List<String> =
         when (normalize(path)) {

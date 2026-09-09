@@ -22,7 +22,7 @@ data class DatexHudState(
     val inactiveCount: Int = 0,
     val warning: String? = null,
     val attribution: String? = null,
-    /** `server-lan` / `server-duckdns` / `none` — same tags as pack acquisition. */
+    /** `server-duckdns` / `none` — same tags as pack acquisition. */
     val dataSource: String = "none",
     val activeJson: String = "[]",
     val inactiveJson: String = "[]",

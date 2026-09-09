@@ -16,6 +16,7 @@ use sha2::{Digest, Sha256};
 
 use super::acquisition::{leaf_stem_for_region_id, normalize_region_id};
 use super::{http_get_text, PackServerError, ReadyRegion, CONNECTIVITY_TIMEOUT, USER_AGENT};
+use crate::download::progress as download_progress;
 use crate::routing::indexed::{manifest_path, server_install_path, NaviManifest, PackStatus};
 
 /// Pack GET timeout (large regions; streaming — not held entirely in RAM).
@@ -154,12 +155,18 @@ fn verify_hex(got: &str, expect: &str) -> Result<(), String> {
 }
 
 /// Stream GET → file with running sha256. Atomic via `.partial` rename.
+///
+/// `progress_base` is bytes already finished from prior files; `progress_total`
+/// is the full region byte budget (when known) for UI percent.
 fn http_download_verified(
     url: &str,
     dest: &Path,
     expect_sha256: &str,
     expect_bytes: Option<u64>,
-) -> Result<(), String> {
+    progress_base: u64,
+    progress_total: Option<u64>,
+    progress_label: &str,
+) -> Result<u64, String> {
     let parent = dest.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     let partial = dest.with_file_name(format!(
@@ -177,6 +184,7 @@ fn http_download_verified(
     let expect = expect_sha256.to_string();
     let url = url.to_string();
     let partial_clone = partial.clone();
+    let label = progress_label.to_string();
     let digest = rt.block_on(async move {
         let client = reqwest::Client::builder()
             .timeout(PACK_DOWNLOAD_TIMEOUT)
@@ -195,12 +203,22 @@ fn http_download_verified(
         let mut file = File::create(&partial_clone).map_err(|e| e.to_string())?;
         let mut hasher = Sha256::new();
         let mut written: u64 = 0;
+        let mut last_ui = 0u64;
+        download_progress::set(progress_base, progress_total, &label);
         let mut stream = resp.bytes_stream();
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|e| format!("body: {e}"))?;
             hasher.update(&chunk);
             file.write_all(&chunk).map_err(|e| e.to_string())?;
             written += chunk.len() as u64;
+            if written - last_ui >= 256 * 1024 || expect_bytes.is_some_and(|t| written >= t) {
+                download_progress::set(
+                    progress_base.saturating_add(written),
+                    progress_total,
+                    &label,
+                );
+                last_ui = written;
+            }
         }
         file.flush().map_err(|e| e.to_string())?;
         if let Some(n) = expect_bytes {
@@ -210,13 +228,17 @@ fn http_download_verified(
                 ));
             }
         }
+        download_progress::set(
+            progress_base.saturating_add(written),
+            progress_total,
+            &label,
+        );
         Ok((hex::encode(hasher.finalize()), written))
     })?;
 
     verify_hex(&digest.0, &expect)?;
-    let _ = digest.1;
     fs::rename(&partial, dest).map_err(|e| format!("rename {}: {e}", dest.display()))?;
-    Ok(())
+    Ok(digest.1)
 }
 
 fn write_stub_pbf(path: &Path) -> Result<(), String> {
@@ -280,6 +302,22 @@ pub fn try_fetch_region_packs(
     let leaf_stem = leaf_stem_for_region_id(&region_id);
     let pack_base = join_url(base_url, &format!("/packs/{region_id}/{generation}"));
 
+    let file_count = client.files.len() as u64;
+    let known_bytes: u64 = client.files.values().filter_map(|m| m.bytes).sum();
+    let progress_total = if known_bytes > 0 {
+        Some(known_bytes)
+    } else if file_count > 0 {
+        Some(file_count)
+    } else {
+        None
+    };
+    let use_byte_progress = known_bytes > 0;
+    download_progress::set(
+        0,
+        progress_total,
+        &format!("Fetching packs ({file_count} files)…"),
+    );
+
     let staging = data_dir.join(format!(".pack-fetch-{leaf_stem}.partial"));
     if staging.exists() {
         let _ = fs::remove_dir_all(&staging);
@@ -291,12 +329,25 @@ pub fn try_fetch_region_packs(
         .clone()
         .unwrap_or_else(|| format!("{bake_stem}.navi-manifest.json"));
 
+    let mut done_bytes: u64 = 0;
+    let mut done_files: u64 = 0;
     for (remote_name, meta) in &client.files {
+        done_files += 1;
+        let label = format!("Fetching packs ({done_files}/{file_count}): {remote_name}");
         let url = join_url(&pack_base, remote_name);
         let staged = staging.join(remote_name);
         // Prefer streaming for large binaries; small JSON can use RAM path.
         let is_json = remote_name.ends_with(".json");
         if is_json {
+            download_progress::set(
+                if use_byte_progress {
+                    done_bytes
+                } else {
+                    done_files.saturating_sub(1)
+                },
+                progress_total,
+                &label,
+            );
             let bytes = super::http_get_bytes(&url, Duration::from_secs(120))
                 .map_err(|e| format!("GET {remote_name}: {e}"))?;
             if let Some(n) = meta.bytes {
@@ -309,10 +360,39 @@ pub fn try_fetch_region_packs(
             }
             verify_hex(&sha256_hex(&bytes), &meta.sha256)?;
             fs::write(&staged, &bytes).map_err(|e| e.to_string())?;
+            if use_byte_progress {
+                done_bytes = done_bytes.saturating_add(bytes.len() as u64);
+                download_progress::set(done_bytes, progress_total, &label);
+            } else {
+                download_progress::set(done_files, progress_total, &label);
+            }
         } else {
-            http_download_verified(&url, &staged, &meta.sha256, meta.bytes)?;
+            let got = http_download_verified(
+                &url,
+                &staged,
+                &meta.sha256,
+                meta.bytes,
+                if use_byte_progress {
+                    done_bytes
+                } else {
+                    done_files.saturating_sub(1)
+                },
+                progress_total,
+                &label,
+            )?;
+            if use_byte_progress {
+                done_bytes = done_bytes.saturating_add(got);
+            } else {
+                download_progress::set(done_files, progress_total, &label);
+            }
         }
     }
+
+    download_progress::set(
+        progress_total.unwrap_or(done_files),
+        progress_total,
+        "Installing packs…",
+    );
 
     // Remap bake → leaf into final names under staging/out.
     let out = staging.join("out");

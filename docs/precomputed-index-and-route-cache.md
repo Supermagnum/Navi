@@ -31,8 +31,7 @@ database. You download extracts and/or published packs per region.
 
 ## Measured disk: live published packs (globe catalog)
 
-**Source:** `GET http://192.168.1.195/current.json` (same body as
-`https://navigate-me.duckdns.org/current.json`), catalog generation
+**Source:** `GET https://navigate-me.duckdns.org/current.json`, catalog generation
 `20260909T014316Z-4181137-e437434e`. Sum of each region’s published `bytes`
 field (pack-tree payload under DocumentRoot — **not** bake scratch /
 blue-green ops tree).

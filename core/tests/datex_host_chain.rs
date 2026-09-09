@@ -175,7 +175,10 @@ fn chain_falls_to_second_host_tagged_duckdns() {
         wifi_only: false,
         on_wifi: true,
         discovery_bases_override: Some(vec![
-            (PackDataSource::ServerLan, "http://192.0.2.1:9".to_string()),
+            (
+                PackDataSource::ServerDuckdns,
+                "http://192.0.2.1:9".to_string(),
+            ),
             (PackDataSource::ServerDuckdns, duck.clone()),
         ]),
         ..Default::default()
@@ -218,7 +221,7 @@ fn sticky_skips_lan_reprobe_on_second_cycle() {
         use_discovery_chain: true,
         wifi_only: false,
         on_wifi: true,
-        discovery_bases_override: Some(vec![(PackDataSource::ServerLan, base)]),
+        discovery_bases_override: Some(vec![(PackDataSource::ServerDuckdns, base)]),
         ..Default::default()
     };
 

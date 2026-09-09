@@ -7,9 +7,9 @@ use crate::config::OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M;
 /// Product requirement: DATEX overlay ships **disabled** until the user opts in.
 pub const DATEX_PLUGIN_DEFAULT_ENABLED: bool = false;
 
-/// Documented settings default for a typical LAN navi-server (legacy single-host
-/// override). Discovery prefers [`crate::pack_server`] LAN → duckdns chain.
-pub const DATEX_SETTINGS_DEFAULT_HOST: &str = "192.168.1.195";
+/// Documented settings default for the public navi-server pack / DATEX host.
+/// Discovery uses [`crate::pack_server::pack_server_discovery_bases`].
+pub const DATEX_SETTINGS_DEFAULT_HOST: &str = "navigate-me.duckdns.org";
 
 /// Default HTTP port for navi-server Apache DocumentRoot.
 pub const DATEX_SETTINGS_DEFAULT_PORT: u16 = 80;
@@ -31,7 +31,7 @@ pub const DATEX_WIFI_ONLY_DEFAULT: bool = true;
 pub struct DatexConfig {
     /// User enable toggle. Default [`DATEX_PLUGIN_DEFAULT_ENABLED`].
     pub enabled: bool,
-    /// When true (default), resolve host via pack_server LAN → duckdns chain.
+    /// When true (default), resolve host via pack_server discovery chain.
     /// When false, use [`Self::host`] / [`Self::port`] only (tests / override).
     pub use_discovery_chain: bool,
     /// Single-host override when [`Self::use_discovery_chain`] is false.
@@ -46,7 +46,7 @@ pub struct DatexConfig {
     pub min_poll_interval_secs: u64,
     /// Optional directory for persisted last snapshot + freshness marker.
     pub cache_dir: Option<PathBuf>,
-    /// Test / advanced: replace LAN→duckdns bases when [`Self::use_discovery_chain`].
+    /// Test / advanced: replace discovery bases when [`Self::use_discovery_chain`].
     pub discovery_bases_override: Option<Vec<(crate::pack_server::PackDataSource, String)>>,
     /// Corridor band margin (metres).
     pub corridor_margin_m_bits: u64,

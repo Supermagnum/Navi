@@ -6333,7 +6333,7 @@ pub struct FfiRegionAcquisitionDecision {
     pub execute_local_convert: bool,
     pub region_generation: Option<String>,
     pub catalog_generation: Option<String>,
-    /// Final hop: `server-lan` / `server-duckdns` / `local-bake`.
+    /// Final hop: `server-duckdns` / `local-bake`.
     pub data_source: String,
 }
 
@@ -6349,7 +6349,7 @@ pub fn default_pack_server_base_url() -> String {
 /// Pack-host catalog snapshot for region-pill availability coloring.
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct FfiPackCatalogSnapshot {
-    /// `server-lan` / `server-duckdns` / `local-bake` (unreachable → local-bake).
+    /// `server-duckdns` / `local-bake` (unreachable → local-bake).
     pub data_source: String,
     pub ready_region_ids: Vec<String>,
     pub catalog_generation: Option<String>,
@@ -6357,7 +6357,7 @@ pub struct FfiPackCatalogSnapshot {
     pub unreachable_reason: Option<String>,
 }
 
-/// Probe LAN → duckdns (or override) and list ready region ids for pill greens.
+/// Probe the public pack host (or override) and list ready region ids for pill greens.
 ///
 /// Soft-fail: empty `ready_region_ids` when hosts are unreachable.
 #[uniffi::export]
@@ -6383,7 +6383,7 @@ pub fn pack_path_covered_by_ready_ids(path: String, ready_region_ids: Vec<String
     driver_break_core::pack_server::path_covered_by_ready_ids(&path, &ready_region_ids)
 }
 
-/// Consult pack hosts (LAN → duckdns unless overridden) and decide Server vs Local.
+/// Consult the pack host (or override) and decide Server vs Local.
 ///
 /// When `data_dir` is set and the region is Server-ready, attempts pack install
 /// into that directory. Soft-fail: unreachable / missing region / fetch errors
@@ -7452,12 +7452,12 @@ fn situation_to_json(s: &driver_break_core::datex::DatexSituation) -> serde_json
 
 /// Refresh DATEX for a route corridor polyline.
 ///
-/// Uses the pack_server LAN → duckdns discovery chain by default (`use_discovery_chain`).
+/// Uses the pack_server discovery chain by default (`use_discovery_chain`).
 /// `route_lat_lon_json` is a JSON array of `[lat, lon]` pairs. When `enabled` is
 /// false, no network I/O occurs. Failures return `overlay_enabled: false` and a
 /// `warning` string — they never throw into Kotlin.
 ///
-/// `data_source` mirrors pack acquisition tags: `server-lan` / `server-duckdns` /
+/// `data_source` mirrors pack acquisition tags: `server-duckdns` /
 /// `none` (never `local-bake` for traffic).
 #[uniffi::export]
 pub fn datex_refresh_json(
