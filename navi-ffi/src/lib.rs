@@ -6426,6 +6426,26 @@ pub fn decide_region_acquisition(
     }
 }
 
+/// After pack-server install: download a real Geofabrik PBF (replacing the
+/// stub) and build `place_index.db` via the same NameIndex path as
+/// [`ensure_place_index`]. Use `force_rebuild=true` on region update.
+#[uniffi::export]
+pub fn ensure_pack_region_place_index(
+    data_dir: String,
+    region_id: String,
+    force_rebuild: bool,
+) -> String {
+    ensure_native_logging();
+    match driver_break_core::pack_server::ensure_place_index_after_pack_install(
+        Path::new(&data_dir),
+        &region_id,
+        force_rebuild,
+    ) {
+        Ok(r) => r.to_report_string(),
+        Err(e) => format!("FAIL: {e}\n"),
+    }
+}
+
 /// Canonical Geofabrik `-latest.osm.pbf` URL for a region path
 /// (e.g. `europe/norway/ostlandet`). Prefer this over host-side URL string
 /// interpolation so Android and core share one builder.

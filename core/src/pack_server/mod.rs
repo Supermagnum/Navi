@@ -34,6 +34,7 @@
 
 mod acquisition;
 mod fetch;
+mod place_index_after;
 
 pub use acquisition::{
     discover_pack_catalog, leaf_stem_for_region_id, normalize_region_id, pack_server_base_url,
@@ -42,6 +43,10 @@ pub use acquisition::{
     RegionSource,
 };
 pub use fetch::{try_fetch_region_packs, ServerInstallStamp};
+pub use place_index_after::{
+    ensure_geofabrik_pbf_for_region, ensure_place_index_after_pack_install, PackPlaceIndexReport,
+    MIN_REAL_PBF_BYTES, PLACE_INDEX_DB_NAME,
+};
 
 use std::time::Duration;
 
@@ -276,6 +281,7 @@ fn parse_current_json(body: &str, served_from: &str) -> Connectivity {
 /// connect failure, non-2xx (including 404), or malformed JSON returns
 /// [`Connectivity::Unreachable`] — never panics.
 pub async fn check_connectivity(base_url: &str) -> Connectivity {
+    let t0 = std::time::Instant::now();
     let base = base_url.trim().trim_end_matches('/');
     let url = current_json_url(base);
     let client = match reqwest::Client::builder()
@@ -298,12 +304,22 @@ pub async fn check_connectivity(base_url: &str) -> Connectivity {
             } else {
                 "network_error"
             };
+            let ms = t0.elapsed().as_secs_f64() * 1000.0;
+            log::info!(
+                target: "NaviPack",
+                "check_connectivity host={base} outcome={kind} ms={ms:.1} err={e}"
+            );
             return unreachable(format!("{kind}: {e}"));
         }
     };
 
     let status = response.status();
     if !status.is_success() {
+        let ms = t0.elapsed().as_secs_f64() * 1000.0;
+        log::info!(
+            target: "NaviPack",
+            "check_connectivity host={base} outcome=http_{status} ms={ms:.1}"
+        );
         return unreachable(format!(
             "not ready (HTTP {status}) — use Geofabrik fallback"
         ));
@@ -314,7 +330,15 @@ pub async fn check_connectivity(base_url: &str) -> Connectivity {
         Err(e) => return unreachable(format!("read body failed: {e}")),
     };
 
-    parse_current_json(&body, base)
+    let ms = t0.elapsed().as_secs_f64() * 1000.0;
+    let conn = parse_current_json(&body, base);
+    let n = conn.catalog().map(|c| c.regions.len()).unwrap_or(0);
+    log::info!(
+        target: "NaviPack",
+        "check_connectivity host={base} outcome=ready regions={n} body_bytes={} ms={ms:.1}",
+        body.len()
+    );
+    conn
 }
 
 /// Blocking wrapper around [`check_connectivity`].
@@ -336,14 +360,27 @@ pub fn check_connectivity_blocking(base_url: &str) -> Connectivity {
 pub async fn check_connectivity_chain(
     bases: &[(PackDataSource, String)],
 ) -> (Connectivity, Option<PackDataSource>) {
+    let t_chain = std::time::Instant::now();
     let mut last = unreachable("no pack server bases configured");
     for (source, base) in bases {
+        let t_hop = std::time::Instant::now();
         match check_connectivity(base).await {
-            ready @ Connectivity::Ready(_) => return (ready, Some(*source)),
-            bad => {
+            ready @ Connectivity::Ready(_) => {
+                let hop_ms = t_hop.elapsed().as_secs_f64() * 1000.0;
+                let chain_ms = t_chain.elapsed().as_secs_f64() * 1000.0;
                 log::info!(
                     target: "NaviPack",
-                    "pack host {} ({}) unreachable: {}",
+                    "check_connectivity_chain selected={} ({}) hop_ms={hop_ms:.1} chain_ms={chain_ms:.1}",
+                    source.as_str(),
+                    base
+                );
+                return (ready, Some(*source));
+            }
+            bad => {
+                let hop_ms = t_hop.elapsed().as_secs_f64() * 1000.0;
+                log::info!(
+                    target: "NaviPack",
+                    "pack host {} ({}) unreachable in {hop_ms:.1}ms: {}",
                     source.as_str(),
                     base,
                     match &bad {
@@ -355,6 +392,11 @@ pub async fn check_connectivity_chain(
             }
         }
     }
+    let chain_ms = t_chain.elapsed().as_secs_f64() * 1000.0;
+    log::info!(
+        target: "NaviPack",
+        "check_connectivity_chain all hops failed chain_ms={chain_ms:.1}"
+    );
     (last, None)
 }
 

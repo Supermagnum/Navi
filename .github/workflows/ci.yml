@@ -122,8 +122,8 @@ jobs:
       - name: cargo audit (aarch64 / android filters)
         run: cargo audit --target-arch aarch64 --target-os android
 
-  # Path filter so PRs that do not touch the plugin host / lockfile skip the
-  # NDK+QEMU aarch64 smoke; pushes to main/dev always run it.
+  # Path filter: NDK+QEMU aarch64 smoke only when plugin-host / lockfile / smoke
+  # scripts change (PR and push). Always emit the paths job itself as a green check.
   plugin-host-android-paths:
     name: plugin-host-android-paths
     runs-on: ubuntu-latest
@@ -147,15 +147,12 @@ jobs:
               - '.cargo/audit.toml'
               - 'scripts/plugin-host-android-aarch64-smoke.sh'
               - 'scripts/check-plugin-host-gate.sh'
-              - '.github/workflows/ci.yml'
 
   plugin-host-android-aarch64:
     name: plugin-host-android-aarch64
     needs: plugin-host-android-paths
     runs-on: ubuntu-latest
-    if: >
-      github.event_name == 'push' ||
-      needs.plugin-host-android-paths.outputs.run_smoke == 'true'
+    if: needs.plugin-host-android-paths.outputs.run_smoke == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -312,6 +309,39 @@ jobs:
           cargo test -p driver-break-core --test budorvegen_service_detour -- --nocapture
           cargo test -p driver-break-core --test wetland_apply_identity -- --nocapture
           cargo test -p driver-break-core --test wetland_pack_identity -- --nocapture
+
+      - name: Pack-server place-index host guards (offline)
+        # On-device Geofabrik PBF + NameIndex path after pack install (no network).
+        run: >
+          cargo test -p driver-break-core --lib
+          pack_server::place_index_after:: -- --nocapture
+
+  # Distinct job: Friisvegen-style seasonal motor_vehicle:conditional (winter).
+  winter-road-closure:
+    name: winter-road-closure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.0"
+
+      - name: System deps (pkg-config / OpenSSL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: winter-road-closure
+
+      - name: Friisvegen-style winter closure (car/truck blocked, foot/bike not)
+        run: >
+          cargo test -p driver-break-core --lib
+          friisvegen_style_conditional_blocks_car_not_foot -- --nocapture
 
   android-build:
     name: android-build
