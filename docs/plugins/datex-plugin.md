@@ -6,6 +6,11 @@ Android Tools/Map Plugins UI (default **OFF**). Host discovery reuses
 (LAN → duckdns). WASM guest scaffold under `plugins/datex/` is **not linked**
 into the product APK.
 
+**Coverage today: Norway only.** The live feed is NPRA DATEX II (Statens
+vegvesen). Other countries’ DATEX / road-authority feeds are not wired; enabling
+the plugin outside Norway still only surfaces Norwegian situations when the
+navi-server redistributor is polling NPRA.
+
 **Path:** `docs/plugins/datex-plugin.md`  
 **Server ops:** [navi-server `docs/datex-npra.md`](https://github.com/Supermagnum/navi-server/blob/main/docs/datex-npra.md)
 
@@ -27,6 +32,60 @@ re-runs the chain.
 DATEX availability on a resolved host uses
 [`probe_path`](../../core/src/pack_server/mod.rs) on `/datex/source.json`
 (same probe shape as [`probe_current_json`](../../core/src/pack_server/mod.rs)).
+
+---
+
+## Adding DATEX services and cadence (server)
+
+Credentials and upstream polling live on **navi-server**, never on the device.
+Full operator detail:
+[navi-server `docs/datex-npra.md`](https://github.com/Supermagnum/navi-server/blob/main/docs/datex-npra.md).
+
+### Enable (interactive)
+
+```bash
+sudo /media/navi/navi-server/scripts/setup-server.sh --apply-datex
+```
+
+Prompts for NPRA username/password, writes secrets mode `0600`, and installs
+`systemd/navi-datex-npra.timer` / `.service`. Preview: `setup-server.sh --dry-run`.
+
+### Enable (file edit)
+
+1. Create `data/secrets/datex_npra.env` with `NAV_DATEX_USERNAME` /
+   `NAV_DATEX_PASSWORD` (mode `0600`).
+2. In `data/config.env`: `NAVI_DATEX_NPRA_ENABLED=1`, point
+   `NAVI_DATEX_NPRA_SECRETS_FILE` at that file, set a real contact in
+   `NAVI_DATEX_NPRA_USER_AGENT`.
+3. Install units from `systemd/navi-datex-npra.*`, then
+   `systemctl enable --now navi-datex-npra.timer`.
+
+### Cadence (poll intervals)
+
+| Config key | Default | Role |
+|---|---|---|
+| `NAVI_DATEX_NPRA_POLL_INTERVAL_SECS` | `300` | Fallback / jitter base for endpoints without an explicit map entry |
+| `NAVI_DATEX_NPRA_ENDPOINT_INTERVALS` | Situation + TravelTime `300`; Weather `600`; CCTVSiteTable `43200` (12 h) | Per-endpoint poll cadence (`Endpoint=secs`) |
+| `NAVI_DATEX_NPRA_USE_IF_MODIFIED_SINCE` | `1` | Conditional GET to skip unchanged bodies |
+
+Default upstream endpoints (comma-separated in `NAVI_DATEX_NPRA_ENDPOINTS`):
+`GetSituation`, `GetTravelTimeData`, `GetMeasuredWeatherData`,
+`GetCCTVSiteTable`. Path pattern:
+`{BASE}/datexapi/{Endpoint}/pullsnapshotdata`.
+
+**Add or retune a service:** append the DATEX endpoint name to
+`NAVI_DATEX_NPRA_ENDPOINTS`, set its seconds in
+`NAVI_DATEX_NPRA_ENDPOINT_INTERVALS`, restart/reload the timer unit, and confirm
+files appear under DocumentRoot `/datex/` (`source.json` + `<Endpoint>.xml`).
+SOAP filtered pulls are out of scope. Uninstall:
+`scripts/uninstall-datex-npra.sh` (`--purge` also drops secrets).
+
+### Client cadence (Navi app)
+
+Independent of the server timer: the host client refuses polls more often than
+[`DatexConfig.min_poll_interval_secs`](../../core/src/datex/config.rs) (default
+**300 s**, clamped to the Situation TTL). Route-active + Wi-Fi-only defaults
+still apply (see [Network economy](#network-economy)).
 
 ---
 
