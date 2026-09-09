@@ -28,10 +28,10 @@ In **Tools**, region chips (pills) show how the download will run:
   routing packs first, then still fetches a real Geofabrik extract and builds
   the **place index** on device (search). That place-index step is still
   minutes of work; leave the app alone until status shows done.
-- **Blue / default pills** — the path is **not** on the pack server. The
-  button reads **Download region + build place index** and falls back to a
-  full **local bake**: Geofabrik PBF download, on-device pack convert, and
-  place index (the slower path).
+- **Blue / default pills** — the path is **not** on the pack server or the
+  server is down. The button reads **Download region + build place index**
+  and falls back to a full **local bake**: Geofabrik PBF download, on-device
+  pack convert, and place index (the slower path).
 
 **Fallback chain** (automatic; you do not pick hosts by hand): try the public
 pack host
