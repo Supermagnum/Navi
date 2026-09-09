@@ -3180,7 +3180,8 @@ data class CorridorRouteResult (
     var `poiIconKey`: kotlin.String, 
     /**
      * JSON array of pause / overnight stops along the route:
-     * `[{"name","lat","lon","kind","icon"}]` where kind is `hut`, `tent`, or `amenity`.
+     * `[{"name","lat","lon","kind","icon"}]` where kind is `hut`, `tent`,
+     * `amenity`, `rest_area`, `craft_brewery`, or `fishing`.
      */
     var `breakPoisJson`: kotlin.String, 
     /**

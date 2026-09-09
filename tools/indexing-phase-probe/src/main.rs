@@ -158,19 +158,28 @@ fn poi_node_ok(tags: &HashMap<String, String>) -> bool {
     if matches!(natural, Some("spring")) {
         return true;
     }
-    if matches!(shop, Some("alcohol") | Some("fishing")) {
+    if matches!(craft, Some("brewery") | Some("winery") | Some("distillery")) {
+        return true;
+    }
+    if tags.get("microbrewery").is_some_and(|v| v == "yes") {
+        return true;
+    }
+    if matches!(
+        tags.get("brewery").map(String::as_str),
+        Some("cider") | Some("wine") | Some("mead") | Some("beer")
+    ) {
+        return true;
+    }
+    if tags.get("industrial").is_some_and(|v| v == "distillery") {
+        return true;
+    }
+    if matches!(shop, Some("alcohol") | Some("wine") | Some("fishing")) {
         return true;
     }
     if matches!(leisure, Some("fishing") | Some("fishing_pier")) {
         return true;
     }
     if matches!(sport, Some("fishing")) {
-        return true;
-    }
-    if matches!(craft, Some("brewery")) {
-        return true;
-    }
-    if tags.get("microbrewery").is_some_and(|v| v == "yes") {
         return true;
     }
     if matches!(highway, Some("rest_area") | Some("services")) {

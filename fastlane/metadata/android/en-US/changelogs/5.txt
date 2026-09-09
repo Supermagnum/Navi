@@ -1,0 +1,1 @@
+v0.3.2-alpha: motor breaks can suggest craft brewery and fishing stops; broader craft-alcohol POI tags (cider, wine, spirits shops and craft=*); POI look-ahead cone plugin spec only.

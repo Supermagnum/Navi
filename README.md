@@ -78,8 +78,8 @@ On-device and emulator results:
 **Install the signed release APK.** Testers should download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
-**v0.3.1-alpha** (`versionName` 0.3.1, `versionCode` 4). Download from the
-[`v0.3.1-alpha` tag](https://github.com/Supermagnum/Navi/tree/v0.3.1-alpha)
+**v0.3.2-alpha** (`versionName` 0.3.2, `versionCode` 5). Download from the
+[`v0.3.2-alpha` tag](https://github.com/Supermagnum/Navi/tree/v0.3.2-alpha)
 or the latest
 [`dev` branch](https://github.com/Supermagnum/Navi/tree/dev) copy. Android
 validates the APK signature on install; the separate GPG files
@@ -829,6 +829,7 @@ I/O for hardware-facing plugins.
 | [`docs/plugins/custom-alert-sounds-spec.md`](docs/plugins/custom-alert-sounds-spec.md) | Short alert tones (road signs, cameras, overspeed earcon) |
 | [`docs/plugins/horse-trekking-spec.md`](docs/plugins/horse-trekking-spec.md) | Equestrian lookahead and access guidance (Hiking is the interim stopgap) |
 | [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md) | Spoken escalating overspeed (percentage tiers; not shipped) |
+| [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md) | Look-ahead cone for attractions, fishing, breweries/cider (open-now; not shipped) |
 | [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic — Meshstick USB SX1262 stick or BLE node; location/speed/fuel/charge (not shipped) |
 | [`docs/plugins/voice-command.md`](docs/plugins/voice-command.md) | Spoken navigate / save-place / nearest-POI alternative (on-device ASR/TTS; not shipped). Distinct from turn-by-turn [`docs/voice-guidance.md`](docs/voice-guidance.md) |
 
@@ -898,7 +899,7 @@ it as a normal install (not an unsigned or debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.3.1 / tag **v0.3.1-alpha**) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.3.2 / tag **v0.3.2-alpha**) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
@@ -907,7 +908,7 @@ You do not need a Rust/NDK toolchain to install it.
 1. On the device: enable **Developer options** and allow installs from your
    browser or file manager (USB debugging only needed for `adb`).
 2. Download
-   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.3.1-alpha/compiled/navi-release.apk)
+   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.3.2-alpha/compiled/navi-release.apk)
    (pinned tag) or the latest
    [`dev` copy](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-release.apk).
 3. Optional integrity check on a PC:
@@ -1012,7 +1013,7 @@ Debug installs use the Android **debug** keystore. A **release** package is what
 you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
 
 A prebuilt upload-key-signed release APK for testers is committed at
-[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.3.1-alpha**;
+[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.3.2-alpha**;
 see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
@@ -1063,7 +1064,7 @@ adb shell am start -n no.navi.app/.MainActivity
    [`docs/android-api36-plan.md`](docs/android-api36-plan.md#aab-smoke-host).
 
 Current `versionName` / `versionCode` live in `app/build.gradle.kts`
-(`0.3.1` / `4` at time of writing). Bump those before a real store or tagged
+(`0.3.2` / `5` at time of writing). Bump those before a real store or tagged
 release. F-Droid-style Podman reproducibility:
 [`tools/fdroid-check/README.md`](tools/fdroid-check/README.md). Full shared
 recipe: [`docs/android-build.md`](docs/android-build.md).

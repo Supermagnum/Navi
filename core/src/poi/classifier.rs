@@ -81,11 +81,24 @@ pub fn classify_tags(tags: &HashMap<String, String>) -> Vec<PoiCategory> {
         }
     }
 
-    // Craft brewery / alcohol retail: any one of these OSM conventions qualifies.
+    // Craft alcohol producers + retail: beer, cider, wine, spirits/distillery.
+    // Any one OSM convention qualifies (OR). Large industrial sites tagged
+    // industrial=distillery are included so whiskey/aquavit/etc. stops surface.
     let microbrewery = tags.get("microbrewery").map(String::as_str) == Some("yes");
-    let shop_alcohol = tags.get("shop").map(String::as_str) == Some("alcohol");
-    let craft_brewery = tags.get("craft").map(String::as_str) == Some("brewery");
-    if microbrewery || shop_alcohol || craft_brewery {
+    let shop_alcohol = matches!(
+        tags.get("shop").map(String::as_str),
+        Some("alcohol") | Some("wine")
+    );
+    let craft_alcohol = matches!(
+        tags.get("craft").map(String::as_str),
+        Some("brewery") | Some("winery") | Some("distillery")
+    );
+    let brewery_kind = matches!(
+        tags.get("brewery").map(String::as_str),
+        Some("cider") | Some("wine") | Some("mead") | Some("beer")
+    );
+    let industrial_distillery = tags.get("industrial").map(String::as_str) == Some("distillery");
+    if microbrewery || shop_alcohol || craft_alcohol || brewery_kind || industrial_distillery {
         out.push(PoiCategory::CraftBrewery);
     }
 
@@ -159,19 +172,44 @@ mod tests {
     }
 
     #[test]
-    fn craft_brewery_matches_any_of_three_tag_styles() {
+    fn craft_brewery_matches_beer_cider_wine_spirits_and_retail() {
         assert!(
             classify_tags(&tags(&[("microbrewery", "yes")])).contains(&PoiCategory::CraftBrewery)
         );
         assert!(classify_tags(&tags(&[("shop", "alcohol")])).contains(&PoiCategory::CraftBrewery));
+        assert!(classify_tags(&tags(&[("shop", "wine")])).contains(&PoiCategory::CraftBrewery));
         assert!(classify_tags(&tags(&[("craft", "brewery")])).contains(&PoiCategory::CraftBrewery));
+        assert!(classify_tags(&tags(&[("craft", "winery")])).contains(&PoiCategory::CraftBrewery));
+        assert!(
+            classify_tags(&tags(&[("craft", "distillery")])).contains(&PoiCategory::CraftBrewery)
+        );
+        assert!(classify_tags(&tags(&[("brewery", "cider")])).contains(&PoiCategory::CraftBrewery));
+        assert!(classify_tags(&tags(&[("brewery", "wine")])).contains(&PoiCategory::CraftBrewery));
+        assert!(classify_tags(&tags(&[("brewery", "mead")])).contains(&PoiCategory::CraftBrewery));
+        assert!(classify_tags(&tags(&[("brewery", "beer")])).contains(&PoiCategory::CraftBrewery));
+        assert!(classify_tags(&tags(&[("industrial", "distillery")]))
+            .contains(&PoiCategory::CraftBrewery));
+        // Beer brewery that also distills: craft=brewery + industrial=distillery.
+        assert!(classify_tags(&tags(&[
+            ("craft", "brewery"),
+            ("industrial", "distillery"),
+            ("name", "Dual Craft"),
+        ]))
+        .contains(&PoiCategory::CraftBrewery));
         assert!(!classify_tags(&tags(&[("shop", "bakery")])).contains(&PoiCategory::CraftBrewery));
+        assert!(!classify_tags(&tags(&[("brewery", "yes")])).contains(&PoiCategory::CraftBrewery));
     }
 
     #[test]
     fn craft_brewery_does_not_require_all_three_tags() {
         let only_shop = classify_tags(&tags(&[("shop", "alcohol"), ("name", "Tap Room")]));
         assert_eq!(only_shop, vec![PoiCategory::CraftBrewery]);
+        let only_cider = classify_tags(&tags(&[("brewery", "cider"), ("name", "Fosmoen")]));
+        assert_eq!(only_cider, vec![PoiCategory::CraftBrewery]);
+        let only_winery = classify_tags(&tags(&[("craft", "winery"), ("name", "Vineyard")]));
+        assert_eq!(only_winery, vec![PoiCategory::CraftBrewery]);
+        let only_distillery = classify_tags(&tags(&[("craft", "distillery"), ("name", "Aquavit")]));
+        assert_eq!(only_distillery, vec![PoiCategory::CraftBrewery]);
     }
 
     #[test]

@@ -3,8 +3,19 @@ use std::collections::HashMap;
 /// Resolve a stable OSM icon key from tags (consistent across basemap layers).
 pub fn osm_icon_key(tags: &HashMap<String, String>) -> String {
     if tags.get("microbrewery").map(String::as_str) == Some("yes")
-        || tags.get("craft").map(String::as_str) == Some("brewery")
-        || tags.get("shop").map(String::as_str) == Some("alcohol")
+        || matches!(
+            tags.get("craft").map(String::as_str),
+            Some("brewery") | Some("winery") | Some("distillery")
+        )
+        || matches!(
+            tags.get("shop").map(String::as_str),
+            Some("alcohol") | Some("wine")
+        )
+        || matches!(
+            tags.get("brewery").map(String::as_str),
+            Some("cider") | Some("wine") | Some("mead") | Some("beer")
+        )
+        || tags.get("industrial").map(String::as_str) == Some("distillery")
     {
         return "shop-alcohol".to_string();
     }

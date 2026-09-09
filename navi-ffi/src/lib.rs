@@ -432,7 +432,8 @@ pub struct CorridorRouteResult {
     pub poi_name: String,
     pub poi_icon_key: String,
     /// JSON array of pause / overnight stops along the route:
-    /// `[{"name","lat","lon","kind","icon"}]` where kind is `hut`, `tent`, or `amenity`.
+    /// `[{"name","lat","lon","kind","icon"}]` where kind is `hut`, `tent`,
+    /// `amenity`, `rest_area`, `craft_brewery`, or `fishing`.
     pub break_pois_json: String,
     /// JSON array of multi-day day cards (empty `"[]"` when single-day / unknown).
     /// Fields: day_index, date, start_km, end_km, distance_km, driving_hours,
@@ -1137,6 +1138,8 @@ fn pick_motor_pause_at(
     for cat in [
         PoiCategory::RestArea,
         PoiCategory::General,
+        PoiCategory::CraftBrewery,
+        PoiCategory::Fishing,
         PoiCategory::Restroom,
         PoiCategory::OvernightFacility,
         PoiCategory::Cabin,
@@ -1175,6 +1178,10 @@ fn pick_motor_pause_at(
     let pick = |p: &PoiRecord| -> (String, f64, f64, String, String) {
         let kind = if p.categories.contains(&PoiCategory::RestArea) {
             "rest_area"
+        } else if p.categories.contains(&PoiCategory::CraftBrewery) {
+            "craft_brewery"
+        } else if p.categories.contains(&PoiCategory::Fishing) {
+            "fishing"
         } else if p.categories.contains(&PoiCategory::Restroom) {
             "amenity"
         } else if p.categories.contains(&PoiCategory::OvernightFacility)

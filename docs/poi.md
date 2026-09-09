@@ -26,7 +26,7 @@ General radius. Motor profiles require road-linked POIs; see
 | **OvernightFacility** | same as Cabin | Assigned together with Cabin for the same overnight tags |
 | **NetworkHut** | 25 km (Drive save may set to slider km) | wilderness_hut / alpine_hut **and** `operator` or `network` contains DNT, STF, DAV, SAC, OeAV, or Metsähallitus. **Use networked cabins** (Drive; hiking/cycle; off by default) gates auto-via candidacy. **Network hut member** (Hiking; off by default) gates overnight preference — see README Drive settings. |
 | **General** | 15 km (Drive hike/cycle: 10.5 km+) | `amenity` ∈ cafe, restaurant, fast_food, museum, gallery, zoo, aquarium, viewpoint, picnic_site; **or** `tourism` ∈ viewpoint, attraction, museum |
-| **CraftBrewery** | 15 km (General) | **OR** of: `microbrewery=yes`, `shop=alcohol`, `craft=brewery` |
+| **CraftBrewery** | 15 km (General) | **OR** of: `microbrewery=yes`; `shop` ∈ alcohol, wine; `craft` ∈ brewery, winery, distillery; `brewery` ∈ cider, wine, mead, beer; `industrial=distillery` |
 | **TentSite** | Cabin radius | `tourism` ∈ camp_site, camp_pitch; **or** `amenity=camping` |
 | **Fishing** | 15 km (General) | **OR** of: `leisure=fishing`, `leisure=fishing_pier`, `sport=fishing`, `shop=fishing` — icon: Navit-derived `fish.svg` as `leisure-fishing` ([`icons.md`](icons.md)) |
 | **RestArea** | max(General, 20 km) | **OR** of: `highway=rest_area`, `highway=services`, or `amenity=parking` with HGV access (`hgv` / `access:hgv` = yes or designated). Used for truck EC 561 overnight matching and as a fallback for car / motorcycle / mobile home soft multi-day overnight (intentionally simpler than hiking hut scoring — nearest tagged stop within a fixed radius) |
@@ -34,6 +34,12 @@ General radius. Motor profiles require road-linked POIs; see
 
 Suggested preference radii and regional nearest-neighbor spacing (for tuning
 hiking/cycling search): [`poi-search-defaults.md`](poi-search-defaults.md).
+
+**Motor interval breaks** (`pick_motor_pause_at` / `break_pois_json`) search
+**RestArea**, **General**, **CraftBrewery**, **Fishing**, **Restroom**,
+**OvernightFacility**, and **Cabin** near each sample (road-linked on motor
+profiles). Hiking pauses stay hut/tent-oriented (**NetworkHut** / **Cabin** /
+**TentSite**).
 
 ## Hiking rast huts as auto-vias
 
@@ -62,7 +68,8 @@ category system below is for **typed nearby / rest planning** queries
 
 ## Icon keys
 
-Craft brewery / alcohol retail maps to semantic icon key `shop-alcohol`. Other
+Craft alcohol producers and retail map to semantic icon key `shop-alcohol`
+(beer / cider / wine / distillery / alcohol shops). Other
 POIs use `amenity-*`, `tourism-*`, `leisure-*`, etc. via `osm_icon_key` in
 `core/src/poi/icons.rs`. See [`icons.md`](icons.md).
 

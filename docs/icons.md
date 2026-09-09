@@ -138,8 +138,10 @@ Icons are named by OSM-style keys where applicable, for example:
 - `amenity-*` (fuel, toilets, restaurant, …)
 - `tourism-*` (wilderness_hut, alpine_hut, attraction, …)
 - `natural-*`, `leisure-*`, `shop-*`
-- Craft brewery / alcohol retail maps to `shop-alcohol` when classified as
-  `PoiCategory::CraftBrewery`
+- Craft alcohol (beer / cider / wine / spirits) maps to `shop-alcohol` when
+  classified as `PoiCategory::CraftBrewery` (`microbrewery=yes`; `craft` ∈
+  brewery, winery, distillery; `shop` ∈ alcohol, wine; `brewery` ∈ cider,
+  wine, mead, beer; or `industrial=distillery`)
 - `leaf.svg` — eco-mode indicator (**custom** Navi drop-in; not from the Navit
   inventory — same override-by-filename mechanism as other keys; document any
   further custom art the same way)
