@@ -10,7 +10,7 @@ pub enum PoiCategory {
     NetworkHut,
     Restroom,
     OvernightFacility,
-    /// Microbrewery / craft alcohol (OSM tag variants OR'd together).
+    /// Craft alcohol: beer / cider / wine / spirits (OSM tag variants OR'd).
     CraftBrewery,
     /// Peak / ridge were never pause labels. TentSite is camp_site / camp_pitch only.
     TentSite,

@@ -481,6 +481,17 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 | **Safety** | Driver does not enter fuel/battery on the Navi device while moving — companion is passenger-operable. Mesh TX only while the plugin is enabled. Informational overlay, not collision avoidance. |
 | **Notes** | Spec only — not implemented. Navi never talks to raw LoRa modules. Recommended radio: [**Meshstick**](https://www.elecrow.com/meshstick-usb-to-spi-sx1262-tcxo-lora-usb-stick-usb-plug-and-play-meshtastic-lora-mesh-node.html) USB SX1262 TCXO stick (USB head units; unique identity, traceability, flat mount face) or BLE Meshtastic boards (tablets). Text messaging is a later arm on the same PortNum dispatch. |
 
+### 16. POI look-ahead cone (`poi_lookahead` / `poi_cone`)
+
+| | |
+|---|---|
+| **Benefit** | Quiet "worth a look" discovery of attractions, fishing spots, craft breweries, and cider makers in a heading-driven cone ahead of the vehicle (with or without a route) — not a hazard warning |
+| **Docs** | [`plugins/poi-lookahead-cone-spec.md`](plugins/poi-lookahead-cone-spec.md) — 850 m / ±30° cone, `General` + `Fishing` + `CraftBrewery` filter, open-now `opening_hours` gate, separate from the 300 m hazard cone |
+| **Host duties** | Cone or radius+bearing POI query; evaluate or expose open-now; render quiet chips/markers; enable/disable |
+| **Guest duties** | Category filter, cone membership if host returns a radius set, hours policy, nearest-first list — no audio |
+| **Proposed caps** | `position_read`, `poi_query`, `clock_read`, `plugin_kv` / `storage`, `log` |
+| **Notes** | Spec only — not implemented. Must suppress known-closed venues. Does not modify `live_hazard.rs`. `brewery=cider` is classified as `CraftBrewery` in core. |
+
 ### Capability sketch (not in ABI yet)
 
 | Proposed | Purpose |

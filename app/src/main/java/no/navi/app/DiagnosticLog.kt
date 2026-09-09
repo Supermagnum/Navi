@@ -737,7 +737,11 @@ object DiagnosticLog {
             k == "interval" ||
             k == "main" ||
             k == "alt" ||
-            k == "tent"
+            k == "tent" ||
+            k == "hut" ||
+            k == "amenity" ||
+            k == "craft_brewery" ||
+            k == "fishing"
     }
 
     fun logInstructionsIssued(

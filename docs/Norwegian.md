@@ -22,8 +22,8 @@ Resultater på enhet og emulator:
 **Installer den signerte release-APK-en.** Testere skal laste ned og sideloade
 [`compiled/navi-release.apk`](../compiled/navi-release.apk) — en **riktig
 signert, installerbar release-APK** (upload-nøkkel; ikke debug-bygget). Gjeldende
-bygg: **v0.3.1-alpha** (`versionName` 0.3.1, `versionCode` 4). Last ned fra
-[`v0.3.1-alpha`-taggen](https://github.com/Supermagnum/Navi/tree/v0.3.1-alpha)
+bygg: **v0.3.2-alpha** (`versionName` 0.3.2, `versionCode` 5). Last ned fra
+[`v0.3.2-alpha`-taggen](https://github.com/Supermagnum/Navi/tree/v0.3.2-alpha)
 eller siste kopi på
 [`dev`-grenen](https://github.com/Supermagnum/Navi/tree/dev). Android validerer
 APK-signeringen ved installasjon; de separate GPG-filene
@@ -589,6 +589,7 @@ og maskinvareplugins skal kunne snakke over **USB** / **Bluetooth** via verten.
 | [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md) | Korte varselyder (skilt, kamera, overskridelse-earcon) |
 | [`plugins/horse-trekking-spec.md`](plugins/horse-trekking-spec.md) | Ridning: forsyning og adgangsveiledning (Hiking er midlertidig stopgap) |
 | [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) | Talt, eskalerende fartsvarsel (prosenttrinn; ikke levert) |
+| [`plugins/poi-lookahead-cone-spec.md`](plugins/poi-lookahead-cone-spec.md) | Fremover-kjegle for attraksjoner, fiske, bryggeri/sider (åpent nå; ikke levert) |
 | [`plugins/lora-convoy-spec.md`](plugins/lora-convoy-spec.md) | LoRa-konvoistatus over Meshtastic (Meshstick USB / BLE; ikke levert) |
 | [`plugins/voice-command.md`](plugins/voice-command.md) | Talt navigere / lagre sted / nærmeste POI (ASR/TTS på enheten; ikke levert). Skilt fra sving-for-sving [`voice-guidance.md`](voice-guidance.md) |
 
@@ -658,7 +659,7 @@ den som en vanlig installasjon (ikke usignert eller bare debug).
 
 | Fil | Rolle |
 |---|---|
-| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (arm64, `versionName` 0.3.1 / tag **v0.3.1-alpha**) |
+| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (arm64, `versionName` 0.3.2 / tag **v0.3.2-alpha**) |
 | [`compiled/SHA256SUMS`](../compiled/SHA256SUMS) | SHA-256-sjekksum for integritet |
 | [`compiled/SHA256SUMS.asc`](../compiled/SHA256SUMS.asc) | Løsrevet GPG-proveniens (ikke Android APK-signering) |
 
@@ -667,7 +668,7 @@ Du trenger ikke Rust/NDK-verktøykjede for å installere den.
 1. På enheten: slå på **Utvikleralternativer** og tillat installasjon fra
    nettleser eller filbehandler (`adb` trengs bare for USB-installasjon).
 2. Last ned
-   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.3.1-alpha/compiled/navi-release.apk)
+   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.3.2-alpha/compiled/navi-release.apk)
    (fast tag) eller siste
    [`dev`-kopi](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-release.apk).
 3. Valgfri integritetssjekk på PC:
