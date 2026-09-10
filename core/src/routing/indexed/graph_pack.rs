@@ -11,8 +11,8 @@ use crate::routing::graph::{infer_surface_from_highway, GraphEdge, RouteGraph, R
 
 /// Little-endian ASCII "NVRK".
 pub const MAGIC_GRAPH: u32 = 0x4E_56_52_4B;
-/// v6: v5 + vehicle physical limits (maxheight/weight/width/length/axle/bogie).
-pub const GRAPH_FORMAT_VERSION: u32 = 6;
+/// v7: v6 + maxspeed practical/advisory/type/variable + minspeed.
+pub const GRAPH_FORMAT_VERSION: u32 = 7;
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone)]
 pub struct FlatGraphPack {
@@ -32,6 +32,16 @@ pub struct FlatGraphPack {
     pub edge_end_lon: Vec<f64>,
     pub edge_highway: Vec<String>,
     pub edge_maxspeed_kmh: Vec<f64>, // NaN = none
+    /// NaN = none. OSM `maxspeed:practical`.
+    pub edge_maxspeed_practical_kmh: Vec<f64>,
+    /// NaN = none. OSM `maxspeed:advisory`.
+    pub edge_maxspeed_advisory_kmh: Vec<f64>,
+    /// Raw OSM `maxspeed:type` (empty = none).
+    pub edge_maxspeed_type: Vec<String>,
+    /// `1` when OSM `maxspeed:variable` is truthy.
+    pub edge_maxspeed_variable: Vec<u8>,
+    /// NaN = none. OSM `minspeed`.
+    pub edge_minspeed_kmh: Vec<f64>,
     pub edge_name: Vec<String>,
     pub edge_road_ref: Vec<String>,
     pub edge_is_motorroad: Vec<u8>,
@@ -109,6 +119,11 @@ impl FlatGraphPack {
         let mut edge_end_lon = Vec::with_capacity(n);
         let mut edge_highway = Vec::with_capacity(n);
         let mut edge_maxspeed_kmh = Vec::with_capacity(n);
+        let mut edge_maxspeed_practical_kmh = Vec::with_capacity(n);
+        let mut edge_maxspeed_advisory_kmh = Vec::with_capacity(n);
+        let mut edge_maxspeed_type = Vec::with_capacity(n);
+        let mut edge_maxspeed_variable = Vec::with_capacity(n);
+        let mut edge_minspeed_kmh = Vec::with_capacity(n);
         let mut edge_name = Vec::with_capacity(n);
         let mut edge_road_ref = Vec::with_capacity(n);
         let mut edge_is_motorroad = Vec::with_capacity(n);
@@ -151,6 +166,11 @@ impl FlatGraphPack {
             edge_end_lon.push(e.end_lon);
             edge_highway.push(e.highway.clone().unwrap_or_default());
             edge_maxspeed_kmh.push(e.maxspeed_kmh.unwrap_or(f64::NAN));
+            edge_maxspeed_practical_kmh.push(pack_opt_metric(e.maxspeed_practical_kmh));
+            edge_maxspeed_advisory_kmh.push(pack_opt_metric(e.maxspeed_advisory_kmh));
+            edge_maxspeed_type.push(e.maxspeed_type.clone().unwrap_or_default());
+            edge_maxspeed_variable.push(u8::from(e.maxspeed_variable));
+            edge_minspeed_kmh.push(pack_opt_metric(e.minspeed_kmh));
             edge_name.push(e.name.clone().unwrap_or_default());
             edge_road_ref.push(e.road_ref.clone().unwrap_or_default());
             edge_is_motorroad.push(u8::from(e.is_motorroad));
@@ -210,6 +230,11 @@ impl FlatGraphPack {
             edge_end_lon,
             edge_highway,
             edge_maxspeed_kmh,
+            edge_maxspeed_practical_kmh,
+            edge_maxspeed_advisory_kmh,
+            edge_maxspeed_type,
+            edge_maxspeed_variable,
+            edge_minspeed_kmh,
             edge_name,
             edge_road_ref,
             edge_is_motorroad,
@@ -321,6 +346,22 @@ impl FlatGraphPack {
                 } else {
                     None
                 },
+                maxspeed_practical_kmh: unpack_opt_metric(&self.edge_maxspeed_practical_kmh, i),
+                maxspeed_advisory_kmh: unpack_opt_metric(&self.edge_maxspeed_advisory_kmh, i),
+                maxspeed_type: {
+                    let s = self
+                        .edge_maxspeed_type
+                        .get(i)
+                        .map(String::as_str)
+                        .unwrap_or("");
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_string())
+                    }
+                },
+                maxspeed_variable: self.edge_maxspeed_variable.get(i).copied().unwrap_or(0) != 0,
+                minspeed_kmh: unpack_opt_metric(&self.edge_minspeed_kmh, i),
                 name: if name.is_empty() {
                     None
                 } else {
@@ -470,6 +511,11 @@ mod tests {
             shape: vec![(10.05, 60.04), (10.12, 60.07), (10.18, 60.09)],
             highway: Some("secondary".into()),
             maxspeed_kmh: Some(80.0),
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
             name: Some("Curvy".into()),
             road_ref: None,
             is_motorroad: false,
@@ -556,6 +602,11 @@ mod tests {
             shape: Vec::new(),
             highway: Some("primary".into()),
             maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
             name: None,
             road_ref: None,
             is_motorroad: false,

@@ -117,6 +117,7 @@ class ForegroundPlanConeSkipInstrumentedTest {
                     vehicle = EMPTY_VEHICLE,
                     preferOfficialNetworks = false,
                     dataDir = "",
+                    viaPoints = emptyList(),
                 )
             } finally {
                 planRunning.set(false)

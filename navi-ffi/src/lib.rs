@@ -2034,6 +2034,7 @@ pub fn plan_car_route(
     vehicle: FfiVehicleLimits,
     prefer_official_networks: bool,
     data_dir: String,
+    via_points: Vec<FfiLatLon>,
 ) -> CorridorRouteResult {
     plan_car_route_at(
         pbf_path,
@@ -2052,6 +2053,7 @@ pub fn plan_car_route(
         prefer_official_networks,
         None,
         data_dir,
+        via_points,
     )
 }
 
@@ -2059,6 +2061,9 @@ pub fn plan_car_route(
 ///
 /// `departure_local_iso` accepts `YYYY-MM-DDTHH:MM:SS` (no timezone). When `None`,
 /// the planner uses the device local clock (same as [`plan_car_route`]).
+///
+/// `via_points` are ordered intermediate stops (max [`MAX_ROUTE_VIA_POINTS`]).
+/// More than four returns a clear FAIL result (no panic, no silent truncate).
 #[uniffi::export]
 pub fn plan_car_route_at(
     pbf_path: String,
@@ -2077,6 +2082,7 @@ pub fn plan_car_route_at(
     prefer_official_networks: bool,
     departure_local_iso: Option<String>,
     data_dir: String,
+    via_points: Vec<FfiLatLon>,
 ) -> CorridorRouteResult {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ch = driver_break_core::download::progress::ChannelGuard::enter(
@@ -2099,6 +2105,7 @@ pub fn plan_car_route_at(
             prefer_official_networks,
             departure_local_iso,
             data_dir,
+            via_points,
         )
     })) {
         Ok(result) => result,
@@ -2135,12 +2142,20 @@ fn plan_car_route_inner(
     prefer_official_networks: bool,
     departure_local_iso: Option<String>,
     data_dir: String,
+    via_points: Vec<FfiLatLon>,
 ) -> CorridorRouteResult {
     let empty = empty_corridor;
     let _cancel_guard = driver_break_core::download::plan_cancel::begin_plan();
 
     if profile == TravelProfile::Hiking {
         return empty("TEST_KIND=PLAN_CAR_ROUTE\nFAIL: use plan_hiking_route for hiking\n".into());
+    }
+
+    if via_points.len() > MAX_ROUTE_VIA_POINTS {
+        return empty(format!(
+            "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: at most {MAX_ROUTE_VIA_POINTS} via points allowed (got {})\n",
+            via_points.len()
+        ));
     }
 
     let mut timer = PlanStageTimer::start();
@@ -2168,7 +2183,8 @@ fn plan_car_route_inner(
     let mut report = String::new();
     report.push_str("TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\n");
     report.push_str(&format!(
-        "profile={profile:?}; routing={routing_profile:?}; start={start_lat:.6},{start_lon:.6}; end={end_lat:.6},{end_lon:.6}; use_eco={use_eco}\n"
+        "profile={profile:?}; routing={routing_profile:?}; start={start_lat:.6},{start_lon:.6}; end={end_lat:.6},{end_lon:.6}; vias={}; use_eco={use_eco}\n",
+        via_points.len()
     ));
     report.push_str(&format!(
         "avoid_motorways={avoid_motorways}; toll_policy={}; avoid_ferries={avoid_ferries}; vehicle_limits={}\n",
@@ -2201,20 +2217,43 @@ fn plan_car_route_inner(
     ));
     let eco = eco_for_travel_profile(profile);
     let elevation = ElevationService::new(ElevationCache::new(&elev));
+
+    let mut route_points: Vec<(f64, f64)> = Vec::with_capacity(2 + via_points.len());
+    route_points.push((start_lat, start_lon));
+    for v in &via_points {
+        route_points.push((v.lat, v.lon));
+    }
+    route_points.push((end_lat, end_lon));
+
+    let elev_min_lat = route_points
+        .iter()
+        .map(|p| p.0)
+        .fold(f64::INFINITY, f64::min);
+    let elev_min_lon = route_points
+        .iter()
+        .map(|p| p.1)
+        .fold(f64::INFINITY, f64::min);
+    let elev_max_lat = route_points
+        .iter()
+        .map(|p| p.0)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let elev_max_lon = route_points
+        .iter()
+        .map(|p| p.1)
+        .fold(f64::NEG_INFINITY, f64::max);
     let _ = elevation.warm_bbox([
-        start_lat.min(end_lat) - 0.05,
-        start_lon.min(end_lon) - 0.05,
-        start_lat.max(end_lat) + 0.05,
-        start_lon.max(end_lon) + 0.05,
+        elev_min_lat - 0.05,
+        elev_min_lon - 0.05,
+        elev_max_lat + 0.05,
+        elev_max_lon + 0.05,
     ]);
 
     // Clip to the trip bbox so we never load a full country graph into RAM
     // (that OOMs 4GB Automotive AVDs). Still reads the same region .pbf.
     // Pad starts from the historical span clamp, then doubles up to a hard cap
     // when A* finds no path (avoids false "no route" for long avoid-detours).
-    let pad_schedule = driver_break_core::routing::plan_bbox::plan_bbox_pad_schedule(
-        start_lat, start_lon, end_lat, end_lon,
-    );
+    let pad_schedule =
+        driver_break_core::routing::plan_bbox::plan_bbox_pad_schedule_points(&route_points);
     let mut pad_attempts: Vec<f64> = Vec::new();
     let mut last_expansions: u64 = 0;
     let mut last_terminate = "bbox_exhausted";
@@ -2240,9 +2279,7 @@ fn plan_car_route_inner(
 
     'pads: for &pad in &pad_schedule {
         pad_attempts.push(pad);
-        bbox = driver_break_core::routing::plan_bbox::trip_bbox(
-            start_lat, start_lon, end_lat, end_lon, pad,
-        );
+        bbox = driver_break_core::routing::plan_bbox::trip_bbox_points(&route_points, pad);
         report.push_str(&format!(
             "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}\n",
             bbox[0], bbox[1], bbox[2], bbox[3]
@@ -2350,50 +2387,84 @@ fn plan_car_route_inner(
             return plan_cancelled_result(report, &timer, &[("profile_map_ms", profile_map_ms)]);
         }
 
-        let (ss, sdist) =
-            match built.nearest_routable_with_options(start_lat, start_lon, &route_opts) {
-                Ok(v) => v,
+        // Snap every stop (start → vias → end), then A* each consecutive leg.
+        let mut snapped: Vec<(osm4routing::NodeId, f64)> = Vec::with_capacity(route_points.len());
+        let mut snap_ok = true;
+        for (i, &(lat, lon)) in route_points.iter().enumerate() {
+            match built.nearest_routable_with_options(lat, lon, &route_opts) {
+                Ok(v) => snapped.push(v),
                 Err(e) => {
                     last_terminate = "snap_failed";
+                    let label = if i == 0 {
+                        "start".to_string()
+                    } else if i + 1 == route_points.len() {
+                        "destination".to_string()
+                    } else {
+                        format!("via{i}")
+                    };
                     report.push_str(&format!(
-                        "snap_fail_start pad={pad:.2}: {}\n",
-                        format_snap_too_far("start", e, built.profile())
+                        "snap_fail_{label} pad={pad:.2}: {}\n",
+                        format_snap_too_far(&label, e, built.profile())
                     ));
-                    continue 'pads;
+                    snap_ok = false;
+                    break;
                 }
-            };
-        let (gg, gdist) = match built.nearest_routable_with_options(end_lat, end_lon, &route_opts) {
-            Ok(v) => v,
-            Err(e) => {
-                last_terminate = "snap_failed";
-                report.push_str(&format!(
-                    "snap_fail_end pad={pad:.2}: {}\n",
-                    format_snap_too_far("destination", e, built.profile())
-                ));
-                continue 'pads;
-            }
-        };
-
-        let stats = built.shortest_path_with_options_stats(ss, gg, use_eco, &route_opts);
-        last_expansions = stats.expansions;
-        last_terminate = stats.terminate_reason;
-        if let Some((p, e, c)) = stats.path {
-            if p.len() >= 2 {
-                path = p;
-                path_edges = e;
-                cost = c;
-                s = ss;
-                g = gg;
-                snap_start_m = sdist;
-                snap_end_m = gdist;
-                graph = Some(built);
-                used_opts = route_opts.clone();
-                break 'pads;
             }
         }
+        if !snap_ok {
+            continue 'pads;
+        }
+
+        let mut full_path: Vec<osm4routing::NodeId> = Vec::new();
+        let mut full_edges: Vec<usize> = Vec::new();
+        let mut full_cost = 0.0;
+        let mut leg_expansions: u64 = 0;
+        let mut legs_ok = true;
+        for leg in 0..snapped.len() - 1 {
+            let (ss, _) = snapped[leg];
+            let (gg, _) = snapped[leg + 1];
+            let stats = built.shortest_path_with_options_stats(ss, gg, use_eco, &route_opts);
+            leg_expansions = leg_expansions.saturating_add(stats.expansions);
+            last_terminate = stats.terminate_reason;
+            let Some((p, e, c)) = stats.path else {
+                report.push_str(&format!(
+                    "no_route_leg{} pad={pad:.2} expansions={} reason={}\n",
+                    leg + 1,
+                    stats.expansions,
+                    stats.terminate_reason
+                ));
+                legs_ok = false;
+                break;
+            };
+            if p.len() < 2 {
+                report.push_str(&format!("zero_length_leg{} pad={pad:.2}\n", leg + 1));
+                legs_ok = false;
+                break;
+            }
+            full_cost += c;
+            if full_path.is_empty() {
+                full_path = p;
+                full_edges = e;
+            } else {
+                full_path.extend(p.into_iter().skip(1));
+                full_edges.extend(e);
+            }
+        }
+        last_expansions = leg_expansions;
+        if legs_ok && full_path.len() >= 2 {
+            path = full_path;
+            path_edges = full_edges;
+            cost = full_cost;
+            s = snapped[0].0;
+            g = snapped[snapped.len() - 1].0;
+            snap_start_m = snapped[0].1;
+            snap_end_m = snapped[snapped.len() - 1].1;
+            graph = Some(built);
+            used_opts = route_opts.clone();
+            break 'pads;
+        }
         report.push_str(&format!(
-            "no_route pad={pad:.2} expansions={} reason={}\n",
-            stats.expansions, stats.terminate_reason
+            "no_route pad={pad:.2} expansions={leg_expansions} reason={last_terminate}\n"
         ));
         graph = Some(built);
     }
@@ -2404,28 +2475,62 @@ fn plan_car_route_inner(
         if let Some(built) = graph.as_ref() {
             let mut fallback_opts = route_opts.clone();
             fallback_opts.toll_policy = driver_break_core::routing::toll::TollPolicy::Penalize;
-            if let (Ok((ss, sdist)), Ok((gg, gdist))) = (
-                built.nearest_routable_with_options(start_lat, start_lon, &fallback_opts),
-                built.nearest_routable_with_options(end_lat, end_lon, &fallback_opts),
-            ) {
-                let stats = built.shortest_path_with_options_stats(ss, gg, use_eco, &fallback_opts);
-                last_expansions = stats.expansions;
-                if let Some((p, e, c)) = stats.path {
-                    if p.len() >= 2 {
-                        path = p;
-                        path_edges = e;
-                        cost = c;
-                        s = ss;
-                        g = gg;
-                        snap_start_m = sdist;
-                        snap_end_m = gdist;
-                        used_opts = fallback_opts;
-                        toll_avoidance_incomplete = true;
-                        last_terminate = "found_with_toll_fallback";
-                        report.push_str(
-                            "toll_avoidance_incomplete=true; returned_penalize_fallback_after_never_use\n",
-                        );
+            let mut snapped: Vec<(osm4routing::NodeId, f64)> =
+                Vec::with_capacity(route_points.len());
+            let mut snap_ok = true;
+            for &(lat, lon) in &route_points {
+                match built.nearest_routable_with_options(lat, lon, &fallback_opts) {
+                    Ok(v) => snapped.push(v),
+                    Err(_) => {
+                        snap_ok = false;
+                        break;
                     }
+                }
+            }
+            if snap_ok {
+                let mut full_path: Vec<osm4routing::NodeId> = Vec::new();
+                let mut full_edges: Vec<usize> = Vec::new();
+                let mut full_cost = 0.0;
+                let mut leg_expansions: u64 = 0;
+                let mut legs_ok = true;
+                for leg in 0..snapped.len() - 1 {
+                    let (ss, _) = snapped[leg];
+                    let (gg, _) = snapped[leg + 1];
+                    let stats =
+                        built.shortest_path_with_options_stats(ss, gg, use_eco, &fallback_opts);
+                    leg_expansions = leg_expansions.saturating_add(stats.expansions);
+                    let Some((p, e, c)) = stats.path else {
+                        legs_ok = false;
+                        break;
+                    };
+                    if p.len() < 2 {
+                        legs_ok = false;
+                        break;
+                    }
+                    full_cost += c;
+                    if full_path.is_empty() {
+                        full_path = p;
+                        full_edges = e;
+                    } else {
+                        full_path.extend(p.into_iter().skip(1));
+                        full_edges.extend(e);
+                    }
+                }
+                last_expansions = leg_expansions;
+                if legs_ok && full_path.len() >= 2 {
+                    path = full_path;
+                    path_edges = full_edges;
+                    cost = full_cost;
+                    s = snapped[0].0;
+                    g = snapped[snapped.len() - 1].0;
+                    snap_start_m = snapped[0].1;
+                    snap_end_m = snapped[snapped.len() - 1].1;
+                    used_opts = fallback_opts;
+                    toll_avoidance_incomplete = true;
+                    last_terminate = "found_with_toll_fallback";
+                    report.push_str(
+                        "toll_avoidance_incomplete=true; returned_penalize_fallback_after_never_use\n",
+                    );
                 }
             }
         }
@@ -4324,6 +4429,16 @@ pub struct FfiGpsFix {
     pub speed_kmh: Option<f64>,
 }
 
+/// Ordered via / waypoint coordinate for motor multi-leg planning.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiLatLon {
+    pub lat: f64,
+    pub lon: f64,
+}
+
+/// Maximum intermediate via points accepted by [`plan_car_route`] / [`plan_car_route_at`].
+pub const MAX_ROUTE_VIA_POINTS: usize = 4;
+
 fn routes_db(data_dir: &str) -> PathBuf {
     Path::new(data_dir).join("navi.db")
 }
@@ -6178,6 +6293,10 @@ pub struct FfiRoadNearInfo {
     pub maxspeed_posted: bool,
     /// True when a matching `maxspeed:conditional` window is active now.
     pub limit_from_conditional: bool,
+    /// Raw OSM `maxspeed:type` when present (zone/source metadata).
+    pub maxspeed_type: Option<String>,
+    /// True when OSM `maxspeed:variable` is truthy on the locked edge.
+    pub maxspeed_variable: bool,
 }
 
 fn empty_road_near_info() -> FfiRoadNearInfo {
@@ -6187,6 +6306,8 @@ fn empty_road_near_info() -> FfiRoadNearInfo {
         highway: None,
         maxspeed_posted: false,
         limit_from_conditional: false,
+        maxspeed_type: None,
+        maxspeed_variable: false,
     }
 }
 
@@ -6212,6 +6333,8 @@ fn road_near_info_from_sticky(
         highway: hit.highway,
         maxspeed_posted,
         limit_from_conditional,
+        maxspeed_type: hit.maxspeed_type,
+        maxspeed_variable: hit.maxspeed_variable,
     }
 }
 

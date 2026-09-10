@@ -91,6 +91,7 @@ class FarmSnapRouteInstrumentedTest {
                 vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                 preferOfficialNetworks = false,
                 dataDir = "",
+                viaPoints = emptyList(),
             )
         android.util.Log.i("FarmSnapRoute", route.report)
         assertTrue("plan failed:\n${route.report}", route.report.contains("PASS"))

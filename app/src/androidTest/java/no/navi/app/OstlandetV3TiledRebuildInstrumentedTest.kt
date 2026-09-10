@@ -69,6 +69,7 @@ class OstlandetV3TiledRebuildInstrumentedTest {
                 false,
                 "2026-07-15T12:00:00",
                 dataDir = "",
+                viaPoints = emptyList(),
             )
         android.util.Log.i("OstlandetV3Tiled", "FALLBACK ${r.report}")
         assertTrue("fallback plan failed:\n${r.report}", r.report.contains("PASS"))
@@ -112,7 +113,7 @@ class OstlandetV3TiledRebuildInstrumentedTest {
         assertTrue(pbf.lastModified() == beforeMtime)
 
         val man = File(dir, "ostlandet-latest.navi-manifest.json").readText()
-        assertTrue(man.contains("\"graph_format_version\": 6"))
+        assertTrue(man.contains("\"graph_format_version\": 7"))
         assertTrue("manifest missing graph_tiles:\n$man", man.contains("graph_tiles"))
         android.util.Log.i("OstlandetV3Tiled", "MANIFEST $man")
     }
@@ -159,6 +160,7 @@ class OstlandetV3TiledRebuildInstrumentedTest {
                 false,
                 "2026-07-15T12:00:00",
                 dataDir = "",
+                viaPoints = emptyList(),
             )
         android.util.Log.i("OstlandetV3Tiled", "SUMMER ${summer.report}")
         assertTrue("summer:\n${summer.report}", summer.report.contains("PASS"))
@@ -186,6 +188,7 @@ class OstlandetV3TiledRebuildInstrumentedTest {
                 false,
                 "2026-01-15T12:00:00",
                 dataDir = "",
+                viaPoints = emptyList(),
             )
         android.util.Log.i("OstlandetV3Tiled", "WINTER ${winter.report}")
         assertTrue("winter pack_hit:\n${winter.report}", winter.report.contains("pack_hit=true"))

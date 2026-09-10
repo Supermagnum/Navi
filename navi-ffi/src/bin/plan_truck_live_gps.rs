@@ -91,6 +91,7 @@ fn main() {
         },
         false,
         String::new(),
+        Vec::new(),
     );
     println!("distance_km={:.3}", r.distance_km);
     println!("eta_minutes={:.1}", r.eta_minutes);

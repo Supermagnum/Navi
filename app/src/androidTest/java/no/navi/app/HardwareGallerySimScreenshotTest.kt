@@ -122,6 +122,7 @@ class HardwareGallerySimScreenshotTest {
                         vehicle = vehicle,
                         preferOfficialNetworks = false,
                         dataDir = "",
+                        viaPoints = emptyList(),
                     )
                 check(leg.report.contains("PASS") && leg.routePolyline.isNotBlank()) {
                     "leg ${i + 1} failed: ${leg.report.take(400)}"

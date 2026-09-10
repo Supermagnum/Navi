@@ -49,6 +49,11 @@ fn edge(
         shape: Vec::new(),
         highway: Some(highway.into()),
         maxspeed_kmh: None,
+        maxspeed_practical_kmh: None,
+        maxspeed_advisory_kmh: None,
+        maxspeed_type: None,
+        maxspeed_variable: false,
+        minspeed_kmh: None,
         name: None,
         road_ref: None,
         is_motorroad: false,
@@ -813,4 +818,88 @@ fn barrier_node_blocks_through_not_way_wide() {
         .shortest_path(NodeId(1), NodeId(2), false)
         .expect("may drive up to bollard");
     assert_eq!(to_barrier.0, vec![NodeId(1), NodeId(2)]);
+}
+
+/// Multi-leg: start → via1 → via2 → end; concatenated path visits vias in order
+/// and total cost equals the sum of legs.
+#[test]
+fn multi_via_legs_concatenate_in_order() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.0, 10.03),
+    ] {
+        nodes.insert(id, n);
+    }
+    let e12 = edge("12", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "secondary");
+    let e23 = edge("23", 2, 3, 60.0, 10.01, 60.0, 10.02, 150.0, "secondary");
+    let e34 = edge("34", 3, 4, 60.0, 10.02, 60.0, 10.03, 200.0, "secondary");
+    let graph = RouteGraph::from_parts(nodes, vec![e12, e23, e34], RoutingProfile::Car);
+
+    let stops = [NodeId(1), NodeId(2), NodeId(3), NodeId(4)];
+    let mut full_path = Vec::new();
+    let mut full_edges = Vec::new();
+    let mut total_cost = 0.0;
+    let mut leg_costs = Vec::new();
+    for w in stops.windows(2) {
+        let (p, e, c) = graph
+            .shortest_path(w[0], w[1], false)
+            .expect("leg must exist");
+        leg_costs.push(c);
+        total_cost += c;
+        if full_path.is_empty() {
+            full_path = p;
+            full_edges = e;
+        } else {
+            full_path.extend(p.into_iter().skip(1));
+            full_edges.extend(e);
+        }
+    }
+    assert_eq!(full_path, vec![NodeId(1), NodeId(2), NodeId(3), NodeId(4)]);
+    assert_eq!(full_edges.len(), 3);
+    assert!((total_cost - leg_costs.iter().sum::<f64>()).abs() < 1e-9);
+    let dist_m: f64 = full_edges.iter().map(|&i| graph.edges[i].length_m).sum();
+    assert!((dist_m - 450.0).abs() < 1e-6);
+}
+
+/// Minspeed on an edge hard-excludes it for foot (and bicycle) when building
+/// from tags; here we model the same by omitting the edge from a foot graph.
+#[test]
+fn minspeed_excludes_foot_profile_path() {
+    use driver_break_core::routing::eta::edge_speed_kmh;
+
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+    ] {
+        nodes.insert(id, n);
+    }
+    // Direct short edge with minspeed (motor-only); foot graph omits it.
+    let mut motor_only = edge("fast", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "trunk");
+    motor_only.minspeed_kmh = Some(60.0);
+    motor_only.maxspeed_kmh = Some(80.0);
+    let detour_a = edge("d1", 1, 3, 60.0, 10.0, 60.0, 10.02, 300.0, "path");
+    let detour_b = edge("d2", 3, 2, 60.0, 10.02, 60.0, 10.01, 300.0, "path");
+
+    let car = RouteGraph::from_parts(
+        nodes.clone(),
+        vec![motor_only.clone(), detour_a.clone(), detour_b.clone()],
+        RoutingProfile::Car,
+    );
+    let car_path = car.shortest_path(NodeId(1), NodeId(2), false).unwrap();
+    assert_eq!(car_path.0, vec![NodeId(1), NodeId(2)]);
+    assert!((edge_speed_kmh(&car.edges[0]) - 80.0).abs() < 1e-9);
+
+    // Foot graph without the minspeed edge (as build filters would drop it).
+    let foot = RouteGraph::from_parts(nodes, vec![detour_a, detour_b], RoutingProfile::Foot);
+    let foot_path = foot.shortest_path(NodeId(1), NodeId(2), false).unwrap();
+    assert!(
+        foot_path.0.contains(&NodeId(3)),
+        "foot must detour around minspeed edge: {:?}",
+        foot_path.0
+    );
 }

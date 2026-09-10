@@ -102,6 +102,16 @@ pub struct GraphEdge {
     pub highway: Option<String>,
     /// OSM `maxspeed` in km/h when parseable; `None` → highway-class fallback for ETA.
     pub maxspeed_kmh: Option<f64>,
+    /// OSM `maxspeed:practical` in km/h — preferred for ETA when present (achievable speed).
+    pub maxspeed_practical_kmh: Option<f64>,
+    /// OSM `maxspeed:advisory` in km/h — ETA hint when posted/practical are absent.
+    pub maxspeed_advisory_kmh: Option<f64>,
+    /// Raw OSM `maxspeed:type` (zone/source metadata; no weight/ETA effect).
+    pub maxspeed_type: Option<String>,
+    /// OSM `maxspeed:variable` truthy — variable-message / matrix signs (display only).
+    pub maxspeed_variable: bool,
+    /// OSM `minspeed` in km/h — floor for motor ETA; excludes foot/bicycle when set.
+    pub minspeed_kmh: Option<f64>,
     /// OSM `name` (colloquial street name) when present.
     pub name: Option<String>,
     /// OSM `ref` plus `int_ref` when they differ (display / guidance only).
@@ -214,6 +224,11 @@ impl RouteGraph {
         let (nodes, edges) = Reader::new()
             .read_tag("highway")
             .read_tag("maxspeed")
+            .read_tag("maxspeed:practical")
+            .read_tag("maxspeed:advisory")
+            .read_tag("maxspeed:type")
+            .read_tag("maxspeed:variable")
+            .read_tag("minspeed")
             .read_tag("name")
             .read_tag("ref")
             .read_tag("int_ref")
@@ -276,7 +291,7 @@ impl RouteGraph {
             let end_lon = end.coord.x;
             let length_m = edge.length();
             let meta = edge_meta(&edge, profile);
-            if meta.17 {
+            if meta.access_forbidden {
                 // Static access forbids this profile — omit from graph.
                 continue;
             }
@@ -1176,37 +1191,61 @@ pub fn append_seasonal_closure_report(report: &str, excluded_edges: usize) -> St
     format!("{report}\nseasonal_closure_excluded_edges={excluded_edges}")
 }
 
-type EdgeMeta = (
-    Option<String>,
-    Option<f64>,
-    Option<String>,
-    Option<String>,
-    Option<f64>,
-    Option<f64>,
-    Option<f64>,
-    Option<f64>,
-    Option<f64>,
-    Option<f64>,
-    bool,
-    bool,
-    bool,
-    bool,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    bool,
-    bool,
-    bool,
-    bool,
-    Option<u8>,
-    SurfaceQuality,
-);
+/// Tags extracted once per OSM way and copied onto each directed [`GraphEdge`].
+#[derive(Debug, Clone)]
+struct EdgeMeta {
+    highway: Option<String>,
+    maxspeed_kmh: Option<f64>,
+    maxspeed_practical_kmh: Option<f64>,
+    maxspeed_advisory_kmh: Option<f64>,
+    maxspeed_type: Option<String>,
+    maxspeed_variable: bool,
+    minspeed_kmh: Option<f64>,
+    name: Option<String>,
+    road_ref: Option<String>,
+    maxweight_t: Option<f64>,
+    maxaxleload_t: Option<f64>,
+    maxbogieweight_t: Option<f64>,
+    maxheight_m: Option<f64>,
+    maxwidth_m: Option<f64>,
+    maxlength_m: Option<f64>,
+    is_toll: bool,
+    is_ferry: bool,
+    is_boardwalk_crossing: bool,
+    is_roundabout: bool,
+    motor_vehicle_conditional: Option<String>,
+    access_conditional: Option<String>,
+    maxspeed_conditional: Option<String>,
+    access_forbidden: bool,
+    is_motorroad: bool,
+    is_expressway: bool,
+    is_oneway: bool,
+    lanes: Option<u8>,
+    surface_quality: SurfaceQuality,
+}
 
 fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
     let highway = edge.tags.get("highway").cloned();
     let maxspeed_kmh = edge
         .tags
         .get("maxspeed")
+        .and_then(|s| crate::routing::eta::parse_maxspeed_kmh(s));
+    let maxspeed_practical_kmh = edge
+        .tags
+        .get("maxspeed:practical")
+        .and_then(|s| crate::routing::eta::parse_maxspeed_kmh(s));
+    let maxspeed_advisory_kmh = edge
+        .tags
+        .get("maxspeed:advisory")
+        .and_then(|s| crate::routing::eta::parse_maxspeed_kmh(s));
+    let maxspeed_type = edge.tags.get("maxspeed:type").cloned();
+    let maxspeed_variable = edge
+        .tags
+        .get("maxspeed:variable")
+        .is_some_and(|s| is_truthy_tag(s));
+    let minspeed_kmh = edge
+        .tags
+        .get("minspeed")
         .and_then(|s| crate::routing::eta::parse_maxspeed_kmh(s));
     let name = edge.tags.get("name").cloned();
     let road_ref = combine_osm_road_refs(
@@ -1270,9 +1309,14 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
         edge.tags.get("surface").map(String::as_str),
         edge.tags.get("tracktype").map(String::as_str),
     );
-    (
+    EdgeMeta {
         highway,
         maxspeed_kmh,
+        maxspeed_practical_kmh,
+        maxspeed_advisory_kmh,
+        maxspeed_type,
+        maxspeed_variable,
+        minspeed_kmh,
         name,
         road_ref,
         maxweight_t,
@@ -1294,7 +1338,7 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
         is_oneway,
         lanes,
         surface_quality,
-    )
+    }
 }
 
 pub(crate) fn parse_lanes_tag(raw: &str) -> Option<u8> {
@@ -1343,29 +1387,34 @@ fn push_directed_edge(
         end_lat,
         end_lon,
         shape,
-        highway: meta.0.clone(),
-        maxspeed_kmh: meta.1,
-        name: meta.2.clone(),
-        road_ref: meta.3.clone(),
-        is_motorroad: meta.18,
-        is_expressway: meta.19,
-        is_oneway: meta.20,
-        lanes: meta.21,
-        maxweight_t: meta.4,
-        maxaxleload_t: meta.5,
-        maxbogieweight_t: meta.6,
-        maxheight_m: meta.7,
-        maxwidth_m: meta.8,
-        maxlength_m: meta.9,
-        is_toll: meta.10,
-        is_ferry: meta.11,
-        is_boardwalk_crossing: meta.12,
-        is_roundabout: meta.13,
-        motor_vehicle_conditional: meta.14.clone(),
-        access_conditional: meta.15.clone(),
-        maxspeed_conditional: meta.16.clone(),
-        access_forbidden: meta.17,
-        surface_quality: meta.22,
+        highway: meta.highway.clone(),
+        maxspeed_kmh: meta.maxspeed_kmh,
+        maxspeed_practical_kmh: meta.maxspeed_practical_kmh,
+        maxspeed_advisory_kmh: meta.maxspeed_advisory_kmh,
+        maxspeed_type: meta.maxspeed_type.clone(),
+        maxspeed_variable: meta.maxspeed_variable,
+        minspeed_kmh: meta.minspeed_kmh,
+        name: meta.name.clone(),
+        road_ref: meta.road_ref.clone(),
+        is_motorroad: meta.is_motorroad,
+        is_expressway: meta.is_expressway,
+        is_oneway: meta.is_oneway,
+        lanes: meta.lanes,
+        maxweight_t: meta.maxweight_t,
+        maxaxleload_t: meta.maxaxleload_t,
+        maxbogieweight_t: meta.maxbogieweight_t,
+        maxheight_m: meta.maxheight_m,
+        maxwidth_m: meta.maxwidth_m,
+        maxlength_m: meta.maxlength_m,
+        is_toll: meta.is_toll,
+        is_ferry: meta.is_ferry,
+        is_boardwalk_crossing: meta.is_boardwalk_crossing,
+        is_roundabout: meta.is_roundabout,
+        motor_vehicle_conditional: meta.motor_vehicle_conditional.clone(),
+        access_conditional: meta.access_conditional.clone(),
+        maxspeed_conditional: meta.maxspeed_conditional.clone(),
+        access_forbidden: meta.access_forbidden,
+        surface_quality: meta.surface_quality,
     });
     graph.adjacency.entry(source).or_default().push(idx);
 }
@@ -1613,6 +1662,16 @@ fn edge_allowed(edge: &Edge, profile: RoutingProfile) -> bool {
     ) {
         return false;
     }
+    // Mandated minimum speed: foot/bicycle cannot legally use the way.
+    if matches!(profile, RoutingProfile::Foot | RoutingProfile::Bicycle)
+        && edge
+            .tags
+            .get("minspeed")
+            .and_then(|s| crate::routing::eta::parse_maxspeed_kmh(s))
+            .is_some()
+    {
+        return false;
+    }
     let mut props = edge.properties;
     props.normalize();
     match profile {
@@ -1766,6 +1825,11 @@ mod tests {
             shape: Vec::new(),
             highway: Some("path".into()),
             maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
             name: None,
             road_ref: None,
             is_motorroad: false,
@@ -1849,6 +1913,11 @@ mod tests {
             shape: Vec::new(),
             highway: Some("residential".into()),
             maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
             name: None,
             road_ref: None,
             is_motorroad: false,
@@ -2383,6 +2452,11 @@ mod tests {
             shape: Vec::new(),
             highway: Some("secondary".into()),
             maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
             name: None,
             road_ref: None,
             is_motorroad: false,
@@ -2447,6 +2521,11 @@ mod tests {
             shape: Vec::new(),
             highway: Some("primary".into()),
             maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
             name: None,
             road_ref: None,
             is_motorroad: false,
@@ -2519,6 +2598,11 @@ mod tests {
             shape: Vec::new(),
             highway: Some("motorway".into()),
             maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
             name: None,
             road_ref: None,
             is_motorroad: false,
@@ -2581,6 +2665,11 @@ mod tests {
             shape: Vec::new(),
             highway: Some("unclassified".into()),
             maxspeed_kmh: Some(80.0),
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
             name: Some("Friisvegen".into()),
             road_ref: None,
             is_motorroad: false,
@@ -2674,6 +2763,11 @@ mod tests {
             shape: Vec::new(),
             highway: Some("motorway".into()),
             maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
             name: None,
             road_ref: None,
             is_motorroad: false,

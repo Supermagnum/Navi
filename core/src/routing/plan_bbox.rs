@@ -18,8 +18,14 @@ pub fn plan_bbox_pad_schedule(
     end_lat: f64,
     end_lon: f64,
 ) -> Vec<f64> {
-    let lat_span = (start_lat - end_lat).abs();
-    let lon_span = (start_lon - end_lon).abs();
+    plan_bbox_pad_schedule_points(&[(start_lat, start_lon), (end_lat, end_lon)])
+}
+
+/// Pad schedule from the axis-aligned span of all route points (start, vias, end).
+pub fn plan_bbox_pad_schedule_points(points: &[(f64, f64)]) -> Vec<f64> {
+    let (min_lat, min_lon, max_lat, max_lon) = points_bounds(points);
+    let lat_span = (max_lat - min_lat).abs();
+    let lon_span = (max_lon - min_lon).abs();
     let mut pad =
         (lat_span.max(lon_span) * 0.35).clamp(PLAN_BBOX_PAD_MIN_DEG, PLAN_BBOX_PAD_INITIAL_MAX_DEG);
     let mut out = Vec::with_capacity(4);
@@ -38,12 +44,31 @@ pub fn plan_bbox_pad_schedule(
 }
 
 pub fn trip_bbox(start_lat: f64, start_lon: f64, end_lat: f64, end_lon: f64, pad: f64) -> [f64; 4] {
-    [
-        start_lat.min(end_lat) - pad,
-        start_lon.min(end_lon) - pad,
-        start_lat.max(end_lat) + pad,
-        start_lon.max(end_lon) + pad,
-    ]
+    trip_bbox_points(&[(start_lat, start_lon), (end_lat, end_lon)], pad)
+}
+
+/// Axis-aligned bbox covering all points, expanded by `pad` degrees.
+pub fn trip_bbox_points(points: &[(f64, f64)], pad: f64) -> [f64; 4] {
+    let (min_lat, min_lon, max_lat, max_lon) = points_bounds(points);
+    [min_lat - pad, min_lon - pad, max_lat + pad, max_lon + pad]
+}
+
+fn points_bounds(points: &[(f64, f64)]) -> (f64, f64, f64, f64) {
+    let mut min_lat = f64::INFINITY;
+    let mut min_lon = f64::INFINITY;
+    let mut max_lat = f64::NEG_INFINITY;
+    let mut max_lon = f64::NEG_INFINITY;
+    for &(lat, lon) in points {
+        min_lat = min_lat.min(lat);
+        min_lon = min_lon.min(lon);
+        max_lat = max_lat.max(lat);
+        max_lon = max_lon.max(lon);
+    }
+    if !min_lat.is_finite() {
+        (0.0, 0.0, 0.0, 0.0)
+    } else {
+        (min_lat, min_lon, max_lat, max_lon)
+    }
 }
 
 #[cfg(test)]
@@ -63,5 +88,15 @@ mod tests {
         let pads = plan_bbox_pad_schedule(50.0, 5.0, 70.0, 25.0);
         assert!(pads.len() <= 8);
         assert!((pads[0] - PLAN_BBOX_PAD_INITIAL_MAX_DEG).abs() < 1e-9);
+    }
+
+    #[test]
+    fn points_bbox_includes_via() {
+        let pts = [(60.0, 10.0), (61.0, 11.0), (60.5, 12.0)];
+        let b = trip_bbox_points(&pts, 0.1);
+        assert!((b[0] - 59.9).abs() < 1e-9);
+        assert!((b[1] - 9.9).abs() < 1e-9);
+        assert!((b[2] - 61.1).abs() < 1e-9);
+        assert!((b[3] - 12.1).abs() < 1e-9);
     }
 }

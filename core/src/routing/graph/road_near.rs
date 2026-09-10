@@ -162,6 +162,10 @@ pub struct NearestRoadHit {
     pub highway: Option<String>,
     pub maxspeed_kmh: Option<f64>,
     pub maxspeed_conditional: Option<String>,
+    /// Raw OSM `maxspeed:type` when present (zone/source metadata).
+    pub maxspeed_type: Option<String>,
+    /// OSM `maxspeed:variable` truthy on the edge.
+    pub maxspeed_variable: bool,
     pub distance_m: f64,
 }
 
@@ -172,6 +176,8 @@ impl NearestRoadHit {
             highway: e.highway.clone(),
             maxspeed_kmh: e.maxspeed_kmh,
             maxspeed_conditional: e.maxspeed_conditional.clone(),
+            maxspeed_type: e.maxspeed_type.clone(),
+            maxspeed_variable: e.maxspeed_variable,
             distance_m,
         }
     }
@@ -441,6 +447,11 @@ mod tests {
             shape,
             highway: Some(highway.into()),
             maxspeed_kmh,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
             name: name.map(|s| s.into()),
             road_ref: road_ref.map(|s| s.into()),
             is_motorroad: false,

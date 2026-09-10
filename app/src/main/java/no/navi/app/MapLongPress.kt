@@ -88,8 +88,11 @@ fun MapMarkActionSheet(
     onSetTo: () -> Unit,
     onSavePlace: () -> Unit,
     onCancel: () -> Unit,
+    viaCount: Int = 0,
+    maxVias: Int = 4,
     modifier: Modifier = Modifier,
 ) {
+    val viaFull = viaCount >= maxVias
     Box(
         modifier =
             modifier
@@ -130,8 +133,17 @@ fun MapMarkActionSheet(
                 ) { Text("Set as From / Start") }
                 Button(
                     onClick = onSetVia,
+                    enabled = !viaFull,
                     modifier = Modifier.fillMaxWidth().testTag("map_mark_set_via"),
-                ) { Text("Set as Via") }
+                ) {
+                    Text(
+                        when {
+                            viaFull -> "Via full ($maxVias/$maxVias)"
+                            viaCount == 0 -> "Add as Via"
+                            else -> "Add as Via (${viaCount + 1}/$maxVias)"
+                        },
+                    )
+                }
                 Button(
                     onClick = onSetTo,
                     modifier = Modifier.fillMaxWidth().testTag("map_mark_set_to"),

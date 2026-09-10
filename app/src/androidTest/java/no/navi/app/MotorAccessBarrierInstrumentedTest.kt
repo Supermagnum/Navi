@@ -120,6 +120,7 @@ class MotorAccessBarrierInstrumentedTest {
                     FfiVehicleLimits(null, null, null, null, null, null),
                     false,
                     dataDir = "",
+                    viaPoints = emptyList(),
                 )
             check(warm.report.contains("PASS")) { "car prewarm failed: ${warm.report}" }
             val near = minDistToPolylineM(warm.routePolyline, TORGGATA_MID.first, TORGGATA_MID.second)
@@ -326,6 +327,7 @@ class MotorAccessBarrierInstrumentedTest {
                 FfiVehicleLimits(null, null, null, null, null, null),
                 false,
                 dataDir = "",
+                viaPoints = emptyList(),
             )
         assertTrue("car PASS: ${car.report.take(300)}", car.report.contains("PASS"))
         val near = minDistToPolylineM(car.routePolyline, BOLLARD.first, BOLLARD.second)

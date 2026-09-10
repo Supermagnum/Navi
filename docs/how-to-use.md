@@ -31,12 +31,17 @@ independent toggles in map/display settings; both use the Mapterhorn DEM
 | Method | How |
 |---|---|
 | **Keyboard search** | Type in the search field. Use **Place** (place, hut, or `lat, lon`) or **Address** (road, settlement, or `lat, lon`). Tap a result to apply it to the selected field. While the place index is still empty/building, the list shows a building hint instead of zero hits — use coordinates, map tap, or **Use GPS**. |
-| **Use GPS** | Tap **Use GPS as from** / **as to** / **as via** (label follows the selected chip). Needs a device fix; otherwise status shows `GPS unavailable`. Coordinates appear immediately; an optional nearby road-name upgrade may follow. |
-| **Map long-press** | Hold one finger on the map for **about 4 seconds** (blue ring). The **Marked location** sheet offers **Set as From / Start**, **Set as Via**, **Set as To / Destination**, **Save this place**, or **Cancel**. |
+| **Use GPS** | Tap **Use GPS as from** / **as to** / **as via** (label follows the selected chip). Needs a device fix; otherwise status shows `GPS unavailable`. Coordinates appear immediately; an optional nearby road-name upgrade may follow. On Via, the upgrade **replaces** the last via (does not add a second copy). |
+| **Map long-press** | Hold one finger on the map for **about 4 seconds** (blue ring). The **Marked location** sheet offers **Set as From / Start**, **Add as Via** (up to 4), **Set as To / Destination**, **Save this place**, or **Cancel**. |
 | **Saved place** | Open **Saved places**, then tap **From**, **Via**, or **To** on a row. |
 
-The summary line under the chips shows the current From / To / Via names.
-**Clear vias (N)** removes all vias.
+**Multiple vias (up to 4).** Via is a list, not a single slot. After you add a
+via, the search box clears so you can type the next; the chip shows
+**Via (n/4)**. A list under the chips has **Remove** per stop and **Clear all
+vias**. Re-tapping the Via chip also clears the box. At 4 vias the UI refuses
+further adds until you remove one.
+
+The summary line under the chips shows From / To and vias joined with `→`.
 
 Named hiking / cycle / pilgrim **routes** can appear in place search when they
 are in the local place index — search by route name the same way as a hut or

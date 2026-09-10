@@ -138,8 +138,9 @@ Dette er helt valgfri støtte, ikke en betalingsmur — Navi er og forblir grati
 | **Frakoblet planlegging** | Last ned en region én gang, planlegg og se ruten på enheten. | Ferdig |
 | **Indeksering** | Etter regionsnedlasting gjør en bakgrunnsjobb OSM-uttrekket om til kompakte rutingpakker, så senere planer går raskt. Du kan planlegge mens den kjører; konvertering og stedsindeks **pauser** under en forgrunnsplan, slik at PBF-reservestien ikke sulter. | Ferdig |
 | **Stedssøk** | Søk steder og sett Fra / Via / Til. Mens stedsindeksen fortsatt er tom/bygges, viser søket en byggehint (koordinater og karttrykk fungerer fortsatt). | Ferdig |
-| **Bruk GPS** | Fyll Fra / Via / Til fra live-posisjon: koordinater kommer med en gang, deretter eventuelt oppgradering til veiknavn i nærheten. Feltet er chipen som var aktiv da du trykket — ikke den som er valgt etter at oppslaget er ferdig. | Ferdig |
-| **Kartmerke og lagrede steder** | Hold på kartet ~4 s for å merke et punkt; sett Fra / Via / Til eller lagre et navngitt sted (skilt fra Lagrede ruter). | Ferdig |
+| **Flere via-punkter** | Inntil **4** mellomstopp for bil / lastebil / sykkel (og fot-waypoints). Via-chipen viser **Via (n/4)**; hvert valg **legger til** et stopp og tømmer søkefeltet. Liste med **Remove** / **Clear all**. Omvei-replan beholder gjenværende via. | Ferdig |
+| **Bruk GPS** | Fyll Fra / Via / Til fra live-posisjon: koordinater kommer med en gang, deretter eventuelt oppgradering til veiknavn i nærheten. Feltet er chipen som var aktiv da du trykket — ikke den som er valgt etter at oppslaget er ferdig. GPS som Via oppgraderer siste via på stedet (dupliserer ikke). | Ferdig |
+| **Kartmerke og lagrede steder** | Hold på kartet ~4 s for å merke et punkt; sett Fra / **Add as Via** / Til eller lagre et navngitt sted (skilt fra Lagrede ruter). Via legges til til taket på 4. | Ferdig |
 | **Avvik / omberegning** | Vedvarende avvik viser **Off route**; motorprofiler omplanlegger automatisk fra live posisjon; fottur spør først. | Ferdig |
 | **Avbryt planlegging** | Mens **Planning route…** eller **Recalculating route…** vises, stopper **Cancel** den pågående native-planen. Avbrutt omberegning beholder opprinnelig rute. | Ferdig |
 | **Pauser og hvile** | Påminner når pause er «forfalt» og kan foreslå stopp. Bil bruker timer mellom pauser; fottur/sykling bruker rasteavstander; lastebil bruker juridiske kjøretidsregler der de er kjent. | Ferdig |
@@ -270,12 +271,23 @@ Et eksempel på en flersone-biltur (OSM ciderprodusenter, sør til nord):
 
 ## Slik fungerer funksjonene
 
-**Planlegge rute.** Sett **From** og **To** (og valgfrie via-punkter), velg
-reisemåte, deretter **Plan route**. From settes ofte med **Use GPS** (velg
+**Planlegge rute.** Sett **From** og **To** (og valgfrie **Via**-stopp), velg
+reisemåte, deretter **Plan route**. Du kan legge til inntil **fire** via-punkter:
+velg **Via**-chipen, velg et sted (eller **Use GPS** / kartmerke **Add as Via**),
+søk deretter neste — chipen viser **Via (n/4)** og en liste med fjern-knapper
+ligger under sammendraget. From settes ofte med **Use GPS** (velg
 **From** / **To** / **Via**-chip først; knappeetiketten følger chipen).
 Fotstier krever **Hiking**-modus — planlegging med Car bruker veinettet og
 følger ikke stier skikkelig. Et banner **Planning route…** har **Cancel** hvis
 du vil stoppe en pågående plan.
+
+**Tur-ETA og OSM-fart.** Motor-ETA før avreise foretrekker OSM
+`maxspeed:practical`, deretter skiltet `maxspeed`, deretter
+`maxspeed:advisory`, deretter highway-fallback. `minspeed` setter gulv for
+motor-ETA og utelukker slike kanter for fot/sykkel. Live HUD / fotoboks bruker
+fortsatt `maxspeed:conditional` mot lokal tid. Grafpakker er **format v7** —
+bruk **Tools → Rebuild indexed maps** (eller last ned på nytt) hvis en eldre
+pakke fortsatt ligger på enheten.
 
 **Øko vs kortest.** Kortest ignorerer bakker. Øko gjør bratte stigninger
 «dyrere». Elektriske modi får noe kreditt for energi tilbake i nedoverbakke.
