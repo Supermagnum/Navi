@@ -342,9 +342,11 @@ bottom-right of the map, with a short label and often a **percent done**. The
 same text is mirrored in a **pinned footer at the bottom of Tools** (outside the
 scrollable region picker), in a fixed order: region download → basemap/DEM →
 place index → indexed maps. You do not need to scroll Tools to find active job
-status. When every tracked phase for the current download session has finished
-(packs + place index + basemap/DEM — fully done, not merely usable), that footer
-shows **Ready!** instead of the per-process lines.
+status. When Tools is open, the map chip is suppressed for those same progress
+lines so the percent is not shown twice. When every tracked phase for the
+current download session has finished (packs + place index + basemap/DEM —
+fully done, not merely usable), that footer shows **Ready!** instead of the
+per-process lines.
 
 While **Download region** is running, Tools keeps **one** progress line for the
 non-basemap phases of that job (place-index / indexed-maps duplicate lines are

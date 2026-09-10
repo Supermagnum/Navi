@@ -6640,11 +6640,18 @@ private fun NaviMapScreen() {
                             modifier = Modifier.testTag("tools_process_ready"),
                         )
                     }
-                    Text(
-                        userFacingStatus(status),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.testTag("tools_status"),
-                    )
+                    // Do not repeat the same % line under tools_status — the pinned
+                    // process footer already owns active download/index progress.
+                    val toolsStatusLine = userFacingStatus(status)
+                    if (toolsStatusLine.isNotBlank() &&
+                        processLines.none { (_, line) -> line == toolsStatusLine }
+                    ) {
+                        Text(
+                            toolsStatusLine,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("tools_status"),
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = {
@@ -6741,8 +6748,22 @@ private fun NaviMapScreen() {
             }
 
             // Status chip: short user-facing messages only (never pipeline debug dumps).
+            // While Tools is open, the pinned process footer owns download/index % —
+            // hide the map toast when it would duplicate that footer line.
             val toast = userFacingStatus(status)
-            if (toast.isNotBlank() && !toast.equals("Ready", ignoreCase = true)) {
+            val toolsProcessDup =
+                showTools &&
+                    toast.isNotBlank() &&
+                    listOf(
+                        regionDownloadProgress,
+                        pmtilesProgress,
+                        placeIndexUiLine,
+                        indexedMapsUiLine,
+                    ).any { it.isNotBlank() && it == toast }
+            if (toast.isNotBlank() &&
+                !toast.equals("Ready", ignoreCase = true) &&
+                !toolsProcessDup
+            ) {
                 Text(
                     text = toast,
                     modifier =
