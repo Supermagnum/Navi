@@ -20,7 +20,8 @@ Screenshots (SM-P613): [`images/map-long-press/`](images/map-long-press/).
    suggested name (nearest address/place within ~12 m when known, otherwise
    coordinates) and these actions:
    - **Set as From / Start**
-   - **Set as Via** (adds another via; you can mark several)
+   - **Add as Via** (appends; up to **4** vias — button shows the next slot or
+     **Via full** when capped)
    - **Set as To / Destination**
    - **Save this place** (see below)
    - **Cancel** (or tap outside the sheet)

@@ -131,11 +131,25 @@ pub fn highway_class_display_label(highway: Option<&str>) -> &'static str {
     }
 }
 
-/// Effective motor speed (km/h): posted OSM `maxspeed` when present, else highway-class fallback.
+/// Effective motor speed (km/h) for pre-departure ETA.
+///
+/// Priority: `maxspeed:practical` → posted `maxspeed` → `maxspeed:advisory` →
+/// highway-class fallback. Then floor by `minspeed` when present.
 pub fn edge_speed_kmh(edge: &GraphEdge) -> f64 {
-    edge.maxspeed_kmh
+    let base = edge
+        .maxspeed_practical_kmh
         .filter(|v| v.is_finite() && *v > 0.0)
-        .unwrap_or_else(|| highway_fallback_kmh(edge.highway.as_deref()))
+        .or_else(|| edge.maxspeed_kmh.filter(|v| v.is_finite() && *v > 0.0))
+        .or_else(|| {
+            edge.maxspeed_advisory_kmh
+                .filter(|v| v.is_finite() && *v > 0.0)
+        })
+        .unwrap_or_else(|| highway_fallback_kmh(edge.highway.as_deref()));
+    let floor = edge
+        .minspeed_kmh
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .unwrap_or(0.0);
+    base.max(floor)
 }
 
 /// Segment travel time in hours from length and speed (km/h).
@@ -298,6 +312,11 @@ mod tests {
             shape: Vec::new(),
             highway: Some("primary".into()),
             maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
             name: None,
             road_ref: None,
             is_motorroad: false,
@@ -360,6 +379,11 @@ mod tests {
             shape: Vec::new(),
             highway: Some("residential".into()), // fallback would be 40
             maxspeed_kmh: Some(100.0),
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
             name: None,
             road_ref: None,
             is_motorroad: false,
@@ -391,5 +415,104 @@ mod tests {
     fn hiking_and_cycling_fixed_pace() {
         assert!((fixed_pace_minutes(10.0, HIKING_MIN_PER_KM) - 160.0).abs() < 1e-9);
         assert!((fixed_pace_minutes(15.0, CYCLING_MIN_PER_KM) - 60.0).abs() < 1e-9);
+    }
+
+    fn stub_edge(
+        maxspeed_kmh: Option<f64>,
+        maxspeed_practical_kmh: Option<f64>,
+        maxspeed_advisory_kmh: Option<f64>,
+        minspeed_kmh: Option<f64>,
+        length_m: f64,
+        highway: &str,
+    ) -> (HashMap<NodeId, Node>, GraphEdge) {
+        let mut nodes = HashMap::new();
+        nodes.insert(
+            NodeId(1),
+            Node {
+                id: NodeId(1),
+                coord: Coord { x: 10.0, y: 60.0 },
+                uses: 0,
+            },
+        );
+        nodes.insert(
+            NodeId(2),
+            Node {
+                id: NodeId(2),
+                coord: Coord { x: 10.1, y: 60.0 },
+                uses: 0,
+            },
+        );
+        let edge = GraphEdge {
+            id: "e1".into(),
+            source: NodeId(1),
+            target: NodeId(2),
+            length_m,
+            base_weight: length_m,
+            eco_weight: None,
+            start_lat: 60.0,
+            start_lon: 10.0,
+            end_lat: 60.0,
+            end_lon: 10.1,
+            shape: Vec::new(),
+            highway: Some(highway.into()),
+            maxspeed_kmh,
+            maxspeed_practical_kmh,
+            maxspeed_advisory_kmh,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh,
+            name: None,
+            road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+            surface_quality: crate::routing::graph::SurfaceQuality::Good,
+        };
+        (nodes, edge)
+    }
+
+    #[test]
+    fn practical_beats_posted_for_eta() {
+        // 10 km: posted 100 → 6 min; practical 50 → 12 min.
+        let (nodes, edge) = stub_edge(Some(100.0), Some(50.0), None, None, 10_000.0, "primary");
+        assert!((edge_speed_kmh(&edge) - 50.0).abs() < 1e-9);
+        let graph = RouteGraph::from_parts(nodes, vec![edge], RoutingProfile::Car);
+        let mins = motor_path_minutes(&graph, &[NodeId(1), NodeId(2)]);
+        assert!((mins - 12.0).abs() < 0.01, "got {mins}");
+    }
+
+    #[test]
+    fn advisory_used_when_no_posted() {
+        let (nodes, edge) = stub_edge(None, None, Some(60.0), None, 10_000.0, "residential");
+        // residential fallback is 40; advisory 60 should win.
+        assert!((edge_speed_kmh(&edge) - 60.0).abs() < 1e-9);
+        let graph = RouteGraph::from_parts(nodes, vec![edge], RoutingProfile::Car);
+        let mins = motor_path_minutes(&graph, &[NodeId(1), NodeId(2)]);
+        assert!((mins - 10.0).abs() < 0.01, "got {mins}");
+    }
+
+    #[test]
+    fn minspeed_floors_motor_eta() {
+        // Posted 40 but minspeed 80 → ETA uses 80.
+        let (nodes, edge) = stub_edge(Some(40.0), None, None, Some(80.0), 10_000.0, "primary");
+        assert!((edge_speed_kmh(&edge) - 80.0).abs() < 1e-9);
+        let graph = RouteGraph::from_parts(nodes, vec![edge], RoutingProfile::Car);
+        let mins = motor_path_minutes(&graph, &[NodeId(1), NodeId(2)]);
+        assert!((mins - 7.5).abs() < 0.01, "got {mins}");
     }
 }

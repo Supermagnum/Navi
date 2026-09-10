@@ -275,6 +275,7 @@ class FollowGpsPanZoomInstrumentedTest {
                 ),
             preferOfficialNetworks = false,
             dataDir = "",
+            viaPoints = emptyList(),
         )
     }
 

@@ -103,110 +103,46 @@ object RouteReplan {
                 }
             val cacheDir =
                 File(dataDir, "graph-cache-${pbf.nameWithoutExtension}-$graphTag")
-            var poly = ""
-            var dist = 0.0
-            var etaSum = 0.0
-            var shareWeighted = 0.0
-            var last: CorridorRouteResult? = null
-            val legSamples = mutableListOf<List<RouteSimSample>>()
-            val legManeuvers = mutableListOf<List<RouteManeuver>>()
-            val legTotal = waypoints.size - 1
-            for (i in 0 until legTotal) {
-                val a = waypoints[i]
-                val b = waypoints[i + 1]
-                val pct = ((i * 100) / legTotal).coerceIn(0, 99)
-                onProgress(pct, "leg_${i + 1}_of_$legTotal")
-                val leg =
-                    planCarRoute(
-                        pbfPath = pbf.absolutePath,
-                        elevDir = elev,
-                        cacheDir = cacheDir.absolutePath,
-                        startLat = a.lat,
-                        startLon = a.lon,
-                        endLat = b.lat,
-                        endLon = b.lon,
-                        useEco = useEco,
-                        profile = profile,
-                        avoidMotorways = avoidMotorways,
-                        tollPolicy =
-                            if (avoidTolls) {
-                                FfiTollPolicy.PENALIZE
-                            } else {
-                                FfiTollPolicy.ALLOW
-                            },
-                        avoidFerries = avoidFerries,
-                        vehicle = vehicle,
-                        preferOfficialNetworks = preferOfficialNetworks,
-                        dataDir = dataDir.absolutePath,
-                    )
-                if (!leg.report.contains("PASS") || leg.routePolyline.isBlank()) {
-                    return@withContext leg
-                }
-                last = leg
-                if (poly.isNotEmpty() && leg.routePolyline.isNotEmpty()) poly += ";"
-                poly += leg.routePolyline
-                dist += leg.distanceKm
-                etaSum += leg.etaMinutes
-                shareWeighted += leg.priorityPathSharePct * leg.distanceKm
-                legSamples.add(parseRouteSimSamples(leg.simSamplesJson))
-                legManeuvers.add(parseRouteManeuvers(leg.maneuversJson))
+            require(waypoints.size <= 6) {
+                "at most 4 via points allowed (got ${waypoints.size - 2} vias)"
             }
-            val merged = last!!
-            val share = if (dist > 0) shareWeighted / dist else merged.priorityPathSharePct
+            onProgress(10, "planning")
+            val start = waypoints.first()
+            val end = waypoints.last()
+            val vias =
+                waypoints.drop(1).dropLast(1).map { uniffi.navi.FfiLatLon(it.lat, it.lon) }
+            val result =
+                planCarRoute(
+                    pbfPath = pbf.absolutePath,
+                    elevDir = elev,
+                    cacheDir = cacheDir.absolutePath,
+                    startLat = start.lat,
+                    startLon = start.lon,
+                    endLat = end.lat,
+                    endLon = end.lon,
+                    useEco = useEco,
+                    profile = profile,
+                    avoidMotorways = avoidMotorways,
+                    tollPolicy =
+                        if (avoidTolls) {
+                            FfiTollPolicy.PENALIZE
+                        } else {
+                            FfiTollPolicy.ALLOW
+                        },
+                    avoidFerries = avoidFerries,
+                    vehicle = vehicle,
+                    preferOfficialNetworks = preferOfficialNetworks,
+                    dataDir = dataDir.absolutePath,
+                    viaPoints = vias,
+                )
             onProgress(100, "done")
-            CorridorRouteResult(
-                report = merged.report,
-                distanceKm = dist,
-                etaMinutes = etaSum,
-                cacheHit = merged.cacheHit,
-                coldBuildS = merged.coldBuildS,
-                warmLoadS = merged.warmLoadS,
-                routePolyline = poly,
-                poiLat = waypoints.last().lat,
-                poiLon = waypoints.last().lon,
-                poiName = waypoints.last().name,
-                poiIconKey = merged.poiIconKey,
-                breakPoisJson = merged.breakPoisJson,
-                daysJson = merged.daysJson,
-                simSamplesJson = samplesToJson(mergeSimSamples(legSamples)),
-                maneuversJson = maneuversToJson(mergeManeuvers(legManeuvers)),
-                priorityPathSharePct = share,
-                routeSegmentsJson = merged.routeSegmentsJson,
-                offTrailAdvisory = merged.offTrailAdvisory,
-                tollPolicy = merged.tollPolicy,
-                padAttemptsJson = merged.padAttemptsJson,
-                searchExpansions = merged.searchExpansions,
-                searchTerminateReason = merged.searchTerminateReason,
-                tollAvoidanceIncomplete = merged.tollAvoidanceIncomplete,
-                routeUsesTolls = merged.routeUsesTolls,
+            if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
+                return@withContext result
+            }
+            result.copy(
+                poiLat = end.lat,
+                poiLon = end.lon,
+                poiName = end.name,
             )
         }
-
-    private fun samplesToJson(samples: List<RouteSimSample>): String {
-        if (samples.isEmpty()) return "[]"
-        return samples.joinToString(",", "[", "]") { s ->
-            val street =
-                s.street?.let { org.json.JSONObject.quote(it) } ?: "null"
-            val hwy = s.highway?.let { org.json.JSONObject.quote(it) } ?: "null"
-            val cond =
-                s.maxspeedConditional?.let { org.json.JSONObject.quote(it) } ?: "null"
-            val posted =
-                s.maxspeedKmh?.takeIf { it.isFinite() }?.toString() ?: "null"
-            """{"lat":${s.lat},"lon":${s.lon},"cum_m":${s.cumM},"speed_kmh":${s.speedKmh},""" +
-                """"highway":$hwy,"maxspeed_posted":${s.maxspeedPosted},""" +
-                """"maxspeed_kmh":$posted,"maxspeed_conditional":$cond,"street":$street}"""
-        }
-    }
-
-    private fun maneuversToJson(maneuvers: List<RouteManeuver>): String {
-        if (maneuvers.isEmpty()) return "[]"
-        return maneuvers.joinToString(",", "[", "]") { m ->
-            val street = m.street?.let { org.json.JSONObject.quote(it) } ?: "null"
-            val exit = m.roundaboutExit?.toString() ?: "null"
-            """{"lat":${m.lat},"lon":${m.lon},"cum_m":${m.cumM},"kind":${org.json.JSONObject.quote(m.kind)},""" +
-                """"street":$street,"roundabout_exit":$exit""" +
-                (m.icon?.let { ""","icon":${org.json.JSONObject.quote(it)}""" } ?: "") +
-                "}"
-        }
-    }
 }

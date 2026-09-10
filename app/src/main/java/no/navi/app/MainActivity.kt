@@ -424,6 +424,9 @@ private enum class SearchTarget { From, To, Via }
 
 private enum class SearchMode { Place, Address }
 
+/** Matches FFI [`uniffi.navi`] motor via cap (`MAX_ROUTE_VIA_POINTS`). */
+private const val MAX_ROUTE_VIAS = 4
+
 /**
  * Pre-departure trip ETA in minutes for the HUD (before live GPS speed exists).
  *
@@ -2396,6 +2399,7 @@ private fun NaviMapScreen() {
                                                 loadVehicleLimits(dataDir.absolutePath),
                                                 preferOfficialNetworks,
                                                 dataDir.absolutePath,
+                                                viaPoints = emptyList(),
                                             )
                                         if (!legRes.report.contains("PASS")) {
                                             return@runCatching legRes
@@ -3706,29 +3710,48 @@ private fun NaviMapScreen() {
                                     lat = pendingHit.lat,
                                     lon = pendingHit.lon,
                                 )
+                            var accepted = true
                             when (searchTarget) {
                                 SearchTarget.From -> fromPoint = wp
                                 SearchTarget.To -> toPoint = wp
-                                SearchTarget.Via -> viaPoints = viaPoints + wp
+                                SearchTarget.Via -> {
+                                    if (viaPoints.size >= MAX_ROUTE_VIAS) {
+                                        accepted = false
+                                        status =
+                                            "At most $MAX_ROUTE_VIAS vias — remove one first"
+                                    } else {
+                                        viaPoints = viaPoints + wp
+                                    }
+                                }
                             }
-                            mapState =
-                                mapState.copy(
-                                    followGps = false,
-                                    cameraLat = pendingHit.lat,
-                                    cameraLon = pendingHit.lon,
-                                    cameraZoom = 12.0,
-                                    poiLat = pendingHit.lat,
-                                    poiLon = pendingHit.lon,
-                                    poiName = pendingHit.name,
-                                    layerEpoch = mapState.layerEpoch + 1,
-                                )
-                            NaviMapTestHooks.followGps = false
-                            query = pendingHit.name
-                            hits = emptyList()
-                            status =
-                                userFacingStatus(
-                                    "Set ${searchTarget.name.lowercase()}: ${pendingHit.name}",
-                                )
+                            if (accepted) {
+                                mapState =
+                                    mapState.copy(
+                                        followGps = false,
+                                        cameraLat = pendingHit.lat,
+                                        cameraLon = pendingHit.lon,
+                                        cameraZoom = 12.0,
+                                        poiLat = pendingHit.lat,
+                                        poiLon = pendingHit.lon,
+                                        poiName = pendingHit.name,
+                                        layerEpoch = mapState.layerEpoch + 1,
+                                    )
+                                NaviMapTestHooks.followGps = false
+                                hits = emptyList()
+                                if (searchTarget == SearchTarget.Via) {
+                                    query = ""
+                                    status =
+                                        userFacingStatus(
+                                            "Added via ${viaPoints.size}/$MAX_ROUTE_VIAS: ${pendingHit.name}",
+                                        )
+                                } else {
+                                    query = pendingHit.name
+                                    status =
+                                        userFacingStatus(
+                                            "Set ${searchTarget.name.lowercase()}: ${pendingHit.name}",
+                                        )
+                                }
+                            }
                         }
                         val breakReq = NaviMapTestHooks.requestBreakReminders
                         if (breakReq != null) {
@@ -3849,6 +3872,8 @@ private fun NaviMapScreen() {
     fun applyHit(
         hit: PlaceHit,
         target: SearchTarget = searchTarget,
+        /** GPS label upgrade: replace the last via instead of appending another. */
+        replaceLastVia: Boolean = false,
     ) {
         val label = placeHitDisplayLabel(hit)
         val (street, house, post) = parseAddressDisplayLines(combined = hit.name)
@@ -3864,7 +3889,20 @@ private fun NaviMapScreen() {
         when (target) {
             SearchTarget.From -> fromPoint = wp
             SearchTarget.To -> toPoint = wp
-            SearchTarget.Via -> viaPoints = viaPoints + wp
+            SearchTarget.Via -> {
+                val next =
+                    when {
+                        replaceLastVia && viaPoints.isNotEmpty() ->
+                            viaPoints.dropLast(1) + wp
+                        viaPoints.size >= MAX_ROUTE_VIAS -> {
+                            status =
+                                "At most $MAX_ROUTE_VIAS vias — remove one first"
+                            return
+                        }
+                        else -> viaPoints + wp
+                    }
+                viaPoints = next
+            }
         }
         mapState =
             mapState.copy(
@@ -3878,9 +3916,19 @@ private fun NaviMapScreen() {
                 layerEpoch = mapState.layerEpoch + 1,
             )
         NaviMapTestHooks.followGps = false
-        query = label
         hits = emptyList()
-        status = userFacingStatus("Set ${target.name.lowercase()}: $label")
+        // Via is a multi-slot list: clear the box so the next search can add another.
+        // From / To keep the resolved label in the field (single-slot).
+        if (target == SearchTarget.Via) {
+            query = ""
+            status =
+                userFacingStatus(
+                    "Added via ${viaPoints.size}/$MAX_ROUTE_VIAS: $label",
+                )
+        } else {
+            query = label
+            status = userFacingStatus("Set ${target.name.lowercase()}: $label")
+        }
     }
 
     fun applyMarkAs(
@@ -4109,6 +4157,8 @@ private fun NaviMapScreen() {
                         showSavePlaceDialog = true
                     },
                     onCancel = { mapMarkPending = null },
+                    viaCount = viaPoints.size,
+                    maxVias = MAX_ROUTE_VIAS,
                 )
             }
         }
@@ -4430,7 +4480,14 @@ private fun NaviMapScreen() {
                                     // switching so a resolved GPS/place label from From does
                                     // not linger visually on To/Via (and vice versa).
                                     fun selectSearchTarget(next: SearchTarget) {
-                                        if (searchTarget == next) return
+                                        // Re-tapping Via clears the box so another via can be typed.
+                                        if (searchTarget == next) {
+                                            if (next == SearchTarget.Via) {
+                                                query = ""
+                                                hits = emptyList()
+                                            }
+                                            return
+                                        }
                                         searchTarget = next
                                         query = ""
                                         hits = emptyList()
@@ -4450,7 +4507,15 @@ private fun NaviMapScreen() {
                                     FilterChip(
                                         selected = searchTarget == SearchTarget.Via,
                                         onClick = { selectSearchTarget(SearchTarget.Via) },
-                                        label = { Text("Via") },
+                                        label = {
+                                            Text(
+                                                if (viaPoints.isEmpty()) {
+                                                    "Via"
+                                                } else {
+                                                    "Via (${viaPoints.size}/$MAX_ROUTE_VIAS)"
+                                                },
+                                            )
+                                        },
                                         modifier = Modifier.testTag("chip_via"),
                                     )
                                     FilterChip(
@@ -4491,11 +4556,57 @@ private fun NaviMapScreen() {
                             }
                             Text(
                                 "From: ${fromPoint?.name ?: "(unset)"}  |  To: ${toPoint.name.ifBlank { "(unset)" }}  |  Via: ${
-                                    if (viaPoints.isEmpty()) "(none)" else viaPoints.joinToString(" → ") { it.name }
+                                    if (viaPoints.isEmpty()) {
+                                        "(none)"
+                                    } else {
+                                        viaPoints.joinToString(" → ") { it.name }
+                                    }
                                 }",
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.testTag("search_waypoints_summary"),
                             )
+                            if (viaPoints.isNotEmpty()) {
+                                Column(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .testTag("via_list"),
+                                ) {
+                                    viaPoints.forEachIndexed { idx, v ->
+                                        Row(
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .testTag("via_row_$idx"),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(
+                                                "Via ${idx + 1}: ${v.name}",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                            TextButton(
+                                                onClick = {
+                                                    viaPoints =
+                                                        viaPoints.filterIndexed { i, _ ->
+                                                            i != idx
+                                                        }
+                                                },
+                                                modifier = Modifier.testTag("btn_remove_via_$idx"),
+                                            ) {
+                                                Text("Remove")
+                                            }
+                                        }
+                                    }
+                                    TextButton(
+                                        onClick = { viaPoints = emptyList() },
+                                        modifier = Modifier.testTag("btn_clear_vias"),
+                                    ) {
+                                        Text("Clear all vias (${viaPoints.size})")
+                                    }
+                                }
+                            }
                             OutlinedTextField(
                                 value = query,
                                 onValueChange = {
@@ -4516,9 +4627,27 @@ private fun NaviMapScreen() {
                                     ),
                                 placeholder = {
                                     Text(
-                                        when (searchMode) {
-                                            SearchMode.Place -> "Place, hut, or lat, lon"
-                                            SearchMode.Address -> "Road, settlement, or lat, lon"
+                                        when (searchTarget) {
+                                            SearchTarget.Via ->
+                                                when {
+                                                    viaPoints.size >= MAX_ROUTE_VIAS ->
+                                                        "Via full ($MAX_ROUTE_VIAS/$MAX_ROUTE_VIAS)"
+                                                    viaPoints.isEmpty() ->
+                                                        when (searchMode) {
+                                                            SearchMode.Place ->
+                                                                "Add via: place, hut, or lat, lon"
+                                                            SearchMode.Address ->
+                                                                "Add via: road, settlement, or lat, lon"
+                                                        }
+                                                    else ->
+                                                        "Add via ${viaPoints.size + 1}/$MAX_ROUTE_VIAS"
+                                                }
+                                            else ->
+                                                when (searchMode) {
+                                                    SearchMode.Place -> "Place, hut, or lat, lon"
+                                                    SearchMode.Address ->
+                                                        "Road, settlement, or lat, lon"
+                                                }
                                         },
                                     )
                                 },
@@ -4553,12 +4682,6 @@ private fun NaviMapScreen() {
                                         Text(hit.kind, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
-                            }
-                            if (viaPoints.isNotEmpty()) {
-                                TextButton(
-                                    onClick = { viaPoints = emptyList() },
-                                    modifier = Modifier.testTag("btn_clear_vias"),
-                                ) { Text("Clear vias (${viaPoints.size})") }
                             }
                             Button(
                                 onClick = { planKick += 1 },
@@ -4687,6 +4810,8 @@ private fun NaviMapScreen() {
                                                     municipality = "",
                                                 ),
                                                 target = targetAtClick,
+                                                replaceLastVia =
+                                                    targetAtClick == SearchTarget.Via,
                                             )
                                         }
                                     },

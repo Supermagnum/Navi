@@ -230,6 +230,7 @@ class IndexedPackV3MigrationConvertInstrumentedTest {
                 false,
                 "2026-07-15T12:00:00",
                 dataDir = "",
+                viaPoints = emptyList(),
             )
         assertTrue("summer plan failed:\n${summer.report}", summer.report.contains("PASS"))
         assertTrue(
@@ -259,6 +260,7 @@ class IndexedPackV3MigrationConvertInstrumentedTest {
                 false,
                 "2026-01-15T12:00:00",
                 dataDir = "",
+                viaPoints = emptyList(),
             )
         // Pack-hit + seasonal filter: closed mountain road is no longer snap/routable.
         assertTrue(

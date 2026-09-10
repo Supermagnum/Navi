@@ -16,7 +16,7 @@ use super::surface_quality::infer_surface_from_highway;
 // Deprecated trip-bbox cache format (NAVIGPH7 + bincode). Planning no longer
 // reads or writes these files (M5, 2026-08); indexed region packs replace them.
 // Helpers below remain for unit tests / forensic load of old artifacts.
-const CACHE_MAGIC: &[u8; 8] = b"NAVIGPH7";
+const CACHE_MAGIC: &[u8; 8] = b"NAVIGPH8";
 
 /// Source PBF and eco inputs used to validate a cached reweighted graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -97,6 +97,16 @@ struct CachedGraphEdge {
     shape: Vec<(f64, f64)>,
     highway: Option<String>,
     maxspeed_kmh: Option<f64>,
+    #[serde(default)]
+    maxspeed_practical_kmh: Option<f64>,
+    #[serde(default)]
+    maxspeed_advisory_kmh: Option<f64>,
+    #[serde(default)]
+    maxspeed_type: Option<String>,
+    #[serde(default)]
+    maxspeed_variable: bool,
+    #[serde(default)]
+    minspeed_kmh: Option<f64>,
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
@@ -200,6 +210,11 @@ pub fn save_reweighted_graph(
                 shape: edge.shape.clone(),
                 highway: edge.highway.clone(),
                 maxspeed_kmh: edge.maxspeed_kmh,
+                maxspeed_practical_kmh: edge.maxspeed_practical_kmh,
+                maxspeed_advisory_kmh: edge.maxspeed_advisory_kmh,
+                maxspeed_type: edge.maxspeed_type.clone(),
+                maxspeed_variable: edge.maxspeed_variable,
+                minspeed_kmh: edge.minspeed_kmh,
                 name: edge.name.clone(),
                 road_ref: edge.road_ref.clone(),
                 is_motorroad: edge.is_motorroad,
@@ -380,6 +395,11 @@ fn reconstruct_graph(payload: CachedRouteGraph) -> RouteGraph {
                 shape: edge.shape,
                 highway: edge.highway,
                 maxspeed_kmh: edge.maxspeed_kmh,
+                maxspeed_practical_kmh: edge.maxspeed_practical_kmh,
+                maxspeed_advisory_kmh: edge.maxspeed_advisory_kmh,
+                maxspeed_type: edge.maxspeed_type,
+                maxspeed_variable: edge.maxspeed_variable,
+                minspeed_kmh: edge.minspeed_kmh,
                 name: edge.name,
                 road_ref: edge.road_ref,
                 is_motorroad: edge.is_motorroad,
@@ -446,6 +466,11 @@ mod tests {
             shape: Vec::new(),
             highway: Some("primary".to_string()),
             maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
             name: None,
             road_ref: None,
             is_motorroad: false,

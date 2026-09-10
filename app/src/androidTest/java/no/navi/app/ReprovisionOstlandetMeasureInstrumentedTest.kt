@@ -129,9 +129,9 @@ class ReprovisionOstlandetMeasureInstrumentedTest {
         val man = File(dir, "ostlandet-latest.navi-manifest.json")
         assertTrue(man.isFile)
         assertTrue(
-            "expected graph_format_version 6 in ${man.readText().take(500)}",
-            man.readText().contains("\"graph_format_version\": 6") ||
-                man.readText().contains("\"graph_format_version\":6"),
+            "expected graph_format_version 7 in ${man.readText().take(500)}",
+            man.readText().contains("\"graph_format_version\": 7") ||
+                man.readText().contains("\"graph_format_version\":7"),
         )
     }
 
@@ -165,6 +165,7 @@ class ReprovisionOstlandetMeasureInstrumentedTest {
                 vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                 preferOfficialNetworks = false,
                 dataDir = "",
+                viaPoints = emptyList(),
             )
         val wallMs = System.currentTimeMillis() - t0
         RoutingPlanLog.complete(route, ecoEnabled = false, durationMs = wallMs)

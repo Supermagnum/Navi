@@ -92,6 +92,7 @@ class SimOverspeedInstrumentedTest {
                         vehicle = vehicle,
                         preferOfficialNetworks = false,
                         dataDir = "",
+                        viaPoints = emptyList(),
                     )
                 assertTrue(
                     "leg ${i + 1} PASS: ${leg.report.take(200)}",

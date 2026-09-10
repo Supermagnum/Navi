@@ -75,6 +75,7 @@ fn main() {
             },
             false,
             String::new(),
+            Vec::new(),
         );
         (
             result.distance_km,

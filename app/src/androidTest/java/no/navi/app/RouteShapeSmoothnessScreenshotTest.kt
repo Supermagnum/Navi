@@ -113,6 +113,7 @@ class RouteShapeSmoothnessScreenshotTest {
                 vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                 preferOfficialNetworks = false,
                 dataDir = "",
+                viaPoints = emptyList(),
             )
         assertTrue("plan failed: ${route.report}", route.routePolyline.contains(';'))
         assertTrue("expected distance: ${route.distanceKm}", route.distanceKm > 50.0)

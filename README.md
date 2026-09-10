@@ -215,8 +215,9 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Offline planning** | Download a region once, then plan and see the route on the device. | Done |
 | **Indexing** | After a region download, a background job turns the OSM extract into compact routing packs so later plans are fast. You can plan while it runs; convert and place-index **pause** during a foreground plan so the PBF fallback is not starved. | Done |
 | **Place search** | Search places and set From / Via / To. While the place index is still empty/building, search shows a building hint (coordinates and map tap still work). | Done |
-| **Use GPS** | Fill From / Via / To from the live fix: coordinates appear immediately, then an optional nearby road-name upgrade. The field is the chip active when you tap — not whichever chip is selected after resolution finishes. | Done |
-| **Map mark & saved places** | Hold on the map ~4 s to mark a point; set From / Via / To or save a named place (separate from Saved routes). | Done |
+| **Multiple vias** | Up to **4** intermediate stops for car / truck / bicycle (and hiking waypoints). The Via chip shows **Via (n/4)**; each pick **adds** a stop and clears the search box for the next. A list under the chips has **Remove** / **Clear all**. Off-route replan keeps remaining vias. | Done |
+| **Use GPS** | Fill From / Via / To from the live fix: coordinates appear immediately, then an optional nearby road-name upgrade. The field is the chip active when you tap — not whichever chip is selected after resolution finishes. GPS as Via upgrades the last via in place (does not duplicate). | Done |
+| **Map mark & saved places** | Hold on the map ~4 s to mark a point; set From / **Add as Via** / To or save a named place (separate from Saved routes). Via adds until the 4-stop cap. | Done |
 | **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position (resolved start label); hiking prompts first. | Done |
 | **Cancel planning** | While **Planning route…** or **Recalculating route…** is shown, **Cancel** stops the in-flight native plan. Recalc cancel keeps the original route. | Done |
 | **Breaks & rest** | Reminds you when a break is due and can suggest stops. Cars use hours between breaks; hiking/cycling use rest distances; trucks use legal driving-time rules where known. What is searched and used as pause POIs: [`docs/poi.md`](docs/poi.md). | Done |
@@ -448,13 +449,24 @@ north): [`docs/cider-route.md`](docs/cider-route.md).
 
 ## How features work
 
-**Planning a route.** Set **From** and **To** (and optional vias), pick a travel
-mode, then **Plan route**. From is often set with **Use GPS** (select the
+**Planning a route.** Set **From** and **To** (and optional **Via** stops), pick a
+travel mode, then **Plan route**. You can add up to **four** vias: select the
+**Via** chip, pick a place (or **Use GPS** / map long-press **Add as Via**), then
+search again for the next — the chip shows **Via (n/4)** and a removable list
+appears under the summary. From is often set with **Use GPS** (select the
 **From** / **To** / **Via** chip first; the button label follows the chip).
 Hiking paths need the **Hiking** mode — planning with Car uses the road network
 and will not follow foot trails properly. A **Planning route…** banner includes
 **Cancel** if you want to stop an in-flight plan. Percent and stage labels are
 documented under [Progress status box](#progress-status-box-pale-yellow).
+
+**Trip ETA and OSM speeds.** Pre-departure motor ETA prefers OSM
+`maxspeed:practical`, then posted `maxspeed`, then `maxspeed:advisory`, then a
+highway-class fallback. `minspeed` floors motor ETA and excludes those edges
+from foot/bicycle access. Live HUD / speed-camera limits still honour
+`maxspeed:conditional` against local time. Graph packs are **format v7** for
+these fields — use **Tools → Rebuild indexed maps** (or re-download) if an
+older pack is still installed.
 
 **Eco vs shortest.** Shortest ignores hills. Eco makes steep climbs “cost” more.
 Electric modes get some credit for downhill recovery.
@@ -1208,6 +1220,8 @@ Country/region visual extracts can also be prepared with
   and use **Tools → Rebuild indexed maps** (or wait for background convert
   after download). Plan-button session logs now include `pack_hit` /
   `poi_pack_hit` and `ROUTE_PLAN_STAGES` (same as off-route recalculation).
+  Graph packs are **format v7** (OSM practical/advisory/minspeed and related
+  fields). Stale packs from an older format fall back to PBF until you rebuild.
   Pixel UI multi-minute Espa→Atnbrufossen stalls (36 min / 193 s / 294 s /
   314555 ms) were a fixture-PBF pack-dir miss, not a planner bug — see
   [`docs/status.md`](docs/status.md) (2026-08-28). The UI status also warns

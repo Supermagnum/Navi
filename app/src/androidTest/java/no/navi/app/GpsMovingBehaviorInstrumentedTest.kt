@@ -112,6 +112,7 @@ class GpsMovingBehaviorInstrumentedTest {
                         vehicle = vehicle,
                         preferOfficialNetworks = false,
                         dataDir = "",
+                        viaPoints = emptyList(),
                     )
                 assertTrue(
                     "leg ${i + 1} must PASS: ${leg.report.take(300)}",

@@ -19,7 +19,8 @@ Skjermbilder (SM-P613): [`images/map-long-press/`](images/map-long-press/).
 4. Når holdet er ferdig, kommer arket **Marked location** med foreslått navn
    (nærmeste adresse/sted innen ~12 m når det finnes, ellers koordinater) og:
    - **Set as From / Start**
-   - **Set as Via** (kan gjentas for flere via-punkter)
+   - **Add as Via** (legger til; inntil **4** via-punkter — knappen viser neste
+     plass eller **Via full** når taket er nådd)
    - **Set as To / Destination**
    - **Save this place**
    - **Cancel** (eller trykk utenfor arket)
