@@ -78,8 +78,8 @@ On-device and emulator results:
 **Install the signed release APK.** Testers should download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
-**v0.3.2-alpha** (`versionName` 0.3.2, `versionCode` 5). Download from the
-[`v0.3.2-alpha` tag](https://github.com/Supermagnum/Navi/tree/v0.3.2-alpha)
+**v0.3.0-beta** (`versionName` 0.3.0-beta, `versionCode` 6). Download from the
+[`v0.3.0-beta` tag](https://github.com/Supermagnum/Navi/tree/v0.3.0-beta)
 or the latest
 [`dev` branch](https://github.com/Supermagnum/Navi/tree/dev) copy. Android
 validates the APK signature on install; the separate GPG files
@@ -911,7 +911,7 @@ it as a normal install (not an unsigned or debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.3.2 / tag **v0.3.2-alpha**) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.3.0-beta / tag **v0.3.0-beta**) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
@@ -920,7 +920,7 @@ You do not need a Rust/NDK toolchain to install it.
 1. On the device: enable **Developer options** and allow installs from your
    browser or file manager (USB debugging only needed for `adb`).
 2. Download
-   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.3.2-alpha/compiled/navi-release.apk)
+   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.3.0-beta/compiled/navi-release.apk)
    (pinned tag) or the latest
    [`dev` copy](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-release.apk).
 3. Optional integrity check on a PC:
@@ -1025,7 +1025,7 @@ Debug installs use the Android **debug** keystore. A **release** package is what
 you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
 
 A prebuilt upload-key-signed release APK for testers is committed at
-[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.3.2-alpha**;
+[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.3.0-beta**;
 see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
@@ -1076,7 +1076,7 @@ adb shell am start -n no.navi.app/.MainActivity
    [`docs/android-api36-plan.md`](docs/android-api36-plan.md#aab-smoke-host).
 
 Current `versionName` / `versionCode` live in `app/build.gradle.kts`
-(`0.3.2` / `5` at time of writing). Bump those before a real store or tagged
+(`0.3.0-beta` / `6` at time of writing). Bump those before a real store or tagged
 release. F-Droid-style Podman reproducibility:
 [`tools/fdroid-check/README.md`](tools/fdroid-check/README.md). Full shared
 recipe: [`docs/android-build.md`](docs/android-build.md).
