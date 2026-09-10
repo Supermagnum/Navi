@@ -22,8 +22,8 @@ Resultater på enhet og emulator:
 **Installer den signerte release-APK-en.** Testere skal laste ned og sideloade
 [`compiled/navi-release.apk`](../compiled/navi-release.apk) — en **riktig
 signert, installerbar release-APK** (upload-nøkkel; ikke debug-bygget). Gjeldende
-bygg: **v0.3.2-alpha** (`versionName` 0.3.2, `versionCode` 5). Last ned fra
-[`v0.3.2-alpha`-taggen](https://github.com/Supermagnum/Navi/tree/v0.3.2-alpha)
+bygg: **v0.3.0-beta** (`versionName` 0.3.0-beta, `versionCode` 6). Last ned fra
+[`v0.3.0-beta`-taggen](https://github.com/Supermagnum/Navi/tree/v0.3.0-beta)
 eller siste kopi på
 [`dev`-grenen](https://github.com/Supermagnum/Navi/tree/dev). Android validerer
 APK-signeringen ved installasjon; de separate GPG-filene
@@ -671,7 +671,7 @@ den som en vanlig installasjon (ikke usignert eller bare debug).
 
 | Fil | Rolle |
 |---|---|
-| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (arm64, `versionName` 0.3.2 / tag **v0.3.2-alpha**) |
+| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (arm64, `versionName` 0.3.0-beta / tag **v0.3.0-beta**) |
 | [`compiled/SHA256SUMS`](../compiled/SHA256SUMS) | SHA-256-sjekksum for integritet |
 | [`compiled/SHA256SUMS.asc`](../compiled/SHA256SUMS.asc) | Løsrevet GPG-proveniens (ikke Android APK-signering) |
 
@@ -680,7 +680,7 @@ Du trenger ikke Rust/NDK-verktøykjede for å installere den.
 1. På enheten: slå på **Utvikleralternativer** og tillat installasjon fra
    nettleser eller filbehandler (`adb` trengs bare for USB-installasjon).
 2. Last ned
-   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.3.2-alpha/compiled/navi-release.apk)
+   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.3.0-beta/compiled/navi-release.apk)
    (fast tag) eller siste
    [`dev`-kopi](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-release.apk).
 3. Valgfri integritetssjekk på PC:

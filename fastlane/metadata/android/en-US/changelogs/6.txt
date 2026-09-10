@@ -1,0 +1,1 @@
+v0.3.0-beta: up to 4 Via stops in Route planning; OSM practical/advisory/minspeed for trip ETA (graph pack v7 — rebuild indexed maps); keeps prior 0.3.x-alpha offline/pack and POI work.
