@@ -358,7 +358,7 @@ fun TopDriveHud(
 
 /**
  * Per-plugin enable toggles shared by Map settings and Tools.
- * Weather and DATEX are the shipped host-owned plugin controls (both default OFF).
+ * Weather, DATEX, and Nearby attractions are host-owned controls (all default OFF).
  */
 @Composable
 fun PluginSettingsSection(
@@ -377,6 +377,10 @@ fun PluginSettingsSection(
     datexWifiOnly: Boolean = MapHudPrefs.DATEX_WIFI_ONLY_DEFAULT,
     onDatexWifiOnlyChange: (Boolean) -> Unit = {},
     datexStatusLine: String = "",
+    poiLookaheadEnabled: Boolean = false,
+    onPoiLookaheadChange: (Boolean) -> Unit = {},
+    poiLookaheadStrictHoursUnknown: Boolean = false,
+    onPoiLookaheadStrictHoursUnknownChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -475,6 +479,36 @@ fun PluginSettingsSection(
                 )
             }
         }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("Nearby attractions")
+            Switch(
+                checked = poiLookaheadEnabled,
+                onCheckedChange = onPoiLookaheadChange,
+                modifier = Modifier.testTag("toggle_poi_lookahead"),
+            )
+        }
+        if (poiLookaheadEnabled) {
+            Text(
+                "Quiet look-ahead for attractions, fishing, and craft alcohol within 850 m ahead. Not a hazard warning.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Hide when hours unknown")
+                Switch(
+                    checked = poiLookaheadStrictHoursUnknown,
+                    onCheckedChange = onPoiLookaheadStrictHoursUnknownChange,
+                    modifier = Modifier.testTag("toggle_poi_lookahead_strict_hours"),
+                )
+            }
+        }
     }
 }
 
@@ -509,6 +543,10 @@ fun MapSettingsSheet(
     datexWifiOnly: Boolean = MapHudPrefs.DATEX_WIFI_ONLY_DEFAULT,
     onDatexWifiOnlyChange: (Boolean) -> Unit = {},
     datexStatusLine: String = "",
+    poiLookaheadEnabled: Boolean = false,
+    onPoiLookaheadChange: (Boolean) -> Unit = {},
+    poiLookaheadStrictHoursUnknown: Boolean = false,
+    onPoiLookaheadStrictHoursUnknownChange: (Boolean) -> Unit = {},
     onSave: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -727,6 +765,10 @@ fun MapSettingsSheet(
                 datexWifiOnly = datexWifiOnly,
                 onDatexWifiOnlyChange = onDatexWifiOnlyChange,
                 datexStatusLine = datexStatusLine,
+                poiLookaheadEnabled = poiLookaheadEnabled,
+                onPoiLookaheadChange = onPoiLookaheadChange,
+                poiLookaheadStrictHoursUnknown = poiLookaheadStrictHoursUnknown,
+                onPoiLookaheadStrictHoursUnknownChange = onPoiLookaheadStrictHoursUnknownChange,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(

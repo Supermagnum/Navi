@@ -1,13 +1,34 @@
 # POI look-ahead cone plugin (specification)
 
-**Status:** specification only — not implemented.  
+**Status:** implemented (host-native UniFFI + MapHudPrefs; WASM guest scaffold).  
 **Path:** `docs/plugins/poi-lookahead-cone-spec.md`  
-**Architecture:** planned WASM guest via `plugin-host` / `plugin-sdk` and
-capability-gated `HostApi` ([`plugins.md`](../plugins.md)).  
+**Architecture:** product path is host-native (`navi-ffi` + Android prefs/HUD), with an
+optional WASM guest scaffold under `plugins/poi-lookahead/` via `plugin-host` /
+`plugin-sdk` (capability-gated per [`plugins.md`](../plugins.md)). Product APK
+does not load wasmtime guests yet.  
 **System requirements** (all plugins): user **enable/disable** toggle
 ([`plugins.md` — enable/disable](../plugins.md#enable--disable-required)).
 
-Working title / id suggestion: `poi_lookahead` / `poi_cone`.
+Working title / id: `poi_lookahead` / `poi_cone`.
+
+**Resolved implementation assumptions** (also listed in the PR description):
+
+1. Full existing `General` category (not a narrower attraction-only subset).
+2. Cone half-angle ±30° (60° total), not the hazard cone's ±60°.
+3. Single `CraftBrewery` category / `shop-alcohol` icon (no per-drink icons).
+4. Unnamed attractions use generic category labels (not filtered out).
+5. Ride on existing `PoiIndex` / pack load — no dedicated on-disk look-ahead cache.
+6. Hours-unknown shown with "(hours unknown)"; Settings toggle "Hide when hours
+   unknown" defaults off.
+
+**`poi_query` decision:** keep HostApi `poi_query` radius-only; enrich JSON with
+`open_now` and drop `open_now=false` before the guest buffer. Cone membership
+uses host UniFFI `poi_lookahead_query_json` (heading + 850 m / ±30°). Guest-side
+bearing filter would need heading on `Position`, which is absent today — less
+churn than extending the ABI for a product path that is host-native anyway.
+
+**`live_hazard.rs`:** untouched. Geometry is duplicated in `core/src/poi/lookahead.rs`
+with separate constants.
 
 This is **not** a safety/hazard warning. It is a "worth a look" discovery
 surface: attractions, fishing spots, breweries, and cider makers on or near
@@ -72,7 +93,7 @@ repurpose the existing 300 m / ±60° hazard cone or its FFI surface.
 | Existing surface | What this plugin reuses | What differs |
 |---|---|---|
 | Live hazard cone, no route (`road-signs.md`, `live_hazard.rs`) | Cone-from-heading geometry: `bearing_deg`, `angle_diff_deg`, haversine distance, cell-windowed loading, "works without an active route" | Radius (850 m vs 300 m), half-angle (see below vs ±60°), category set (POI discovery vs road signs/children/cameras/bumps), no approach-urgency audio phase |
-| `PoiCategory` / `PoiIndex::nearest` (`poi.md`, `driver-break-core`) | Category definitions and OSM tag rules for **General** (attraction, museum, viewpoint, …), **Fishing**, and **CraftBrewery** | Query shape: cone-filtered by heading + 850 m, not an omnidirectional radius search; excludes Cabin/OvernightFacility/NetworkHut/TentSite/RestArea/Lodging entirely, and Water unless co-tagged as an attraction |
+| `PoiCategory` / `PoiIndex::nearest` (`poi.md`, `driver-break-core`) | Category definitions and OSM tag rules for **General** (attraction, museum, viewpoint, artwork, …), **Fishing**, and **CraftBrewery** | Query shape: cone-filtered by heading + 850 m, not an omnidirectional radius search; excludes Cabin/OvernightFacility/NetworkHut/TentSite/RestArea/Lodging entirely, and Water unless co-tagged as an attraction |
 | `poi_query` HostApi capability (`plugins.md`) | The existing "JSON POI list into guest buffer" capability | May need a cone-shaped variant/parameter (heading + half-angle + radius) if `poi_query` today is radius-only — see [Host capabilities](#host-capabilities-proposed) |
 | `opening-hours` crate (`conditional.rs`, [`crates.md`](../crates.md)) | OSM `opening_hours` evaluation already used for access/maxspeed conditionals | Applied to discovery POIs at query time with device-local clock; not an urgency/alert path |
 
@@ -107,7 +128,7 @@ scheme — this plugin is a **filtered view** over the existing categories.
 
 | Category | Included tags (from `poi.md`) | Notes |
 |---|---|---|
-| **General** (attractions) | `tourism` ∈ attraction, viewpoint, museum; `amenity` ∈ museum, gallery, zoo, aquarium, viewpoint, picnic_site, cafe, restaurant, fast_food | Full existing `General` set. If "attractions … etc" is meant more narrowly (e.g. viewpoint/attraction/museum only, not cafe/fast_food), that is a filter to apply on top of `General` at implementation time — flagged as an [open question](#open-questions) rather than assumed here. |
+| **General** (attractions) | `tourism` ∈ attraction, viewpoint, museum, artwork; `amenity` ∈ museum, gallery, zoo, aquarium, viewpoint, picnic_site, cafe, restaurant, fast_food | Full `General` set including OSM [`tourism=artwork`](https://wiki.openstreetmap.org/wiki/Tag:tourism%3Dartwork) (sculpture, mural, installation, etc.). If "attractions … etc" is meant more narrowly (e.g. viewpoint/attraction/museum/artwork only, not cafe/fast_food), that is a filter to apply on top of `General` at implementation time — flagged as an [open question](#open-questions) rather than assumed here. |
 | **Fishing** | `leisure` ∈ fishing, fishing_pier; `sport=fishing`; `shop=fishing` | Existing category — piers, spots, and tackle shops ahead in the cone. Outdoor spots often lack `opening_hours`; they follow the [hours-unknown](#opening-hours) rule unless tagged closed. |
 | **CraftBrewery** | `microbrewery=yes`; `shop` ∈ alcohol, wine; `craft` ∈ brewery, winery, distillery; `brewery` ∈ cider, wine, mead, beer; `industrial=distillery` | Beer, cider, wine, spirits/distillery producers and alcohol/wine retail. A brewery that also distills matches if it keeps `craft=brewery` and/or `industrial=distillery`. |
 
@@ -178,11 +199,14 @@ Either way, closed-now POIs must not reach the HUD list.
 
 ## Presentation
 
-- Quiet, non-blocking marker or HUD chip — not the `RoadSignWarningBox`
-  approach-phase chrome used for hazards. No urgency state, no sound.
+- Quiet, non-blocking marker or HUD chip on the **top right** (opposite the
+  yellow children / road-sign warning box on the left) — not the
+  `RoadSignWarningBox` approach-phase chrome used for hazards. No urgency
+  state, no sound.
 - Icon keys reuse the existing semantic keys from `osm_icon_key`
   ([`icons.md`](../icons.md)): `tourism-attraction`, `tourism-viewpoint`,
-  `tourism-museum`, `amenity-*`, fishing keys (`leisure-fishing` /
+  `tourism-museum`, `tourism-artwork` (or nearest shipped key until an
+  artwork-specific glyph exists), `amenity-*`, fishing keys (`leisure-fishing` /
   `leisure-fishing_pier` / `sport-fishing` / `shop-fishing` as resolved by
   `osm_icon_key`), and `shop-alcohol` for craft brewery / cider.
 - Suggested label: distance + name (when named) + category, e.g. "650 m —
@@ -215,10 +239,8 @@ visual browsing surface, not an alert.
 
 ## Settings
 
-- Master **Nearby attractions** (or similar) toggle, default off or on at
-  product discretion — this is a discovery feature, not a safety one, so no
-  default-on-for-motor-profiles argument applies the way it does for warning
-  plugins.
+- Master **Nearby attractions** toggle — **default off** (opt-in). No
+  motor-profile or first-run logic may flip it on.
 - Optional **Hide when hours unknown** (default off) for drivers who only want
   tagged open venues.
 - No severity/urgency settings, since there is no urgency model.
@@ -229,9 +251,9 @@ visual browsing surface, not an alert.
 
 1. **Exact `General` subset.** Does "attractions … etc" mean the full existing
    `General` category (including cafe/restaurant/fast_food/picnic_site), or a
-   narrower attraction-flavoured subset (viewpoint/attraction/museum/gallery/
-   zoo/aquarium only)? The table above defaults to the full set and flags the
-   narrower reading as a filter to apply if that's the intent.
+   narrower attraction-flavoured subset (viewpoint/attraction/museum/artwork/
+   gallery/zoo/aquarium only)? The table above defaults to the full set and
+   flags the narrower reading as a filter to apply if that's the intent.
 2. **Cone angle reading.** Confirm whether "60 degree cone" means 60° total
    width (±30°, as specified above) or the existing hazard-cone convention of
    a 60° **half**-angle (120° total).

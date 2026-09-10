@@ -294,7 +294,7 @@ that (no global dump onto the map).
 | **Guest duties** | Scaffolded WASM guest (`plugin.json`); product APK does not load plugin-host yet |
 | **Caps** | `position_read`, `weather_read`, `log` (in ABI; unused by product until wasmtime gate lifts) |
 | **Offline** | Last-known cache only; no silent background refresh without user opt-in |
-| **Shipped UI** | **Map settings → Plugins** and **Tools → Plugins**: **Weather overlay** (default OFF); nested **Show weather symbols on map** (default OFF; `place:city`, zoom ≤ 8, cap 10, 56 px, nearest-to-center) |
+| **Shipped UI** | **Map settings → Plugins** and **Tools → Plugins**: **Weather overlay** (default OFF); nested **Show weather symbols on map** (default OFF; `place:city`, zoom ≤ 8, cap 10, 56 px, nearest-to-center); **Nearby attractions** (default OFF; nested **Hide when hours unknown**); **DATEX roadworks** (default OFF) |
 | **Not shipped** | SMIL / other icon styles; town/village tiers; viewport-batching; corridor overlay; safety-resupply WBGT hookup; product plugin-host link |
 
 APRS WX beacons (`b`/`t`/`h` keys) remain a radio-side path; this plugin is the
@@ -490,7 +490,7 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 | **Host duties** | Cone or radius+bearing POI query; evaluate or expose open-now; render quiet chips/markers; enable/disable |
 | **Guest duties** | Category filter, cone membership if host returns a radius set, hours policy, nearest-first list — no audio |
 | **Proposed caps** | `position_read`, `poi_query`, `clock_read`, `plugin_kv` / `storage`, `log` |
-| **Notes** | Spec only — not implemented. Must suppress known-closed venues. Does not modify `live_hazard.rs`. `brewery=cider` is classified as `CraftBrewery` in core. |
+| **Notes** | Host-native UniFFI + quiet HUD chip; WASM guest scaffold. Must suppress known-closed venues. Does not modify `live_hazard.rs`. `brewery=cider` is classified as `CraftBrewery` in core. Master toggle default OFF. |
 
 ### Capability sketch (not in ABI yet)
 

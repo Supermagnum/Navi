@@ -1060,6 +1060,20 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1144,6 +1158,8 @@ fun uniffi_navi_checksum_func_ensure_live_hazards_loaded(
 fun uniffi_navi_checksum_func_ensure_pack_region_place_index(
 ): Short
 fun uniffi_navi_checksum_func_ensure_place_index(
+): Short
+fun uniffi_navi_checksum_func_ensure_poi_lookahead_loaded(
 ): Short
 fun uniffi_navi_checksum_func_export_saved_route_gpx(
 ): Short
@@ -1296,6 +1312,18 @@ fun uniffi_navi_checksum_func_pmtiles_region_key(
 fun uniffi_navi_checksum_func_pmtiles_resume_job(
 ): Short
 fun uniffi_navi_checksum_func_pmtiles_run_job(
+): Short
+fun uniffi_navi_checksum_func_poi_lookahead_cone_half_width_deg(
+): Short
+fun uniffi_navi_checksum_func_poi_lookahead_cone_m(
+): Short
+fun uniffi_navi_checksum_func_poi_lookahead_default_enabled(
+): Short
+fun uniffi_navi_checksum_func_poi_lookahead_ingest_from_json(
+): Short
+fun uniffi_navi_checksum_func_poi_lookahead_query_json(
+): Short
+fun uniffi_navi_checksum_func_poi_lookahead_strict_hours_unknown_default(
 ): Short
 fun uniffi_navi_checksum_func_provision_region_data(
 ): Short
@@ -1560,6 +1588,8 @@ fun uniffi_navi_fn_func_ensure_pack_region_place_index(`dataDir`: RustBuffer.ByV
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_ensure_poi_lookahead_loaded(`dataDir`: RustBuffer.ByValue,`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 fun uniffi_navi_fn_func_export_saved_route_gpx(`dataDir`: RustBuffer.ByValue,`routeId`: RustBuffer.ByValue,`routePolyline`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ffi_linkage_smoke_test(uniffi_out_err: UniffiRustCallStatus, 
@@ -1712,6 +1742,18 @@ fun uniffi_navi_fn_func_pmtiles_resume_job(`jobId`: RustBuffer.ByValue,uniffi_ou
 ): Unit
 fun uniffi_navi_fn_func_pmtiles_run_job(`dataDir`: RustBuffer.ByValue,`jobId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+fun uniffi_navi_fn_func_poi_lookahead_cone_half_width_deg(uniffi_out_err: UniffiRustCallStatus, 
+): Double
+fun uniffi_navi_fn_func_poi_lookahead_cone_m(uniffi_out_err: UniffiRustCallStatus, 
+): Double
+fun uniffi_navi_fn_func_poi_lookahead_default_enabled(uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+fun uniffi_navi_fn_func_poi_lookahead_ingest_from_json(`key`: RustBuffer.ByValue,`poisJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_poi_lookahead_query_json(`lat`: Double,`lon`: Double,`headingDeg`: RustBuffer.ByValue,`enabled`: Byte,`strictHoursUnknown`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_poi_lookahead_strict_hours_unknown_default(uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 fun uniffi_navi_fn_func_provision_region_data(`dataDir`: RustBuffer.ByValue,`pbfUrl`: RustBuffer.ByValue,`pbfFilename`: RustBuffer.ByValue,`elevationTarUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_rasterize_icon_check(`key`: RustBuffer.ByValue,`theme`: RustBuffer.ByValue,`width`: Int,`height`: Int,`bundledDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -2051,6 +2093,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_ensure_place_index() != 16197.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_navi_checksum_func_ensure_poi_lookahead_loaded() != 61117.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_navi_checksum_func_export_saved_route_gpx() != 14845.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2277,6 +2322,24 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_pmtiles_run_job() != 12879.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_poi_lookahead_cone_half_width_deg() != 32685.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_poi_lookahead_cone_m() != 44532.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_poi_lookahead_default_enabled() != 65507.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_poi_lookahead_ingest_from_json() != 49359.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_poi_lookahead_query_json() != 5761.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_poi_lookahead_strict_hours_unknown_default() != 54615.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_provision_region_data() != 5529.toShort()) {
@@ -3773,6 +3836,42 @@ public object FfiConverterTypeFfiPmtilesJob: FfiConverterRustBuffer<FfiPmtilesJo
             FfiConverterOptionalDouble.write(value.`minLon`, buf)
             FfiConverterOptionalDouble.write(value.`maxLat`, buf)
             FfiConverterOptionalDouble.write(value.`maxLon`, buf)
+    }
+}
+
+
+
+data class FfiPoiLookaheadLoadStats (
+    var `records`: kotlin.UInt, 
+    var `coneM`: kotlin.Double, 
+    var `halfWidthDeg`: kotlin.Double
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiPoiLookaheadLoadStats: FfiConverterRustBuffer<FfiPoiLookaheadLoadStats> {
+    override fun read(buf: ByteBuffer): FfiPoiLookaheadLoadStats {
+        return FfiPoiLookaheadLoadStats(
+            FfiConverterUInt.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiPoiLookaheadLoadStats) = (
+            FfiConverterUInt.allocationSize(value.`records`) +
+            FfiConverterDouble.allocationSize(value.`coneM`) +
+            FfiConverterDouble.allocationSize(value.`halfWidthDeg`)
+    )
+
+    override fun write(value: FfiPoiLookaheadLoadStats, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`records`, buf)
+            FfiConverterDouble.write(value.`coneM`, buf)
+            FfiConverterDouble.write(value.`halfWidthDeg`, buf)
     }
 }
 
@@ -5414,6 +5513,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Load POI pack (preferred) or full PBF into the look-ahead store.
+         */ fun `ensurePoiLookaheadLoaded`(`dataDir`: kotlin.String, `pbfPath`: kotlin.String): FfiPoiLookaheadLoadStats {
+            return FfiConverterTypeFfiPoiLookaheadLoadStats.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_ensure_poi_lookahead_loaded(
+        FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`pbfPath`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Look up a saved route, rebuild `<rte>` from stored waypoints, and serialize GPX
          * using a caller-supplied replan polyline (Option A — geometry is not stored in DB).
          *
@@ -6291,6 +6402,76 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_pmtiles_run_job(
         FfiConverterString.lower(`dataDir`),FfiConverterString.lower(`jobId`),_status)
+}
+    )
+    }
+    
+ fun `poiLookaheadConeHalfWidthDeg`(): kotlin.Double {
+            return FfiConverterDouble.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_poi_lookahead_cone_half_width_deg(
+        _status)
+}
+    )
+    }
+    
+ fun `poiLookaheadConeM`(): kotlin.Double {
+            return FfiConverterDouble.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_poi_lookahead_cone_m(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Product default for the Nearby attractions master toggle — must stay false.
+         */ fun `poiLookaheadDefaultEnabled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_poi_lookahead_default_enabled(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Replace the look-ahead store from tagged OSM-like JSON (tests / Hardanger fixtures).
+         */ fun `poiLookaheadIngestFromJson`(`key`: kotlin.String, `poisJson`: kotlin.String): FfiPoiLookaheadLoadStats {
+            return FfiConverterTypeFfiPoiLookaheadLoadStats.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_poi_lookahead_ingest_from_json(
+        FfiConverterString.lower(`key`),FfiConverterString.lower(`poisJson`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Query the look-ahead cone. When `enabled` is false, returns empty hits (toggle off).
+         *
+         * Closed-now POIs are never included (host-side). `heading_deg` null → isotropic
+         * distance-only membership (same fallback pattern as the hazard cone docs).
+         * Does not modify `live_hazard.rs`.
+         */ fun `poiLookaheadQueryJson`(`lat`: kotlin.Double, `lon`: kotlin.Double, `headingDeg`: kotlin.Double?, `enabled`: kotlin.Boolean, `strictHoursUnknown`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_poi_lookahead_query_json(
+        FfiConverterDouble.lower(`lat`),FfiConverterDouble.lower(`lon`),FfiConverterOptionalDouble.lower(`headingDeg`),FfiConverterBoolean.lower(`enabled`),FfiConverterBoolean.lower(`strictHoursUnknown`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Default for "Hide when hours unknown" — false (show with label).
+         */ fun `poiLookaheadStrictHoursUnknownDefault`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_poi_lookahead_strict_hours_unknown_default(
+        _status)
 }
     )
     }

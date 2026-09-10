@@ -205,6 +205,20 @@ host merge. Cluster export of the merged warning:
 [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md).
 Audio consumers: [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md).
 
+### 1.6c Nearby attractions (POI look-ahead cone)
+
+| Rust | Purpose |
+|---|---|
+| `poi_lookahead_default_enabled()` | Product master-toggle default (`false`) |
+| `poi_lookahead_strict_hours_unknown_default()` | “Hide when hours unknown” default (`false`) |
+| `poi_lookahead_cone_m()` / `poi_lookahead_cone_half_width_deg()` | **850** / **±30** (distinct from hazard 300 / ±60) |
+| `ensure_poi_lookahead_loaded(data_dir, pbf_path)` | Load POI pack (preferred) or PBF into the look-ahead store |
+| `poi_lookahead_ingest_from_json(key, pois_json)` | Test/fixture ingest of tagged OSM-like JSON |
+| `poi_lookahead_query_json(lat, lon, heading_deg?, enabled, strict_hours_unknown)` | Cone query JSON (`hits` nearest-first); empty when disabled; **never** includes closed-now |
+
+Does **not** modify `live_hazard.rs`. Quiet top-right HUD chip (not urgency chrome).
+Product rules: [`plugins/poi-lookahead-cone-spec.md`](plugins/poi-lookahead-cone-spec.md).
+
 ### 1.7 OSM updates (opt-in)
 
 | Rust | Purpose |

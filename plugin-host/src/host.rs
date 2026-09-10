@@ -296,6 +296,10 @@ fn install_imports(
                         .and_then(|x| x.as_str())
                         .unwrap_or("plugin")
                         .to_string(),
+                    open_now: v
+                        .get("open_now")
+                        .and_then(|x| x.as_str())
+                        .map(str::to_string),
                 };
                 match caller.data_mut().api.poi_write(poi) {
                     Ok(()) => Ok(0),
@@ -341,13 +345,20 @@ fn install_imports(
 
 fn hits_as_json(hits: &[PoiWrite]) -> Vec<serde_json::Value> {
     hits.iter()
+        .filter(|h| h.open_now.as_deref() != Some("false"))
         .map(|h| {
-            serde_json::json!({
+            let mut v = serde_json::json!({
                 "name": h.name,
                 "lat": h.lat,
                 "lon": h.lon,
                 "kind": h.kind,
-            })
+            });
+            if let Some(on) = &h.open_now {
+                v.as_object_mut()
+                    .expect("object")
+                    .insert("open_now".into(), serde_json::Value::String(on.clone()));
+            }
+            v
         })
         .collect()
 }

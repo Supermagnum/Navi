@@ -7549,6 +7549,180 @@ mod hiking_auto_via_tests {
     }
 }
 
+// --- POI look-ahead cone ("Nearby attractions"; default OFF; not live_hazard) ---
+
+struct PoiLookaheadStore {
+    key: String,
+    index: PoiIndex,
+}
+
+static POI_LOOKAHEAD_STORE: Mutex<Option<PoiLookaheadStore>> = Mutex::new(None);
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiPoiLookaheadLoadStats {
+    pub records: u32,
+    pub cone_m: f64,
+    pub half_width_deg: f64,
+}
+
+/// Product default for the Nearby attractions master toggle — must stay false.
+#[uniffi::export]
+pub fn poi_lookahead_default_enabled() -> bool {
+    driver_break_core::poi::POI_LOOKAHEAD_DEFAULT_ENABLED
+}
+
+/// Default for "Hide when hours unknown" — false (show with label).
+#[uniffi::export]
+pub fn poi_lookahead_strict_hours_unknown_default() -> bool {
+    driver_break_core::poi::POI_LOOKAHEAD_STRICT_HOURS_UNKNOWN_DEFAULT
+}
+
+#[uniffi::export]
+pub fn poi_lookahead_cone_m() -> f64 {
+    driver_break_core::poi::POI_LOOKAHEAD_CONE_M
+}
+
+#[uniffi::export]
+pub fn poi_lookahead_cone_half_width_deg() -> f64 {
+    driver_break_core::poi::POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG
+}
+
+fn poi_lookahead_hits_json(hits: &[driver_break_core::poi::PoiLookaheadHit]) -> String {
+    use driver_break_core::poi::category_wire_name;
+    let arr: Vec<serde_json::Value> = hits
+        .iter()
+        .map(|h| {
+            serde_json::json!({
+                "osm_id": h.osm_id,
+                "lat": h.lat,
+                "lon": h.lon,
+                "distance_m": h.distance_m,
+                "name": h.name,
+                "category": category_wire_name(h.category),
+                "icon_key": h.icon_key,
+                "open_now": h.open_now.as_str(),
+                "label": h.label,
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "cone_m": driver_break_core::poi::POI_LOOKAHEAD_CONE_M,
+        "half_width_deg": driver_break_core::poi::POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+        "hits": arr,
+    })
+    .to_string()
+}
+
+/// Load POI pack (preferred) or full PBF into the look-ahead store.
+#[uniffi::export]
+pub fn ensure_poi_lookahead_loaded(data_dir: String, pbf_path: String) -> FfiPoiLookaheadLoadStats {
+    use driver_break_core::poi::{POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG, POI_LOOKAHEAD_CONE_M};
+    let key = format!("{data_dir}|{pbf_path}");
+    {
+        let guard = POI_LOOKAHEAD_STORE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(store) = guard.as_ref() {
+            if store.key == key {
+                return FfiPoiLookaheadLoadStats {
+                    records: store.index.len() as u32,
+                    cone_m: POI_LOOKAHEAD_CONE_M,
+                    half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+                };
+            }
+        }
+    }
+    let data = PathBuf::from(&data_dir);
+    let pbf = PathBuf::from(&pbf_path);
+    let index =
+        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan(&data, &pbf) {
+            Ok((poi, _)) => poi,
+            Err(_) => match PoiIndex::load_from_pbf(&pbf) {
+                Ok(i) => i,
+                Err(e) => {
+                    log::warn!(target: "NaviNative", "poi_lookahead load failed: {e:#}");
+                    return FfiPoiLookaheadLoadStats {
+                        records: 0,
+                        cone_m: POI_LOOKAHEAD_CONE_M,
+                        half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+                    };
+                }
+            },
+        };
+    let out = FfiPoiLookaheadLoadStats {
+        records: index.len() as u32,
+        cone_m: POI_LOOKAHEAD_CONE_M,
+        half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+    };
+    if let Ok(mut guard) = POI_LOOKAHEAD_STORE.lock() {
+        *guard = Some(PoiLookaheadStore { key, index });
+    }
+    out
+}
+
+/// Replace the look-ahead store from tagged OSM-like JSON (tests / Hardanger fixtures).
+#[uniffi::export]
+pub fn poi_lookahead_ingest_from_json(key: String, pois_json: String) -> FfiPoiLookaheadLoadStats {
+    use driver_break_core::poi::{
+        poi_index_from_tagged_json, POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG, POI_LOOKAHEAD_CONE_M,
+    };
+    let index = match poi_index_from_tagged_json(&pois_json) {
+        Ok(i) => i,
+        Err(e) => {
+            log::warn!(target: "NaviNative", "poi_lookahead ingest: {e}");
+            return FfiPoiLookaheadLoadStats {
+                records: 0,
+                cone_m: POI_LOOKAHEAD_CONE_M,
+                half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+            };
+        }
+    };
+    let out = FfiPoiLookaheadLoadStats {
+        records: index.len() as u32,
+        cone_m: POI_LOOKAHEAD_CONE_M,
+        half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+    };
+    if let Ok(mut guard) = POI_LOOKAHEAD_STORE.lock() {
+        *guard = Some(PoiLookaheadStore { key, index });
+    }
+    out
+}
+
+/// Query the look-ahead cone. When `enabled` is false, returns empty hits (toggle off).
+///
+/// Closed-now POIs are never included (host-side). `heading_deg` null → isotropic
+/// distance-only membership (same fallback pattern as the hazard cone docs).
+/// Does not modify `live_hazard.rs`.
+#[uniffi::export]
+pub fn poi_lookahead_query_json(
+    lat: f64,
+    lon: f64,
+    heading_deg: Option<f64>,
+    enabled: bool,
+    strict_hours_unknown: bool,
+) -> String {
+    use driver_break_core::poi::query_poi_lookahead;
+    if !enabled {
+        return poi_lookahead_hits_json(&[]);
+    }
+    let now = chrono::Local::now().naive_local();
+    let guard = POI_LOOKAHEAD_STORE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let Some(store) = guard.as_ref() else {
+        return poi_lookahead_hits_json(&[]);
+    };
+    let hits = query_poi_lookahead(
+        &store.index,
+        lat,
+        lon,
+        heading_deg,
+        now,
+        strict_hours_unknown,
+    );
+    poi_lookahead_hits_json(&hits)
+}
+
 // --- DATEX plugin (host GET of navi-server cached NPRA snapshots; default OFF) ---
 
 /// Hard-coded product default: DATEX overlay must ship disabled.

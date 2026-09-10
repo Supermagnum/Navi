@@ -601,7 +601,7 @@ og maskinvareplugins skal kunne snakke over **USB** / **Bluetooth** via verten.
 | [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md) | Korte varselyder (skilt, kamera, overskridelse-earcon) |
 | [`plugins/horse-trekking-spec.md`](plugins/horse-trekking-spec.md) | Ridning: forsyning og adgangsveiledning (Hiking er midlertidig stopgap) |
 | [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) | Talt, eskalerende fartsvarsel (prosenttrinn; ikke levert) |
-| [`plugins/poi-lookahead-cone-spec.md`](plugins/poi-lookahead-cone-spec.md) | Fremover-kjegle for attraksjoner, fiske, bryggeri/sider (åpent nå; ikke levert) |
+| [`plugins/poi-lookahead-cone-spec.md`](plugins/poi-lookahead-cone-spec.md) | Fremover-kjegle for attraksjoner, fiske, bryggeri/sider (vert UniFFI + rolig HUD; standard AV) |
 | [`plugins/lora-convoy-spec.md`](plugins/lora-convoy-spec.md) | LoRa-konvoistatus over Meshtastic (Meshstick USB / BLE; ikke levert) |
 | [`plugins/voice-command.md`](plugins/voice-command.md) | Talt navigere / lagre sted / nærmeste POI (ASR/TTS på enheten; ikke levert). Skilt fra sving-for-sving [`voice-guidance.md`](voice-guidance.md) |
 

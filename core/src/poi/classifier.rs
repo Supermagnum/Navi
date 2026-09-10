@@ -65,6 +65,7 @@ pub fn classify_tags(tags: &HashMap<String, String>) -> Vec<PoiCategory> {
     ) || tourism == Some("viewpoint")
         || tourism == Some("attraction")
         || tourism == Some("museum")
+        || tourism == Some("artwork")
     {
         out.push(PoiCategory::General);
     }
@@ -261,5 +262,12 @@ mod tests {
         assert!(hostel.contains(&PoiCategory::Lodging));
         assert!(hostel.contains(&PoiCategory::OvernightFacility));
         assert!(!classify_tags(&tags(&[("tourism", "attraction")])).contains(&PoiCategory::Lodging));
+    }
+
+    #[test]
+    fn general_matches_tourism_artwork() {
+        assert!(classify_tags(&tags(&[("tourism", "artwork")])).contains(&PoiCategory::General));
+        assert!(!classify_tags(&tags(&[("tourism", "artwork")])).contains(&PoiCategory::Lodging));
+        assert!(!classify_tags(&tags(&[("tourism", "artwork")])).contains(&PoiCategory::Cabin));
     }
 }

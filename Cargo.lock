@@ -2969,6 +2969,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "navi-plugin-poi-lookahead"
+version = "0.1.0"
+dependencies = [
+ "navi-plugin-sdk",
+ "wee_alloc",
+]
+
+[[package]]
 name = "navi-plugin-sdk"
 version = "0.1.0"
 
