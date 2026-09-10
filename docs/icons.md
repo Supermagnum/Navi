@@ -136,7 +136,7 @@ Resolution order finds `leaf.svg` in the override dir before
 Icons are named by OSM-style keys where applicable, for example:
 
 - `amenity-*` (fuel, toilets, restaurant, …)
-- `tourism-*` (wilderness_hut, alpine_hut, attraction, …)
+- `tourism-*` (wilderness_hut, alpine_hut, attraction, artwork, …)
 - `natural-*`, `leisure-*`, `shop-*`
 - Craft alcohol (beer / cider / wine / spirits) maps to `shop-alcohol` when
   classified as `PoiCategory::CraftBrewery` (`microbrewery=yes`; `craft` ∈

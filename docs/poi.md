@@ -25,7 +25,7 @@ General radius. Motor profiles require road-linked POIs; see
 | **Cabin** | 5 km (Drive hike/cycle: 10.5 km+) | `tourism` ∈ wilderness_hut, alpine_hut, hostel, camp_site, camp_pitch; **or** `amenity=shelter` |
 | **OvernightFacility** | same as Cabin | Assigned together with Cabin for the same overnight tags |
 | **NetworkHut** | 25 km (Drive save may set to slider km) | wilderness_hut / alpine_hut **and** `operator` or `network` contains DNT, STF, DAV, SAC, OeAV, or Metsähallitus. **Use networked cabins** (Drive; hiking/cycle; off by default) gates auto-via candidacy. **Network hut member** (Hiking; off by default) gates overnight preference — see README Drive settings. |
-| **General** | 15 km (Drive hike/cycle: 10.5 km+) | `amenity` ∈ cafe, restaurant, fast_food, museum, gallery, zoo, aquarium, viewpoint, picnic_site; **or** `tourism` ∈ viewpoint, attraction, museum |
+| **General** | 15 km (Drive hike/cycle: 10.5 km+) | `amenity` ∈ cafe, restaurant, fast_food, museum, gallery, zoo, aquarium, viewpoint, picnic_site; **or** `tourism` ∈ viewpoint, attraction, museum, artwork |
 | **CraftBrewery** | 15 km (General) | **OR** of: `microbrewery=yes`; `shop` ∈ alcohol, wine; `craft` ∈ brewery, winery, distillery; `brewery` ∈ cider, wine, mead, beer; `industrial=distillery` |
 | **TentSite** | Cabin radius | `tourism` ∈ camp_site, camp_pitch; **or** `amenity=camping` |
 | **Fishing** | 15 km (General) | **OR** of: `leisure=fishing`, `leisure=fishing_pier`, `sport=fishing`, `shop=fishing` — icon: Navit-derived `fish.svg` as `leisure-fishing` ([`icons.md`](icons.md)) |
