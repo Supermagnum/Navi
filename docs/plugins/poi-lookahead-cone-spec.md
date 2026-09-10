@@ -1,13 +1,34 @@
 # POI look-ahead cone plugin (specification)
 
-**Status:** specification only — not implemented.  
+**Status:** implemented (host-native UniFFI + MapHudPrefs; WASM guest scaffold).  
 **Path:** `docs/plugins/poi-lookahead-cone-spec.md`  
-**Architecture:** planned WASM guest via `plugin-host` / `plugin-sdk` and
-capability-gated `HostApi` ([`plugins.md`](../plugins.md)).  
+**Architecture:** product path is host-native (`navi-ffi` + Android prefs/HUD), with an
+optional WASM guest scaffold under `plugins/poi-lookahead/` via `plugin-host` /
+`plugin-sdk` (capability-gated per [`plugins.md`](../plugins.md)). Product APK
+does not load wasmtime guests yet.  
 **System requirements** (all plugins): user **enable/disable** toggle
 ([`plugins.md` — enable/disable](../plugins.md#enable--disable-required)).
 
-Working title / id suggestion: `poi_lookahead` / `poi_cone`.
+Working title / id: `poi_lookahead` / `poi_cone`.
+
+**Resolved implementation assumptions** (also listed in the PR description):
+
+1. Full existing `General` category (not a narrower attraction-only subset).
+2. Cone half-angle ±30° (60° total), not the hazard cone's ±60°.
+3. Single `CraftBrewery` category / `shop-alcohol` icon (no per-drink icons).
+4. Unnamed attractions use generic category labels (not filtered out).
+5. Ride on existing `PoiIndex` / pack load — no dedicated on-disk look-ahead cache.
+6. Hours-unknown shown with "(hours unknown)"; Settings toggle "Hide when hours
+   unknown" defaults off.
+
+**`poi_query` decision:** keep HostApi `poi_query` radius-only; enrich JSON with
+`open_now` and drop `open_now=false` before the guest buffer. Cone membership
+uses host UniFFI `poi_lookahead_query_json` (heading + 850 m / ±30°). Guest-side
+bearing filter would need heading on `Position`, which is absent today — less
+churn than extending the ABI for a product path that is host-native anyway.
+
+**`live_hazard.rs`:** untouched. Geometry is duplicated in `core/src/poi/lookahead.rs`
+with separate constants.
 
 This is **not** a safety/hazard warning. It is a "worth a look" discovery
 surface: attractions, fishing spots, breweries, and cider makers on or near
@@ -178,8 +199,10 @@ Either way, closed-now POIs must not reach the HUD list.
 
 ## Presentation
 
-- Quiet, non-blocking marker or HUD chip — not the `RoadSignWarningBox`
-  approach-phase chrome used for hazards. No urgency state, no sound.
+- Quiet, non-blocking marker or HUD chip on the **top right** (opposite the
+  yellow children / road-sign warning box on the left) — not the
+  `RoadSignWarningBox` approach-phase chrome used for hazards. No urgency
+  state, no sound.
 - Icon keys reuse the existing semantic keys from `osm_icon_key`
   ([`icons.md`](../icons.md)): `tourism-attraction`, `tourism-viewpoint`,
   `tourism-museum`, `tourism-artwork` (or nearest shipped key until an
@@ -216,10 +239,8 @@ visual browsing surface, not an alert.
 
 ## Settings
 
-- Master **Nearby attractions** (or similar) toggle, default off or on at
-  product discretion — this is a discovery feature, not a safety one, so no
-  default-on-for-motor-profiles argument applies the way it does for warning
-  plugins.
+- Master **Nearby attractions** toggle — **default off** (opt-in). No
+  motor-profile or first-run logic may flip it on.
 - Optional **Hide when hours unknown** (default off) for drivers who only want
   tagged open venues.
 - No severity/urgency settings, since there is no urgency model.

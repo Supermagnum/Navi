@@ -53,6 +53,9 @@ pub struct PoiWrite {
     pub lat: f64,
     pub lon: f64,
     pub kind: String,
+    /// Host-evaluated opening-hours: `"true"` / `"false"` / `"unknown"`.
+    /// Closed venues must not be returned to discovery guests.
+    pub open_now: Option<String>,
 }
 
 /// Cached weather sample returned to guests via [`HostApi::weather_read`].

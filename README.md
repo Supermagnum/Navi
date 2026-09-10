@@ -229,6 +229,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Seasonal road closures** | OSM `motor_vehicle:conditional` / `access:conditional` hard-filtered against the planned departure time (Car/Truck honour it; Hiking/Bicycle do not). Verified on Friisvegen (way `361797686`) on both bbox/PBF fallback and pack-hit (graph pack **v3**). Purely OSM-tag-driven — no jurisdiction pack. **v1 limitation:** multi-day trips that cross a season boundary are evaluated only at the planned departure instant (not re-evaluated day-by-day along the trip). | Done |
 | **Norwegian road-sign warnings** | Vendored `NO:` catalogue approach icons in Norway; explicit OSM `traffic_sign` / `hazard` tags. Same 750 / 150 / 25 m approach phases as maneuvers. See [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Look forward** | Without a planned route, GPS position + heading look ahead **300 m** (±60°) for catalogue road signs, speed humps (`NO:109`), children facilities (generic **142**), opted-in speed cameras, and an upcoming posted speed-limit plate from the existing road-label cell graph — same approach box (750 / 150 / 25 m) and jurisdiction gates as the route-corridor path. Dedicated 362 plates cover every-5 km/h values including 12 generated plates; odd OSM speeds still snap to the nearest shipped plate. Compact points load once per region. Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
+| **Nearby attractions** | Opt-in under **Map / Tools → Plugins → Nearby attractions** (off by default). Quiet top-right HUD chip for attractions, fishing, and craft alcohol (incl. cider) in an **850 m / ±30°** heading cone — open-now filtered, not a hazard warning. Distinct from Look forward. Spec: [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md). | Done |
 | **Children facilities nearby** | When no tagged children / school sign is active, schools, kindergartens, and playgrounds still trigger a generic **142 Children** approach warning (nearest facility wins; tagged `NO:142` outranks this fallback). **With a planned route:** facilities within **200 m** of the corridor. **Without a route:** covered by **Look forward** (300 m cone). Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Speed camera warnings** | Point cameras use the existing approach distance-phase UX; average-speed / section-control zones use a distinct enter/exit box. `maxspeed:conditional` is evaluated against live local time. Jurisdiction-gated like EC561 / allemannsretten: Norway/UK opt-in (OSM-sourced, may be incomplete); Germany/France/Switzerland and unknown jurisdictions decline — see [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). First-run opt-in dialog required (not silently enabled). Works on both planned-route corridor and **Look forward**. | Done (display/warning only — no route-avoidance toggle, by deliberate product decision) |
 | **Map updates** | Only when you ask — check for OpenStreetMap updates or download a fresh region. Never silent. On-screen copy is plain language (no internal planner dumps). | Done |
@@ -236,7 +237,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Diagnostic logging** | **Tools → Diagnostic logging** (off by default). When on, writes a dated session log under **Internal storage → Documents → debug** (`navi_session_*.log`) for copy over USB/MTP — no adb required. Covers GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system. Not uploaded. **Export diagnostic log** shares the latest file. Detail: [Settings → Tools](#tools-downloads-and-diagnostic-logging) and [`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file). | Done |
 | **Weather overlay (HUD)** | **Map → Plugins → Weather overlay** (also under **Tools → Plugins**; off by default). Opt-in MET Norway → Open-Meteo fetch with SQLite cache, fill-style Meteocons icons, stale labeling when offline/throttled. Host UniFFI path; product does not yet link the WASM plugin-host. | Done |
 | **Weather symbols on map** | Nested **Show weather symbols on map** under Plugins (off by default; inert unless Weather overlay is on). `place:city` only at MapLibre zoom ≤ 8; max 10 symbols; 56 px min spacing; nearest-to-viewport-center priority. Town/village tiers and corridor overlay not shipped. | Done |
-| **Plugins** | A safe sandbox for future add-ons exists; most product plugins are not shipped yet. Weather uses the host cache today (see rows above). **DATEX** road situations (opt-in, default OFF) use the navi-server feed — **Norway / NPRA only** today. | Host ready |
+| **Plugins** | A safe sandbox for future add-ons exists; most product plugins are not shipped yet. Weather and **Nearby attractions** use the host UniFFI path today (see rows above). **DATEX** road situations (opt-in, default OFF) use the navi-server feed — **Norway / NPRA only** today. | Host ready |
 
 **Hardware note:** Real-device checks include Samsung Galaxy Tab S6 Lite
 (**SM-P613**) and Google Pixel 9a. Car head units still need more real-world
@@ -567,7 +568,7 @@ display choices in app preferences).
 | **3D (experimental)** | Optional hill shading on the map (independent of contours) |
 | **Contours** | Opt-in elevation isolines from the Mapterhorn DEM (independent of 3D; off by default) |
 | **Map tilt** | Tip the camera (0° / 35° / 45° / 60°) |
-| **Plugins** | Per-plugin enable toggles (Weather overlay + optional map city symbols; off by default) |
+| **Plugins** | Per-plugin enable toggles (Weather overlay + optional map city symbols; Nearby attractions + optional hide hours-unknown; DATEX; all off by default) |
 
 ### Drive / vehicle (tap bottom status)
 
@@ -606,6 +607,7 @@ downloads).
 | **Diagnostic logging** | **Debug toggle** (off by default). When **on**, Navi appends a pipe-delimited **session log** on the device so you can diagnose planning, GPS, and setting changes without `adb logcat`. When **off**, no new session file is written and native per-stage route-plan timing stays gated off |
 | **Export diagnostic log** | Opens the Android share sheet for the latest session file (or tells you to turn logging on first) |
 | **Weather overlay** | Opt-in internet weather under **Plugins** (off by default). Shows a HUD chip near your position with fill-style icons; MET Norway primary, Open-Meteo failover; throttled ~45 min; last-known cache when offline |
+| **Nearby attractions** | Opt-in under **Plugins** (off by default). Quiet top-right chip for attractions / fishing / craft alcohol ahead in an 850 m cone; hides known-closed venues; optional “Hide when hours unknown” |
 | **DATEX road situations** | Opt-in under **Plugins** (off by default). Live feed via navi-server is **Norway / NPRA only** today |
 | **Show weather symbols on map** | Independent toggle under Plugins / Weather overlay (also off by default). When both are on, draws city weather icons at zoom ≤ 8 (`place:city` only, cap 10, 56 px spacing). Turning Weather overlay off clears map symbols too |
 
@@ -819,10 +821,11 @@ Per-PR GitHub Actions jobs and what each Rust / Kotlin test suite checks:
 
 A sandboxed plugin host exists so future add-ons can run safely. **Most product
 plugins do not ship in the app yet** — that is intentional. Weather conditions
-are available today via a **host-owned** path (Tools toggles), not via a linked
-WASM guest. **DATEX** road situations (Map/Tools → Plugins; default **OFF**)
-pull from navi-server; the live feed currently covers **Norway only** (NPRA).
-Overview: [`docs/plugins.md`](docs/plugins.md). The system requires a
+and **Nearby attractions** (850 m look-ahead discovery cone) are available today
+via a **host-owned** UniFFI path (Map/Tools → Plugins; default **OFF**), not via
+a linked WASM guest. **DATEX** road situations (Map/Tools → Plugins; default
+**OFF**) pull from navi-server; the live feed currently covers **Norway only**
+(NPRA). Overview: [`docs/plugins.md`](docs/plugins.md). The system requires a
 per-plugin **enable/disable** control, and host-mediated **USB** / **Bluetooth**
 I/O for hardware-facing plugins.
 
@@ -841,7 +844,7 @@ I/O for hardware-facing plugins.
 | [`docs/plugins/custom-alert-sounds-spec.md`](docs/plugins/custom-alert-sounds-spec.md) | Short alert tones (road signs, cameras, overspeed earcon) |
 | [`docs/plugins/horse-trekking-spec.md`](docs/plugins/horse-trekking-spec.md) | Equestrian lookahead and access guidance (Hiking is the interim stopgap) |
 | [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md) | Spoken escalating overspeed (percentage tiers; not shipped) |
-| [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md) | Look-ahead cone for attractions, fishing, breweries/cider (open-now; not shipped) |
+| [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md) | Nearby attractions look-ahead cone (host UniFFI + quiet HUD; WASM scaffold; default OFF) |
 | [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic — Meshstick USB SX1262 stick or BLE node; location/speed/fuel/charge (not shipped) |
 | [`docs/plugins/voice-command.md`](docs/plugins/voice-command.md) | Spoken navigate / save-place / nearest-POI alternative (on-device ASR/TTS; not shipped). Distinct from turn-by-turn [`docs/voice-guidance.md`](docs/voice-guidance.md) |
 

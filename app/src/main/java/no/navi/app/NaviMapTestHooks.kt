@@ -699,6 +699,10 @@ object NaviMapTestHooks {
     @Volatile
     var liveHazardConeEnabled: Boolean = true
 
+    /** Last Nearby attractions look-ahead query JSON (for instrumented tests). */
+    @Volatile
+    var lastPoiLookaheadJson: String = """{"hits":[]}"""
+
     /** Compact live-hazard load stats from [ensureLiveHazardsLoaded] (`-1` = not loaded). */
     @Volatile
     var lastLiveHazardSigns: Int = -1

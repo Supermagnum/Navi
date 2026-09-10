@@ -29,6 +29,9 @@ object MapHudPrefs {
     private const val KEY_DATEX_HOST = "datex_host"
     private const val KEY_DATEX_PORT = "datex_port"
     private const val KEY_DATEX_WIFI_ONLY = "datex_wifi_only"
+    private const val KEY_POI_LOOKAHEAD_ENABLED = "poi_lookahead_enabled"
+    private const val KEY_POI_LOOKAHEAD_STRICT_HOURS = "poi_lookahead_strict_hours_unknown"
+    private const val KEY_POI_LOOKAHEAD_DISMISSED = "poi_lookahead_dismissed_ids"
 
     /**
      * Product default for the weather plugin enable toggle.
@@ -47,6 +50,15 @@ object MapHudPrefs {
      * [DatexPluginDefaultOffTest] fails the build if flipped.
      */
     const val DATEX_PLUGIN_DEFAULT_ENABLED = false
+
+    /**
+     * Nearby attractions (POI look-ahead cone). Must remain false (opt-in).
+     * [PoiLookaheadDefaultOffTest] fails the build if flipped.
+     */
+    const val POI_LOOKAHEAD_DEFAULT_ENABLED = false
+
+    /** Hide venues with unknown opening hours — default off (show with label). */
+    const val POI_LOOKAHEAD_STRICT_HOURS_UNKNOWN_DEFAULT = false
 
     /** Settings default host; discovery prefers LAN→duckdns unless overridden. */
     const val DATEX_SETTINGS_DEFAULT_HOST = "navigate-me.duckdns.org"
@@ -512,6 +524,60 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_DATEX_WIFI_ONLY, wifiOnly)
+            .apply()
+    }
+
+    /** Nearby attractions cone — defaults OFF. */
+    fun loadPoiLookaheadEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_POI_LOOKAHEAD_ENABLED, POI_LOOKAHEAD_DEFAULT_ENABLED)
+
+    fun savePoiLookaheadEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_POI_LOOKAHEAD_ENABLED, enabled)
+            .apply()
+    }
+
+    fun loadPoiLookaheadStrictHoursUnknown(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(
+                KEY_POI_LOOKAHEAD_STRICT_HOURS,
+                POI_LOOKAHEAD_STRICT_HOURS_UNKNOWN_DEFAULT,
+            )
+
+    fun savePoiLookaheadStrictHoursUnknown(
+        context: Context,
+        strict: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_POI_LOOKAHEAD_STRICT_HOURS, strict)
+            .apply()
+    }
+
+    fun loadPoiLookaheadDismissedIds(context: Context): Set<String> =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getStringSet(KEY_POI_LOOKAHEAD_DISMISSED, emptySet())
+            ?.toSet()
+            ?: emptySet()
+
+    fun savePoiLookaheadDismissedIds(
+        context: Context,
+        ids: Set<String>,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putStringSet(KEY_POI_LOOKAHEAD_DISMISSED, ids)
             .apply()
     }
 }

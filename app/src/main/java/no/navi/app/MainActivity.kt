@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -722,6 +723,16 @@ private fun NaviMapScreen() {
     }
     var datexHud by remember { mutableStateOf(DatexHudState()) }
     var datexEpoch by remember { mutableIntStateOf(0) }
+    var poiLookaheadEnabled by remember {
+        mutableStateOf(MapHudPrefs.loadPoiLookaheadEnabled(context))
+    }
+    var poiLookaheadStrictHoursUnknown by remember {
+        mutableStateOf(MapHudPrefs.loadPoiLookaheadStrictHoursUnknown(context))
+    }
+    var poiLookaheadDismissedIds by remember {
+        mutableStateOf(MapHudPrefs.loadPoiLookaheadDismissedIds(context))
+    }
+    var poiLookaheadHud by remember { mutableStateOf(PoiLookaheadHudState()) }
     var hideChrome by remember { mutableStateOf(false) }
     var hideSearch by remember { mutableStateOf(false) }
     var regionDownloadProgress by remember { mutableStateOf("") }
@@ -1468,6 +1479,53 @@ private fun NaviMapScreen() {
             )
             // Match server Situation poll cadence (~300 s); fail soft between polls.
             delay(300_000L)
+        }
+    }
+
+    LaunchedEffect(
+        poiLookaheadEnabled,
+        poiLookaheadStrictHoursUnknown,
+        poiLookaheadDismissedIds,
+        weatherAppActive,
+        dataDir,
+    ) {
+        if (!poiLookaheadEnabled) {
+            poiLookaheadHud = PoiLookaheadHudState()
+            return@LaunchedEffect
+        }
+        while (true) {
+            if (!poiLookaheadEnabled) break
+            if (weatherAppActive) {
+                val lat = mapState.gpsLat.takeIf { it != 0.0 } ?: (mapState.cameraLat ?: 0.0)
+                val lon = mapState.gpsLon.takeIf { mapState.gpsLat != 0.0 } ?: (mapState.cameraLon ?: 0.0)
+                val heading =
+                    NaviMapTestHooks.gpsBearingDeg
+                        ?: mapState.cameraBearing.takeIf { it.isFinite() }
+                val pbf = RouteReplan.resolvePbf(dataDir)
+                val dismissed = poiLookaheadDismissedIds
+                val strict = poiLookaheadStrictHoursUnknown
+                val raw =
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            if (pbf != null) {
+                                uniffi.navi.ensurePoiLookaheadLoaded(
+                                    dataDir.absolutePath,
+                                    pbf.absolutePath,
+                                )
+                            }
+                            uniffi.navi.poiLookaheadQueryJson(
+                                lat,
+                                lon,
+                                heading,
+                                true,
+                                strict,
+                            )
+                        }.getOrDefault("""{"hits":[]}""")
+                    }
+                poiLookaheadHud = poiLookaheadHudFromQueryJson(raw, dismissed)
+                NaviMapTestHooks.lastPoiLookaheadJson = raw
+            }
+            delay(30_000L)
         }
     }
 
@@ -4408,57 +4466,81 @@ private fun NaviMapScreen() {
                     },
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
-                ApproachInstructionBox(
-                    state = approachGuidance,
-                    iconsDir = iconsDir.absolutePath,
-                    routePlanned = mapState.polyline.isNotBlank(),
-                    modifier =
-                        Modifier
-                            .align(Alignment.Start)
-                            .padding(bottom = 8.dp),
-                )
-                SpeedCameraWarningBox(
-                    state = speedCameraWarning,
-                    iconsDir = iconsDir.absolutePath,
-                    modifier =
-                        Modifier
-                            .align(Alignment.Start)
-                            .padding(bottom = 8.dp),
-                )
-                RoadSignWarningBox(
-                    state = roadSignWarning,
-                    iconsDir = iconsDir.absolutePath,
-                    modifier =
-                        Modifier
-                            .align(Alignment.Start)
-                            .padding(bottom = 8.dp),
-                )
-                if (weatherPluginEnabled) {
-                    WeatherHudChip(
-                        state = weatherHud,
-                        weatherIconsDir = File(iconsDir, "weather").absolutePath,
-                        onRefresh = {
-                            val lat = mapState.cameraLat ?: mapState.gpsLat
-                            val lon = mapState.cameraLon ?: mapState.gpsLon
-                            val raw =
-                                runCatching {
-                                    uniffi.navi.weatherRefreshJson(
-                                        dataDir.absolutePath,
-                                        lat,
-                                        lon,
-                                        true,
-                                        weatherAppActive,
-                                        true,
+                // Hazard chrome (yellow children / road-sign box) stays Start; discovery
+                // chips sit End so they do not compete for the same glance zone.
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f, fill = false),
+                        horizontalAlignment = Alignment.Start,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ApproachInstructionBox(
+                            state = approachGuidance,
+                            iconsDir = iconsDir.absolutePath,
+                            routePlanned = mapState.polyline.isNotBlank(),
+                            modifier = Modifier.align(Alignment.Start),
+                        )
+                        SpeedCameraWarningBox(
+                            state = speedCameraWarning,
+                            iconsDir = iconsDir.absolutePath,
+                            modifier = Modifier.align(Alignment.Start),
+                        )
+                        RoadSignWarningBox(
+                            state = roadSignWarning,
+                            iconsDir = iconsDir.absolutePath,
+                            modifier = Modifier.align(Alignment.Start),
+                        )
+                        if (weatherPluginEnabled) {
+                            WeatherHudChip(
+                                state = weatherHud,
+                                weatherIconsDir = File(iconsDir, "weather").absolutePath,
+                                onRefresh = {
+                                    val lat = mapState.cameraLat ?: mapState.gpsLat
+                                    val lon = mapState.cameraLon ?: mapState.gpsLon
+                                    val raw =
+                                        runCatching {
+                                            uniffi.navi.weatherRefreshJson(
+                                                dataDir.absolutePath,
+                                                lat,
+                                                lon,
+                                                true,
+                                                weatherAppActive,
+                                                true,
+                                            )
+                                        }.getOrDefault("{}")
+                                    weatherHud = weatherHudFromRefreshJson(raw)
+                                    android.util.Log.i("NaviWeather", "manual refresh: $raw")
+                                },
+                                modifier = Modifier.align(Alignment.Start),
+                            )
+                        }
+                    }
+                    if (poiLookaheadEnabled) {
+                        PoiLookaheadHudChip(
+                            state = poiLookaheadHud,
+                            iconsDir = iconsDir.absolutePath,
+                            onDismissNearest = { osmId ->
+                                val next = poiLookaheadDismissedIds + osmId.toString()
+                                poiLookaheadDismissedIds = next
+                                MapHudPrefs.savePoiLookaheadDismissedIds(context, next)
+                                val remaining = poiLookaheadHud.hits.filter { it.osmId != osmId }
+                                poiLookaheadHud =
+                                    PoiLookaheadHudState(
+                                        active = remaining.isNotEmpty(),
+                                        hits = remaining,
                                     )
-                                }.getOrDefault("{}")
-                            weatherHud = weatherHudFromRefreshJson(raw)
-                            android.util.Log.i("NaviWeather", "manual refresh: $raw")
-                        },
-                        modifier =
-                            Modifier
-                                .align(Alignment.Start)
-                                .padding(bottom = 8.dp),
-                    )
+                            },
+                            modifier =
+                                Modifier
+                                    .align(Alignment.Top)
+                                    .widthIn(max = 280.dp)
+                                    .padding(start = 8.dp),
+                        )
+                    }
                 }
                 if (!hideSearch) {
                     Surface(
@@ -5892,6 +5974,24 @@ private fun NaviMapScreen() {
                                 datexEpoch += 1
                             },
                             datexStatusLine = datexStatusLineForHud(datexPluginEnabled, datexHud),
+                            poiLookaheadEnabled = poiLookaheadEnabled,
+                            onPoiLookaheadChange = { on ->
+                                poiLookaheadEnabled = on
+                                MapHudPrefs.savePoiLookaheadEnabled(context, on)
+                                DiagnosticLog.logToggle("poi_lookahead", on)
+                                if (!on) {
+                                    poiLookaheadHud = PoiLookaheadHudState()
+                                    status = "Nearby attractions off"
+                                } else {
+                                    status = "Nearby attractions on"
+                                }
+                            },
+                            poiLookaheadStrictHoursUnknown = poiLookaheadStrictHoursUnknown,
+                            onPoiLookaheadStrictHoursUnknownChange = { on ->
+                                poiLookaheadStrictHoursUnknown = on
+                                MapHudPrefs.savePoiLookaheadStrictHoursUnknown(context, on)
+                                DiagnosticLog.logToggle("poi_lookahead_strict_hours", on)
+                            },
                         )
                         Text("Region", style = MaterialTheme.typography.titleSmall)
                         Text("Map layers: $mapLayerCount", style = MaterialTheme.typography.bodySmall)
@@ -6831,6 +6931,24 @@ private fun NaviMapScreen() {
                         datexEpoch += 1
                     },
                     datexStatusLine = datexStatusLineForHud(datexPluginEnabled, datexHud),
+                    poiLookaheadEnabled = poiLookaheadEnabled,
+                    onPoiLookaheadChange = { on ->
+                        poiLookaheadEnabled = on
+                        MapHudPrefs.savePoiLookaheadEnabled(context, on)
+                        DiagnosticLog.logToggle("poi_lookahead", on)
+                        if (!on) {
+                            poiLookaheadHud = PoiLookaheadHudState()
+                            status = "Nearby attractions off"
+                        } else {
+                            status = "Nearby attractions on"
+                        }
+                    },
+                    poiLookaheadStrictHoursUnknown = poiLookaheadStrictHoursUnknown,
+                    onPoiLookaheadStrictHoursUnknownChange = { on ->
+                        poiLookaheadStrictHoursUnknown = on
+                        MapHudPrefs.savePoiLookaheadStrictHoursUnknown(context, on)
+                        DiagnosticLog.logToggle("poi_lookahead_strict_hours", on)
+                    },
                     onSave = {
                         MapHudPrefs.saveAutoZoom(
                             context,

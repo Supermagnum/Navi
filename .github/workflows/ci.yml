@@ -69,6 +69,7 @@ jobs:
           --exclude navi-plugin-busy-loop
           --exclude navi-plugin-weather
           --exclude navi-plugin-datex
+          --exclude navi-plugin-poi-lookahead
           --exclude navi-desktop
           -- -D warnings
 
@@ -100,6 +101,7 @@ jobs:
           --exclude navi-plugin-busy-loop
           --exclude navi-plugin-weather
           --exclude navi-plugin-datex
+          --exclude navi-plugin-poi-lookahead
 
       - name: Plugin host isolation tests (fuel/timeout sandbox)
         run: cargo test -p navi-plugin-host --test isolation
@@ -218,7 +220,8 @@ jobs:
             --exclude navi-plugin-log-hello \
             --exclude navi-plugin-busy-loop \
             --exclude navi-plugin-weather \
-            --exclude navi-plugin-datex
+            --exclude navi-plugin-datex \
+            --exclude navi-plugin-poi-lookahead
           cargo build -p navi-desktop --no-default-features --features gpsd,linux-imu
 
   kotlin-checks:
