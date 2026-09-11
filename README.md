@@ -19,7 +19,7 @@ the way many commercial GPS / head-unit products do (those usually include
 precomputed indexes from the vendor). Computing place search and routing
 indexes on device takes anywhere from about **8 minutes up to 25 minutes**
 (larger regions take longer). It must be done when you **download or update**
-map data for your region. These steps can look stuck in Tools — **be patient**.
+map data for your region, if the server is down. These steps can look stuck in Tools — **be patient**, but they start automatic.
 
 In **Tools**, region chips (pills) show how the download will run:
 
