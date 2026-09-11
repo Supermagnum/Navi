@@ -68,7 +68,7 @@ class WetlandTiledPackCloseGapTest {
                     .contains("navi-wetland.t"),
         )
         val t0 = System.nanoTime()
-        val report = ensureIndexedMaps(pbf.absolutePath, dataDir.absolutePath, null)
+        val report = ensureIndexedMaps(pbf.absolutePath, dataDir.absolutePath, null, null)
         val elapsedMs = (System.nanoTime() - t0) / 1_000_000L
         dump("ensure_indexed_maps.txt", "elapsed_ms=$elapsedMs\n$report\n")
         assertTrue("convert failed:\n$report", report.contains("PASS"))

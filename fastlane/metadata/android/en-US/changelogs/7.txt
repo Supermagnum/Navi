@@ -1,0 +1,1 @@
+v0.3.2-beta: graph pack v8 with baked surface quality (asphalt/gravel soft costs); prefer downloading v8 packs from the pack server before local rebuild; motor missing-maxspeed soft penalty; clearer download-vs-rebuild status.

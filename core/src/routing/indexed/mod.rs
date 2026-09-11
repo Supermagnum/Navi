@@ -20,7 +20,7 @@ pub use crate::routing::region_lock::{
     REGION_CONVERT_IN_PROGRESS,
 };
 pub use convert::{convert_region_packs, ConvertOptions, ConvertReport};
-pub use graph_pack::{FlatGraphPack, GRAPH_FORMAT_VERSION, MAGIC_GRAPH};
+pub use graph_pack::{ArchivedFlatGraphPack, FlatGraphPack, GRAPH_FORMAT_VERSION, MAGIC_GRAPH};
 pub use header::{read_preamble, Preamble, PREAMBLE_LEN};
 pub use io::{archive_payload_offset, write_archive_atomic};
 pub use load::{

@@ -25,7 +25,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use driver_break_core::config::VehicleLimits;
-use driver_break_core::routing::graph::{RouteOptions, RoutingProfile};
+use driver_break_core::routing::graph::{RouteOptions, RoutingProfile, SurfaceRoutingMode};
 use driver_break_core::routing::indexed::{
     convert_region_packs, try_load_graph_for_plan_bbox, ConvertOptions,
 };
@@ -57,6 +57,18 @@ fn convert_truck_packs(work: &Path, src_pbf: &Path) -> PathBuf {
     ];
     convert_region_packs(&opts).expect("convert_region_packs");
     pbf
+}
+
+/// Vehicle-limit regressions must not be steered by baked surface soft costs.
+fn load_truck_graph_for_limits(
+    work: &Path,
+    pbf: &Path,
+    bbox: [f64; 4],
+) -> driver_break_core::routing::graph::RouteGraph {
+    let mut g = try_load_graph_for_plan_bbox(work, pbf, RoutingProfile::Truck, Some(bbox))
+        .expect("pack load");
+    g.surface_routing_mode = SurfaceRoutingMode::Offroad;
+    g
 }
 
 fn path_uses_named(
@@ -110,8 +122,7 @@ fn pack_path_fokholgutua_maxheight_finds_detour() {
     let work = tempfile::tempdir().unwrap();
     let pbf = convert_truck_packs(work.path(), &src);
     let bbox = [60.710, 11.150, 60.750, 11.220];
-    let g = try_load_graph_for_plan_bbox(work.path(), &pbf, RoutingProfile::Truck, Some(bbox))
-        .expect("pack load");
+    let g = load_truck_graph_for_limits(work.path(), &pbf, bbox);
 
     let bridge = g
         .edges
@@ -175,8 +186,7 @@ fn pack_path_atna_maxlength_finds_detour() {
     let work = tempfile::tempdir().unwrap();
     let pbf = convert_truck_packs(work.path(), &src);
     let bbox = [61.710, 10.800, 61.750, 10.860];
-    let g = try_load_graph_for_plan_bbox(work.path(), &pbf, RoutingProfile::Truck, Some(bbox))
-        .expect("pack load");
+    let g = load_truck_graph_for_limits(work.path(), &pbf, bbox);
 
     let bridge = g
         .edges
@@ -225,8 +235,7 @@ fn pack_path_atna_maxweight_finds_detour() {
     let work = tempfile::tempdir().unwrap();
     let pbf = convert_truck_packs(work.path(), &src);
     let bbox = [61.710, 10.800, 61.750, 10.860];
-    let g = try_load_graph_for_plan_bbox(work.path(), &pbf, RoutingProfile::Truck, Some(bbox))
-        .expect("pack load");
+    let g = load_truck_graph_for_limits(work.path(), &pbf, bbox);
 
     let (s, _) = g.nearest_routable(61.7285, 10.8300).unwrap();
     let (t, _) = g.nearest_routable(61.7292, 10.8220).unwrap();
@@ -271,8 +280,7 @@ fn pack_path_stai_maxwidth_and_maxaxleload_enforced() {
     let work = tempfile::tempdir().unwrap();
     let pbf = convert_truck_packs(work.path(), &src);
     let bbox = [61.460, 11.000, 61.540, 11.120];
-    let g = try_load_graph_for_plan_bbox(work.path(), &pbf, RoutingProfile::Truck, Some(bbox))
-        .expect("pack load");
+    let g = load_truck_graph_for_limits(work.path(), &pbf, bbox);
 
     let stai = g
         .edges
@@ -367,8 +375,7 @@ fn pack_path_liabrue_maxbogieweight_enforced() {
     let work = tempfile::tempdir().unwrap();
     let pbf = convert_truck_packs(work.path(), &src);
     let bbox = [61.820, 8.620, 61.900, 8.760];
-    let g = try_load_graph_for_plan_bbox(work.path(), &pbf, RoutingProfile::Truck, Some(bbox))
-        .expect("pack load");
+    let g = load_truck_graph_for_limits(work.path(), &pbf, bbox);
 
     let bridge = g
         .edges

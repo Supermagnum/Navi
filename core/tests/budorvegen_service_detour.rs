@@ -4,8 +4,8 @@
 //! Fixture: `tests/fixtures/budorvegen-service-detour.osm.pbf` (~cut from Ostlandet).
 
 use driver_break_core::routing::graph::{
-    apply_surface_preference, apply_surface_quality_from_pbf, way_id_from_edge_id, RouteGraph,
-    RouteOptions, RoutingProfile, SurfaceRoutingMode,
+    apply_surface_preference, apply_surface_quality_from_pbf, way_id_from_edge_id,
+    MotorSoftCostProfile, RouteGraph, RouteOptions, RoutingProfile, SurfaceRoutingMode,
 };
 use driver_break_core::routing::indexed::{load_graph_pack_bbox, merge_tile_graphs};
 use std::path::{Path, PathBuf};
@@ -49,7 +49,11 @@ fn build_car_graph(pbf: &std::path::Path) -> RouteGraph {
         RouteGraph::build_from_pbf_bbox(pbf, RoutingProfile::Car, bbox()).expect("car graph");
     graph.surface_routing_mode = SurfaceRoutingMode::Car;
     let _ = apply_surface_quality_from_pbf(&mut graph, pbf);
-    apply_surface_preference(&mut graph, SurfaceRoutingMode::Car);
+    apply_surface_preference(
+        &mut graph,
+        SurfaceRoutingMode::Car,
+        MotorSoftCostProfile::Car,
+    );
     graph
 }
 
@@ -115,7 +119,11 @@ fn budorvegen_indexed_pack_geometry_uses_secondary_not_service_parallel() {
     let mut graph =
         load_graph_pack_bbox(tile, RoutingProfile::Car, Some(bbox())).expect("indexed car tile");
     graph.surface_routing_mode = SurfaceRoutingMode::Car;
-    apply_surface_preference(&mut graph, SurfaceRoutingMode::Car);
+    apply_surface_preference(
+        &mut graph,
+        SurfaceRoutingMode::Car,
+        MotorSoftCostProfile::Car,
+    );
     let opts = RouteOptions::default();
 
     let start = (60.88416, 11.3125);
@@ -167,7 +175,11 @@ fn budorvegen_tiled_merge_geometry_uses_secondary_not_service_parallel() {
         load_graph_pack_bbox(tile, RoutingProfile::Car, Some(bbox())).expect("indexed car tile");
     let mut graph = merge_tile_graphs(vec![tile_graph], RoutingProfile::Car);
     graph.surface_routing_mode = SurfaceRoutingMode::Car;
-    apply_surface_preference(&mut graph, SurfaceRoutingMode::Car);
+    apply_surface_preference(
+        &mut graph,
+        SurfaceRoutingMode::Car,
+        MotorSoftCostProfile::Car,
+    );
     let opts = RouteOptions::default();
 
     let parallel: Vec<_> = graph

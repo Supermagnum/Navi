@@ -8,14 +8,28 @@ use std::path::Path;
 use osm4routing::NodeId;
 use rayon::prelude::*;
 
+use crate::config::Profile;
+
 use super::bike_suitability::{load_way_terrain_tags, way_id_from_edge_id};
-use super::builder::{RouteGraph, RoutingProfile};
+use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
 
 /// Soft multiplier applied to poor-surface edges (car profile).
-pub const SURFACE_POOR_EDGE_PENALTY: f64 = 4.0;
+pub const SURFACE_POOR_EDGE_PENALTY: f64 = 3.0;
 
 /// Soft multiplier applied to marginal-surface edges (car profile).
 pub const SURFACE_MARGINAL_EDGE_PENALTY: f64 = 1.5;
+
+pub const SURFACE_MARGINAL_MOTORCYCLE: f64 = 2.2;
+pub const SURFACE_POOR_MOTORCYCLE: f64 = 4.5;
+pub const SURFACE_MARGINAL_TRUCK: f64 = 2.0;
+pub const SURFACE_POOR_TRUCK: f64 = 4.0;
+pub const SURFACE_MARGINAL_MOBILE_HOME: f64 = 2.4;
+pub const SURFACE_POOR_MOBILE_HOME: f64 = 5.0;
+
+/// Missing posted/practical/advisory maxspeed — car / motorcycle.
+pub const MAXSPEED_MISSING_CAR: f64 = 1.10;
+/// Missing maxspeed — truck / mobile home.
+pub const MAXSPEED_MISSING_TRUCK: f64 = 1.15;
 
 /// Metre-equivalent penalty when surface class drops by more than
 /// [`SURFACE_TRANSITION_MAX_CLASS_DROP`] between consecutive edges.
@@ -55,6 +69,38 @@ impl SurfaceRoutingMode {
     }
 }
 
+/// Fine-grained motor soft-cost table (Car pack is shared with Motorcycle;
+/// Truck pack with MobileHome — multipliers are applied at plan time).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MotorSoftCostProfile {
+    Car,
+    Motorcycle,
+    Truck,
+    MobileHome,
+}
+
+impl MotorSoftCostProfile {
+    /// Map a travel [`Profile`] to motor soft costs, if applicable.
+    pub fn from_travel_profile(profile: Profile) -> Option<Self> {
+        match profile {
+            Profile::Car | Profile::CarElectric => Some(Self::Car),
+            Profile::Motorcycle | Profile::MotorcycleElectric => Some(Self::Motorcycle),
+            Profile::Truck | Profile::TruckElectric => Some(Self::Truck),
+            Profile::MobileHome => Some(Self::MobileHome),
+            Profile::Hiking | Profile::Cycling | Profile::CyclingElectric => None,
+        }
+    }
+
+    /// Fallback from coarse [`RoutingProfile`] (Motorcycle→Car, MobileHome→Truck).
+    pub fn from_routing_profile(profile: RoutingProfile) -> Option<Self> {
+        match profile {
+            RoutingProfile::Car => Some(Self::Car),
+            RoutingProfile::Truck => Some(Self::Truck),
+            RoutingProfile::Foot | RoutingProfile::Bicycle => None,
+        }
+    }
+}
+
 /// Ranked driveability from OSM `surface` / `tracktype` / `highway=track`.
 #[derive(
     Debug,
@@ -80,6 +126,18 @@ pub enum SurfaceQuality {
 impl SurfaceQuality {
     pub fn rank(self) -> u8 {
         self as u8
+    }
+
+    pub fn as_u8(self) -> u8 {
+        self as u8
+    }
+
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            0 => Self::Good,
+            1 => Self::Marginal,
+            _ => Self::Poor,
+        }
     }
 }
 
@@ -141,16 +199,75 @@ pub fn infer_surface_from_highway(highway: Option<&str>) -> SurfaceQuality {
     }
 }
 
-/// Soft edge cost multiplier for one surface class under `mode`.
-pub fn edge_surface_multiplier(quality: SurfaceQuality, mode: SurfaceRoutingMode) -> f64 {
+/// Soft edge cost multiplier for one surface class under `mode` / cost profile.
+pub fn edge_surface_multiplier(
+    quality: SurfaceQuality,
+    mode: SurfaceRoutingMode,
+    cost_profile: MotorSoftCostProfile,
+) -> f64 {
     if mode == SurfaceRoutingMode::Offroad {
         return 1.0;
     }
+    let (marginal, poor) = match cost_profile {
+        MotorSoftCostProfile::Car => (SURFACE_MARGINAL_EDGE_PENALTY, SURFACE_POOR_EDGE_PENALTY),
+        MotorSoftCostProfile::Motorcycle => (SURFACE_MARGINAL_MOTORCYCLE, SURFACE_POOR_MOTORCYCLE),
+        MotorSoftCostProfile::Truck => (SURFACE_MARGINAL_TRUCK, SURFACE_POOR_TRUCK),
+        MotorSoftCostProfile::MobileHome => {
+            (SURFACE_MARGINAL_MOBILE_HOME, SURFACE_POOR_MOBILE_HOME)
+        }
+    };
     match quality {
         SurfaceQuality::Good => 1.0,
-        SurfaceQuality::Marginal => SURFACE_MARGINAL_EDGE_PENALTY,
-        SurfaceQuality::Poor => SURFACE_POOR_EDGE_PENALTY,
+        SurfaceQuality::Marginal => marginal,
+        SurfaceQuality::Poor => poor,
     }
+}
+
+/// True when any of OSM `maxspeed` / `maxspeed:practical` / `maxspeed:advisory` is set.
+pub fn edge_has_posted_maxspeed(edge: &GraphEdge) -> bool {
+    edge.maxspeed_kmh.is_some()
+        || edge.maxspeed_practical_kmh.is_some()
+        || edge.maxspeed_advisory_kmh.is_some()
+}
+
+fn motor_highway_for_maxspeed_penalty(highway: Option<&str>) -> bool {
+    match highway {
+        None => false,
+        Some("ferry") | Some("path") | Some("footway") | Some("cycleway") | Some("steps")
+        | Some("pedestrian") | Some("platform") => false,
+        Some(_) => true,
+    }
+}
+
+/// Soft multiplier when posted/practical/advisory maxspeed are all absent.
+pub fn edge_maxspeed_multiplier(
+    edge: &GraphEdge,
+    mode: SurfaceRoutingMode,
+    cost_profile: MotorSoftCostProfile,
+) -> f64 {
+    if mode == SurfaceRoutingMode::Offroad {
+        return 1.0;
+    }
+    if edge.is_ferry || !motor_highway_for_maxspeed_penalty(edge.highway.as_deref()) {
+        return 1.0;
+    }
+    if edge_has_posted_maxspeed(edge) {
+        return 1.0;
+    }
+    match cost_profile {
+        MotorSoftCostProfile::Car | MotorSoftCostProfile::Motorcycle => MAXSPEED_MISSING_CAR,
+        MotorSoftCostProfile::Truck | MotorSoftCostProfile::MobileHome => MAXSPEED_MISSING_TRUCK,
+    }
+}
+
+/// Combined surface × missing-maxspeed soft multiplier (≥ 1.0).
+pub fn edge_motor_soft_multiplier(
+    edge: &GraphEdge,
+    mode: SurfaceRoutingMode,
+    cost_profile: MotorSoftCostProfile,
+) -> f64 {
+    edge_surface_multiplier(edge.surface_quality, mode, cost_profile)
+        * edge_maxspeed_multiplier(edge, mode, cost_profile)
 }
 
 /// Metre-equivalent transition penalty between consecutive edges.
@@ -198,8 +315,16 @@ pub fn best_incident_surface(graph: &RouteGraph, node: NodeId) -> SurfaceQuality
     best
 }
 
-/// Apply surface soft-cost multipliers to motor graph edges.
-pub fn apply_surface_preference(graph: &mut RouteGraph, mode: SurfaceRoutingMode) {
+/// Apply surface + missing-maxspeed soft-cost multipliers to motor graph edges.
+///
+/// Call once after weights are length- or eco-based (packs store unpenalized
+/// `length_m` as `base_weight`). Multipliers are profile-specific so Motorcycle
+/// / MobileHome can differ from the Car / Truck packs they share.
+pub fn apply_surface_preference(
+    graph: &mut RouteGraph,
+    mode: SurfaceRoutingMode,
+    cost_profile: MotorSoftCostProfile,
+) {
     if mode == SurfaceRoutingMode::Offroad {
         return;
     }
@@ -207,7 +332,7 @@ pub fn apply_surface_preference(graph: &mut RouteGraph, mode: SurfaceRoutingMode
         return;
     }
     graph.edges.par_iter_mut().for_each(|edge| {
-        let mult = edge_surface_multiplier(edge.surface_quality, mode);
+        let mult = edge_motor_soft_multiplier(edge, mode, cost_profile);
         if mult > 1.0 + 1e-9 {
             edge.base_weight *= mult;
             if let Some(ref mut eco) = edge.eco_weight {
@@ -217,7 +342,10 @@ pub fn apply_surface_preference(graph: &mut RouteGraph, mode: SurfaceRoutingMode
     });
 }
 
-/// Refine [`GraphEdge::surface_quality`] from a PBF pass (indexed packs / bbox builds).
+/// Refine [`GraphEdge::surface_quality`] from a PBF pass (bbox / way-id edge ids only).
+///
+/// Do **not** call on indexed pack-hit graphs: pack edge ids are `node-node-idx`,
+/// so [`way_id_from_edge_id`] mis-parses node ids as way ids.
 pub fn apply_surface_quality_from_pbf(graph: &mut RouteGraph, pbf: &Path) -> anyhow::Result<usize> {
     if !matches!(graph.profile(), RoutingProfile::Car | RoutingProfile::Truck) {
         return Ok(0);
@@ -328,14 +456,111 @@ mod tests {
     }
 
     #[test]
-    fn edge_multipliers_car_vs_offroad() {
+    fn edge_multipliers_per_profile_and_offroad() {
         assert_eq!(
-            edge_surface_multiplier(SurfaceQuality::Poor, SurfaceRoutingMode::Car),
+            edge_surface_multiplier(
+                SurfaceQuality::Poor,
+                SurfaceRoutingMode::Car,
+                MotorSoftCostProfile::Car
+            ),
             SURFACE_POOR_EDGE_PENALTY
         );
         assert_eq!(
-            edge_surface_multiplier(SurfaceQuality::Poor, SurfaceRoutingMode::Offroad),
+            edge_surface_multiplier(
+                SurfaceQuality::Marginal,
+                SurfaceRoutingMode::Car,
+                MotorSoftCostProfile::MobileHome
+            ),
+            SURFACE_MARGINAL_MOBILE_HOME
+        );
+        assert_eq!(
+            edge_surface_multiplier(
+                SurfaceQuality::Poor,
+                SurfaceRoutingMode::Offroad,
+                MotorSoftCostProfile::Car
+            ),
             1.0
+        );
+        assert!(
+            edge_surface_multiplier(
+                SurfaceQuality::Marginal,
+                SurfaceRoutingMode::Car,
+                MotorSoftCostProfile::Motorcycle
+            ) > edge_surface_multiplier(
+                SurfaceQuality::Marginal,
+                SurfaceRoutingMode::Car,
+                MotorSoftCostProfile::Car
+            )
+        );
+    }
+
+    #[test]
+    fn missing_maxspeed_multipliers() {
+        let mut edge = GraphEdge {
+            id: "1-0".into(),
+            source: NodeId(1),
+            target: NodeId(2),
+            length_m: 100.0,
+            base_weight: 100.0,
+            eco_weight: None,
+            start_lat: 60.0,
+            start_lon: 10.0,
+            end_lat: 60.001,
+            end_lon: 10.0,
+            shape: Vec::new(),
+            highway: Some("secondary".into()),
+            maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
+            name: None,
+            road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
+        };
+        assert_eq!(
+            edge_maxspeed_multiplier(&edge, SurfaceRoutingMode::Car, MotorSoftCostProfile::Car),
+            MAXSPEED_MISSING_CAR
+        );
+        edge.maxspeed_kmh = Some(80.0);
+        assert_eq!(
+            edge_maxspeed_multiplier(&edge, SurfaceRoutingMode::Car, MotorSoftCostProfile::Car),
+            1.0
+        );
+    }
+
+    #[test]
+    fn travel_profile_maps_to_soft_cost() {
+        assert_eq!(
+            MotorSoftCostProfile::from_travel_profile(Profile::Motorcycle),
+            Some(MotorSoftCostProfile::Motorcycle)
+        );
+        assert_eq!(
+            MotorSoftCostProfile::from_travel_profile(Profile::MobileHome),
+            Some(MotorSoftCostProfile::MobileHome)
+        );
+        assert_eq!(
+            MotorSoftCostProfile::from_travel_profile(Profile::Hiking),
+            None
         );
     }
 }

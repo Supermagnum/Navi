@@ -290,20 +290,49 @@ pub fn check_for_updates(data_dir: &Path) -> Result<UpdatePlan> {
                 Some(r) => {
                     let remote_gen = r.generation.clone().unwrap_or_default();
                     let local_gen = region.pack_generation.clone().unwrap_or_default();
-                    if !remote_gen.is_empty() && (local_gen.is_empty() || remote_gen != local_gen) {
-                        let plan = UpdatePlan::FullRedownload {
-                            reason: format!(
+                    let leaf = crate::pack_server::leaf_stem_for_region_id(&region.region_id);
+                    let format_mismatch = {
+                        use crate::routing::indexed::{manifest_path, NaviManifest, PackStatus};
+                        let man_path = manifest_path(data_dir, &leaf);
+                        NaviManifest::load(&man_path)
+                            .ok()
+                            .map(|m| m.status_pack_files(data_dir) == PackStatus::VersionMismatch)
+                            .unwrap_or(false)
+                    };
+                    if format_mismatch
+                        || (!remote_gen.is_empty()
+                            && (local_gen.is_empty() || remote_gen != local_gen))
+                    {
+                        let reason = if format_mismatch {
+                            format!(
+                                "Local indexed packs are below the client format (version_mismatch) for {} — try pack server first, then local rebuild (data_source=server-duckdns); local_gen={local_gen:?} remote_gen={remote_gen}",
+                                region.region_id
+                            )
+                        } else {
+                            format!(
                                 "Pack server generation newer for {} (data_source=server-duckdns): local={local_gen:?} remote={remote_gen}",
                                 region.region_id
-                            ),
+                            )
+                        };
+                        let plan = UpdatePlan::FullRedownload {
+                            reason,
                             latest_pbf_url: geofabrik_latest_pbf_url(&region.region_id),
-                            remote_timestamp: remote_gen.clone(),
+                            remote_timestamp: if remote_gen.is_empty() {
+                                "format-mismatch".into()
+                            } else {
+                                remote_gen.clone()
+                            },
                             remote_sequence: 0,
                             days_behind: None,
                         };
                         lines.push(format!(
-                            "region={} update available (pack generation {local_gen:?} -> {remote_gen})",
-                            region.region_id
+                            "region={} update available ({})",
+                            region.region_id,
+                            if format_mismatch {
+                                "pack format mismatch"
+                            } else {
+                                "pack generation"
+                            }
                         ));
                         if first_actionable.is_none() {
                             first_actionable = Some(plan);

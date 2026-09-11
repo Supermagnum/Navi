@@ -118,7 +118,7 @@ class ReprovisionOstlandetMeasureInstrumentedTest {
         Log.i(TAG, "indexedMapsStatus before=$before")
         if (before != "ready") {
             val t0 = System.currentTimeMillis()
-            val report = ensureIndexedMaps(pbf.absolutePath, dir.absolutePath, null)
+            val report = ensureIndexedMaps(pbf.absolutePath, dir.absolutePath, null, null)
             val elapsed = System.currentTimeMillis() - t0
             Log.i(TAG, "ensureIndexedMaps elapsed_ms=$elapsed report=$report")
             assertTrue("ensureIndexedMaps must PASS:\n$report", report.contains("PASS"))
