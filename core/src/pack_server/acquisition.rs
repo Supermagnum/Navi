@@ -3,9 +3,9 @@
 //! Host chain: public pack host → local-bake. Pack binary fetch lives in
 //! [`super::fetch`]; on failure the planner soft-falls to local convert.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use super::fetch::try_fetch_region_packs;
+use super::fetch::{try_fetch_region_packs, ServerInstallStamp};
 use super::{
     check_connectivity_blocking, check_connectivity_chain_blocking, Connectivity, ReadyRegion,
     DEFAULT_PACK_SERVER_BASE_URL,
@@ -392,6 +392,182 @@ pub fn plan_region_acquisition(
                 data_source: PackDataSource::LocalBake,
             }
         }
+    }
+}
+
+/// Resolve Geofabrik / pack-catalog region id for a leaf stem under `data_dir`.
+pub fn resolve_region_id_for_leaf(
+    data_dir: &Path,
+    leaf_stem: &str,
+    region_id_hint: Option<&str>,
+) -> Option<String> {
+    if let Some(h) = region_id_hint.map(str::trim).filter(|s| !s.is_empty()) {
+        return Some(normalize_region_id(h));
+    }
+    if let Ok(stamp) = ServerInstallStamp::load_for_leaf(data_dir, leaf_stem) {
+        let id = normalize_region_id(&stamp.region_id);
+        if !id.is_empty() {
+            return Some(id);
+        }
+    }
+    // Avoid importing osm_update (pack_server ↔ osm_update cycle); read meta JSON directly.
+    let meta_path = data_dir.join("region_meta.json");
+    if let Ok(text) = std::fs::read_to_string(meta_path) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+            if let Some(id) = v
+                .get("geofabrik_region")
+                .and_then(|x| x.as_str())
+                .map(normalize_region_id)
+                .filter(|s| !s.is_empty())
+            {
+                return Some(id);
+            }
+        }
+    }
+    None
+}
+
+/// Outcome of [`ensure_indexed_packs_prefer_server`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnsureIndexedPacksResult {
+    /// `server-duckdns` when packs were installed from the pack host; else `local-bake`.
+    pub data_source: PackDataSource,
+    /// True when packs were already Ready (no work).
+    pub cache_hit: bool,
+    pub log_message: String,
+    /// Optional convert report when a local bake ran.
+    pub convert_ms: Option<f64>,
+}
+
+/// Make indexed packs Ready for `pbf`: **pack server first**, local convert fallback.
+///
+/// Preference order:
+/// 1. Already Ready → no-op
+/// 2. Fetch / install published packs via [`plan_region_acquisition`] when a
+///    region id is known and the host has a client-compatible format
+/// 3. Otherwise run on-device [`convert_region_packs`] from the local PBF
+pub fn ensure_indexed_packs_prefer_server(
+    data_dir: &Path,
+    pbf: &Path,
+    elev_dir: Option<&Path>,
+    region_id_hint: Option<&str>,
+) -> Result<EnsureIndexedPacksResult, String> {
+    use crate::routing::graph::RoutingProfile;
+    use crate::routing::indexed::{
+        convert_region_packs, manifest_path, server_install_present, ConvertOptions, NaviManifest,
+        PackStatus,
+    };
+
+    let stem = pbf
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|name| {
+            name.strip_suffix(".osm.pbf")
+                .or_else(|| name.strip_suffix(".pbf"))
+                .unwrap_or(name)
+                .to_string()
+        })
+        .unwrap_or_else(|| "region".into());
+
+    let man_path = manifest_path(data_dir, &stem);
+    if man_path.is_file() {
+        if let Ok(man) = NaviManifest::load(&man_path) {
+            let ready = if server_install_present(data_dir, &stem) {
+                man.status_pack_files(data_dir) == PackStatus::Ready
+            } else if let Ok(packed) =
+                crate::routing::indexed::fingerprint_pbf_for_packs(data_dir, pbf, &man)
+            {
+                man.status_for_pbf(data_dir, &packed) == PackStatus::Ready
+            } else {
+                false
+            };
+            if ready {
+                return Ok(EnsureIndexedPacksResult {
+                    data_source: if server_install_present(data_dir, &stem) {
+                        PackDataSource::ServerDuckdns
+                    } else {
+                        PackDataSource::LocalBake
+                    },
+                    cache_hit: true,
+                    log_message: "packs already ready".into(),
+                    convert_ms: None,
+                });
+            }
+        }
+    }
+
+    let region_id = resolve_region_id_for_leaf(data_dir, &stem, region_id_hint);
+    if let Some(ref rid) = region_id {
+        crate::download::progress::set(0, None, "Downloading updated pack from server…");
+        log::info!(
+            target: "NaviPack",
+            "ensure_indexed_packs: trying pack server first region={rid} stem={stem}"
+        );
+        let plan = plan_region_acquisition(rid, None, Some(data_dir));
+        if !plan.execute_local_convert {
+            // Re-check Ready after install (format gate already applied in fetch).
+            if let Ok(man) = NaviManifest::load(&manifest_path(data_dir, &stem)) {
+                if man.status_pack_files(data_dir) == PackStatus::Ready {
+                    let msg = format!("downloaded updated pack from server ({})", plan.log_message);
+                    log::info!(target: "NaviPack", "{msg}");
+                    return Ok(EnsureIndexedPacksResult {
+                        data_source: PackDataSource::ServerDuckdns,
+                        cache_hit: false,
+                        log_message: msg,
+                        convert_ms: None,
+                    });
+                }
+            }
+            log::info!(
+                target: "NaviPack",
+                "ensure_indexed_packs: server install reported success but packs not Ready — local rebuild"
+            );
+        } else {
+            log::info!(
+                target: "NaviPack",
+                "ensure_indexed_packs: server path unavailable ({}) — rebuilding locally",
+                plan.log_message
+            );
+        }
+    } else {
+        log::info!(
+            target: "NaviPack",
+            "ensure_indexed_packs: no region id for stem={stem} — rebuilding locally from PBF"
+        );
+    }
+
+    crate::download::progress::set(0, None, "Rebuilding locally (server pack unavailable)…");
+    let mut opts = ConvertOptions::new(data_dir, pbf);
+    opts.elev_dir = elev_dir.map(PathBuf::from);
+    opts.profiles = vec![
+        RoutingProfile::Car,
+        RoutingProfile::Truck,
+        RoutingProfile::Foot,
+        RoutingProfile::Bicycle,
+    ];
+    match convert_region_packs(&opts) {
+        Ok(r) => {
+            let msg = format!(
+                "rebuilding locally (server pack unavailable); convert_ms={:.1}",
+                r.convert_ms
+            );
+            log::info!(target: "NaviPack", "{msg}");
+            Ok(EnsureIndexedPacksResult {
+                data_source: PackDataSource::LocalBake,
+                cache_hit: false,
+                log_message: msg,
+                convert_ms: Some(r.convert_ms),
+            })
+        }
+        Err(e) if crate::routing::region_lock::is_convert_in_progress_err(&e) => {
+            Ok(EnsureIndexedPacksResult {
+                data_source: PackDataSource::LocalBake,
+                cache_hit: false,
+                log_message: "skipped=convert_in_progress".into(),
+                convert_ms: None,
+            })
+        }
+        Err(e) => Err(format!("indexed convert: {e:#}")),
     }
 }
 

@@ -162,7 +162,7 @@ class IndexedPackV3MigrationConvertInstrumentedTest {
         val elev = File(dir, "elevation").takeIf { it.isDirectory }?.absolutePath
         // Identical UniFFI call the Tools "Rebuild indexed maps (local PBF)" button uses
         // (button picks the first *.osm.pbf; we call with the corridor path explicitly).
-        val report = ensureIndexedMaps(pbf.absolutePath, dir.absolutePath, elev)
+        val report = ensureIndexedMaps(pbf.absolutePath, dir.absolutePath, elev, null)
         assertTrue("ensureIndexedMaps failed:\n$report", report.contains("PASS"))
         assertTrue(
             "expected convert (cache_hit=false) on version mismatch:\n$report",

@@ -2146,7 +2146,13 @@ private fun NaviMapScreen() {
                 // installing packs / indexing — that doubles progress UI and
                 // fights the pack-server install path.
                 if (!regionDownloading) {
-                    IndexedMapsBackground.ensureStarted(scope, pbf, dataDir, elev)
+                    IndexedMapsBackground.ensureStarted(
+                        scope,
+                        pbf,
+                        dataDir,
+                        elev,
+                        selectedGeofabrikPath.ifBlank { null },
+                    )
                 }
                 indexedMapsUiLine =
                     if (regionDownloading) {
@@ -6270,7 +6276,7 @@ private fun NaviMapScreen() {
                                             it.isFile && it.name.endsWith(".osm.pbf")
                                         }
                                     if (pbf == null) {
-                                        status = "No local region PBF to rebuild indexed maps from"
+                                        status = "No local region PBF to refresh indexed maps from"
                                         return@launch
                                     }
                                     val elevDir =
@@ -6279,10 +6285,16 @@ private fun NaviMapScreen() {
                                         withContext(Dispatchers.IO) {
                                             indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath)
                                         }
-                                    IndexedMapsBackground.ensureStarted(scope, pbf, dataDir, elevDir)
+                                    IndexedMapsBackground.ensureStarted(
+                                        scope,
+                                        pbf,
+                                        dataDir,
+                                        elevDir,
+                                        selectedGeofabrikPath.ifBlank { null },
+                                    )
                                     status =
-                                        "indexed before=$before — rebuild started in background " +
-                                        "(region stays usable via PBF fallback)"
+                                        "indexed before=$before — refresh started (pack server first, " +
+                                        "local rebuild only if server pack unavailable)"
                                 }
                             },
                             modifier =
@@ -6290,7 +6302,7 @@ private fun NaviMapScreen() {
                                     .fillMaxWidth()
                                     .testTag("btn_rebuild_indexed_maps"),
                         ) {
-                            Text("Rebuild indexed maps (local PBF, background)")
+                            Text("Refresh indexed maps (server first, then local)")
                         }
                         Text(
                             "Basemap (PMTiles) — included in Download region; DEM is optional",
@@ -6510,6 +6522,7 @@ private fun NaviMapScreen() {
                                                 pbf,
                                                 dataDir,
                                                 elevDir,
+                                                selectedGeofabrikPath.ifBlank { null },
                                             )
                                             status = OsmUpdateUserCopy.UPDATED_INDEXING
                                         } else {

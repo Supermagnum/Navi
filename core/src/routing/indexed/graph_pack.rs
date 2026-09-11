@@ -7,12 +7,12 @@ use osm4routing::{Node, NodeId};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
 use crate::routing::elevation::ElevationService;
-use crate::routing::graph::{infer_surface_from_highway, GraphEdge, RouteGraph, RoutingProfile};
+use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile, SurfaceQuality};
 
 /// Little-endian ASCII "NVRK".
 pub const MAGIC_GRAPH: u32 = 0x4E_56_52_4B;
-/// v7: v6 + maxspeed practical/advisory/type/variable + minspeed.
-pub const GRAPH_FORMAT_VERSION: u32 = 7;
+/// v8: v7 + per-edge `surface_quality` (OSM surface/tracktype class).
+pub const GRAPH_FORMAT_VERSION: u32 = 8;
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone)]
 pub struct FlatGraphPack {
@@ -79,6 +79,8 @@ pub struct FlatGraphPack {
     pub edge_maxspeed_conditional: Vec<String>,
     /// Profile-static access forbid flag per edge (`1` = forbidden).
     pub edge_access_forbidden: Vec<u8>,
+    /// [`SurfaceQuality`] as `u8` (`0` Good, `1` Marginal, `2` Poor).
+    pub edge_surface_quality: Vec<u8>,
     /// Parallel to `node_ids`: `1` when the node is a profile access-blocked barrier.
     pub node_access_blocked: Vec<u8>,
 }
@@ -147,6 +149,7 @@ impl FlatGraphPack {
         let mut edge_access_conditional = Vec::with_capacity(n);
         let mut edge_maxspeed_conditional = Vec::with_capacity(n);
         let mut edge_access_forbidden = Vec::with_capacity(n);
+        let mut edge_surface_quality = Vec::with_capacity(n);
         edge_shape_offsets.push(0);
 
         if elev.is_some() {
@@ -192,6 +195,7 @@ impl FlatGraphPack {
             edge_access_conditional.push(e.access_conditional.clone().unwrap_or_default());
             edge_maxspeed_conditional.push(e.maxspeed_conditional.clone().unwrap_or_default());
             edge_access_forbidden.push(u8::from(e.access_forbidden));
+            edge_surface_quality.push(e.surface_quality.as_u8());
             for &(lon, lat) in &e.shape {
                 edge_shape_lons.push(lon);
                 edge_shape_lats.push(lat);
@@ -258,6 +262,7 @@ impl FlatGraphPack {
             edge_access_conditional,
             edge_maxspeed_conditional,
             edge_access_forbidden,
+            edge_surface_quality,
             node_access_blocked,
         }
     }
@@ -430,11 +435,19 @@ impl FlatGraphPack {
                     }
                 },
                 access_forbidden: self.edge_access_forbidden.get(i).copied().unwrap_or(0) != 0,
-                surface_quality: infer_surface_from_highway(if hw.is_empty() {
-                    None
-                } else {
-                    Some(hw)
-                }),
+                surface_quality: SurfaceQuality::from_u8(
+                    self.edge_surface_quality
+                        .get(i)
+                        .copied()
+                        .unwrap_or_else(|| {
+                            // Pre-v8 packs should not reach here (format version gate).
+                            if hw == "track" {
+                                SurfaceQuality::Poor.as_u8()
+                            } else {
+                                SurfaceQuality::Good.as_u8()
+                            }
+                        }),
+                ),
             });
         }
         let mut blocked = std::collections::HashSet::new();
@@ -539,6 +552,24 @@ mod tests {
             surface_quality: SurfaceQuality::Good,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
+    }
+
+    #[test]
+    fn pack_roundtrip_preserves_surface_quality() {
+        let mut graph = tiny_curved_graph();
+        graph.edges[0].surface_quality = SurfaceQuality::Marginal;
+        let pack = FlatGraphPack::from_route_graph(&graph, None);
+        assert_eq!(
+            pack.edge_surface_quality,
+            vec![SurfaceQuality::Marginal.as_u8()]
+        );
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&pack).expect("serialize");
+        let archived =
+            rkyv::access::<ArchivedFlatGraphPack, rkyv::rancor::Error>(&bytes[..]).expect("access");
+        let restored: FlatGraphPack =
+            rkyv::deserialize::<FlatGraphPack, rkyv::rancor::Error>(archived).expect("deserialize");
+        let back = restored.to_route_graph(RoutingProfile::Car);
+        assert_eq!(back.edges[0].surface_quality, SurfaceQuality::Marginal);
     }
 
     #[test]

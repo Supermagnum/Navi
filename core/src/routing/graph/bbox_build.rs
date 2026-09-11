@@ -80,6 +80,7 @@ fn keep_way_tag(key: &str) -> bool {
             | "ferry"
             | "bridge"
             | "surface"
+            | "tracktype"
             | "motor_vehicle"
             | "access"
             | "foot"

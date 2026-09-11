@@ -1580,7 +1580,7 @@ fun uniffi_navi_fn_func_eco_mode_toggleable(`profile`: RustBuffer.ByValue,uniffi
 ): Byte
 fun uniffi_navi_fn_func_elevation_at(`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_navi_fn_func_ensure_indexed_maps(`pbfPath`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_navi_fn_func_ensure_indexed_maps(`pbfPath`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ensure_live_hazards_loaded(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -2081,7 +2081,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_elevation_at() != 51192.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_ensure_indexed_maps() != 12375.toShort()) {
+    if (lib.uniffi_navi_checksum_func_ensure_indexed_maps() != 61266.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_ensure_live_hazards_loaded() != 1961.toShort()) {
@@ -5456,14 +5456,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         /**
          * Build preprocess-once indexed map packs next to a region PBF (graph + POI/barrier).
          *
-         * Writes `{stem}.navi-graph-*.rkyv`, `{stem}.navi-poi-barrier.rkyv`, and
-         * `{stem}.navi-manifest.json` under `data_dir` (defaults to the PBF parent).
-         * Safe to call after download / for migration rebuild from local PBF.
-         */ fun `ensureIndexedMaps`(`pbfPath`: kotlin.String, `dataDir`: kotlin.String, `elevDir`: kotlin.String?): kotlin.String {
+         * Preference order when packs are missing / stale / format-mismatched:
+         * 1. Download a client-compatible pack from the navi-server pack host
+         * 2. Fall back to on-device PBF convert only if the server pack is unavailable
+         * (offline, host down, region not published, or server format too old)
+         *
+         * Optional `region_id` (Geofabrik path, e.g. `europe/norway/ostlandet`) improves
+         * pack-server lookup; otherwise a server-install stamp or `region_meta.json` is used.
+         */ fun `ensureIndexedMaps`(`pbfPath`: kotlin.String, `dataDir`: kotlin.String, `elevDir`: kotlin.String?, `regionId`: kotlin.String?): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_ensure_indexed_maps(
-        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`dataDir`),FfiConverterOptionalString.lower(`elevDir`),_status)
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`dataDir`),FfiConverterOptionalString.lower(`elevDir`),FfiConverterOptionalString.lower(`regionId`),_status)
 }
     )
     }

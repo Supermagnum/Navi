@@ -274,6 +274,42 @@ fn confirm_usable(data_dir: &Path, leaf_stem: &str) -> Result<(), String> {
     }
 }
 
+/// Ensure staged (not yet promoted) packs match this client's format versions.
+fn assert_staged_pack_format_compatible(out_dir: &Path, leaf_stem: &str) -> Result<(), String> {
+    use crate::routing::indexed::{
+        GRAPH_FORMAT_VERSION, POI_BARRIER_FORMAT_VERSION, WETLAND_FORMAT_VERSION,
+    };
+    let man_path = out_dir.join(format!("{leaf_stem}.navi-manifest.json"));
+    let man = NaviManifest::load(&man_path)
+        .map_err(|e| format!("load staged navi-manifest for format check: {e}"))?;
+    if man.graph_format_version != GRAPH_FORMAT_VERSION {
+        return Err(format!(
+            "server pack graph_format_version={} (client needs {GRAPH_FORMAT_VERSION}) — not installing",
+            man.graph_format_version
+        ));
+    }
+    if man.poi_barrier_format_version != POI_BARRIER_FORMAT_VERSION {
+        return Err(format!(
+            "server pack poi_barrier_format_version={} (client needs {POI_BARRIER_FORMAT_VERSION}) — not installing",
+            man.poi_barrier_format_version
+        ));
+    }
+    if man.wetland_format_version != WETLAND_FORMAT_VERSION {
+        return Err(format!(
+            "server pack wetland_format_version={} (client needs {WETLAND_FORMAT_VERSION}) — not installing",
+            man.wetland_format_version
+        ));
+    }
+    if man.schema != NaviManifest::SCHEMA {
+        return Err(format!(
+            "server pack manifest schema={} (client needs {}) — not installing",
+            man.schema,
+            NaviManifest::SCHEMA
+        ));
+    }
+    Ok(())
+}
+
 /// Fetch, verify, remap to leaf stem, and install into `data_dir`.
 pub fn try_fetch_region_packs(
     ready: &ReadyRegion,
@@ -311,6 +347,53 @@ pub fn try_fetch_region_packs(
     let leaf_stem = leaf_stem_for_region_id(&region_id);
     let pack_base = join_url(base_url, &format!("/packs/{region_id}/{generation}"));
 
+    let navi_name = client
+        .navi_manifest
+        .clone()
+        .unwrap_or_else(|| format!("{bake_stem}.navi-manifest.json"));
+    let navi_meta = client
+        .files
+        .get(&navi_name)
+        .ok_or_else(|| format!("manifest.json missing navi-manifest file entry ({navi_name})"))?;
+
+    let staging = data_dir.join(format!(".pack-fetch-{leaf_stem}.partial"));
+    if staging.exists() {
+        let _ = fs::remove_dir_all(&staging);
+    }
+    fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+    let out = staging.join("out");
+    fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+
+    // Early format gate: pull only the navi-manifest JSON before multi-GB binaries.
+    // Live duckdns packs may still be an older graph_format_version; rejecting
+    // after a full download would waste bandwidth and delay the local rebuild fallback.
+    download_progress::set(0, Some(1), "Checking pack format on server…");
+    {
+        let url = join_url(&pack_base, &navi_name);
+        let bytes = super::http_get_bytes(&url, Duration::from_secs(120))
+            .map_err(|e| format!("GET {navi_name}: {e}"))?;
+        if let Some(n) = navi_meta.bytes {
+            if bytes.len() as u64 != n {
+                return Err(format!(
+                    "size mismatch {navi_name}: got {}, expect {n}",
+                    bytes.len()
+                ));
+            }
+        }
+        verify_hex(&sha256_hex(&bytes), &navi_meta.sha256)?;
+        fs::write(staging.join(&navi_name), &bytes).map_err(|e| e.to_string())?;
+        let rewritten = rewrite_navi_manifest_bytes(&bytes, &bake_stem, &leaf_stem)?;
+        fs::write(
+            out.join(format!("{leaf_stem}.navi-manifest.json")),
+            rewritten,
+        )
+        .map_err(|e| e.to_string())?;
+        if let Err(e) = assert_staged_pack_format_compatible(&out, &leaf_stem) {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(e);
+        }
+    }
+
     let file_count = client.files.len() as u64;
     let known_bytes: u64 = client.files.values().filter_map(|m| m.bytes).sum();
     let progress_total = if known_bytes > 0 {
@@ -322,25 +405,17 @@ pub fn try_fetch_region_packs(
     };
     let use_byte_progress = known_bytes > 0;
     download_progress::set(
-        0,
+        navi_meta.bytes.unwrap_or(0),
         progress_total,
         &format!("Fetching packs ({file_count} files)…"),
     );
 
-    let staging = data_dir.join(format!(".pack-fetch-{leaf_stem}.partial"));
-    if staging.exists() {
-        let _ = fs::remove_dir_all(&staging);
-    }
-    fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
-
-    let navi_name = client
-        .navi_manifest
-        .clone()
-        .unwrap_or_else(|| format!("{bake_stem}.navi-manifest.json"));
-
-    let mut done_bytes: u64 = 0;
-    let mut done_files: u64 = 0;
+    let mut done_bytes: u64 = navi_meta.bytes.unwrap_or(0);
+    let mut done_files: u64 = 1;
     for (remote_name, meta) in &client.files {
+        if remote_name == &navi_name {
+            continue;
+        }
         done_files += 1;
         let label = format!("Fetching packs ({done_files}/{file_count}): {remote_name}");
         let url = join_url(&pack_base, remote_name);
@@ -403,22 +478,13 @@ pub fn try_fetch_region_packs(
         "Installing packs…",
     );
 
-    // Remap bake → leaf into final names under staging/out.
-    let out = staging.join("out");
-    fs::create_dir_all(&out).map_err(|e| e.to_string())?;
-
+    // Remap bake → leaf into final names under staging/out (navi-manifest already there).
     for remote_name in client.files.keys() {
-        let src = staging.join(remote_name);
-        let dest_name = if remote_name == &navi_name || remote_name.ends_with(".navi-manifest.json")
-        {
-            let raw = fs::read(&src).map_err(|e| e.to_string())?;
-            let rewritten = rewrite_navi_manifest_bytes(&raw, &bake_stem, &leaf_stem)?;
-            let dest = out.join(format!("{leaf_stem}.navi-manifest.json"));
-            fs::write(&dest, rewritten).map_err(|e| e.to_string())?;
+        if remote_name == &navi_name || remote_name.ends_with(".navi-manifest.json") {
             continue;
-        } else {
-            remap_filename(remote_name, &bake_stem, &leaf_stem)
-        };
+        }
+        let src = staging.join(remote_name);
+        let dest_name = remap_filename(remote_name, &bake_stem, &leaf_stem);
         let dest = out.join(&dest_name);
         fs::rename(&src, &dest)
             .or_else(|_| {
@@ -495,6 +561,13 @@ mod tests {
     }
 
     fn serve_files(files: BTreeMap<String, Vec<u8>>) -> String {
+        serve_files_recording(files, None)
+    }
+
+    fn serve_files_recording(
+        files: BTreeMap<String, Vec<u8>>,
+        hits: Option<std::sync::Arc<std::sync::Mutex<Vec<String>>>>,
+    ) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         let addr = listener.local_addr().expect("addr");
         thread::spawn(move || {
@@ -511,6 +584,11 @@ mod tests {
                     .and_then(|l| l.split_whitespace().nth(1))
                     .unwrap_or("/");
                 let key = path.trim_start_matches('/');
+                if let Some(h) = &hits {
+                    if let Ok(mut g) = h.lock() {
+                        g.push(key.to_string());
+                    }
+                }
                 let body = files.get(key).cloned().or_else(|| {
                     key.rsplit('/')
                         .next()
@@ -641,5 +719,104 @@ mod tests {
         let man = NaviManifest::load(&dir.path().join("monaco-latest.navi-manifest.json")).unwrap();
         assert_eq!(man.stem, "monaco-latest");
         assert_eq!(man.status_pack_files(dir.path()), PackStatus::Ready);
+    }
+
+    #[test]
+    fn fetch_rejects_old_graph_format_without_promoting() {
+        let car = vec![0u8; 64];
+        let foot = vec![1u8; 64];
+        let poi = vec![2u8; 64];
+        let wet = vec![3u8; 48];
+        let bake = "europe_monaco-latest";
+        let navi = serde_json::json!({
+            "schema": 1,
+            "stem": bake,
+            "pbf_filename": format!("{bake}.osm.pbf"),
+            "pbf_size_bytes": 100,
+            "pbf_modified_unix_secs": 1,
+            "graph_files": {
+                "car": format!("{bake}.navi-graph-car.rkyv"),
+                "foot": format!("{bake}.navi-graph-foot.rkyv")
+            },
+            "graph_tiles": {},
+            "graph_format_version": 6,
+            "poi_barrier_file": format!("{bake}.navi-poi-barrier.rkyv"),
+            "poi_barrier_format_version": POI_BARRIER_FORMAT_VERSION,
+            "wetland_file": format!("{bake}.navi-wetland.rkyv"),
+            "wetland_tiles": [],
+            "wetland_format_version": WETLAND_FORMAT_VERSION,
+            "has_delta_h": false
+        });
+        let navi_bytes = serde_json::to_vec_pretty(&navi).unwrap();
+        let car_name = format!("{bake}.navi-graph-car.rkyv");
+        let foot_name = format!("{bake}.navi-graph-foot.rkyv");
+        let poi_name = format!("{bake}.navi-poi-barrier.rkyv");
+        let wet_name = format!("{bake}.navi-wetland.rkyv");
+        let man_name = format!("{bake}.navi-manifest.json");
+
+        let mut blob = BTreeMap::new();
+        blob.insert(car_name.clone(), car.clone());
+        blob.insert(foot_name.clone(), foot.clone());
+        blob.insert(poi_name.clone(), poi.clone());
+        blob.insert(wet_name.clone(), wet.clone());
+        blob.insert(man_name.clone(), navi_bytes.clone());
+
+        let client = serde_json::json!({
+            "schema": 1,
+            "generation": "g-old",
+            "region_id": "europe/monaco",
+            "bake_id": "europe_monaco",
+            "stem": bake,
+            "navi_manifest": man_name,
+            "files": {
+                car_name.clone(): {"sha256": sha(&car), "bytes": 64},
+                foot_name.clone(): {"sha256": sha(&foot), "bytes": 64},
+                poi_name.clone(): {"sha256": sha(&poi), "bytes": 64},
+                wet_name.clone(): {"sha256": sha(&wet), "bytes": 48},
+                man_name.clone(): {"sha256": sha(&navi_bytes), "bytes": navi_bytes.len()},
+            }
+        });
+        let client_bytes = serde_json::to_vec_pretty(&client).unwrap();
+        blob.insert(
+            "packs/europe/monaco/g-old/manifest.json".into(),
+            client_bytes.clone(),
+        );
+        blob.insert("manifest.json".into(), client_bytes);
+
+        let hits = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let base = serve_files_recording(blob, Some(hits.clone()));
+        let dir = tempfile::tempdir().unwrap();
+        // Plant a sentinel that must not be overwritten by a rejected fetch.
+        let sentinel = dir.path().join("monaco-latest.navi-manifest.json");
+        fs::write(&sentinel, b"keep-me").unwrap();
+        let ready = ReadyRegion {
+            region_id: "europe/monaco".into(),
+            generation: Some("g-old".into()),
+            bytes: Some(1000),
+            manifest_url: Some("/packs/europe/monaco/g-old/manifest.json".into()),
+        };
+        let err = try_fetch_region_packs(&ready, &base, Some(dir.path())).unwrap_err();
+        assert!(
+            err.contains("graph_format_version=6"),
+            "expected format rejection, got {err}"
+        );
+        assert_eq!(fs::read_to_string(&sentinel).unwrap(), "keep-me");
+        assert!(!dir
+            .path()
+            .join("monaco-latest.navi-graph-car.rkyv")
+            .is_file());
+        let requested = hits.lock().unwrap().clone();
+        assert!(
+            requested.iter().any(|p| p.contains("manifest.json")),
+            "expected catalog manifest fetch, got {requested:?}"
+        );
+        assert!(
+            requested.iter().any(|p| p.contains("navi-manifest.json")),
+            "expected early navi-manifest fetch, got {requested:?}"
+        );
+        assert!(
+            !requested.iter().any(|p| p.ends_with(".rkyv")),
+            "format reject must not download pack binaries, got {requested:?}"
+        );
     }
 }

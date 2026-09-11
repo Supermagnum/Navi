@@ -873,6 +873,9 @@ impl RouteGraph {
         let use_surface_transitions = self.surface_routing_mode == SurfaceRoutingMode::Car
             && matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
         let surface_mode = self.surface_routing_mode;
+        // Soft multipliers are ≥ 1. Heuristic uses min(cost/endpoint_chord) so it
+        // stays admissible on real OSM (≈1.0×haversine) and on synthetic fixtures.
+        let heuristic_per_m = self.astar_heuristic_cost_per_metre(use_eco);
 
         if use_surface_transitions {
             let result = astar(
@@ -915,7 +918,7 @@ impl RouteGraph {
                             .get(&state.0)
                             .and_then(|n| self.nodes.get(&goal).map(|g| haversine_m(n, g)))
                             .unwrap_or(0.0)
-                            * 0.1,
+                            * heuristic_per_m,
                     )
                 },
                 |state| state.0 == goal,
@@ -974,7 +977,7 @@ impl RouteGraph {
                         .get(&state.0)
                         .and_then(|n| self.nodes.get(&goal).map(|g| haversine_m(n, g)))
                         .unwrap_or(0.0)
-                        * 0.1,
+                        * heuristic_per_m,
                 )
             },
             |(node, _)| *node == goal,
@@ -996,6 +999,36 @@ impl RouteGraph {
             },
             path,
             expansions,
+        }
+    }
+
+    /// Admissible A* scale: cost units per metre of great-circle remainder.
+    ///
+    /// Uses `min(edge_cost / endpoint_chord_m)` so the heuristic stays admissible
+    /// when `length_m` is synthetic or otherwise shorter than the geographic chord
+    /// (fixtures), while remaining ~1.0×haversine on real OSM length weights and
+    /// correctly scaled for eco joule costs.
+    fn astar_heuristic_cost_per_metre(&self, use_eco: bool) -> f64 {
+        let mut min_ratio = f64::INFINITY;
+        for edge in &self.edges {
+            let chord =
+                haversine_latlon_m(edge.start_lat, edge.start_lon, edge.end_lat, edge.end_lon);
+            if chord < 1.0 {
+                continue;
+            }
+            let cost = if use_eco {
+                edge.eco_weight.unwrap_or(edge.base_weight)
+            } else {
+                edge.base_weight
+            };
+            if cost.is_finite() && cost >= 0.0 {
+                min_ratio = min_ratio.min(cost / chord);
+            }
+        }
+        if min_ratio.is_finite() && min_ratio > 0.0 {
+            min_ratio
+        } else {
+            1.0
         }
     }
 
@@ -1786,7 +1819,7 @@ fn uf_union(
 mod tests {
     use super::*;
     use crate::config::HIKING_MAX_WAYPOINT_SNAP_M;
-    use crate::routing::graph::apply_surface_preference;
+    use crate::routing::graph::{apply_surface_preference, MotorSoftCostProfile};
     use geo_types::Coord;
 
     #[test]
@@ -2242,7 +2275,11 @@ mod tests {
         ];
         let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
         graph.surface_routing_mode = SurfaceRoutingMode::Car;
-        apply_surface_preference(&mut graph, SurfaceRoutingMode::Car);
+        apply_surface_preference(
+            &mut graph,
+            SurfaceRoutingMode::Car,
+            MotorSoftCostProfile::Car,
+        );
         let path = graph
             .shortest_path(NodeId(1), NodeId(4), false)
             .expect("route exists")

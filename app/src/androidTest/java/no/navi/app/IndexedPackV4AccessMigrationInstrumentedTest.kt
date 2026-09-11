@@ -356,7 +356,7 @@ class IndexedPackV4AccessMigrationConvertInstrumentedTest {
 
         // No elev_dir: tiled convert skips region-wide DEM warm (same as v3 tiled rebuild).
         val t0 = System.nanoTime()
-        val report = ensureIndexedMaps(pbf.absolutePath, dir.absolutePath, null)
+        val report = ensureIndexedMaps(pbf.absolutePath, dir.absolutePath, null, null)
         val elapsedMs = (System.nanoTime() - t0) / 1_000_000L
         android.util.Log.i(TAG, "ensureIndexedMaps elapsed_ms=$elapsedMs report=$report")
         assertTrue("convert failed:\n$report", report.contains("PASS"))

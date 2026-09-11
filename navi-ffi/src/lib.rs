@@ -22,8 +22,8 @@ use driver_break_core::routing::graph::{
     apply_surface_preference, apply_surface_quality_from_pbf, difficulty_notes_for_path,
     load_official_network_way_ids, load_or_build_reweighted, load_or_build_reweighted_bbox,
     load_pilgrim_route_way_ids, load_way_difficulty_tags, max_waypoint_snap_m, BikeCapability,
-    OfficialNetworkKind, RoadLabelSticky, RoadNodeIndex, RouteGraph, RouteOptions, RoutingProfile,
-    SnapTooFar, SurfaceRoutingMode,
+    MotorSoftCostProfile, OfficialNetworkKind, RoadLabelSticky, RoadNodeIndex, RouteGraph,
+    RouteOptions, RoutingProfile, SnapTooFar, SurfaceRoutingMode,
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::safety::{
@@ -2379,8 +2379,15 @@ fn plan_car_route_inner(
                 Err(_) => SurfaceRoutingMode::Car,
             };
             built.surface_routing_mode = surface_mode;
-            let _ = apply_surface_quality_from_pbf(&mut built, pbf);
-            apply_surface_preference(&mut built, surface_mode);
+            // Pack-hit graphs already carry classified `surface_quality` (format v8+).
+            // PBF refine is way-id based and must not run on pack edge ids (node-node-idx).
+            if !phit {
+                let _ = apply_surface_quality_from_pbf(&mut built, pbf);
+            }
+            if let Some(cost_profile) = MotorSoftCostProfile::from_travel_profile(profile.to_core())
+            {
+                apply_surface_preference(&mut built, surface_mode, cost_profile);
+            }
         }
 
         if driver_break_core::download::plan_cancel::is_cancelled() {
@@ -4027,16 +4034,20 @@ pub fn ensure_place_index(
 
 /// Build preprocess-once indexed map packs next to a region PBF (graph + POI/barrier).
 ///
-/// Writes `{stem}.navi-graph-*.rkyv`, `{stem}.navi-poi-barrier.rkyv`, and
-/// `{stem}.navi-manifest.json` under `data_dir` (defaults to the PBF parent).
-/// Safe to call after download / for migration rebuild from local PBF.
+/// Preference order when packs are missing / stale / format-mismatched:
+/// 1. Download a client-compatible pack from the navi-server pack host
+/// 2. Fall back to on-device PBF convert only if the server pack is unavailable
+///    (offline, host down, region not published, or server format too old)
+///
+/// Optional `region_id` (Geofabrik path, e.g. `europe/norway/ostlandet`) improves
+/// pack-server lookup; otherwise a server-install stamp or `region_meta.json` is used.
 #[uniffi::export]
-pub fn ensure_indexed_maps(pbf_path: String, data_dir: String, elev_dir: Option<String>) -> String {
-    use driver_break_core::routing::graph::RoutingProfile;
-    use driver_break_core::routing::indexed::{
-        convert_region_packs, manifest_path, ConvertOptions, NaviManifest, PackStatus,
-    };
-
+pub fn ensure_indexed_maps(
+    pbf_path: String,
+    data_dir: String,
+    elev_dir: Option<String>,
+    region_id: Option<String>,
+) -> String {
     let pbf = PathBuf::from(&pbf_path);
     if !pbf.is_file() {
         return format!("FAIL: PBF missing: {pbf_path}\n");
@@ -4050,60 +4061,40 @@ pub fn ensure_indexed_maps(pbf_path: String, data_dir: String, elev_dir: Option<
     };
     let _ = std::fs::create_dir_all(&data);
 
-    let stem = pbf
-        .file_name()
-        .and_then(|s| s.to_str())
-        .map(|name| {
-            name.strip_suffix(".osm.pbf")
-                .or_else(|| name.strip_suffix(".pbf"))
-                .unwrap_or(name)
-                .to_string()
-        })
-        .unwrap_or_else(|| "region".into());
-    let man_path = manifest_path(&data, &stem);
-    if man_path.is_file() {
-        if let Ok(man) = NaviManifest::load(&man_path) {
-            use driver_break_core::routing::indexed::server_install_present;
-            let ready = if server_install_present(&data, &stem) {
-                man.status_pack_files(&data) == PackStatus::Ready
-            } else {
-                man.status_for_pbf(&data, &pbf) == PackStatus::Ready
-            };
-            if ready {
-                return format!("PASS\ncache_hit=true\nmanifest={}\n", man_path.display());
-            }
-        }
-    }
-
     ensure_native_logging();
-    let mut opts = ConvertOptions::new(&data, &pbf);
-    opts.elev_dir = elev_dir.map(PathBuf::from);
-    // Motor + hiking covers the shared planning profiles for v1.
-    opts.profiles = vec![
-        RoutingProfile::Car,
-        RoutingProfile::Truck,
-        RoutingProfile::Foot,
-        RoutingProfile::Bicycle,
-    ];
-    match convert_region_packs(&opts) {
-        Ok(r) => format!(
-            "PASS\ncache_hit=false\nconvert_ms={:.1}\nnodes={}\nedges={}\npois={}\nbarrier_segs={}\nwetland_rings={}\ngraph_tiles={}\npeak_rss_mb={:.1}\nmanifest={}\n",
-            r.convert_ms,
-            r.nodes,
-            r.edges,
-            r.pois,
-            r.barrier_segs,
-            r.wetland_rings,
-            r.graph_tiles,
-            r.peak_rss_mb,
-            r.manifest_file
-        ),
-        Err(e)
-            if driver_break_core::routing::region_lock::is_convert_in_progress_err(&e) =>
-        {
-            "PASS\nskipped=convert_in_progress\n".to_string()
+    let elev = elev_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from);
+    match driver_break_core::pack_server::ensure_indexed_packs_prefer_server(
+        &data,
+        &pbf,
+        elev.as_deref(),
+        region_id.as_deref(),
+    ) {
+        Ok(r) => {
+            let source = r.data_source.as_str();
+            let path_note = if r.data_source
+                == driver_break_core::pack_server::PackDataSource::ServerDuckdns
+                && !r.cache_hit
+            {
+                "path=server_download"
+            } else if r.cache_hit {
+                "path=cache_hit"
+            } else {
+                "path=local_rebuild"
+            };
+            let convert = r
+                .convert_ms
+                .map(|ms| format!("convert_ms={ms:.1}\n"))
+                .unwrap_or_default();
+            format!(
+                "PASS\ncache_hit={}\ndata_source={source}\n{path_note}\n{convert}detail={}\n",
+                r.cache_hit, r.log_message
+            )
         }
-        Err(e) => format!("FAIL: indexed convert: {e:#}\n"),
+        Err(e) => format!("FAIL: {e}\n"),
     }
 }
 

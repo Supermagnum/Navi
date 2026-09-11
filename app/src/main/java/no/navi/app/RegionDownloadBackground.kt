@@ -558,7 +558,12 @@ object RegionDownloadBackground {
                     val pbf = File(dataDir, filename)
                     if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
                         val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
-                        IndexedMapsBackground.ensureStarted(pbf, dataDir, elev)
+                        IndexedMapsBackground.ensureStarted(
+                            pbf,
+                            dataDir,
+                            elev,
+                            geofabrikPath.ifBlank { null },
+                        )
                     }
                     val basemapPath = geofabrikPath.ifBlank { pathForDecision }
                     persistPhase(dataDir, url, filename, basemapPath, Phase.PLACE_INDEX)
