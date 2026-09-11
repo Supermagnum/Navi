@@ -92,7 +92,7 @@ class PoiLookaheadHardangerInstrumentedTest {
     fun hardanger_cone_filters_categories_hours_and_toggle() {
         val stats = poiLookaheadIngestFromJson("hardanger:ulvik", fixtureJson())
         Log.i(TAG, "ingest records=${stats.records} cone_m=${stats.coneM}")
-        assertTrue(stats.records >= 3)
+        assertTrue(stats.records >= 3u)
 
         val off =
             poiLookaheadQueryJson(
