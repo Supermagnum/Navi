@@ -31,6 +31,11 @@ pub const MAXSPEED_MISSING_CAR: f64 = 1.10;
 /// Missing maxspeed — truck / mobile home.
 pub const MAXSPEED_MISSING_TRUCK: f64 = 1.15;
 
+/// Reference posted speed for Good asphalt with maxspeed > 50 (typical primary).
+/// Used only for Marginal/Poor edges that *do* carry a posted maxspeed: folds
+/// length/speed into soft cost so a shorter gravel@60 loses to asphalt@80.
+pub const MOTOR_ROUGH_SURFACE_SPEED_REF_KMH: f64 = 80.0;
+
 /// Metre-equivalent penalty when surface class drops by more than
 /// [`SURFACE_TRANSITION_MAX_CLASS_DROP`] between consecutive edges.
 pub const SURFACE_TRANSITION_PENALTY_M: f64 = 500.0;
@@ -260,7 +265,30 @@ pub fn edge_maxspeed_multiplier(
     }
 }
 
-/// Combined surface × missing-maxspeed soft multiplier (≥ 1.0).
+/// Extra soft cost for Marginal/Poor edges with a posted maxspeed, so slower
+/// rough roads are not preferred over a longer Good asphalt detour that posts
+/// above 50 km/h. Good surfaces are unchanged (factor 1.0).
+pub fn edge_rough_surface_speed_factor(edge: &GraphEdge, mode: SurfaceRoutingMode) -> f64 {
+    if mode == SurfaceRoutingMode::Offroad {
+        return 1.0;
+    }
+    match edge.surface_quality {
+        SurfaceQuality::Good => 1.0,
+        SurfaceQuality::Marginal | SurfaceQuality::Poor => {
+            let Some(ms) = edge
+                .maxspeed_kmh
+                .or(edge.maxspeed_practical_kmh)
+                .or(edge.maxspeed_advisory_kmh)
+                .filter(|v| *v > 0.0)
+            else {
+                return 1.0;
+            };
+            (MOTOR_ROUGH_SURFACE_SPEED_REF_KMH / ms).max(1.0)
+        }
+    }
+}
+
+/// Combined surface × missing-maxspeed × rough-speed soft multiplier (≥ 1.0).
 pub fn edge_motor_soft_multiplier(
     edge: &GraphEdge,
     mode: SurfaceRoutingMode,
@@ -268,6 +296,7 @@ pub fn edge_motor_soft_multiplier(
 ) -> f64 {
     edge_surface_multiplier(edge.surface_quality, mode, cost_profile)
         * edge_maxspeed_multiplier(edge, mode, cost_profile)
+        * edge_rough_surface_speed_factor(edge, mode)
 }
 
 /// Metre-equivalent transition penalty between consecutive edges.
@@ -561,6 +590,124 @@ mod tests {
         assert_eq!(
             MotorSoftCostProfile::from_travel_profile(Profile::Hiking),
             None
+        );
+    }
+
+    fn motor_edge(
+        id: &str,
+        source: i64,
+        target: i64,
+        length_m: f64,
+        maxspeed_kmh: Option<f64>,
+        surface: SurfaceQuality,
+    ) -> GraphEdge {
+        GraphEdge {
+            id: id.into(),
+            source: NodeId(source),
+            target: NodeId(target),
+            length_m,
+            base_weight: length_m,
+            eco_weight: Some(length_m),
+            start_lat: 60.0,
+            start_lon: 10.0,
+            end_lat: 60.01,
+            end_lon: 10.01,
+            shape: Vec::new(),
+            highway: Some("tertiary".into()),
+            maxspeed_kmh,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
+            name: None,
+            road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+            surface_quality: surface,
+        }
+    }
+
+    /// Short gravel@60 vs longer asphalt@80: asphalt must win for all motor soft profiles.
+    #[test]
+    fn prefers_asphalt_maxspeed_over_50_to_shorter_gravel_60() {
+        use geo_types::Coord;
+        use std::collections::HashMap;
+
+        // Topology: 1 --gravel 1000m@60--> 2
+        //           1 --asphalt 900m@80--> 3 --asphalt 900m@80--> 2
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [(1, 60.0, 10.0), (2, 60.01, 10.01), (3, 60.005, 10.02)] {
+            nodes.insert(
+                NodeId(id),
+                osm4routing::Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let edges = vec![
+            motor_edge("g12", 1, 2, 1000.0, Some(60.0), SurfaceQuality::Marginal),
+            motor_edge("g21", 2, 1, 1000.0, Some(60.0), SurfaceQuality::Marginal),
+            motor_edge("a13", 1, 3, 900.0, Some(80.0), SurfaceQuality::Good),
+            motor_edge("a31", 3, 1, 900.0, Some(80.0), SurfaceQuality::Good),
+            motor_edge("a32", 3, 2, 900.0, Some(80.0), SurfaceQuality::Good),
+            motor_edge("a23", 2, 3, 900.0, Some(80.0), SurfaceQuality::Good),
+        ];
+
+        for cost_profile in [
+            MotorSoftCostProfile::Car,
+            MotorSoftCostProfile::Motorcycle,
+            MotorSoftCostProfile::Truck,
+            MotorSoftCostProfile::MobileHome,
+        ] {
+            let mut graph = RouteGraph::from_parts(nodes.clone(), edges.clone(), RoutingProfile::Car);
+            apply_surface_preference(&mut graph, SurfaceRoutingMode::Car, cost_profile);
+            let (path, _, _) = graph
+                .shortest_path(NodeId(1), NodeId(2), false)
+                .unwrap_or_else(|| panic!("{cost_profile:?}: no path"));
+            assert!(
+                path.contains(&NodeId(3)),
+                "{cost_profile:?}: expected asphalt via node 3, got {path:?}"
+            );
+            assert_eq!(
+                path,
+                vec![NodeId(1), NodeId(3), NodeId(2)],
+                "{cost_profile:?}: path={path:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rough_speed_factor_only_boosts_non_good_with_posted_maxspeed() {
+        let mut gravel = motor_edge("g", 1, 2, 1000.0, Some(60.0), SurfaceQuality::Marginal);
+        assert!((edge_rough_surface_speed_factor(&gravel, SurfaceRoutingMode::Car) - 80.0 / 60.0).abs() < 1e-9);
+        gravel.maxspeed_kmh = None;
+        assert_eq!(
+            edge_rough_surface_speed_factor(&gravel, SurfaceRoutingMode::Car),
+            1.0
+        );
+        let asphalt = motor_edge("a", 1, 2, 1000.0, Some(80.0), SurfaceQuality::Good);
+        assert_eq!(
+            edge_rough_surface_speed_factor(&asphalt, SurfaceRoutingMode::Car),
+            1.0
         );
     }
 }

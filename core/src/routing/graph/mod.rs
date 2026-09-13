@@ -50,7 +50,8 @@ pub use road_near::{
 pub use surface_quality::{
     apply_surface_preference, apply_surface_quality_from_pbf, best_incident_surface,
     classify_surface_tags, edge_has_posted_maxspeed, edge_maxspeed_multiplier,
-    edge_motor_soft_multiplier, edge_surface_multiplier, infer_surface_from_highway,
+    edge_motor_soft_multiplier, edge_rough_surface_speed_factor, edge_surface_multiplier,
+    infer_surface_from_highway,
     surface_transition_cost_m, worst_incident_surface, MotorSoftCostProfile, SurfaceQuality,
     SurfaceRoutingMode, MAXSPEED_MISSING_CAR, MAXSPEED_MISSING_TRUCK,
     SNAP_VIRTUAL_APPROACH_SURFACE, SURFACE_MARGINAL_EDGE_PENALTY, SURFACE_MARGINAL_MOBILE_HOME,
