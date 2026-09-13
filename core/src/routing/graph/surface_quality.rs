@@ -36,6 +36,11 @@ pub const MAXSPEED_MISSING_TRUCK: f64 = 1.15;
 /// length/speed into soft cost so a shorter gravel@60 loses to asphalt@80.
 pub const MOTOR_ROUGH_SURFACE_SPEED_REF_KMH: f64 = 80.0;
 
+/// Cap on [`edge_rough_surface_speed_factor`] so very low posted maxspeed on
+/// rough surfaces cannot make a barely-related asphalt detour win when gravel
+/// is the only sensible corridor (e.g. maxspeed=20 → uncapped 4×).
+pub const MOTOR_ROUGH_SURFACE_SPEED_FACTOR_MAX: f64 = 2.0;
+
 /// Metre-equivalent penalty when surface class drops by more than
 /// [`SURFACE_TRANSITION_MAX_CLASS_DROP`] between consecutive edges.
 pub const SURFACE_TRANSITION_PENALTY_M: f64 = 500.0;
@@ -283,7 +288,9 @@ pub fn edge_rough_surface_speed_factor(edge: &GraphEdge, mode: SurfaceRoutingMod
             else {
                 return 1.0;
             };
-            (MOTOR_ROUGH_SURFACE_SPEED_REF_KMH / ms).max(1.0)
+            (MOTOR_ROUGH_SURFACE_SPEED_REF_KMH / ms)
+                .max(1.0)
+                .min(MOTOR_ROUGH_SURFACE_SPEED_FACTOR_MAX)
         }
     }
 }
@@ -709,5 +716,93 @@ mod tests {
             edge_rough_surface_speed_factor(&asphalt, SurfaceRoutingMode::Car),
             1.0
         );
+        // Very low posted maxspeed is capped (not 80/20 = 4).
+        let slow = motor_edge("s", 1, 2, 1000.0, Some(20.0), SurfaceQuality::Marginal);
+        assert_eq!(
+            edge_rough_surface_speed_factor(&slow, SurfaceRoutingMode::Car),
+            MOTOR_ROUGH_SURFACE_SPEED_FACTOR_MAX
+        );
+    }
+
+    /// Sole gravel corridor @40: penalty must not invent a non-existent asphalt path.
+    #[test]
+    fn low_maxspeed_gravel_still_used_when_no_asphalt_alternative() {
+        use geo_types::Coord;
+        use std::collections::HashMap;
+
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [(1, 60.0, 10.0), (2, 60.01, 10.01)] {
+            nodes.insert(
+                NodeId(id),
+                osm4routing::Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let edges = vec![
+            motor_edge("g12", 1, 2, 1000.0, Some(40.0), SurfaceQuality::Marginal),
+            motor_edge("g21", 2, 1, 1000.0, Some(40.0), SurfaceQuality::Marginal),
+        ];
+        for cost_profile in [
+            MotorSoftCostProfile::Car,
+            MotorSoftCostProfile::Motorcycle,
+            MotorSoftCostProfile::Truck,
+            MotorSoftCostProfile::MobileHome,
+        ] {
+            let mut graph = RouteGraph::from_parts(nodes.clone(), edges.clone(), RoutingProfile::Car);
+            apply_surface_preference(&mut graph, SurfaceRoutingMode::Car, cost_profile);
+            let (path, _, _) = graph
+                .shortest_path(NodeId(1), NodeId(2), false)
+                .unwrap_or_else(|| panic!("{cost_profile:?}: gravel-only must remain routable"));
+            assert_eq!(path, vec![NodeId(1), NodeId(2)], "{cost_profile:?}");
+        }
+    }
+
+    /// Absurd asphalt detour must not beat short gravel@40 even after the speed factor.
+    #[test]
+    fn gravel_40_beats_absurdly_long_asphalt_detour() {
+        use geo_types::Coord;
+        use std::collections::HashMap;
+
+        // 1 --gravel 1km@40--> 2
+        // 1 --asphalt 50km@80--> 3 --asphalt 50km@80--> 2
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [(1, 60.0, 10.0), (2, 60.01, 10.01), (3, 60.5, 11.0)] {
+            nodes.insert(
+                NodeId(id),
+                osm4routing::Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let edges = vec![
+            motor_edge("g12", 1, 2, 1_000.0, Some(40.0), SurfaceQuality::Marginal),
+            motor_edge("g21", 2, 1, 1_000.0, Some(40.0), SurfaceQuality::Marginal),
+            motor_edge("a13", 1, 3, 50_000.0, Some(80.0), SurfaceQuality::Good),
+            motor_edge("a31", 3, 1, 50_000.0, Some(80.0), SurfaceQuality::Good),
+            motor_edge("a32", 3, 2, 50_000.0, Some(80.0), SurfaceQuality::Good),
+            motor_edge("a23", 2, 3, 50_000.0, Some(80.0), SurfaceQuality::Good),
+        ];
+        for cost_profile in [
+            MotorSoftCostProfile::Car,
+            MotorSoftCostProfile::Motorcycle,
+            MotorSoftCostProfile::Truck,
+            MotorSoftCostProfile::MobileHome,
+        ] {
+            let mut graph = RouteGraph::from_parts(nodes.clone(), edges.clone(), RoutingProfile::Car);
+            apply_surface_preference(&mut graph, SurfaceRoutingMode::Car, cost_profile);
+            let (path, _, _) = graph
+                .shortest_path(NodeId(1), NodeId(2), false)
+                .unwrap_or_else(|| panic!("{cost_profile:?}: no path"));
+            assert_eq!(
+                path,
+                vec![NodeId(1), NodeId(2)],
+                "{cost_profile:?}: must keep short gravel, not 100km asphalt; got {path:?}"
+            );
+        }
     }
 }
