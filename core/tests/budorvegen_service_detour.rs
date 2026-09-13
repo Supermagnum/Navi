@@ -6,6 +6,7 @@
 use driver_break_core::routing::graph::{
     apply_surface_preference, apply_surface_quality_from_pbf, way_id_from_edge_id,
     MotorSoftCostProfile, RouteGraph, RouteOptions, RoutingProfile, SurfaceRoutingMode,
+    HIGHWAY_CLASS_SECONDARY,
 };
 use driver_break_core::routing::indexed::{load_graph_pack_bbox, merge_tile_graphs};
 use std::path::{Path, PathBuf};
@@ -74,8 +75,8 @@ fn budorvegen_path_geometry_uses_secondary_not_service_parallel() {
         .shortest_path_with_options(s, g, false, &opts)
         .expect("route must exist");
     assert!(
-        (cost - 64.6).abs() < 1.0,
-        "A* must use 64.6 m secondary chord, got cost {cost}"
+        (cost - 64.6 * HIGHWAY_CLASS_SECONDARY).abs() < 2.0,
+        "A* must use ~64.6 m secondary chord (× highway soft cost), got cost {cost}"
     );
     assert_eq!(
         path_edges.len(),

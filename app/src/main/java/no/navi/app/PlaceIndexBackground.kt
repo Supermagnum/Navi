@@ -79,18 +79,18 @@ object PlaceIndexBackground {
                             rid,
                         )
                     val bytes = if (indexDb.isFile) indexDb.length() else 0L
-                    lastStatus.set(
-                        if (report.contains("PASS")) {
-                            "done bytes=$bytes"
-                        } else {
-                            "failed"
-                        },
-                    )
-                    // Ensure UI does not linger on phase 5/6 (~83%) after success.
                     if (report.contains("PASS")) {
+                        val dataDir = indexDb.parentFile
+                        if (dataDir != null && !rid.isNullOrBlank()) {
+                            PlaceIndexReady.markReady(dataDir, rid)
+                        }
+                        lastStatus.set("Place index ready 100% (6 / 6)")
+                        // Leave the 100% snapshot briefly; next job clears it.
                         runCatching {
                             uniffi.navi.downloadProgressClear()
                         }
+                    } else {
+                        lastStatus.set("failed")
                     }
                     Log.i(TAG, "finished bytes=$bytes report=$report")
                 } catch (t: Throwable) {

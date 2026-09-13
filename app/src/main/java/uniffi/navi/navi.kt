@@ -4375,7 +4375,11 @@ data class PlaceHit (
     /**
      * Containing municipality (kommune), from OSM admin_level 6–8 polygons.
      */
-    var `municipality`: kotlin.String
+    var `municipality`: kotlin.String, 
+    /**
+     * Geofabrik path this row was indexed under (empty for legacy / synthetic hits).
+     */
+    var `regionId`: kotlin.String
 ) {
     
     companion object
@@ -4394,6 +4398,7 @@ public object FfiConverterTypePlaceHit: FfiConverterRustBuffer<PlaceHit> {
             FfiConverterDouble.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -4404,7 +4409,8 @@ public object FfiConverterTypePlaceHit: FfiConverterRustBuffer<PlaceHit> {
             FfiConverterDouble.allocationSize(value.`lat`) +
             FfiConverterDouble.allocationSize(value.`lon`) +
             FfiConverterString.allocationSize(value.`subArea`) +
-            FfiConverterString.allocationSize(value.`municipality`)
+            FfiConverterString.allocationSize(value.`municipality`) +
+            FfiConverterString.allocationSize(value.`regionId`)
     )
 
     override fun write(value: PlaceHit, buf: ByteBuffer) {
@@ -4415,6 +4421,7 @@ public object FfiConverterTypePlaceHit: FfiConverterRustBuffer<PlaceHit> {
             FfiConverterDouble.write(value.`lon`, buf)
             FfiConverterString.write(value.`subArea`, buf)
             FfiConverterString.write(value.`municipality`, buf)
+            FfiConverterString.write(value.`regionId`, buf)
     }
 }
 

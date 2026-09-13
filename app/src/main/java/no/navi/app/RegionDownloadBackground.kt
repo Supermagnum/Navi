@@ -943,7 +943,7 @@ object RegionDownloadBackground {
     ): Boolean {
         val pbf = File(dataDir, filename)
         if (!pbf.isFile || pbf.length() < MIN_PBF_BYTES) return false
-        lastStatus.set("Building place index…")
+        lastStatus.set("Place index: starting… 0% (0 / 6)")
         val placeReport =
             runCatching {
                 ensurePlaceIndex(
@@ -956,6 +956,9 @@ object RegionDownloadBackground {
                 "FAIL: ${t.message}\n"
             }
         Log.i(TAG, "local-bake place index: ${placeReport.take(400)}")
+        if (placeReport.contains("PASS")) {
+            lastStatus.set("Place index ready 100% (6 / 6)")
+        }
         return placeReport.contains("PASS")
     }
 

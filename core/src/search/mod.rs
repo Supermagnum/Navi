@@ -20,6 +20,8 @@ pub struct NameHit {
     pub lon: f64,
     pub sub_area: String,
     pub municipality: String,
+    /// Geofabrik path this row was indexed under (empty for legacy rows).
+    pub region_id: String,
 }
 
 /// Local FTS5 name index for settlements, POIs, huts, peaks, and named ways.
@@ -447,7 +449,7 @@ impl NameIndex {
         let fetch = (limit.saturating_mul(8)).clamp(40, 200);
         let mut stmt = self.conn.prepare(
             "
-            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality
+            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id
             FROM name_fts f
             JOIN name_entries e ON e.osm_id = f.rowid
             WHERE name_fts MATCH ?1
@@ -463,6 +465,7 @@ impl NameIndex {
                 lon: row.get(4)?,
                 sub_area: row.get(5)?,
                 municipality: row.get(6)?,
+                region_id: row.get(7)?,
             })
         })?;
         let mut out = Vec::new();
@@ -512,7 +515,7 @@ impl NameIndex {
         let lon_pad = radius_m / (111_320.0 * lat.to_radians().cos().max(0.2));
         let mut stmt = self.conn.prepare(
             "
-            SELECT osm_id, name, kind, lat, lon, sub_area, municipality
+            SELECT osm_id, name, kind, lat, lon, sub_area, municipality, region_id
             FROM name_entries
             WHERE lat BETWEEN ?1 AND ?2 AND lon BETWEEN ?3 AND ?4
             ",
@@ -528,6 +531,7 @@ impl NameIndex {
                     lon: row.get(4)?,
                     sub_area: row.get(5)?,
                     municipality: row.get(6)?,
+                    region_id: row.get(7)?,
                 })
             },
         )?;
@@ -556,7 +560,7 @@ impl NameIndex {
         let limit = limit.max(1);
         let mut stmt = self.conn.prepare(
             "
-            SELECT osm_id, name, kind, lat, lon, sub_area, municipality
+            SELECT osm_id, name, kind, lat, lon, sub_area, municipality, region_id
             FROM name_entries
             WHERE kind = ?1
               AND lat BETWEEN ?2 AND ?3
@@ -576,6 +580,7 @@ impl NameIndex {
                     lon: row.get(4)?,
                     sub_area: row.get(5)?,
                     municipality: row.get(6)?,
+                    region_id: row.get(7)?,
                 })
             },
         )?;

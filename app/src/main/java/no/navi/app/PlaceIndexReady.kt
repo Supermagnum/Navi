@@ -10,6 +10,9 @@ import java.io.File
  * Written only after a region's downloads finish and its place index build
  * returns PASS. Cleared when a new download for that region starts so From/Via/To
  * never surfaces partial or in-progress index rows.
+ *
+ * Search also requires the region to be present on disk (downloaded packs /
+ * extract). Hits outside downloaded ∪ ready regions are never shown.
  */
 object PlaceIndexReady {
     const val READY_FILE = "place-index-ready.json"
@@ -18,6 +21,7 @@ object PlaceIndexReady {
     fun readyFile(dataDir: File): File = File(dataDir, READY_FILE)
 
     fun load(dataDir: File): Set<String> {
+        healReadyFromDownloads(dataDir)
         val f = readyFile(dataDir)
         if (f.isFile) {
             return parseJsonStringArray(f.readText())
@@ -34,15 +38,65 @@ object PlaceIndexReady {
         return discovered
     }
 
+    /**
+     * When the stamp is empty/`[]` but the DB already has rows for downloaded
+     * regions (background index finished without [markReady], or stamp lost),
+     * adopt those region ids so search works again.
+     *
+     * Skips while a download or place-index job is running so mid-build rows
+     * are not stamped ready early.
+     */
+    fun healReadyFromDownloads(dataDir: File) {
+        if (RegionDownloadBackground.isRunning()) return
+        if (PlaceIndexBackground.isRunning()) return
+        val f = readyFile(dataDir)
+        val stamped =
+            if (f.isFile) {
+                parseJsonStringArray(f.readText())
+                    .map { PackRegionAvailability.normalize(it) }
+                    .filter { it.isNotEmpty() }
+                    .toSet()
+            } else {
+                null
+            }
+        if (stamped != null && stamped.isNotEmpty()) return
+
+        val downloaded =
+            RegionCoverage
+                .downloadedGeofabrikPaths(dataDir)
+                .map { PackRegionAvailability.normalize(it) }
+                .filter { it.isNotEmpty() }
+                .toSet()
+        val inDb = discoverRegionIdsFromDb(dataDir)
+        if (inDb.isEmpty()) return
+
+        val healed =
+            if (downloaded.isEmpty()) {
+                // No PBF/manifest heuristic (unit tests / fixtures): trust DB.
+                inDb
+            } else {
+                inDb
+                    .filter { id ->
+                        downloaded.any { d -> regionMatches(d, id) }
+                    }.toSet()
+            }
+        if (healed.isEmpty()) return
+        if (healed == (stamped ?: emptySet<String>())) return
+        save(dataDir, healed)
+        runCatching { Log.i(TAG, "healed ready stamp regions=$healed") }
+    }
+
     fun markReady(
         dataDir: File,
         regionId: String,
     ) {
         val id = PackRegionAvailability.normalize(regionId)
         if (id.isEmpty()) return
-        val next = load(dataDir).toMutableSet()
-        next.add(id)
-        save(dataDir, next)
+        // Read stamp without heal side effects so an empty [] stays authoritative
+        // until we add this id (heal could otherwise race mid-clear).
+        val current = loadStampOnly(dataDir).toMutableSet()
+        current.add(id)
+        save(dataDir, current)
         runCatching { Log.i(TAG, "mark ready region=$id") }
     }
 
@@ -52,7 +106,7 @@ object PlaceIndexReady {
     ) {
         val id = PackRegionAvailability.normalize(regionId)
         if (id.isEmpty()) return
-        val next = load(dataDir).toMutableSet()
+        val next = loadStampOnly(dataDir).toMutableSet()
         next.remove(id)
         // Always persist so the stamp file becomes authoritative (even as []).
         save(dataDir, next)
@@ -72,28 +126,67 @@ object PlaceIndexReady {
     }
 
     /**
-     * Keep hits whose lat/lon fall in a ready Geofabrik region. Hits outside any
-     * known landsdel bbox are dropped when a ready set exists.
+     * Regions allowed in From/Via/To: ready stamp, restricted to downloaded
+     * regions when any are on disk. Hits must match by [PlaceHit.regionId]
+     * (preferred) or lat/lon Geofabrik suggestion (legacy empty region_id).
+     */
+    fun searchAllowedRegions(dataDir: File): Set<String> {
+        val ready = load(dataDir)
+        if (ready.isEmpty()) return emptySet()
+        val downloaded =
+            RegionCoverage
+                .downloadedGeofabrikPaths(dataDir)
+                .map { PackRegionAvailability.normalize(it) }
+                .filter { it.isNotEmpty() }
+                .toSet()
+        if (downloaded.isEmpty()) return ready
+        return ready
+            .filter { r ->
+                downloaded.any { d -> regionMatches(d, r) }
+            }.toSet()
+    }
+
+    /**
+     * Keep hits that belong to a ready (and, when known, downloaded) region.
+     * Never surface places outside those regions.
      */
     fun filterHitsToReadyRegions(
         dataDir: File,
         hits: List<uniffi.navi.PlaceHit>,
     ): List<uniffi.navi.PlaceHit> {
-        val ready = load(dataDir)
-        if (ready.isEmpty()) return emptyList()
+        val allowed = searchAllowedRegions(dataDir)
+        if (allowed.isEmpty()) return emptyList()
         return hits.filter { hit ->
+            val fromDb =
+                PackRegionAvailability
+                    .normalize(hit.regionId)
+                    .takeIf { it.isNotEmpty() }
             val path =
-                runCatching { RegionCoverage.suggestGeofabrikPath(hit.lat, hit.lon) }
-                    .getOrNull()
-                    ?.let { PackRegionAvailability.normalize(it) }
-                    .orEmpty()
+                fromDb
+                    ?: runCatching { RegionCoverage.suggestGeofabrikPath(hit.lat, hit.lon) }
+                        .getOrNull()
+                        ?.let { PackRegionAvailability.normalize(it) }
+                        .orEmpty()
             if (path.isEmpty()) return@filter false
-            ready.any { r ->
-                PackRegionAvailability.regionIdsMatchForCatalog(r, path) ||
-                    path.startsWith("$r/") ||
-                    r.startsWith("$path/")
-            }
+            allowed.any { r -> regionMatches(r, path) }
         }
+    }
+
+    private fun regionMatches(
+        a: String,
+        b: String,
+    ): Boolean =
+        PackRegionAvailability.regionIdsMatchForCatalog(a, b) ||
+            a.startsWith("$b/") ||
+            b.startsWith("$a/")
+
+    private fun loadStampOnly(dataDir: File): Set<String> {
+        val f = readyFile(dataDir)
+        if (!f.isFile) return emptySet()
+        return parseJsonStringArray(f.readText())
+            .map { PackRegionAvailability.normalize(it) }
+            .filter { it.isNotEmpty() }
+            .toSet()
     }
 
     private fun save(

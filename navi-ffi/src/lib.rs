@@ -4003,6 +4003,8 @@ pub struct PlaceHit {
     pub sub_area: String,
     /// Containing municipality (kommune), from OSM admin_level 6–8 polygons.
     pub municipality: String,
+    /// Geofabrik path this row was indexed under (empty for legacy / synthetic hits).
+    pub region_id: String,
 }
 
 /// Build or open the offline FTS name index for a region PBF.
@@ -4016,6 +4018,7 @@ pub fn ensure_place_index(
     index_db_path: String,
     region_id: Option<String>,
 ) -> String {
+    use driver_break_core::download::progress;
     let pbf = Path::new(&pbf_path);
     if !pbf.is_file() {
         return format!("FAIL: PBF missing: {pbf_path}\n");
@@ -4030,6 +4033,9 @@ pub fn ensure_place_index(
         .trim()
         .trim_matches('/')
         .to_string();
+    // Surface 0/6 immediately so the Tools % line is never blank while we check
+    // the cache / open SQLite.
+    progress::set(0, Some(6), "Place index: starting…");
     // Reuse existing index when this region (or any rows for legacy empty id)
     // is already present at the current schema.
     if db.is_file() {
@@ -4044,6 +4050,7 @@ pub fn ensure_place_index(
                     && driver_break_core::search::NameIndex::has_entries_for_region(db, &region)
             };
             if region_ok {
+                progress::set(6, Some(6), "Place index ready");
                 return format!(
                     "PASS\ncache_hit=true\nregion_id={region}\nindex_db={index_db_path}\n"
                 );
@@ -4263,6 +4270,7 @@ pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<Pl
             lon: h.lon,
             sub_area: h.sub_area,
             municipality: h.municipality,
+            region_id: h.region_id,
         })
         .collect()
 }
@@ -4291,6 +4299,7 @@ pub fn nearby_places(
             lon: h.lon,
             sub_area: h.sub_area,
             municipality: h.municipality,
+            region_id: h.region_id,
         })
         .collect()
 }
