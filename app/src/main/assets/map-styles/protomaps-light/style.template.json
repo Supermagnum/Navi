@@ -3,7 +3,7 @@
   "name": "Navi Protomaps Light (offline)",
   "metadata": {
     "navi:style": "protomaps-light",
-    "navi:note": "Placeholders __PMTILES_URL__, __SPRITE__, __GLYPHS__ are rewritten at runtime. LAYER ORDER RULE: all fill/line/background layers must precede all symbol (label/icon) layers. Do not insert a new fill or line layer after any symbol layer. Relative order within fills/lines (e.g. glacier outline above ice fill, under roads) and within symbols is separate. Glacier fills (glacier_fill_over_park / landuse_glacier_fill_over_park) paint after landuse so ice stays cyan where it overlaps national_park green.",
+    "navi:note": "Placeholders __PMTILES_URL__, __SPRITE__, __GLYPHS__ are rewritten at runtime. LAYER ORDER RULE: all fill/line/background layers must precede all symbol (label/icon) layers. Do not insert a new fill or line layer after any symbol layer. Relative order within fills/lines (e.g. glacier outline above ice fill, under roads) and within symbols is separate. Glacier fills (glacier_fill_over_park / landuse_glacier_fill_over_park) paint after landuse so ice stays cyan where it overlaps national_park green. pois layer minzoom is 8 for large glacier/military (coalesce min_zoom); amenity kinds stay at z16 via the per-kind match — BasemapLabelPolicy must keep the same layer floor.",
     "navi:layer_order": "fills_and_lines_then_all_symbols"
   },
   "sources": {
