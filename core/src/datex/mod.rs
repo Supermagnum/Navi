@@ -148,7 +148,7 @@ fn resolve_datex_host(
             target: "NaviDatex",
             "discovery chain failed: {}",
             match &conn {
-                pack_server::Connectivity::Unreachable { reason } => reason.as_str(),
+                pack_server::Connectivity::Unreachable { reason, .. } => reason.as_str(),
                 pack_server::Connectivity::Ready(_) => "unknown",
             }
         );
