@@ -2181,16 +2181,29 @@ private fun NaviMapScreen() {
                                     "Place index: $st"
                                 }
                             } else {
-                                "Place index: building (background)"
+                                "Place index: starting… 0% (0 / 6)"
                             }
                         }
                         else -> ""
                     }
+                if (PlaceIndexBackground.isRunning() &&
+                    !planningRoute &&
+                    !regionDownloading
+                ) {
+                    val line = placeIndexUiLine
+                    if (line.isNotBlank()) status = line
+                }
             } else {
                 indexedMapsUiLine = ""
                 placeIndexUiLine = ""
             }
-            delay(2_500)
+            delay(
+                if (PlaceIndexBackground.isRunning() || IndexedMapsBackground.isRunning()) {
+                    400
+                } else {
+                    2_500
+                },
+            )
         }
     }
 
@@ -4042,6 +4055,7 @@ private fun NaviMapScreen() {
                 lon = pending.lon,
                 subArea = "",
                 municipality = "",
+                regionId = "",
             ),
             target = target,
         )
@@ -4069,6 +4083,7 @@ private fun NaviMapScreen() {
                         lon = lon,
                         subArea = "",
                         municipality = "",
+                        regionId = "",
                     ),
                 )
             NaviMapTestHooks.lastSearchHitCount = 1
@@ -4932,6 +4947,7 @@ private fun NaviMapScreen() {
                                                     lon = fixLon,
                                                     subArea = "",
                                                     municipality = "",
+                                                    regionId = "",
                                                 ),
                                                 target = targetAtClick,
                                                 replaceLastVia =
@@ -5816,6 +5832,7 @@ private fun NaviMapScreen() {
                                                                 lon = place.lon,
                                                                 subArea = "",
                                                                 municipality = "",
+                                                                regionId = "",
                                                             ),
                                                         )
                                                     },
@@ -5833,6 +5850,7 @@ private fun NaviMapScreen() {
                                                                 lon = place.lon,
                                                                 subArea = "",
                                                                 municipality = "",
+                                                                regionId = "",
                                                             ),
                                                         )
                                                     },
@@ -5850,6 +5868,7 @@ private fun NaviMapScreen() {
                                                                 lon = place.lon,
                                                                 subArea = "",
                                                                 municipality = "",
+                                                                regionId = "",
                                                             ),
                                                         )
                                                     },
@@ -6584,12 +6603,18 @@ private fun NaviMapScreen() {
                                     if (raw.contains("PASS", ignoreCase = true)) {
                                         val pbf = resolveRegionPbf()
                                         if (pbf != null && pbf.isFile) {
+                                            val pathForReady =
+                                                selectedGeofabrikPath.trim().trim('/').ifBlank { null }
                                             withContext(Dispatchers.IO) {
-                                                ensurePlaceIndex(
-                                                    pbf.absolutePath,
-                                                    placeIndexDbForWrite().absolutePath,
-                                                    selectedGeofabrikPath.ifBlank { null },
-                                                )
+                                                val report =
+                                                    ensurePlaceIndex(
+                                                        pbf.absolutePath,
+                                                        placeIndexDbForWrite().absolutePath,
+                                                        pathForReady,
+                                                    )
+                                                if (report.contains("PASS") && pathForReady != null) {
+                                                    PlaceIndexReady.markReady(dataDir, pathForReady)
+                                                }
                                             }
                                             val elevDir =
                                                 File(dataDir, "elevation").takeIf { it.isDirectory }

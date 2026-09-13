@@ -14,22 +14,26 @@ use super::bike_suitability::{load_way_terrain_tags, way_id_from_edge_id};
 use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
 
 /// Soft multiplier applied to poor-surface edges (car profile).
-pub const SURFACE_POOR_EDGE_PENALTY: f64 = 3.0;
+pub const SURFACE_POOR_EDGE_PENALTY: f64 = 4.0;
 
 /// Soft multiplier applied to marginal-surface edges (car profile).
-pub const SURFACE_MARGINAL_EDGE_PENALTY: f64 = 1.5;
+///
+/// Strong enough that Hamar→Rendalen prefers Elverum/Rv3 asphalt over a shorter
+/// gravel tertiary corridor (~1.5× was not enough once surface tags are missing
+/// from a pack and only length remains).
+pub const SURFACE_MARGINAL_EDGE_PENALTY: f64 = 2.2;
 
-pub const SURFACE_MARGINAL_MOTORCYCLE: f64 = 2.2;
-pub const SURFACE_POOR_MOTORCYCLE: f64 = 4.5;
-pub const SURFACE_MARGINAL_TRUCK: f64 = 2.0;
-pub const SURFACE_POOR_TRUCK: f64 = 4.0;
-pub const SURFACE_MARGINAL_MOBILE_HOME: f64 = 2.4;
-pub const SURFACE_POOR_MOBILE_HOME: f64 = 5.0;
+pub const SURFACE_MARGINAL_MOTORCYCLE: f64 = 3.0;
+pub const SURFACE_POOR_MOTORCYCLE: f64 = 5.5;
+pub const SURFACE_MARGINAL_TRUCK: f64 = 2.8;
+pub const SURFACE_POOR_TRUCK: f64 = 5.0;
+pub const SURFACE_MARGINAL_MOBILE_HOME: f64 = 3.2;
+pub const SURFACE_POOR_MOBILE_HOME: f64 = 6.0;
 
 /// Missing posted/practical/advisory maxspeed — car / motorcycle.
-pub const MAXSPEED_MISSING_CAR: f64 = 1.10;
+pub const MAXSPEED_MISSING_CAR: f64 = 1.20;
 /// Missing maxspeed — truck / mobile home.
-pub const MAXSPEED_MISSING_TRUCK: f64 = 1.15;
+pub const MAXSPEED_MISSING_TRUCK: f64 = 1.30;
 
 /// Reference posted speed for Good asphalt with maxspeed > 50 (typical primary).
 /// Used only for Marginal/Poor edges that *do* carry a posted maxspeed: folds
@@ -40,6 +44,14 @@ pub const MOTOR_ROUGH_SURFACE_SPEED_REF_KMH: f64 = 80.0;
 /// rough surfaces cannot make a barely-related asphalt detour win when gravel
 /// is the only sensible corridor (e.g. maxspeed=20 → uncapped 4×).
 pub const MOTOR_ROUGH_SURFACE_SPEED_FACTOR_MAX: f64 = 2.0;
+
+/// Soft highway-class multipliers (motor). Prefer trunk/primary even when pack
+/// `surface_quality` is missing/all-Good (pre-v8 or incomplete tags).
+pub const HIGHWAY_CLASS_TRUNK_PRIMARY: f64 = 1.0;
+pub const HIGHWAY_CLASS_SECONDARY: f64 = 1.12;
+pub const HIGHWAY_CLASS_TERTIARY: f64 = 1.60;
+pub const HIGHWAY_CLASS_LOCAL: f64 = 1.80;
+pub const HIGHWAY_CLASS_SERVICE_TRACK: f64 = 2.20;
 
 /// Metre-equivalent penalty when surface class drops by more than
 /// [`SURFACE_TRANSITION_MAX_CLASS_DROP`] between consecutive edges.
@@ -270,6 +282,33 @@ pub fn edge_maxspeed_multiplier(
     }
 }
 
+/// Prefer higher-class motor roads (trunk/primary) over tertiary/local shortcuts.
+///
+/// Length-only A* otherwise prefers short gravel/tertiary corridors when pack
+/// surface classes are missing (all Good). Offroad mode disables this.
+pub fn edge_highway_class_multiplier(edge: &GraphEdge, mode: SurfaceRoutingMode) -> f64 {
+    if mode == SurfaceRoutingMode::Offroad || edge.is_ferry {
+        return 1.0;
+    }
+    match edge.highway.as_deref() {
+        Some("motorway")
+        | Some("motorway_link")
+        | Some("trunk")
+        | Some("trunk_link")
+        | Some("primary")
+        | Some("primary_link") => HIGHWAY_CLASS_TRUNK_PRIMARY,
+        Some("secondary") | Some("secondary_link") => HIGHWAY_CLASS_SECONDARY,
+        Some("tertiary") | Some("tertiary_link") => HIGHWAY_CLASS_TERTIARY,
+        Some("unclassified") | Some("residential") | Some("living_street") | Some("road") => {
+            HIGHWAY_CLASS_LOCAL
+        }
+        Some("service") | Some("track") | Some("path") | Some("footway") | Some("cycleway") => {
+            HIGHWAY_CLASS_SERVICE_TRACK
+        }
+        _ => 1.0,
+    }
+}
+
 /// Extra soft cost for Marginal/Poor edges with a posted maxspeed, so slower
 /// rough roads are not preferred over a longer Good asphalt detour that posts
 /// above 50 km/h. Good surfaces are unchanged (factor 1.0).
@@ -294,13 +333,15 @@ pub fn edge_rough_surface_speed_factor(edge: &GraphEdge, mode: SurfaceRoutingMod
     }
 }
 
-/// Combined surface × missing-maxspeed × rough-speed soft multiplier (≥ 1.0).
+/// Combined surface × highway-class × missing-maxspeed × rough-speed soft
+/// multiplier (≥ 1.0).
 pub fn edge_motor_soft_multiplier(
     edge: &GraphEdge,
     mode: SurfaceRoutingMode,
     cost_profile: MotorSoftCostProfile,
 ) -> f64 {
     edge_surface_multiplier(edge.surface_quality, mode, cost_profile)
+        * edge_highway_class_multiplier(edge, mode)
         * edge_maxspeed_multiplier(edge, mode, cost_profile)
         * edge_rough_surface_speed_factor(edge, mode)
 }
@@ -350,7 +391,8 @@ pub fn best_incident_surface(graph: &RouteGraph, node: NodeId) -> SurfaceQuality
     best
 }
 
-/// Apply surface + missing-maxspeed soft-cost multipliers to motor graph edges.
+/// Apply surface + highway-class + missing-maxspeed soft-cost multipliers to
+/// motor graph edges.
 ///
 /// Call once after weights are length- or eco-based (packs store unpenalized
 /// `length_m` as `base_weight`). Multipliers are profile-specific so Motorcycle
@@ -607,6 +649,26 @@ mod tests {
         maxspeed_kmh: Option<f64>,
         surface: SurfaceQuality,
     ) -> GraphEdge {
+        motor_edge_hw(
+            id,
+            source,
+            target,
+            length_m,
+            maxspeed_kmh,
+            surface,
+            "tertiary",
+        )
+    }
+
+    fn motor_edge_hw(
+        id: &str,
+        source: i64,
+        target: i64,
+        length_m: f64,
+        maxspeed_kmh: Option<f64>,
+        surface: SurfaceQuality,
+        highway: &str,
+    ) -> GraphEdge {
         GraphEdge {
             id: id.into(),
             source: NodeId(source),
@@ -619,7 +681,7 @@ mod tests {
             end_lat: 60.01,
             end_lon: 10.01,
             shape: Vec::new(),
-            highway: Some("tertiary".into()),
+            highway: Some(highway.into()),
             maxspeed_kmh,
             maxspeed_practical_kmh: None,
             maxspeed_advisory_kmh: None,
@@ -809,5 +871,96 @@ mod tests {
                 "{cost_profile:?}: must keep short gravel, not 100km asphalt; got {path:?}"
             );
         }
+    }
+
+    /// All-Good pack regression: shorter tertiary must lose to longer trunk.
+    #[test]
+    fn all_good_prefers_trunk_over_shorter_tertiary() {
+        use geo_types::Coord;
+        use std::collections::HashMap;
+
+        // 1 --tertiary Good 1000m--> 2
+        // 1 --trunk Good 530m--> 3 --trunk Good 530m--> 2 (~6% longer, like Elverum vs shortcut)
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [(1, 60.0, 10.0), (2, 60.01, 10.01), (3, 60.005, 10.02)] {
+            nodes.insert(
+                NodeId(id),
+                osm4routing::Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let edges = vec![
+            motor_edge_hw(
+                "t12",
+                1,
+                2,
+                1000.0,
+                Some(60.0),
+                SurfaceQuality::Good,
+                "tertiary",
+            ),
+            motor_edge_hw(
+                "t21",
+                2,
+                1,
+                1000.0,
+                Some(60.0),
+                SurfaceQuality::Good,
+                "tertiary",
+            ),
+            motor_edge_hw(
+                "a13",
+                1,
+                3,
+                530.0,
+                Some(80.0),
+                SurfaceQuality::Good,
+                "trunk",
+            ),
+            motor_edge_hw(
+                "a31",
+                3,
+                1,
+                530.0,
+                Some(80.0),
+                SurfaceQuality::Good,
+                "trunk",
+            ),
+            motor_edge_hw(
+                "a32",
+                3,
+                2,
+                530.0,
+                Some(80.0),
+                SurfaceQuality::Good,
+                "trunk",
+            ),
+            motor_edge_hw(
+                "a23",
+                2,
+                3,
+                530.0,
+                Some(80.0),
+                SurfaceQuality::Good,
+                "trunk",
+            ),
+        ];
+        let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        apply_surface_preference(
+            &mut graph,
+            SurfaceRoutingMode::Car,
+            MotorSoftCostProfile::Car,
+        );
+        let (path, _, _) = graph
+            .shortest_path(NodeId(1), NodeId(2), false)
+            .expect("path");
+        assert_eq!(
+            path,
+            vec![NodeId(1), NodeId(3), NodeId(2)],
+            "highway-class soft cost must prefer trunk detour; got {path:?}"
+        );
     }
 }

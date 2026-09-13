@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import uniffi.navi.PlaceHit
 import java.io.File
 
 class PlaceIndexReadyTest {
@@ -92,6 +93,46 @@ class PlaceIndexReadyTest {
             PlaceIndexReady.clearReady(dir, "europe/norway/ostlandet")
             assertFalse(PlaceIndexReady.isReady(dir, "europe/norway/ostlandet"))
             assertEquals("[]", PlaceIndexReady.readyFile(dir).readText().trim())
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun filter_keeps_hit_by_region_id_not_lat_lon() {
+        val dir =
+            File.createTempFile("place-ready-filter", "dir").apply {
+                delete()
+                mkdirs()
+            }
+        try {
+            PlaceIndexReady.readyFile(dir).writeText("[]")
+            PlaceIndexReady.markReady(dir, "europe/norway/ostlandet")
+            val keep =
+                PlaceHit(
+                    1L,
+                    "Hamar",
+                    "place:town",
+                    0.0,
+                    0.0,
+                    "",
+                    "",
+                    "europe/norway/ostlandet",
+                )
+            val drop =
+                PlaceHit(
+                    2L,
+                    "Bergen",
+                    "place:city",
+                    0.0,
+                    0.0,
+                    "",
+                    "",
+                    "europe/norway/vestlandet",
+                )
+            val filtered =
+                PlaceIndexReady.filterHitsToReadyRegions(dir, listOf(keep, drop))
+            assertEquals(listOf(keep), filtered)
         } finally {
             dir.deleteRecursively()
         }

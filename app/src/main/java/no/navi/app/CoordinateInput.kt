@@ -54,6 +54,7 @@ fun gpsImmediateCoordHit(
         lon = lon,
         subArea = "",
         municipality = "",
+        regionId = "",
     )
 
 /**
