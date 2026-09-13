@@ -56,6 +56,15 @@ fun routeSamplesToLatLonJson(samples: List<RouteSimSample>): String {
     return arr.toString()
 }
 
+/** Waypoint / corridor vertices as `[[lat,lon],…]` for [uniffi.navi.datexRefreshJson]. */
+fun latLonPairsToJson(points: List<Pair<Double, Double>>): String {
+    val arr = JSONArray()
+    for ((lat, lon) in points) {
+        arr.put(JSONArray().put(lat).put(lon))
+    }
+    return arr.toString()
+}
+
 /** Paint active DATEX situations as map circles; clear when overlay is off. */
 fun applyDatexOverlay(
     style: Style,

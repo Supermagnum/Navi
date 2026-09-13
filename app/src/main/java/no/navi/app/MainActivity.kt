@@ -1451,7 +1451,8 @@ private fun NaviMapScreen() {
             val raw =
                 withContext(Dispatchers.IO) {
                     runCatching {
-                        uniffi.navi.datexRefreshJson(
+                        // Share in-flight work with pre-plan warmup (no double fetch).
+                        DatexSessionRefresh.refreshShared(
                             enabled = true,
                             host = host,
                             port = port.toUInt(),
@@ -2298,6 +2299,39 @@ private fun NaviMapScreen() {
         val result =
             try {
                 foregroundPlanEnter()
+                // First motor/bike plan this process: bounded DATEX refresh so
+                // plan_car_route can apply a fresh disk cache (max-age still applies).
+                if (datexPluginEnabled && profile != TravelProfile.HIKING) {
+                    val host =
+                        datexHost.trim().ifBlank { MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST }
+                    val port =
+                        datexPortText.trim().toIntOrNull()?.coerceIn(1, 65535)
+                            ?: MapHudPrefs.DATEX_SETTINGS_DEFAULT_PORT
+                    val prePlanRouteJson =
+                        latLonPairsToJson(pts.map { it.lat to it.lon })
+                    val cacheDirPath = File(dataDir, "datex_cache").absolutePath
+                    val prePlan =
+                        DatexSessionRefresh.ensureBeforeFirstPlan(
+                            pluginEnabled = true,
+                            appliesToProfile = true,
+                            host = host,
+                            port = port.toUInt(),
+                            routeLatLonJson = prePlanRouteJson,
+                            wifiOnly = datexWifiOnly,
+                            onWifi = datexIsOnWifi(context),
+                            cacheDir = cacheDirPath,
+                            onWaiting = {
+                                routePlanProgress = "Planning route: refreshing traffic…"
+                                status = routePlanProgress
+                            },
+                        )
+                    when (prePlan) {
+                        is DatexSessionRefresh.PrePlanOutcome.Refreshed -> {
+                            datexHud = datexHudFromRefreshJson(prePlan.rawJson)
+                        }
+                        else -> Unit
+                    }
+                }
                 planIndexingHintVisible =
                     withContext(Dispatchers.IO) {
                         val planPbf = pbf ?: resolveRegionPbf()
