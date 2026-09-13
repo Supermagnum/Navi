@@ -1,7 +1,7 @@
 //! DATEX corridor filter + validity windows on the Espa → Åtnbrua (Atnbrufossen) route.
 //!
 //! Fixture: `tests/fixtures/datex/espa-atnbru-getsituation.xml` — subset of a real
-//! navi-server `/datex/GetSituation.xml` cache (GML linestrings stripped for size).
+//! navi-server `/datex/npra/GetSituation.xml` cache (GML linestrings stripped for size).
 
 use std::collections::HashMap;
 

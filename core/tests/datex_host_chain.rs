@@ -80,9 +80,9 @@ fn serve_navi_root(hits: Arc<Mutex<Vec<String>>>) -> String {
             hits.lock().unwrap().push(path.clone());
             let (status, body, ctype) = if path.starts_with("/current.json") {
                 ("HTTP/1.1 200 OK", CURRENT_JSON, "application/json")
-            } else if path.starts_with("/datex/source.json") {
+            } else if path.starts_with("/datex/npra/source.json") {
                 ("HTTP/1.1 200 OK", SOURCE_JSON, "application/json")
-            } else if path.starts_with("/datex/GetSituation.xml") {
+            } else if path.starts_with("/datex/npra/GetSituation.xml") {
                 ("HTTP/1.1 200 OK", MINI_SITUATION, "application/xml")
             } else {
                 ("HTTP/1.1 404 Not Found", "missing", "text/plain")

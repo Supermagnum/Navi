@@ -125,9 +125,9 @@ class DatexLiveServerInstrumentedTest {
         runCatching {
             val url =
                 if (port == 80) {
-                    URL("http://$host/datex/source.json")
+                    URL("http://$host/datex/npra/source.json")
                 } else {
-                    URL("http://$host:$port/datex/source.json")
+                    URL("http://$host:$port/datex/npra/source.json")
                 }
             val conn = url.openConnection() as HttpURLConnection
             conn.connectTimeout = 3000

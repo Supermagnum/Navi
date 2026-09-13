@@ -32,7 +32,7 @@ pub enum DatexFetchError {
     Source(String),
 }
 
-/// Probe `/datex/source.json` via shared [`pack_server::probe_path`] (same
+/// Probe `/datex/npra/source.json` via shared [`pack_server::probe_path`] (same
 /// shape as [`pack_server::probe_current_json`], different path).
 pub fn probe_datex_source(base: &str) -> Result<bool, PackServerError> {
     pack_server::probe_path(base, DATEX_SOURCE_PATH)

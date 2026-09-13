@@ -240,7 +240,7 @@ fn resolve_datex_host(
         Ok(false) => {
             log::warn!(
                 target: "NaviDatex",
-                "host {} reachable but /datex/source.json missing",
+                "host {} reachable but /datex/npra/source.json missing",
                 tag.as_str()
             );
             Ok(None)

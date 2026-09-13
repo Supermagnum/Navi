@@ -91,7 +91,7 @@ pub fn base_url(host: &str, port: u16) -> String {
 ///
 /// Returns `Ok(true)` on HTTP 200, `Ok(false)` on 404 (host up, resource
 /// missing), and `Err` on transport / other HTTP failures. Used by
-/// [`probe_current_json`] and DATEX `/datex/source.json` checks — do not
+/// [`probe_current_json`] and DATEX `/datex/npra/source.json` checks — do not
 /// duplicate this HTTP shape elsewhere.
 pub fn probe_path(base: &str, path: &str) -> Result<bool, PackServerError> {
     let base = base.trim().trim_end_matches('/');
