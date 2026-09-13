@@ -8485,7 +8485,23 @@ private fun applyRouteToStyle(
                     PropertyFactory.lineJoin("round"),
                 )
             }
-            style.addLayer(layer)
+            // Keep the planned route under road/trail name labels (and other
+            // basemap symbols). addLayer() would paint the red line on top.
+            val below =
+                listOf(
+                    "roads_label_motorway",
+                    "roads_label_secondary",
+                    "roads_label_major",
+                    "roads_label_minor",
+                    "water_label_lake",
+                    "places",
+                    "pois",
+                ).firstOrNull { style.getLayer(it) != null }
+            if (below != null) {
+                style.addLayerBelow(layer, below)
+            } else {
+                style.addLayer(layer)
+            }
         }
     }
 
