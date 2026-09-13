@@ -10,6 +10,7 @@ use driver_break_core::config::OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M;
 use driver_break_core::datex::{
     corridor_view, parse_situation_publication, planner_impacts, planner_impacts_from_data_dir,
     set_apply_to_routing, DatexConfig, DatexImpact, SituationKind, DATEX_PLUGIN_DEFAULT_ENABLED,
+    DATEX_PLAN_CACHE_MAX_AGE_SECS,
 };
 use driver_break_core::routing::graph::{
     GraphEdge, RouteGraph, RouteOptions, RoutingProfile, SurfaceQuality,
@@ -519,21 +520,24 @@ fn plan_time_disk_cache_yields_espa_corridor_impacts() {
     let cache = data_dir.join("datex_cache");
     std::fs::create_dir_all(&cache).unwrap();
     std::fs::write(cache.join("datex-GetSituation.xml"), FIXTURE).unwrap();
+    let now = local_oslo(2026, 9, 8, 5, 34);
+    let fetched = now.timestamp();
     std::fs::write(
         cache.join("datex-cache.json"),
-        r#"{
-            "fetched_unix": 1725770040,
+        format!(
+            r#"{{
+            "fetched_unix": {fetched},
             "source_fingerprint": "fixture",
             "data_source": "server-duckdns",
             "base_url": "https://navigate-me.duckdns.org",
             "attribution": null,
             "source": null
-        }"#,
+        }}"#
+        ),
     )
     .unwrap();
 
     let route = espa_atnbru_route();
-    let now = local_oslo(2026, 9, 8, 5, 34);
 
     let without_stamp = planner_impacts_from_data_dir(data_dir, &route, now);
     assert!(
@@ -556,6 +560,27 @@ fn plan_time_disk_cache_yields_espa_corridor_impacts() {
             .iter()
             .map(|c| c.impact)
             .collect::<Vec<_>>()
+    );
+
+    // Week-old fetched_unix must not apply (cleared incidents must not linger).
+    let stale_fetched = fetched - DATEX_PLAN_CACHE_MAX_AGE_SECS - 60;
+    std::fs::write(
+        cache.join("datex-cache.json"),
+        format!(
+            r#"{{
+            "fetched_unix": {stale_fetched},
+            "source_fingerprint": "fixture",
+            "data_source": "server-duckdns",
+            "base_url": "https://navigate-me.duckdns.org",
+            "attribution": null,
+            "source": null
+        }}"#
+        ),
+    )
+    .unwrap();
+    assert!(
+        planner_impacts_from_data_dir(data_dir, &route, now).is_empty(),
+        "stale cache older than {DATEX_PLAN_CACHE_MAX_AGE_SECS}s must be ignored"
     );
 
     set_apply_to_routing(&cache, false);

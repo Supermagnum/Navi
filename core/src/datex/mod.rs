@@ -53,11 +53,18 @@ use std::path::Path;
 /// DATEX impacts. Written when the plugin is enabled; removed when disabled.
 pub const DATEX_APPLY_TO_ROUTING_STAMP: &str = "apply_to_routing";
 
+/// Max age of a disk DATEX snapshot for plan-time impacts (seconds).
+///
+/// Matches three server poll intervals ([`DATEX_SERVER_SITUATION_POLL_SECS`]).
+/// Older caches are ignored (empty impacts) so a week-old closure snapshot
+/// cannot silently block a cold-start plan after the incident has cleared.
+pub const DATEX_PLAN_CACHE_MAX_AGE_SECS: i64 = (DATEX_SERVER_SITUATION_POLL_SECS as i64) * 3;
+
 /// Load active DATEX constraints for initial route planning from the on-disk
 /// navi-server cache under `{data_dir}/datex_cache`.
 ///
-/// Soft / no-op when the plugin stamp is missing, the cache is empty, or parse
-/// fails — routing must not fail open-blocked because DATEX is unavailable.
+/// Soft / no-op when the plugin stamp is missing, the cache is empty/stale, or
+/// parse fails — routing must not fail open-blocked because DATEX is unavailable.
 /// Does not change UniFFI plan signatures; call from plan paths that already
 /// receive `data_dir`.
 pub fn planner_impacts_from_data_dir(
@@ -72,9 +79,17 @@ pub fn planner_impacts_from_data_dir(
     if !cache_dir.join(DATEX_APPLY_TO_ROUTING_STAMP).is_file() {
         return Vec::new();
     }
-    let Some((_meta, xml, _fetched, _fp)) = load_disk_cache(&cache_dir) else {
+    let Some((_meta, xml, fetched_unix, _fp)) = load_disk_cache(&cache_dir) else {
         return Vec::new();
     };
+    let age_secs = now.timestamp().saturating_sub(fetched_unix);
+    if age_secs > DATEX_PLAN_CACHE_MAX_AGE_SECS {
+        log::info!(
+            target: "NaviDatex",
+            "plan-time DATEX cache stale age_secs={age_secs} max={DATEX_PLAN_CACHE_MAX_AGE_SECS}; skipping"
+        );
+        return Vec::new();
+    }
     let all = match parse_situation_publication(&xml) {
         Ok(v) => v,
         Err(e) => {
