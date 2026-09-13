@@ -1046,7 +1046,7 @@
       "type": "symbol",
       "source": "protomaps",
       "source-layer": "pois",
-      "minzoom": 12,
+      "minzoom": 8,
       "filter": [
         "all",
         [
@@ -1069,26 +1069,57 @@
             "zoom"
           ],
           [
-            "match",
+            "case",
             [
-              "get",
-              "kind"
+              "==",
+              [
+                "get",
+                "kind"
+              ],
+              "glacier"
             ],
-            "glacier",
-            12,
-            "wetland",
-            12,
-            "military",
-            12,
-            "peak",
-            13,
-            "hill",
-            13,
-            "townhall",
-            15,
-            "station",
-            12,
-            16
+            [
+              "coalesce",
+              [
+                "get",
+                "min_zoom"
+              ],
+              10
+            ],
+            [
+              "==",
+              [
+                "get",
+                "kind"
+              ],
+              "military"
+            ],
+            [
+              "coalesce",
+              [
+                "get",
+                "min_zoom"
+              ],
+              10
+            ],
+            [
+              "match",
+              [
+                "get",
+                "kind"
+              ],
+              "wetland",
+              12,
+              "peak",
+              13,
+              "hill",
+              13,
+              "townhall",
+              15,
+              "station",
+              12,
+              16
+            ]
           ]
         ],
         [
