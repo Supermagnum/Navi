@@ -5953,9 +5953,47 @@ private fun NaviMapScreen() {
                                 if (!on) {
                                     datexHud = DatexHudState()
                                     datexEpoch += 1
+                                    // Clear plan-time apply stamp even when no route yet
+                                    // (refresh would no-op without a corridor).
+                                    runCatching {
+                                        uniffi.navi.datexRefreshJson(
+                                            enabled = false,
+                                            host = datexHost.trim().ifBlank {
+                                                MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
+                                            },
+                                            port =
+                                                (
+                                                    datexPortText.trim().toIntOrNull()
+                                                        ?: MapHudPrefs.DATEX_SETTINGS_DEFAULT_PORT
+                                                ).toUInt(),
+                                            routeLatLonJson = "[]",
+                                            wifiOnly = datexWifiOnly,
+                                            onWifi = true,
+                                            useDiscoveryChain = true,
+                                            cacheDir = File(dataDir, "datex_cache").absolutePath,
+                                        )
+                                    }
                                     status = "DATEX overlay off"
                                 } else {
                                     datexEpoch += 1
+                                    runCatching {
+                                        uniffi.navi.datexRefreshJson(
+                                            enabled = true,
+                                            host = datexHost.trim().ifBlank {
+                                                MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
+                                            },
+                                            port =
+                                                (
+                                                    datexPortText.trim().toIntOrNull()
+                                                        ?: MapHudPrefs.DATEX_SETTINGS_DEFAULT_PORT
+                                                ).toUInt(),
+                                            routeLatLonJson = "[]",
+                                            wifiOnly = datexWifiOnly,
+                                            onWifi = datexIsOnWifi(context),
+                                            useDiscoveryChain = true,
+                                            cacheDir = File(dataDir, "datex_cache").absolutePath,
+                                        )
+                                    }
                                     status = "DATEX overlay on — fetch when a route is planned"
                                 }
                             },
@@ -6938,9 +6976,45 @@ private fun NaviMapScreen() {
                         if (!on) {
                             datexHud = DatexHudState()
                             datexEpoch += 1
+                            runCatching {
+                                uniffi.navi.datexRefreshJson(
+                                    enabled = false,
+                                    host = datexHost.trim().ifBlank {
+                                        MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
+                                    },
+                                    port =
+                                        (
+                                            datexPortText.trim().toIntOrNull()
+                                                ?: MapHudPrefs.DATEX_SETTINGS_DEFAULT_PORT
+                                        ).toUInt(),
+                                    routeLatLonJson = "[]",
+                                    wifiOnly = datexWifiOnly,
+                                    onWifi = true,
+                                    useDiscoveryChain = true,
+                                    cacheDir = File(dataDir, "datex_cache").absolutePath,
+                                )
+                            }
                             status = "DATEX overlay off"
                         } else {
                             datexEpoch += 1
+                            runCatching {
+                                uniffi.navi.datexRefreshJson(
+                                    enabled = true,
+                                    host = datexHost.trim().ifBlank {
+                                        MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
+                                    },
+                                    port =
+                                        (
+                                            datexPortText.trim().toIntOrNull()
+                                                ?: MapHudPrefs.DATEX_SETTINGS_DEFAULT_PORT
+                                        ).toUInt(),
+                                    routeLatLonJson = "[]",
+                                    wifiOnly = datexWifiOnly,
+                                    onWifi = datexIsOnWifi(context),
+                                    useDiscoveryChain = true,
+                                    cacheDir = File(dataDir, "datex_cache").absolutePath,
+                                )
+                            }
                             status = "DATEX overlay on — fetch when a route is planned"
                         }
                     },

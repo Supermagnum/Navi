@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use chrono::{FixedOffset, TimeZone, Utc};
 use driver_break_core::config::OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M;
 use driver_break_core::datex::{
-    corridor_view, parse_situation_publication, planner_impacts, DatexConfig, DatexImpact,
-    SituationKind, DATEX_PLUGIN_DEFAULT_ENABLED,
+    corridor_view, parse_situation_publication, planner_impacts, planner_impacts_from_data_dir,
+    set_apply_to_routing, DatexConfig, DatexImpact, SituationKind, DATEX_PLUGIN_DEFAULT_ENABLED,
 };
 use driver_break_core::routing::graph::{
     GraphEdge, RouteGraph, RouteOptions, RoutingProfile, SurfaceQuality,
@@ -508,5 +508,59 @@ fn penalize_keeps_edge_usable_when_no_detour() {
         path.0.contains(&NodeId(2)),
         "no-detour Penalize must still use the corridor: {:?}",
         path.0
+    );
+}
+
+/// Initial-plan wiring: disk cache + apply stamp → non-empty Block/Penalize for Espa corridor.
+#[test]
+fn plan_time_disk_cache_yields_espa_corridor_impacts() {
+    let dir = tempfile::tempdir().expect("tmpdir");
+    let data_dir = dir.path();
+    let cache = data_dir.join("datex_cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join("datex-GetSituation.xml"), FIXTURE).unwrap();
+    std::fs::write(
+        cache.join("datex-cache.json"),
+        r#"{
+            "fetched_unix": 1725770040,
+            "source_fingerprint": "fixture",
+            "data_source": "server-duckdns",
+            "base_url": "https://navigate-me.duckdns.org",
+            "attribution": null,
+            "source": null
+        }"#,
+    )
+    .unwrap();
+
+    let route = espa_atnbru_route();
+    let now = local_oslo(2026, 9, 8, 5, 34);
+
+    let without_stamp = planner_impacts_from_data_dir(data_dir, &route, now);
+    assert!(
+        without_stamp.is_empty(),
+        "without apply stamp, plan must ignore DATEX cache"
+    );
+
+    set_apply_to_routing(&cache, true);
+    let impacts = planner_impacts_from_data_dir(data_dir, &route, now);
+    assert!(
+        !impacts.is_empty(),
+        "Espa corridor at 05:34 must produce planner impacts from fixture cache"
+    );
+    assert!(
+        impacts
+            .iter()
+            .any(|c| c.impact == DatexImpact::Block || c.impact == DatexImpact::Penalize),
+        "expected Block and/or Penalize; got {:?}",
+        impacts
+            .iter()
+            .map(|c| c.impact)
+            .collect::<Vec<_>>()
+    );
+
+    set_apply_to_routing(&cache, false);
+    assert!(
+        planner_impacts_from_data_dir(data_dir, &route, now).is_empty(),
+        "disabling stamp must stop plan-time DATEX"
     );
 }
