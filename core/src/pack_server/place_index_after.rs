@@ -139,6 +139,7 @@ pub fn build_place_index_from_pbf(
                 NameIndex::has_entries_for_region(index_db, region_id)
             };
             if meta.len() > 10_000 && NameIndex::is_current_schema(index_db) && region_ok {
+                crate::download::progress::set(6, Some(6), "Place index ready");
                 return Ok((0, true, 0.0));
             }
         }

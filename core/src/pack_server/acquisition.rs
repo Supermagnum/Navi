@@ -482,6 +482,12 @@ pub fn ensure_indexed_packs_prefer_server(
                 false
             };
             if ready {
+                crate::download::progress::set_on(
+                    crate::download::progress::ProgressChannel::Convert,
+                    100,
+                    Some(100),
+                    "Indexed maps ready",
+                );
                 return Ok(EnsureIndexedPacksResult {
                     data_source: if server_install_present(data_dir, &stem) {
                         PackDataSource::ServerDuckdns
@@ -510,6 +516,12 @@ pub fn ensure_indexed_packs_prefer_server(
                 if man.status_pack_files(data_dir) == PackStatus::Ready {
                     let msg = format!("downloaded updated pack from server ({})", plan.log_message);
                     log::info!(target: "NaviPack", "{msg}");
+                    crate::download::progress::set_on(
+                        crate::download::progress::ProgressChannel::Convert,
+                        100,
+                        Some(100),
+                        "Indexed maps ready",
+                    );
                     return Ok(EnsureIndexedPacksResult {
                         data_source: PackDataSource::ServerDuckdns,
                         cache_hit: false,
