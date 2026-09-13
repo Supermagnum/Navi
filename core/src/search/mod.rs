@@ -1222,7 +1222,10 @@ mod tests {
         .unwrap();
         // Simulate Android clear without FTS5: wipe content, leave FTS stale.
         idx.conn
-            .execute("DELETE FROM name_entries WHERE region_id = ?1", ["europe/norway/ostlandet"])
+            .execute(
+                "DELETE FROM name_entries WHERE region_id = ?1",
+                ["europe/norway/ostlandet"],
+            )
             .unwrap();
         // Stale FTS may still MATCH; JOIN should yield nothing.
         let pre = idx.search("GamleNavn", 8).unwrap();
@@ -1245,7 +1248,8 @@ mod tests {
         .unwrap();
         let old = idx.search("GamleNavn", 8).unwrap();
         assert!(
-            old.iter().all(|h| h.name != "GamleNavn" && h.name != "NyttNavn"),
+            old.iter()
+                .all(|h| h.name != "GamleNavn" && h.name != "NyttNavn"),
             "old name must not match after rebuild+rename: {old:?}"
         );
         let neu = idx.search("NyttNavn", 8).unwrap();

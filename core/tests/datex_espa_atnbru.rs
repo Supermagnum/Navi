@@ -9,8 +9,8 @@ use chrono::{FixedOffset, TimeZone, Utc};
 use driver_break_core::config::OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M;
 use driver_break_core::datex::{
     corridor_view, parse_situation_publication, planner_impacts, planner_impacts_from_data_dir,
-    set_apply_to_routing, DatexConfig, DatexImpact, SituationKind, DATEX_PLUGIN_DEFAULT_ENABLED,
-    DATEX_PLAN_CACHE_MAX_AGE_SECS,
+    set_apply_to_routing, DatexConfig, DatexImpact, SituationKind, DATEX_PLAN_CACHE_MAX_AGE_SECS,
+    DATEX_PLUGIN_DEFAULT_ENABLED,
 };
 use driver_break_core::routing::graph::{
     GraphEdge, RouteGraph, RouteOptions, RoutingProfile, SurfaceQuality,
@@ -556,10 +556,7 @@ fn plan_time_disk_cache_yields_espa_corridor_impacts() {
             .iter()
             .any(|c| c.impact == DatexImpact::Block || c.impact == DatexImpact::Penalize),
         "expected Block and/or Penalize; got {:?}",
-        impacts
-            .iter()
-            .map(|c| c.impact)
-            .collect::<Vec<_>>()
+        impacts.iter().map(|c| c.impact).collect::<Vec<_>>()
     );
 
     // Week-old fetched_unix must not apply (cleared incidents must not linger).
@@ -629,10 +626,7 @@ fn cold_session_first_plan_uses_fresh_disk_cache() {
             .iter()
             .any(|c| c.impact == DatexImpact::Block || c.impact == DatexImpact::Penalize),
         "expected Block and/or Penalize; got {:?}",
-        impacts
-            .iter()
-            .map(|c| c.impact)
-            .collect::<Vec<_>>()
+        impacts.iter().map(|c| c.impact).collect::<Vec<_>>()
     );
 }
 

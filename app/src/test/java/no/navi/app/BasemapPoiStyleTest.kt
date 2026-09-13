@@ -182,14 +182,34 @@ class BasemapPoiStyleTest {
         )
 
         assertTrue("military must be whitelisted for name labels", kinds.contains("military"))
-        assertEquals(12.0, floors["military"] ?: error("military zoom floor missing"), 0.0)
+        // Large military areas use coalesce(min_zoom, 10) — not the per-kind match floor map.
+        assertTrue(
+            "military must use coalesce(min_zoom) like glacier (default 10)",
+            pois.contains("\"military\"") &&
+                pois.indexOf("\"military\"").let { m ->
+                    val window = pois.substring(m, (m + 180).coerceAtMost(pois.length))
+                    window.contains("\"min_zoom\"") && window.contains("10")
+                },
+        )
         assertEquals("park", iconForKind(pois, "military"))
         assertTrue(
             "military icon must be hidden (name-only, same pattern as glacier)",
             iconOpacityForKind(pois, "military") == 0.0,
         )
+        // Layer minzoom is 8; with default coalesce floor 10 a z9 view still hides labels.
+        assertFalse(
+            passesPoisFilter(kinds, floors, kind = "military", minZoom = 8.0, zoom = 9.0),
+        )
+        // When tile min_zoom is absent, coalesce default 10 applies — treat as floor 10.
+        val floorsWithMilitary = floors + ("military" to 10.0)
         assertTrue(
-            passesPoisFilter(kinds, floors, kind = "military", minZoom = 11.0, zoom = 12.0),
+            passesPoisFilter(
+                kinds,
+                floorsWithMilitary,
+                kind = "military",
+                minZoom = 8.0,
+                zoom = 10.0,
+            ),
         )
     }
 

@@ -289,8 +289,7 @@ pub fn edge_rough_surface_speed_factor(edge: &GraphEdge, mode: SurfaceRoutingMod
                 return 1.0;
             };
             (MOTOR_ROUGH_SURFACE_SPEED_REF_KMH / ms)
-                .max(1.0)
-                .min(MOTOR_ROUGH_SURFACE_SPEED_FACTOR_MAX)
+                .clamp(1.0, MOTOR_ROUGH_SURFACE_SPEED_FACTOR_MAX)
         }
     }
 }
@@ -685,7 +684,8 @@ mod tests {
             MotorSoftCostProfile::Truck,
             MotorSoftCostProfile::MobileHome,
         ] {
-            let mut graph = RouteGraph::from_parts(nodes.clone(), edges.clone(), RoutingProfile::Car);
+            let mut graph =
+                RouteGraph::from_parts(nodes.clone(), edges.clone(), RoutingProfile::Car);
             apply_surface_preference(&mut graph, SurfaceRoutingMode::Car, cost_profile);
             let (path, _, _) = graph
                 .shortest_path(NodeId(1), NodeId(2), false)
@@ -705,7 +705,10 @@ mod tests {
     #[test]
     fn rough_speed_factor_only_boosts_non_good_with_posted_maxspeed() {
         let mut gravel = motor_edge("g", 1, 2, 1000.0, Some(60.0), SurfaceQuality::Marginal);
-        assert!((edge_rough_surface_speed_factor(&gravel, SurfaceRoutingMode::Car) - 80.0 / 60.0).abs() < 1e-9);
+        assert!(
+            (edge_rough_surface_speed_factor(&gravel, SurfaceRoutingMode::Car) - 80.0 / 60.0).abs()
+                < 1e-9
+        );
         gravel.maxspeed_kmh = None;
         assert_eq!(
             edge_rough_surface_speed_factor(&gravel, SurfaceRoutingMode::Car),
@@ -751,7 +754,8 @@ mod tests {
             MotorSoftCostProfile::Truck,
             MotorSoftCostProfile::MobileHome,
         ] {
-            let mut graph = RouteGraph::from_parts(nodes.clone(), edges.clone(), RoutingProfile::Car);
+            let mut graph =
+                RouteGraph::from_parts(nodes.clone(), edges.clone(), RoutingProfile::Car);
             apply_surface_preference(&mut graph, SurfaceRoutingMode::Car, cost_profile);
             let (path, _, _) = graph
                 .shortest_path(NodeId(1), NodeId(2), false)
@@ -793,7 +797,8 @@ mod tests {
             MotorSoftCostProfile::Truck,
             MotorSoftCostProfile::MobileHome,
         ] {
-            let mut graph = RouteGraph::from_parts(nodes.clone(), edges.clone(), RoutingProfile::Car);
+            let mut graph =
+                RouteGraph::from_parts(nodes.clone(), edges.clone(), RoutingProfile::Car);
             apply_surface_preference(&mut graph, SurfaceRoutingMode::Car, cost_profile);
             let (path, _, _) = graph
                 .shortest_path(NodeId(1), NodeId(2), false)

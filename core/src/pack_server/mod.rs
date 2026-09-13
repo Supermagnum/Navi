@@ -270,9 +270,11 @@ pub fn region_catalog_status(conn: &Connectivity, region_id: &str) -> RegionCata
             reason: reason.clone(),
         },
         Connectivity::Ready(catalog) => {
-            if let Some(r) = catalog.regions.iter().find(|r| {
-                region_ids_match_for_catalog(&r.region_id, &want)
-            }) {
+            if let Some(r) = catalog
+                .regions
+                .iter()
+                .find(|r| region_ids_match_for_catalog(&r.region_id, &want))
+            {
                 RegionCatalogStatus::Published {
                     region_id: r.region_id.clone(),
                     generation: r.generation.clone(),
@@ -434,12 +436,7 @@ pub fn check_connectivity_blocking(base_url: &str) -> Connectivity {
         .build()
     {
         Ok(rt) => rt,
-        Err(e) => {
-            return unreachable(
-                ConnectivityFailureKind::Internal,
-                format!("runtime: {e}"),
-            )
-        }
+        Err(e) => return unreachable(ConnectivityFailureKind::Internal, format!("runtime: {e}")),
     };
     rt.block_on(check_connectivity(base_url))
 }
@@ -505,10 +502,7 @@ pub fn check_connectivity_chain_blocking(
         Ok(rt) => rt,
         Err(e) => {
             return (
-                unreachable(
-                    ConnectivityFailureKind::Internal,
-                    format!("runtime: {e}"),
-                ),
+                unreachable(ConnectivityFailureKind::Internal, format!("runtime: {e}")),
                 None,
             )
         }
@@ -633,7 +627,10 @@ mod tests {
         }"#;
         let conn = parse_current_json(json, "http://example.com");
         match region_catalog_status(&conn, "europe/monaco") {
-            RegionCatalogStatus::Published { region_id, generation } => {
+            RegionCatalogStatus::Published {
+                region_id,
+                generation,
+            } => {
                 assert_eq!(region_id, "europe/monaco");
                 assert_eq!(generation.as_deref(), Some("bake1"));
             }

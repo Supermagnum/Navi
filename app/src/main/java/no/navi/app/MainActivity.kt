@@ -5992,9 +5992,10 @@ private fun NaviMapScreen() {
                                     runCatching {
                                         uniffi.navi.datexRefreshJson(
                                             enabled = false,
-                                            host = datexHost.trim().ifBlank {
-                                                MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
-                                            },
+                                            host =
+                                                datexHost.trim().ifBlank {
+                                                    MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
+                                                },
                                             port =
                                                 (
                                                     datexPortText.trim().toIntOrNull()
@@ -6013,9 +6014,10 @@ private fun NaviMapScreen() {
                                     runCatching {
                                         uniffi.navi.datexRefreshJson(
                                             enabled = true,
-                                            host = datexHost.trim().ifBlank {
-                                                MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
-                                            },
+                                            host =
+                                                datexHost.trim().ifBlank {
+                                                    MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
+                                                },
                                             port =
                                                 (
                                                     datexPortText.trim().toIntOrNull()
@@ -7013,9 +7015,10 @@ private fun NaviMapScreen() {
                             runCatching {
                                 uniffi.navi.datexRefreshJson(
                                     enabled = false,
-                                    host = datexHost.trim().ifBlank {
-                                        MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
-                                    },
+                                    host =
+                                        datexHost.trim().ifBlank {
+                                            MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
+                                        },
                                     port =
                                         (
                                             datexPortText.trim().toIntOrNull()
@@ -7034,9 +7037,10 @@ private fun NaviMapScreen() {
                             runCatching {
                                 uniffi.navi.datexRefreshJson(
                                     enabled = true,
-                                    host = datexHost.trim().ifBlank {
-                                        MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
-                                    },
+                                    host =
+                                        datexHost.trim().ifBlank {
+                                            MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
+                                        },
                                     port =
                                         (
                                             datexPortText.trim().toIntOrNull()
