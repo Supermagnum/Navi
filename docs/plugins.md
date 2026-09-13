@@ -322,7 +322,7 @@ internet weather overlay.
 | **Benefit** | Closed roads, mountain convoy schedules, accidents / temporary hazards |
 | **Sources** | National road authorities, DATEX-II style feeds, OSM notes/`highway=*` diffs, user reports — always opt-in network |
 | **Research** | [`plugins/traffic-information.md`](plugins/traffic-information.md) — why a free / global / ~1-minute source does not exist today; RTL-SDR RDS-TMC / DAB-TPEG alternative under consideration |
-| **NPRA DATEX (via navi-server)** | [`plugins/datex-plugin.md`](plugins/datex-plugin.md) — host GET of cached `/datex/GetSituation.xml` (default OFF; no NPRA credentials on device) |
+| **NPRA DATEX (via navi-server)** | [`plugins/datex-plugin.md`](plugins/datex-plugin.md) — host GET of cached `/datex/npra/GetSituation.xml` (default OFF; no NPRA credentials on device) |
 | **Legacy direct-NPRA sketch** | [`plugins/datex-npra-client.md`](plugins/datex-npra-client.md) — do **not** use for product; credentials stay server-side |
 | **Host duties** | Fetch + validate; store incidents with bbox + expiry; DATEX uses `pack_server` read-only GET |
 | **Core effect** | DATEX: `DatexImpact::{Ignore,Penalize,Block}` on active situations → `RouteOptions.datex_impacts` (see datex-plugin.md) |

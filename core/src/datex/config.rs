@@ -15,10 +15,14 @@ pub const DATEX_SETTINGS_DEFAULT_HOST: &str = "navigate-me.duckdns.org";
 pub const DATEX_SETTINGS_DEFAULT_PORT: u16 = 80;
 
 /// Situation snapshot path under the DocumentRoot (navi-server contract).
-pub const DATEX_SITUATION_PATH: &str = "/datex/GetSituation.xml";
+/// Direct NPRA cache paths — do not use the legacy `/datex/GetSituation.xml`
+/// redirect aliases.
+pub const DATEX_SITUATION_PATH: &str = "/datex/npra/GetSituation.xml";
 
 /// Attribution metadata path (fetch before XML; 404 means DATEX off / empty).
-pub const DATEX_SOURCE_PATH: &str = "/datex/source.json";
+/// Direct NPRA cache paths — do not use the legacy `/datex/source.json`
+/// redirect aliases.
+pub const DATEX_SOURCE_PATH: &str = "/datex/npra/source.json";
 
 /// Server-side Situation poll cadence (seconds). Client min poll is clamped to
 /// this so we never outpace the cache TTL.

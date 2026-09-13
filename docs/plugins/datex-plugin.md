@@ -29,8 +29,10 @@ succeeds, DATEX **sticks** to that base for the process until it fails, then
 re-runs discovery.
 
 DATEX availability on a resolved host uses
-[`probe_path`](../../core/src/pack_server/mod.rs) on `/datex/source.json`
+[`probe_path`](../../core/src/pack_server/mod.rs) on `/datex/npra/source.json`
 (same probe shape as [`probe_current_json`](../../core/src/pack_server/mod.rs)).
+Situation XML is fetched from `/datex/npra/GetSituation.xml` (direct NPRA
+cache paths — not the legacy `/datex/*` redirect aliases).
 
 ---
 
@@ -75,7 +77,7 @@ Default upstream endpoints (comma-separated in `NAVI_DATEX_NPRA_ENDPOINTS`):
 **Add or retune a service:** append the DATEX endpoint name to
 `NAVI_DATEX_NPRA_ENDPOINTS`, set its seconds in
 `NAVI_DATEX_NPRA_ENDPOINT_INTERVALS`, restart/reload the timer unit, and confirm
-files appear under DocumentRoot `/datex/` (`source.json` + `<Endpoint>.xml`).
+files appear under DocumentRoot `/datex/npra/` (`source.json` + `<Endpoint>.xml`).
 SOAP filtered pulls are out of scope. Uninstall:
 `scripts/uninstall-datex-npra.sh` (`--purge` also drops secrets).
 
