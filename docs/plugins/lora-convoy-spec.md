@@ -37,7 +37,7 @@ driver remains responsible for the vehicle.
 ## Goals
 
 1. Gather this vehicle's own status from onboard sources and/or a passenger-
-   operable Android companion, then broadcast it on a schedule over Meshtastic.
+   operable Android companion device and app, then broadcast it on a schedule over Meshtastic.
 2. Listen for other vehicles' telemetry arriving via the mesh, keep a last-
    known table keyed by vehicle, and render it (map overlay + list, with a
    configurable low-fuel / low-charge warning).
@@ -261,7 +261,7 @@ Until decided, key the table by node id and treat `vehicle_id` as a label.
 ## Transmit path
 
 1. Plugin enabled and Meshtastic session up; otherwise no TX.
-2. On a configurable interval (default starting point: **45 s**; user-tunable;
+2. On a configurable interval (default starting point: **3 s**; user-tunable;
    see airtime below), build `VehicleStatus` from the merge rule.
 3. Host asks the Meshtastic node to send on the private portnum (broadcast on
    the configured channel). Hop limit is the node's/channel default unless the
@@ -276,6 +276,8 @@ location on the mesh is opted-in by enabling this plugin. There is no
 phone-home of VIN, callsign, or location to the internet. Channel PSK is
 Meshtastic's; Navi does not invent a second crypto layer.
 
+
+
 ### Airtime budget
 
 LoRa airtime on typical Meshtastic “LongFast” settings is on the order of
@@ -284,7 +286,7 @@ conservative:
 
 | Setting | First-pass default | Notes |
 |---|---|---|
-| Broadcast interval | 45 s | Configurable; floor e.g. 15 s to prevent accidental flood |
+| Broadcast interval | 4 s | Configurable; floor e.g. 15 s to prevent accidental flood |
 | Payload | Position (firmware) + ~8–20 byte status | No verbose JSON on air |
 | Extra TX | On crossing warn threshold | Rate-limit extra TX (e.g. at most one extra per interval) |
 
@@ -334,7 +336,7 @@ host GNSS / last fix, not from Android.
 
 The driver must not interact with Navi's own device while driving to report a
 manual fuel reading. That input goes through a passenger-operable Android
-companion.
+companion device.
 
 ### Pairing precedent
 
