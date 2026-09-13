@@ -148,7 +148,6 @@ import uniffi.navi.placeIndexHasEntries
 import uniffi.navi.planProgressClear
 import uniffi.navi.planProgressSnapshot
 import uniffi.navi.pmtilesCancelJob
-import uniffi.navi.pmtilesDefaultBaseUrl
 import uniffi.navi.pmtilesGetJob
 import uniffi.navi.pmtilesPauseJob
 import uniffi.navi.pmtilesResumeJob
@@ -962,12 +961,9 @@ private fun NaviMapScreen() {
                 onFinished = {},
             )
     }
+    // Default must stay empty until the user sets a planet URL (no hardcoded seed).
     var pmtilesBaseUrl by remember {
-        mutableStateOf(
-            MapHudPrefs.loadPmtilesBaseUrl(context).ifBlank {
-                runCatching { pmtilesDefaultBaseUrl() }.getOrDefault("")
-            },
-        )
+        mutableStateOf(MapHudPrefs.loadPmtilesBaseUrl(context))
     }
     var pmtilesJobId by remember { mutableStateOf<String?>(null) }
     var pmtilesProgress by remember { mutableStateOf("") }
