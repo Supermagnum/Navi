@@ -2449,16 +2449,13 @@ private fun NaviMapScreen() {
                                     hike
                                 }
                                 else -> {
-                                    // Multi-leg motor/bike: bbox-clipped graph per profile.
-                                    var poly = ""
-                                    var dist = 0.0
-                                    var etaSum = 0.0
-                                    var shareWeighted = 0.0
-                                    var last: uniffi.navi.CorridorRouteResult? = null
-                                    val legSamples = mutableListOf<List<RouteSimSample>>()
-                                    val legManeuvers = mutableListOf<List<RouteManeuver>>()
-                                    val vehicleAvoidanceLines = linkedSetOf<String>()
-                                    val legTotal = pts.size - 1
+                                    // Single planCarRoute with vias: one trip bbox + one
+                                    // apply_surface_preference pass (same soft-cost path as
+                                    // direct). Do not split into per-leg plans with empty
+                                    // viaPoints — that bypasses native multi-stop routing.
+                                    if (planAbort.get()) {
+                                        return@runCatching cancelledCorridorResult()
+                                    }
                                     val graphTag =
                                         when (profile) {
                                             TravelProfile.BICYCLE,
@@ -2475,145 +2472,52 @@ private fun NaviMapScreen() {
                                             dataDir,
                                             "graph-cache-${pbf!!.nameWithoutExtension}-$graphTag",
                                         )
-                                    for (i in 0 until legTotal) {
-                                        if (planAbort.get()) {
-                                            return@runCatching last
-                                                ?: cancelledCorridorResult()
-                                        }
-                                        val a = pts[i]
-                                        val b = pts[i + 1]
-                                        val pct = ((i * 100) / legTotal).coerceIn(0, 99)
-                                        RoutingPlanLog.progress(
-                                            pct,
-                                            ecoForPlan,
-                                            detail = "leg_${i + 1}_of_$legTotal",
-                                        )
-                                        val legRes =
-                                            uniffi.navi.planCarRoute(
-                                                pbf.absolutePath,
-                                                File(dataDir, "elevation").absolutePath,
-                                                cacheDir.absolutePath,
-                                                a.lat,
-                                                a.lon,
-                                                b.lat,
-                                                b.lon,
-                                                ecoForPlan,
-                                                profile,
-                                                avoidMotorways,
-                                                if (avoidTolls) {
-                                                    uniffi.navi.FfiTollPolicy.PENALIZE
-                                                } else {
-                                                    uniffi.navi.FfiTollPolicy.ALLOW
-                                                },
-                                                avoidFerries,
-                                                loadVehicleLimits(dataDir.absolutePath),
-                                                preferOfficialNetworks,
-                                                dataDir.absolutePath,
-                                                viaPoints = emptyList(),
-                                            )
-                                        if (!legRes.report.contains("PASS")) {
-                                            return@runCatching legRes
-                                        }
-                                        legRes.report.lineSequence().forEach { line ->
-                                            if (line.contains(
-                                                    "weight/height/width/length-restricted",
-                                                    ignoreCase = true,
-                                                )
-                                            ) {
-                                                vehicleAvoidanceLines += line.trim()
-                                            }
-                                        }
-                                        dist += legRes.distanceKm
-                                        etaSum += legRes.etaMinutes
-                                        shareWeighted += legRes.priorityPathSharePct * legRes.distanceKm
-                                        poly =
-                                            if (poly.isEmpty()) {
-                                                legRes.routePolyline
-                                            } else {
-                                                poly + ";" +
-                                                    legRes.routePolyline
-                                                        .substringAfter(';')
-                                            }
-                                        legSamples.add(parseRouteSimSamples(legRes.simSamplesJson))
-                                        legManeuvers.add(parseRouteManeuvers(legRes.maneuversJson))
-                                        last = legRes
-                                    }
-                                    val base = last!!
-                                    val mergedSamples = mergeSimSamples(legSamples)
-                                    val mergedManeuvers = mergeManeuvers(legManeuvers)
-                                    val mergedShare =
-                                        if (dist > 0.0) {
-                                            shareWeighted / dist
-                                        } else {
-                                            base.priorityPathSharePct
-                                        }
-                                    val mergedReport =
-                                        buildString {
-                                            append(base.report)
-                                            if (!base.report.endsWith("\n") &&
-                                                vehicleAvoidanceLines.isNotEmpty()
-                                            ) {
-                                                append('\n')
-                                            }
-                                            vehicleAvoidanceLines.forEach { appendLine(it) }
-                                        }
-                                    uniffi.navi.CorridorRouteResult(
-                                        report = mergedReport,
-                                        distanceKm = dist,
-                                        etaMinutes = etaSum,
-                                        cacheHit = base.cacheHit,
-                                        coldBuildS = base.coldBuildS,
-                                        warmLoadS = base.warmLoadS,
-                                        routePolyline = poly,
-                                        poiLat = toPoint.lat,
-                                        poiLon = toPoint.lon,
-                                        poiName = toPoint.name,
-                                        poiIconKey = base.poiIconKey,
-                                        breakPoisJson = base.breakPoisJson,
-                                        daysJson = base.daysJson,
-                                        simSamplesJson =
-                                            org.json
-                                                .JSONArray(
-                                                    mergedSamples.map { s ->
-                                                        org.json
-                                                            .JSONObject()
-                                                            .put("lat", s.lat)
-                                                            .put("lon", s.lon)
-                                                            .put("cum_m", s.cumM)
-                                                            .put("speed_kmh", s.speedKmh)
-                                                            .put("highway", s.highway)
-                                                            .put("maxspeed_posted", s.maxspeedPosted)
-                                                    },
-                                                ).toString(),
-                                        maneuversJson =
-                                            org.json
-                                                .JSONArray(
-                                                    mergedManeuvers.map { m ->
-                                                        org.json
-                                                            .JSONObject()
-                                                            .put("lat", m.lat)
-                                                            .put("lon", m.lon)
-                                                            .put("cum_m", m.cumM)
-                                                            .put("kind", m.kind)
-                                                            .put("street", m.street)
-                                                            .put("roundabout_exit", m.roundaboutExit)
-                                                            .also { jo ->
-                                                                if (m.icon != null) {
-                                                                    jo.put("icon", m.icon)
-                                                                }
-                                                            }
-                                                    },
-                                                ).toString(),
-                                        priorityPathSharePct = mergedShare,
-                                        routeSegmentsJson = "[]",
-                                        offTrailAdvisory = "",
-                                        tollPolicy = "allow",
-                                        padAttemptsJson = "[]",
-                                        searchExpansions = 0u,
-                                        searchTerminateReason = "fail",
-                                        tollAvoidanceIncomplete = false,
-                                        routeUsesTolls = false,
+                                    RoutingPlanLog.progress(
+                                        10,
+                                        ecoForPlan,
+                                        detail = "motor_plan",
                                     )
+                                    val ffiVias =
+                                        viaPoints.map { v ->
+                                            uniffi.navi.FfiLatLon(lat = v.lat, lon = v.lon)
+                                        }
+                                    val planned =
+                                        uniffi.navi.planCarRoute(
+                                            pbf.absolutePath,
+                                            File(dataDir, "elevation").absolutePath,
+                                            cacheDir.absolutePath,
+                                            start.lat,
+                                            start.lon,
+                                            toPoint.lat,
+                                            toPoint.lon,
+                                            ecoForPlan,
+                                            profile,
+                                            avoidMotorways,
+                                            if (avoidTolls) {
+                                                uniffi.navi.FfiTollPolicy.PENALIZE
+                                            } else {
+                                                uniffi.navi.FfiTollPolicy.ALLOW
+                                            },
+                                            avoidFerries,
+                                            loadVehicleLimits(dataDir.absolutePath),
+                                            preferOfficialNetworks,
+                                            dataDir.absolutePath,
+                                            viaPoints = ffiVias,
+                                        )
+                                    RoutingPlanLog.progress(
+                                        90,
+                                        ecoForPlan,
+                                        detail = "motor_path",
+                                    )
+                                    if (planned.report.contains("PASS") &&
+                                        planned.poiLat == 0.0 &&
+                                        planned.poiLon == 0.0
+                                    ) {
+                                        planned.poiLat = toPoint.lat
+                                        planned.poiLon = toPoint.lon
+                                        planned.poiName = toPoint.name
+                                    }
+                                    planned
                                 }
                             }
                         }
@@ -8554,25 +8458,45 @@ private fun CorridorMapView(
 }
 
 private fun ensureRouteAboveHillshade(style: Style) {
-    // Hills now sit below water; overlays must stay on top of the full basemap
-    // stack (land + hills + water + roads), not merely above navi-hills.
+    // Route must sit above hillshade / road *geometry*, but BELOW road-name and
+    // other symbol labels. A blanket remove+addLayer(top) undoes applyRouteToStyle's
+    // addLayerBelow and covers labels with the red line — do not "fix" hillshade
+    // by moving the route to the absolute top.
+    //
+    // Waypoints + GPS stay on top of both the route and labels for tap targets.
+    val routeBelow =
+        listOf(
+            "roads_label_motorway",
+            "roads_label_secondary",
+            "roads_label_major",
+            "roads_label_minor",
+            "highway-name-major",
+            "highway-name-minor",
+            "highway-name-path",
+        ).firstOrNull { style.getLayer(it) != null }
+            ?: BasemapLayerOrder.firstSymbolLayerId(style)
+
+    for (id in listOf("route-line", "route-off-trail-line")) {
+        val layer = style.getLayer(id) ?: continue
+        runCatching {
+            style.removeLayer(layer)
+            if (routeBelow != null) {
+                style.addLayerBelow(layer, routeBelow)
+            } else {
+                style.addLayer(layer)
+            }
+        }
+    }
     for (id in listOf(
-        "route-line",
-        "route-off-trail-line",
         "waypoints-dots",
         "waypoints-layer",
         "gps-accuracy",
         "gps-dot",
     )) {
         val layer = style.getLayer(id) ?: continue
-        val moved =
-            runCatching {
-                style.removeLayer(layer)
-                style.addLayer(layer)
-                true
-            }.getOrDefault(false)
-        if (!moved && style.getLayer(id) == null) {
-            runCatching { style.addLayer(layer) }
+        runCatching {
+            style.removeLayer(layer)
+            style.addLayer(layer)
         }
     }
 }
@@ -8630,16 +8554,18 @@ private fun applyRouteToStyle(
             }
             // Keep the planned route under road/trail name labels (and other
             // basemap symbols). addLayer() would paint the red line on top.
+            // ensureRouteAboveHillshade must use the same rule — never absolute top.
             val below =
                 listOf(
                     "roads_label_motorway",
                     "roads_label_secondary",
                     "roads_label_major",
                     "roads_label_minor",
-                    "water_label_lake",
-                    "places",
-                    "pois",
+                    "highway-name-major",
+                    "highway-name-minor",
+                    "highway-name-path",
                 ).firstOrNull { style.getLayer(it) != null }
+                    ?: BasemapLayerOrder.firstSymbolLayerId(style)
             if (below != null) {
                 style.addLayerBelow(layer, below)
             } else {

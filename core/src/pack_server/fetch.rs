@@ -6,21 +6,39 @@
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Duration;
 
-use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::acquisition::{leaf_stem_for_region_id, normalize_region_id};
-use super::{http_get_text, PackServerError, ReadyRegion, CONNECTIVITY_TIMEOUT, USER_AGENT};
+use super::{http_get_text, PackServerError, ReadyRegion};
+use crate::download::http::{
+    progress_label_for_resume, stream_get_to_file_blocking, StreamDownloadOpts,
+};
 use crate::download::progress as download_progress;
 use crate::routing::indexed::{manifest_path, server_install_path, NaviManifest, PackStatus};
 
-/// Pack GET timeout (large regions; streaming — not held entirely in RAM).
-const PACK_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(3600);
+/// Sidecar under `.pack-fetch-{leaf}.partial/` so a relaunch can resume the same
+/// generation. Stale generations are discarded.
+///
+/// Resume covers app close / next open only — not OS background kills while the
+/// process is dead (that would need WorkManager / a foreground service).
+#[derive(Debug, Serialize, Deserialize)]
+struct PackFetchState {
+    schema: u32,
+    region_id: String,
+    generation: String,
+    base_url: String,
+    leaf_stem: String,
+}
+
+impl PackFetchState {
+    const SCHEMA: u32 = 1;
+    const FILE: &'static str = "fetch-state.json";
+}
 
 #[derive(Debug, Deserialize)]
 struct ClientManifest {
@@ -163,10 +181,12 @@ fn verify_hex(got: &str, expect: &str) -> Result<(), String> {
     }
 }
 
-/// Stream GET → file with running sha256. Atomic via `.partial` rename.
+/// Stream GET → file with sha256 verify. Resumes via `.partial` + HTTP Range
+/// (same path as Geofabrik PBF downloads). Apache pack CDN advertises
+/// `Accept-Ranges: bytes`.
 ///
-/// `progress_base` is bytes already finished from prior files; `progress_total`
-/// is the full region byte budget (when known) for UI percent.
+/// Resume covers app close / next open when staging + partials remain on disk.
+/// It does **not** continue while the process is dead (no WorkManager / FGS).
 fn http_download_verified(
     url: &str,
     dest: &Path,
@@ -178,76 +198,94 @@ fn http_download_verified(
 ) -> Result<u64, String> {
     let parent = dest.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let partial = dest.with_file_name(format!(
-        "{}.partial",
-        dest.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("pack.bin")
-    ));
-    let _ = fs::remove_file(&partial);
 
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| e.to_string())?;
-    let expect = expect_sha256.to_string();
-    let url = url.to_string();
-    let partial_clone = partial.clone();
-    let label = progress_label.to_string();
-    let digest = rt.block_on(async move {
-        let client = reqwest::Client::builder()
-            .timeout(PACK_DOWNLOAD_TIMEOUT)
-            .connect_timeout(CONNECTIVITY_TIMEOUT)
-            .user_agent(USER_AGENT)
-            .build()
-            .map_err(|e| e.to_string())?;
-        let resp = client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| format!("GET {url}: {e}"))?;
-        if !resp.status().is_success() {
-            return Err(format!("HTTP {} for {url}", resp.status().as_u16()));
-        }
-        let mut file = File::create(&partial_clone).map_err(|e| e.to_string())?;
-        let mut hasher = Sha256::new();
-        let mut written: u64 = 0;
-        let mut last_ui = 0u64;
-        download_progress::set(progress_base, progress_total, &label);
-        let mut stream = resp.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| format!("body: {e}"))?;
-            hasher.update(&chunk);
-            file.write_all(&chunk).map_err(|e| e.to_string())?;
-            written += chunk.len() as u64;
-            if written - last_ui >= 256 * 1024 || expect_bytes.is_some_and(|t| written >= t) {
-                download_progress::set(
-                    progress_base.saturating_add(written),
-                    progress_total,
-                    &label,
-                );
-                last_ui = written;
+    // Already complete and verified — skip (file-level resume across relaunches).
+    if dest.is_file() {
+        if let Ok(meta) = dest.metadata() {
+            let len = meta.len();
+            let size_ok = expect_bytes.map(|n| n == len).unwrap_or(true);
+            if size_ok {
+                match file_sha256_hex(dest) {
+                    Ok(got) if got.eq_ignore_ascii_case(expect_sha256.trim()) => {
+                        download_progress::set(
+                            progress_base.saturating_add(len),
+                            progress_total,
+                            progress_label,
+                        );
+                        return Ok(len);
+                    }
+                    _ => {
+                        let _ = fs::remove_file(dest);
+                    }
+                }
+            } else {
+                let _ = fs::remove_file(dest);
             }
         }
-        file.flush().map_err(|e| e.to_string())?;
-        if let Some(n) = expect_bytes {
-            if written != n {
-                return Err(format!(
-                    "size mismatch for {url}: got {written}, expect {n}"
-                ));
-            }
-        }
-        download_progress::set(
-            progress_base.saturating_add(written),
-            progress_total,
-            &label,
-        );
-        Ok((hex::encode(hasher.finalize()), written))
-    })?;
+    }
 
-    verify_hex(&digest.0, &expect)?;
-    fs::rename(&partial, dest).map_err(|e| format!("rename {}: {e}", dest.display()))?;
-    Ok(digest.1)
+    let partial = {
+        let mut p = dest.as_os_str().to_owned();
+        p.push(".partial");
+        std::path::PathBuf::from(p)
+    };
+    let resume_from = partial.metadata().map(|m| m.len()).unwrap_or(0);
+    let label = progress_label_for_resume(progress_label, resume_from);
+    download_progress::set(
+        progress_base.saturating_add(resume_from),
+        progress_total,
+        &label,
+    );
+
+    // Shared Range downloader keeps `.partial` across interrupts and sends
+    // `Range: bytes={n}-` when resuming. On a full 200 it rewrites from scratch.
+    let _ = stream_get_to_file_blocking(StreamDownloadOpts {
+        url,
+        dest,
+        headers: Default::default(),
+        resume_from: 0, // auto-detect from sibling .partial
+        expected_bytes: expect_bytes,
+        retries: crate::download::http::DEFAULT_RETRIES,
+        progress_label: &label,
+        allow_not_found: false,
+    })
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| format!("GET {url}: not found"))?;
+
+    let written = dest.metadata().map(|m| m.len()).unwrap_or(0);
+    if let Some(n) = expect_bytes {
+        if written != n {
+            let _ = fs::remove_file(dest);
+            return Err(format!(
+                "size mismatch for {url}: got {written}, expect {n}"
+            ));
+        }
+    }
+    let got = file_sha256_hex(dest).map_err(|e| e.to_string())?;
+    if let Err(e) = verify_hex(&got, expect_sha256) {
+        let _ = fs::remove_file(dest);
+        return Err(e);
+    }
+    download_progress::set(
+        progress_base.saturating_add(written),
+        progress_total,
+        progress_label,
+    );
+    Ok(written)
+}
+
+fn file_sha256_hex(path: &Path) -> std::io::Result<String> {
+    let mut f = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 1024 * 256];
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()))
 }
 
 fn write_stub_pbf(path: &Path) -> Result<(), String> {
@@ -357,12 +395,37 @@ pub fn try_fetch_region_packs(
         .ok_or_else(|| format!("manifest.json missing navi-manifest file entry ({navi_name})"))?;
 
     let staging = data_dir.join(format!(".pack-fetch-{leaf_stem}.partial"));
-    if staging.exists() {
+    let state_path = staging.join(PackFetchState::FILE);
+    let base_norm = base_url.trim().trim_end_matches('/').to_string();
+    let resume_ok = fs::read_to_string(&state_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<PackFetchState>(&s).ok())
+        .is_some_and(|st| {
+            st.schema == PackFetchState::SCHEMA
+                && st.region_id == region_id
+                && st.generation == generation
+                && st.base_url == base_norm
+                && st.leaf_stem == leaf_stem
+        });
+    if staging.exists() && !resume_ok {
+        // Different generation / URL / leaf — discard stale partials.
         let _ = fs::remove_dir_all(&staging);
     }
     fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
     let out = staging.join("out");
     fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+    let state = PackFetchState {
+        schema: PackFetchState::SCHEMA,
+        region_id: region_id.clone(),
+        generation: generation.to_string(),
+        base_url: base_norm,
+        leaf_stem: leaf_stem.clone(),
+    };
+    fs::write(
+        &state_path,
+        serde_json::to_vec_pretty(&state).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
 
     // Early format gate: pull only the navi-manifest JSON before multi-GB binaries.
     // Live duckdns packs may still be an older graph_format_version; rejecting
@@ -571,11 +634,11 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         let addr = listener.local_addr().expect("addr");
         thread::spawn(move || {
-            for _ in 0..64 {
+            for _ in 0..128 {
                 let Ok((mut stream, _)) = listener.accept() else {
                     break;
                 };
-                let mut buf = [0u8; 4096];
+                let mut buf = [0u8; 8192];
                 let n = stream.read(&mut buf).unwrap_or(0);
                 let req = String::from_utf8_lossy(&buf[..n]);
                 let path = req
@@ -584,9 +647,17 @@ mod tests {
                     .and_then(|l| l.split_whitespace().nth(1))
                     .unwrap_or("/");
                 let key = path.trim_start_matches('/');
+                let range = req
+                    .lines()
+                    .find(|l| l.to_ascii_lowercase().starts_with("range:"))
+                    .and_then(|l| l.split_once(':').map(|(_, v)| v.trim().to_string()));
                 if let Some(h) = &hits {
                     if let Ok(mut g) = h.lock() {
-                        g.push(key.to_string());
+                        let tag = match &range {
+                            Some(r) => format!("{key}|{r}"),
+                            None => key.to_string(),
+                        };
+                        g.push(tag);
                     }
                 }
                 let body = files.get(key).cloned().or_else(|| {
@@ -595,12 +666,35 @@ mod tests {
                         .and_then(|leaf| files.get(leaf).cloned())
                 });
                 if let Some(body) = body {
-                    let resp = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                        body.len()
-                    );
-                    let _ = stream.write_all(resp.as_bytes());
-                    let _ = stream.write_all(&body);
+                    if let Some(r) = range.as_deref() {
+                        // bytes=START- or bytes=START-END
+                        let start = r
+                            .strip_prefix("bytes=")
+                            .and_then(|s| s.split('-').next())
+                            .and_then(|s| s.parse::<usize>().ok())
+                            .unwrap_or(0)
+                            .min(body.len());
+                        let slice = &body[start..];
+                        let resp = format!(
+                            "HTTP/1.1 206 Partial Content\r\n\
+                             Accept-Ranges: bytes\r\n\
+                             Content-Range: bytes {start}-{}/{}\r\n\
+                             Content-Length: {}\r\n\
+                             Connection: close\r\n\r\n",
+                            body.len().saturating_sub(1).max(start),
+                            body.len(),
+                            slice.len()
+                        );
+                        let _ = stream.write_all(resp.as_bytes());
+                        let _ = stream.write_all(slice);
+                    } else {
+                        let resp = format!(
+                            "HTTP/1.1 200 OK\r\nAccept-Ranges: bytes\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            body.len()
+                        );
+                        let _ = stream.write_all(resp.as_bytes());
+                        let _ = stream.write_all(&body);
+                    }
                 } else {
                     let resp =
                         "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
@@ -719,6 +813,42 @@ mod tests {
         let man = NaviManifest::load(&dir.path().join("monaco-latest.navi-manifest.json")).unwrap();
         assert_eq!(man.stem, "monaco-latest");
         assert_eq!(man.status_pack_files(dir.path()), PackStatus::Ready);
+    }
+
+    #[test]
+    fn http_download_verified_resumes_partial_with_range() {
+        let payload: Vec<u8> = (0u8..200).collect();
+        let mut blob = BTreeMap::new();
+        blob.insert("big.bin".into(), payload.clone());
+        let hits = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let base = serve_files_recording(blob, Some(hits.clone()));
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("big.bin");
+        // Simulate interrupt: leave a .partial with the first half.
+        let half = payload.len() / 2;
+        let mut partial = dest.as_os_str().to_owned();
+        partial.push(".partial");
+        let partial_path = std::path::PathBuf::from(partial);
+        fs::write(&partial_path, &payload[..half]).unwrap();
+
+        let got = http_download_verified(
+            &format!("{base}/big.bin"),
+            &dest,
+            &sha(&payload),
+            Some(payload.len() as u64),
+            0,
+            Some(payload.len() as u64),
+            "test pack",
+        )
+        .expect("resume download");
+        assert_eq!(got, payload.len() as u64);
+        assert_eq!(fs::read(&dest).unwrap(), payload);
+        assert!(!partial_path.is_file(), "partial should be promoted away");
+        let recorded = hits.lock().unwrap().clone();
+        assert!(
+            recorded.iter().any(|h| h.contains("bytes=")),
+            "expected Range request in hits={recorded:?}"
+        );
     }
 
     #[test]
