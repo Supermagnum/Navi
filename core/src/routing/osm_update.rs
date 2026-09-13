@@ -382,7 +382,7 @@ pub fn check_for_updates(data_dir: &Path) -> Result<UpdatePlan> {
 
     // Pack server unreachable — Geofabrik fallback for each installed region.
     let unreachable_reason = match &connectivity {
-        crate::pack_server::Connectivity::Unreachable { reason } => reason.clone(),
+        crate::pack_server::Connectivity::Unreachable { reason, .. } => reason.clone(),
         _ => "unreachable".into(),
     };
     let mut chosen: Option<UpdatePlan> = None;

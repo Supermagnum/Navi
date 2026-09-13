@@ -8,10 +8,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.json.JSONArray
+import org.json.JSONObject
 import uniffi.navi.bindGeofabrikRegion
 import uniffi.navi.decideRegionAcquisition
 import uniffi.navi.downloadProgressSnapshot
-import uniffi.navi.ensurePackRegionPlaceIndex
+import uniffi.navi.ensureIndexedMaps
 import uniffi.navi.ensurePlaceIndex
 import uniffi.navi.geofabrikLatestPbfUrl
 import uniffi.navi.geofabrikPathForPbfName
@@ -23,21 +25,26 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Process-scoped region download. Survives Compose cancellation.
+ * Process-scoped region download queue. Survives Compose cancellation.
  *
- * Pack-server path: install published packs → Geofabrik extract + place index
- * (app becomes usable for routing/search) → Protomaps basemap extract
- * (optional picture; does not block usability). Local-bake path: Geofabrik PBF
- * + local packs → place index → basemap. A force-stop still kills the HTTP
- * stream, but [JOB_FILE] (with [Phase]) plus `.partial` let the next launch
- * resume without the user tapping Download again.
+ * Regions are processed **one at a time**. When several are requested, the
+ * region containing the user's current GPS fix is first; remaining regions
+ * keep request order. For each region: download packs + Geofabrik extract +
+ * basemap to completion, **then** (local-bake) run indexed-map convert to
+ * completion, **then** build the place index. Never start place-index or
+ * convert work while that region's downloads are still in progress; never
+ * start the next region's download until this region's place index finishes.
+ * A force-stop still kills the HTTP stream, but [JOB_FILE] (with [Phase]) plus
+ * `.partial` / [QUEUE_FILE] let the next launch resume without tapping Download
+ * again.
  */
 object RegionDownloadBackground {
     const val JOB_FILE = "region-download.json"
+    const val QUEUE_FILE = "region-download-queue.json"
     private const val TAG = "RegionDownloadBg"
     private const val MIN_PBF_BYTES = 1_000_000L
 
-    /** Status prefix while basemap still runs after packs + place index. */
+    /** Status prefix once packs, basemap, and place index have finished. */
     const val USABLE_STATUS_PREFIX = "Place index ready"
 
     enum class Phase {
@@ -243,8 +250,8 @@ object RegionDownloadBackground {
         val filename = "$leaf-latest.osm.pbf"
         val phase =
             when {
-                !placeIndexLooksReady(dataDir, path) -> Phase.PLACE_INDEX
                 !PackRegionAvailability.localPmtilesReady(dataDir, path) -> Phase.BASEMAP
+                !placeIndexLooksReady(dataDir, path) -> Phase.PLACE_INDEX
                 else -> return null
             }
         // URL is rebuilt at resume time if needed; avoid UniFFI in pure discovery.
@@ -259,7 +266,10 @@ object RegionDownloadBackground {
         )
     }
 
-    /** Drop phases that are already satisfied; null when everything is done. */
+    /** Drop phases that are already satisfied; null when everything is done.
+     *
+     * Pipeline order: packs (+ Geofabrik extract) → basemap → place index.
+     */
     private fun advanceFinishedPhases(
         dataDir: File,
         job: Job,
@@ -268,18 +278,23 @@ object RegionDownloadBackground {
         val path = job.geofabrikPath.trim().trim('/')
         if (path.isEmpty()) return job
         val packsReady = PackRegionAvailability.localBakeReady(dataDir, path)
-        val indexReady = placeIndexLooksReady(dataDir, path)
         val basemapReady = PackRegionAvailability.localPmtilesReady(dataDir, path)
-        if (packsReady && indexReady && basemapReady) {
+        val indexReady = placeIndexLooksReady(dataDir, path)
+        if (packsReady && basemapReady && indexReady) {
             return null
         }
         if (phase == Phase.PACKS && packsReady) {
-            phase = Phase.PLACE_INDEX
-        }
-        if (phase == Phase.PLACE_INDEX && indexReady) {
-            phase = Phase.BASEMAP
+            phase =
+                when {
+                    !basemapReady -> Phase.BASEMAP
+                    !indexReady -> Phase.PLACE_INDEX
+                    else -> return null
+                }
         }
         if (phase == Phase.BASEMAP && basemapReady) {
+            phase = if (!indexReady) Phase.PLACE_INDEX else return null
+        }
+        if (phase == Phase.PLACE_INDEX && indexReady) {
             return null
         }
         return job.copy(phase = phase, geofabrikPath = path)
@@ -294,35 +309,44 @@ object RegionDownloadBackground {
         dataDir: File,
         regionId: String,
     ): Boolean {
-        val dbFile = File(dataDir, "place_index.db")
-        if (!dbFile.isFile || dbFile.length() < 10_000L) return false
         val rid = regionId.trim().trim('/')
         if (rid.isEmpty()) return false
-        return runCatching {
-            android.database.sqlite.SQLiteDatabase
-                .openDatabase(
-                    dbFile.absolutePath,
-                    null,
-                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
-                ).use { db ->
-                    val byRegion =
-                        runCatching {
-                            db
-                                .rawQuery(
-                                    "SELECT 1 FROM name_entries WHERE region_id = ? LIMIT 1",
-                                    arrayOf(rid),
-                                ).use { it.moveToFirst() }
-                        }
-                    when {
-                        byRegion.isSuccess -> byRegion.getOrThrow()
-                        else ->
-                            // Pre-v3 / missing column: any row is enough for single-region devices.
-                            db.rawQuery("SELECT 1 FROM name_entries LIMIT 1", null).use {
-                                it.moveToFirst()
+        if (PlaceIndexReady.isReady(dataDir, rid)) return true
+        // Once a stamp file exists it is authoritative — do not treat partial
+        // mid-build rows as ready (clearReady leaves an updated stamp).
+        if (PlaceIndexReady.readyFile(dataDir).isFile) return false
+        val dbFile = File(dataDir, "place_index.db")
+        if (!dbFile.isFile || dbFile.length() < 10_000L) return false
+        val hasRows =
+            runCatching {
+                android.database.sqlite.SQLiteDatabase
+                    .openDatabase(
+                        dbFile.absolutePath,
+                        null,
+                        android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+                    ).use { db ->
+                        val byRegion =
+                            runCatching {
+                                db
+                                    .rawQuery(
+                                        "SELECT 1 FROM name_entries WHERE region_id = ? LIMIT 1",
+                                        arrayOf(rid),
+                                    ).use { it.moveToFirst() }
                             }
+                        when {
+                            byRegion.isSuccess -> byRegion.getOrThrow()
+                            else ->
+                                db.rawQuery("SELECT 1 FROM name_entries LIMIT 1", null).use {
+                                    it.moveToFirst()
+                                }
+                        }
                     }
-                }
-        }.getOrDefault(false)
+            }.getOrDefault(false)
+        if (hasRows) {
+            // Legacy DB rows without a ready stamp — adopt them once.
+            PlaceIndexReady.markReady(dataDir, rid)
+        }
+        return hasRows
     }
 
     fun uiLine(): String {
@@ -382,225 +406,485 @@ object RegionDownloadBackground {
         filename: String,
         geofabrikPath: String,
         startPhase: Phase = Phase.PACKS,
+        userLat: Double? = null,
+        userLon: Double? = null,
     ) {
         scope.launch {
-            val shouldRun =
-                mutex.withLock {
-                    if (running.get()) {
-                        Log.i(TAG, "already running; skip")
-                        return@withLock false
-                    }
-                    running.set(true)
-                    val already = partialBytes(dataDir, filename)
-                    resuming.set(already > 0L || startPhase != Phase.PACKS)
-                    val job =
-                        Job(
-                            url = url,
-                            filename = filename,
-                            geofabrikPath = geofabrikPath,
-                            phase = startPhase,
-                        )
-                    writeJob(dataDir, job)
-                    if (lastStatus.get().isBlank() || !lastStatus.get().startsWith("Resuming")) {
-                        lastStatus.set(
-                            if (already > 0L || startPhase != Phase.PACKS) {
-                                "Resuming download…"
-                            } else {
-                                "Downloading region… 0%"
-                            },
-                        )
-                    }
-                    Log.i(
-                        TAG,
-                        "start provision filename=$filename resume_bytes=$already " +
-                            "path=$geofabrikPath phase=$startPhase",
-                    )
-                    true
-                }
-            if (!shouldRun) return@launch
-            try {
-                val pathForDecision =
-                    geofabrikPath.ifBlank {
-                        geofabrikPathForPbfName(filename)
-                    }
-                var phase = startPhase
-                if (pathForDecision.isNotBlank() && phase == Phase.PACKS) {
-                    val checkStarted = System.nanoTime()
-                    lastStatus.set("Fetching from pack server…")
-                    persistPhase(dataDir, url, filename, pathForDecision, Phase.PACKS)
-                    val decision =
-                        runCatching {
-                            decideRegionAcquisition(
-                                regionId = pathForDecision,
-                                packServerBaseUrl = null,
-                                dataDir = dataDir.absolutePath,
-                            )
-                        }.getOrElse { t ->
-                            Log.i(
-                                TAG,
-                                "pack routing failed soft: ${t.message}; using local convert",
-                            )
-                            null
-                        }
-                    val checkMs = (System.nanoTime() - checkStarted) / 1_000_000L
-                    if (decision != null) {
-                        Log.i(
-                            TAG,
-                            "pack routing source=${decision.source} " +
-                                "data_source=${decision.dataSource} " +
-                                "execute_local=${decision.executeLocalConvert} " +
-                                "reason=${decision.reason} " +
-                                "decide_region_acquisition_ms=$checkMs",
-                        )
-                        if (!decision.executeLocalConvert) {
-                            lastStatus.set("Installing packs from ${decision.dataSource}…")
-                            runCatching {
-                                bindGeofabrikRegion(
-                                    dataDir = dataDir.absolutePath,
-                                    geofabrikRegion = pathForDecision,
-                                    pbfFilename = filename,
-                                    localSequence = null,
-                                )
-                            }
-                            if (geofabrikPath.isNotBlank()) {
-                                MapHudPrefs.saveGeofabrikPath(context, geofabrikPath)
-                            }
-                            phase = Phase.PLACE_INDEX
-                            persistPhase(dataDir, url, filename, pathForDecision, phase)
-                            if (!runPlaceIndexPackServer(context, dataDir, pathForDecision)) {
-                                return@launch
-                            }
-                            phase = Phase.BASEMAP
-                            persistPhase(dataDir, url, filename, pathForDecision, phase)
-                            val basemapOk =
-                                downloadBasemapPmtiles(context, dataDir, pathForDecision)
-                            clearJob(dataDir)
-                            lastCompletedPath.set(pathForDecision)
-                            lastStatus.set(
-                                if (basemapOk) {
-                                    "done"
-                                } else {
-                                    "done (basemap failed)"
-                                },
-                            )
-                            Log.i(
-                                TAG,
-                                "pack server install + place index + basemap finished " +
-                                    "for $pathForDecision basemap_ok=$basemapOk",
-                            )
-                            return@launch
-                        }
-                    }
-                }
-
-                if (phase == Phase.PLACE_INDEX || phase == Phase.BASEMAP) {
-                    // Resume mid-pipeline after packs (or after place index).
-                    if (phase == Phase.PLACE_INDEX) {
-                        persistPhase(dataDir, url, filename, pathForDecision, Phase.PLACE_INDEX)
-                        if (PackRegionAvailability.localBakeReady(dataDir, pathForDecision) &&
-                            pathForDecision.isNotBlank()
-                        ) {
-                            if (!runPlaceIndexPackServer(context, dataDir, pathForDecision)) {
-                                return@launch
-                            }
-                        } else {
-                            if (!runPlaceIndexLocal(dataDir, filename, pathForDecision)) {
-                                clearJob(dataDir)
-                                lastCompletedPath.set(pathForDecision)
-                                lastStatus.set("done (place index failed)")
-                                downloadBasemapPmtiles(context, dataDir, pathForDecision)
-                                return@launch
-                            }
-                            markUsable(pathForDecision)
-                        }
-                        phase = Phase.BASEMAP
-                        persistPhase(dataDir, url, filename, pathForDecision, phase)
-                    }
-                    if (phase == Phase.BASEMAP && pathForDecision.isNotBlank()) {
-                        if (!markUsableAlready()) {
-                            markUsable(pathForDecision)
-                        }
-                        val basemapOk =
-                            downloadBasemapPmtiles(context, dataDir, pathForDecision)
-                        clearJob(dataDir)
-                        lastCompletedPath.set(pathForDecision)
-                        lastStatus.set(
-                            if (basemapOk) "done" else "done (basemap failed)",
-                        )
-                        return@launch
-                    }
-                }
-
-                lastStatus.set(
-                    if (resuming.get()) "Resuming Geofabrik download…" else "Downloading region… 0%",
+            val path = geofabrikPath.trim().trim('/')
+            val job =
+                Job(
+                    url = url,
+                    filename = filename,
+                    geofabrikPath = path,
+                    phase = startPhase,
                 )
-                persistPhase(dataDir, url, filename, pathForDecision, Phase.PACKS)
-                val report =
-                    provisionRegionData(
-                        dataDir = dataDir.absolutePath,
-                        pbfUrl = url,
-                        pbfFilename = filename,
-                        elevationTarUrl = null,
-                    )
-                Log.i(TAG, "finished: ${report.take(240)}")
-                if (report.contains("PASS")) {
-                    if (geofabrikPath.isNotBlank()) {
-                        MapHudPrefs.saveGeofabrikPath(context, geofabrikPath)
-                        runCatching {
-                            bindGeofabrikRegion(
-                                dataDir = dataDir.absolutePath,
-                                geofabrikRegion = geofabrikPath,
-                                pbfFilename = filename,
-                                localSequence = null,
-                            )
-                        }
+            val shouldStartWorker =
+                mutex.withLock {
+                    enqueueJobLocked(dataDir, job, userLat, userLon)
+                    if (running.get()) {
+                        Log.i(TAG, "queued behind active download path=$path")
+                        lastStatus.set(queueStatusLine(dataDir, path))
+                        false
+                    } else {
+                        running.set(true)
+                        true
                     }
-                    val pbf = File(dataDir, filename)
-                    if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
-                        val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
-                        IndexedMapsBackground.ensureStarted(
-                            pbf,
-                            dataDir,
-                            elev,
-                            geofabrikPath.ifBlank { null },
-                        )
-                    }
-                    val basemapPath = geofabrikPath.ifBlank { pathForDecision }
-                    persistPhase(dataDir, url, filename, basemapPath, Phase.PLACE_INDEX)
-                    if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
-                        if (!runPlaceIndexLocal(dataDir, filename, basemapPath)) {
-                            lastStatus.set("done (place index failed)")
-                            clearJob(dataDir)
-                            lastCompletedPath.set(basemapPath)
-                            if (basemapPath.isNotBlank()) {
-                                downloadBasemapPmtiles(context, dataDir, basemapPath)
-                            }
-                            return@launch
-                        }
-                    }
-                    if (basemapPath.isNotBlank()) {
-                        markUsable(basemapPath)
-                        persistPhase(dataDir, url, filename, basemapPath, Phase.BASEMAP)
-                        if (!downloadBasemapPmtiles(context, dataDir, basemapPath)) {
-                            clearJob(dataDir)
-                            lastCompletedPath.set(basemapPath)
-                            lastStatus.set("done (basemap failed)")
-                            return@launch
-                        }
-                    }
-                    clearJob(dataDir)
-                    lastCompletedPath.set(basemapPath)
-                    lastStatus.set("done")
-                } else {
-                    lastStatus.set("failed")
                 }
-            } catch (t: Throwable) {
-                lastStatus.set("failed: ${t.message}")
-                Log.e(TAG, "provisionRegionData crashed", t)
+            if (!shouldStartWorker) return@launch
+            try {
+                drainQueue(context, dataDir)
             } finally {
                 running.set(false)
                 resuming.set(false)
             }
+        }
+    }
+
+    private fun queueStatusLine(
+        dataDir: File,
+        justQueued: String,
+    ): String {
+        val n = loadQueue(dataDir).size
+        val active = loadJob(dataDir)?.geofabrikPath.orEmpty()
+        return when {
+            active.isNotBlank() && n > 0 ->
+                "Queued $justQueued (after $active; $n waiting)…"
+            n > 0 -> "Queued $justQueued ($n waiting)…"
+            else -> "Queued $justQueued…"
+        }
+    }
+
+    private fun enqueueJobLocked(
+        dataDir: File,
+        job: Job,
+        userLat: Double?,
+        userLon: Double?,
+    ) {
+        val path = job.geofabrikPath.trim().trim('/')
+        if (path.isEmpty()) return
+        val active = loadJob(dataDir)
+        val q = loadQueue(dataDir).toMutableList()
+        val alreadyActive =
+            active != null &&
+                PackRegionAvailability.regionIdsMatchForCatalog(active.geofabrikPath, path)
+        val alreadyQueued =
+            q.any { PackRegionAvailability.regionIdsMatchForCatalog(it.geofabrikPath, path) }
+        if (!alreadyActive && !alreadyQueued) {
+            q.add(job)
+        }
+        val orderedPaths =
+            PlaceIndexReady.prioritizePaths(
+                q.map { it.geofabrikPath },
+                userLat,
+                userLon,
+            )
+        val byPath = q.associateBy { PackRegionAvailability.normalize(it.geofabrikPath) }
+        val ordered =
+            orderedPaths.mapNotNull { p ->
+                byPath[PackRegionAvailability.normalize(p)]
+            }
+        saveQueue(dataDir, ordered)
+        if (userLat != null && userLon != null) {
+            saveQueueLocation(dataDir, userLat, userLon)
+        }
+    }
+
+    private const val QUEUE_LOC_FILE = "region-download-queue-loc.json"
+
+    private fun queueFile(dataDir: File) = File(dataDir, QUEUE_FILE)
+
+    /**
+     * Parse [QUEUE_FILE] via [JSONArray]. Dedupes by Geofabrik path (first wins)
+     * so a corrupt/legacy file cannot schedule the same region twice.
+     */
+    internal fun loadQueue(dataDir: File): List<Job> {
+        val f = queueFile(dataDir)
+        if (!f.isFile) return emptyList()
+        return runCatching {
+            val arr = JSONArray(f.readText())
+            val jobs = mutableListOf<Job>()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val url = o.optString("url", "")
+                val filename = o.optString("filename", "")
+                if (url.isBlank() || filename.isBlank()) continue
+                jobs.add(
+                    Job(
+                        url = url,
+                        filename = filename,
+                        geofabrikPath = o.optString("geofabrikPath", ""),
+                        phase = Phase.parse(o.optString("phase").ifBlank { null }),
+                    ),
+                )
+            }
+            dedupeQueueJobs(jobs)
+        }.getOrDefault(emptyList())
+    }
+
+    /** Keep first job per normalized Geofabrik path. */
+    internal fun dedupeQueueJobs(jobs: List<Job>): List<Job> {
+        val seen = LinkedHashSet<String>()
+        val out = ArrayList<Job>(jobs.size)
+        for (j in jobs) {
+            val key = PackRegionAvailability.normalize(j.geofabrikPath)
+            if (key.isEmpty()) continue
+            if (!seen.add(key)) continue
+            out.add(j.copy(geofabrikPath = key))
+        }
+        return out
+    }
+
+    internal fun saveQueue(
+        dataDir: File,
+        jobs: List<Job>,
+    ) {
+        dataDir.mkdirs()
+        val deduped = dedupeQueueJobs(jobs)
+        if (deduped.isEmpty()) {
+            queueFile(dataDir).delete()
+            return
+        }
+        val arr = JSONArray()
+        for (j in deduped) {
+            arr.put(
+                JSONObject()
+                    .put("url", j.url)
+                    .put("filename", j.filename)
+                    .put("geofabrikPath", j.geofabrikPath)
+                    .put("phase", j.phase.wire()),
+            )
+        }
+        queueFile(dataDir).writeText(arr.toString())
+    }
+
+    /** Pop the next prioritized queue job (GPS location from [QUEUE_LOC_FILE]). */
+    internal fun popQueue(dataDir: File): Job? {
+        val q = loadQueue(dataDir).toMutableList()
+        if (q.isEmpty()) return null
+        val loc = loadQueueLocation(dataDir)
+        val orderedPaths =
+            PlaceIndexReady.prioritizePaths(
+                q.map { it.geofabrikPath },
+                loc?.first,
+                loc?.second,
+            )
+        val firstPath = orderedPaths.firstOrNull() ?: return null
+        val idx =
+            q.indexOfFirst {
+                PackRegionAvailability.regionIdsMatchForCatalog(it.geofabrikPath, firstPath)
+            }
+        if (idx < 0) return null
+        val job = q.removeAt(idx)
+        saveQueue(dataDir, q)
+        return job
+    }
+
+    private fun saveQueueLocation(
+        dataDir: File,
+        lat: Double,
+        lon: Double,
+    ) {
+        File(dataDir, QUEUE_LOC_FILE).writeText("""{"lat":$lat,"lon":$lon}""")
+    }
+
+    private fun loadQueueLocation(dataDir: File): Pair<Double, Double>? {
+        val f = File(dataDir, QUEUE_LOC_FILE)
+        if (!f.isFile) return null
+        val text = f.readText()
+        val lat =
+            Regex(""""lat"\s*:\s*(-?\d+(?:\.\d+)?)""")
+                .find(text)
+                ?.groupValues
+                ?.get(1)
+                ?.toDoubleOrNull()
+                ?: return null
+        val lon =
+            Regex(""""lon"\s*:\s*(-?\d+(?:\.\d+)?)""")
+                .find(text)
+                ?.groupValues
+                ?.get(1)
+                ?.toDoubleOrNull()
+                ?: return null
+        return lat to lon
+    }
+
+    private suspend fun drainQueue(
+        context: Context,
+        dataDir: File,
+    ) {
+        while (true) {
+            val next =
+                mutex.withLock {
+                    popQueue(dataDir)
+                        ?: loadJob(dataDir)?.also {
+                            // Solo sidecar resume (no queue entry yet).
+                        }
+                } ?: break
+            // Avoid processing the same sidecar twice if it was also queued.
+            if (loadJob(dataDir)?.geofabrikPath == next.geofabrikPath) {
+                // runOneRegion will rewrite the sidecar.
+            }
+            runOneRegion(context, dataDir, next)
+        }
+    }
+
+    private suspend fun runOneRegion(
+        context: Context,
+        dataDir: File,
+        incoming: Job,
+    ) {
+        val url = incoming.url
+        val filename = incoming.filename
+        val geofabrikPath = incoming.geofabrikPath.trim().trim('/')
+        var startPhase = incoming.phase
+        val already = partialBytes(dataDir, filename)
+        resuming.set(already > 0L || startPhase != Phase.PACKS)
+        writeJob(dataDir, incoming)
+        // In-progress download must not leave searchable place rows for this region.
+        if (geofabrikPath.isNotBlank()) {
+            PlaceIndexReady.clearReady(dataDir, geofabrikPath)
+        }
+        if (lastStatus.get().isBlank() || !lastStatus.get().startsWith("Resuming")) {
+            lastStatus.set(
+                if (already > 0L || startPhase != Phase.PACKS) {
+                    "Resuming download of $geofabrikPath…"
+                } else {
+                    "Downloading $geofabrikPath… 0%"
+                },
+            )
+        }
+        Log.i(
+            TAG,
+            "start provision filename=$filename resume_bytes=$already " +
+                "path=$geofabrikPath phase=$startPhase",
+        )
+        try {
+            runOneRegionPipeline(context, dataDir, url, filename, geofabrikPath, startPhase)
+        } catch (t: Throwable) {
+            lastStatus.set("failed: ${t.message}")
+            Log.e(TAG, "provisionRegionData crashed", t)
+        } finally {
+            clearJob(dataDir)
+        }
+    }
+
+    private fun runOneRegionPipeline(
+        context: Context,
+        dataDir: File,
+        url: String,
+        filename: String,
+        geofabrikPath: String,
+        startPhase: Phase,
+    ) {
+        val pathForDecision =
+            geofabrikPath.ifBlank {
+                geofabrikPathForPbfName(filename)
+            }
+        var phase = startPhase
+        if (pathForDecision.isNotBlank() && phase == Phase.PACKS) {
+            val checkStarted = System.nanoTime()
+            lastStatus.set("Fetching from pack server…")
+            persistPhase(dataDir, url, filename, pathForDecision, Phase.PACKS)
+            val decision =
+                runCatching {
+                    decideRegionAcquisition(
+                        regionId = pathForDecision,
+                        packServerBaseUrl = null,
+                        dataDir = dataDir.absolutePath,
+                    )
+                }.getOrElse { t ->
+                    Log.i(
+                        TAG,
+                        "pack routing failed soft: ${t.message}; using local convert",
+                    )
+                    null
+                }
+            val checkMs = (System.nanoTime() - checkStarted) / 1_000_000L
+            if (decision != null) {
+                Log.i(
+                    TAG,
+                    "pack routing source=${decision.source} " +
+                        "data_source=${decision.dataSource} " +
+                        "execute_local=${decision.executeLocalConvert} " +
+                        "reason=${decision.reason} " +
+                        "decide_region_acquisition_ms=$checkMs",
+                )
+                if (!decision.executeLocalConvert) {
+                    lastStatus.set("Installing packs from ${decision.dataSource}…")
+                    runCatching {
+                        bindGeofabrikRegion(
+                            dataDir = dataDir.absolutePath,
+                            geofabrikRegion = pathForDecision,
+                            pbfFilename = filename,
+                            localSequence = null,
+                        )
+                    }
+                    if (geofabrikPath.isNotBlank()) {
+                        MapHudPrefs.saveGeofabrikPath(context, geofabrikPath)
+                    }
+                    // Download Geofabrik extract BEFORE place index / basemap.
+                    lastStatus.set("Downloading extract for place index…")
+                    val pbfReport =
+                        provisionRegionData(
+                            dataDir = dataDir.absolutePath,
+                            pbfUrl = url,
+                            pbfFilename = filename,
+                            elevationTarUrl = null,
+                        )
+                    Log.i(TAG, "pack-server PBF provision: ${pbfReport.take(240)}")
+                    if (!pbfReport.contains("PASS")) {
+                        lastStatus.set("failed (extract download)")
+                        lastCompletedPath.set(pathForDecision)
+                        return
+                    }
+                    phase = Phase.BASEMAP
+                    persistPhase(dataDir, url, filename, pathForDecision, phase)
+                    val basemapOk =
+                        downloadBasemapPmtiles(context, dataDir, pathForDecision)
+                    if (!basemapOk) {
+                        lastCompletedPath.set(pathForDecision)
+                        lastStatus.set("done (basemap failed)")
+                        return
+                    }
+                    phase = Phase.PLACE_INDEX
+                    persistPhase(dataDir, url, filename, pathForDecision, phase)
+                    if (!runPlaceIndexLocal(dataDir, filename, pathForDecision)) {
+                        lastStatus.set("done (place index failed)")
+                        lastCompletedPath.set(pathForDecision)
+                        return
+                    }
+                    PlaceIndexReady.markReady(dataDir, pathForDecision)
+                    markUsable(pathForDecision)
+                    lastCompletedPath.set(pathForDecision)
+                    lastStatus.set("done")
+                    Log.i(
+                        TAG,
+                        "pack server install + extract + basemap + place index finished " +
+                            "for $pathForDecision",
+                    )
+                    return
+                }
+            }
+        }
+
+        if (phase == Phase.PLACE_INDEX || phase == Phase.BASEMAP) {
+            // Resume mid-pipeline. New order: basemap before place index.
+            if (phase == Phase.BASEMAP) {
+                persistPhase(dataDir, url, filename, pathForDecision, Phase.BASEMAP)
+                if (pathForDecision.isNotBlank()) {
+                    val basemapOk =
+                        downloadBasemapPmtiles(context, dataDir, pathForDecision)
+                    if (!basemapOk) {
+                        lastCompletedPath.set(pathForDecision)
+                        lastStatus.set("done (basemap failed)")
+                        return
+                    }
+                }
+                phase = Phase.PLACE_INDEX
+                persistPhase(dataDir, url, filename, pathForDecision, phase)
+            }
+            if (phase == Phase.PLACE_INDEX) {
+                persistPhase(dataDir, url, filename, pathForDecision, Phase.PLACE_INDEX)
+                val ok =
+                    if (PackRegionAvailability.localBakeReady(dataDir, pathForDecision) &&
+                        pathForDecision.isNotBlank() &&
+                        File(dataDir, filename).length() >= MIN_PBF_BYTES
+                    ) {
+                        runPlaceIndexLocal(dataDir, filename, pathForDecision)
+                    } else if (PackRegionAvailability.localBakeReady(dataDir, pathForDecision) &&
+                        pathForDecision.isNotBlank()
+                    ) {
+                        // Packs present but extract missing — fetch then index.
+                        lastStatus.set("Downloading extract for place index…")
+                        val pbfReport =
+                            provisionRegionData(
+                                dataDir = dataDir.absolutePath,
+                                pbfUrl = url,
+                                pbfFilename = filename,
+                                elevationTarUrl = null,
+                            )
+                        if (!pbfReport.contains("PASS")) {
+                            lastStatus.set("done (place index failed)")
+                            lastCompletedPath.set(pathForDecision)
+                            return
+                        }
+                        runPlaceIndexLocal(dataDir, filename, pathForDecision)
+                    } else {
+                        runPlaceIndexLocal(dataDir, filename, pathForDecision)
+                    }
+                if (!ok) {
+                    lastStatus.set("done (place index failed)")
+                    lastCompletedPath.set(pathForDecision)
+                    return
+                }
+                PlaceIndexReady.markReady(dataDir, pathForDecision)
+                markUsable(pathForDecision)
+                lastCompletedPath.set(pathForDecision)
+                lastStatus.set("done")
+                return
+            }
+        }
+
+        lastStatus.set(
+            if (resuming.get()) "Resuming Geofabrik download…" else "Downloading region… 0%",
+        )
+        persistPhase(dataDir, url, filename, pathForDecision, Phase.PACKS)
+        val report =
+            provisionRegionData(
+                dataDir = dataDir.absolutePath,
+                pbfUrl = url,
+                pbfFilename = filename,
+                elevationTarUrl = null,
+            )
+        Log.i(TAG, "finished: ${report.take(240)}")
+        if (report.contains("PASS")) {
+            if (geofabrikPath.isNotBlank()) {
+                MapHudPrefs.saveGeofabrikPath(context, geofabrikPath)
+                runCatching {
+                    bindGeofabrikRegion(
+                        dataDir = dataDir.absolutePath,
+                        geofabrikRegion = geofabrikPath,
+                        pbfFilename = filename,
+                        localSequence = null,
+                    )
+                }
+            }
+            val basemapPath = geofabrikPath.ifBlank { pathForDecision }
+            // All network downloads for this region before any index/convert work.
+            if (basemapPath.isNotBlank()) {
+                persistPhase(dataDir, url, filename, basemapPath, Phase.BASEMAP)
+                if (!downloadBasemapPmtiles(context, dataDir, basemapPath)) {
+                    lastCompletedPath.set(basemapPath)
+                    lastStatus.set("done (basemap failed)")
+                    return
+                }
+            }
+            val pbf = File(dataDir, filename)
+            if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
+                // Blocking convert so the next queued region cannot start
+                // while packs for this region are still being written.
+                runIndexedMapsLocal(
+                    pbf,
+                    dataDir,
+                    geofabrikPath.ifBlank { basemapPath }.ifBlank { null },
+                )
+            }
+            persistPhase(dataDir, url, filename, basemapPath, Phase.PLACE_INDEX)
+            if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
+                if (!runPlaceIndexLocal(dataDir, filename, basemapPath)) {
+                    lastStatus.set("done (place index failed)")
+                    lastCompletedPath.set(basemapPath)
+                    return
+                }
+            }
+            if (basemapPath.isNotBlank()) {
+                PlaceIndexReady.markReady(dataDir, basemapPath)
+                markUsable(basemapPath)
+            }
+            lastCompletedPath.set(basemapPath)
+            lastStatus.set("done")
+        } else {
+            lastStatus.set("failed")
         }
     }
 
@@ -622,49 +906,34 @@ object RegionDownloadBackground {
         )
     }
 
-    private fun markUsableAlready(): Boolean = lastStatus.get().startsWith(USABLE_STATUS_PREFIX)
-
     private fun markUsable(path: String) {
         val trimmed = path.trim().trim('/')
         if (trimmed.isEmpty()) return
         lastUsablePath.set(trimmed)
-        lastStatus.set("$USABLE_STATUS_PREFIX — downloading basemap…")
-        Log.i(TAG, "region usable for routing/search path=$trimmed (basemap may continue)")
+        lastStatus.set("$USABLE_STATUS_PREFIX — region ready for routing and search")
+        Log.i(TAG, "region usable for routing/search path=$trimmed")
     }
 
-    /** Pack-server place index; marks usable on PASS. Returns false if failed (and handled). */
-    private fun runPlaceIndexPackServer(
-        context: Context,
+    private fun runIndexedMapsLocal(
+        pbf: File,
         dataDir: File,
-        pathForDecision: String,
-    ): Boolean {
-        lastStatus.set("Downloading extract + building place index…")
-        Log.i(
-            TAG,
-            "starting Geofabrik PBF + place index for $pathForDecision",
-        )
-        val placeReport =
+        regionId: String?,
+    ) {
+        val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
+        lastStatus.set("Building indexed maps…")
+        val report =
             runCatching {
-                ensurePackRegionPlaceIndex(
-                    dataDir = dataDir.absolutePath,
-                    regionId = pathForDecision,
-                    forceRebuild = false,
+                ensureIndexedMaps(
+                    pbf.absolutePath,
+                    dataDir.absolutePath,
+                    elev?.absolutePath,
+                    regionId?.trim()?.trim('/')?.ifBlank { null },
                 )
             }.getOrElse { t ->
-                Log.e(TAG, "ensurePackRegionPlaceIndex crashed", t)
+                Log.e(TAG, "ensureIndexedMaps crashed", t)
                 "FAIL: ${t.message}\n"
             }
-        Log.i(TAG, "pack region place index: ${placeReport.take(400)}")
-        if (!placeReport.contains("PASS")) {
-            lastStatus.set("done (place index failed)")
-            clearJob(dataDir)
-            lastCompletedPath.set(pathForDecision)
-            Log.e(TAG, "place index failed after packs; still fetching basemap")
-            downloadBasemapPmtiles(context, dataDir, pathForDecision)
-            return false
-        }
-        markUsable(pathForDecision)
-        return true
+        Log.i(TAG, "local-bake indexed maps: ${report.take(400)}")
     }
 
     private fun runPlaceIndexLocal(
@@ -674,7 +943,7 @@ object RegionDownloadBackground {
     ): Boolean {
         val pbf = File(dataDir, filename)
         if (!pbf.isFile || pbf.length() < MIN_PBF_BYTES) return false
-        lastStatus.set("Downloading extract + building place index…")
+        lastStatus.set("Building place index…")
         val placeReport =
             runCatching {
                 ensurePlaceIndex(

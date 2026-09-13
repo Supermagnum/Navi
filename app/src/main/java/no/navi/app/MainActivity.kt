@@ -148,7 +148,6 @@ import uniffi.navi.placeIndexHasEntries
 import uniffi.navi.planProgressClear
 import uniffi.navi.planProgressSnapshot
 import uniffi.navi.pmtilesCancelJob
-import uniffi.navi.pmtilesDefaultBaseUrl
 import uniffi.navi.pmtilesGetJob
 import uniffi.navi.pmtilesPauseJob
 import uniffi.navi.pmtilesResumeJob
@@ -962,12 +961,9 @@ private fun NaviMapScreen() {
                 onFinished = {},
             )
     }
+    // Default must stay empty until the user sets a planet URL (no hardcoded seed).
     var pmtilesBaseUrl by remember {
-        mutableStateOf(
-            MapHudPrefs.loadPmtilesBaseUrl(context).ifBlank {
-                runCatching { pmtilesDefaultBaseUrl() }.getOrDefault("")
-            },
-        )
+        mutableStateOf(MapHudPrefs.loadPmtilesBaseUrl(context))
     }
     var pmtilesJobId by remember { mutableStateOf<String?>(null) }
     var pmtilesProgress by remember { mutableStateOf("") }
@@ -1455,7 +1451,8 @@ private fun NaviMapScreen() {
             val raw =
                 withContext(Dispatchers.IO) {
                     runCatching {
-                        uniffi.navi.datexRefreshJson(
+                        // Share in-flight work with pre-plan warmup (no double fetch).
+                        DatexSessionRefresh.refreshShared(
                             enabled = true,
                             host = host,
                             port = port.toUInt(),
@@ -1973,15 +1970,19 @@ private fun NaviMapScreen() {
                 already > 0L -> "Resuming download of $path…"
                 serverReady ->
                     "Pack server has $path ($packCatalogDataSource); installing packs + place index…"
-                else -> "Downloading $path (packs/index, then basemap)…"
+                else -> "Downloading $path (download all data, then place index)…"
             }
         MapHudPrefs.saveGeofabrikPath(context, path)
+        val gpsLat = mapState.gpsLat.takeIf { it != 0.0 }
+        val gpsLon = mapState.gpsLon.takeIf { mapState.gpsLat != 0.0 }
         RegionDownloadBackground.ensureStarted(
             context,
             dataDir,
             url,
             filename,
             path,
+            userLat = gpsLat,
+            userLon = gpsLon,
         )
     }
 
@@ -2032,7 +2033,7 @@ private fun NaviMapScreen() {
                     regionDownloadProgress = ""
                 }
             }
-            // Packs + place index usable while basemap may still run.
+            // Region becomes usable only after place index (downloads already done).
             if (regionRunning) {
                 RegionDownloadBackground.takeLastUsablePath().let { path ->
                     if (path.isNotBlank()) {
@@ -2043,8 +2044,7 @@ private fun NaviMapScreen() {
                         )
                         offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
                         if (!planningRoute) {
-                            status =
-                                "Region ready for routing and search — basemap still downloading"
+                            status = "Region ready for routing and search"
                         }
                     }
                 }
@@ -2302,6 +2302,39 @@ private fun NaviMapScreen() {
         val result =
             try {
                 foregroundPlanEnter()
+                // First motor/bike plan this process: bounded DATEX refresh so
+                // plan_car_route can apply a fresh disk cache (max-age still applies).
+                if (datexPluginEnabled && profile != TravelProfile.HIKING) {
+                    val host =
+                        datexHost.trim().ifBlank { MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST }
+                    val port =
+                        datexPortText.trim().toIntOrNull()?.coerceIn(1, 65535)
+                            ?: MapHudPrefs.DATEX_SETTINGS_DEFAULT_PORT
+                    val prePlanRouteJson =
+                        latLonPairsToJson(pts.map { it.lat to it.lon })
+                    val cacheDirPath = File(dataDir, "datex_cache").absolutePath
+                    val prePlan =
+                        DatexSessionRefresh.ensureBeforeFirstPlan(
+                            pluginEnabled = true,
+                            appliesToProfile = true,
+                            host = host,
+                            port = port.toUInt(),
+                            routeLatLonJson = prePlanRouteJson,
+                            wifiOnly = datexWifiOnly,
+                            onWifi = datexIsOnWifi(context),
+                            cacheDir = cacheDirPath,
+                            onWaiting = {
+                                routePlanProgress = "Planning route: refreshing traffic…"
+                                status = routePlanProgress
+                            },
+                        )
+                    when (prePlan) {
+                        is DatexSessionRefresh.PrePlanOutcome.Refreshed -> {
+                            datexHud = datexHudFromRefreshJson(prePlan.rawJson)
+                        }
+                        else -> Unit
+                    }
+                }
                 planIndexingHintVisible =
                     withContext(Dispatchers.IO) {
                         val planPbf = pbf ?: resolveRegionPbf()
@@ -4052,7 +4085,10 @@ private fun NaviMapScreen() {
                 val dbPath = resolvePlaceIndexDb().absolutePath
                 val list =
                     withContext(Dispatchers.IO) {
-                        searchPlaces(dbPath, trimmed, 20u)
+                        PlaceIndexReady.filterHitsToReadyRegions(
+                            dataDir,
+                            searchPlaces(dbPath, trimmed, 20u),
+                        )
                     }
                 hits =
                     when (searchMode) {
@@ -5957,9 +5993,49 @@ private fun NaviMapScreen() {
                                 if (!on) {
                                     datexHud = DatexHudState()
                                     datexEpoch += 1
+                                    // Clear plan-time apply stamp even when no route yet
+                                    // (refresh would no-op without a corridor).
+                                    runCatching {
+                                        uniffi.navi.datexRefreshJson(
+                                            enabled = false,
+                                            host =
+                                                datexHost.trim().ifBlank {
+                                                    MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
+                                                },
+                                            port =
+                                                (
+                                                    datexPortText.trim().toIntOrNull()
+                                                        ?: MapHudPrefs.DATEX_SETTINGS_DEFAULT_PORT
+                                                ).toUInt(),
+                                            routeLatLonJson = "[]",
+                                            wifiOnly = datexWifiOnly,
+                                            onWifi = true,
+                                            useDiscoveryChain = true,
+                                            cacheDir = File(dataDir, "datex_cache").absolutePath,
+                                        )
+                                    }
                                     status = "DATEX overlay off"
                                 } else {
                                     datexEpoch += 1
+                                    runCatching {
+                                        uniffi.navi.datexRefreshJson(
+                                            enabled = true,
+                                            host =
+                                                datexHost.trim().ifBlank {
+                                                    MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
+                                                },
+                                            port =
+                                                (
+                                                    datexPortText.trim().toIntOrNull()
+                                                        ?: MapHudPrefs.DATEX_SETTINGS_DEFAULT_PORT
+                                                ).toUInt(),
+                                            routeLatLonJson = "[]",
+                                            wifiOnly = datexWifiOnly,
+                                            onWifi = datexIsOnWifi(context),
+                                            useDiscoveryChain = true,
+                                            cacheDir = File(dataDir, "datex_cache").absolutePath,
+                                        )
+                                    }
                                     status = "DATEX overlay on — fetch when a route is planned"
                                 }
                             },
@@ -6942,9 +7018,47 @@ private fun NaviMapScreen() {
                         if (!on) {
                             datexHud = DatexHudState()
                             datexEpoch += 1
+                            runCatching {
+                                uniffi.navi.datexRefreshJson(
+                                    enabled = false,
+                                    host =
+                                        datexHost.trim().ifBlank {
+                                            MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
+                                        },
+                                    port =
+                                        (
+                                            datexPortText.trim().toIntOrNull()
+                                                ?: MapHudPrefs.DATEX_SETTINGS_DEFAULT_PORT
+                                        ).toUInt(),
+                                    routeLatLonJson = "[]",
+                                    wifiOnly = datexWifiOnly,
+                                    onWifi = true,
+                                    useDiscoveryChain = true,
+                                    cacheDir = File(dataDir, "datex_cache").absolutePath,
+                                )
+                            }
                             status = "DATEX overlay off"
                         } else {
                             datexEpoch += 1
+                            runCatching {
+                                uniffi.navi.datexRefreshJson(
+                                    enabled = true,
+                                    host =
+                                        datexHost.trim().ifBlank {
+                                            MapHudPrefs.DATEX_SETTINGS_DEFAULT_HOST
+                                        },
+                                    port =
+                                        (
+                                            datexPortText.trim().toIntOrNull()
+                                                ?: MapHudPrefs.DATEX_SETTINGS_DEFAULT_PORT
+                                        ).toUInt(),
+                                    routeLatLonJson = "[]",
+                                    wifiOnly = datexWifiOnly,
+                                    onWifi = datexIsOnWifi(context),
+                                    useDiscoveryChain = true,
+                                    cacheDir = File(dataDir, "datex_cache").absolutePath,
+                                )
+                            }
                             status = "DATEX overlay on — fetch when a route is planned"
                         }
                     },
@@ -8489,7 +8603,23 @@ private fun applyRouteToStyle(
                     PropertyFactory.lineJoin("round"),
                 )
             }
-            style.addLayer(layer)
+            // Keep the planned route under road/trail name labels (and other
+            // basemap symbols). addLayer() would paint the red line on top.
+            val below =
+                listOf(
+                    "roads_label_motorway",
+                    "roads_label_secondary",
+                    "roads_label_major",
+                    "roads_label_minor",
+                    "water_label_lake",
+                    "places",
+                    "pois",
+                ).firstOrNull { style.getLayer(it) != null }
+            if (below != null) {
+                style.addLayerBelow(layer, below)
+            } else {
+                style.addLayer(layer)
+            }
         }
     }
 

@@ -47,6 +47,72 @@ use crate::pack_server::{
 
 use session::{fingerprint_source_body, load_disk_cache, save_disk_cache};
 
+use std::path::Path;
+
+/// Stamp file under `datex_cache/`: when present, initial plan applies cached
+/// DATEX impacts. Written when the plugin is enabled; removed when disabled.
+pub const DATEX_APPLY_TO_ROUTING_STAMP: &str = "apply_to_routing";
+
+/// Max age of a disk DATEX snapshot for plan-time impacts (seconds).
+///
+/// Matches three server poll intervals ([`DATEX_SERVER_SITUATION_POLL_SECS`]).
+/// Older caches are ignored (empty impacts) so a week-old closure snapshot
+/// cannot silently block a cold-start plan after the incident has cleared.
+pub const DATEX_PLAN_CACHE_MAX_AGE_SECS: i64 = (DATEX_SERVER_SITUATION_POLL_SECS as i64) * 3;
+
+/// Load active DATEX constraints for initial route planning from the on-disk
+/// navi-server cache under `{data_dir}/datex_cache`.
+///
+/// Soft / no-op when the plugin stamp is missing, the cache is empty/stale, or
+/// parse fails — routing must not fail open-blocked because DATEX is unavailable.
+/// Does not change UniFFI plan signatures; call from plan paths that already
+/// receive `data_dir`.
+pub fn planner_impacts_from_data_dir(
+    data_dir: &Path,
+    route_lat_lon: &[(f64, f64)],
+    now: DateTime<Utc>,
+) -> Vec<DatexPlannerConstraint> {
+    if route_lat_lon.len() < 2 {
+        return Vec::new();
+    }
+    let cache_dir = data_dir.join("datex_cache");
+    if !cache_dir.join(DATEX_APPLY_TO_ROUTING_STAMP).is_file() {
+        return Vec::new();
+    }
+    let Some((_meta, xml, fetched_unix, _fp)) = load_disk_cache(&cache_dir) else {
+        return Vec::new();
+    };
+    let age_secs = now.timestamp().saturating_sub(fetched_unix);
+    if age_secs > DATEX_PLAN_CACHE_MAX_AGE_SECS {
+        log::info!(
+            target: "NaviDatex",
+            "plan-time DATEX cache stale age_secs={age_secs} max={DATEX_PLAN_CACHE_MAX_AGE_SECS}; skipping"
+        );
+        return Vec::new();
+    }
+    let all = match parse_situation_publication(&xml) {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!(target: "NaviDatex", "plan-time DATEX parse failed: {e}");
+            return Vec::new();
+        }
+    };
+    let margin = DatexConfig::default().corridor_margin_m();
+    let view = corridor_view(&all, route_lat_lon, margin, now);
+    planner_impacts(&view.active)
+}
+
+/// Create or remove the plan-time DATEX apply stamp under `datex_cache`.
+pub fn set_apply_to_routing(cache_dir: &Path, enabled: bool) {
+    let stamp = cache_dir.join(DATEX_APPLY_TO_ROUTING_STAMP);
+    if enabled {
+        let _ = std::fs::create_dir_all(cache_dir);
+        let _ = std::fs::write(&stamp, b"1");
+    } else {
+        let _ = std::fs::remove_file(&stamp);
+    }
+}
+
 /// Outcome of a refresh attempt suitable for HUD / overlay wiring.
 #[derive(Debug, Clone)]
 pub struct DatexRefreshResult {
@@ -148,7 +214,7 @@ fn resolve_datex_host(
             target: "NaviDatex",
             "discovery chain failed: {}",
             match &conn {
-                pack_server::Connectivity::Unreachable { reason } => reason.as_str(),
+                pack_server::Connectivity::Unreachable { reason, .. } => reason.as_str(),
                 pack_server::Connectivity::Ready(_) => "unknown",
             }
         );

@@ -19,6 +19,9 @@ object MapHudPrefs {
     private const val KEY_SPEED_CAMERA_PROMPT_SHOWN = "speed_camera_prompt_shown"
     private const val KEY_CAMERA_TILT = "camera_tilt_deg"
     private const val KEY_PMTILES_BASE_URL = "pmtiles_base_url"
+
+    /** SharedPreferences default for planet PMTiles URL — must stay empty. */
+    const val PMTILES_BASE_URL_DEFAULT = ""
     private const val KEY_GEOFABRIK_PATH = "geofabrik_path"
     private const val KEY_DIAGNOSTIC_LOGGING = "diagnostic_logging"
     private const val KEY_DOWNLOADED_PMTILES_REGIONS = "downloaded_pmtiles_regions"
@@ -327,7 +330,7 @@ object MapHudPrefs {
     fun loadPmtilesBaseUrl(context: Context): String =
         context
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_PMTILES_BASE_URL, "")
+            .getString(KEY_PMTILES_BASE_URL, PMTILES_BASE_URL_DEFAULT)
             .orEmpty()
 
     fun savePmtilesBaseUrl(

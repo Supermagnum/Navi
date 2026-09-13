@@ -171,6 +171,9 @@ object IndexedMapsBackground {
                         else -> "failed"
                     },
                 )
+                if (report.contains("PASS")) {
+                    convertProgressClearSafe()
+                }
                 Log.i(TAG, "finished: $report")
             } catch (t: Throwable) {
                 lastStatus.set("failed: ${t.message}")

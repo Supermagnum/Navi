@@ -123,7 +123,7 @@ pub fn resolve_region_source(
 ) -> RegionSource {
     let region_id = normalize_region_id(region_id);
     match connectivity {
-        Connectivity::Unreachable { reason } => RegionSource::Local {
+        Connectivity::Unreachable { reason, .. } => RegionSource::Local {
             reason: format!("pack server unreachable, using local convert ({reason})"),
             data_source: PackDataSource::LocalBake,
         },
@@ -254,7 +254,7 @@ pub fn discover_pack_catalog(base_url_override: Option<&str>) -> PackCatalogSnap
                 unreachable_reason: None,
             }
         }
-        Connectivity::Unreachable { reason } => PackCatalogSnapshot {
+        Connectivity::Unreachable { reason, .. } => PackCatalogSnapshot {
             data_source: PackDataSource::LocalBake,
             ready_region_ids: Vec::new(),
             catalog_generation: None,
@@ -482,6 +482,12 @@ pub fn ensure_indexed_packs_prefer_server(
                 false
             };
             if ready {
+                crate::download::progress::set_on(
+                    crate::download::progress::ProgressChannel::Convert,
+                    100,
+                    Some(100),
+                    "Indexed maps ready",
+                );
                 return Ok(EnsureIndexedPacksResult {
                     data_source: if server_install_present(data_dir, &stem) {
                         PackDataSource::ServerDuckdns
@@ -510,6 +516,12 @@ pub fn ensure_indexed_packs_prefer_server(
                 if man.status_pack_files(data_dir) == PackStatus::Ready {
                     let msg = format!("downloaded updated pack from server ({})", plan.log_message);
                     log::info!(target: "NaviPack", "{msg}");
+                    crate::download::progress::set_on(
+                        crate::download::progress::ProgressChannel::Convert,
+                        100,
+                        Some(100),
+                        "Indexed maps ready",
+                    );
                     return Ok(EnsureIndexedPacksResult {
                         data_source: PackDataSource::ServerDuckdns,
                         cache_hit: false,
@@ -664,6 +676,7 @@ mod tests {
     #[test]
     fn resolve_unreachable() {
         let conn = Connectivity::Unreachable {
+            kind: crate::pack_server::ConnectivityFailureKind::Timeout,
             reason: "timeout".into(),
         };
         match resolve_region_source("europe/monaco", &conn, PackDataSource::ServerDuckdns) {

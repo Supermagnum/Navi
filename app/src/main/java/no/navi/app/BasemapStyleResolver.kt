@@ -305,11 +305,37 @@ object BasemapStyleResolver {
             styleJson = MapterhornTerrain.augmentStyleJson(json, tileJsonUrl)
         }
 
-        val outName = "style.local.v3.json"
+        // Unique filename per archive (and DEM toggle). A fixed style.local.v3.json
+        // URI made MainActivity skip setStyle when the camera moved into a second
+        // downloaded region — MapLibre kept the first region's in-memory source
+        // while disk JSON already pointed at the second PMTiles file.
+        val outName =
+            offlineStyleLeafName(
+                pmtilesAbsolutePath = pmFile.absolutePath,
+                withDem = demFor3d != null && demFor3d.isFile,
+            )
         val outStyle = File(outRoot, outName)
         outStyle.writeText(styleJson.toString())
         // MapLibre Native expects a URI scheme for local styles.
         return "file://${outStyle.absolutePath}"
+    }
+
+    /**
+     * Leaf name for the rewritten offline style JSON. Must differ per PMTiles
+     * archive so [MainActivity.applyResolvedStyle] does not treat a second
+     * region's style as `sameUri` and skip [org.maplibre.android.maps.MapLibreMap.setStyle].
+     */
+    internal fun offlineStyleLeafName(
+        pmtilesAbsolutePath: String,
+        withDem: Boolean,
+    ): String {
+        val stem =
+            File(pmtilesAbsolutePath)
+                .nameWithoutExtension
+                .ifBlank { "basemap" }
+                .replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val demTag = if (withDem) ".dem" else ""
+        return "style.local.v3.$stem$demTag.json"
     }
 
     /**

@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -159,6 +160,35 @@ class BasemapStyleResolverInstrumentedTest {
                 .optString("url")
         assertTrue(pmUrl.contains("test_dem_filter_vector.pmtiles"))
         assertFalse(pmUrl.contains("_dem.pmtiles"))
+    }
+
+    @Test
+    fun prepareOfflineStyle_uses_distinct_uri_per_archive() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val dir = context.cacheDir.resolve("style-uri-multi").also { it.mkdirs() }
+
+        fun writeMinimalPmtiles(file: File) {
+            file.outputStream().use { out ->
+                out.write("PMTiles".toByteArray())
+                out.write(ByteArray(94))
+                out.write(byteArrayOf(14)) // maxzoom at offset 101
+                out.write(ByteArray(200))
+            }
+        }
+        val a = File(dir, "europe_norway_ostlandet.pmtiles").also { writeMinimalPmtiles(it) }
+        val b = File(dir, "europe_norway_vestlandet.pmtiles").also { writeMinimalPmtiles(it) }
+        val uriA = BasemapStyleResolver.prepareOfflineStyle(context, a.absolutePath)
+        val uriB = BasemapStyleResolver.prepareOfflineStyle(context, b.absolutePath)
+        assertNotNull(uriA)
+        assertNotNull(uriB)
+        assertNotEquals(uriA, uriB)
+        assertTrue(uriA!!.contains("ostlandet"))
+        assertTrue(uriB!!.contains("vestlandet"))
+        val textA = File(uriA.removePrefix("file://")).readText()
+        val textB = File(uriB.removePrefix("file://")).readText()
+        assertTrue(textA.contains(a.absolutePath) || textA.contains(a.name))
+        assertTrue(textB.contains(b.absolutePath) || textB.contains(b.name))
+        assertFalse(textA.contains("vestlandet"))
     }
 
     @Test

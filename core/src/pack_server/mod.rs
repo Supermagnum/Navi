@@ -195,8 +195,24 @@ pub enum Connectivity {
     Ready(PackCatalog),
     /// Host unreachable, not published yet, bad JSON, non-2xx, etc.
     Unreachable {
+        /// Structured failure class (network vs HTTP vs parse).
+        kind: ConnectivityFailureKind,
         reason: String,
     },
+}
+
+/// Why [`Connectivity::Unreachable`] was returned (catalog-level probe only).
+///
+/// Region-not-published is **not** this enum: a reachable catalog that omits a
+/// region is still [`Connectivity::Ready`]; use [`resolve_region_source`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectivityFailureKind {
+    Timeout,
+    Network,
+    HttpStatus(u16),
+    Malformed,
+    /// Tokio / client setup failed before the request.
+    Internal,
 }
 
 impl Connectivity {
@@ -208,6 +224,66 @@ impl Connectivity {
         match self {
             Self::Ready(c) => Some(c),
             Self::Unreachable { .. } => None,
+        }
+    }
+
+    pub fn failure_kind(&self) -> Option<ConnectivityFailureKind> {
+        match self {
+            Self::Unreachable { kind, .. } => Some(*kind),
+            Self::Ready(_) => None,
+        }
+    }
+
+    pub fn reason(&self) -> Option<&str> {
+        match self {
+            Self::Unreachable { reason, .. } => Some(reason.as_str()),
+            Self::Ready(_) => None,
+        }
+    }
+}
+
+/// Catalog-level vs region-level outcome for a single Geofabrik path.
+///
+/// [`check_connectivity`] only proves the host serves a valid `current.json`.
+/// Use this helper (or [`resolve_region_source`]) to tell "reachable but region
+/// not published" apart from network/HTTP/parse failures.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RegionCatalogStatus {
+    Published {
+        region_id: String,
+        generation: Option<String>,
+    },
+    NotPublished {
+        catalog_regions: usize,
+    },
+    ServerUnreachable {
+        kind: ConnectivityFailureKind,
+        reason: String,
+    },
+}
+
+pub fn region_catalog_status(conn: &Connectivity, region_id: &str) -> RegionCatalogStatus {
+    let want = normalize_region_id(region_id);
+    match conn {
+        Connectivity::Unreachable { kind, reason } => RegionCatalogStatus::ServerUnreachable {
+            kind: *kind,
+            reason: reason.clone(),
+        },
+        Connectivity::Ready(catalog) => {
+            if let Some(r) = catalog
+                .regions
+                .iter()
+                .find(|r| region_ids_match_for_catalog(&r.region_id, &want))
+            {
+                RegionCatalogStatus::Published {
+                    region_id: r.region_id.clone(),
+                    generation: r.generation.clone(),
+                }
+            } else {
+                RegionCatalogStatus::NotPublished {
+                    catalog_regions: catalog.regions.len(),
+                }
+            }
         }
     }
 }
@@ -235,8 +311,9 @@ fn current_json_url(base_url: &str) -> String {
     format!("{base}/current.json")
 }
 
-fn unreachable(reason: impl Into<String>) -> Connectivity {
+fn unreachable(kind: ConnectivityFailureKind, reason: impl Into<String>) -> Connectivity {
     Connectivity::Unreachable {
+        kind,
         reason: reason.into(),
     }
 }
@@ -244,10 +321,18 @@ fn unreachable(reason: impl Into<String>) -> Connectivity {
 fn parse_current_json(body: &str, served_from: &str) -> Connectivity {
     let parsed: CurrentJson = match serde_json::from_str(body) {
         Ok(v) => v,
-        Err(e) => return unreachable(format!("malformed current.json: {e}")),
+        Err(e) => {
+            return unreachable(
+                ConnectivityFailureKind::Malformed,
+                format!("malformed current.json: {e}"),
+            )
+        }
     };
     if parsed.generation.trim().is_empty() {
-        return unreachable("malformed current.json: empty catalog generation");
+        return unreachable(
+            ConnectivityFailureKind::Malformed,
+            "malformed current.json: empty catalog generation",
+        );
     }
     let regions = parsed
         .regions
@@ -293,37 +378,44 @@ pub async fn check_connectivity(base_url: &str) -> Connectivity {
     {
         Ok(r) => r,
         Err(e) => {
-            let kind = if e.is_timeout() {
-                "timeout"
+            let (kind, label) = if e.is_timeout() {
+                (ConnectivityFailureKind::Timeout, "timeout")
             } else if e.is_connect() {
-                "connection_failed"
+                (ConnectivityFailureKind::Network, "connection_failed")
             } else {
-                "network_error"
+                (ConnectivityFailureKind::Network, "network_error")
             };
             let ms = t0.elapsed().as_secs_f64() * 1000.0;
             log::info!(
                 target: "NaviPack",
-                "check_connectivity host={base} outcome={kind} ms={ms:.1} err={e}"
+                "check_connectivity host={base} outcome={label} kind={kind:?} ms={ms:.1} err={e}"
             );
-            return unreachable(format!("{kind}: {e}"));
+            return unreachable(kind, format!("{label}: {e}"));
         }
     };
 
     let status = response.status();
     if !status.is_success() {
         let ms = t0.elapsed().as_secs_f64() * 1000.0;
+        let code = status.as_u16();
         log::info!(
             target: "NaviPack",
-            "check_connectivity host={base} outcome=http_{status} ms={ms:.1}"
+            "check_connectivity host={base} outcome=http_{code} kind=HttpStatus ms={ms:.1}"
         );
-        return unreachable(format!(
-            "not ready (HTTP {status}) — use Geofabrik fallback"
-        ));
+        return unreachable(
+            ConnectivityFailureKind::HttpStatus(code),
+            format!("not ready (HTTP {code}) — use Geofabrik fallback"),
+        );
     }
 
     let body = match response.text().await {
         Ok(t) => t,
-        Err(e) => return unreachable(format!("read body failed: {e}")),
+        Err(e) => {
+            return unreachable(
+                ConnectivityFailureKind::Network,
+                format!("read body failed: {e}"),
+            )
+        }
     };
 
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -344,7 +436,7 @@ pub fn check_connectivity_blocking(base_url: &str) -> Connectivity {
         .build()
     {
         Ok(rt) => rt,
-        Err(e) => return unreachable(format!("runtime: {e}")),
+        Err(e) => return unreachable(ConnectivityFailureKind::Internal, format!("runtime: {e}")),
     };
     rt.block_on(check_connectivity(base_url))
 }
@@ -357,7 +449,10 @@ pub async fn check_connectivity_chain(
     bases: &[(PackDataSource, String)],
 ) -> (Connectivity, Option<PackDataSource>) {
     let t_chain = std::time::Instant::now();
-    let mut last = unreachable("no pack server bases configured");
+    let mut last = unreachable(
+        ConnectivityFailureKind::Internal,
+        "no pack server bases configured",
+    );
     for (source, base) in bases {
         let t_hop = std::time::Instant::now();
         match check_connectivity(base).await {
@@ -380,7 +475,7 @@ pub async fn check_connectivity_chain(
                     source.as_str(),
                     base,
                     match &bad {
-                        Connectivity::Unreachable { reason } => reason.as_str(),
+                        Connectivity::Unreachable { reason, .. } => reason.as_str(),
                         Connectivity::Ready(_) => unreachable!(),
                     }
                 );
@@ -405,7 +500,12 @@ pub fn check_connectivity_chain_blocking(
         .build()
     {
         Ok(rt) => rt,
-        Err(e) => return (unreachable(format!("runtime: {e}")), None),
+        Err(e) => {
+            return (
+                unreachable(ConnectivityFailureKind::Internal, format!("runtime: {e}")),
+                None,
+            )
+        }
     };
     rt.block_on(check_connectivity_chain(bases))
 }
@@ -485,7 +585,7 @@ mod tests {
                 assert_eq!(c.regions[1].generation, None);
                 assert_eq!(c.regions[1].bytes, None);
             }
-            Connectivity::Unreachable { reason } => panic!("expected Ready, got {reason}"),
+            Connectivity::Unreachable { reason, .. } => panic!("expected Ready, got {reason}"),
         }
     }
 
@@ -514,15 +614,52 @@ mod tests {
                     c.regions[0].generation.as_deref().unwrap()
                 );
             }
-            Connectivity::Unreachable { reason } => panic!("expected Ready, got {reason}"),
+            Connectivity::Unreachable { reason, .. } => panic!("expected Ready, got {reason}"),
+        }
+    }
+
+    #[test]
+    fn region_catalog_status_distinguishes_missing_region() {
+        let json = r#"{
+            "schema": 1,
+            "generation": "g1",
+            "regions": [{ "region_id": "europe/monaco", "generation": "bake1" }]
+        }"#;
+        let conn = parse_current_json(json, "http://example.com");
+        match region_catalog_status(&conn, "europe/monaco") {
+            RegionCatalogStatus::Published {
+                region_id,
+                generation,
+            } => {
+                assert_eq!(region_id, "europe/monaco");
+                assert_eq!(generation.as_deref(), Some("bake1"));
+            }
+            other => panic!("expected Published: {other:?}"),
+        }
+        match region_catalog_status(&conn, "europe/norway/ostlandet") {
+            RegionCatalogStatus::NotPublished { catalog_regions } => {
+                assert_eq!(catalog_regions, 1);
+            }
+            other => panic!("expected NotPublished: {other:?}"),
+        }
+        let down = Connectivity::Unreachable {
+            kind: ConnectivityFailureKind::Timeout,
+            reason: "timeout".into(),
+        };
+        match region_catalog_status(&down, "europe/monaco") {
+            RegionCatalogStatus::ServerUnreachable { kind, .. } => {
+                assert_eq!(kind, ConnectivityFailureKind::Timeout);
+            }
+            other => panic!("expected ServerUnreachable: {other:?}"),
         }
     }
 
     #[test]
     fn malformed_json_is_unreachable() {
         match parse_current_json("{not-json", "http://example.com") {
-            Connectivity::Unreachable { reason } => {
+            Connectivity::Unreachable { kind, reason } => {
                 assert!(reason.contains("malformed"), "{reason}");
+                assert_eq!(kind, ConnectivityFailureKind::Malformed);
             }
             Connectivity::Ready(_) => panic!("expected Unreachable"),
         }
@@ -542,7 +679,7 @@ mod tests {
                 assert_eq!(c.regions[0].generation.as_deref(), Some("20260904T113619Z"));
                 assert_eq!(c.regions[0].bytes, Some(99));
             }
-            Connectivity::Unreachable { reason } => panic!("expected Ready: {reason}"),
+            Connectivity::Unreachable { reason, .. } => panic!("expected Ready: {reason}"),
         }
     }
 
@@ -550,11 +687,12 @@ mod tests {
     async fn mock_404_is_soft_unreachable() {
         let base = serve_once("HTTP/1.1 404 Not Found", "missing");
         match check_connectivity(&base).await {
-            Connectivity::Unreachable { reason } => {
+            Connectivity::Unreachable { kind, reason } => {
                 assert!(
                     reason.contains("404") || reason.contains("not ready"),
                     "{reason}"
                 );
+                assert_eq!(kind, ConnectivityFailureKind::HttpStatus(404));
             }
             Connectivity::Ready(_) => panic!("404 must not be Ready"),
         }
@@ -564,7 +702,7 @@ mod tests {
     async fn unreachable_host_fails_soft() {
         let status = check_connectivity("http://192.0.2.1:9").await;
         match status {
-            Connectivity::Unreachable { reason } => {
+            Connectivity::Unreachable { reason, .. } => {
                 assert!(!reason.is_empty());
             }
             Connectivity::Ready(_) => panic!("bogus host must not be Ready"),
@@ -590,7 +728,7 @@ mod tests {
             Connectivity::Ready(c) => {
                 assert_eq!(c.regions[0].region_id, "europe/norway/ostlandet");
             }
-            Connectivity::Unreachable { reason } => panic!("expected Ready: {reason}"),
+            Connectivity::Unreachable { reason, .. } => panic!("expected Ready: {reason}"),
         }
     }
 
@@ -616,7 +754,7 @@ mod tests {
                 }
                 assert!(!c.catalog_generation.is_empty());
             }
-            Connectivity::Unreachable { reason } => {
+            Connectivity::Unreachable { reason, .. } => {
                 eprintln!("unreachable / not ready: {reason}");
             }
         }

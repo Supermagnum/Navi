@@ -8,8 +8,9 @@ use std::collections::HashMap;
 use chrono::{FixedOffset, TimeZone, Utc};
 use driver_break_core::config::OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M;
 use driver_break_core::datex::{
-    corridor_view, parse_situation_publication, planner_impacts, DatexConfig, DatexImpact,
-    SituationKind, DATEX_PLUGIN_DEFAULT_ENABLED,
+    corridor_view, parse_situation_publication, planner_impacts, planner_impacts_from_data_dir,
+    set_apply_to_routing, DatexConfig, DatexImpact, SituationKind, DATEX_PLAN_CACHE_MAX_AGE_SECS,
+    DATEX_PLUGIN_DEFAULT_ENABLED,
 };
 use driver_break_core::routing::graph::{
     GraphEdge, RouteGraph, RouteOptions, RoutingProfile, SurfaceQuality,
@@ -508,5 +509,156 @@ fn penalize_keeps_edge_usable_when_no_detour() {
         path.0.contains(&NodeId(2)),
         "no-detour Penalize must still use the corridor: {:?}",
         path.0
+    );
+}
+
+/// Initial-plan wiring: disk cache + apply stamp → non-empty Block/Penalize for Espa corridor.
+#[test]
+fn plan_time_disk_cache_yields_espa_corridor_impacts() {
+    let dir = tempfile::tempdir().expect("tmpdir");
+    let data_dir = dir.path();
+    let cache = data_dir.join("datex_cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join("datex-GetSituation.xml"), FIXTURE).unwrap();
+    let now = local_oslo(2026, 9, 8, 5, 34);
+    let fetched = now.timestamp();
+    std::fs::write(
+        cache.join("datex-cache.json"),
+        format!(
+            r#"{{
+            "fetched_unix": {fetched},
+            "source_fingerprint": "fixture",
+            "data_source": "server-duckdns",
+            "base_url": "https://navigate-me.duckdns.org",
+            "attribution": null,
+            "source": null
+        }}"#
+        ),
+    )
+    .unwrap();
+
+    let route = espa_atnbru_route();
+
+    let without_stamp = planner_impacts_from_data_dir(data_dir, &route, now);
+    assert!(
+        without_stamp.is_empty(),
+        "without apply stamp, plan must ignore DATEX cache"
+    );
+
+    set_apply_to_routing(&cache, true);
+    let impacts = planner_impacts_from_data_dir(data_dir, &route, now);
+    assert!(
+        !impacts.is_empty(),
+        "Espa corridor at 05:34 must produce planner impacts from fixture cache"
+    );
+    assert!(
+        impacts
+            .iter()
+            .any(|c| c.impact == DatexImpact::Block || c.impact == DatexImpact::Penalize),
+        "expected Block and/or Penalize; got {:?}",
+        impacts.iter().map(|c| c.impact).collect::<Vec<_>>()
+    );
+
+    // Week-old fetched_unix must not apply (cleared incidents must not linger).
+    let stale_fetched = fetched - DATEX_PLAN_CACHE_MAX_AGE_SECS - 60;
+    std::fs::write(
+        cache.join("datex-cache.json"),
+        format!(
+            r#"{{
+            "fetched_unix": {stale_fetched},
+            "source_fingerprint": "fixture",
+            "data_source": "server-duckdns",
+            "base_url": "https://navigate-me.duckdns.org",
+            "attribution": null,
+            "source": null
+        }}"#
+        ),
+    )
+    .unwrap();
+    assert!(
+        planner_impacts_from_data_dir(data_dir, &route, now).is_empty(),
+        "stale cache older than {DATEX_PLAN_CACHE_MAX_AGE_SECS}s must be ignored"
+    );
+
+    set_apply_to_routing(&cache, false);
+    assert!(
+        planner_impacts_from_data_dir(data_dir, &route, now).is_empty(),
+        "disabling stamp must stop plan-time DATEX"
+    );
+}
+
+/// Cold session / first plan: after a successful pre-plan refresh the disk cache
+/// is fresh + stamped, so plan-time impacts are non-empty (Espa corridor).
+#[test]
+fn cold_session_first_plan_uses_fresh_disk_cache() {
+    let dir = tempfile::tempdir().expect("tmpdir");
+    let data_dir = dir.path();
+    let cache = data_dir.join("datex_cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join("datex-GetSituation.xml"), FIXTURE).unwrap();
+    let now = local_oslo(2026, 9, 8, 5, 34);
+    // Simulate what datex_refresh_json writes just before the first plan_car_route.
+    let fetched = now.timestamp();
+    std::fs::write(
+        cache.join("datex-cache.json"),
+        format!(
+            r#"{{
+            "fetched_unix": {fetched},
+            "source_fingerprint": "pre-plan-refresh",
+            "data_source": "server-duckdns",
+            "base_url": "https://navigate-me.duckdns.org",
+            "attribution": null,
+            "source": null
+        }}"#
+        ),
+    )
+    .unwrap();
+    set_apply_to_routing(&cache, true);
+
+    let route = espa_atnbru_route();
+    let impacts = planner_impacts_from_data_dir(data_dir, &route, now);
+    assert!(
+        !impacts.is_empty(),
+        "cold-session first plan must see Block/Penalize after fresh pre-plan cache"
+    );
+    assert!(
+        impacts
+            .iter()
+            .any(|c| c.impact == DatexImpact::Block || c.impact == DatexImpact::Penalize),
+        "expected Block and/or Penalize; got {:?}",
+        impacts.iter().map(|c| c.impact).collect::<Vec<_>>()
+    );
+}
+
+/// Cold session with only a stale snapshot (pre-plan refresh timed out / offline):
+/// max-age fails open to empty impacts — first plan is unprotected, not wrongly blocked.
+#[test]
+fn cold_session_first_plan_stale_cache_fails_open() {
+    let dir = tempfile::tempdir().expect("tmpdir");
+    let data_dir = dir.path();
+    let cache = data_dir.join("datex_cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join("datex-GetSituation.xml"), FIXTURE).unwrap();
+    let now = local_oslo(2026, 9, 8, 5, 34);
+    let stale = now.timestamp() - DATEX_PLAN_CACHE_MAX_AGE_SECS - 1;
+    std::fs::write(
+        cache.join("datex-cache.json"),
+        format!(
+            r#"{{
+            "fetched_unix": {stale},
+            "source_fingerprint": "stale",
+            "data_source": "server-duckdns",
+            "base_url": "https://navigate-me.duckdns.org",
+            "attribution": null,
+            "source": null
+        }}"#
+        ),
+    )
+    .unwrap();
+    set_apply_to_routing(&cache, true);
+
+    assert!(
+        planner_impacts_from_data_dir(data_dir, &espa_atnbru_route(), now).is_empty(),
+        "stale cold-session cache must not apply on first plan"
     );
 }

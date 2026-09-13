@@ -2171,13 +2171,45 @@ fn plan_car_route_inner(
     let avoid_motorways = avoid_motorways
         || driver_break_core::routing::graph::profile_locks_avoid_motorways(routing_profile);
     let toll_policy = driver_break_core::routing::toll::TollPolicy::from(toll_policy);
+
+    let mut route_points: Vec<(f64, f64)> = Vec::with_capacity(2 + via_points.len());
+    route_points.push((start_lat, start_lon));
+    for v in &via_points {
+        route_points.push((v.lat, v.lon));
+    }
+    route_points.push((end_lat, end_lon));
+
+    // Initial plan only: apply active DATEX from `{data_dir}/datex_cache` when the
+    // plugin stamp is present. No UniFFI signature change; mid-nav dynamic
+    // reroute remains out of scope.
+    let datex_impacts = {
+        let dir = data_dir.trim();
+        if dir.is_empty() {
+            Vec::new()
+        } else {
+            driver_break_core::datex::planner_impacts_from_data_dir(
+                Path::new(dir),
+                &route_points,
+                chrono::Utc::now(),
+            )
+        }
+    };
+    let datex_blocks = datex_impacts
+        .iter()
+        .filter(|c| c.impact == driver_break_core::datex::DatexImpact::Block)
+        .count();
+    let datex_penalize = datex_impacts
+        .iter()
+        .filter(|c| c.impact == driver_break_core::datex::DatexImpact::Penalize)
+        .count();
+
     let route_opts = RouteOptions {
         avoid_motorways,
         toll_policy,
         avoid_ferries,
         vehicle: vehicle_limits.clone(),
         departure_local,
-        datex_impacts: Vec::new(),
+        datex_impacts,
     };
 
     let mut report = String::new();
@@ -2190,6 +2222,10 @@ fn plan_car_route_inner(
         "avoid_motorways={avoid_motorways}; toll_policy={}; avoid_ferries={avoid_ferries}; vehicle_limits={}\n",
         toll_policy.as_diag_str(),
         vehicle_limits.is_some()
+    ));
+    report.push_str(&format!(
+        "datex_impacts={}; datex_block={datex_blocks}; datex_penalize={datex_penalize}\n",
+        datex_blocks + datex_penalize
     ));
     report.push_str(&format!(
         "eco_regen={:.3}\n",
@@ -2217,13 +2253,6 @@ fn plan_car_route_inner(
     ));
     let eco = eco_for_travel_profile(profile);
     let elevation = ElevationService::new(ElevationCache::new(&elev));
-
-    let mut route_points: Vec<(f64, f64)> = Vec::with_capacity(2 + via_points.len());
-    route_points.push((start_lat, start_lon));
-    for v in &via_points {
-        route_points.push((v.lat, v.lon));
-    }
-    route_points.push((end_lat, end_lon));
 
     let elev_min_lat = route_points
         .iter()
@@ -7796,6 +7825,16 @@ pub fn datex_refresh_json(
     use std::path::PathBuf;
 
     let port = u16::try_from(port).unwrap_or(80);
+    let cache_path = cache_dir
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from);
+    // Stamp controls whether plan_car_route applies this cache — independent of
+    // whether a fetch succeeds this call.
+    if let Some(ref dir) = cache_path {
+        driver_break_core::datex::set_apply_to_routing(dir, enabled);
+    }
     let config = DatexConfig {
         enabled,
         use_discovery_chain,
@@ -7803,10 +7842,7 @@ pub fn datex_refresh_json(
         port,
         wifi_only,
         on_wifi,
-        cache_dir: cache_dir
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .map(PathBuf::from),
+        cache_dir: cache_path,
         ..DatexConfig::default()
     };
 

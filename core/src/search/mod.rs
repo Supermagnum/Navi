@@ -366,6 +366,11 @@ impl NameIndex {
             "DELETE FROM name_entries WHERE region_id = ?1",
             params![region_id],
         )?;
+        // External-content FTS5 can retain orphan index rows when content was
+        // deleted without matching FTS 'delete' commands (e.g. Android framework
+        // SQLite lacking FTS5 cleared name_entries first). Rebuild syncs the
+        // index to the remaining content table so orphans cannot MATCH.
+        let _ = tx.execute_batch("INSERT INTO name_fts(name_fts) VALUES('rebuild');");
         Ok(())
     }
 
@@ -1195,5 +1200,59 @@ mod tests {
         let db = dir.path().join("no-such.db");
         assert!(!NameIndex::has_entries(&db));
         assert!(!db.exists());
+    }
+
+    /// Orphan FTS rows (content deleted without FTS delete) must not surface after
+    /// clear_region: search JOINs to name_entries, and clear rebuilds FTS.
+    #[test]
+    fn clear_region_rebuild_drops_orphan_fts_hits() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("orphan.db");
+        let mut idx = NameIndex::open(&db).expect("create");
+        idx.upsert_entry_with_region(
+            42,
+            "GamleNavn".into(),
+            "place:village".into(),
+            60.0,
+            10.0,
+            String::new(),
+            String::new(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        // Simulate Android clear without FTS5: wipe content, leave FTS stale.
+        idx.conn
+            .execute(
+                "DELETE FROM name_entries WHERE region_id = ?1",
+                ["europe/norway/ostlandet"],
+            )
+            .unwrap();
+        // Stale FTS may still MATCH; JOIN should yield nothing.
+        let pre = idx.search("GamleNavn", 8).unwrap();
+        assert!(
+            pre.iter().all(|h| h.name != "GamleNavn"),
+            "JOIN must hide orphans before rebuild: {pre:?}"
+        );
+        // clear_region (with rebuild) then re-index under a new name.
+        idx.clear_region("europe/norway/ostlandet").unwrap();
+        idx.upsert_entry_with_region(
+            42,
+            "NyttNavn".into(),
+            "place:village".into(),
+            60.0,
+            10.0,
+            String::new(),
+            String::new(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        let old = idx.search("GamleNavn", 8).unwrap();
+        assert!(
+            old.iter()
+                .all(|h| h.name != "GamleNavn" && h.name != "NyttNavn"),
+            "old name must not match after rebuild+rename: {old:?}"
+        );
+        let neu = idx.search("NyttNavn", 8).unwrap();
+        assert!(neu.iter().any(|h| h.name == "NyttNavn"), "got {neu:?}");
     }
 }

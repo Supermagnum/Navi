@@ -67,7 +67,7 @@ class RegionDownloadResumeTest {
     }
 
     @Test
-    fun discoverPending_advances_packs_to_place_index_when_manifest_present() {
+    fun discoverPending_advances_packs_to_basemap_when_manifest_present() {
         val dir = tmp.newFolder("data")
         File(dir, "ostlandet-latest.navi-manifest.json").writeText("{}")
         RegionDownloadBackground.writeJob(
@@ -81,15 +81,15 @@ class RegionDownloadResumeTest {
         )
         val pending = RegionDownloadBackground.discoverPending(dir)
         assertNotNull(pending)
-        assertEquals(RegionDownloadBackground.Phase.PLACE_INDEX, pending!!.phase)
+        assertEquals(RegionDownloadBackground.Phase.BASEMAP, pending!!.phase)
         assertEquals(
-            RegionDownloadBackground.Phase.PLACE_INDEX,
+            RegionDownloadBackground.Phase.BASEMAP,
             RegionDownloadBackground.loadJob(dir)!!.phase,
         )
     }
 
     @Test
-    fun discoverIncompleteForPath_starts_place_index_when_packs_ready() {
+    fun discoverIncompleteForPath_starts_basemap_when_packs_ready() {
         val dir = tmp.newFolder("data")
         File(dir, "ostlandet-latest.navi-manifest.json").writeText("{}")
         val job =
@@ -98,7 +98,7 @@ class RegionDownloadResumeTest {
                 "europe/norway/ostlandet",
             )
         assertNotNull(job)
-        assertEquals(RegionDownloadBackground.Phase.PLACE_INDEX, job!!.phase)
+        assertEquals(RegionDownloadBackground.Phase.BASEMAP, job!!.phase)
         assertEquals("europe/norway/ostlandet", job.geofabrikPath)
     }
 

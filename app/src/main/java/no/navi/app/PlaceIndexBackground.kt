@@ -86,6 +86,12 @@ object PlaceIndexBackground {
                             "failed"
                         },
                     )
+                    // Ensure UI does not linger on phase 5/6 (~83%) after success.
+                    if (report.contains("PASS")) {
+                        runCatching {
+                            uniffi.navi.downloadProgressClear()
+                        }
+                    }
                     Log.i(TAG, "finished bytes=$bytes report=$report")
                 } catch (t: Throwable) {
                     lastStatus.set("failed: ${t.message}")

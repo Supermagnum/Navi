@@ -72,7 +72,7 @@ fn main() {
                 }
             }
         }
-        Connectivity::Unreachable { reason } => {
+        Connectivity::Unreachable { reason, .. } => {
             println!("status=unreachable / not ready source=local-bake");
             println!("reason={reason}");
             println!("fallback=Geofabrik (or equivalent)");
