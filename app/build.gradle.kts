@@ -117,6 +117,8 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
+    // Real org.json for JVM unit tests (Android stubs throw "not mocked").
+    testImplementation("org.json:json:20240303")
 
     // androidx.test 1.7 / Espresso 3.7: API 37 removes InputManager.getInstance();
     // Espresso 3.6.1 still reflected it (Compose ui-test → Espresso.onIdle crash).

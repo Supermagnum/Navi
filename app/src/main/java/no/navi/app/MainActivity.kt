@@ -1970,15 +1970,19 @@ private fun NaviMapScreen() {
                 already > 0L -> "Resuming download of $path…"
                 serverReady ->
                     "Pack server has $path ($packCatalogDataSource); installing packs + place index…"
-                else -> "Downloading $path (packs/index, then basemap)…"
+                else -> "Downloading $path (download all data, then place index)…"
             }
         MapHudPrefs.saveGeofabrikPath(context, path)
+        val gpsLat = mapState.gpsLat.takeIf { it != 0.0 }
+        val gpsLon = mapState.gpsLon.takeIf { mapState.gpsLat != 0.0 }
         RegionDownloadBackground.ensureStarted(
             context,
             dataDir,
             url,
             filename,
             path,
+            userLat = gpsLat,
+            userLon = gpsLon,
         )
     }
 
@@ -2029,7 +2033,7 @@ private fun NaviMapScreen() {
                     regionDownloadProgress = ""
                 }
             }
-            // Packs + place index usable while basemap may still run.
+            // Region becomes usable only after place index (downloads already done).
             if (regionRunning) {
                 RegionDownloadBackground.takeLastUsablePath().let { path ->
                     if (path.isNotBlank()) {
@@ -2040,8 +2044,7 @@ private fun NaviMapScreen() {
                         )
                         offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
                         if (!planningRoute) {
-                            status =
-                                "Region ready for routing and search — basemap still downloading"
+                            status = "Region ready for routing and search"
                         }
                     }
                 }
@@ -4082,7 +4085,10 @@ private fun NaviMapScreen() {
                 val dbPath = resolvePlaceIndexDb().absolutePath
                 val list =
                     withContext(Dispatchers.IO) {
-                        searchPlaces(dbPath, trimmed, 20u)
+                        PlaceIndexReady.filterHitsToReadyRegions(
+                            dataDir,
+                            searchPlaces(dbPath, trimmed, 20u),
+                        )
                     }
                 hits =
                     when (searchMode) {
