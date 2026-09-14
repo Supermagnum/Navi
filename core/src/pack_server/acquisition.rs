@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 
 use super::fetch::{try_fetch_region_packs, ServerInstallStamp};
 use super::{
-    check_connectivity_blocking, check_connectivity_chain_blocking, Connectivity, ReadyRegion,
+    check_connectivity_blocking, check_connectivity_blocking_timed,
+    check_connectivity_chain_blocking, check_connectivity_chain_blocking_timed, Connectivity,
+    ConnectivityFailureKind, ReadyRegion, CONNECTIVITY_RETRY_TIMEOUT, CONNECTIVITY_TIMEOUT,
     DEFAULT_PACK_SERVER_BASE_URL,
 };
 
@@ -275,9 +277,106 @@ pub struct RegionAcquisitionPlan {
     /// or when pack-fetch soft-fails.
     pub execute_local_convert: bool,
     pub log_message: String,
+    /// Short machine token for logs / UI:
+    /// `ok` | `timeout` | `not_in_catalog` | `fetch_error` | `format_gate` |
+    /// `network` | `http_404` | `malformed` | `catalog_empty` | …
+    pub decision_reason: String,
     pub catalog_generation: Option<String>,
     /// Final hop tag for UI / logs (`server-duckdns` / `local-bake`).
     pub data_source: PackDataSource,
+}
+
+fn classify_unreachable_kind(kind: ConnectivityFailureKind) -> &'static str {
+    match kind {
+        ConnectivityFailureKind::Timeout => "timeout",
+        ConnectivityFailureKind::Network => "network",
+        ConnectivityFailureKind::HttpStatus(404) => "http_404",
+        ConnectivityFailureKind::HttpStatus(_) => "http_status",
+        ConnectivityFailureKind::Malformed => "malformed",
+        ConnectivityFailureKind::Internal => "internal",
+    }
+}
+
+fn classify_fetch_failure(fetch_reason: &str) -> &'static str {
+    let lower = fetch_reason.to_ascii_lowercase();
+    if lower.contains("graph_format_version")
+        || lower.contains("wetland_format")
+        || lower.contains("poi_barrier_format")
+        || lower.contains("format check")
+        || lower.contains("not installing")
+    {
+        "format_gate"
+    } else if lower.contains("not ready") || lower.contains("packs not ready") {
+        "install_not_ready"
+    } else if lower.contains("data_dir") || lower.contains("no data dir") {
+        "no_data_dir"
+    } else {
+        "fetch_error"
+    }
+}
+
+fn classify_local_source_reason(reason: &str) -> &'static str {
+    let lower = reason.to_ascii_lowercase();
+    if lower.contains("not published") {
+        "not_in_catalog"
+    } else if lower.contains("catalog empty") {
+        "catalog_empty"
+    } else if lower.contains("timeout") {
+        "timeout"
+    } else if lower.contains("unreachable") {
+        // Prefer more specific tokens from ConnectivityFailureKind when available.
+        if lower.contains("http 404") || lower.contains("http_404") {
+            "http_404"
+        } else if lower.contains("malformed") {
+            "malformed"
+        } else {
+            "network"
+        }
+    } else {
+        "local"
+    }
+}
+
+/// Probe pack catalog; on a plain timeout, retry once with a longer budget.
+fn probe_catalog_with_timeout_retry(
+    base_url_override: Option<&str>,
+) -> (Connectivity, Option<PackDataSource>, f64) {
+    let t_conn = std::time::Instant::now();
+    let (mut connectivity, mut hop) = if let Some(base) = base_url_override {
+        let tag = hop_tag_for_override_base(base);
+        let conn = check_connectivity_blocking_timed(base, CONNECTIVITY_TIMEOUT);
+        let hop = if conn.is_ready() { Some(tag) } else { None };
+        (conn, hop)
+    } else {
+        let bases = pack_server_discovery_bases();
+        check_connectivity_chain_blocking_timed(&bases, CONNECTIVITY_TIMEOUT)
+    };
+
+    if matches!(
+        connectivity.failure_kind(),
+        Some(ConnectivityFailureKind::Timeout)
+    ) {
+        log::info!(
+            target: "NaviPack",
+            "plan_region_acquisition catalog probe timed out ({}ms budget); retrying with {}ms",
+            CONNECTIVITY_TIMEOUT.as_millis(),
+            CONNECTIVITY_RETRY_TIMEOUT.as_millis()
+        );
+        let (retry_conn, retry_hop) = if let Some(base) = base_url_override {
+            let tag = hop_tag_for_override_base(base);
+            let conn = check_connectivity_blocking_timed(base, CONNECTIVITY_RETRY_TIMEOUT);
+            let hop = if conn.is_ready() { Some(tag) } else { None };
+            (conn, hop)
+        } else {
+            let bases = pack_server_discovery_bases();
+            check_connectivity_chain_blocking_timed(&bases, CONNECTIVITY_RETRY_TIMEOUT)
+        };
+        connectivity = retry_conn;
+        hop = retry_hop;
+    }
+
+    let connectivity_ms = t_conn.elapsed().as_secs_f64() * 1000.0;
+    (connectivity, hop, connectivity_ms)
 }
 
 /// Check the pack host (or `base_url_override`), resolve source,
@@ -285,6 +384,11 @@ pub struct RegionAcquisitionPlan {
 ///
 /// When `base_url_override` is `Some`, only that host is probed (tests /
 /// UniFFI explicit URL). Silent automatic fallback — never panics.
+///
+/// A **timeout** on the first catalog probe is retried once with a longer
+/// budget before local-bake. Confirmed misses (`not_in_catalog`) fall through
+/// immediately. Soft failures still set [`RegionAcquisitionPlan::execute_local_convert`]
+/// but [`RegionAcquisitionPlan::decision_reason`] distinguishes the cause.
 pub fn plan_region_acquisition(
     region_id: &str,
     base_url_override: Option<&str>,
@@ -294,34 +398,17 @@ pub fn plan_region_acquisition(
     let region_id = normalize_region_id(region_id);
 
     crate::download::progress::set(0, None, "Checking pack server…");
-    let t_conn = std::time::Instant::now();
-    let (connectivity, hop) = if let Some(base) = base_url_override
+    let override_base = base_url_override
         .map(|s| s.trim().trim_end_matches('/'))
-        .filter(|s| !s.is_empty())
-    {
-        let tag = hop_tag_for_override_base(base);
-        let conn = check_connectivity_blocking(base);
-        let hop = if conn.is_ready() { Some(tag) } else { None };
-        (conn, hop)
-    } else {
-        let bases = pack_server_discovery_bases();
-        check_connectivity_chain_blocking(&bases)
-    };
-    let connectivity_ms = t_conn.elapsed().as_secs_f64() * 1000.0;
+        .filter(|s| !s.is_empty());
+    let (connectivity, hop, connectivity_ms) = probe_catalog_with_timeout_retry(override_base);
 
     let catalog_generation = connectivity.catalog().map(|c| c.catalog_generation.clone());
     let hop_for_resolve = hop.unwrap_or(PackDataSource::LocalBake);
     let source = resolve_region_source(&region_id, &connectivity, hop_for_resolve);
     let data_source = source.data_source();
-    log::info!(
-        target: "NaviPack",
-        "plan_region_acquisition region={region_id} connectivity_ms={connectivity_ms:.1} \
-         source_kind={} data_dir={}",
-        if source.is_server() { "server" } else { "local" },
-        data_dir.is_some()
-    );
 
-    match &source {
+    let plan = match &source {
         RegionSource::Server {
             region_id: rid,
             generation,
@@ -350,27 +437,28 @@ pub fn plan_region_acquisition(
                          connectivity_ms={connectivity_ms:.1} fetch_ms={fetch_ms:.1} total_ms={total_ms:.1}",
                         data_source.as_str()
                     );
-                    log::info!(target: "NaviPack", "{log_message}");
                     RegionAcquisitionPlan {
-                        source,
+                        source: source.clone(),
                         execute_local_convert: false,
                         log_message,
+                        decision_reason: "ok".into(),
                         catalog_generation,
                         data_source,
                     }
                 }
                 Err(fetch_reason) => {
                     let fetch_ms = t_fetch.elapsed().as_secs_f64() * 1000.0;
+                    let decision_reason = classify_fetch_failure(&fetch_reason).to_string();
                     let log_message = format!(
                         "source={} pack server has region {rid} (generation={generation:?}); pack fetch failed ({fetch_reason}) — using local convert \
-                         connectivity_ms={connectivity_ms:.1} fetch_ms={fetch_ms:.1}",
+                         connectivity_ms={connectivity_ms:.1} fetch_ms={fetch_ms:.1} decision_reason={decision_reason}",
                         data_source.as_str()
                     );
-                    log::info!(target: "NaviPack", "{log_message}");
                     RegionAcquisitionPlan {
-                        source,
+                        source: source.clone(),
                         execute_local_convert: true,
                         log_message,
+                        decision_reason,
                         catalog_generation,
                         data_source: PackDataSource::LocalBake,
                     }
@@ -379,20 +467,36 @@ pub fn plan_region_acquisition(
         }
         RegionSource::Local { reason, .. } => {
             let total_ms = t0.elapsed().as_secs_f64() * 1000.0;
+            let decision_reason = match connectivity.failure_kind() {
+                Some(kind) => classify_unreachable_kind(kind).to_string(),
+                None => classify_local_source_reason(reason).to_string(),
+            };
             let log_message = format!(
-                "source={} {reason} connectivity_ms={connectivity_ms:.1} total_ms={total_ms:.1}",
+                "source={} {reason} connectivity_ms={connectivity_ms:.1} total_ms={total_ms:.1} \
+                 decision_reason={decision_reason}",
                 PackDataSource::LocalBake.as_str()
             );
-            log::info!(target: "NaviPack", "{log_message}");
             RegionAcquisitionPlan {
-                source,
+                source: source.clone(),
                 execute_local_convert: true,
                 log_message,
+                decision_reason,
                 catalog_generation,
                 data_source: PackDataSource::LocalBake,
             }
         }
-    }
+    };
+
+    log::info!(
+        target: "NaviPack",
+        "plan_region_acquisition region={region_id} execute_local={} reason={} \
+         connectivity_ms={connectivity_ms:.1} data_dir={}",
+        plan.execute_local_convert,
+        plan.decision_reason,
+        data_dir.is_some()
+    );
+    log::info!(target: "NaviPack", "{}", plan.log_message);
+    plan
 }
 
 /// Resolve Geofabrik / pack-catalog region id for a leaf stem under `data_dir`.
@@ -503,6 +607,7 @@ pub fn ensure_indexed_packs_prefer_server(
     }
 
     let region_id = resolve_region_id_for_leaf(data_dir, &stem, region_id_hint);
+    let mut rebuild_reason = "no_region_id".to_string();
     if let Some(ref rid) = region_id {
         crate::download::progress::set(0, None, "Downloading updated pack from server…");
         log::info!(
@@ -530,25 +635,28 @@ pub fn ensure_indexed_packs_prefer_server(
                     });
                 }
             }
+            rebuild_reason = "install_not_ready".into();
             log::info!(
                 target: "NaviPack",
-                "ensure_indexed_packs: server install reported success but packs not Ready — local rebuild"
+                "ensure_indexed_packs: server install reported success but packs not Ready — local rebuild reason={rebuild_reason}"
             );
         } else {
+            rebuild_reason = plan.decision_reason.clone();
             log::info!(
                 target: "NaviPack",
-                "ensure_indexed_packs: server path unavailable ({}) — rebuilding locally",
+                "ensure_indexed_packs: server path unavailable reason={rebuild_reason} ({}) — rebuilding locally",
                 plan.log_message
             );
         }
     } else {
         log::info!(
             target: "NaviPack",
-            "ensure_indexed_packs: no region id for stem={stem} — rebuilding locally from PBF"
+            "ensure_indexed_packs: no region id for stem={stem} — rebuilding locally from PBF reason={rebuild_reason}"
         );
     }
 
-    crate::download::progress::set(0, None, "Rebuilding locally (server pack unavailable)…");
+    let progress_label = format!("Rebuilding locally ({rebuild_reason})…");
+    crate::download::progress::set(0, None, &progress_label);
     let mut opts = ConvertOptions::new(data_dir, pbf);
     opts.elev_dir = elev_dir.map(PathBuf::from);
     opts.profiles = vec![
@@ -560,7 +668,7 @@ pub fn ensure_indexed_packs_prefer_server(
     match convert_region_packs(&opts) {
         Ok(r) => {
             let msg = format!(
-                "rebuilding locally (server pack unavailable); convert_ms={:.1}",
+                "rebuilding locally ({rebuild_reason}); convert_ms={:.1}",
                 r.convert_ms
             );
             log::info!(target: "NaviPack", "{msg}");
@@ -579,7 +687,7 @@ pub fn ensure_indexed_packs_prefer_server(
                 convert_ms: None,
             })
         }
-        Err(e) => Err(format!("indexed convert: {e:#}")),
+        Err(e) => Err(format!("indexed convert ({rebuild_reason}): {e:#}")),
     }
 }
 
@@ -605,9 +713,31 @@ mod tests {
     }
 
     #[test]
-    fn data_source_tags() {
-        assert_eq!(PackDataSource::ServerDuckdns.as_str(), "server-duckdns");
-        assert_eq!(PackDataSource::LocalBake.as_str(), "local-bake");
+    fn classify_unreachable_and_fetch_tokens() {
+        assert_eq!(
+            classify_unreachable_kind(ConnectivityFailureKind::Timeout),
+            "timeout"
+        );
+        assert_eq!(
+            classify_unreachable_kind(ConnectivityFailureKind::HttpStatus(404)),
+            "http_404"
+        );
+        assert_eq!(
+            classify_fetch_failure(
+                "server pack graph_format_version=6 (client needs 8) — not installing"
+            ),
+            "format_gate"
+        );
+        assert_eq!(
+            classify_fetch_failure("installed packs not Ready for monaco-latest: Missing"),
+            "install_not_ready"
+        );
+        assert_eq!(
+            classify_local_source_reason(
+                "region not published on pack server (europe/foo), using local convert"
+            ),
+            "not_in_catalog"
+        );
     }
 
     #[test]

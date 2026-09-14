@@ -6,9 +6,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Documents Download-region phase order: packs+extract → basemap → (local convert) →
- * place index, and that offline style URIs differ per PMTiles archive
- * (2nd-region render fix).
+ * Documents Download-region phase order: packs+extract → basemap → place index,
+ * with local convert handed to IndexedMapsBackground afterward (not blocking
+ * place index). Offline style URIs differ per PMTiles archive (2nd-region render).
  */
 class RegionDownloadOrderTest {
     @Test

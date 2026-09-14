@@ -8,7 +8,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import uniffi.navi.convertProgressSnapshot
-import uniffi.navi.downloadProgressSnapshot
 import uniffi.navi.ensureIndexedMaps
 import uniffi.navi.indexedMapsStatus
 import java.io.File
@@ -52,17 +51,9 @@ object IndexedMapsBackground {
         if (pbf == null || !pbf.isFile) return ""
         if (running.get()) {
             val snap =
-                runCatching { downloadProgressSnapshot() }.getOrNull()?.takeIf {
-                    it.label.isNotBlank() &&
-                        (
-                            it.label.contains("pack", ignoreCase = true) ||
-                                it.label.contains("server", ignoreCase = true) ||
-                                it.label.contains("Downloading updated", ignoreCase = true) ||
-                                it.label.contains("Rebuilding locally", ignoreCase = true) ||
-                                it.label.contains("Checking pack format", ignoreCase = true) ||
-                                it.label.contains("Fetching packs", ignoreCase = true)
-                        )
-                } ?: runCatching { convertProgressSnapshot() }.getOrNull()
+                runCatching { convertProgressSnapshot() }.getOrNull()?.takeIf {
+                    it.label.isNotBlank()
+                }
             val prog =
                 if (snap != null && snap.label.isNotBlank()) {
                     val pct =
@@ -120,6 +111,30 @@ object IndexedMapsBackground {
         regionId: String? = null,
     ) {
         if (!pbf.isFile) return
+        val rid = regionId?.trim()?.trim('/').orEmpty()
+        val resolvedPbf =
+            if (rid.isNotEmpty()) {
+                val matched =
+                    PackRegionAvailability.resolvePbfForRegion(dataDir, rid)
+                        ?: pbf.takeIf { PackRegionAvailability.pbfMatchesRegion(it, rid) }
+                android.util.Log.i(
+                    TAG,
+                    "local-bake pbf resolved region_id=$rid pbf=${(matched ?: pbf).absolutePath} " +
+                        "expected_prefix=$rid",
+                )
+                if (matched == null || !PackRegionAvailability.pbfMatchesRegion(matched, rid)) {
+                    android.util.Log.e(
+                        TAG,
+                        "FAIL: PBF/region mismatch region_id=$rid pbf=${pbf.name} " +
+                            "expected_stem=${PackRegionAvailability.localStem(rid)} — refusing convert",
+                    )
+                    lastStatus.set("failed (pbf/region mismatch)")
+                    return
+                }
+                matched
+            } else {
+                pbf
+            }
         this.scope.launch {
             val shouldRun =
                 mutex.withLock {
@@ -128,21 +143,21 @@ object IndexedMapsBackground {
                     }
                     val st =
                         runCatching {
-                            indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath).trim()
+                            indexedMapsStatus(resolvedPbf.absolutePath, dataDir.absolutePath).trim()
                         }.getOrElse {
                             Log.e(TAG, "indexedMapsStatus failed", it)
                             "error"
                         }
                     if (st == "ready") {
                         lastStatus.set("ready")
-                        Log.i(TAG, "packs ready; skip refresh pbf=${pbf.name}")
+                        Log.i(TAG, "packs ready; skip refresh pbf=${resolvedPbf.name}")
                         return@withLock false
                     }
                     running.set(true)
                     lastStatus.set("starting ($st) — pack server first")
                     Log.i(
                         TAG,
-                        "start ensureIndexedMaps status=$st pbf=${pbf.name} regionId=$regionId",
+                        "start ensureIndexedMaps status=$st pbf=${resolvedPbf.name} regionId=$rid",
                     )
                     true
                 }
@@ -151,10 +166,12 @@ object IndexedMapsBackground {
                 convertProgressClearSafe()
                 val report =
                     ensureIndexedMaps(
-                        pbf.absolutePath,
+                        resolvedPbf.absolutePath,
                         dataDir.absolutePath,
                         elevDir?.takeIf { it.isDirectory }?.absolutePath,
-                        regionId?.trim()?.trim('/')?.ifBlank { null },
+                        rid.ifBlank { null },
+                        // Own Convert slot — never clobber RegionDownload Download progress.
+                        progressOnConvertChannel = true,
                     )
                 lastStatus.set(
                     when {
@@ -162,7 +179,7 @@ object IndexedMapsBackground {
                             "done (downloaded updated pack from server)"
                         report.contains("path=local_rebuild") ||
                             report.contains("rebuilding locally") ->
-                            "done (rebuilt locally — server pack unavailable)"
+                            "done (rebuilt locally — ${extractRebuildReason(report)})"
                         report.contains("PASS") && report.contains("cache_hit=true") -> "done (already ready)"
                         report.contains("PASS") -> "done"
                         report.contains("skipped=convert_in_progress") ||
@@ -186,5 +203,18 @@ object IndexedMapsBackground {
 
     private fun convertProgressClearSafe() {
         runCatching { uniffi.navi.convertProgressClear() }
+    }
+
+    /** Pull `rebuilding locally (reason)` token from an ensureIndexedMaps report. */
+    private fun extractRebuildReason(report: String): String {
+        val m =
+            Regex("""rebuilding locally \(([^)]+)\)""")
+                .find(report)
+        return m
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            .orEmpty()
+            .ifBlank { "local-bake" }
     }
 }

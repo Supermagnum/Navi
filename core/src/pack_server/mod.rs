@@ -64,6 +64,11 @@ pub const DEFAULT_PACK_SERVER_BASE_URL: &str = "https://navigate-me.duckdns.org"
 /// Per-host connect + discovery GET timeout (short so the chain stays snappy).
 pub const CONNECTIVITY_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// Second-chance catalog probe after a plain [`CONNECTIVITY_TIMEOUT`].
+/// Transient load right after a heavy region download must not be treated as
+/// "region not published".
+pub const CONNECTIVITY_RETRY_TIMEOUT: Duration = Duration::from_secs(8);
+
 /// Default body read timeout for larger GETs (DATEX XML, future pack files).
 const BODY_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -358,12 +363,17 @@ fn parse_current_json(body: &str, served_from: &str) -> Connectivity {
     })
 }
 
-/// `GET {base_url}/current.json` with a short timeout; parse into a catalog.
+/// `GET {base_url}/current.json` with [`CONNECTIVITY_TIMEOUT`]; parse into a catalog.
 ///
 /// On HTTP 200 + valid JSON returns [`Connectivity::Ready`]. On timeout, DNS,
 /// connect failure, non-2xx (including 404), or malformed JSON returns
 /// [`Connectivity::Unreachable`] — never panics.
 pub async fn check_connectivity(base_url: &str) -> Connectivity {
+    check_connectivity_timed(base_url, CONNECTIVITY_TIMEOUT).await
+}
+
+/// Same as [`check_connectivity`] with an explicit request timeout.
+pub async fn check_connectivity_timed(base_url: &str, timeout: Duration) -> Connectivity {
     let t0 = std::time::Instant::now();
     let base = base_url.trim().trim_end_matches('/');
     let url = current_json_url(base);
@@ -371,7 +381,7 @@ pub async fn check_connectivity(base_url: &str) -> Connectivity {
 
     let response = match client
         .get(&url)
-        .timeout(CONNECTIVITY_TIMEOUT)
+        .timeout(timeout)
         .header(reqwest::header::USER_AGENT, USER_AGENT)
         .send()
         .await
@@ -431,6 +441,11 @@ pub async fn check_connectivity(base_url: &str) -> Connectivity {
 
 /// Blocking wrapper around [`check_connectivity`].
 pub fn check_connectivity_blocking(base_url: &str) -> Connectivity {
+    check_connectivity_blocking_timed(base_url, CONNECTIVITY_TIMEOUT)
+}
+
+/// Blocking wrapper around [`check_connectivity_timed`].
+pub fn check_connectivity_blocking_timed(base_url: &str, timeout: Duration) -> Connectivity {
     let rt = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -438,7 +453,7 @@ pub fn check_connectivity_blocking(base_url: &str) -> Connectivity {
         Ok(rt) => rt,
         Err(e) => return unreachable(ConnectivityFailureKind::Internal, format!("runtime: {e}")),
     };
-    rt.block_on(check_connectivity(base_url))
+    rt.block_on(check_connectivity_timed(base_url, timeout))
 }
 
 /// Try each `(source, base_url)` in order; return the first ready catalog.
@@ -448,6 +463,14 @@ pub fn check_connectivity_blocking(base_url: &str) -> Connectivity {
 pub async fn check_connectivity_chain(
     bases: &[(PackDataSource, String)],
 ) -> (Connectivity, Option<PackDataSource>) {
+    check_connectivity_chain_timed(bases, CONNECTIVITY_TIMEOUT).await
+}
+
+/// Same as [`check_connectivity_chain`] with an explicit per-hop timeout.
+pub async fn check_connectivity_chain_timed(
+    bases: &[(PackDataSource, String)],
+    timeout: Duration,
+) -> (Connectivity, Option<PackDataSource>) {
     let t_chain = std::time::Instant::now();
     let mut last = unreachable(
         ConnectivityFailureKind::Internal,
@@ -455,15 +478,16 @@ pub async fn check_connectivity_chain(
     );
     for (source, base) in bases {
         let t_hop = std::time::Instant::now();
-        match check_connectivity(base).await {
+        match check_connectivity_timed(base, timeout).await {
             ready @ Connectivity::Ready(_) => {
                 let hop_ms = t_hop.elapsed().as_secs_f64() * 1000.0;
                 let chain_ms = t_chain.elapsed().as_secs_f64() * 1000.0;
                 log::info!(
                     target: "NaviPack",
-                    "check_connectivity_chain selected={} ({}) hop_ms={hop_ms:.1} chain_ms={chain_ms:.1}",
+                    "check_connectivity_chain selected={} ({}) hop_ms={hop_ms:.1} chain_ms={chain_ms:.1} timeout_ms={}",
                     source.as_str(),
-                    base
+                    base,
+                    timeout.as_millis()
                 );
                 return (ready, Some(*source));
             }
@@ -495,6 +519,14 @@ pub async fn check_connectivity_chain(
 pub fn check_connectivity_chain_blocking(
     bases: &[(PackDataSource, String)],
 ) -> (Connectivity, Option<PackDataSource>) {
+    check_connectivity_chain_blocking_timed(bases, CONNECTIVITY_TIMEOUT)
+}
+
+/// Blocking wrapper around [`check_connectivity_chain_timed`].
+pub fn check_connectivity_chain_blocking_timed(
+    bases: &[(PackDataSource, String)],
+    timeout: Duration,
+) -> (Connectivity, Option<PackDataSource>) {
     let rt = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -507,7 +539,7 @@ pub fn check_connectivity_chain_blocking(
             )
         }
     };
-    rt.block_on(check_connectivity_chain(bases))
+    rt.block_on(check_connectivity_chain_timed(bases, timeout))
 }
 
 #[cfg(test)]

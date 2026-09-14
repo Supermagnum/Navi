@@ -66,6 +66,47 @@ object PackRegionAvailability {
     }
 
     /**
+     * True when [pbf]'s leaf stem matches [geofabrikPath] (e.g. `vestlandet-latest.osm.pbf`
+     * for `europe/norway/vestlandet`). Alias pairs (Västra Götaland) are accepted.
+     */
+    fun pbfMatchesRegion(
+        pbf: File,
+        geofabrikPath: String,
+    ): Boolean {
+        val got =
+            pbf.name
+                .removeSuffix(".osm.pbf")
+                .removeSuffix(".pbf")
+                .lowercase()
+        if (got.isEmpty()) return false
+        val candidates =
+            buildList {
+                add(normalize(geofabrikPath))
+                addAll(packCatalogRegionIdAliases(geofabrikPath))
+            }
+        return candidates.any { path ->
+            localStem(path).equals(got, ignoreCase = true)
+        }
+    }
+
+    /** On-disk PBF for [geofabrikPath] under [dataDir], or null if missing. */
+    fun resolvePbfForRegion(
+        dataDir: File,
+        geofabrikPath: String,
+    ): File? {
+        val candidates =
+            buildList {
+                add(normalize(geofabrikPath))
+                addAll(packCatalogRegionIdAliases(geofabrikPath))
+            }
+        for (path in candidates) {
+            val f = File(dataDir, "${localStem(path)}.osm.pbf")
+            if (f.isFile && f.length() > 10_000L) return f
+        }
+        return null
+    }
+
+    /**
      * Same stem as core `geofabrik_path_to_region_key`
      * (`europe/norway/ostlandet` → `europe_norway_ostlandet`).
      */

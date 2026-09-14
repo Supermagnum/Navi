@@ -94,7 +94,7 @@ class OstlandetV3TiledRebuildInstrumentedTest {
 
         // No elev_dir: tiled convert skips region-wide DEM warm by design.
         val t0 = System.nanoTime()
-        val report = ensureIndexedMaps(pbf.absolutePath, dir.absolutePath, null, null)
+        val report = ensureIndexedMaps(pbf.absolutePath, dir.absolutePath, null, null, false)
         val elapsedMs = (System.nanoTime() - t0) / 1_000_000L
         android.util.Log.i(
             "OstlandetV3Tiled",

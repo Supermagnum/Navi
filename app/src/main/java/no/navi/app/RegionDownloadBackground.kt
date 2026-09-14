@@ -13,7 +13,6 @@ import org.json.JSONObject
 import uniffi.navi.bindGeofabrikRegion
 import uniffi.navi.decideRegionAcquisition
 import uniffi.navi.downloadProgressSnapshot
-import uniffi.navi.ensureIndexedMaps
 import uniffi.navi.ensurePlaceIndex
 import uniffi.navi.geofabrikLatestPbfUrl
 import uniffi.navi.geofabrikPathForPbfName
@@ -30,10 +29,10 @@ import java.util.concurrent.atomic.AtomicReference
  * Regions are processed **one at a time**. When several are requested, the
  * region containing the user's current GPS fix is first; remaining regions
  * keep request order. For each region: download packs + Geofabrik extract +
- * basemap to completion, **then** (local-bake) run indexed-map convert to
- * completion, **then** build the place index. Never start place-index or
- * convert work while that region's downloads are still in progress; never
- * start the next region's download until this region's place index finishes.
+ * basemap to completion; on local-bake, build place index from the extract
+ * next (not gated on full convert), then hand convert to IndexedMapsBackground.
+ * Never start place-index while that region's downloads are still in progress;
+ * never start the next region's download until this region's place index finishes.
  * A force-stop still kills the HTTP stream, but [JOB_FILE] (with [Phase]) plus
  * `.partial` / [QUEUE_FILE] let the next launch resume without tapping Download
  * again.
@@ -706,6 +705,7 @@ object RegionDownloadBackground {
                     "pack routing source=${decision.source} " +
                         "data_source=${decision.dataSource} " +
                         "execute_local=${decision.executeLocalConvert} " +
+                        "decision_reason=${decision.decisionReason} " +
                         "reason=${decision.reason} " +
                         "decide_region_acquisition_ms=$checkMs",
                 )
@@ -819,6 +819,25 @@ object RegionDownloadBackground {
                 }
                 PlaceIndexReady.markReady(dataDir, pathForDecision)
                 markUsable(pathForDecision)
+                // Local-bake resume: place index is done; convert is non-blocking.
+                val resumePbf = File(dataDir, filename)
+                if (resumePbf.isFile &&
+                    resumePbf.length() >= MIN_PBF_BYTES &&
+                    PackRegionAvailability.localBakeReady(dataDir, pathForDecision)
+                ) {
+                    val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
+                    IndexedMapsBackground.ensureStarted(
+                        resumePbf,
+                        dataDir,
+                        elev,
+                        pathForDecision.ifBlank { null },
+                    )
+                    Log.i(
+                        TAG,
+                        "local-bake place index ready (resume); convert handed to " +
+                            "IndexedMapsBackground for $pathForDecision",
+                    )
+                }
                 lastCompletedPath.set(pathForDecision)
                 lastStatus.set("done")
                 return
@@ -861,25 +880,32 @@ object RegionDownloadBackground {
             }
             val pbf = File(dataDir, filename)
             if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
-                // Blocking convert so the next queued region cannot start
-                // while packs for this region are still being written.
-                runIndexedMapsLocal(
-                    pbf,
-                    dataDir,
-                    geofabrikPath.ifBlank { basemapPath }.ifBlank { null },
-                )
-            }
-            persistPhase(dataDir, url, filename, basemapPath, Phase.PLACE_INDEX)
-            if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
+                // Place index only needs the OSM extract — do not wait on a
+                // multi-hour local convert (same readiness as pack-server path).
+                persistPhase(dataDir, url, filename, basemapPath, Phase.PLACE_INDEX)
                 if (!runPlaceIndexLocal(dataDir, filename, basemapPath)) {
                     lastStatus.set("done (place index failed)")
                     lastCompletedPath.set(basemapPath)
                     return
                 }
-            }
-            if (basemapPath.isNotBlank()) {
-                PlaceIndexReady.markReady(dataDir, basemapPath)
-                markUsable(basemapPath)
+                if (basemapPath.isNotBlank()) {
+                    PlaceIndexReady.markReady(dataDir, basemapPath)
+                    markUsable(basemapPath)
+                }
+                // Hand convert to IndexedMapsBackground (Convert progress slot) so
+                // the region queue can proceed to the next download.
+                val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
+                IndexedMapsBackground.ensureStarted(
+                    pbf,
+                    dataDir,
+                    elev,
+                    geofabrikPath.ifBlank { basemapPath }.ifBlank { null },
+                )
+                Log.i(
+                    TAG,
+                    "local-bake place index ready; convert handed to IndexedMapsBackground " +
+                        "for ${geofabrikPath.ifBlank { basemapPath }}",
+                )
             }
             lastCompletedPath.set(basemapPath)
             lastStatus.set("done")
@@ -914,28 +940,6 @@ object RegionDownloadBackground {
         Log.i(TAG, "region usable for routing/search path=$trimmed")
     }
 
-    private fun runIndexedMapsLocal(
-        pbf: File,
-        dataDir: File,
-        regionId: String?,
-    ) {
-        val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
-        lastStatus.set("Building indexed maps…")
-        val report =
-            runCatching {
-                ensureIndexedMaps(
-                    pbf.absolutePath,
-                    dataDir.absolutePath,
-                    elev?.absolutePath,
-                    regionId?.trim()?.trim('/')?.ifBlank { null },
-                )
-            }.getOrElse { t ->
-                Log.e(TAG, "ensureIndexedMaps crashed", t)
-                "FAIL: ${t.message}\n"
-            }
-        Log.i(TAG, "local-bake indexed maps: ${report.take(400)}")
-    }
-
     private fun runPlaceIndexLocal(
         dataDir: File,
         filename: String,
@@ -943,13 +947,29 @@ object RegionDownloadBackground {
     ): Boolean {
         val pbf = File(dataDir, filename)
         if (!pbf.isFile || pbf.length() < MIN_PBF_BYTES) return false
+        val rid = regionId.trim().trim('/')
+        if (rid.isNotEmpty()) {
+            Log.i(
+                TAG,
+                "local-bake pbf resolved region_id=$rid pbf=${pbf.absolutePath} expected_prefix=$rid",
+            )
+            if (!PackRegionAvailability.pbfMatchesRegion(pbf, rid)) {
+                Log.e(
+                    TAG,
+                    "FAIL: PBF/region mismatch for place index region_id=$rid pbf=${pbf.name} " +
+                        "expected_stem=${PackRegionAvailability.localStem(rid)}",
+                )
+                lastStatus.set("failed (pbf/region mismatch)")
+                return false
+            }
+        }
         lastStatus.set("Place index: starting… 0% (0 / 6)")
         val placeReport =
             runCatching {
                 ensurePlaceIndex(
                     pbf.absolutePath,
                     File(dataDir, "place_index.db").absolutePath,
-                    regionId.ifBlank { null },
+                    rid.ifBlank { null },
                 )
             }.getOrElse { t ->
                 Log.e(TAG, "ensurePlaceIndex crashed", t)
