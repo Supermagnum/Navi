@@ -63,8 +63,10 @@ pub fn region_bbox(geofabrik_path: &str) -> Option<[f64; 4]> {
     {
         return Some(bbox);
     }
-    // Unknown subpath under a known country extract: use the country bbox.
-    if let Some((parent, _)) = path.rsplit_once('/') {
+    // Unknown subpath under a known extract: walk parents (e.g.
+    // europe/germany/bayern/oberbayern → europe/germany).
+    let mut rest = path.as_str();
+    while let Some((parent, _)) = rest.rsplit_once('/') {
         if let Some(bbox) = GEOFABRIK_PATH_BBOX
             .iter()
             .find(|(p, _)| *p == parent)
@@ -72,6 +74,7 @@ pub fn region_bbox(geofabrik_path: &str) -> Option<[f64; 4]> {
         {
             return Some(bbox);
         }
+        rest = parent;
     }
     None
 }
@@ -657,6 +660,16 @@ mod tests {
         let bbox = region_bbox("europe/norway/ostlandet").unwrap();
         assert!(bbox_covers_point(bbox, 59.91, 10.75));
         assert!(!bbox_covers_point(bbox, 69.65, 18.96));
+    }
+
+    #[test]
+    fn germany_nested_leaf_falls_back_to_country_bbox() {
+        let country = region_bbox("europe/germany").unwrap();
+        assert_eq!(
+            region_bbox("europe/germany/bayern/oberbayern"),
+            Some(country)
+        );
+        assert_eq!(region_bbox("europe/germany/bremen"), Some(country));
     }
 
     #[test]
