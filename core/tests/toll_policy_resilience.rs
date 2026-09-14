@@ -199,7 +199,7 @@ fn snap_under_never_use_skips_toll_only_island() {
     let query_lat = 60.00015;
     let query_lon = 10.00015;
     let (snap_allow, _) = graph
-        .nearest_routable_with_options(query_lat, query_lon, &RouteOptions::default())
+        .nearest_routable_with_options(query_lat, query_lon, &RouteOptions::default(), false)
         .expect("allow snap");
     assert!(
         matches!(snap_allow, NodeId(7) | NodeId(8) | NodeId(9)),
@@ -211,7 +211,7 @@ fn snap_under_never_use_skips_toll_only_island() {
         ..Default::default()
     };
     let (snap_never, _) = graph
-        .nearest_routable_with_options(query_lat, query_lon, &never)
+        .nearest_routable_with_options(query_lat, query_lon, &never, false)
         .expect("never-use snap");
     assert!(
         matches!(snap_never, NodeId(1) | NodeId(2)),
