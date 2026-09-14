@@ -132,6 +132,7 @@ checklist above and file an issue; you do not need to write code.
 2. [Support Navi](#support-navi)
 3. [Features](#features)
    - [What you need to download](#what-you-need-to-download)
+   - [Pack coverage (countries and subregions)](docs/coverage.md)
    - [Indexing (background after download)](#indexing-background-after-download)
    - [Leaving a downloaded region](#leaving-a-downloaded-region)
    - [Why route planning can take a while](#why-route-planning-can-take-a-while)
@@ -263,6 +264,8 @@ you can go offline.
 basemap PMTiles (or stay online for Liberty).  
 Prefer a **region** (not a whole huge country) on tablets with limited RAM —
 see [Minimum hardware and storage](#minimum-hardware-and-storage).
+Published pack-server countries and nested subregions (from live
+`current.json`): [`docs/coverage.md`](docs/coverage.md).
 
 After the region file is on disk, Navi **indexes** it in the background so later
 plans are fast — see [Indexing (background after download)](#indexing-background-after-download).
@@ -823,6 +826,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Tracked future-proofing / open risk items |
 | [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md) | Phased evaluation of preprocess-once indexed routing maps |
 | [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md) | Server / mirror of precomputed packs, commercial DB contrast, town-to-town route cache (direction; not shipped) |
+| [`docs/coverage.md`](docs/coverage.md) | Pack-server countries and subregions from `current.json` (TOC + region ids) |
 | [`docs/plugins.md`](docs/plugins.md) | Plugin host and roadmap (enable/disable; USB/Bluetooth I/O) |
 | [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic (Meshstick USB / BLE radio; not shipped) |
 
