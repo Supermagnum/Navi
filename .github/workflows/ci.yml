@@ -237,7 +237,11 @@ jobs:
           java-version: "17"
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # Google no longer publishes the obsolete `tools` package; the action
+          # default still includes it and fails sdkmanager on current runners.
+          packages: platform-tools
 
       - name: Cache Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -284,7 +288,10 @@ jobs:
           java-version: "17"
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # Default still includes obsolete `tools`; install platform-tools only.
+          packages: platform-tools
 
       - name: Cache Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -362,7 +369,10 @@ jobs:
           java-version: "17"
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # Default still includes obsolete `tools`; install platform-tools only.
+          packages: platform-tools
 
       - name: Cache Gradle
         uses: gradle/actions/setup-gradle@v4
