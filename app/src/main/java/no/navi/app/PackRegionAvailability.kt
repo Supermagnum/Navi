@@ -68,6 +68,8 @@ object PackRegionAvailability {
     /**
      * True when [pbf]'s leaf stem matches [geofabrikPath] (e.g. `vestlandet-latest.osm.pbf`
      * for `europe/norway/vestlandet`). Alias pairs (Västra Götaland) are accepted.
+     * Sweden län may use the country extract (`sweden-latest.osm.pbf`) because
+     * Geofabrik no longer publishes län PBFs.
      */
     fun pbfMatchesRegion(
         pbf: File,
@@ -79,10 +81,13 @@ object PackRegionAvailability {
                 .removeSuffix(".pbf")
                 .lowercase()
         if (got.isEmpty()) return false
+        val rid = GeofabrikDownloadCatalog.canonicalizePath(geofabrikPath)
         val candidates =
             buildList {
-                add(normalize(geofabrikPath))
-                addAll(packCatalogRegionIdAliases(geofabrikPath))
+                add(rid)
+                addAll(packCatalogRegionIdAliases(rid))
+                val extract = GeofabrikDownloadCatalog.extractPathForPbf(rid)
+                if (extract != rid) add(extract)
             }
         return candidates.any { path ->
             localStem(path).equals(got, ignoreCase = true)

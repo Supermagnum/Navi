@@ -1048,6 +1048,18 @@ private fun NaviMapScreen() {
         remember {
             GeofabrikDownloadCatalog.swedenRegions.map { (slug, _) -> "europe/sweden/$slug" }
         }
+    val ukNationPaths =
+        remember {
+            GeofabrikDownloadCatalog.unitedKingdomNations.map { (slug, _) ->
+                "europe/united-kingdom/$slug"
+            }
+        }
+    val englandCountyPaths =
+        remember {
+            GeofabrikDownloadCatalog.englandCounties.map { (slug, _) ->
+                "europe/united-kingdom/england/$slug"
+            }
+        }
 
     fun pathPillReady(path: String): Boolean =
         PackRegionAvailability.pillReady(
@@ -1058,6 +1070,8 @@ private fun NaviMapScreen() {
                 when (GeofabrikDownloadCatalog.regionChipBasePath(path)) {
                     "europe/norway" -> norwayChildPaths
                     "europe/sweden" -> swedenChildPaths
+                    "europe/united-kingdom" -> ukNationPaths + englandCountyPaths
+                    "europe/united-kingdom/england" -> englandCountyPaths
                     else -> emptyList()
                 },
         )
@@ -1946,15 +1960,17 @@ private fun NaviMapScreen() {
     }
 
     fun startRegionDownload(path: String) {
-        val leaf = path.substringAfterLast('/')
+        val packPath = GeofabrikDownloadCatalog.canonicalizePath(path)
+        val extractPath = GeofabrikDownloadCatalog.extractPathForPbf(packPath)
+        val leaf = extractPath.substringAfterLast('/')
         val filename = "$leaf-latest.osm.pbf"
         // Real pack fetch runs in RegionDownloadBackground (catalog + install).
         // Do not probe decideRegionAcquisition here — that duplicated discovery
         // and could stall the UI thread for the full host timeout.
-        val url = geofabrikLatestPbfUrl(path)
+        val url = geofabrikLatestPbfUrl(packPath)
         val already = RegionDownloadBackground.partialBytes(dataDir, filename)
         val serverReady =
-            PackRegionAvailability.pathCoveredByReadyIds(path, packServerReadyIds)
+            PackRegionAvailability.pathCoveredByReadyIds(packPath, packServerReadyIds)
         regionDownloadProgress =
             if (already > 0L) {
                 "Resuming download…"
@@ -1967,12 +1983,12 @@ private fun NaviMapScreen() {
         toolsProcessReady = false
         status =
             when {
-                already > 0L -> "Resuming download of $path…"
+                already > 0L -> "Resuming download of $packPath…"
                 serverReady ->
-                    "Pack server has $path ($packCatalogDataSource); installing packs + place index…"
-                else -> "Downloading $path (download all data, then place index)…"
+                    "Pack server has $packPath ($packCatalogDataSource); installing packs + place index…"
+                else -> "Downloading $packPath (download all data, then place index)…"
             }
-        MapHudPrefs.saveGeofabrikPath(context, path)
+        MapHudPrefs.saveGeofabrikPath(context, packPath)
         val gpsLat = mapState.gpsLat.takeIf { it != 0.0 }
         val gpsLon = mapState.gpsLon.takeIf { mapState.gpsLat != 0.0 }
         RegionDownloadBackground.ensureStarted(
@@ -1980,7 +1996,7 @@ private fun NaviMapScreen() {
             dataDir,
             url,
             filename,
-            path,
+            packPath,
             userLat = gpsLat,
             userLon = gpsLon,
         )
@@ -6182,6 +6198,8 @@ private fun NaviMapScreen() {
                                     when (chipBase) {
                                         "europe/norway" -> "chip_norway"
                                         "europe/sweden" -> "chip_sweden"
+                                        "europe/united-kingdom" -> "chip_uk"
+                                        "europe/united-kingdom/england" -> "chip_england"
                                         else -> "chip_region"
                                     }
                                 Row(

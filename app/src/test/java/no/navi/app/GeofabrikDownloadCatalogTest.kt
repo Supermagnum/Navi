@@ -34,11 +34,24 @@ class GeofabrikDownloadCatalogTest {
     }
 
     @Test
+    fun sweden_extract_path_uses_country_pbf() {
+        assertEquals(
+            "europe/sweden",
+            GeofabrikDownloadCatalog.extractPathForPbf("europe/sweden/stockholm"),
+        )
+        assertEquals(
+            "europe/sweden/stockholm",
+            GeofabrikDownloadCatalog.canonicalizePath("europe/sweden/stockholm"),
+        )
+    }
+
+    @Test
     fun sweden_no_longer_uses_country_only_granularity_note() {
         // Sweden has chips; the note path is for countries without chips.
         val note = GeofabrikDownloadCatalog.regionGranularityNote("europe/denmark")
         assertTrue(note.contains("Sweden", ignoreCase = true) || note.contains("län"))
         assertTrue(note.contains("Norway", ignoreCase = true))
+        assertTrue(note.contains("United Kingdom", ignoreCase = true) || note.contains("UK"))
     }
 
     @Test
@@ -55,9 +68,80 @@ class GeofabrikDownloadCatalogTest {
     }
 
     @Test
+    fun great_britain_note_points_at_united_kingdom() {
+        val note = GeofabrikDownloadCatalog.regionGranularityNote("europe/great-britain")
+        assertTrue(note.contains("United Kingdom"))
+        assertTrue(note.contains("borough", ignoreCase = true) || note.contains("London"))
+    }
+
+    @Test
+    fun united_kingdom_and_england_chips_are_live_geofabrik_leaves() {
+        assertTrue(GeofabrikDownloadCatalog.hasRegionChips("europe/united-kingdom"))
+        assertEquals(
+            "europe/united-kingdom/england",
+            GeofabrikDownloadCatalog.defaultRegionChipPath("europe/united-kingdom"),
+        )
+        assertTrue(
+            GeofabrikDownloadCatalog.unitedKingdomNations.any { it.first == "england" },
+        )
+        assertFalse(
+            GeofabrikDownloadCatalog.englandCounties.any { it.first == "enfield" },
+        )
+        assertTrue(
+            GeofabrikDownloadCatalog.englandCounties.any { it.first == "greater-london" },
+        )
+        assertEquals(47, GeofabrikDownloadCatalog.englandCounties.size)
+        assertEquals(
+            "europe/united-kingdom/england/greater-london",
+            GeofabrikDownloadCatalog.defaultRegionChipPath("europe/united-kingdom/england"),
+        )
+        assertEquals(
+            "europe/united-kingdom/england",
+            GeofabrikDownloadCatalog.regionChipBasePath(
+                "europe/united-kingdom/england/greater-london",
+            ),
+        )
+    }
+
+    @Test
+    fun canonicalize_retired_london_borough_to_greater_london() {
+        val want = "europe/united-kingdom/england/greater-london"
+        assertEquals(
+            want,
+            GeofabrikDownloadCatalog.canonicalizePath(
+                "europe/united-kingdom/england/london/enfield",
+            ),
+        )
+        assertEquals(
+            want,
+            GeofabrikDownloadCatalog.canonicalizePath("europe/united-kingdom/england/london"),
+        )
+        assertEquals(want, GeofabrikDownloadCatalog.canonicalizePath("enfield"))
+        assertEquals(want, GeofabrikDownloadCatalog.canonicalizePath(want))
+        assertEquals(
+            "europe/great-britain",
+            GeofabrikDownloadCatalog.canonicalizePath("europe/great-britain"),
+        )
+        assertEquals(
+            "europe/united-kingdom/england",
+            GeofabrikDownloadCatalog.canonicalizePath("europe/great-britain/england"),
+        )
+    }
+
+    @Test
     fun russia_region_note_points_at_typed_district() {
         val note = GeofabrikDownloadCatalog.regionGranularityNote("russia")
         assertTrue(note.contains("kaliningrad"))
         assertTrue(note.contains("federal-district", ignoreCase = true) || note.contains("district"))
+    }
+
+    @Test
+    fun catalog_country_paths_include_united_kingdom() {
+        assertTrue(
+            GeofabrikDownloadCatalog.countries.any { it.path == "europe/united-kingdom" },
+        )
+        assertTrue(
+            GeofabrikDownloadCatalog.countries.any { it.path == "europe/great-britain" },
+        )
     }
 }

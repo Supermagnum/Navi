@@ -625,8 +625,20 @@ object GeofabrikDownloadCatalog {
                 continent = GeofabrikContinent.Europe,
                 iso = "gb",
                 supportNote =
-                    "Offline maps (country extract). Truck HOS: decline until a dedicated UK pack exists. Speed cameras: opt-in.",
+                    "Offline maps (England+Scotland+Wales country extract, no NI). " +
+                        "For nations/counties use United Kingdom. Truck HOS: decline. Speed cameras: opt-in.",
                 testTag = "chip_country_europe_great_britain",
+            ),
+            GeofabrikCountry(
+                label = "United Kingdom",
+                path = "europe/united-kingdom",
+                continent = GeofabrikContinent.Europe,
+                iso = "gb",
+                supportNote =
+                    "Offline maps (UK extract + nation/county chips). Includes Northern Ireland. " +
+                        "London borough extracts were retired — use Greater London. " +
+                        "Truck HOS: decline. Speed cameras: opt-in.",
+                testTag = "chip_country_europe_united_kingdom",
             ),
             GeofabrikCountry(
                 label = "Greece",
@@ -796,7 +808,8 @@ object GeofabrikDownloadCatalog {
                 continent = GeofabrikContinent.Europe,
                 iso = "se",
                 supportNote =
-                    "Offline maps: prefer a län under Region in country (pack server). " +
+                    "Offline maps: Geofabrik publishes only the country extract; län chips install " +
+                        "pack-server regions and use the Sweden PBF for place index. " +
                         "Truck HOS: EC 561 from GPS. Speed cameras: decline (not allow-listed).",
                 testTag = "chip_country_europe_sweden",
             ),
@@ -904,25 +917,63 @@ object GeofabrikDownloadCatalog {
     fun countriesIn(continent: GeofabrikContinent): List<GeofabrikCountry> = countries.filter { it.continent == continent }
 
     fun findByPath(path: String): GeofabrikCountry? {
-        val norm = path.trim().trim('/').lowercase()
+        val norm = canonicalizePath(path)
         return countries.firstOrNull { it.path == norm }
             ?: countries.firstOrNull { norm.startsWith(it.path + "/") }
     }
 
+    /**
+     * Remap retired / relocated Geofabrik paths. Keep in sync with core
+     * `canonicalize_geofabrik_region_path`.
+     */
+    fun canonicalizePath(path: String): String {
+        val norm = path.trim().trim('/').lowercase()
+        val greaterLondon = "europe/united-kingdom/england/greater-london"
+        return when {
+            norm == "europe/united-kingdom/england/london" ||
+                norm.startsWith("europe/united-kingdom/england/london/") ||
+                norm == "enfield" ||
+                norm == "london" -> greaterLondon
+            norm.startsWith("europe/great-britain/") ->
+                "europe/united-kingdom/" + norm.removePrefix("europe/great-britain/")
+            else -> norm
+        }
+    }
+
+    /**
+     * Path used for Geofabrik `-latest.osm.pbf` / updates. Sweden län keep their
+     * pack region id but download the country extract (Geofabrik has no län PBFs).
+     * Mirrors core `geofabrik_extract_path`.
+     */
+    fun extractPathForPbf(path: String): String {
+        val norm = canonicalizePath(path)
+        return if (norm.startsWith("europe/sweden/")) "europe/sweden" else norm
+    }
+
     fun continentForPath(path: String): GeofabrikContinent = findByPath(path)?.continent ?: GeofabrikContinent.Europe
 
-    /** Norway landsdeler and Sweden län have sub-region chips in Tools. */
+    /** Norway landsdeler, Sweden län, and UK nation/county chips in Tools. */
     fun hasRegionChips(path: String): Boolean {
-        val norm = path.trim().trim('/').lowercase()
+        val norm = canonicalizePath(path)
         return regionChipBasePath(norm) != null
     }
 
-    /** Parent path for chip rows (`europe/norway` / `europe/sweden`), or null. */
+    /**
+     * Parent path for chip rows, or null.
+     * UK: nation chips under `united-kingdom`; county chips under `…/england`
+     * (no retired London borough chips — Greater London only).
+     */
     fun regionChipBasePath(path: String): String? {
-        val norm = path.trim().trim('/').lowercase()
+        val norm = canonicalizePath(path)
         return when {
             norm == "europe/norway" || norm.startsWith("europe/norway/") -> "europe/norway"
             norm == "europe/sweden" || norm.startsWith("europe/sweden/") -> "europe/sweden"
+            norm == "europe/united-kingdom/england" ||
+                norm.startsWith("europe/united-kingdom/england/") ->
+                "europe/united-kingdom/england"
+            norm == "europe/united-kingdom" ||
+                norm.startsWith("europe/united-kingdom/") ->
+                "europe/united-kingdom"
             else -> null
         }
     }
@@ -932,6 +983,9 @@ object GeofabrikDownloadCatalog {
         when (regionChipBasePath(path)) {
             "europe/norway" -> "europe/norway/ostlandet"
             "europe/sweden" -> "europe/sweden/stockholm"
+            "europe/united-kingdom" -> "europe/united-kingdom/england"
+            "europe/united-kingdom/england" ->
+                "europe/united-kingdom/england/greater-london"
             else -> null
         }
 
@@ -940,6 +994,8 @@ object GeofabrikDownloadCatalog {
         when (regionChipBasePath(path)) {
             "europe/norway" -> norwayRegions
             "europe/sweden" -> swedenRegions
+            "europe/united-kingdom" -> unitedKingdomNations
+            "europe/united-kingdom/england" -> englandCounties
             else -> null
         }
 
@@ -955,12 +1011,8 @@ object GeofabrikDownloadCatalog {
         )
 
     /**
-     * Sweden län chips — slugs match published `current.json` `region_id` leaves
-     * under `europe/sweden` (including `vastra_gotaland` with underscore).
-     *
-     * Typed/legacy hyphen path `europe/sweden/vastra-gotaland` still resolves via
-     * [PackRegionAvailability.packCatalogRegionIdAliases] and Rust
-     * `pack_catalog_region_id_aliases`.
+     * Sweden län chips — pack-server `region_id` leaves under `europe/sweden`.
+     * Geofabrik has no län PBFs; [extractPathForPbf] uses the country extract.
      */
     val swedenRegions: List<Pair<String, String>> =
         listOf(
@@ -987,6 +1039,69 @@ object GeofabrikDownloadCatalog {
             "vastra_gotaland" to "Västra Götaland",
         )
 
+    /** Top-level UK nation chips (live Geofabrik + pack catalog). */
+    val unitedKingdomNations: List<Pair<String, String>> =
+        listOf(
+            "england" to "England",
+            "scotland" to "Scotland",
+            "wales" to "Wales",
+        )
+
+    /**
+     * England ceremonial/county extracts from Geofabrik index-v1 (no London
+     * borough leaves — only Greater London).
+     */
+    val englandCounties: List<Pair<String, String>> =
+        listOf(
+            "bedfordshire" to "Bedfordshire",
+            "berkshire" to "Berkshire",
+            "bristol" to "Bristol",
+            "buckinghamshire" to "Buckinghamshire",
+            "cambridgeshire" to "Cambridgeshire",
+            "cheshire" to "Cheshire",
+            "cornwall" to "Cornwall",
+            "cumbria" to "Cumbria",
+            "derbyshire" to "Derbyshire",
+            "devon" to "Devon",
+            "dorset" to "Dorset",
+            "durham" to "Durham",
+            "east-sussex" to "East Sussex",
+            "east-yorkshire-with-hull" to "East Yorkshire with Hull",
+            "essex" to "Essex",
+            "gloucestershire" to "Gloucestershire",
+            "greater-london" to "Greater London",
+            "greater-manchester" to "Greater Manchester",
+            "hampshire" to "Hampshire",
+            "herefordshire" to "Herefordshire",
+            "hertfordshire" to "Hertfordshire",
+            "isle-of-wight" to "Isle of Wight",
+            "kent" to "Kent",
+            "lancashire" to "Lancashire",
+            "leicestershire" to "Leicestershire",
+            "lincolnshire" to "Lincolnshire",
+            "merseyside" to "Merseyside",
+            "norfolk" to "Norfolk",
+            "north-yorkshire" to "North Yorkshire",
+            "northamptonshire" to "Northamptonshire",
+            "northumberland" to "Northumberland",
+            "nottinghamshire" to "Nottinghamshire",
+            "oxfordshire" to "Oxfordshire",
+            "rutland" to "Rutland",
+            "shropshire" to "Shropshire",
+            "somerset" to "Somerset",
+            "south-yorkshire" to "South Yorkshire",
+            "staffordshire" to "Staffordshire",
+            "suffolk" to "Suffolk",
+            "surrey" to "Surrey",
+            "tyne-and-wear" to "Tyne and Wear",
+            "warwickshire" to "Warwickshire",
+            "west-midlands" to "West Midlands",
+            "west-sussex" to "West Sussex",
+            "west-yorkshire" to "West Yorkshire",
+            "wiltshire" to "Wiltshire",
+            "worcestershire" to "Worcestershire",
+        )
+
     const val EMPTY_CONTINENT_NOTE =
         "No supported map extracts for this continent yet."
 
@@ -1001,12 +1116,15 @@ object GeofabrikDownloadCatalog {
                 "US states are published by Geofabrik, but this picker lists the country extract. Enter a state path such as north-america/us/west-virginia, or switch back to Country."
             "europe/germany" ->
                 "German states are published by Geofabrik, but this picker lists the country extract. Enter a state path such as europe/germany/bremen, or switch back to Country."
+            "europe/great-britain" ->
+                "Great Britain is the GB-only country extract. For England/Scotland/Wales/counties " +
+                    "(including Greater London), select United Kingdom. London borough extracts were retired."
             "russia" ->
                 "Geofabrik publishes Russian federal-district extracts, but this picker lists the country extract only. Enter a district path such as russia/kaliningrad, or switch back to Country."
             else ->
-                "Sub-region chips are listed for Norway (landsdeler) and Sweden (län) today. " +
-                    "Enter a Geofabrik subpath in the field below " +
-                    "(e.g. europe/germany/bayern), or switch back to Country."
+                "Sub-region chips are listed for Norway (landsdeler), Sweden (län), and the " +
+                    "United Kingdom (nations / England counties). Enter a Geofabrik subpath in the " +
+                    "field below (e.g. europe/germany/bayern), or switch back to Country."
         }
     }
 }

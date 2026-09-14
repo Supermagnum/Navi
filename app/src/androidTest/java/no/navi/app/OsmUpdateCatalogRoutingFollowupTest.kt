@@ -243,7 +243,7 @@ class OsmUpdateCatalogRoutingFollowupTest {
         clickTag("chip_continent_europe")
         clickTag("chip_country_europe_sweden")
         clickTag("chip_download_region")
-        // Sweden now has län chips (same pattern as Norway landsdeler).
+        // Sweden län chips (pack-server ids); Geofabrik extract is country-only.
         composeRule
             .onNodeWithTag("chip_sweden_stockholm", useUnmergedTree = true)
             .assertExists()
@@ -258,6 +258,37 @@ class OsmUpdateCatalogRoutingFollowupTest {
         assertTrue(
             "Kronobergs län must not be a Geofabrik extract: $kronoberg",
             kronoberg.first >= 400 || kronoberg.second < 1_000_000L,
+        )
+
+        clickTag("chip_download_country")
+        clickTag("chip_country_europe_united_kingdom")
+        clickTag("chip_download_region")
+        composeRule
+            .onNodeWithTag("chip_uk_england", useUnmergedTree = true)
+            .assertExists()
+        clickTag("chip_uk_england")
+        composeRule
+            .onNodeWithTag("chip_england_greater-london", useUnmergedTree = true)
+            .assertExists()
+        assertFalse(
+            runCatching {
+                composeRule
+                    .onNodeWithTag("chip_england_enfield", useUnmergedTree = true)
+                    .fetchSemanticsNode()
+                true
+            }.getOrDefault(false),
+        )
+        val greaterLondon = head("europe/united-kingdom/england/greater-london")
+        val enfield = head("europe/united-kingdom/england/london/enfield")
+        Log.i(TAG, "HEAD greater-london=$greaterLondon enfield=$enfield")
+        assertTrue(
+            "greater-london extract missing: $greaterLondon",
+            greaterLondon.first in 200..399 && greaterLondon.second > 1_000_000L,
+        )
+        assertTrue(
+            "retired enfield borough must not be a live PBF: $enfield",
+            enfield.first >= 400 ||
+                enfield.second < 1_000_000L,
         )
 
         clickTag("chip_download_country")

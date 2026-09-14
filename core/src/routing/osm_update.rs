@@ -148,12 +148,48 @@ fn days_between(earlier_unix: u64, later_unix: u64) -> u64 {
     later_unix.saturating_sub(earlier_unix) / 86_400
 }
 
+/// Canonical region id after retired / relocated Geofabrik extracts.
+///
+/// - London borough leaves under `…/england/london/…` (and bare `london` /
+///   `enfield`) → `england/greater-london`.
+/// - Subpaths formerly under `europe/great-britain/…` now live under
+///   `europe/united-kingdom/…` (country file `great-britain` itself stays).
+pub fn canonicalize_geofabrik_region_path(region: &str) -> String {
+    let path = region.trim().trim_matches('/').to_ascii_lowercase();
+    const GREATER_LONDON: &str = "europe/united-kingdom/england/greater-london";
+    if path == "europe/united-kingdom/england/london"
+        || path.starts_with("europe/united-kingdom/england/london/")
+        || path == "enfield"
+        || path == "london"
+    {
+        return GREATER_LONDON.to_string();
+    }
+    if let Some(rest) = path.strip_prefix("europe/great-britain/") {
+        return format!("europe/united-kingdom/{rest}");
+    }
+    path
+}
+
+/// Geofabrik `-latest.osm.pbf` path for [region] after canonicalization.
+///
+/// Sweden län remain pack-server region ids, but Geofabrik only publishes the
+/// country extract (`europe/sweden`) — use that for HTTP downloads / updates.
+pub fn geofabrik_extract_path(region: &str) -> String {
+    let path = canonicalize_geofabrik_region_path(region);
+    if path.starts_with("europe/sweden/") {
+        return "europe/sweden".to_string();
+    }
+    path
+}
+
 /// Geofabrik base URLs for a region path like `europe/norway/ostlandet`.
 pub fn geofabrik_latest_pbf_url(region: &str) -> String {
+    let region = geofabrik_extract_path(region);
     format!("https://download.geofabrik.de/{region}-latest.osm.pbf")
 }
 
 pub fn geofabrik_updates_base(region: &str) -> String {
+    let region = geofabrik_extract_path(region);
     format!("https://download.geofabrik.de/{region}-updates")
 }
 
@@ -928,6 +964,49 @@ timestamp=2024-01-15T01\\:02\\:03Z
         let s = parse_geofabrik_state(text).unwrap();
         assert_eq!(s.sequence_number, 123456);
         assert_eq!(s.timestamp, "2024-01-15T01:02:03Z");
+    }
+
+    #[test]
+    fn retired_london_borough_paths_remap_to_greater_london() {
+        let want = "europe/united-kingdom/england/greater-london";
+        assert_eq!(
+            canonicalize_geofabrik_region_path("europe/united-kingdom/england/london/enfield"),
+            want
+        );
+        assert_eq!(
+            canonicalize_geofabrik_region_path("europe/united-kingdom/england/london"),
+            want
+        );
+        assert_eq!(canonicalize_geofabrik_region_path("enfield"), want);
+        assert_eq!(
+            geofabrik_latest_pbf_url("europe/united-kingdom/england/london/enfield"),
+            format!("https://download.geofabrik.de/{want}-latest.osm.pbf")
+        );
+        assert_eq!(canonicalize_geofabrik_region_path(want), want);
+        assert_eq!(
+            canonicalize_geofabrik_region_path("europe/great-britain"),
+            "europe/great-britain"
+        );
+        assert_eq!(
+            canonicalize_geofabrik_region_path("europe/great-britain/england"),
+            "europe/united-kingdom/england"
+        );
+    }
+
+    #[test]
+    fn sweden_lan_extract_uses_country_pbf() {
+        assert_eq!(
+            geofabrik_extract_path("europe/sweden/stockholm"),
+            "europe/sweden"
+        );
+        assert_eq!(
+            geofabrik_latest_pbf_url("europe/sweden/stockholm"),
+            "https://download.geofabrik.de/europe/sweden-latest.osm.pbf"
+        );
+        assert_eq!(
+            canonicalize_geofabrik_region_path("europe/sweden/stockholm"),
+            "europe/sweden/stockholm"
+        );
     }
 
     #[test]
