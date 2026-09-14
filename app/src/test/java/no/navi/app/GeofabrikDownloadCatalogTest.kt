@@ -16,6 +16,10 @@ class GeofabrikDownloadCatalogTest {
         assertTrue(
             GeofabrikDownloadCatalog.norwayRegions.any { it.first == "ostlandet" },
         )
+        // hedmark is on the pack server but covered by Østlandet — not a separate chip.
+        assertFalse(
+            GeofabrikDownloadCatalog.norwayRegions.any { it.first == "hedmark" },
+        )
 
         assertTrue(GeofabrikDownloadCatalog.hasRegionChips("europe/sweden"))
         assertTrue(GeofabrikDownloadCatalog.hasRegionChips("europe/sweden/stockholm"))
@@ -24,7 +28,6 @@ class GeofabrikDownloadCatalogTest {
             "europe/sweden/stockholm",
             GeofabrikDownloadCatalog.defaultRegionChipPath("europe/sweden"),
         )
-        // Chip slug matches published current.json id (underscore).
         assertTrue(
             GeofabrikDownloadCatalog.swedenRegions.any { it.first == "vastra_gotaland" },
         )
@@ -46,25 +49,72 @@ class GeofabrikDownloadCatalogTest {
     }
 
     @Test
-    fun sweden_no_longer_uses_country_only_granularity_note() {
-        // Sweden has chips; the note path is for countries without chips.
+    fun countries_without_chips_get_granularity_note() {
         val note = GeofabrikDownloadCatalog.regionGranularityNote("europe/denmark")
-        assertTrue(note.contains("Sweden", ignoreCase = true) || note.contains("län"))
-        assertTrue(note.contains("Norway", ignoreCase = true))
-        assertTrue(note.contains("United Kingdom", ignoreCase = true) || note.contains("UK"))
+        assertTrue(note.contains("France", ignoreCase = true) || note.contains("current.json"))
+        assertTrue(note.contains("Norway", ignoreCase = true) || note.contains("current.json"))
     }
 
     @Test
-    fun us_region_note_mentions_west_virginia_path() {
-        val note = GeofabrikDownloadCatalog.regionGranularityNote("north-america/us")
-        assertTrue(note.contains("west-virginia"))
-        assertTrue(note.contains("states", ignoreCase = true))
+    fun germany_region_chips_match_pack_catalog_leaves() {
+        assertTrue(GeofabrikDownloadCatalog.hasRegionChips("europe/germany"))
+        assertEquals(16, GeofabrikDownloadCatalog.germanyRegions.size)
+        assertEquals(
+            "europe/germany/bremen",
+            GeofabrikDownloadCatalog.defaultRegionChipPath("europe/germany"),
+        )
+        assertEquals(
+            "europe/germany",
+            GeofabrikDownloadCatalog.regionChipBasePath("europe/germany/bremen"),
+        )
+        assertEquals(
+            "europe/germany/bayern",
+            GeofabrikDownloadCatalog.regionChipBasePath("europe/germany/bayern/oberbayern"),
+        )
+        assertEquals(29, GeofabrikDownloadCatalog.germanyPackLeafPaths().size)
     }
 
     @Test
-    fun germany_region_note_mentions_typed_state_path() {
-        val note = GeofabrikDownloadCatalog.regionGranularityNote("europe/germany")
-        assertTrue(note.contains("bremen"))
+    fun pack_server_subregion_chips_cover_published_country_trees() {
+        assertEquals(53, GeofabrikDownloadCatalog.usStates.size)
+        assertEquals(2, GeofabrikDownloadCatalog.usCaliforniaRegions.size)
+        assertEquals(
+            "north-america/us/california",
+            GeofabrikDownloadCatalog.regionChipBasePath("north-america/us/california/socal"),
+        )
+        assertEquals(54, GeofabrikDownloadCatalog.packCatalogLeafPaths("north-america/us").size)
+
+        assertEquals(27, GeofabrikDownloadCatalog.franceRegions.size)
+        assertEquals(27, GeofabrikDownloadCatalog.packCatalogLeafPaths("europe/france").size)
+
+        assertEquals(18, GeofabrikDownloadCatalog.spainRegions.size)
+        assertEquals(16, GeofabrikDownloadCatalog.polandRegions.size)
+        assertEquals(14, GeofabrikDownloadCatalog.czechRepublicRegions.size)
+        assertEquals(12, GeofabrikDownloadCatalog.netherlandsRegions.size)
+        assertEquals(12, GeofabrikDownloadCatalog.australiaRegions.size)
+        assertEquals(10, GeofabrikDownloadCatalog.russiaRegions.size)
+        assertEquals(8, GeofabrikDownloadCatalog.japanRegions.size)
+        assertEquals(7, GeofabrikDownloadCatalog.indonesiaRegions.size)
+        assertEquals(6, GeofabrikDownloadCatalog.indiaRegions.size)
+        assertEquals(5, GeofabrikDownloadCatalog.brazilRegions.size)
+        assertEquals(5, GeofabrikDownloadCatalog.italyRegions.size)
+        assertEquals(33, GeofabrikDownloadCatalog.chinaRegions.size)
+
+        assertEquals(13, GeofabrikDownloadCatalog.canadaRegions.size)
+        assertEquals(6, GeofabrikDownloadCatalog.canadaBritishColumbiaRegions.size)
+        assertEquals(3, GeofabrikDownloadCatalog.canadaNunavutRegions.size)
+        assertEquals(20, GeofabrikDownloadCatalog.packCatalogLeafPaths("north-america/canada").size)
+
+        assertEquals(
+            "europe/france/ile-de-france",
+            GeofabrikDownloadCatalog.defaultRegionChipPath("europe/france"),
+        )
+        assertEquals(
+            "russia/central-fed-district",
+            GeofabrikDownloadCatalog.defaultRegionChipPath("russia"),
+        )
+        assertTrue(GeofabrikDownloadCatalog.hasRegionChips("asia/china/beijing"))
+        assertTrue(GeofabrikDownloadCatalog.hasRegionChips("europe/italy/sud"))
     }
 
     @Test
@@ -84,6 +134,13 @@ class GeofabrikDownloadCatalogTest {
         assertTrue(
             GeofabrikDownloadCatalog.unitedKingdomNations.any { it.first == "england" },
         )
+        assertTrue(
+            GeofabrikDownloadCatalog.unitedKingdomNations.any { it.first == "bermuda" },
+        )
+        assertTrue(
+            GeofabrikDownloadCatalog.unitedKingdomNations.any { it.first == "falklands" },
+        )
+        assertEquals(5, GeofabrikDownloadCatalog.unitedKingdomNations.size)
         assertFalse(
             GeofabrikDownloadCatalog.englandCounties.any { it.first == "enfield" },
         )
@@ -126,13 +183,6 @@ class GeofabrikDownloadCatalogTest {
             "europe/united-kingdom/england",
             GeofabrikDownloadCatalog.canonicalizePath("europe/great-britain/england"),
         )
-    }
-
-    @Test
-    fun russia_region_note_points_at_typed_district() {
-        val note = GeofabrikDownloadCatalog.regionGranularityNote("russia")
-        assertTrue(note.contains("kaliningrad"))
-        assertTrue(note.contains("federal-district", ignoreCase = true) || note.contains("district"))
     }
 
     @Test

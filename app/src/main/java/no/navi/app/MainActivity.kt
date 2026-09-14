@@ -1061,20 +1061,24 @@ private fun NaviMapScreen() {
             }
         }
 
-    fun pathPillReady(path: String): Boolean =
-        PackRegionAvailability.pillReady(
+    fun pathPillReady(path: String): Boolean {
+        val base = GeofabrikDownloadCatalog.regionChipBasePath(path)
+        val childPaths =
+            when (base) {
+                "europe/norway" -> norwayChildPaths
+                "europe/sweden" -> swedenChildPaths
+                "europe/united-kingdom" -> ukNationPaths + englandCountyPaths
+                "europe/united-kingdom/england" -> englandCountyPaths
+                null -> emptyList()
+                else -> GeofabrikDownloadCatalog.packCatalogLeafPaths(base)
+            }
+        return PackRegionAvailability.pillReady(
             path = path,
             serverReadyIds = packServerReadyIds,
             dataDir = dataDir,
-            childPathsForLocal =
-                when (GeofabrikDownloadCatalog.regionChipBasePath(path)) {
-                    "europe/norway" -> norwayChildPaths
-                    "europe/sweden" -> swedenChildPaths
-                    "europe/united-kingdom" -> ukNationPaths + englandCountyPaths
-                    "europe/united-kingdom/england" -> englandCountyPaths
-                    else -> emptyList()
-                },
+            childPathsForLocal = childPaths,
         )
+    }
 
     fun continentPillReady(continent: GeofabrikContinent): Boolean =
         GeofabrikDownloadCatalog.countriesIn(continent).any { country ->
@@ -6110,7 +6114,7 @@ private fun NaviMapScreen() {
                                         }
                                     } else {
                                         // Keep country path; sub-region chips are
-                                        // Norway landsdeler + Sweden län only.
+                                        // only for curated countries (NO/SE/DE/UK).
                                         val country =
                                             GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)
                                         if (country != null) {
@@ -6198,9 +6202,15 @@ private fun NaviMapScreen() {
                                     when (chipBase) {
                                         "europe/norway" -> "chip_norway"
                                         "europe/sweden" -> "chip_sweden"
+                                        "europe/germany" -> "chip_germany"
+                                        "europe/germany/baden-wuerttemberg" -> "chip_germany_bw"
+                                        "europe/germany/bayern" -> "chip_germany_bayern"
+                                        "europe/germany/nordrhein-westfalen" -> "chip_germany_nrw"
                                         "europe/united-kingdom" -> "chip_uk"
                                         "europe/united-kingdom/england" -> "chip_england"
-                                        else -> "chip_region"
+                                        else ->
+                                            "chip_" +
+                                                chipBase.replace('/', '_').replace('-', '_')
                                     }
                                 Row(
                                     modifier = Modifier.horizontalScroll(rememberScrollState()),
