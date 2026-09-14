@@ -237,6 +237,9 @@ pub fn pbf_stem_to_geofabrik_path(stem: &str) -> Option<String> {
         // Underscore variant from some tooling; same region, not a merge.
         "nord-norge" | "nord_norge" => Some("europe/norway/nord-norge".into()),
         "sorlandet" => Some("europe/norway/sorlandet".into()),
+        "greater-london" => Some("europe/united-kingdom/england/greater-london".into()),
+        // Retired borough leaf — map to the remaining Greater London extract.
+        "enfield" => Some("europe/united-kingdom/england/greater-london".into()),
         other => {
             // Full path with underscores, or leaf under a Geofabrik continent folder.
             let as_path = other.replace('_', "/");
@@ -447,6 +450,27 @@ const GEOFABRIK_PATH_BBOX: &[(&str, [f64; 4])] = &[
     (
         "europe/great-britain",
         [49.523000, -14.990700, 61.135640, 2.513672],
+    ),
+    (
+        "europe/united-kingdom",
+        [49.4192, -14.8585, 61.13564, 2.641786],
+    ),
+    (
+        "europe/united-kingdom/england",
+        [49.57808, -7.101192, 56.06997, 2.249944],
+    ),
+    (
+        "europe/united-kingdom/scotland",
+        [54.54001, -14.86155, 61.13564, 0.216055],
+    ),
+    (
+        "europe/united-kingdom/wales",
+        [51.03997, -6.183241, 53.76632, -2.648042],
+    ),
+    // Geofabrik retired london/* borough extracts; this is the remaining London leaf.
+    (
+        "europe/united-kingdom/england/greater-london",
+        [51.28554, -0.511482, 51.69344, 0.335437],
     ),
     (
         "europe/greece",
@@ -720,6 +744,15 @@ mod tests {
     }
 
     #[test]
+    fn london_point_prefers_greater_london_over_great_britain() {
+        // Trafalgar Square
+        assert_eq!(
+            suggest_geofabrik_path_for_point(51.5081, -0.1281),
+            Some("europe/united-kingdom/england/greater-london")
+        );
+    }
+
+    #[test]
     fn pbf_stem_maps_to_geofabrik_path() {
         assert_eq!(
             pbf_stem_to_geofabrik_path("ostlandet-latest"),
@@ -748,6 +781,14 @@ mod tests {
         assert_eq!(
             pbf_stem_to_geofabrik_path("kenya-latest"),
             Some("africa/kenya".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("greater-london-latest"),
+            Some("europe/united-kingdom/england/greater-london".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("enfield-latest"),
+            Some("europe/united-kingdom/england/greater-london".into())
         );
         assert_eq!(
             pbf_stem_to_geofabrik_path("antarctica-latest"),

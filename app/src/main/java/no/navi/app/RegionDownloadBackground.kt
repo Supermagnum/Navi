@@ -409,7 +409,7 @@ object RegionDownloadBackground {
         userLon: Double? = null,
     ) {
         scope.launch {
-            val path = geofabrikPath.trim().trim('/')
+            val path = GeofabrikDownloadCatalog.canonicalizePath(geofabrikPath)
             val job =
                 Job(
                     url = url,
