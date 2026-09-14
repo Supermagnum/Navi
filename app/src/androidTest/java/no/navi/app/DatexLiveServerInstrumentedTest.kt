@@ -121,20 +121,28 @@ class DatexLiveServerInstrumentedTest {
         assertTrue(active.length() + inactive.length() == onRoute.length())
     }
 
-    private fun sourceJsonReachable(): Boolean =
-        runCatching {
-            val url =
+    private fun sourceJsonReachable(): Boolean {
+        // Pack/DATEX discovery uses HTTPS on the public host; plain HTTP:80 is often
+        // rejected from RFC1918 clients (403). Probe HTTPS first, then HTTP override.
+        val candidates =
+            listOf(
+                "https://$host/datex/npra/source.json",
                 if (port == 80) {
-                    URL("http://$host/datex/npra/source.json")
+                    "http://$host/datex/npra/source.json"
                 } else {
-                    URL("http://$host:$port/datex/npra/source.json")
-                }
-            val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 3000
-            conn.readTimeout = 5000
-            conn.requestMethod = "GET"
-            val code = conn.responseCode
-            conn.disconnect()
-            code == 200
-        }.getOrDefault(false)
+                    "http://$host:$port/datex/npra/source.json"
+                },
+            )
+        return candidates.any { urlStr ->
+            runCatching {
+                val conn = URL(urlStr).openConnection() as HttpURLConnection
+                conn.connectTimeout = 5000
+                conn.readTimeout = 8000
+                conn.requestMethod = "GET"
+                val code = conn.responseCode
+                conn.disconnect()
+                code == 200
+            }.getOrDefault(false)
+        }
+    }
 }

@@ -4077,14 +4077,47 @@ pub fn ensure_place_index(
 ///
 /// Optional `region_id` (Geofabrik path, e.g. `europe/norway/ostlandet`) improves
 /// pack-server lookup; otherwise a server-install stamp or `region_meta.json` is used.
+///
+/// When `progress_on_convert_channel` is true (IndexedMapsBackground), progress
+/// writes the Convert slot so RegionDownloadBackground's Download slot is not
+/// clobbered. Region-download local-bake passes false to keep convert UI on Download.
 #[uniffi::export]
 pub fn ensure_indexed_maps(
     pbf_path: String,
     data_dir: String,
     elev_dir: Option<String>,
     region_id: Option<String>,
+    progress_on_convert_channel: bool,
 ) -> String {
-    let pbf = PathBuf::from(&pbf_path);
+    if progress_on_convert_channel {
+        driver_break_core::download::progress::with_channel(
+            driver_break_core::download::progress::ProgressChannel::Convert,
+            || {
+                ensure_indexed_maps_inner(
+                    &pbf_path,
+                    &data_dir,
+                    elev_dir.as_deref(),
+                    region_id.as_deref(),
+                )
+            },
+        )
+    } else {
+        ensure_indexed_maps_inner(
+            &pbf_path,
+            &data_dir,
+            elev_dir.as_deref(),
+            region_id.as_deref(),
+        )
+    }
+}
+
+fn ensure_indexed_maps_inner(
+    pbf_path: &str,
+    data_dir: &str,
+    elev_dir: Option<&str>,
+    region_id: Option<&str>,
+) -> String {
+    let pbf = PathBuf::from(pbf_path);
     if !pbf.is_file() {
         return format!("FAIL: PBF missing: {pbf_path}\n");
     }
@@ -4093,13 +4126,12 @@ pub fn ensure_indexed_maps(
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."))
     } else {
-        PathBuf::from(&data_dir)
+        PathBuf::from(data_dir)
     };
     let _ = std::fs::create_dir_all(&data);
 
     ensure_native_logging();
     let elev = elev_dir
-        .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(PathBuf::from);
@@ -4107,7 +4139,7 @@ pub fn ensure_indexed_maps(
         &data,
         &pbf,
         elev.as_deref(),
-        region_id.as_deref(),
+        region_id,
     ) {
         Ok(r) => {
             let source = r.data_source.as_str();
@@ -6512,6 +6544,9 @@ pub struct FfiRegionAcquisitionDecision {
     pub region_id: String,
     /// Why this path was chosen (also logged under tag `NaviPack`).
     pub reason: String,
+    /// Short machine token: `ok` | `timeout` | `not_in_catalog` | `fetch_error` |
+    /// `format_gate` | `install_not_ready` | `network` | …
+    pub decision_reason: String,
     /// Whether callers should run Geofabrik download + on-device convert now.
     ///
     /// `false` after a successful pack-server install; `true` when falling
@@ -6605,6 +6640,7 @@ pub fn decide_region_acquisition(
         source,
         region_id: driver_break_core::pack_server::normalize_region_id(&region_id),
         reason: plan.log_message,
+        decision_reason: plan.decision_reason,
         execute_local_convert: plan.execute_local_convert,
         region_generation,
         catalog_generation: plan.catalog_generation,

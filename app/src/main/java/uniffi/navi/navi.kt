@@ -1580,7 +1580,7 @@ fun uniffi_navi_fn_func_eco_mode_toggleable(`profile`: RustBuffer.ByValue,uniffi
 ): Byte
 fun uniffi_navi_fn_func_elevation_at(`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-fun uniffi_navi_fn_func_ensure_indexed_maps(`pbfPath`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+fun uniffi_navi_fn_func_ensure_indexed_maps(`pbfPath`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,`progressOnConvertChannel`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_ensure_live_hazards_loaded(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -2081,7 +2081,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_navi_checksum_func_elevation_at() != 51192.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_navi_checksum_func_ensure_indexed_maps() != 61266.toShort()) {
+    if (lib.uniffi_navi_checksum_func_ensure_indexed_maps() != 53957.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_ensure_live_hazards_loaded() != 1961.toShort()) {
@@ -3938,6 +3938,11 @@ data class FfiRegionAcquisitionDecision (
      */
     var `reason`: kotlin.String, 
     /**
+     * Short machine token: `ok` | `timeout` | `not_in_catalog` | `fetch_error` |
+     * `format_gate` | `install_not_ready` | `network` | …
+     */
+    var `decisionReason`: kotlin.String, 
+    /**
      * Whether callers should run Geofabrik download + on-device convert now.
      *
      * `false` after a successful pack-server install; `true` when falling
@@ -3964,6 +3969,7 @@ public object FfiConverterTypeFfiRegionAcquisitionDecision: FfiConverterRustBuff
             FfiConverterTypeFfiRegionSourceKind.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalString.read(buf),
@@ -3975,6 +3981,7 @@ public object FfiConverterTypeFfiRegionAcquisitionDecision: FfiConverterRustBuff
             FfiConverterTypeFfiRegionSourceKind.allocationSize(value.`source`) +
             FfiConverterString.allocationSize(value.`regionId`) +
             FfiConverterString.allocationSize(value.`reason`) +
+            FfiConverterString.allocationSize(value.`decisionReason`) +
             FfiConverterBoolean.allocationSize(value.`executeLocalConvert`) +
             FfiConverterOptionalString.allocationSize(value.`regionGeneration`) +
             FfiConverterOptionalString.allocationSize(value.`catalogGeneration`) +
@@ -3985,6 +3992,7 @@ public object FfiConverterTypeFfiRegionAcquisitionDecision: FfiConverterRustBuff
             FfiConverterTypeFfiRegionSourceKind.write(value.`source`, buf)
             FfiConverterString.write(value.`regionId`, buf)
             FfiConverterString.write(value.`reason`, buf)
+            FfiConverterString.write(value.`decisionReason`, buf)
             FfiConverterBoolean.write(value.`executeLocalConvert`, buf)
             FfiConverterOptionalString.write(value.`regionGeneration`, buf)
             FfiConverterOptionalString.write(value.`catalogGeneration`, buf)
@@ -5470,11 +5478,15 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
          *
          * Optional `region_id` (Geofabrik path, e.g. `europe/norway/ostlandet`) improves
          * pack-server lookup; otherwise a server-install stamp or `region_meta.json` is used.
-         */ fun `ensureIndexedMaps`(`pbfPath`: kotlin.String, `dataDir`: kotlin.String, `elevDir`: kotlin.String?, `regionId`: kotlin.String?): kotlin.String {
+         *
+         * When `progress_on_convert_channel` is true (IndexedMapsBackground), progress
+         * writes the Convert slot so RegionDownloadBackground's Download slot is not
+         * clobbered. Region-download local-bake passes false to keep convert UI on Download.
+         */ fun `ensureIndexedMaps`(`pbfPath`: kotlin.String, `dataDir`: kotlin.String, `elevDir`: kotlin.String?, `regionId`: kotlin.String?, `progressOnConvertChannel`: kotlin.Boolean): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_ensure_indexed_maps(
-        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`dataDir`),FfiConverterOptionalString.lower(`elevDir`),FfiConverterOptionalString.lower(`regionId`),_status)
+        FfiConverterString.lower(`pbfPath`),FfiConverterString.lower(`dataDir`),FfiConverterOptionalString.lower(`elevDir`),FfiConverterOptionalString.lower(`regionId`),FfiConverterBoolean.lower(`progressOnConvertChannel`),_status)
 }
     )
     }

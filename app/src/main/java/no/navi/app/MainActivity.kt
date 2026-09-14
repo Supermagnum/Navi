@@ -2135,10 +2135,16 @@ private fun NaviMapScreen() {
     // Passive indexed-maps status; auto-start background rebuild when packs are stale.
     LaunchedEffect(Unit) {
         while (isActive) {
+            val regionPath = selectedGeofabrikPath.trim().trim('/')
             val pbf =
-                dataDir.listFiles()?.firstOrNull {
-                    it.isFile && it.name.endsWith(".osm.pbf")
-                }
+                if (regionPath.isNotEmpty()) {
+                    PackRegionAvailability.resolvePbfForRegion(dataDir, regionPath)
+                } else {
+                    null
+                } ?: RouteReplan.resolvePbf(dataDir)
+                    ?: dataDir.listFiles()?.firstOrNull {
+                        it.isFile && it.name.endsWith(".osm.pbf")
+                    }
             if (pbf != null) {
                 val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
                 val regionDownloading = RegionDownloadBackground.isRunning()
@@ -2151,7 +2157,7 @@ private fun NaviMapScreen() {
                         pbf,
                         dataDir,
                         elev,
-                        selectedGeofabrikPath.ifBlank { null },
+                        regionPath.ifBlank { null },
                     )
                 }
                 indexedMapsUiLine =
