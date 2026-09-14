@@ -197,3 +197,8 @@ pub const CAR_MAX_WAYPOINT_SNAP_M: f64 = 750.0;
 /// Max distance (m) from a truck/motorhome waypoint to the nearest linked road node.
 /// Truck stops and industrial access can sit farther from the highway graph.
 pub const TRUCK_MAX_WAYPOINT_SNAP_M: f64 = 1_000.0;
+
+/// When via-point surface preference is enabled, only consider better-surface
+/// candidates within this many metres of the literal nearest giant-component
+/// node — never across the full car/truck snap budget.
+pub const SURFACE_VIA_SNAP_SLACK_M: f64 = 150.0;

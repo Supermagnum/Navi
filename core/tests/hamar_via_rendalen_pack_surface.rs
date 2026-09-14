@@ -71,8 +71,15 @@ fn nongood_pct(graph: &RouteGraph, edges: &[usize]) -> f64 {
 fn plan_via(graph: &RouteGraph, pts: &[(f64, f64)]) -> (Vec<usize>, f64) {
     let opts = RouteOptions::default();
     let mut snaps = Vec::new();
-    for &(lat, lon) in pts {
-        snaps.push(graph.nearest_routable(lat, lon).expect("snap").0);
+    for (i, &(lat, lon)) in pts.iter().enumerate() {
+        // Mirror navi-ffi: surface preference only on intermediate vias.
+        let prefer_better_surface = i > 0 && i + 1 < pts.len();
+        snaps.push(
+            graph
+                .nearest_routable_with_options(lat, lon, &opts, prefer_better_surface)
+                .expect("snap")
+                .0,
+        );
     }
     let mut edges = Vec::new();
     let mut cost = 0.0;

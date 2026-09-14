@@ -205,6 +205,9 @@ fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 }
 
 /// Snap `(lat,lon)` to a linked graph node within the profile snap budget.
+///
+/// Endpoint semantics (`prefer_better_surface: false`): literal nearest routable
+/// node on the filtered giant component. Not for intermediate via surface bias.
 fn nearest(graph: &RouteGraph, lat: f64, lon: f64) -> Result<(NodeId, f64), SnapTooFar> {
     graph.nearest_routable(lat, lon)
 }
@@ -2427,7 +2430,11 @@ fn plan_car_route_inner(
         let mut snapped: Vec<(osm4routing::NodeId, f64)> = Vec::with_capacity(route_points.len());
         let mut snap_ok = true;
         for (i, &(lat, lon)) in route_points.iter().enumerate() {
-            match built.nearest_routable_with_options(lat, lon, &route_opts) {
+            // Surface preference is vias-only: start/destination must snap to the
+            // literal nearest routable node (last-mile gravel driveways).
+            let prefer_better_surface = i > 0 && i + 1 < route_points.len();
+            match built.nearest_routable_with_options(lat, lon, &route_opts, prefer_better_surface)
+            {
                 Ok(v) => snapped.push(v),
                 Err(e) => {
                     last_terminate = "snap_failed";
@@ -2514,8 +2521,14 @@ fn plan_car_route_inner(
             let mut snapped: Vec<(osm4routing::NodeId, f64)> =
                 Vec::with_capacity(route_points.len());
             let mut snap_ok = true;
-            for &(lat, lon) in &route_points {
-                match built.nearest_routable_with_options(lat, lon, &fallback_opts) {
+            for (i, &(lat, lon)) in route_points.iter().enumerate() {
+                let prefer_better_surface = i > 0 && i + 1 < route_points.len();
+                match built.nearest_routable_with_options(
+                    lat,
+                    lon,
+                    &fallback_opts,
+                    prefer_better_surface,
+                ) {
                     Ok(v) => snapped.push(v),
                     Err(_) => {
                         snap_ok = false;

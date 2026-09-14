@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::{
     Profile, CAR_MAX_WAYPOINT_SNAP_M, CYCLING_MAX_WAYPOINT_SNAP_M, HIKING_MAX_WAYPOINT_SNAP_M,
-    TRUCK_MAX_WAYPOINT_SNAP_M,
+    SURFACE_VIA_SNAP_SLACK_M, TRUCK_MAX_WAYPOINT_SNAP_M,
 };
 use crate::routing::access::{self, AccessMode};
 use crate::routing::elevation::ElevationService;
@@ -486,8 +486,12 @@ impl RouteGraph {
     /// [`SnapTooFar`] when the closest linked node exceeds
     /// [`max_waypoint_snap_m`] — callers must treat that as unreachable, not
     /// silently substitute a distant network node.
+    ///
+    /// Does not apply surface preference (start/destination behaviour). Use
+    /// [`Self::nearest_routable_with_options`] with `prefer_better_surface`
+    /// for via points.
     pub fn nearest_routable(&self, lat: f64, lon: f64) -> Result<(NodeId, f64), SnapTooFar> {
-        self.nearest_routable_with_options(lat, lon, &RouteOptions::default())
+        self.nearest_routable_with_options(lat, lon, &RouteOptions::default(), false)
     }
 
     /// Nearest routable node that remains usable under `options` (hard filters).
@@ -495,11 +499,20 @@ impl RouteGraph {
     /// Prefer the largest weakly-connected component formed only by edges that
     /// pass [`edge_allowed_for_options`], so avoid-toll / avoid-motorway / ferry
     /// / clearance settings cannot snap onto an island that A* cannot leave.
+    ///
+    /// When `prefer_better_surface` is true (intermediate vias only) and the
+    /// graph is in car surface mode, among giant-component candidates within
+    /// [`SURFACE_VIA_SNAP_SLACK_M`] of the literal nearest node, prefer better
+    /// `worst_incident_surface` (distance is the tiebreaker). Start and
+    /// destination snaps must pass `false` so rural addresses keep the last
+    /// metres of gravel driveway instead of jumping to a paved road hundreds
+    /// of metres away.
     pub fn nearest_routable_with_options(
         &self,
         lat: f64,
         lon: f64,
         options: &RouteOptions,
+        prefer_better_surface: bool,
     ) -> Result<(NodeId, f64), SnapTooFar> {
         let max_m = max_waypoint_snap_m(self.profile);
         let (filtered_root, filtered_giant) = self.option_filtered_components(options);
@@ -512,12 +525,15 @@ impl RouteGraph {
                 v
             }
         };
+        let in_filtered_giant = |id: NodeId| -> bool {
+            match (filtered_giant, filtered_root.get(&id)) {
+                (Some(giant), Some(root)) => *root == giant,
+                _ => self.in_giant_component(id),
+            }
+        };
         let mut nearest_any: Option<(&Node, f64)> = None;
         let mut nearest_giant: Option<(&Node, f64)> = None;
-        let use_surface_snap = self.surface_routing_mode == SurfaceRoutingMode::Car
-            && matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
-        let mut best_surface_giant: Option<(&Node, f64)> = None;
-        for n in pool {
+        for n in &pool {
             if !self.node_has_allowed_incident(n.id, options) {
                 continue;
             }
@@ -525,12 +541,34 @@ impl RouteGraph {
             if nearest_any.is_none_or(|(_, d)| dist < d) {
                 nearest_any = Some((n, dist));
             }
-            let in_filtered_giant = match (filtered_giant, filtered_root.get(&n.id)) {
-                (Some(giant), Some(root)) => *root == giant,
-                _ => self.in_giant_component(n.id),
-            };
-            if dist <= max_m && in_filtered_giant {
-                if use_surface_snap {
+            if dist <= max_m
+                && in_filtered_giant(n.id)
+                && nearest_giant.is_none_or(|(_, d)| dist < d)
+            {
+                nearest_giant = Some((n, dist));
+            }
+        }
+        let Some((best_any, nearest_m)) = nearest_any else {
+            return Err(SnapTooFar {
+                nearest_m: f64::INFINITY,
+                max_m,
+            });
+        };
+        let use_surface_snap = prefer_better_surface
+            && self.surface_routing_mode == SurfaceRoutingMode::Car
+            && matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
+        if use_surface_snap {
+            if let Some((_, nearest_giant_m)) = nearest_giant {
+                let surface_limit_m = (nearest_giant_m + SURFACE_VIA_SNAP_SLACK_M).min(max_m);
+                let mut best_surface_giant: Option<(&Node, f64)> = None;
+                for n in &pool {
+                    if !self.node_has_allowed_incident(n.id, options) {
+                        continue;
+                    }
+                    let dist = haversine_point_m(lat, lon, n);
+                    if dist > surface_limit_m || !in_filtered_giant(n.id) {
+                        continue;
+                    }
                     let sq = worst_incident_surface(self, n.id);
                     let replace = match best_surface_giant {
                         None => true,
@@ -542,22 +580,13 @@ impl RouteGraph {
                     if replace {
                         best_surface_giant = Some((n, dist));
                     }
-                } else if nearest_giant.is_none_or(|(_, d)| dist < d) {
-                    nearest_giant = Some((n, dist));
+                }
+                if let Some((n, dist)) = best_surface_giant {
+                    return Ok((n.id, dist));
                 }
             }
         }
-        let Some((best_any, nearest_m)) = nearest_any else {
-            return Err(SnapTooFar {
-                nearest_m: f64::INFINITY,
-                max_m,
-            });
-        };
-        if let Some((n, dist)) = if use_surface_snap {
-            best_surface_giant
-        } else {
-            nearest_giant
-        } {
+        if let Some((n, dist)) = nearest_giant {
             return Ok((n.id, dist));
         }
         if nearest_m > max_m {
@@ -2021,6 +2050,7 @@ mod tests {
     #[test]
     fn nearest_routable_prefers_better_surface_within_snap_budget() {
         // POI at (60, 10). Nearby 2-node track island ~30 m north; 3-node paved component ~400 m north.
+        // Giant-component preference (not surface) must still prefer the public network.
         let poi_lat = 60.0;
         let track_lat = 60.0 + (30.0 / 111_320.0);
         let paved_lat = 60.0 + (400.0 / 111_320.0);
@@ -2109,9 +2139,178 @@ mod tests {
         assert!(dist > 350.0 && dist < 450.0, "dist_m={dist}");
     }
 
+    /// Rural address: gravel driveway ~100 m away, paved through-road ~400 m away,
+    /// same connected component. Endpoint snap must keep the driveway.
+    fn gravel_driveway_vs_distant_paved_graph() -> RouteGraph {
+        let gravel_lat = 60.0 + (100.0 / 111_320.0);
+        let paved_lat = 60.0 + (400.0 / 111_320.0);
+        let mut nodes = HashMap::new();
+        for (id, n) in [
+            test_node(1, gravel_lat, 10.0),
+            test_node(2, gravel_lat, 10.001),
+            test_node(3, paved_lat, 10.0),
+        ] {
+            nodes.insert(id, n);
+        }
+        let edges = vec![
+            test_edge_with_surface(
+                1,
+                2,
+                gravel_lat,
+                10.0,
+                gravel_lat,
+                10.001,
+                "track",
+                SurfaceQuality::Poor,
+            ),
+            test_edge_with_surface(
+                2,
+                1,
+                gravel_lat,
+                10.001,
+                gravel_lat,
+                10.0,
+                "track",
+                SurfaceQuality::Poor,
+            ),
+            test_edge_with_surface(
+                2,
+                3,
+                gravel_lat,
+                10.001,
+                paved_lat,
+                10.0,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+            test_edge_with_surface(
+                3,
+                2,
+                paved_lat,
+                10.0,
+                gravel_lat,
+                10.001,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+        ];
+        let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        graph.surface_routing_mode = SurfaceRoutingMode::Car;
+        graph
+    }
+
+    #[test]
+    fn nearest_routable_endpoint_keeps_near_gravel_over_distant_paved() {
+        let graph = gravel_driveway_vs_distant_paved_graph();
+        let (id, dist) = graph
+            .nearest_routable(60.0, 10.0)
+            .expect("gravel driveway within snap budget");
+        assert_eq!(
+            id,
+            NodeId(1),
+            "endpoint must snap to literal nearest gravel node, not paved ~400 m away"
+        );
+        assert!(dist > 80.0 && dist < 130.0, "dist_m={dist}");
+    }
+
+    #[test]
+    fn nearest_routable_via_surface_does_not_jump_across_full_budget() {
+        // Via surface preference is capped near the literal nearest node (~100 m + 150 m
+        // slack); a paved node at ~400 m must not win.
+        let graph = gravel_driveway_vs_distant_paved_graph();
+        let (id, dist) = graph
+            .nearest_routable_with_options(60.0, 10.0, &RouteOptions::default(), true)
+            .expect("gravel driveway within snap budget");
+        assert_eq!(
+            id,
+            NodeId(1),
+            "via surface preference must not leap to paved outside slack"
+        );
+        assert!(dist > 80.0 && dist < 130.0, "dist_m={dist}");
+    }
+
+    #[test]
+    fn nearest_routable_via_prefers_better_surface_within_slack() {
+        // Gravel ~50 m, paved ~120 m on same component: via may prefer paved (within slack).
+        let gravel_lat = 60.0 + (50.0 / 111_320.0);
+        let paved_lat = 60.0 + (120.0 / 111_320.0);
+        let mut nodes = HashMap::new();
+        for (id, n) in [
+            test_node(1, gravel_lat, 10.0),
+            test_node(2, gravel_lat, 10.001),
+            test_node(3, paved_lat, 10.0),
+        ] {
+            nodes.insert(id, n);
+        }
+        let edges = vec![
+            test_edge_with_surface(
+                1,
+                2,
+                gravel_lat,
+                10.0,
+                gravel_lat,
+                10.001,
+                "track",
+                SurfaceQuality::Poor,
+            ),
+            test_edge_with_surface(
+                2,
+                1,
+                gravel_lat,
+                10.001,
+                gravel_lat,
+                10.0,
+                "track",
+                SurfaceQuality::Poor,
+            ),
+            test_edge_with_surface(
+                2,
+                3,
+                gravel_lat,
+                10.001,
+                paved_lat,
+                10.0,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+            test_edge_with_surface(
+                3,
+                2,
+                paved_lat,
+                10.0,
+                gravel_lat,
+                10.001,
+                "primary",
+                SurfaceQuality::Good,
+            ),
+        ];
+        let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        graph.surface_routing_mode = SurfaceRoutingMode::Car;
+
+        let (end_id, end_dist) = graph
+            .nearest_routable_with_options(60.0, 10.0, &RouteOptions::default(), false)
+            .expect("endpoint snap");
+        assert_eq!(end_id, NodeId(1), "endpoint keeps nearest gravel");
+        assert!(end_dist > 40.0 && end_dist < 70.0, "end_dist_m={end_dist}");
+
+        let (via_id, via_dist) = graph
+            .nearest_routable_with_options(60.0, 10.0, &RouteOptions::default(), true)
+            .expect("via snap");
+        assert_eq!(
+            via_id,
+            NodeId(3),
+            "via may prefer paved within surface slack of nearest"
+        );
+        assert!(
+            via_dist > 100.0 && via_dist < 140.0,
+            "via_dist_m={via_dist}"
+        );
+    }
+
     #[test]
     fn nearest_routable_prefers_good_surface_on_same_component() {
-        // Single network: track stub junction near POI, paved continuation farther along same graph.
+        // Legacy name: endpoint behaviour now prefers nearer track; via still
+        // prefers good surface only inside SURFACE_VIA_SNAP_SLACK_M of nearest.
         let poi_lat = 60.0;
         let track_lat = 60.0 + (30.0 / 111_320.0);
         let paved_lat = 60.0 + (400.0 / 111_320.0);
@@ -2169,13 +2368,13 @@ mod tests {
         graph.surface_routing_mode = SurfaceRoutingMode::Car;
         let (id, dist) = graph
             .nearest_routable(poi_lat, 10.0)
-            .expect("paved junction within car snap budget");
+            .expect("track junction within car snap budget");
         assert_eq!(
             id,
-            NodeId(3),
-            "must prefer good-surface junction over nearer track"
+            NodeId(1),
+            "endpoint must prefer nearer track over paved 400 m away"
         );
-        assert!(dist > 350.0 && dist < 450.0, "dist_m={dist}");
+        assert!(dist > 20.0 && dist < 50.0, "dist_m={dist}");
     }
 
     #[test]
