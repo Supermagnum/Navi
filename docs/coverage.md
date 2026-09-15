@@ -72,11 +72,15 @@ separate subregion (same rule as the app region chips).
 
 ## Table of contents
 
+Sizes after names are Geofabrik PBFs; nested sizes are pack-server packs.
+Entries that are **not countries** (multi-country or regional Geofabrik
+extracts) include a short explanation on the same line.
+
 - [Afghanistan](#asia-afghanistan) — 107 MB
 - [Albania](#europe-albania) — 51.5 MB
 - [Algeria](#africa-algeria) — 286 MB
-- [Alps](#europe-alps) — 2.16 GB
-- [American Oceania](#australia-oceania-american-oceania) — 5.12 MB
+- [Alps](#europe-alps) — 2.16 GB — regional extract: Alpine mountain area across several countries
+- [American Oceania](#australia-oceania-american-oceania) — 5.12 MB — regional extract: US-affiliated Pacific islands
 - [Andorra](#europe-andorra) — 3.31 MB
 - [Angola](#africa-angola) — 81.3 MB
 - [Antarctica](#antarctica) — 31.6 MB
@@ -97,7 +101,7 @@ separate subregion (same rule as the app region chips).
   - [Western Australia](#australia-oceania-australia-western-australia) — 967 MB
 - [Austria](#europe-austria) — 773 MB
 - [Azerbaijan](#asia-azerbaijan) — 44.0 MB
-- [Azores](#europe-azores) — 16.9 MB
+- [Azores](#europe-azores) — 16.9 MB — Portuguese Atlantic autonomous region (not a country)
 - [Bahamas](#central-america-bahamas) — 13.6 MB
 - [Bangladesh](#asia-bangladesh) — 338 MB
 - [Belarus](#europe-belarus) — 333 MB
@@ -114,7 +118,7 @@ separate subregion (same rule as the app region chips).
   - [Norte](#south-america-brazil-norte) — 1.35 GB
   - [Sudeste](#south-america-brazil-sudeste) — 6.87 GB
   - [Sul](#south-america-brazil-sul) — 3.77 GB
-- [Britain and Ireland](#europe-britain-and-ireland) — 2.43 GB
+- [Britain and Ireland](#europe-britain-and-ireland) — 2.43 GB — multi-country extract: Great Britain + Ireland
 - [Bulgaria](#europe-bulgaria) — 166 MB
 - [Burkina Faso](#africa-burkina-faso) — 80.7 MB
 - [Burundi](#africa-burundi) — 44.1 MB
@@ -143,7 +147,7 @@ separate subregion (same rule as the app region chips).
   - [Quebec](#north-america-canada-quebec) — 1.91 GB
   - [Saskatchewan](#north-america-canada-saskatchewan) — 578 MB
   - [Yukon](#north-america-canada-yukon) — 65.3 MB
-- [Canary Islands](#africa-canary-islands) — 57.0 MB
+- [Canary Islands](#africa-canary-islands) — 57.0 MB — Spanish autonomous community (listed under Africa on Geofabrik)
 - [Cape Verde](#africa-cape-verde) — 11.1 MB
 - [Central African Republic](#africa-central-african-republic) — 94.8 MB
 - [Chad](#africa-chad) — 129 MB
@@ -183,7 +187,7 @@ separate subregion (same rule as the app region chips).
   - [Yunnan](#asia-china-yunnan) — 1.38 GB
   - [Zhejiang](#asia-china-zhejiang) — 1.16 GB
 - [Colombia](#south-america-colombia) — 314 MB
-- [Comores](#africa-comores) — 3.79 MB
+- [Comores](#africa-comores) — 3.79 MB — Comoros islands extract
 - [Congo (Democratic Republic/Kinshasa)](#africa-congo-democratic-republic) — 397 MB
 - [Congo (Republic/Brazzaville)](#africa-congo-brazzaville) — 31.1 MB
 - [Cook Islands](#australia-oceania-cook-islands) — 950 KB
@@ -206,7 +210,7 @@ separate subregion (same rule as the app region chips).
   - [Ústecký kraj](#europe-czech-republic-ustecky) — 392 MB
   - [Kraj Vysočina](#europe-czech-republic-vysocina) — 210 MB
   - [Zlínský kraj](#europe-czech-republic-zlinsky) — 189 MB
-- [DACH](#europe-dach) — 5.80 GB
+- [DACH](#europe-dach) — 5.80 GB — multi-country extract: Germany + Austria + Switzerland
 - [Denmark](#europe-denmark) — 471 MB
 - [Djibouti](#africa-djibouti) — 6.69 MB
 - [East Timor](#asia-east-timor) — 16.9 MB
@@ -249,7 +253,7 @@ separate subregion (same rule as the app region chips).
   - [Reunion](#europe-france-reunion) — 133 MB
   - [Rhone-Alpes](#europe-france-rhone-alpes) — 2.78 GB
 - [Gabon](#africa-gabon) — 24.3 MB
-- [GCC States](#asia-gcc-states) — 241 MB
+- [GCC States](#asia-gcc-states) — 241 MB — multi-country extract: Gulf Cooperation Council (Bahrain, Kuwait, Oman, Qatar, UAE)
 - [Georgia](#europe-georgia) — 97.0 MB
 - [Germany](#europe-germany) — 4.51 GB
   - [Baden-Württemberg](#europe-germany-baden-wuerttemberg)
@@ -285,15 +289,15 @@ separate subregion (same rule as the app region chips).
   - [Schleswig-Holstein](#europe-germany-schleswig-holstein) — 803 MB
   - [Thüringen](#europe-germany-thueringen) — 1.01 GB
 - [Ghana](#africa-ghana) — 110 MB
-- [Great Britain](#europe-great-britain) — 2.02 GB
+- [Great Britain](#europe-great-britain) — 2.02 GB — regional extract: England, Scotland, and Wales (not the full UK)
 - [Greece](#europe-greece) — 325 MB
 - [Greenland](#north-america-greenland) — 24.9 MB
 - [Guatemala](#central-america-guatemala) — 125 MB
-- [Guernsey and Jersey](#europe-guernsey-jersey) — 3.71 MB
+- [Guernsey and Jersey](#europe-guernsey-jersey) — 3.71 MB — Channel Islands extract (Guernsey + Jersey)
 - [Guinea](#africa-guinea) — 113 MB
 - [Guinea-Bissau](#africa-guinea-bissau) — 10.6 MB
 - [Guyana](#south-america-guyana) — 14.8 MB
-- [Haiti and Dominican Republic](#central-america-haiti-and-domrep) — 84.5 MB
+- [Haiti and Dominican Republic](#central-america-haiti-and-domrep) — 84.5 MB — multi-country extract: Hispaniola
 - [Honduras](#central-america-honduras) — 70.6 MB
 - [Hungary](#europe-hungary) — 309 MB
 - [Iceland](#europe-iceland) — 61.7 MB
@@ -315,8 +319,8 @@ separate subregion (same rule as the app region chips).
 - [Iran](#asia-iran) — 219 MB
 - [Iraq](#asia-iraq) — 86.2 MB
 - [Ireland and Northern Ireland](#europe-ireland-and-northern-ireland) — 394 MB
-- [Isle of Man](#europe-isle-of-man) — 5.78 MB
-- [Israel and Palestine](#asia-israel-and-palestine) — 114 MB
+- [Isle of Man](#europe-isle-of-man) — 5.78 MB — Crown dependency extract
+- [Israel and Palestine](#asia-israel-and-palestine) — 114 MB — combined extract: Israel and Palestine
 - [Italy](#europe-italy) — 2.08 GB
   - [Centro](#europe-italy-centro) — 2.60 GB
   - [Isole](#europe-italy-isole) — 1.74 GB
@@ -338,7 +342,7 @@ separate subregion (same rule as the app region chips).
 - [Kazakhstan](#asia-kazakhstan) — 213 MB
 - [Kenya](#africa-kenya) — 334 MB
 - [Kiribati](#australia-oceania-kiribati) — 2.33 MB
-- [Kosovo](#europe-kosovo) — 29.3 MB
+- [Kosovo](#europe-kosovo) — 29.3 MB — territory extract (disputed status; own Geofabrik leaf)
 - [Kyrgyzstan](#asia-kyrgyzstan) — 71.3 MB
 - [Laos](#asia-laos) — 51.1 MB
 - [Latvia](#europe-latvia) — 134 MB
@@ -352,7 +356,7 @@ separate subregion (same rule as the app region chips).
 - [Macedonia](#europe-macedonia) — 28.3 MB
 - [Madagascar](#africa-madagascar) — 371 MB
 - [Malawi](#africa-malawi) — 148 MB
-- [Malaysia, Singapore, and Brunei](#asia-malaysia-singapore-brunei) — 239 MB
+- [Malaysia, Singapore, and Brunei](#asia-malaysia-singapore-brunei) — 239 MB — multi-country extract: Malaysia + Singapore + Brunei
 - [Maldives](#asia-maldives) — 5.00 MB
 - [Mali](#africa-mali) — 165 MB
 - [Malta](#europe-malta) — 8.50 MB
@@ -441,7 +445,7 @@ separate subregion (same rule as the app region chips).
 - [Saint Helena, Ascension, and Tristan da Cunha](#africa-saint-helena-ascension-and-tristan-da-cunha) — 876 KB
 - [Samoa](#australia-oceania-samoa) — 3.30 MB
 - [Sao Tome and Principe](#africa-sao-tome-and-principe) — 1.20 MB
-- [Senegal and Gambia](#africa-senegal-and-gambia) — 100 MB
+- [Senegal and Gambia](#africa-senegal-and-gambia) — 100 MB — multi-country extract: Senegal + Gambia
 - [Serbia](#europe-serbia) — 229 MB
 - [Seychelles](#africa-seychelles) — 2.63 MB
 - [Sierra Leone](#africa-sierra-leone) — 44.1 MB
@@ -450,10 +454,10 @@ separate subregion (same rule as the app region chips).
 - [Solomon Islands](#australia-oceania-solomon-islands) — 11.4 MB
 - [Somalia](#africa-somalia) — 157 MB
 - [South Africa](#africa-south-africa) — 401 MB
-- [South Africa (includes Lesotho)](#africa-south-africa-and-lesotho) — 520 MB
+- [South Africa (includes Lesotho)](#africa-south-africa-and-lesotho) — 520 MB — multi-country extract: South Africa including Lesotho
 - [South Korea](#asia-south-korea) — 274 MB
 - [South Sudan](#africa-south-sudan) — 132 MB
-- [South-East Asia](#asia-sea) — 3.41 GB
+- [South-East Asia](#asia-sea) — 3.41 GB — multi-country extract for South-East Asia (Geofabrik id `sea`)
 - [Spain](#europe-spain) — 1.38 GB
   - [Andalucía](#europe-spain-andalucia) — 1.75 GB
   - [Aragón](#europe-spain-aragon) — 763 MB
@@ -626,11 +630,11 @@ separate subregion (same rule as the app region chips).
   - [us/wisconsin](#north-america-us-wisconsin) — 2.41 GB
   - [us/wyoming](#north-america-us-wyoming) — 733 MB
 - [Uruguay](#south-america-uruguay) — 53.5 MB
-- [US Midwest](#north-america-us-midwest) — 2.33 GB
-- [US Northeast](#north-america-us-northeast) — 1.67 GB
-- [US Pacific](#north-america-us-pacific) — 164 MB
-- [US South](#north-america-us-south) — 3.84 GB
-- [US West](#north-america-us-west) — 3.17 GB
+- [US Midwest](#north-america-us-midwest) — 2.33 GB — special US regional extract (overlaps state packs; not a country)
+- [US Northeast](#north-america-us-northeast) — 1.67 GB — special US regional extract (overlaps state packs; not a country)
+- [US Pacific](#north-america-us-pacific) — 164 MB — special US regional extract (overlaps state packs; not a country)
+- [US South](#north-america-us-south) — 3.84 GB — special US regional extract (overlaps state packs; not a country)
+- [US West](#north-america-us-west) — 3.17 GB — special US regional extract (overlaps state packs; not a country)
 - [Uzbekistan](#asia-uzbekistan) — 118 MB
 - [Vanuatu](#australia-oceania-vanuatu) — 7.53 MB
 - [Venezuela](#south-america-venezuela) — 121 MB
@@ -676,6 +680,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Europe
 - Region id: `europe/alps`
+- Extract type: regional Geofabrik extract for the Alpine mountain area across several countries (not a country)
 - Country-level pack: yes
 - Geofabrik country PBF size: **2.16 GB** (`2319806701` bytes)
 - Geofabrik URL: https://download.geofabrik.de/europe/alps.html
@@ -686,6 +691,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Australia and Oceania
 - Region id: `australia-oceania/american-oceania`
+- Extract type: regional Geofabrik extract for US-affiliated Pacific islands (not a country)
 - Country-level pack: yes
 - Geofabrik country PBF size: **5.12 MB** (`5368012` bytes)
 - Geofabrik URL: https://download.geofabrik.de/australia-oceania/american-oceania.html
@@ -787,6 +793,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Europe
 - Region id: `europe/azores`
+- Extract type: Portuguese Atlantic autonomous region (not a country)
 - Country-level pack: yes
 - Geofabrik country PBF size: **16.9 MB** (`17692392` bytes)
 - Geofabrik URL: https://download.geofabrik.de/europe/azores.html
@@ -911,6 +918,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Europe
 - Region id: `europe/britain-and-ireland`
+- Extract type: multi-country Geofabrik extract — Great Britain + Ireland
 - Country-level pack: yes
 - Geofabrik country PBF size: **2.43 GB** (`2607456933` bytes)
 - Geofabrik URL: https://download.geofabrik.de/europe/britain-and-ireland.html
@@ -1002,6 +1010,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Africa
 - Region id: `africa/canary-islands`
+- Extract type: Spanish autonomous community (listed under Africa on Geofabrik; not a country)
 - Country-level pack: yes
 - Geofabrik country PBF size: **57.0 MB** (`59723233` bytes)
 - Geofabrik URL: https://download.geofabrik.de/africa/canary-islands.html
@@ -1104,6 +1113,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Africa
 - Region id: `africa/comores`
+- Extract type: Geofabrik extract for the Comoros islands
 - Country-level pack: yes
 - Geofabrik country PBF size: **3.79 MB** (`3978038` bytes)
 - Geofabrik URL: https://download.geofabrik.de/africa/comores.html
@@ -1207,6 +1217,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Europe
 - Region id: `europe/dach`
+- Extract type: multi-country Geofabrik extract — **Germany + Austria + Switzerland** (not a single country)
 - Country-level pack: yes
 - Geofabrik country PBF size: **5.80 GB** (`6223361554` bytes)
 - Geofabrik URL: https://download.geofabrik.de/europe/dach.html
@@ -1393,6 +1404,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Asia
 - Region id: `asia/gcc-states`
+- Extract type: multi-country Geofabrik extract — Gulf Cooperation Council (**Bahrain, Kuwait, Oman, Qatar, UAE**; not a single country)
 - Country-level pack: yes
 - Geofabrik country PBF size: **241 MB** (`253036510` bytes)
 - Geofabrik URL: https://download.geofabrik.de/asia/gcc-states.html
@@ -1464,6 +1476,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Europe
 - Region id: `europe/great-britain`
+- Extract type: regional Geofabrik extract — England, Scotland, and Wales (not the full United Kingdom)
 - Country-level pack: yes
 - Geofabrik country PBF size: **2.02 GB** (`2172902136` bytes)
 - Geofabrik URL: https://download.geofabrik.de/europe/great-britain.html
@@ -1504,6 +1517,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Europe
 - Region id: `europe/guernsey-jersey`
+- Extract type: Channel Islands extract — Guernsey + Jersey
 - Country-level pack: yes
 - Geofabrik country PBF size: **3.71 MB** (`3891660` bytes)
 - Geofabrik URL: https://download.geofabrik.de/europe/guernsey-jersey.html
@@ -1544,6 +1558,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Central America
 - Region id: `central-america/haiti-and-domrep`
+- Extract type: multi-country Geofabrik extract — Haiti + Dominican Republic (Hispaniola)
 - Country-level pack: yes
 - Geofabrik country PBF size: **84.5 MB** (`88640558` bytes)
 - Geofabrik URL: https://download.geofabrik.de/central-america/haiti-and-domrep.html
@@ -1645,6 +1660,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Europe
 - Region id: `europe/isle-of-man`
+- Extract type: Crown dependency extract
 - Country-level pack: yes
 - Geofabrik country PBF size: **5.78 MB** (`6064173` bytes)
 - Geofabrik URL: https://download.geofabrik.de/europe/isle-of-man.html
@@ -1655,6 +1671,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Asia
 - Region id: `asia/israel-and-palestine`
+- Extract type: combined Geofabrik extract — Israel and Palestine
 - Country-level pack: yes
 - Geofabrik country PBF size: **114 MB** (`119528881` bytes)
 - Geofabrik URL: https://download.geofabrik.de/asia/israel-and-palestine.html
@@ -1756,6 +1773,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Europe
 - Region id: `europe/kosovo`
+- Extract type: territory extract (disputed status; own Geofabrik leaf)
 - Country-level pack: yes
 - Geofabrik country PBF size: **29.3 MB** (`30749699` bytes)
 - Geofabrik URL: https://download.geofabrik.de/europe/kosovo.html
@@ -1896,6 +1914,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Asia
 - Region id: `asia/malaysia-singapore-brunei`
+- Extract type: multi-country Geofabrik extract — Malaysia + Singapore + Brunei
 - Country-level pack: yes
 - Geofabrik country PBF size: **239 MB** (`250814575` bytes)
 - Geofabrik URL: https://download.geofabrik.de/asia/malaysia-singapore-brunei.html
@@ -2387,6 +2406,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Africa
 - Region id: `africa/senegal-and-gambia`
+- Extract type: multi-country Geofabrik extract — Senegal + Gambia
 - Country-level pack: yes
 - Geofabrik country PBF size: **100 MB** (`105180489` bytes)
 - Geofabrik URL: https://download.geofabrik.de/africa/senegal-and-gambia.html
@@ -2477,6 +2497,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Africa
 - Region id: `africa/south-africa-and-lesotho`
+- Extract type: multi-country Geofabrik extract — South Africa including Lesotho
 - Country-level pack: yes
 - Geofabrik country PBF size: **520 MB** (`545052203` bytes)
 - Geofabrik URL: https://download.geofabrik.de/africa/south-africa-and-lesotho.html
@@ -2507,6 +2528,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: Asia
 - Region id: `asia/sea`
+- Extract type: multi-country Geofabrik extract for South-East Asia (id `sea`)
 - Country-level pack: yes
 - Geofabrik country PBF size: **3.41 GB** (`3660245239` bytes)
 - Geofabrik URL: https://download.geofabrik.de/asia/sea.html
@@ -2901,6 +2923,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: North America
 - Region id: `north-america/us-midwest`
+- Extract type: special US regional Geofabrik extract (Midwest); overlaps state packs, not a country
 - Country-level pack: yes
 - Geofabrik country PBF size: **2.33 GB** (`2500351197` bytes)
 - Geofabrik URL: https://download.geofabrik.de/north-america/us-midwest.html
@@ -2911,6 +2934,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: North America
 - Region id: `north-america/us-northeast`
+- Extract type: special US regional Geofabrik extract (Northeast); overlaps state packs, not a country
 - Country-level pack: yes
 - Geofabrik country PBF size: **1.67 GB** (`1798185986` bytes)
 - Geofabrik URL: https://download.geofabrik.de/north-america/us-northeast.html
@@ -2921,6 +2945,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: North America
 - Region id: `north-america/us-pacific`
+- Extract type: special US regional Geofabrik extract (Pacific); overlaps state packs, not a country
 - Country-level pack: yes
 - Geofabrik country PBF size: **164 MB** (`171546160` bytes)
 - Geofabrik URL: https://download.geofabrik.de/north-america/us-pacific.html
@@ -2931,6 +2956,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: North America
 - Region id: `north-america/us-south`
+- Extract type: special US regional Geofabrik extract (South); overlaps state packs, not a country
 - Country-level pack: yes
 - Geofabrik country PBF size: **3.84 GB** (`4123288536` bytes)
 - Geofabrik URL: https://download.geofabrik.de/north-america/us-south.html
@@ -2941,6 +2967,7 @@ separate subregion (same rule as the app region chips).
 
 - Continent / group: North America
 - Region id: `north-america/us-west`
+- Extract type: special US regional Geofabrik extract (West); overlaps state packs, not a country
 - Country-level pack: yes
 - Geofabrik country PBF size: **3.17 GB** (`3400591554` bytes)
 - Geofabrik URL: https://download.geofabrik.de/north-america/us-west.html
