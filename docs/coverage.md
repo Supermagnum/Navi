@@ -62,6 +62,14 @@ Country-level pack **yes** means the bare country path itself is a
 downloadable pack. **no (subregions only)** means you download nested
 leaves, not a single whole-country pack.
 
+Display names use Geofabrik’s local spelling where available (including
+Norwegian Æ/Ø/Å and other diacritics). Pack path ids stay ASCII
+(`ostlandet`, `sorlandet`, …).
+
+**Norway / Hedmark:** the pack server still lists `europe/norway/hedmark`,
+but that area is covered by **Østlandet**; this doc omits Hedmark as a
+separate subregion (same rule as the app region chips).
+
 ## Table of contents
 
 - [Afghanistan](#asia-afghanistan) — 107 MB
@@ -75,11 +83,11 @@ leaves, not a single whole-country pack.
 - [Argentina](#south-america-argentina) — 410 MB
 - [Armenia](#asia-armenia) — 50.7 MB
 - [Australia](#australia-oceania-australia) — 918 MB
-  - [ACT](#australia-oceania-australia-act) — 133 MB
+  - [Australian Capital Territory](#australia-oceania-australia-act) — 133 MB
   - [Christmas Island](#australia-oceania-australia-christmas-island) — 1.15 MB
-  - [Cocos Islands](#australia-oceania-australia-cocos-islands) — 423 KB
+  - [Cocos (Keeling) Islands](#australia-oceania-australia-cocos-islands) — 423 KB
   - [Coral Sea Islands](#australia-oceania-australia-coral-sea-islands) — 6.42 KB
-  - [New South Wales](#australia-oceania-australia-new-south-wales) — 1.91 GB
+  - [New South Wales (with ACT and JBT)](#australia-oceania-australia-new-south-wales) — 1.91 GB
   - [Norfolk Island](#australia-oceania-australia-norfolk-island) — 1.16 MB
   - [Northern Territory](#australia-oceania-australia-northern-territory) — 147 MB
   - [Queensland](#australia-oceania-australia-queensland) — 1.21 GB
@@ -98,7 +106,7 @@ leaves, not a single whole-country pack.
 - [Benin](#africa-benin) — 46.0 MB
 - [Bhutan](#asia-bhutan) — 22.5 MB
 - [Bolivia](#south-america-bolivia) — 165 MB
-- [Bosnia and Herzegovina](#europe-bosnia-herzegovina) — 153 MB
+- [Bosnia-Herzegovina](#europe-bosnia-herzegovina) — 153 MB
 - [Botswana](#africa-botswana) — 83.9 MB
 - [Brazil](#south-america-brazil) — 1.94 GB
   - [Centro-Oeste](#south-america-brazil-centro-oeste) — 1.83 GB
@@ -106,7 +114,7 @@ leaves, not a single whole-country pack.
   - [Norte](#south-america-brazil-norte) — 1.35 GB
   - [Sudeste](#south-america-brazil-sudeste) — 6.87 GB
   - [Sul](#south-america-brazil-sul) — 3.77 GB
-- [Britain And Ireland](#europe-britain-and-ireland) — 2.43 GB
+- [Britain and Ireland](#europe-britain-and-ireland) — 2.43 GB
 - [Bulgaria](#europe-bulgaria) — 166 MB
 - [Burkina Faso](#africa-burkina-faso) — 80.7 MB
 - [Burundi](#africa-burundi) — 44.1 MB
@@ -115,21 +123,21 @@ leaves, not a single whole-country pack.
 - [Canada](#north-america-canada) — 6.01 GB
   - [Alberta](#north-america-canada-alberta) — 1.53 GB
   - [British Columbia](#north-america-canada-british-columbia)
-    - [Interior Admreg](#north-america-canada-british-columbia-interior-admreg) — 183 MB
-    - [Island Admreg](#north-america-canada-british-columbia-island-admreg) — 361 MB
-    - [Kootenay Admreg](#north-america-canada-british-columbia-kootenay-admreg) — 145 MB
-    - [North Admreg](#north-america-canada-british-columbia-north-admreg) — 264 MB
-    - [Okanagan Admreg](#north-america-canada-british-columbia-okanagan-admreg) — 202 MB
-    - [Southcoast Admreg](#north-america-canada-british-columbia-southcoast-admreg) — 612 MB
+    - [Interior Administrative Region](#north-america-canada-british-columbia-interior-admreg) — 183 MB
+    - [Island Administrative Region](#north-america-canada-british-columbia-island-admreg) — 361 MB
+    - [Kootenay Administrative Region](#north-america-canada-british-columbia-kootenay-admreg) — 145 MB
+    - [North Administrative Region](#north-america-canada-british-columbia-north-admreg) — 264 MB
+    - [Okanagan Administrative Region](#north-america-canada-british-columbia-okanagan-admreg) — 202 MB
+    - [South Coast Administrative Region](#north-america-canada-british-columbia-southcoast-admreg) — 612 MB
   - [Manitoba](#north-america-canada-manitoba) — 686 MB
   - [New Brunswick](#north-america-canada-new-brunswick) — 252 MB
   - [Newfoundland and Labrador](#north-america-canada-newfoundland-and-labrador) — 243 MB
   - [Northwest Territories](#north-america-canada-northwest-territories) — 112 MB
   - [Nova Scotia](#north-america-canada-nova-scotia) — 429 MB
   - [Nunavut](#north-america-canada-nunavut)
-    - [Kitikmeot](#north-america-canada-nunavut-kitikmeot) — 51.6 MB
-    - [Kivalliq](#north-america-canada-nunavut-kivalliq) — 63.4 MB
-    - [Qikiqtaaluk](#north-america-canada-nunavut-qikiqtaaluk) — 98.3 MB
+    - [Kitikmeot Region](#north-america-canada-nunavut-kitikmeot) — 51.6 MB
+    - [Kivalliq Region](#north-america-canada-nunavut-kivalliq) — 63.4 MB
+    - [Qikiqtaaluk Region](#north-america-canada-nunavut-qikiqtaaluk) — 98.3 MB
   - [Ontario](#north-america-canada-ontario) — 3.13 GB
   - [Prince Edward Island](#north-america-canada-prince-edward-island) — 58.8 MB
   - [Quebec](#north-america-canada-quebec) — 1.91 GB
@@ -146,11 +154,11 @@ leaves, not a single whole-country pack.
   - [Chongqing](#asia-china-chongqing) — 403 MB
   - [Fujian](#asia-china-fujian) — 679 MB
   - [Gansu](#asia-china-gansu) — 789 MB
-  - [Guangdong](#asia-china-guangdong) — 1.94 GB
+  - [Guangdong (with Hong Kong and Macau)](#asia-china-guangdong) — 1.94 GB
   - [Guangxi](#asia-china-guangxi) — 675 MB
   - [Guizhou](#asia-china-guizhou) — 397 MB
   - [Hainan](#asia-china-hainan) — 148 MB
-  - [Hebei](#asia-china-hebei) — 1.99 GB
+  - [Hebei (with Beijing and Tianjin)](#asia-china-hebei) — 1.99 GB
   - [Heilongjiang](#asia-china-heilongjiang) — 484 MB
   - [Henan](#asia-china-henan) — 980 MB
   - [Hong Kong](#asia-china-hong-kong) — 186 MB
@@ -176,29 +184,29 @@ leaves, not a single whole-country pack.
   - [Zhejiang](#asia-china-zhejiang) — 1.16 GB
 - [Colombia](#south-america-colombia) — 314 MB
 - [Comores](#africa-comores) — 3.79 MB
-- [Congo (Democratic Republic)](#africa-congo-democratic-republic) — 397 MB
-- [Congo-Brazzaville](#africa-congo-brazzaville) — 31.1 MB
+- [Congo (Democratic Republic/Kinshasa)](#africa-congo-democratic-republic) — 397 MB
+- [Congo (Republic/Brazzaville)](#africa-congo-brazzaville) — 31.1 MB
 - [Cook Islands](#australia-oceania-cook-islands) — 950 KB
 - [Costa Rica](#central-america-costa-rica) — 37.2 MB
 - [Croatia](#europe-croatia) — 190 MB
 - [Cuba](#central-america-cuba) — 59.1 MB
 - [Cyprus](#europe-cyprus) — 35.6 MB
 - [Czech Republic](#europe-czech-republic) — 903 MB
-  - [Jihocesky](#europe-czech-republic-jihocesky) — 330 MB
-  - [Jihomoravsky](#europe-czech-republic-jihomoravsky) — 372 MB
-  - [Karlovarsky](#europe-czech-republic-karlovarsky) — 107 MB
-  - [Kralovehradecky](#europe-czech-republic-kralovehradecky) — 198 MB
-  - [Liberecky](#europe-czech-republic-liberecky) — 160 MB
-  - [Moravskoslezky](#europe-czech-republic-moravskoslezky) — 267 MB
-  - [Olomoucky](#europe-czech-republic-olomoucky) — 219 MB
-  - [Pardubicky](#europe-czech-republic-pardubicky) — 187 MB
-  - [Plzensky](#europe-czech-republic-plzensky) — 254 MB
+  - [Jihočeský kraj](#europe-czech-republic-jihocesky) — 330 MB
+  - [Jihomoravský kraj](#europe-czech-republic-jihomoravsky) — 372 MB
+  - [Karlovarský kraj](#europe-czech-republic-karlovarsky) — 107 MB
+  - [Královéhradecký kraj](#europe-czech-republic-kralovehradecky) — 198 MB
+  - [Liberecký kraj](#europe-czech-republic-liberecky) — 160 MB
+  - [Moravskoslezský kraj](#europe-czech-republic-moravskoslezky) — 267 MB
+  - [Olomoucký kraj](#europe-czech-republic-olomoucky) — 219 MB
+  - [Pardubický kraj](#europe-czech-republic-pardubicky) — 187 MB
+  - [Plzeňský kraj](#europe-czech-republic-plzensky) — 254 MB
   - [Praha](#europe-czech-republic-praha) — 182 MB
-  - [Stredocesky](#europe-czech-republic-stredocesky) — 875 MB
-  - [Ustecky](#europe-czech-republic-ustecky) — 392 MB
-  - [Vysocina](#europe-czech-republic-vysocina) — 210 MB
-  - [Zlinsky](#europe-czech-republic-zlinsky) — 189 MB
-- [Dach](#europe-dach) — 5.80 GB
+  - [Středočeský kraj (with Praha)](#europe-czech-republic-stredocesky) — 875 MB
+  - [Ústecký kraj](#europe-czech-republic-ustecky) — 392 MB
+  - [Kraj Vysočina](#europe-czech-republic-vysocina) — 210 MB
+  - [Zlínský kraj](#europe-czech-republic-zlinsky) — 189 MB
+- [DACH](#europe-dach) — 5.80 GB
 - [Denmark](#europe-denmark) — 471 MB
 - [Djibouti](#africa-djibouti) — 6.69 MB
 - [East Timor](#asia-east-timor) — 16.9 MB
@@ -220,9 +228,9 @@ leaves, not a single whole-country pack.
   - [Bourgogne](#europe-france-bourgogne) — 949 MB
   - [Bretagne](#europe-france-bretagne) — 1.53 GB
   - [Centre](#europe-france-centre) — 1.16 GB
-  - [Champagne-Ardenne](#europe-france-champagne-ardenne) — 632 MB
+  - [Champagne Ardenne](#europe-france-champagne-ardenne) — 632 MB
   - [Corse](#europe-france-corse) — 162 MB
-  - [Franche-Comte](#europe-france-franche-comte) — 652 MB
+  - [Franche Comte](#europe-france-franche-comte) — 652 MB
   - [Guadeloupe](#europe-france-guadeloupe) — 95.0 MB
   - [Guyane](#europe-france-guyane) — 58.0 MB
   - [Haute-Normandie](#europe-france-haute-normandie) — 521 MB
@@ -237,18 +245,18 @@ leaves, not a single whole-country pack.
   - [Pays de la Loire](#europe-france-pays-de-la-loire) — 1.59 GB
   - [Picardie](#europe-france-picardie) — 604 MB
   - [Poitou-Charentes](#europe-france-poitou-charentes) — 1.00 GB
-  - [Provence-Alpes-Cote d'Azur](#europe-france-provence-alpes-cote-d-azur) — 1.81 GB
+  - [Provence Alpes-Cote-d'Azur](#europe-france-provence-alpes-cote-d-azur) — 1.81 GB
   - [Reunion](#europe-france-reunion) — 133 MB
   - [Rhone-Alpes](#europe-france-rhone-alpes) — 2.78 GB
 - [Gabon](#africa-gabon) — 24.3 MB
 - [GCC States](#asia-gcc-states) — 241 MB
 - [Georgia](#europe-georgia) — 97.0 MB
 - [Germany](#europe-germany) — 4.51 GB
-  - [Baden-Wuerttemberg](#europe-germany-baden-wuerttemberg)
+  - [Baden-Württemberg](#europe-germany-baden-wuerttemberg)
     - [Freiburg Regbez](#europe-germany-baden-wuerttemberg-freiburg-regbez) — 1013 MB
     - [Karlsruhe Regbez](#europe-germany-baden-wuerttemberg-karlsruhe-regbez) — 934 MB
     - [Stuttgart Regbez](#europe-germany-baden-wuerttemberg-stuttgart-regbez) — 1.27 GB
-    - [Tuebingen Regbez](#europe-germany-baden-wuerttemberg-tuebingen-regbez) — 826 MB
+    - [Tübingen Regbez](#europe-germany-baden-wuerttemberg-tuebingen-regbez) — 826 MB
   - [Bayern](#europe-germany-bayern)
     - [Mittelfranken](#europe-germany-bayern-mittelfranken) — 555 MB
     - [Niederbayern](#europe-germany-bayern-niederbayern) — 640 MB
@@ -258,30 +266,30 @@ leaves, not a single whole-country pack.
     - [Schwaben](#europe-germany-bayern-schwaben) — 763 MB
     - [Unterfranken](#europe-germany-bayern-unterfranken) — 734 MB
   - [Berlin](#europe-germany-berlin) — 478 MB
-  - [Brandenburg](#europe-germany-brandenburg) — 1.57 GB
+  - [Brandenburg (mit Berlin)](#europe-germany-brandenburg) — 1.57 GB
   - [Bremen](#europe-germany-bremen) — 85.2 MB
   - [Hamburg](#europe-germany-hamburg) — 230 MB
   - [Hessen](#europe-germany-hessen) — 2.19 GB
   - [Mecklenburg-Vorpommern](#europe-germany-mecklenburg-vorpommern) — 620 MB
-  - [Niedersachsen](#europe-germany-niedersachsen) — 2.76 GB
+  - [Niedersachsen (mit Bremen)](#europe-germany-niedersachsen) — 2.76 GB
   - [Nordrhein-Westfalen](#europe-germany-nordrhein-westfalen)
     - [Arnsberg Regbez](#europe-germany-nordrhein-westfalen-arnsberg-regbez) — 958 MB
     - [Detmold Regbez](#europe-germany-nordrhein-westfalen-detmold-regbez) — 762 MB
-    - [Duesseldorf Regbez](#europe-germany-nordrhein-westfalen-duesseldorf-regbez) — 861 MB
-    - [Koeln Regbez](#europe-germany-nordrhein-westfalen-koeln-regbez) — 893 MB
-    - [Muenster Regbez](#europe-germany-nordrhein-westfalen-muenster-regbez) — 583 MB
+    - [Düsseldorf Regbez](#europe-germany-nordrhein-westfalen-duesseldorf-regbez) — 861 MB
+    - [Köln Regbez](#europe-germany-nordrhein-westfalen-koeln-regbez) — 893 MB
+    - [Münster Regbez](#europe-germany-nordrhein-westfalen-muenster-regbez) — 583 MB
   - [Rheinland-Pfalz](#europe-germany-rheinland-pfalz) — 1.68 GB
   - [Saarland](#europe-germany-saarland) — 220 MB
   - [Sachsen](#europe-germany-sachsen) — 1.57 GB
   - [Sachsen-Anhalt](#europe-germany-sachsen-anhalt) — 909 MB
   - [Schleswig-Holstein](#europe-germany-schleswig-holstein) — 803 MB
-  - [Thueringen](#europe-germany-thueringen) — 1.01 GB
+  - [Thüringen](#europe-germany-thueringen) — 1.01 GB
 - [Ghana](#africa-ghana) — 110 MB
 - [Great Britain](#europe-great-britain) — 2.02 GB
 - [Greece](#europe-greece) — 325 MB
 - [Greenland](#north-america-greenland) — 24.9 MB
 - [Guatemala](#central-america-guatemala) — 125 MB
-- [Guernsey Jersey](#europe-guernsey-jersey) — 3.71 MB
+- [Guernsey and Jersey](#europe-guernsey-jersey) — 3.71 MB
 - [Guinea](#africa-guinea) — 113 MB
 - [Guinea-Bissau](#africa-guinea-bissau) — 10.6 MB
 - [Guyana](#south-america-guyana) — 14.8 MB
@@ -296,17 +304,17 @@ leaves, not a single whole-country pack.
   - [Northern Zone](#asia-india-northern-zone) — 5.65 GB
   - [Southern Zone](#asia-india-southern-zone) — 9.58 GB
   - [Western Zone](#asia-india-western-zone) — 4.23 GB
-- [Indonesia](#asia-indonesia) — 1.62 GB
+- [Indonesia (with East Timor)](#asia-indonesia) — 1.62 GB
   - [Java](#asia-indonesia-java) — 7.60 GB
   - [Kalimantan](#asia-indonesia-kalimantan) — 1.65 GB
   - [Maluku](#asia-indonesia-maluku) — 177 MB
-  - [Nusa Tenggara](#asia-indonesia-nusa-tenggara) — 1019 MB
+  - [Nusa-Tenggara](#asia-indonesia-nusa-tenggara) — 1019 MB
   - [Papua](#asia-indonesia-papua) — 247 MB
   - [Sulawesi](#asia-indonesia-sulawesi) — 1.18 GB
   - [Sumatra](#asia-indonesia-sumatra) — 3.10 GB
 - [Iran](#asia-iran) — 219 MB
 - [Iraq](#asia-iraq) — 86.2 MB
-- [Ireland And Northern Ireland](#europe-ireland-and-northern-ireland) — 394 MB
+- [Ireland and Northern Ireland](#europe-ireland-and-northern-ireland) — 394 MB
 - [Isle of Man](#europe-isle-of-man) — 5.78 MB
 - [Israel and Palestine](#asia-israel-and-palestine) — 114 MB
 - [Italy](#europe-italy) — 2.08 GB
@@ -318,14 +326,14 @@ leaves, not a single whole-country pack.
 - [Ivory Coast](#africa-ivory-coast) — 81.4 MB
 - [Jamaica](#central-america-jamaica) — 36.8 MB
 - [Japan](#asia-japan) — 2.35 GB
-  - [Chubu](#asia-japan-chubu) — 4.35 GB
-  - [Chugoku](#asia-japan-chugoku) — 1.80 GB
-  - [Hokkaido](#asia-japan-hokkaido) — 1.24 GB
-  - [Kansai](#asia-japan-kansai) — 3.03 GB
-  - [Kanto](#asia-japan-kanto) — 5.07 GB
-  - [Kyushu](#asia-japan-kyushu) — 3.13 GB
+  - [Chūbu region](#asia-japan-chubu) — 4.35 GB
+  - [Chūgoku region](#asia-japan-chugoku) — 1.80 GB
+  - [Hokkaidō](#asia-japan-hokkaido) — 1.24 GB
+  - [Kansai region (a.k.a. Kinki region)](#asia-japan-kansai) — 3.03 GB
+  - [Kantō region](#asia-japan-kanto) — 5.07 GB
+  - [Kyūshū](#asia-japan-kyushu) — 3.13 GB
   - [Shikoku](#asia-japan-shikoku) — 1010 MB
-  - [Tohoku](#asia-japan-tohoku) — 2.44 GB
+  - [Tōhoku region](#asia-japan-tohoku) — 2.44 GB
 - [Jordan](#asia-jordan) — 29.6 MB
 - [Kazakhstan](#asia-kazakhstan) — 213 MB
 - [Kenya](#africa-kenya) — 334 MB
@@ -344,7 +352,7 @@ leaves, not a single whole-country pack.
 - [Macedonia](#europe-macedonia) — 28.3 MB
 - [Madagascar](#africa-madagascar) — 371 MB
 - [Malawi](#africa-malawi) — 148 MB
-- [Malaysia, Singapore and Brunei](#asia-malaysia-singapore-brunei) — 239 MB
+- [Malaysia, Singapore, and Brunei](#asia-malaysia-singapore-brunei) — 239 MB
 - [Maldives](#asia-maldives) — 5.00 MB
 - [Mali](#africa-mali) — 165 MB
 - [Malta](#europe-malta) — 8.50 MB
@@ -359,7 +367,7 @@ leaves, not a single whole-country pack.
 - [Montenegro](#europe-montenegro) — 32.8 MB
 - [Morocco](#africa-morocco) — 232 MB
 - [Mozambique](#africa-mozambique) — 244 MB
-- [Myanmar](#asia-myanmar) — 269 MB
+- [Myanmar (a.k.a. Burma)](#asia-myanmar) — 269 MB
 - [Namibia](#africa-namibia) — 52.0 MB
 - [Nauru](#australia-oceania-nauru) — 260 KB
 - [Nepal](#asia-nepal) — 395 MB
@@ -370,12 +378,12 @@ leaves, not a single whole-country pack.
   - [Gelderland](#europe-netherlands-gelderland) — 542 MB
   - [Groningen](#europe-netherlands-groningen) — 140 MB
   - [Limburg](#europe-netherlands-limburg) — 249 MB
-  - [Noord Brabant](#europe-netherlands-noord-brabant) — 523 MB
-  - [Noord Holland](#europe-netherlands-noord-holland) — 450 MB
+  - [Noord-Brabant](#europe-netherlands-noord-brabant) — 523 MB
+  - [Noord-Holland](#europe-netherlands-noord-holland) — 450 MB
   - [Overijssel](#europe-netherlands-overijssel) — 310 MB
   - [Utrecht](#europe-netherlands-utrecht) — 223 MB
   - [Zeeland](#europe-netherlands-zeeland) — 121 MB
-  - [Zuid Holland](#europe-netherlands-zuid-holland) — 542 MB
+  - [Zuid-Holland](#europe-netherlands-zuid-holland) — 542 MB
 - [New Caledonia](#australia-oceania-new-caledonia) — 13.5 MB
 - [New Zealand](#australia-oceania-new-zealand) — 384 MB
 - [Nicaragua](#central-america-nicaragua) — 58.5 MB
@@ -384,12 +392,11 @@ leaves, not a single whole-country pack.
 - [Niue](#australia-oceania-niue) — 415 KB
 - [North Korea](#asia-north-korea) — 87.7 MB
 - [Norway](#europe-norway) — 1.28 GB
-  - [Hedmark](#europe-norway-hedmark) — 451 MB
   - [Nord-Norge](#europe-norway-nord-norge) — 836 MB
-  - [Ostlandet](#europe-norway-ostlandet) — 2.43 GB
-  - [Sorlandet](#europe-norway-sorlandet) — 304 MB
+  - [Østlandet](#europe-norway-ostlandet) — 2.43 GB
+  - [Sørlandet](#europe-norway-sorlandet) — 304 MB
   - [Svalbard and Jan Mayen](#europe-norway-svalbard-janmayen) — 7.78 MB
-  - [Trondelag](#europe-norway-trondelag) — 615 MB
+  - [Trøndelag](#europe-norway-trondelag) — 615 MB
   - [Vestlandet](#europe-norway-vestlandet) — 1.11 GB
 - [Pakistan](#asia-pakistan) — 149 MB
 - [Palau](#australia-oceania-palau) — 801 KB
@@ -400,26 +407,26 @@ leaves, not a single whole-country pack.
 - [Philippines](#asia-philippines) — 578 MB
 - [Pitcairn Islands](#australia-oceania-pitcairn-islands) — 112 KB
 - [Poland](#europe-poland) — 1.95 GB
-  - [Dolnoslaskie](#europe-poland-dolnoslaskie) — 1.01 GB
-  - [Kujawsko-Pomorskie](#europe-poland-kujawsko-pomorskie) — 717 MB
-  - [Lodzkie](#europe-poland-lodzkie) — 638 MB
+  - [Dolnośląskie](#europe-poland-dolnoslaskie) — 1.01 GB
+  - [Kujawsko-pomorskie](#europe-poland-kujawsko-pomorskie) — 717 MB
+  - [Łódzkie](#europe-poland-lodzkie) — 638 MB
   - [Lubelskie](#europe-poland-lubelskie) — 960 MB
   - [Lubuskie](#europe-poland-lubuskie) — 430 MB
-  - [Malopolskie](#europe-poland-malopolskie) — 1.22 GB
+  - [Małopolskie](#europe-poland-malopolskie) — 1.22 GB
   - [Mazowieckie](#europe-poland-mazowieckie) — 1.47 GB
   - [Opolskie](#europe-poland-opolskie) — 335 MB
   - [Podkarpackie](#europe-poland-podkarpackie) — 917 MB
   - [Podlaskie](#europe-poland-podlaskie) — 467 MB
   - [Pomorskie](#europe-poland-pomorskie) — 791 MB
-  - [Slaskie](#europe-poland-slaskie) — 1.20 GB
-  - [Swietokrzyskie](#europe-poland-swietokrzyskie) — 498 MB
-  - [Warminsko-Mazurskie](#europe-poland-warminsko-mazurskie) — 528 MB
+  - [Śląskie](#europe-poland-slaskie) — 1.20 GB
+  - [Świętokrzyskie](#europe-poland-swietokrzyskie) — 498 MB
+  - [Warmińsko-mazurskie](#europe-poland-warminsko-mazurskie) — 528 MB
   - [Wielkopolskie](#europe-poland-wielkopolskie) — 902 MB
   - [Zachodniopomorskie](#europe-poland-zachodniopomorskie) — 553 MB
-- [Polynesie Francaise](#australia-oceania-polynesie-francaise) — 14.9 MB
+- [Polynésie française (French Polynesia)](#australia-oceania-polynesie-francaise) — 14.9 MB
 - [Portugal](#europe-portugal) — 403 MB
 - [Romania](#europe-romania) — 313 MB
-- [Russia](#russia) — 3.87 GB
+- [Russian Federation](#russia) — 3.87 GB
   - [Central Federal District](#russia-central-fed-district) — 5.73 GB
   - [Crimean Federal District](#russia-crimean-fed-district) — 369 MB
   - [Far Eastern Federal District](#russia-far-eastern-fed-district) — 1.26 GB
@@ -427,14 +434,13 @@ leaves, not a single whole-country pack.
   - [North Caucasus Federal District](#russia-north-caucasus-fed-district) — 877 MB
   - [Northwestern Federal District](#russia-northwestern-fed-district) — 3.08 GB
   - [Siberian Federal District](#russia-siberian-fed-district) — 2.90 GB
-  - [Southern Federal District](#russia-south-fed-district) — 1.98 GB
+  - [South Federal District](#russia-south-fed-district) — 1.98 GB
   - [Ural Federal District](#russia-ural-fed-district) — 1.96 GB
   - [Volga Federal District](#russia-volga-fed-district) — 4.29 GB
 - [Rwanda](#africa-rwanda) — 64.1 MB
-- [Saint Helena, Ascension and Tristan da Cunha](#africa-saint-helena-ascension-and-tristan-da-cunha) — 876 KB
+- [Saint Helena, Ascension, and Tristan da Cunha](#africa-saint-helena-ascension-and-tristan-da-cunha) — 876 KB
 - [Samoa](#australia-oceania-samoa) — 3.30 MB
 - [Sao Tome and Principe](#africa-sao-tome-and-principe) — 1.20 MB
-- [Sea](#asia-sea) — 3.41 GB
 - [Senegal and Gambia](#africa-senegal-and-gambia) — 100 MB
 - [Serbia](#europe-serbia) — 229 MB
 - [Seychelles](#africa-seychelles) — 2.63 MB
@@ -444,17 +450,18 @@ leaves, not a single whole-country pack.
 - [Solomon Islands](#australia-oceania-solomon-islands) — 11.4 MB
 - [Somalia](#africa-somalia) — 157 MB
 - [South Africa](#africa-south-africa) — 401 MB
-- [South Africa and Lesotho](#africa-south-africa-and-lesotho) — 520 MB
+- [South Africa (includes Lesotho)](#africa-south-africa-and-lesotho) — 520 MB
 - [South Korea](#asia-south-korea) — 274 MB
 - [South Sudan](#africa-south-sudan) — 132 MB
+- [South-East Asia](#asia-sea) — 3.41 GB
 - [Spain](#europe-spain) — 1.38 GB
-  - [Andalucia](#europe-spain-andalucia) — 1.75 GB
-  - [Aragon](#europe-spain-aragon) — 763 MB
+  - [Andalucía](#europe-spain-andalucia) — 1.75 GB
+  - [Aragón](#europe-spain-aragon) — 763 MB
   - [Asturias](#europe-spain-asturias) — 288 MB
   - [Cantabria](#europe-spain-cantabria) — 227 MB
   - [Castilla-La Mancha](#europe-spain-castilla-la-mancha) — 1.09 GB
-  - [Castilla y Leon](#europe-spain-castilla-y-leon) — 1.73 GB
-  - [Cataluna](#europe-spain-cataluna) — 2.21 GB
+  - [Castilla y León](#europe-spain-castilla-y-leon) — 1.73 GB
+  - [Cataluña](#europe-spain-cataluna) — 2.21 GB
   - [Ceuta](#europe-spain-ceuta) — 4.72 MB
   - [Extremadura](#europe-spain-extremadura) — 448 MB
   - [Galicia](#europe-spain-galicia) — 1.18 GB
@@ -464,7 +471,7 @@ leaves, not a single whole-country pack.
   - [Melilla](#europe-spain-melilla) — 5.72 MB
   - [Murcia](#europe-spain-murcia) — 446 MB
   - [Navarra](#europe-spain-navarra) — 411 MB
-  - [Pais Vasco](#europe-spain-pais-vasco) — 462 MB
+  - [País Vasco](#europe-spain-pais-vasco) — 462 MB
   - [Valencia](#europe-spain-valencia) — 1.24 GB
 - [Sri Lanka](#asia-sri-lanka) — 138 MB
 - [Sudan](#africa-sudan) — 195 MB
@@ -473,25 +480,25 @@ leaves, not a single whole-country pack.
 - [Sweden](#europe-sweden) — 779 MB
   - [Blekinge](#europe-sweden-blekinge) — 81.9 MB
   - [Dalarna](#europe-sweden-dalarna) — 281 MB
-  - [Gavleborg](#europe-sweden-gavleborg) — 217 MB
+  - [Gävleborg](#europe-sweden-gavleborg) — 217 MB
   - [Gotland](#europe-sweden-gotland) — 51.7 MB
   - [Halland](#europe-sweden-halland) — 175 MB
-  - [Jamtland](#europe-sweden-jamtland) — 242 MB
-  - [Jonkoping](#europe-sweden-jonkoping) — 210 MB
+  - [Jämtland](#europe-sweden-jamtland) — 242 MB
+  - [Jönköping](#europe-sweden-jonkoping) — 210 MB
   - [Kalmar](#europe-sweden-kalmar) — 189 MB
   - [Kronoberg](#europe-sweden-kronoberg) — 131 MB
   - [Norrbotten](#europe-sweden-norrbotten) — 324 MB
-  - [Orebro](#europe-sweden-orebro) — 218 MB
-  - [Ostergotland](#europe-sweden-ostergotland) — 345 MB
-  - [Skane](#europe-sweden-skane) — 455 MB
-  - [Sodermanland](#europe-sweden-sodermanland) — 147 MB
+  - [Örebro](#europe-sweden-orebro) — 218 MB
+  - [Östergötland](#europe-sweden-ostergotland) — 345 MB
+  - [Skåne](#europe-sweden-skane) — 455 MB
+  - [Södermanland](#europe-sweden-sodermanland) — 147 MB
   - [Stockholm](#europe-sweden-stockholm) — 560 MB
   - [Uppsala](#europe-sweden-uppsala) — 184 MB
-  - [Varmland](#europe-sweden-varmland) — 255 MB
-  - [Vasterbotten](#europe-sweden-vasterbotten) — 251 MB
-  - [Vasternorrland](#europe-sweden-vasternorrland) — 253 MB
-  - [Vastmanland](#europe-sweden-vastmanland) — 126 MB
-  - [Vastra Gotaland](#europe-sweden-vastra-gotaland) — 927 MB
+  - [Värmland](#europe-sweden-varmland) — 255 MB
+  - [Västerbotten](#europe-sweden-vasterbotten) — 251 MB
+  - [Västernorrland](#europe-sweden-vasternorrland) — 253 MB
+  - [Västmanland](#europe-sweden-vastmanland) — 126 MB
+  - [Västra Götaland](#europe-sweden-vastra-gotaland) — 927 MB
 - [Switzerland](#europe-switzerland) — 521 MB
 - [Syria](#asia-syria) — 77.9 MB
 - [Taiwan](#asia-taiwan) — 311 MB
@@ -506,7 +513,7 @@ leaves, not a single whole-country pack.
 - [Turkmenistan](#asia-turkmenistan) — 23.7 MB
 - [Tuvalu](#australia-oceania-tuvalu) — 357 KB
 - [Uganda](#africa-uganda) — 354 MB
-- [Ukraine](#europe-ukraine) — 836 MB
+- [Ukraine (with Crimea)](#europe-ukraine) — 836 MB
 - [United Kingdom](#europe-united-kingdom) — 2.10 GB
   - [Bermuda](#europe-united-kingdom-bermuda) — 12.3 MB
   - [England](#europe-united-kingdom-england)
@@ -559,76 +566,76 @@ leaves, not a single whole-country pack.
     - [West Yorkshire](#europe-united-kingdom-england-west-yorkshire) — 320 MB
     - [Wiltshire](#europe-united-kingdom-england-wiltshire) — 185 MB
     - [Worcestershire](#europe-united-kingdom-england-worcestershire) — 112 MB
-  - [Falklands](#europe-united-kingdom-falklands) — 18.2 MB
+  - [Falkland Islands](#europe-united-kingdom-falklands) — 18.2 MB
   - [Scotland](#europe-united-kingdom-scotland) — 1.80 GB
   - [Wales](#europe-united-kingdom-wales) — 858 MB
-- [United States](#north-america-us) — 11.3 GB
-  - [Alabama](#north-america-us-alabama) — 1.78 GB
-  - [Alaska](#north-america-us-alaska) — 390 MB
-  - [Arizona](#north-america-us-arizona) — 2.68 GB
-  - [Arkansas](#north-america-us-arkansas) — 1.24 GB
-  - [California](#north-america-us-california)
+- [United States of America](#north-america-us) — 11.3 GB
+  - [us/alabama](#north-america-us-alabama) — 1.78 GB
+  - [us/alaska](#north-america-us-alaska) — 390 MB
+  - [us/arizona](#north-america-us-arizona) — 2.68 GB
+  - [us/arkansas](#north-america-us-arkansas) — 1.24 GB
+  - [us/california](#north-america-us-california)
     - [Northern California](#north-america-us-california-norcal) — 4.32 GB
     - [Southern California](#north-america-us-california-socal) — 4.05 GB
-  - [Colorado](#north-america-us-colorado) — 2.68 GB
-  - [Connecticut](#north-america-us-connecticut) — 1.11 GB
-  - [Delaware](#north-america-us-delaware) — 255 MB
-  - [District of Columbia](#north-america-us-district-of-columbia) — 121 MB
-  - [Florida](#north-america-us-florida) — 5.37 GB
+  - [us/colorado](#north-america-us-colorado) — 2.68 GB
+  - [us/connecticut](#north-america-us-connecticut) — 1.11 GB
+  - [us/delaware](#north-america-us-delaware) — 255 MB
+  - [us/district-of-columbia](#north-america-us-district-of-columbia) — 121 MB
+  - [us/florida](#north-america-us-florida) — 5.37 GB
   - [Georgia](#north-america-us-georgia) — 3.09 GB
-  - [Hawaii](#north-america-us-hawaii) — 204 MB
-  - [Idaho](#north-america-us-idaho) — 1.32 GB
-  - [Illinois](#north-america-us-illinois) — 3.75 GB
-  - [Indiana](#north-america-us-indiana) — 2.49 GB
-  - [Iowa](#north-america-us-iowa) — 1.37 GB
-  - [Kansas](#north-america-us-kansas) — 1.59 GB
-  - [Kentucky](#north-america-us-kentucky) — 1.63 GB
-  - [Louisiana](#north-america-us-louisiana) — 1.37 GB
-  - [Maine](#north-america-us-maine) — 736 MB
-  - [Maryland](#north-america-us-maryland) — 1.71 GB
-  - [Massachusetts](#north-america-us-massachusetts) — 1.96 GB
-  - [Michigan](#north-america-us-michigan) — 3.88 GB
-  - [Minnesota](#north-america-us-minnesota) — 2.10 GB
-  - [Mississippi](#north-america-us-mississippi) — 984 MB
-  - [Missouri](#north-america-us-missouri) — 2.68 GB
-  - [Montana](#north-america-us-montana) — 1011 MB
-  - [Nebraska](#north-america-us-nebraska) — 972 MB
-  - [Nevada](#north-america-us-nevada) — 1.21 GB
-  - [New Hampshire](#north-america-us-new-hampshire) — 690 MB
-  - [New Jersey](#north-america-us-new-jersey) — 1.65 GB
-  - [New Mexico](#north-america-us-new-mexico) — 1.18 GB
-  - [New York](#north-america-us-new-york) — 3.52 GB
-  - [North Carolina](#north-america-us-north-carolina) — 4.00 GB
-  - [North Dakota](#north-america-us-north-dakota) — 760 MB
-  - [Ohio](#north-america-us-ohio) — 4.02 GB
-  - [Oklahoma](#north-america-us-oklahoma) — 1.68 GB
-  - [Oregon](#north-america-us-oregon) — 2.05 GB
-  - [Pennsylvania](#north-america-us-pennsylvania) — 3.49 GB
-  - [Puerto Rico](#north-america-us-puerto-rico) — 419 MB
-  - [Rhode Island](#north-america-us-rhode-island) — 218 MB
-  - [South Carolina](#north-america-us-south-carolina) — 1.71 GB
-  - [South Dakota](#north-america-us-south-dakota) — 546 MB
-  - [Tennessee](#north-america-us-tennessee) — 2.06 GB
-  - [Texas](#north-america-us-texas) — 8.17 GB
-  - [US Virgin Islands](#north-america-us-us-virgin-islands) — 23.8 MB
-  - [Utah](#north-america-us-utah) — 1.69 GB
-  - [Vermont](#north-america-us-vermont) — 368 MB
-  - [Virginia](#north-america-us-virginia) — 3.13 GB
-  - [Washington](#north-america-us-washington) — 2.81 GB
-  - [West Virginia](#north-america-us-west-virginia) — 760 MB
-  - [Wisconsin](#north-america-us-wisconsin) — 2.41 GB
-  - [Wyoming](#north-america-us-wyoming) — 733 MB
+  - [us/hawaii](#north-america-us-hawaii) — 204 MB
+  - [us/idaho](#north-america-us-idaho) — 1.32 GB
+  - [us/illinois](#north-america-us-illinois) — 3.75 GB
+  - [us/indiana](#north-america-us-indiana) — 2.49 GB
+  - [us/iowa](#north-america-us-iowa) — 1.37 GB
+  - [us/kansas](#north-america-us-kansas) — 1.59 GB
+  - [us/kentucky](#north-america-us-kentucky) — 1.63 GB
+  - [us/louisiana](#north-america-us-louisiana) — 1.37 GB
+  - [us/maine](#north-america-us-maine) — 736 MB
+  - [us/maryland](#north-america-us-maryland) — 1.71 GB
+  - [us/massachusetts](#north-america-us-massachusetts) — 1.96 GB
+  - [us/michigan](#north-america-us-michigan) — 3.88 GB
+  - [us/minnesota](#north-america-us-minnesota) — 2.10 GB
+  - [us/mississippi](#north-america-us-mississippi) — 984 MB
+  - [us/missouri](#north-america-us-missouri) — 2.68 GB
+  - [us/montana](#north-america-us-montana) — 1011 MB
+  - [us/nebraska](#north-america-us-nebraska) — 972 MB
+  - [us/nevada](#north-america-us-nevada) — 1.21 GB
+  - [us/new-hampshire](#north-america-us-new-hampshire) — 690 MB
+  - [us/new-jersey](#north-america-us-new-jersey) — 1.65 GB
+  - [us/new-mexico](#north-america-us-new-mexico) — 1.18 GB
+  - [us/new-york](#north-america-us-new-york) — 3.52 GB
+  - [us/north-carolina](#north-america-us-north-carolina) — 4.00 GB
+  - [us/north-dakota](#north-america-us-north-dakota) — 760 MB
+  - [us/ohio](#north-america-us-ohio) — 4.02 GB
+  - [us/oklahoma](#north-america-us-oklahoma) — 1.68 GB
+  - [us/oregon](#north-america-us-oregon) — 2.05 GB
+  - [us/pennsylvania](#north-america-us-pennsylvania) — 3.49 GB
+  - [us/puerto-rico](#north-america-us-puerto-rico) — 419 MB
+  - [us/rhode-island](#north-america-us-rhode-island) — 218 MB
+  - [us/south-carolina](#north-america-us-south-carolina) — 1.71 GB
+  - [us/south-dakota](#north-america-us-south-dakota) — 546 MB
+  - [us/tennessee](#north-america-us-tennessee) — 2.06 GB
+  - [us/texas](#north-america-us-texas) — 8.17 GB
+  - [us/us-virgin-islands](#north-america-us-us-virgin-islands) — 23.8 MB
+  - [us/utah](#north-america-us-utah) — 1.69 GB
+  - [us/vermont](#north-america-us-vermont) — 368 MB
+  - [us/virginia](#north-america-us-virginia) — 3.13 GB
+  - [us/washington](#north-america-us-washington) — 2.81 GB
+  - [us/west-virginia](#north-america-us-west-virginia) — 760 MB
+  - [us/wisconsin](#north-america-us-wisconsin) — 2.41 GB
+  - [us/wyoming](#north-america-us-wyoming) — 733 MB
 - [Uruguay](#south-america-uruguay) — 53.5 MB
-- [Us Midwest](#north-america-us-midwest) — 2.33 GB
-- [Us Northeast](#north-america-us-northeast) — 1.67 GB
-- [Us Pacific](#north-america-us-pacific) — 164 MB
-- [Us South](#north-america-us-south) — 3.84 GB
-- [Us West](#north-america-us-west) — 3.17 GB
+- [US Midwest](#north-america-us-midwest) — 2.33 GB
+- [US Northeast](#north-america-us-northeast) — 1.67 GB
+- [US Pacific](#north-america-us-pacific) — 164 MB
+- [US South](#north-america-us-south) — 3.84 GB
+- [US West](#north-america-us-west) — 3.17 GB
 - [Uzbekistan](#asia-uzbekistan) — 118 MB
 - [Vanuatu](#australia-oceania-vanuatu) — 7.53 MB
 - [Venezuela](#south-america-venezuela) — 121 MB
 - [Vietnam](#asia-vietnam) — 313 MB
-- [Wallis Et Futuna](#australia-oceania-wallis-et-futuna) — 604 KB
+- [Wallis et Futuna](#australia-oceania-wallis-et-futuna) — 604 KB
 - [Yemen](#asia-yemen) — 41.2 MB
 - [Zambia](#africa-zambia) — 240 MB
 - [Zimbabwe](#africa-zimbabwe) — 171 MB
@@ -743,11 +750,11 @@ leaves, not a single whole-country pack.
 - Geofabrik country PBF size: **918 MB** (`962789460` bytes)
 - Geofabrik URL: https://download.geofabrik.de/australia-oceania/australia.html
 - Subregions (sizes from pack server `current.json`):
-  - **ACT** `australia-oceania/australia/act` — pack **133 MB** (`139553321` bytes)
+  - **Australian Capital Territory** `australia-oceania/australia/act` — pack **133 MB** (`139553321` bytes)
   - **Christmas Island** `australia-oceania/australia/christmas-island` — pack **1.15 MB** (`1207971` bytes)
-  - **Cocos Islands** `australia-oceania/australia/cocos-islands` — pack **423 KB** (`433084` bytes)
+  - **Cocos (Keeling) Islands** `australia-oceania/australia/cocos-islands` — pack **423 KB** (`433084` bytes)
   - **Coral Sea Islands** `australia-oceania/australia/coral-sea-islands` — pack **6.42 KB** (`6578` bytes)
-  - **New South Wales** `australia-oceania/australia/new-south-wales` — pack **1.91 GB** (`2047523526` bytes)
+  - **New South Wales (with ACT and JBT)** `australia-oceania/australia/new-south-wales` — pack **1.91 GB** (`2047523526` bytes)
   - **Norfolk Island** `australia-oceania/australia/norfolk-island` — pack **1.16 MB** (`1211219` bytes)
   - **Northern Territory** `australia-oceania/australia/northern-territory` — pack **147 MB** (`153698714` bytes)
   - **Queensland** `australia-oceania/australia/queensland` — pack **1.21 GB** (`1304039181` bytes)
@@ -866,7 +873,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **1.90 GB** (`2035406167` bytes)
 - Subregions: none
 
-## Bosnia and Herzegovina
+## Bosnia-Herzegovina
 
 - Continent / group: Europe
 - Region id: `europe/bosnia-herzegovina`
@@ -900,7 +907,7 @@ leaves, not a single whole-country pack.
   - **Sudeste** `south-america/brazil/sudeste` — pack **6.87 GB** (`7373399123` bytes)
   - **Sul** `south-america/brazil/sul` — pack **3.77 GB** (`4050770681` bytes)
 
-## Britain And Ireland
+## Britain and Ireland
 
 - Continent / group: Europe
 - Region id: `europe/britain-and-ireland`
@@ -970,21 +977,21 @@ leaves, not a single whole-country pack.
 - Subregions (sizes from pack server `current.json`):
   - **Alberta** `north-america/canada/alberta` — pack **1.53 GB** (`1640957145` bytes)
   - **British Columbia** `north-america/canada/british-columbia`
-    - **Interior Admreg** `north-america/canada/british-columbia/interior-admreg` — pack **183 MB** (`192249971` bytes)
-    - **Island Admreg** `north-america/canada/british-columbia/island-admreg` — pack **361 MB** (`378860950` bytes)
-    - **Kootenay Admreg** `north-america/canada/british-columbia/kootenay-admreg` — pack **145 MB** (`152035199` bytes)
-    - **North Admreg** `north-america/canada/british-columbia/north-admreg` — pack **264 MB** (`277150286` bytes)
-    - **Okanagan Admreg** `north-america/canada/british-columbia/okanagan-admreg` — pack **202 MB** (`212242018` bytes)
-    - **Southcoast Admreg** `north-america/canada/british-columbia/southcoast-admreg` — pack **612 MB** (`641466991` bytes)
+    - **Interior Administrative Region** `north-america/canada/british-columbia/interior-admreg` — pack **183 MB** (`192249971` bytes)
+    - **Island Administrative Region** `north-america/canada/british-columbia/island-admreg` — pack **361 MB** (`378860950` bytes)
+    - **Kootenay Administrative Region** `north-america/canada/british-columbia/kootenay-admreg` — pack **145 MB** (`152035199` bytes)
+    - **North Administrative Region** `north-america/canada/british-columbia/north-admreg` — pack **264 MB** (`277150286` bytes)
+    - **Okanagan Administrative Region** `north-america/canada/british-columbia/okanagan-admreg` — pack **202 MB** (`212242018` bytes)
+    - **South Coast Administrative Region** `north-america/canada/british-columbia/southcoast-admreg` — pack **612 MB** (`641466991` bytes)
   - **Manitoba** `north-america/canada/manitoba` — pack **686 MB** (`719035909` bytes)
   - **New Brunswick** `north-america/canada/new-brunswick` — pack **252 MB** (`264452109` bytes)
   - **Newfoundland and Labrador** `north-america/canada/newfoundland-and-labrador` — pack **243 MB** (`254792387` bytes)
   - **Northwest Territories** `north-america/canada/northwest-territories` — pack **112 MB** (`117620051` bytes)
   - **Nova Scotia** `north-america/canada/nova-scotia` — pack **429 MB** (`449981832` bytes)
   - **Nunavut** `north-america/canada/nunavut`
-    - **Kitikmeot** `north-america/canada/nunavut/kitikmeot` — pack **51.6 MB** (`54112082` bytes)
-    - **Kivalliq** `north-america/canada/nunavut/kivalliq` — pack **63.4 MB** (`66500313` bytes)
-    - **Qikiqtaaluk** `north-america/canada/nunavut/qikiqtaaluk` — pack **98.3 MB** (`103082710` bytes)
+    - **Kitikmeot Region** `north-america/canada/nunavut/kitikmeot` — pack **51.6 MB** (`54112082` bytes)
+    - **Kivalliq Region** `north-america/canada/nunavut/kivalliq` — pack **63.4 MB** (`66500313` bytes)
+    - **Qikiqtaaluk Region** `north-america/canada/nunavut/qikiqtaaluk` — pack **98.3 MB** (`103082710` bytes)
   - **Ontario** `north-america/canada/ontario` — pack **3.13 GB** (`3360217703` bytes)
   - **Prince Edward Island** `north-america/canada/prince-edward-island` — pack **58.8 MB** (`61659342` bytes)
   - **Quebec** `north-america/canada/quebec` — pack **1.91 GB** (`2052607649` bytes)
@@ -1054,11 +1061,11 @@ leaves, not a single whole-country pack.
   - **Chongqing** `asia/china/chongqing` — pack **403 MB** (`422598242` bytes)
   - **Fujian** `asia/china/fujian` — pack **679 MB** (`712437541` bytes)
   - **Gansu** `asia/china/gansu` — pack **789 MB** (`827777567` bytes)
-  - **Guangdong** `asia/china/guangdong` — pack **1.94 GB** (`2079698569` bytes)
+  - **Guangdong (with Hong Kong and Macau)** `asia/china/guangdong` — pack **1.94 GB** (`2079698569` bytes)
   - **Guangxi** `asia/china/guangxi` — pack **675 MB** (`707875035` bytes)
   - **Guizhou** `asia/china/guizhou` — pack **397 MB** (`416091807` bytes)
   - **Hainan** `asia/china/hainan` — pack **148 MB** (`155659327` bytes)
-  - **Hebei** `asia/china/hebei` — pack **1.99 GB** (`2137026720` bytes)
+  - **Hebei (with Beijing and Tianjin)** `asia/china/hebei` — pack **1.99 GB** (`2137026720` bytes)
   - **Heilongjiang** `asia/china/heilongjiang` — pack **484 MB** (`507625382` bytes)
   - **Henan** `asia/china/henan` — pack **980 MB** (`1027595940` bytes)
   - **Hong Kong** `asia/china/hong-kong` — pack **186 MB** (`194649130` bytes)
@@ -1103,7 +1110,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **16.2 MB** (`16953244` bytes)
 - Subregions: none
 
-## Congo (Democratic Republic)
+## Congo (Democratic Republic/Kinshasa)
 
 - Continent / group: Africa
 - Region id: `africa/congo-democratic-republic`
@@ -1113,7 +1120,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **2.12 GB** (`2281060404` bytes)
 - Subregions: none
 
-## Congo-Brazzaville
+## Congo (Republic/Brazzaville)
 
 - Continent / group: Africa
 - Region id: `africa/congo-brazzaville`
@@ -1181,22 +1188,22 @@ leaves, not a single whole-country pack.
 - Geofabrik country PBF size: **903 MB** (`946569209` bytes)
 - Geofabrik URL: https://download.geofabrik.de/europe/czech-republic.html
 - Subregions (sizes from pack server `current.json`):
-  - **Jihocesky** `europe/czech-republic/jihocesky` — pack **330 MB** (`346303788` bytes)
-  - **Jihomoravsky** `europe/czech-republic/jihomoravsky` — pack **372 MB** (`389865099` bytes)
-  - **Karlovarsky** `europe/czech-republic/karlovarsky` — pack **107 MB** (`111780238` bytes)
-  - **Kralovehradecky** `europe/czech-republic/kralovehradecky` — pack **198 MB** (`207696854` bytes)
-  - **Liberecky** `europe/czech-republic/liberecky` — pack **160 MB** (`167522166` bytes)
-  - **Moravskoslezky** `europe/czech-republic/moravskoslezky` — pack **267 MB** (`279621562` bytes)
-  - **Olomoucky** `europe/czech-republic/olomoucky` — pack **219 MB** (`229879385` bytes)
-  - **Pardubicky** `europe/czech-republic/pardubicky` — pack **187 MB** (`196505423` bytes)
-  - **Plzensky** `europe/czech-republic/plzensky` — pack **254 MB** (`265840892` bytes)
+  - **Jihočeský kraj** `europe/czech-republic/jihocesky` — pack **330 MB** (`346303788` bytes)
+  - **Jihomoravský kraj** `europe/czech-republic/jihomoravsky` — pack **372 MB** (`389865099` bytes)
+  - **Karlovarský kraj** `europe/czech-republic/karlovarsky` — pack **107 MB** (`111780238` bytes)
+  - **Královéhradecký kraj** `europe/czech-republic/kralovehradecky` — pack **198 MB** (`207696854` bytes)
+  - **Liberecký kraj** `europe/czech-republic/liberecky` — pack **160 MB** (`167522166` bytes)
+  - **Moravskoslezský kraj** `europe/czech-republic/moravskoslezky` — pack **267 MB** (`279621562` bytes)
+  - **Olomoucký kraj** `europe/czech-republic/olomoucky` — pack **219 MB** (`229879385` bytes)
+  - **Pardubický kraj** `europe/czech-republic/pardubicky` — pack **187 MB** (`196505423` bytes)
+  - **Plzeňský kraj** `europe/czech-republic/plzensky` — pack **254 MB** (`265840892` bytes)
   - **Praha** `europe/czech-republic/praha` — pack **182 MB** (`190448044` bytes)
-  - **Stredocesky** `europe/czech-republic/stredocesky` — pack **875 MB** (`917053065` bytes)
-  - **Ustecky** `europe/czech-republic/ustecky` — pack **392 MB** (`410543016` bytes)
-  - **Vysocina** `europe/czech-republic/vysocina` — pack **210 MB** (`220044712` bytes)
-  - **Zlinsky** `europe/czech-republic/zlinsky` — pack **189 MB** (`198019521` bytes)
+  - **Středočeský kraj (with Praha)** `europe/czech-republic/stredocesky` — pack **875 MB** (`917053065` bytes)
+  - **Ústecký kraj** `europe/czech-republic/ustecky` — pack **392 MB** (`410543016` bytes)
+  - **Kraj Vysočina** `europe/czech-republic/vysocina` — pack **210 MB** (`220044712` bytes)
+  - **Zlínský kraj** `europe/czech-republic/zlinsky` — pack **189 MB** (`198019521` bytes)
 
-## Dach
+## DACH
 
 - Continent / group: Europe
 - Region id: `europe/dach`
@@ -1351,9 +1358,9 @@ leaves, not a single whole-country pack.
   - **Bourgogne** `europe/france/bourgogne` — pack **949 MB** (`995400162` bytes)
   - **Bretagne** `europe/france/bretagne` — pack **1.53 GB** (`1639137511` bytes)
   - **Centre** `europe/france/centre` — pack **1.16 GB** (`1246871290` bytes)
-  - **Champagne-Ardenne** `europe/france/champagne-ardenne` — pack **632 MB** (`663120158` bytes)
+  - **Champagne Ardenne** `europe/france/champagne-ardenne` — pack **632 MB** (`663120158` bytes)
   - **Corse** `europe/france/corse` — pack **162 MB** (`169661255` bytes)
-  - **Franche-Comte** `europe/france/franche-comte` — pack **652 MB** (`683971390` bytes)
+  - **Franche Comte** `europe/france/franche-comte` — pack **652 MB** (`683971390` bytes)
   - **Guadeloupe** `europe/france/guadeloupe` — pack **95.0 MB** (`99585249` bytes)
   - **Guyane** `europe/france/guyane` — pack **58.0 MB** (`60863760` bytes)
   - **Haute-Normandie** `europe/france/haute-normandie` — pack **521 MB** (`546458516` bytes)
@@ -1368,7 +1375,7 @@ leaves, not a single whole-country pack.
   - **Pays de la Loire** `europe/france/pays-de-la-loire` — pack **1.59 GB** (`1704523241` bytes)
   - **Picardie** `europe/france/picardie` — pack **604 MB** (`633786168` bytes)
   - **Poitou-Charentes** `europe/france/poitou-charentes` — pack **1.00 GB** (`1075613534` bytes)
-  - **Provence-Alpes-Cote d'Azur** `europe/france/provence-alpes-cote-d-azur` — pack **1.81 GB** (`1938955745` bytes)
+  - **Provence Alpes-Cote-d'Azur** `europe/france/provence-alpes-cote-d-azur` — pack **1.81 GB** (`1938955745` bytes)
   - **Reunion** `europe/france/reunion` — pack **133 MB** (`139770565` bytes)
   - **Rhone-Alpes** `europe/france/rhone-alpes` — pack **2.78 GB** (`2988154880` bytes)
 
@@ -1410,11 +1417,11 @@ leaves, not a single whole-country pack.
 - Geofabrik country PBF size: **4.51 GB** (`4838703123` bytes)
 - Geofabrik URL: https://download.geofabrik.de/europe/germany.html
 - Subregions (sizes from pack server `current.json`):
-  - **Baden-Wuerttemberg** `europe/germany/baden-wuerttemberg`
+  - **Baden-Württemberg** `europe/germany/baden-wuerttemberg`
     - **Freiburg Regbez** `europe/germany/baden-wuerttemberg/freiburg-regbez` — pack **1013 MB** (`1062723128` bytes)
     - **Karlsruhe Regbez** `europe/germany/baden-wuerttemberg/karlsruhe-regbez` — pack **934 MB** (`979091618` bytes)
     - **Stuttgart Regbez** `europe/germany/baden-wuerttemberg/stuttgart-regbez` — pack **1.27 GB** (`1361256288` bytes)
-    - **Tuebingen Regbez** `europe/germany/baden-wuerttemberg/tuebingen-regbez` — pack **826 MB** (`866445412` bytes)
+    - **Tübingen Regbez** `europe/germany/baden-wuerttemberg/tuebingen-regbez` — pack **826 MB** (`866445412` bytes)
   - **Bayern** `europe/germany/bayern`
     - **Mittelfranken** `europe/germany/bayern/mittelfranken` — pack **555 MB** (`582313245` bytes)
     - **Niederbayern** `europe/germany/bayern/niederbayern` — pack **640 MB** (`670663064` bytes)
@@ -1424,24 +1431,24 @@ leaves, not a single whole-country pack.
     - **Schwaben** `europe/germany/bayern/schwaben` — pack **763 MB** (`800028663` bytes)
     - **Unterfranken** `europe/germany/bayern/unterfranken` — pack **734 MB** (`769417104` bytes)
   - **Berlin** `europe/germany/berlin` — pack **478 MB** (`500899958` bytes)
-  - **Brandenburg** `europe/germany/brandenburg` — pack **1.57 GB** (`1689778319` bytes)
+  - **Brandenburg (mit Berlin)** `europe/germany/brandenburg` — pack **1.57 GB** (`1689778319` bytes)
   - **Bremen** `europe/germany/bremen` — pack **85.2 MB** (`89358890` bytes)
   - **Hamburg** `europe/germany/hamburg` — pack **230 MB** (`241309724` bytes)
   - **Hessen** `europe/germany/hessen` — pack **2.19 GB** (`2348999771` bytes)
   - **Mecklenburg-Vorpommern** `europe/germany/mecklenburg-vorpommern` — pack **620 MB** (`649676935` bytes)
-  - **Niedersachsen** `europe/germany/niedersachsen` — pack **2.76 GB** (`2960864485` bytes)
+  - **Niedersachsen (mit Bremen)** `europe/germany/niedersachsen` — pack **2.76 GB** (`2960864485` bytes)
   - **Nordrhein-Westfalen** `europe/germany/nordrhein-westfalen`
     - **Arnsberg Regbez** `europe/germany/nordrhein-westfalen/arnsberg-regbez` — pack **958 MB** (`1004449227` bytes)
     - **Detmold Regbez** `europe/germany/nordrhein-westfalen/detmold-regbez` — pack **762 MB** (`799029762` bytes)
-    - **Duesseldorf Regbez** `europe/germany/nordrhein-westfalen/duesseldorf-regbez` — pack **861 MB** (`903035123` bytes)
-    - **Koeln Regbez** `europe/germany/nordrhein-westfalen/koeln-regbez` — pack **893 MB** (`935945162` bytes)
-    - **Muenster Regbez** `europe/germany/nordrhein-westfalen/muenster-regbez` — pack **583 MB** (`611556771` bytes)
+    - **Düsseldorf Regbez** `europe/germany/nordrhein-westfalen/duesseldorf-regbez` — pack **861 MB** (`903035123` bytes)
+    - **Köln Regbez** `europe/germany/nordrhein-westfalen/koeln-regbez` — pack **893 MB** (`935945162` bytes)
+    - **Münster Regbez** `europe/germany/nordrhein-westfalen/muenster-regbez` — pack **583 MB** (`611556771` bytes)
   - **Rheinland-Pfalz** `europe/germany/rheinland-pfalz` — pack **1.68 GB** (`1806549675` bytes)
   - **Saarland** `europe/germany/saarland` — pack **220 MB** (`230946941` bytes)
   - **Sachsen** `europe/germany/sachsen` — pack **1.57 GB** (`1683222015` bytes)
   - **Sachsen-Anhalt** `europe/germany/sachsen-anhalt` — pack **909 MB** (`953388862` bytes)
   - **Schleswig-Holstein** `europe/germany/schleswig-holstein` — pack **803 MB** (`842356763` bytes)
-  - **Thueringen** `europe/germany/thueringen` — pack **1.01 GB** (`1086691810` bytes)
+  - **Thüringen** `europe/germany/thueringen` — pack **1.01 GB** (`1086691810` bytes)
 
 ## Ghana
 
@@ -1493,7 +1500,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **1004 MB** (`1052693339` bytes)
 - Subregions: none
 
-## Guernsey Jersey
+## Guernsey and Jersey
 
 - Continent / group: Europe
 - Region id: `europe/guernsey-jersey`
@@ -1588,7 +1595,7 @@ leaves, not a single whole-country pack.
   - **Southern Zone** `asia/india/southern-zone` — pack **9.58 GB** (`10286620911` bytes)
   - **Western Zone** `asia/india/western-zone` — pack **4.23 GB** (`4539035125` bytes)
 
-## Indonesia
+## Indonesia (with East Timor)
 
 - Continent / group: Asia
 - Region id: `asia/indonesia`
@@ -1599,7 +1606,7 @@ leaves, not a single whole-country pack.
   - **Java** `asia/indonesia/java` — pack **7.60 GB** (`8165203070` bytes)
   - **Kalimantan** `asia/indonesia/kalimantan` — pack **1.65 GB** (`1776698085` bytes)
   - **Maluku** `asia/indonesia/maluku` — pack **177 MB** (`185649866` bytes)
-  - **Nusa Tenggara** `asia/indonesia/nusa-tenggara` — pack **1019 MB** (`1067979212` bytes)
+  - **Nusa-Tenggara** `asia/indonesia/nusa-tenggara` — pack **1019 MB** (`1067979212` bytes)
   - **Papua** `asia/indonesia/papua` — pack **247 MB** (`258917785` bytes)
   - **Sulawesi** `asia/indonesia/sulawesi` — pack **1.18 GB** (`1263857172` bytes)
   - **Sumatra** `asia/indonesia/sumatra` — pack **3.10 GB** (`3324657826` bytes)
@@ -1624,7 +1631,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **1.88 GB** (`2021305210` bytes)
 - Subregions: none
 
-## Ireland And Northern Ireland
+## Ireland and Northern Ireland
 
 - Continent / group: Europe
 - Region id: `europe/ireland-and-northern-ireland`
@@ -1696,14 +1703,14 @@ leaves, not a single whole-country pack.
 - Geofabrik country PBF size: **2.35 GB** (`2521119729` bytes)
 - Geofabrik URL: https://download.geofabrik.de/asia/japan.html
 - Subregions (sizes from pack server `current.json`):
-  - **Chubu** `asia/japan/chubu` — pack **4.35 GB** (`4674844060` bytes)
-  - **Chugoku** `asia/japan/chugoku` — pack **1.80 GB** (`1928737907` bytes)
-  - **Hokkaido** `asia/japan/hokkaido` — pack **1.24 GB** (`1331050653` bytes)
-  - **Kansai** `asia/japan/kansai` — pack **3.03 GB** (`3251896178` bytes)
-  - **Kanto** `asia/japan/kanto` — pack **5.07 GB** (`5440630351` bytes)
-  - **Kyushu** `asia/japan/kyushu` — pack **3.13 GB** (`3360326775` bytes)
+  - **Chūbu region** `asia/japan/chubu` — pack **4.35 GB** (`4674844060` bytes)
+  - **Chūgoku region** `asia/japan/chugoku` — pack **1.80 GB** (`1928737907` bytes)
+  - **Hokkaidō** `asia/japan/hokkaido` — pack **1.24 GB** (`1331050653` bytes)
+  - **Kansai region (a.k.a. Kinki region)** `asia/japan/kansai` — pack **3.03 GB** (`3251896178` bytes)
+  - **Kantō region** `asia/japan/kanto` — pack **5.07 GB** (`5440630351` bytes)
+  - **Kyūshū** `asia/japan/kyushu` — pack **3.13 GB** (`3360326775` bytes)
   - **Shikoku** `asia/japan/shikoku` — pack **1010 MB** (`1059277391` bytes)
-  - **Tohoku** `asia/japan/tohoku` — pack **2.44 GB** (`2615795447` bytes)
+  - **Tōhoku region** `asia/japan/tohoku` — pack **2.44 GB** (`2615795447` bytes)
 
 ## Jordan
 
@@ -1885,7 +1892,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **1.38 GB** (`1478179631` bytes)
 - Subregions: none
 
-## Malaysia, Singapore and Brunei
+## Malaysia, Singapore, and Brunei
 
 - Continent / group: Asia
 - Region id: `asia/malaysia-singapore-brunei`
@@ -2035,7 +2042,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **1.83 GB** (`1966484576` bytes)
 - Subregions: none
 
-## Myanmar
+## Myanmar (a.k.a. Burma)
 
 - Continent / group: Asia
 - Region id: `asia/myanmar`
@@ -2089,12 +2096,12 @@ leaves, not a single whole-country pack.
   - **Gelderland** `europe/netherlands/gelderland` — pack **542 MB** (`568754690` bytes)
   - **Groningen** `europe/netherlands/groningen` — pack **140 MB** (`146837046` bytes)
   - **Limburg** `europe/netherlands/limburg` — pack **249 MB** (`261533222` bytes)
-  - **Noord Brabant** `europe/netherlands/noord-brabant` — pack **523 MB** (`547901538` bytes)
-  - **Noord Holland** `europe/netherlands/noord-holland` — pack **450 MB** (`471599183` bytes)
+  - **Noord-Brabant** `europe/netherlands/noord-brabant` — pack **523 MB** (`547901538` bytes)
+  - **Noord-Holland** `europe/netherlands/noord-holland` — pack **450 MB** (`471599183` bytes)
   - **Overijssel** `europe/netherlands/overijssel` — pack **310 MB** (`325312044` bytes)
   - **Utrecht** `europe/netherlands/utrecht` — pack **223 MB** (`233984857` bytes)
   - **Zeeland** `europe/netherlands/zeeland` — pack **121 MB** (`127001852` bytes)
-  - **Zuid Holland** `europe/netherlands/zuid-holland` — pack **542 MB** (`568006454` bytes)
+  - **Zuid-Holland** `europe/netherlands/zuid-holland` — pack **542 MB** (`568006454` bytes)
 
 ## New Caledonia
 
@@ -2173,13 +2180,13 @@ leaves, not a single whole-country pack.
 - Country-level pack: no (subregions only)
 - Geofabrik country PBF size: **1.28 GB** (`1374794406` bytes)
 - Geofabrik URL: https://download.geofabrik.de/europe/norway.html
+- Note: `europe/norway/hedmark` exists on the pack server but is omitted here; coverage is under **Østlandet**.
 - Subregions (sizes from pack server `current.json`):
-  - **Hedmark** `europe/norway/hedmark` — pack **451 MB** (`473327929` bytes)
   - **Nord-Norge** `europe/norway/nord-norge` — pack **836 MB** (`876694995` bytes)
-  - **Ostlandet** `europe/norway/ostlandet` — pack **2.43 GB** (`2613668860` bytes)
-  - **Sorlandet** `europe/norway/sorlandet` — pack **304 MB** (`319074305` bytes)
+  - **Østlandet** `europe/norway/ostlandet` — pack **2.43 GB** (`2613668860` bytes)
+  - **Sørlandet** `europe/norway/sorlandet` — pack **304 MB** (`319074305` bytes)
   - **Svalbard and Jan Mayen** `europe/norway/svalbard-janmayen` — pack **7.78 MB** (`8161385` bytes)
-  - **Trondelag** `europe/norway/trondelag` — pack **615 MB** (`645224257` bytes)
+  - **Trøndelag** `europe/norway/trondelag` — pack **615 MB** (`645224257` bytes)
   - **Vestlandet** `europe/norway/vestlandet` — pack **1.11 GB** (`1191807281` bytes)
 
 ## Pakistan
@@ -2270,24 +2277,24 @@ leaves, not a single whole-country pack.
 - Geofabrik country PBF size: **1.95 GB** (`2096077759` bytes)
 - Geofabrik URL: https://download.geofabrik.de/europe/poland.html
 - Subregions (sizes from pack server `current.json`):
-  - **Dolnoslaskie** `europe/poland/dolnoslaskie` — pack **1.01 GB** (`1080395074` bytes)
-  - **Kujawsko-Pomorskie** `europe/poland/kujawsko-pomorskie` — pack **717 MB** (`751618287` bytes)
-  - **Lodzkie** `europe/poland/lodzkie` — pack **638 MB** (`668991635` bytes)
+  - **Dolnośląskie** `europe/poland/dolnoslaskie` — pack **1.01 GB** (`1080395074` bytes)
+  - **Kujawsko-pomorskie** `europe/poland/kujawsko-pomorskie` — pack **717 MB** (`751618287` bytes)
+  - **Łódzkie** `europe/poland/lodzkie` — pack **638 MB** (`668991635` bytes)
   - **Lubelskie** `europe/poland/lubelskie` — pack **960 MB** (`1006788756` bytes)
   - **Lubuskie** `europe/poland/lubuskie` — pack **430 MB** (`450572196` bytes)
-  - **Malopolskie** `europe/poland/malopolskie` — pack **1.22 GB** (`1309734669` bytes)
+  - **Małopolskie** `europe/poland/malopolskie` — pack **1.22 GB** (`1309734669` bytes)
   - **Mazowieckie** `europe/poland/mazowieckie` — pack **1.47 GB** (`1579135969` bytes)
   - **Opolskie** `europe/poland/opolskie` — pack **335 MB** (`351083948` bytes)
   - **Podkarpackie** `europe/poland/podkarpackie` — pack **917 MB** (`961291603` bytes)
   - **Podlaskie** `europe/poland/podlaskie` — pack **467 MB** (`489533060` bytes)
   - **Pomorskie** `europe/poland/pomorskie` — pack **791 MB** (`829315315` bytes)
-  - **Slaskie** `europe/poland/slaskie` — pack **1.20 GB** (`1290263936` bytes)
-  - **Swietokrzyskie** `europe/poland/swietokrzyskie` — pack **498 MB** (`522142422` bytes)
-  - **Warminsko-Mazurskie** `europe/poland/warminsko-mazurskie` — pack **528 MB** (`553371105` bytes)
+  - **Śląskie** `europe/poland/slaskie` — pack **1.20 GB** (`1290263936` bytes)
+  - **Świętokrzyskie** `europe/poland/swietokrzyskie` — pack **498 MB** (`522142422` bytes)
+  - **Warmińsko-mazurskie** `europe/poland/warminsko-mazurskie` — pack **528 MB** (`553371105` bytes)
   - **Wielkopolskie** `europe/poland/wielkopolskie` — pack **902 MB** (`945311377` bytes)
   - **Zachodniopomorskie** `europe/poland/zachodniopomorskie` — pack **553 MB** (`579612198` bytes)
 
-## Polynesie Francaise
+## Polynésie française (French Polynesia)
 
 - Continent / group: Australia and Oceania
 - Region id: `australia-oceania/polynesie-francaise`
@@ -2317,7 +2324,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **2.55 GB** (`2733897337` bytes)
 - Subregions: none
 
-## Russia
+## Russian Federation
 
 - Continent / group: Russia
 - Region id: `russia`
@@ -2332,7 +2339,7 @@ leaves, not a single whole-country pack.
   - **North Caucasus Federal District** `russia/north-caucasus-fed-district` — pack **877 MB** (`919197322` bytes)
   - **Northwestern Federal District** `russia/northwestern-fed-district` — pack **3.08 GB** (`3305507493` bytes)
   - **Siberian Federal District** `russia/siberian-fed-district` — pack **2.90 GB** (`3109786140` bytes)
-  - **Southern Federal District** `russia/south-fed-district` — pack **1.98 GB** (`2121757770` bytes)
+  - **South Federal District** `russia/south-fed-district` — pack **1.98 GB** (`2121757770` bytes)
   - **Ural Federal District** `russia/ural-fed-district` — pack **1.96 GB** (`2103890128` bytes)
   - **Volga Federal District** `russia/volga-fed-district` — pack **4.29 GB** (`4611197190` bytes)
 
@@ -2346,7 +2353,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **546 MB** (`572703968` bytes)
 - Subregions: none
 
-## Saint Helena, Ascension and Tristan da Cunha
+## Saint Helena, Ascension, and Tristan da Cunha
 
 - Continent / group: Africa
 - Region id: `africa/saint-helena-ascension-and-tristan-da-cunha`
@@ -2374,16 +2381,6 @@ leaves, not a single whole-country pack.
 - Geofabrik country PBF size: **1.20 MB** (`1258312` bytes)
 - Geofabrik URL: https://download.geofabrik.de/africa/sao-tome-and-principe.html
 - Pack-server country pack size: **6.44 MB** (`6750835` bytes)
-- Subregions: none
-
-## Sea
-
-- Continent / group: Asia
-- Region id: `asia/sea`
-- Country-level pack: yes
-- Geofabrik country PBF size: **3.41 GB** (`3660245239` bytes)
-- Geofabrik URL: https://download.geofabrik.de/asia/sea.html
-- Pack-server country pack size: **38.3 GB** (`41077449458` bytes)
 - Subregions: none
 
 ## Senegal and Gambia
@@ -2476,7 +2473,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **5.72 GB** (`6143137093` bytes)
 - Subregions: none
 
-## South Africa and Lesotho
+## South Africa (includes Lesotho)
 
 - Continent / group: Africa
 - Region id: `africa/south-africa-and-lesotho`
@@ -2506,6 +2503,16 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **614 MB** (`643855275` bytes)
 - Subregions: none
 
+## South-East Asia
+
+- Continent / group: Asia
+- Region id: `asia/sea`
+- Country-level pack: yes
+- Geofabrik country PBF size: **3.41 GB** (`3660245239` bytes)
+- Geofabrik URL: https://download.geofabrik.de/asia/sea.html
+- Pack-server country pack size: **38.3 GB** (`41077449458` bytes)
+- Subregions: none
+
 ## Spain
 
 - Continent / group: Europe
@@ -2514,13 +2521,13 @@ leaves, not a single whole-country pack.
 - Geofabrik country PBF size: **1.38 GB** (`1481358977` bytes)
 - Geofabrik URL: https://download.geofabrik.de/europe/spain.html
 - Subregions (sizes from pack server `current.json`):
-  - **Andalucia** `europe/spain/andalucia` — pack **1.75 GB** (`1874434978` bytes)
-  - **Aragon** `europe/spain/aragon` — pack **763 MB** (`800076973` bytes)
+  - **Andalucía** `europe/spain/andalucia` — pack **1.75 GB** (`1874434978` bytes)
+  - **Aragón** `europe/spain/aragon` — pack **763 MB** (`800076973` bytes)
   - **Asturias** `europe/spain/asturias` — pack **288 MB** (`301764068` bytes)
   - **Cantabria** `europe/spain/cantabria` — pack **227 MB** (`238483229` bytes)
   - **Castilla-La Mancha** `europe/spain/castilla-la-mancha` — pack **1.09 GB** (`1166518958` bytes)
-  - **Castilla y Leon** `europe/spain/castilla-y-leon` — pack **1.73 GB** (`1856427978` bytes)
-  - **Cataluna** `europe/spain/cataluna` — pack **2.21 GB** (`2373087133` bytes)
+  - **Castilla y León** `europe/spain/castilla-y-leon` — pack **1.73 GB** (`1856427978` bytes)
+  - **Cataluña** `europe/spain/cataluna` — pack **2.21 GB** (`2373087133` bytes)
   - **Ceuta** `europe/spain/ceuta` — pack **4.72 MB** (`4952376` bytes)
   - **Extremadura** `europe/spain/extremadura` — pack **448 MB** (`470050862` bytes)
   - **Galicia** `europe/spain/galicia` — pack **1.18 GB** (`1268518834` bytes)
@@ -2530,7 +2537,7 @@ leaves, not a single whole-country pack.
   - **Melilla** `europe/spain/melilla` — pack **5.72 MB** (`5997365` bytes)
   - **Murcia** `europe/spain/murcia` — pack **446 MB** (`467483286` bytes)
   - **Navarra** `europe/spain/navarra` — pack **411 MB** (`431181481` bytes)
-  - **Pais Vasco** `europe/spain/pais-vasco` — pack **462 MB** (`484242006` bytes)
+  - **País Vasco** `europe/spain/pais-vasco` — pack **462 MB** (`484242006` bytes)
   - **Valencia** `europe/spain/valencia` — pack **1.24 GB** (`1329960382` bytes)
 
 ## Sri Lanka
@@ -2583,25 +2590,25 @@ leaves, not a single whole-country pack.
 - Subregions (sizes from pack server `current.json`):
   - **Blekinge** `europe/sweden/blekinge` — pack **81.9 MB** (`85866447` bytes)
   - **Dalarna** `europe/sweden/dalarna` — pack **281 MB** (`294519773` bytes)
-  - **Gavleborg** `europe/sweden/gavleborg` — pack **217 MB** (`227255075` bytes)
+  - **Gävleborg** `europe/sweden/gavleborg` — pack **217 MB** (`227255075` bytes)
   - **Gotland** `europe/sweden/gotland` — pack **51.7 MB** (`54184786` bytes)
   - **Halland** `europe/sweden/halland` — pack **175 MB** (`183868111` bytes)
-  - **Jamtland** `europe/sweden/jamtland` — pack **242 MB** (`253854290` bytes)
-  - **Jonkoping** `europe/sweden/jonkoping` — pack **210 MB** (`220489374` bytes)
+  - **Jämtland** `europe/sweden/jamtland` — pack **242 MB** (`253854290` bytes)
+  - **Jönköping** `europe/sweden/jonkoping` — pack **210 MB** (`220489374` bytes)
   - **Kalmar** `europe/sweden/kalmar` — pack **189 MB** (`198582483` bytes)
   - **Kronoberg** `europe/sweden/kronoberg` — pack **131 MB** (`137061002` bytes)
   - **Norrbotten** `europe/sweden/norrbotten` — pack **324 MB** (`340206090` bytes)
-  - **Orebro** `europe/sweden/orebro` — pack **218 MB** (`228914640` bytes)
-  - **Ostergotland** `europe/sweden/ostergotland` — pack **345 MB** (`361470057` bytes)
-  - **Skane** `europe/sweden/skane` — pack **455 MB** (`476916399` bytes)
-  - **Sodermanland** `europe/sweden/sodermanland` — pack **147 MB** (`153957779` bytes)
+  - **Örebro** `europe/sweden/orebro` — pack **218 MB** (`228914640` bytes)
+  - **Östergötland** `europe/sweden/ostergotland` — pack **345 MB** (`361470057` bytes)
+  - **Skåne** `europe/sweden/skane` — pack **455 MB** (`476916399` bytes)
+  - **Södermanland** `europe/sweden/sodermanland` — pack **147 MB** (`153957779` bytes)
   - **Stockholm** `europe/sweden/stockholm` — pack **560 MB** (`586929682` bytes)
   - **Uppsala** `europe/sweden/uppsala` — pack **184 MB** (`193144649` bytes)
-  - **Varmland** `europe/sweden/varmland` — pack **255 MB** (`267705855` bytes)
-  - **Vasterbotten** `europe/sweden/vasterbotten` — pack **251 MB** (`262736055` bytes)
-  - **Vasternorrland** `europe/sweden/vasternorrland` — pack **253 MB** (`265053625` bytes)
-  - **Vastmanland** `europe/sweden/vastmanland` — pack **126 MB** (`132586439` bytes)
-  - **Vastra Gotaland** `europe/sweden/vastra_gotaland` — pack **927 MB** (`971623055` bytes)
+  - **Värmland** `europe/sweden/varmland` — pack **255 MB** (`267705855` bytes)
+  - **Västerbotten** `europe/sweden/vasterbotten` — pack **251 MB** (`262736055` bytes)
+  - **Västernorrland** `europe/sweden/vasternorrland` — pack **253 MB** (`265053625` bytes)
+  - **Västmanland** `europe/sweden/vastmanland` — pack **126 MB** (`132586439` bytes)
+  - **Västra Götaland** `europe/sweden/vastra_gotaland` — pack **927 MB** (`971623055` bytes)
 
 ## Switzerland
 
@@ -2743,7 +2750,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **2.07 GB** (`2219787374` bytes)
 - Subregions: none
 
-## Ukraine
+## Ukraine (with Crimea)
 
 - Continent / group: Europe
 - Region id: `europe/ukraine`
@@ -2812,11 +2819,11 @@ leaves, not a single whole-country pack.
     - **West Yorkshire** `europe/united-kingdom/england/west-yorkshire` — pack **320 MB** (`335558295` bytes)
     - **Wiltshire** `europe/united-kingdom/england/wiltshire` — pack **185 MB** (`193572027` bytes)
     - **Worcestershire** `europe/united-kingdom/england/worcestershire` — pack **112 MB** (`117746447` bytes)
-  - **Falklands** `europe/united-kingdom/falklands` — pack **18.2 MB** (`19121740` bytes)
+  - **Falkland Islands** `europe/united-kingdom/falklands` — pack **18.2 MB** (`19121740` bytes)
   - **Scotland** `europe/united-kingdom/scotland` — pack **1.80 GB** (`1933613195` bytes)
   - **Wales** `europe/united-kingdom/wales` — pack **858 MB** (`899634073` bytes)
 
-## United States
+## United States of America
 
 - Continent / group: North America
 - Region id: `north-america/us`
@@ -2824,61 +2831,61 @@ leaves, not a single whole-country pack.
 - Geofabrik country PBF size: **11.3 GB** (`12140469551` bytes)
 - Geofabrik URL: https://download.geofabrik.de/north-america/us.html
 - Subregions (sizes from pack server `current.json`):
-  - **Alabama** `north-america/us/alabama` — pack **1.78 GB** (`1906261846` bytes)
-  - **Alaska** `north-america/us/alaska` — pack **390 MB** (`408674828` bytes)
-  - **Arizona** `north-america/us/arizona` — pack **2.68 GB** (`2879228159` bytes)
-  - **Arkansas** `north-america/us/arkansas` — pack **1.24 GB** (`1326963661` bytes)
-  - **California** `north-america/us/california`
+  - **us/alabama** `north-america/us/alabama` — pack **1.78 GB** (`1906261846` bytes)
+  - **us/alaska** `north-america/us/alaska` — pack **390 MB** (`408674828` bytes)
+  - **us/arizona** `north-america/us/arizona` — pack **2.68 GB** (`2879228159` bytes)
+  - **us/arkansas** `north-america/us/arkansas` — pack **1.24 GB** (`1326963661` bytes)
+  - **us/california** `north-america/us/california`
     - **Northern California** `north-america/us/california/norcal` — pack **4.32 GB** (`4636561336` bytes)
     - **Southern California** `north-america/us/california/socal` — pack **4.05 GB** (`4346136125` bytes)
-  - **Colorado** `north-america/us/colorado` — pack **2.68 GB** (`2875422389` bytes)
-  - **Connecticut** `north-america/us/connecticut` — pack **1.11 GB** (`1192326122` bytes)
-  - **Delaware** `north-america/us/delaware` — pack **255 MB** (`266976974` bytes)
-  - **District of Columbia** `north-america/us/district-of-columbia` — pack **121 MB** (`126729520` bytes)
-  - **Florida** `north-america/us/florida` — pack **5.37 GB** (`5763135651` bytes)
+  - **us/colorado** `north-america/us/colorado` — pack **2.68 GB** (`2875422389` bytes)
+  - **us/connecticut** `north-america/us/connecticut` — pack **1.11 GB** (`1192326122` bytes)
+  - **us/delaware** `north-america/us/delaware` — pack **255 MB** (`266976974` bytes)
+  - **us/district-of-columbia** `north-america/us/district-of-columbia` — pack **121 MB** (`126729520` bytes)
+  - **us/florida** `north-america/us/florida` — pack **5.37 GB** (`5763135651` bytes)
   - **Georgia** `north-america/us/georgia` — pack **3.09 GB** (`3314988986` bytes)
-  - **Hawaii** `north-america/us/hawaii` — pack **204 MB** (`213883341` bytes)
-  - **Idaho** `north-america/us/idaho` — pack **1.32 GB** (`1419205064` bytes)
-  - **Illinois** `north-america/us/illinois` — pack **3.75 GB** (`4027106919` bytes)
-  - **Indiana** `north-america/us/indiana` — pack **2.49 GB** (`2677096577` bytes)
-  - **Iowa** `north-america/us/iowa` — pack **1.37 GB** (`1475601557` bytes)
-  - **Kansas** `north-america/us/kansas` — pack **1.59 GB** (`1704072337` bytes)
-  - **Kentucky** `north-america/us/kentucky` — pack **1.63 GB** (`1751101848` bytes)
-  - **Louisiana** `north-america/us/louisiana` — pack **1.37 GB** (`1469520789` bytes)
-  - **Maine** `north-america/us/maine` — pack **736 MB** (`771474329` bytes)
-  - **Maryland** `north-america/us/maryland` — pack **1.71 GB** (`1831661146` bytes)
-  - **Massachusetts** `north-america/us/massachusetts` — pack **1.96 GB** (`2105825137` bytes)
-  - **Michigan** `north-america/us/michigan` — pack **3.88 GB** (`4163820135` bytes)
-  - **Minnesota** `north-america/us/minnesota` — pack **2.10 GB** (`2253879239` bytes)
-  - **Mississippi** `north-america/us/mississippi` — pack **984 MB** (`1032112488` bytes)
-  - **Missouri** `north-america/us/missouri` — pack **2.68 GB** (`2872916833` bytes)
-  - **Montana** `north-america/us/montana` — pack **1011 MB** (`1060616984` bytes)
-  - **Nebraska** `north-america/us/nebraska` — pack **972 MB** (`1019408146` bytes)
-  - **Nevada** `north-america/us/nevada` — pack **1.21 GB** (`1303682458` bytes)
-  - **New Hampshire** `north-america/us/new-hampshire` — pack **690 MB** (`723687737` bytes)
-  - **New Jersey** `north-america/us/new-jersey` — pack **1.65 GB** (`1768613070` bytes)
-  - **New Mexico** `north-america/us/new-mexico` — pack **1.18 GB** (`1270468589` bytes)
-  - **New York** `north-america/us/new-york` — pack **3.52 GB** (`3784855619` bytes)
-  - **North Carolina** `north-america/us/north-carolina` — pack **4.00 GB** (`4297193712` bytes)
-  - **North Dakota** `north-america/us/north-dakota` — pack **760 MB** (`796451370` bytes)
-  - **Ohio** `north-america/us/ohio` — pack **4.02 GB** (`4316350857` bytes)
-  - **Oklahoma** `north-america/us/oklahoma` — pack **1.68 GB** (`1801667611` bytes)
-  - **Oregon** `north-america/us/oregon` — pack **2.05 GB** (`2204944488` bytes)
-  - **Pennsylvania** `north-america/us/pennsylvania` — pack **3.49 GB** (`3750265736` bytes)
-  - **Puerto Rico** `north-america/us/puerto-rico` — pack **419 MB** (`439406334` bytes)
-  - **Rhode Island** `north-america/us/rhode-island` — pack **218 MB** (`228246479` bytes)
-  - **South Carolina** `north-america/us/south-carolina` — pack **1.71 GB** (`1834187096` bytes)
-  - **South Dakota** `north-america/us/south-dakota` — pack **546 MB** (`572195277` bytes)
-  - **Tennessee** `north-america/us/tennessee` — pack **2.06 GB** (`2207998668` bytes)
-  - **Texas** `north-america/us/texas` — pack **8.17 GB** (`8768293363` bytes)
-  - **US Virgin Islands** `north-america/us/us-virgin-islands` — pack **23.8 MB** (`24977773` bytes)
-  - **Utah** `north-america/us/utah` — pack **1.69 GB** (`1809930962` bytes)
-  - **Vermont** `north-america/us/vermont` — pack **368 MB** (`385692834` bytes)
-  - **Virginia** `north-america/us/virginia` — pack **3.13 GB** (`3362902094` bytes)
-  - **Washington** `north-america/us/washington` — pack **2.81 GB** (`3017554736` bytes)
-  - **West Virginia** `north-america/us/west-virginia` — pack **760 MB** (`797401079` bytes)
-  - **Wisconsin** `north-america/us/wisconsin` — pack **2.41 GB** (`2584914028` bytes)
-  - **Wyoming** `north-america/us/wyoming` — pack **733 MB** (`768880953` bytes)
+  - **us/hawaii** `north-america/us/hawaii` — pack **204 MB** (`213883341` bytes)
+  - **us/idaho** `north-america/us/idaho` — pack **1.32 GB** (`1419205064` bytes)
+  - **us/illinois** `north-america/us/illinois` — pack **3.75 GB** (`4027106919` bytes)
+  - **us/indiana** `north-america/us/indiana` — pack **2.49 GB** (`2677096577` bytes)
+  - **us/iowa** `north-america/us/iowa` — pack **1.37 GB** (`1475601557` bytes)
+  - **us/kansas** `north-america/us/kansas` — pack **1.59 GB** (`1704072337` bytes)
+  - **us/kentucky** `north-america/us/kentucky` — pack **1.63 GB** (`1751101848` bytes)
+  - **us/louisiana** `north-america/us/louisiana` — pack **1.37 GB** (`1469520789` bytes)
+  - **us/maine** `north-america/us/maine` — pack **736 MB** (`771474329` bytes)
+  - **us/maryland** `north-america/us/maryland` — pack **1.71 GB** (`1831661146` bytes)
+  - **us/massachusetts** `north-america/us/massachusetts` — pack **1.96 GB** (`2105825137` bytes)
+  - **us/michigan** `north-america/us/michigan` — pack **3.88 GB** (`4163820135` bytes)
+  - **us/minnesota** `north-america/us/minnesota` — pack **2.10 GB** (`2253879239` bytes)
+  - **us/mississippi** `north-america/us/mississippi` — pack **984 MB** (`1032112488` bytes)
+  - **us/missouri** `north-america/us/missouri` — pack **2.68 GB** (`2872916833` bytes)
+  - **us/montana** `north-america/us/montana` — pack **1011 MB** (`1060616984` bytes)
+  - **us/nebraska** `north-america/us/nebraska` — pack **972 MB** (`1019408146` bytes)
+  - **us/nevada** `north-america/us/nevada` — pack **1.21 GB** (`1303682458` bytes)
+  - **us/new-hampshire** `north-america/us/new-hampshire` — pack **690 MB** (`723687737` bytes)
+  - **us/new-jersey** `north-america/us/new-jersey` — pack **1.65 GB** (`1768613070` bytes)
+  - **us/new-mexico** `north-america/us/new-mexico` — pack **1.18 GB** (`1270468589` bytes)
+  - **us/new-york** `north-america/us/new-york` — pack **3.52 GB** (`3784855619` bytes)
+  - **us/north-carolina** `north-america/us/north-carolina` — pack **4.00 GB** (`4297193712` bytes)
+  - **us/north-dakota** `north-america/us/north-dakota` — pack **760 MB** (`796451370` bytes)
+  - **us/ohio** `north-america/us/ohio` — pack **4.02 GB** (`4316350857` bytes)
+  - **us/oklahoma** `north-america/us/oklahoma` — pack **1.68 GB** (`1801667611` bytes)
+  - **us/oregon** `north-america/us/oregon` — pack **2.05 GB** (`2204944488` bytes)
+  - **us/pennsylvania** `north-america/us/pennsylvania` — pack **3.49 GB** (`3750265736` bytes)
+  - **us/puerto-rico** `north-america/us/puerto-rico` — pack **419 MB** (`439406334` bytes)
+  - **us/rhode-island** `north-america/us/rhode-island` — pack **218 MB** (`228246479` bytes)
+  - **us/south-carolina** `north-america/us/south-carolina` — pack **1.71 GB** (`1834187096` bytes)
+  - **us/south-dakota** `north-america/us/south-dakota` — pack **546 MB** (`572195277` bytes)
+  - **us/tennessee** `north-america/us/tennessee` — pack **2.06 GB** (`2207998668` bytes)
+  - **us/texas** `north-america/us/texas` — pack **8.17 GB** (`8768293363` bytes)
+  - **us/us-virgin-islands** `north-america/us/us-virgin-islands` — pack **23.8 MB** (`24977773` bytes)
+  - **us/utah** `north-america/us/utah` — pack **1.69 GB** (`1809930962` bytes)
+  - **us/vermont** `north-america/us/vermont` — pack **368 MB** (`385692834` bytes)
+  - **us/virginia** `north-america/us/virginia` — pack **3.13 GB** (`3362902094` bytes)
+  - **us/washington** `north-america/us/washington` — pack **2.81 GB** (`3017554736` bytes)
+  - **us/west-virginia** `north-america/us/west-virginia` — pack **760 MB** (`797401079` bytes)
+  - **us/wisconsin** `north-america/us/wisconsin` — pack **2.41 GB** (`2584914028` bytes)
+  - **us/wyoming** `north-america/us/wyoming` — pack **733 MB** (`768880953` bytes)
 
 ## Uruguay
 
@@ -2890,7 +2897,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **301 MB** (`315547312` bytes)
 - Subregions: none
 
-## Us Midwest
+## US Midwest
 
 - Continent / group: North America
 - Region id: `north-america/us-midwest`
@@ -2900,7 +2907,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **25.9 GB** (`27792708278` bytes)
 - Subregions: none
 
-## Us Northeast
+## US Northeast
 
 - Continent / group: North America
 - Region id: `north-america/us-northeast`
@@ -2910,7 +2917,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **13.8 GB** (`14807530891` bytes)
 - Subregions: none
 
-## Us Pacific
+## US Pacific
 
 - Continent / group: North America
 - Region id: `north-america/us-pacific`
@@ -2920,7 +2927,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **541 MB** (`567301966` bytes)
 - Subregions: none
 
-## Us South
+## US South
 
 - Continent / group: North America
 - Region id: `north-america/us-south`
@@ -2930,7 +2937,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **36.8 GB** (`39506379549` bytes)
 - Subregions: none
 
-## Us West
+## US West
 
 - Continent / group: North America
 - Region id: `north-america/us-west`
@@ -2980,7 +2987,7 @@ leaves, not a single whole-country pack.
 - Pack-server country pack size: **8.03 GB** (`8623835247` bytes)
 - Subregions: none
 
-## Wallis Et Futuna
+## Wallis et Futuna
 
 - Continent / group: Australia and Oceania
 - Region id: `australia-oceania/wallis-et-futuna`
