@@ -174,37 +174,69 @@ follow the same model without confirmation.
 Research summary for a future implementation choice — **not** a decision to add
 any crate to `Cargo.toml` now.
 
-### Candidate crates
+### Upstream Piper (archived / forked)
+
+The original [rhasspy/piper](https://github.com/rhasspy/piper) repository was
+**archived (October 2025)** and development split into maintained forks:
+
+| Fork | License / notes |
+|---|---|
+| [OHF-Voice/piper1-gpl](https://github.com/OHF-Voice/piper1-gpl) | **GPL-3.0**, actively maintained. This is what `piper1-rs` binds to. |
+| [ayutaz/piper-plus](https://github.com/ayutaz/piper-plus) (MIT-compatible fork) | Own G2P, **no espeak-ng** dependency, better latency — but language coverage is only **JA / EN / ZH / KO / ES / FR / PT / SV**. **No Norwegian**, so it is **not viable as the sole TTS backend** for this project despite the friendlier license. |
+
+Navi’s Nordic recorded packs and any on-device TTS that must speak Norwegian
+should assume the **piper1-gpl** line (or recordings), not piper-plus alone.
+
+### Leading Android candidate: `piper-kotlin`
+
+| Item | Detail |
+|---|---|
+| Repo | [IhorShevchuk/piper-kotlin](https://github.com/IhorShevchuk/piper-kotlin) |
+| What it is | Kotlin **JNI** wrapper that bundles **piper1-gpl** + **espeak-ng** + the **ONNX Runtime Android AAR** |
+| Build status | Already built and linking for `aarch64-linux-android` / `x86_64-linux-android` |
+| API | Exposes `synthesize()` streaming **PCM** chunks — suitable for direct `AudioTrack` / ExoPlayer playback |
+| Architecture fit | Host-native (Kotlin/JNI), so it matches the existing **host-owns-audio-I/O** design better than Rust ONNX-binding crates |
+
+This is the **Android-native playback path** already anticipated in
+[Fallback](#fallback) below — not a hypothetical spike target. Prefer evaluating
+`piper-kotlin` for on-device TTS on Android before investing in unproven Rust
+cross-compiles.
+
+**Licensing:** still **GPL-3.0** (piper1-gpl). The fold-in with
+[`icons.md`](icons.md)’s GPL bundling decision applies **unchanged**.
+
+### Candidate Rust crates (Linux / secondary)
+
+These remain useful for desktop/Linux experimentation. They do **not** displace
+`piper-kotlin` as the leading Android path: several are Linux-only or unproven
+on Android (`piper1-rs`’s own docs state it only supports Linux).
 
 | Crate | Notes (as researched) |
 |---|---|
-| `piper1-rs` | Safe bindings to `libpiper`; Linux-focused; needs **ONNX Runtime** installed separately |
-| `piper-rs` | Piper-related Rust wrapper (evaluate maturity / Android support at spike time) |
+| `piper1-rs` | Safe bindings to `libpiper` / **piper1-gpl**; **Linux-only** per project docs; needs **ONNX Runtime** installed separately |
+| `piper-rs` | Piper-related Rust wrapper (evaluate maturity; not the preferred Android path) |
 | `piper-tts-rs` | Needs `libclang-dev`; currently tends to output **raw PCM** needing external conversion for playback |
 | `blazen_audio_piper` | Higher-level; part of a larger framework — weigh dependency surface |
 | `natural-tts` | Multi-backend abstraction that can include Piper |
 
-### Gating risk (Android)
-
-The real gate for **all** Piper options is whether **ONNX Runtime**
-cross-compiles and links for the Android target ABI — not which Rust wrapper is
-chosen. Confirm ONNX Runtime + Piper native libs for `aarch64-linux-android`
-(and emulator `x86_64-linux-android` if needed) in an implementation spike
-before depending on TTS in CI or releases.
-
 ### Licensing
 
-**Piper is GPL-licensed.** Bundling Piper (or GPL voice models) must be folded
-into the **same open licensing decision** already flagged for the Navit icon set
-(GPL asset bundling vs the rest of the repository’s license) — see
-[`icons.md`](icons.md). Do not treat Piper as a separate, already-settled
-licensing question.
+**Piper (piper1-gpl / piper-kotlin) is GPL-licensed.** Bundling Piper (or GPL
+voice models) must be folded into the **same open licensing decision** already
+flagged for the Navit icon set (GPL asset bundling vs the rest of the
+repository’s license) — see [`icons.md`](icons.md). Do not treat Piper as a
+separate, already-settled licensing question. piper-plus’s friendlier license
+does not remove this issue if Norwegian coverage still requires piper1-gpl.
 
 ### Fallback
 
-If no Piper/ONNX path builds reliably for Android when this is implemented, ship
-**recordings only**. Piper is **additive**; it must not block the recorded-voice
-path.
+If Piper is disabled or unavailable, ship **recordings only**. Piper is
+**additive**; it must not block the recorded-voice path.
+
+On Android, TTS (when enabled) should use the host **`piper-kotlin` → PCM →
+`AudioTrack` / ExoPlayer** path above rather than assuming a Rust ONNX crate
+will cross-compile. If that host path is not adopted (e.g. GPL fold-in deferred),
+keep recordings-only until licensing and packaging are settled.
 
 ---
 
@@ -273,5 +305,5 @@ unaffected when the setting is empty/off.
 | Per-language concat vs whole phrases | **Open** |
 | Persona sentence-ending suffixes | Specified here (optional, off by default); not implemented |
 | rodio / cpal on Android | **Spike required** |
-| Piper / ONNX on Android | **Spike required**; optional |
+| Piper / ONNX on Android | **De-risked** via [piper-kotlin](https://github.com/IhorShevchuk/piper-kotlin) (pre-built JNI wrapper); confirm GPL licensing fold-in before adopting |
 | Implementation / crates in workspace | **Not started** |
