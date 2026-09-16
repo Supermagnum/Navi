@@ -32,6 +32,7 @@ declare -A CARTO=(
   [hospital]="amenity/hospital.svg"
   [pharmacy]="amenity/pharmacy.svg"
   [hotel]="tourism/hotel.svg"
+  [alpine_hut]="tourism/alpinehut.svg"
   [townhall]="amenity/town_hall.svg"
   [car_repair]="shop/car_repair.svg"
   [motorcycle]="shop/motorcycle.svg"
@@ -67,6 +68,13 @@ if [[ -f "${ICONS}/spring.svg" ]]; then
   echo "  spring: stroke remapped #ffffff -> #000000 for light basemap"
 fi
 
+# Local Navi icons (not in Carto as usable pictorial POI sprites for our atlas keys).
+# shelter: core Navit-derived SVG (GPL v2) — amenity=shelter / tourism shelter.
+# station is already in the atlas from a prior pack of rail_station.svg (see CREDITS).
+echo "=== Add local Navi SVGs ==="
+cp "${REPO_ROOT}/core/src/icons/shelter.svg" "${ICONS}/shelter.svg"
+echo "  shelter <- core/src/icons/shelter.svg"
+
 echo "=== Pack new icons with spreet ==="
 spreet "$ICONS" "$NEW_PACK/light"
 spreet --retina "$ICONS" "$NEW_PACK/light@2x"
@@ -78,7 +86,7 @@ import sys
 from pathlib import Path
 
 sprite_dir = Path(sys.argv[1])
-refresh = {"spring"}
+refresh = {"spring", "shelter", "alpine_hut"}
 for name in ("light.json", "light@2x.json"):
     path = sprite_dir / name
     meta = json.loads(path.read_text())
@@ -88,7 +96,6 @@ for name in ("light.json", "light@2x.json"):
     path.write_text(json.dumps(meta, separators=(",", ":")))
     print(f"  refresh: removed {', '.join(removed) or '(none)'} from {name}")
 PY
-
 echo "=== Merge into bundled atlas ==="
 python3 "${REPO_ROOT}/scripts/merge_sprite_atlas.py" \
   --base-json "${SPRITE_DIR}/light.json" \
@@ -110,3 +117,4 @@ python3 "${REPO_ROOT}/scripts/merge_sprite_atlas.py" \
 
 echo "Done. Updated ${SPRITE_DIR}/light*.json/png — bump BasemapStyleResolver assetEpoch and style.template.json icon-image mappings."
 echo "Note: railway station (kind=station) uses Navit rail_station.svg packed separately into the atlas — not from Carto (see CREDITS.md)."
+echo "Note: shelter uses Navit shelter.svg; alpine_hut uses Carto tourism/alpinehut.svg (wilderness_hut shares that sprite)."
