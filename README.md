@@ -868,6 +868,7 @@ I/O for hardware-facing plugins.
 | [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md) | Spoken escalating overspeed (percentage tiers; not shipped) |
 | [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md) | Nearby attractions look-ahead cone (host UniFFI + quiet HUD; WASM scaffold; default OFF) |
 | [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic — Meshstick USB SX1262 stick or BLE node; location/speed/fuel/charge (not shipped) |
+| [`docs/voice-guidance.md`](https://github.com/Supermagnum/Navi/blob/main/docs/voice-guidance.md) | Turn-by-turn spoken maneuver guidance — pre-recorded clips (primary) or Piper TTS (optional); distinct from [`docs/plugins/voice-command.md`](https://github.com/Supermagnum/Navi/blob/main/docs/plugins/voice-command.md) |
 | [`docs/plugins/voice-command.md`](docs/plugins/voice-command.md) | Spoken navigate / save-place / nearest-POI alternative (on-device ASR/TTS; not shipped). Distinct from turn-by-turn [`docs/voice-guidance.md`](docs/voice-guidance.md) |
 
 ## Icons (where they live)
