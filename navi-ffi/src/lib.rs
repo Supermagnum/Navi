@@ -18,12 +18,13 @@ use driver_break_core::icons::{self, IconTheme};
 use driver_break_core::poi::{rest_area_suitable_for_weekly, PoiCategory, PoiIndex, PoiRecord};
 use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
 use driver_break_core::routing::graph::{
-    apply_bike_suitability_from_pbf, apply_official_network_preference, apply_slow_road_preference,
-    apply_surface_preference, apply_surface_quality_from_pbf, difficulty_notes_for_path,
-    load_official_network_way_ids, load_or_build_reweighted, load_or_build_reweighted_bbox,
-    load_pilgrim_route_way_ids, load_way_difficulty_tags, max_waypoint_snap_m, BikeCapability,
-    MotorSoftCostProfile, OfficialNetworkKind, RoadLabelSticky, RoadNodeIndex, RouteGraph,
-    RouteOptions, RoutingProfile, SnapTooFar, SurfaceRoutingMode,
+    apply_bike_suitability_from_pbf, apply_bike_surface_preference,
+    apply_official_network_preference, apply_slow_road_preference, apply_surface_preference,
+    apply_surface_quality_from_pbf, difficulty_notes_for_path, load_official_network_way_ids,
+    load_or_build_reweighted, load_or_build_reweighted_bbox, load_pilgrim_route_way_ids,
+    load_way_difficulty_tags, max_waypoint_snap_m, BikeCapability, MotorSoftCostProfile,
+    OfficialNetworkKind, RoadLabelSticky, RoadNodeIndex, RouteGraph, RouteOptions, RoutingProfile,
+    SnapTooFar, SurfaceRoutingMode,
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::safety::{
@@ -2380,7 +2381,6 @@ fn plan_car_route_inner(
             );
         }
         if profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric {
-            apply_slow_road_preference(&mut built);
             let bike_cap = match driver_break_core::storage::Storage::open(routes_db(
                 &data_dir.to_string_lossy(),
             )) {
@@ -2394,7 +2394,17 @@ fn plan_car_route_inner(
                 }
                 Err(_) => BikeCapability::Trekking,
             };
-            let _ = apply_bike_suitability_from_pbf(&mut built, pbf, bike_cap);
+            // Hard suitability needs OSM way ids (PBF / bbox cache). Pack edge
+            // ids are node-node-idx — skip on pack hits (same as motor surface refine).
+            if !phit {
+                let _ = apply_bike_suitability_from_pbf(&mut built, pbf, bike_cap);
+            }
+            // Soft costs use packed highway + surface_quality (works for pack hits).
+            apply_bike_surface_preference(&mut built, bike_cap);
+            // Slow-road preference fights Road mode (penalizes fast asphalt).
+            if !matches!(bike_cap, BikeCapability::Road) {
+                apply_slow_road_preference(&mut built);
+            }
         }
         if matches!(routing_profile, RoutingProfile::Car | RoutingProfile::Truck) {
             let surface_mode = match driver_break_core::storage::Storage::open(routes_db(

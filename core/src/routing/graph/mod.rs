@@ -23,8 +23,9 @@ mod surface_quality;
 
 pub use bbox_build::TiledBuildTimings;
 pub use bike_suitability::{
-    apply_bike_suitability, apply_bike_suitability_from_pbf, load_way_terrain_tags,
-    tags_unsuitable_for, way_id_from_edge_id, BikeCapability,
+    apply_bike_suitability, apply_bike_suitability_from_pbf, apply_bike_surface_preference,
+    edge_bike_soft_multiplier, load_way_terrain_tags, tags_unsuitable_for, way_id_from_edge_id,
+    BikeCapability,
 };
 pub use builder::{
     append_seasonal_closure_report, edge_is_motorway_grade, format_route_avoidance_report,

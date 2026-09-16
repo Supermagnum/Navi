@@ -58,6 +58,10 @@ Every kind in the offline `pois` allow-list maps to a named sprite in
 | `theatre` | `theatre` | |
 | `cinema` | `theatre` | shared theatre sprite |
 | `hotel` | `hotel` | OSM Carto |
+| `alpine_hut` | `alpine_hut` | OSM Carto `tourism/alpinehut.svg` |
+| `wilderness_hut` | `alpine_hut` | shared alpine-hut sprite (unstaffed mountain hut) |
+| `chalet` | `hotel` | closest staffed/paid lodging match; no dedicated chalet sprite |
+| `shelter` | `shelter` | Navit `shelter.svg` (GPL v2); packed by `build-poi-sprites.sh` |
 | `townhall` | `townhall` | OSM Carto; kind floor z15 |
 | `peak` | `peak` | kind floor z13 (OSM Carto / osm.org peak floor; extract maxzoom is 15) |
 | `hill` | `peak` | shared peak sprite; kind floor z13 |
@@ -152,7 +156,7 @@ retail audit. They remain long-standing:
 `bus_stop`, `station`, `parking`, `attraction`, `museum`, `cafe`, `restaurant`,
 `fast_food`, `hospital`, `pharmacy`, `library`, `post_office`, `toilets`,
 `drinking_water`, `bench`, `playground`, `park`, `zoo`, `theatre`, `cinema`,
-`hotel`, `townhall`, `peak`, `hill`, `glacier`, `wetland`, `police`,
+`hotel`, `alpine_hut`, `wilderness_hut`, `chalet`, `shelter`, `townhall`, `peak`, `hill`, `glacier`, `wetland`, `police`,
 `fire_station`, `place_of_worship`, `spring`, `military`.
 
 Grocery (`convenience`, `supermarket`, `grocery`) was already in that core
@@ -162,3 +166,5 @@ station names/icons) was missing from the allow-list until a later pass —
 tiles already carried `pois.kind=station` from OSM `railway=station`.
 `police` / `fire_station` / `place_of_worship` / `spring` icons and `military`
 name-only labels were added the same way (tiles already carried the kinds).
+`alpine_hut` / `wilderness_hut` / `chalet` / `shelter` were allow-listed later
+(names + icons); `chalet` still shares the `hotel` sprite.

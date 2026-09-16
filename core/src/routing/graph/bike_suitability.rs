@@ -8,8 +8,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use osmpbf::Element;
+use rayon::prelude::*;
 
-use super::builder::RouteGraph;
+use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
+use super::surface_quality::SurfaceQuality;
 
 /// User-selected bike capability (stored in config; applies to Bicycle and
 /// Electric cycle — both share the bicycle graph).
@@ -277,6 +279,162 @@ pub fn apply_bike_suitability_from_pbf(
     Ok(apply_bike_suitability(graph, &tags, cap))
 }
 
+// --- Soft surface / highway preference (capability-aware) -------------------
+//
+// Mirrors motor [`apply_surface_preference`]: multiplies `base_weight` (metres)
+// so longer preferred corridors beat short "wrong" connectors. Never hard-filters.
+
+/// Soft highway multipliers for Road bikes (prefer asphalt roads over trails).
+///
+/// Path/footway is steep even when `surface_quality` is Good: pack hits lack
+/// `mtb:scale` / smoothness, and untagged paths default to Good in the pack.
+pub const BIKE_ROAD_PATH_FOOTWAY: f64 = 5.0;
+pub const BIKE_ROAD_TRACK: f64 = 3.5;
+pub const BIKE_ROAD_CYCLEWAY: f64 = 1.12;
+pub const BIKE_ROAD_SURFACE_MARGINAL: f64 = 2.2;
+pub const BIKE_ROAD_SURFACE_POOR: f64 = 4.0;
+
+/// Soft multipliers for Gravel / Trekking (prefer gravel/compacted over asphalt
+/// arterials and over technical path/singletrack).
+///
+/// Path cost must stay clearly above MTB's ~1.0 so the two modes diverge on
+/// mixed asphalt/gravel/path graphs. Pack hits cannot hard-filter `mtb:scale`.
+pub const BIKE_GRAVEL_ASPHALT_ARTERIAL: f64 = 2.4;
+pub const BIKE_GRAVEL_ASPHALT_LOCAL: f64 = 1.55;
+pub const BIKE_GRAVEL_SURFACE_POOR: f64 = 2.0;
+pub const BIKE_GRAVEL_PATH: f64 = 2.2;
+pub const BIKE_GRAVEL_TRACK: f64 = 1.35;
+
+/// Soft multipliers for MTB (prefer path/track/singletrack over paved roads).
+pub const BIKE_MTB_ARTERIAL: f64 = 2.6;
+pub const BIKE_MTB_LOCAL_PAVED: f64 = 2.8;
+pub const BIKE_MTB_CYCLEWAY: f64 = 1.25;
+pub const BIKE_MTB_SURFACE_MARGINAL_ON_ROAD: f64 = 1.2;
+
+fn is_path_like(highway: Option<&str>) -> bool {
+    matches!(
+        highway,
+        Some("path") | Some("footway") | Some("steps") | Some("pedestrian") | Some("bridleway")
+    )
+}
+
+fn is_track(highway: Option<&str>) -> bool {
+    highway == Some("track")
+}
+
+fn is_cycleway(highway: Option<&str>) -> bool {
+    highway == Some("cycleway")
+}
+
+fn is_arterial(highway: Option<&str>) -> bool {
+    matches!(
+        highway,
+        Some("motorway")
+            | Some("motorway_link")
+            | Some("trunk")
+            | Some("trunk_link")
+            | Some("primary")
+            | Some("primary_link")
+            | Some("secondary")
+            | Some("secondary_link")
+    )
+}
+
+fn is_local_road(highway: Option<&str>) -> bool {
+    matches!(
+        highway,
+        Some("tertiary")
+            | Some("tertiary_link")
+            | Some("unclassified")
+            | Some("residential")
+            | Some("living_street")
+            | Some("road")
+            | Some("service")
+    )
+}
+
+/// Soft cost multiplier (≥ 1.0) for one edge under `cap`.
+pub fn edge_bike_soft_multiplier(edge: &GraphEdge, cap: BikeCapability) -> f64 {
+    if edge.is_ferry {
+        return 1.0;
+    }
+    let hw = edge.highway.as_deref();
+    let sq = edge.surface_quality;
+    match cap {
+        BikeCapability::Road => {
+            let hw_mult = if is_path_like(hw) {
+                BIKE_ROAD_PATH_FOOTWAY
+            } else if is_track(hw) {
+                BIKE_ROAD_TRACK
+            } else if is_cycleway(hw) {
+                BIKE_ROAD_CYCLEWAY
+            } else {
+                1.0
+            };
+            let surf_mult = match sq {
+                SurfaceQuality::Good => 1.0,
+                SurfaceQuality::Marginal => BIKE_ROAD_SURFACE_MARGINAL,
+                SurfaceQuality::Poor => BIKE_ROAD_SURFACE_POOR,
+            };
+            hw_mult * surf_mult
+        }
+        BikeCapability::Trekking => {
+            // Prefer gravel/compacted (Marginal) roads; soft-penalize asphalt and
+            // path/singletrack (touring bikes are not MTB).
+            let mut mult = 1.0;
+            if is_path_like(hw) {
+                mult *= BIKE_GRAVEL_PATH;
+            } else if is_track(hw) {
+                mult *= BIKE_GRAVEL_TRACK;
+            }
+            match sq {
+                SurfaceQuality::Good if is_arterial(hw) => mult *= BIKE_GRAVEL_ASPHALT_ARTERIAL,
+                SurfaceQuality::Good if is_local_road(hw) || is_cycleway(hw) => {
+                    mult *= BIKE_GRAVEL_ASPHALT_LOCAL;
+                }
+                SurfaceQuality::Good => {}
+                SurfaceQuality::Marginal => {}
+                SurfaceQuality::Poor => mult *= BIKE_GRAVEL_SURFACE_POOR,
+            }
+            mult
+        }
+        BikeCapability::Mountain => {
+            let mut mult = 1.0;
+            if is_arterial(hw) {
+                mult *= BIKE_MTB_ARTERIAL;
+            } else if is_local_road(hw) && matches!(sq, SurfaceQuality::Good) {
+                mult *= BIKE_MTB_LOCAL_PAVED;
+            } else if is_cycleway(hw) {
+                mult *= BIKE_MTB_CYCLEWAY;
+            }
+            // Path/track stay near 1.0; gravel roads only lightly nudged.
+            if matches!(sq, SurfaceQuality::Marginal) && is_local_road(hw) {
+                mult *= BIKE_MTB_SURFACE_MARGINAL_ON_ROAD;
+            }
+            mult
+        }
+    }
+}
+
+/// Apply capability-aware soft costs to bicycle graph edges.
+///
+/// Uses packed/built [`GraphEdge::highway`] + [`GraphEdge::surface_quality`] so
+/// both on-device PBF builds and v8 pack hits work (no OSM way-id lookup).
+pub fn apply_bike_surface_preference(graph: &mut RouteGraph, cap: BikeCapability) {
+    if graph.profile() != RoutingProfile::Bicycle {
+        return;
+    }
+    graph.edges.par_iter_mut().for_each(|edge| {
+        let mult = edge_bike_soft_multiplier(edge, cap);
+        if mult > 1.0 + 1e-9 {
+            edge.base_weight *= mult;
+            if let Some(ref mut eco) = edge.eco_weight {
+                *eco *= mult;
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -310,5 +468,305 @@ mod tests {
         ] {
             assert!(!tags_unsuitable_for(cap, &t), "{cap:?}");
         }
+    }
+
+    fn bike_edge(
+        id: &str,
+        src: i64,
+        tgt: i64,
+        length_m: f64,
+        highway: &str,
+        surface: SurfaceQuality,
+    ) -> GraphEdge {
+        GraphEdge {
+            id: id.into(),
+            source: osm4routing::NodeId(src),
+            target: osm4routing::NodeId(tgt),
+            length_m,
+            base_weight: length_m,
+            eco_weight: None,
+            start_lat: 60.0,
+            start_lon: 10.0,
+            end_lat: 60.01,
+            end_lon: 10.01,
+            shape: Vec::new(),
+            highway: Some(highway.into()),
+            maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
+            name: None,
+            road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+            surface_quality: surface,
+        }
+    }
+
+    fn bike_graph(edges: Vec<GraphEdge>) -> RouteGraph {
+        use geo_types::Coord;
+        use std::collections::HashMap as StdHashMap;
+        let mut nodes = StdHashMap::new();
+        for (id, lat, lon) in [
+            (1, 60.0, 10.0),
+            (2, 60.01, 10.01),
+            (3, 60.005, 10.02),
+            (4, 60.005, 9.98),
+        ] {
+            nodes.insert(
+                osm4routing::NodeId(id),
+                osm4routing::Node {
+                    id: osm4routing::NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        RouteGraph::from_parts(nodes, edges, RoutingProfile::Bicycle)
+    }
+
+    /// Road: short path loses to longer asphalt residential.
+    #[test]
+    fn road_prefers_asphalt_over_shorter_path() {
+        // 1 --path 800m--> 2
+        // 1 --residential asphalt 1000m--> 3 --residential asphalt 1000m--> 2
+        let edges = vec![
+            bike_edge("p12", 1, 2, 800.0, "path", SurfaceQuality::Good),
+            bike_edge("p21", 2, 1, 800.0, "path", SurfaceQuality::Good),
+            bike_edge("r13", 1, 3, 1000.0, "residential", SurfaceQuality::Good),
+            bike_edge("r31", 3, 1, 1000.0, "residential", SurfaceQuality::Good),
+            bike_edge("r32", 3, 2, 1000.0, "residential", SurfaceQuality::Good),
+            bike_edge("r23", 2, 3, 1000.0, "residential", SurfaceQuality::Good),
+        ];
+        let mut graph = bike_graph(edges);
+        apply_bike_surface_preference(&mut graph, BikeCapability::Road);
+        let (path, _, _) = graph
+            .shortest_path(osm4routing::NodeId(1), osm4routing::NodeId(2), false)
+            .expect("path");
+        assert_eq!(
+            path,
+            vec![
+                osm4routing::NodeId(1),
+                osm4routing::NodeId(3),
+                osm4routing::NodeId(2)
+            ],
+            "Road should prefer asphalt via 3, got {path:?}"
+        );
+    }
+
+    /// Gravel/Trekking: shorter asphalt arterial loses to longer gravel tertiary.
+    #[test]
+    fn gravel_prefers_gravel_over_shorter_asphalt_arterial() {
+        // 1 --primary asphalt 1200m--> 2
+        // 1 --tertiary gravel 1000m--> 3 --tertiary gravel 1000m--> 2
+        let edges = vec![
+            bike_edge("a12", 1, 2, 1200.0, "primary", SurfaceQuality::Good),
+            bike_edge("a21", 2, 1, 1200.0, "primary", SurfaceQuality::Good),
+            bike_edge("g13", 1, 3, 1000.0, "tertiary", SurfaceQuality::Marginal),
+            bike_edge("g31", 3, 1, 1000.0, "tertiary", SurfaceQuality::Marginal),
+            bike_edge("g32", 3, 2, 1000.0, "tertiary", SurfaceQuality::Marginal),
+            bike_edge("g23", 2, 3, 1000.0, "tertiary", SurfaceQuality::Marginal),
+        ];
+        let mut graph = bike_graph(edges);
+        apply_bike_surface_preference(&mut graph, BikeCapability::Trekking);
+        let (path, _, _) = graph
+            .shortest_path(osm4routing::NodeId(1), osm4routing::NodeId(2), false)
+            .expect("path");
+        assert_eq!(
+            path,
+            vec![
+                osm4routing::NodeId(1),
+                osm4routing::NodeId(3),
+                osm4routing::NodeId(2)
+            ],
+            "Gravel should prefer gravel via 3, got {path:?}"
+        );
+    }
+
+    /// MTB: shorter residential asphalt loses to longer path.
+    #[test]
+    fn mtb_prefers_path_over_shorter_paved_local() {
+        // 1 --residential asphalt 900m--> 2
+        // 1 --path 1200m--> 3 --path 1200m--> 2
+        let edges = vec![
+            bike_edge("r12", 1, 2, 900.0, "residential", SurfaceQuality::Good),
+            bike_edge("r21", 2, 1, 900.0, "residential", SurfaceQuality::Good),
+            bike_edge("p13", 1, 3, 1200.0, "path", SurfaceQuality::Poor),
+            bike_edge("p31", 3, 1, 1200.0, "path", SurfaceQuality::Poor),
+            bike_edge("p32", 3, 2, 1200.0, "path", SurfaceQuality::Poor),
+            bike_edge("p23", 2, 3, 1200.0, "path", SurfaceQuality::Poor),
+        ];
+        let mut graph = bike_graph(edges);
+        apply_bike_surface_preference(&mut graph, BikeCapability::Mountain);
+        let (path, _, _) = graph
+            .shortest_path(osm4routing::NodeId(1), osm4routing::NodeId(2), false)
+            .expect("path");
+        assert_eq!(
+            path,
+            vec![
+                osm4routing::NodeId(1),
+                osm4routing::NodeId(3),
+                osm4routing::NodeId(2)
+            ],
+            "MTB should prefer path via 3, got {path:?}"
+        );
+    }
+
+    #[test]
+    fn road_soft_cost_does_not_block_short_path_connector_when_only_option() {
+        // Only a path exists — soft cost must not remove connectivity.
+        let edges = vec![
+            bike_edge("p12", 1, 2, 500.0, "path", SurfaceQuality::Poor),
+            bike_edge("p21", 2, 1, 500.0, "path", SurfaceQuality::Poor),
+        ];
+        let mut graph = bike_graph(edges);
+        apply_bike_surface_preference(&mut graph, BikeCapability::Road);
+        assert!(graph
+            .shortest_path(osm4routing::NodeId(1), osm4routing::NodeId(2), false)
+            .is_some());
+    }
+
+    /// Pack-hit stand-in: soft costs only (no hard suitability). Short poor path
+    /// that hard-filter would drop for Road must still lose to asphalt.
+    #[test]
+    fn pack_hit_soft_only_road_avoids_short_poor_path() {
+        // 1 --path dirt 600m--> 2   (would be hard-unsuitable: rough surface)
+        // 1 --residential 1100m--> 3 --residential 1100m--> 2
+        let edges = vec![
+            bike_edge("p12", 1, 2, 600.0, "path", SurfaceQuality::Poor),
+            bike_edge("p21", 2, 1, 600.0, "path", SurfaceQuality::Poor),
+            bike_edge("r13", 1, 3, 1100.0, "residential", SurfaceQuality::Good),
+            bike_edge("r31", 3, 1, 1100.0, "residential", SurfaceQuality::Good),
+            bike_edge("r32", 3, 2, 1100.0, "residential", SurfaceQuality::Good),
+            bike_edge("r23", 2, 3, 1100.0, "residential", SurfaceQuality::Good),
+        ];
+        let mut graph = bike_graph(edges);
+        apply_bike_surface_preference(&mut graph, BikeCapability::Road);
+        let (path, _, _) = graph
+            .shortest_path(osm4routing::NodeId(1), osm4routing::NodeId(2), false)
+            .expect("path");
+        assert_eq!(
+            path,
+            vec![
+                osm4routing::NodeId(1),
+                osm4routing::NodeId(3),
+                osm4routing::NodeId(2)
+            ],
+            "Road soft-only must avoid short poor path, got {path:?}"
+        );
+    }
+
+    /// Pack-hit stand-in: Trekking soft costs must prefer gravel over short poor path.
+    #[test]
+    fn pack_hit_soft_only_trekking_avoids_short_poor_path() {
+        // 1 --path dirt 700m--> 2
+        // 1 --tertiary gravel 1200m--> 3 --tertiary gravel 1200m--> 2
+        let edges = vec![
+            bike_edge("p12", 1, 2, 700.0, "path", SurfaceQuality::Poor),
+            bike_edge("p21", 2, 1, 700.0, "path", SurfaceQuality::Poor),
+            bike_edge("g13", 1, 3, 1200.0, "tertiary", SurfaceQuality::Marginal),
+            bike_edge("g31", 3, 1, 1200.0, "tertiary", SurfaceQuality::Marginal),
+            bike_edge("g32", 3, 2, 1200.0, "tertiary", SurfaceQuality::Marginal),
+            bike_edge("g23", 2, 3, 1200.0, "tertiary", SurfaceQuality::Marginal),
+        ];
+        let mut graph = bike_graph(edges);
+        apply_bike_surface_preference(&mut graph, BikeCapability::Trekking);
+        let (path, _, _) = graph
+            .shortest_path(osm4routing::NodeId(1), osm4routing::NodeId(2), false)
+            .expect("path");
+        assert_eq!(
+            path,
+            vec![
+                osm4routing::NodeId(1),
+                osm4routing::NodeId(3),
+                osm4routing::NodeId(2)
+            ],
+            "Trekking soft-only must avoid short poor path, got {path:?}"
+        );
+    }
+
+    /// Same mixed graph for all three modes: asphalt / gravel / path must diverge.
+    #[test]
+    fn mtb_and_gravel_diverge_on_mixed_asphalt_gravel_path() {
+        // 1 --residential asphalt 1000m--> 2
+        // 1 --tertiary gravel 700m--> 3 --tertiary gravel 700m--> 2  (1400)
+        // 1 --path poor 550m--> 4 --path poor 550m--> 2             (1100)
+        let edges = vec![
+            bike_edge("a12", 1, 2, 1000.0, "residential", SurfaceQuality::Good),
+            bike_edge("a21", 2, 1, 1000.0, "residential", SurfaceQuality::Good),
+            bike_edge("g13", 1, 3, 700.0, "tertiary", SurfaceQuality::Marginal),
+            bike_edge("g31", 3, 1, 700.0, "tertiary", SurfaceQuality::Marginal),
+            bike_edge("g32", 3, 2, 700.0, "tertiary", SurfaceQuality::Marginal),
+            bike_edge("g23", 2, 3, 700.0, "tertiary", SurfaceQuality::Marginal),
+            bike_edge("p14", 1, 4, 550.0, "path", SurfaceQuality::Poor),
+            bike_edge("p41", 4, 1, 550.0, "path", SurfaceQuality::Poor),
+            bike_edge("p42", 4, 2, 550.0, "path", SurfaceQuality::Poor),
+            bike_edge("p24", 2, 4, 550.0, "path", SurfaceQuality::Poor),
+        ];
+
+        let via3 = vec![
+            osm4routing::NodeId(1),
+            osm4routing::NodeId(3),
+            osm4routing::NodeId(2),
+        ];
+        let via4 = vec![
+            osm4routing::NodeId(1),
+            osm4routing::NodeId(4),
+            osm4routing::NodeId(2),
+        ];
+        let direct = vec![osm4routing::NodeId(1), osm4routing::NodeId(2)];
+
+        let mut road_g = bike_graph(edges.clone());
+        apply_bike_surface_preference(&mut road_g, BikeCapability::Road);
+        let (road_path, _, _) = road_g
+            .shortest_path(osm4routing::NodeId(1), osm4routing::NodeId(2), false)
+            .expect("road");
+        assert_eq!(
+            road_path, direct,
+            "Road should take asphalt direct, got {road_path:?}"
+        );
+
+        let mut gravel_g = bike_graph(edges.clone());
+        apply_bike_surface_preference(&mut gravel_g, BikeCapability::Trekking);
+        let (gravel_path, _, _) = gravel_g
+            .shortest_path(osm4routing::NodeId(1), osm4routing::NodeId(2), false)
+            .expect("gravel");
+        assert_eq!(
+            gravel_path, via3,
+            "Gravel should take gravel via 3, got {gravel_path:?}"
+        );
+
+        let mut mtb_g = bike_graph(edges);
+        apply_bike_surface_preference(&mut mtb_g, BikeCapability::Mountain);
+        let (mtb_path, _, _) = mtb_g
+            .shortest_path(osm4routing::NodeId(1), osm4routing::NodeId(2), false)
+            .expect("mtb");
+        assert_eq!(
+            mtb_path, via4,
+            "MTB should take path via 4, got {mtb_path:?}"
+        );
+
+        assert_ne!(
+            gravel_path, mtb_path,
+            "Gravel and MTB must diverge on this mixed graph"
+        );
     }
 }

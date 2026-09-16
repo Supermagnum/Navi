@@ -156,6 +156,49 @@ class BasemapPoiStyleTest {
     }
 
     @Test
+    fun hutChaletShelterHaveIntendedSpritesAndNames() {
+        val pois = layerJson("pois")
+        val kinds = kindWhitelist(pois)
+        val sprites = spriteKeys()
+        val floors = kindZoomFloors(pois)
+
+        val expectedIcon =
+            mapOf(
+                "alpine_hut" to "alpine_hut",
+                "wilderness_hut" to "alpine_hut",
+                "chalet" to "hotel",
+                "shelter" to "shelter",
+            )
+        for ((kind, icon) in expectedIcon) {
+            assertTrue("$kind must be in the pois kind whitelist", kinds.contains(kind))
+            assertEquals("$kind icon mapping", icon, iconForKind(pois, kind))
+            assertTrue("$icon sprite missing from light.json (for $kind)", sprites.contains(icon))
+            assertEquals(16.0, floors[kind] ?: floors.getValue("__default"), 0.0)
+            assertFalse(passesPoisFilter(kinds, floors, kind = kind, minZoom = 16.0, zoom = 15.0))
+            assertTrue(passesPoisFilter(kinds, floors, kind = kind, minZoom = 16.0, zoom = 16.0))
+        }
+
+        // Distinct semantics: alpine/wilderness must not share the hotel lodging glyph.
+        assertTrue(iconForKind(pois, "alpine_hut") != "hotel")
+        assertTrue(iconForKind(pois, "wilderness_hut") != "hotel")
+        assertTrue(iconForKind(pois, "shelter") != "hotel")
+        // Chalet is staffed/paid lodging — hotel is the deliberate closest match.
+        assertEquals("hotel", iconForKind(pois, "chalet"))
+
+        val layoutAt = pois.indexOf("\"text-field\"")
+        assertTrue("pois must have text-field", layoutAt >= 0)
+        val field = arraySlice(pois, pois.indexOf('[', layoutAt))
+        assertTrue(
+            "hut/chalet/shelter names use the shared name property (not kind-gated)",
+            field.contains("\"name\""),
+        )
+        assertTrue(
+            "icon-optional so names still draw if a sprite is missing",
+            pois.contains("\"icon-optional\": true") || pois.contains("\"icon-optional\":true"),
+        )
+    }
+
+    @Test
     fun civicSpringAndMilitaryPoisAreWhitelistedWithSprites() {
         val pois = layerJson("pois")
         val kinds = kindWhitelist(pois)
