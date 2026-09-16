@@ -146,24 +146,24 @@ checklist above and file an issue; you do not need to write code.
 9. [Documents](#documents)
 10. [Code inspection / CI tests](#code-inspection--ci-tests)
 11. [Plugins](#plugins)
-    - [i18n / UI languages](docs/plugins/i18n-translation-spec.md)
-    - [Right-to-roam camping](docs/plugins/right-to-roam-camping-spec.md)
-    - [Safety resupply](docs/plugins/safety-resupply.md)
-    - [Traffic information](docs/plugins/traffic-information.md)
-    - [DATEX road situations](docs/plugins/datex-plugin.md)
-    - [DATEX NPRA client](docs/plugins/datex-npra-client.md)
-    - [Weather overlay](docs/plugins/weather-plugin.md)
-    - [Weather icons reference](docs/plugins/weather-icons-reference.md)
-    - [Instrument cluster (AGL)](docs/plugins/instrument-cluster-agl-spec.md)
-    - [Animated icons](docs/plugins/animated-icons-spec.md)
-    - [Custom alert sounds](docs/plugins/custom-alert-sounds-spec.md)
-    - [Horse trekking](docs/plugins/horse-trekking-spec.md)
-    - [Adaptive speed warning](docs/plugins/adaptive-speed-warning-spec.md)
-    - [Nearby attractions (POI look-ahead)](docs/plugins/poi-lookahead-cone-spec.md)
-    - [LoRa convoy](docs/plugins/lora-convoy-spec.md)
-    - [Voice guidance (turn-by-turn)](docs/voice-guidance.md)
-    - [Voice command](docs/plugins/voice-command.md)
-    - [Icons (where they live)](#icons-where-they-live)
+    - [i18n / UI languages](docs/plugins/i18n-translation-spec.md) — not implemented
+    - [Right-to-roam camping](docs/plugins/right-to-roam-camping-spec.md) — not implemented
+    - [Safety resupply](docs/plugins/safety-resupply.md) — not implemented
+    - [Traffic information](docs/plugins/traffic-information.md) — not implemented (research)
+    - [DATEX road situations](docs/plugins/datex-plugin.md) — implemented (opt-in, Norway/NPRA)
+    - [DATEX NPRA client](docs/plugins/datex-npra-client.md) — not implemented (legacy sketch; unused by APK)
+    - [Weather overlay](docs/plugins/weather-plugin.md) — implemented (opt-in)
+    - [Weather icons reference](docs/plugins/weather-icons-reference.md) — reference (assets shipped with weather)
+    - [Instrument cluster (AGL)](docs/plugins/instrument-cluster-agl-spec.md) — not implemented
+    - [Animated icons](docs/plugins/animated-icons-spec.md) — not implemented
+    - [Custom alert sounds](docs/plugins/custom-alert-sounds-spec.md) — not implemented
+    - [Horse trekking](docs/plugins/horse-trekking-spec.md) — not implemented
+    - [Adaptive speed warning](docs/plugins/adaptive-speed-warning-spec.md) — not implemented
+    - [Nearby attractions (POI look-ahead)](docs/plugins/poi-lookahead-cone-spec.md) — implemented (opt-in)
+    - [LoRa convoy](docs/plugins/lora-convoy-spec.md) — not implemented
+    - [Voice guidance (turn-by-turn)](docs/voice-guidance.md) — not implemented
+    - [Voice command](docs/plugins/voice-command.md) — not implemented
+    - [Icons (where they live)](#icons-where-they-live) — documentation (assets in-repo)
 12. [Coding standards and contributing](#coding-standards-and-contributing)
 13. [Building and installing](#building-and-installing)
     - [Install a prebuilt APK](#install-a-prebuilt-apk)
@@ -868,25 +868,26 @@ a linked WASM guest. **DATEX** road situations (Map/Tools → Plugins; default
 per-plugin **enable/disable** control, and host-mediated **USB** / **Bluetooth**
 I/O for hardware-facing plugins.
 
-| Spec | Topic |
-|---|---|
-| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Future UI languages (English-only today). Translator table: [`translations.csv`](docs/plugins/translations.csv); context: [`translations-context.md`](docs/plugins/translations-context.md) |
-| [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Wild-camping suggestions (plugin, not core) |
-| [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Fuel/water resupply ideas |
-| [`docs/plugins/traffic-information.md`](docs/plugins/traffic-information.md) | Traffic data sourcing research (DATEX II limits, RTL-SDR TMC/TPEG; not shipped) |
-| [`docs/plugins/datex-plugin.md`](docs/plugins/datex-plugin.md) | DATEX road situations via navi-server (**Norway / NPRA only** today; default OFF). How to enable services + poll cadence on the server |
-| [`docs/plugins/datex-npra-client.md`](docs/plugins/datex-npra-client.md) | NPRA DATEX II v3.1 pull client sketch (access, Basic Auth, endpoints; **not** used by the product APK — credentials stay on navi-server) |
-| [`docs/plugins/weather-plugin.md`](docs/plugins/weather-plugin.md) | Weather overlay — HUD chip + optional city map symbols (host UniFFI; WASM guest scaffolded, not linked into the product APK) |
-| [`docs/plugins/weather-icons-reference.md`](docs/plugins/weather-icons-reference.md) | What each weather icon slug means (fill style) |
-| [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state + approach warnings to instrument clusters |
-| [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Animated icons |
-| [`docs/plugins/custom-alert-sounds-spec.md`](docs/plugins/custom-alert-sounds-spec.md) | Short alert tones (road signs, cameras, overspeed earcon) |
-| [`docs/plugins/horse-trekking-spec.md`](docs/plugins/horse-trekking-spec.md) | Equestrian lookahead and access guidance (Hiking is the interim stopgap) |
-| [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md) | Spoken escalating overspeed (percentage tiers; not shipped) |
-| [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md) | Nearby attractions look-ahead cone (host UniFFI + quiet HUD; WASM scaffold; default OFF) |
-| [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic — Meshstick USB SX1262 stick or BLE node; location/speed/fuel/charge (not shipped) |
-| [`docs/voice-guidance.md`](https://github.com/Supermagnum/Navi/blob/main/docs/voice-guidance.md) | Turn-by-turn spoken maneuver guidance — pre-recorded clips (primary) or Piper TTS (optional); distinct from [`docs/plugins/voice-command.md`](https://github.com/Supermagnum/Navi/blob/main/docs/plugins/voice-command.md) |
-| [`docs/plugins/voice-command.md`](docs/plugins/voice-command.md) | Spoken navigate / save-place / nearest-POI alternative (on-device ASR/TTS; not shipped). Distinct from turn-by-turn [`docs/voice-guidance.md`](docs/voice-guidance.md) |
+| Spec | Topic | Status |
+|---|---|---|
+| [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Future UI languages (English-only today). Translator table: [`translations.csv`](docs/plugins/translations.csv); context: [`translations-context.md`](docs/plugins/translations-context.md) | **Not implemented** |
+| [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Wild-camping suggestions (plugin, not core) | **Not implemented** |
+| [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Fuel/water resupply ideas | **Not implemented** |
+| [`docs/plugins/traffic-information.md`](docs/plugins/traffic-information.md) | Traffic data sourcing research (DATEX II limits, RTL-SDR TMC/TPEG) | **Not implemented** (research) |
+| [`docs/plugins/datex-plugin.md`](docs/plugins/datex-plugin.md) | DATEX road situations via navi-server (**Norway / NPRA only** today; default OFF). How to enable services + poll cadence on the server | **Implemented** (opt-in) |
+| [`docs/plugins/datex-npra-client.md`](docs/plugins/datex-npra-client.md) | NPRA DATEX II v3.1 pull client sketch (access, Basic Auth, endpoints; **not** used by the product APK — credentials stay on navi-server) | **Not implemented** (legacy sketch) |
+| [`docs/plugins/weather-plugin.md`](docs/plugins/weather-plugin.md) | Weather overlay — HUD chip + optional city map symbols (host UniFFI; WASM guest scaffolded, not linked into the product APK) | **Implemented** (opt-in) |
+| [`docs/plugins/weather-icons-reference.md`](docs/plugins/weather-icons-reference.md) | What each weather icon slug means (fill style) | **Reference** (assets shipped with weather) |
+| [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state + approach warnings to instrument clusters | **Not implemented** |
+| [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Animated icons | **Not implemented** |
+| [`docs/plugins/custom-alert-sounds-spec.md`](docs/plugins/custom-alert-sounds-spec.md) | Short alert tones (road signs, cameras, overspeed earcon) | **Not implemented** |
+| [`docs/plugins/horse-trekking-spec.md`](docs/plugins/horse-trekking-spec.md) | Equestrian lookahead and access guidance (Hiking is the interim stopgap) | **Not implemented** |
+| [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md) | Spoken escalating overspeed (percentage tiers) | **Not implemented** |
+| [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md) | Nearby attractions look-ahead cone (host UniFFI + quiet HUD; WASM scaffold; default OFF) | **Implemented** (opt-in) |
+| [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic — Meshstick USB SX1262 stick or BLE node; location/speed/fuel/charge | **Not implemented** |
+| [`docs/voice-guidance.md`](docs/voice-guidance.md) | Turn-by-turn spoken maneuver guidance — pre-recorded clips only; distinct from [`docs/plugins/voice-command.md`](docs/plugins/voice-command.md) | **Not implemented** |
+| [`docs/plugins/voice-command.md`](docs/plugins/voice-command.md) | Spoken navigate / save-place / nearest-POI alternative (on-device ASR/TTS). Distinct from turn-by-turn [`docs/voice-guidance.md`](docs/voice-guidance.md) | **Not implemented** |
+| [Icons (where they live)](#icons-where-they-live) | Map/turn/POI/status icon paths and licences — see [`docs/icons.md`](docs/icons.md) | **Documentation** (assets in-repo) |
 
 ## Icons (where they live)
 

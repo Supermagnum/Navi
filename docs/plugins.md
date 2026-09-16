@@ -374,12 +374,12 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 
 | | |
 |---|---|
-| **Benefit** | Turn-by-turn spoken directions (recorded packs; optional Piper TTS) |
-| **Docs** | [`voice-guidance.md`](voice-guidance.md) — clip layout, fragment keys, localization open questions, rodio/cpal and Piper/ONNX spikes |
+| **Benefit** | Turn-by-turn spoken directions (pre-recorded clip packs only — no on-device TTS) |
+| **Docs** | [`voice-guidance.md`](voice-guidance.md) — clip layout, fragment keys, storage estimates, localization open questions, rodio/cpal clip-playback spike |
 | **Host duties** | Audio output (rodio/cpal or Android-native fallback); load `/sounds/<lang>/<gender>/`; mute/volume + language/gender settings |
 | **Guest duties** | Optional: phrase assembly / pack selection; triggers from nav maneuver state |
 | **Proposed caps** | `position_read`, `voice_speak` / `voice_pack_query` (new), `log` |
-| **Notes** | Recorded voice is the default path; Piper is additive and gated on Android ONNX. Spoken guidance is a legitimate foreground audio interruption (unlike silent background routing). Per-language concat vs whole-phrase clips is an open design question. |
+| **Notes** | Recorded clips are the only audio path (authored offline; English fallback if a language pack is missing). Spoken guidance is a legitimate foreground audio interruption (unlike silent background routing). Per-language concat vs whole-phrase clips is an open design question. |
 
 ### 7. Right-to-roam overnight camping (`right_to_roam_camping`)
 

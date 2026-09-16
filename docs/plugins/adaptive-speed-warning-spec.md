@@ -67,7 +67,7 @@ wrong or stale.
 | `overspeed_delta_kmh` | `speed − limit` convenience for HUD | Useful debug; **not** the escalation metric (see [§ Core trigger](#core-trigger-metric)). |
 | Custom alert sounds `overspeed` clip | Planned short beep, ~60 s repeat throttle | **Earcon at tier transitions** when both plugins are enabled — not a second repeating nag. See [§ Alert sounds](#relationship-to-custom-alert-sounds). |
 | Children-zone proximity (`source=children_proximity`, code `142`) | Visual approach box; not a speed-limit source | Optional **arm-delay shortening** while the merged warning is active ([`road-signs.md`](../road-signs.md)). |
-| Voice guidance | Turn-by-turn phrase keys / Piper | Shared playback; this plugin uses a **separate phrase-key family** (`speed_warn_*`). Maneuver prompts outrank mid-tier nags; critical overspeed may outrank non-safety chatter (host mix policy). |
+| Voice guidance | Turn-by-turn phrase keys (pre-recorded packs only) | Shared playback; this plugin uses a **separate phrase-key family** (`speed_warn_*`). Maneuver prompts outrank mid-tier nags; critical overspeed may outrank non-safety chatter (host mix policy). |
 | Travel profiles | Car, EV, truck, motorcycle, bicycle, hiking, … | **Motor profiles only** (Car / CarElectric, Truck / TruckElectric, MobileHome, Motorcycle / MotorcycleElectric). Off for Bicycle, Hiking, and a future Horse profile. |
 
 Internal units stay **km/h** (same as HUD and UniFFI). `overPct` is

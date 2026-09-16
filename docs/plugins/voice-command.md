@@ -608,7 +608,7 @@ implementation spike; until then the comparison is:
 
 | Candidate | Coverage | Size | WASM / embed notes | Maturity / risk |
 |---|---|---|---|---|
-| **Piper via `piper1-rs`** (bindings to `libpiper` + **ONNX Runtime**) | Per-language, per-voice neural models; male/female where upstream voices exist | Small models; good fit for hybrid bundling | Same **ONNX-on-Android** gate already documented in [`voice-guidance.md`](../voice-guidance.md) | **Primary candidate to spike first**, aligned with voice-guidance research. GPL: same open licensing decision as other GPL assets ([`icons.md`](../icons.md), voice-guidance §6). Re-verify. |
+| **Piper via `piper1-rs`** (bindings to `libpiper` + **ONNX Runtime**) | Per-language, per-voice neural models; male/female where upstream voices exist | Small models; good fit for hybrid bundling | **ONNX-on-Android** link/build gate must be spiked for this plugin (voice-guidance is recordings-only and does not share that gate) | **Primary candidate to spike first.** GPL: same open licensing decision as other GPL assets ([`icons.md`](../icons.md)). Re-verify. |
 | **Other Piper wrappers** (`piper-rs`, `piper-tts-rs`, `blazen_audio_piper`, `natural-tts`) | Same Piper voices in principle | Same models | Mix of ONNX bindings vs experimental pure-Rust/RTen | **Do not treat as interchangeable.** `piper-tts-rs` has been raw-PCM oriented; `piper-rs` maturity/Android must be checked independently. Re-verify. |
 | **`any-tts`** (Candle; Kokoro, Qwen3-TTS, VibeVoice, …) | Strong named multilingual coverage | **Heavier** than Piper | Candle/Rust; WASM and Android NPU story unclear | **Fallback family** only if Piper voice coverage is too thin for a required v1 language. Re-verify. |
 | **OS-level `tts` crate** (delegates to platform TTS) | Whatever the device has installed | Zero extra models | Trivial wrap | **Rejected as primary.** Does not guarantee on-device models or “no network path.” Vendor TTS may hit the cloud. Mentioned only as a why-not. |
@@ -618,10 +618,10 @@ back to platform cloud TTS. Options are: CPU ONNX, a different local engine
 from the table, or delay the plugin. Recorded clips are **not** a substitute
 here (unbounded place names).
 
-Voice-guidance may still use **recorded maneuver packs** as its default;
-this plugin's TTS is a **separate pipeline** that may share an ONNX runtime
-and even Piper voices if licensing and memory allow, but it must not block
-on guidance clip design.
+Voice-guidance uses **recorded maneuver packs only** (no on-device TTS);
+this plugin's TTS is a **separate pipeline** that may use ONNX/Piper for
+unbounded replies if licensing and memory allow, but it must not block on
+guidance clip design.
 
 ---
 
@@ -629,7 +629,7 @@ on guidance clip design.
 
 | Surface | Relationship |
 |---|---|
-| **Turn-by-turn voice guidance** ([`voice-guidance.md`](../voice-guidance.md)) | Maneuver prompts (recorded packs, optional Piper). Different phrase keys and triggers. May share the host playback device and audio focus; mix policy is host-owned (safety prompts vs. this plugin's replies). |
+| **Turn-by-turn voice guidance** ([`voice-guidance.md`](../voice-guidance.md)) | Maneuver prompts (pre-recorded packs only). Different phrase keys and triggers. May share the host playback device and audio focus; mix policy is host-owned (safety prompts vs. this plugin's replies). |
 | **Custom alert sounds** | Short urgency-phase tones, not commands. |
 | **Adaptive speed warning** | Spoken overspeed tiers from HUD limit, not this intent enum. |
 | **Chatterbox TTS** | **Offline authoring tool only.** Used to **pre-generate** fixed speed-warning alert audio clips for a separate “Bitchin' Betty” voice-warning feature. Chatterbox **does not run in the app**, is **not** started from Navi, and has **no connection** to this plugin's on-device TTS (Piper/any-tts/etc.). Do not merge the two systems, share their models at runtime, or load Chatterbox as a plugin. |
@@ -655,13 +655,13 @@ explicit implementation-time choice.
 | 4 | **v1 language list** | Not frozen. Spike should name a **minimum set** (at least OS-locale target markets + English fallback) | Coverage vs. APK size and test burden. |
 | 5 | **Bundling:** all / on-demand / hybrid? | **Hybrid** ([§7.2](#72-model-bundling-open-choice--recommended-hybrid)) | Size vs. first-run offline vs. accessibility of the download UI. |
 | 6 | **ASR engine** | Spike **`whisper-rs` first** for multilingual; evaluate **`vosk-rs`** if dialect packs + size dominate; do not commit Parakeet/voirs without a maturity check | Accuracy vs. size vs. WASM/Android link reality. Re-verify all four. |
-| 7 | **TTS engine / which Piper crate?** | Spike **`piper1-rs` + ONNX** first (same gate as voice-guidance); pin **one** crate, not the name “piper-rs” | GPL, ONNX-on-Android, voice coverage. `any-tts` only if Piper lacks a required language. |
+| 7 | **TTS engine / which Piper crate?** | Spike **`piper1-rs` + ONNX** first (this plugin only — voice-guidance has no TTS path); pin **one** crate, not the name “piper-rs” | GPL, ONNX-on-Android, voice coverage. `any-tts` only if Piper lacks a required language. |
 | 8 | **Voice WASM fuel / timeout** | Host-driven **chunked infer** with per-chunk epoch limits, or a documented raised budget **only** on this instance | Tight defaults kill ASR; unbounded fuel weakens isolation. |
 | 9 | **Confirmation timeout** | **6 s**, one retry, then cancel ([§4.5](#45-spoken-confirmation-follow-ups)) | Short timeouts strand slow speakers; long timeouts leave the mic open. |
 | 10 | **`NavigateTo` auto-start vs. always confirm?** | **Always speak the resolved destination and ask yes/no** before planning | Extra step vs. sending someone to the wrong “Springfield.” Accessibility still satisfied if yes/no is spoken. |
 | 11 | **Fuel / gas-station `PoiCategory`** | Add a host **Fuel** (OSM `amenity=fuel`) category (or equivalent query) before advertising the utterance | Without it, “nearest gas station” cannot be honest. Scope of other spoken categories (parking, hospital, …) also needs a v1 list. |
 | 12 | **NameIndex alt-name ingest** | Required for fuzzy matching quality ([§4.4](#44-fuzzy-place-name-matching)); schedule as a core search change, not a guest hack | Index size and rebuild cost for regional PBF. |
-| 13 | **Share Piper runtime with voice-guidance?** | **Allowed to share ONNX/runtime**, not required; guidance stays recordings-first | Memory vs. duplication. Do not couple ship dates. |
+| 13 | **Share Piper runtime with voice-guidance?** | **N/A** — voice-guidance is recordings-only; this plugin owns its own TTS stack | No shared TTS runtime with guidance. |
 | 14 | **Live POI enrichment UX** | Default **off**; enable only via explicit spoken modifier **or** a dedicated setting, never both silently | Discoverability vs. accidental network use. |
 | 15 | **AEC / barge-in** | **v1: no**; gate only | Interruptibility vs. cabin AEC cost. |
 | 16 | **Log redaction vs. supportability** | Default: intent enum + timings; opt-in command-text debug | Debugging mishears vs. leaving “mom's” on an MTP volume. |
@@ -715,7 +715,7 @@ guidance clips, `poi_query` for camping) stay on **those** instances.
 |---|---|
 | [`plugins.md`](../plugins.md) | Host, capabilities, wasmtime gate, enable/disable |
 | [`architecture.md`](../architecture.md) | Core vs plugin-host, search/route data paths |
-| [`voice-guidance.md`](../voice-guidance.md) | Turn-by-turn speech; Piper/ONNX research; **not** this plugin |
+| [`voice-guidance.md`](../voice-guidance.md) | Turn-by-turn speech (pre-recorded packs only); **not** this plugin |
 | [`map-marking-saved-places.md`](../map-marking-saved-places.md) | Local `saved_places` |
 | [`poi.md`](../poi.md) | Offline POI categories |
 | [`i18n-translation-spec.md`](i18n-translation-spec.md) | UI locale vs GPS; parallel to voice locale rules |

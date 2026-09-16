@@ -6,26 +6,20 @@ required by this doc.
 
 **Plugin candidate:** listed as `voice` / `voice_guidance` in
 [`plugins.md`](plugins.md). Host owns audio I/O and clip packs; a WASM guest may
-help with pack selection / phrase assembly once HostApi caps exist. Recorded
-packs remain the default offline path.
+help with pack selection / phrase assembly once HostApi caps exist. Pre-recorded
+clip packs are the only audio path.
 
-Status: documentation. Implementation will follow separately after audio-backend
-and (optionally) Piper Android spikes.
+Status: documentation. Implementation will follow separately after an
+audio-backend spike (playback of static clips on Android).
 
 ---
 
 ## 1. Audio sources
 
-Voice guidance will support **two interchangeable sources**:
-
-| Source | Role |
-|---|---|
-| **Pre-recorded human voice clips** | Primary / default. Stable offline path; no TTS toolchain. |
-| **Piper TTS-generated speech** | Optional alternative, only if Piper’s toolchain can be built and linked for the Android target ABI (see [§8](#8-piper-tts--candidate-crates-and-known-constraints)). |
-
-The UI should treat them as selectable backends for the same phrase keys: if
-Piper is unavailable or disabled, fall back to recordings without changing
-maneuver trigger logic.
+Voice guidance uses **pre-recorded audio clips only**. Clips are authored
+offline (see [§4](#4-estimated-storage-recorded-clip-packs)) and shipped as
+static files — there is **no** on-device TTS engine, **no** TTS toolchain, and
+**no** runtime speech synthesis of any kind.
 
 **Scope boundary:** this plugin covers **turn-by-turn maneuver speech**. It does
 **not** own road-sign / children-zone / speed-camera alerts (see
@@ -38,17 +32,20 @@ host audio device but use different phrase / clip families. Voice command's
 on-device TTS pipeline is also distinct from Chatterbox-authored “Bitchin'
 Betty” alert clips (authoring-only; not loaded at runtime).
 
+**Missing-language coverage:** if a selected language pack is incomplete or
+absent, fall back to **English recordings** — never to any synthesis engine.
+
 ---
 
 ## 2. Playback approach
 
-Intended Rust playback stack:
+Intended Rust playback stack (decode and play **static** clip files only):
 
 | Layer | Crate / role |
 |---|---|
 | Playback API | [`rodio`](https://crates.io/crates/rodio) |
 | Output | [`cpal`](https://crates.io/crates/cpal) (via rodio) |
-| Decode | Symphonia (rodio’s usual decoder path for common formats such as MP3/OGG) |
+| Decode | Symphonia (rodio’s usual decoder path for common formats such as MP3/OGG/Opus) |
 
 **Open risk (implementation spike, not resolved here):** `cpal`’s Android audio
 backend must be confirmed to **build and link cleanly** for the target ABI
@@ -78,9 +75,10 @@ filenames — no code change to add a pack:
   ...   (additional languages as added later)
 ```
 
-`male` / `female` here are **voice-actor** folders only (who recorded / synthesized
-the clips). They are **not** a listener-gender or grammatical-addressee setting —
-see [§5](#5-localization--open-design-question).
+`male` / `female` here are **voice-actor** folders only (who recorded /
+offline-generated the clips). They are **not** a listener-gender or
+grammatical-addressee setting — see
+[§6](#6-localization--open-design-question).
 
 **Naming:** each concept uses a predictable key as the basename, e.g.:
 
@@ -94,8 +92,8 @@ hundred.mp3
 meters.mp3
 ```
 
-Exact container (MP3 vs OGG) can be chosen at implementation time; the **key**
-(stem) must stay stable across languages and voice-actor folders. Path
+Exact container (MP3 vs OGG/Opus) can be chosen at implementation time; the
+**key** (stem) must stay stable across languages and voice-actor folders. Path
 resolution sketch:
 
 ```text
@@ -104,7 +102,59 @@ sounds/<language>/<voice_actor_gender>/<concept_key>.<ext>
 
 ---
 
-## 4. Required word / phrase fragment list
+## 4. Estimated storage (recorded clip packs)
+
+Planning estimates for disk cost of shipped **static** clip packs. Generation
+is offline only (Chatterbox Multilingual, Style-Bert-VITS2, or human recording)
+— never on-device.
+
+### Authoring paths
+
+| Path | Typical inventory | When to use |
+|---|---|---|
+| **Fragment-based** | ~50 short clips per gender | Viable for English-style concatenation |
+| **Whole pre-composed phrases** | ~150–200 clips per gender | Needed where word order / case / gender agreement breaks naive concat (e.g. Norwegian, Russian, Ukrainian, Arabic) |
+
+Hybrid packs are allowed ([§6](#6-localization--open-design-question)):
+concatenate where safe; use composed phrases for awkward templates.
+
+### Per-clip size (recommended codecs)
+
+Rough sizes at a recommended encode:
+
+| Clip kind | Duration (typical) | Size (order of magnitude) |
+|---|---|---|
+| Fragment | ~1 s | ~8 KB (mono Opus ~32 kbps **or** MP3 64 kbps) |
+| Whole phrase | ~2.5 s | ~10–20 KB (same codecs) |
+
+### Per-language total (both genders)
+
+| Pack style | Rough total |
+|---|---|
+| Fragment-based language | **~0.4–1 MB** |
+| Whole-phrase language | **~1.5–8 MB** (depends on codec and phrase count) |
+
+### Scaling
+
+Storage scales roughly **linearly per language**: total for *N* languages is
+approximately *N* × (per-language estimate above), plus **~20–30%** overhead for
+per-file container / filesystem cost across hundreds of small files.
+
+### Caveats
+
+These are **pre-generation estimates for planning only**. Actual figures depend
+on the finalized fragment / phrase inventory ([§5](#5-required-word--phrase-fragment-list)–[§6](#6-localization--open-design-question))
+and codec choice, and should be **re-measured** once the first real language
+pack is generated.
+
+This footprint is separate from — and much smaller than — any on-device TTS
+model file would have been. That size (and complexity) gap is part of why TTS
+was dropped as an option ([§1](#1-audio-sources)), not only a licensing
+simplification.
+
+---
+
+## 5. Required word / phrase fragment list
 
 Minimum fragment set **per** `language` / voice-actor folder. Filenames should
 map 1:1 to these concepts (examples in parentheses).
@@ -146,11 +196,12 @@ is finalized with phrase-assembly design.
 | Linking words | e.g. `in`, `then` — enough to assemble “in N units, then maneuver” |
 
 The **exact** connector set is deliberately open: finalize once phrase-assembly
-logic is designed (and after the per-language grammar decision in [§5](#5-localization--open-design-question)).
+logic is designed (and after the per-language grammar decision in
+[§6](#6-localization--open-design-question)).
 
 ---
 
-## 5. Localization — open design question
+## 6. Localization — open design question
 
 Naive **word-by-word concatenation** (e.g. `in` + `two` + `hundred` + `meters` +
 `left`) can sound acceptable in English but is **not guaranteed** to be
@@ -178,7 +229,7 @@ These are **separate axes**. Do not conflate them:
 
 | Axis | What it means | Navi today |
 |---|---|---|
-| **Voice-actor gender** | Who speaks: the `male` / `female` sound folders (timbre / recorded or synthesized voice). | User-selectable pack path. |
+| **Voice-actor gender** | Who speaks: the `male` / `female` sound folders (timbre / recorded or offline-generated voice). | User-selectable pack path. |
 | **Grammatical addressee gender** | How some languages conjugate imperatives and other forms by the **gender of the person being addressed**, not the speaker (e.g. Arabic). | **No listener-gender setting.** |
 
 **Default for grammatically gendered languages:** always use the
@@ -193,7 +244,7 @@ derive grammatical forms from the voice-actor folder name.
 
 ---
 
-## 6. Phrase translation source
+## 7. Phrase translation source
 
 Full navigation phrases that combine distance and maneuver — e.g. *“in 100
 meters, take the second exit at the roundabout”* — must **not** be generated
@@ -212,14 +263,14 @@ where packs use composed clips).
 
 **Fallback:** only use raw MT for languages **absent from both** sources. Any
 MT-sourced language must be **explicitly flagged** as lower-confidence and
-pending native-speaker review (see [§7](#7-language-priority) and the status
+pending native-speaker review (see [§8](#8-language-priority) and the status
 checklist).
 
 ---
 
-## 7. Language priority
+## 8. Language priority
 
-Build order for recorded / TTS voice packs. **Confirm** OSRM Text Instructions
+Build order for **recorded** voice packs. **Confirm** OSRM Text Instructions
 and/or Valhalla `locales/` coverage before treating a language as
 vetted-phrase-ready — do not assume presence from this list alone.
 
@@ -229,11 +280,11 @@ English, French, German, Russian, Arabic, Chinese, Japanese, Ukrainian, Hindi.
 
 | Language | Notes |
 |---|---|
-| **Arabic** | Target **MSA (Modern Standard Arabic)** register for nav phrasing. Classical Arabic is **not** the target. Apply masculine/gender-neutral imperatives per [§5](#5-localization--open-design-question). |
-| **Chinese** | Target the most common variant: **Mandarin in Simplified script** (`zh-CN` / Putonghua). Traditional Chinese (Taiwan / Hong Kong) and other Sinitic varieties are out of scope for the first pack unless later prioritized separately. Confirm OSRM/Valhalla template coverage before assuming vetted phrases; otherwise MT-fallback + native review ([§6](#6-phrase-translation-source)). |
-| **Japanese** | Confirm OSRM/Valhalla template coverage before assuming vetted phrases; if absent from both, treat as **MT-sourced** and flag for native review ([§6](#6-phrase-translation-source)). |
-| **Ukrainian** | **No Chatterbox Multilingual coverage.** Source voice from Piper’s `uk_UA` (upstream **x_low** quality) or real human recordings. **Not** equal-effort to the rest of Tier 1. |
-| **Hindi** | Confirm OSRM/Valhalla template coverage **before** assuming vetted phrases. If absent from both, treat as **MT-sourced** and flag for native review ([§6](#6-phrase-translation-source)). |
+| **Arabic** | Target **MSA (Modern Standard Arabic)** register for nav phrasing. Classical Arabic is **not** the target. Apply masculine/gender-neutral imperatives per [§6](#6-localization--open-design-question). |
+| **Chinese** | Target the most common variant: **Mandarin in Simplified script** (`zh-CN` / Putonghua). Traditional Chinese (Taiwan / Hong Kong) and other Sinitic varieties are out of scope for the first pack unless later prioritized separately. Confirm OSRM/Valhalla template coverage before assuming vetted phrases; otherwise MT-fallback + native review ([§7](#7-phrase-translation-source)). |
+| **Japanese** | Confirm OSRM/Valhalla template coverage before assuming vetted phrases; if absent from both, treat as **MT-sourced** and flag for native review ([§7](#7-phrase-translation-source)). |
+| **Ukrainian** | Prefer offline-generated or human recordings for the clip pack. **Not** equal-effort to the rest of Tier 1 until a vetted phrase source and voice inventory are confirmed. |
+| **Hindi** | Confirm OSRM/Valhalla template coverage **before** assuming vetted phrases. If absent from both, treat as **MT-sourced** and flag for native review ([§7](#7-phrase-translation-source)). |
 
 ### Tier 2 (smaller — ranked by confirmed translation-template quality, best first)
 
@@ -248,80 +299,8 @@ be checked, not assumed.
 Icelandic, Greek, Swahili, Malay, Czech, Hungarian, Romanian, Vietnamese,
 Latvian, Serbian, Georgian, Kazakh, Nepali.
 
-**Icelandic:** no confirmed vetted phrase-template source and only
-unverified-quality Piper voice coverage — treat as **lowest priority** pending
-dedicated research.
-
----
-
-## 8. Piper TTS — candidate crates and known constraints
-
-Research summary for a future implementation choice — **not** a decision to add
-any crate to `Cargo.toml` now.
-
-### Upstream Piper (archived / forked)
-
-The original [rhasspy/piper](https://github.com/rhasspy/piper) repository was
-**archived (October 2025)** and development split into maintained forks:
-
-| Fork | License / notes |
-|---|---|
-| [OHF-Voice/piper1-gpl](https://github.com/OHF-Voice/piper1-gpl) | **GPL-3.0**, actively maintained. This is what `piper1-rs` binds to. |
-| [ayutaz/piper-plus](https://github.com/ayutaz/piper-plus) (MIT-compatible fork) | Own G2P, **no espeak-ng** dependency, better latency — but language coverage is only **JA / EN / ZH / KO / ES / FR / PT / SV**. **No Norwegian**, so it is **not viable as the sole TTS backend** for this project despite the friendlier license. |
-
-Navi’s Nordic recorded packs and any on-device TTS that must speak Norwegian
-should assume the **piper1-gpl** line (or recordings), not piper-plus alone.
-
-### Leading Android candidate: `piper-kotlin`
-
-| Item | Detail |
-|---|---|
-| Repo | [IhorShevchuk/piper-kotlin](https://github.com/IhorShevchuk/piper-kotlin) |
-| What it is | Kotlin **JNI** wrapper that bundles **piper1-gpl** + **espeak-ng** + the **ONNX Runtime Android AAR** |
-| Build status | Already built and linking for `aarch64-linux-android` / `x86_64-linux-android` |
-| API | Exposes `synthesize()` streaming **PCM** chunks — suitable for direct `AudioTrack` / ExoPlayer playback |
-| Architecture fit | Host-native (Kotlin/JNI), so it matches the existing **host-owns-audio-I/O** design better than Rust ONNX-binding crates |
-
-This is the **Android-native playback path** already anticipated in
-[Fallback](#fallback) below — not a hypothetical spike target. Prefer evaluating
-`piper-kotlin` for on-device TTS on Android before investing in unproven Rust
-cross-compiles.
-
-**Licensing:** still **GPL-3.0** (piper1-gpl). The fold-in with
-[`icons.md`](icons.md)’s GPL bundling decision applies **unchanged**.
-
-### Candidate Rust crates (Linux / secondary)
-
-These remain useful for desktop/Linux experimentation. They do **not** displace
-`piper-kotlin` as the leading Android path: several are Linux-only or unproven
-on Android (`piper1-rs`’s own docs state it only supports Linux).
-
-| Crate | Notes (as researched) |
-|---|---|
-| `piper1-rs` | Safe bindings to `libpiper` / **piper1-gpl**; **Linux-only** per project docs; needs **ONNX Runtime** installed separately |
-| `piper-rs` | Piper-related Rust wrapper (evaluate maturity; not the preferred Android path) |
-| `piper-tts-rs` | Needs `libclang-dev`; currently tends to output **raw PCM** needing external conversion for playback |
-| `blazen_audio_piper` | Higher-level; part of a larger framework — weigh dependency surface |
-| `natural-tts` | Multi-backend abstraction that can include Piper |
-
-### Licensing
-
-**Piper (piper1-gpl / piper-kotlin) is GPL-licensed.** Bundling Piper (or GPL
-voice models) must be folded into the **same open licensing decision** already
-flagged for the Navit icon set (GPL asset bundling vs the rest of the
-repository’s license) — see [`icons.md`](icons.md). Do not treat Piper as a
-separate, already-settled licensing question. piper-plus’s friendlier license
-does not remove this issue if Norwegian coverage still requires piper1-gpl.
-
-### Fallback
-
-If Piper is disabled or unavailable, ship **recordings only**. Piper is
-**additive**; it must not block the recorded-voice path.
-
-On Android, TTS (when enabled) should use the host **`piper-kotlin` → PCM →
-`AudioTrack` / ExoPlayer** path above rather than assuming a Rust ONNX crate
-will cross-compile. If that host path is not adopted (e.g. GPL fold-in deferred),
-keep recordings-only until licensing and packaging are settled.
+**Icelandic:** no confirmed vetted phrase-template source — treat as **lowest
+priority** pending dedicated research.
 
 ---
 
@@ -331,8 +310,8 @@ keep recordings-only until licensing and packaging are settled.
 |---|---|
 | **Trigger source** | Ferrostar’s navigation state machine already tracks distance-to-next-maneuver and maneuver type — voice prompts should fire from that state (or an equivalent Navi nav-state layer if Ferrostar is not wired yet). |
 | **Audio vs background compute** | Existing design: background routing/compute must not stutter concurrent music. Spoken guidance is a **legitimate foreground interruption** (like any nav app’s directions) and does **not** need to defer to background music the way silent T3/T4 work does. Still avoid starving UI; duck or pause media per platform norms if desired later. |
-| **User settings** | Mute / volume for guidance; persisted **language** and **voice-actor gender** (and later: recorded vs Piper); optional **persona suffix** ([§10](#10-persona-sentence-ending-suffixes-optional)); optional **persona voice pack** ([§10a](#10a-optional-persona-voice-packs-whole-voice-alternative)). No listener/addressee-gender setting yet ([§5](#5-localization--open-design-question)). Store with other Drive settings ([README settings](../README.md#settings) / SQLite `app_config`). |
-| **Offline** | Recorded packs must work fully offline. Piper models, if used, should be on-device and opt-in by size. |
+| **User settings** | Mute / volume for guidance; persisted **language**, **voice-actor gender**, and (if shipped) **persona voice pack** ([§10a](#10a-optional-persona-voice-packs-whole-voice-alternative)); optional **persona suffix** ([§10](#10-persona-sentence-ending-suffixes-optional)). No listener/addressee-gender setting yet ([§6](#6-localization--open-design-question)). Store with other Drive settings ([README settings](../README.md#settings) / SQLite `app_config`). |
+| **Offline** | Recorded packs must work fully offline. There is no TTS model to download or cache at runtime. |
 
 ---
 
@@ -356,20 +335,16 @@ see [§10a](#10a-optional-persona-voice-packs-whole-voice-alternative).
 | Scope | Pure presentation layer on top of the existing fragment / phrase system. Does **not** change navigation logic, maneuver data, distance triggers, or timing. |
 | Default | **Off** — empty suffix. Default voice packs and phrasing are unchanged unless the user deliberately enables a suffix. |
 | Config | User-chosen string (or empty). Stored with other voice settings alongside language / voice-actor gender ([§9](#9-integration-points-documented-not-built)). |
-| Concatenation | The same per-language caveat as [§5](#5-localization--open-design-question) applies: naive append of a trailing suffix to a concatenated phrase may sound unnatural in some languages. Review per language; prefer whole-phrase packs where needed. |
+| Concatenation | The same per-language caveat as [§6](#6-localization--open-design-question) applies: naive append of a trailing suffix to a concatenated phrase may sound unnatural in some languages. Review per language; prefer whole-phrase packs where needed. |
 
-### Playback backends
+### Playback
 
-When Piper TTS is eventually wired ([§8](#8-piper-tts--candidate-crates-and-known-constraints)):
-
-| Path | How the suffix is applied |
-|---|---|
-| **TTS (Piper)** | Include the suffix in the text string passed to synthesis (live). |
-| **Pre-recorded clips** | Either append a separate short recorded clip per persona-suffix option after the assembled instruction, or record whole phrases that already include the suffix. |
-
-Both are valid; choose at implementation time. Keep persona clips / strings
-clearly separate from the default voice pack so the default experience stays
-unaffected when the setting is empty/off.
+Persona suffixes use **pre-recorded clips only**, same as the default packs.
+Apply by either appending a separate short recorded clip per persona-suffix
+option after the assembled instruction, or recording whole phrases that already
+include the suffix. Choose at implementation time. Keep persona clips clearly
+separate from the default voice pack so the default experience stays unaffected
+when the setting is empty/off. There is no live TTS path for suffixes.
 
 ---
 
@@ -380,16 +355,17 @@ above, this is a **full alternate voice pack**: an entire language pack’s clip
 (per [§3](#3-file-structure-intended-not-created-in-repo-yet)’s folder structure)
 voiced in a stylized character voice instead of a neutral human voice.
 
-**Candidate:** [Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2),
-a Japanese-character-voice TTS model, generating English / Norwegian navigation
-phrases with a Japanese-accented delivery (the model’s Japanese phonemizer
-naturally produces this effect when fed non-Japanese text — this is the
-**intended** effect, not a defect to fix).
+**Candidate authoring tools** (offline generation only):
+[Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2) and/or
+Chatterbox Multilingual — same pipeline as default packs. Style-Bert-VITS2 can
+produce English / Norwegian navigation phrases with a Japanese-accented delivery
+(the model’s Japanese phonemizer naturally produces this effect when fed
+non-Japanese text — this is the **intended** effect, not a defect to fix).
 
-**Generation is authoring-only**, same as the Chatterbox Multilingual clip
-pipeline already used for the default voice packs: generate offline, ship as
-static recorded clips under a new persona subfolder (e.g.
-`sounds/<language>/persona-anime/`), **no** runtime TTS inference on device.
+**Generation is authoring-only**: generate offline, ship as static recorded
+clips under a new persona subfolder (e.g. `sounds/<language>/persona-anime/`).
+Persona packs are **never** synthesized on-device — same rule as default packs
+([§1](#1-audio-sources)).
 
 ### Licensing
 
@@ -399,9 +375,12 @@ pack, given Navi is free / distributed:
 1. **Engine license:** Style-Bert-VITS2 itself is **AGPL-3.0** (the
    `text/user_dict/` module is **LGPL-3.0**). AGPL permits commercial and free
    use but carries a source-disclosure obligation for the combined work if
-   distributed — fold this into the same GPL-bundling decision already tracked
-   for Piper in [`icons.md`](icons.md); do **not** treat it as a separate,
-   already-settled question.
+   distributed — fold authoring-tool AGPL into the project’s open licensing
+   decision tracked for GPL assets in [`icons.md`](icons.md) (Navit icon set);
+   do **not** treat Style-Bert-VITS2 as a separate, already-settled question.
+   Offline authoring that never ships the engine binary is a different packaging
+   question from bundling GPL runtime assets — still verify before shipping
+   generated clips that derive from AGPL tooling if redistribution terms apply.
 2. **Voice-model license:** the trained checkpoint used for the persona voice
    must be verified **independently** of the engine license. Many
    community-shared Style-Bert-VITS2 checkpoints are either marked “research
@@ -425,10 +404,10 @@ consistent with this file’s documentation-not-built status.
 | Doc | Relevance |
 |---|---|
 | [`architecture.md`](architecture.md) | Thread tiers (T2 UI/audio); keep guidance off the routing pool |
-| [`android-build.md`](android-build.md) | ABI / NDK constraints for any native audio or ONNX spike |
-| [`icons.md`](icons.md) | GPL / AGPL bundling decision shared with Piper and (if adopted) Style-Bert-VITS2 authoring |
+| [`android-build.md`](android-build.md) | ABI / NDK constraints for any native clip-playback spike |
+| [`icons.md`](icons.md) | GPL bundling for the Navit icon set; AGPL considerations for offline Style-Bert-VITS2 authoring if applicable |
 | [`plugins.md`](plugins.md) | Optional future: voice as `voice_guidance` plugin ([§6](plugins.md#6-voice-guidance-voice--voice_guidance)); voice command is [§16](plugins.md#16-voice-command-voice_command--voice_cmd) |
-| [`plugins/voice-command.md`](plugins/voice-command.md) | Conversational navigate/save/POI — separate sandbox TTS; not maneuver clips |
+| [`plugins/voice-command.md`](plugins/voice-command.md) | Conversational navigate/save/POI — separate sandbox; not maneuver clips |
 | [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) | Spoken overspeed tiers reuse `voice_speak` / the same playback stack |
 | [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md) | Road-sign / camera / children-zone **tones** — not turn-by-turn phrases |
 | [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Exports the same maneuver + warning state to clusters (no audio) |
@@ -440,11 +419,11 @@ consistent with this file’s documentation-not-built status.
 | Recorded-voice folder contract | Specified here; tree not created |
 | Fragment key list | Minimum set documented; connectors TBD with assembly |
 | Per-language concat vs whole phrases | **Open** |
+| Estimated clip-pack storage | Planning figures in [§4](#4-estimated-storage-recorded-clip-packs); re-measure after first pack |
 | Phrase template source verified (OSRM/Valhalla vs MT-fallback) — per language | **Open** |
 | Voice-actor vs addressee gender (default masculine/neutral; listener setting) | Specified default; listener-gender setting **open** if added later |
-| Language priority tiers | Specified here ([§7](#7-language-priority)); per-language template presence still to confirm |
+| Language priority tiers | Specified here ([§8](#8-language-priority)); per-language template presence still to confirm |
 | Persona sentence-ending suffixes | Specified here (optional, off by default); not implemented |
 | Persona voice packs (whole-voice) | Specified here ([§10a](#10a-optional-persona-voice-packs-whole-voice-alternative); optional, off by default); not implemented — engine + checkpoint licenses both **open** |
-| rodio / cpal on Android | **Spike required** |
-| Piper / ONNX on Android | **De-risked** via [piper-kotlin](https://github.com/IhorShevchuk/piper-kotlin) (pre-built JNI wrapper); confirm GPL licensing fold-in before adopting |
+| rodio / cpal on Android (static clip playback) | **Spike required** |
 | Implementation / crates in workspace | **Not started** |
