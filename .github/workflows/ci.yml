@@ -30,7 +30,7 @@ jobs:
     name: rust-checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -132,8 +132,8 @@ jobs:
     outputs:
       run_smoke: ${{ steps.filter.outputs.smoke }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -156,7 +156,7 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.plugin-host-android-paths.outputs.run_smoke == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -189,7 +189,7 @@ jobs:
     name: linux-build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -228,10 +228,10 @@ jobs:
     name: kotlin-checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -244,7 +244,7 @@ jobs:
           packages: platform-tools
 
       - name: Cache Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: false
 
@@ -264,7 +264,7 @@ jobs:
     name: regression-guards
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -282,7 +282,7 @@ jobs:
           shared-key: regression-guards
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -294,7 +294,7 @@ jobs:
           packages: platform-tools
 
       - name: Cache Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: false
 
@@ -334,7 +334,7 @@ jobs:
     name: winter-road-closure
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -360,10 +360,10 @@ jobs:
     name: android-build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -375,7 +375,7 @@ jobs:
           packages: platform-tools
 
       - name: Cache Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: false
 
