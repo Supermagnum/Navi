@@ -86,6 +86,7 @@ used by truck / restriction costing (see record in `navi-ffi`).
 | `place_index_has_entries(index_db_path)` | True when the SQLite FTS file has at least one searchable row (empty stub → false) |
 | `search_places(index_db_path, query, limit)` | → `Vec<PlaceHit>` (`osm_id`, `name`, `kind`, `lat`, `lon`, `sub_area`, `municipality`) |
 | `nearby_places(index_db_path, lat, lon, radius_m, limit)` | Place hits near a fix (idle current-street interim) |
+| `named_buildings_in_bbox(index_db_path, min_lat, min_lon, max_lat, max_lon, limit)` | Named OSM buildings (`kind=building`) in a viewport for map labels |
 | `rasterize_icon_png(key, theme, …)` | PNG bytes for Navit-derived icon key |
 | `rasterize_icon_check(key, theme, …)` | Validation / smoke for icon key |
 

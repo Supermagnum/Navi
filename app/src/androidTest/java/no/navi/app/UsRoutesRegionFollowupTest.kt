@@ -207,6 +207,7 @@ class UsRoutesRegionFollowupTest {
                     false,
                     uniffi.navi.FfiTollPolicy.ALLOW,
                     false,
+                    false,
                     EMPTY_VEHICLE,
                     false,
                     dataDir = "",

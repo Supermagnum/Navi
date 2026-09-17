@@ -81,6 +81,7 @@ fn main() {
         false,
         navi::FfiTollPolicy::Allow,
         false,
+        false,
         navi::FfiVehicleLimits {
             axle_weight_kg: None,
             bogie_weight_kg: None,

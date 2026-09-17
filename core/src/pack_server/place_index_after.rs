@@ -131,6 +131,9 @@ pub fn build_place_index_from_pbf(
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let region_id = region_id.trim().trim_matches('/');
+    // Schema bumps must rebuild; wipe so multi-region DBs do not keep pre-bump
+    // kinds after only this region is re-indexed.
+    NameIndex::discard_if_schema_stale(index_db);
     if !force_rebuild && index_db.is_file() {
         if let Ok(meta) = fs::metadata(index_db) {
             let region_ok = if region_id.is_empty() {

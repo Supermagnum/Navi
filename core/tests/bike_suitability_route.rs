@@ -54,6 +54,7 @@ fn edge(id: &str, source: i64, target: i64, length_m: f64, highway: &str) -> Gra
         maxlength_m: None,
         is_toll: false,
         is_ferry: false,
+        is_tunnel: false,
         is_boardwalk_crossing: false,
         is_roundabout: false,
         motor_vehicle_conditional: None,

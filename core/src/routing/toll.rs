@@ -38,6 +38,13 @@ const FOOT_TOLL_KEYS: &[&str] = &["toll:foot"];
 /// so the graph stays connected and A* finds *some* path when one exists.
 pub const TOLL_AVOID_PENALTY_MULT: f64 = 50.0;
 
+/// Finite multiplier applied to tunnel-edge A* costs when
+/// [`crate::routing::graph::RouteOptions::avoid_tunnels`] is set.
+///
+/// Same order of magnitude as [`TOLL_AVOID_PENALTY_MULT`]: prefer a longer
+/// surface detour when one exists, but never disconnect the graph.
+pub const TUNNEL_AVOID_PENALTY_MULT: f64 = 50.0;
+
 /// How the router treats OSM toll edges for this plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TollPolicy {

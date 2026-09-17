@@ -301,6 +301,7 @@ fn load_graph_from_rtree(db: &Path, bbox: [f64; 4]) -> RouteGraph {
                 maxlength_m: None,
                 is_toll: row.13 != 0,
                 is_ferry: row.14 != 0,
+                is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: row.15 != 0,
                 motor_vehicle_conditional: None,

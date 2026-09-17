@@ -68,6 +68,7 @@ fn edge(
         maxlength_m: None,
         is_toll: false,
         is_ferry: false,
+        is_tunnel: false,
         is_boardwalk_crossing: false,
         is_roundabout: false,
         motor_vehicle_conditional: None,
@@ -384,6 +385,74 @@ fn avoid_toll_changes_planned_route() {
         .unwrap();
     assert!(!no_toll.0.contains(&NodeId(2)));
     assert_ne!(with_toll.0, no_toll.0);
+}
+
+#[test]
+fn avoid_tunnels_prefers_surface_detour_but_keeps_tunnel_only_path() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let mut ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "primary");
+    ab.is_tunnel = true;
+    let mut bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "primary");
+    bc.is_tunnel = true;
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 250.0, "secondary");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 250.0, "secondary");
+    let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Car);
+
+    let with_tunnel = graph.shortest_path(NodeId(1), NodeId(3), false).unwrap();
+    assert!(with_tunnel.0.contains(&NodeId(2)));
+
+    let avoid = graph
+        .shortest_path_with_options(
+            NodeId(1),
+            NodeId(3),
+            false,
+            &RouteOptions {
+                avoid_tunnels: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(
+        !avoid.0.contains(&NodeId(2)),
+        "soft avoid tunnels should take the longer surface path: {:?}",
+        avoid.0
+    );
+    assert_ne!(with_tunnel.0, avoid.0);
+
+    // Tunnel-only connectivity: no surface alternative — must still succeed.
+    let mut nodes2 = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+    ] {
+        nodes2.insert(id, n);
+    }
+    let mut t1 = edge("t1", 1, 2, 60.0, 10.0, 60.0, 10.01, 200.0, "primary");
+    t1.is_tunnel = true;
+    let mut t2 = edge("t2", 2, 3, 60.0, 10.01, 60.0, 10.02, 200.0, "primary");
+    t2.is_tunnel = true;
+    let only = RouteGraph::from_parts(nodes2, vec![t1, t2], RoutingProfile::Car);
+    let forced = only
+        .shortest_path_with_options(
+            NodeId(1),
+            NodeId(3),
+            false,
+            &RouteOptions {
+                avoid_tunnels: true,
+                ..Default::default()
+            },
+        )
+        .expect("tunnel-only path must remain reachable under soft avoid");
+    assert!(forced.0.contains(&NodeId(2)));
 }
 
 #[test]

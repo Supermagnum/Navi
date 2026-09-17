@@ -63,6 +63,7 @@ class AreaGraphPackHitProfileInstrumentedTest {
                     avoidMotorways = false,
                     tollPolicy = FfiTollPolicy.ALLOW,
                     avoidFerries = false,
+                    avoidTunnels = false,
                     vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                     preferOfficialNetworks = false,
                     dataDir = dataDir,

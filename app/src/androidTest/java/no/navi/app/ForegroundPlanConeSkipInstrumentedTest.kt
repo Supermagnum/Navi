@@ -114,6 +114,7 @@ class ForegroundPlanConeSkipInstrumentedTest {
                     avoidMotorways = false,
                     tollPolicy = uniffi.navi.FfiTollPolicy.ALLOW,
                     avoidFerries = false,
+                    avoidTunnels = false,
                     vehicle = EMPTY_VEHICLE,
                     preferOfficialNetworks = false,
                     dataDir = "",

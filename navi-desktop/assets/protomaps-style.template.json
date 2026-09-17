@@ -130,6 +130,7 @@
         "text-color": "#5a5a5a"
       }
     },
+    
     {
       "id": "roads_minor",
       "type": "line",

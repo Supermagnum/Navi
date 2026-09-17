@@ -62,6 +62,7 @@ object RouteReplan {
         avoidMotorways: Boolean,
         avoidTolls: Boolean,
         avoidFerries: Boolean,
+        avoidTunnels: Boolean,
         vehicle: FfiVehicleLimits,
         preferOfficialNetworks: Boolean,
         preferPilgrimRoutes: Boolean,
@@ -130,6 +131,7 @@ object RouteReplan {
                             FfiTollPolicy.ALLOW
                         },
                     avoidFerries = avoidFerries,
+                    avoidTunnels = avoidTunnels,
                     vehicle = vehicle,
                     preferOfficialNetworks = preferOfficialNetworks,
                     dataDir = dataDir.absolutePath,

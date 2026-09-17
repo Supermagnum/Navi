@@ -303,6 +303,10 @@ object RegionDownloadBackground {
      * Cheap readiness check for launch rediscovery — never calls ensurePlaceIndex
      * (that can rebuild for minutes). Prefer a read-only region_id probe; fall
      * back to "any entries exist" when the column is missing (pre-v3 DBs).
+     *
+     * Also requires [PLACE_INDEX_SCHEMA_VERSION] so classify_named bumps (e.g.
+     * named buildings → `kind=building`) trigger an automatic reindex instead
+     * of a permanent cache hit on older on-device DBs.
      */
     internal fun placeIndexLooksReady(
         dataDir: File,
@@ -310,43 +314,79 @@ object RegionDownloadBackground {
     ): Boolean {
         val rid = regionId.trim().trim('/')
         if (rid.isEmpty()) return false
-        if (PlaceIndexReady.isReady(dataDir, rid)) return true
+        val dbFile = File(dataDir, "place_index.db")
+        if (!dbFile.isFile || dbFile.length() < 10_000L) return false
+        if (!placeIndexSchemaCurrent(dbFile)) {
+            // Drop stamps so heal cannot re-adopt pre-wipe region ids as ready
+            // while ensure_place_index discards the stale DB.
+            runCatching { PlaceIndexReady.readyFile(dataDir).delete() }
+            return false
+        }
+        if (PlaceIndexReady.isReady(dataDir, rid)) {
+            // Stamp alone is not enough after a schema wipe removed other regions.
+            return placeIndexHasRowsForRegion(dbFile, rid)
+        }
         // Once a stamp file exists it is authoritative — do not treat partial
         // mid-build rows as ready (clearReady leaves an updated stamp).
         if (PlaceIndexReady.readyFile(dataDir).isFile) return false
-        val dbFile = File(dataDir, "place_index.db")
-        if (!dbFile.isFile || dbFile.length() < 10_000L) return false
-        val hasRows =
-            runCatching {
-                android.database.sqlite.SQLiteDatabase
-                    .openDatabase(
-                        dbFile.absolutePath,
-                        null,
-                        android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
-                    ).use { db ->
-                        val byRegion =
-                            runCatching {
-                                db
-                                    .rawQuery(
-                                        "SELECT 1 FROM name_entries WHERE region_id = ? LIMIT 1",
-                                        arrayOf(rid),
-                                    ).use { it.moveToFirst() }
-                            }
-                        when {
-                            byRegion.isSuccess -> byRegion.getOrThrow()
-                            else ->
-                                db.rawQuery("SELECT 1 FROM name_entries LIMIT 1", null).use {
-                                    it.moveToFirst()
-                                }
-                        }
-                    }
-            }.getOrDefault(false)
+        val hasRows = placeIndexHasRowsForRegion(dbFile, rid)
         if (hasRows) {
             // Legacy DB rows without a ready stamp — adopt them once.
             PlaceIndexReady.markReady(dataDir, rid)
         }
         return hasRows
     }
+
+    /**
+     * Must match core `PLACE_INDEX_SCHEMA_VERSION` (v4 = buildings as `building`).
+     */
+    internal const val PLACE_INDEX_SCHEMA_VERSION = 4
+
+    internal fun placeIndexSchemaCurrent(dbFile: File): Boolean {
+        if (!dbFile.isFile) return false
+        return runCatching {
+            android.database.sqlite.SQLiteDatabase
+                .openDatabase(
+                    dbFile.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+                ).use { db ->
+                    db.rawQuery("PRAGMA user_version", null).use { c ->
+                        if (!c.moveToFirst()) return@use false
+                        c.getInt(0) >= PLACE_INDEX_SCHEMA_VERSION
+                    }
+                }
+        }.getOrDefault(false)
+    }
+
+    private fun placeIndexHasRowsForRegion(
+        dbFile: File,
+        rid: String,
+    ): Boolean =
+        runCatching {
+            android.database.sqlite.SQLiteDatabase
+                .openDatabase(
+                    dbFile.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+                ).use { db ->
+                    val byRegion =
+                        runCatching {
+                            db
+                                .rawQuery(
+                                    "SELECT 1 FROM name_entries WHERE region_id = ? LIMIT 1",
+                                    arrayOf(rid),
+                                ).use { it.moveToFirst() }
+                        }
+                    when {
+                        byRegion.isSuccess -> byRegion.getOrThrow()
+                        else ->
+                            db.rawQuery("SELECT 1 FROM name_entries LIMIT 1", null).use {
+                                it.moveToFirst()
+                            }
+                    }
+                }
+        }.getOrDefault(false)
 
     fun uiLine(): String {
         if (!running.get()) return lastStatus.get()

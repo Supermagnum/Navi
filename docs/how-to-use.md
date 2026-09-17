@@ -225,7 +225,8 @@ panel.
   cautiously. No on-screen surface warnings. **Offroad** / 4×4 mode disables
   the weighting (config key `surface_routing_mode` via API — no UI toggle yet).
 - **Vehicle** panel: **Height (m)** (cars).
-- **Avoid motorways** / **Avoid toll roads** / **Avoid ferries**.
+- **Avoid motorways** / **Avoid toll roads** / **Avoid ferries** / **Avoid tunnels**
+  (tunnels are a soft preference — destinations only reachable via tunnel still work).
 - **Eco mode** toggle (hill-aware energy costing). Car electric also has battery
   / efficiency fields in Drive settings.
 - Soft break interval (see above). Soft multi-day overnight can use **Lodging**
