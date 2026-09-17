@@ -28,7 +28,7 @@ repository = "https://github.com/Supermagnum/naw-app"
 
 [workspace.dependencies]
 anyhow = "1"
-bincode = "1"
+bincode = "3"
 geo = "0.29"
 geo-types = "0.7"
 pathfinding = "4"
