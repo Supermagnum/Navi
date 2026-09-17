@@ -1010,6 +1010,10 @@ fn graph_from_raw_ways(
         });
         let is_ferry =
             way.tags.get("route").is_some_and(|v| v == "ferry") || way.tags.contains_key("ferry");
+        let is_tunnel = way
+            .tags
+            .get("tunnel")
+            .is_some_and(|v| super::builder::is_tunnel_tag(v));
         let is_boardwalk_crossing = tags_map_indicate_boardwalk(&way.tags);
         let is_roundabout = way.tags.get("junction").is_some_and(|v| v == "roundabout");
         let motor_vehicle_conditional = way.tags.get("motor_vehicle:conditional").cloned();
@@ -1099,6 +1103,7 @@ fn graph_from_raw_ways(
                 maxlength_m,
                 is_toll,
                 is_ferry,
+                is_tunnel,
                 is_boardwalk_crossing,
                 is_roundabout,
                 motor_vehicle_conditional.clone(),
@@ -1139,6 +1144,7 @@ fn graph_from_raw_ways(
                     maxlength_m,
                     is_toll,
                     is_ferry,
+                    is_tunnel,
                     is_boardwalk_crossing,
                     is_roundabout,
                     motor_vehicle_conditional.clone(),
@@ -1195,6 +1201,7 @@ fn bbox_edge(
     maxlength_m: Option<f64>,
     is_toll: bool,
     is_ferry: bool,
+    is_tunnel: bool,
     is_boardwalk_crossing: bool,
     is_roundabout: bool,
     motor_vehicle_conditional: Option<String>,
@@ -1236,6 +1243,7 @@ fn bbox_edge(
         maxlength_m,
         is_toll,
         is_ferry,
+        is_tunnel,
         is_boardwalk_crossing,
         is_roundabout,
         motor_vehicle_conditional,

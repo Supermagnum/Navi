@@ -112,6 +112,7 @@ class LiveRouteSimulationInstrumentedTest {
                         avoidMotorways = false,
                         tollPolicy = uniffi.navi.FfiTollPolicy.ALLOW,
                         avoidFerries = false,
+                        avoidTunnels = false,
                         vehicle = vehicle,
                         preferOfficialNetworks = false,
                         dataDir = "",

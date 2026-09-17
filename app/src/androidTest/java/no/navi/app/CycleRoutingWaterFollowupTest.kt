@@ -105,6 +105,7 @@ class CycleRoutingWaterFollowupTest {
                 false,
                 uniffi.navi.FfiTollPolicy.ALLOW,
                 false,
+                false,
                 EMPTY_VEHICLE,
                 true,
                 "",

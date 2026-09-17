@@ -2035,6 +2035,7 @@ pub fn plan_car_route(
     avoid_motorways: bool,
     toll_policy: FfiTollPolicy,
     avoid_ferries: bool,
+    avoid_tunnels: bool,
     vehicle: FfiVehicleLimits,
     prefer_official_networks: bool,
     data_dir: String,
@@ -2053,6 +2054,7 @@ pub fn plan_car_route(
         avoid_motorways,
         toll_policy,
         avoid_ferries,
+        avoid_tunnels,
         vehicle,
         prefer_official_networks,
         None,
@@ -2082,6 +2084,7 @@ pub fn plan_car_route_at(
     avoid_motorways: bool,
     toll_policy: FfiTollPolicy,
     avoid_ferries: bool,
+    avoid_tunnels: bool,
     vehicle: FfiVehicleLimits,
     prefer_official_networks: bool,
     departure_local_iso: Option<String>,
@@ -2105,6 +2108,7 @@ pub fn plan_car_route_at(
             avoid_motorways,
             toll_policy,
             avoid_ferries,
+            avoid_tunnels,
             vehicle,
             prefer_official_networks,
             departure_local_iso,
@@ -2142,6 +2146,7 @@ fn plan_car_route_inner(
     avoid_motorways: bool,
     toll_policy: FfiTollPolicy,
     avoid_ferries: bool,
+    avoid_tunnels: bool,
     vehicle: FfiVehicleLimits,
     prefer_official_networks: bool,
     departure_local_iso: Option<String>,
@@ -2211,6 +2216,7 @@ fn plan_car_route_inner(
         avoid_motorways,
         toll_policy,
         avoid_ferries,
+        avoid_tunnels,
         vehicle: vehicle_limits.clone(),
         departure_local,
         datex_impacts,
@@ -2223,7 +2229,7 @@ fn plan_car_route_inner(
         via_points.len()
     ));
     report.push_str(&format!(
-        "avoid_motorways={avoid_motorways}; toll_policy={}; avoid_ferries={avoid_ferries}; vehicle_limits={}\n",
+        "avoid_motorways={avoid_motorways}; toll_policy={}; avoid_ferries={avoid_ferries}; avoid_tunnels={avoid_tunnels}; vehicle_limits={}\n",
         toll_policy.as_diag_str(),
         vehicle_limits.is_some()
     ));
@@ -4059,6 +4065,9 @@ pub fn ensure_place_index(
     // Surface 0/6 immediately so the Tools % line is never blank while we check
     // the cache / open SQLite.
     progress::set(0, Some(6), "Place index: starting…");
+    // Schema bumps (e.g. v4 building kind) must rebuild; wipe first so other
+    // regions are not left with pre-bump row kinds after user_version advances.
+    driver_break_core::search::NameIndex::discard_if_schema_stale(db);
     // Reuse existing index when this region (or any rows for legacy empty id)
     // is already present at the current schema.
     if db.is_file() {
@@ -4314,6 +4323,40 @@ pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<Pl
         return Vec::new();
     };
     let Ok(hits) = idx.search(&query, limit as usize) else {
+        return Vec::new();
+    };
+    hits.into_iter()
+        .map(|h| PlaceHit {
+            osm_id: h.osm_id,
+            name: h.name,
+            kind: h.kind,
+            lat: h.lat,
+            lon: h.lon,
+            sub_area: h.sub_area,
+            municipality: h.municipality,
+            region_id: h.region_id,
+        })
+        .collect()
+}
+
+/// Named OSM buildings (`building=*` + `name=*`) in a viewport bbox from the
+/// offline place index. Empty when the index is missing or was built before
+/// buildings were classified as `kind=building` (rebuild the place index).
+#[uniffi::export]
+pub fn named_buildings_in_bbox(
+    index_db_path: String,
+    min_lat: f64,
+    min_lon: f64,
+    max_lat: f64,
+    max_lon: f64,
+    limit: u32,
+) -> Vec<PlaceHit> {
+    let Ok(idx) = driver_break_core::search::NameIndex::open(Path::new(&index_db_path)) else {
+        return Vec::new();
+    };
+    let Ok(hits) =
+        idx.named_buildings_in_bbox(min_lat, min_lon, max_lat, max_lon, limit.max(1) as usize)
+    else {
         return Vec::new();
     };
     hits.into_iter()
@@ -5432,6 +5475,7 @@ pub fn format_avoid_motorways_report(
         avoid_motorways,
         FfiTollPolicy::Allow,
         false,
+        false,
         priority_path_share_pct,
     )
 }
@@ -5444,12 +5488,14 @@ pub fn format_route_avoidance_report(
     avoid_motorways: bool,
     toll_policy: FfiTollPolicy,
     avoid_ferries: bool,
+    avoid_tunnels: bool,
     priority_path_share_pct: f64,
 ) -> String {
     let opts = driver_break_core::RouteOptions {
         avoid_motorways,
         toll_policy: driver_break_core::routing::toll::TollPolicy::from(toll_policy),
         avoid_ferries,
+        avoid_tunnels,
         vehicle: None,
         departure_local: None,
         datex_impacts: Vec::new(),

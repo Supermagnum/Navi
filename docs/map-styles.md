@@ -258,12 +258,19 @@ outline teal (`#2a6e70`) for contrast on ice fill `#C8E9E9`;
 wetland `#3d5c3d`; both omit icons. Lake/river labels use italic `#2a5a78` so
 they read apart from town and peak names.
 
-**Out of scope — generic named buildings:** Protomaps drops `name` from the
-`buildings` fill layer. Ordinary `building=yes` + `name=*` footprints that are
-not classified as a `pois` kind (amenity/shop/townhall/…) are **not** in the
-`pois` layer and will not get labels from this whitelist. Fixing those would
-need a separate, larger schema/style change. `kind=building` was checked in
-Hamar/Gjøvik z12–15 tiles and was empty there — not added to the whitelist.
+**Named buildings (place-index overlay):** Protomaps’ `buildings` layer has no
+`name` attribute (upstream Planetiler only writes `kind` / height /
+`addr_housenumber` for addresses). A dead `buildings_label_name` style layer
+cannot fix that. Navi labels `building=*` + `name=*` from the offline place
+index instead: `classify_named` stores them as `kind=building`,
+`named_buildings_in_bbox` / Android [`NamedBuildingLabels`](../app/src/main/java/no/navi/app/NamedBuildingLabels.kt)
+paints a GeoJSON symbol layer at zoom ≥ 15 (debounced on camera idle). Place
+index schema **v4** makes older on-device DBs fail `is_current_schema`, so the
+next app open / region place-index pass discards the stale DB and rebuilds
+automatically (no manual wipe). Amenity / shop / POI names stay on the existing
+`pois` / places layers — unchanged.
+**Desktop:** MapLibre GL JS has the same basemap gap; a place-index GeoJSON
+overlay is not wired in `navi-desktop` yet (Android-only for this change).
 OpenFreeMap Liberty **tiles** include OpenMapTiles `mountain_peak` (`ele` /
 `ele_ft`); upstream Liberty JSON does not bind that layer. Navi adds
 `mountain_peak_label` at runtime (`BasemapPeakElevationStyle`) so named peaks

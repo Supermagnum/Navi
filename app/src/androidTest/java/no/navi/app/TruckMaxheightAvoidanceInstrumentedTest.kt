@@ -86,6 +86,7 @@ class TruckMaxheightAvoidanceInstrumentedTest {
                     false,
                     uniffi.navi.FfiTollPolicy.ALLOW,
                     false,
+                    false,
                     FfiVehicleLimits(null, null, 2.8, null, null, null),
                     false,
                     "",

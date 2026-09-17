@@ -109,7 +109,8 @@ object BasemapStyleResolver {
      * Prefer local PMTiles when a completed job covers [lat]/[lon].
      * Opt-in 3D with a local `{region}_dem.pmtiles` beside the basemap uses
      * **downloaded Protomaps + Mapterhorn DEM hillshade** (no network).
-     * Without a local DEM, networked 3D falls through to Liberty + TileJSON.
+     * Without a local DEM, keep the offline vector basemap in flat 2D (do **not**
+     * abandon PMTiles for online Liberty) — surface a degrade note instead.
      */
     fun resolve(
         context: Context,
@@ -137,18 +138,11 @@ object BasemapStyleResolver {
 
             if (covering != null) {
                 val localDem = MapterhornTerrain.localDemBesideBasemap(covering.localPath)
-                // Downloaded-only 3D: Protomaps vectors + local Mapterhorn DEM.
-                val offline3d = want3d && localDem != null
-                if (want3d && localDem == null) {
-                    // No local DEM — do not stay on flat Protomaps pretending to be 3D.
-                    return fallbackOnline(
-                        context,
-                        dataDir,
-                        prefer3d = true,
-                        vulkanAvailable = true,
-                        note = "No local ${File(covering.localPath).nameWithoutExtension}_dem.pmtiles; using Liberty + Mapterhorn",
+                val offlineFlags =
+                    offlineCoveringFlags(
+                        want3d = want3d,
+                        localDemPresent = localDem != null,
                     )
-                }
                 val uri =
                     prepareOfflineStyle(
                         context,
@@ -156,7 +150,7 @@ object BasemapStyleResolver {
                         // Terrarium encoding must be in style JSON — Android
                         // RasterDemSource cannot set encoding programmatically
                         // (maplibre-native#3564 / MapLibre Android PMTiles notes).
-                        demFor3d = if (offline3d) localDem else null,
+                        demFor3d = if (offlineFlags.offline3d) localDem else null,
                     )
                         ?: return fallbackOnline(
                             context,
@@ -169,16 +163,12 @@ object BasemapStyleResolver {
                     kind = StyleKind.OfflineProtomaps,
                     styleUri = uri,
                     coveringJob = covering,
-                    note =
-                        when {
-                            offline3d -> "Offline Protomaps + Mapterhorn DEM hillshade"
-                            else -> null
-                        },
-                    cameraPitch = if (want3d) TERRAIN_VIEW_TILT else 0.0,
+                    note = offlineFlags.note,
+                    cameraPitch = offlineFlags.cameraPitch,
                     // Baked into style.local.json; runtime attach would detach/readd.
                     attachMapterhornTerrain = false,
                     demSourceUri =
-                        if (offline3d) {
+                        if (offlineFlags.offline3d) {
                             MapterhornTerrain.ensureLocalDemTileJsonUrl(localDem!!)
                         } else {
                             null
@@ -205,6 +195,47 @@ object BasemapStyleResolver {
 
         return fallbackOnline(context, dataDir, prefer3d, vulkanAvailable, note = null)
     }
+
+    /**
+     * Pure decision for an offline vector covering: use local DEM hillshade when
+     * present, otherwise stay on flat OfflineProtomaps (never fall through to
+     * online solely because the DEM companion is missing).
+     *
+     * DEM companion lookup is [MapterhornTerrain.localDemBesideBasemap]: same
+     * parent dir, `{vectorStem}_dem.pmtiles`, and `length() > 1000`. A DEM saved
+     * under a different stem than the vector file, or a truncated download under
+     * 1000 bytes, reads as missing and triggers the flat-offline degrade path.
+     */
+    internal fun offlineCoveringFlags(
+        want3d: Boolean,
+        localDemPresent: Boolean,
+    ): OfflineCoveringFlags {
+        if (want3d && localDemPresent) {
+            return OfflineCoveringFlags(
+                offline3d = true,
+                cameraPitch = TERRAIN_VIEW_TILT,
+                note = "Offline Protomaps + Mapterhorn DEM hillshade",
+            )
+        }
+        if (want3d) {
+            return OfflineCoveringFlags(
+                offline3d = false,
+                cameraPitch = 0.0,
+                note = "3D hillshade needs the terrain download; showing offline map in 2D",
+            )
+        }
+        return OfflineCoveringFlags(
+            offline3d = false,
+            cameraPitch = 0.0,
+            note = null,
+        )
+    }
+
+    internal data class OfflineCoveringFlags(
+        val offline3d: Boolean,
+        val cameraPitch: Double,
+        val note: String?,
+    )
 
     private fun fallbackOnline(
         context: Context,
@@ -257,7 +288,7 @@ object BasemapStyleResolver {
         if (!pmFile.isFile) return null
 
         val outRoot = File(context.filesDir, PREPARED_DIR)
-        val assetEpoch = "v20-hut-shelter-sprites"
+        val assetEpoch = "v22-named-building-overlay"
         val epochFile = File(outRoot, ".asset_epoch")
         val needCopy =
             !outRoot.exists() ||

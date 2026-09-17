@@ -426,6 +426,7 @@ async fn api_plan(State(state): State<AppState>, Json(body): Json<PlanBody>) -> 
             false,
             navi::FfiTollPolicy::Allow,
             false,
+            false,
             vehicle,
             false,
             String::new(),

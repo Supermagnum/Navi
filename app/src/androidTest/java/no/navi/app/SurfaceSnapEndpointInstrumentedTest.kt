@@ -88,6 +88,7 @@ class SurfaceSnapEndpointInstrumentedTest {
                 avoidMotorways = false,
                 tollPolicy = uniffi.navi.FfiTollPolicy.ALLOW,
                 avoidFerries = false,
+                avoidTunnels = false,
                 vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                 preferOfficialNetworks = false,
                 dataDir = dataDir.absolutePath,

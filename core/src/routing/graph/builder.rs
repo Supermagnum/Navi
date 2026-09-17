@@ -132,6 +132,9 @@ pub struct GraphEdge {
     pub maxlength_m: Option<f64>,
     pub is_toll: bool,
     pub is_ferry: bool,
+    /// OSM `tunnel=*` (any non-empty value other than `no`). Soft-avoid via
+    /// [`RouteOptions::avoid_tunnels`], not a hard exclusion.
+    pub is_tunnel: bool,
     /// OSM `bridge=boardwalk` or `surface=wood` — carve-out for hard wetlands.
     pub is_boardwalk_crossing: bool,
     /// OSM `junction=roundabout` — ring edges for guidance (not routing weight).
@@ -154,6 +157,8 @@ pub struct GraphEdge {
 /// Clearance / motorway / ferry / [`TollPolicy::NeverUse`]: violating edges are
 /// **excluded** from A*. [`TollPolicy::Penalize`] keeps toll edges but multiplies
 /// their cost by [`crate::routing::toll::TOLL_AVOID_PENALTY_MULT`].
+/// [`RouteOptions::avoid_tunnels`] likewise keeps tunnel edges but multiplies
+/// their cost by [`crate::routing::toll::TUNNEL_AVOID_PENALTY_MULT`].
 ///
 /// Active DATEX constraints ([`crate::datex::planner_impacts`]): [`DatexImpact::Block`]
 /// hard-excludes nearby edges; [`DatexImpact::Penalize`] multiplies cost by the
@@ -170,6 +175,10 @@ pub struct RouteOptions {
     pub toll_policy: crate::routing::toll::TollPolicy,
     /// Exclude ferry connections. Default off.
     pub avoid_ferries: bool,
+    /// Soft-prefer tunnel-free roads via
+    /// [`crate::routing::toll::TUNNEL_AVOID_PENALTY_MULT`]. Never hard-excludes
+    /// tunnels (destinations reachable only via tunnel must still succeed).
+    pub avoid_tunnels: bool,
     pub vehicle: Option<crate::config::VehicleLimits>,
     /// Planned departure (local naive). `None` → evaluate seasonal closures at now.
     pub departure_local: Option<chrono::NaiveDateTime>,
@@ -1224,6 +1233,14 @@ pub fn format_route_avoidance_report(
         "Avoid ferries: {}",
         if options.avoid_ferries { "ON" } else { "OFF" }
     ));
+    lines.push(format!(
+        "Avoid tunnels: {}",
+        if options.avoid_tunnels {
+            "ON (penalize)"
+        } else {
+            "OFF"
+        }
+    ));
     let datex_blocks = options
         .datex_impacts
         .iter()
@@ -1273,6 +1290,7 @@ struct EdgeMeta {
     maxlength_m: Option<f64>,
     is_toll: bool,
     is_ferry: bool,
+    is_tunnel: bool,
     is_boardwalk_crossing: bool,
     is_roundabout: bool,
     motor_vehicle_conditional: Option<String>,
@@ -1347,6 +1365,7 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
             .map(|s| is_truthy_tag(s))
             .unwrap_or(false)
         || highway.as_deref() == Some("ferry");
+    let is_tunnel = edge.tags.get("tunnel").is_some_and(|s| is_tunnel_tag(s));
     let is_boardwalk_crossing = tags_indicate_boardwalk(
         edge.tags.get("bridge").map(String::as_str),
         edge.tags.get("surface").map(String::as_str),
@@ -1389,6 +1408,7 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
         maxlength_m,
         is_toll,
         is_ferry,
+        is_tunnel,
         is_boardwalk_crossing,
         is_roundabout,
         motor_vehicle_conditional,
@@ -1421,6 +1441,13 @@ pub(crate) fn is_truthy_tag(raw: &str) -> bool {
         raw.trim().to_ascii_lowercase().as_str(),
         "yes" | "true" | "1" | "toll"
     )
+}
+
+/// OSM `tunnel=*` — any non-empty value other than `no` (covers `yes`,
+/// `building_passage`, `culvert`, …).
+pub(crate) fn is_tunnel_tag(raw: &str) -> bool {
+    let t = raw.trim();
+    !t.is_empty() && !t.eq_ignore_ascii_case("no")
 }
 
 fn push_directed_edge(
@@ -1470,6 +1497,7 @@ fn push_directed_edge(
         maxlength_m: meta.maxlength_m,
         is_toll: meta.is_toll,
         is_ferry: meta.is_ferry,
+        is_tunnel: meta.is_tunnel,
         is_boardwalk_crossing: meta.is_boardwalk_crossing,
         is_roundabout: meta.is_roundabout,
         motor_vehicle_conditional: meta.motor_vehicle_conditional.clone(),
@@ -1678,6 +1706,9 @@ fn edge_travel_cost(edge: &GraphEdge, use_eco: bool, options: &RouteOptions) -> 
     };
     if options.toll_policy == crate::routing::toll::TollPolicy::Penalize && edge.is_toll {
         cost *= crate::routing::toll::TOLL_AVOID_PENALTY_MULT;
+    }
+    if options.avoid_tunnels && edge.is_tunnel {
+        cost *= crate::routing::toll::TUNNEL_AVOID_PENALTY_MULT;
     }
     if let Some(mult) = datex_penalize_multiplier(edge, options) {
         cost *= mult;
@@ -1906,6 +1937,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
             motor_vehicle_conditional: None,
@@ -1994,6 +2026,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
             motor_vehicle_conditional: None,
@@ -2707,6 +2740,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
             motor_vehicle_conditional: None,
@@ -2776,6 +2810,7 @@ mod tests {
             maxlength_m: None,
             is_toll: true,
             is_ferry: false,
+            is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
             motor_vehicle_conditional: None,
@@ -2819,6 +2854,75 @@ mod tests {
     }
 
     #[test]
+    fn avoid_tunnels_soft_cost_keeps_edge_allowed() {
+        let mut edge = GraphEdge {
+            id: "tun".into(),
+            source: NodeId(1),
+            target: NodeId(2),
+            length_m: 100.0,
+            base_weight: 100.0,
+            eco_weight: None,
+            start_lat: 0.0,
+            start_lon: 0.0,
+            end_lat: 0.0,
+            end_lon: 0.0,
+            shape: Vec::new(),
+            highway: Some("primary".into()),
+            maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
+            name: None,
+            road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            is_tunnel: true,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
+        };
+        let avoid = RouteOptions {
+            avoid_tunnels: true,
+            ..Default::default()
+        };
+        assert!(
+            edge_allowed_for_options(&edge, &avoid, RoutingProfile::Car),
+            "tunnels must stay searchable under soft avoid"
+        );
+        let base = edge_travel_cost(&edge, false, &RouteOptions::default());
+        let penalized = edge_travel_cost(&edge, false, &avoid);
+        assert!(
+            (penalized - base * crate::routing::toll::TUNNEL_AVOID_PENALTY_MULT).abs() < 1e-9,
+            "base={base} penalized={penalized}"
+        );
+        assert!(is_tunnel_tag("yes"));
+        assert!(is_tunnel_tag("building_passage"));
+        assert!(!is_tunnel_tag("no"));
+        assert!(!is_tunnel_tag(""));
+        edge.is_tunnel = false;
+        assert_eq!(
+            edge_travel_cost(&edge, false, &avoid),
+            edge_travel_cost(&edge, false, &RouteOptions::default())
+        );
+    }
+
+    #[test]
     fn foot_and_bicycle_always_avoid_motorway_grade() {
         let edge = GraphEdge {
             id: "mw".into(),
@@ -2853,6 +2957,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
             motor_vehicle_conditional: None,
@@ -2920,6 +3025,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
             motor_vehicle_conditional: Some("no @ Nov-Jun".into()),
@@ -3018,6 +3124,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
             motor_vehicle_conditional: None,

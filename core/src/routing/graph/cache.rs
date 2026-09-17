@@ -128,6 +128,8 @@ struct CachedGraphEdge {
     is_toll: bool,
     is_ferry: bool,
     #[serde(default)]
+    is_tunnel: bool,
+    #[serde(default)]
     is_boardwalk_crossing: bool,
     #[serde(default)]
     is_roundabout: bool,
@@ -229,6 +231,7 @@ pub fn save_reweighted_graph(
                 maxlength_m: edge.maxlength_m,
                 is_toll: edge.is_toll,
                 is_ferry: edge.is_ferry,
+                is_tunnel: edge.is_tunnel,
                 is_boardwalk_crossing: edge.is_boardwalk_crossing,
                 is_roundabout: edge.is_roundabout,
                 motor_vehicle_conditional: edge.motor_vehicle_conditional.clone(),
@@ -414,6 +417,7 @@ fn reconstruct_graph(payload: CachedRouteGraph) -> RouteGraph {
                 maxlength_m: edge.maxlength_m,
                 is_toll: edge.is_toll,
                 is_ferry: edge.is_ferry,
+                is_tunnel: edge.is_tunnel,
                 is_boardwalk_crossing: edge.is_boardwalk_crossing,
                 is_roundabout: edge.is_roundabout,
                 motor_vehicle_conditional: edge.motor_vehicle_conditional,
@@ -485,6 +489,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
             motor_vehicle_conditional: None,

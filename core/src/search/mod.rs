@@ -11,6 +11,9 @@ mod place_context;
 
 pub use place_context::{format_place_display, PLACE_INDEX_SCHEMA_VERSION};
 
+/// Place-index `kind` for OSM `building=*` + `name=*` (no amenity/shop/place).
+pub const NAMED_BUILDING_KIND: &str = "building";
+
 #[derive(Debug, Clone)]
 pub struct NameHit {
     pub osm_id: i64,
@@ -152,6 +155,37 @@ impl NameIndex {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap_or(0);
         v >= PLACE_INDEX_SCHEMA_VERSION
+    }
+
+    /// Delete an on-device index whose `user_version` is below
+    /// [`PLACE_INDEX_SCHEMA_VERSION`].
+    ///
+    /// Used before rebuild so a multi-region DB cannot keep pre-bump row kinds
+    /// (e.g. buildings as `named`) after only one region is re-indexed and the
+    /// pragma advances. Returns true when a file was removed.
+    pub fn discard_if_schema_stale(path: impl AsRef<Path>) -> bool {
+        let path = path.as_ref();
+        if !path.is_file() || Self::is_current_schema(path) {
+            return false;
+        }
+        match std::fs::remove_file(path) {
+            Ok(()) => {
+                log::info!(
+                    target: "NaviSearch",
+                    "place-index: discarded stale schema DB {}",
+                    path.display()
+                );
+                true
+            }
+            Err(e) => {
+                log::warn!(
+                    target: "NaviSearch",
+                    "place-index: failed to discard stale schema DB {}: {e}",
+                    path.display()
+                );
+                false
+            }
+        }
     }
 
     /// Full-file rebuild with empty `region_id` (legacy / single-extract callers).
@@ -602,6 +636,7 @@ fn classify_named<'a>(
     let mut addr_street = None;
     let mut addr_housenumber = None;
     let mut kind = "named".to_string();
+    let mut is_building = false;
     for (k, v) in tags {
         match k {
             "name" => name = Some(v.to_string()),
@@ -614,6 +649,9 @@ fn classify_named<'a>(
             "highway" => kind = format!("highway:{v}"),
             "amenity" => kind = format!("amenity:{v}"),
             "shop" => kind = format!("shop:{v}"),
+            // Plain named footprints (building=* + name=*) — not amenity/shop.
+            // Amenity/shop/place above win when present so POIs stay classified.
+            "building" if !v.eq_ignore_ascii_case("no") => is_building = true,
             _ => {}
         }
     }
@@ -630,7 +668,35 @@ fn classify_named<'a>(
             }
         }
     }
+    if kind == "named" && is_building {
+        kind = NAMED_BUILDING_KIND.to_string();
+    }
     name.map(|n| (osm_id, n, kind, lat, lon))
+}
+
+impl NameIndex {
+    /// Named building footprints (`kind = building`) inside a lat/lon bbox.
+    ///
+    /// Requires a place index built at schema ≥ v4 ([`PLACE_INDEX_SCHEMA_VERSION`])
+    /// so `classify_named` stored buildings as [`NAMED_BUILDING_KIND`]. Older
+    /// on-device indexes are discarded and rebuilt on next `ensure_place_index`.
+    pub fn named_buildings_in_bbox(
+        &self,
+        min_lat: f64,
+        min_lon: f64,
+        max_lat: f64,
+        max_lon: f64,
+        limit: usize,
+    ) -> SqlResult<Vec<NameHit>> {
+        self.places_of_kind_in_bbox(
+            NAMED_BUILDING_KIND,
+            min_lat,
+            min_lon,
+            max_lat,
+            max_lon,
+            limit,
+        )
+    }
 }
 
 /// Saved route persistence (host UI route list).
@@ -1120,6 +1186,41 @@ mod tests {
     }
 
     #[test]
+    fn discard_if_schema_stale_removes_pre_v4_db() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("stale.db");
+        {
+            let conn = rusqlite::Connection::open(&db).unwrap();
+            conn.execute_batch(
+                "
+                CREATE TABLE name_entries (
+                    osm_id INTEGER PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    lat REAL NOT NULL,
+                    lon REAL NOT NULL,
+                    sub_area TEXT NOT NULL DEFAULT '',
+                    municipality TEXT NOT NULL DEFAULT '',
+                    region_id TEXT NOT NULL DEFAULT ''
+                );
+                PRAGMA user_version = 3;
+                ",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO name_entries(osm_id, name, kind, lat, lon, region_id)
+                 VALUES (1,'Named Hall','named',61.0,10.0,'europe/norway/ostlandet')",
+                [],
+            )
+            .unwrap();
+        }
+        assert!(!NameIndex::is_current_schema(&db));
+        assert!(NameIndex::discard_if_schema_stale(&db));
+        assert!(!db.is_file());
+        assert!(!NameIndex::discard_if_schema_stale(&db));
+    }
+
+    #[test]
     fn multi_region_index_is_additive_and_reindex_preserves_other() {
         let dir = tempfile::tempdir().expect("tmpdir");
         let db = dir.path().join("place_index.db");
@@ -1259,5 +1360,84 @@ mod tests {
         );
         let neu = idx.search("NyttNavn", 8).unwrap();
         assert!(neu.iter().any(|h| h.name == "NyttNavn"), "got {neu:?}");
+    }
+
+    #[test]
+    fn classify_named_building_kind_and_amenity_override() {
+        let building = classify_named(
+            435718754,
+            61.885_475,
+            10.737_108,
+            [("building", "yes"), ("name", "Espedalsvegen 656")].into_iter(),
+        )
+        .expect("named building");
+        assert_eq!(building.2, NAMED_BUILDING_KIND);
+        assert_eq!(building.1, "Espedalsvegen 656");
+
+        let amenity = classify_named(
+            1,
+            60.0,
+            10.0,
+            [
+                ("building", "yes"),
+                ("name", "Rådhuset"),
+                ("amenity", "townhall"),
+            ]
+            .into_iter(),
+        )
+        .expect("townhall");
+        assert_eq!(amenity.2, "amenity:townhall");
+
+        assert!(classify_named(
+            2,
+            60.0,
+            10.0,
+            [("building", "no"), ("name", "X")].into_iter()
+        )
+        .is_some());
+        let not_building = classify_named(
+            2,
+            60.0,
+            10.0,
+            [("building", "no"), ("name", "X")].into_iter(),
+        )
+        .unwrap();
+        assert_eq!(not_building.2, "named");
+    }
+
+    /// Espedalsvegen 656 area (OSM way/435718754 coords) round-trips via bbox query.
+    #[test]
+    fn named_buildings_in_bbox_round_trip_espedal() {
+        let mut idx = NameIndex::open_in_memory().expect("mem");
+        // Simulate classify_named + upsert for the reported building.
+        let (id, name, kind, lat, lon) = classify_named(
+            435718754,
+            61.885_475,
+            10.737_108,
+            [("building", "yes"), ("name", "Espedalsvegen 656")].into_iter(),
+        )
+        .unwrap();
+        assert_eq!(kind, NAMED_BUILDING_KIND);
+        idx.upsert_entry(id, name.clone(), kind, lat, lon).unwrap();
+        // Distractors: city + generic named (not building).
+        idx.upsert_entry(9, "Lillehammer".into(), "place:city".into(), 61.115, 10.466)
+            .unwrap();
+        idx.upsert_entry(10, "Some Peak Label".into(), "named".into(), 61.885, 10.737)
+            .unwrap();
+
+        let hits = idx
+            .named_buildings_in_bbox(61.88, 10.73, 61.89, 10.74, 32)
+            .unwrap();
+        assert_eq!(hits.len(), 1, "expected only the building: {hits:?}");
+        assert_eq!(hits[0].osm_id, 435718754);
+        assert_eq!(hits[0].name, "Espedalsvegen 656");
+        assert_eq!(hits[0].kind, NAMED_BUILDING_KIND);
+        assert!((hits[0].lat - 61.885_475).abs() < 1e-6);
+        assert!((hits[0].lon - 10.737_108).abs() < 1e-6);
+
+        let empty = idx
+            .named_buildings_in_bbox(59.0, 10.0, 60.0, 11.0, 8)
+            .unwrap();
+        assert!(empty.is_empty());
     }
 }

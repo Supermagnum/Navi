@@ -373,6 +373,7 @@ private fun applySavedRouteSummaryJson(
     onAvoidMotorways: (Boolean) -> Unit,
     onAvoidTolls: (Boolean) -> Unit,
     onAvoidFerries: (Boolean) -> Unit,
+    onAvoidTunnels: (Boolean) -> Unit,
     onPriorityShare: (Double) -> Unit,
 ) {
     if (summaryJson.isBlank()) return
@@ -390,6 +391,7 @@ private fun applySavedRouteSummaryJson(
             onAvoidTolls(o.optBoolean("avoid_tolls"))
         }
         if (o.has("avoid_ferries")) onAvoidFerries(o.optBoolean("avoid_ferries"))
+        if (o.has("avoid_tunnels")) onAvoidTunnels(o.optBoolean("avoid_tunnels"))
         if (o.has("priority_share_pct")) onPriorityShare(o.optDouble("priority_share_pct"))
     }
 }
@@ -657,6 +659,7 @@ private fun NaviMapScreen() {
     var avoidMotorways by remember { mutableStateOf(false) }
     var avoidTolls by remember { mutableStateOf(false) }
     var avoidFerries by remember { mutableStateOf(false) }
+    var avoidTunnels by remember { mutableStateOf(false) }
     var preferOfficialNetworks by remember { mutableStateOf(false) }
     var preferPilgrimRoutes by remember { mutableStateOf(false) }
     var useNetworkedCabins by remember { mutableStateOf(false) }
@@ -1855,6 +1858,7 @@ private fun NaviMapScreen() {
                                 avoidMotorways = avoidMotorways,
                                 avoidTolls = avoidTolls,
                                 avoidFerries = avoidFerries,
+                                avoidTunnels,
                                 vehicle = vehicle,
                                 preferOfficialNetworks = preferOfficialNetworks,
                                 preferPilgrimRoutes = preferPilgrimRoutes,
@@ -2223,6 +2227,29 @@ private fun NaviMapScreen() {
                 indexedMapsUiLine = ""
                 placeIndexUiLine = ""
             }
+            // After a place-index schema bump, wipe+rebuild leaves other downloaded
+            // regions without rows — chain one ensurePlaceIndex at a time.
+            if (!RegionDownloadBackground.isRunning() &&
+                !PlaceIndexBackground.isRunning()
+            ) {
+                val missing =
+                    RegionCoverage
+                        .downloadedGeofabrikPaths(dataDir)
+                        .firstOrNull { path ->
+                            !RegionDownloadBackground.placeIndexLooksReady(dataDir, path)
+                        }
+                if (missing != null) {
+                    val missingPbf =
+                        PackRegionAvailability.resolvePbfForRegion(dataDir, missing)
+                    if (missingPbf != null && missingPbf.isFile) {
+                        PlaceIndexBackground.ensureStarted(
+                            missingPbf,
+                            placeIndexDbForWrite(),
+                            missing,
+                        )
+                    }
+                }
+            }
             delay(
                 if (PlaceIndexBackground.isRunning() || IndexedMapsBackground.isRunning()) {
                     400
@@ -2525,6 +2552,7 @@ private fun NaviMapScreen() {
                                                 uniffi.navi.FfiTollPolicy.ALLOW
                                             },
                                             avoidFerries,
+                                            avoidTunnels,
                                             loadVehicleLimits(dataDir.absolutePath),
                                             preferOfficialNetworks,
                                             dataDir.absolutePath,
@@ -2661,6 +2689,7 @@ private fun NaviMapScreen() {
                             uniffi.navi.FfiTollPolicy.ALLOW
                         },
                         avoidFerries,
+                        avoidTunnels,
                         prioritySharePct,
                     ) + "\n" +
                         DisplayUnits.formatRoutePlanned(
@@ -5198,6 +5227,7 @@ private fun NaviMapScreen() {
                                                         uniffi.navi.FfiTollPolicy.ALLOW
                                                     },
                                                     avoidFerries,
+                                                    avoidTunnels,
                                                     prioritySharePct,
                                                 )
                                         },
@@ -5226,6 +5256,7 @@ private fun NaviMapScreen() {
                                                         uniffi.navi.FfiTollPolicy.ALLOW
                                                     },
                                                     avoidFerries,
+                                                    avoidTunnels,
                                                     prioritySharePct,
                                                 )
                                         },
@@ -5262,6 +5293,7 @@ private fun NaviMapScreen() {
                                                         uniffi.navi.FfiTollPolicy.ALLOW
                                                     },
                                                     avoidFerries,
+                                                    avoidTunnels,
                                                     prioritySharePct,
                                                 )
                                         },
@@ -5275,6 +5307,43 @@ private fun NaviMapScreen() {
                                                 profile == TravelProfile.MOTORCYCLE_ELECTRIC,
                                     )
                                 }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text("Avoid tunnels")
+                                    Switch(
+                                        checked = avoidTunnels,
+                                        onCheckedChange = { on ->
+                                            avoidTunnels = on
+                                            DiagnosticLog.logToggle("avoid_tunnels", on)
+                                            status =
+                                                formatRouteAvoidanceReport(
+                                                    avoidMotorways,
+                                                    if (avoidTolls) {
+                                                        uniffi.navi.FfiTollPolicy.PENALIZE
+                                                    } else {
+                                                        uniffi.navi.FfiTollPolicy.ALLOW
+                                                    },
+                                                    avoidFerries,
+                                                    avoidTunnels,
+                                                    prioritySharePct,
+                                                )
+                                        },
+                                        enabled =
+                                            profile == TravelProfile.CAR ||
+                                                profile == TravelProfile.TRUCK ||
+                                                profile == TravelProfile.MOBILE_HOME ||
+                                                profile == TravelProfile.MOTORCYCLE ||
+                                                profile == TravelProfile.CAR_ELECTRIC ||
+                                                profile == TravelProfile.TRUCK_ELECTRIC ||
+                                                profile == TravelProfile.MOTORCYCLE_ELECTRIC ||
+                                                profile == TravelProfile.BICYCLE ||
+                                                profile == TravelProfile.BICYCLE_ELECTRIC,
+                                        modifier = Modifier.testTag("toggle_avoid_tunnels"),
+                                    )
+                                }
                                 Text(
                                     formatRouteAvoidanceReport(
                                         avoidMotorways,
@@ -5284,6 +5353,7 @@ private fun NaviMapScreen() {
                                             uniffi.navi.FfiTollPolicy.ALLOW
                                         },
                                         avoidFerries,
+                                        avoidTunnels,
                                         prioritySharePct,
                                     ),
                                     style = MaterialTheme.typography.bodySmall,
@@ -5558,6 +5628,7 @@ private fun NaviMapScreen() {
                                                         onAvoidMotorways = { avoidMotorways = it },
                                                         onAvoidTolls = { avoidTolls = it },
                                                         onAvoidFerries = { avoidFerries = it },
+                                                        onAvoidTunnels = { avoidTunnels = it },
                                                         onPriorityShare = { prioritySharePct = it },
                                                     )
                                                     // Bike / hike: motorways are unsuitable — keep lock semantics.
@@ -5610,6 +5681,7 @@ private fun NaviMapScreen() {
                                                         onAvoidMotorways = { avoidMotorways = it },
                                                         onAvoidTolls = { avoidTolls = it },
                                                         onAvoidFerries = { avoidFerries = it },
+                                                        onAvoidTunnels = { avoidTunnels = it },
                                                         onPriorityShare = { prioritySharePct = it },
                                                     )
                                                     if (loadedProfile == TravelProfile.BICYCLE ||
@@ -5667,7 +5739,7 @@ private fun NaviMapScreen() {
                                                 endName = toPoint.name,
                                                 viaJson = viaJson,
                                                 profile = profile.name.lowercase(),
-                                                summaryJson = """{"avoid_motorways":$avoidMotorways,"toll_policy":"${if (avoidTolls) "penalize" else "allow"}","avoid_tolls":$avoidTolls,"avoid_ferries":$avoidFerries,"priority_share_pct":$prioritySharePct}""",
+                                                summaryJson = """{"avoid_motorways":$avoidMotorways,"toll_policy":"${if (avoidTolls) "penalize" else "allow"}","avoid_tolls":$avoidTolls,"avoid_ferries":$avoidFerries,"avoid_tunnels":$avoidTunnels,"priority_share_pct":$prioritySharePct}""",
                                             )
                                         refreshRoutes()
                                         status = report
@@ -7531,6 +7603,7 @@ private fun CorridorMapView(
                 appActive = weatherAppActive,
             )
         }
+        NamedBuildingLabels.scheduleRefresh(map, placeIndexDbPath)
         applyDatexOverlay(style, datexHud)
         applyCameraTilt(map)
         styleReady.value = true
@@ -8132,9 +8205,24 @@ private fun CorridorMapView(
                     mapSymbolsEnabled = weatherMapSymbolsEnabled,
                     appActive = weatherAppActive,
                 )
+                NamedBuildingLabels.scheduleRefresh(map, placeIndexDbPath)
             }
             delay(15_000L)
         }
+    }
+
+    // Debounced named-building labels on camera moves (also covered by the
+    // weather tick loop above; this reacts immediately on idle).
+    LaunchedEffect(
+        styleReady.value,
+        state.cameraZoom,
+        state.cameraLat,
+        state.cameraLon,
+        placeIndexDbPath,
+    ) {
+        if (!styleReady.value) return@LaunchedEffect
+        val map = mapRef ?: return@LaunchedEffect
+        NamedBuildingLabels.scheduleRefresh(map, placeIndexDbPath)
     }
 
     LaunchedEffect(state.cameraLat, state.cameraLon, prefer3d, contoursEnabled, cameraTiltDeg) {

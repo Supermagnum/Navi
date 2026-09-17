@@ -65,6 +65,7 @@ fn main() {
             false,
             FfiTollPolicy::Allow,
             false,
+            false,
             FfiVehicleLimits {
                 axle_weight_kg: None,
                 bogie_weight_kg: None,
