@@ -618,7 +618,7 @@ impl PoiIndex {
         let origin = Point::new(lon, lat);
         let mut hits: Vec<&PoiRecord> = self
             .tree
-            .locate_in_envelope_intersecting(&envelope)
+            .locate_in_envelope_intersecting(envelope)
             .filter_map(|entry| self.records.get(&entry.osm_id))
             .filter(|rec| rec.categories.contains(&category))
             .filter(|rec| Haversine::distance(origin, Point::new(rec.lon, rec.lat)) <= radius_m)

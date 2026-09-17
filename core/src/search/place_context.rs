@@ -150,7 +150,7 @@ impl ContextResolver {
         let p = [lon, lat];
         let mut best_78: Option<&AdminRing> = None;
         let mut best_6: Option<&AdminRing> = None;
-        for bb in self.admin_tree.locate_in_envelope_intersecting(&env) {
+        for bb in self.admin_tree.locate_in_envelope_intersecting(env) {
             let ring = &self.rings[bb.idx];
             if !point_in_ring(p, &ring.ring) {
                 continue;
@@ -236,7 +236,7 @@ impl ContextResolver {
         );
         let mut best_primary: Option<(f64, String)> = None;
         let mut best_fallback: Option<(f64, String)> = None;
-        for cand in self.sub_tree.locate_in_envelope_intersecting(&env) {
+        for cand in self.sub_tree.locate_in_envelope_intersecting(env) {
             if cand.osm_id == osm_id {
                 continue;
             }
