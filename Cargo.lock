@@ -626,9 +626,9 @@ dependencies = [
 
 [[package]]
 name = "compact-calendar"
-version = "1.4.0"
+version = "2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92c68966c8d9d2a83024a006672db0003279ca1bf17933f3f4212512daf5d822"
+checksum = "365fbf200c0923b3f5dabc58ae81a00447166bc86a2fc53b2ebee4cdb7549712"
 dependencies = [
  "chrono",
 ]
@@ -3246,9 +3246,9 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "opening-hours"
-version = "1.4.0"
+version = "2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8862341d473ea3755a77f37782b5a1f0841fc35264b5c12eeb6348f057abe1ee"
+checksum = "2a437c95d38cb5ea0607f4bce6e458f3afb83b810e621aa7a5d63c460da62d65"
 dependencies = [
  "chrono",
  "compact-calendar",
@@ -3260,12 +3260,11 @@ dependencies = [
 
 [[package]]
 name = "opening-hours-syntax"
-version = "1.4.0"
+version = "2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec69aca7d929ee36e1e9452db77b8647c329bd9f0ab079cf806e84bf62670e99"
+checksum = "5ab3f2a858d057c70e242877d293b2123e2ac164da7e8d66edc5b377c2f51670"
 dependencies = [
  "chrono",
- "log",
  "pest",
  "pest_derive",
 ]
