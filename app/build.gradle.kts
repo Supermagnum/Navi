@@ -102,13 +102,13 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("androidx.activity:activity-compose:1.9.3")
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation("androidx.core:core-ktx:1.19.0")
+    implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-    implementation("net.java.dev.jna:jna:5.15.0@aar")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("net.java.dev.jna:jna:5.19.1@aar")
     // Default (finalized): MapLibre GLES android-sdk. Prefer 11.13.5 over 11.8.8
     // (Maven has GLES 11.13.5 — keep version, change renderer from android-sdk-vulkan).
     // Evidence 2026-07-31: AAOS BearingCrashIsolationTest PASS (no SIGSEGV);
@@ -129,7 +129,7 @@ dependencies {
     androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.4.0")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
