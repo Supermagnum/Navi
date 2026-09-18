@@ -117,7 +117,7 @@ dependencies {
     // (Maven has GLES 11.13.5 — keep version, change renderer from android-sdk-vulkan).
     // Evidence 2026-07-31: AAOS BearingCrashIsolationTest PASS (no SIGSEGV);
     // SM-P613 online/offline 3D wash cleared (demHitsOk>=1).
-    implementation("org.maplibre.gl:android-sdk:11.13.5")
+    implementation("org.maplibre.gl:android-sdk:13.6.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
