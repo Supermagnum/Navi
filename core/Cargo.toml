@@ -22,7 +22,7 @@ pathfinding.workspace = true
 reqwest.workspace = true
 futures-util = "0.3"
 bytes = "1"
-pmtiles = { version = "0.23", default-features = false, features = ["write", "mmap-async-tokio"] }
+pmtiles = { version = "0.24", default-features = false, features = ["write", "mmap-async-tokio"] }
 rstar.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
