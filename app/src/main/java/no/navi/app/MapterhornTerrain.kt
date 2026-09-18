@@ -118,9 +118,9 @@ object MapterhornTerrain {
                 HillshadeLayer(HILLS_LAYER_ID, HILLSHADE_SOURCE_ID)
                     .withProperties(
                         PropertyFactory.hillshadeExaggeration(hillshadeExaggeration()),
-                        PropertyFactory.hillshadeShadowColor(Color.parseColor(HILLSHADE_SHADOW_COLOR)),
-                        PropertyFactory.hillshadeHighlightColor(Color.parseColor(HILLSHADE_HIGHLIGHT_COLOR)),
-                        PropertyFactory.hillshadeIlluminationDirection(HILLSHADE_ILLUMINATION_DEG),
+                        PropertyFactory.hillshadeShadowColor(arrayOf(HILLSHADE_SHADOW_COLOR)),
+                        PropertyFactory.hillshadeHighlightColor(arrayOf(HILLSHADE_HIGHLIGHT_COLOR)),
+                        PropertyFactory.hillshadeIlluminationDirection(arrayOf(HILLSHADE_ILLUMINATION_DEG)),
                     )
             // Insert under the first hydro fill/line so hillshade does not
             // darken water fill when 3D is on (keeps DEM shading under water).
