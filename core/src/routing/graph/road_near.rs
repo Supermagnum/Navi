@@ -71,7 +71,7 @@ impl RoadNodeIndex {
 
     /// Great-circle distance (m) from `(lat, lon)` to the nearest graph node.
     pub fn distance_m(&self, lat: f64, lon: f64) -> f64 {
-        let Some(nn) = self.tree.nearest_neighbor(&[lon, lat]) else {
+        let Some(nn) = self.tree.nearest_neighbor([lon, lat]) else {
             return f64::INFINITY;
         };
         Haversine::distance(Point::new(lon, lat), Point::new(nn[0], nn[1]))

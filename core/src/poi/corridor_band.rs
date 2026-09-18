@@ -78,7 +78,7 @@ impl CorridorBand {
             return false;
         }
         // Cheap reject via nearest sample, then refine against adjacent segments.
-        let Some(nn) = self.tree.nearest_neighbor(&[lon, lat]) else {
+        let Some(nn) = self.tree.nearest_neighbor([lon, lat]) else {
             return false;
         };
         let nn_lat = nn[1];

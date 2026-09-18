@@ -89,7 +89,7 @@ impl DangerBarrierIndex {
         let p0 = [lon0, lat0];
         let p1 = [lon1, lat1];
         let env = AABB::from_corners(p0, p1);
-        for seg in self.tree.locate_in_envelope_intersecting(&env) {
+        for seg in self.tree.locate_in_envelope_intersecting(env) {
             if segments_intersect(p0, p1, seg.a, seg.b) {
                 return true;
             }
