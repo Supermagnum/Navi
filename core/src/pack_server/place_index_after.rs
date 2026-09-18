@@ -82,7 +82,7 @@ pub fn ensure_geofabrik_pbf_for_region(
     let url = geofabrik_latest_pbf_url(&region_id);
     let existing = pbf_path.metadata().map(|m| m.len()).unwrap_or(0);
     let need = !pbf_path.is_file() || existing < MIN_REAL_PBF_BYTES;
-    let t0 = Instant::now();
+    let t0 = crate::download::phase_timing::start("geofabrik_pbf.download");
     let (bytes, downloaded) = if need {
         log::info!(
             target: "NaviPack",
@@ -109,6 +109,11 @@ pub fn ensure_geofabrik_pbf_for_region(
         );
         (existing, false)
     };
+    crate::download::phase_timing::end_detail(
+        "geofabrik_pbf.download",
+        t0,
+        &format!("bytes={bytes} downloaded={downloaded}"),
+    );
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
     Ok((pbf_path, bytes, downloaded, ms))
 }
@@ -149,7 +154,9 @@ pub fn build_place_index_from_pbf(
     }
     let t0 = Instant::now();
     crate::download::progress::set(0, Some(6), "Place index: starting…");
+    let open_t0 = crate::download::phase_timing::start("place_index.open_db");
     let mut idx = NameIndex::open(index_db).map_err(|e| format!("open index: {e}"))?;
+    crate::download::phase_timing::end("place_index.open_db", open_t0);
     let n = idx
         .load_from_pbf_for_region(pbf_path, region_id)
         .map_err(|e| format!("index load: {e:#}"))?;

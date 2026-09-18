@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -18,6 +18,7 @@ use super::{http_get_text, PackServerError, ReadyRegion};
 use crate::download::http::{
     progress_label_for_resume, stream_get_to_file_blocking, StreamDownloadOpts,
 };
+use crate::download::phase_timing;
 use crate::download::progress as download_progress;
 use crate::routing::indexed::{manifest_path, server_install_path, NaviManifest, PackStatus};
 
@@ -354,6 +355,7 @@ pub fn try_fetch_region_packs(
     base_url: &str,
     data_dir: Option<&Path>,
 ) -> Result<(), String> {
+    let total_t0 = phase_timing::start("pack_fetch.total");
     let data_dir = data_dir.ok_or_else(|| "pack fetch needs data_dir".to_string())?;
     fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
 
@@ -365,6 +367,7 @@ pub fn try_fetch_region_packs(
         .filter(|s| !s.is_empty())
         .ok_or_else(|| "ready region missing generation".to_string())?;
 
+    let manifest_t0 = phase_timing::start("pack_fetch.manifest");
     let manifest_rel = ready
         .manifest_url
         .clone()
@@ -380,6 +383,11 @@ pub fn try_fetch_region_packs(
     if client.files.is_empty() {
         return Err("manifest.json has empty files map".into());
     }
+    phase_timing::end_detail(
+        "pack_fetch.manifest",
+        manifest_t0,
+        &format!("files={}", client.files.len()),
+    );
 
     let bake_stem = bake_stem_from_manifest(&client, ready);
     let leaf_stem = leaf_stem_for_region_id(&region_id);
@@ -431,6 +439,7 @@ pub fn try_fetch_region_packs(
     // Live duckdns packs may still be an older graph_format_version; rejecting
     // after a full download would waste bandwidth and delay the local rebuild fallback.
     download_progress::set(0, Some(1), "Checking pack format on server…");
+    let format_t0 = phase_timing::start("pack_fetch.format_gate");
     {
         let url = join_url(&pack_base, &navi_name);
         let bytes = super::http_get_bytes(&url, Duration::from_secs(120))
@@ -456,6 +465,7 @@ pub fn try_fetch_region_packs(
             return Err(e);
         }
     }
+    phase_timing::end("pack_fetch.format_gate", format_t0);
 
     let file_count = client.files.len() as u64;
     let known_bytes: u64 = client.files.values().filter_map(|m| m.bytes).sum();
@@ -475,6 +485,7 @@ pub fn try_fetch_region_packs(
 
     let mut done_bytes: u64 = navi_meta.bytes.unwrap_or(0);
     let mut done_files: u64 = 1;
+    let files_t0 = phase_timing::start("pack_fetch.download_files");
     for (remote_name, meta) in &client.files {
         if remote_name == &navi_name {
             continue;
@@ -483,9 +494,10 @@ pub fn try_fetch_region_packs(
         let label = format!("Fetching packs ({done_files}/{file_count}): {remote_name}");
         let url = join_url(&pack_base, remote_name);
         let staged = staging.join(remote_name);
+        let file_t0 = Instant::now();
         // Prefer streaming for large binaries; small JSON can use RAM path.
         let is_json = remote_name.ends_with(".json");
-        if is_json {
+        let got_bytes = if is_json {
             download_progress::set(
                 if use_byte_progress {
                     done_bytes
@@ -507,12 +519,14 @@ pub fn try_fetch_region_packs(
             }
             verify_hex(&sha256_hex(&bytes), &meta.sha256)?;
             fs::write(&staged, &bytes).map_err(|e| e.to_string())?;
+            let n = bytes.len() as u64;
             if use_byte_progress {
-                done_bytes = done_bytes.saturating_add(bytes.len() as u64);
+                done_bytes = done_bytes.saturating_add(n);
                 download_progress::set(done_bytes, progress_total, &label);
             } else {
                 download_progress::set(done_files, progress_total, &label);
             }
+            n
         } else {
             let got = http_download_verified(
                 &url,
@@ -532,8 +546,25 @@ pub fn try_fetch_region_packs(
             } else {
                 download_progress::set(done_files, progress_total, &label);
             }
-        }
+            got
+        };
+        let file_ms = file_t0.elapsed().as_secs_f64() * 1000.0;
+        let rate = if file_ms > 0.0 {
+            (got_bytes as f64 / 1_000_000.0) / (file_ms / 1000.0)
+        } else {
+            0.0
+        };
+        log::info!(
+            target: "PHASE_TIMING",
+            "END phase=pack_fetch.file elapsed_ms={file_ms:.1} file={remote_name} \
+             bytes={got_bytes} done_files={done_files}/{file_count} mb_per_s={rate:.2}"
+        );
     }
+    phase_timing::end_detail(
+        "pack_fetch.download_files",
+        files_t0,
+        &format!("files={done_files} bytes={done_bytes}"),
+    );
 
     download_progress::set(
         progress_total.unwrap_or(done_files),
@@ -541,6 +572,7 @@ pub fn try_fetch_region_packs(
         "Installing packs…",
     );
 
+    let install_t0 = phase_timing::start("pack_fetch.install_promote");
     // Remap bake → leaf into final names under staging/out (navi-manifest already there).
     for remote_name in client.files.keys() {
         if remote_name == &navi_name || remote_name.ends_with(".navi-manifest.json") {
@@ -595,6 +627,8 @@ pub fn try_fetch_region_packs(
 
     confirm_usable(data_dir, &leaf_stem)?;
     let _ = fs::remove_dir_all(&staging);
+    phase_timing::end("pack_fetch.install_promote", install_t0);
+    phase_timing::end("pack_fetch.total", total_t0);
     log::info!(
         target: "NaviPack",
         "installed packs region={region_id} leaf={leaf_stem} bake={bake_stem} gen={generation}"

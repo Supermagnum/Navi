@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 
 use pmtiles::{PmTilesWriter, TileCoord, TileId};
 
+use crate::download::phase_timing;
 use crate::download::progress as download_progress;
 use crate::download::DownloadControl;
 use crate::routing::basemap::http_backend::Reqwest012Backend;
@@ -151,6 +152,7 @@ pub async fn extract_bbox_to_file(
     control: &DownloadControl,
     store: Option<(&Storage, Uuid)>,
 ) -> anyhow::Result<u64> {
+    let total_t0 = phase_timing::start("pmtiles.extract.total");
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -167,6 +169,7 @@ pub async fn extract_bbox_to_file(
 
     wait_if_paused_or_cancelled(control, store, &partial, &staging).await?;
 
+    let setup_t0 = phase_timing::start("pmtiles.extract.setup_http");
     let http_requests = Arc::new(AtomicU64::new(0));
     // Ceiling timeout; each range GET also sets a size-scaled per-request timeout.
     let client = reqwest::Client::builder()
@@ -177,11 +180,18 @@ pub async fn extract_bbox_to_file(
         .build()?;
     let backend = Reqwest012Backend::try_from(client, planet_url)?
         .with_request_counter(Arc::clone(&http_requests));
+    phase_timing::end("pmtiles.extract.setup_http", setup_t0);
 
+    let plan_t0 = phase_timing::start("pmtiles.extract.plan_tile_list");
     let mut coords = tiles_covering_bbox(bbox, max_zoom);
     coords.sort_by_key(|c| TileId::from(*c));
-
     let total = coords.len() as u64;
+    phase_timing::end_detail(
+        "pmtiles.extract.plan_tile_list",
+        plan_t0,
+        &format!("tiles={total} max_z={max_zoom}"),
+    );
+
     let avail = crate::download::available_bytes(dest);
     let started = Instant::now();
     let progress_label = if dest
@@ -209,7 +219,10 @@ pub async fn extract_bbox_to_file(
 
     wait_if_paused_or_cancelled(control, store, &partial, &staging).await?;
 
+    // UI stays on "Planning extract…" until the coalesce fetch first updates
+    // byte progress — time that gap explicitly.
     download_progress::set(0, None, PLANNING_EXTRACT_LABEL);
+    let fetch_t0 = phase_timing::start("pmtiles.extract.fetch_coalesced");
     let fetched = fetch_tiles_coalesced(
         &backend,
         &coords,
@@ -234,9 +247,19 @@ pub async fn extract_bbox_to_file(
         .into_iter()
         .filter(|t| t.coord.z() <= max_z)
         .collect();
+    phase_timing::end_detail(
+        "pmtiles.extract.fetch_coalesced",
+        fetch_t0,
+        &format!(
+            "tiles={} http_requests={}",
+            tiles.len(),
+            http_requests.load(Ordering::Relaxed)
+        ),
+    );
 
     wait_if_paused_or_cancelled(control, store, &partial, &staging).await?;
 
+    let write_t0 = phase_timing::start("pmtiles.extract.write_archive");
     let file = File::create(&partial).map_err(|e| crate::download::enrich_io_error(e, &partial))?;
     let mut writer = PmTilesWriter::new(fetched.tile_type)
         .tile_compression(fetched.tile_compression)
@@ -294,6 +317,11 @@ pub async fn extract_bbox_to_file(
     fs::rename(&partial, dest).map_err(|e| crate::download::enrich_io_error(e, dest))?;
     let _ = fs::remove_dir_all(&staging);
     let len = fs::metadata(dest)?.len();
+    phase_timing::end_detail(
+        "pmtiles.extract.write_archive",
+        write_t0,
+        &format!("bytes={len} wrote={done}"),
+    );
     if let Some((storage, job_id)) = store {
         // Progress only — caller ([PmtilesDownloader::run_job]) validates the
         // archive before marking Completed (shared guard with the short-circuit path).
@@ -307,6 +335,11 @@ pub async fn extract_bbox_to_file(
         "[NaviDownload] pmtiles extract complete dest={} bytes={len} bbox_tiles={total} wrote={done} \
          elapsed_s={elapsed:.1} tiles_per_s={tiles_per_s:.2} http_requests={reqs}",
         dest.display()
+    );
+    phase_timing::end_detail(
+        "pmtiles.extract.total",
+        total_t0,
+        &format!("bytes={len} tiles={done}"),
     );
     Ok(len)
 }

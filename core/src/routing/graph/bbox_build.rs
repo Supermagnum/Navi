@@ -748,6 +748,7 @@ impl RouteGraph {
             for w in &mut tile_writers {
                 w.flush()?;
             }
+            // Release assign writers before step3; spills stay until tiles are consumed.
             drop(tile_writers);
             let tile_assign_ms = t_assign.elapsed().as_secs_f64() * 1000.0;
             log::info!(
@@ -778,19 +779,50 @@ impl RouteGraph {
                     "CONVERT_PHASE resume skip tiles ({profile_key}) kept={skipped} remaining={pending_total}"
                 );
             }
+            // On the last profile, drop shared Pass-2 coords we no longer need
+            // before building tiles — peak RSS otherwise stacks full coords with
+            // concurrent RouteGraph builds (LMK on ~4 GB devices).
+            if last_profile {
+                retain_coords_for_pending_tiles(&mut coords, &tile_node_ids, &pending);
+                coords.shrink_to_fit();
+                log::info!(
+                    target: "NaviConvert",
+                    "CONVERT_PHASE coords trimmed before last-profile step3 ({profile_key}) remaining_nodes={}",
+                    coords.len()
+                );
+            }
+            // Cap concurrency when the shared coord table is still huge (earlier
+            // profiles cannot trim coords yet — later tile-assign needs them).
+            let concurrency = if !last_profile && coords.len() > 4_000_000 {
+                1
+            } else {
+                TILE_BUILD_CONCURRENCY
+            };
             log::info!(
                 target: "NaviConvert",
-                "CONVERT_PHASE step3 start ({profile_key}) tiles={pending_total} concurrency={TILE_BUILD_CONCURRENCY}"
+                "CONVERT_PHASE step3 start ({profile_key}) tiles={pending_total} concurrency={concurrency}"
+            );
+            crate::download::progress::set(
+                0,
+                Some(pending_total as u64),
+                &format!("Indexed maps: step3 ({profile_key}) 0/{pending_total}…"),
             );
 
             while !pending.is_empty() {
-                let batch_len = TILE_BUILD_CONCURRENCY.min(pending.len());
+                let batch_len = concurrency.min(pending.len());
                 let batch: Vec<usize> = pending.drain(..batch_len).collect();
+                let remaining_with_batch = pending.len() + batch.len();
+                let done_before = pending_total.saturating_sub(remaining_with_batch);
                 log::info!(
                     target: "NaviConvert",
                     "CONVERT_PHASE step3 batch ({profile_key}) remaining={} batch={:?}",
-                    pending.len() + batch.len(),
+                    remaining_with_batch,
                     batch
+                );
+                crate::download::progress::set(
+                    done_before as u64,
+                    Some(pending_total as u64),
+                    &format!("Indexed maps: step3 ({profile_key}) {done_before}/{pending_total}…"),
                 );
 
                 struct TileWork {
@@ -815,6 +847,8 @@ impl RouteGraph {
                         }
                     }
                     let _ = std::fs::remove_file(tile_spills[i].path());
+                    // Free per-tile node-id set once its spill is loaded.
+                    tile_node_ids[i] = HashSet::new();
                     works.push(TileWork {
                         row,
                         col,
@@ -839,15 +873,28 @@ impl RouteGraph {
                         }
                     })?;
                 produced += batch_produced.load(Ordering::Relaxed);
+                // Explicitly drop tile payloads before shrinking shared coords /
+                // starting the next batch (do not leave Arc graphs for GC).
+                drop(works);
 
-                // Keep shared coords intact until the last profile finishes.
+                // Keep shared coords intact until the last profile finishes
+                // tile-assign; during last-profile step3, release nodes for
+                // finished tiles after each batch.
                 if last_profile {
                     if pending.is_empty() {
                         coords.clear();
+                        coords.shrink_to_fit();
                     } else {
                         retain_coords_for_pending_tiles(&mut coords, &tile_node_ids, &pending);
+                        coords.shrink_to_fit();
                     }
                 }
+                let done_after = pending_total.saturating_sub(pending.len());
+                crate::download::progress::set(
+                    done_after as u64,
+                    Some(pending_total as u64),
+                    &format!("Indexed maps: step3 ({profile_key}) {done_after}/{pending_total}…"),
+                );
             }
 
             let tile_build_ms = t_build.elapsed().as_secs_f64() * 1000.0;
@@ -858,6 +905,12 @@ impl RouteGraph {
             if produced == 0 {
                 anyhow::bail!("tiled graph empty for profile {profile:?}");
             }
+            // Drop per-profile spill state before the next profile reallocates.
+            drop(tile_spills);
+            tile_node_ids.clear();
+            tile_node_ids.shrink_to_fit();
+            tile_way_counts.clear();
+            tile_way_counts.shrink_to_fit();
             out.push((
                 profile,
                 produced,
@@ -866,8 +919,22 @@ impl RouteGraph {
                     tile_build_ms,
                 },
             ));
+            log::info!(
+                target: "NaviConvert",
+                "CONVERT_PHASE profile released ({profile_key}) next={} shared_coords={}",
+                if last_profile {
+                    "none".to_string()
+                } else {
+                    profile_label(profiles[pi + 1]).to_string()
+                },
+                coords.len()
+            );
         }
+        // Shared way spill is only needed for per-profile tile-assign; release
+        // before returning so TempSpill::drop deletes the file promptly.
         drop(ways_spill);
+        drop(barrier_tags);
+        coords.clear();
         Ok(out)
     }
 }

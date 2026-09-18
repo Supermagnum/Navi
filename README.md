@@ -16,10 +16,18 @@ https://github.com/Supermagnum/Navi/blob/dev/docs/crates.md
 
 Navi does not currently ship with a ready-made international routing database
 the way many commercial GPS / head-unit products do (those usually include
-precomputed indexes from the vendor). Computing place search and routing
-indexes on device takes anywhere from about **8 minutes up to 25 minutes**
-(larger regions take longer). It must be done when you **download or update**
-map data for your region, if the server is down. These steps can look stuck in Tools — **be patient**, but they start automatic.
+precomputed indexes from the vendor). On the **pack-server path** (green pills),
+a full region download still needs pack fetch + Geofabrik extract + offline
+basemap + on-device **place index** — typically about **20–22 minutes** for a
+large landsdel such as Østlandet on the reference tablet, or about **5 minutes**
+for a small region such as Luxembourg. On the **local-bake path** (blue pills /
+server down), add on-device routing-pack convert as well (Østlandet convert
+alone is on the order of **~7–11 minutes**). These are **current baseline
+measurements**, not guarantees — see
+[Download and place-index timing (measured)](#download-and-place-index-timing-measured)
+and [Known issues](#known-issues). It must be done when you **download or
+update** map data for your region. These steps can look stuck in Tools —
+**be patient**, but they start automatic.
 
 In **Tools**, region chips (pills) show how the download will run:
 
@@ -293,9 +301,70 @@ plans are fast — see [Indexing (background after download)](#indexing-backgrou
 map data from the internet** (for example **Check for OSM updates** or a fresh
 region download), Navi must build the **place index** (search names for From /
 Via / To) and, on the local-bake path, the **indexed routing packs**. Both scan
-the full region file and can run for many minutes on a large extract (Østlandet
-on a tablet is often on the order of tens of minutes, sometimes longer). That is
+the full region file and can run for many minutes on a large extract. That is
 expected; leave the app open or return to it later.
+
+### Download and place-index timing (measured)
+
+**Baseline, not a guarantee.** Numbers below were measured on a Samsung Galaxy
+Tab S6 Lite (**SM-P613**, serial R52TB0JQEDE), Wi-Fi, pack-server path
+(car + foot packs published; place index still built on device from the
+Geofabrik PBF). Wall-clock comes from `PHASE_TIMING` logs (2026-09-17/18).
+Other devices, networks, thermal state, or flash write pressure can be slower —
+including a still-open unreproduced outlier where place index alone once took
+~28 min on this same tablet (see [Known issues](#known-issues)).
+
+**Østlandet** (`europe/norway/ostlandet`, PBF ≈ 434 MiB / 455 006 900 bytes):
+
+| Phase | Wall-clock (approx.) |
+|---|---|
+| Pack fetch + install | ~8.0 min (483 s) |
+| Geofabrik PBF download | ~0.7 min (41 s) |
+| DEM corridor | ~0.3 min (18 s) |
+| PMTiles basemap extract | ~7.4 min (445 s) |
+| Place index (post named-routes fix) | **~5.8–6.2 min** (350–369 s; four back-to-back rebuilds) |
+| **Pack-server path total (sum)** | **~20–22 min** |
+
+Place-index sub-phases on that tablet after the named-routes streaming fix
+(representative run): admin ~50 s, ways ~10 s, nodes ~110 s, named routes ~35 s,
+SQLite FTS insert ~145 s.
+
+**Luxembourg** (`europe/luxembourg`, PBF ≈ 45 MiB / 47 519 380 bytes):
+
+| Phase | Wall-clock (approx.) |
+|---|---|
+| Pack fetch + install | ~0.6 min (37 s) |
+| Geofabrik PBF + DEM | ~0.3 min |
+| PMTiles basemap | ~0.7 min (43 s) |
+| Place index | ~3.6 min (214 s) |
+| **Pack-server path total** | **~4.6–5.5 min** (pipeline ~279 s) |
+
+**Scaling:** in the same instrumented session (before the named-routes fix),
+place-index wall time scaled roughly with PBF size — about **7.8×** time for
+about **9.6×** PBF bytes (Østlandet vs Luxembourg). Use that as a rough rule
+of thumb for other regions; it is not linear for every extract, and network /
+basemap cost is separate from place index.
+
+### Pack on-disk size (budget storage)
+
+Published pack payloads from the live pack-server catalog (car + foot profiles
+only — sizes will grow when additional profiles such as bicycle are baked
+server-side). Figures match [`docs/coverage.md`](docs/coverage.md) live
+generation sizes:
+
+| Region | Pack payload (approx.) |
+|---|---|
+| Østlandet (`europe/norway/ostlandet`) | **2.43 GiB** |
+| Niedersachsen (`europe/germany/niedersachsen`) | **2.76 GiB** |
+| Bremen (`europe/germany/bremen`) | **0.08 GiB** |
+| Île-de-France (`europe/france/ile-de-france`) | **1.31 GiB** |
+| Champagne-Ardenne (`europe/france/champagne-ardenne`) | **0.62 GiB** |
+
+Also budget the Geofabrik PBF, place index DB, offline PMTiles basemap, and
+optional DEM on top of the pack payload (often another 1–2+ GiB for a large
+landsdel). Full country tables:
+[`docs/pbf-source-sizes.md`](docs/pbf-source-sizes.md),
+[`docs/coverage.md`](docs/coverage.md).
 
 ### Multi-region download order
 
@@ -733,7 +802,7 @@ device:
 |---|---|
 | **CPU** | **8 cores**, about **2 GHz** class |
 | **RAM** | **4 GB**. Prefer **regional** extracts on that class; whole large countries in one go are often too heavy. On the reference SM-P613 (~3.5 GB total), region **use** is fine via pack-hit or PBF fallback; **background pack conversion** still has thin system memory margin — see [Known issues](#known-issues). |
-| **Storage** | Leave room for the region file, place index, offline basemap, optional DEM, and indexed packs — often several GB for a region. |
+| **Storage** | Leave room for the region file, place index, offline basemap, optional DEM, and indexed packs — often several GB for a region. Example pack payloads (car+foot only): Østlandet **2.43 GiB**, Niedersachsen **2.76 GiB**, Bremen **0.08 GiB** — see [Pack on-disk size](#pack-on-disk-size-budget-storage). |
 | **GPU** | MapLibre GLES is the default path (verified on SM-P613 Adreno and Pixel 9a Mali). |
 
 Mitigations already in the design: regional downloads by default, preprocess-once
@@ -1170,6 +1239,33 @@ Country/region visual extracts can also be prepared with
 [PMT-splitter](https://github.com/Supermagnum/PMT-splitter/tree/main).
 
 # Known issues
+
+- **Place-index wall-time outlier (known, unreproduced).** On SM-P613
+  (2026-09-17), one Østlandet place-index build took **~27.9 min**
+  (`place_index.total` 1672.7 s, same 1 486 764 rows as faster runs). A same-day
+  build finished in **~4.8 min**, and four back-to-back rebuilds after a
+  named-routes scan fix (2026-09-18) all clustered at **~5.8–6.2 min**. The
+  ~28 min run was slower across **unchanged** phases too (admin ~241 s vs
+  ~52 s; SQLite insert ~681 s vs ~145 s) — not explained by named-routes alone.
+  Thermal Status and flash free-space were healthy on the fast repro runs
+  (~74–82% Data-Free); **no iostat/thermal HOST snapshot exists from the slow
+  timestamp**. A further run under deliberate memory / flash / background-app
+  pressure (Chrome/Maps/YouTube started, ~1–2 GB `/data/local/tmp` write churn
+  immediately before index) still finished in **~5.6 min** (`place_index.total`
+  334.2 s) — **did not re-enter the ~28 min mode**. Treat ~6 min as the current
+  Østlandet place-index baseline on this tablet, and treat ~28 min as an open
+  field risk, not as resolved. Pipeline phases log `PHASE_TIMING` **HOST**
+  (RAM / thermal / `avail_bytes` / process `proc_*_bytes`) and **IO_PROXY**
+  (per-phase `/proc/self/io` deltas + MB/s, with `suspected_disk_contention=1`
+  when throughput falls far below the SM-P613 healthy floor). Grep
+  `HOST phase=` / `IO_PROXY phase=` / `suspected_disk_contention=1` in logcat
+  (`PHASE_TIMING` / `NaviNative`) or a diagnostic session log.
+  **Permanent platform limit:** system-wide `disk_*_sectors` stay
+  `disk_stats=unavailable` on the app UID (SM-P613 denies `/proc/diskstats` and
+  `/sys/block`). Android `StatFs` / `StorageStatsManager` only expose capacity /
+  per-app usage — not other apps' flash traffic — so there is no rootless
+  system iostat. The IO_PROXY flag is the available contention signal; it cannot
+  name the contending writer.
 
 - **Background indexing is still slow on region-scale extracts, but improved.**
   On the reference SM-P613, full Østlandet convert dropped from about **14.8 min

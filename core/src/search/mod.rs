@@ -5,6 +5,7 @@ use std::path::Path;
 use osmpbf::Element;
 use rusqlite::{params, Connection, Result as SqlResult};
 
+use crate::download::phase_timing;
 use crate::storage::Storage;
 
 mod place_context;
@@ -202,6 +203,7 @@ impl NameIndex {
         path: impl AsRef<Path>,
         region_id: &str,
     ) -> anyhow::Result<usize> {
+        let total_t0 = phase_timing::start("place_index.total");
         let _bg = crate::download::pbf_priority::BackgroundIndexerGuard::enter();
         let path = path.as_ref();
         let region_id = region_id.trim().trim_matches('/').to_string();
@@ -210,14 +212,21 @@ impl NameIndex {
         crate::download::progress::set(0, Some(PHASES), "Place index: admin boundaries…");
 
         // Admin polygons use their own PBF passes (relations → ways → nodes).
+        let admin_t0 = phase_timing::start("place_index.admin");
         let admin_rings = place_context::load_admin_from_pbf(path).unwrap_or_else(|e| {
             log::warn!("admin boundary load for place context skipped: {e:#}");
             Vec::new()
         });
+        phase_timing::end_detail(
+            "place_index.admin",
+            admin_t0,
+            &format!("admin_rings={}", admin_rings.len()),
+        );
 
         // Pass 1: collect named closed/open ways that need node centroids
         // (tourism=zoo, amenity areas, etc. are often ways, not nodes).
         crate::download::progress::set(1, Some(PHASES), "Place index: scanning ways…");
+        let ways_t0 = phase_timing::start("place_index.ways");
         let mut way_jobs: Vec<(i64, String, String, Vec<i64>)> = Vec::new();
         let mut needed_nodes: std::collections::HashSet<i64> = std::collections::HashSet::new();
         {
@@ -252,9 +261,19 @@ impl NameIndex {
                 way_jobs.push((way.id(), name, kind, refs));
             })?;
         }
+        phase_timing::end_detail(
+            "place_index.ways",
+            ways_t0,
+            &format!(
+                "way_jobs={} needed_nodes={}",
+                way_jobs.len(),
+                needed_nodes.len()
+            ),
+        );
 
         // Pass 2: nodes (search hits) + coords for way centroids.
         crate::download::progress::set(2, Some(PHASES), "Place index: scanning nodes…");
+        let nodes_t0 = phase_timing::start("place_index.nodes");
         let mut node_coords: std::collections::HashMap<i64, (f64, f64)> =
             std::collections::HashMap::with_capacity(needed_nodes.len());
         {
@@ -284,7 +303,20 @@ impl NameIndex {
                 _ => {}
             })?;
         }
+        let node_hits = batch.len();
+        phase_timing::end_detail(
+            "place_index.nodes",
+            nodes_t0,
+            &format!(
+                "node_hits={} centroid_coords={}",
+                node_hits,
+                node_coords.len()
+            ),
+        );
 
+        // Invisible to progress UI: assemble way centroids from collected coords.
+        let centroids_t0 = phase_timing::start("place_index.way_centroids");
+        let mut way_hits = 0usize;
         for (way_id, name, kind, refs) in way_jobs {
             let mut sum_lat = 0.0;
             let mut sum_lon = 0.0;
@@ -300,15 +332,25 @@ impl NameIndex {
                 continue;
             }
             batch.push((way_id, name, kind, sum_lat / n as f64, sum_lon / n as f64));
+            way_hits += 1;
         }
+        drop(node_coords);
+        phase_timing::end_detail(
+            "place_index.way_centroids",
+            centroids_t0,
+            &format!("way_hits={way_hits} batch={}", batch.len()),
+        );
 
         // Official hiking/cycling route relations (name/ref/operator) for To/Via search.
         // Relation ids are distinct from node ids in OSM; store relation id as-is
         // (FTS rowid = osm_id).
         crate::download::progress::set(3, Some(PHASES), "Place index: named routes…");
+        let routes_t0 = phase_timing::start("place_index.named_routes");
         crate::download::pbf_priority::yield_if_foreground_plan();
+        let mut route_hits = 0usize;
         match crate::routing::graph::load_named_route_entries(path) {
             Ok(routes) => {
+                route_hits = routes.len();
                 for r in routes {
                     batch.push((r.osm_id, r.name, r.kind, r.lat, r.lon));
                 }
@@ -317,8 +359,14 @@ impl NameIndex {
                 log::warn!("named route relation index skipped: {e:#}");
             }
         }
+        phase_timing::end_detail(
+            "place_index.named_routes",
+            routes_t0,
+            &format!("route_hits={route_hits} batch={}", batch.len()),
+        );
 
         crate::download::progress::set(4, Some(PHASES), "Place index: resolving context…");
+        let ctx_t0 = phase_timing::start("place_index.resolve_context");
         let sub_areas = batch
             .iter()
             .filter_map(|(osm_id, name, kind, lat, lon)| {
@@ -327,10 +375,19 @@ impl NameIndex {
             .collect();
         let resolver =
             place_context::ContextResolver::from_admin_and_sub_areas(admin_rings, sub_areas);
+        phase_timing::end_detail(
+            "place_index.resolve_context",
+            ctx_t0,
+            &format!("batch={}", batch.len()),
+        );
 
         crate::download::progress::set(5, Some(PHASES), "Place index: writing database…");
+        let write_t0 = phase_timing::start("place_index.sqlite_write");
+        let clear_t0 = phase_timing::start("place_index.sqlite_clear_region");
         let tx = self.conn.unchecked_transaction()?;
         Self::clear_region_rows(&tx, &region_id)?;
+        phase_timing::end("place_index.sqlite_clear_region", clear_t0);
+        let insert_t0 = phase_timing::start("place_index.sqlite_insert_rows");
         for (osm_id, name, kind, lat, lon) in &batch {
             let ctx = resolver.resolve(*osm_id, name, kind, *lat, *lon);
             // osm_id may already exist from another region at a landsdel border —
@@ -358,11 +415,28 @@ impl NameIndex {
                 params![osm_id, name, kind],
             )?;
         }
+        phase_timing::end_detail(
+            "place_index.sqlite_insert_rows",
+            insert_t0,
+            &format!("rows={}", batch.len()),
+        );
+        let commit_t0 = phase_timing::start("place_index.sqlite_commit");
         tx.execute_batch(&format!(
             "PRAGMA user_version = {PLACE_INDEX_SCHEMA_VERSION};"
         ))?;
         tx.commit()?;
+        phase_timing::end("place_index.sqlite_commit", commit_t0);
+        phase_timing::end_detail(
+            "place_index.sqlite_write",
+            write_t0,
+            &format!("rows={}", batch.len()),
+        );
         crate::download::progress::set(PHASES, Some(PHASES), "Place index ready");
+        phase_timing::end_detail(
+            "place_index.total",
+            total_t0,
+            &format!("indexed={}", batch.len()),
+        );
         Ok(batch.len())
     }
 

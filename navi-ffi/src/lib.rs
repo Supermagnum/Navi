@@ -4065,6 +4065,7 @@ pub fn ensure_place_index(
     // Surface 0/6 immediately so the Tools % line is never blank while we check
     // the cache / open SQLite.
     progress::set(0, Some(6), "Place index: starting…");
+    let prep_t0 = driver_break_core::download::phase_timing::start("place_index.prep_cache_check");
     // Schema bumps (e.g. v4 building kind) must rebuild; wipe first so other
     // regions are not left with pre-bump row kinds after user_version advances.
     driver_break_core::search::NameIndex::discard_if_schema_stale(db);
@@ -4082,6 +4083,10 @@ pub fn ensure_place_index(
                     && driver_break_core::search::NameIndex::has_entries_for_region(db, &region)
             };
             if region_ok {
+                driver_break_core::download::phase_timing::end(
+                    "place_index.prep_cache_check",
+                    prep_t0,
+                );
                 progress::set(6, Some(6), "Place index ready");
                 return format!(
                     "PASS\ncache_hit=true\nregion_id={region}\nindex_db={index_db_path}\n"
@@ -4089,14 +4094,22 @@ pub fn ensure_place_index(
             }
         }
     }
+    driver_break_core::download::phase_timing::end("place_index.prep_cache_check", prep_t0);
+    let open_t0 = driver_break_core::download::phase_timing::start("place_index.open_db");
     match driver_break_core::search::NameIndex::open(db) {
-        Ok(mut idx) => match idx.load_from_pbf_for_region(pbf, &region) {
-            Ok(n) => format!(
-                "PASS\ncache_hit=false\nindexed={n}\nregion_id={region}\nindex_db={index_db_path}\n"
-            ),
-            Err(e) => format!("FAIL: index load: {e:#}\n"),
-        },
-        Err(e) => format!("FAIL: open index: {e}\n"),
+        Ok(mut idx) => {
+            driver_break_core::download::phase_timing::end("place_index.open_db", open_t0);
+            match idx.load_from_pbf_for_region(pbf, &region) {
+                Ok(n) => format!(
+                    "PASS\ncache_hit=false\nindexed={n}\nregion_id={region}\nindex_db={index_db_path}\n"
+                ),
+                Err(e) => format!("FAIL: index load: {e:#}\n"),
+            }
+        }
+        Err(e) => {
+            driver_break_core::download::phase_timing::end("place_index.open_db", open_t0);
+            format!("FAIL: open index: {e}\n")
+        }
     }
 }
 

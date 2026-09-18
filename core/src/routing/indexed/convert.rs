@@ -575,10 +575,24 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
             // then per-tile graphs built+written in parallel (coords shared read-only).
             let skip_tiles = skip_tiles_from_checkpoint(&ck, &opts.data_dir);
             if !skip_tiles.is_empty() {
+                let mut by_profile: BTreeMap<&'static str, usize> = BTreeMap::new();
+                for (p, _, _) in &skip_tiles {
+                    *by_profile.entry(profile_key(*p)).or_default() += 1;
+                }
+                let summary = by_profile
+                    .iter()
+                    .map(|(k, n)| format!("{k}={n}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 download_progress::set(
                     1,
                     Some(total_steps),
-                    "Resuming indexed maps: graphs (skipping finished tiles)…",
+                    &format!("Resuming indexed maps: skipping finished tiles ({summary})…"),
+                );
+                log::info!(
+                    target: "NaviConvert",
+                    "CONVERT_PHASE resume skip_tiles total={} ({summary})",
+                    skip_tiles.len()
                 );
             }
             let barrier_arc = Arc::new(Mutex::new(barrier_extra));

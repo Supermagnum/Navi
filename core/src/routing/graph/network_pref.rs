@@ -444,6 +444,13 @@ pub struct NamedRouteEntry {
 /// Uses the first node of the first way member as a representative coordinate.
 /// Superroutes without their own geometry inherit the first child's first way node
 /// when available; otherwise they are skipped (known limitation).
+///
+/// Scans use the same yield-aware parallel blob path as place-index ways/nodes
+/// ([`crate::download::pbf_priority::for_each_pbf_elements`]). Relation pass
+/// keeps only `type=route` / `type=superroute` candidates (not every OSM
+/// relation), so retained work tracks route density rather than full-file
+/// relation count; way/node passes only resolve the few thousand member ids
+/// needed for those candidates.
 pub fn load_named_route_entries(path: impl AsRef<Path>) -> anyhow::Result<Vec<NamedRouteEntry>> {
     let path = path.as_ref();
 
@@ -457,36 +464,39 @@ pub fn load_named_route_entries(path: impl AsRef<Path>) -> anyhow::Result<Vec<Na
     let mut way_first_node: HashMap<i64, i64> = HashMap::new();
     let mut node_coord: HashMap<i64, (f64, f64)> = HashMap::new();
 
-    // Three lightweight passes (relations → ways → nodes).
-    {
-        let file = std::fs::File::open(path)?;
-        let reader = ElementReader::new(file);
-        reader.for_each(|element| {
-            if let Element::Relation(rel) = element {
-                let tags: HashMap<String, String> = rel
-                    .tags()
-                    .map(|(k, v)| (k.to_string(), v.to_string()))
-                    .collect();
-                let mut way_ids = Vec::new();
-                let mut child_rels = Vec::new();
-                for m in rel.members() {
-                    match m.member_type {
-                        RelMemberType::Way => way_ids.push(m.member_id),
-                        RelMemberType::Relation => child_rels.push(m.member_id),
-                        RelMemberType::Node => {}
-                    }
-                }
-                rels.insert(
-                    rel.id(),
-                    RelInfo {
-                        tags,
-                        way_ids,
-                        child_rels,
-                    },
-                );
+    // Pass 1: route/superroute candidates only (parallel, yield-aware).
+    crate::download::pbf_priority::yield_if_foreground_plan();
+    crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+        let Element::Relation(rel) = element else {
+            return;
+        };
+        let tags: HashMap<String, String> = rel
+            .tags()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        // Drop non-route relations immediately — avoids allocating members for
+        // every boundary/multipolygon/restriction in the extract.
+        if !tag_eq(&tags, "type", "route") && !tag_eq(&tags, "type", "superroute") {
+            return;
+        }
+        let mut way_ids = Vec::new();
+        let mut child_rels = Vec::new();
+        for m in rel.members() {
+            match m.member_type {
+                RelMemberType::Way => way_ids.push(m.member_id),
+                RelMemberType::Relation => child_rels.push(m.member_id),
+                RelMemberType::Node => {}
             }
-        })?;
-    }
+        }
+        rels.insert(
+            rel.id(),
+            RelInfo {
+                tags,
+                way_ids,
+                child_rels,
+            },
+        );
+    })?;
 
     let interesting: HashSet<i64> = rels
         .iter()
@@ -515,37 +525,34 @@ pub fn load_named_route_entries(path: impl AsRef<Path>) -> anyhow::Result<Vec<Na
         }
     }
 
-    {
-        let file = std::fs::File::open(path)?;
-        let reader = ElementReader::new(file);
-        reader.for_each(|element| {
-            if let Element::Way(way) = element {
-                let id = way.id();
-                if needed_ways.contains(&id) {
-                    if let Some(n) = way.refs().next() {
-                        way_first_node.insert(id, n);
-                    }
-                }
+    // Pass 2: first node of each needed way (parallel, yield-aware).
+    crate::download::pbf_priority::yield_if_foreground_plan();
+    crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+        let Element::Way(way) = element else {
+            return;
+        };
+        let id = way.id();
+        if needed_ways.contains(&id) {
+            if let Some(n) = way.refs().next() {
+                way_first_node.insert(id, n);
             }
-        })?;
-    }
+        }
+    })?;
 
     let needed_nodes: HashSet<i64> = way_first_node.values().copied().collect();
-    {
-        let file = std::fs::File::open(path)?;
-        let reader = ElementReader::new(file);
-        reader.for_each(|element| match element {
-            Element::Node(n) => {
-                if needed_nodes.contains(&n.id()) {
-                    node_coord.insert(n.id(), (n.lat(), n.lon()));
-                }
+    // Pass 3: coords for those nodes only.
+    crate::download::pbf_priority::yield_if_foreground_plan();
+    crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
+        Element::Node(n) => {
+            if needed_nodes.contains(&n.id()) {
+                node_coord.insert(n.id(), (n.lat(), n.lon()));
             }
-            Element::DenseNode(n) if needed_nodes.contains(&n.id) => {
-                node_coord.insert(n.id, (n.lat(), n.lon()));
-            }
-            _ => {}
-        })?;
-    }
+        }
+        Element::DenseNode(n) if needed_nodes.contains(&n.id) => {
+            node_coord.insert(n.id, (n.lat(), n.lon()));
+        }
+        _ => {}
+    })?;
 
     let mut out = Vec::new();
     for id in interesting {

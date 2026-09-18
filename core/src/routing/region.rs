@@ -7,7 +7,7 @@ use anyhow::bail;
 use reqwest::header::HeaderMap;
 
 use crate::download::{
-    stream_get_to_file_blocking, DownloadControl, StreamDownloadOpts, DEFAULT_RETRIES,
+    phase_timing, stream_get_to_file_blocking, DownloadControl, StreamDownloadOpts, DEFAULT_RETRIES,
 };
 use crate::routing::elevation::{bbox_to_tiles, ElevationCache, ElevationDownloader};
 use crate::storage::{ElevationJobStore, JobStatus, Storage};
@@ -144,6 +144,7 @@ pub fn provision_region_with_elev_tar(
     let mut osm_bytes = 0u64;
     let need_pbf = !pbf_path.is_file() || fs::metadata(&pbf_path)?.len() < 1_000_000;
     if need_pbf {
+        let pbf_t0 = phase_timing::start("geofabrik_pbf.download");
         let partial_path = {
             let mut p = pbf_path.as_os_str().to_owned();
             p.push(".partial");
@@ -165,6 +166,17 @@ pub fn provision_region_with_elev_tar(
                 "downloaded PBF too small ({osm_bytes} bytes) from {pbf_url} — refuse stub/empty"
             );
         }
+        phase_timing::end_detail(
+            "geofabrik_pbf.download",
+            pbf_t0,
+            &format!("bytes={osm_bytes}"),
+        );
+    } else {
+        log::info!(
+            target: "PHASE_TIMING",
+            "END phase=geofabrik_pbf.download elapsed_ms=0.0 skipped=already_present bytes={}",
+            fs::metadata(&pbf_path)?.len()
+        );
     }
 
     if let Some(tar_url) = elevation_tar_url {
@@ -198,7 +210,13 @@ pub fn provision_region_with_elev_tar(
         });
     }
 
+    let dem_t0 = phase_timing::start("dem.ensure_corridor");
     let (_, _, dem_s) = ensure_corridor_dem(&elev_dir, &data_dir.join("navi.db"))?;
+    phase_timing::end_detail(
+        "dem.ensure_corridor",
+        dem_t0,
+        &format!("dem_download_s={dem_s:.1}"),
+    );
     Ok(RegionProvision {
         pbf_path,
         elev_dir,

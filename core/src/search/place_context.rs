@@ -15,6 +15,7 @@ use std::path::Path;
 use osmpbf::{Element, RelMemberType};
 use rstar::{RTree, RTreeObject, AABB};
 
+use crate::download::phase_timing;
 use crate::tracks::haversine_km;
 
 /// Schema bump written at the end of a context-aware `load_from_pbf`.
@@ -297,6 +298,7 @@ pub(crate) fn load_admin_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Vec<
     let mut rels: Vec<(String, u8, Vec<i64>)> = Vec::new();
     let mut needed_ways: HashSet<i64> = HashSet::new();
     {
+        let t0 = phase_timing::start("place_index.admin.relations");
         crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
             let Element::Relation(rel) = element else {
                 return;
@@ -329,11 +331,17 @@ pub(crate) fn load_admin_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Vec<
                 rels.push((name, level, outers));
             }
         })?;
+        phase_timing::end_detail(
+            "place_index.admin.relations",
+            t0,
+            &format!("rels={} needed_ways={}", rels.len(), needed_ways.len()),
+        );
     }
 
     let mut way_nodes: HashMap<i64, Vec<i64>> = HashMap::new();
     let mut standalone: Vec<(String, u8, Vec<i64>)> = Vec::new();
     {
+        let t0 = phase_timing::start("place_index.admin.ways");
         crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
             let Element::Way(way) = element else {
                 return;
@@ -353,6 +361,15 @@ pub(crate) fn load_admin_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Vec<
                 }
             }
         })?;
+        phase_timing::end_detail(
+            "place_index.admin.ways",
+            t0,
+            &format!(
+                "way_nodes={} standalone={}",
+                way_nodes.len(),
+                standalone.len()
+            ),
+        );
     }
 
     let mut needed_nodes: HashSet<i64> = HashSet::new();
@@ -365,6 +382,7 @@ pub(crate) fn load_admin_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Vec<
 
     let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed_nodes.len());
     {
+        let t0 = phase_timing::start("place_index.admin.nodes");
         crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
             Element::Node(n) => {
                 if needed_nodes.contains(&n.id()) {
@@ -376,8 +394,14 @@ pub(crate) fn load_admin_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Vec<
             }
             _ => {}
         })?;
+        phase_timing::end_detail(
+            "place_index.admin.nodes",
+            t0,
+            &format!("coords={}", coords.len()),
+        );
     }
 
+    let stitch_t0 = phase_timing::start("place_index.admin.stitch_rings");
     let mut rings = Vec::new();
     for (name, level, outers) in rels {
         let mut ways: Vec<Vec<i64>> = Vec::new();
@@ -399,6 +423,11 @@ pub(crate) fn load_admin_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Vec<
             rings.push(admin_ring(name, level, ring));
         }
     }
+    phase_timing::end_detail(
+        "place_index.admin.stitch_rings",
+        stitch_t0,
+        &format!("rings={}", rings.len()),
+    );
     Ok(rings)
 }
 

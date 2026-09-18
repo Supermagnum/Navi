@@ -41,7 +41,247 @@ object RegionDownloadBackground {
     const val JOB_FILE = "region-download.json"
     const val QUEUE_FILE = "region-download-queue.json"
     private const val TAG = "RegionDownloadBg"
+    private const val PHASE_TAG = "PHASE_TIMING"
     private const val MIN_PBF_BYTES = 1_000_000L
+
+    private val phaseIoAnchors = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Long>>()
+
+    private fun phaseStart(phase: String): Long {
+        Log.i(PHASE_TAG, "START phase=$phase")
+        logHostSnapshot(phase)
+        phaseIoAnchors[phase] = readProcSelfIo()
+        return System.nanoTime()
+    }
+
+    private fun phaseEnd(
+        phase: String,
+        t0Ns: Long,
+        detail: String = "",
+    ) {
+        val ms = (System.nanoTime() - t0Ns) / 1_000_000.0
+        val suffix = if (detail.isEmpty()) "" else " $detail"
+        Log.i(PHASE_TAG, "END phase=$phase elapsed_ms=${"%.1f".format(ms)}$suffix")
+        logPhaseIoProxy(phase, ms)
+    }
+
+    /**
+     * Lightweight always-on host snapshot at pipeline phase start (mirrors Rust
+     * `phase_timing::start`). Best-effort reads of /proc and /sys — never throws.
+     *
+     * System `disk_*_sectors` are usually unavailable to the app UID (StatFs /
+     * StorageStatsManager only expose capacity, not I/O rates). See IO_PROXY on
+     * phase end for the process-throughput contention proxy.
+     */
+    private fun logHostSnapshot(phase: String) {
+        try {
+            val (availKb, freeKb, totalKb) = readMeminfoKb()
+            val thermal = readThermalSample()
+            val (diskRd, diskWr) = readDiskstatsSectors()
+            val diskStats =
+                if (diskRd > 0L || diskWr > 0L) {
+                    "ok"
+                } else {
+                    "unavailable"
+                }
+            val (procR, procW) = readProcSelfIo()
+            val availBytes = File("/data").usableSpace
+            Log.i(
+                PHASE_TAG,
+                "HOST phase=$phase mem_avail_kb=$availKb mem_free_kb=$freeKb " +
+                    "mem_total_kb=$totalKb thermal_mC=$thermal " +
+                    "disk_rd_sectors=$diskRd disk_wr_sectors=$diskWr disk_stats=$diskStats " +
+                    "proc_read_bytes=$procR proc_write_bytes=$procW " +
+                    "avail_bytes=$availBytes",
+            )
+        } catch (_: Throwable) {
+            Log.i(PHASE_TAG, "HOST phase=$phase mem_avail_kb=-1 error=snapshot_failed")
+        }
+    }
+
+    private fun logPhaseIoProxy(
+        phase: String,
+        elapsedMs: Double,
+    ) {
+        val anchor = phaseIoAnchors.remove(phase) ?: return
+        val (procR, procW) = readProcSelfIo()
+        val readDelta = (procR - anchor.first).coerceAtLeast(0L)
+        val writeDelta = (procW - anchor.second).coerceAtLeast(0L)
+        val secs = (elapsedMs / 1000.0).coerceAtLeast(0.001)
+        val readMbS = readDelta.toDouble() / (1024.0 * 1024.0) / secs
+        val writeMbS = writeDelta.toDouble() / (1024.0 * 1024.0) / secs
+        val suspected = suspectedDiskContention(phase, elapsedMs, readDelta, writeDelta, readMbS, writeMbS)
+        Log.i(
+            PHASE_TAG,
+            "IO_PROXY phase=$phase elapsed_ms=${"%.1f".format(elapsedMs)} " +
+                "proc_read_delta_b=$readDelta proc_write_delta_b=$writeDelta " +
+                "proc_read_mb_s=${"%.3f".format(readMbS)} " +
+                "proc_write_mb_s=${"%.3f".format(writeMbS)} " +
+                "suspected_disk_contention=$suspected",
+        )
+    }
+
+    /** Coarse pipeline IO_PROXY: flag collapsed process throughput on long phases. */
+    private fun suspectedDiskContention(
+        @Suppress("UNUSED_PARAMETER") phase: String,
+        elapsedMs: Double,
+        readDelta: Long,
+        writeDelta: Long,
+        readMbS: Double,
+        writeMbS: Double,
+    ): Int {
+        if (elapsedMs < 15_000.0) return 0
+        val minBytes = 1024L * 1024L
+        // Prefer write floor for download / index / basemap walls; read floor
+        // when the phase barely wrote (PBF-scan dominated).
+        if (writeDelta >= minBytes && writeMbS < 0.25) return 1
+        if (writeDelta < minBytes && readDelta >= minBytes && readMbS < 0.5) return 1
+        return 0
+    }
+
+    private fun readProcSelfIo(): Pair<Long, Long> {
+        var readBytes = 0L
+        var writeBytes = 0L
+        try {
+            File("/proc/self/io").bufferedReader().useLines { lines ->
+                for (line in lines) {
+                    when {
+                        line.startsWith("read_bytes:") ->
+                            readBytes = line.substringAfter(':').trim().toLongOrNull() ?: 0L
+                        line.startsWith("write_bytes:") ->
+                            writeBytes = line.substringAfter(':').trim().toLongOrNull() ?: 0L
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+            return 0L to 0L
+        }
+        return readBytes to writeBytes
+    }
+
+    private fun readMeminfoKb(): Triple<Long, Long, Long> {
+        var avail = -1L
+        var free = -1L
+        var total = -1L
+        try {
+            File("/proc/meminfo").bufferedReader().useLines { lines ->
+                for (line in lines) {
+                    when {
+                        line.startsWith("MemAvailable:") ->
+                            avail = line.split(Regex("\\s+")).getOrNull(1)?.toLongOrNull() ?: -1L
+                        line.startsWith("MemFree:") ->
+                            free = line.split(Regex("\\s+")).getOrNull(1)?.toLongOrNull() ?: -1L
+                        line.startsWith("MemTotal:") ->
+                            total = line.split(Regex("\\s+")).getOrNull(1)?.toLongOrNull() ?: -1L
+                    }
+                    if (avail >= 0 && free >= 0 && total >= 0) break
+                }
+            }
+        } catch (_: Throwable) {
+            // leave -1
+        }
+        return Triple(avail, free, total)
+    }
+
+    private fun readThermalSample(): String {
+        val out = ArrayList<String>(4)
+        try {
+            for (idx in 0 until 16) {
+                if (out.size >= 4) break
+                val base = "/sys/class/thermal/thermal_zone$idx"
+                val ty =
+                    File("$base/type")
+                        .takeIf { it.isFile }
+                        ?.readText()
+                        ?.trim()
+                        .orEmpty()
+                val temp =
+                    File("$base/temp")
+                        .takeIf { it.isFile }
+                        ?.readText()
+                        ?.trim()
+                        .orEmpty()
+                if (ty.isEmpty() || temp.isEmpty()) continue
+                val prefer =
+                    ty.contains("cpu", ignoreCase = true) ||
+                        ty.contains("skin", ignoreCase = true) ||
+                        ty.contains("battery", ignoreCase = true) ||
+                        ty.contains("AP") ||
+                        ty.contains("LITTLE") ||
+                        ty.contains("BIG")
+                if (prefer || out.size < 2) {
+                    out.add("$ty:$temp")
+                }
+            }
+        } catch (_: Throwable) {
+            return "none"
+        }
+        return if (out.isEmpty()) "none" else out.joinToString(",")
+    }
+
+    private fun readDiskstatsSectors(): Pair<Long, Long> {
+        val fromProc = readDiskstatsProc()
+        if (fromProc.first > 0L || fromProc.second > 0L) return fromProc
+        return readDiskstatsSysfs()
+    }
+
+    private fun keepBlockDevice(name: String): Boolean {
+        if (name.startsWith("loop") || name.startsWith("ram") || name.startsWith("zram")) {
+            return false
+        }
+        val last = name.lastOrNull() ?: return false
+        val isPartition =
+            last.isDigit() &&
+                (
+                    name.startsWith("sd") ||
+                        name.startsWith("vd") ||
+                        name.startsWith("nvme") ||
+                        (name.startsWith("mmc") && name.contains('p'))
+                )
+        return !isPartition
+    }
+
+    private fun readDiskstatsProc(): Pair<Long, Long> {
+        var rd = 0L
+        var wr = 0L
+        try {
+            File("/proc/diskstats").bufferedReader().useLines { lines ->
+                for (line in lines) {
+                    val p = line.trim().split(Regex("\\s+"))
+                    if (p.size < 10) continue
+                    if (!keepBlockDevice(p[2])) continue
+                    val rdSec = p[5].toLongOrNull() ?: continue
+                    val wrSec = p[9].toLongOrNull() ?: continue
+                    rd += rdSec
+                    wr += wrSec
+                }
+            }
+        } catch (_: Throwable) {
+            return 0L to 0L
+        }
+        return rd to wr
+    }
+
+    private fun readDiskstatsSysfs(): Pair<Long, Long> {
+        var rd = 0L
+        var wr = 0L
+        try {
+            val block = File("/sys/block")
+            if (!block.isDirectory) return 0L to 0L
+            for (dev in block.listFiles().orEmpty()) {
+                if (!keepBlockDevice(dev.name)) continue
+                val text = File(dev, "stat").takeIf { it.isFile }?.readText() ?: continue
+                val p = text.trim().split(Regex("\\s+"))
+                if (p.size < 7) continue
+                val rdSec = p[2].toLongOrNull() ?: continue
+                val wrSec = p[6].toLongOrNull() ?: continue
+                rd += rdSec
+                wr += wrSec
+            }
+        } catch (_: Throwable) {
+            return 0L to 0L
+        }
+        return rd to wr
+    }
 
     /** Status prefix once packs, basemap, and place index have finished. */
     const val USABLE_STATUS_PREFIX = "Place index ready"
@@ -722,6 +962,7 @@ object RegionDownloadBackground {
         var phase = startPhase
         if (pathForDecision.isNotBlank() && phase == Phase.PACKS) {
             val checkStarted = System.nanoTime()
+            val decideT0 = phaseStart("pipeline.decide_acquisition")
             lastStatus.set("Fetching from pack server…")
             persistPhase(dataDir, url, filename, pathForDecision, Phase.PACKS)
             val decision =
@@ -738,6 +979,11 @@ object RegionDownloadBackground {
                     )
                     null
                 }
+            phaseEnd(
+                "pipeline.decide_acquisition",
+                decideT0,
+                "execute_local=${decision?.executeLocalConvert} reason=${decision?.decisionReason}",
+            )
             val checkMs = (System.nanoTime() - checkStarted) / 1_000_000L
             if (decision != null) {
                 Log.i(
@@ -750,6 +996,7 @@ object RegionDownloadBackground {
                         "decide_region_acquisition_ms=$checkMs",
                 )
                 if (!decision.executeLocalConvert) {
+                    val packPathT0 = phaseStart("pipeline.pack_server_path")
                     lastStatus.set("Installing packs from ${decision.dataSource}…")
                     runCatching {
                         bindGeofabrikRegion(
@@ -764,6 +1011,7 @@ object RegionDownloadBackground {
                     }
                     // Download Geofabrik extract BEFORE place index / basemap.
                     lastStatus.set("Downloading extract for place index…")
+                    val pbfT0 = phaseStart("pipeline.provision_pbf_dem")
                     val pbfReport =
                         provisionRegionData(
                             dataDir = dataDir.absolutePath,
@@ -771,6 +1019,11 @@ object RegionDownloadBackground {
                             pbfFilename = filename,
                             elevationTarUrl = null,
                         )
+                    phaseEnd(
+                        "pipeline.provision_pbf_dem",
+                        pbfT0,
+                        "pass=${pbfReport.contains("PASS")}",
+                    )
                     Log.i(TAG, "pack-server PBF provision: ${pbfReport.take(240)}")
                     if (!pbfReport.contains("PASS")) {
                         lastStatus.set("failed (extract download)")
@@ -779,8 +1032,14 @@ object RegionDownloadBackground {
                     }
                     phase = Phase.BASEMAP
                     persistPhase(dataDir, url, filename, pathForDecision, phase)
+                    val basemapT0 = phaseStart("pipeline.basemap_pmtiles")
                     val basemapOk =
                         downloadBasemapPmtiles(context, dataDir, pathForDecision)
+                    phaseEnd(
+                        "pipeline.basemap_pmtiles",
+                        basemapT0,
+                        "ok=$basemapOk",
+                    )
                     if (!basemapOk) {
                         lastCompletedPath.set(pathForDecision)
                         lastStatus.set("done (basemap failed)")
@@ -788,7 +1047,14 @@ object RegionDownloadBackground {
                     }
                     phase = Phase.PLACE_INDEX
                     persistPhase(dataDir, url, filename, pathForDecision, phase)
-                    if (!runPlaceIndexLocal(dataDir, filename, pathForDecision)) {
+                    val placeT0 = phaseStart("pipeline.place_index")
+                    val placeOk = runPlaceIndexLocal(dataDir, filename, pathForDecision)
+                    phaseEnd(
+                        "pipeline.place_index",
+                        placeT0,
+                        "ok=$placeOk",
+                    )
+                    if (!placeOk) {
                         lastStatus.set("done (place index failed)")
                         lastCompletedPath.set(pathForDecision)
                         return
@@ -797,6 +1063,7 @@ object RegionDownloadBackground {
                     markUsable(pathForDecision)
                     lastCompletedPath.set(pathForDecision)
                     lastStatus.set("done")
+                    phaseEnd("pipeline.pack_server_path", packPathT0)
                     Log.i(
                         TAG,
                         "pack server install + extract + basemap + place index finished " +
