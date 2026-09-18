@@ -16,7 +16,7 @@ kotlin {
 
 android {
     namespace = "no.navi.app"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "no.navi.app"
