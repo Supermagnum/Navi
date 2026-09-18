@@ -1,4 +1,4 @@
-//! OSM conditional restriction evaluation via `opening-hours` 1.4.x.
+//! OSM conditional restriction evaluation via `opening-hours` 2.x.
 //!
 //! Used for seasonal road closures (`motor_vehicle:conditional` /
 //! `access:conditional`) and live maxspeed conditionals on speed cameras.
@@ -8,6 +8,7 @@
 
 use chrono::{Local, NaiveDateTime};
 use opening_hours::OpeningHours;
+use std::str::FromStr;
 
 /// Extract the opening-hours condition from one OSM conditional clause.
 ///
@@ -56,7 +57,7 @@ pub fn clause_access_token(clause: &str) -> Option<&str> {
 ///
 /// `None` = unparseable — caller must decline the clause.
 pub fn oh_condition_matches_at(condition: &str, dt: NaiveDateTime) -> Option<bool> {
-    match OpeningHours::parse(condition) {
+    match OpeningHours::from_str(condition) {
         Ok(oh) => Some(oh.is_open(dt)),
         Err(_) => None,
     }
