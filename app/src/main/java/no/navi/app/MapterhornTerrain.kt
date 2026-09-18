@@ -1,6 +1,5 @@
 package no.navi.app
 
-import android.graphics.Color
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
