@@ -39,6 +39,13 @@ class RegionCoverageTest {
                 "europe/norway/trondelag",
             ),
         )
+        // Sibling landsdels still do not cover each other.
+        assertFalse(
+            RegionCoverage.downloadedCoversIdentity(
+                "europe/norway/vestlandet",
+                "europe/norway/ostlandet",
+            ),
+        )
     }
 
     @Test

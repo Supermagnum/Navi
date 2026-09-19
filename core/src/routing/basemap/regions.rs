@@ -46,9 +46,36 @@ pub fn sanitize_region_key(key: &str) -> String {
 ///
 /// Norway landsdels and `test/oslo` use the local table; country extracts use
 /// bboxes derived from Geofabrik `index-v1.json` geometries (see
-/// [`GEOFABRIK_PATH_BBOX`]).
+/// [`GEOFABRIK_PATH_BBOX`]). Pack-catalog leaves use [`PACK_LEAF_PATH_BBOX`].
+///
+/// **Parent-walk:** unknown subpaths under a known extract (e.g.
+/// `europe/germany/bayern/oberbayern`) resolve to the nearest ancestor bbox.
+/// Prefer [`region_bbox_exact`] when false coverage of a parent must be avoided.
 pub fn region_bbox(geofabrik_path: &str) -> Option<[f64; 4]> {
     let path = geofabrik_path.trim().trim_matches('/').to_ascii_lowercase();
+    if let Some(bbox) = region_bbox_exact(&path) {
+        return Some(bbox);
+    }
+    // Unknown subpath under a known extract: walk parents (e.g.
+    // europe/germany/bayern/oberbayern → europe/germany).
+    let mut rest = path.as_str();
+    while let Some((parent, _)) = rest.rsplit_once('/') {
+        if let Some(bbox) = region_bbox_exact(parent) {
+            return Some(bbox);
+        }
+        rest = parent;
+    }
+    None
+}
+
+/// Exact table bbox only — no parent-walk. Returns [None] for paths that are
+/// not themselves rows in [`NORWAY_LANDSDEL`], [`GEOFABRIK_PATH_BBOX`], or
+/// [`PACK_LEAF_PATH_BBOX`] (e.g. `europe/germany/bayern/oberbayern`).
+pub fn region_bbox_exact(geofabrik_path: &str) -> Option<[f64; 4]> {
+    let path = geofabrik_path.trim().trim_matches('/').to_ascii_lowercase();
+    if path.is_empty() {
+        return None;
+    }
     if let Some(bbox) = NORWAY_LANDSDEL
         .iter()
         .find(|(p, _)| *p == path)
@@ -63,28 +90,10 @@ pub fn region_bbox(geofabrik_path: &str) -> Option<[f64; 4]> {
     {
         return Some(bbox);
     }
-    if let Some(bbox) = PACK_LEAF_PATH_BBOX
+    PACK_LEAF_PATH_BBOX
         .iter()
         .find(|(p, _)| *p == path)
         .map(|(_, b)| *b)
-    {
-        return Some(bbox);
-    }
-    // Unknown subpath under a known extract: walk parents (e.g.
-    // europe/germany/bayern/oberbayern → europe/germany).
-    let mut rest = path.as_str();
-    while let Some((parent, _)) = rest.rsplit_once('/') {
-        if let Some(bbox) = GEOFABRIK_PATH_BBOX
-            .iter()
-            .chain(PACK_LEAF_PATH_BBOX.iter())
-            .find(|(p, _)| *p == parent)
-            .map(|(_, b)| *b)
-        {
-            return Some(bbox);
-        }
-        rest = parent;
-    }
-    None
 }
 
 /// Legacy helper: when `base` is a planet URL, return it unchanged; otherwise
@@ -1004,6 +1013,22 @@ mod tests {
         let ost = region_bbox("europe/norway/ostlandet").unwrap();
         assert!(bbox_intersects(vg, svinesund));
         assert!(bbox_intersects(ost, svinesund));
+    }
+
+    #[test]
+    fn region_bbox_exact_rejects_parent_walk_leaves() {
+        assert!(region_bbox_exact("europe/germany").is_some());
+        assert!(region_bbox_exact("europe/norway/ostlandet").is_some());
+        // Pack-leaf table rows are exact hits (current origin/dev PACK_LEAF_PATH_BBOX).
+        assert!(region_bbox_exact("europe/germany/niedersachsen").is_some());
+        assert!(region_bbox_exact("europe/germany/hamburg").is_some());
+        assert!(region_bbox_exact("europe/denmark/syddanmark").is_some());
+        // True parent-walk-only path: no exact row, walking API returns ancestor.
+        assert_eq!(region_bbox_exact("europe/germany/bayern/oberbayern"), None);
+        assert_eq!(
+            region_bbox("europe/germany/bayern/oberbayern"),
+            region_bbox("europe/germany")
+        );
     }
 
     #[test]
