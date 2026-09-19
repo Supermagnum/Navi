@@ -20,6 +20,23 @@ object PlaceIndexReady {
 
     fun readyFile(dataDir: File): File = File(dataDir, READY_FILE)
 
+    /**
+     * Region ids from [READY_FILE] only — no heal, no DB discovery.
+     * Missing or unreadable file → empty. Corrupt JSON → empty / partial parse
+     * (same defensive parser as [loadStampOnly]).
+     */
+    fun readyIds(dataDir: File): List<String> {
+        val f = readyFile(dataDir)
+        if (!f.isFile) return emptyList()
+        return runCatching {
+            parseJsonStringArray(f.readText())
+                .map { PackRegionAvailability.normalize(it) }
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .sorted()
+        }.getOrDefault(emptyList())
+    }
+
     fun load(dataDir: File): Set<String> {
         healReadyFromDownloads(dataDir)
         val f = readyFile(dataDir)

@@ -1,5 +1,7 @@
 package no.navi.app
 
+import android.util.Log
+import org.json.JSONObject
 import uniffi.navi.pmtilesRegionBbox
 import java.io.File
 
@@ -7,7 +9,8 @@ import java.io.File
  * Pre-flight offline coverage for route planning: detect From/To/Via points
  * that fall outside downloaded Geofabrik extracts, and suggest a download path.
  *
- * Bboxes come from the same table as offline PMTiles (`pmtilesRegionBbox`).
+ * Coverage uses **exact** region bboxes only (see [exactRegionBbox]) so a pack
+ * leaf without its own table entry never silently inherits a parent country box.
  */
 data class MissingRegionCoverage(
     /** Waypoint role: "To", "Via", or "From". */
@@ -23,12 +26,21 @@ data class MissingRegionCoverage(
 )
 
 object RegionCoverage {
+    private const val TAG = "RegionCoverage"
+
     data class Waypoint(
         val role: String,
         val name: String,
         val lat: Double,
         val lon: Double,
     )
+
+    /**
+     * Test hook: when non-null, [exactRegionBbox] returns this instead of native.
+     * Cleared by tests in `@After`.
+     */
+    @Volatile
+    internal var exactRegionBboxForTest: ((String) -> List<Double>?)? = null
 
     fun displayName(geofabrikPath: String): String =
         when (geofabrikPath.trim().trim('/').lowercase()) {
@@ -76,6 +88,33 @@ object RegionCoverage {
     ): String? {
         val fromCore = uniffi.navi.suggestGeofabrikPath(lat, lon).trim()
         return fromCore.ifBlank { null }
+    }
+
+    /**
+     * Exact-region bbox only. Mirrors native `region_bbox_exact`: if
+     * [pmtilesRegionBbox] only matched via parent-walk (same box as an ancestor),
+     * returns null so coverage cannot silently use a country extract.
+     */
+    fun exactRegionBbox(path: String): List<Double>? {
+        exactRegionBboxForTest?.let { return it(path) }
+        val n = path.trim().trim('/').lowercase()
+        if (n.isEmpty()) return null
+        val bbox =
+            runCatching { pmtilesRegionBbox(n) }.getOrNull()?.takeIf { it.size >= 4 }
+                ?: return null
+        var rest = n
+        while (true) {
+            val slash = rest.lastIndexOf('/')
+            if (slash <= 0) break
+            val parent = rest.substring(0, slash)
+            val parentBbox =
+                runCatching { pmtilesRegionBbox(parent) }.getOrNull()?.takeIf { it.size >= 4 }
+            if (parentBbox != null && parentBbox == bbox) {
+                return null
+            }
+            rest = parent
+        }
+        return bbox
     }
 
     /**
@@ -129,11 +168,60 @@ object RegionCoverage {
         val d = downloaded.trim().trim('/')
         val id = identity.trim().trim('/')
         if (d.equals(id, ignoreCase = true)) return true
+        // Parent download covers a more specific identity.
         if (id.startsWith("$d/", ignoreCase = true)) return true
+        // Leaf download covers a coarser identity (e.g. niedersachsen vs germany).
+        if (d.startsWith("$id/", ignoreCase = true)) return true
         return false
     }
 
+    /**
+     * Installed region ids for coverage / idle reindex: union of place-index-ready
+     * stamps, pack-server install stamps (`*.navi-server-install.json`), and the
+     * legacy filename→path map. Only [GeofabrikDownloadCatalog.isKnownPackRegionId]
+     * values are kept.
+     *
+     * Note: `*.navi-manifest.json` does not store a pack-catalog region id; that
+     * source is not used (stems alone are ambiguous after the stem-path fix).
+     */
     fun downloadedGeofabrikPaths(dataDir: File): List<String> {
+        val out = linkedSetOf<String>()
+        for (id in PlaceIndexReady.readyIds(dataDir)) {
+            if (GeofabrikDownloadCatalog.isKnownPackRegionId(id)) {
+                out.add(id)
+            } else {
+                runCatching { Log.w(TAG, "ignoring non-catalog ready id=$id") }
+            }
+        }
+        for (id in regionIdsFromPackInstallStamps(dataDir)) {
+            if (GeofabrikDownloadCatalog.isKnownPackRegionId(id)) {
+                out.add(id)
+            } else {
+                runCatching { Log.w(TAG, "ignoring non-catalog pack-install id=$id") }
+            }
+        }
+        // Legacy filename mapping (Norway landsdels and other exact stem hits).
+        out.addAll(legacyPathsFromFilenames(dataDir))
+        return out.sorted()
+    }
+
+    /** Pack-server install sidecars record an authoritative `region_id`. */
+    internal fun regionIdsFromPackInstallStamps(dataDir: File): List<String> {
+        val files = dataDir.listFiles() ?: return emptyList()
+        val out = mutableListOf<String>()
+        for (f in files) {
+            if (!f.isFile || !f.name.endsWith(".navi-server-install.json")) continue
+            val id =
+                runCatching {
+                    val o = JSONObject(f.readText())
+                    PackRegionAvailability.normalize(o.optString("region_id", ""))
+                }.getOrNull()
+            if (!id.isNullOrEmpty()) out.add(id)
+        }
+        return out.distinct()
+    }
+
+    private fun legacyPathsFromFilenames(dataDir: File): List<String> {
         val files =
             buildList {
                 dataDir.listFiles()?.forEach { f ->
@@ -141,14 +229,12 @@ object RegionCoverage {
                         add(f)
                     }
                 }
-                // Pack-server installs may have Ready manifests without a large PBF.
                 dataDir.listFiles()?.forEach { f ->
                     if (f.isFile && f.name.endsWith(".navi-manifest.json")) {
                         val stem = f.name.removeSuffix(".navi-manifest.json")
                         add(File(dataDir, "$stem.osm.pbf"))
                     }
                 }
-                // Same fixture fallback Plan route can use.
                 listOf(
                     File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"),
                     File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"),
@@ -160,7 +246,6 @@ object RegionCoverage {
             .mapNotNull { geofabrikPathForPbfName(it.name) }
             .filter { GeofabrikDownloadCatalog.isKnownPackRegionId(it) }
             .distinct()
-            .sorted()
     }
 
     fun pointCovered(
@@ -168,7 +253,8 @@ object RegionCoverage {
         lon: Double,
         downloadedPaths: List<String>,
     ): Boolean {
-        val identity = suggestGeofabrikPath(lat, lon)
+        val identity =
+            runCatching { suggestGeofabrikPath(lat, lon) }.getOrNull()
         return downloadedPaths.any { path ->
             regionCovers(path, lat, lon) && downloadedCoversIdentity(path, identity)
         }
@@ -179,8 +265,7 @@ object RegionCoverage {
         lat: Double,
         lon: Double,
     ): Boolean {
-        val bbox = pmtilesRegionBbox(path) ?: return false
-        if (bbox.size < 4) return false
+        val bbox = exactRegionBbox(path) ?: return false
         return covers(bbox, lat, lon)
     }
 
@@ -211,13 +296,16 @@ object RegionCoverage {
 
         val needed =
             waypoints
-                .mapNotNull { wp -> suggestGeofabrikPath(wp.lat, wp.lon) }
-                .distinct()
+                .mapNotNull { wp ->
+                    runCatching { suggestGeofabrikPath(wp.lat, wp.lon) }.getOrNull()
+                }.distinct()
         val crossRegion = needed.size > 1
         val first = uncovered.first()
         // Always suggest the region that covers the uncovered waypoint — never
         // a country-scale fallback when landsdels are the product unit.
-        val suggested = suggestGeofabrikPath(first.lat, first.lon) ?: "europe/norway"
+        val suggested =
+            runCatching { suggestGeofabrikPath(first.lat, first.lon) }.getOrNull()
+                ?: "europe/norway"
         val label = displayName(suggested)
         val place = first.name.ifBlank { "${first.lat}, ${first.lon}" }
         val message =

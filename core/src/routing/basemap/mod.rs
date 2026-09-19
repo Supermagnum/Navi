@@ -16,7 +16,7 @@ pub use extract::{
 pub use regions::{
     bbox_covers_point, default_pmtiles_base_url, default_pmtiles_planet_url,
     geofabrik_path_to_region_key, is_exact_catalog_path, pbf_stem_to_geofabrik_path,
-    point_covered_by_regions, region_bbox, region_pmtiles_url, sanitize_region_key,
-    suggest_geofabrik_path_for_point, DEFAULT_PMTILES_BASE_URL,
+    point_covered_by_regions, region_bbox, region_bbox_exact, region_pmtiles_url,
+    sanitize_region_key, suggest_geofabrik_path_for_point, DEFAULT_PMTILES_BASE_URL,
 };
 pub use tile_read::read_pmtiles_tile;
