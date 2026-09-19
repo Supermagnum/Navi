@@ -869,7 +869,10 @@ mod tests {
             None
         );
         assert_eq!(pbf_stem_to_geofabrik_path("hamburg-latest"), None);
-        assert_eq!(pbf_stem_to_geofabrik_path("schleswig-holstein-latest"), None);
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("schleswig-holstein-latest"),
+            None
+        );
         assert_eq!(pbf_stem_to_geofabrik_path("syddanmark-latest"), None);
         assert_eq!(pbf_stem_to_geofabrik_path("sjaelland-latest"), None);
         assert!(!is_exact_catalog_path("europe/norway/niedersachsen"));
