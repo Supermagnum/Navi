@@ -1,0 +1,1 @@
+{"costing":"auto","costing_options":{"auto":{"exclude_ferries":true}},"id":"navi-probe-ferry_kiel_oslo","locations":[{"lat":54.3233,"lon":10.1394,"type":"break"},{"lat":59.9044,"lon":10.741,"type":"break"}],"units":"kilometers"}

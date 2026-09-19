@@ -193,6 +193,24 @@ impl<D: RegionDownloader, I: RegionIndexer, V: VolumeSource> TripOrchestrator<D,
         // Never delete Installed / Indexed data.
     }
 
+    /// After process restart (or toggle back on): keep Installed/Indexed,
+    /// re-queue Paused / Unavailable / Failed as Needed, and re-enable.
+    pub fn resume_after_restart(&mut self, plan: &mut LongTripPlan) {
+        self.enabled = true;
+        for st in plan.states.values_mut() {
+            if matches!(
+                st,
+                RegionTripState::Paused
+                    | RegionTripState::Unavailable
+                    | RegionTripState::Failed(_)
+                    | RegionTripState::Downloading
+                    | RegionTripState::Indexing
+            ) {
+                *st = RegionTripState::Needed;
+            }
+        }
+    }
+
     pub fn on_card_removed_mid_download(&mut self, plan: &mut LongTripPlan) {
         for st in plan.states.values_mut() {
             if matches!(st, RegionTripState::Downloading) {

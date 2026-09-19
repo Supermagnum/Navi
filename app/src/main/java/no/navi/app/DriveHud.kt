@@ -497,7 +497,7 @@ fun PluginSettingsSection(
         if (longTripEnabled) {
             Text(
                 "Downloads map packs along the route on Wi-Fi/Ethernet only. " +
-                    "Origin, vias and destination are sent to OpenRouteService when online.",
+                    "Origin, vias and destination are sent to BRouter and/or OpenRouteService when online.",
                 style = MaterialTheme.typography.bodySmall,
             )
             if (longTripStatusLine.isNotBlank()) {

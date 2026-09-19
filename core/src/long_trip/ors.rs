@@ -5,7 +5,10 @@
 //! - Coordinates: `[lon, lat]` pairs; min 2, max 50 waypoints
 //! - `options.avoid_features`: `ferries` (also highways/tollways/fords/steps)
 //! - `options.avoid_countries`: integer ORS country ids (not ISO strings)
-//! - Public API max driving distance: 6000 km; avoid-areas: 150 km
+//! - Public API max driving distance: 6000 km
+//! - “Distance (with avoid areas)” 150 km applies to `avoid_polygons` /
+//!   avoid-areas only (`maximum_distance_avoid_areas`), **not** to
+//!   `avoid_countries` — stay-inside-country via neighbour ids is fine on long trips
 //! - Standard plan quota: 2000 directions/day, 40/min
 //! - Prefer base `https://api.heigit.org/openrouteservice` (api.openrouteservice.org deprecated)
 
@@ -18,11 +21,17 @@ use super::neighbours::avoid_country_ids_for_allowed;
 /// Default HeiGIT ORS host (no trailing slash).
 pub const DEFAULT_ORS_BASE_URL: &str = "https://api.heigit.org/openrouteservice";
 
-/// UI disclosure: origin, vias and destination are sent to a third party.
-pub const ORS_DISCLOSURE: &str = "Long-trip mode sends your origin, via points and destination coordinates to OpenRouteService (a third party) to estimate which map regions you need. The API key stays on your device settings and is never logged.";
+/// UI disclosure for settings that still call the ORS-named helper.
+/// Same text as [`super::preliminary::PRELIMINARY_ROUTE_DISCLOSURE`] (kept as a
+/// literal to avoid a module cycle).
+pub const ORS_DISCLOSURE: &str = "Long-trip mode sends your origin, via points and destination coordinates to third-party routing services (BRouter and/or OpenRouteService) to estimate which map regions you need. The BRouter operator logs IP address, User-Agent and route coordinates for about two weeks (see brouter.de privacy policy). An OpenRouteService API key, when used, stays on your device settings and is never logged.";
 
 /// Public API driving-car maximum route distance (metres).
 pub const ORS_MAX_DISTANCE_M: f64 = 6_000_000.0;
+
+/// Public API cap when **avoid areas / polygons** are set (metres).
+/// Does **not** apply to `options.avoid_countries`.
+pub const ORS_MAX_DISTANCE_AVOID_AREAS_M: f64 = 150_000.0;
 
 /// Maximum waypoints per directions request (public API).
 pub const ORS_MAX_WAYPOINTS: usize = 50;
@@ -240,6 +249,7 @@ pub fn request_directions(
     let body = build_directions_request_body(&coords, allowed_countries)?;
     let url = format!("{}/v2/directions/driving-car/geojson", cfg.base_url);
 
+    crate::long_trip::pace_preliminary_network();
     let client = crate::download::shared_http_client();
     let key = cfg.api_key.trim().to_string();
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -320,10 +330,12 @@ mod tests {
     #[test]
     fn no_straight_line_fallback_in_module() {
         // Guard: this crate must not invent a chord when ORS fails.
+        // Scan production code only (exclude this tests module).
         let src = include_str!("ors.rs");
+        let prod = src.split("#[cfg(test)]").next().unwrap_or(src);
         assert!(
-            !src.contains("straight_line") && !src.contains("chord_fallback"),
-            "ORS module must never fall back to a straight line"
+            !prod.contains("straight_line") && !prod.contains("chord_fallback"),
+            "ORS module must never fall back to a chord when the provider fails"
         );
     }
 

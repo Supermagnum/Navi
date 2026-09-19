@@ -1,0 +1,10 @@
+{
+  "navi_fixture": "recorded",
+  "meta": {
+    "http_status": 400,
+    "wall_time_ms": 7690,
+    "request_url": "https://brouter.de/brouter?lonlats=10.045%2C53.334%7C10.3318551%2C61.5929077&profile=car-fast&alternativeidx=0&format=geojson",
+    "user_agent": "Navi/0.1.0 https://github.com/Supermagnum/Navi"
+  },
+  "response_body": "operation killed by thread-priority-watchdog after 7 seconds\n"
+}

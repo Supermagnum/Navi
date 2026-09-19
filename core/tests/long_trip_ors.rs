@@ -1,8 +1,8 @@
 //! Phase 2: ORS preliminary corridor → ordered catalog regions (fixture-backed).
 
 use driver_break_core::long_trip::{
-    build_directions_request_body, classify_catalog_coverage, ors_country_id,
-    parse_directions_geojson, CatalogCoverage, LONG_TRIP_CORRIDOR_BUFFER_KM, ORS_DISCLOSURE,
+    build_directions_request_body, classify_catalog_coverage, ors_country_id, CatalogCoverage,
+    LONG_TRIP_CORRIDOR_BUFFER_KM, ORS_DISCLOSURE,
 };
 use driver_break_core::pack_server::{catalog_entries_from_ready_ids, ReadyRegion};
 use serde::Deserialize;
@@ -35,13 +35,25 @@ fn load_catalog_ids() -> (Vec<String>, Vec<(String, u64)>) {
     (ids, sizes)
 }
 
-fn regions_from_ors_fixture(
+fn regions_from_recorded_brouter(
     name: &str,
     installed: &[String],
     country_iso: Option<&str>,
 ) -> (Vec<String>, f64) {
-    let body = std::fs::read_to_string(fixture(name)).expect("ors fixture");
-    let route = parse_directions_geojson(&body).expect("parse ors");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/long_trip/recorded")
+        .join(name);
+    let wrap: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(
+        wrap.get("navi_fixture").and_then(|x| x.as_str()),
+        Some("recorded")
+    );
+    let body = wrap
+        .get("response_body")
+        .and_then(|b| b.as_str())
+        .expect("response_body");
+    let route = driver_break_core::long_trip::parse_brouter_geojson(body).unwrap();
     let (ids, _) = load_catalog_ids();
     let entries = catalog_entries_from_ready_ids(&ids);
     let needed = driver_break_core::long_trip::ordered_needed_regions_along_route_filtered(
@@ -56,15 +68,17 @@ fn regions_from_ors_fixture(
 
 #[test]
 fn disclosure_string_mentions_third_party() {
-    assert!(ORS_DISCLOSURE.to_ascii_lowercase().contains("third party"));
-    assert!(ORS_DISCLOSURE.contains("OpenRouteService"));
+    let d = ORS_DISCLOSURE.to_ascii_lowercase();
+    assert!(d.contains("third-party") || d.contains("third party"));
+    assert!(d.contains("openrouteservice") || d.contains("open route"));
+    assert!(d.contains("brouter"));
 }
 
 #[test]
 fn klecken_innlandet_seven_regions_after_dropping_niedersachsen() {
     let installed = vec!["europe/germany/niedersachsen".into()];
     let (needed, dist_m) =
-        regions_from_ors_fixture("ors_klecken_innlandet.geojson", &installed, None);
+        regions_from_recorded_brouter("brouter_klecken_innlandet_car-eco.json", &installed, None);
     assert!(dist_m > 0.0);
     // Property: unique, ordered, no installed, destination-side Norway last-ish.
     let mut seen = std::collections::BTreeSet::new();
@@ -128,7 +142,8 @@ fn kautokeino_roros_norway_only_request_and_regions() {
     let feats = body["options"]["avoid_features"].as_array().unwrap();
     assert!(feats.iter().any(|v| v == "ferries"));
 
-    let (needed, _) = regions_from_ors_fixture("ors_kautokeino_roros.geojson", &[], Some("no"));
+    let (needed, _) =
+        regions_from_recorded_brouter("brouter_kautokeino_roros_car-eco.json", &[], Some("no"));
     assert!(!needed.is_empty());
     for r in &needed {
         assert!(

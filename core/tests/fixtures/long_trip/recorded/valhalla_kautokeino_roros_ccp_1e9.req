@@ -1,0 +1,1 @@
+{"costing":"auto","costing_options":{"auto":{"country_crossing_penalty":1000000000.0,"use_ferry":0}},"id":"navi-probe-kautokeino_roros","locations":[{"lat":69.01,"lon":23.04,"type":"break"},{"lat":62.57,"lon":11.38,"type":"break"}],"units":"kilometers"}

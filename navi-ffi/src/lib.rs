@@ -7911,10 +7911,10 @@ pub fn datex_wifi_only_default() -> bool {
     driver_break_core::datex::DATEX_WIFI_ONLY_DEFAULT
 }
 
-/// Long-trip ORS privacy disclosure for the settings UI.
+/// Long-trip preliminary-route privacy disclosure for the settings UI.
 #[uniffi::export]
 pub fn long_trip_ors_disclosure() -> String {
-    driver_break_core::long_trip::ORS_DISCLOSURE.to_string()
+    driver_break_core::long_trip::PRELIMINARY_ROUTE_DISCLOSURE.to_string()
 }
 
 /// Default ORS HTTP base (no trailing slash). Overridable via user setting.

@@ -1,0 +1,1 @@
+{"costing":"auto","costing_options":{"auto":{"country_crossing_penalty":1000000000.0,"use_ferry":0}},"id":"navi-probe-penalty_oslo_karlstad","locations":[{"lat":59.9139,"lon":10.7522,"type":"break"},{"lat":59.3793,"lon":13.5036,"type":"break"}],"units":"kilometers"}

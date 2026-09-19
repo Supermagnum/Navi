@@ -1,23 +1,47 @@
-//! Long-trip mode: ORS preliminary corridor, ordered region acquisition, and
-//! storage checks.
+//! Long-trip mode: preliminary corridor (BRouter + ORS), ordered region
+//! acquisition, and storage checks.
 //!
 //! Orchestration is core + Android (not a WASM plugin). Pack downloads for this
 //! mode may be gated to unmetered Wi‑Fi/Ethernet on the host; that gate must not
 //! change ordinary Tools downloads.
 
+mod brouter;
 mod estimate;
 mod neighbours;
 mod orchestrate;
 mod ors;
+mod preliminary;
 mod volume;
 
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+/// Shared ≤1 request/second gate for preliminary HTTP providers.
+pub(crate) fn pace_preliminary_network() {
+    static LAST: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
+    let lock = LAST.get_or_init(|| Mutex::new(None));
+    let mut guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(t) = *guard {
+        let elapsed = t.elapsed();
+        if elapsed < Duration::from_secs(1) {
+            std::thread::sleep(Duration::from_secs(1) - elapsed);
+        }
+    }
+    *guard = Some(Instant::now());
+}
+
+pub use brouter::{
+    build_brouter_url, count_ferry_segments_in_messages, parse_brouter_geojson,
+    request_brouter_route, BrouterConfig, BrouterError, BrouterRoute, BROUTER_CAR_PROFILE,
+    BROUTER_TIMEOUT, DEFAULT_BROUTER_BASE_URL,
+};
 pub use estimate::{
     estimate_trip_disk_bytes, CatalogSizeLookup, SpaceCheck, SpaceReport, PBF_KEEP_RATIO,
     PLACE_INDEX_RATIO, STAGING_SAFETY_FACTOR,
 };
 pub use neighbours::{
     avoid_country_ids_for_allowed, land_neighbours_iso, neighbour_table_is_symmetric,
-    ors_country_id,
+    ors_country_id, ORS_COUNTRY_LIST_DOC,
 };
 pub use orchestrate::{
     LongTripError, LongTripPlan, RegionDownloader, RegionIndexer, RegionTripState,
@@ -25,8 +49,13 @@ pub use orchestrate::{
 };
 pub use ors::{
     build_directions_request_body, parse_directions_geojson, request_directions, OrsConfig,
-    OrsError, OrsRoute, DEFAULT_ORS_BASE_URL, ORS_DISCLOSURE, ORS_MAX_DISTANCE_M,
-    ORS_MAX_WAYPOINTS,
+    OrsError, OrsRoute, DEFAULT_ORS_BASE_URL, ORS_DISCLOSURE, ORS_MAX_DISTANCE_AVOID_AREAS_M,
+    ORS_MAX_DISTANCE_M, ORS_MAX_WAYPOINTS,
+};
+pub use preliminary::{
+    clear_preliminary_cache, request_preliminary_route, request_preliminary_with_fetchers,
+    BrouterFetcher, LiveBrouter, LiveOrs, OrsFetcher, PreliminaryCache, PreliminaryError,
+    PreliminaryRoute, RouteProviderId, FERRY_WARNING, PRELIMINARY_ROUTE_DISCLOSURE,
 };
 pub use volume::{StorageVolume, VolumeId};
 

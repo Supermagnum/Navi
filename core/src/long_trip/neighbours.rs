@@ -1,12 +1,22 @@
 //! Static land-neighbour table for catalog countries → ORS `avoid_countries` ids.
 //!
 //! OpenRouteService documents `options.avoid_countries` as an **integer array of
-//! country ids** (see https://giscience.github.io/openrouteservice/technical-details/country-list),
-//! not ISO alpha-2/3 strings. We map ISO-3166-1 alpha-2 → ORS id here.
+//! country ids** from the official country list:
+//! https://giscience.github.io/openrouteservice/technical-details/country-list
+//! (retrieved 2026-09-19). These are **not** ISO alpha-2/3 strings.
+//!
+//! The 150 km public-API cap labelled “Distance (with avoid areas)” applies to
+//! `avoid_polygons` / avoid-areas (`maximum_distance_avoid_areas` in self-hosted
+//! config), **not** to `avoid_countries`. Long US-only / Norway-only trips using
+//! only `avoid_countries` remain under the 6000 km driving cap.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-/// ORS numeric country id (country-list docs, retrieved 2026-09-19).
+/// Source URL for the integer ids below (must stay in sync with ORS docs).
+pub const ORS_COUNTRY_LIST_DOC: &str =
+    "https://giscience.github.io/openrouteservice/technical-details/country-list";
+
+/// ORS numeric country id from [`ORS_COUNTRY_LIST_DOC`] (retrieved 2026-09-19).
 pub fn ors_country_id(iso_alpha2: &str) -> Option<u32> {
     match iso_alpha2.trim().to_ascii_lowercase().as_str() {
         "af" => Some(1),
@@ -202,6 +212,23 @@ mod tests {
     #[test]
     fn table_is_symmetric() {
         assert!(neighbour_table_is_symmetric());
+    }
+
+    /// Pin values against the ORS country-list page (same retrieval date as
+    /// [`ORS_COUNTRY_LIST_DOC`]). A wrong id would still 200 OK while avoiding
+    /// the wrong country.
+    #[test]
+    fn pinned_ors_country_ids_match_official_list() {
+        assert!(ORS_COUNTRY_LIST_DOC.contains("country-list"));
+        assert_eq!(ors_country_id("ca"), Some(35), "Canada");
+        assert_eq!(ors_country_id("mx"), Some(128), "Mexico");
+        assert_eq!(ors_country_id("se"), Some(192), "Sweden");
+        assert_eq!(ors_country_id("fi"), Some(69), "Finland");
+        assert_eq!(ors_country_id("ru"), Some(163), "Russian Federation");
+        assert_eq!(ors_country_id("no"), Some(148), "Norway");
+        assert_eq!(ors_country_id("us"), Some(214), "United States");
+        assert_eq!(ors_country_id("at"), Some(11), "Austria (doc example)");
+        assert_eq!(ors_country_id("ch"), Some(193), "Switzerland (doc example)");
     }
 
     #[test]

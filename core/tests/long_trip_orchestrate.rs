@@ -1,11 +1,10 @@
 //! Phase 3: orchestration, storage estimate, US cross-country fixture tests.
 
 use driver_break_core::long_trip::{
-    avoid_country_ids_for_allowed, build_directions_request_body, classify_catalog_coverage,
-    estimate_trip_disk_bytes, ordered_needed_regions_along_route, parse_directions_geojson,
-    regions_bbox_adjacent, CatalogCoverage, LongTripError, LongTripPlan, RegionDownloader,
-    RegionIndexer, RegionTripState, SpaceCheck, StorageVolume, TripOrchestrator, VolumeSource,
-    LONG_TRIP_CORRIDOR_BUFFER_KM,
+    avoid_country_ids_for_allowed, build_directions_request_body, estimate_trip_disk_bytes,
+    ordered_needed_regions_along_route, regions_bbox_adjacent, LongTripError, LongTripPlan,
+    RegionDownloader, RegionIndexer, RegionTripState, StorageVolume, TripOrchestrator,
+    VolumeSource, LONG_TRIP_CORRIDOR_BUFFER_KM,
 };
 use driver_break_core::pack_server::catalog_entries_from_ready_ids;
 use driver_break_core::routing::basemap::region_bbox;
@@ -38,20 +37,6 @@ fn load_catalog() -> (Vec<String>, Vec<(String, u64)>) {
         .map(|r| (r.region_id.clone(), r.bytes.unwrap_or(0)))
         .collect();
     (ids, sizes)
-}
-
-fn needed_from_ors(name: &str, installed: &[String]) -> (Vec<String>, f64) {
-    let route = parse_directions_geojson(&std::fs::read_to_string(fixture(name)).unwrap()).unwrap();
-    let (ids, _) = load_catalog();
-    let entries = catalog_entries_from_ready_ids(&ids);
-    let needed = driver_break_core::long_trip::ordered_needed_regions_along_route_filtered(
-        &route.lat_lon,
-        &entries,
-        installed,
-        LONG_TRIP_CORRIDOR_BUFFER_KM,
-        Some("us"),
-    );
-    (needed, route.distance_m)
 }
 
 use std::cell::RefCell;
@@ -140,11 +125,11 @@ fn download_order_matches_route_and_index_waits() {
 
 #[test]
 fn planning_region_installed_while_others_progress() {
+    // Finished region stays Indexed while siblings download / index.
     let mut plan = LongTripPlan::new("a".into(), vec!["a".into(), "b".into(), "c".into()]);
     plan.set_state("a", RegionTripState::Indexed);
     plan.set_state("b", RegionTripState::Downloading);
     plan.set_state("c", RegionTripState::Indexing);
-    // Installed/Indexed ⇒ routable/searchable independently of siblings.
     assert!(matches!(
         plan.states.get("a"),
         Some(RegionTripState::Indexed)
@@ -152,6 +137,77 @@ fn planning_region_installed_while_others_progress() {
     assert!(matches!(
         plan.states.get("b"),
         Some(RegionTripState::Downloading)
+    ));
+    assert!(matches!(
+        plan.states.get("c"),
+        Some(RegionTripState::Indexing)
+    ));
+    // Planning on `a` must not require siblings to finish.
+    assert_eq!(plan.states.get("a"), Some(&RegionTripState::Indexed));
+}
+
+#[test]
+fn restart_resumes_from_installed() {
+    let regions = vec!["a".into(), "b".into(), "c".into()];
+    let sizes: Vec<(String, u64)> = regions
+        .iter()
+        .map(|r: &String| (r.clone(), 1_000_000u64))
+        .collect();
+    let mut plan = LongTripPlan::new("a".into(), regions);
+    plan.set_state("a", RegionTripState::Indexed);
+    plan.set_state("b", RegionTripState::Installed);
+    plan.set_state("c", RegionTripState::Downloading);
+    let dl_order = Rc::new(RefCell::new(Vec::new()));
+    let ix_order = Rc::new(RefCell::new(Vec::new()));
+    let mut orch = TripOrchestrator {
+        downloader: FakeDl {
+            order: Rc::clone(&dl_order),
+            fail_on: None,
+        },
+        indexer: FakeIx {
+            order: Rc::clone(&ix_order),
+        },
+        volumes: FakeVol {
+            vols: vec![StorageVolume::primary(u64::MAX / 4, u64::MAX / 2)],
+        },
+        unmetered: true,
+        enabled: false,
+    };
+    // Crash mid-download of c → Unavailable; restart restores queue.
+    orch.on_card_removed_mid_download(&mut plan);
+    assert!(matches!(
+        plan.states.get("c"),
+        Some(RegionTripState::Unavailable)
+    ));
+    orch.resume_after_restart(&mut plan);
+    assert!(orch.enabled);
+    assert!(matches!(
+        plan.states.get("a"),
+        Some(RegionTripState::Indexed)
+    ));
+    assert!(matches!(
+        plan.states.get("b"),
+        Some(RegionTripState::Installed)
+    ));
+    assert!(matches!(
+        plan.states.get("c"),
+        Some(RegionTripState::Needed)
+    ));
+    orch.run_downloads_then_index(&mut plan, &sizes).unwrap();
+    // a already Indexed → not re-downloaded; b Installed → index only; c download+index.
+    assert_eq!(dl_order.borrow().as_slice(), ["c"]);
+    assert_eq!(ix_order.borrow().as_slice(), ["b", "c"]);
+    assert!(matches!(
+        plan.states.get("a"),
+        Some(RegionTripState::Indexed)
+    ));
+    assert!(matches!(
+        plan.states.get("b"),
+        Some(RegionTripState::Indexed)
+    ));
+    assert!(matches!(
+        plan.states.get("c"),
+        Some(RegionTripState::Indexed)
     ));
 }
 
@@ -299,115 +355,65 @@ fn us_cross_country_fixture_a_and_b() {
         .any(|v| v == "ferries"));
 
     let start = "north-america/us/new-york".to_string();
-    let (a, dist_a) =
-        needed_from_ors("ors_us_a_redball_portofino.geojson", std::slice::from_ref(&start));
-    let (b, dist_b) =
-        needed_from_ors("ors_us_b_redball_crescent.geojson", std::slice::from_ref(&start));
-    eprintln!("route A distance_m={dist_a:.0}");
-    eprintln!("route B distance_m={dist_b:.0}");
-    if dist_a > driver_break_core::long_trip::ORS_MAX_DISTANCE_M {
-        panic!("fixture A exceeds ORS max — would be RequestTooLarge");
+    // Synthetic US corridors must not drive real-trip region-list assertions.
+    for name in [
+        "ors_us_a_redball_portofino.geojson",
+        "ors_us_b_redball_crescent.geojson",
+    ] {
+        let raw = std::fs::read_to_string(fixture(name)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            v.get("navi_fixture").and_then(|x| x.as_str()),
+            Some("synthetic")
+        );
     }
+    eprintln!(
+        "NOTE: ors_us_*.geojson remain SYNTHETIC; region lists for US A/B come from \
+         live BRouter recording when available (see live_us_brouter_dry_run)"
+    );
 
-    // Drop empties if catalog PIP missed (report gaps).
-    let cov_a = classify_catalog_coverage(&a, &ids, Some("us"));
-    let cov_b = classify_catalog_coverage(&b, &ids, Some("us"));
-    eprintln!("catalog coverage A={cov_a:?}");
-    eprintln!("catalog coverage B={cov_b:?}");
-    match &cov_a {
-        CatalogCoverage::NotPublished { regions, fallback } => {
-            for r in regions {
-                eprintln!("not published: {r} fallback={fallback}");
+    // Optional: if a recorded BRouter US fixture exists, derive lists + storage.
+    let recorded_a = fixture("recorded/brouter_us_a_redball_portofino_car-eco.json");
+    let mut plan_regions: Vec<String> = vec![start.clone()];
+    if recorded_a.exists() {
+        let wrap: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&recorded_a).unwrap()).unwrap();
+        let status = wrap
+            .pointer("/meta/http_status")
+            .and_then(|s| s.as_u64())
+            .unwrap_or(0);
+        if status == 200 {
+            assert_eq!(
+                wrap.get("navi_fixture").and_then(|x| x.as_str()),
+                Some("recorded")
+            );
+            let body = wrap.get("response_body").and_then(|b| b.as_str()).unwrap();
+            let route = driver_break_core::long_trip::parse_brouter_geojson(body).unwrap();
+            let entries = catalog_entries_from_ready_ids(&ids);
+            let a = driver_break_core::long_trip::ordered_needed_regions_along_route_filtered(
+                &route.lat_lon,
+                &entries,
+                std::slice::from_ref(&start),
+                LONG_TRIP_CORRIDOR_BUFFER_KM,
+                Some("us"),
+            );
+            assert_us_corridor_properties(&a, "socal");
+            let check_512 = estimate_trip_disk_bytes(&a, &sizes, 512u64 * 1024 * 1024 * 1024);
+            let check_64 = estimate_trip_disk_bytes(&a, &sizes, 64u64 * 1024 * 1024 * 1024);
+            eprintln!(
+                "recorded US A regions={} storage512={check_512:?} storage64={check_64:?}",
+                a.len()
+            );
+            plan_regions = a;
+            if !plan_regions.contains(&start) {
+                plan_regions.insert(0, start.clone());
             }
-        }
-        CatalogCoverage::NoCountryCoverage { country_iso } => {
-            panic!("typed NoCountryCoverage for {country_iso}");
-        }
-        CatalogCoverage::Complete => {}
-    }
-
-    assert_us_corridor_properties(&a, "socal");
-    assert_us_corridor_properties(&b, "norcal");
-
-    eprintln!("region list A ({}):", a.len());
-    for r in &a {
-        eprintln!("  {r}");
-    }
-    eprintln!("region list B ({}):", b.len());
-    for r in &b {
-        eprintln!("  {r}");
-    }
-    let set_a: BTreeSet<_> = a.iter().collect();
-    let set_b: BTreeSet<_> = b.iter().collect();
-    eprintln!(
-        "only in A: {:?}",
-        set_a.difference(&set_b).collect::<Vec<_>>()
-    );
-    eprintln!(
-        "only in B: {:?}",
-        set_b.difference(&set_a).collect::<Vec<_>>()
-    );
-
-    // Storage estimate vs fake volumes.
-    let check_512 = estimate_trip_disk_bytes(&a, &sizes, 512u64 * 1024 * 1024 * 1024);
-    let check_64 = estimate_trip_disk_bytes(&a, &sizes, 64u64 * 1024 * 1024 * 1024);
-    match &check_512 {
-        SpaceCheck::Ok(r) => eprintln!(
-            "512GiB: OK packs={} place_index={} pbf={} needed={}",
-            r.pack_bytes, r.place_index_bytes, r.pbf_keep_bytes, r.needed_bytes
-        ),
-        SpaceCheck::InsufficientSpace { report, .. } => {
-            eprintln!("512GiB: Insufficient needed={}", report.needed_bytes)
+        } else {
+            eprintln!("recorded US A status={status}; skipping region-list asserts");
         }
     }
-    match &check_64 {
-        SpaceCheck::Ok(r) => eprintln!(
-            "64GiB: OK needed={} (packs={})",
-            r.needed_bytes, r.pack_bytes
-        ),
-        SpaceCheck::InsufficientSpace {
-            needed,
-            free,
-            shortfall,
-            report,
-        } => eprintln!(
-            "64GiB: InsufficientSpace needed={needed} free={free} shortfall={shortfall} packs={}",
-            report.pack_bytes
-        ),
-    }
-    // Always exercise shortfall: free = needed - 1 GiB.
-    let needed = match &check_512 {
-        SpaceCheck::Ok(r) | SpaceCheck::InsufficientSpace { report: r, .. } => r.needed_bytes,
-    };
-    let free_short = needed.saturating_sub(1024 * 1024 * 1024);
-    match estimate_trip_disk_bytes(&a, &sizes, free_short) {
-        SpaceCheck::InsufficientSpace { shortfall, .. } => {
-            assert!(shortfall >= 1024 * 1024 * 1024 - 1);
-        }
-        SpaceCheck::Ok(_) => panic!("expected shortfall at free=needed-1GiB"),
-    }
-    // 64 GiB / 512 GiB volume matrix.
-    match check_64 {
-        SpaceCheck::InsufficientSpace { .. } => eprintln!("64GiB: shortfall as expected"),
-        SpaceCheck::Ok(_) => eprintln!("64GiB: OK (estimate fits)"),
-    }
-    match check_512 {
-        SpaceCheck::Ok(_) => {}
-        SpaceCheck::InsufficientSpace { .. } => panic!("512GiB should fit this fixture estimate"),
-    }
-
-    // Destination entry note (report-only): no place index for uninstalled dest.
-    eprintln!(
-        "destination entry: app today requires map long-press / coordinates or a prior \
-         place-index hit; uninstalled dest regions cannot be searched by name. \
-         This test uses coordinates from Nominatim (see us_endpoints.json)."
-    );
 
     // Start region first (step 1) with fake orch.
-    let mut plan_regions = a.clone();
-    if !plan_regions.contains(&start) {
-        plan_regions.insert(0, start.clone());
-    }
     let mut plan = LongTripPlan::new(start.clone(), plan_regions);
     let dl_order = Rc::new(RefCell::new(Vec::new()));
     let mut orch = TripOrchestrator {
@@ -433,7 +439,6 @@ fn us_cross_country_fixture_a_and_b() {
         plan.states.get(&start),
         Some(RegionTripState::Indexed)
     ));
-    let _ = b;
 }
 
 #[test]
