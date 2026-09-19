@@ -88,6 +88,27 @@ class PackRegionAvailabilityTest {
     }
 
     @Test
+    fun resolvePbfForRegion_rejects_pack_install_stub() {
+        val dir = createTempDirectory("navi-pbf-stub").toFile()
+        try {
+            val stub = File(dir, "ostlandet-latest.osm.pbf")
+            stub.writeBytes(ByteArray(16_384))
+            assertTrue("fixture is above the old 10_000-byte cutoff", stub.length() > 10_000L)
+            assertEquals(
+                null,
+                PackRegionAvailability.resolvePbfForRegion(dir, "europe/norway/ostlandet"),
+            )
+            java.io.RandomAccessFile(stub, "rw").use { raf ->
+                raf.setLength(RegionDownloadBackground.MIN_PBF_BYTES)
+            }
+            val got = PackRegionAvailability.resolvePbfForRegion(dir, "europe/norway/ostlandet")
+            assertEquals(stub.canonicalFile, got?.canonicalFile)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun statusLine_server_ready() {
         val line =
             PackRegionAvailability.statusLine(

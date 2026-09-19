@@ -42,7 +42,7 @@ object RegionDownloadBackground {
     const val QUEUE_FILE = "region-download-queue.json"
     private const val TAG = "RegionDownloadBg"
     private const val PHASE_TAG = "PHASE_TIMING"
-    private const val MIN_PBF_BYTES = 1_000_000L
+    internal const val MIN_PBF_BYTES = 1_000_000L
 
     private val phaseIoAnchors = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Long>>()
 
@@ -330,7 +330,14 @@ object RegionDownloadBackground {
 
     fun isResuming(): Boolean = resuming.get()
 
-    fun statusLine(): String = lastStatus.get()
+    fun statusLine(): String {
+        if (running.get()) {
+            formattedNativeSnapshot()
+                ?.takeIf { it.first.startsWith("Place index") }
+                ?.let { return it.second }
+        }
+        return lastStatus.get()
+    }
 
     fun takeLastCompletedPath(): String = lastCompletedPath.getAndSet("")
 
@@ -655,10 +662,13 @@ object RegionDownloadBackground {
                 }
         }.getOrDefault(true)
 
-    fun uiLine(): String {
-        if (!running.get()) return lastStatus.get()
-        val snap = runCatching { downloadProgressSnapshot() }.getOrNull() ?: return lastStatus.get()
-        if (snap.label.isBlank()) return lastStatus.get()
+    /**
+     * Native download-slot snapshot as (raw label, formatted "label N% (done / tot)").
+     * [runCatching] so JVM unit tests without libnavi still compile and run.
+     */
+    private fun formattedNativeSnapshot(): Pair<String, String>? {
+        val snap = runCatching { downloadProgressSnapshot() }.getOrNull() ?: return null
+        if (snap.label.isBlank()) return null
         val tot = snap.unitsTotal
         val done = snap.unitsDone
         val pct =
@@ -667,11 +677,18 @@ object RegionDownloadBackground {
             } else {
                 null
             }
-        return when {
-            pct != null && tot != null -> "${snap.label} $pct% ($done / $tot)"
-            pct != null -> "${snap.label} $pct%"
-            else -> snap.label
-        }
+        val formatted =
+            when {
+                pct != null && tot != null -> "${snap.label} $pct% ($done / $tot)"
+                pct != null -> "${snap.label} $pct%"
+                else -> snap.label
+            }
+        return snap.label to formatted
+    }
+
+    fun uiLine(): String {
+        if (!running.get()) return lastStatus.get()
+        return formattedNativeSnapshot()?.second ?: lastStatus.get()
     }
 
     fun ensureStartedFromPending(

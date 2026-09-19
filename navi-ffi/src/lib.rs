@@ -4054,7 +4054,7 @@ pub fn ensure_place_index(
     }
     // Serialize discard/open/load so PlaceIndexBackground + RegionDownload cannot
     // both parse the same PBF. Cache-hit after the winner still returns PASS.
-    let _build = driver_break_core::search::lock_place_index_build();
+    let _build = driver_break_core::search::lock_place_index_build_with_progress();
     let db = Path::new(&index_db_path);
     if let Some(parent) = db.parent() {
         let _ = std::fs::create_dir_all(parent);

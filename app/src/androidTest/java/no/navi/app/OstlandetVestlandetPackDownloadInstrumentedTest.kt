@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.navi.geofabrikLatestPbfUrl
@@ -24,6 +25,11 @@ class OstlandetVestlandetPackDownloadInstrumentedTest {
         // Pack payloads are multi-GB; allow a long wall clock on Wi-Fi tablet.
         const val PER_REGION_TIMEOUT_MS = 3L * 60L * 60L * 1000L
         const val START_GRACE_MS = 120_000L
+
+        // After the first "Place index" ui line, a later native label (admin
+        // relations/ways/nodes, waiting, scanning ways, …) must appear. open_db
+        // was ~7 s on SM-P613; 90 s is a bounded ceiling, not a success timeout.
+        const val PLACE_INDEX_PROGRESS_MS = 90_000L
     }
 
     @Test
@@ -53,6 +59,9 @@ class OstlandetVestlandetPackDownloadInstrumentedTest {
         var sawPlaceIndex = false
         var sawPackProgress = false
         var finished = false
+        val placeIndexUiLabels = linkedSetOf<String>()
+        var firstPlaceIndexAt = 0L
+        var sawPlaceIndexProgress = false
 
         // Wait until the background job actually starts (avoid reading prior "done").
         while (System.currentTimeMillis() - t0 < START_GRACE_MS) {
@@ -69,6 +78,27 @@ class OstlandetVestlandetPackDownloadInstrumentedTest {
             val running = RegionDownloadBackground.isRunning()
             val status = RegionDownloadBackground.statusLine()
             val ui = RegionDownloadBackground.uiLine()
+            if (ui.startsWith("Place index")) {
+                placeIndexUiLabels += ui
+                if (firstPlaceIndexAt == 0L) {
+                    firstPlaceIndexAt = System.currentTimeMillis()
+                }
+                if (!ui.contains("starting…")) {
+                    if (!sawPlaceIndexProgress) {
+                        Log.i(TAG, "PLACE_INDEX_PROGRESS path=$path ui=$ui")
+                    }
+                    sawPlaceIndexProgress = true
+                }
+            }
+            if (firstPlaceIndexAt != 0L &&
+                !sawPlaceIndexProgress &&
+                System.currentTimeMillis() - firstPlaceIndexAt > PLACE_INDEX_PROGRESS_MS
+            ) {
+                fail(
+                    "Place index ui stayed on starting… for ${PLACE_INDEX_PROGRESS_MS}ms " +
+                        "after the first label; labels=$placeIndexUiLabels",
+                )
+            }
             if (ui.contains("Fetching packs", ignoreCase = true) ||
                 status.contains("Fetching", ignoreCase = true) ||
                 ui.contains("Installing packs", ignoreCase = true)
@@ -111,6 +141,11 @@ class OstlandetVestlandetPackDownloadInstrumentedTest {
             finished,
         )
         assertTrue("expected place index to start for $path", sawPlaceIndex)
+        assertTrue(
+            "expected a Place index ui label other than starting… for $path; " +
+                "labels=$placeIndexUiLabels",
+            sawPlaceIndexProgress,
+        )
         val finalStatus = RegionDownloadBackground.statusLine()
         assertTrue(
             "expected done for $path, got $finalStatus",

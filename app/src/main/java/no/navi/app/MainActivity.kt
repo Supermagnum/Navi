@@ -2361,7 +2361,7 @@ private fun NaviMapScreen() {
             endLat = pts.last().lat,
             endLon = pts.last().lon,
         )
-        downloadProgressClear()
+        DownloadProgressClear.clearIfIdle()
         planProgressClear()
         planningRoute = true
         routePlanPct = 0
@@ -2626,7 +2626,7 @@ private fun NaviMapScreen() {
                 planIndexingHintVisible = false
                 planProgressClear()
                 foregroundPlanLeave()
-                downloadProgressClear()
+                DownloadProgressClear.clearIfIdle()
             }
         val durationMs = System.currentTimeMillis() - planStarted
         if (planAbort.get() || planReportIsCancelled(result.report)) {
@@ -6471,7 +6471,7 @@ private fun NaviMapScreen() {
                                         status = "Select a Geofabrik path first."
                                         return@launch
                                     }
-                                    downloadProgressClear()
+                                    DownloadProgressClear.clearIfIdle()
                                     toolsProcessReady = false
                                     status = "Extracting Mapterhorn DEM for $path..."
                                     val job =

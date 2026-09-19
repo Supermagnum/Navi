@@ -102,9 +102,14 @@ object PlaceIndexBackground {
                             PlaceIndexReady.markReady(dataDir, rid)
                         }
                         lastStatus.set("Place index ready 100% (6 / 6)")
-                        // Leave the 100% snapshot briefly; next job clears it.
-                        runCatching {
-                            uniffi.navi.downloadProgressClear()
+                        // Own [running] is still true until [finally]; skip if the
+                        // region pipeline has taken the lock for another build.
+                        if (DownloadProgressClear.shouldClear(
+                                regionRunning = RegionDownloadBackground.isRunning(),
+                                placeIndexRunning = false,
+                            )
+                        ) {
+                            runCatching { uniffi.navi.downloadProgressClear() }
                         }
                     } else {
                         lastStatus.set("failed")
