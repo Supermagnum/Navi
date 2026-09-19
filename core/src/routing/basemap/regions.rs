@@ -876,6 +876,36 @@ mod tests {
         );
     }
 
+    /// Catalog bbox for Ostlandet reaches lon 13.5 — well into Sweden — so
+    /// attributing edges by pack stem / catalog path would silently allow SE
+    /// roads. Country rings (`country_iso_at`) are the hard-constraint source.
+    #[test]
+    fn ostlandet_catalog_bbox_spills_into_sweden() {
+        let bbox = region_bbox("europe/norway/ostlandet").expect("ostlandet bbox");
+        // [min_lat, min_lon, max_lat, max_lon]
+        assert!(
+            bbox[3] > 12.5,
+            "ostlandet max_lon={:.2} should extend past the border into SE",
+            bbox[3]
+        );
+        let east_mid_lat = (bbox[0] + bbox[2]) * 0.5;
+        let east_lon = bbox[3] - 0.05;
+        assert_eq!(
+            crate::routing::elevation::country_iso_at(east_mid_lat, east_lon),
+            Some("se"),
+            "east edge of ostlandet catalog bbox must resolve as Sweden"
+        );
+        // Known SE town inside the ostlandet bbox footprint.
+        assert_eq!(
+            crate::routing::elevation::country_iso_at(61.8975, 12.2685),
+            Some("se")
+        );
+        assert_eq!(
+            crate::routing::elevation::country_iso_at(59.91, 10.75),
+            Some("no")
+        );
+    }
+
     #[test]
     fn coverage_uses_downloaded_paths_only() {
         let ost = ["europe/norway/ostlandet"];

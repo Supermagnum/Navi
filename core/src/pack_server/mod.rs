@@ -56,7 +56,8 @@ pub use place_index_after::{
     MIN_REAL_PBF_BYTES, PLACE_INDEX_DB_NAME,
 };
 pub use region_plan::{
-    ensure_corridor_regions_installed, region_plan_error_from_snap_or_no_route, RegionPlanError,
+    ensure_corridor_regions_installed, region_plan_error_from_snap_or_no_route,
+    region_plan_error_from_terminate_reason, trip_corridor_waypoints, RegionPlanError,
 };
 
 use std::time::Duration;

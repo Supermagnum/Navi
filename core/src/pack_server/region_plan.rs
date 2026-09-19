@@ -1,16 +1,21 @@
 //! Typed plan failures when corridor packs are incomplete.
 //!
 //! Distinguishes missing installed regions from a true “no route” on fully
-//! covered data and from waypoint snap failures ([`SnapTooFar`]).
+//! covered data, from waypoint snap failures ([`SnapTooFar`]), and from a hard
+//! stay-inside-country constraint that leaves no legal path
+//! ([`RegionPlanError::NoRouteInsideCountries`]).
 
 use crate::pack_server::corridor_regions::{ordered_regions_along_corridor, CatalogRegionEntry};
 use crate::routing::graph::SnapTooFar;
 
 /// Failure modes for a long-corridor plan attempt.
 ///
-/// Keep this core-only for now: surfacing [`Self::MissingRegions`] through
-/// UniFFI would need a `CorridorRouteResult` field or a new
-/// `search_terminate_reason` token — see module docs in the long-trip report.
+/// Keep this core-only for now: surfacing [`Self::MissingRegions`] /
+/// [`Self::NoRouteInsideCountries`] through UniFFI would need a
+/// `CorridorRouteResult` field or a new `search_terminate_reason` token —
+/// see the Phase 1 report (smallest option: map
+/// `terminate_reason == "outside_countries"` / MissingRegions list into the
+/// existing diagnostic string without a UniFFI enum bump).
 #[derive(Debug, Clone, PartialEq)]
 pub enum RegionPlanError {
     /// Required catalog regions along the corridor are not installed, in
@@ -18,6 +23,9 @@ pub enum RegionPlanError {
     MissingRegions(Vec<String>),
     /// Graph is loaded for the corridor but A* found no path.
     NoRoute { detail: String },
+    /// A path exists without the country filter, but none stays inside
+    /// [`RouteOptions::allowed_countries`].
+    NoRouteInsideCountries { allowed: Vec<String> },
     /// Snap exceeded the profile cap (unchanged [`SnapTooFar`] semantics).
     SnapTooFar(SnapTooFar),
 }
@@ -42,6 +50,11 @@ impl std::fmt::Display for RegionPlanError {
                 write!(f, "missing regions along route: {}", regions.join(", "))
             }
             Self::NoRoute { detail } => write!(f, "no route found ({detail})"),
+            Self::NoRouteInsideCountries { allowed } => write!(
+                f,
+                "no route inside allowed countries: {}",
+                allowed.join(",")
+            ),
             Self::SnapTooFar(s) => write!(
                 f,
                 "snap too far: nearest={:.0} m max={:.0} m",
@@ -57,6 +70,19 @@ impl From<SnapTooFar> for RegionPlanError {
     fn from(value: SnapTooFar) -> Self {
         Self::SnapTooFar(value)
     }
+}
+
+/// Ordered corridor samples for coverage / densify: start, vias in order, end.
+pub fn trip_corridor_waypoints(
+    start: (f64, f64),
+    vias: &[(f64, f64)],
+    end: (f64, f64),
+) -> Vec<(f64, f64)> {
+    let mut out = Vec::with_capacity(2 + vias.len());
+    out.push(start);
+    out.extend_from_slice(vias);
+    out.push(end);
+    out
 }
 
 /// If any catalog regions along `waypoints` are not in `installed`, return
@@ -90,6 +116,24 @@ pub fn region_plan_error_from_snap_or_no_route(
         RegionPlanError::NoRoute {
             detail: no_route_detail.into(),
         }
+    }
+}
+
+/// Map an A* [`PathSearchStats::terminate_reason`] into a typed plan error.
+///
+/// Keeps [`RegionPlanError::NoRoute`], [`RegionPlanError::NoRouteInsideCountries`],
+/// and snap failures distinct. Unknown reasons fall through to [`NoRoute`].
+pub fn region_plan_error_from_terminate_reason(
+    terminate_reason: &str,
+    allowed_countries: Option<&[String]>,
+) -> RegionPlanError {
+    match terminate_reason {
+        "outside_countries" => RegionPlanError::NoRouteInsideCountries {
+            allowed: allowed_countries.unwrap_or(&[]).to_vec(),
+        },
+        other => RegionPlanError::NoRoute {
+            detail: other.to_string(),
+        },
     }
 }
 
@@ -186,5 +230,70 @@ mod tests {
         let no_route = region_plan_error_from_snap_or_no_route(None, "disconnected");
         assert!(matches!(no_route, RegionPlanError::NoRoute { .. }));
         assert!(!no_route.is_missing_regions());
+    }
+
+    #[test]
+    fn trip_waypoints_preserve_via_order() {
+        let pts = trip_corridor_waypoints(
+            (59.91, 10.75),
+            &[(63.43, 10.39), (69.97, 23.27)],
+            (62.57, 11.38),
+        );
+        assert_eq!(
+            pts,
+            vec![
+                (59.91, 10.75),
+                (63.43, 10.39),
+                (69.97, 23.27),
+                (62.57, 11.38),
+            ]
+        );
+    }
+
+    #[test]
+    fn via_on_uninstalled_region_is_reported_in_missing_regions() {
+        // Start/end in Ostlandet; via in Trondelag (not installed).
+        let start = (59.91, 10.75);
+        let via = (63.43, 10.39); // Trondheim
+        let end = (59.74, 10.20);
+        let waypoints = trip_corridor_waypoints(start, &[via], end);
+        let catalog = catalog_entries_from_ready_ids(&[
+            "europe/norway/ostlandet".into(),
+            "europe/norway/trondelag".into(),
+        ]);
+        let err = ensure_corridor_regions_installed(
+            &waypoints,
+            &catalog,
+            &["europe/norway/ostlandet".into()],
+            25.0,
+        )
+        .expect_err("via region must be missing");
+        match err {
+            RegionPlanError::MissingRegions(regions) => {
+                assert!(
+                    regions.iter().any(|r| r.contains("trondelag")),
+                    "expected trondelag in {regions:?}"
+                );
+                assert!(
+                    !regions.iter().any(|r| r.contains("ostlandet")),
+                    "installed ostlandet must be dropped: {regions:?}"
+                );
+            }
+            other => panic!("expected MissingRegions, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn terminate_reason_outside_countries_maps_to_typed_error() {
+        let err =
+            region_plan_error_from_terminate_reason("outside_countries", Some(&["no".into()]));
+        assert_eq!(
+            err,
+            RegionPlanError::NoRouteInsideCountries {
+                allowed: vec!["no".into()]
+            }
+        );
+        let plain = region_plan_error_from_terminate_reason("disconnected", None);
+        assert!(matches!(plain, RegionPlanError::NoRoute { .. }));
     }
 }

@@ -2220,6 +2220,7 @@ fn plan_car_route_inner(
         vehicle: vehicle_limits.clone(),
         departure_local,
         datex_impacts,
+        allowed_countries: None,
     };
 
     let mut report = String::new();
@@ -5520,6 +5521,7 @@ pub fn format_route_avoidance_report(
         vehicle: None,
         departure_local: None,
         datex_impacts: Vec::new(),
+        allowed_countries: None,
     };
     driver_break_core::format_route_avoidance_report(&opts, 0, priority_path_share_pct)
 }
