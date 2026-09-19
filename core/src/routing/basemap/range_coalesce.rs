@@ -426,6 +426,31 @@ pub async fn fetch_tiles_coalesced(
         if control.is_cancelled() {
             bail!("cancelled");
         }
+        if crate::download::pbf_priority::pause_background_for_foreground_plan() {
+            download_progress::set(
+                0,
+                None,
+                crate::download::pbf_priority::WAITING_FOR_ROUTE_PLANNING_LABEL,
+            );
+            let pause_started = std::time::Instant::now();
+            while crate::download::pbf_priority::pause_background_for_foreground_plan() {
+                if control.is_cancelled() {
+                    bail!("cancelled");
+                }
+                if pause_started.elapsed()
+                    >= crate::download::pbf_priority::FOREGROUND_PLAN_PAUSE_MAX
+                {
+                    log::info!(
+                        target: "NaviDownload",
+                        "[NaviDownload] pmtiles coalesce resume after plan-pause timeout \
+                         max_s={}",
+                        crate::download::pbf_priority::FOREGROUND_PLAN_PAUSE_MAX.as_secs()
+                    );
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
         while control.is_paused() {
             if let Some((storage, job_id)) = store {
                 let _ = PmtilesJobStore::new(storage).set_status(

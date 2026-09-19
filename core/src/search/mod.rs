@@ -49,16 +49,20 @@ pub fn lock_place_index_build() -> MutexGuard<'static, ()> {
 }
 
 /// Same as [`lock_place_index_build`], but if another builder already holds the
-/// mutex, set a 0/6 Place-index label so the UI is not stuck on "starting…".
+/// mutex, set a 0/6 Place-index wait label when the slot is idle or stuck on
+/// "starting…". A live holder label (admin / named routes / …) is left alone
+/// so a second region's pipeline does not blank the in-flight build.
 pub fn lock_place_index_build_with_progress() -> MutexGuard<'static, ()> {
     match PLACE_INDEX_BUILD_LOCK.try_lock() {
         Ok(guard) => guard,
         Err(TryLockError::WouldBlock) => {
-            crate::download::progress::set(
-                0,
-                Some(6),
-                "Place index: waiting for another index build…",
-            );
+            if should_publish_lock_wait_label(&crate::download::progress::snapshot().label) {
+                crate::download::progress::set(
+                    0,
+                    Some(6),
+                    "Place index: waiting for another index build…",
+                );
+            }
             PLACE_INDEX_BUILD_LOCK
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
@@ -119,6 +123,15 @@ pub fn clear_place_index_region_rows(
     idx.clear_region(region_id)
         .map_err(|e| format!("clear region: {e}"))?;
     Ok(())
+}
+
+pub(crate) fn should_publish_lock_wait_label(current_label: &str) -> bool {
+    let t = current_label.trim();
+    if !t.starts_with("Place index") {
+        return true;
+    }
+    let lower = t.to_ascii_lowercase();
+    lower.contains("starting") || lower.contains("waiting for another") || lower.contains("ready")
 }
 
 #[derive(Debug, Clone)]
@@ -2250,6 +2263,30 @@ mod tests {
             started.elapsed() >= Duration::from_millis(40),
             "builder returned too fast"
         );
+    }
+
+    #[test]
+    fn lock_wait_label_keeps_live_holder_status() {
+        assert!(should_publish_lock_wait_label(""));
+        assert!(should_publish_lock_wait_label("Writing map archive…"));
+        assert!(should_publish_lock_wait_label(
+            "Place index: starting… 0% (0 / 6)"
+        ));
+        assert!(should_publish_lock_wait_label(
+            "Place index: waiting for another index build…",
+        ));
+        assert!(should_publish_lock_wait_label(
+            "Place index ready 100% (6 / 6)"
+        ));
+        assert!(!should_publish_lock_wait_label(
+            "Place index: named routes…",
+        ));
+        assert!(!should_publish_lock_wait_label(
+            "Place index: admin boundaries: relations…",
+        ));
+        assert!(!should_publish_lock_wait_label(
+            "Place index: scanning nodes…"
+        ));
     }
 
     /// Synthetic multi-region DB used to decide whether `backfill_legacy_complete`

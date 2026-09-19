@@ -1,5 +1,6 @@
-//! Cooperative PBF access: background convert / place-index yield while a
-//! foreground plan is on the pack-miss fallback path. Bbox graph builds
+//! Cooperative PBF and region-pipeline access: background convert / place-index
+//! / PMTiles extract yield while a foreground plan is on the pack-load path so
+//! routing in an already-indexed region is not starved. Bbox graph builds
 //! (plan fallback, speed-limit cone, road-near) also serialize here so a new
 //! caller cannot scan the PBF in parallel with an active plan.
 
@@ -72,6 +73,53 @@ pub fn foreground_plan_active() -> bool {
 /// stall the HUD after the plan returns.
 pub fn skip_non_plan_bbox_build() -> bool {
     current_channel() != ProgressChannel::Plan && foreground_plan_active()
+}
+
+/// Pause region-pipeline / place-index / PMTiles work so a UI plan in an
+/// already-indexed region can load packs. No-op on the plan thread.
+pub fn pause_background_for_foreground_plan() -> bool {
+    current_channel() != ProgressChannel::Plan && foreground_plan_active()
+}
+
+/// Download-slot label while a PMTiles archive / fetch yields to a UI plan.
+pub const WAITING_FOR_ROUTE_PLANNING_LABEL: &str = "Waiting for route planning…";
+
+/// Cap how long background work sits idle for a plan. A leaked or very long
+/// foreground plan (e.g. cold bicycle PBF build) must not stall the region
+/// pipeline forever; after this the archive resumes.
+pub const FOREGROUND_PLAN_PAUSE_MAX: Duration = Duration::from_secs(120);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForegroundPlanWaitOutcome {
+    /// No plan was active, or the plan ended before [FOREGROUND_PLAN_PAUSE_MAX].
+    PlanEnded,
+    /// Plan still held the flag after the cap; caller should resume work.
+    TimedOut,
+    /// [should_abort] became true (cancel).
+    Aborted,
+}
+
+/// Block while a foreground plan is active, up to [max]. Polls every [poll].
+/// Used by tests and by sync callers; async extract uses the same outcomes.
+pub fn wait_while_foreground_plan_bounded(
+    max: Duration,
+    poll: Duration,
+    mut should_abort: impl FnMut() -> bool,
+) -> ForegroundPlanWaitOutcome {
+    if !pause_background_for_foreground_plan() {
+        return ForegroundPlanWaitOutcome::PlanEnded;
+    }
+    let started = std::time::Instant::now();
+    while pause_background_for_foreground_plan() {
+        if should_abort() {
+            return ForegroundPlanWaitOutcome::Aborted;
+        }
+        if started.elapsed() >= max {
+            return ForegroundPlanWaitOutcome::TimedOut;
+        }
+        thread::sleep(poll);
+    }
+    ForegroundPlanWaitOutcome::PlanEnded
 }
 
 /// Exclusive lock for [`crate::routing::graph::load_or_build_reweighted_bbox`].
@@ -400,6 +448,66 @@ mod tests {
         let t0 = Instant::now();
         yield_if_foreground_plan();
         assert!(t0.elapsed() < Duration::from_millis(30));
+    }
+
+    #[test]
+    fn download_channel_pauses_for_plan_plan_thread_does_not() {
+        let _serial = lock_plan_flag_for_test();
+        assert!(!pause_background_for_foreground_plan());
+        let _fg = ForegroundPlanGuard::acquire();
+        assert!(pause_background_for_foreground_plan());
+        crate::download::progress::with_channel(ProgressChannel::Plan, || {
+            assert!(!pause_background_for_foreground_plan());
+        });
+        crate::download::progress::with_channel(ProgressChannel::Download, || {
+            assert!(pause_background_for_foreground_plan());
+        });
+        drop(_fg);
+        assert!(!pause_background_for_foreground_plan());
+    }
+
+    #[test]
+    fn wait_while_foreground_plan_bounded_ends_when_plan_drops() {
+        let _serial = lock_plan_flag_for_test();
+        let _fg = ForegroundPlanGuard::acquire();
+        let started = Instant::now();
+        let h = thread::spawn(|| {
+            wait_while_foreground_plan_bounded(
+                Duration::from_secs(5),
+                Duration::from_millis(10),
+                || false,
+            )
+        });
+        thread::sleep(Duration::from_millis(60));
+        drop(_fg);
+        assert_eq!(h.join().unwrap(), ForegroundPlanWaitOutcome::PlanEnded);
+        assert!(started.elapsed() >= Duration::from_millis(50));
+    }
+
+    #[test]
+    fn wait_while_foreground_plan_bounded_times_out() {
+        let _serial = lock_plan_flag_for_test();
+        let _fg = ForegroundPlanGuard::acquire();
+        let outcome = wait_while_foreground_plan_bounded(
+            Duration::from_millis(80),
+            Duration::from_millis(10),
+            || false,
+        );
+        assert_eq!(outcome, ForegroundPlanWaitOutcome::TimedOut);
+        drop(_fg);
+    }
+
+    #[test]
+    fn wait_while_foreground_plan_bounded_aborts() {
+        let _serial = lock_plan_flag_for_test();
+        let _fg = ForegroundPlanGuard::acquire();
+        let outcome = wait_while_foreground_plan_bounded(
+            Duration::from_secs(5),
+            Duration::from_millis(10),
+            || true,
+        );
+        assert_eq!(outcome, ForegroundPlanWaitOutcome::Aborted);
+        drop(_fg);
     }
 
     #[test]

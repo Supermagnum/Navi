@@ -118,6 +118,41 @@ async fn wait_if_paused_or_cancelled(
         }
         anyhow::bail!("cancelled");
     }
+    // Idle while a UI plan loads packs for an already-indexed region so the
+    // archive write does not starve "Loading map data for this route…".
+    // Cap the wait so a leaked / very long plan cannot stall the pipeline.
+    if crate::download::pbf_priority::pause_background_for_foreground_plan() {
+        download_progress::set(
+            0,
+            None,
+            crate::download::pbf_priority::WAITING_FOR_ROUTE_PLANNING_LABEL,
+        );
+        let pause_started = Instant::now();
+        while crate::download::pbf_priority::pause_background_for_foreground_plan() {
+            if control.is_cancelled() {
+                let _ = fs::remove_file(partial);
+                let _ = fs::remove_dir_all(staging);
+                if let Some((storage, job_id)) = store {
+                    PmtilesJobStore::new(storage).set_status(
+                        job_id,
+                        PmtilesJobStatus::Cancelled,
+                        false,
+                    )?;
+                }
+                anyhow::bail!("cancelled");
+            }
+            if pause_started.elapsed() >= crate::download::pbf_priority::FOREGROUND_PLAN_PAUSE_MAX {
+                log::info!(
+                    target: "NaviDownload",
+                    "[NaviDownload] pmtiles resume after plan-pause timeout \
+                     max_s={}",
+                    crate::download::pbf_priority::FOREGROUND_PLAN_PAUSE_MAX.as_secs()
+                );
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
     while control.is_paused() {
         if let Some((storage, job_id)) = store {
             PmtilesJobStore::new(storage).set_status(job_id, PmtilesJobStatus::Paused, true)?;
