@@ -1004,9 +1004,11 @@ object RegionDownloadBackground {
         startPhase: Phase,
     ) {
         val pathForDecision =
-            geofabrikPath.ifBlank {
-                RegionCoverage.geofabrikPathForPbfName(filename).orEmpty()
-            }.trim().trim('/')
+            geofabrikPath
+                .ifBlank {
+                    RegionCoverage.geofabrikPathForPbfName(filename).orEmpty()
+                }.trim()
+                .trim('/')
         if (pathForDecision.isBlank() ||
             !GeofabrikDownloadCatalog.isKnownPackRegionId(pathForDecision)
         ) {
