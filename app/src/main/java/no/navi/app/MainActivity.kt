@@ -2142,8 +2142,10 @@ private fun NaviMapScreen() {
             }
         }
         val pbf = resolveRegionPbf()
-        // Avoid racing RegionDownloadBackground's place-index open (SQLite
-        // "database is locked") while a Download region job is in flight.
+        // ensureStartedFromPending claims [RegionDownloadBackground.isRunning]
+        // synchronously before its IO coroutine, so this check cannot race a
+        // just-started resume (PlaceIndexBackground + RegionDownload both
+        // calling ensurePlaceIndex on the same DB).
         if (pbf != null &&
             pbf.isFile &&
             !RegionDownloadBackground.isRunning()

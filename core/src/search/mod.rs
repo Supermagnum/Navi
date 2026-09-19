@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use osmpbf::Element;
@@ -20,6 +21,19 @@ pub const NAMED_BUILDING_KIND: &str = "building";
 /// Commit SQLite/FTS inserts this often so a force-close cannot roll back the
 /// entire write, and so WAL readers are not blocked for minutes.
 const INSERT_COMMIT_BATCH: usize = 50_000;
+
+/// One writer at a time for discard + open + `load_from_pbf`. Android can
+/// launch PlaceIndexBackground and RegionDownloadBackground against the same
+/// DB; without this, both parse the PBF (~500 MB each) and OOM a 3.5 GB tablet.
+static PLACE_INDEX_BUILD_LOCK: Mutex<()> = Mutex::new(());
+
+/// Hold while building or cache-checking a place index. Poison is recovered so
+/// a panicked builder cannot deadlock later callers.
+pub fn lock_place_index_build() -> MutexGuard<'static, ()> {
+    PLACE_INDEX_BUILD_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
 
 #[derive(Debug, Clone)]
 pub struct NameHit {
@@ -1810,6 +1824,36 @@ mod tests {
         assert!(
             !NameIndex::region_index_complete(&db, "europe/norway/ostlandet"),
             "partial write must not cache-hit"
+        );
+    }
+
+    #[test]
+    fn place_index_build_lock_serializes_concurrent_callers() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::thread;
+        use std::time::Duration;
+
+        static INSIDE: AtomicUsize = AtomicUsize::new(0);
+        static MAX: AtomicUsize = AtomicUsize::new(0);
+
+        let threads: Vec<_> = (0..4)
+            .map(|_| {
+                thread::spawn(|| {
+                    let _g = lock_place_index_build();
+                    let now = INSIDE.fetch_add(1, Ordering::SeqCst) + 1;
+                    MAX.fetch_max(now, Ordering::SeqCst);
+                    thread::sleep(Duration::from_millis(30));
+                    INSIDE.fetch_sub(1, Ordering::SeqCst);
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().expect("thread");
+        }
+        assert_eq!(
+            MAX.load(Ordering::SeqCst),
+            1,
+            "two place-index builders must not overlap"
         );
     }
 }

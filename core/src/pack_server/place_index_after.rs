@@ -136,6 +136,7 @@ pub fn build_place_index_from_pbf(
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let region_id = region_id.trim().trim_matches('/');
+    let _build = crate::search::lock_place_index_build();
     // Schema bumps must rebuild; wipe so multi-region DBs do not keep pre-bump
     // kinds after only this region is re-indexed.
     NameIndex::discard_if_schema_stale(index_db);

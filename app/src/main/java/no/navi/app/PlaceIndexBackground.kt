@@ -30,6 +30,20 @@ object PlaceIndexBackground {
 
     fun isRunning(): Boolean = running.get()
 
+    /**
+     * Claim before launching IO so a concurrent [ensureStarted] sees busy.
+     * Pair with [RegionDownloadBackground.isRunning] at call sites: the region
+     * pipeline owns place-index when a download/resume is already claimed.
+     */
+    internal fun claimWorker(): Boolean = running.compareAndSet(false, true)
+
+    internal fun releaseWorker() {
+        running.set(false)
+    }
+
+    /** True when this process must not start a second `ensurePlaceIndex`. */
+    internal fun shouldSkipStandaloneIndex(): Boolean = RegionDownloadBackground.isRunning() || running.get()
+
     fun statusLine(): String {
         if (running.get()) {
             val snap = runCatching { downloadProgressSnapshot() }.getOrNull()
@@ -58,19 +72,22 @@ object PlaceIndexBackground {
         regionId: String? = null,
     ) {
         if (!pbf.isFile) return
+        if (RegionDownloadBackground.isRunning()) {
+            Log.i(TAG, "region pipeline already running; skip standalone ensurePlaceIndex")
+            return
+        }
+        if (!claimWorker()) {
+            Log.i(TAG, "already running; skip")
+            return
+        }
+        lastStatus.set("building")
+        val rid = regionId?.trim()?.trim('/')?.ifBlank { null }
+        Log.i(
+            TAG,
+            "start ensurePlaceIndex pbf=${pbf.absolutePath} db=${indexDb.absolutePath} region=$rid",
+        )
         scope.launch {
             mutex.withLock {
-                if (running.get()) {
-                    Log.i(TAG, "already running; skip")
-                    return@withLock
-                }
-                running.set(true)
-                lastStatus.set("building")
-                val rid = regionId?.trim()?.trim('/')?.ifBlank { null }
-                Log.i(
-                    TAG,
-                    "start ensurePlaceIndex pbf=${pbf.absolutePath} db=${indexDb.absolutePath} region=$rid",
-                )
                 try {
                     val report =
                         ensurePlaceIndex(
@@ -97,7 +114,7 @@ object PlaceIndexBackground {
                     lastStatus.set("failed: ${t.message}")
                     Log.e(TAG, "ensurePlaceIndex crashed", t)
                 } finally {
-                    running.set(false)
+                    releaseWorker()
                 }
             }
         }

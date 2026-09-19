@@ -705,6 +705,18 @@ object RegionDownloadBackground {
         )
     }
 
+    /**
+     * Claim the pipeline slot before any IO coroutine. [isRunning] must be true
+     * as soon as this returns so MainActivity cannot start PlaceIndexBackground
+     * against the same DB (launch used to set [running] only inside Dispatchers.IO).
+     */
+    internal fun claimWorker(): Boolean = running.compareAndSet(false, true)
+
+    internal fun releaseWorker() {
+        running.set(false)
+        resuming.set(false)
+    }
+
     fun ensureStarted(
         context: Context,
         dataDir: File,
@@ -715,6 +727,7 @@ object RegionDownloadBackground {
         userLat: Double? = null,
         userLon: Double? = null,
     ) {
+        val startDrain = claimWorker()
         scope.launch {
             val path = GeofabrikDownloadCatalog.canonicalizePath(geofabrikPath)
             val job =
@@ -724,24 +737,21 @@ object RegionDownloadBackground {
                     geofabrikPath = path,
                     phase = startPhase,
                 )
-            val shouldStartWorker =
+            if (!startDrain) {
                 mutex.withLock {
                     enqueueJobLocked(dataDir, job, userLat, userLon)
-                    if (running.get()) {
-                        Log.i(TAG, "queued behind active download path=$path")
-                        lastStatus.set(queueStatusLine(dataDir, path))
-                        false
-                    } else {
-                        running.set(true)
-                        true
-                    }
                 }
-            if (!shouldStartWorker) return@launch
+                Log.i(TAG, "queued behind active download path=$path")
+                lastStatus.set(queueStatusLine(dataDir, path))
+                return@launch
+            }
             try {
+                mutex.withLock {
+                    enqueueJobLocked(dataDir, job, userLat, userLon)
+                }
                 drainQueue(context, dataDir)
             } finally {
-                running.set(false)
-                resuming.set(false)
+                releaseWorker()
             }
         }
     }
@@ -1298,6 +1308,8 @@ object RegionDownloadBackground {
             }
         }
         lastStatus.set("Place index: starting… 0% (0 / 6)")
+        // Native `ensure_place_index` single-flights discard/open/load so a
+        // concurrent PlaceIndexBackground caller waits then cache-hits.
         val placeReport =
             runCatching {
                 ensurePlaceIndex(

@@ -131,4 +131,44 @@ class RegionDownloadResumeTest {
             RegionDownloadBackground.USABLE_STATUS_PREFIX.startsWith("Place index ready"),
         )
     }
+
+    @Test
+    fun claimWorker_is_visible_to_isRunning_before_any_coroutine() {
+        try {
+            assertFalse(RegionDownloadBackground.isRunning())
+            assertTrue(RegionDownloadBackground.claimWorker())
+            assertTrue(
+                "MainActivity must see the pipeline as started before drainQueue launches",
+                RegionDownloadBackground.isRunning(),
+            )
+            assertFalse(
+                "second caller must not start a second drain",
+                RegionDownloadBackground.claimWorker(),
+            )
+            assertTrue(
+                "standalone place-index must skip while the region pipeline holds the slot",
+                PlaceIndexBackground.shouldSkipStandaloneIndex(),
+            )
+            assertFalse(PlaceIndexBackground.isRunning())
+        } finally {
+            PlaceIndexBackground.releaseWorker()
+            RegionDownloadBackground.releaseWorker()
+            assertFalse(RegionDownloadBackground.isRunning())
+            assertFalse(PlaceIndexBackground.isRunning())
+        }
+    }
+
+    @Test
+    fun placeIndexBackground_claimWorker_is_synchronous() {
+        try {
+            assertFalse(PlaceIndexBackground.isRunning())
+            assertTrue(PlaceIndexBackground.claimWorker())
+            assertTrue(PlaceIndexBackground.isRunning())
+            assertTrue(PlaceIndexBackground.shouldSkipStandaloneIndex())
+            assertFalse(PlaceIndexBackground.claimWorker())
+        } finally {
+            PlaceIndexBackground.releaseWorker()
+            assertFalse(PlaceIndexBackground.isRunning())
+        }
+    }
 }

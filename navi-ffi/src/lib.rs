@@ -4052,6 +4052,9 @@ pub fn ensure_place_index(
     if !pbf.is_file() {
         return format!("FAIL: PBF missing: {pbf_path}\n");
     }
+    // Serialize discard/open/load so PlaceIndexBackground + RegionDownload cannot
+    // both parse the same PBF. Cache-hit after the winner still returns PASS.
+    let _build = driver_break_core::search::lock_place_index_build();
     let db = Path::new(&index_db_path);
     if let Some(parent) = db.parent() {
         let _ = std::fs::create_dir_all(parent);
