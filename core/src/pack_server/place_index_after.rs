@@ -142,9 +142,10 @@ pub fn build_place_index_from_pbf(
     if !force_rebuild && index_db.is_file() {
         if let Ok(meta) = fs::metadata(index_db) {
             let region_ok = if region_id.is_empty() {
-                NameIndex::has_entries(index_db)
+                NameIndex::has_entries(index_db) && NameIndex::region_index_complete(index_db, "")
             } else {
                 NameIndex::has_entries_for_region(index_db, region_id)
+                    && NameIndex::region_index_complete(index_db, region_id)
             };
             if meta.len() > 10_000 && NameIndex::is_current_schema(index_db) && region_ok {
                 crate::download::progress::set(6, Some(6), "Place index ready");

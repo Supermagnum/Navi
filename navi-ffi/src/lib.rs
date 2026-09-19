@@ -4077,10 +4077,12 @@ pub fn ensure_place_index(
                 meta.len() > 10_000
                     && driver_break_core::search::NameIndex::is_current_schema(db)
                     && driver_break_core::search::NameIndex::has_entries(db)
+                    && driver_break_core::search::NameIndex::region_index_complete(db, "")
             } else {
                 meta.len() > 10_000
                     && driver_break_core::search::NameIndex::is_current_schema(db)
                     && driver_break_core::search::NameIndex::has_entries_for_region(db, &region)
+                    && driver_break_core::search::NameIndex::region_index_complete(db, &region)
             };
             if region_ok {
                 driver_break_core::download::phase_timing::end(
@@ -4332,7 +4334,8 @@ pub fn water_pois_along_polyline(
 /// Offline place / address-style name search (FTS5 prefix).
 #[uniffi::export]
 pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<PlaceHit> {
-    let Ok(idx) = driver_break_core::search::NameIndex::open(Path::new(&index_db_path)) else {
+    let Ok(idx) = driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path))
+    else {
         return Vec::new();
     };
     let Ok(hits) = idx.search(&query, limit as usize) else {
@@ -4364,7 +4367,8 @@ pub fn named_buildings_in_bbox(
     max_lon: f64,
     limit: u32,
 ) -> Vec<PlaceHit> {
-    let Ok(idx) = driver_break_core::search::NameIndex::open(Path::new(&index_db_path)) else {
+    let Ok(idx) = driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path))
+    else {
         return Vec::new();
     };
     let Ok(hits) =
@@ -4395,7 +4399,8 @@ pub fn nearby_places(
     radius_m: f64,
     limit: u32,
 ) -> Vec<PlaceHit> {
-    let Ok(idx) = driver_break_core::search::NameIndex::open(Path::new(&index_db_path)) else {
+    let Ok(idx) = driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path))
+    else {
         return Vec::new();
     };
     let Ok(hits) = idx.nearby(lat, lon, radius_m, limit as usize) else {
@@ -7502,7 +7507,7 @@ pub fn weather_map_symbols_json(
         .to_string();
     }
 
-    let Ok(idx) = NameIndex::open(Path::new(&index_db_path)) else {
+    let Ok(idx) = NameIndex::open_readonly(Path::new(&index_db_path)) else {
         return serde_json::json!({
             "zoom": zoom,
             "visible_cities": 0,

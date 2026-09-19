@@ -1,6 +1,8 @@
 //! Offline name/address search via SQLite FTS5.
 
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use osmpbf::Element;
 use rusqlite::{params, Connection, Result as SqlResult};
@@ -14,6 +16,10 @@ pub use place_context::{format_place_display, PLACE_INDEX_SCHEMA_VERSION};
 
 /// Place-index `kind` for OSM `building=*` + `name=*` (no amenity/shop/place).
 pub const NAMED_BUILDING_KIND: &str = "building";
+
+/// Commit SQLite/FTS inserts this often so a force-close cannot roll back the
+/// entire write, and so WAL readers are not blocked for minutes.
+const INSERT_COMMIT_BATCH: usize = 50_000;
 
 #[derive(Debug, Clone)]
 pub struct NameHit {
@@ -42,11 +48,34 @@ impl NameIndex {
 
     pub fn open(path: impl AsRef<Path>) -> SqlResult<Self> {
         let conn = Connection::open(path)?;
-        // Region download and PlaceIndexBackground can contend briefly; wait
-        // instead of failing open with SQLITE_BUSY ("database is locked").
-        conn.busy_timeout(std::time::Duration::from_secs(30))?;
+        // WAL writers rarely wait on readers; keep a short timeout for checkpoints.
+        conn.busy_timeout(Duration::from_secs(5))?;
+        Self::apply_file_pragmas(&conn)?;
         Self::migrate(&conn)?;
         Ok(Self { conn })
+    }
+
+    /// Query-only open: no migrate/DDL, no 30s busy wait on the UI path.
+    pub fn open_readonly(path: impl AsRef<Path>) -> SqlResult<Self> {
+        let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        conn.busy_timeout(Duration::from_millis(250))?;
+        Ok(Self { conn })
+    }
+
+    fn apply_file_pragmas(conn: &Connection) -> SqlResult<()> {
+        // WAL lets overlay/search readers see a consistent snapshot during writes.
+        // NORMAL (not FULL) is the SQLite-recommended pairing with WAL: fsync on
+        // WAL frame commit is skipped; a checkpoint still durable enough for a
+        // rebuildable search index.
+        let mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
+        if !mode.eq_ignore_ascii_case("wal") {
+            log::warn!(
+                target: "NaviSearch",
+                "place-index: journal_mode={mode}, expected wal"
+            );
+        }
+        conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
+        Ok(())
     }
 
     fn migrate(conn: &Connection) -> SqlResult<()> {
@@ -68,9 +97,36 @@ impl NameIndex {
                 content='name_entries',
                 content_rowid='osm_id'
             );
+            CREATE TABLE IF NOT EXISTS name_index_build (
+                region_id TEXT PRIMARY KEY NOT NULL,
+                expected INTEGER NOT NULL DEFAULT 0,
+                written INTEGER NOT NULL DEFAULT 0,
+                complete INTEGER NOT NULL DEFAULT 0
+            );
             ",
         )?;
-        Self::ensure_context_columns(conn)
+        Self::ensure_context_columns(conn)?;
+        Self::backfill_legacy_complete(conn)
+    }
+
+    /// Existing DBs have rows but no build-progress row; treat them as finished
+    /// so cache_hit still skips a rebuild. Never overwrite an in-progress row.
+    fn backfill_legacy_complete(conn: &Connection) -> SqlResult<()> {
+        conn.execute_batch(
+            "
+            INSERT OR IGNORE INTO name_index_build(region_id, expected, written, complete)
+            SELECT region_id, COUNT(*), COUNT(*), 1
+            FROM name_entries
+            WHERE region_id != ''
+            GROUP BY region_id;
+            INSERT OR IGNORE INTO name_index_build(region_id, expected, written, complete)
+            SELECT '', COUNT(*), COUNT(*), 1
+            FROM name_entries
+            WHERE region_id = ''
+            HAVING COUNT(*) > 0;
+            ",
+        )?;
+        Ok(())
     }
 
     fn ensure_context_columns(conn: &Connection) -> SqlResult<()> {
@@ -171,6 +227,7 @@ impl NameIndex {
         }
         match std::fs::remove_file(path) {
             Ok(()) => {
+                Self::remove_wal_sidecars(path);
                 log::info!(
                     target: "NaviSearch",
                     "place-index: discarded stale schema DB {}",
@@ -187,6 +244,64 @@ impl NameIndex {
                 false
             }
         }
+    }
+
+    fn remove_wal_sidecars(path: &Path) {
+        for suffix in ["-wal", "-shm"] {
+            let mut sidecar = path.as_os_str().to_os_string();
+            sidecar.push(suffix);
+            let _ = std::fs::remove_file(PathBuf::from(sidecar));
+        }
+    }
+
+    /// True when this region's index finished a write (not a mid-build partial).
+    ///
+    /// Missing `name_index_build` table (never opened with this code) falls back
+    /// to [`has_entries_for_region`] / [`has_entries`] so legacy DBs still cache-hit.
+    pub fn region_index_complete(path: impl AsRef<Path>, region_id: &str) -> bool {
+        let path = path.as_ref();
+        let region_id = region_id.trim().trim_matches('/');
+        if !path.is_file() {
+            return false;
+        }
+        let Ok(conn) =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        else {
+            return false;
+        };
+        match conn.query_row(
+            "SELECT complete FROM name_index_build WHERE region_id = ?1",
+            params![region_id],
+            |row| row.get::<_, i64>(0),
+        ) {
+            Ok(v) => v != 0,
+            Err(_) => {
+                if region_id.is_empty() {
+                    Self::has_entries(path)
+                } else {
+                    Self::has_entries_for_region(path, region_id)
+                }
+            }
+        }
+    }
+
+    fn build_is_interrupted(conn: &Connection, region_id: &str) -> bool {
+        conn.query_row(
+            "SELECT complete FROM name_index_build WHERE region_id = ?1",
+            params![region_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .ok()
+        .is_some_and(|v| v == 0)
+    }
+
+    fn build_written(conn: &Connection, region_id: &str) -> i64 {
+        conn.query_row(
+            "SELECT written FROM name_index_build WHERE region_id = ?1",
+            params![region_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0)
     }
 
     /// Full-file rebuild with empty `region_id` (legacy / single-extract callers).
@@ -209,7 +324,17 @@ impl NameIndex {
         let region_id = region_id.trim().trim_matches('/').to_string();
         let mut batch: Vec<(i64, String, String, f64, f64)> = Vec::new();
         const PHASES: u64 = 6;
-        crate::download::progress::set(0, Some(PHASES), "Place index: admin boundaries…");
+        let interrupted = Self::build_is_interrupted(&self.conn, &region_id);
+        let phase_prefix = if interrupted {
+            "Place index: previous build interrupted, restarting — "
+        } else {
+            "Place index: "
+        };
+        crate::download::progress::set(
+            0,
+            Some(PHASES),
+            &format!("{phase_prefix}admin boundaries…"),
+        );
 
         // Admin polygons use their own PBF passes (relations → ways → nodes).
         let admin_t0 = phase_timing::start("place_index.admin");
@@ -225,7 +350,7 @@ impl NameIndex {
 
         // Pass 1: collect named closed/open ways that need node centroids
         // (tourism=zoo, amenity areas, etc. are often ways, not nodes).
-        crate::download::progress::set(1, Some(PHASES), "Place index: scanning ways…");
+        crate::download::progress::set(1, Some(PHASES), &format!("{phase_prefix}scanning ways…"));
         let ways_t0 = phase_timing::start("place_index.ways");
         let mut way_jobs: Vec<(i64, String, String, Vec<i64>)> = Vec::new();
         let mut needed_nodes: std::collections::HashSet<i64> = std::collections::HashSet::new();
@@ -272,7 +397,7 @@ impl NameIndex {
         );
 
         // Pass 2: nodes (search hits) + coords for way centroids.
-        crate::download::progress::set(2, Some(PHASES), "Place index: scanning nodes…");
+        crate::download::progress::set(2, Some(PHASES), &format!("{phase_prefix}scanning nodes…"));
         let nodes_t0 = phase_timing::start("place_index.nodes");
         let mut node_coords: std::collections::HashMap<i64, (f64, f64)> =
             std::collections::HashMap::with_capacity(needed_nodes.len());
@@ -344,7 +469,7 @@ impl NameIndex {
         // Official hiking/cycling route relations (name/ref/operator) for To/Via search.
         // Relation ids are distinct from node ids in OSM; store relation id as-is
         // (FTS rowid = osm_id).
-        crate::download::progress::set(3, Some(PHASES), "Place index: named routes…");
+        crate::download::progress::set(3, Some(PHASES), &format!("{phase_prefix}named routes…"));
         let routes_t0 = phase_timing::start("place_index.named_routes");
         crate::download::pbf_priority::yield_if_foreground_plan();
         let mut route_hits = 0usize;
@@ -365,7 +490,11 @@ impl NameIndex {
             &format!("route_hits={route_hits} batch={}", batch.len()),
         );
 
-        crate::download::progress::set(4, Some(PHASES), "Place index: resolving context…");
+        crate::download::progress::set(
+            4,
+            Some(PHASES),
+            &format!("{phase_prefix}resolving context…"),
+        );
         let ctx_t0 = phase_timing::start("place_index.resolve_context");
         let sub_areas = batch
             .iter()
@@ -381,14 +510,50 @@ impl NameIndex {
             &format!("batch={}", batch.len()),
         );
 
-        crate::download::progress::set(5, Some(PHASES), "Place index: writing database…");
+        crate::download::progress::set(
+            5,
+            Some(PHASES),
+            &format!("{phase_prefix}writing database…"),
+        );
         let write_t0 = phase_timing::start("place_index.sqlite_write");
+        let resume_written = if interrupted {
+            Self::build_written(&self.conn, &region_id)
+        } else {
+            0
+        };
+        let resume = interrupted && resume_written > 0;
+        let skip: HashSet<i64> = if resume {
+            Self::osm_ids_for_region(&self.conn, &region_id)?
+        } else {
+            HashSet::new()
+        };
+
         let clear_t0 = phase_timing::start("place_index.sqlite_clear_region");
-        let tx = self.conn.unchecked_transaction()?;
-        Self::clear_region_rows(&tx, &region_id)?;
+        {
+            let tx = self.conn.unchecked_transaction()?;
+            if !resume {
+                Self::clear_region_rows(&tx, &region_id)?;
+            }
+            Self::upsert_build_progress(
+                &tx,
+                &region_id,
+                batch.len() as i64,
+                if resume { resume_written } else { 0 },
+                false,
+            )?;
+            tx.commit()?;
+        }
         phase_timing::end("place_index.sqlite_clear_region", clear_t0);
+
         let insert_t0 = phase_timing::start("place_index.sqlite_insert_rows");
+        let total = batch.len();
+        let mut inserted = skip.len();
+        let mut since_commit = 0usize;
+        let mut tx = self.conn.unchecked_transaction()?;
         for (osm_id, name, kind, lat, lon) in &batch {
+            if skip.contains(osm_id) {
+                continue;
+            }
             let ctx = resolver.resolve(*osm_id, name, kind, *lat, *lon);
             // osm_id may already exist from another region at a landsdel border —
             // replace and refresh FTS for that id.
@@ -414,22 +579,37 @@ impl NameIndex {
                 "INSERT INTO name_fts(rowid, name, kind) VALUES (?1,?2,?3)",
                 params![osm_id, name, kind],
             )?;
+            inserted += 1;
+            since_commit += 1;
+            if since_commit >= INSERT_COMMIT_BATCH {
+                Self::upsert_build_progress(&tx, &region_id, total as i64, inserted as i64, false)?;
+                tx.commit()?;
+                crate::download::progress::set(
+                    inserted as u64,
+                    Some(total as u64),
+                    &format!("{phase_prefix}writing database…"),
+                );
+                crate::download::pbf_priority::yield_if_foreground_plan();
+                tx = self.conn.unchecked_transaction()?;
+                since_commit = 0;
+            }
         }
         phase_timing::end_detail(
             "place_index.sqlite_insert_rows",
             insert_t0,
-            &format!("rows={}", batch.len()),
+            &format!("rows={total} resumed={resume}"),
         );
         let commit_t0 = phase_timing::start("place_index.sqlite_commit");
         tx.execute_batch(&format!(
             "PRAGMA user_version = {PLACE_INDEX_SCHEMA_VERSION};"
         ))?;
+        Self::upsert_build_progress(&tx, &region_id, total as i64, inserted as i64, true)?;
         tx.commit()?;
         phase_timing::end("place_index.sqlite_commit", commit_t0);
         phase_timing::end_detail(
             "place_index.sqlite_write",
             write_t0,
-            &format!("rows={}", batch.len()),
+            &format!("rows={total}"),
         );
         crate::download::progress::set(PHASES, Some(PHASES), "Place index ready");
         phase_timing::end_detail(
@@ -481,6 +661,31 @@ impl NameIndex {
         // SQLite lacking FTS5 cleared name_entries first). Rebuild syncs the
         // index to the remaining content table so orphans cannot MATCH.
         let _ = tx.execute_batch("INSERT INTO name_fts(name_fts) VALUES('rebuild');");
+        Ok(())
+    }
+
+    fn osm_ids_for_region(conn: &Connection, region_id: &str) -> SqlResult<HashSet<i64>> {
+        let mut stmt = conn.prepare("SELECT osm_id FROM name_entries WHERE region_id = ?1")?;
+        let rows = stmt.query_map(params![region_id], |row| row.get(0))?;
+        rows.collect()
+    }
+
+    fn upsert_build_progress(
+        tx: &rusqlite::Transaction<'_>,
+        region_id: &str,
+        expected: i64,
+        written: i64,
+        complete: bool,
+    ) -> SqlResult<()> {
+        tx.execute(
+            "INSERT INTO name_index_build(region_id, expected, written, complete)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(region_id) DO UPDATE SET
+                expected = excluded.expected,
+                written = excluded.written,
+                complete = excluded.complete",
+            params![region_id, expected, written, i64::from(complete)],
+        )?;
         Ok(())
     }
 
@@ -1513,5 +1718,98 @@ mod tests {
             .named_buildings_in_bbox(59.0, 10.0, 60.0, 11.0, 8)
             .unwrap();
         assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn file_index_uses_wal_and_synchronous_normal() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("place_index.db");
+        let idx = NameIndex::open(&db).expect("open");
+        let mode: String = idx
+            .conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(mode.to_lowercase(), "wal");
+        let sync: i64 = idx
+            .conn
+            .query_row("PRAGMA synchronous", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(sync, 1, "WAL should use synchronous=NORMAL (1), got {sync}");
+    }
+
+    #[test]
+    fn wal_readonly_query_does_not_wait_on_writer_transaction() {
+        use std::time::Instant;
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("wal.db");
+        let mut writer = NameIndex::open(&db).expect("open");
+        writer
+            .upsert_entry_with_region(
+                1,
+                "Oslo".into(),
+                "place:city".into(),
+                59.91,
+                10.75,
+                String::new(),
+                String::new(),
+                "europe/norway/ostlandet".into(),
+            )
+            .unwrap();
+        let tx = writer.conn.unchecked_transaction().unwrap();
+        tx.execute(
+            "UPDATE name_entries SET name = 'HIDDEN' WHERE osm_id = 1",
+            [],
+        )
+        .unwrap();
+        let t0 = Instant::now();
+        let reader = NameIndex::open_readonly(&db).expect("readonly");
+        let hits = reader.search("Oslo", 8).unwrap();
+        let elapsed = t0.elapsed();
+        assert!(
+            elapsed.as_millis() < 200,
+            "readonly open/search blocked for {elapsed:?} (expected WAL snapshot)"
+        );
+        assert!(
+            hits.iter().any(|h| h.name == "Oslo"),
+            "WAL reader should see committed snapshot, got {hits:?}"
+        );
+        drop(hits);
+        drop(reader);
+        tx.rollback().unwrap();
+    }
+
+    #[test]
+    fn incomplete_build_is_not_region_index_complete() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("partial.db");
+        let mut idx = NameIndex::open(&db).expect("open");
+        idx.upsert_entry_with_region(
+            1,
+            "Oslo".into(),
+            "place:city".into(),
+            59.91,
+            10.75,
+            String::new(),
+            String::new(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        idx.conn
+            .execute(
+                "INSERT INTO name_index_build(region_id, expected, written, complete)
+                 VALUES ('europe/norway/ostlandet', 100, 1, 0)
+                 ON CONFLICT(region_id) DO UPDATE SET written=1, complete=0",
+                [],
+            )
+            .unwrap();
+        drop(idx);
+        assert!(NameIndex::has_entries_for_region(
+            &db,
+            "europe/norway/ostlandet"
+        ));
+        assert!(
+            !NameIndex::region_index_complete(&db, "europe/norway/ostlandet"),
+            "partial write must not cache-hit"
+        );
     }
 }

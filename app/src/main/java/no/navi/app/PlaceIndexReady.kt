@@ -205,18 +205,23 @@ object PlaceIndexReady {
         if (!dbFile.isFile || dbFile.length() < 100L) return emptySet()
         return runCatching {
             SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
-                db
-                    .rawQuery(
-                        "SELECT DISTINCT region_id FROM name_entries WHERE region_id != ''",
-                        null,
-                    ).use { c ->
-                        buildSet {
-                            while (c.moveToNext()) {
-                                val id = PackRegionAvailability.normalize(c.getString(0) ?: "")
-                                if (id.isNotEmpty()) add(id)
-                            }
+                val sqlWithComplete =
+                    "SELECT DISTINCT e.region_id FROM name_entries e " +
+                        "LEFT JOIN name_index_build b ON b.region_id = e.region_id " +
+                        "WHERE e.region_id != '' AND (b.complete IS NULL OR b.complete = 1)"
+                val sqlLegacy = "SELECT DISTINCT region_id FROM name_entries WHERE region_id != ''"
+                val cursor =
+                    runCatching { db.rawQuery(sqlWithComplete, null) }.getOrElse {
+                        db.rawQuery(sqlLegacy, null)
+                    }
+                cursor.use { c ->
+                    buildSet {
+                        while (c.moveToNext()) {
+                            val id = PackRegionAvailability.normalize(c.getString(0) ?: "")
+                            if (id.isNotEmpty()) add(id)
                         }
                     }
+                }
             }
         }.getOrDefault(emptySet())
     }

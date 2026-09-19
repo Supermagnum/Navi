@@ -1,8 +1,13 @@
 package no.navi.app
 
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
@@ -14,12 +19,16 @@ import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.Point
 import uniffi.navi.namedBuildingsInBbox
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Named OSM buildings (`building=*` + `name=*`) from the offline place index.
  *
  * Protomaps tiles do not carry `name` on the buildings layer; labels come from
  * [namedBuildingsInBbox] instead of a dead style JSON symbol layer.
+ *
+ * Camera-idle only captures zoom/bounds on the main thread. The UniFFI SQLite
+ * open runs on [Dispatchers.IO] so a place-index write cannot ANR the looper.
  */
 object NamedBuildingLabels {
     private const val TAG = "NamedBuildingLabels"
@@ -34,8 +43,9 @@ object NamedBuildingLabels {
     private const val TEXT_COLOR = "#4a4a4a"
     private const val HALO_COLOR = "#f8f4f0"
 
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var pending: Runnable? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var debounceJob: Job? = null
+    private val fetchGen = AtomicLong(0)
 
     fun clear(style: Style) {
         runCatching {
@@ -49,14 +59,12 @@ object NamedBuildingLabels {
         map: MapLibreMap,
         placeIndexDb: String,
     ) {
-        pending?.let { mainHandler.removeCallbacks(it) }
-        val task =
-            Runnable {
-                pending = null
+        debounceJob?.cancel()
+        debounceJob =
+            scope.launch {
+                delay(DEBOUNCE_MS)
                 refreshNow(map, placeIndexDb)
             }
-        pending = task
-        mainHandler.postDelayed(task, DEBOUNCE_MS)
     }
 
     fun refreshNow(
@@ -80,29 +88,40 @@ object NamedBuildingLabels {
                 applyFeatures(style, emptyList())
                 return
             }
-        val hits =
-            runCatching {
-                namedBuildingsInBbox(
-                    indexDbPath = placeIndexDb,
-                    minLat = bounds.latitudeSouth,
-                    minLon = bounds.longitudeWest,
-                    maxLat = bounds.latitudeNorth,
-                    maxLon = bounds.longitudeEast,
-                    limit = MAX_LABELS.toUInt(),
-                )
-            }.getOrElse {
-                Log.w(TAG, "namedBuildingsInBbox failed: ${it.message}")
-                emptyList()
-            }
-        val features =
-            hits.map { hit ->
-                Feature.fromGeometry(Point.fromLngLat(hit.lon, hit.lat)).also { f ->
-                    f.addStringProperty("name", hit.name)
-                    f.addNumberProperty("osm_id", hit.osmId.toDouble())
+        val minLat = bounds.latitudeSouth
+        val minLon = bounds.longitudeWest
+        val maxLat = bounds.latitudeNorth
+        val maxLon = bounds.longitudeEast
+        val gen = fetchGen.incrementAndGet()
+        scope.launch {
+            val hits =
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        namedBuildingsInBbox(
+                            indexDbPath = placeIndexDb,
+                            minLat = minLat,
+                            minLon = minLon,
+                            maxLat = maxLat,
+                            maxLon = maxLon,
+                            limit = MAX_LABELS.toUInt(),
+                        )
+                    }.getOrElse {
+                        Log.w(TAG, "namedBuildingsInBbox failed: ${it.message}")
+                        emptyList()
+                    }
                 }
-            }
-        applyFeatures(style, features)
-        Log.i(TAG, "labels=${features.size} zoom=$zoom")
+            if (gen != fetchGen.get()) return@launch
+            val liveStyle = map.style ?: return@launch
+            val features =
+                hits.map { hit ->
+                    Feature.fromGeometry(Point.fromLngLat(hit.lon, hit.lat)).also { f ->
+                        f.addStringProperty("name", hit.name)
+                        f.addNumberProperty("osm_id", hit.osmId.toDouble())
+                    }
+                }
+            applyFeatures(liveStyle, features)
+            Log.i(TAG, "labels=${features.size} zoom=$zoom")
+        }
     }
 
     private fun applyFeatures(

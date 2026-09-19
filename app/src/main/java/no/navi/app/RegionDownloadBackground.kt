@@ -564,13 +564,14 @@ object RegionDownloadBackground {
         }
         if (PlaceIndexReady.isReady(dataDir, rid)) {
             // Stamp alone is not enough after a schema wipe removed other regions.
-            return placeIndexHasRowsForRegion(dbFile, rid)
+            return placeIndexHasRowsForRegion(dbFile, rid) && placeIndexBuildComplete(dbFile, rid)
         }
         // Once a stamp file exists it is authoritative — do not treat partial
         // mid-build rows as ready (clearReady leaves an updated stamp).
         if (PlaceIndexReady.readyFile(dataDir).isFile) return false
         val hasRows = placeIndexHasRowsForRegion(dbFile, rid)
         if (hasRows) {
+            if (!placeIndexBuildComplete(dbFile, rid)) return false
             // Legacy DB rows without a ready stamp — adopt them once.
             PlaceIndexReady.markReady(dataDir, rid)
         }
@@ -627,6 +628,32 @@ object RegionDownloadBackground {
                     }
                 }
         }.getOrDefault(false)
+
+    /**
+     * False while sqlite_insert_rows is in progress (complete=0). Missing
+     * `name_index_build` table (legacy DB) is treated as complete.
+     */
+    internal fun placeIndexBuildComplete(
+        dbFile: File,
+        rid: String,
+    ): Boolean =
+        runCatching {
+            android.database.sqlite.SQLiteDatabase
+                .openDatabase(
+                    dbFile.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+                ).use { db ->
+                    db
+                        .rawQuery(
+                            "SELECT complete FROM name_index_build WHERE region_id = ? LIMIT 1",
+                            arrayOf(rid),
+                        ).use { c ->
+                            if (!c.moveToFirst()) return@use true
+                            c.getInt(0) != 0
+                        }
+                }
+        }.getOrDefault(true)
 
     fun uiLine(): String {
         if (!running.get()) return lastStatus.get()

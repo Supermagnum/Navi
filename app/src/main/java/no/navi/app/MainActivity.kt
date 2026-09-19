@@ -8194,8 +8194,8 @@ private fun CorridorMapView(
         while (true) {
             val map = mapRef
             if (map != null && styleReady.value) {
-                // MapLibre style APIs must run on the main thread; at most one
-                // HTTPS fetch occurs inside UniFFI per tick (paced).
+                // MapLibre style APIs stay on the main thread; place-index JSON
+                // is fetched on Dispatchers.IO inside refreshWeatherMapOnMain.
                 refreshWeatherMapOnMain(
                     map = map,
                     dataDir = dataDir.absolutePath,

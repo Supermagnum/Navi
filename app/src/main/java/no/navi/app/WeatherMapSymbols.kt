@@ -6,6 +6,11 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import org.maplibre.android.maps.MapLibreMap
@@ -23,11 +28,15 @@ import uniffi.navi.weatherMapMaxSymbols
 import uniffi.navi.weatherMapMinPixelSpacing
 import uniffi.navi.weatherMapSymbolsJson
 import uniffi.navi.weatherMapZoomMax
+import java.util.concurrent.atomic.AtomicLong
 
 private const val TAG = "NaviWeatherMap"
 private const val SRC_ID = "weather-cities-src"
 private const val LAYER_ID = "weather-cities-layer"
 private const val HALO_LAYER_ID = "weather-cities-halo"
+
+private val weatherScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+private val weatherFetchGen = AtomicLong(0)
 
 data class WeatherMapTickResult(
     val visibleCities: Int = 0,
@@ -92,7 +101,10 @@ fun refreshWeatherMapSymbols(
     return parsed.result.copy(rawJson = raw)
 }
 
-/** Main-thread helper used from CorridorMapView. */
+/**
+ * Capture camera on the main thread, then open the place index on [Dispatchers.IO].
+ * Style mutation stays on main. Does not block camera-idle / Compose.
+ */
 fun refreshWeatherMapOnMain(
     map: MapLibreMap,
     dataDir: String,
@@ -103,16 +115,53 @@ fun refreshWeatherMapOnMain(
     appActive: Boolean,
 ) {
     val mapStyle = map.style ?: return
-    refreshWeatherMapSymbols(
-        map = map,
-        mapStyle = mapStyle,
-        dataDir = dataDir,
-        placeIndexDb = placeIndexDb,
-        weatherIconsDir = weatherIconsDir,
-        weatherPluginEnabled = weatherPluginEnabled,
-        mapSymbolsEnabled = mapSymbolsEnabled,
-        appActive = appActive,
-    )
+    if (!weatherPluginEnabled || !mapSymbolsEnabled) {
+        clearWeatherMapSymbols(mapStyle)
+        return
+    }
+    val zoom = map.cameraPosition.zoom
+    val zoomMax = weatherMapZoomMax()
+    if (zoom > zoomMax) {
+        clearWeatherMapSymbols(mapStyle)
+        Log.i(TAG, "hide symbols zoom=$zoom > max=$zoomMax")
+        return
+    }
+    val bounds =
+        try {
+            map.projection.visibleRegion.latLngBounds
+        } catch (_: Exception) {
+            clearWeatherMapSymbols(mapStyle)
+            return
+        }
+    val minLat = bounds.latitudeSouth
+    val minLon = bounds.longitudeWest
+    val maxLat = bounds.latitudeNorth
+    val maxLon = bounds.longitudeEast
+    val gen = weatherFetchGen.incrementAndGet()
+    weatherScope.launch {
+        val raw =
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    weatherMapSymbolsJson(
+                        dataDir = dataDir,
+                        indexDbPath = placeIndexDb,
+                        minLat = minLat,
+                        minLon = minLon,
+                        maxLat = maxLat,
+                        maxLon = maxLon,
+                        zoom = zoom,
+                        weatherPluginEnabled = weatherPluginEnabled,
+                        mapSymbolsEnabled = mapSymbolsEnabled,
+                        appActive = appActive,
+                    )
+                }.getOrDefault("{}")
+            }
+        if (gen != weatherFetchGen.get()) return@launch
+        val liveStyle = map.style ?: return@launch
+        Log.i(TAG, "tick: $raw")
+        val parsed = parseWeatherMapJson(raw)
+        applyWeatherMapSymbols(liveStyle, weatherIconsDir, parsed.features)
+    }
 }
 
 fun clearWeatherMapSymbols(mapStyle: Style) {
