@@ -42,7 +42,7 @@ object RegionDownloadBackground {
     const val QUEUE_FILE = "region-download-queue.json"
     private const val TAG = "RegionDownloadBg"
     private const val PHASE_TAG = "PHASE_TIMING"
-    private const val MIN_PBF_BYTES = 1_000_000L
+    internal const val MIN_PBF_BYTES = 1_000_000L
 
     private val phaseIoAnchors = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Long>>()
 

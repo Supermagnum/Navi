@@ -106,7 +106,7 @@ object PackRegionAvailability {
             }
         for (path in candidates) {
             val f = File(dataDir, "${localStem(path)}.osm.pbf")
-            if (f.isFile && f.length() > 10_000L) return f
+            if (f.isFile && f.length() >= RegionDownloadBackground.MIN_PBF_BYTES) return f
         }
         return null
     }
