@@ -1,0 +1,18 @@
+{
+  "format": "NAVICP50",
+  "format_version": 1,
+  "coord_scale": 10000000,
+  "source": "Natural Earth Admin-0 Countries",
+  "source_url": "https://naciscdn.org/naturalearth/50m/cultural/ne_50m_admin_0_countries.zip",
+  "natural_earth_version": "5.1.1",
+  "natural_earth_scale": "50m",
+  "download_sha256": "5fed433373581fa648920435f937d95f2d3c0200e067409c6478dcdf1b853139",
+  "asset_sha256": "2ffa9bd3152930f89b59ba7ff5eaa0db3faae91443fa430b09762af7dadfd1e1",
+  "asset_bytes": 804180,
+  "max_asset_bytes": 5242880,
+  "country_count": 237,
+  "generated_utc": "2026-09-19T22:58:51Z",
+  "license": "Public Domain (CC0 1.0) \u2014 Natural Earth",
+  "attribution": "Country boundaries: Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com.",
+  "user_agent": "NaviCountryIsoBuild/0.1 (https://github.com/navigate-me/Navi; generate-country-polys)"
+}
