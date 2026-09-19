@@ -57,6 +57,7 @@ impl NameIndex {
     pub fn open_in_memory() -> SqlResult<Self> {
         let conn = Connection::open_in_memory()?;
         Self::migrate(&conn)?;
+        Self::backfill_legacy_complete(&conn)?;
         Ok(Self { conn })
     }
 
@@ -64,8 +65,23 @@ impl NameIndex {
         let conn = Connection::open(path)?;
         // WAL writers rarely wait on readers; keep a short timeout for checkpoints.
         conn.busy_timeout(Duration::from_secs(5))?;
+        let pragmas_t0 = phase_timing::start("place_index.open_db.pragmas");
         Self::apply_file_pragmas(&conn)?;
+        phase_timing::end("place_index.open_db.pragmas", pragmas_t0);
+        // GROUP BY over name_entries on every open dominated reopen (~383 ms of
+        // 384 ms for 2.1M rows in the ignored timing test; tablet open_db ~7 s).
+        // Production writers (`load_from_pbf_for_region` → `upsert_build_progress`)
+        // always upsert name_index_build. `upsert_entry*` is tests-only and does
+        // not; those DBs already have the table from `open`, so they skip too.
+        let had_build_table = Self::name_index_build_table_exists(&conn)?;
+        let migrate_t0 = phase_timing::start("place_index.open_db.migrate");
         Self::migrate(&conn)?;
+        phase_timing::end("place_index.open_db.migrate", migrate_t0);
+        let backfill_t0 = phase_timing::start("place_index.open_db.backfill_legacy_complete");
+        if !had_build_table {
+            Self::backfill_legacy_complete(&conn)?;
+        }
+        phase_timing::end("place_index.open_db.backfill_legacy_complete", backfill_t0);
         Ok(Self { conn })
     }
 
@@ -120,7 +136,16 @@ impl NameIndex {
             ",
         )?;
         Self::ensure_context_columns(conn)?;
-        Self::backfill_legacy_complete(conn)
+        Ok(())
+    }
+
+    fn name_index_build_table_exists(conn: &Connection) -> SqlResult<bool> {
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'name_index_build'",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(n > 0)
     }
 
     /// Existing DBs have rows but no build-progress row; treat them as finished
@@ -1850,6 +1875,196 @@ mod tests {
             MAX.load(Ordering::SeqCst),
             1,
             "two place-index builders must not overlap"
+        );
+    }
+
+    /// Synthetic multi-region DB used to decide whether `backfill_legacy_complete`
+    /// dominates `NameIndex::open`. Ignored: seeds >= 2M rows (slow, disk-heavy).
+    #[test]
+    #[ignore]
+    fn open_two_million_rows_prints_timings() {
+        use std::time::Instant;
+
+        struct PhaseLog;
+        impl log::Log for PhaseLog {
+            fn enabled(&self, metadata: &log::Metadata) -> bool {
+                metadata.target() == "PHASE_TIMING"
+            }
+            fn log(&self, record: &log::Record) {
+                if self.enabled(record.metadata()) {
+                    println!("{}", record.args());
+                }
+            }
+            fn flush(&self) {}
+        }
+        static LOGGER: PhaseLog = PhaseLog;
+        let _ = log::set_logger(&LOGGER);
+        log::set_max_level(log::LevelFilter::Info);
+
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("big.db");
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.execute_batch(
+                "
+                PRAGMA journal_mode = WAL;
+                PRAGMA synchronous = OFF;
+                CREATE TABLE name_entries (
+                    osm_id INTEGER PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    lat REAL NOT NULL,
+                    lon REAL NOT NULL,
+                    sub_area TEXT NOT NULL DEFAULT '',
+                    municipality TEXT NOT NULL DEFAULT '',
+                    region_id TEXT NOT NULL DEFAULT ''
+                );
+                CREATE TABLE name_index_build (
+                    region_id TEXT PRIMARY KEY NOT NULL,
+                    expected INTEGER NOT NULL DEFAULT 0,
+                    written INTEGER NOT NULL DEFAULT 0,
+                    complete INTEGER NOT NULL DEFAULT 0
+                );
+                ",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO name_entries(osm_id, name, kind, lat, lon, region_id)
+                 VALUES (1, 'n', 'place:village', 60.0, 10.0, 'europe/norway/ostlandet')",
+                [],
+            )
+            .unwrap();
+            loop {
+                let n: i64 = conn
+                    .query_row("SELECT COUNT(*) FROM name_entries", [], |row| row.get(0))
+                    .unwrap();
+                if n >= 2_000_000 {
+                    break;
+                }
+                conn.execute(
+                    "INSERT INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id)
+                     SELECT osm_id + ?1, name, kind, lat, lon, sub_area, municipality,
+                       CASE ((osm_id + ?1) % 3)
+                         WHEN 0 THEN 'europe/norway/ostlandet'
+                         WHEN 1 THEN 'europe/norway/vestlandet'
+                         ELSE 'europe/norway/trondelag'
+                       END
+                     FROM name_entries",
+                    params![n],
+                )
+                .unwrap();
+            }
+            let n: i64 = conn
+                .query_row("SELECT COUNT(*) FROM name_entries", [], |row| row.get(0))
+                .unwrap();
+            let distinct: i64 = conn
+                .query_row(
+                    "SELECT COUNT(DISTINCT region_id) FROM name_entries",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            println!("seeded {n} name_entries rows across {distinct} region ids");
+            conn.execute_batch(
+                "
+                INSERT INTO name_index_build(region_id, expected, written, complete)
+                SELECT region_id, COUNT(*), COUNT(*), 1 FROM name_entries GROUP BY region_id;
+                ",
+            )
+            .unwrap();
+        }
+
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.busy_timeout(Duration::from_secs(5)).unwrap();
+            let t0 = Instant::now();
+            NameIndex::apply_file_pragmas(&conn).unwrap();
+            println!("apply_file_pragmas {:?}", t0.elapsed());
+            let t0 = Instant::now();
+            NameIndex::migrate(&conn).unwrap();
+            println!("migrate {:?}", t0.elapsed());
+            let t0 = Instant::now();
+            NameIndex::backfill_legacy_complete(&conn).unwrap();
+            println!("backfill_legacy_complete {:?}", t0.elapsed());
+        }
+
+        let t0 = Instant::now();
+        let _idx = NameIndex::open(&db).expect("open 2M-row index");
+        println!(
+            "NameIndex::open total {:?} (backfill skipped when name_index_build already exists)",
+            t0.elapsed()
+        );
+    }
+
+    fn name_entries_ddl_with_region() -> &'static str {
+        "
+            CREATE TABLE name_entries (
+                osm_id INTEGER PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                lat REAL NOT NULL,
+                lon REAL NOT NULL,
+                sub_area TEXT NOT NULL DEFAULT '',
+                municipality TEXT NOT NULL DEFAULT '',
+                region_id TEXT NOT NULL DEFAULT ''
+            );
+        "
+    }
+
+    #[test]
+    fn open_backfills_legacy_db_without_build_table() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("legacy-no-build.db");
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.execute_batch(name_entries_ddl_with_region()).unwrap();
+            conn.execute(
+                "INSERT INTO name_entries(osm_id, name, kind, lat, lon, region_id)
+                 VALUES (1, 'Oslo', 'place:city', 59.91, 10.75, 'europe/norway/ostlandet')",
+                [],
+            )
+            .unwrap();
+        }
+        let _idx = NameIndex::open(&db).expect("open legacy");
+        assert!(
+            NameIndex::region_index_complete(&db, "europe/norway/ostlandet"),
+            "legacy rows must get a complete name_index_build row"
+        );
+    }
+
+    #[test]
+    fn open_skips_backfill_when_build_table_already_exists() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("has-build.db");
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.execute_batch(name_entries_ddl_with_region()).unwrap();
+            conn.execute_batch(
+                "
+                CREATE TABLE name_index_build (
+                    region_id TEXT PRIMARY KEY NOT NULL,
+                    expected INTEGER NOT NULL DEFAULT 0,
+                    written INTEGER NOT NULL DEFAULT 0,
+                    complete INTEGER NOT NULL DEFAULT 0
+                );
+                ",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO name_entries(osm_id, name, kind, lat, lon, region_id)
+                 VALUES (1, 'Oslo', 'place:city', 59.91, 10.75, 'europe/norway/ostlandet')",
+                [],
+            )
+            .unwrap();
+        }
+        let _idx = NameIndex::open(&db).expect("open");
+        let conn = Connection::open(&db).unwrap();
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM name_index_build", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            n, 0,
+            "GROUP BY backfill must not run when name_index_build already existed"
         );
     }
 }
