@@ -25,11 +25,12 @@ use std::time::{Duration, Instant};
 
 use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime, NaiveTime};
 use driver_break_core::pack_server::{
-    catalog_entries_from_ready_ids, discover_pack_catalog, ensure_geofabrik_pbf_for_region,
-    ensure_indexed_packs_prefer_server, ensure_place_index_after_pack_install,
-    leaf_stem_for_region_id, normalize_region_id, ordered_regions_along_corridor,
-    pack_catalog_region_id_aliases, plan_region_acquisition, region_ids_match_for_catalog,
-    resolve_area_to_catalog, resolve_areas_to_catalog, PackCatalogSnapshot, PackDataSource,
+    catalog_entries_from_ready_ids, discover_pack_catalog, ensure_corridor_regions_installed,
+    ensure_geofabrik_pbf_for_region, ensure_indexed_packs_prefer_server,
+    ensure_place_index_after_pack_install, leaf_stem_for_region_id, normalize_region_id,
+    ordered_regions_along_corridor, pack_catalog_region_id_aliases, plan_region_acquisition,
+    region_ids_match_for_catalog, region_plan_error_from_snap_or_no_route, resolve_area_to_catalog,
+    resolve_areas_to_catalog, PackCatalogSnapshot, PackDataSource, RegionPlanError,
     PLACE_INDEX_DB_NAME,
 };
 use driver_break_core::routing::eta::motor_path_minutes_from_edges;
@@ -1154,9 +1155,12 @@ EXISTS:
     generic parent fallback onto published catalog ids (Danish leaves -> europe/denmark)
   core/src/pack_server/corridor_regions.rs ordered_regions_along_corridor
     densify caller corridor + catalog geom PIP → ordered missing regions
+  core/src/pack_server/region_plan.rs RegionPlanError::MissingRegions
+    distinct typed result vs NoRoute / SnapTooFar (FFI signature unchanged)
 GAP (stubbed in this test):
   Waypoint missingCoverage does not walk the corridor (Android RegionCoverage).
   Corridor source itself (overview route / skeleton / routed path) is caller-owned.
+  UniFFI CorridorRouteResult still embeds failures in `report` only.
 
 ### Rest-break / max-daily / sleep
 EXISTS (post-plan overlay, does not change A* path):
@@ -1196,13 +1200,53 @@ GAP:
   Swedish lan return None, so multi-stem merge is skipped. This test stubs
   loading every Ready car tile that intersects the trip bbox.
   current.json publishes europe/denmark (country), not syddanmark/sjaelland/etc.
-  Planner FAIL is "no route found" without listing missing corridor regions.
+  Planner FAIL is "no route found" without listing missing corridor regions in the
+  UniFFI report string; core RegionPlanError::MissingRegions is the typed path.
   Destination OSM 12985331075 is a viewpoint 6 m from Friisvegen (way 361797686,
   Fv2204). Production car snap honours motor_vehicle:conditional=no @ Nov-Jun, so
   a June departure treats the nearby secondary as closed and the nearest open
   road can exceed CAR_MAX_WAYPOINT_SNAP_M (750 m). Default DATE is 2026-07-15.
 "#
     .to_string()
+}
+
+#[test]
+fn production_missing_regions_typed_result_distinct_from_snap() {
+    println!(
+        "behaviour=missing_regions_typed_result source={}",
+        BehaviourSource::Production.label()
+    );
+    let scenarios = load_scenarios();
+    let all_road = scenarios.iter().find(|s| s.id == "all_road").unwrap();
+    let waypoints: Vec<(f64, f64)> = all_road.waypoints.iter().map(|w| (w.lat, w.lon)).collect();
+    let catalog = catalog_entries_from_ready_ids(&[
+        "europe/germany/niedersachsen".into(),
+        "europe/germany/hamburg".into(),
+        "europe/germany/schleswig-holstein".into(),
+        "europe/denmark".into(),
+        "europe/sweden/skane".into(),
+        "europe/sweden/halland".into(),
+        "europe/sweden/vastra_gotaland".into(),
+        "europe/norway/ostlandet".into(),
+    ]);
+    let err = ensure_corridor_regions_installed(
+        &waypoints,
+        &catalog,
+        &["europe/germany/niedersachsen".into()],
+        SAMPLE_STEP_KM,
+    )
+    .expect_err("incomplete install");
+    assert!(err.is_missing_regions());
+    assert_eq!(err.missing_regions().unwrap().len(), 7);
+    let snap = region_plan_error_from_snap_or_no_route(
+        Some(driver_break_core::routing::SnapTooFar {
+            nearest_m: 1900.0,
+            max_m: 750.0,
+        }),
+        "no route",
+    );
+    assert!(matches!(snap, RegionPlanError::SnapTooFar(_)));
+    assert!(!snap.is_missing_regions());
 }
 
 #[test]
@@ -1394,7 +1438,7 @@ fn live_klecken_to_innlandet_long_trip() {
     ));
     report.push_str(&format!(
         "- missing_regions_typed_result: {}\n",
-        BehaviourSource::Stub.label()
+        BehaviourSource::Production.label()
     ));
     report.push_str(&format!(
         "- multi_stem_corridor_merge: {}\n\n",
@@ -1506,22 +1550,39 @@ fn live_klecken_to_innlandet_long_trip() {
         },
         Err(e) => format!("production graph load failed: {e:?}"),
     };
-    let missing_regions = {
-        let all_road = scenarios
-            .iter()
-            .find(|s| s.id == "all_road")
-            .expect("all_road scenario");
-        ordered_regions_for_scenario(all_road, &cat, BASE_REGION)
+    let all_road = scenarios
+        .iter()
+        .find(|s| s.id == "all_road")
+        .expect("all_road scenario");
+    let coverage = {
+        let entries = catalog_entries_from_ready_ids(&cat.ready_region_ids);
+        let waypoints: Vec<(f64, f64)> =
+            all_road.waypoints.iter().map(|w| (w.lat, w.lon)).collect();
+        ensure_corridor_regions_installed(
+            &waypoints,
+            &entries,
+            &[BASE_REGION.to_string()],
+            SAMPLE_STEP_KM,
+        )
     };
+    let missing_regions = match &coverage {
+        Err(RegionPlanError::MissingRegions(r)) => r.clone(),
+        Ok(()) => Vec::new(),
+        Err(other) => panic!("unexpected coverage error before plan: {other}"),
+    };
+    let typed_ok = matches!(coverage, Err(RegionPlanError::MissingRegions(_)))
+        && missing_regions.len() == expected_for_scenario("all_road").len();
+    // Production graph/plan still returns a plain no-route string today; the
+    // typed MissingRegions result is the distinct core API (FFI unchanged).
     let silent = production_missing_is_plain_no_route(&missing_msg) && missing_regions.is_empty();
     assertions.push(Assertion::check(
         "incomplete_coverage_reports_missing_regions",
-        !silent && !missing_regions.is_empty(),
-        format!("{missing_msg}; missing_regions={missing_regions:?}"),
+        typed_ok && !silent,
+        format!("typed={coverage:?}; graph_msg={missing_msg}; missing_regions={missing_regions:?}"),
     ));
     report.push_str("\n## Step 3 — plan with only Niedersachsen\n");
     report.push_str(&format!(
-        "{missing_msg}\nmissing regions (production ordered_regions_along_corridor):\n"
+        "graph/plan: {missing_msg}\ntyped RegionPlanError: {coverage:?}\nmissing regions (production):\n"
     ));
     for r in &missing_regions {
         let (dl, fb) = resolve_download_id(r, &cat);

@@ -36,6 +36,7 @@ mod acquisition;
 mod corridor_regions;
 mod fetch;
 mod place_index_after;
+mod region_plan;
 
 pub use acquisition::{
     discover_pack_catalog, ensure_indexed_packs_prefer_server, leaf_stem_for_region_id,
@@ -53,6 +54,9 @@ pub use fetch::{try_fetch_region_packs, ServerInstallStamp};
 pub use place_index_after::{
     ensure_geofabrik_pbf_for_region, ensure_place_index_after_pack_install, PackPlaceIndexReport,
     MIN_REAL_PBF_BYTES, PLACE_INDEX_DB_NAME,
+};
+pub use region_plan::{
+    ensure_corridor_regions_installed, region_plan_error_from_snap_or_no_route, RegionPlanError,
 };
 
 use std::time::Duration;
