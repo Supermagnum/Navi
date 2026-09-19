@@ -102,6 +102,59 @@ pub fn region_ids_match_for_catalog(a: &str, b: &str) -> bool {
             .any(|alias| *alias == a)
 }
 
+/// Look up `region_id` (or a catalog alias) in `ready_ids`, returning the
+/// **published** spelling from the catalog when present.
+fn published_id_exact(region_id: &str, ready_ids: &[String]) -> Option<String> {
+    let want = normalize_region_id(region_id);
+    if want.is_empty() {
+        return None;
+    }
+    ready_ids
+        .iter()
+        .find(|r| region_ids_match_for_catalog(r, &want))
+        .map(|r| normalize_region_id(r))
+}
+
+/// Resolve a required area to a catalog entry that exists in `ready_ids`.
+///
+/// Exact match (including [`pack_catalog_region_id_aliases`]) wins. Otherwise
+/// walk parents (`europe/denmark/syddanmark` → `europe/denmark`) until a
+/// published id is found. Generic — not Denmark-specific. Returns `None` when
+/// no ancestor is published.
+pub fn resolve_area_to_catalog(region_id: &str, ready_ids: &[String]) -> Option<String> {
+    let mut cur = normalize_region_id(region_id);
+    if cur.is_empty() {
+        return None;
+    }
+    loop {
+        if let Some(hit) = published_id_exact(&cur, ready_ids) {
+            return Some(hit);
+        }
+        match cur.rsplit_once('/') {
+            Some((parent, _)) if !parent.is_empty() => cur = parent.to_string(),
+            _ => return None,
+        }
+    }
+}
+
+/// Resolve required areas to published catalog ids.
+///
+/// Deduplicates while keeping first-occurrence order. Entries that cannot be
+/// resolved to any published ancestor are dropped.
+pub fn resolve_areas_to_catalog(required: &[String], ready_ids: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for req in required {
+        let Some(id) = resolve_area_to_catalog(req, ready_ids) else {
+            continue;
+        };
+        if seen.insert(id.clone()) {
+            out.push(id);
+        }
+    }
+    out
+}
+
 /// Device-side pack stem for a Geofabrik path (`europe/monaco` → `monaco-latest`).
 pub fn leaf_stem_for_region_id(region_id: &str) -> String {
     let id = normalize_region_id(region_id);
@@ -111,13 +164,15 @@ pub fn leaf_stem_for_region_id(region_id: &str) -> String {
 
 /// Pure routing decision: no I/O. Unit-test without a network.
 ///
-/// - [`Connectivity::Ready`] + region present -> [`RegionSource::Server`]
-/// - Ready but region missing / empty catalog -> [`RegionSource::Local`]
+/// - [`Connectivity::Ready`] + region present (exact, alias, or published
+///   parent via [`resolve_area_to_catalog`]) -> [`RegionSource::Server`]
+/// - Ready but region and all parents missing / empty catalog -> [`RegionSource::Local`]
 /// - [`Connectivity::Unreachable`] -> Local
 ///
-/// On a catalog hit (including [`pack_catalog_region_id_aliases`]), the
-/// returned [`RegionSource::Server::region_id`] is the **published** catalog
-/// id (may differ from the client/chip path for the Västra Götaland alias).
+/// On a catalog hit (including [`pack_catalog_region_id_aliases`] and parent
+/// fallback), the returned [`RegionSource::Server::region_id`] is the
+/// **published** catalog id (may differ from the client/chip path for the
+/// Västra Götaland alias or an unpublished leaf).
 pub fn resolve_region_source(
     region_id: &str,
     connectivity: &Connectivity,
@@ -134,14 +189,22 @@ pub fn resolve_region_source(
             data_source: PackDataSource::LocalBake,
         },
         Connectivity::Ready(catalog) => {
-            match catalog
+            let ready_ids: Vec<String> = catalog
                 .regions
                 .iter()
-                .find(|r| region_ids_match_for_catalog(&r.region_id, &region_id))
-            {
+                .map(|r| r.region_id.clone())
+                .collect();
+            match resolve_area_to_catalog(&region_id, &ready_ids).and_then(|published| {
+                catalog
+                    .regions
+                    .iter()
+                    .find(|r| region_ids_match_for_catalog(&r.region_id, &published))
+            }) {
                 Some(ready) => RegionSource::Server {
                     // Prefer the catalog's published id so pack URLs / stems
-                    // match DocumentRoot (e.g. vastra_gotaland).
+                    // match DocumentRoot (e.g. vastra_gotaland). Parent fallback
+                    // maps unpublished leaves (e.g. europe/denmark/syddanmark)
+                    // onto a published ancestor when one exists.
                     region_id: normalize_region_id(&ready.region_id),
                     generation: ready.generation.clone(),
                     bytes: ready.bytes,
@@ -922,5 +985,91 @@ mod tests {
             pack_catalog_region_id_aliases("europe/sweden/vastra-gotaland"),
             vec!["europe/sweden/vastra_gotaland"]
         );
+    }
+
+    #[test]
+    fn catalog_parent_fallback_resolves_danish_leaves_to_country() {
+        // Live pack host publishes europe/denmark, not Syddanmark / Sjælland leaves.
+        let ready = vec![
+            "europe/germany/hamburg".into(),
+            "europe/denmark".into(),
+            "europe/sweden/skane".into(),
+            "europe/sweden/vastra_gotaland".into(),
+        ];
+        assert_eq!(
+            resolve_area_to_catalog("europe/denmark/syddanmark", &ready).as_deref(),
+            Some("europe/denmark")
+        );
+        assert_eq!(
+            resolve_area_to_catalog("europe/denmark/sjaelland", &ready).as_deref(),
+            Some("europe/denmark")
+        );
+        assert_eq!(
+            resolve_area_to_catalog("europe/denmark/hovedstaden", &ready).as_deref(),
+            Some("europe/denmark")
+        );
+        // Exact catalog hit stays on the leaf when published.
+        let with_leaves = vec![
+            "europe/denmark/syddanmark".into(),
+            "europe/denmark/sjaelland".into(),
+            "europe/denmark".into(),
+        ];
+        assert_eq!(
+            resolve_area_to_catalog("europe/denmark/syddanmark", &with_leaves).as_deref(),
+            Some("europe/denmark/syddanmark")
+        );
+        // Alias → published underscore spelling.
+        assert_eq!(
+            resolve_area_to_catalog("europe/sweden/vastra-gotaland", &ready).as_deref(),
+            Some("europe/sweden/vastra_gotaland")
+        );
+        // Deduplicate while keeping first-occurrence order.
+        let required = vec![
+            "europe/denmark/syddanmark".into(),
+            "europe/germany/hamburg".into(),
+            "europe/denmark/sjaelland".into(),
+            "europe/sweden/vastra-gotaland".into(),
+        ];
+        assert_eq!(
+            resolve_areas_to_catalog(&required, &ready),
+            vec![
+                "europe/denmark".to_string(),
+                "europe/germany/hamburg".to_string(),
+                "europe/sweden/vastra_gotaland".to_string(),
+            ]
+        );
+        // Generic parent walk — not Denmark-only.
+        let de = vec!["europe/germany".into()];
+        assert_eq!(
+            resolve_area_to_catalog("europe/germany/bayern/oberbayern", &de).as_deref(),
+            Some("europe/germany")
+        );
+        assert!(resolve_area_to_catalog("europe/norway/ostlandet", &ready).is_none());
+    }
+
+    #[test]
+    fn resolve_region_source_uses_parent_fallback() {
+        let conn = Connectivity::Ready(PackCatalog {
+            catalog_generation: "g".into(),
+            served_from: "https://navigate-me.duckdns.org".into(),
+            regions: vec![ReadyRegion {
+                region_id: "europe/denmark".into(),
+                generation: Some("bake".into()),
+                bytes: Some(1),
+                manifest_url: None,
+            }],
+        });
+        match resolve_region_source(
+            "europe/denmark/syddanmark",
+            &conn,
+            PackDataSource::ServerDuckdns,
+        ) {
+            RegionSource::Server { region_id, .. } => {
+                assert_eq!(region_id, "europe/denmark");
+            }
+            RegionSource::Local { reason, .. } => {
+                panic!("expected parent fallback to europe/denmark, got Local: {reason}")
+            }
+        }
     }
 }
