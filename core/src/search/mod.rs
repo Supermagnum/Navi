@@ -392,10 +392,11 @@ impl NameIndex {
         // Sub-labels are set inside load_admin_from_pbf so the 0/6 phase is not
         // a single frozen "admin boundaries…" string for a minute-plus scan.
         let admin_t0 = phase_timing::start("place_index.admin");
-        let admin_rings = place_context::load_admin_from_pbf(path, phase_prefix).unwrap_or_else(|e| {
-            log::warn!("admin boundary load for place context skipped: {e:#}");
-            Vec::new()
-        });
+        let admin_rings =
+            place_context::load_admin_from_pbf(path, phase_prefix).unwrap_or_else(|e| {
+                log::warn!("admin boundary load for place context skipped: {e:#}");
+                Vec::new()
+            });
         phase_timing::end_detail(
             "place_index.admin",
             admin_t0,
@@ -2122,7 +2123,9 @@ mod tests {
         let _idx = NameIndex::open(&db).expect("open");
         let conn = Connection::open(&db).unwrap();
         let n: i64 = conn
-            .query_row("SELECT COUNT(*) FROM name_index_build", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM name_index_build", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(
             n, 0,
