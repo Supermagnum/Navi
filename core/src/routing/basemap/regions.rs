@@ -783,6 +783,28 @@ mod tests {
     }
 
     #[test]
+    fn long_trip_boundary_bboxes_intersect_neighbours() {
+        use crate::routing::indexed::bbox_intersects;
+        let great_belt = [55.30, 10.90, 55.45, 11.50];
+        let syd = region_bbox("europe/denmark/syddanmark").unwrap();
+        let sja = region_bbox("europe/denmark/sjaelland").unwrap();
+        assert!(bbox_intersects(syd, great_belt));
+        assert!(bbox_intersects(sja, great_belt));
+
+        let oresund = [55.55, 12.50, 55.75, 13.10];
+        let hoved = region_bbox("europe/denmark/hovedstaden").unwrap();
+        let skane = region_bbox("europe/sweden/skane").unwrap();
+        assert!(bbox_intersects(hoved, oresund));
+        assert!(bbox_intersects(skane, oresund));
+
+        let svinesund = [58.95, 11.05, 59.20, 11.45];
+        let vg = region_bbox("europe/sweden/vastra_gotaland").unwrap();
+        let ost = region_bbox("europe/norway/ostlandet").unwrap();
+        assert!(bbox_intersects(vg, svinesund));
+        assert!(bbox_intersects(ost, svinesund));
+    }
+
+    #[test]
     fn suggest_landsdel_prefers_specific_over_country() {
         assert_eq!(
             suggest_geofabrik_path_for_point(59.91, 10.75),

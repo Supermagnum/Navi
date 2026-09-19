@@ -35,10 +35,7 @@ use driver_break_core::pack_server::{
 };
 use driver_break_core::routing::eta::motor_path_minutes_from_edges;
 use driver_break_core::routing::graph::{RouteGraph, RouteOptions, RoutingProfile};
-use driver_break_core::routing::indexed::{
-    bbox_intersects, load_graph_pack_bbox, merge_tile_graphs, try_load_graph_for_plan_bbox,
-    NaviManifest, PackStatus,
-};
+use driver_break_core::routing::indexed::{try_load_graph_for_plan_bbox, NaviManifest, PackStatus};
 use driver_break_core::routing::rest::{plan_motor_multi_day, MotorDailyBudget};
 use driver_break_core::routing::suggest_geofabrik_path_for_point;
 use driver_break_core::search::NameIndex;
@@ -60,6 +57,7 @@ const SAMPLE_STEP_KM: f64 = 25.0;
 #[derive(Debug, Clone, Copy)]
 enum BehaviourSource {
     Production,
+    #[allow(dead_code)] // retained for remaining ferry/rest harness stubs
     Stub,
 }
 
@@ -914,52 +912,6 @@ fn production_missing_is_plain_no_route(report: &str) -> bool {
         && !lower.contains("not downloaded")
 }
 
-fn load_merged_car_graph(data_dir: &Path, bbox: [f64; 4]) -> Result<RouteGraph, String> {
-    let Ok(entries) = fs::read_dir(data_dir) else {
-        return Err("data_dir unreadable".into());
-    };
-    let mut graphs = Vec::new();
-    for ent in entries.flatten() {
-        let name = ent.file_name();
-        let name = name.to_string_lossy();
-        let Some(_) = name.strip_suffix(".navi-manifest.json") else {
-            continue;
-        };
-        let Ok(man) = NaviManifest::load(&ent.path()) else {
-            continue;
-        };
-        if man.status_pack_files(data_dir) != PackStatus::Ready {
-            continue;
-        }
-        if let Some(tiles) = man.graph_tiles_for(RoutingProfile::Car) {
-            for t in tiles {
-                if !bbox_intersects(t.bbox, bbox) {
-                    continue;
-                }
-                let path = data_dir.join(&t.file);
-                if !path.is_file() {
-                    continue;
-                }
-                match load_graph_pack_bbox(&path, RoutingProfile::Car, Some(bbox)) {
-                    Ok(g) => graphs.push(g),
-                    Err(e) => {
-                        eprintln!("skip tile {} ({e:?})", path.display());
-                    }
-                }
-            }
-        } else if let Some(path) = man.graph_path(data_dir, RoutingProfile::Car) {
-            match load_graph_pack_bbox(&path, RoutingProfile::Car, Some(bbox)) {
-                Ok(g) => graphs.push(g),
-                Err(e) => return Err(format!("load {}: {e:?}", path.display())),
-            }
-        }
-    }
-    if graphs.is_empty() {
-        return Err("no ready car tiles in bbox".into());
-    }
-    Ok(merge_tile_graphs(graphs, RoutingProfile::Car))
-}
-
 fn snap_named_road(
     graph: &RouteGraph,
     lat: f64,
@@ -1195,19 +1147,157 @@ EXISTS:
   Android PlaceIndexReady.kt is host-only stamp — not used on cargo
   core/tests/pack_server_place_index_live.rs is the existing live pattern
 GAP:
-  extra_corridor_manifests (indexed/load.rs) maps stems through
-  pbf_stem_to_geofabrik_path + region_bbox. German states, Danish regions and
-  Swedish lan return None, so multi-stem merge is skipped. This test stubs
-  loading every Ready car tile that intersects the trip bbox.
-  current.json publishes europe/denmark (country), not syddanmark/sjaelland/etc.
-  Planner FAIL is "no route found" without listing missing corridor regions in the
-  UniFFI report string; core RegionPlanError::MissingRegions is the typed path.
+  (none for multi-stem merge — DE/DK/SE leaves map via PACK_LEAF_PATH_BBOX)
+  UniFFI CorridorRouteResult still embeds failures in `report` only.
   Destination OSM 12985331075 is a viewpoint 6 m from Friisvegen (way 361797686,
   Fv2204). Production car snap honours motor_vehicle:conditional=no @ Nov-Jun, so
   a June departure treats the nearby secondary as closed and the nearest open
   road can exceed CAR_MAX_WAYPOINT_SNAP_M (750 m). Default DATE is 2026-07-15.
 "#
     .to_string()
+}
+
+#[test]
+fn measure_multistem_peak_rss_when_packs_cached() {
+    println!(
+        "behaviour=multi_stem_corridor_merge source={}",
+        BehaviourSource::Production.label()
+    );
+    let data_dir = data_root().join("app-data");
+    let pbf = data_dir.join(format!("{}.osm.pbf", leaf_stem_for_region_id(BASE_REGION)));
+    if !packs_ready(&data_dir, BASE_REGION) || !pbf.is_file() {
+        eprintln!(
+            "skip RSS measure: no cached packs at {} (set NAVI_LONG_TRIP_DIR)",
+            data_dir.display()
+        );
+        return;
+    }
+    // Count Ready stems that production extra_corridor would merge for the trip bbox
+    // (lightweight; full trip tile merge is left to the ignored live test).
+    let trip = [53.0_f64, 7.5, 62.8, 14.8];
+    let mut intersecting = 0usize;
+    if let Ok(entries) = fs::read_dir(&data_dir) {
+        for ent in entries.flatten() {
+            let name = ent.file_name();
+            let name = name.to_string_lossy();
+            let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+                continue;
+            };
+            let Ok(man) = NaviManifest::load(&ent.path()) else {
+                continue;
+            };
+            if man.status_pack_files(&data_dir) != PackStatus::Ready {
+                continue;
+            }
+            let Some(path) = driver_break_core::routing::pbf_stem_to_geofabrik_path(stem) else {
+                continue;
+            };
+            let Some(region) = driver_break_core::routing::region_bbox(&path) else {
+                continue;
+            };
+            if driver_break_core::routing::indexed::bbox_intersects(region, trip) {
+                intersecting += 1;
+                eprintln!("extra_corridor candidate stem={stem} path={path}");
+            }
+        }
+    }
+    assert!(
+        intersecting >= 2,
+        "expected multi-stem candidates along trip bbox, got {intersecting}"
+    );
+
+    // RSS delta on a small multi-region corridor (Great Belt approaches), not the
+    // full Klecken→Innlandet tile set (that can exceed tens of GB peak).
+    let (_, hwm0) = rss_and_hwm();
+    let primary_only = [52.5_f64, 8.5, 53.5, 10.5];
+    let g1 = try_load_graph_for_plan_bbox(&data_dir, &pbf, RoutingProfile::Car, Some(primary_only));
+    let (_, hwm1) = rss_and_hwm();
+    let before = hwm0.max(hwm1);
+    let primary_nodes = g1.as_ref().map(|x| x.nodes.len()).unwrap_or(0);
+    drop(g1);
+    let belt = [54.8_f64, 9.2, 55.9, 12.8]; // SH / Denmark corridor slice
+    let (_, hwm2) = rss_and_hwm();
+    let g2 = try_load_graph_for_plan_bbox(&data_dir, &pbf, RoutingProfile::Car, Some(belt));
+    let (_, hwm3) = rss_and_hwm();
+    let after = hwm2.max(hwm3);
+    match &g2 {
+        Ok(g) => eprintln!(
+            "peak_rss_before_multistem_approx={before} ({:.3} GiB) nodes_primary={primary_nodes}\npeak_rss_after_multistem_belt_slice={after} ({:.3} GiB) nodes={} edges={} intersecting_stems={intersecting}",
+            before as f64 / 1024.0 / 1024.0 / 1024.0,
+            after as f64 / 1024.0 / 1024.0 / 1024.0,
+            g.nodes.len(),
+            g.edges.len()
+        ),
+        Err(e) => panic!("production multi-stem belt-slice load failed: {e:?}"),
+    }
+    assert!(
+        after >= before,
+        "multi-stem peak RSS should be >= primary-only approx ({after} vs {before})"
+    );
+}
+
+#[test]
+fn production_multi_stem_boundary_stem_maps() {
+    println!(
+        "behaviour=multi_stem_corridor_merge source={}",
+        BehaviourSource::Production.label()
+    );
+    use driver_break_core::routing::indexed::bbox_intersects;
+    use driver_break_core::routing::{bbox_covers_point, pbf_stem_to_geofabrik_path, region_bbox};
+    for (stem, path) in [
+        ("syddanmark-latest", "europe/denmark/syddanmark"),
+        ("sjaelland-latest", "europe/denmark/sjaelland"),
+        ("hovedstaden-latest", "europe/denmark/hovedstaden"),
+        ("skane-latest", "europe/sweden/skane"),
+        ("vastra_gotaland-latest", "europe/sweden/vastra_gotaland"),
+        ("denmark-latest", "europe/denmark"),
+    ] {
+        assert_eq!(
+            pbf_stem_to_geofabrik_path(stem).as_deref(),
+            Some(path),
+            "stem {stem}"
+        );
+        assert!(region_bbox(path).is_some(), "bbox for {path}");
+    }
+    let great_belt = [55.30, 10.90, 55.45, 11.50];
+    assert!(bbox_intersects(
+        region_bbox("europe/denmark/syddanmark").unwrap(),
+        great_belt
+    ));
+    assert!(bbox_intersects(
+        region_bbox("europe/denmark/sjaelland").unwrap(),
+        great_belt
+    ));
+    let oresund = [55.55, 12.50, 55.75, 13.10];
+    assert!(bbox_intersects(
+        region_bbox("europe/denmark/hovedstaden").unwrap(),
+        oresund
+    ));
+    assert!(bbox_intersects(
+        region_bbox("europe/sweden/skane").unwrap(),
+        oresund
+    ));
+    let svinesund = [58.95, 11.05, 59.20, 11.45];
+    assert!(bbox_intersects(
+        region_bbox("europe/sweden/vastra_gotaland").unwrap(),
+        svinesund
+    ));
+    assert!(bbox_intersects(
+        region_bbox("europe/norway/ostlandet").unwrap(),
+        svinesund
+    ));
+    // Points on the bridges fall inside neighbour bboxes (corridor merge trigger).
+    assert!(
+        bbox_covers_point(
+            region_bbox("europe/denmark/syddanmark").unwrap(),
+            55.35,
+            10.97
+        ) || bbox_covers_point(
+            region_bbox("europe/denmark/sjaelland").unwrap(),
+            55.35,
+            10.97
+        )
+    );
 }
 
 #[test]
@@ -1442,7 +1532,7 @@ fn live_klecken_to_innlandet_long_trip() {
     ));
     report.push_str(&format!(
         "- multi_stem_corridor_merge: {}\n\n",
-        BehaviourSource::Stub.label()
+        BehaviourSource::Production.label()
     ));
     report.push_str(&inventory_text());
     report.push('\n');
@@ -1789,25 +1879,61 @@ fn live_klecken_to_innlandet_long_trip() {
         tot_peak as f64 / 1024.0 / 1024.0 / 1024.0
     ));
 
-    // Step 6 — re-plan with stub-merged tiles (production extra_corridor cannot see DE/DK/SE leaves)
+    // Step 6 — re-plan with production multi-stem corridor merge
     report.push_str("\n## Step 6 — re-plan with installed packs\n");
+    report.push_str(&format!(
+        "behaviour=multi_stem_corridor_merge source={}\n",
+        BehaviourSource::Production.label()
+    ));
     report
-        .push_str("GAP: try_load_graph_for_plan_bbox extra_corridor_manifests skips stems whose\n");
-    report.push_str(
-        "pbf_stem_to_geofabrik_path/region_bbox is unknown. Test loads Ready car tiles itself.\n",
-    );
+        .push_str("Production try_load_graph_for_plan_bbox merges Ready stems whose region bbox\n");
+    report.push_str("intersects the plan bbox (DE/DK/SE leaves map via PACK_LEAF_PATH_BBOX).\n");
     let trip_bbox = [53.0, 7.5, 62.8, 14.8];
-    let graph = match load_merged_car_graph(&data_dir, trip_bbox) {
+    // Approximate pre-fix peak: primary stem only (bbox inside Niedersachsen).
+    let (_, hwm0) = rss_and_hwm();
+    let primary_only_bbox = [52.5, 8.5, 53.5, 10.5];
+    let _ = try_load_graph_for_plan_bbox(
+        &data_dir,
+        &pbf,
+        RoutingProfile::Car,
+        Some(primary_only_bbox),
+    );
+    let (_, hwm_primary) = rss_and_hwm();
+    let peak_rss_before_multistem = hwm0.max(hwm_primary);
+    let (_, hwm1) = rss_and_hwm();
+    let graph = match try_load_graph_for_plan_bbox(
+        &data_dir,
+        &pbf,
+        RoutingProfile::Car,
+        Some(trip_bbox),
+    ) {
         Ok(g) => {
+            let (_, hwm2) = rss_and_hwm();
+            let peak_rss_after_multistem = hwm1.max(hwm2);
             report.push_str(&format!(
-                "merged graph nodes={} edges={}\n",
+                "production merged graph nodes={} edges={}\n",
                 g.nodes.len(),
                 g.edges.len()
             ));
+            report.push_str(&format!(
+                "peak_rss_before_multistem_approx (primary-stem bbox)={peak_rss_before_multistem} ({:.2} GiB)\n",
+                peak_rss_before_multistem as f64 / 1024.0 / 1024.0 / 1024.0
+            ));
+            report.push_str(&format!(
+                "peak_rss_after_multistem (full trip bbox)={peak_rss_after_multistem} ({:.2} GiB)\n",
+                peak_rss_after_multistem as f64 / 1024.0 / 1024.0 / 1024.0
+            ));
+            eprintln!(
+                "RSS peak before≈{peak_rss_before_multistem} after={peak_rss_after_multistem}"
+            );
             Some(g)
         }
         Err(e) => {
-            assertions.push(Assertion::check("merged_graph_load", false, e));
+            assertions.push(Assertion::check(
+                "merged_graph_load",
+                false,
+                format!("production try_load_graph_for_plan_bbox: {e:?}"),
+            ));
             None
         }
     };
