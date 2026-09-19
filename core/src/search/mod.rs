@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, TryLockError};
 use std::time::Duration;
 
 use osmpbf::Element;
@@ -33,6 +33,25 @@ pub fn lock_place_index_build() -> MutexGuard<'static, ()> {
     PLACE_INDEX_BUILD_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner())
+}
+
+/// Same as [`lock_place_index_build`], but if another builder already holds the
+/// mutex, set a 0/6 Place-index label so the UI is not stuck on "starting…".
+pub fn lock_place_index_build_with_progress() -> MutexGuard<'static, ()> {
+    match PLACE_INDEX_BUILD_LOCK.try_lock() {
+        Ok(guard) => guard,
+        Err(TryLockError::WouldBlock) => {
+            crate::download::progress::set(
+                0,
+                Some(6),
+                "Place index: waiting for another index build…",
+            );
+            PLACE_INDEX_BUILD_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+        }
+        Err(TryLockError::Poisoned(p)) => p.into_inner(),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1876,6 +1895,49 @@ mod tests {
             1,
             "two place-index builders must not overlap"
         );
+    }
+
+    #[test]
+    fn place_index_build_lock_wait_sets_progress_label() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+        use std::time::Duration;
+
+        crate::download::progress::clear();
+        let hold = Arc::new(Barrier::new(2));
+        let released = Arc::new(Barrier::new(2));
+        let holder = thread::spawn({
+            let hold = hold.clone();
+            let released = released.clone();
+            move || {
+                let _g = lock_place_index_build();
+                hold.wait();
+                released.wait();
+            }
+        });
+        hold.wait();
+        let waiter = thread::spawn(|| {
+            let _g = lock_place_index_build_with_progress();
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            let snap = crate::download::progress::snapshot();
+            if snap.label == "Place index: waiting for another index build…" {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "wait label never appeared, last={:?}",
+                snap.label
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        let snap = crate::download::progress::snapshot();
+        assert_eq!(snap.units_done, 0);
+        assert_eq!(snap.units_total, Some(6));
+        released.wait();
+        waiter.join().expect("waiter");
+        holder.join().expect("holder");
     }
 
     /// Synthetic multi-region DB used to decide whether `backfill_legacy_complete`
