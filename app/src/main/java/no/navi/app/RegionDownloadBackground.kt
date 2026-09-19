@@ -15,7 +15,6 @@ import uniffi.navi.decideRegionAcquisition
 import uniffi.navi.downloadProgressSnapshot
 import uniffi.navi.ensurePlaceIndex
 import uniffi.navi.geofabrikLatestPbfUrl
-import uniffi.navi.geofabrikPathForPbfName
 import uniffi.navi.pmtilesQueueRegion
 import uniffi.navi.pmtilesRunJob
 import uniffi.navi.provisionRegionData
@@ -449,8 +448,16 @@ object RegionDownloadBackground {
         loadJob(dataDir)?.let { job ->
             val path =
                 job.geofabrikPath.ifBlank {
-                    runCatching { geofabrikPathForPbfName(job.filename) }.getOrDefault("")
+                    RegionCoverage.geofabrikPathForPbfName(job.filename).orEmpty()
                 }
+            if (path.isNotBlank() && !GeofabrikDownloadCatalog.isKnownPackRegionId(path)) {
+                Log.e(
+                    TAG,
+                    "discoverPending: rejecting unknown region id=$path from job file",
+                )
+                clearJob(dataDir)
+                return null
+            }
             val advanced = advanceFinishedPhases(dataDir, job.copy(geofabrikPath = path))
             if (advanced == null) {
                 clearJob(dataDir)
@@ -464,13 +471,17 @@ object RegionDownloadBackground {
         val partial = findPartialPbf(dataDir) ?: return null
         val filename = partial.name.removeSuffix(".partial")
         val path =
-            runCatching { geofabrikPathForPbfName(filename) }
-                .getOrDefault("")
-                .trim()
-                .ifBlank { return null }
+            RegionCoverage
+                .geofabrikPathForPbfName(filename)
+                ?.trim()
+                ?.trim('/')
+                ?.takeIf { GeofabrikDownloadCatalog.isKnownPackRegionId(it) }
+                ?: return null
+        // Extract URL for place-index PBF only; region id must already be a
+        // pack-catalog path (navigate-me.duckdns.org), never invented from stem.
         val url =
             runCatching { geofabrikLatestPbfUrl(path) }
-                .getOrDefault("https://download.geofabrik.de/$path-latest.osm.pbf")
+                .getOrDefault("")
         return Job(
             url = url,
             filename = filename,
@@ -500,10 +511,10 @@ object RegionDownloadBackground {
                 !placeIndexLooksReady(dataDir, path) -> Phase.PLACE_INDEX
                 else -> return null
             }
-        // URL is rebuilt at resume time if needed; avoid UniFFI in pure discovery.
+        // Extract URL for place-index PBF; packs come from the pack server.
         val url =
             runCatching { geofabrikLatestPbfUrl(path) }
-                .getOrDefault("https://download.geofabrik.de/$path-latest.osm.pbf")
+                .getOrDefault("")
         return Job(
             url = url,
             filename = filename,
@@ -1010,11 +1021,25 @@ object RegionDownloadBackground {
         startPhase: Phase,
     ) {
         val pathForDecision =
-            geofabrikPath.ifBlank {
-                geofabrikPathForPbfName(filename)
-            }
+            geofabrikPath
+                .ifBlank {
+                    RegionCoverage.geofabrikPathForPbfName(filename).orEmpty()
+                }.trim()
+                .trim('/')
+        if (pathForDecision.isBlank() ||
+            !GeofabrikDownloadCatalog.isKnownPackRegionId(pathForDecision)
+        ) {
+            Log.e(
+                TAG,
+                "FAIL: unknown or blank region for pipeline filename=$filename " +
+                    "path=$pathForDecision (pass an explicit pack-server region id)",
+            )
+            lastStatus.set("failed (unknown region)")
+            lastCompletedPath.set(pathForDecision)
+            return
+        }
         var phase = startPhase
-        if (pathForDecision.isNotBlank() && phase == Phase.PACKS) {
+        if (phase == Phase.PACKS) {
             val checkStarted = System.nanoTime()
             val decideT0 = phaseStart("pipeline.decide_acquisition")
             lastStatus.set("Fetching from pack server…")
@@ -1206,7 +1231,7 @@ object RegionDownloadBackground {
         }
 
         lastStatus.set(
-            if (resuming.get()) "Resuming Geofabrik download…" else "Downloading region… 0%",
+            if (resuming.get()) "Resuming download…" else "Downloading region… 0%",
         )
         persistPhase(dataDir, url, filename, pathForDecision, Phase.PACKS)
         val report =
@@ -1309,20 +1334,26 @@ object RegionDownloadBackground {
         val pbf = File(dataDir, filename)
         if (!pbf.isFile || pbf.length() < MIN_PBF_BYTES) return false
         val rid = regionId.trim().trim('/')
-        if (rid.isNotEmpty()) {
-            Log.i(
+        if (rid.isEmpty() || !GeofabrikDownloadCatalog.isKnownPackRegionId(rid)) {
+            Log.e(
                 TAG,
-                "local-bake pbf resolved region_id=$rid pbf=${pbf.absolutePath} expected_prefix=$rid",
+                "FAIL: refusing place index under unknown region_id=$rid pbf=${pbf.name}",
             )
-            if (!PackRegionAvailability.pbfMatchesRegion(pbf, rid)) {
-                Log.e(
-                    TAG,
-                    "FAIL: PBF/region mismatch for place index region_id=$rid pbf=${pbf.name} " +
-                        "expected_stem=${PackRegionAvailability.localStem(rid)}",
-                )
-                lastStatus.set("failed (pbf/region mismatch)")
-                return false
-            }
+            lastStatus.set("failed (unknown region)")
+            return false
+        }
+        Log.i(
+            TAG,
+            "local-bake pbf resolved region_id=$rid pbf=${pbf.absolutePath} expected_prefix=$rid",
+        )
+        if (!PackRegionAvailability.pbfMatchesRegion(pbf, rid)) {
+            Log.e(
+                TAG,
+                "FAIL: PBF/region mismatch for place index region_id=$rid pbf=${pbf.name} " +
+                    "expected_stem=${PackRegionAvailability.localStem(rid)}",
+            )
+            lastStatus.set("failed (pbf/region mismatch)")
+            return false
         }
         lastStatus.set("Place index: starting… 0% (0 / 6)")
         // Native `ensure_place_index` single-flights discard/open/load so a
@@ -1332,7 +1363,7 @@ object RegionDownloadBackground {
                 ensurePlaceIndex(
                     pbf.absolutePath,
                     File(dataDir, "place_index.db").absolutePath,
-                    rid.ifBlank { null },
+                    rid,
                 )
             }.getOrElse { t ->
                 Log.e(TAG, "ensurePlaceIndex crashed", t)
