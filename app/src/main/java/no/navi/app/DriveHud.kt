@@ -377,6 +377,9 @@ fun PluginSettingsSection(
     datexWifiOnly: Boolean = MapHudPrefs.DATEX_WIFI_ONLY_DEFAULT,
     onDatexWifiOnlyChange: (Boolean) -> Unit = {},
     datexStatusLine: String = "",
+    longTripEnabled: Boolean = false,
+    onLongTripChange: (Boolean) -> Unit = {},
+    longTripStatusLine: String = "",
     poiLookaheadEnabled: Boolean = false,
     onPoiLookaheadChange: (Boolean) -> Unit = {},
     poiLookaheadStrictHoursUnknown: Boolean = false,
@@ -476,6 +479,32 @@ fun PluginSettingsSection(
                     datexStatusLine,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag("datex_status_line"),
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("Long trip")
+            Switch(
+                checked = longTripEnabled,
+                onCheckedChange = onLongTripChange,
+                modifier = Modifier.testTag("toggle_long_trip"),
+            )
+        }
+        if (longTripEnabled) {
+            Text(
+                "Downloads map packs along the route on Wi-Fi/Ethernet only. " +
+                    "Origin, vias and destination are sent to OpenRouteService when online.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (longTripStatusLine.isNotBlank()) {
+                Text(
+                    longTripStatusLine,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("long_trip_status_line"),
                 )
             }
         }

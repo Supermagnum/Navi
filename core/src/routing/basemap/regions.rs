@@ -701,6 +701,198 @@ const PACK_LEAF_PATH_BBOX: &[(&str, [f64; 4])] = &[
         "europe/sweden/vastra-gotaland",
         [57.15, 10.95, 59.36, 14.80],
     ),
+    // US state / CA split leaves for long-trip corridor PIP (catalog ids).
+    (
+        "north-america/us/alabama",
+        [30.223, -88.473, 35.008, -84.889],
+    ),
+    (
+        "north-america/us/alaska",
+        [51.214, -179.148, 71.538, -129.979],
+    ),
+    (
+        "north-america/us/arizona",
+        [31.332, -114.818, 37.004, -109.045],
+    ),
+    (
+        "north-america/us/arkansas",
+        [33.004, -94.618, 36.5, -89.644],
+    ),
+    (
+        "north-america/us/california/norcal",
+        [36.0, -124.482, 42.009, -119.0],
+    ),
+    (
+        "north-america/us/california/socal",
+        [32.512, -121.5, 36.0, -114.131],
+    ),
+    (
+        "north-america/us/colorado",
+        [36.993, -109.06, 41.003, -102.042],
+    ),
+    (
+        "north-america/us/connecticut",
+        [40.986, -73.728, 42.05, -71.787],
+    ),
+    (
+        "north-america/us/delaware",
+        [38.451, -75.789, 39.839, -75.049],
+    ),
+    (
+        "north-america/us/district-of-columbia",
+        [38.791, -77.12, 38.996, -76.909],
+    ),
+    (
+        "north-america/us/florida",
+        [24.396, -87.635, 31.001, -79.974],
+    ),
+    (
+        "north-america/us/georgia",
+        [30.356, -85.605, 35.001, -80.841],
+    ),
+    (
+        "north-america/us/hawaii",
+        [18.865, -160.247, 22.293, -154.807],
+    ),
+    (
+        "north-america/us/idaho",
+        [41.988, -117.243, 49.001, -111.044],
+    ),
+    (
+        "north-america/us/illinois",
+        [36.97, -91.513, 42.508, -87.02],
+    ),
+    (
+        "north-america/us/indiana",
+        [37.771, -88.098, 41.761, -84.784],
+    ),
+    ("north-america/us/iowa", [40.375, -96.639, 43.501, -90.14]),
+    (
+        "north-america/us/kansas",
+        [36.993, -102.052, 40.004, -94.588],
+    ),
+    (
+        "north-america/us/kentucky",
+        [36.497, -89.571, 39.148, -81.965],
+    ),
+    (
+        "north-america/us/louisiana",
+        [28.927, -94.043, 33.019, -88.816],
+    ),
+    ("north-america/us/maine", [43.057, -71.084, 47.46, -66.949]),
+    (
+        "north-america/us/maryland",
+        [37.886, -79.487, 39.723, -75.049],
+    ),
+    (
+        "north-america/us/massachusetts",
+        [41.239, -73.508, 42.887, -69.928],
+    ),
+    (
+        "north-america/us/michigan",
+        [41.696, -90.418, 48.306, -82.122],
+    ),
+    (
+        "north-america/us/minnesota",
+        [43.499, -97.239, 49.384, -89.483],
+    ),
+    (
+        "north-america/us/mississippi",
+        [30.174, -91.655, 34.996, -88.098],
+    ),
+    (
+        "north-america/us/missouri",
+        [35.995, -95.774, 40.614, -89.099],
+    ),
+    (
+        "north-america/us/montana",
+        [44.358, -116.05, 49.001, -104.04],
+    ),
+    (
+        "north-america/us/nebraska",
+        [39.999, -104.053, 43.002, -95.308],
+    ),
+    (
+        "north-america/us/new-hampshire",
+        [42.697, -72.557, 45.306, -70.704],
+    ),
+    (
+        "north-america/us/new-jersey",
+        [38.928, -75.559, 41.357, -73.894],
+    ),
+    (
+        "north-america/us/new-mexico",
+        [31.332, -109.05, 37.0, -103.002],
+    ),
+    (
+        "north-america/us/new-york",
+        [40.496, -79.762, 45.016, -71.856],
+    ),
+    (
+        "north-america/us/north-carolina",
+        [33.842, -84.322, 36.588, -75.46],
+    ),
+    (
+        "north-america/us/north-dakota",
+        [45.935, -104.049, 49.001, -96.555],
+    ),
+    ("north-america/us/ohio", [38.403, -84.82, 41.978, -80.518]),
+    (
+        "north-america/us/oklahoma",
+        [33.616, -103.002, 37.002, -94.431],
+    ),
+    (
+        "north-america/us/oregon",
+        [41.992, -124.703, 46.292, -116.463],
+    ),
+    (
+        "north-america/us/pennsylvania",
+        [39.719, -80.519, 42.269, -74.69],
+    ),
+    (
+        "north-america/us/rhode-island",
+        [41.146, -71.862, 42.019, -71.12],
+    ),
+    (
+        "north-america/us/south-carolina",
+        [32.034, -83.354, 35.215, -78.541],
+    ),
+    (
+        "north-america/us/south-dakota",
+        [42.48, -104.058, 45.945, -96.436],
+    ),
+    (
+        "north-america/us/tennessee",
+        [34.983, -90.31, 36.678, -81.647],
+    ),
+    (
+        "north-america/us/texas",
+        [25.837, -106.646, 36.501, -93.508],
+    ),
+    (
+        "north-america/us/utah",
+        [36.998, -114.053, 42.002, -109.041],
+    ),
+    (
+        "north-america/us/vermont",
+        [42.727, -73.437, 45.017, -71.465],
+    ),
+    (
+        "north-america/us/virginia",
+        [36.541, -83.675, 39.466, -75.166],
+    ),
+    (
+        "north-america/us/washington",
+        [45.543, -124.848, 49.002, -116.915],
+    ),
+    (
+        "north-america/us/wisconsin",
+        [42.492, -92.889, 47.081, -86.805],
+    ),
+    (
+        "north-america/us/wyoming",
+        [40.995, -111.057, 45.006, -104.052],
+    ),
 ];
 
 const NORWAY_LANDSDEL: &[(&str, [f64; 4])] = &[
