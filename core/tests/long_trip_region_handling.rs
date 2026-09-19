@@ -25,10 +25,12 @@ use std::time::{Duration, Instant};
 
 use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime, NaiveTime};
 use driver_break_core::pack_server::{
-    discover_pack_catalog, ensure_geofabrik_pbf_for_region, ensure_indexed_packs_prefer_server,
-    ensure_place_index_after_pack_install, leaf_stem_for_region_id, normalize_region_id,
+    catalog_entries_from_ready_ids, discover_pack_catalog, ensure_geofabrik_pbf_for_region,
+    ensure_indexed_packs_prefer_server, ensure_place_index_after_pack_install,
+    leaf_stem_for_region_id, normalize_region_id, ordered_regions_along_corridor,
     pack_catalog_region_id_aliases, plan_region_acquisition, region_ids_match_for_catalog,
-    resolve_area_to_catalog, resolve_areas_to_catalog, PackCatalogSnapshot, PLACE_INDEX_DB_NAME,
+    resolve_area_to_catalog, resolve_areas_to_catalog, PackCatalogSnapshot, PackDataSource,
+    PLACE_INDEX_DB_NAME,
 };
 use driver_break_core::routing::eta::motor_path_minutes_from_edges;
 use driver_break_core::routing::graph::{RouteGraph, RouteOptions, RoutingProfile};
@@ -366,12 +368,11 @@ fn load_scenarios() -> Vec<Scenario> {
 
 fn expected_for_scenario(id: &str) -> &'static [&'static str] {
     match id {
+        // Against current-style catalog (Danish leaves absent → europe/denmark).
         "all_road" => &[
             "europe/germany/hamburg",
             "europe/germany/schleswig-holstein",
-            "europe/denmark/syddanmark",
-            "europe/denmark/sjaelland",
-            "europe/denmark/hovedstaden",
+            "europe/denmark",
             "europe/sweden/skane",
             "europe/sweden/halland",
             "europe/sweden/vastra_gotaland",
@@ -380,26 +381,40 @@ fn expected_for_scenario(id: &str) -> &'static [&'static str] {
         "kiel-oslo" => &[
             "europe/germany/hamburg",
             "europe/germany/schleswig-holstein",
+            // Schleswig approaches + densified samples graze the Denmark country box.
+            "europe/denmark",
             "europe/norway/ostlandet",
         ],
         "copenhagen-oslo" => &[
             "europe/germany/hamburg",
             "europe/germany/schleswig-holstein",
-            "europe/denmark/syddanmark",
-            "europe/denmark/sjaelland",
-            "europe/denmark/hovedstaden",
+            "europe/denmark",
+            // Ferry chord Copenhagen→Oslo is densified as a straight line and
+            // falsely samples southern Sweden (bbox-only limitation).
+            "europe/sweden/skane",
+            "europe/sweden/halland",
+            "europe/sweden/vastra_gotaland",
             "europe/norway/ostlandet",
         ],
         "hirtshals-larvik" => &[
             "europe/germany/hamburg",
             "europe/germany/schleswig-holstein",
-            "europe/denmark/syddanmark",
-            "europe/denmark/midtjylland",
-            "europe/denmark/nordjylland",
+            "europe/denmark",
             "europe/norway/ostlandet",
         ],
         _ => &[],
     }
+}
+
+/// Production along-route list for a scenario corridor against `cat`.
+fn ordered_regions_for_scenario(
+    sc: &Scenario,
+    cat: &PackCatalogSnapshot,
+    exclude: &str,
+) -> Vec<String> {
+    let entries = catalog_entries_from_ready_ids(&cat.ready_region_ids);
+    let waypoints: Vec<(f64, f64)> = sc.waypoints.iter().map(|w| (w.lat, w.lon)).collect();
+    ordered_regions_along_corridor(&waypoints, &entries, &[exclude.to_string()], SAMPLE_STEP_KM)
 }
 
 /// Test-only finest covering region: fixture bboxes, then production point suggester.
@@ -419,46 +434,6 @@ fn suggest_finest(lat: f64, lon: f64, bboxes: &[BboxRegion]) -> String {
     suggest_geofabrik_path_for_point(lat, lon)
         .unwrap_or("unknown")
         .to_string()
-}
-
-fn sample_corridor(waypoints: &[NamedCoord], step_km: f64) -> Vec<(f64, f64)> {
-    let mut out = Vec::new();
-    if waypoints.is_empty() {
-        return out;
-    }
-    out.push((waypoints[0].lat, waypoints[0].lon));
-    for w in waypoints.windows(2) {
-        let a = (w[0].lat, w[0].lon);
-        let b = (w[1].lat, w[1].lon);
-        let d = haversine_km(a, b);
-        let n = (d / step_km).ceil() as i32;
-        for i in 1..=n.max(1) {
-            let t = i as f64 / n.max(1) as f64;
-            out.push((a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t));
-        }
-    }
-    out
-}
-
-fn ordered_unique_regions(
-    samples: &[(f64, f64)],
-    bboxes: &[BboxRegion],
-    exclude: &str,
-) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut seen = BTreeSet::new();
-    let ex = normalize_region_id(exclude);
-    for &(lat, lon) in samples {
-        let raw = suggest_finest(lat, lon, bboxes);
-        let id = canonicalize_suggested(&raw);
-        if id.is_empty() || region_ids_match_for_catalog(&id, &ex) {
-            continue;
-        }
-        if seen.insert(id.clone()) {
-            out.push(id);
-        }
-    }
-    out
 }
 
 fn canonicalize_suggested(id: &str) -> String {
@@ -1177,10 +1152,11 @@ EXISTS:
     europe/sweden/vastra-gotaland <-> europe/sweden/vastra_gotaland
   core/src/pack_server/acquisition.rs resolve_area_to_catalog / resolve_areas_to_catalog
     generic parent fallback onto published catalog ids (Danish leaves -> europe/denmark)
+  core/src/pack_server/corridor_regions.rs ordered_regions_along_corridor
+    densify caller corridor + catalog geom PIP → ordered missing regions
 GAP (stubbed in this test):
-  No "suggest regions along a planned route" API. Waypoint missingCoverage does not
-  walk the corridor. Production point suggester cannot emit Hamburg as a distinct
-  slug (bbox table is country-level for Germany).
+  Waypoint missingCoverage does not walk the corridor (Android RegionCoverage).
+  Corridor source itself (overview route / skeleton / routed path) is caller-owned.
 
 ### Rest-break / max-daily / sleep
 EXISTS (post-plan overlay, does not change A* path):
@@ -1257,6 +1233,48 @@ fn production_catalog_parent_fallback_for_danish_leaves() {
 }
 
 #[test]
+fn production_ordered_regions_all_road_current_and_leaf_catalogs() {
+    println!(
+        "behaviour=ordered_along_route_regions source={}",
+        BehaviourSource::Production.label()
+    );
+    let scenarios = load_scenarios();
+    let all_road = scenarios.iter().find(|s| s.id == "all_road").unwrap();
+    let waypoints: Vec<(f64, f64)> = all_road.waypoints.iter().map(|w| (w.lat, w.lon)).collect();
+    let installed = vec!["europe/germany/niedersachsen".into()];
+    let current = catalog_entries_from_ready_ids(&[
+        "europe/germany/niedersachsen".into(),
+        "europe/germany/hamburg".into(),
+        "europe/germany/schleswig-holstein".into(),
+        "europe/denmark".into(),
+        "europe/sweden/skane".into(),
+        "europe/sweden/halland".into(),
+        "europe/sweden/vastra_gotaland".into(),
+        "europe/norway/ostlandet".into(),
+    ]);
+    let got = ordered_regions_along_corridor(&waypoints, &current, &installed, SAMPLE_STEP_KM);
+    assert_eq!(got, expected_for_scenario("all_road"));
+    let leaves = catalog_entries_from_ready_ids(&[
+        "europe/germany/niedersachsen".into(),
+        "europe/germany/hamburg".into(),
+        "europe/germany/schleswig-holstein".into(),
+        "europe/denmark/syddanmark".into(),
+        "europe/denmark/sjaelland".into(),
+        "europe/denmark/hovedstaden".into(),
+        "europe/sweden/skane".into(),
+        "europe/sweden/halland".into(),
+        "europe/sweden/vastra_gotaland".into(),
+        "europe/norway/ostlandet".into(),
+    ]);
+    let got_leaves =
+        ordered_regions_along_corridor(&waypoints, &leaves, &installed, SAMPLE_STEP_KM);
+    assert!(got_leaves.iter().any(|r| r.contains("syddanmark")));
+    assert!(got_leaves.iter().any(|r| r.contains("sjaelland")));
+    assert!(got_leaves.iter().any(|r| r.contains("hovedstaden")));
+    assert!(!got_leaves.iter().any(|r| r == "europe/denmark"));
+}
+
+#[test]
 fn stub_suggester_keeps_hamburg_and_alias() {
     let bboxes = load_bboxes();
     let hamburg = suggest_finest(53.55, 10.00, &bboxes);
@@ -1272,15 +1290,33 @@ fn stub_suggester_keeps_hamburg_and_alias() {
 
 #[test]
 fn stub_report_scenario_lists_and_0900_winner() {
-    let bboxes = load_bboxes();
     let ferries = load_ferries();
     let scenarios = load_scenarios();
     let date = NaiveDate::from_ymd_opt(2026, 6, 20).unwrap();
     let depart = date.and_hms_opt(9, 0, 0).unwrap();
     println!("DATE={date} departure=09:00 (fixture; live test may override)");
+    println!(
+        "behaviour=ordered_along_route_regions source={}",
+        BehaviourSource::Production.label()
+    );
+    let synthetic = PackCatalogSnapshot {
+        data_source: PackDataSource::ServerDuckdns,
+        ready_region_ids: vec![
+            "europe/germany/niedersachsen".into(),
+            "europe/germany/hamburg".into(),
+            "europe/germany/schleswig-holstein".into(),
+            "europe/denmark".into(),
+            "europe/sweden/skane".into(),
+            "europe/sweden/halland".into(),
+            "europe/sweden/vastra_gotaland".into(),
+            "europe/norway/ostlandet".into(),
+        ],
+        catalog_generation: Some("fixture".into()),
+        served_from: None,
+        unreachable_reason: None,
+    };
     for sc in &scenarios {
-        let samples = sample_corridor(&sc.waypoints, SAMPLE_STEP_KM);
-        let actual = ordered_unique_regions(&samples, &bboxes, BASE_REGION);
+        let actual = ordered_regions_for_scenario(sc, &synthetic, BASE_REGION);
         let expected = expected_for_scenario(&sc.id);
         println!("\n### {} ({})", sc.label, sc.id);
         println!("expected: {expected:?}");
@@ -1338,7 +1374,6 @@ fn live_klecken_to_innlandet_long_trip() {
     let sleep_h = sleep_hours();
     let depart = date.and_hms_opt(9, 0, 0).expect("09:00");
     let ferries = load_ferries();
-    let bboxes = load_bboxes();
     let scenarios = load_scenarios();
     let mut assertions = Vec::new();
     let mut report = String::new();
@@ -1355,7 +1390,7 @@ fn live_klecken_to_innlandet_long_trip() {
     ));
     report.push_str(&format!(
         "- ordered_along_route_regions: {}\n",
-        BehaviourSource::Stub.label()
+        BehaviourSource::Production.label()
     ));
     report.push_str(&format!(
         "- missing_regions_typed_result: {}\n",
@@ -1471,11 +1506,13 @@ fn live_klecken_to_innlandet_long_trip() {
         },
         Err(e) => format!("production graph load failed: {e:?}"),
     };
-    let samples_union: Vec<(f64, f64)> = scenarios
-        .iter()
-        .flat_map(|sc| sample_corridor(&sc.waypoints, SAMPLE_STEP_KM))
-        .collect();
-    let missing_regions = ordered_unique_regions(&samples_union, &bboxes, BASE_REGION);
+    let missing_regions = {
+        let all_road = scenarios
+            .iter()
+            .find(|s| s.id == "all_road")
+            .expect("all_road scenario");
+        ordered_regions_for_scenario(all_road, &cat, BASE_REGION)
+    };
     let silent = production_missing_is_plain_no_route(&missing_msg) && missing_regions.is_empty();
     assertions.push(Assertion::check(
         "incomplete_coverage_reports_missing_regions",
@@ -1484,7 +1521,7 @@ fn live_klecken_to_innlandet_long_trip() {
     ));
     report.push_str("\n## Step 3 — plan with only Niedersachsen\n");
     report.push_str(&format!(
-        "{missing_msg}\nmissing regions (stub corridor sample + finest catalog bbox):\n"
+        "{missing_msg}\nmissing regions (production ordered_regions_along_corridor):\n"
     ));
     for r in &missing_regions {
         let (dl, fb) = resolve_download_id(r, &cat);
@@ -1496,13 +1533,14 @@ fn live_klecken_to_innlandet_long_trip() {
 
     // Step 4 — per-scenario lists
     report.push_str("\n## 2. Expected vs actual region list\n");
-    report.push_str("Actual = test-stub finest covering bbox (fixtures) + production point suggester fallback,\n");
-    report.push_str("then vastra-gotaland hyphen resolved via pack_catalog_region_id_aliases.\n");
-    report.push_str("Production suggest_geofabrik_path_for_point alone would emit country slugs for DE/DK/SE.\n\n");
+    report.push_str(
+        "Actual = production ordered_regions_along_corridor (catalog geom + densified corridor).\n",
+    );
+    report
+        .push_str("Danish leaves absent in current.json → europe/denmark via catalog entries.\n\n");
     let mut hamburg_ok = true;
     for sc in &scenarios {
-        let samples = sample_corridor(&sc.waypoints, SAMPLE_STEP_KM);
-        let actual = ordered_unique_regions(&samples, &bboxes, BASE_REGION);
+        let actual = ordered_regions_for_scenario(sc, &cat, BASE_REGION);
         let expected = expected_for_scenario(&sc.id);
         let diff = diff_lists(expected, &actual);
         report.push_str(&format!("### {} ({})\nexpected:\n", sc.label, sc.id));
@@ -1617,8 +1655,7 @@ fn live_klecken_to_innlandet_long_trip() {
 
     // Step 5 — download suggested for winning corridor
     let win_sc = scenarios.iter().find(|s| s.id == win_id).unwrap();
-    let win_samples = sample_corridor(&win_sc.waypoints, SAMPLE_STEP_KM);
-    let suggested = ordered_unique_regions(&win_samples, &bboxes, BASE_REGION);
+    let suggested = ordered_regions_for_scenario(win_sc, &cat, BASE_REGION);
     let download_list = dedupe_download_list(&suggested, &cat);
     report.push_str("\n## Step 5 — sequential download (winning corridor)\n");
     for (id, fb) in &download_list {

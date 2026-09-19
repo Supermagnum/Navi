@@ -33,6 +33,7 @@
 //!   `/packs/<region_id>/<generation>/`. Use this for cache invalidation.
 
 mod acquisition;
+mod corridor_regions;
 mod fetch;
 mod place_index_after;
 
@@ -43,6 +44,10 @@ pub use acquisition::{
     region_ids_match_for_catalog, resolve_area_to_catalog, resolve_areas_to_catalog,
     resolve_region_id_for_leaf, resolve_region_source, EnsureIndexedPacksResult,
     PackCatalogSnapshot, PackDataSource, RegionAcquisitionPlan, RegionSource,
+};
+pub use corridor_regions::{
+    catalog_entries_from_ready_ids, ordered_regions_along_corridor, CatalogRegionEntry,
+    CatalogRegionGeom,
 };
 pub use fetch::{try_fetch_region_packs, ServerInstallStamp};
 pub use place_index_after::{

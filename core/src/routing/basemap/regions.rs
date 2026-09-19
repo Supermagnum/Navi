@@ -63,12 +63,20 @@ pub fn region_bbox(geofabrik_path: &str) -> Option<[f64; 4]> {
     {
         return Some(bbox);
     }
+    if let Some(bbox) = PACK_LEAF_PATH_BBOX
+        .iter()
+        .find(|(p, _)| *p == path)
+        .map(|(_, b)| *b)
+    {
+        return Some(bbox);
+    }
     // Unknown subpath under a known extract: walk parents (e.g.
     // europe/germany/bayern/oberbayern → europe/germany).
     let mut rest = path.as_str();
     while let Some((parent, _)) = rest.rsplit_once('/') {
         if let Some(bbox) = GEOFABRIK_PATH_BBOX
             .iter()
+            .chain(PACK_LEAF_PATH_BBOX.iter())
             .find(|(p, _)| *p == parent)
             .map(|(_, b)| *b)
         {
@@ -269,6 +277,7 @@ pub fn is_exact_catalog_path(path: &str) -> bool {
     }
     NORWAY_LANDSDEL.iter().any(|(p, _)| *p == path)
         || GEOFABRIK_PATH_BBOX.iter().any(|(p, _)| *p == path)
+        || PACK_LEAF_PATH_BBOX.iter().any(|(p, _)| *p == path)
 }
 
 fn unique_leaf_catalog_path(leaf: &str) -> Option<&'static str> {
@@ -276,12 +285,19 @@ fn unique_leaf_catalog_path(leaf: &str) -> Option<&'static str> {
         .iter()
         .map(|(p, _)| *p)
         .chain(GEOFABRIK_PATH_BBOX.iter().map(|(p, _)| *p))
+        .chain(PACK_LEAF_PATH_BBOX.iter().map(|(p, _)| *p))
         .filter(|p| p.rsplit('/').next() == Some(leaf))
         .collect();
     hits.sort_unstable();
     hits.dedup();
     match hits.as_slice() {
         [only] => Some(*only),
+        // Prefer underscore Västra Götaland when both spellings are table entries.
+        _ if leaf == "vastra_gotaland" || leaf == "vastra-gotaland" => hits
+            .iter()
+            .find(|p| p.ends_with("vastra_gotaland"))
+            .copied()
+            .or_else(|| hits.first().copied()),
         _ => None,
     }
 }
@@ -651,6 +667,42 @@ const GEOFABRIK_PATH_BBOX: &[(&str, [f64; 4])] = &[
     ),
 ];
 
+/// Pack-catalog leaf bboxes for DE/DK/SE (and similar) extracts that Geofabrik
+/// only publishes as country files. Approximate `[min_lat, min_lon, max_lat,
+/// max_lon]` for corridor PIP / multi-stem merge. Prefer catalog polygons when
+/// the host publishes them; until then these boxes minimise — but do not
+/// eliminate — false positives from overlaps (see
+/// [`crate::pack_server::ordered_regions_along_corridor`]).
+const PACK_LEAF_PATH_BBOX: &[(&str, [f64; 4])] = &[
+    // Germany Bundesländer used on the Klecken→Innlandet corridor (+ neighbours).
+    ("europe/germany/hamburg", [53.38, 9.73, 53.75, 10.35]),
+    ("europe/germany/bremen", [53.00, 8.50, 53.23, 8.99]),
+    ("europe/germany/niedersachsen", [51.29, 6.65, 53.90, 11.60]),
+    (
+        "europe/germany/schleswig-holstein",
+        [53.36, 8.37, 55.06, 11.32],
+    ),
+    // Danish regions (published on some hosts; live host currently has country only).
+    ("europe/denmark/syddanmark", [54.72, 8.07, 55.78, 10.95]),
+    ("europe/denmark/sjaelland", [54.85, 10.85, 55.80, 12.55]),
+    ("europe/denmark/hovedstaden", [55.58, 12.00, 56.13, 12.70]),
+    ("europe/denmark/midtjylland", [55.78, 8.10, 56.85, 11.20]),
+    ("europe/denmark/nordjylland", [56.70, 8.15, 57.76, 10.95]),
+    // Sweden län along the Øresund–Svinesund corridor.
+    ("europe/sweden/skane", [55.32, 12.45, 56.50, 14.60]),
+    ("europe/sweden/halland", [56.32, 11.85, 57.55, 13.55]),
+    (
+        "europe/sweden/vastra_gotaland",
+        [57.15, 10.95, 59.36, 14.80],
+    ),
+    // Hyphen spelling kept as an exact table entry so stem/alias lookups hit
+    // before parent-walk; published underscore form is preferred via aliases.
+    (
+        "europe/sweden/vastra-gotaland",
+        [57.15, 10.95, 59.36, 14.80],
+    ),
+];
+
 const NORWAY_LANDSDEL: &[(&str, [f64; 4])] = &[
     ("europe/norway", [57.9, 4.5, 71.5, 31.5]),
     ("europe/norway/ostlandet", [58.5, 7.5, 62.8, 13.5]),
@@ -692,7 +744,42 @@ mod tests {
             region_bbox("europe/germany/bayern/oberbayern"),
             Some(country)
         );
-        assert_eq!(region_bbox("europe/germany/bremen"), Some(country));
+        // Bremen is an exact pack-leaf entry (not only a country parent-walk).
+        let bremen = region_bbox("europe/germany/bremen").unwrap();
+        assert_ne!(bremen, country);
+        assert!(bbox_covers_point(bremen, 53.08, 8.80));
+    }
+
+    #[test]
+    fn pack_leaf_stems_map_to_catalog_paths() {
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("niedersachsen-latest"),
+            Some("europe/germany/niedersachsen".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("hamburg-latest"),
+            Some("europe/germany/hamburg".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("schleswig-holstein-latest"),
+            Some("europe/germany/schleswig-holstein".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("syddanmark-latest"),
+            Some("europe/denmark/syddanmark".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("sjaelland-latest"),
+            Some("europe/denmark/sjaelland".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("vastra_gotaland-latest"),
+            Some("europe/sweden/vastra_gotaland".into())
+        );
+        assert!(!is_exact_catalog_path("europe/norway/niedersachsen"));
+        assert!(is_exact_catalog_path("europe/germany"));
+        assert!(is_exact_catalog_path("europe/germany/niedersachsen"));
+        assert!(is_exact_catalog_path("europe/norway/ostlandet"));
     }
 
     #[test]
@@ -854,27 +941,11 @@ mod tests {
 
     #[test]
     fn pbf_stem_unknown_leaves_are_not_invented_under_norway() {
-        // GEOFABRIK_PATH_BBOX has country `europe/germany` only — no
-        // `europe/germany/niedersachsen` leaf. Parent-walk must not mint
-        // `europe/norway/niedersachsen`.
-        assert!(
-            !GEOFABRIK_PATH_BBOX
-                .iter()
-                .any(|(p, _)| *p == "europe/germany/niedersachsen"),
-            "test expectation: niedersachsen is not an exact bbox-table leaf"
-        );
-        assert_eq!(pbf_stem_to_geofabrik_path("niedersachsen-latest"), None);
+        // Leaf must not be invented under europe/norway/{leaf}.
         assert_eq!(
-            pbf_stem_to_geofabrik_path("niedersachsen-latest.osm.pbf"),
+            pbf_stem_to_geofabrik_path("this-region-does-not-exist-zz-latest"),
             None
         );
-        assert_eq!(pbf_stem_to_geofabrik_path("hamburg-latest"), None);
-        assert_eq!(
-            pbf_stem_to_geofabrik_path("schleswig-holstein-latest"),
-            None
-        );
-        assert_eq!(pbf_stem_to_geofabrik_path("syddanmark-latest"), None);
-        assert_eq!(pbf_stem_to_geofabrik_path("sjaelland-latest"), None);
         assert!(!is_exact_catalog_path("europe/norway/niedersachsen"));
         assert!(is_exact_catalog_path("europe/germany"));
         assert!(is_exact_catalog_path("europe/norway/ostlandet"));
