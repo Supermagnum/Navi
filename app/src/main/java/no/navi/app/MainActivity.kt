@@ -1972,9 +1972,9 @@ private fun NaviMapScreen() {
         val extractPath = GeofabrikDownloadCatalog.extractPathForPbf(packPath)
         val leaf = extractPath.substringAfterLast('/')
         val filename = "$leaf-latest.osm.pbf"
-        // Real pack fetch runs in RegionDownloadBackground (catalog + install).
-        // Do not probe decideRegionAcquisition here — that duplicated discovery
-        // and could stall the UI thread for the full host timeout.
+        // Real pack fetch runs in RegionDownloadBackground (catalog + install from
+        // https://navigate-me.duckdns.org). The URL below is only the OSM extract
+        // used for place index after packs (navi-server does not publish a PBF).
         val url = geofabrikLatestPbfUrl(packPath)
         val already = RegionDownloadBackground.partialBytes(dataDir, filename)
         val serverReady =

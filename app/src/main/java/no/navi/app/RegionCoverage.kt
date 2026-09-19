@@ -60,29 +60,14 @@ object RegionCoverage {
         }
 
     fun geofabrikPathForPbfName(pbfName: String): String? {
-        val leaf =
-            pbfName
+        // Single source of truth: native pack-catalog stem map (no Norway parent-walk).
+        return runCatching {
+            uniffi.navi
+                .geofabrikPathForPbfName(pbfName)
                 .trim()
-                .removeSuffix(".osm.pbf")
-                .removeSuffix("-latest")
-                .removeSuffix("_latest")
-                .lowercase()
-        return when (leaf) {
-            "norway" -> "europe/norway"
-            "ostlandet", "oppland" -> "europe/norway/ostlandet"
-            "vestlandet" -> "europe/norway/vestlandet"
-            "trondelag" -> "europe/norway/trondelag"
-            "nord-norge", "nord_norge" -> "europe/norway/nord-norge"
-            "sorlandet" -> "europe/norway/sorlandet"
-            else -> {
-                val asPath = leaf.replace('_', '/')
-                when {
-                    pmtilesRegionBbox(asPath) != null -> asPath
-                    pmtilesRegionBbox("europe/norway/$leaf") != null -> "europe/norway/$leaf"
-                    else -> null
-                }
-            }
-        }
+                .trim('/')
+                .ifBlank { null }
+        }.getOrNull()
     }
 
     fun suggestGeofabrikPath(
@@ -173,6 +158,7 @@ object RegionCoverage {
             }
         return files
             .mapNotNull { geofabrikPathForPbfName(it.name) }
+            .filter { GeofabrikDownloadCatalog.isKnownPackRegionId(it) }
             .distinct()
             .sorted()
     }

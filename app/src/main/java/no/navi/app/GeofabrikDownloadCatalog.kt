@@ -1094,6 +1094,24 @@ object GeofabrikDownloadCatalog {
         }
 
     /**
+     * True when [path] is a pack-server region id the UI may index under:
+     * a country root from the catalog, a chip parent, or a known chip leaf.
+     * Rejects invented paths such as `europe/norway/niedersachsen`.
+     */
+    fun isKnownPackRegionId(path: String): Boolean {
+        val n = canonicalizePath(path)
+        if (n.isEmpty()) return false
+        val country = findByPath(n) ?: return false
+        if (n == country.path) return true
+        val base = regionChipBasePath(n) ?: return false
+        if (n == base) return true
+        if (!n.startsWith("$base/")) return false
+        val chips = regionChipsFor(base) ?: return false
+        val rest = n.removePrefix("$base/")
+        return chips.any { (slug, _) -> rest == slug || rest.startsWith("$slug/") }
+    }
+
+    /**
      * Expand [root] chip row into pack-catalog leaf paths (for ready-pill coverage).
      * Parents that have their own chip row (Bayern, California, …) expand to their leaves.
      */

@@ -194,4 +194,27 @@ class GeofabrikDownloadCatalogTest {
             GeofabrikDownloadCatalog.countries.any { it.path == "europe/great-britain" },
         )
     }
+
+    @Test
+    fun known_pack_region_ids_reject_invented_norway_leaves() {
+        // Pack-server chips list germany/niedersachsen; stem alone must not invent
+        // europe/norway/niedersachsen (bbox table has country europe/germany only).
+        assertTrue(GeofabrikDownloadCatalog.isKnownPackRegionId("europe/germany/niedersachsen"))
+        assertTrue(GeofabrikDownloadCatalog.isKnownPackRegionId("europe/germany/hamburg"))
+        assertTrue(
+            GeofabrikDownloadCatalog.isKnownPackRegionId("europe/germany/schleswig-holstein"),
+        )
+        assertFalse(GeofabrikDownloadCatalog.isKnownPackRegionId("europe/norway/niedersachsen"))
+        assertFalse(GeofabrikDownloadCatalog.isKnownPackRegionId("europe/norway/hamburg"))
+        assertFalse(GeofabrikDownloadCatalog.isKnownPackRegionId("europe/norway/syddanmark"))
+        assertFalse(GeofabrikDownloadCatalog.isKnownPackRegionId("europe/norway/sjaelland"))
+        // Denmark has no chip leaves in the pack catalog UI.
+        assertFalse(GeofabrikDownloadCatalog.isKnownPackRegionId("europe/denmark/syddanmark"))
+        assertFalse(GeofabrikDownloadCatalog.isKnownPackRegionId("europe/denmark/sjaelland"))
+        // Norwegian landsdel chips stay valid.
+        assertTrue(GeofabrikDownloadCatalog.isKnownPackRegionId("europe/norway/ostlandet"))
+        assertTrue(GeofabrikDownloadCatalog.isKnownPackRegionId("europe/norway/vestlandet"))
+        assertTrue(GeofabrikDownloadCatalog.isKnownPackRegionId("europe/norway"))
+        assertTrue(GeofabrikDownloadCatalog.isKnownPackRegionId("europe/germany"))
+    }
 }

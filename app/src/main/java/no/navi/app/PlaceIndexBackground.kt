@@ -76,12 +76,17 @@ object PlaceIndexBackground {
             Log.i(TAG, "region pipeline already running; skip standalone ensurePlaceIndex")
             return
         }
+        val rid = regionId?.trim()?.trim('/')?.ifBlank { null }
+        if (rid != null && !GeofabrikDownloadCatalog.isKnownPackRegionId(rid)) {
+            Log.e(TAG, "refusing ensurePlaceIndex under unknown region_id=$rid")
+            lastStatus.set("failed (unknown region)")
+            return
+        }
         if (!claimWorker()) {
             Log.i(TAG, "already running; skip")
             return
         }
         lastStatus.set("building")
-        val rid = regionId?.trim()?.trim('/')?.ifBlank { null }
         Log.i(
             TAG,
             "start ensurePlaceIndex pbf=${pbf.absolutePath} db=${indexDb.absolutePath} region=$rid",
