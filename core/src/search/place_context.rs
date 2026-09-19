@@ -293,11 +293,24 @@ pub(crate) fn sub_area_pt(
 }
 
 /// Load named admin_level 6–8 polygons from a region extract.
-pub(crate) fn load_admin_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Vec<AdminRing>> {
+///
+/// [phase_prefix] is `"Place index: "` (or the interrupted-restart prefix) so
+/// Android `statusLine()` can match `startsWith("Place index")`. Counts stay
+/// at 0/6 for the whole three-pass scan plus ring stitching.
+pub(crate) fn load_admin_from_pbf(
+    path: impl AsRef<Path>,
+    phase_prefix: &str,
+) -> anyhow::Result<Vec<AdminRing>> {
     let path = path.as_ref();
+    const PHASES: u64 = 6;
     let mut rels: Vec<(String, u8, Vec<i64>)> = Vec::new();
     let mut needed_ways: HashSet<i64> = HashSet::new();
     {
+        crate::download::progress::set(
+            0,
+            Some(PHASES),
+            &format!("{phase_prefix}admin boundaries: relations…"),
+        );
         let t0 = phase_timing::start("place_index.admin.relations");
         crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
             let Element::Relation(rel) = element else {
@@ -341,6 +354,11 @@ pub(crate) fn load_admin_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Vec<
     let mut way_nodes: HashMap<i64, Vec<i64>> = HashMap::new();
     let mut standalone: Vec<(String, u8, Vec<i64>)> = Vec::new();
     {
+        crate::download::progress::set(
+            0,
+            Some(PHASES),
+            &format!("{phase_prefix}admin boundaries: ways…"),
+        );
         let t0 = phase_timing::start("place_index.admin.ways");
         crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
             let Element::Way(way) = element else {
@@ -382,6 +400,11 @@ pub(crate) fn load_admin_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Vec<
 
     let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed_nodes.len());
     {
+        crate::download::progress::set(
+            0,
+            Some(PHASES),
+            &format!("{phase_prefix}admin boundaries: nodes…"),
+        );
         let t0 = phase_timing::start("place_index.admin.nodes");
         crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
             Element::Node(n) => {
@@ -401,6 +424,11 @@ pub(crate) fn load_admin_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<Vec<
         );
     }
 
+    crate::download::progress::set(
+        0,
+        Some(PHASES),
+        &format!("{phase_prefix}admin boundaries: stitching rings…"),
+    );
     let stitch_t0 = phase_timing::start("place_index.admin.stitch_rings");
     let mut rings = Vec::new();
     for (name, level, outers) in rels {
@@ -605,6 +633,22 @@ mod tests {
             [min_lon, max_lat],
             [min_lon, min_lat],
         ]
+    }
+
+    #[test]
+    fn load_admin_sets_relations_label_before_missing_pbf() {
+        crate::download::progress::clear();
+        let err = load_admin_from_pbf("/no/such/region.osm.pbf", "Place index: ");
+        assert!(err.is_err());
+        let snap = crate::download::progress::snapshot();
+        assert!(
+            snap.label.starts_with("Place index"),
+            "Kotlin matches startsWith(Place index), got {:?}",
+            snap.label
+        );
+        assert_eq!(snap.label, "Place index: admin boundaries: relations…");
+        assert_eq!(snap.units_done, 0);
+        assert_eq!(snap.units_total, Some(6));
     }
 
     #[test]

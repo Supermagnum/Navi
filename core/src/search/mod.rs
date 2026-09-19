@@ -344,15 +344,11 @@ impl NameIndex {
         } else {
             "Place index: "
         };
-        crate::download::progress::set(
-            0,
-            Some(PHASES),
-            &format!("{phase_prefix}admin boundaries…"),
-        );
-
         // Admin polygons use their own PBF passes (relations → ways → nodes).
+        // Sub-labels are set inside load_admin_from_pbf so the 0/6 phase is not
+        // a single frozen "admin boundaries…" string for a minute-plus scan.
         let admin_t0 = phase_timing::start("place_index.admin");
-        let admin_rings = place_context::load_admin_from_pbf(path).unwrap_or_else(|e| {
+        let admin_rings = place_context::load_admin_from_pbf(path, phase_prefix).unwrap_or_else(|e| {
             log::warn!("admin boundary load for place context skipped: {e:#}");
             Vec::new()
         });
