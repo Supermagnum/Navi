@@ -465,7 +465,11 @@ pub struct CorridorRouteResult {
     pub pad_attempts_json: String,
     /// A* node expansions on the last search attempt (0 when not run).
     pub search_expansions: u64,
-    /// `found` / `disconnected` / `bbox_exhausted` / `cancelled` / `snap_failed` / `ok`.
+    /// `found` / `disconnected` / `bbox_exhausted` / `cancelled` / `snap_failed` /
+    /// `outside_countries` / `missing_regions` / `ok`.
+    ///
+    /// Long-trip typed failures use these tokens (smallest FFI option — no new
+    /// UniFFI fields). Details stay in [`Self::report`].
     pub search_terminate_reason: String,
     /// True when NeverUse could not find a free path and a toll-using route was returned.
     pub toll_avoidance_incomplete: bool,
@@ -7905,6 +7909,35 @@ pub fn datex_settings_default_port() -> u32 {
 #[uniffi::export]
 pub fn datex_wifi_only_default() -> bool {
     driver_break_core::datex::DATEX_WIFI_ONLY_DEFAULT
+}
+
+/// Long-trip ORS privacy disclosure for the settings UI.
+#[uniffi::export]
+pub fn long_trip_ors_disclosure() -> String {
+    driver_break_core::long_trip::ORS_DISCLOSURE.to_string()
+}
+
+/// Default ORS HTTP base (no trailing slash). Overridable via user setting.
+#[uniffi::export]
+pub fn long_trip_ors_default_base_url() -> String {
+    driver_break_core::long_trip::DEFAULT_ORS_BASE_URL.to_string()
+}
+
+/// Build ORS directions JSON body for diagnostics (never includes the API key).
+#[uniffi::export]
+pub fn long_trip_ors_request_body_json(
+    waypoints_lat_lon_json: String,
+    allowed_countries_json: Option<String>,
+) -> String {
+    let pts: Vec<(f64, f64)> = serde_json::from_str(&waypoints_lat_lon_json).unwrap_or_default();
+    let coords: Vec<[f64; 2]> = pts.iter().map(|&(lat, lon)| [lon, lat]).collect();
+    let allowed: Option<Vec<String>> = allowed_countries_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
+    match driver_break_core::long_trip::build_directions_request_body(&coords, allowed.as_deref()) {
+        Ok(v) => v.to_string(),
+        Err(e) => serde_json::json!({ "error": e.to_string() }).to_string(),
+    }
 }
 
 /// Server Situation cache TTL / client poll floor (seconds).
