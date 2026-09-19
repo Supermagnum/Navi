@@ -1700,7 +1700,7 @@ fn edge_allowed_for_options(
         return false;
     }
     if let Some(ref allowed) = options.allowed_countries {
-        if !edge_midpoint_in_allowed_countries(edge, allowed) {
+        if !edge_in_allowed_countries(edge, allowed) {
             return false;
         }
     }
@@ -1749,23 +1749,36 @@ fn edge_allowed_for_options(
     true
 }
 
-/// Hard country filter: edge midpoint must fall in an allowed ISO code.
+/// Hard country filter: start, midpoint and end must all resolve to an allowed
+/// ISO code (semantic change from midpoint-only).
 ///
-/// Attribution uses [`crate::routing::elevation::country_iso_at`] (offline
-/// coarse rings), not pack stem / catalog path — Norwegian extract bboxes
+/// Attribution uses [`crate::routing::elevation::country_iso_at`] (Natural Earth
+/// Admin-0 polygons), not pack stem / catalog path — Norwegian extract bboxes
 /// and Geofabrik clips both spill past the border (see
 /// `ostlandet_catalog_bbox_spills_into_sweden` and the Langflon spill probe).
-/// Unknown midpoints (`None`) are excluded when the filter is active.
-fn edge_midpoint_in_allowed_countries(edge: &GraphEdge, allowed: &[String]) -> bool {
+/// Unresolved points (`None` after coastal snap) are excluded when the filter
+/// is active, as unknown codes were under the old midpoint rule.
+fn edge_in_allowed_countries(edge: &GraphEdge, allowed: &[String]) -> bool {
     if allowed.is_empty() {
         return false;
     }
     let mid_lat = (edge.start_lat + edge.end_lat) * 0.5;
     let mid_lon = (edge.start_lon + edge.end_lon) * 0.5;
-    let Some(iso) = crate::routing::elevation::country_iso_at(mid_lat, mid_lon) else {
-        return false;
-    };
-    allowed.iter().any(|c| c.trim().eq_ignore_ascii_case(iso))
+    // Midpoint first: matches the old hot path and rejects cross-border edges early.
+    let points = [
+        (mid_lat, mid_lon),
+        (edge.start_lat, edge.start_lon),
+        (edge.end_lat, edge.end_lon),
+    ];
+    for (lat, lon) in points {
+        let Some(iso) = crate::routing::elevation::country_iso_at(lat, lon) else {
+            return false;
+        };
+        if !allowed.iter().any(|c| c.trim().eq_ignore_ascii_case(iso)) {
+            return false;
+        }
+    }
+    true
 }
 
 fn edge_travel_cost(edge: &GraphEdge, use_eco: bool, options: &RouteOptions) -> f64 {
@@ -3491,5 +3504,54 @@ mod tests {
         assert_eq!(leg1.0.last().copied(), Some(NodeId(2)));
         assert_eq!(leg2.0.first().copied(), Some(NodeId(2)));
         assert_eq!(leg2.0.last().copied(), Some(NodeId(3)));
+    }
+
+    #[test]
+    fn edge_filter_roros_halden_style_allowed_for_norway() {
+        // West of old SE box edge (lon 11): Roros latitudes down to inland Ostlandet.
+        let west = test_edge(1, 2, 62.57, 10.90, 59.91, 10.75);
+        assert!(edge_in_allowed_countries(&west, &["no".into()]));
+        // East of lon 11 but still in Norway (Roros → Halden).
+        let east = test_edge(1, 2, 62.5747, 11.3842, 59.1248, 11.3875);
+        assert!(edge_in_allowed_countries(&east, &["no".into()]));
+    }
+
+    #[test]
+    fn edge_filter_kautokeino_alta_vs_karesuando() {
+        let ok = test_edge(1, 2, 69.0125, 23.0415, 69.9689, 23.2717);
+        assert!(edge_in_allowed_countries(&ok, &["no".into()]));
+        let cross = test_edge(1, 2, 69.0125, 23.0415, 68.4417, 22.4800);
+        assert!(!edge_in_allowed_countries(&cross, &["no".into()]));
+    }
+
+    #[test]
+    fn edge_filter_svinesund_bridge_excluded_for_no_and_se() {
+        let bridge = test_edge(1, 2, 59.1200, 11.3000, 59.0800, 11.2600);
+        assert!(!edge_in_allowed_countries(&bridge, &["no".into()]));
+        assert!(!edge_in_allowed_countries(&bridge, &["se".into()]));
+    }
+
+    #[test]
+    fn edge_filter_flensburg_padborg_excluded_for_germany() {
+        let e = test_edge(1, 2, 54.7930, 9.4330, 54.8250, 9.3600);
+        assert!(!edge_in_allowed_countries(&e, &["de".into()]));
+    }
+
+    #[test]
+    fn edge_filter_us_border_crossings_excluded_for_us() {
+        let detroit_windsor = test_edge(1, 2, 42.3314, -83.0458, 42.3149, -83.0364);
+        assert!(!edge_in_allowed_countries(&detroit_windsor, &["us".into()]));
+        let blaine_white_rock = test_edge(1, 2, 48.9500, -122.7400, 49.0250, -122.8030);
+        assert!(!edge_in_allowed_countries(
+            &blaine_white_rock,
+            &["us".into()]
+        ));
+        let san_ysidro_tijuana = test_edge(1, 2, 32.5550, -117.0450, 32.5149, -117.0382);
+        assert!(!edge_in_allowed_countries(
+            &san_ysidro_tijuana,
+            &["us".into()]
+        ));
+        let el_paso_juarez = test_edge(1, 2, 31.8000, -106.4850, 31.6904, -106.4245);
+        assert!(!edge_in_allowed_countries(&el_paso_juarez, &["us".into()]));
     }
 }
