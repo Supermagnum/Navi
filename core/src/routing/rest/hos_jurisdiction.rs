@@ -1,9 +1,8 @@
 //! Offline ISO-based driving-hours pack resolution.
 //!
-//! Uses the shared country ring table via
+//! Uses the shared Natural Earth country polygons via
 //! [`crate::routing::elevation::country_iso_at`] (same offline admin detector
-//! used as the Geofabrik-`.poly` fallback elsewhere) — not a second bespoke
-//! geometry approach.
+//! used elsewhere) — not a second bespoke geometry approach.
 
 use crate::config::JurisdictionDrivingHoursPack;
 use crate::routing::elevation::country_iso_at as iso_at;
