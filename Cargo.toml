@@ -53,7 +53,7 @@ uniffi = "0.29"
 usvg = "0.48"
 resvg = "0.48"
 flate2 = "1"
-png = "0.17"
+png = "0.18"
 rkyv = { version = "0.8", features = ["alloc"] }
 memmap2 = "0.9"
 chrono = { version = "0.4", default-features = true, features = ["clock"] }
