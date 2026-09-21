@@ -59,6 +59,6 @@ memmap2 = "0.9"
 chrono = { version = "0.4", default-features = true, features = ["clock"] }
 # opening-hours 2.x is stable on our pinned toolchain (1.98).
 opening-hours = "=2.1.4"
-roxmltree = "0.20"
+roxmltree = "0.21"
 sha2 = "0.11"
 hex = "0.4"

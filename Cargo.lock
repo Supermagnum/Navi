@@ -1210,7 +1210,7 @@ dependencies = [
  "reqwest",
  "resvg",
  "rkyv",
- "roxmltree 0.20.0",
+ "roxmltree 0.21.1",
  "rstar 0.13.0",
  "rusqlite",
  "serde",
