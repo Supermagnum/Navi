@@ -366,6 +366,40 @@ pub fn iso_at(lat: f64, lon: f64) -> Option<&'static str> {
     best_ci.map(|ci| idx.iso_static[ci as usize])
 }
 
+
+/// Distance in metres to the nearest border of a country other than `own_iso`.
+/// Returns `0.0` when the point lies inside a foreign polygon (NE/OSM dispute).
+pub fn dist_to_foreign_border_m(lat: f64, lon: f64, own_iso: &str) -> Option<f64> {
+    let idx = index();
+    let own = own_iso.to_ascii_lowercase();
+    let mut best = f64::INFINITY;
+    for (ci, c) in idx.countries.iter().enumerate() {
+        if idx.iso_static[ci] == own {
+            continue;
+        }
+        let pad = 3.0;
+        if lon < c.min_lon - pad
+            || lon > c.max_lon + pad
+            || lat < c.min_lat - pad
+            || lat > c.max_lat + pad
+        {
+            continue;
+        }
+        if point_in_country(c, lon, lat) {
+            return Some(0.0);
+        }
+        let d = min_dist_to_country_m(c, lat, lon);
+        if d < best {
+            best = d;
+        }
+    }
+    if best.is_finite() {
+        Some(best)
+    } else {
+        None
+    }
+}
+
 /// Force-load the polygon index and return approximate resident byte size of
 /// decoded geometry (for memory measurements).
 pub fn warm_country_polys() -> usize {

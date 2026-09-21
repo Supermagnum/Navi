@@ -3541,7 +3541,7 @@ mod tests {
     fn edge_filter_us_border_crossings_excluded_for_us() {
         let detroit_windsor = test_edge(1, 2, 42.3314, -83.0458, 42.3149, -83.0364);
         assert!(!edge_in_allowed_countries(&detroit_windsor, &["us".into()]));
-        let blaine_white_rock = test_edge(1, 2, 48.9500, -122.7400, 49.0250, -122.8030);
+        let blaine_white_rock = test_edge(1, 2, 48.9937, -122.7470, 49.0250, -122.8030);
         assert!(!edge_in_allowed_countries(
             &blaine_white_rock,
             &["us".into()]
@@ -3551,7 +3551,7 @@ mod tests {
             &san_ysidro_tijuana,
             &["us".into()]
         ));
-        let el_paso_juarez = test_edge(1, 2, 31.8000, -106.4850, 31.6904, -106.4245);
+        let el_paso_juarez = test_edge(1, 2, 31.7619, -106.4850, 31.6904, -106.4245);
         assert!(!edge_in_allowed_countries(&el_paso_juarez, &["us".into()]));
     }
 }
