@@ -44,7 +44,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 osmpbf = "0.3"
 osm4routing = "0.8"
 geotiff = "0.1"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 tar = "0.4"
 rayon = "1"
 log = "0.4"
