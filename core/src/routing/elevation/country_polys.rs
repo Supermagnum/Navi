@@ -4,12 +4,19 @@
 //! `scripts/generate-country-polys.py` (see `data/ATTRIBUTION.txt`). Rings are
 //! never hand-edited.
 //!
-//! Lookup: bounding-box grid index → exact ray-cast only for candidate
-//! countries in the cell. Countries are stored smallest-area-first so overlaps
-//! resolve deterministically. Coastal points that miss every polygon may snap
-//! to the unique nearest country within [`COASTAL_SNAP_TOLERANCE_M`].
+//! Lookup: bounding-box grid index → O(1) when a cell is wholly inside one
+//! country, otherwise exact ray-cast only for candidate countries in the cell.
+//! Countries are stored smallest-area-first so overlaps resolve
+//! deterministically. Coastal points that miss every polygon may snap to the
+//! unique nearest country within [`COASTAL_SNAP_TOLERANCE_M`].
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
+
+static LOOKUP_TOTAL: AtomicU64 = AtomicU64::new(0);
+static LOOKUP_GRID_HIT: AtomicU64 = AtomicU64::new(0);
+static LOOKUP_EXACT: AtomicU64 = AtomicU64::new(0);
+static LOOKUP_VERTICES: AtomicU64 = AtomicU64::new(0);
 
 /// Placeholder coastal snap distance (metres). Tunable.
 pub const COASTAL_SNAP_TOLERANCE_M: f64 = 5_000.0;
@@ -19,7 +26,7 @@ pub const COASTAL_SNAP_TOLERANCE_M: f64 = 5_000.0;
 pub const MAX_COUNTRY_POLYS_ASSET_BYTES: usize = 5 * 1024 * 1024;
 
 /// Grid cell size in degrees for the spatial index. Tunable.
-const GRID_CELL_DEG: f64 = 2.0;
+const GRID_CELL_DEG: f64 = 0.25;
 
 const ASSET: &[u8] = include_bytes!("data/country_polys.bin");
 const COORD_SCALE: f64 = 10_000_000.0;
@@ -50,6 +57,10 @@ struct Index {
     iso_static: Vec<&'static str>,
     /// Cell → country indices that may cover the cell.
     cells: Vec<Vec<u16>>,
+    /// When `Some(ci)`, every point in the cell resolves to that country via
+    /// exact PIP (no coastal snap). Speeds interior lookups without changing
+    /// results vs the exact path.
+    cell_owner: Vec<Option<u16>>,
     origin_lon: f64,
     origin_lat: f64,
     n_lon: usize,
@@ -179,7 +190,74 @@ fn build_index(countries: Vec<Country>) -> Index {
             .min((n_lat - 1) as f64) as usize;
         for j in j0..=j1 {
             for i in i0..=i1 {
-                cells[j * n_lon + i].push(ci as u16);
+                let lon0 = min_lon + i as f64 * cell_deg;
+                let lat0 = min_lat + j as f64 * cell_deg;
+                let lon1 = lon0 + cell_deg;
+                let lat1 = lat0 + cell_deg;
+                // Drop bbox-only false positives (e.g. SE bbox over inland NO).
+                // Coastal snap still sees neighbouring cells that retain the land
+                // country, so we only require a PIP probe here (fast).
+                let mut reaches = false;
+                'probe: for sj in 0..3usize {
+                    for si in 0..3usize {
+                        let lon = lon0 + (lon1 - lon0) * (si as f64) / 2.0;
+                        let lat = lat0 + (lat1 - lat0) * (sj as f64) / 2.0;
+                        if point_in_country(c, lon, lat) {
+                            reaches = true;
+                            break 'probe;
+                        }
+                    }
+                }
+                if reaches {
+                    cells[j * n_lon + i].push(ci as u16);
+                }
+            }
+        }
+    }
+
+    // Wholly-inside cells (safe): centre resolves to country C, distance from
+    // centre to C's boundary exceeds the cell half-diagonal, and every other
+    // remaining candidate is farther than the half-diagonal.
+    let mut cell_owner = vec![None; n_lon * n_lat];
+    let half_diag_m = cell_deg * 111_320.0 * std::f64::consts::SQRT_2 * 0.5;
+    for j in 0..n_lat {
+        for i in 0..n_lon {
+            let cell_i = j * n_lon + i;
+            let cands = &cells[cell_i];
+            if cands.is_empty() {
+                continue;
+            }
+            let clon = min_lon + (i as f64 + 0.5) * cell_deg;
+            let clat = min_lat + (j as f64 + 0.5) * cell_deg;
+            let mut owner: Option<u16> = None;
+            for &ci in cands {
+                if point_in_country(&countries[ci as usize], clon, clat) {
+                    owner = Some(ci);
+                    break;
+                }
+            }
+            let Some(oi) = owner else {
+                continue;
+            };
+            let oc = &countries[oi as usize];
+            if min_dist_to_country_m(oc, clat, clon) <= half_diag_m {
+                continue;
+            }
+            let mut clear = true;
+            for &ci in cands {
+                if ci == oi {
+                    continue;
+                }
+                let oc2 = &countries[ci as usize];
+                if point_in_country(oc2, clon, clat)
+                    || min_dist_to_country_m(oc2, clat, clon) <= half_diag_m
+                {
+                    clear = false;
+                    break;
+                }
+            }
+            if clear {
+                cell_owner[cell_i] = Some(oi);
             }
         }
     }
@@ -188,6 +266,7 @@ fn build_index(countries: Vec<Country>) -> Index {
         countries,
         iso_static,
         cells,
+        cell_owner,
         origin_lon: min_lon,
         origin_lat: min_lat,
         n_lon,
@@ -210,13 +289,20 @@ fn index() -> &'static Index {
     })
 }
 
-fn cell_candidates(idx: &Index, lon: f64, lat: f64) -> &[u16] {
+fn cell_index(idx: &Index, lon: f64, lat: f64) -> Option<usize> {
     let i = ((lon - idx.origin_lon) / idx.cell_deg).floor() as isize;
     let j = ((lat - idx.origin_lat) / idx.cell_deg).floor() as isize;
     if i < 0 || j < 0 || i as usize >= idx.n_lon || j as usize >= idx.n_lat {
-        return &[];
+        return None;
     }
-    &idx.cells[j as usize * idx.n_lon + i as usize]
+    Some(j as usize * idx.n_lon + i as usize)
+}
+
+fn cell_candidates(idx: &Index, lon: f64, lat: f64) -> &[u16] {
+    match cell_index(idx, lon, lat) {
+        Some(ci) => &idx.cells[ci],
+        None => &[],
+    }
 }
 
 fn point_in_ring(lon: f64, lat: f64, ring: &Ring) -> bool {
@@ -305,11 +391,31 @@ fn min_dist_to_country_m(c: &Country, lat: f64, lon: f64) -> f64 {
 /// time; the first containing country wins. If none contain the point, snap to
 /// the unique nearest country within [`COASTAL_SNAP_TOLERANCE_M`], else `None`.
 pub fn iso_at(lat: f64, lon: f64) -> Option<&'static str> {
+    LOOKUP_TOTAL.fetch_add(1, Ordering::Relaxed);
     let idx = index();
+    if let Some(ci) = cell_index(idx, lon, lat) {
+        if let Some(owner) = idx.cell_owner[ci] {
+            LOOKUP_GRID_HIT.fetch_add(1, Ordering::Relaxed);
+            return Some(idx.iso_static[owner as usize]);
+        }
+    }
+    LOOKUP_EXACT.fetch_add(1, Ordering::Relaxed);
+    iso_at_exact(idx, lat, lon)
+}
+
+/// Exact path (grid candidates + PIP + coastal snap), ignoring wholly-inside
+/// cell shortcuts. Used by equivalence tests.
+pub fn iso_at_exact_path(lat: f64, lon: f64) -> Option<&'static str> {
+    iso_at_exact(index(), lat, lon)
+}
+
+fn iso_at_exact(idx: &Index, lat: f64, lon: f64) -> Option<&'static str> {
     let cands = cell_candidates(idx, lon, lat);
     // Exact PIP — first match wins (smallest area first in asset order).
     for &ci in cands {
         let c = &idx.countries[ci as usize];
+        let verts: u64 = c.rings.iter().map(|r| r.pts.len() as u64).sum();
+        LOOKUP_VERTICES.fetch_add(verts, Ordering::Relaxed);
         if point_in_country(c, lon, lat) {
             return Some(idx.iso_static[ci as usize]);
         }
@@ -346,6 +452,8 @@ pub fn iso_at(lat: f64, lon: f64) -> Option<&'static str> {
                 {
                     continue;
                 }
+                let verts: u64 = c.rings.iter().map(|r| r.pts.len() as u64).sum();
+                LOOKUP_VERTICES.fetch_add(verts, Ordering::Relaxed);
                 let d = min_dist_to_country_m(c, lat, lon);
                 if d > tol {
                     continue;
@@ -365,7 +473,6 @@ pub fn iso_at(lat: f64, lon: f64) -> Option<&'static str> {
     }
     best_ci.map(|ci| idx.iso_static[ci as usize])
 }
-
 
 /// Distance in metres to the nearest border of a country other than `own_iso`.
 /// Returns `0.0` when the point lies inside a foreign polygon (NE/OSM dispute).
@@ -398,6 +505,38 @@ pub fn dist_to_foreign_border_m(lat: f64, lon: f64, own_iso: &str) -> Option<f64
     } else {
         None
     }
+}
+
+/// Reset and read lookup profiling counters (for perf / diagnostics).
+pub fn reset_iso_lookup_stats() {
+    LOOKUP_TOTAL.store(0, Ordering::Relaxed);
+    LOOKUP_GRID_HIT.store(0, Ordering::Relaxed);
+    LOOKUP_EXACT.store(0, Ordering::Relaxed);
+    LOOKUP_VERTICES.store(0, Ordering::Relaxed);
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct IsoLookupStats {
+    pub total: u64,
+    pub grid_shortcut: u64,
+    pub exact: u64,
+    pub vertices_tested: u64,
+}
+
+pub fn iso_lookup_stats() -> IsoLookupStats {
+    IsoLookupStats {
+        total: LOOKUP_TOTAL.load(Ordering::Relaxed),
+        grid_shortcut: LOOKUP_GRID_HIT.load(Ordering::Relaxed),
+        exact: LOOKUP_EXACT.load(Ordering::Relaxed),
+        vertices_tested: LOOKUP_VERTICES.load(Ordering::Relaxed),
+    }
+}
+
+/// Fraction of grid cells marked wholly-inside one country.
+pub fn cell_owner_coverage() -> (usize, usize) {
+    let idx = index();
+    let owned = idx.cell_owner.iter().filter(|o| o.is_some()).count();
+    (owned, idx.cell_owner.len())
 }
 
 /// Force-load the polygon index and return approximate resident byte size of

@@ -13,8 +13,9 @@ pub use crate::download::DownloadControl;
 pub use cache::ElevationCache;
 pub use country::{iso_at as country_iso_at, lookup as country_lookup};
 pub use country_polys::{
-    country_polys_count, dist_to_foreign_border_m, warm_country_polys, COASTAL_SNAP_TOLERANCE_M,
-    MAX_COUNTRY_POLYS_ASSET_BYTES,
+    cell_owner_coverage, country_polys_count, dist_to_foreign_border_m, iso_at_exact_path,
+    iso_lookup_stats, reset_iso_lookup_stats, warm_country_polys, IsoLookupStats,
+    COASTAL_SNAP_TOLERANCE_M, MAX_COUNTRY_POLYS_ASSET_BYTES,
 };
 pub use downloader::{ElevationDownloader, ElevationJob};
 pub use reader::ElevationReader;
