@@ -32,4 +32,4 @@ serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "fs", "io-util", "sync"] }
 tower-http = { version = "0.7", features = ["cors", "fs"] }
 tao = { version = "0.35", optional = true }
-wry = { version = "0.50", optional = true }
+wry = { version = "0.55", optional = true }
