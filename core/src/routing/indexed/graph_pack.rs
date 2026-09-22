@@ -19,6 +19,11 @@ pub const MAGIC_GRAPH: u32 = 0x4E_56_52_4B;
 /// [`FlatGraphPack`] must ship as a coordinated client+server release.
 ///
 /// v8: v7 + per-edge `surface_quality` (OSM surface/tracktype class).
+/// SurfaceQuality wire bytes: `0` Good, `1` Marginal, `2` Poor, `3` Unknown
+/// (Unknown appended; v8 ordinals 0–2 unchanged so old packs load without
+/// reinterpretation). No format-version bump: layout is identical; rebake is
+/// required only to *reclassify* previously untagged edges that were baked as
+/// Good under the pre–Option-C defaults.
 pub const GRAPH_FORMAT_VERSION: u32 = 8;
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone)]
@@ -86,7 +91,7 @@ pub struct FlatGraphPack {
     pub edge_maxspeed_conditional: Vec<String>,
     /// Profile-static access forbid flag per edge (`1` = forbidden).
     pub edge_access_forbidden: Vec<u8>,
-    /// [`SurfaceQuality`] as `u8` (`0` Good, `1` Marginal, `2` Poor).
+    /// [`SurfaceQuality`] as `u8` (`0` Good, `1` Marginal, `2` Poor, `3` Unknown).
     pub edge_surface_quality: Vec<u8>,
     /// Parallel to `node_ids`: `1` when the node is a profile access-blocked barrier.
     pub node_access_blocked: Vec<u8>,
@@ -451,11 +456,7 @@ impl FlatGraphPack {
                         .copied()
                         .unwrap_or_else(|| {
                             // Pre-v8 packs should not reach here (format version gate).
-                            if hw == "track" {
-                                SurfaceQuality::Poor.as_u8()
-                            } else {
-                                SurfaceQuality::Good.as_u8()
-                            }
+                            crate::routing::graph::infer_surface_from_highway(Some(hw)).as_u8()
                         }),
                 ),
             });
