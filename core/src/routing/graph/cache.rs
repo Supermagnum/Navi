@@ -384,6 +384,9 @@ fn reconstruct_graph(payload: CachedRouteGraph) -> RouteGraph {
         .into_iter()
         .map(|edge| {
             let surface_quality = infer_surface_from_highway(edge.highway.as_deref());
+            // Legacy graph-cache payloads omit OSM surface/tracktype; the same
+            // per-highway Option C table as classify_surface_tags' untagged
+            // fallback applies here (infer_surface_from_highway).
             GraphEdge {
                 id: edge.id,
                 source: NodeId(edge.source),

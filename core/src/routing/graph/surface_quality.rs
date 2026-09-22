@@ -23,10 +23,19 @@ pub const SURFACE_POOR_EDGE_PENALTY: f64 = 4.0;
 /// from a pack and only length remains).
 pub const SURFACE_MARGINAL_EDGE_PENALTY: f64 = 2.2;
 
+/// Soft multiplier for untagged / unknown surface (car profile).
+///
+/// Softer than Marginal: never equals Good, but does not treat every untagged
+/// residential/service as confirmed gravel.
+pub const SURFACE_UNKNOWN_EDGE_PENALTY: f64 = 1.4;
+
+pub const SURFACE_UNKNOWN_MOTORCYCLE: f64 = 1.55;
 pub const SURFACE_MARGINAL_MOTORCYCLE: f64 = 3.0;
 pub const SURFACE_POOR_MOTORCYCLE: f64 = 5.5;
+pub const SURFACE_UNKNOWN_TRUCK: f64 = 1.5;
 pub const SURFACE_MARGINAL_TRUCK: f64 = 2.8;
 pub const SURFACE_POOR_TRUCK: f64 = 5.0;
+pub const SURFACE_UNKNOWN_MOBILE_HOME: f64 = 1.6;
 pub const SURFACE_MARGINAL_MOBILE_HOME: f64 = 3.2;
 pub const SURFACE_POOR_MOBILE_HOME: f64 = 6.0;
 
@@ -123,7 +132,12 @@ impl MotorSoftCostProfile {
     }
 }
 
-/// Ranked driveability from OSM `surface` / `tracktype` / `highway=track`.
+/// Ranked driveability from OSM `surface` / `tracktype` / highway-class fallback.
+///
+/// Discriminant order is the transition rank: Good < Unknown < Marginal < Poor.
+/// Pack wire bytes (`as_u8` / `from_u8`) keep the v8 layout for the original
+/// three classes and append Unknown as `3` so existing packs never reinterpret
+/// Marginal/Poor ordinals.
 #[derive(
     Debug,
     Clone,
@@ -140,24 +154,35 @@ impl MotorSoftCostProfile {
 #[repr(u8)]
 pub enum SurfaceQuality {
     Good = 0,
-    Marginal = 1,
+    Unknown = 1,
+    Marginal = 2,
     #[default]
-    Poor = 2,
+    Poor = 3,
 }
 
 impl SurfaceQuality {
+    /// Transition / Ord rank (Good=0 … Poor=3).
     pub fn rank(self) -> u8 {
         self as u8
     }
 
+    /// Pack wire encoding. Stable vs v8: Good=0, Marginal=1, Poor=2; Unknown=3.
     pub fn as_u8(self) -> u8 {
-        self as u8
+        match self {
+            Self::Good => 0,
+            Self::Marginal => 1,
+            Self::Poor => 2,
+            Self::Unknown => 3,
+        }
     }
 
+    /// Decode pack wire byte. Unknown values collapse to Poor (conservative).
     pub fn from_u8(v: u8) -> Self {
         match v {
             0 => Self::Good,
             1 => Self::Marginal,
+            2 => Self::Poor,
+            3 => Self::Unknown,
             _ => Self::Poor,
         }
     }
@@ -190,6 +215,10 @@ fn classify_tracktype(raw: &str) -> SurfaceQuality {
 }
 
 /// Classify one way from OSM tags (conservative: worst explicit tag wins).
+///
+/// When `surface` and `tracktype` are both absent, falls back to a per-highway
+/// default via [`infer_surface_from_highway`] (Option C: paved-typical classes
+/// stay Good; tertiary→Marginal; local/service→Unknown; track→Poor).
 pub fn classify_surface_tags(
     highway: Option<&str>,
     surface: Option<&str>,
@@ -205,19 +234,29 @@ pub fn classify_surface_tags(
     if !from_tags.is_empty() {
         return from_tags.into_iter().max().unwrap();
     }
-    if highway == Some("track") {
-        SurfaceQuality::Poor
-    } else {
-        SurfaceQuality::Good
-    }
+    infer_surface_from_highway(highway)
 }
 
 /// Infer surface class from highway alone when detailed tags are unavailable.
+///
+/// Untagged (no `surface` / `tracktype`) defaults:
+/// - motorway…secondary (+ `_link`): Good
+/// - tertiary (+ `_link`): Marginal
+/// - unclassified / residential / living_street / road / service: Unknown
+/// - track: Poor
+/// - path / footway / cycleway / other: Good (same as pre-fix paved-typical
+///   default; motor soft costs already heavily weight path-like classes)
 pub fn infer_surface_from_highway(highway: Option<&str>) -> SurfaceQuality {
-    if highway == Some("track") {
-        SurfaceQuality::Poor
-    } else {
-        SurfaceQuality::Good
+    match highway {
+        Some("track") => SurfaceQuality::Poor,
+        Some("tertiary") | Some("tertiary_link") => SurfaceQuality::Marginal,
+        Some("unclassified")
+        | Some("residential")
+        | Some("living_street")
+        | Some("road")
+        | Some("service") => SurfaceQuality::Unknown,
+        // motorway…secondary (+ links), path/footway/cycleway, missing, etc.
+        _ => SurfaceQuality::Good,
     }
 }
 
@@ -230,16 +269,31 @@ pub fn edge_surface_multiplier(
     if mode == SurfaceRoutingMode::Offroad {
         return 1.0;
     }
-    let (marginal, poor) = match cost_profile {
-        MotorSoftCostProfile::Car => (SURFACE_MARGINAL_EDGE_PENALTY, SURFACE_POOR_EDGE_PENALTY),
-        MotorSoftCostProfile::Motorcycle => (SURFACE_MARGINAL_MOTORCYCLE, SURFACE_POOR_MOTORCYCLE),
-        MotorSoftCostProfile::Truck => (SURFACE_MARGINAL_TRUCK, SURFACE_POOR_TRUCK),
-        MotorSoftCostProfile::MobileHome => {
-            (SURFACE_MARGINAL_MOBILE_HOME, SURFACE_POOR_MOBILE_HOME)
-        }
+    let (unknown, marginal, poor) = match cost_profile {
+        MotorSoftCostProfile::Car => (
+            SURFACE_UNKNOWN_EDGE_PENALTY,
+            SURFACE_MARGINAL_EDGE_PENALTY,
+            SURFACE_POOR_EDGE_PENALTY,
+        ),
+        MotorSoftCostProfile::Motorcycle => (
+            SURFACE_UNKNOWN_MOTORCYCLE,
+            SURFACE_MARGINAL_MOTORCYCLE,
+            SURFACE_POOR_MOTORCYCLE,
+        ),
+        MotorSoftCostProfile::Truck => (
+            SURFACE_UNKNOWN_TRUCK,
+            SURFACE_MARGINAL_TRUCK,
+            SURFACE_POOR_TRUCK,
+        ),
+        MotorSoftCostProfile::MobileHome => (
+            SURFACE_UNKNOWN_MOBILE_HOME,
+            SURFACE_MARGINAL_MOBILE_HOME,
+            SURFACE_POOR_MOBILE_HOME,
+        ),
     };
     match quality {
         SurfaceQuality::Good => 1.0,
+        SurfaceQuality::Unknown => unknown,
         SurfaceQuality::Marginal => marginal,
         SurfaceQuality::Poor => poor,
     }
@@ -318,7 +372,7 @@ pub fn edge_rough_surface_speed_factor(edge: &GraphEdge, mode: SurfaceRoutingMod
     }
     match edge.surface_quality {
         SurfaceQuality::Good => 1.0,
-        SurfaceQuality::Marginal | SurfaceQuality::Poor => {
+        SurfaceQuality::Unknown | SurfaceQuality::Marginal | SurfaceQuality::Poor => {
             let Some(ms) = edge
                 .maxspeed_kmh
                 .or(edge.maxspeed_practical_kmh)
@@ -493,6 +547,81 @@ mod tests {
     }
 
     #[test]
+    fn untagged_per_highway_class_table() {
+        // motorway…secondary stay Good
+        for hw in [
+            "motorway",
+            "motorway_link",
+            "trunk",
+            "trunk_link",
+            "primary",
+            "primary_link",
+            "secondary",
+            "secondary_link",
+        ] {
+            assert_eq!(
+                classify_surface_tags(Some(hw), None, None),
+                SurfaceQuality::Good,
+                "{hw}"
+            );
+            assert_eq!(
+                infer_surface_from_highway(Some(hw)),
+                SurfaceQuality::Good,
+                "{hw}"
+            );
+        }
+        for hw in ["tertiary", "tertiary_link"] {
+            assert_eq!(
+                classify_surface_tags(Some(hw), None, None),
+                SurfaceQuality::Marginal,
+                "{hw}"
+            );
+        }
+        for hw in [
+            "unclassified",
+            "residential",
+            "living_street",
+            "road",
+            "service",
+        ] {
+            assert_eq!(
+                classify_surface_tags(Some(hw), None, None),
+                SurfaceQuality::Unknown,
+                "{hw}"
+            );
+        }
+        assert_eq!(
+            classify_surface_tags(Some("track"), None, None),
+            SurfaceQuality::Poor
+        );
+        // Explicit tags still win over highway defaults.
+        assert_eq!(
+            classify_surface_tags(Some("tertiary"), Some("asphalt"), None),
+            SurfaceQuality::Good
+        );
+        assert_eq!(
+            classify_surface_tags(Some("residential"), Some("gravel"), None),
+            SurfaceQuality::Marginal
+        );
+    }
+
+    #[test]
+    fn wire_encoding_preserves_v8_ordinals_and_appends_unknown() {
+        assert_eq!(SurfaceQuality::Good.as_u8(), 0);
+        assert_eq!(SurfaceQuality::Marginal.as_u8(), 1);
+        assert_eq!(SurfaceQuality::Poor.as_u8(), 2);
+        assert_eq!(SurfaceQuality::Unknown.as_u8(), 3);
+        assert_eq!(SurfaceQuality::from_u8(0), SurfaceQuality::Good);
+        assert_eq!(SurfaceQuality::from_u8(1), SurfaceQuality::Marginal);
+        assert_eq!(SurfaceQuality::from_u8(2), SurfaceQuality::Poor);
+        assert_eq!(SurfaceQuality::from_u8(3), SurfaceQuality::Unknown);
+        // Rank order for transitions (discriminant), independent of wire bytes.
+        assert!(SurfaceQuality::Good < SurfaceQuality::Unknown);
+        assert!(SurfaceQuality::Unknown < SurfaceQuality::Marginal);
+        assert!(SurfaceQuality::Marginal < SurfaceQuality::Poor);
+    }
+
+    #[test]
     fn transition_penalty_applies_on_first_edge_from_snap() {
         assert_eq!(
             surface_transition_cost_m(
@@ -506,13 +635,23 @@ mod tests {
 
     #[test]
     fn transition_penalty_only_on_large_drop() {
+        // Adjacent step (Good→Unknown): no penalty.
+        assert_eq!(
+            surface_transition_cost_m(
+                Some(SurfaceQuality::Good),
+                SurfaceQuality::Unknown,
+                SurfaceRoutingMode::Car
+            ),
+            0.0
+        );
+        // Two-step drop (Good→Marginal) with Unknown in the ladder: penalty.
         assert_eq!(
             surface_transition_cost_m(
                 Some(SurfaceQuality::Good),
                 SurfaceQuality::Marginal,
                 SurfaceRoutingMode::Car
             ),
-            0.0
+            SURFACE_TRANSITION_PENALTY_M
         );
         assert_eq!(
             surface_transition_cost_m(
@@ -963,6 +1102,210 @@ mod tests {
             path,
             vec![NodeId(1), NodeId(3), NodeId(2)],
             "highway-class soft cost must prefer trunk detour; got {path:?}"
+        );
+    }
+
+    /// Untagged tertiary (Marginal) vs tagged asphalt tertiary of similar length:
+    /// asphalt wins when lengths are within ~20% (here equal length).
+    #[test]
+    fn untagged_tertiary_loses_to_asphalt_tertiary_when_lengths_close() {
+        use geo_types::Coord;
+        use std::collections::HashMap;
+
+        // 1 --untagged tertiary 1000m--> 2
+        // 1 --asphalt tertiary 1000m--> 3 --asphalt tertiary 50m--> 2  (~5% longer total)
+        // Equal primary leg + short connector: asphalt path ≈ 1050m vs 1000m untagged.
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [(1, 60.0, 10.0), (2, 60.01, 10.01), (3, 60.005, 10.005)] {
+            nodes.insert(
+                NodeId(id),
+                osm4routing::Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let edges = vec![
+            motor_edge_hw(
+                "u12",
+                1,
+                2,
+                1000.0,
+                Some(60.0),
+                SurfaceQuality::Marginal, // untagged tertiary default
+                "tertiary",
+            ),
+            motor_edge_hw(
+                "u21",
+                2,
+                1,
+                1000.0,
+                Some(60.0),
+                SurfaceQuality::Marginal,
+                "tertiary",
+            ),
+            motor_edge_hw(
+                "a13",
+                1,
+                3,
+                1000.0,
+                Some(60.0),
+                SurfaceQuality::Good,
+                "tertiary",
+            ),
+            motor_edge_hw(
+                "a31",
+                3,
+                1,
+                1000.0,
+                Some(60.0),
+                SurfaceQuality::Good,
+                "tertiary",
+            ),
+            motor_edge_hw(
+                "a32",
+                3,
+                2,
+                50.0,
+                Some(60.0),
+                SurfaceQuality::Good,
+                "tertiary",
+            ),
+            motor_edge_hw(
+                "a23",
+                2,
+                3,
+                50.0,
+                Some(60.0),
+                SurfaceQuality::Good,
+                "tertiary",
+            ),
+        ];
+        let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        apply_surface_preference(
+            &mut graph,
+            SurfaceRoutingMode::Car,
+            MotorSoftCostProfile::Car,
+        );
+        let (path, _, _) = graph
+            .shortest_path(NodeId(1), NodeId(2), false)
+            .expect("path");
+        assert_eq!(
+            path,
+            vec![NodeId(1), NodeId(3), NodeId(2)],
+            "asphalt tertiary (~1050m × 1.0) must beat untagged tertiary (1000m × 2.2); got {path:?}"
+        );
+    }
+
+    /// Sole untagged residential corridor remains routable; cost reflects Unknown × local highway.
+    #[test]
+    fn untagged_residential_still_routable_when_no_alternative() {
+        use geo_types::Coord;
+        use std::collections::HashMap;
+
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [(1, 60.0, 10.0), (2, 60.01, 10.01)] {
+            nodes.insert(
+                NodeId(id),
+                osm4routing::Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let length_m = 1000.0;
+        let edges = vec![
+            motor_edge_hw(
+                "r12",
+                1,
+                2,
+                length_m,
+                Some(80.0), // posted @ ref speed → rough-speed factor 1.0
+                SurfaceQuality::Unknown,
+                "residential",
+            ),
+            motor_edge_hw(
+                "r21",
+                2,
+                1,
+                length_m,
+                Some(80.0),
+                SurfaceQuality::Unknown,
+                "residential",
+            ),
+        ];
+        let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        apply_surface_preference(
+            &mut graph,
+            SurfaceRoutingMode::Car,
+            MotorSoftCostProfile::Car,
+        );
+        let (path, _, cost) = graph
+            .shortest_path(NodeId(1), NodeId(2), false)
+            .expect("residential-only must remain routable");
+        assert_eq!(path, vec![NodeId(1), NodeId(2)]);
+        let expected = length_m * SURFACE_UNKNOWN_EDGE_PENALTY * HIGHWAY_CLASS_LOCAL;
+        assert!(
+            (cost - expected).abs() < 1e-6,
+            "cost must be length × Unknown(1.4) × local(1.8) = {expected}, got {cost}"
+        );
+    }
+
+    /// Pre-fix v8 pack edge baked as Good (untagged inferred Good) still costs as Good.
+    #[test]
+    fn legacy_v8_baked_good_degrades_gracefully() {
+        use geo_types::Coord;
+        use std::collections::HashMap;
+
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [(1, 60.0, 10.0), (2, 60.01, 10.01)] {
+            nodes.insert(
+                NodeId(id),
+                osm4routing::Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let length_m = 500.0;
+        // Simulate old pack: untagged tertiary stored as Good (pre-Option-C).
+        let edges = vec![
+            motor_edge_hw(
+                "t12",
+                1,
+                2,
+                length_m,
+                Some(60.0),
+                SurfaceQuality::Good,
+                "tertiary",
+            ),
+            motor_edge_hw(
+                "t21",
+                2,
+                1,
+                length_m,
+                Some(60.0),
+                SurfaceQuality::Good,
+                "tertiary",
+            ),
+        ];
+        let mut graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        apply_surface_preference(
+            &mut graph,
+            SurfaceRoutingMode::Car,
+            MotorSoftCostProfile::Car,
+        );
+        let (path, _, cost) = graph
+            .shortest_path(NodeId(1), NodeId(2), false)
+            .expect("legacy Good edge must not crash soft costs");
+        assert_eq!(path, vec![NodeId(1), NodeId(2)]);
+        let expected = length_m * HIGHWAY_CLASS_TERTIARY; // surface mult 1.0
+        assert!(
+            (cost - expected).abs() < 1e-6,
+            "legacy baked Good stays Good (× tertiary class only); expected {expected}, got {cost}"
         );
     }
 }

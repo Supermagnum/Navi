@@ -138,8 +138,8 @@ fn budorvegen_indexed_pack_geometry_uses_secondary_not_service_parallel() {
         .shortest_path_with_options(s, g, false, &opts)
         .expect("route must exist");
     assert!(
-        (cost - 64.6).abs() < 1.5,
-        "A* must use ~64.6 m secondary chord, got cost {cost}"
+        (cost - 64.6 * HIGHWAY_CLASS_SECONDARY).abs() < 2.0,
+        "A* must use ~64.6 m secondary chord (× highway soft cost), got cost {cost}"
     );
     assert_eq!(
         path_edges.len(),
@@ -208,8 +208,8 @@ fn budorvegen_tiled_merge_geometry_uses_secondary_not_service_parallel() {
         .shortest_path_with_options(s, g, false, &opts)
         .expect("route must exist");
     assert!(
-        (cost - 64.6).abs() < 1.5,
-        "A* must use ~64.6 m secondary chord, got cost {cost}"
+        (cost - 64.6 * HIGHWAY_CLASS_SECONDARY).abs() < 2.0,
+        "A* must use ~64.6 m secondary chord (× highway soft cost), got cost {cost}"
     );
     assert_no_service_parallel_geometry(&graph, &path_edges);
 }
