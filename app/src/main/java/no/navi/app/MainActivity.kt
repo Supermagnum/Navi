@@ -260,6 +260,41 @@ class MainActivity : ComponentActivity() {
         } else if (intent.action == Intent.ACTION_MAIN) {
             NaviMapTestHooks.disableGpsFollow = false
         }
+        val fromLat = intentDoubleExtra(intent, "navi_from_lat")
+        val fromLon = intentDoubleExtra(intent, "navi_from_lon")
+        val toLat = intentDoubleExtra(intent, "navi_to_lat")
+        val toLon = intentDoubleExtra(intent, "navi_to_lon")
+        if (!fromLat.isNaN() && !fromLon.isNaN() && !toLat.isNaN() && !toLon.isNaN()) {
+            val fromName =
+                intent.getStringExtra("navi_from_name").orEmpty().ifBlank {
+                    formatCoordWaypointName(fromLat, fromLon)
+                }
+            val toName =
+                intent.getStringExtra("navi_to_name").orEmpty().ifBlank {
+                    formatCoordWaypointName(toLat, toLon)
+                }
+            val enableLong =
+                !intent.hasExtra("navi_long_trip") ||
+                    intent.getBooleanExtra("navi_long_trip", true)
+            val autoPlan =
+                !intent.hasExtra("navi_auto_plan") ||
+                    intent.getBooleanExtra("navi_auto_plan", true)
+            NaviMapTestHooks.pendingTripPlan =
+                NaviMapTestHooks.PendingTripPlan(
+                    fromName = fromName,
+                    fromLat = fromLat,
+                    fromLon = fromLon,
+                    toName = toName,
+                    toLat = toLat,
+                    toLon = toLon,
+                    enableLongTrip = enableLong,
+                    autoPlan = autoPlan,
+                )
+            android.util.Log.i(
+                "NaviTrip",
+                "pendingTripPlan from=$fromName to=$toName long=$enableLong plan=$autoPlan",
+            )
+        }
     }
 
     private fun intentDoubleExtra(
@@ -770,6 +805,33 @@ private fun NaviMapScreen() {
     var planningRoute by remember { mutableStateOf(false) }
     var planKick by remember { mutableIntStateOf(0) }
     var routePlanProgress by remember { mutableStateOf("") }
+
+    // Standalone long-trip seed via adb extras (see applyNaviLaunchExtras).
+    LaunchedEffect(Unit) {
+        val trip = NaviMapTestHooks.pendingTripPlan ?: return@LaunchedEffect
+        NaviMapTestHooks.pendingTripPlan = null
+        if (trip.enableLongTrip) {
+            longTripEnabled = true
+            MapHudPrefs.saveLongTripEnabled(context, true)
+        }
+        fromPoint =
+            Waypoint(
+                name = trip.fromName,
+                lat = trip.fromLat,
+                lon = trip.fromLon,
+            )
+        toPoint =
+            Waypoint(
+                name = trip.toName,
+                lat = trip.toLat,
+                lon = trip.toLon,
+            )
+        status = "Trip seeded: ${trip.fromName} → ${trip.toName}"
+        if (trip.autoPlan) {
+            delay(1_200)
+            planKick += 1
+        }
+    }
 
     /** True while planning when indexed packs are not ready (slow PBF path). */
     var planIndexingHintVisible by remember { mutableStateOf(false) }
@@ -1320,6 +1382,24 @@ private fun NaviMapScreen() {
             runCatching { pending.maneuversJson }.getOrDefault("[]")
         NaviMapTestHooks.lastSimSamplesJson =
             runCatching { pending.simSamplesJson }.getOrDefault("[]")
+        runCatching {
+            val dir =
+                File(context.getExternalFilesDir(null), "long-trip-ui-report").also { it.mkdirs() }
+            val days = pending.daysJson
+            val o =
+                org.json
+                    .JSONObject()
+                    .put("t_ms", SystemClock.elapsedRealtime())
+                    .put("distance_km", pending.distanceKm)
+                    .put("report", pending.report.take(2000))
+                    .put("polyline_chars", pending.routePolyline.length)
+                    .put("days_json", days)
+                    .put("break_poi_count", breaks.size)
+                    .put("start", startLabel)
+                    .put("end", endLabel)
+                    .put("long_trip_status", LongTripCoordinator.statusLine())
+            File(dir, "route-result.json").writeText(o.toString(2))
+        }
         routeSamples =
             parseRouteSimSamples(
                 runCatching { pending.simSamplesJson }.getOrDefault("[]"),
