@@ -527,7 +527,26 @@ impl RouteGraph {
         options: &RouteOptions,
         prefer_better_surface: bool,
     ) -> Result<(NodeId, f64), SnapTooFar> {
-        let max_m = max_waypoint_snap_m(self.profile);
+        self.nearest_routable_with_options_max(
+            lat,
+            lon,
+            options,
+            prefer_better_surface,
+            max_waypoint_snap_m(self.profile),
+        )
+    }
+
+    /// Like [`Self::nearest_routable_with_options`], with an explicit snap budget.
+    /// Used for long-trip densify hop endpoints (region centroids) that may sit
+    /// farther from the network than a user-entered waypoint.
+    pub fn nearest_routable_with_options_max(
+        &self,
+        lat: f64,
+        lon: f64,
+        options: &RouteOptions,
+        prefer_better_surface: bool,
+        max_m: f64,
+    ) -> Result<(NodeId, f64), SnapTooFar> {
         let (filtered_root, filtered_giant) = self.option_filtered_components(options);
         let linked = self.nodes.values().filter(|n| self.is_linked(n.id));
         let pool: Vec<&Node> = {
