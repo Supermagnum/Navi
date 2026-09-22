@@ -44,21 +44,21 @@ uuid = { version = "1", features = ["v4", "serde"] }
 osmpbf = "0.3"
 osm4routing = "0.8"
 geotiff = "0.1"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 tar = "0.4"
 rayon = "1"
 log = "0.4"
 libc = "0.2"
-uniffi = "0.29"
+uniffi = "0.32"
 usvg = "0.48"
 resvg = "0.48"
 flate2 = "1"
-png = "0.17"
+png = "0.18"
 rkyv = { version = "0.8", features = ["alloc"] }
 memmap2 = "0.9"
 chrono = { version = "0.4", default-features = true, features = ["clock"] }
 # opening-hours 2.x is stable on our pinned toolchain (1.98).
 opening-hours = "=2.1.4"
-roxmltree = "0.20"
+roxmltree = "0.21"
 sha2 = "0.11"
 hex = "0.4"
