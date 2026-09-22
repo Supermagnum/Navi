@@ -27,6 +27,7 @@ object PlaceIndexBackground {
     private val mutex = Mutex()
     private val running = AtomicBoolean(false)
     private val lastStatus = AtomicReference("idle")
+    private val activeRegionId = AtomicReference("")
 
     fun isRunning(): Boolean = running.get()
 
@@ -44,10 +45,21 @@ object PlaceIndexBackground {
     /** True when this process must not start a second `ensurePlaceIndex`. */
     internal fun shouldSkipStandaloneIndex(): Boolean = RegionDownloadBackground.isRunning() || running.get()
 
+    private fun annotate(
+        label: String,
+        regionId: String = activeRegionId.get(),
+    ): String {
+        val id = regionId.trim().trim('/')
+        if (id.isEmpty()) return label
+        val seq = RegionProgressMessages.sequenceFor(id)
+        return RegionProgressMessages.annotate(label, id, seq?.first, seq?.second)
+    }
+
     fun statusLine(): String {
         if (running.get()) {
             val snap = runCatching { downloadProgressSnapshot() }.getOrNull()
             if (snap != null && snap.label.isNotBlank()) {
+                val label = annotate(snap.label)
                 val tot = snap.unitsTotal
                 val done = snap.unitsDone
                 val pct =
@@ -57,9 +69,9 @@ object PlaceIndexBackground {
                         null
                     }
                 return when {
-                    pct != null && tot != null -> "${snap.label} $pct% ($done / $tot)"
-                    pct != null -> "${snap.label} $pct%"
-                    else -> snap.label
+                    pct != null && tot != null -> "$label $pct% ($done / $tot)"
+                    pct != null -> "$label $pct%"
+                    else -> label
                 }
             }
         }
@@ -79,14 +91,15 @@ object PlaceIndexBackground {
         val rid = regionId?.trim()?.trim('/')?.ifBlank { null }
         if (rid != null && !GeofabrikDownloadCatalog.isKnownPackRegionId(rid)) {
             Log.e(TAG, "refusing ensurePlaceIndex under unknown region_id=$rid")
-            lastStatus.set("failed (unknown region)")
+            lastStatus.set(annotate("failed (unknown region)", rid))
             return
         }
         if (!claimWorker()) {
             Log.i(TAG, "already running; skip")
             return
         }
-        lastStatus.set("building")
+        activeRegionId.set(rid.orEmpty())
+        lastStatus.set(annotate("building", rid.orEmpty()))
         Log.i(
             TAG,
             "start ensurePlaceIndex pbf=${pbf.absolutePath} db=${indexDb.absolutePath} region=$rid",
@@ -106,7 +119,7 @@ object PlaceIndexBackground {
                         if (dataDir != null && !rid.isNullOrBlank()) {
                             PlaceIndexReady.markReady(dataDir, rid)
                         }
-                        lastStatus.set("Place index ready 100% (6 / 6)")
+                        lastStatus.set(annotate("Place index ready 100% (6 / 6)", rid.orEmpty()))
                         // Own [running] is still true until [finally]; skip if the
                         // region pipeline has taken the lock for another build.
                         if (DownloadProgressClear.shouldClear(
@@ -117,13 +130,14 @@ object PlaceIndexBackground {
                             runCatching { uniffi.navi.downloadProgressClear() }
                         }
                     } else {
-                        lastStatus.set("failed")
+                        lastStatus.set(annotate("failed", rid.orEmpty()))
                     }
                     Log.i(TAG, "finished bytes=$bytes report=$report")
                 } catch (t: Throwable) {
-                    lastStatus.set("failed: ${t.message}")
+                    lastStatus.set(annotate("failed: ${t.message}", rid.orEmpty()))
                     Log.e(TAG, "ensurePlaceIndex crashed", t)
                 } finally {
+                    activeRegionId.set("")
                     releaseWorker()
                 }
             }

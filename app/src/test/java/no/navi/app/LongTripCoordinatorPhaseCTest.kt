@@ -30,6 +30,14 @@ class LongTripCoordinatorPhaseCTest {
             "europe/norway/trondelag",
         )
 
+    /** Real-size PBF + place-index stamp so ReuseInternal counts as Indexed. */
+    private fun seedIndexedStartRegion(dir: java.io.File, regionId: String) {
+        val stem = PackRegionAvailability.localStem(regionId)
+        val pbf = java.io.File(dir, "$stem.osm.pbf")
+        java.io.RandomAccessFile(pbf, "rw").use { it.setLength(RegionDownloadBackground.MIN_PBF_BYTES) }
+        PlaceIndexReady.markReady(dir, regionId)
+    }
+
     @After
     fun tearDown() {
         LongTripCoordinator.resetForTests()
@@ -158,6 +166,7 @@ class LongTripCoordinatorPhaseCTest {
     fun non_blocking_planning_while_real_queue_holds_worker() {
         val dir = tmp.newFolder("nonblock")
         val packDir = tmp.newFolder("packs-nb")
+        seedIndexedStartRegion(dir, regions[0])
         val enqueued = CopyOnWriteArrayList<String>()
 
         // Hold the real queue slot (as an in-flight download would).
@@ -240,6 +249,7 @@ class LongTripCoordinatorPhaseCTest {
     fun scrub_stems_map_to_unavailable() {
         val dir = tmp.newFolder("scrub")
         val packDir = tmp.newFolder("packs-scrub")
+        seedIndexedStartRegion(dir, regions[0])
         LongTripCoordinator.setCorridorProviderForTests { _, _, _ -> Result.success(regions) }
         LongTripCoordinator.setPackTargetResolverForTests { _, id ->
             if (id == regions[0]) {

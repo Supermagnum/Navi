@@ -1,6 +1,11 @@
 //! Per-consumer progress slots so download, plan, convert, and cone do not clobber
 //! each other. `set` / `snapshot` / `clear` write the **current thread** channel
 //! (default: [`ProgressChannel::Download`]).
+//!
+//! Optional [`set_region_tag`] annotates every subsequent [`set`] label with the
+//! active region id (and optional N-of-M) until cleared — so bare phase labels
+//! like "Writing map archive…" become region-aware without threading the id
+//! through every call site.
 
 use std::cell::Cell;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -53,6 +58,61 @@ thread_local! {
     static CURRENT: Cell<ProgressChannel> = const { Cell::new(ProgressChannel::Download) };
 }
 
+struct RegionTag {
+    /// Geofabrik path or leaf id shown in progress labels.
+    id: String,
+    /// 1-based corridor index when known.
+    index: Option<u32>,
+    /// Corridor length when known.
+    total: Option<u32>,
+}
+
+fn region_tag() -> &'static Mutex<Option<RegionTag>> {
+    static TAG: OnceLock<Mutex<Option<RegionTag>>> = OnceLock::new();
+    TAG.get_or_init(|| Mutex::new(None))
+}
+
+/// Set the region identity attached to subsequent [`set`] / [`set_on`] labels.
+/// Pass empty `region_id` to clear. [index]/[total] are optional 1-based
+/// corridor positions (kept when both are `Some` and total > 0).
+pub fn set_region_tag(region_id: &str, index: Option<u32>, total: Option<u32>) {
+    let id = region_id.trim().trim_matches('/').to_string();
+    let mut g = region_tag().lock().unwrap_or_else(|e| e.into_inner());
+    if id.is_empty() {
+        *g = None;
+    } else {
+        *g = Some(RegionTag { id, index, total });
+    }
+}
+
+/// Clear the region tag (same as `set_region_tag("", None, None)`).
+pub fn clear_region_tag() {
+    set_region_tag("", None, None);
+}
+
+fn annotate_with_region(label: &str) -> String {
+    let g = region_tag().lock().unwrap_or_else(|e| e.into_inner());
+    let Some(tag) = g.as_ref() else {
+        return label.to_string();
+    };
+    if tag.id.is_empty() {
+        return label.to_string();
+    }
+    let leaf = tag.id.rsplit('/').next().unwrap_or(tag.id.as_str());
+    let lower = label.to_ascii_lowercase();
+    if lower.contains(&tag.id.to_ascii_lowercase())
+        || (!leaf.is_empty() && lower.contains(&leaf.to_ascii_lowercase()))
+    {
+        return label.to_string();
+    }
+    match (tag.index, tag.total) {
+        (Some(i), Some(t)) if t > 0 && i > 0 => {
+            format!("{label} (region {i} of {t}: {leaf})")
+        }
+        _ => format!("{label} ({leaf})"),
+    }
+}
+
 /// Restores the previous channel when dropped (including panic unwind).
 pub struct ChannelGuard {
     prev: ProgressChannel,
@@ -90,16 +150,17 @@ pub fn set(bytes_or_units: u64, total: Option<u64>, label: &str) {
 }
 
 pub fn set_on(ch: ProgressChannel, bytes_or_units: u64, total: Option<u64>, label: &str) {
+    let annotated = annotate_with_region(label);
     let s = &slots()[ch.index()];
     s.bytes.store(bytes_or_units, Ordering::Relaxed);
     s.total.store(total.unwrap_or(0), Ordering::Relaxed);
     if let Ok(mut g) = s.label.lock() {
-        *g = label.to_string();
+        *g = annotated.clone();
     }
     // Convert phases are long; surface the active label in logcat so device
     // LMK / crash dumps can identify which phase was in progress.
     if ch == ProgressChannel::Convert {
-        log::info!(target: "NaviConvert", "CONVERT_PHASE {label}");
+        log::info!(target: "NaviConvert", "CONVERT_PHASE {annotated}");
     }
 }
 
@@ -156,6 +217,22 @@ pub fn snapshot_on(ch: ProgressChannel) -> Snapshot {
     snapshot_slot(&slots()[ch.index()])
 }
 
+/// RAII: sets region tag on construct, clears on drop.
+pub struct RegionTagGuard;
+
+impl RegionTagGuard {
+    pub fn enter(region_id: &str, index: Option<u32>, total: Option<u32>) -> Self {
+        set_region_tag(region_id, index, total);
+        Self
+    }
+}
+
+impl Drop for RegionTagGuard {
+    fn drop(&mut self) {
+        clear_region_tag();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +249,7 @@ mod tests {
         for ch in ProgressChannel::ALL {
             clear_on(ch);
         }
+        clear_region_tag();
         set_on(
             ProgressChannel::Plan,
             1,
@@ -203,6 +281,7 @@ mod tests {
         for ch in ProgressChannel::ALL {
             clear_on(ch);
         }
+        clear_region_tag();
         let h = thread::spawn(|| {
             let _g = ChannelGuard::enter(ProgressChannel::Cone);
             set(2, Some(4), "test-cone: reading roads…");
@@ -220,5 +299,23 @@ mod tests {
             "test-cone: reading roads…"
         );
         assert_eq!(snapshot_on(ProgressChannel::Cone).percent, Some(50));
+    }
+
+    #[test]
+    fn region_tag_annotates_bare_labels() {
+        let _lock = TEST_LOCK.lock().unwrap();
+        clear_on(ProgressChannel::Convert);
+        clear_region_tag();
+        set_region_tag("europe/sweden/vastra_gotaland", Some(2), Some(4));
+        set_on(ProgressChannel::Convert, 0, Some(1), "Writing map archive…");
+        let snap = snapshot_on(ProgressChannel::Convert);
+        assert!(
+            snap.label.contains("Writing map archive"),
+            "got {}",
+            snap.label
+        );
+        assert!(snap.label.contains("2 of 4"), "got {}", snap.label);
+        assert!(snap.label.contains("vastra_gotaland"), "got {}", snap.label);
+        clear_region_tag();
     }
 }

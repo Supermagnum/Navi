@@ -360,6 +360,7 @@ pub fn try_fetch_region_packs(
     fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
 
     let region_id = normalize_region_id(&ready.region_id);
+    let _region_tag = crate::download::progress::RegionTagGuard::enter(&region_id, None, None);
     let generation = ready
         .generation
         .as_deref()

@@ -30,8 +30,9 @@ object RegionCoverage {
         val lon: Double,
     )
 
-    fun displayName(geofabrikPath: String): String =
-        when (geofabrikPath.trim().trim('/').lowercase()) {
+    fun displayName(geofabrikPath: String): String {
+        val norm = geofabrikPath.trim().trim('/').lowercase()
+        return when (norm) {
             "europe/norway" -> "Norway"
             "europe/norway/ostlandet" -> "Ostlandet"
             "europe/norway/vestlandet" -> "Vestlandet"
@@ -54,10 +55,41 @@ object RegionCoverage {
             "north-america/us/west-virginia" -> "West Virginia"
             "north-america/us/nevada" -> "Nevada"
             "russia" -> "Russia"
-            else ->
-                GeofabrikDownloadCatalog.findByPath(geofabrikPath)?.label
+            else -> {
+                // Prefer exact leaf chip labels (Sweden län, German Länder, …)
+                // before findByPath parent-country fallback, so progress strings
+                // name "Västra Götaland" not "Sweden".
+                leafDisplayName(norm)
+                    ?: GeofabrikDownloadCatalog.findByPath(geofabrikPath)?.label
                     ?: geofabrikPath.substringAfterLast('/').ifBlank { geofabrikPath }
+            }
         }
+    }
+
+    private fun leafDisplayName(normPath: String): String? {
+        val leaf = normPath.substringAfterLast('/').ifBlank { return null }
+        val leafAlt = leaf.replace('-', '_')
+        val leafHyphen = leaf.replace('_', '-')
+        fun match(pairs: List<Pair<String, String>>): String? =
+            pairs
+                .firstOrNull {
+                    it.first.equals(leaf, ignoreCase = true) ||
+                        it.first.equals(leafAlt, ignoreCase = true) ||
+                        it.first.equals(leafHyphen, ignoreCase = true)
+                }?.second
+        return when {
+            normPath.startsWith("europe/norway/") -> match(GeofabrikDownloadCatalog.norwayRegions)
+            normPath.startsWith("europe/sweden/") -> match(GeofabrikDownloadCatalog.swedenRegions)
+            normPath.startsWith("europe/germany/baden-wuerttemberg/") ->
+                match(GeofabrikDownloadCatalog.germanyBadenWuerttembergRegions)
+            normPath.startsWith("europe/germany/bayern/") ->
+                match(GeofabrikDownloadCatalog.germanyBayernRegions)
+            normPath.startsWith("europe/germany/nordrhein-westfalen/") ->
+                match(GeofabrikDownloadCatalog.germanyNordrheinWestfalenRegions)
+            normPath.startsWith("europe/germany/") -> match(GeofabrikDownloadCatalog.germanyRegions)
+            else -> null
+        }
+    }
 
     fun geofabrikPathForPbfName(pbfName: String): String? {
         // Single source of truth: native pack-catalog stem map (no Norway parent-walk).

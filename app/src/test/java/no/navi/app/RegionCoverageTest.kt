@@ -79,6 +79,14 @@ class RegionCoverageTest {
                 .displayName("europe/norway/nord-norge")
                 .equals("Norway", ignoreCase = true),
         )
+        assertEquals(
+            "Västra Götaland",
+            RegionCoverage.displayName("europe/sweden/vastra_gotaland"),
+        )
+        assertEquals(
+            "Schleswig-Holstein",
+            RegionCoverage.displayName("europe/germany/schleswig-holstein"),
+        )
     }
 
     @Test

@@ -36,10 +36,21 @@ object IndexedMapsBackground {
     private val mutex = Mutex()
     private val running = AtomicBoolean(false)
     private val lastStatus = AtomicReference("idle")
+    private val activeRegionId = AtomicReference("")
 
     fun isRunning(): Boolean = running.get()
 
     fun statusLine(): String = lastStatus.get()
+
+    private fun annotate(
+        label: String,
+        regionId: String = activeRegionId.get(),
+    ): String {
+        val id = regionId.ifBlank { RegionDownloadBackground.activeRegionPath() }.trim().trim('/')
+        if (id.isEmpty()) return label
+        val seq = RegionProgressMessages.sequenceFor(id)
+        return RegionProgressMessages.annotate(label, id, seq?.first, seq?.second)
+    }
 
     /**
      * Tools status line. Empty when idle and packs are ready.
@@ -56,6 +67,7 @@ object IndexedMapsBackground {
                 }
             val prog =
                 if (snap != null && snap.label.isNotBlank()) {
+                    val label = annotate(snap.label)
                     val pct =
                         snap.unitsTotal?.let { tot ->
                             if (tot > 0uL) {
@@ -66,7 +78,7 @@ object IndexedMapsBackground {
                                 null
                             }
                         }
-                    if (pct != null) "${snap.label} $pct%" else snap.label
+                    if (pct != null) "$label $pct%" else label
                 } else {
                     lastStatus.get()
                 }
@@ -76,13 +88,17 @@ object IndexedMapsBackground {
             runCatching { indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath).trim() }
                 .getOrDefault("error")
         return when (st) {
-            "ready" -> "Indexed maps: ready (pack-hit)"
+            "ready" -> annotate("Indexed maps: ready (pack-hit)")
             "version_mismatch" ->
-                "Indexed maps: outdated format — will try pack server, then local rebuild"
+                annotate(
+                    "Indexed maps: outdated format — will try pack server, then local rebuild",
+                )
             "stale_pbf" ->
-                "Indexed maps: stale vs PBF — will try pack server, then local rebuild"
-            "missing" -> "Indexed maps: not built yet (planning uses PBF fallback)"
-            else -> "Indexed maps: $st"
+                annotate(
+                    "Indexed maps: stale vs PBF — will try pack server, then local rebuild",
+                )
+            "missing" -> annotate("Indexed maps: not built yet (planning uses PBF fallback)")
+            else -> annotate("Indexed maps: $st")
         }
     }
 
@@ -128,7 +144,8 @@ object IndexedMapsBackground {
                         "FAIL: PBF/region mismatch region_id=$rid pbf=${pbf.name} " +
                             "expected_stem=${PackRegionAvailability.localStem(rid)} — refusing convert",
                     )
-                    lastStatus.set("failed (pbf/region mismatch)")
+                    activeRegionId.set(rid)
+                    lastStatus.set(annotate("failed (pbf/region mismatch)", rid))
                     return
                 }
                 matched
@@ -149,12 +166,13 @@ object IndexedMapsBackground {
                             "error"
                         }
                     if (st == "ready") {
-                        lastStatus.set("ready")
+                        lastStatus.set(annotate("ready", rid))
                         Log.i(TAG, "packs ready; skip refresh pbf=${resolvedPbf.name}")
                         return@withLock false
                     }
                     running.set(true)
-                    lastStatus.set("starting ($st) — pack server first")
+                    activeRegionId.set(rid)
+                    lastStatus.set(annotate("starting ($st) — pack server first", rid))
                     Log.i(
                         TAG,
                         "start ensureIndexedMaps status=$st pbf=${resolvedPbf.name} regionId=$rid",
@@ -174,29 +192,34 @@ object IndexedMapsBackground {
                         progressOnConvertChannel = true,
                     )
                 lastStatus.set(
-                    when {
-                        report.contains("path=server_download") ->
-                            "done (downloaded updated pack from server)"
-                        report.contains("path=local_rebuild") ||
-                            report.contains("rebuilding locally") ->
-                            "done (rebuilt locally — ${extractRebuildReason(report)})"
-                        report.contains("PASS") && report.contains("cache_hit=true") -> "done (already ready)"
-                        report.contains("PASS") -> "done"
-                        report.contains("skipped=convert_in_progress") ||
-                            report.contains("region convert already in progress") ->
-                            "waiting (convert already running)"
-                        else -> "failed"
-                    },
+                    annotate(
+                        when {
+                            report.contains("path=server_download") ->
+                                "done (downloaded updated pack from server)"
+                            report.contains("path=local_rebuild") ||
+                                report.contains("rebuilding locally") ->
+                                "done (rebuilt locally — ${extractRebuildReason(report)})"
+                            report.contains("PASS") && report.contains("cache_hit=true") ->
+                                "done (already ready)"
+                            report.contains("PASS") -> "done"
+                            report.contains("skipped=convert_in_progress") ||
+                                report.contains("region convert already in progress") ->
+                                "waiting (convert already running)"
+                            else -> "failed"
+                        },
+                        rid,
+                    ),
                 )
                 if (report.contains("PASS")) {
                     convertProgressClearSafe()
                 }
                 Log.i(TAG, "finished: $report")
             } catch (t: Throwable) {
-                lastStatus.set("failed: ${t.message}")
+                lastStatus.set(annotate("failed: ${t.message}", rid))
                 Log.e(TAG, "ensureIndexedMaps crashed", t)
             } finally {
                 running.set(false)
+                activeRegionId.set("")
             }
         }
     }
