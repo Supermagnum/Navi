@@ -270,6 +270,44 @@ object PlaceIndexReady {
     ) {
         val dbFile = File(dataDir, "place_index.db")
         if (!dbFile.isFile) return
+        // Same PLACE_INDEX_BUILD_LOCK as ensure_place_index (Task 4/5). Prefer
+        // rusqlite under that lock; fall back to Android SQLite still under the
+        // lock so -wal/-shm are never touched concurrently with a native build.
+        val native =
+            runCatching {
+                uniffi.navi.clearPlaceIndexRegionRows(dbFile.absolutePath, regionId)
+            }
+        if (native.isSuccess) {
+            val report = native.getOrDefault("")
+            if (!report.startsWith("PASS")) {
+                Log.w(TAG, "clearRegionRows native: $report")
+            }
+            return
+        }
+        val acquired =
+            runCatching { uniffi.navi.placeIndexBuildLockAcquire() }
+        val held = acquired.getOrNull()?.startsWith("PASS") == true
+        if (!held) {
+            Log.w(
+                TAG,
+                "clearRegionRows lock acquire unavailable: " +
+                    (acquired.getOrNull() ?: acquired.exceptionOrNull()?.message),
+            )
+        }
+        try {
+            clearRegionRowsAndroidSqlite(dbFile, regionId)
+        } finally {
+            if (held) {
+                runCatching { uniffi.navi.placeIndexBuildLockRelease() }
+                    .onFailure { Log.w(TAG, "clearRegionRows lock release: ${it.message}") }
+            }
+        }
+    }
+
+    private fun clearRegionRowsAndroidSqlite(
+        dbFile: File,
+        regionId: String,
+    ) {
         runCatching {
             SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
                 db.beginTransaction()

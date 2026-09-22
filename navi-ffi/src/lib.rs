@@ -4654,6 +4654,40 @@ pub fn ensure_place_index(
     }
 }
 
+/// Acquire the same mutex as [`ensure_place_index`] on this thread.
+///
+/// Kotlin `PlaceIndexReady.clearRegionRows` must call this before opening
+/// `place_index.db` / `-wal` / `-shm`, and [`place_index_build_lock_release`]
+/// in a `finally` block. Blocks (does not fail-fast) when a build is running.
+#[uniffi::export]
+pub fn place_index_build_lock_acquire() -> String {
+    match driver_break_core::search::place_index_build_lock_acquire() {
+        Ok(()) => "PASS".into(),
+        Err(e) => format!("FAIL: {e}"),
+    }
+}
+
+/// Release a prior [`place_index_build_lock_acquire`] on this thread.
+#[uniffi::export]
+pub fn place_index_build_lock_release() -> String {
+    match driver_break_core::search::place_index_build_lock_release() {
+        Ok(()) => "PASS".into(),
+        Err(e) => format!("FAIL: {e}"),
+    }
+}
+
+/// Clear one region's place-index rows under the shared build lock (rusqlite).
+///
+/// Prefer this over Android framework SQLite when native is available — same
+/// connection stack as [`ensure_place_index`].
+#[uniffi::export]
+pub fn clear_place_index_region_rows(index_db_path: String, region_id: String) -> String {
+    match driver_break_core::search::clear_place_index_region_rows(index_db_path, &region_id) {
+        Ok(()) => "PASS".into(),
+        Err(e) => format!("FAIL: {e}"),
+    }
+}
+
 /// Build preprocess-once indexed map packs next to a region PBF (graph + POI/barrier).
 ///
 /// Preference order when packs are missing / stale / format-mismatched:
