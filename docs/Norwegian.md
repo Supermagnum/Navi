@@ -23,9 +23,10 @@ Resultater på enhet og emulator:
 [`compiled/navi-release.apk`](../compiled/navi-release.apk) — en **riktig
 signert, installerbar release-APK** (upload-nøkkel; ikke debug-bygget). Gjeldende
 bygg: **v0.3.4-beta** (`versionName` 0.3.4-beta, `versionCode` 9). Last ned fra
-[`v0.3.4-beta`-taggen](https://github.com/Supermagnum/Navi/tree/v0.3.4-beta)
-eller siste kopi på
-[`dev`-grenen](https://github.com/Supermagnum/Navi/tree/dev). Android validerer
+[`main`-grenen](https://github.com/Supermagnum/Navi/tree/main/compiled)
+(siste testerbygg) eller den faste
+[`v0.3.4-beta`-taggen](https://github.com/Supermagnum/Navi/tree/v0.3.4-beta).
+Android validerer
 APK-signeringen ved installasjon; de separate GPG-filene
 ([`compiled/SHA256SUMS`](../compiled/SHA256SUMS),
 [`compiled/SHA256SUMS.asc`](../compiled/SHA256SUMS.asc)) er valgfri proveniens
@@ -136,7 +137,8 @@ Dette er helt valgfri støtte, ikke en betalingsmur — Navi er og forblir grati
 | **3D-bakkeskygge** | Valgfri skyggelegging fra Mapterhorn-DEM. Uavhengig av høydekurver — én, begge eller ingen. Frakoblet trenger **Download terrain DEM**. | Ferdig |
 | **Økoruting** | Foretrekk ruter som bruker mindre energi ved å ta hensyn til bakker. Et lite bladikon vises når øko er på. | Ferdig |
 | **Frakoblet planlegging** | Last ned en region én gang, planlegg og se ruten på enheten. | Ferdig |
-| **Indeksering** | Etter regionsnedlasting gjør en bakgrunnsjobb OSM-uttrekket om til kompakte rutingpakker, så senere planer går raskt. Du kan planlegge mens den kjører; konvertering og stedsindeks **pauser** under en forgrunnsplan, slik at PBF-reservestien ikke sulter. | Ferdig |
+| **Langtur** | Valgfritt under Kjøre-innstillinger (av som standard). Med Fra/Til satt anslår Navi hvilke Geofabrik-regioner korridoren trenger (adjacensgraf; nettbasert BRouter primært / OpenRouteService som reserve for den foreløpige polylinjen), køer pakkenedlasting bare på **Wi‑Fi/Ethernet**, og kan lagre de pakkene på et flyttbart volum. Stedsindeks og Tools-nedlastinger blir på intern lagring. Frakoblet planlegging bruker deretter flerregionspakker med myke pauser / overnatting på flerdagers etapper. Personverntekst vises i innstillingene når funksjonen er på. | Ferdig |
+| **Indeksering** | Etter regionsnedlasting gjør en bakgrunnsjobb OSM-uttrekket om til kompakte rutingpakker, så senere planer går raskt. Du kan planlegge mens den kjører; konvertering og stedsindeks **pauser** under en forgrunnsplan, slik at PBF-reservestien ikke sulter. Avbrutte stedsindeks-bygginger **gjenopptas uten å slette** allerede skrevne rader; OSM-oppdateringer hopper over full stedsindeks-ombygging når kataloggenerasjonen er uendret. | Ferdig |
 | **Stedssøk** | Søk steder og sett Fra / Via / Til. Mens stedsindeksen fortsatt er tom/bygges, viser søket en byggehint (koordinater og karttrykk fungerer fortsatt). | Ferdig |
 | **Flere via-punkter** | Inntil **4** mellomstopp for bil / lastebil / sykkel (og fot-waypoints). Via-chipen viser **Via (n/4)**; hvert valg **legger til** et stopp og tømmer søkefeltet. Liste med **Remove** / **Clear all**. Omvei-replan beholder gjenværende via. | Ferdig |
 | **Bruk GPS** | Fyll Fra / Via / Til fra live-posisjon: koordinater kommer med en gang, deretter eventuelt oppgradering til veiknavn i nærheten. Feltet er chipen som var aktiv da du trykket — ikke den som er valgt etter at oppslaget er ferdig. GPS som Via oppgraderer siste via på stedet (dupliserer ikke). | Ferdig |
@@ -391,6 +393,7 @@ kartvisning i app-preferanser).
 | **Use networked cabins** | Fottur / sykkel / elsykkel: tillat DNT/STF-lignende **nettverkshytter** som auto-via / via-kandidater (av som standard). Endrer **ikke** overnattingsmedlemskapsregler |
 | **Network hut member (DNT/STF/…)** | Bare fottur: når på, kan overnatting foretrekke nettverkshytter; når av (standard), foretrekk ikke-nettverk og merk nettverkstopp som medlemskapskrevd |
 | **Follow pilgrim routes** | Bare fottur; myk preferanse (av som standard), faller tilbake til vanlig fottur |
+| **Long trip** | Valgfri flerregions-korridor (av som standard). Når på: pakkekø bare på Wi‑Fi/Ethernet langs ruten, valgfri flyttbar lagring for de pakkene, og personverntekst om BRouter / OpenRouteService for det foreløpige regionanslaget. Statuslinje viser needed / downloading / indexed |
 | **Hours between breaks** | Hvor ofte du *ønsker* pause (bil), eller lastebilens pålagte pause-etter-tid |
 | **Rest time** | Hvor lenge pausen bør vare (forslag / lastebil sammenhengende pause) |
 | **Next break as Time / Distance** | Vis nedtelling i minutter, eller som km/mi ved antatt cruisehastighet |
@@ -680,9 +683,9 @@ Du trenger ikke Rust/NDK-verktøykjede for å installere den.
 1. På enheten: slå på **Utvikleralternativer** og tillat installasjon fra
    nettleser eller filbehandler (`adb` trengs bare for USB-installasjon).
 2. Last ned
-   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.3.4-beta/compiled/navi-release.apk)
-   (fast tag) eller siste
-   [`dev`-kopi](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-release.apk).
+   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/main/compiled/navi-release.apk)
+   (siste på `main`) eller den faste
+   [`v0.3.4-beta`-taggen](https://github.com/Supermagnum/Navi/raw/v0.3.4-beta/compiled/navi-release.apk).
 3. Valgfri integritetssjekk på PC:
 
 ```bash
@@ -721,9 +724,9 @@ adb shell am start -n no.navi.app/.MainActivity
 ```
 
 Nedlasting i nettleser:
-[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/blob/dev/compiled/navi-debug.apk)
+[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/blob/main/compiled/navi-debug.apk)
 eller
-[`raw/dev/compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-debug.apk).
+[`raw/main/compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/main/compiled/navi-debug.apk).
 
 For å bygge fra kilde, følg avsnittene nedenfor.
 

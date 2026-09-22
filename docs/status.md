@@ -11,6 +11,7 @@ they are **not** the live product status.
 | Question | Canonical doc | Notes |
 |---|---|---|
 | What is the current product / feature status? | [`../README.md`](../README.md) Features table + Known issues | Single live summary. Update here when status changes. |
+| Long-trip multi-region packs | README Features (**Long trip**); [`how-to-use.md`](how-to-use.md#long-trip-multi-region) | **Shipped (opt-in).** Adjacency corridor + Wi‑Fi pack queue; BRouter/ORS preliminary polyline; place-index resume keeps incomplete rows. |
 | How do I mark a map point / use Saved places? | [`map-marking-saved-places.md`](map-marking-saved-places.md) | User how-to (NO: [`kartmerking-lagrede-steder.md`](kartmerking-lagrede-steder.md)). |
 | How do the parts fit together? | [`architecture.md`](architecture.md) | Design intent, not a rolling QA log. |
 | Where do I edit code for X? | [`codebase-map.md`](codebase-map.md) | Contributor file map. |
