@@ -2201,6 +2201,7 @@ private fun NaviMapScreen() {
         while (isActive) {
             val regionPath = selectedGeofabrikPath.trim().trim('/')
             val planning = planningRoute
+
             data class BgTick(
                 val indexedLine: String,
                 val placeLine: String,
@@ -2282,10 +2283,14 @@ private fun NaviMapScreen() {
                         indexedLine = indexedLine,
                         placeLine = placeLine,
                         pushIndexedToStatus =
-                            indexedRunning && !planning && !regionDownloading &&
+                            indexedRunning &&
+                                !planning &&
+                                !regionDownloading &&
                                 indexedLine.isNotBlank(),
                         pushPlaceToStatus =
-                            placeRunning && !planning && !regionDownloading &&
+                            placeRunning &&
+                                !planning &&
+                                !regionDownloading &&
                                 placeLine.isNotBlank(),
                         busy = placeRunning || indexedRunning,
                     )
@@ -2393,9 +2398,10 @@ private fun NaviMapScreen() {
         if (pbf == null && !stagedOk) {
             if (longTripEnabled) {
                 val line =
-                    longTripStatusLine.ifBlank {
-                        LongTripCoordinator.statusLine()
-                    }.ifBlank { "Long trip: downloading required regions…" }
+                    longTripStatusLine
+                        .ifBlank {
+                            LongTripCoordinator.statusLine()
+                        }.ifBlank { "Long trip: downloading required regions…" }
                 status = line
                 longTripStatusLine = line
                 return@LaunchedEffect
@@ -4040,14 +4046,18 @@ private fun NaviMapScreen() {
         }
         // Online (or offline) hits carry a Geofabrik regionId — preselect Tools
         // download path so region finder/downloader works from a name/address.
-        val fromHit = hit.regionId.trim().trim('/').ifBlank { null }
+        val fromHit =
+            hit.regionId
+                .trim()
+                .trim('/')
+                .ifBlank { null }
         if (fromHit != null) {
             selectedGeofabrikPath = fromHit
             downloadContinent = GeofabrikDownloadCatalog.continentForPath(fromHit)
             val countryHit = GeofabrikDownloadCatalog.findByPath(fromHit)
             downloadScopeCountry =
                 countryHit != null &&
-                    countryHit.path == fromHit
+                countryHit.path == fromHit
             MapHudPrefs.saveGeofabrikPath(context, fromHit)
             NaviMapTestHooks.lastSelectedGeofabrikPath = fromHit
         } else {
@@ -4070,7 +4080,7 @@ private fun NaviMapScreen() {
                 val countryHit = GeofabrikDownloadCatalog.findByPath(suggested)
                 downloadScopeCountry =
                     countryHit != null &&
-                        countryHit.path == suggested
+                    countryHit.path == suggested
                 MapHudPrefs.saveGeofabrikPath(context, suggested)
                 NaviMapTestHooks.lastSelectedGeofabrikPath = suggested
             }
@@ -4198,15 +4208,7 @@ private fun NaviMapScreen() {
                             if (list.isEmpty()) {
                                 online
                             } else {
-                                val seen = HashSet<String>()
-                                val merged = ArrayList<PlaceHit>(online.size + list.size)
-                                for (h in online + list) {
-                                    val key =
-                                        "${h.name.lowercase()}|${"%.4f".format(h.lat)}|" +
-                                            "%.4f".format(h.lon)
-                                    if (seen.add(key)) merged.add(h)
-                                }
-                                merged
+                                mergeOnlineAndOfflinePlaceHits(trimmed, online, list)
                             }
                     }
                 }
