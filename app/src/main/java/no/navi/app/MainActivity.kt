@@ -747,16 +747,9 @@ private fun NaviMapScreen() {
                 context,
                 onUnavailable = { volumeId, stems ->
                     longTripPackVolumes = NaviStorageVolumes.listPickerOptions(context)
-                    val sel = MapHudPrefs.loadLongTripPackVolumeId(context)
-                    if (sel == volumeId || stems.isNotEmpty()) {
-                        longTripStatusLine =
-                            "Storage unavailable ($volumeId)" +
-                                if (stems.isEmpty()) {
-                                    " — downloads paused"
-                                } else {
-                                    " — paused mid-write (${stems.size})"
-                                }
-                    }
+                    // Scrub stems → RegionTripState.Unavailable on the live plan.
+                    longTripStatusLine =
+                        LongTripCoordinator.onVolumeUnavailable(volumeId, stems)
                 },
                 onMounted = { volumeId ->
                     longTripPackVolumes = NaviStorageVolumes.listPickerOptions(context)
@@ -6117,11 +6110,29 @@ private fun NaviMapScreen() {
                                 longTripEnabled = on
                                 MapHudPrefs.saveLongTripEnabled(context, on)
                                 if (!on) {
-                                    longTripStatusLine = "Long trip off (installed packs kept)"
+                                    longTripStatusLine = LongTripCoordinator.disable(context)
                                 } else {
                                     longTripPackVolumes = NaviStorageVolumes.listPickerOptions(context)
+                                    val wps =
+                                        buildList {
+                                            if (mapState.gpsLat != 0.0 || mapState.gpsLon != 0.0) {
+                                                add(mapState.gpsLat to mapState.gpsLon)
+                                            } else if (mapState.startLat != 0.0 || mapState.startLon != 0.0) {
+                                                add(mapState.startLat to mapState.startLon)
+                                            }
+                                            for (v in viaPoints) {
+                                                if (v.lat != 0.0 || v.lon != 0.0) {
+                                                    add(v.lat to v.lon)
+                                                }
+                                            }
+                                            if (mapState.endLat != 0.0 || mapState.endLon != 0.0) {
+                                                add(mapState.endLat to mapState.endLon)
+                                            }
+                                        }
                                     longTripStatusLine =
-                                        if (NetworkUnmetered.isWifiOrEthernet(context)) {
+                                        if (wps.size >= 2) {
+                                            LongTripCoordinator.enable(context, wps)
+                                        } else if (NetworkUnmetered.isWifiOrEthernet(context)) {
                                             "Long trip on — unmetered; awaiting trip"
                                         } else {
                                             "Long trip on — waiting for Wi-Fi/Ethernet"
@@ -7180,11 +7191,29 @@ private fun NaviMapScreen() {
                         longTripEnabled = on
                         MapHudPrefs.saveLongTripEnabled(context, on)
                         if (!on) {
-                            longTripStatusLine = "Long trip off (installed packs kept)"
+                            longTripStatusLine = LongTripCoordinator.disable(context)
                         } else {
                             longTripPackVolumes = NaviStorageVolumes.listPickerOptions(context)
+                            val wps =
+                                buildList {
+                                    if (mapState.gpsLat != 0.0 || mapState.gpsLon != 0.0) {
+                                        add(mapState.gpsLat to mapState.gpsLon)
+                                    } else if (mapState.startLat != 0.0 || mapState.startLon != 0.0) {
+                                        add(mapState.startLat to mapState.startLon)
+                                    }
+                                    for (v in viaPoints) {
+                                        if (v.lat != 0.0 || v.lon != 0.0) {
+                                            add(v.lat to v.lon)
+                                        }
+                                    }
+                                    if (mapState.endLat != 0.0 || mapState.endLon != 0.0) {
+                                        add(mapState.endLat to mapState.endLon)
+                                    }
+                                }
                             longTripStatusLine =
-                                if (NetworkUnmetered.isWifiOrEthernet(context)) {
+                                if (wps.size >= 2) {
+                                    LongTripCoordinator.enable(context, wps)
+                                } else if (NetworkUnmetered.isWifiOrEthernet(context)) {
                                     "Long trip on — unmetered; awaiting trip"
                                 } else {
                                     "Long trip on — waiting for Wi-Fi/Ethernet"

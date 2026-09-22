@@ -1076,6 +1076,14 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
 // For large crates we prevent `MethodTooLargeException` (see #2340)
 // N.B. the name of the extension is very misleading, since it is 
 // rather `InterfaceTooLargeException`, caused by too many methods 
@@ -1252,6 +1260,14 @@ fun uniffi_navi_checksum_func_load_truck_rest_settings(
 fun uniffi_navi_checksum_func_load_use_networked_cabins(
 ): Short
 fun uniffi_navi_checksum_func_load_vehicle_limits(
+): Short
+fun uniffi_navi_checksum_func_long_trip_ordered_regions_json(
+): Short
+fun uniffi_navi_checksum_func_long_trip_ors_default_base_url(
+): Short
+fun uniffi_navi_checksum_func_long_trip_ors_disclosure(
+): Short
+fun uniffi_navi_checksum_func_long_trip_ors_request_body_json(
 ): Short
 fun uniffi_navi_checksum_func_named_buildings_in_bbox(
 ): Short
@@ -1683,6 +1699,14 @@ fun uniffi_navi_fn_func_load_truck_rest_settings(`dataDir`: RustBuffer.ByValue,u
 fun uniffi_navi_fn_func_load_use_networked_cabins(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 fun uniffi_navi_fn_func_load_vehicle_limits(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_long_trip_ordered_regions_json(`waypointsLatLonJson`: RustBuffer.ByValue,`installedRegionIdsJson`: RustBuffer.ByValue,`countryIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_long_trip_ors_default_base_url(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_long_trip_ors_disclosure(uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+fun uniffi_navi_fn_func_long_trip_ors_request_body_json(`waypointsLatLonJson`: RustBuffer.ByValue,`allowedCountriesJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 fun uniffi_navi_fn_func_named_buildings_in_bbox(`indexDbPath`: RustBuffer.ByValue,`minLat`: Double,`minLon`: Double,`maxLat`: Double,`maxLon`: Double,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -2235,6 +2259,18 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_load_vehicle_limits() != 31229.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_long_trip_ordered_regions_json() != 33647.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_long_trip_ors_default_base_url() != 13962.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_long_trip_ors_disclosure() != 22831.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_navi_checksum_func_long_trip_ors_request_body_json() != 26941.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_navi_checksum_func_named_buildings_in_bbox() != 25500.toShort()) {
@@ -3301,7 +3337,11 @@ data class CorridorRouteResult (
      */
     var `searchExpansions`: kotlin.ULong, 
     /**
-     * `found` / `disconnected` / `bbox_exhausted` / `cancelled` / `snap_failed` / `ok`.
+     * `found` / `disconnected` / `bbox_exhausted` / `cancelled` / `snap_failed` /
+     * `outside_countries` / `missing_regions` / `ok`.
+     *
+     * Long-trip typed failures use these tokens (smallest FFI option — no new
+     * UniFFI fields). Details stay in [`Self::report`].
      */
     var `searchTerminateReason`: kotlin.String, 
     /**
@@ -6075,6 +6115,59 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_navi_fn_func_load_vehicle_limits(
         FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Default adjacency-graph corridor: ordered catalog regions for waypoints.
+         *
+         * `waypoints_lat_lon_json` is `[[lat,lon],…]`. `installed_region_ids_json` is a
+         * JSON string array. `country_iso` is an optional ISO alpha-2 filter (e.g. `"no"`).
+         * On success returns `{"ok":true,"regions":[…]}`; on missing corridor
+         * `{"ok":false,"error":…}`.
+         */ fun `longTripOrderedRegionsJson`(`waypointsLatLonJson`: kotlin.String, `installedRegionIdsJson`: kotlin.String, `countryIso`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_long_trip_ordered_regions_json(
+        FfiConverterString.lower(`waypointsLatLonJson`),FfiConverterString.lower(`installedRegionIdsJson`),FfiConverterOptionalString.lower(`countryIso`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Default ORS HTTP base (no trailing slash). Overridable via user setting.
+         */ fun `longTripOrsDefaultBaseUrl`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_long_trip_ors_default_base_url(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Long-trip preliminary-route privacy disclosure for the settings UI.
+         */ fun `longTripOrsDisclosure`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_long_trip_ors_disclosure(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Build ORS directions JSON body for diagnostics (never includes the API key).
+         */ fun `longTripOrsRequestBodyJson`(`waypointsLatLonJson`: kotlin.String, `allowedCountriesJson`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_navi_fn_func_long_trip_ors_request_body_json(
+        FfiConverterString.lower(`waypointsLatLonJson`),FfiConverterOptionalString.lower(`allowedCountriesJson`),_status)
 }
     )
     }

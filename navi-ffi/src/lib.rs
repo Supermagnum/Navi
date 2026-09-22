@@ -7940,6 +7940,31 @@ pub fn long_trip_ors_request_body_json(
     }
 }
 
+/// Default adjacency-graph corridor: ordered catalog regions for waypoints.
+///
+/// `waypoints_lat_lon_json` is `[[lat,lon],…]`. `installed_region_ids_json` is a
+/// JSON string array. `country_iso` is an optional ISO alpha-2 filter (e.g. `"no"`).
+/// On success returns `{"ok":true,"regions":[…]}`; on missing corridor
+/// `{"ok":false,"error":…}`.
+#[uniffi::export]
+pub fn long_trip_ordered_regions_json(
+    waypoints_lat_lon_json: String,
+    installed_region_ids_json: String,
+    country_iso: Option<String>,
+) -> String {
+    let wps: Vec<(f64, f64)> = serde_json::from_str(&waypoints_lat_lon_json).unwrap_or_default();
+    let installed: Vec<String> =
+        serde_json::from_str(&installed_region_ids_json).unwrap_or_default();
+    let iso = country_iso
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    match driver_break_core::long_trip::ordered_needed_regions_for_trip(&wps, &installed, iso) {
+        Ok(regions) => serde_json::json!({ "ok": true, "regions": regions }).to_string(),
+        Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }).to_string(),
+    }
+}
+
 /// Server Situation cache TTL / client poll floor (seconds).
 #[uniffi::export]
 pub fn datex_server_poll_secs() -> u64 {

@@ -10,7 +10,15 @@ import android.net.NetworkCapabilities
  * Ordinary Tools region downloads must not call this — long-trip mode only.
  */
 object NetworkUnmetered {
+    /**
+     * Host-test override. When non-null, [isWifiOrEthernet] returns this value and
+     * never touches [Context] (so JVM unit tests can exercise the long-trip gate).
+     */
+    @Volatile
+    internal var forceForTests: Boolean? = null
+
     fun isWifiOrEthernet(context: Context): Boolean {
+        forceForTests?.let { return it }
         val cm =
             context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
                 ?: return false

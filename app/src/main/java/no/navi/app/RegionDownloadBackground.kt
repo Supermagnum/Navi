@@ -325,6 +325,72 @@ object RegionDownloadBackground {
      */
     private val lastUsablePath = AtomicReference("")
 
+    /**
+     * When set, pack/PBF writes go here while job/queue sidecars and place index
+     * stay on the [dataDir] passed to [ensureStarted] (internal [NaviAppData]).
+     */
+    private val packDirOverride = AtomicReference<File?>(null)
+
+    /** When true, [ensureStarted] refuses to drain unless Wi‑Fi/Ethernet. */
+    private val requireUnmeteredGate = AtomicBoolean(false)
+
+    fun interface PhaseListener {
+        fun onRegionPhase(
+            geofabrikPath: String,
+            phase: String,
+        )
+    }
+
+    private val phaseListeners = java.util.concurrent.CopyOnWriteArrayList<PhaseListener>()
+
+    fun addPhaseListener(listener: PhaseListener) {
+        phaseListeners.addIfAbsent(listener)
+    }
+
+    fun removePhaseListener(listener: PhaseListener) {
+        phaseListeners.remove(listener)
+    }
+
+    private fun emitPhase(
+        path: String,
+        phase: String,
+    ) {
+        for (l in phaseListeners) {
+            runCatching { l.onRegionPhase(path, phase) }
+        }
+    }
+
+    /** Host-test helper: fan-out a synthetic phase to [PhaseListener]s. */
+    internal fun emitPhaseForTests(
+        path: String,
+        phase: String,
+    ) {
+        emitPhase(path, phase)
+    }
+
+    /** Active pack write root (override or [dataDir]). */
+    internal fun packRoot(dataDir: File): File = packDirOverride.get() ?: dataDir
+
+    /**
+     * Cancel pending queue entries and clear the active job sidecar. Does **not**
+     * delete installed packs or place-index data (long-trip toggle OFF).
+     */
+    fun cancelPending(dataDir: File) {
+        mutex.tryLock().let { locked ->
+            try {
+                saveQueue(dataDir, emptyList())
+                clearJob(dataDir)
+                lastStatus.set("cancelled")
+                Log.i(TAG, "cancelPending cleared queue+job under ${dataDir.absolutePath}")
+            } finally {
+                if (locked) mutex.unlock()
+            }
+        }
+        // Best-effort if mutex busy (drain in flight): still wipe files.
+        saveQueue(dataDir, emptyList())
+        clearJob(dataDir)
+    }
+
     fun isRunning(): Boolean = running.get()
 
     fun isResuming(): Boolean = resuming.get()
@@ -754,7 +820,67 @@ object RegionDownloadBackground {
         startPhase: Phase = Phase.PACKS,
         userLat: Double? = null,
         userLon: Double? = null,
+        /** Long-trip pack directory; null → write packs into [dataDir]. */
+        packDir: File? = null,
+        /** When true, apply [NetworkUnmetered] at this real wiring point. */
+        requireUnmetered: Boolean = false,
     ) {
+        ensureStartedWithNetworkState(
+            context = context,
+            dataDir = dataDir,
+            url = url,
+            filename = filename,
+            geofabrikPath = geofabrikPath,
+            startPhase = startPhase,
+            userLat = userLat,
+            userLon = userLon,
+            packDir = packDir,
+            requireUnmetered = requireUnmetered,
+            unmeteredNow = NetworkUnmetered.isWifiOrEthernet(context),
+        )
+    }
+
+    /**
+     * Same as [ensureStarted] but with an explicit unmetered reading so host tests
+     * can prove the Wi‑Fi/Ethernet gate at this wiring point without a live radio.
+     */
+    internal fun ensureStartedWithNetworkState(
+        context: Context?,
+        dataDir: File,
+        url: String,
+        filename: String,
+        geofabrikPath: String,
+        startPhase: Phase = Phase.PACKS,
+        userLat: Double? = null,
+        userLon: Double? = null,
+        packDir: File? = null,
+        requireUnmetered: Boolean = false,
+        unmeteredNow: Boolean,
+    ) {
+        requireUnmeteredGate.set(requireUnmetered)
+        packDirOverride.set(packDir)
+        if (requireUnmetered && !unmeteredNow) {
+            Log.i(TAG, "long-trip gate: not on Wi-Fi/Ethernet; pause enqueue of $geofabrikPath")
+            lastStatus.set("Paused — waiting for Wi-Fi/Ethernet")
+            emitPhase(GeofabrikDownloadCatalog.canonicalizePath(geofabrikPath), "paused_unmetered")
+            // Still record the job on the queue so remount/unmetered resume can drain.
+            val path = GeofabrikDownloadCatalog.canonicalizePath(geofabrikPath)
+            val job =
+                Job(
+                    url = url,
+                    filename = filename,
+                    geofabrikPath = path,
+                    phase = startPhase,
+                )
+            // Synchronous queue write (no claim) so Tools behaviour is unchanged when
+            // requireUnmetered=false; long-trip can resume later via ensureStartedFromPending.
+            runCatching {
+                kotlinx.coroutines.runBlocking {
+                    mutex.withLock { enqueueJobLocked(dataDir, job, userLat, userLon) }
+                }
+            }
+            return
+        }
         val startDrain = claimWorker()
         scope.launch {
             val path = GeofabrikDownloadCatalog.canonicalizePath(geofabrikPath)
@@ -771,18 +897,32 @@ object RegionDownloadBackground {
                 }
                 Log.i(TAG, "queued behind active download path=$path")
                 lastStatus.set(queueStatusLine(dataDir, path))
+                emitPhase(path, "queued")
                 return@launch
             }
             try {
                 mutex.withLock {
                     enqueueJobLocked(dataDir, job, userLat, userLon)
                 }
-                drainQueue(context, dataDir)
+                // Production drain needs a Context; host gate/queue tests never reach here
+                // with a null context (they pause or only enqueue behind an active claim).
+                val ctx =
+                    context
+                        ?: run {
+                            Log.e(TAG, "ensureStarted drain skipped: null Context")
+                            return@launch
+                        }
+                drainQueue(ctx, dataDir)
             } finally {
+                packDirOverride.set(null)
+                requireUnmeteredGate.set(false)
                 releaseWorker()
             }
         }
     }
+
+    /** True when the long-trip unmetered gate is armed on the active worker. */
+    internal fun requireUnmeteredGateArmed(): Boolean = requireUnmeteredGate.get()
 
     private fun queueStatusLine(
         dataDir: File,
@@ -957,6 +1097,11 @@ object RegionDownloadBackground {
         dataDir: File,
     ) {
         while (true) {
+            if (requireUnmeteredGate.get() && !NetworkUnmetered.isWifiOrEthernet(context)) {
+                lastStatus.set("Paused — waiting for Wi-Fi/Ethernet")
+                Log.i(TAG, "drainQueue paused: unmetered gate")
+                break
+            }
             val next =
                 mutex.withLock {
                     popQueue(dataDir)
@@ -981,7 +1126,8 @@ object RegionDownloadBackground {
         val filename = incoming.filename
         val geofabrikPath = incoming.geofabrikPath.trim().trim('/')
         var startPhase = incoming.phase
-        val already = partialBytes(dataDir, filename)
+        val packs = packRoot(dataDir)
+        val already = partialBytes(packs, filename)
         resuming.set(already > 0L || startPhase != Phase.PACKS)
         writeJob(dataDir, incoming)
         // In-progress download must not leave searchable place rows for this region.
@@ -997,17 +1143,26 @@ object RegionDownloadBackground {
                 },
             )
         }
+        emitPhase(geofabrikPath, "downloading")
         Log.i(
             TAG,
             "start provision filename=$filename resume_bytes=$already " +
-                "path=$geofabrikPath phase=$startPhase",
+                "path=$geofabrikPath phase=$startPhase packRoot=${packs.absolutePath}",
         )
+        LongTripPackStorage.beginPackWrite(packs)
         try {
-            runOneRegionPipeline(context, dataDir, url, filename, geofabrikPath, startPhase)
+            runOneRegionPipeline(context, dataDir, packs, url, filename, geofabrikPath, startPhase)
         } catch (t: Throwable) {
             lastStatus.set("failed: ${t.message}")
             Log.e(TAG, "provisionRegionData crashed", t)
+            if (t is java.io.IOException || t.cause is java.io.IOException) {
+                val stems = LongTripPackStorage.handleWriteIoFailure(context, packs, t)
+                emitPhase(geofabrikPath, "unavailable:${stems.joinToString(",")}")
+            } else {
+                emitPhase(geofabrikPath, "failed")
+            }
         } finally {
+            LongTripPackStorage.endPackWrite(packs)
             clearJob(dataDir)
         }
     }
@@ -1015,6 +1170,7 @@ object RegionDownloadBackground {
     private fun runOneRegionPipeline(
         context: Context,
         dataDir: File,
+        packDir: File,
         url: String,
         filename: String,
         geofabrikPath: String,
@@ -1049,7 +1205,7 @@ object RegionDownloadBackground {
                     decideRegionAcquisition(
                         regionId = pathForDecision,
                         packServerBaseUrl = null,
-                        dataDir = dataDir.absolutePath,
+                        dataDir = packDir.absolutePath,
                     )
                 }.getOrElse { t ->
                     Log.i(
@@ -1079,7 +1235,7 @@ object RegionDownloadBackground {
                     lastStatus.set("Installing packs from ${decision.dataSource}…")
                     runCatching {
                         bindGeofabrikRegion(
-                            dataDir = dataDir.absolutePath,
+                            dataDir = packDir.absolutePath,
                             geofabrikRegion = pathForDecision,
                             pbfFilename = filename,
                             localSequence = null,
@@ -1093,7 +1249,7 @@ object RegionDownloadBackground {
                     val pbfT0 = phaseStart("pipeline.provision_pbf_dem")
                     val pbfReport =
                         provisionRegionData(
-                            dataDir = dataDir.absolutePath,
+                            dataDir = packDir.absolutePath,
                             pbfUrl = url,
                             pbfFilename = filename,
                             elevationTarUrl = null,
@@ -1127,7 +1283,7 @@ object RegionDownloadBackground {
                     phase = Phase.PLACE_INDEX
                     persistPhase(dataDir, url, filename, pathForDecision, phase)
                     val placeT0 = phaseStart("pipeline.place_index")
-                    val placeOk = runPlaceIndexLocal(dataDir, filename, pathForDecision)
+                    val placeOk = runPlaceIndexLocal(dataDir, packDir, filename, pathForDecision)
                     phaseEnd(
                         "pipeline.place_index",
                         placeT0,
@@ -1172,19 +1328,19 @@ object RegionDownloadBackground {
             if (phase == Phase.PLACE_INDEX) {
                 persistPhase(dataDir, url, filename, pathForDecision, Phase.PLACE_INDEX)
                 val ok =
-                    if (PackRegionAvailability.localBakeReady(dataDir, pathForDecision) &&
+                    if (PackRegionAvailability.localBakeReady(packDir, pathForDecision) &&
                         pathForDecision.isNotBlank() &&
-                        File(dataDir, filename).length() >= MIN_PBF_BYTES
+                        File(packDir, filename).length() >= MIN_PBF_BYTES
                     ) {
-                        runPlaceIndexLocal(dataDir, filename, pathForDecision)
-                    } else if (PackRegionAvailability.localBakeReady(dataDir, pathForDecision) &&
+                        runPlaceIndexLocal(dataDir, packDir, filename, pathForDecision)
+                    } else if (PackRegionAvailability.localBakeReady(packDir, pathForDecision) &&
                         pathForDecision.isNotBlank()
                     ) {
                         // Packs present but extract missing — fetch then index.
                         lastStatus.set("Downloading extract for place index…")
                         val pbfReport =
                             provisionRegionData(
-                                dataDir = dataDir.absolutePath,
+                                dataDir = packDir.absolutePath,
                                 pbfUrl = url,
                                 pbfFilename = filename,
                                 elevationTarUrl = null,
@@ -1194,9 +1350,9 @@ object RegionDownloadBackground {
                             lastCompletedPath.set(pathForDecision)
                             return
                         }
-                        runPlaceIndexLocal(dataDir, filename, pathForDecision)
+                        runPlaceIndexLocal(dataDir, packDir, filename, pathForDecision)
                     } else {
-                        runPlaceIndexLocal(dataDir, filename, pathForDecision)
+                        runPlaceIndexLocal(dataDir, packDir, filename, pathForDecision)
                     }
                 if (!ok) {
                     lastStatus.set("done (place index failed)")
@@ -1206,10 +1362,10 @@ object RegionDownloadBackground {
                 PlaceIndexReady.markReady(dataDir, pathForDecision)
                 markUsable(pathForDecision)
                 // Local-bake resume: place index is done; convert is non-blocking.
-                val resumePbf = File(dataDir, filename)
+                val resumePbf = File(packDir, filename)
                 if (resumePbf.isFile &&
                     resumePbf.length() >= MIN_PBF_BYTES &&
-                    PackRegionAvailability.localBakeReady(dataDir, pathForDecision)
+                    PackRegionAvailability.localBakeReady(packDir, pathForDecision)
                 ) {
                     val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
                     IndexedMapsBackground.ensureStarted(
@@ -1236,7 +1392,7 @@ object RegionDownloadBackground {
         persistPhase(dataDir, url, filename, pathForDecision, Phase.PACKS)
         val report =
             provisionRegionData(
-                dataDir = dataDir.absolutePath,
+                dataDir = packDir.absolutePath,
                 pbfUrl = url,
                 pbfFilename = filename,
                 elevationTarUrl = null,
@@ -1247,7 +1403,7 @@ object RegionDownloadBackground {
                 MapHudPrefs.saveGeofabrikPath(context, geofabrikPath)
                 runCatching {
                     bindGeofabrikRegion(
-                        dataDir = dataDir.absolutePath,
+                        dataDir = packDir.absolutePath,
                         geofabrikRegion = geofabrikPath,
                         pbfFilename = filename,
                         localSequence = null,
@@ -1264,12 +1420,12 @@ object RegionDownloadBackground {
                     return
                 }
             }
-            val pbf = File(dataDir, filename)
+            val pbf = File(packDir, filename)
             if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
                 // Place index only needs the OSM extract — do not wait on a
                 // multi-hour local convert (same readiness as pack-server path).
                 persistPhase(dataDir, url, filename, basemapPath, Phase.PLACE_INDEX)
-                if (!runPlaceIndexLocal(dataDir, filename, basemapPath)) {
+                if (!runPlaceIndexLocal(dataDir, packDir, filename, basemapPath)) {
                     lastStatus.set("done (place index failed)")
                     lastCompletedPath.set(basemapPath)
                     return
@@ -1327,11 +1483,12 @@ object RegionDownloadBackground {
     }
 
     private fun runPlaceIndexLocal(
-        dataDir: File,
+        indexDataDir: File,
+        pbfDir: File,
         filename: String,
         regionId: String,
     ): Boolean {
-        val pbf = File(dataDir, filename)
+        val pbf = File(pbfDir, filename)
         if (!pbf.isFile || pbf.length() < MIN_PBF_BYTES) return false
         val rid = regionId.trim().trim('/')
         if (rid.isEmpty() || !GeofabrikDownloadCatalog.isKnownPackRegionId(rid)) {
@@ -1355,14 +1512,16 @@ object RegionDownloadBackground {
             lastStatus.set("failed (pbf/region mismatch)")
             return false
         }
+        emitPhase(rid, "indexing")
         lastStatus.set("Place index: starting… 0% (0 / 6)")
         // Native `ensure_place_index` single-flights discard/open/load so a
-        // concurrent PlaceIndexBackground caller waits then cache-hits.
+        // concurrent PlaceIndexBackground caller waits then cache-hits
+        // (PLACE_INDEX_BUILD_LOCK in core).
         val placeReport =
             runCatching {
                 ensurePlaceIndex(
                     pbf.absolutePath,
-                    File(dataDir, "place_index.db").absolutePath,
+                    File(indexDataDir, "place_index.db").absolutePath,
                     rid,
                 )
             }.getOrElse { t ->
@@ -1372,6 +1531,7 @@ object RegionDownloadBackground {
         Log.i(TAG, "local-bake place index: ${placeReport.take(400)}")
         if (placeReport.contains("PASS")) {
             lastStatus.set("Place index ready 100% (6 / 6)")
+            emitPhase(rid, "indexed")
         }
         return placeReport.contains("PASS")
     }
