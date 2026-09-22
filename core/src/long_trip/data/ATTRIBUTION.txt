@@ -1,0 +1,17 @@
+Region adjacency boundaries
+===========================
+
+Geofabrik download index polygons (index-v1.json):
+  https://download.geofabrik.de/
+  OpenStreetMap data, ODbL.
+
+Natural Earth Admin-1 (1:10m), Sweden only:
+  Public Domain (CC0 1.0) — Natural Earth.
+  Free vector and raster map data @ naturalearthdata.com.
+
+Manual stub / legacy edge:
+  europe/norway/hedmark — catalog legacy rectangle + edge to ostlandet;
+  not derived from Geofabrik or Natural Earth.
+
+Generated: 2026-09-22T00:10:44Z
+Asset sha256: 7d4d0fe9646126f5463209a49d934d45781eea92cec3a75a31408e4ba9bc5fde
