@@ -465,7 +465,11 @@ pub struct CorridorRouteResult {
     pub pad_attempts_json: String,
     /// A* node expansions on the last search attempt (0 when not run).
     pub search_expansions: u64,
-    /// `found` / `disconnected` / `bbox_exhausted` / `cancelled` / `snap_failed` / `ok`.
+    /// `found` / `disconnected` / `bbox_exhausted` / `cancelled` / `snap_failed` /
+    /// `outside_countries` / `missing_regions` / `ok`.
+    ///
+    /// Long-trip typed failures use these tokens (smallest FFI option — no new
+    /// UniFFI fields). Details stay in [`Self::report`].
     pub search_terminate_reason: String,
     /// True when NeverUse could not find a free path and a toll-using route was returned.
     pub toll_avoidance_incomplete: bool,
@@ -2220,6 +2224,7 @@ fn plan_car_route_inner(
         vehicle: vehicle_limits.clone(),
         departure_local,
         datex_impacts,
+        allowed_countries: None,
     };
 
     let mut report = String::new();
@@ -5520,6 +5525,7 @@ pub fn format_route_avoidance_report(
         vehicle: None,
         departure_local: None,
         datex_impacts: Vec::new(),
+        allowed_countries: None,
     };
     driver_break_core::format_route_avoidance_report(&opts, 0, priority_path_share_pct)
 }
@@ -7903,6 +7909,60 @@ pub fn datex_settings_default_port() -> u32 {
 #[uniffi::export]
 pub fn datex_wifi_only_default() -> bool {
     driver_break_core::datex::DATEX_WIFI_ONLY_DEFAULT
+}
+
+/// Long-trip preliminary-route privacy disclosure for the settings UI.
+#[uniffi::export]
+pub fn long_trip_ors_disclosure() -> String {
+    driver_break_core::long_trip::PRELIMINARY_ROUTE_DISCLOSURE.to_string()
+}
+
+/// Default ORS HTTP base (no trailing slash). Overridable via user setting.
+#[uniffi::export]
+pub fn long_trip_ors_default_base_url() -> String {
+    driver_break_core::long_trip::DEFAULT_ORS_BASE_URL.to_string()
+}
+
+/// Build ORS directions JSON body for diagnostics (never includes the API key).
+#[uniffi::export]
+pub fn long_trip_ors_request_body_json(
+    waypoints_lat_lon_json: String,
+    allowed_countries_json: Option<String>,
+) -> String {
+    let pts: Vec<(f64, f64)> = serde_json::from_str(&waypoints_lat_lon_json).unwrap_or_default();
+    let coords: Vec<[f64; 2]> = pts.iter().map(|&(lat, lon)| [lon, lat]).collect();
+    let allowed: Option<Vec<String>> = allowed_countries_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
+    match driver_break_core::long_trip::build_directions_request_body(&coords, allowed.as_deref()) {
+        Ok(v) => v.to_string(),
+        Err(e) => serde_json::json!({ "error": e.to_string() }).to_string(),
+    }
+}
+
+/// Default adjacency-graph corridor: ordered catalog regions for waypoints.
+///
+/// `waypoints_lat_lon_json` is `[[lat,lon],…]`. `installed_region_ids_json` is a
+/// JSON string array. `country_iso` is an optional ISO alpha-2 filter (e.g. `"no"`).
+/// On success returns `{"ok":true,"regions":[…]}`; on missing corridor
+/// `{"ok":false,"error":…}`.
+#[uniffi::export]
+pub fn long_trip_ordered_regions_json(
+    waypoints_lat_lon_json: String,
+    installed_region_ids_json: String,
+    country_iso: Option<String>,
+) -> String {
+    let wps: Vec<(f64, f64)> = serde_json::from_str(&waypoints_lat_lon_json).unwrap_or_default();
+    let installed: Vec<String> =
+        serde_json::from_str(&installed_region_ids_json).unwrap_or_default();
+    let iso = country_iso
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    match driver_break_core::long_trip::ordered_needed_regions_for_trip(&wps, &installed, iso) {
+        Ok(regions) => serde_json::json!({ "ok": true, "regions": regions }).to_string(),
+        Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }).to_string(),
+    }
 }
 
 /// Server Situation cache TTL / client poll floor (seconds).

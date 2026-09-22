@@ -43,6 +43,7 @@ import uniffi.navi.FfiCarRestSettings
 import uniffi.navi.FfiEbikeConfig
 import uniffi.navi.FfiEvCarConfig
 import uniffi.navi.FfiFuelConfig
+import uniffi.navi.longTripOrsDisclosure
 import uniffi.navi.FfiIconTheme
 import uniffi.navi.FfiProfilePoiRadii
 import uniffi.navi.FfiTruckRestSettings
@@ -377,6 +378,12 @@ fun PluginSettingsSection(
     datexWifiOnly: Boolean = MapHudPrefs.DATEX_WIFI_ONLY_DEFAULT,
     onDatexWifiOnlyChange: (Boolean) -> Unit = {},
     datexStatusLine: String = "",
+    longTripEnabled: Boolean = false,
+    onLongTripChange: (Boolean) -> Unit = {},
+    longTripStatusLine: String = "",
+    longTripPackVolumeId: String = NaviStorageVolumes.INTERNAL_ID,
+    longTripPackVolumes: List<NaviStorageVolumes.Volume> = emptyList(),
+    onLongTripPackVolumeChange: (String) -> Unit = {},
     poiLookaheadEnabled: Boolean = false,
     onPoiLookaheadChange: (Boolean) -> Unit = {},
     poiLookaheadStrictHoursUnknown: Boolean = false,
@@ -484,6 +491,81 @@ fun PluginSettingsSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
+            Text("Long trip")
+            Switch(
+                checked = longTripEnabled,
+                onCheckedChange = onLongTripChange,
+                modifier = Modifier.testTag("toggle_long_trip"),
+            )
+        }
+        if (longTripEnabled) {
+            Text(
+                "Downloads map packs along the route on Wi-Fi/Ethernet only. " +
+                    "Place index and Tools downloads stay on internal storage.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                runCatching { longTripOrsDisclosure() }.getOrElse {
+                    "Long-trip mode may send origin, vias and destination to " +
+                        "BRouter and/or OpenRouteService when online."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("long_trip_ors_disclosure"),
+            )
+            if (longTripStatusLine.isNotBlank()) {
+                Text(
+                    longTripStatusLine,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("long_trip_status_line"),
+                )
+            }
+            Text(
+                "Store long-trip packs on",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("long_trip_pack_volume_label"),
+            )
+            val options =
+                longTripPackVolumes.ifEmpty {
+                    listOf(
+                        NaviStorageVolumes.Volume(
+                            id = NaviStorageVolumes.INTERNAL_ID,
+                            label = "Internal storage",
+                            removable = false,
+                            mounted = true,
+                            freeBytes = 0L,
+                            totalBytes = 0L,
+                            appFilesDir = null,
+                        ),
+                    )
+                }
+            for (vol in options) {
+                val selected = vol.id == longTripPackVolumeId
+                val freeLabel =
+                    if (vol.mounted && vol.freeBytes > 0L) {
+                        " — ${formatBytesShort(vol.freeBytes)} free"
+                    } else if (!vol.mounted) {
+                        " — not mounted"
+                    } else {
+                        ""
+                    }
+                val mark = if (selected) "● " else "○ "
+                Text(
+                    mark + vol.label + freeLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = vol.mounted || vol.id == NaviStorageVolumes.INTERNAL_ID) {
+                                onLongTripPackVolumeChange(vol.id)
+                            }.testTag("long_trip_pack_volume_${vol.id}"),
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
             Text("Nearby attractions")
             Switch(
                 checked = poiLookaheadEnabled,
@@ -509,6 +591,21 @@ fun PluginSettingsSection(
                 )
             }
         }
+    }
+}
+
+/** Compact free-space label for the long-trip volume picker. */
+internal fun formatBytesShort(bytes: Long): String {
+    if (bytes < 1024L) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024.0) return String.format(java.util.Locale.US, "%.0f KB", kb)
+    val mb = kb / 1024.0
+    if (mb < 1024.0) return String.format(java.util.Locale.US, "%.0f MB", mb)
+    val gb = mb / 1024.0
+    return if (gb < 1024.0) {
+        String.format(java.util.Locale.US, "%.1f GB", gb)
+    } else {
+        String.format(java.util.Locale.US, "%.1f TB", gb / 1024.0)
     }
 }
 
@@ -543,6 +640,12 @@ fun MapSettingsSheet(
     datexWifiOnly: Boolean = MapHudPrefs.DATEX_WIFI_ONLY_DEFAULT,
     onDatexWifiOnlyChange: (Boolean) -> Unit = {},
     datexStatusLine: String = "",
+    longTripEnabled: Boolean = false,
+    onLongTripChange: (Boolean) -> Unit = {},
+    longTripStatusLine: String = "",
+    longTripPackVolumeId: String = NaviStorageVolumes.INTERNAL_ID,
+    longTripPackVolumes: List<NaviStorageVolumes.Volume> = emptyList(),
+    onLongTripPackVolumeChange: (String) -> Unit = {},
     poiLookaheadEnabled: Boolean = false,
     onPoiLookaheadChange: (Boolean) -> Unit = {},
     poiLookaheadStrictHoursUnknown: Boolean = false,
@@ -765,6 +868,12 @@ fun MapSettingsSheet(
                 datexWifiOnly = datexWifiOnly,
                 onDatexWifiOnlyChange = onDatexWifiOnlyChange,
                 datexStatusLine = datexStatusLine,
+                longTripEnabled = longTripEnabled,
+                onLongTripChange = onLongTripChange,
+                longTripStatusLine = longTripStatusLine,
+                longTripPackVolumeId = longTripPackVolumeId,
+                longTripPackVolumes = longTripPackVolumes,
+                onLongTripPackVolumeChange = onLongTripPackVolumeChange,
                 poiLookaheadEnabled = poiLookaheadEnabled,
                 onPoiLookaheadChange = onPoiLookaheadChange,
                 poiLookaheadStrictHoursUnknown = poiLookaheadStrictHoursUnknown,

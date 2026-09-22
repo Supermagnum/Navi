@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "extra": {
+      "car_profiles_offered": [
+        "car-eco",
+        "car-fast"
+      ],
+      "profile": "car-eco",
+      "trip_id": "us_b_redball_crescent"
+    },
+    "http_method": "GET",
+    "http_status": 403,
+    "navi_fixture": "recorded",
+    "provider_base_url": "https://brouter.de",
+    "recorded_utc": "2026-09-19T22:18:15Z",
+    "request_body": null,
+    "request_url": "https://brouter.de/brouter?lonlats=-73.9803488,40.7439301|-124.198702,41.76106&profile=car-eco&alternativeidx=0&format=geojson",
+    "response_bytes": 20,
+    "user_agent": "NaviRouterProbe/0.1 (https://github.com/navigate-me/Navi; long-trip preliminary route probe)",
+    "wall_time_ms": 107
+  },
+  "navi_fixture": "recorded",
+  "response_body": "Please, retry later!"
+}

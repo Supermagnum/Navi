@@ -1,0 +1,79 @@
+{
+  "format": "NAVIRADJ",
+  "format_version": 1,
+  "coord_scale": 10000000,
+  "generated_utc": "2026-09-22T00:10:44Z",
+  "sha256": "7d4d0fe9646126f5463209a49d934d45781eea92cec3a75a31408e4ba9bc5fde",
+  "bytes": 265250,
+  "n_regions": 117,
+  "n_edges": 232,
+  "n_named_links": 2,
+  "sources": {
+    "geofabrik": {
+      "url": "https://download.geofabrik.de/index-v1.json",
+      "n_regions": 95
+    },
+    "natural_earth_admin1_sweden": {
+      "url": "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_1_states_provinces.zip",
+      "version_hint": "5.1.1",
+      "n_regions": 21
+    },
+    "manual_stub": {
+      "regions": [
+        "europe/norway/hedmark"
+      ],
+      "note": "legacy catalog pack; rectangle stub, not GF/NE"
+    }
+  },
+  "named_links": [
+    {
+      "a": "europe/denmark",
+      "b": "europe/sweden/skane",
+      "note": "Oresund Bridge / Drogden Tunnel",
+      "kind": 1
+    },
+    {
+      "a": "europe/norway/hedmark",
+      "b": "europe/norway/ostlandet",
+      "note": "manual, catalog legacy, no Geofabrik/NE match",
+      "kind": 2
+    }
+  ],
+  "denied_edges": [
+    {
+      "a": "europe/germany/mecklenburg-vorpommern",
+      "b": "europe/denmark",
+      "note": "Fehmarnbelt: tunnel not open; Geofabrik extract polys intersect across water"
+    }
+  ],
+  "isolates": [
+    "europe/norway/svalbard-janmayen",
+    "europe/sweden/gotland",
+    "north-america/us-midwest",
+    "north-america/us-northeast",
+    "north-america/us-pacific",
+    "north-america/us-south",
+    "north-america/us-west",
+    "north-america/us/alaska",
+    "north-america/us/hawaii",
+    "north-america/us/puerto-rico",
+    "north-america/us/us-virgin-islands"
+  ],
+  "force_isolate": [
+    "europe/norway/svalbard-janmayen",
+    "europe/sweden/gotland",
+    "north-america/us/alaska",
+    "north-america/us/hawaii",
+    "north-america/us/puerto-rico",
+    "north-america/us/us-virgin-islands"
+  ],
+  "corridor_graph_exclude": [
+    "north-america/us-midwest",
+    "north-america/us-northeast",
+    "north-america/us-pacific",
+    "north-america/us-south",
+    "north-america/us-west"
+  ],
+  "touch_tolerance_m": 1500.0,
+  "catalog": "/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi/core/tests/fixtures/long_trip/current.json"
+}

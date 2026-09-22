@@ -560,16 +560,9 @@ private fun userFacingStatus(raw: String): String {
     return t.take(120)
 }
 
-private fun datexIsOnWifi(context: android.content.Context): Boolean {
-    val cm =
-        context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
-            as? android.net.ConnectivityManager
-            ?: return false
-    val network = cm.activeNetwork ?: return false
-    val caps = cm.getNetworkCapabilities(network) ?: return false
-    return caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) ||
-        caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)
-}
+private fun datexIsOnWifi(context: android.content.Context): Boolean =
+    NetworkUnmetered.isWifiOrEthernet(context)
+
 
 private fun datexStatusLineForHud(
     enabled: Boolean,
@@ -725,6 +718,16 @@ private fun NaviMapScreen() {
     }
     var datexHud by remember { mutableStateOf(DatexHudState()) }
     var datexEpoch by remember { mutableIntStateOf(0) }
+    var longTripEnabled by remember {
+        mutableStateOf(MapHudPrefs.loadLongTripEnabled(context))
+    }
+    var longTripStatusLine by remember { mutableStateOf("") }
+    var longTripPackVolumeId by remember {
+        mutableStateOf(MapHudPrefs.loadLongTripPackVolumeId(context))
+    }
+    var longTripPackVolumes by remember {
+        mutableStateOf(NaviStorageVolumes.listPickerOptions(context))
+    }
     var poiLookaheadEnabled by remember {
         mutableStateOf(MapHudPrefs.loadPoiLookaheadEnabled(context))
     }
@@ -736,6 +739,29 @@ private fun NaviMapScreen() {
     }
     var poiLookaheadHud by remember { mutableStateOf(PoiLookaheadHudState()) }
     var hideChrome by remember { mutableStateOf(false) }
+
+    DisposableEffect(longTripEnabled) {
+        if (longTripEnabled) {
+            longTripPackVolumes = NaviStorageVolumes.listPickerOptions(context)
+            LongTripPackStorage.ensureWatching(
+                context,
+                onUnavailable = { volumeId, stems ->
+                    longTripPackVolumes = NaviStorageVolumes.listPickerOptions(context)
+                    // Scrub stems → RegionTripState.Unavailable on the live plan.
+                    longTripStatusLine =
+                        LongTripCoordinator.onVolumeUnavailable(volumeId, stems)
+                },
+                onMounted = { volumeId ->
+                    longTripPackVolumes = NaviStorageVolumes.listPickerOptions(context)
+                    longTripStatusLine = "Storage remounted ($volumeId) — ready to resume"
+                },
+            )
+        } else {
+            LongTripPackStorage.stopWatching()
+        }
+        onDispose { LongTripPackStorage.stopWatching() }
+    }
+
     var hideSearch by remember { mutableStateOf(false) }
     var regionDownloadProgress by remember { mutableStateOf("") }
     var downloadPolling by remember { mutableStateOf(false) }
@@ -6079,6 +6105,50 @@ private fun NaviMapScreen() {
                                 datexEpoch += 1
                             },
                             datexStatusLine = datexStatusLineForHud(datexPluginEnabled, datexHud),
+                            longTripEnabled = longTripEnabled,
+                            onLongTripChange = { on ->
+                                longTripEnabled = on
+                                MapHudPrefs.saveLongTripEnabled(context, on)
+                                if (!on) {
+                                    longTripStatusLine = LongTripCoordinator.disable(context)
+                                } else {
+                                    longTripPackVolumes = NaviStorageVolumes.listPickerOptions(context)
+                                    val wps =
+                                        buildList {
+                                            if (mapState.gpsLat != 0.0 || mapState.gpsLon != 0.0) {
+                                                add(mapState.gpsLat to mapState.gpsLon)
+                                            } else if (mapState.startLat != 0.0 || mapState.startLon != 0.0) {
+                                                add(mapState.startLat to mapState.startLon)
+                                            }
+                                            for (v in viaPoints) {
+                                                if (v.lat != 0.0 || v.lon != 0.0) {
+                                                    add(v.lat to v.lon)
+                                                }
+                                            }
+                                            if (mapState.endLat != 0.0 || mapState.endLon != 0.0) {
+                                                add(mapState.endLat to mapState.endLon)
+                                            }
+                                        }
+                                    longTripStatusLine =
+                                        if (wps.size >= 2) {
+                                            LongTripCoordinator.enable(context, wps)
+                                        } else if (NetworkUnmetered.isWifiOrEthernet(context)) {
+                                            "Long trip on — unmetered; awaiting trip"
+                                        } else {
+                                            "Long trip on — waiting for Wi-Fi/Ethernet"
+                                        }
+                                }
+                            },
+                            longTripStatusLine = longTripStatusLine,
+                            longTripPackVolumeId = longTripPackVolumeId,
+                            longTripPackVolumes = longTripPackVolumes,
+                            onLongTripPackVolumeChange = { id ->
+                                longTripPackVolumeId = id
+                                MapHudPrefs.saveLongTripPackVolumeId(context, id)
+                                val vol = longTripPackVolumes.firstOrNull { it.id == id }
+                                longTripStatusLine =
+                                    "Long-trip packs → ${vol?.label ?: id}"
+                            },
                             poiLookaheadEnabled = poiLookaheadEnabled,
                             onPoiLookaheadChange = { on ->
                                 poiLookaheadEnabled = on
@@ -7116,6 +7186,50 @@ private fun NaviMapScreen() {
                         datexEpoch += 1
                     },
                     datexStatusLine = datexStatusLineForHud(datexPluginEnabled, datexHud),
+                    longTripEnabled = longTripEnabled,
+                    onLongTripChange = { on ->
+                        longTripEnabled = on
+                        MapHudPrefs.saveLongTripEnabled(context, on)
+                        if (!on) {
+                            longTripStatusLine = LongTripCoordinator.disable(context)
+                        } else {
+                            longTripPackVolumes = NaviStorageVolumes.listPickerOptions(context)
+                            val wps =
+                                buildList {
+                                    if (mapState.gpsLat != 0.0 || mapState.gpsLon != 0.0) {
+                                        add(mapState.gpsLat to mapState.gpsLon)
+                                    } else if (mapState.startLat != 0.0 || mapState.startLon != 0.0) {
+                                        add(mapState.startLat to mapState.startLon)
+                                    }
+                                    for (v in viaPoints) {
+                                        if (v.lat != 0.0 || v.lon != 0.0) {
+                                            add(v.lat to v.lon)
+                                        }
+                                    }
+                                    if (mapState.endLat != 0.0 || mapState.endLon != 0.0) {
+                                        add(mapState.endLat to mapState.endLon)
+                                    }
+                                }
+                            longTripStatusLine =
+                                if (wps.size >= 2) {
+                                    LongTripCoordinator.enable(context, wps)
+                                } else if (NetworkUnmetered.isWifiOrEthernet(context)) {
+                                    "Long trip on — unmetered; awaiting trip"
+                                } else {
+                                    "Long trip on — waiting for Wi-Fi/Ethernet"
+                                }
+                        }
+                    },
+                    longTripStatusLine = longTripStatusLine,
+                    longTripPackVolumeId = longTripPackVolumeId,
+                    longTripPackVolumes = longTripPackVolumes,
+                    onLongTripPackVolumeChange = { id ->
+                        longTripPackVolumeId = id
+                        MapHudPrefs.saveLongTripPackVolumeId(context, id)
+                        val vol = longTripPackVolumes.firstOrNull { it.id == id }
+                        longTripStatusLine =
+                            "Long-trip packs → ${vol?.label ?: id}"
+                    },
                     poiLookaheadEnabled = poiLookaheadEnabled,
                     onPoiLookaheadChange = { on ->
                         poiLookaheadEnabled = on

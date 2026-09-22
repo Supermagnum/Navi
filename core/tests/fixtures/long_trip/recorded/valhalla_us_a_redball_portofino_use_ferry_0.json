@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "extra": {
+      "costing_auto": {
+        "use_ferry": 0
+      },
+      "suffix": "use_ferry_0",
+      "trip_id": "us_a_redball_portofino",
+      "warnings": []
+    },
+    "http_method": "POST",
+    "http_status": 400,
+    "navi_fixture": "recorded",
+    "provider_base_url": "https://valhalla1.openstreetmap.de",
+    "recorded_utc": "2026-09-19T22:17:54Z",
+    "request_body": "{\"costing\":\"auto\",\"costing_options\":{\"auto\":{\"use_ferry\":0}},\"id\":\"navi-probe-us_a_redball_portofino\",\"locations\":[{\"lat\":40.7439301,\"lon\":-73.9803488,\"type\":\"break\"},{\"lat\":33.8450175,\"lon\":-118.3971954,\"type\":\"break\"}],\"units\":\"kilometers\"}",
+    "request_url": "https://valhalla1.openstreetmap.de/route",
+    "response_bytes": 130,
+    "user_agent": "NaviRouterProbe/0.1 (https://github.com/navigate-me/Navi; long-trip preliminary route probe)",
+    "wall_time_ms": 110
+  },
+  "navi_fixture": "recorded",
+  "response_body": "{\"error_code\":154,\"error\":\"Path distance exceeds the max distance limit: 1500000 meters\",\"status_code\":400,\"status\":\"Bad Request\"}"
+}

@@ -1,0 +1,74 @@
+{
+  "comment": "Test-only land/ferry corridors used when production cannot suggest regions along a route (no along-route API; graph incomplete until packs are installed).",
+  "destination": { "lat": 61.5929077, "lon": 10.3318551 },
+  "scenarios": [
+    {
+      "id": "all_road",
+      "label": "All road via Denmark/Sweden",
+      "waypoints": [
+        { "lat": 53.3340, "lon": 10.0450, "name": "Klecken" },
+        { "lat": 53.5510, "lon": 10.0000, "name": "Hamburg" },
+        { "lat": 54.7830, "lon": 9.4330, "name": "Flensburg" },
+        { "lat": 55.4900, "lon": 9.4700, "name": "Kolding" },
+        { "lat": 55.4000, "lon": 10.3900, "name": "Odense" },
+        { "lat": 55.3500, "lon": 11.1300, "name": "Great Belt" },
+        { "lat": 55.4100, "lon": 11.3800, "name": "Korsor" },
+        { "lat": 55.6760, "lon": 12.5680, "name": "Copenhagen" },
+        { "lat": 55.5700, "lon": 12.8500, "name": "Oresund" },
+        { "lat": 55.6050, "lon": 13.0000, "name": "Malmo" },
+        { "lat": 56.0500, "lon": 12.7000, "name": "Helsingborg" },
+        { "lat": 56.6700, "lon": 12.8600, "name": "Halmstad" },
+        { "lat": 57.7100, "lon": 11.9700, "name": "Goteborg" },
+        { "lat": 59.0900, "lon": 11.2500, "name": "Svinesund" },
+        { "lat": 59.9100, "lon": 10.7500, "name": "Oslo" },
+        { "lat": 61.5929077, "lon": 10.3318551, "name": "Destination" }
+      ]
+    },
+    {
+      "id": "kiel-oslo",
+      "label": "Kiel-Oslo ferry",
+      "ferry_id": "kiel-oslo",
+      "waypoints": [
+        { "lat": 53.3340, "lon": 10.0450, "name": "Klecken" },
+        { "lat": 53.5510, "lon": 10.0000, "name": "Hamburg" },
+        { "lat": 54.3180, "lon": 10.1350, "name": "Kiel" },
+        { "lat": 59.9044, "lon": 10.7410, "name": "Oslo ferry terminal" },
+        { "lat": 61.5929077, "lon": 10.3318551, "name": "Destination" }
+      ]
+    },
+    {
+      "id": "copenhagen-oslo",
+      "label": "Copenhagen-Oslo ferry",
+      "ferry_id": "copenhagen-oslo",
+      "waypoints": [
+        { "lat": 53.3340, "lon": 10.0450, "name": "Klecken" },
+        { "lat": 53.5510, "lon": 10.0000, "name": "Hamburg" },
+        { "lat": 54.7830, "lon": 9.4330, "name": "Flensburg" },
+        { "lat": 55.4900, "lon": 9.4700, "name": "Kolding" },
+        { "lat": 55.4000, "lon": 10.3900, "name": "Odense" },
+        { "lat": 55.3500, "lon": 11.1300, "name": "Great Belt" },
+        { "lat": 55.6760, "lon": 12.5680, "name": "Copenhagen" },
+        { "lat": 55.6945, "lon": 12.5935, "name": "Copenhagen ferry" },
+        { "lat": 59.9044, "lon": 10.7410, "name": "Oslo ferry terminal" },
+        { "lat": 61.5929077, "lon": 10.3318551, "name": "Destination" }
+      ]
+    },
+    {
+      "id": "hirtshals-larvik",
+      "label": "Hirtshals-Larvik ferry",
+      "ferry_id": "hirtshals-larvik",
+      "waypoints": [
+        { "lat": 53.3340, "lon": 10.0450, "name": "Klecken" },
+        { "lat": 53.5510, "lon": 10.0000, "name": "Hamburg" },
+        { "lat": 54.7830, "lon": 9.4330, "name": "Flensburg" },
+        { "lat": 55.4900, "lon": 9.4700, "name": "Kolding" },
+        { "lat": 56.1600, "lon": 10.2100, "name": "Aarhus" },
+        { "lat": 57.0500, "lon": 9.9200, "name": "Aalborg" },
+        { "lat": 57.5918, "lon": 9.9647, "name": "Hirtshals" },
+        { "lat": 59.0530, "lon": 10.0290, "name": "Larvik" },
+        { "lat": 59.9100, "lon": 10.7500, "name": "Oslo" },
+        { "lat": 61.5929077, "lon": 10.3318551, "name": "Destination" }
+      ]
+    }
+  ]
+}

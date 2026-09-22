@@ -1,0 +1,8 @@
+Country boundaries: Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com.
+
+License: Public Domain (CC0 1.0) — Natural Earth
+Source: https://naciscdn.org/naturalearth/50m/cultural/ne_50m_admin_0_countries.zip
+Natural Earth version: 5.1.1 (50m)
+Generated: 2026-09-19T22:58:51Z
+ZIP SHA-256: 5fed433373581fa648920435f937d95f2d3c0200e067409c6478dcdf1b853139
+Asset SHA-256: 2ffa9bd3152930f89b59ba7ff5eaa0db3faae91443fa430b09762af7dadfd1e1

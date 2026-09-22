@@ -185,6 +185,10 @@ pub struct RouteOptions {
     /// Active DATEX planner constraints (empty = no DATEX effect). Prefer
     /// [`crate::datex::planner_impacts`] on the active corridor slice only.
     pub datex_impacts: Vec<crate::datex::DatexPlannerConstraint>,
+    /// When `Some`, only traverse edges whose midpoint falls inside one of these
+    /// ISO-3166-1 alpha-2 codes (case-insensitive). `None` keeps historical
+    /// behaviour (no country filter). Hard constraint — never soft-penalize.
+    pub allowed_countries: Option<Vec<String>>,
 }
 
 /// Outcome of one A* attempt (path may be absent).
@@ -192,7 +196,7 @@ pub struct RouteOptions {
 pub struct PathSearchStats {
     pub path: Option<(Vec<NodeId>, Vec<usize>, f64)>,
     pub expansions: u64,
-    /// `found`, `disconnected`, or `cancelled`.
+    /// `found`, `disconnected`, `cancelled`, or `outside_countries`.
     pub terminate_reason: &'static str,
 }
 
@@ -900,6 +904,48 @@ impl RouteGraph {
 
     /// Like [`Self::shortest_path_with_options`] with expansion count and terminate reason.
     pub fn shortest_path_with_options_stats(
+        &self,
+        start: NodeId,
+        goal: NodeId,
+        use_eco: bool,
+        options: &RouteOptions,
+    ) -> PathSearchStats {
+        let stats = self.shortest_path_with_options_stats_raw(start, goal, use_eco, options);
+        self.reclassify_outside_countries(start, goal, use_eco, options, stats)
+    }
+
+    /// When a country filter disconnects A* but an unrestricted search finds a
+    /// path, surface `outside_countries` so callers can emit
+    /// [`crate::pack_server::RegionPlanError::NoRouteInsideCountries`].
+    fn reclassify_outside_countries(
+        &self,
+        start: NodeId,
+        goal: NodeId,
+        use_eco: bool,
+        options: &RouteOptions,
+        stats: PathSearchStats,
+    ) -> PathSearchStats {
+        if stats.path.is_some() || stats.terminate_reason != "disconnected" {
+            return stats;
+        }
+        if options.allowed_countries.is_none() {
+            return stats;
+        }
+        let mut open = options.clone();
+        open.allowed_countries = None;
+        let alt = self.shortest_path_with_options_stats_raw(start, goal, use_eco, &open);
+        if alt.path.is_some() {
+            PathSearchStats {
+                path: None,
+                expansions: stats.expansions,
+                terminate_reason: "outside_countries",
+            }
+        } else {
+            stats
+        }
+    }
+
+    fn shortest_path_with_options_stats_raw(
         &self,
         start: NodeId,
         goal: NodeId,
@@ -1653,6 +1699,11 @@ fn edge_allowed_for_options(
     if options.avoid_ferries && edge.is_ferry {
         return false;
     }
+    if let Some(ref allowed) = options.allowed_countries {
+        if !edge_in_allowed_countries(edge, allowed) {
+            return false;
+        }
+    }
     let apply_motor = matches!(profile, RoutingProfile::Car | RoutingProfile::Truck);
     if crate::routing::conditional::edge_seasonally_closed(
         edge.motor_vehicle_conditional.as_deref(),
@@ -1693,6 +1744,38 @@ fn edge_allowed_for_options(
             if len > max {
                 return false;
             }
+        }
+    }
+    true
+}
+
+/// Hard country filter: start, midpoint and end must all resolve to an allowed
+/// ISO code (semantic change from midpoint-only).
+///
+/// Attribution uses [`crate::routing::elevation::country_iso_at`] (Natural Earth
+/// Admin-0 polygons), not pack stem / catalog path — Norwegian extract bboxes
+/// and Geofabrik clips both spill past the border (see
+/// `ostlandet_catalog_bbox_spills_into_sweden` and the Langflon spill probe).
+/// Unresolved points (`None` after coastal snap) are excluded when the filter
+/// is active, as unknown codes were under the old midpoint rule.
+fn edge_in_allowed_countries(edge: &GraphEdge, allowed: &[String]) -> bool {
+    if allowed.is_empty() {
+        return false;
+    }
+    let mid_lat = (edge.start_lat + edge.end_lat) * 0.5;
+    let mid_lon = (edge.start_lon + edge.end_lon) * 0.5;
+    // Midpoint first: matches the old hot path and rejects cross-border edges early.
+    let points = [
+        (mid_lat, mid_lon),
+        (edge.start_lat, edge.start_lon),
+        (edge.end_lat, edge.end_lon),
+    ];
+    for (lat, lon) in points {
+        let Some(iso) = crate::routing::elevation::country_iso_at(lat, lon) else {
+            return false;
+        };
+        if !allowed.iter().any(|c| c.trim().eq_ignore_ascii_case(iso)) {
+            return false;
         }
     }
     true
@@ -3244,5 +3327,231 @@ mod tests {
             never.contains("Avoid toll roads: ON (never use)"),
             "{never}"
         );
+    }
+
+    /// Synthetic diamond: short leg crosses into Sweden; long leg stays in Norway.
+    fn norway_sweden_border_diamond() -> RouteGraph {
+        // Oslo (NO) --short--> Langflon area (SE) --short--> goal near border (NO-ish east)
+        // Oslo (NO) --long--> inland NO detour --> goal
+        let mut nodes = HashMap::new();
+        for (id, n) in [
+            test_node(1, 59.91, 10.75), // start Oslo NO
+            test_node(2, 61.90, 12.27), // SE shortcut (Langflon)
+            test_node(3, 60.50, 10.80), // NO detour
+            test_node(4, 59.95, 11.20), // goal inside NO
+        ] {
+            nodes.insert(id, n);
+        }
+        let mut e_short_a = test_edge(1, 2, 59.91, 10.75, 61.90, 12.27);
+        e_short_a.length_m = 100.0;
+        e_short_a.base_weight = 100.0;
+        let mut e_short_b = test_edge(2, 4, 61.90, 12.27, 59.95, 11.20);
+        e_short_b.length_m = 100.0;
+        e_short_b.base_weight = 100.0;
+        let mut e_long_a = test_edge(1, 3, 59.91, 10.75, 60.50, 10.80);
+        e_long_a.length_m = 500.0;
+        e_long_a.base_weight = 500.0;
+        let mut e_long_b = test_edge(3, 4, 60.50, 10.80, 59.95, 11.20);
+        e_long_b.length_m = 500.0;
+        e_long_b.base_weight = 500.0;
+        // Bidirectional copies so A* can traverse either way if needed.
+        let mut edges = vec![e_short_a, e_short_b, e_long_a, e_long_b];
+        let rev: Vec<_> = edges
+            .iter()
+            .map(|e| {
+                let mut r = e.clone();
+                r.id = format!("{}-rev", e.id);
+                std::mem::swap(&mut r.source, &mut r.target);
+                std::mem::swap(&mut r.start_lat, &mut r.end_lat);
+                std::mem::swap(&mut r.start_lon, &mut r.end_lon);
+                r
+            })
+            .collect();
+        edges.extend(rev);
+        RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
+    }
+
+    #[test]
+    fn allowed_countries_none_keeps_shortest_cross_border_path() {
+        let graph = norway_sweden_border_diamond();
+        let path = graph
+            .shortest_path_with_options(NodeId(1), NodeId(4), false, &RouteOptions::default())
+            .expect("unrestricted path");
+        assert!(
+            path.0.contains(&NodeId(2)),
+            "default None must take SE shortcut: {:?}",
+            path.0
+        );
+        assert!(!path.0.contains(&NodeId(3)));
+    }
+
+    #[test]
+    fn allowed_countries_norway_only_takes_longer_domestic_path() {
+        let graph = norway_sweden_border_diamond();
+        let opts = RouteOptions {
+            allowed_countries: Some(vec!["no".into()]),
+            ..Default::default()
+        };
+        let path = graph
+            .shortest_path_with_options(NodeId(1), NodeId(4), false, &opts)
+            .expect("Norway-only path");
+        assert!(
+            path.0.contains(&NodeId(3)),
+            "must stay in Norway via detour: {:?}",
+            path.0
+        );
+        assert!(
+            !path.0.contains(&NodeId(2)),
+            "must not use SE shortcut: {:?}",
+            path.0
+        );
+    }
+
+    #[test]
+    fn allowed_countries_impossible_yields_outside_countries() {
+        // Graph where the only path uses a Sweden midpoint — Norway filter must
+        // fail with outside_countries (not a plain disconnect).
+        let mut nodes = HashMap::new();
+        for (id, n) in [
+            test_node(1, 59.91, 10.75),
+            test_node(2, 61.90, 12.27),
+            test_node(4, 59.95, 11.20),
+        ] {
+            nodes.insert(id, n);
+        }
+        let mut a = test_edge(1, 2, 59.91, 10.75, 61.90, 12.27);
+        a.length_m = 100.0;
+        a.base_weight = 100.0;
+        let mut b = test_edge(2, 4, 61.90, 12.27, 59.95, 11.20);
+        b.length_m = 100.0;
+        b.base_weight = 100.0;
+        let mut a_rev = a.clone();
+        a_rev.id = "a-rev".into();
+        std::mem::swap(&mut a_rev.source, &mut a_rev.target);
+        std::mem::swap(&mut a_rev.start_lat, &mut a_rev.end_lat);
+        std::mem::swap(&mut a_rev.start_lon, &mut a_rev.end_lon);
+        let mut b_rev = b.clone();
+        b_rev.id = "b-rev".into();
+        std::mem::swap(&mut b_rev.source, &mut b_rev.target);
+        std::mem::swap(&mut b_rev.start_lat, &mut b_rev.end_lat);
+        std::mem::swap(&mut b_rev.start_lon, &mut b_rev.end_lon);
+        let graph = RouteGraph::from_parts(nodes, vec![a, b, a_rev, b_rev], RoutingProfile::Car);
+        let opts = RouteOptions {
+            allowed_countries: Some(vec!["no".into()]),
+            ..Default::default()
+        };
+        let stats = graph.shortest_path_with_options_stats(NodeId(1), NodeId(4), false, &opts);
+        assert!(stats.path.is_none());
+        assert_eq!(stats.terminate_reason, "outside_countries");
+    }
+
+    #[test]
+    fn via_points_are_visited_in_order() {
+        // A -> V -> B must visit V; A -> B alone would be shorter without V.
+        let mut nodes = HashMap::new();
+        for (id, n) in [
+            test_node(1, 59.91, 10.70),
+            test_node(2, 59.91, 10.80), // via
+            test_node(3, 59.91, 10.90),
+        ] {
+            nodes.insert(id, n);
+        }
+        let edges = vec![
+            {
+                let mut e = test_edge(1, 2, 59.91, 10.70, 59.91, 10.80);
+                e.length_m = 100.0;
+                e.base_weight = 100.0;
+                e
+            },
+            {
+                let mut e = test_edge(2, 3, 59.91, 10.80, 59.91, 10.90);
+                e.length_m = 100.0;
+                e.base_weight = 100.0;
+                e
+            },
+            {
+                let mut e = test_edge(1, 3, 59.91, 10.70, 59.91, 10.90);
+                e.length_m = 50.0;
+                e.base_weight = 50.0;
+                e
+            },
+        ];
+        // reverse
+        let mut all = edges.clone();
+        for e in &edges {
+            let mut r = e.clone();
+            r.id = format!("{}-rev", e.id);
+            std::mem::swap(&mut r.source, &mut r.target);
+            std::mem::swap(&mut r.start_lat, &mut r.end_lat);
+            std::mem::swap(&mut r.start_lon, &mut r.end_lon);
+            all.push(r);
+        }
+        let graph = RouteGraph::from_parts(nodes, all, RoutingProfile::Car);
+        let direct = graph
+            .shortest_path_with_options(NodeId(1), NodeId(3), false, &RouteOptions::default())
+            .expect("direct");
+        assert!(
+            !direct.0.contains(&NodeId(2)),
+            "direct must skip via: {:?}",
+            direct.0
+        );
+        let leg1 = graph
+            .shortest_path_with_options(NodeId(1), NodeId(2), false, &RouteOptions::default())
+            .expect("to via");
+        let leg2 = graph
+            .shortest_path_with_options(NodeId(2), NodeId(3), false, &RouteOptions::default())
+            .expect("from via");
+        assert_eq!(leg1.0.last().copied(), Some(NodeId(2)));
+        assert_eq!(leg2.0.first().copied(), Some(NodeId(2)));
+        assert_eq!(leg2.0.last().copied(), Some(NodeId(3)));
+    }
+
+    #[test]
+    fn edge_filter_roros_halden_style_allowed_for_norway() {
+        // West of old SE box edge (lon 11): Roros latitudes down to inland Ostlandet.
+        let west = test_edge(1, 2, 62.57, 10.90, 59.91, 10.75);
+        assert!(edge_in_allowed_countries(&west, &["no".into()]));
+        // East of lon 11 but still in Norway (Roros → Halden).
+        let east = test_edge(1, 2, 62.5747, 11.3842, 59.1248, 11.3875);
+        assert!(edge_in_allowed_countries(&east, &["no".into()]));
+    }
+
+    #[test]
+    fn edge_filter_kautokeino_alta_vs_karesuando() {
+        let ok = test_edge(1, 2, 69.0125, 23.0415, 69.9689, 23.2717);
+        assert!(edge_in_allowed_countries(&ok, &["no".into()]));
+        let cross = test_edge(1, 2, 69.0125, 23.0415, 68.4417, 22.4800);
+        assert!(!edge_in_allowed_countries(&cross, &["no".into()]));
+    }
+
+    #[test]
+    fn edge_filter_svinesund_bridge_excluded_for_no_and_se() {
+        let bridge = test_edge(1, 2, 59.1200, 11.3000, 59.0800, 11.2600);
+        assert!(!edge_in_allowed_countries(&bridge, &["no".into()]));
+        assert!(!edge_in_allowed_countries(&bridge, &["se".into()]));
+    }
+
+    #[test]
+    fn edge_filter_flensburg_padborg_excluded_for_germany() {
+        let e = test_edge(1, 2, 54.7930, 9.4330, 54.8250, 9.3600);
+        assert!(!edge_in_allowed_countries(&e, &["de".into()]));
+    }
+
+    #[test]
+    fn edge_filter_us_border_crossings_excluded_for_us() {
+        let detroit_windsor = test_edge(1, 2, 42.3314, -83.0458, 42.3149, -83.0364);
+        assert!(!edge_in_allowed_countries(&detroit_windsor, &["us".into()]));
+        let blaine_white_rock = test_edge(1, 2, 48.9937, -122.7470, 49.0250, -122.8030);
+        assert!(!edge_in_allowed_countries(
+            &blaine_white_rock,
+            &["us".into()]
+        ));
+        let san_ysidro_tijuana = test_edge(1, 2, 32.5550, -117.0450, 32.5149, -117.0382);
+        assert!(!edge_in_allowed_countries(
+            &san_ysidro_tijuana,
+            &["us".into()]
+        ));
+        let el_paso_juarez = test_edge(1, 2, 31.7619, -106.4850, 31.6904, -106.4245);
+        assert!(!edge_in_allowed_countries(&el_paso_juarez, &["us".into()]));
     }
 }

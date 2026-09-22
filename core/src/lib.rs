@@ -12,6 +12,7 @@ pub mod download;
 pub mod ecu;
 pub mod export;
 pub mod icons;
+pub mod long_trip;
 pub mod nav;
 pub mod pack_server;
 pub mod poi;

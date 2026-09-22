@@ -1,0 +1,44 @@
+{
+  "comment": "Test-only ferry timetable fixtures. Production has no timetable or allowlist. Times are Europe/Berlin local (same UTC offset as Denmark/Sweden/Norway). Not live operator data.",
+  "lines": [
+    {
+      "id": "hirtshals-larvik",
+      "name": "Hirtshals-Larvik",
+      "match_needles": ["hirtshals", "larvik"],
+      "from": { "name": "Hirtshals", "lat": 57.5918, "lon": 9.9647 },
+      "to": { "name": "Larvik", "lat": 59.0530, "lon": 10.0290 },
+      "checkin_minutes": 60,
+      "sailing_minutes": 225,
+      "departures_local": ["08:15", "12:45", "17:00", "21:45"]
+    },
+    {
+      "id": "kiel-oslo",
+      "name": "Kiel-Oslo (Oslo-Kiel line)",
+      "match_needles": ["kiel", "oslo"],
+      "from": { "name": "Kiel", "lat": 54.3180, "lon": 10.1350 },
+      "to": { "name": "Oslo", "lat": 59.9044, "lon": 10.7410 },
+      "checkin_minutes": 90,
+      "sailing_minutes": 1200,
+      "departures_local": ["14:00"]
+    },
+    {
+      "id": "copenhagen-oslo",
+      "name": "Copenhagen-Oslo",
+      "match_needles": ["copenhagen", "kobenhavn", "københavn", "oslo"],
+      "from": { "name": "Copenhagen", "lat": 55.6945, "lon": 12.5935 },
+      "to": { "name": "Oslo", "lat": 59.9044, "lon": 10.7410 },
+      "checkin_minutes": 60,
+      "sailing_minutes": 1035,
+      "departures_local": ["16:30"]
+    }
+  ],
+  "forbidden_needles": [
+    "puttgarden",
+    "rodby",
+    "rødby",
+    "helsingor",
+    "helsingør",
+    "elsinore",
+    "helsingborg"
+  ]
+}

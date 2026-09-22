@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
 import android.telephony.TelephonyManager
+import uniffi.navi.longTripOrsDefaultBaseUrl
 
 /** Session map-HUD preferences persisted on device. */
 object MapHudPrefs {
@@ -32,6 +33,10 @@ object MapHudPrefs {
     private const val KEY_DATEX_HOST = "datex_host"
     private const val KEY_DATEX_PORT = "datex_port"
     private const val KEY_DATEX_WIFI_ONLY = "datex_wifi_only"
+    private const val KEY_LONG_TRIP_ENABLED = "long_trip_enabled"
+    private const val KEY_LONG_TRIP_PACK_VOLUME_ID = "long_trip_pack_volume_id"
+    private const val KEY_ORS_API_KEY = "ors_api_key"
+    private const val KEY_ORS_BASE_URL = "ors_base_url"
     private const val KEY_POI_LOOKAHEAD_ENABLED = "poi_lookahead_enabled"
     private const val KEY_POI_LOOKAHEAD_STRICT_HOURS = "poi_lookahead_strict_hours_unknown"
     private const val KEY_POI_LOOKAHEAD_DISMISSED = "poi_lookahead_dismissed_ids"
@@ -527,6 +532,89 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_DATEX_WIFI_ONLY, wifiOnly)
+            .apply()
+    }
+
+    /** Long-trip mode toggle — default OFF. */
+    fun loadLongTripEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_LONG_TRIP_ENABLED, false)
+
+    fun saveLongTripEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_LONG_TRIP_ENABLED, enabled)
+            .apply()
+    }
+
+    /**
+     * Volume id for long-trip pack downloads: [NaviStorageVolumes.INTERNAL_ID] or a
+     * removable id from [NaviStorageVolumes.list]. Empty → treat as internal.
+     */
+    fun loadLongTripPackVolumeId(context: Context): String =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_LONG_TRIP_PACK_VOLUME_ID, NaviStorageVolumes.INTERNAL_ID)
+            .orEmpty()
+            .ifBlank { NaviStorageVolumes.INTERNAL_ID }
+
+    fun saveLongTripPackVolumeId(
+        context: Context,
+        volumeId: String,
+    ) {
+        val id = volumeId.trim().ifBlank { NaviStorageVolumes.INTERNAL_ID }
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_LONG_TRIP_PACK_VOLUME_ID, id)
+            .apply()
+    }
+
+    /** ORS API key from user settings — never log this value. */
+    fun loadOrsApiKey(context: Context): String =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_ORS_API_KEY, "")
+            .orEmpty()
+
+    fun saveOrsApiKey(
+        context: Context,
+        key: String,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_ORS_API_KEY, key.trim())
+            .apply()
+    }
+
+    fun loadOrsBaseUrl(context: Context): String {
+        val raw =
+            context
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_ORS_BASE_URL, "")
+                .orEmpty()
+                .trim()
+        // Keep default in sync with core via UniFFI `long_trip_ors_default_base_url`.
+        return raw.ifEmpty {
+            runCatching { longTripOrsDefaultBaseUrl() }
+                .getOrDefault("https://api.heigit.org/openrouteservice")
+        }
+    }
+
+    fun saveOrsBaseUrl(
+        context: Context,
+        url: String,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_ORS_BASE_URL, url.trim())
             .apply()
     }
 

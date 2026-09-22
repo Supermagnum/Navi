@@ -49,6 +49,27 @@ class GeofabrikDownloadCatalogTest {
     }
 
     @Test
+    fun long_trip_picker_has_hamburg_and_vastra_gotaland_not_denmark_leaves() {
+        assertTrue(GeofabrikDownloadCatalog.germanyRegions.any { it.first == "hamburg" })
+        assertTrue(
+            GeofabrikDownloadCatalog.germanyRegions.any { it.first == "schleswig-holstein" },
+        )
+        assertTrue(GeofabrikDownloadCatalog.germanyRegions.any { it.first == "niedersachsen" })
+        assertTrue(
+            GeofabrikDownloadCatalog.swedenRegions.any { it.first == "vastra_gotaland" },
+        )
+        assertFalse(
+            GeofabrikDownloadCatalog.swedenRegions.any { it.first == "vastra-gotaland" },
+        )
+        assertTrue(GeofabrikDownloadCatalog.swedenRegions.any { it.first == "skane" })
+        assertTrue(GeofabrikDownloadCatalog.swedenRegions.any { it.first == "halland" })
+        // Pack host publishes europe/denmark as a country leaf; the picker has no
+        // Syddanmark / Sjaelland / Hovedstaden / Midtjylland / Nordjylland chips.
+        assertFalse(GeofabrikDownloadCatalog.hasRegionChips("europe/denmark"))
+        assertFalse(GeofabrikDownloadCatalog.hasRegionChips("europe/denmark/syddanmark"))
+    }
+
+    @Test
     fun countries_without_chips_get_granularity_note() {
         val note = GeofabrikDownloadCatalog.regionGranularityNote("europe/denmark")
         assertTrue(note.contains("France", ignoreCase = true) || note.contains("current.json"))
