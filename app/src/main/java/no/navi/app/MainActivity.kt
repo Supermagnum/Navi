@@ -762,6 +762,12 @@ private fun NaviMapScreen() {
     }
     var statusToastCoalesce by remember { mutableStateOf(StatusUi.CoalesceState()) }
     var statusToastText by remember { mutableStateOf("") }
+    // Keeps download / place-index / basemap chrome visibly advancing during
+    // long native phases whose label would otherwise sit unchanged for minutes.
+    val toastActivityPulse = remember { StatusUi.ActivityTracker() }
+    val placeActivityPulse = remember { StatusUi.ActivityTracker() }
+    val mapsActivityPulse = remember { StatusUi.ActivityTracker() }
+    val regionActivityPulse = remember { StatusUi.ActivityTracker() }
     var poiLookaheadEnabled by remember {
         mutableStateOf(MapHudPrefs.loadPoiLookaheadEnabled(context))
     }
@@ -2185,30 +2191,40 @@ private fun NaviMapScreen() {
                         seq?.first,
                         seq?.second,
                     )
-                val line = formatProgressPct(snap.unitsDone, snap.unitsTotal, labeled)
+                val rawLine = formatProgressPct(snap.unitsDone, snap.unitsTotal, labeled)
+                val nowPulse = SystemClock.elapsedRealtime()
                 if (labeled.contains("map tiles", ignoreCase = true) ||
                     labeled.contains("basemap", ignoreCase = true) ||
                     labeled.contains("DEM", ignoreCase = true) ||
                     labeled.contains("Planning extract", ignoreCase = true) ||
                     labeled.contains("Writing map archive", ignoreCase = true)
                 ) {
+                    // Keep Tools basemap line, and always mirror onto the toast —
+                    // users with Tools closed must still see live progress.
+                    val line = regionActivityPulse.pulse(rawLine, nowPulse)
                     pmtilesProgress = line
+                    if (!planningRoute) status = toastActivityPulse.pulse(rawLine, nowPulse)
                 } else if (labeled.contains("Place index", ignoreCase = true)) {
-                    // Task 1 hand-off: place index may run while the next leaf
-                    // downloads — keep that on its own Tools line / do not
-                    // clobber regionDownloadProgress or the toast every tick.
+                    // Own Tools line so pack download % is not overwritten, but
+                    // still drive the toast: place-index phases can run for
+                    // minutes with no percent change and must not look frozen.
+                    val line = placeActivityPulse.pulse(rawLine, nowPulse)
                     placeIndexUiLine = line
+                    if (!planningRoute) status = toastActivityPulse.pulse(rawLine, nowPulse)
                 } else {
+                    val line = regionActivityPulse.pulse(rawLine, nowPulse)
                     regionDownloadProgress = line
                     if (!planningRoute) {
-                        status = line
+                        status = toastActivityPulse.pulse(rawLine, nowPulse)
                     }
                 }
             } else if (regionRunning) {
-                val line = RegionDownloadBackground.uiLine()
-                if (line.isNotBlank()) {
+                val rawLine = RegionDownloadBackground.uiLine()
+                if (rawLine.isNotBlank()) {
+                    val nowPulse = SystemClock.elapsedRealtime()
+                    val line = regionActivityPulse.pulse(rawLine, nowPulse)
                     regionDownloadProgress = line
-                    if (!planningRoute) status = line
+                    if (!planningRoute) status = toastActivityPulse.pulse(rawLine, nowPulse)
                 }
             } else if (!regionRunning && !downloadPolling) {
                 // Idle: do not keep a finished percent line on screen.
@@ -2428,15 +2444,38 @@ private fun NaviMapScreen() {
                         busy = placeRunning || indexedRunning,
                     )
                 }
-            indexedMapsUiLine = tick.indexedLine
+            val nowPulse = SystemClock.elapsedRealtime()
+            val pulsedIndexed =
+                if (tick.indexedLine.isNotBlank()) {
+                    mapsActivityPulse.pulse(tick.indexedLine, nowPulse)
+                } else {
+                    tick.indexedLine
+                }
+            val pulsedPlace =
+                if (tick.placeLine.isNotBlank()) {
+                    placeActivityPulse.pulse(tick.placeLine, nowPulse)
+                } else {
+                    tick.placeLine
+                }
+            indexedMapsUiLine = pulsedIndexed
             // Standalone PlaceIndexBackground owns placeIndexUiLine when it runs.
-            // When the region queue is active, hand-off indexing updates the line
+            // When the region pipeline is active, hand-off indexing updates the line
             // from the download poller — do not blank it here every 400ms.
             if (PlaceIndexBackground.isRunning() || !RegionDownloadBackground.isRunning()) {
-                placeIndexUiLine = tick.placeLine
+                placeIndexUiLine = pulsedPlace
             }
-            if (tick.pushIndexedToStatus) status = tick.indexedLine
-            if (tick.pushPlaceToStatus) status = tick.placeLine
+            if (tick.pushIndexedToStatus) {
+                status = toastActivityPulse.pulse(tick.indexedLine, nowPulse)
+            }
+            if (tick.pushPlaceToStatus) {
+                status = toastActivityPulse.pulse(tick.placeLine, nowPulse)
+            }
+            if (!tick.busy && !RegionDownloadBackground.isRunning()) {
+                toastActivityPulse.reset()
+                placeActivityPulse.reset()
+                mapsActivityPulse.reset()
+                regionActivityPulse.reset()
+            }
             delay(if (tick.busy) 400 else 2_500)
         }
     }

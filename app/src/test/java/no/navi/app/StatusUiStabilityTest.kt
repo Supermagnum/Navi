@@ -112,4 +112,28 @@ class StatusUiStabilityTest {
         assertTrue(StatusUi.TOAST_MIN_HEIGHT_DP >= 40)
         assertTrue(StatusUi.COALESCE_MIN_INTERVAL_MS in 200L..500L)
     }
+
+    @Test
+    fun activity_pulse_stays_quiet_until_hold_threshold() {
+        val base = "Place index: scanning ways… 16% (1 / 6)"
+        assertEquals(base, StatusUi.withActivityPulse(base, 999L))
+        val pulsed = StatusUi.withActivityPulse(base, StatusUi.ACTIVITY_PULSE_AFTER_MS)
+        assertTrue(pulsed.startsWith(base))
+        assertTrue(pulsed.contains(" · 1s"))
+        assertEquals(base, StatusUi.stripActivityPulse(pulsed))
+    }
+
+    @Test
+    fun activity_tracker_grows_elapsed_on_same_phase() {
+        val tracker = StatusUi.ActivityTracker()
+        val base = "Place index: writing database…"
+        assertEquals(base, tracker.pulse(base, 1_000L))
+        val at5 = tracker.pulse(base, 1_000L + 5_000L)
+        assertTrue("expected elapsed suffix in $at5", at5.endsWith(" · 5s"))
+        val nextPhase = "Place index: ready"
+        assertEquals(nextPhase, tracker.pulse(nextPhase, 1_000L + 5_500L))
+        val held = tracker.pulse(nextPhase, 1_000L + 5_500L + 2_000L)
+        assertTrue(held.endsWith(" · 2s"))
+        assertFalse(held.contains("5s"))
+    }
 }

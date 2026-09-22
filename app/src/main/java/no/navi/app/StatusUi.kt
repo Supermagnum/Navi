@@ -11,6 +11,15 @@ object StatusUi {
     /** Cap UI refreshes even when underlying state changes faster. */
     const val COALESCE_MIN_INTERVAL_MS = 300L
 
+    /**
+     * After this hold time on an unchanged phase label, append an elapsed
+     * suffix so long PBF / sqlite phases do not look frozen.
+     */
+    const val ACTIVITY_PULSE_AFTER_MS = 1_000L
+
+    private val ACTIVITY_PULSE_SUFFIX =
+        Regex("""\s·\s(?:\d+m\s)?\d+s$""")
+
     data class CoalesceState(
         val text: String = "",
         val lastEmittedMs: Long = 0L,
@@ -18,6 +27,37 @@ object StatusUi {
         val renderCount: Int = 0,
         val inputCount: Int = 0,
     )
+
+    /** Elapsed hold for [withActivityPulse] (`12s` or `2m 05s`). */
+    fun formatActivityElapsed(elapsedMs: Long): String {
+        val sec = (elapsedMs / 1000L).coerceAtLeast(0L)
+        val m = sec / 60L
+        val s = sec % 60L
+        return if (m > 0L) {
+            "%dm %02ds".format(m, s)
+        } else {
+            "${s}s"
+        }
+    }
+
+    /** Remove a prior activity-pulse suffix so phase identity stays stable. */
+    fun stripActivityPulse(line: String): String =
+        line.replace(ACTIVITY_PULSE_SUFFIX, "").trimEnd()
+
+    /**
+     * When [phaseHeldMs] exceeds [ACTIVITY_PULSE_AFTER_MS], append ` · Nm Ns`
+     * so the chrome visibly advances even if the native phase label is fixed.
+     */
+    fun withActivityPulse(
+        base: String,
+        phaseHeldMs: Long,
+    ): String {
+        val stripped = stripActivityPulse(base)
+        if (stripped.isBlank() || phaseHeldMs < ACTIVITY_PULSE_AFTER_MS) {
+            return stripped
+        }
+        return "$stripped · ${formatActivityElapsed(phaseHeldMs)}"
+    }
 
     /**
      * Coalesce [incoming] into at most one emit per [COALESCE_MIN_INTERVAL_MS].
@@ -132,6 +172,37 @@ object StatusUi {
             lower.contains("basemap") ||
             lower.contains("writing") ||
             lower.contains("fetching")
+    }
+
+    /**
+     * Tracks the current busy phase so [pulse] can append a growing elapsed
+     * suffix while the underlying progress string is unchanged.
+     */
+    class ActivityTracker {
+        private var phaseKey: String = ""
+        private var phaseSinceMs: Long = 0L
+
+        fun pulse(
+            line: String,
+            nowMs: Long,
+        ): String {
+            if (line.isBlank()) {
+                phaseKey = ""
+                phaseSinceMs = 0L
+                return ""
+            }
+            val base = stripActivityPulse(line)
+            if (base != phaseKey) {
+                phaseKey = base
+                phaseSinceMs = nowMs
+            }
+            return withActivityPulse(base, nowMs - phaseSinceMs)
+        }
+
+        fun reset() {
+            phaseKey = ""
+            phaseSinceMs = 0L
+        }
     }
 
     private fun regionLeafTokens(s: String): Set<String> {

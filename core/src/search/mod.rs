@@ -21,6 +21,9 @@ pub const NAMED_BUILDING_KIND: &str = "building";
 /// Commit SQLite/FTS inserts this often so a force-close cannot roll back the
 /// entire write, and so WAL readers are not blocked for minutes.
 const INSERT_COMMIT_BATCH: usize = 50_000;
+/// Refresh place-index UI labels during long PBF walks so Android does not
+/// appear frozen on a single "scanning ways…" / "scanning nodes…" string.
+const PLACE_INDEX_PROGRESS_HEARTBEAT: usize = 25_000;
 
 /// One writer at a time for discard + open + `load_from_pbf`. Android can
 /// launch PlaceIndexBackground and RegionDownloadBackground against the same
@@ -473,8 +476,19 @@ impl NameIndex {
         let ways_t0 = phase_timing::start("place_index.ways");
         let mut way_jobs: Vec<(i64, String, String, Vec<i64>)> = Vec::new();
         let mut needed_nodes: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        let mut ways_visited = 0usize;
+        let mut ways_last_hb = 0usize;
         {
             crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+                ways_visited += 1;
+                if ways_visited - ways_last_hb >= PLACE_INDEX_PROGRESS_HEARTBEAT {
+                    ways_last_hb = ways_visited;
+                    crate::download::progress::set(
+                        1,
+                        Some(PHASES),
+                        &format!("{phase_prefix}scanning ways… ({} found)", way_jobs.len()),
+                    );
+                }
                 let Element::Way(way) = element else {
                     return;
                 };
@@ -520,31 +534,44 @@ impl NameIndex {
         let nodes_t0 = phase_timing::start("place_index.nodes");
         let mut node_coords: std::collections::HashMap<i64, (f64, f64)> =
             std::collections::HashMap::with_capacity(needed_nodes.len());
+        let mut nodes_visited = 0usize;
+        let mut nodes_last_hb = 0usize;
         {
-            crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
-                Element::Node(node) => {
-                    let id = node.id();
-                    let lat = node.lat();
-                    let lon = node.lon();
-                    if needed_nodes.contains(&id) {
-                        node_coords.insert(id, (lat, lon));
-                    }
-                    if let Some(hit) = classify_named(id, lat, lon, node.tags()) {
-                        batch.push(hit);
-                    }
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+                nodes_visited += 1;
+                if nodes_visited - nodes_last_hb >= PLACE_INDEX_PROGRESS_HEARTBEAT {
+                    nodes_last_hb = nodes_visited;
+                    crate::download::progress::set(
+                        2,
+                        Some(PHASES),
+                        &format!("{phase_prefix}scanning nodes… ({} found)", batch.len()),
+                    );
                 }
-                Element::DenseNode(node) => {
-                    let id = node.id;
-                    let lat = node.lat();
-                    let lon = node.lon();
-                    if needed_nodes.contains(&id) {
-                        node_coords.insert(id, (lat, lon));
+                match element {
+                    Element::Node(node) => {
+                        let id = node.id();
+                        let lat = node.lat();
+                        let lon = node.lon();
+                        if needed_nodes.contains(&id) {
+                            node_coords.insert(id, (lat, lon));
+                        }
+                        if let Some(hit) = classify_named(id, lat, lon, node.tags()) {
+                            batch.push(hit);
+                        }
                     }
-                    if let Some(hit) = classify_named(id, lat, lon, node.tags()) {
-                        batch.push(hit);
+                    Element::DenseNode(node) => {
+                        let id = node.id;
+                        let lat = node.lat();
+                        let lon = node.lon();
+                        if needed_nodes.contains(&id) {
+                            node_coords.insert(id, (lat, lon));
+                        }
+                        if let Some(hit) = classify_named(id, lat, lon, node.tags()) {
+                            batch.push(hit);
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             })?;
         }
         let node_hits = batch.len();
@@ -558,10 +585,13 @@ impl NameIndex {
             ),
         );
 
-        // Invisible to progress UI: assemble way centroids from collected coords.
+        // Surface centroids on the progress UI — this pass used to leave the
+        // last "scanning nodes…" label frozen for a long stretch.
+        crate::download::progress::set(2, Some(PHASES), &format!("{phase_prefix}way centroids…"));
         let centroids_t0 = phase_timing::start("place_index.way_centroids");
         let mut way_hits = 0usize;
-        for (way_id, name, kind, refs) in way_jobs {
+        let centroid_total = way_jobs.len();
+        for (i, (way_id, name, kind, refs)) in way_jobs.into_iter().enumerate() {
             let mut sum_lat = 0.0;
             let mut sum_lon = 0.0;
             let mut n = 0usize;
@@ -577,6 +607,13 @@ impl NameIndex {
             }
             batch.push((way_id, name, kind, sum_lat / n as f64, sum_lon / n as f64));
             way_hits += 1;
+            if (i + 1) % PLACE_INDEX_PROGRESS_HEARTBEAT == 0 {
+                crate::download::progress::set(
+                    2,
+                    Some(PHASES),
+                    &format!("{phase_prefix}way centroids… ({way_hits} / {centroid_total})"),
+                );
+            }
         }
         drop(node_coords);
         phase_timing::end_detail(
