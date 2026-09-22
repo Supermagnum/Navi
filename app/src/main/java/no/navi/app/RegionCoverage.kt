@@ -113,6 +113,36 @@ object RegionCoverage {
         return null
     }
 
+    /**
+     * HUD road-sign gate without Natural Earth `country_iso_at` (cold load ANRs
+     * on SM-P613). Mirrors `resolve_road_sign_jurisdiction_at` coarse intent.
+     */
+    fun roadSignHudAllowed(
+        lat: Double,
+        lon: Double,
+    ): Boolean {
+        if (lat in 57.8..71.4 && lon in 4.0..31.5 && !eastOfNorwaySwedenBorder(lat, lon)) {
+            return true
+        }
+        // Same Innlandet carve as core road_sign.rs (coarse SE ring).
+        return lat in 59.3..63.5 && lon < 12.15
+    }
+
+    /**
+     * Speed-camera opt-in prompt gate without Natural Earth. Allowed ISO set is
+     * NO + GB (`SPEED_CAMERA_ALLOWED_ISO` in core).
+     */
+    fun speedCameraHudOptInAllowed(
+        lat: Double,
+        lon: Double,
+    ): Boolean {
+        if (lat in 57.8..71.4 && lon in 4.0..31.5 && !eastOfNorwaySwedenBorder(lat, lon)) {
+            return true
+        }
+        // Rough UK / Ireland box (GB only for the product table).
+        return lat in 49.8..61.0 && lon in -8.6..2.0
+    }
+
     fun eastOfNorwaySwedenBorder(
         lat: Double,
         lon: Double,

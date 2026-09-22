@@ -332,6 +332,16 @@ object NaviMapTestHooks {
     @Volatile
     var lastGpsImmediateCoord: String = ""
 
+    /** Last place hit applied via search / GPS / map-mark (instrumented asserts). */
+    @Volatile
+    var lastAppliedHitName: String = ""
+
+    @Volatile
+    var lastAppliedHitLat: Double = Double.NaN
+
+    @Volatile
+    var lastAppliedHitLon: Double = Double.NaN
+
     /** When true, MainActivity clears the search query field (test helper). */
     @Volatile
     var requestClearSearch: Boolean = false

@@ -176,7 +176,7 @@ fun snapWaypointToRoutePolyline(
 ): RoutePinSnap? = nearestPointOnPolyline(pts, lat, lon)
 
 /** Max distance (metres) for resolving a GPS From/Via/To label to a nearby name. */
-const val GPS_WAYPOINT_RESOLVE_RADIUS_M = 12.0
+const val GPS_WAYPOINT_RESOLVE_RADIUS_M = 75.0
 
 /**
  * Pick a human waypoint label from [nearbyPlaces] hits already filtered to
