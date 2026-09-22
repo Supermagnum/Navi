@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
 import android.telephony.TelephonyManager
+import uniffi.navi.longTripOrsDefaultBaseUrl
 
 /** Session map-HUD preferences persisted on device. */
 object MapHudPrefs {
@@ -599,8 +600,11 @@ object MapHudPrefs {
                 .getString(KEY_ORS_BASE_URL, "")
                 .orEmpty()
                 .trim()
-        // Keep default in sync with core `DEFAULT_ORS_BASE_URL` / FFI export.
-        return raw.ifEmpty { "https://api.heigit.org/openrouteservice" }
+        // Keep default in sync with core via UniFFI `long_trip_ors_default_base_url`.
+        return raw.ifEmpty {
+            runCatching { longTripOrsDefaultBaseUrl() }
+                .getOrDefault("https://api.heigit.org/openrouteservice")
+        }
     }
 
     fun saveOrsBaseUrl(

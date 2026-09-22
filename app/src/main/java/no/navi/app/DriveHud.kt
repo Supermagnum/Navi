@@ -43,6 +43,7 @@ import uniffi.navi.FfiCarRestSettings
 import uniffi.navi.FfiEbikeConfig
 import uniffi.navi.FfiEvCarConfig
 import uniffi.navi.FfiFuelConfig
+import uniffi.navi.longTripOrsDisclosure
 import uniffi.navi.FfiIconTheme
 import uniffi.navi.FfiProfilePoiRadii
 import uniffi.navi.FfiTruckRestSettings
@@ -500,9 +501,16 @@ fun PluginSettingsSection(
         if (longTripEnabled) {
             Text(
                 "Downloads map packs along the route on Wi-Fi/Ethernet only. " +
-                    "Origin, vias and destination are sent to BRouter and/or OpenRouteService when online. " +
                     "Place index and Tools downloads stay on internal storage.",
                 style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                runCatching { longTripOrsDisclosure() }.getOrElse {
+                    "Long-trip mode may send origin, vias and destination to " +
+                        "BRouter and/or OpenRouteService when online."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("long_trip_ors_disclosure"),
             )
             if (longTripStatusLine.isNotBlank()) {
                 Text(
