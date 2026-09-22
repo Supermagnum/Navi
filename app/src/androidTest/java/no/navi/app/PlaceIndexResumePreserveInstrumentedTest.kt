@@ -33,10 +33,11 @@ class PlaceIndexResumePreserveInstrumentedTest {
     fun place_index_resume_preserves_rows_when_complete_zero() {
         initNativeLogging()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val dataDir = File(context.filesDir, "place_index_resume_preserve").also {
-            it.deleteRecursively()
-            it.mkdirs()
-        }
+        val dataDir =
+            File(context.filesDir, "place_index_resume_preserve").also {
+                it.deleteRecursively()
+                it.mkdirs()
+            }
         val dbFile = File(dataDir, "place_index.db")
         seedIncompleteBuild(dbFile, REGION, osmId = 42L, name = "ResumeKeepMe")
         PlaceIndexReady.readyFile(dataDir).writeText("""["$REGION"]""")
@@ -166,13 +167,14 @@ class PlaceIndexResumePreserveInstrumentedTest {
         regionId: String,
     ): Int =
         SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
-            db.rawQuery(
-                "SELECT COUNT(*) FROM name_entries WHERE region_id = ?",
-                arrayOf(regionId),
-            ).use { c ->
-                c.moveToFirst()
-                c.getInt(0)
-            }
+            db
+                .rawQuery(
+                    "SELECT COUNT(*) FROM name_entries WHERE region_id = ?",
+                    arrayOf(regionId),
+                ).use { c ->
+                    c.moveToFirst()
+                    c.getInt(0)
+                }
         }
 
     private fun entryName(

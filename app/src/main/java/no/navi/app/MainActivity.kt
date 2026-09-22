@@ -560,9 +560,7 @@ private fun userFacingStatus(raw: String): String {
     return t.take(120)
 }
 
-private fun datexIsOnWifi(context: android.content.Context): Boolean =
-    NetworkUnmetered.isWifiOrEthernet(context)
-
+private fun datexIsOnWifi(context: android.content.Context): Boolean = NetworkUnmetered.isWifiOrEthernet(context)
 
 private fun datexStatusLineForHud(
     enabled: Boolean,

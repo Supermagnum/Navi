@@ -38,8 +38,7 @@ object LongTripPackStorage {
     }
 
     /** Selected volume id from prefs (`internal` or a [NaviStorageVolumes] id). */
-    fun selectedVolumeId(context: Context): String =
-        MapHudPrefs.loadLongTripPackVolumeId(context).ifBlank { NaviStorageVolumes.INTERNAL_ID }
+    fun selectedVolumeId(context: Context): String = MapHudPrefs.loadLongTripPackVolumeId(context).ifBlank { NaviStorageVolumes.INTERNAL_ID }
 
     fun saveSelectedVolumeId(
         context: Context,

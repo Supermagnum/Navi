@@ -158,8 +158,7 @@ object NaviStorageVolumes {
     }
 
     /** Removable + internal choices for the long-trip pack location picker. */
-    fun listPickerOptions(context: Context): List<Volume> =
-        list(context).filter { it.id == INTERNAL_ID || it.removable }
+    fun listPickerOptions(context: Context): List<Volume> = list(context).filter { it.id == INTERNAL_ID || it.removable }
 
     fun findById(
         context: Context,

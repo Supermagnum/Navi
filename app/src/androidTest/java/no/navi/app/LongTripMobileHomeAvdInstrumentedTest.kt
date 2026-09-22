@@ -39,6 +39,7 @@ class LongTripMobileHomeAvdInstrumentedTest {
         private const val BESSHEIM_LAT = 61.514623
         private const val BESSHEIM_LON = 8.852972
         private const val ANTENNA_BASE_M_EST = 0.50
+
         /** Mast length 223 cm (tip height = base + stack when above body). */
         private const val ANTENNA_STACK_M = 2.23
         private const val BODY_HEIGHT_M = 2.477
@@ -78,7 +79,8 @@ class LongTripMobileHomeAvdInstrumentedTest {
             org.json.JSONArray().also { arr ->
                 for (h in onlineHits) {
                     arr.put(
-                        org.json.JSONObject()
+                        org.json
+                            .JSONObject()
                             .put("name", h.name)
                             .put("lat", h.lat)
                             .put("lon", h.lon)
@@ -92,17 +94,23 @@ class LongTripMobileHomeAvdInstrumentedTest {
             "Nominatim must return Bessheim without a place index",
             onlineHits.any {
                 it.name.contains("Bessheim", ignoreCase = true) ||
-                    (kotlin.math.abs(it.lat - BESSHEIM_LAT) < 0.05 &&
-                        kotlin.math.abs(it.lon - BESSHEIM_LON) < 0.05)
+                    (
+                        kotlin.math.abs(it.lat - BESSHEIM_LAT) < 0.05 &&
+                            kotlin.math.abs(it.lon - BESSHEIM_LON) < 0.05
+                    )
             },
         )
         // Region finder: online hit must carry Geofabrik path for Tools download.
         val bessheimRegion =
-            onlineHits.firstOrNull {
-                it.name.contains("Bessheim", ignoreCase = true) ||
-                    (kotlin.math.abs(it.lat - BESSHEIM_LAT) < 0.05 &&
-                        kotlin.math.abs(it.lon - BESSHEIM_LON) < 0.05)
-            }?.regionId.orEmpty()
+            onlineHits
+                .firstOrNull {
+                    it.name.contains("Bessheim", ignoreCase = true) ||
+                        (
+                            kotlin.math.abs(it.lat - BESSHEIM_LAT) < 0.05 &&
+                                kotlin.math.abs(it.lon - BESSHEIM_LON) < 0.05
+                        )
+                }?.regionId
+                .orEmpty()
         assertTrue(
             "online Bessheim must map to ostlandet for region downloader",
             bessheimRegion.contains("ostlandet"),
@@ -285,7 +293,8 @@ class LongTripMobileHomeAvdInstrumentedTest {
                     )
                 report.put(
                     "full_plan",
-                    org.json.JSONObject()
+                    org.json
+                        .JSONObject()
                         .put("distance_km", result.distanceKm)
                         .put("eta_minutes", result.etaMinutes)
                         .put("search_terminate_reason", result.searchTerminateReason)
