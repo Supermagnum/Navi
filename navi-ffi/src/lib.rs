@@ -39,11 +39,11 @@ use driver_break_core::routing::{
 use driver_break_core::routing::{
     commit_truck_multi_day_plan, evaluate_fmcsa_trip, evaluate_truck_trip,
     hiking_samples_from_coords, max_daily_distance_km, motor_break_interval_km, motor_daily_budget,
-    plan_fmcsa_multi_day, plan_hiking_multi_day, plan_motor_multi_day, plan_truck_multi_day,
-    resolve_driving_hours_pack_at, truck_effective_break_parts, uses_motor_multi_day,
-    uses_truck_rest, HikingMultiDayPlan, MotorMultiDayPlan, MotorOvernightCandidate,
-    MotorOvernightKind, TruckMultiDayPlan, TruckOvernightKind, TruckOvernightRest,
-    TruckRestCandidate, TruckRestFacility,
+    plan_fmcsa_multi_day, plan_hiking_multi_day, plan_motor_multi_day, plan_soft_rest_pauses,
+    plan_truck_multi_day, resolve_driving_hours_pack_at, truck_effective_break_parts,
+    uses_motor_multi_day, uses_truck_rest, HikingMultiDayPlan, MotorMultiDayPlan,
+    MotorOvernightCandidate, MotorOvernightKind, SoftRestCandidate, TruckMultiDayPlan,
+    TruckOvernightKind, TruckOvernightRest, TruckRestCandidate, TruckRestFacility,
 };
 use driver_break_core::routing::{fixed_pace_minutes, motor_path_minutes, HIKING_MIN_PER_KM};
 use osm4routing::NodeId;
@@ -860,7 +860,7 @@ fn travel_profile_report_key(profile: TravelProfile) -> &'static str {
 }
 
 fn sample_polyline_km(polyline: &str) -> Vec<(f64, f64, f64)> {
-    // Returns (lon, lat, cumulative_km)
+    // Returns (lat, lon, cumulative_km). Polyline wire format is "lon,lat;…".
     let mut out = Vec::new();
     let mut cum = 0.0;
     let mut prev: Option<(f64, f64)> = None;
@@ -872,11 +872,11 @@ fn sample_polyline_km(polyline: &str) -> Vec<(f64, f64, f64)> {
         let (Ok(lon), Ok(lat)) = (bits[0].parse::<f64>(), bits[1].parse::<f64>()) else {
             continue;
         };
-        if let Some((plon, plat)) = prev {
+        if let Some((plat, plon)) = prev {
             cum += haversine_m(plat, plon, lat, lon) / 1000.0;
         }
-        out.push((lon, lat, cum));
-        prev = Some((lon, lat));
+        out.push((lat, lon, cum));
+        prev = Some((lat, lon));
     }
     out
 }
@@ -886,11 +886,11 @@ fn interpolate_at_km(samples: &[(f64, f64, f64)], target_km: f64) -> (f64, f64) 
         return (0.0, 0.0);
     }
     if target_km <= samples[0].2 {
-        return (samples[0].1, samples[0].0); // lat, lon
+        return (samples[0].0, samples[0].1); // lat, lon
     }
     for w in samples.windows(2) {
-        let (lon0, lat0, k0) = w[0];
-        let (lon1, lat1, k1) = w[1];
+        let (lat0, lon0, k0) = w[0];
+        let (lat1, lon1, k1) = w[1];
         if target_km <= k1 {
             let t = if (k1 - k0).abs() < 1e-9 {
                 0.0
@@ -903,7 +903,7 @@ fn interpolate_at_km(samples: &[(f64, f64, f64)], target_km: f64) -> (f64, f64) 
         }
     }
     let last = samples.last().unwrap();
-    (last.1, last.0)
+    (last.0, last.1)
 }
 
 fn first_named<'a>(hits: &[&'a PoiRecord]) -> Option<&'a PoiRecord> {
@@ -2118,6 +2118,10 @@ pub fn plan_car_route_at(
             departure_local_iso,
             data_dir,
             via_points,
+            /* allow_long_trip_chunk */ true,
+            /* relax_start_snap */ false,
+            /* relax_end_snap */ false,
+            /* tight_intermediate_snap */ false,
         )
     })) {
         Ok(result) => result,
@@ -2135,6 +2139,463 @@ fn parse_departure_local(iso: Option<&str>) -> Option<chrono::NaiveDateTime> {
     chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
         .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
         .ok()
+}
+
+fn plan_car_route_chunked_legs(
+    pbf_path: String,
+    elev_dir: String,
+    cache_dir: String,
+    use_eco: bool,
+    profile: TravelProfile,
+    avoid_motorways: bool,
+    toll_policy: FfiTollPolicy,
+    avoid_ferries: bool,
+    avoid_tunnels: bool,
+    vehicle: FfiVehicleLimits,
+    prefer_official_networks: bool,
+    departure_local_iso: Option<String>,
+    data_dir: String,
+    hops: &[(f64, f64)],
+) -> CorridorRouteResult {
+    let mut report = String::from("TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\n");
+    report.push_str(&format!(
+        "long_trip_chunked=true; hops={}; chunk_deg={:.2}\n",
+        hops.len().saturating_sub(1),
+        driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
+    ));
+    let mut distance_km = 0.0;
+    let mut eta_minutes = 0.0;
+    let mut build_s = 0.0;
+    let mut cache_hit = true;
+    let mut polyline = String::new();
+    let mut sim_samples = String::from("[");
+    let mut maneuvers = String::from("[");
+    let mut break_pois = String::from("[");
+    let mut sim_first = true;
+    let mut man_first = true;
+    let mut break_first = true;
+    let mut expansions: u64 = 0;
+    let mut toll_incomplete = false;
+    let mut route_uses_tolls = false;
+    let mut pad_attempts: Vec<f64> = Vec::new();
+    let mut priority_share_acc = 0.0;
+    let mut priority_share_w = 0.0;
+
+    for (i, w) in hops.windows(2).enumerate() {
+        let (slat, slon) = w[0];
+        let (elat, elon) = w[1];
+        report.push_str(&format!(
+            "chunk_leg{}={:.5},{:.5} -> {:.5},{:.5}\n",
+            i + 1,
+            slat,
+            slon,
+            elat,
+            elon
+        ));
+        driver_break_core::download::progress::set(
+            i as u64,
+            Some((hops.len() - 1) as u64),
+            &format!("Planning long trip leg {}/{}…", i + 1, hops.len() - 1),
+        );
+        let relax_start = i > 0;
+        let relax_end = i + 2 < hops.len();
+        let leg = plan_car_route_inner(
+            pbf_path.clone(),
+            elev_dir.clone(),
+            cache_dir.clone(),
+            slat,
+            slon,
+            elat,
+            elon,
+            use_eco,
+            profile,
+            avoid_motorways,
+            toll_policy,
+            avoid_ferries,
+            avoid_tunnels,
+            vehicle.clone(),
+            prefer_official_networks,
+            departure_local_iso.clone(),
+            data_dir.clone(),
+            Vec::new(),
+            /* allow_long_trip_chunk */ false,
+            relax_start,
+            relax_end,
+            /* tight_intermediate_snap */ false,
+        );
+        report.push_str(&format!("--- leg{} report ---\n", i + 1));
+        report.push_str(&leg.report);
+        if leg.distance_km <= 0.0
+            || leg.search_terminate_reason == "snap_failed"
+            || leg.search_terminate_reason == "fail"
+            || leg.search_terminate_reason == "graph_build"
+            || leg.search_terminate_reason == "bbox_exhausted"
+            || leg.search_terminate_reason == "disconnected"
+            || leg.route_polyline.is_empty()
+        {
+            // Put the failing leg first so truncated logs still show the cause.
+            let mut fail = format!(
+                "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: chunk_leg{} terminated {}\n",
+                i + 1,
+                leg.search_terminate_reason
+            );
+            fail.push_str(&report);
+            let mut r = empty_corridor(fail);
+            r.search_terminate_reason = leg.search_terminate_reason;
+            r.toll_policy = leg.toll_policy;
+            r.pad_attempts_json = leg.pad_attempts_json;
+            r.search_expansions = expansions.saturating_add(leg.search_expansions);
+            return r;
+        }
+        distance_km += leg.distance_km;
+        eta_minutes += leg.eta_minutes;
+        build_s += leg.cold_build_s;
+        cache_hit = cache_hit && leg.cache_hit;
+        expansions = expansions.saturating_add(leg.search_expansions);
+        toll_incomplete = toll_incomplete || leg.toll_avoidance_incomplete;
+        route_uses_tolls = route_uses_tolls || leg.route_uses_tolls;
+        if let Ok(pads) = serde_json::from_str::<Vec<f64>>(&leg.pad_attempts_json) {
+            pad_attempts.extend(pads);
+        }
+        if leg.distance_km > 0.0 {
+            priority_share_acc += leg.priority_path_share_pct * leg.distance_km;
+            priority_share_w += leg.distance_km;
+        }
+        // Polyline: skip duplicate joint vertex on subsequent legs.
+        if polyline.is_empty() {
+            polyline = leg.route_polyline;
+        } else if let Some((_, rest)) = leg.route_polyline.split_once(';') {
+            if !rest.is_empty() {
+                polyline.push(';');
+                polyline.push_str(rest);
+            }
+        }
+        append_json_array_elems(&mut sim_samples, &mut sim_first, &leg.sim_samples_json);
+        append_json_array_elems(&mut maneuvers, &mut man_first, &leg.maneuvers_json);
+        append_json_array_elems(&mut break_pois, &mut break_first, &leg.break_pois_json);
+        // Clear large leftover strings so the next hop starts with less retained
+        // RSS on 4 GB Automotive (LMK previously killed ~2.9 GB RSS).
+        let CorridorRouteResult {
+            report: _,
+            route_polyline: _,
+            sim_samples_json: _,
+            maneuvers_json: _,
+            break_pois_json: _,
+            days_json: leftover_days,
+            route_segments_json: leftover_segs,
+            off_trail_advisory: leftover_adv,
+            ..
+        } = leg;
+        drop((leftover_days, leftover_segs, leftover_adv));
+    }
+    sim_samples.push(']');
+    maneuvers.push(']');
+    let priority_path_share_pct = if priority_share_w > 0.0 {
+        priority_share_acc / priority_share_w
+    } else {
+        0.0
+    };
+    let end = *hops.last().unwrap_or(&(0.0, 0.0));
+    // Soft rest / overnight on the full concatenated polyline. Per-chunk POI was
+    // skipped (4 GB: POI packs + graph co-resident → LMK). Finalize loads one
+    // Ready POI pack per densify hop, then plans globally so hop joints cannot
+    // drop or double-count a pause.
+    let (break_pois_json, days_json, soft_report) = finalize_chunked_motor_soft_breaks(
+        &data_dir,
+        profile,
+        &cache_dir,
+        &polyline,
+        distance_km,
+        eta_minutes,
+        hops,
+    );
+    report.push_str(&soft_report);
+    let _ = break_pois; // per-leg breaks were empty (poi_skipped); replaced above
+    report.push_str(&format!(
+        "chunked_distance_km={distance_km:.3}; chunked_eta_min={eta_minutes:.1}; hops={}\nPASS\n",
+        hops.len().saturating_sub(1)
+    ));
+    driver_break_core::download::progress::set(5, Some(5), "Planning route: done");
+    CorridorRouteResult {
+        report,
+        distance_km,
+        eta_minutes,
+        cache_hit,
+        cold_build_s: build_s,
+        warm_load_s: 0.0,
+        route_polyline: polyline,
+        poi_lat: end.0,
+        poi_lon: end.1,
+        poi_name: String::from("End"),
+        poi_icon_key: String::from("fuel"),
+        break_pois_json,
+        days_json,
+        sim_samples_json: sim_samples,
+        maneuvers_json: maneuvers,
+        priority_path_share_pct,
+        route_segments_json: String::from("[]"),
+        off_trail_advisory: String::new(),
+        toll_policy: toll_policy_diag(toll_policy),
+        pad_attempts_json: serde_json::to_string(&pad_attempts).unwrap_or_else(|_| "[]".into()),
+        search_expansions: expansions,
+        search_terminate_reason: if toll_incomplete {
+            "found_with_toll_fallback".into()
+        } else {
+            "found".into()
+        },
+        toll_avoidance_incomplete: toll_incomplete,
+        route_uses_tolls,
+    }
+}
+
+/// After chunked routing: collect soft rest + overnight POIs by querying only at
+/// rest-interval and day-boundary marks (same spirit as `build_break_pois_json`).
+/// One Ready POI pack is loaded per mark and dropped before the next — never
+/// co-resident with the route graph (4 GB). Boundary marks are not dropped:
+/// candidates are deduped by `osm_id` here and again in `plan_soft_rest_pauses`.
+fn finalize_chunked_motor_soft_breaks(
+    data_dir: &str,
+    profile: TravelProfile,
+    cache_dir: &str,
+    polyline: &str,
+    distance_km: f64,
+    eta_minutes: f64,
+    _hops: &[(f64, f64)],
+) -> (String, String, String) {
+    let mut report = String::new();
+    let core_profile = profile.to_core();
+    if !uses_motor_multi_day(core_profile) {
+        report.push_str("chunked_soft_breaks=skipped_profile\n");
+        return ("[]".into(), "[]".into(), report);
+    }
+    let cache = PathBuf::from(cache_dir);
+    let data = PathBuf::from(data_dir);
+    let rest = load_rest_config_near_cache(&cache);
+    let poi_radii = load_profile_poi_radii_near_cache(&cache)
+        .for_profile(core_profile)
+        .clone();
+    let break_interval_km = motor_break_interval_km(core_profile, &rest, distance_km, eta_minutes);
+    // Overnight matching uses a ~25 km along-route window; keep the spatial
+    // query in the same ballpark so we do not scan half a country per mark.
+    let search_radius_m = poi_radii.search_radius_m.min(35_000.0);
+    report.push_str(&format!(
+        "chunked_soft_breaks=true; break_interval_km={break_interval_km:.1}; search_radius_m={search_radius_m:.0}\n"
+    ));
+    let samples = sample_polyline_km(polyline);
+    if samples.len() < 2 {
+        report.push_str("chunked_soft_breaks=no_samples\n");
+        return ("[]".into(), "[]".into(), report);
+    }
+
+    let driving_h = eta_minutes / 60.0;
+    let mut query_kms: Vec<(f64, bool)> = Vec::new(); // (km, want_overnight_cats)
+    let mut next = break_interval_km;
+    while next < distance_km - 0.5 {
+        query_kms.push((next, false));
+        next += break_interval_km;
+    }
+    if let Some(budget) = motor_daily_budget(core_profile, &rest.car, &rest.cycling) {
+        let skeleton = plan_motor_multi_day(budget, driving_h, distance_km, &[]);
+        for d in &skeleton.days {
+            if d.overnight.is_some() {
+                query_kms.push((d.end_km, true));
+            }
+        }
+    }
+    query_kms.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    // Merge marks within 5 km so a rest-due and day-boundary near a chunk joint
+    // share one pack load (no drop, no double spatial scan).
+    let mut marks: Vec<(f64, bool)> = Vec::new();
+    for (km, overnight) in query_kms {
+        if let Some(last) = marks.last_mut() {
+            if (last.0 - km).abs() < 5.0 {
+                last.1 |= overnight;
+                continue;
+            }
+        }
+        marks.push((km, overnight));
+    }
+
+    let mut overnight: Vec<MotorOvernightCandidate> = Vec::new();
+    let mut rest_cands: Vec<SoftRestCandidate> = Vec::new();
+    let mut seen_overnight = std::collections::HashSet::new();
+    let mut seen_rest = std::collections::HashSet::new();
+    let mut packs_loaded = 0u32;
+
+    for &(km, want_overnight) in &marks {
+        let (lat, lon) = interpolate_at_km(&samples, km);
+        let Ok((poi, _barriers)) =
+            driver_break_core::routing::indexed::try_load_poi_pack_covering_point(&data, lat, lon)
+        else {
+            continue;
+        };
+        packs_loaded += 1;
+        for p in poi.nearest(PoiCategory::RestArea, lat, lon, search_radius_m) {
+            if seen_rest.insert(p.osm_id) {
+                rest_cands.push(SoftRestCandidate {
+                    along_km: km,
+                    lat: p.lat,
+                    lon: p.lon,
+                    name: p
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| format!("Rest {}", p.osm_id)),
+                    kind: "rest_area".into(),
+                    icon_key: "highway-rest_area".into(),
+                    osm_id: p.osm_id,
+                });
+            }
+        }
+        if want_overnight {
+            for cat in [
+                PoiCategory::Lodging,
+                PoiCategory::OvernightFacility,
+                PoiCategory::TentSite,
+                PoiCategory::Cabin,
+                PoiCategory::RestArea,
+            ] {
+                for p in poi.nearest(cat, lat, lon, search_radius_m) {
+                    if !seen_overnight.insert(p.osm_id) {
+                        continue;
+                    }
+                    let kind = if p.categories.contains(&PoiCategory::Lodging) {
+                        MotorOvernightKind::Lodging
+                    } else if p.categories.contains(&PoiCategory::TentSite)
+                        || p.categories.contains(&PoiCategory::OvernightFacility)
+                        || p.categories.contains(&PoiCategory::Cabin)
+                    {
+                        MotorOvernightKind::Camping
+                    } else if p.categories.contains(&PoiCategory::RestArea) {
+                        MotorOvernightKind::RestArea
+                    } else {
+                        continue;
+                    };
+                    overnight.push(MotorOvernightCandidate {
+                        along_km: km,
+                        lat: p.lat,
+                        lon: p.lon,
+                        name: p
+                            .name
+                            .clone()
+                            .unwrap_or_else(|| format!("Overnight {}", p.osm_id)),
+                        kind,
+                    });
+                }
+            }
+        }
+        drop(poi);
+    }
+    report.push_str(&format!(
+        "chunked_poi_packs_loaded={packs_loaded}; overnight_candidates={}; rest_candidates={}; marks={}\n",
+        overnight.len(),
+        rest_cands.len(),
+        marks.len()
+    ));
+
+    let pauses = plan_soft_rest_pauses(distance_km, break_interval_km, &rest_cands);
+    let mut break_arr: Vec<serde_json::Value> = pauses
+        .iter()
+        .map(|p| {
+            json!({
+                "name": p.name,
+                "lat": p.lat,
+                "lon": p.lon,
+                "kind": p.kind,
+                "icon": p.icon_key,
+                "along_km": p.along_km,
+            })
+        })
+        .collect();
+
+    let mut days_json = String::from("[]");
+    if let Some(budget) = motor_daily_budget(core_profile, &rest.car, &rest.cycling) {
+        let multi = plan_motor_multi_day(budget, driving_h, distance_km, &overnight);
+        if multi.multi_day || !multi.days.is_empty() {
+            days_json = days_json_from_motor(&multi, travel_profile_report_key(profile));
+        }
+        if multi.multi_day {
+            report.push_str(&format!(
+                "motor_multi_day: days={}; budget={:?}; total_driving_h={driving_h:.2}; total_km={distance_km:.1}\n",
+                multi.days.len(),
+                multi.budget
+            ));
+            for d in &multi.days {
+                report.push_str(&format!(
+                    "motor_day: idx={}; start_km={:.1}; end_km={:.1}; driving_h={:.2}; distance_km={:.1}\n",
+                    d.day_index, d.start_km, d.end_km, d.driving_hours, d.distance_km
+                ));
+                if let Some(o) = &d.overnight {
+                    let kind_s = match o.kind {
+                        MotorOvernightKind::Lodging => "lodging",
+                        MotorOvernightKind::Camping => "camping",
+                        MotorOvernightKind::RestArea => "rest_area",
+                        MotorOvernightKind::None => "none",
+                    };
+                    report.push_str(&format!(
+                        "motor_overnight: kind={kind_s}; poi_found={}; name={:?}; lat={:?}; lon={:?}\n",
+                        o.poi_found, o.name, o.lat, o.lon
+                    ));
+                    if o.poi_found {
+                        if let (Some(lat), Some(lon)) = (o.lat, o.lon) {
+                            break_arr.push(json!({
+                                "name": o.name.clone().unwrap_or_else(|| "Overnight".into()),
+                                "lat": lat,
+                                "lon": lon,
+                                "kind": match o.kind {
+                                    MotorOvernightKind::Lodging => "lodging",
+                                    MotorOvernightKind::Camping => "hut",
+                                    MotorOvernightKind::RestArea => "rest_area",
+                                    MotorOvernightKind::None => "amenity",
+                                },
+                                "icon_key": match o.kind {
+                                    MotorOvernightKind::Lodging => "tourism-hotel",
+                                    MotorOvernightKind::Camping => "tourism-camp_site",
+                                    MotorOvernightKind::RestArea => "highway-rest_area",
+                                    MotorOvernightKind::None => "fuel",
+                                },
+                                "along_km": d.end_km,
+                            }));
+                        }
+                    }
+                }
+            }
+        } else {
+            report.push_str("motor_multi_day: days=1; multi_day=false\n");
+        }
+    }
+    report.push_str(&format!(
+        "chunked_rest_pauses={}; break_pois_total={}\n",
+        pauses.len(),
+        break_arr.len()
+    ));
+    let break_pois_json = serde_json::to_string(&break_arr).unwrap_or_else(|_| "[]".into());
+    (break_pois_json, days_json, report)
+}
+
+fn append_json_array_elems(out: &mut String, first: &mut bool, arr_json: &str) {
+    let trimmed = arr_json.trim();
+    if trimmed == "[]" || trimmed.is_empty() {
+        return;
+    }
+    let inner = trimmed
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(trimmed)
+        .trim();
+    if inner.is_empty() {
+        return;
+    }
+    if !*first {
+        out.push(',');
+    }
+    out.push_str(inner);
+    *first = false;
+}
+
+fn toll_policy_diag(policy: FfiTollPolicy) -> String {
+    driver_break_core::routing::toll::TollPolicy::from(policy)
+        .as_diag_str()
+        .into()
 }
 
 fn plan_car_route_inner(
@@ -2156,6 +2617,10 @@ fn plan_car_route_inner(
     departure_local_iso: Option<String>,
     data_dir: String,
     via_points: Vec<FfiLatLon>,
+    allow_long_trip_chunk: bool,
+    relax_start_snap: bool,
+    relax_end_snap: bool,
+    tight_intermediate_snap: bool,
 ) -> CorridorRouteResult {
     let empty = empty_corridor;
     let _cancel_guard = driver_break_core::download::plan_cancel::begin_plan();
@@ -2183,7 +2648,8 @@ fn plan_car_route_inner(
     // Bicycle / e-bike: motorways are illegal or unsuitable — force avoid regardless of UI.
     let avoid_motorways = avoid_motorways
         || driver_break_core::routing::graph::profile_locks_avoid_motorways(routing_profile);
-    let toll_policy = driver_break_core::routing::toll::TollPolicy::from(toll_policy);
+    let ffi_toll_policy = toll_policy;
+    let toll_policy = driver_break_core::routing::toll::TollPolicy::from(ffi_toll_policy);
 
     let mut route_points: Vec<(f64, f64)> = Vec::with_capacity(2 + via_points.len());
     route_points.push((start_lat, start_lon));
@@ -2191,6 +2657,37 @@ fn plan_car_route_inner(
         route_points.push((v.lat, v.lon));
     }
     route_points.push((end_lat, end_lon));
+
+    // Long corridors (multi-landsdel) cannot merge every pack tile into one
+    // graph on Automotive RAM. Densify hops and plan each leg separately.
+    // Nested chunk legs must not re-enter this path (stack overflow).
+    let span = driver_break_core::routing::plan_bbox::trip_span_deg(&route_points);
+    if allow_long_trip_chunk && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG {
+        let pack_dir = plan_pack_data_dir(std::path::Path::new(pbf_path.trim()), &data_dir);
+        let hops = driver_break_core::routing::plan_bbox::densify_route_points_via_regions(
+            &route_points,
+            &pack_dir,
+            driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
+        );
+        if hops.len() > 2 {
+            return plan_car_route_chunked_legs(
+                pbf_path,
+                elev_dir,
+                cache_dir,
+                use_eco,
+                profile,
+                avoid_motorways,
+                ffi_toll_policy,
+                avoid_ferries,
+                avoid_tunnels,
+                vehicle,
+                prefer_official_networks,
+                departure_local_iso,
+                data_dir,
+                &hops,
+            );
+        }
+    }
 
     // Initial plan only: apply active DATEX from `{data_dir}/datex_cache` when the
     // plugin stamp is present. No UniFFI signature change; mid-nav dynamic
@@ -2296,8 +2793,17 @@ fn plan_car_route_inner(
     // (that OOMs 4GB Automotive AVDs). Still reads the same region .pbf.
     // Pad starts from the historical span clamp, then doubles up to a hard cap
     // when A* finds no path (avoids false "no route" for long avoid-detours).
-    let pad_schedule =
-        driver_break_core::routing::plan_bbox::plan_bbox_pad_schedule_points(&route_points);
+    let pad_schedule = {
+        let full =
+            driver_break_core::routing::plan_bbox::plan_bbox_pad_schedule_points(&route_points);
+        if allow_long_trip_chunk {
+            full
+        } else {
+            // Chunked legs: three pads (initial + two widens). Two was not enough
+            // when the first pad snapped a densify hop onto a neighbour shore.
+            full.into_iter().take(3).collect()
+        }
+    };
     let mut pad_attempts: Vec<f64> = Vec::new();
     let mut last_expansions: u64 = 0;
     let mut last_terminate = "bbox_exhausted";
@@ -2332,11 +2838,12 @@ fn plan_car_route_inner(
         driver_break_core::download::progress::set(0, Some(5), "Loading map data for this route…");
         let t_graph = Instant::now();
         let data_dir = plan_pack_data_dir(pbf, &data_dir);
-        let pack_try = driver_break_core::routing::indexed::try_load_graph_for_plan_bbox(
+        let pack_try = driver_break_core::routing::indexed::try_load_graph_for_plan_corridor(
             &data_dir,
             pbf,
             routing_profile,
             Some(bbox),
+            Some(route_points.as_slice()),
         );
         let _pause_bg = if pack_try.is_err() {
             Some(driver_break_core::download::ForegroundPlanGuard::acquire())
@@ -2450,18 +2957,36 @@ fn plan_car_route_inner(
         // Snap every stop (start → vias → end), then A* each consecutive leg.
         let mut snapped: Vec<(osm4routing::NodeId, f64)> = Vec::with_capacity(route_points.len());
         let mut snap_ok = true;
+        let default_snap = max_waypoint_snap_m(built.profile());
+        let chunk_snap = if tight_intermediate_snap {
+            driver_break_core::routing::plan_bbox::CHUNK_SAME_REGION_SNAP_M
+        } else {
+            driver_break_core::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M
+        };
         for (i, &(lat, lon)) in route_points.iter().enumerate() {
             // Surface preference is vias-only: start/destination must snap to the
             // literal nearest routable node (last-mile gravel driveways).
             let prefer_better_surface = i > 0 && i + 1 < route_points.len();
-            match built.nearest_routable_with_options(lat, lon, &route_opts, prefer_better_surface)
-            {
+            let at_start = i == 0;
+            let at_end = i + 1 == route_points.len();
+            let snap_max = if (at_start && relax_start_snap) || (at_end && relax_end_snap) {
+                chunk_snap
+            } else {
+                default_snap
+            };
+            match built.nearest_routable_with_options_max(
+                lat,
+                lon,
+                &route_opts,
+                prefer_better_surface,
+                snap_max,
+            ) {
                 Ok(v) => snapped.push(v),
                 Err(e) => {
                     last_terminate = "snap_failed";
-                    let label = if i == 0 {
+                    let label = if at_start {
                         "start".to_string()
-                    } else if i + 1 == route_points.len() {
+                    } else if at_end {
                         "destination".to_string()
                     } else {
                         format!("via{i}")
@@ -2676,7 +3201,12 @@ fn plan_car_route_inner(
     let polyline_ms = timer.lap_ms();
     driver_break_core::download::progress::set(4, Some(5), "Planning route: break stops…");
     // Clip POI load to the same trip bbox (never a full Ostlandet POI scan).
-    let (poi_index, barriers, poi_pack_hit) =
+    // Chunked intermediate legs skip POI packs entirely — they sit in RSS
+    // alongside the route graph and pushed 4 GB devices into LMK (~3 GB).
+    let (poi_index, barriers, poi_pack_hit) = if !allow_long_trip_chunk {
+        report.push_str("poi_skipped=chunk_leg\n");
+        (PoiIndex::new(), DangerBarrierIndex::default(), false)
+    } else {
         match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan_bbox(
             &data_dir,
             pbf,
@@ -2735,7 +3265,8 @@ fn plan_car_route_inner(
                 };
                 (poi_index, barriers, false)
             }
-        };
+        }
+    };
     let poi_barrier_ms = timer.lap_ms();
     report.push_str(&format!("poi_pack_hit={poi_pack_hit}\n"));
 
@@ -7629,6 +8160,17 @@ pub fn weather_map_symbols_json(
 #[cfg(test)]
 mod hiking_auto_via_tests {
     use super::*;
+
+    #[test]
+    fn sample_polyline_km_returns_lat_lon_order() {
+        // Wire format is lon,lat — consumers must not treat .0 as lon.
+        let s = sample_polyline_km("11.86,52.60;10.47,61.11");
+        assert_eq!(s.len(), 2);
+        assert!((s[0].0 - 52.60).abs() < 1e-9, "lat first: {:?}", s[0]);
+        assert!((s[0].1 - 11.86).abs() < 1e-9, "lon second: {:?}", s[0]);
+        let (lat, lon) = interpolate_at_km(&s, 0.0);
+        assert!((lat - 52.60).abs() < 1e-9 && (lon - 11.86).abs() < 1e-9);
+    }
 
     #[test]
     fn named_hut_pause_filter() {
