@@ -52,15 +52,34 @@ object OnlinePlaceSearch {
         overrideForTests?.let { return it(q, limit) }
         if (!BasemapStyleResolver.hasNetwork(context)) return emptyList()
 
+        val split = splitCountryQualifiedQuery(q)
+        val placeQ = split.placeQuery.ifBlank { q }
+        val countryIso = split.countryIso
         val lim = limit.coerceIn(1, 20)
-        for (candidate in nominatimQueryFallbacks(q)) {
-            val nominatim = searchNominatim(candidate, lim, addressMode)
-            if (nominatim.isNotEmpty()) return nominatim
+        // Prefer place-only candidates when a country filter is present so
+        // Nominatim countrycodes= is applied to "Bergen" not "Bergen, Germany".
+        val candidates =
+            if (countryIso != null) {
+                linkedSetOf(placeQ, q).toList()
+            } else {
+                nominatimQueryFallbacks(q)
+            }
+        for (candidate in candidates) {
+            val nominatim =
+                searchNominatim(
+                    candidate,
+                    lim,
+                    addressMode,
+                    countryIso = countryIso,
+                )
+            val filtered = filterHitsByCountryIso(nominatim, countryIso)
+            if (filtered.isNotEmpty()) return filtered
+            if (countryIso == null && nominatim.isNotEmpty()) return nominatim
         }
 
         val key = readOrsApiKey(context)
         if (key.isNullOrBlank()) return emptyList()
-        return searchOrs(q, lim, key)
+        return filterHitsByCountryIso(searchOrs(placeQ, lim, key), countryIso)
     }
 
     /**
@@ -188,7 +207,8 @@ object OnlinePlaceSearch {
             if (!f.isFile) continue
             val line =
                 runCatching {
-                    f.readText(StandardCharsets.UTF_8)
+                    f
+                        .readText(StandardCharsets.UTF_8)
                         .lineSequence()
                         .map { it.trim() }
                         .firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
@@ -224,22 +244,36 @@ object OnlinePlaceSearch {
                 runCatching { RegionCoverage.suggestGeofabrikPath(lat, lon) }
                     .getOrNull()
                     .orEmpty()
+            val countryCc =
+                addr
+                    ?.optString("country_code")
+                    ?.trim()
+                    ?.lowercase()
+                    .orEmpty()
             val municipality =
-                addr?.optString("municipality")
+                addr
+                    ?.optString("municipality")
                     ?.ifBlank { addr.optString("city") }
                     ?.ifBlank { addr.optString("town") }
                     ?.ifBlank { addr.optString("village") }
                     .orEmpty()
+            val state =
+                addr
+                    ?.optString("state")
+                    ?.ifBlank { addr.optString("county") }
+                    .orEmpty()
             val subArea =
-                addr?.optString("suburb")
+                addr
+                    ?.optString("suburb")
                     ?.ifBlank { addr.optString("neighbourhood") }
                     ?.ifBlank { addr.optString("hamlet") }
+                    ?.ifBlank { state }
                     .orEmpty()
             out.add(
                 PlaceHit(
                     osmId = osmId,
                     name = name,
-                    kind = kind,
+                    kind = kindWithCountryIso(kind, countryCc.ifBlank { null }),
                     lat = lat,
                     lon = lon,
                     subArea = subArea,
@@ -255,13 +289,26 @@ object OnlinePlaceSearch {
         query: String,
         limit: Int,
         addressMode: Boolean,
+        countryIso: String? = null,
     ): List<PlaceHit> {
         throttleNominatim()
         val enc = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
         // Nominatim has no layer= filter (that is Photon). Address mode just
         // uses the same free-text search; callers may bias the query string.
+        // Explicit country → hard countrycodes= filter (not soft ranking).
+        val cc =
+            countryIso
+                ?.trim()
+                ?.lowercase()
+                ?.takeIf { it.length == 2 }
+        val ccParam =
+            if (cc != null) {
+                "&countrycodes=$cc"
+            } else {
+                ""
+            }
         val url =
-            "$NOMINATIM?q=$enc&format=jsonv2&limit=$limit&addressdetails=1"
+            "$NOMINATIM?q=$enc&format=jsonv2&limit=$limit&addressdetails=1$ccParam"
         return runCatching {
             val body = httpGet(url)
             parseNominatimJson(body, limit)

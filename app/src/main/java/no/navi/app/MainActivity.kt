@@ -4176,6 +4176,9 @@ private fun NaviMapScreen() {
         searchJob =
             scope.launch {
                 delay(200)
+                val split = splitCountryQualifiedQuery(trimmed)
+                val placeQ = split.placeQuery.ifBlank { trimmed }
+                val countryIso = split.countryIso
                 val dbPath = resolvePlaceIndexDb().absolutePath
                 val hasEntries =
                     withContext(Dispatchers.IO) {
@@ -4185,7 +4188,7 @@ private fun NaviMapScreen() {
                     withContext(Dispatchers.IO) {
                         PlaceIndexReady.filterHitsToReadyRegions(
                             dataDir,
-                            searchPlaces(dbPath, trimmed, 20u),
+                            searchPlaces(dbPath, placeQ, 20u),
                         )
                     }
                 var usedOnline = false
@@ -4208,10 +4211,11 @@ private fun NaviMapScreen() {
                             if (list.isEmpty()) {
                                 online
                             } else {
-                                mergeOnlineAndOfflinePlaceHits(trimmed, online, list)
+                                mergeOnlineAndOfflinePlaceHits(placeQ, online, list)
                             }
                     }
                 }
+                list = filterHitsByCountryIso(list, countryIso)
                 hits =
                     if (usedOnline) {
                         list
@@ -4248,7 +4252,9 @@ private fun NaviMapScreen() {
                     ).orEmpty()
                 NaviMapTestHooks.lastSearchHitCount = hits.size
                 NaviMapTestHooks.lastSearchQuery = trimmed
-                NaviMapTestHooks.lastSearchHitNames = hits.map { placeHitDisplayLabel(it) }
+                val disambiguate = hits.size > 1
+                NaviMapTestHooks.lastSearchHitNames =
+                    hits.map { placeHitSearchLabel(it, disambiguate) }
                 NaviMapTestHooks.lastSearchIndexBuildingHint = searchIndexHint
                 searchBusy = false
             }
@@ -4918,6 +4924,7 @@ private fun NaviMapScreen() {
                                 )
                             }
                             if (hits.isNotEmpty()) {
+                                val disambiguate = hits.size > 1
                                 hits.take(8).forEachIndexed { idx, hit ->
                                     Column(
                                         modifier =
@@ -4928,7 +4935,7 @@ private fun NaviMapScreen() {
                                                 .padding(vertical = 6.dp, horizontal = 4.dp),
                                     ) {
                                         Text(
-                                            placeHitDisplayLabel(hit),
+                                            placeHitSearchLabel(hit, disambiguate),
                                             style = MaterialTheme.typography.bodyLarge,
                                         )
                                         Text(hit.kind, style = MaterialTheme.typography.bodySmall)
