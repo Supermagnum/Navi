@@ -722,6 +722,12 @@ private fun NaviMapScreen() {
         mutableStateOf(MapHudPrefs.loadLongTripEnabled(context))
     }
     var longTripStatusLine by remember { mutableStateOf("") }
+    var longTripPackVolumeId by remember {
+        mutableStateOf(MapHudPrefs.loadLongTripPackVolumeId(context))
+    }
+    var longTripPackVolumes by remember {
+        mutableStateOf(NaviStorageVolumes.listPickerOptions(context))
+    }
     var poiLookaheadEnabled by remember {
         mutableStateOf(MapHudPrefs.loadPoiLookaheadEnabled(context))
     }
@@ -733,6 +739,36 @@ private fun NaviMapScreen() {
     }
     var poiLookaheadHud by remember { mutableStateOf(PoiLookaheadHudState()) }
     var hideChrome by remember { mutableStateOf(false) }
+
+    DisposableEffect(longTripEnabled) {
+        if (longTripEnabled) {
+            longTripPackVolumes = NaviStorageVolumes.listPickerOptions(context)
+            LongTripPackStorage.ensureWatching(
+                context,
+                onUnavailable = { volumeId, stems ->
+                    longTripPackVolumes = NaviStorageVolumes.listPickerOptions(context)
+                    val sel = MapHudPrefs.loadLongTripPackVolumeId(context)
+                    if (sel == volumeId || stems.isNotEmpty()) {
+                        longTripStatusLine =
+                            "Storage unavailable ($volumeId)" +
+                                if (stems.isEmpty()) {
+                                    " — downloads paused"
+                                } else {
+                                    " — paused mid-write (${stems.size})"
+                                }
+                    }
+                },
+                onMounted = { volumeId ->
+                    longTripPackVolumes = NaviStorageVolumes.listPickerOptions(context)
+                    longTripStatusLine = "Storage remounted ($volumeId) — ready to resume"
+                },
+            )
+        } else {
+            LongTripPackStorage.stopWatching()
+        }
+        onDispose { LongTripPackStorage.stopWatching() }
+    }
+
     var hideSearch by remember { mutableStateOf(false) }
     var regionDownloadProgress by remember { mutableStateOf("") }
     var downloadPolling by remember { mutableStateOf(false) }
@@ -6083,6 +6119,7 @@ private fun NaviMapScreen() {
                                 if (!on) {
                                     longTripStatusLine = "Long trip off (installed packs kept)"
                                 } else {
+                                    longTripPackVolumes = NaviStorageVolumes.listPickerOptions(context)
                                     longTripStatusLine =
                                         if (NetworkUnmetered.isWifiOrEthernet(context)) {
                                             "Long trip on — unmetered; awaiting trip"
@@ -6092,6 +6129,15 @@ private fun NaviMapScreen() {
                                 }
                             },
                             longTripStatusLine = longTripStatusLine,
+                            longTripPackVolumeId = longTripPackVolumeId,
+                            longTripPackVolumes = longTripPackVolumes,
+                            onLongTripPackVolumeChange = { id ->
+                                longTripPackVolumeId = id
+                                MapHudPrefs.saveLongTripPackVolumeId(context, id)
+                                val vol = longTripPackVolumes.firstOrNull { it.id == id }
+                                longTripStatusLine =
+                                    "Long-trip packs → ${vol?.label ?: id}"
+                            },
                             poiLookaheadEnabled = poiLookaheadEnabled,
                             onPoiLookaheadChange = { on ->
                                 poiLookaheadEnabled = on
@@ -7136,6 +7182,7 @@ private fun NaviMapScreen() {
                         if (!on) {
                             longTripStatusLine = "Long trip off (installed packs kept)"
                         } else {
+                            longTripPackVolumes = NaviStorageVolumes.listPickerOptions(context)
                             longTripStatusLine =
                                 if (NetworkUnmetered.isWifiOrEthernet(context)) {
                                     "Long trip on — unmetered; awaiting trip"
@@ -7145,6 +7192,15 @@ private fun NaviMapScreen() {
                         }
                     },
                     longTripStatusLine = longTripStatusLine,
+                    longTripPackVolumeId = longTripPackVolumeId,
+                    longTripPackVolumes = longTripPackVolumes,
+                    onLongTripPackVolumeChange = { id ->
+                        longTripPackVolumeId = id
+                        MapHudPrefs.saveLongTripPackVolumeId(context, id)
+                        val vol = longTripPackVolumes.firstOrNull { it.id == id }
+                        longTripStatusLine =
+                            "Long-trip packs → ${vol?.label ?: id}"
+                    },
                     poiLookaheadEnabled = poiLookaheadEnabled,
                     onPoiLookaheadChange = { on ->
                         poiLookaheadEnabled = on

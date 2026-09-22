@@ -33,6 +33,7 @@ object MapHudPrefs {
     private const val KEY_DATEX_PORT = "datex_port"
     private const val KEY_DATEX_WIFI_ONLY = "datex_wifi_only"
     private const val KEY_LONG_TRIP_ENABLED = "long_trip_enabled"
+    private const val KEY_LONG_TRIP_PACK_VOLUME_ID = "long_trip_pack_volume_id"
     private const val KEY_ORS_API_KEY = "ors_api_key"
     private const val KEY_ORS_BASE_URL = "ors_base_url"
     private const val KEY_POI_LOOKAHEAD_ENABLED = "poi_lookahead_enabled"
@@ -547,6 +548,29 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_LONG_TRIP_ENABLED, enabled)
+            .apply()
+    }
+
+    /**
+     * Volume id for long-trip pack downloads: [NaviStorageVolumes.INTERNAL_ID] or a
+     * removable id from [NaviStorageVolumes.list]. Empty → treat as internal.
+     */
+    fun loadLongTripPackVolumeId(context: Context): String =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_LONG_TRIP_PACK_VOLUME_ID, NaviStorageVolumes.INTERNAL_ID)
+            .orEmpty()
+            .ifBlank { NaviStorageVolumes.INTERNAL_ID }
+
+    fun saveLongTripPackVolumeId(
+        context: Context,
+        volumeId: String,
+    ) {
+        val id = volumeId.trim().ifBlank { NaviStorageVolumes.INTERNAL_ID }
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_LONG_TRIP_PACK_VOLUME_ID, id)
             .apply()
     }
 

@@ -380,6 +380,9 @@ fun PluginSettingsSection(
     longTripEnabled: Boolean = false,
     onLongTripChange: (Boolean) -> Unit = {},
     longTripStatusLine: String = "",
+    longTripPackVolumeId: String = NaviStorageVolumes.INTERNAL_ID,
+    longTripPackVolumes: List<NaviStorageVolumes.Volume> = emptyList(),
+    onLongTripPackVolumeChange: (String) -> Unit = {},
     poiLookaheadEnabled: Boolean = false,
     onPoiLookaheadChange: (Boolean) -> Unit = {},
     poiLookaheadStrictHoursUnknown: Boolean = false,
@@ -497,7 +500,8 @@ fun PluginSettingsSection(
         if (longTripEnabled) {
             Text(
                 "Downloads map packs along the route on Wi-Fi/Ethernet only. " +
-                    "Origin, vias and destination are sent to BRouter and/or OpenRouteService when online.",
+                    "Origin, vias and destination are sent to BRouter and/or OpenRouteService when online. " +
+                    "Place index and Tools downloads stay on internal storage.",
                 style = MaterialTheme.typography.bodySmall,
             )
             if (longTripStatusLine.isNotBlank()) {
@@ -505,6 +509,47 @@ fun PluginSettingsSection(
                     longTripStatusLine,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag("long_trip_status_line"),
+                )
+            }
+            Text(
+                "Store long-trip packs on",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("long_trip_pack_volume_label"),
+            )
+            val options =
+                longTripPackVolumes.ifEmpty {
+                    listOf(
+                        NaviStorageVolumes.Volume(
+                            id = NaviStorageVolumes.INTERNAL_ID,
+                            label = "Internal storage",
+                            removable = false,
+                            mounted = true,
+                            freeBytes = 0L,
+                            totalBytes = 0L,
+                            appFilesDir = null,
+                        ),
+                    )
+                }
+            for (vol in options) {
+                val selected = vol.id == longTripPackVolumeId
+                val freeLabel =
+                    if (vol.mounted && vol.freeBytes > 0L) {
+                        " — ${formatBytesShort(vol.freeBytes)} free"
+                    } else if (!vol.mounted) {
+                        " — not mounted"
+                    } else {
+                        ""
+                    }
+                val mark = if (selected) "● " else "○ "
+                Text(
+                    mark + vol.label + freeLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = vol.mounted || vol.id == NaviStorageVolumes.INTERNAL_ID) {
+                                onLongTripPackVolumeChange(vol.id)
+                            }.testTag("long_trip_pack_volume_${vol.id}"),
                 )
             }
         }
@@ -541,6 +586,21 @@ fun PluginSettingsSection(
     }
 }
 
+/** Compact free-space label for the long-trip volume picker. */
+internal fun formatBytesShort(bytes: Long): String {
+    if (bytes < 1024L) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024.0) return String.format(java.util.Locale.US, "%.0f KB", kb)
+    val mb = kb / 1024.0
+    if (mb < 1024.0) return String.format(java.util.Locale.US, "%.0f MB", mb)
+    val gb = mb / 1024.0
+    return if (gb < 1024.0) {
+        String.format(java.util.Locale.US, "%.1f GB", gb)
+    } else {
+        String.format(java.util.Locale.US, "%.1f TB", gb / 1024.0)
+    }
+}
+
 /**
  * Map / display settings opened from the collapsed top bar.
  * Toggles apply immediately; Save persists prefs and closes; Close dismisses.
@@ -572,6 +632,12 @@ fun MapSettingsSheet(
     datexWifiOnly: Boolean = MapHudPrefs.DATEX_WIFI_ONLY_DEFAULT,
     onDatexWifiOnlyChange: (Boolean) -> Unit = {},
     datexStatusLine: String = "",
+    longTripEnabled: Boolean = false,
+    onLongTripChange: (Boolean) -> Unit = {},
+    longTripStatusLine: String = "",
+    longTripPackVolumeId: String = NaviStorageVolumes.INTERNAL_ID,
+    longTripPackVolumes: List<NaviStorageVolumes.Volume> = emptyList(),
+    onLongTripPackVolumeChange: (String) -> Unit = {},
     poiLookaheadEnabled: Boolean = false,
     onPoiLookaheadChange: (Boolean) -> Unit = {},
     poiLookaheadStrictHoursUnknown: Boolean = false,
@@ -794,6 +860,12 @@ fun MapSettingsSheet(
                 datexWifiOnly = datexWifiOnly,
                 onDatexWifiOnlyChange = onDatexWifiOnlyChange,
                 datexStatusLine = datexStatusLine,
+                longTripEnabled = longTripEnabled,
+                onLongTripChange = onLongTripChange,
+                longTripStatusLine = longTripStatusLine,
+                longTripPackVolumeId = longTripPackVolumeId,
+                longTripPackVolumes = longTripPackVolumes,
+                onLongTripPackVolumeChange = onLongTripPackVolumeChange,
                 poiLookaheadEnabled = poiLookaheadEnabled,
                 onPoiLookaheadChange = onPoiLookaheadChange,
                 poiLookaheadStrictHoursUnknown = poiLookaheadStrictHoursUnknown,
