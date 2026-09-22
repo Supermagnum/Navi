@@ -114,6 +114,43 @@ object PlaceIndexReady {
         runCatching { Log.i(TAG, "clear ready region=$id") }
     }
 
+    /**
+     * Drop the ready stamp so From/Via/To will not treat this region as
+     * searchable, but leave `name_entries` intact.
+     *
+     * Used when resuming [RegionDownloadBackground.Phase.PLACE_INDEX] with
+     * `name_index_build.complete=0`: wiping rows discarded insert-batch progress
+     * and left the region incomplete until a manual retry.
+     */
+    fun clearReadyStampOnly(
+        dataDir: File,
+        regionId: String,
+    ) {
+        val id = PackRegionAvailability.normalize(regionId)
+        if (id.isEmpty()) return
+        val next = loadStampOnly(dataDir).toMutableSet()
+        next.remove(id)
+        save(dataDir, next)
+        runCatching { Log.i(TAG, "clear ready stamp only (preserve rows) region=$id") }
+    }
+
+    /**
+     * Pipeline start for one region: either full [clearReady] (new download /
+     * finished index being replaced) or stamp-only when [preserveIncompleteRows]
+     * is true (PLACE_INDEX resume with complete=0).
+     */
+    fun preparePipelineStart(
+        dataDir: File,
+        regionId: String,
+        preserveIncompleteRows: Boolean,
+    ) {
+        if (preserveIncompleteRows) {
+            clearReadyStampOnly(dataDir, regionId)
+        } else {
+            clearReady(dataDir, regionId)
+        }
+    }
+
     fun isReady(
         dataDir: File,
         regionId: String,

@@ -740,6 +740,47 @@ object RegionDownloadBackground {
         }.getOrDefault(true)
 
     /**
+     * True when `name_index_build` explicitly records complete=0 for [regionId].
+     * Missing DB / missing row / legacy DB → false (not an interrupted mid-build).
+     */
+    internal fun placeIndexBuildIncomplete(
+        dataDir: File,
+        regionId: String,
+    ): Boolean {
+        val rid = regionId.trim().trim('/')
+        if (rid.isEmpty()) return false
+        val dbFile = File(dataDir, "place_index.db")
+        if (!dbFile.isFile || dbFile.length() < 100L) return false
+        return runCatching {
+            android.database.sqlite.SQLiteDatabase
+                .openDatabase(
+                    dbFile.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+                ).use { db ->
+                    db
+                        .rawQuery(
+                            "SELECT complete FROM name_index_build WHERE region_id = ? LIMIT 1",
+                            arrayOf(rid),
+                        ).use { c ->
+                            if (!c.moveToFirst()) return@use false
+                            c.getInt(0) == 0
+                        }
+                }
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Whether pipeline start should wipe `name_entries` for [regionId].
+     * False only for PLACE_INDEX resume with an explicit complete=0 build row.
+     */
+    internal fun shouldClearPlaceRowsOnPipelineStart(
+        phase: Phase,
+        dataDir: File,
+        regionId: String,
+    ): Boolean = !(phase == Phase.PLACE_INDEX && placeIndexBuildIncomplete(dataDir, regionId))
+
+    /**
      * Native download-slot snapshot as (raw label, formatted "label N% (done / tot)").
      * [runCatching] so JVM unit tests without libnavi still compile and run.
      */
@@ -1130,9 +1171,24 @@ object RegionDownloadBackground {
         val already = partialBytes(packs, filename)
         resuming.set(already > 0L || startPhase != Phase.PACKS)
         writeJob(dataDir, incoming)
-        // In-progress download must not leave searchable place rows for this region.
+        // Fresh pack download / complete-index replace: clear stamp + rows.
+        // PLACE_INDEX resume with name_index_build.complete=0: stamp only —
+        // keep partial name_entries so the next ensurePlaceIndex can finish
+        // (full PBF reparse is accepted; discarding rows left regions stuck).
         if (geofabrikPath.isNotBlank()) {
-            PlaceIndexReady.clearReady(dataDir, geofabrikPath)
+            val clearRows =
+                shouldClearPlaceRowsOnPipelineStart(startPhase, dataDir, geofabrikPath)
+            PlaceIndexReady.preparePipelineStart(
+                dataDir,
+                geofabrikPath,
+                preserveIncompleteRows = !clearRows,
+            )
+            if (!clearRows) {
+                Log.i(
+                    TAG,
+                    "PLACE_INDEX resume: preserving incomplete name_entries for $geofabrikPath",
+                )
+            }
         }
         if (lastStatus.get().isBlank() || !lastStatus.get().startsWith("Resuming")) {
             lastStatus.set(
