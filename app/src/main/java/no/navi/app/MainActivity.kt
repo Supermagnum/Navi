@@ -760,6 +760,8 @@ private fun NaviMapScreen() {
     var longTripPackVolumes by remember {
         mutableStateOf(NaviStorageVolumes.listPickerOptions(context))
     }
+    var statusToastCoalesce by remember { mutableStateOf(StatusUi.CoalesceState()) }
+    var statusToastText by remember { mutableStateOf("") }
     var poiLookaheadEnabled by remember {
         mutableStateOf(MapHudPrefs.loadPoiLookaheadEnabled(context))
     }
@@ -794,6 +796,19 @@ private fun NaviMapScreen() {
         onDispose { LongTripPackStorage.stopWatching() }
     }
 
+    // Keep Map-settings / Tools long-trip line in sync with coordinator phases
+    // (enable() alone goes stale while corridor downloads/indexes).
+    LaunchedEffect(longTripEnabled) {
+        if (!longTripEnabled) return@LaunchedEffect
+        while (isActive && longTripEnabled) {
+            val line = LongTripCoordinator.statusLine()
+            if (line.isNotBlank()) {
+                longTripStatusLine = line
+            }
+            delay(500)
+        }
+    }
+
     var hideSearch by remember { mutableStateOf(false) }
     var regionDownloadProgress by remember { mutableStateOf("") }
     var downloadPolling by remember { mutableStateOf(false) }
@@ -807,29 +822,35 @@ private fun NaviMapScreen() {
     var routePlanProgress by remember { mutableStateOf("") }
 
     // Standalone long-trip seed via adb extras (see applyNaviLaunchExtras).
+    // Poll so onNewIntent / warm starts still consume a fresh seed.
     LaunchedEffect(Unit) {
-        val trip = NaviMapTestHooks.pendingTripPlan ?: return@LaunchedEffect
-        NaviMapTestHooks.pendingTripPlan = null
-        if (trip.enableLongTrip) {
-            longTripEnabled = true
-            MapHudPrefs.saveLongTripEnabled(context, true)
-        }
-        fromPoint =
-            Waypoint(
-                name = trip.fromName,
-                lat = trip.fromLat,
-                lon = trip.fromLon,
-            )
-        toPoint =
-            Waypoint(
-                name = trip.toName,
-                lat = trip.toLat,
-                lon = trip.toLon,
-            )
-        status = "Trip seeded: ${trip.fromName} → ${trip.toName}"
-        if (trip.autoPlan) {
-            delay(1_200)
-            planKick += 1
+        while (isActive) {
+            val trip = NaviMapTestHooks.pendingTripPlan
+            if (trip != null) {
+                NaviMapTestHooks.pendingTripPlan = null
+                if (trip.enableLongTrip) {
+                    longTripEnabled = true
+                    MapHudPrefs.saveLongTripEnabled(context, true)
+                }
+                fromPoint =
+                    Waypoint(
+                        name = trip.fromName,
+                        lat = trip.fromLat,
+                        lon = trip.fromLon,
+                    )
+                toPoint =
+                    Waypoint(
+                        name = trip.toName,
+                        lat = trip.toLat,
+                        lon = trip.toLon,
+                    )
+                status = "Trip seeded: ${trip.fromName} → ${trip.toName}"
+                if (trip.autoPlan) {
+                    delay(1_200)
+                    planKick += 1
+                }
+            }
+            delay(400)
         }
     }
 
@@ -2096,20 +2117,37 @@ private fun NaviMapScreen() {
             PackRegionAvailability.pathCoveredByReadyIds(packPath, packServerReadyIds)
         regionDownloadProgress =
             if (already > 0L) {
-                "Resuming download…"
+                RegionProgressMessages.phaseForRegion(
+                    "Resuming download",
+                    packPath,
+                )
             } else if (serverReady) {
-                "Fetching packs from pack server…"
+                RegionProgressMessages.phaseForRegion(
+                    "Fetching packs from pack server",
+                    packPath,
+                )
             } else {
-                "Downloading region… 0%"
+                RegionProgressMessages.phaseForRegion(
+                    "Downloading region",
+                    packPath,
+                ) + " 0%"
             }
         downloadPolling = true
         toolsProcessReady = false
         status =
             when {
-                already > 0L -> "Resuming download of $packPath…"
+                already > 0L ->
+                    RegionProgressMessages.phaseForRegion("Resuming download", packPath)
                 serverReady ->
-                    "Pack server has $packPath ($packCatalogDataSource); installing packs + place index…"
-                else -> "Downloading $packPath (download all data, then place index)…"
+                    RegionProgressMessages.phaseForRegion(
+                        "Pack server has packs ($packCatalogDataSource); installing packs + place index",
+                        packPath,
+                    )
+                else ->
+                    RegionProgressMessages.phaseForRegion(
+                        "Downloading (download all data, then place index)",
+                        packPath,
+                    )
             }
         MapHudPrefs.saveGeofabrikPath(context, packPath)
         val gpsLat = mapState.gpsLat.takeIf { it != 0.0 }
@@ -2138,14 +2176,28 @@ private fun NaviMapScreen() {
             }
             val snap = runCatching { downloadProgressSnapshot() }.getOrNull()
             if (regionRunning && snap != null && snap.label.isNotBlank()) {
-                val line = formatProgressPct(snap.unitsDone, snap.unitsTotal, snap.label)
-                if (snap.label.contains("map tiles", ignoreCase = true) ||
-                    snap.label.contains("basemap", ignoreCase = true) ||
-                    snap.label.contains("DEM", ignoreCase = true) ||
-                    snap.label.contains("Planning extract", ignoreCase = true) ||
-                    snap.label.contains("Writing map archive", ignoreCase = true)
+                val region = RegionDownloadBackground.activeRegionPath()
+                val seq = RegionProgressMessages.sequenceFor(region)
+                val labeled =
+                    RegionProgressMessages.annotate(
+                        snap.label,
+                        region,
+                        seq?.first,
+                        seq?.second,
+                    )
+                val line = formatProgressPct(snap.unitsDone, snap.unitsTotal, labeled)
+                if (labeled.contains("map tiles", ignoreCase = true) ||
+                    labeled.contains("basemap", ignoreCase = true) ||
+                    labeled.contains("DEM", ignoreCase = true) ||
+                    labeled.contains("Planning extract", ignoreCase = true) ||
+                    labeled.contains("Writing map archive", ignoreCase = true)
                 ) {
                     pmtilesProgress = line
+                } else if (labeled.contains("Place index", ignoreCase = true)) {
+                    // Task 1 hand-off: place index may run while the next leaf
+                    // downloads — keep that on its own Tools line / do not
+                    // clobber regionDownloadProgress or the toast every tick.
+                    placeIndexUiLine = line
                 } else {
                     regionDownloadProgress = line
                     if (!planningRoute) {
@@ -2172,7 +2224,8 @@ private fun NaviMapScreen() {
                     regionDownloadProgress = ""
                 }
             }
-            // Region becomes usable only after place index (downloads already done).
+            // Region becomes routing-usable at Installed (packs Ready); place
+            // index may still be building (Indexed = also searchable).
             if (regionRunning) {
                 RegionDownloadBackground.takeLastUsablePath().let { path ->
                     if (path.isNotBlank()) {
@@ -2183,7 +2236,7 @@ private fun NaviMapScreen() {
                         )
                         offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
                         if (!planningRoute) {
-                            status = "Region ready for routing and search"
+                            status = "Region ready for routing"
                         }
                     }
                 }
@@ -2376,7 +2429,12 @@ private fun NaviMapScreen() {
                     )
                 }
             indexedMapsUiLine = tick.indexedLine
-            placeIndexUiLine = tick.placeLine
+            // Standalone PlaceIndexBackground owns placeIndexUiLine when it runs.
+            // When the region queue is active, hand-off indexing updates the line
+            // from the download poller — do not blank it here every 400ms.
+            if (PlaceIndexBackground.isRunning() || !RegionDownloadBackground.isRunning()) {
+                placeIndexUiLine = tick.placeLine
+            }
             if (tick.pushIndexedToStatus) status = tick.indexedLine
             if (tick.pushPlaceToStatus) status = tick.placeLine
             delay(if (tick.busy) 400 else 2_500)
@@ -2466,6 +2524,21 @@ private fun NaviMapScreen() {
                         LongTripCoordinator.enable(context, tripWps)
                     }
                 status = longTripStatusLine.ifBlank { status }
+            }
+            // Wait until every corridor region is Installed (packs Ready) or
+            // Indexed — do not wait for place-index of non-start regions.
+            while (isActive && !LongTripCoordinator.corridorReadyForPlanning()) {
+                val line =
+                    LongTripCoordinator
+                        .statusLine()
+                        .ifBlank { "Long trip: downloading required regions…" }
+                longTripStatusLine = line
+                status = line
+                delay(1_500)
+            }
+            longTripStatusLine = LongTripCoordinator.statusLine().ifBlank { longTripStatusLine }
+            if (longTripStatusLine.isNotBlank()) {
+                status = longTripStatusLine
             }
         }
         // Prefer a single downloaded extract that covers the trip.
@@ -7018,28 +7091,22 @@ private fun NaviMapScreen() {
                     // Pinned process footer — always at the bottom of the Tools surface
                     // so active jobs are visible without scrolling the region picker.
                     val processLines =
-                        buildList {
-                            // Stable order: region download → basemap/DEM → place index → convert.
-                            if (regionDownloadProgress.isNotBlank()) {
-                                add("region_download_progress" to regionDownloadProgress)
-                            }
-                            if (pmtilesProgress.isNotBlank()) {
-                                add("pmtiles_progress" to pmtilesProgress)
-                            }
-                            if (placeIndexUiLine.isNotBlank()) {
-                                add("place_index_bg_status" to placeIndexUiLine)
-                            }
-                            if (indexedMapsUiLine.isNotBlank()) {
-                                add("indexed_maps_bg_status" to indexedMapsUiLine)
-                            }
-                        }
-                    if (processLines.isNotEmpty()) {
+                        StatusUi.toolsVisibleLines(
+                            regionDownloadProgress = regionDownloadProgress,
+                            pmtilesProgress = pmtilesProgress,
+                            placeIndexUiLine = placeIndexUiLine,
+                            indexedMapsUiLine = indexedMapsUiLine,
+                            toolsStatusRaw = userFacingStatus(status),
+                        )
+                    val footerProcess = processLines.filter { it.first != "tools_status" }
+                    val toolsStatusEntry = processLines.firstOrNull { it.first == "tools_status" }
+                    if (footerProcess.isNotEmpty()) {
                         Text(
                             "In progress",
                             style = MaterialTheme.typography.labelMedium,
                             modifier = Modifier.testTag("tools_process_footer_label"),
                         )
-                        processLines.forEach { (tag, line) ->
+                        footerProcess.forEach { (tag, line) ->
                             Text(
                                 line,
                                 style = MaterialTheme.typography.bodySmall,
@@ -7053,14 +7120,9 @@ private fun NaviMapScreen() {
                             modifier = Modifier.testTag("tools_process_ready"),
                         )
                     }
-                    // Do not repeat the same % line under tools_status — the pinned
-                    // process footer already owns active download/index progress.
-                    val toolsStatusLine = userFacingStatus(status)
-                    if (toolsStatusLine.isNotBlank() &&
-                        processLines.none { (_, line) -> line == toolsStatusLine }
-                    ) {
+                    if (toolsStatusEntry != null) {
                         Text(
-                            toolsStatusLine,
+                            toolsStatusEntry.second,
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.testTag("tools_status"),
                         )
@@ -7163,7 +7225,24 @@ private fun NaviMapScreen() {
             // Status chip: short user-facing messages only (never pipeline debug dumps).
             // While Tools is open, the pinned process footer owns download/index % —
             // hide the map toast when it would duplicate that footer line.
-            val toast = userFacingStatus(status)
+            val toastRaw = userFacingStatus(status)
+            LaunchedEffect(toastRaw) {
+                val now = SystemClock.elapsedRealtime()
+                var next = StatusUi.coalesce(statusToastCoalesce, toastRaw, now)
+                statusToastCoalesce = next
+                statusToastText = next.text
+                val pending = next.pending
+                if (pending != null) {
+                    val wait =
+                        (StatusUi.COALESCE_MIN_INTERVAL_MS - (now - next.lastEmittedMs))
+                            .coerceAtLeast(1L)
+                    delay(wait)
+                    next = StatusUi.flushPending(statusToastCoalesce, SystemClock.elapsedRealtime())
+                    statusToastCoalesce = next
+                    statusToastText = next.text
+                }
+            }
+            val toast = statusToastText.ifBlank { toastRaw }
             val toolsProcessDup =
                 showTools &&
                     toast.isNotBlank() &&
@@ -7172,7 +7251,7 @@ private fun NaviMapScreen() {
                         pmtilesProgress,
                         placeIndexUiLine,
                         indexedMapsUiLine,
-                    ).any { it.isNotBlank() && it == toast }
+                    ).any { it.isNotBlank() && StatusUi.overlapsStatus(it, toast) }
             if (toast.isNotBlank() &&
                 !toast.equals("Ready", ignoreCase = true) &&
                 !toolsProcessDup
@@ -7184,6 +7263,7 @@ private fun NaviMapScreen() {
                             .align(Alignment.BottomEnd)
                             .zIndex(3f)
                             .padding(end = 12.dp, bottom = 88.dp)
+                            .heightIn(min = StatusUi.TOAST_MIN_HEIGHT_DP.dp)
                             .background(Color(0xCCFFFFFF), RoundedCornerShape(8.dp))
                             .padding(horizontal = 10.dp, vertical = 8.dp)
                             .testTag("status_toast"),
