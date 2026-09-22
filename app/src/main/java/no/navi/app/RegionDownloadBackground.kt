@@ -1208,10 +1208,15 @@ object RegionDownloadBackground {
         LongTripPackStorage.beginPackWrite(packs)
         try {
             runOneRegionPipeline(context, dataDir, packs, url, filename, geofabrikPath, startPhase)
+        } catch (e: java.io.IOException) {
+            lastStatus.set("failed: ${e.message}")
+            Log.e(TAG, "provisionRegionData crashed", e)
+            val stems = LongTripPackStorage.handleWriteIoFailure(context, packs, e)
+            emitPhase(geofabrikPath, "unavailable:${stems.joinToString(",")}")
         } catch (t: Throwable) {
             lastStatus.set("failed: ${t.message}")
             Log.e(TAG, "provisionRegionData crashed", t)
-            if (t is java.io.IOException || t.cause is java.io.IOException) {
+            if (t.cause is java.io.IOException) {
                 val stems = LongTripPackStorage.handleWriteIoFailure(context, packs, t)
                 emitPhase(geofabrikPath, "unavailable:${stems.joinToString(",")}")
             } else {
