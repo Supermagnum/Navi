@@ -41,8 +41,7 @@ object StatusUi {
     }
 
     /** Remove a prior activity-pulse suffix so phase identity stays stable. */
-    fun stripActivityPulse(line: String): String =
-        line.replace(ACTIVITY_PULSE_SUFFIX, "").trimEnd()
+    fun stripActivityPulse(line: String): String = line.replace(ACTIVITY_PULSE_SUFFIX, "").trimEnd()
 
     /**
      * When [phaseHeldMs] exceeds [ACTIVITY_PULSE_AFTER_MS], append ` · Nm Ns`

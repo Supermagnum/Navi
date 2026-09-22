@@ -196,7 +196,7 @@ class StatusUiFlickerProbeTest {
         val combined = downloadHz + bgHz
         assertEquals(2.5, downloadHz, 0.01)
         assertTrue(
-            "combined busy polls can hit ~${combined}/s into status toast",
+            "combined busy polls can hit ~$combined/s into status toast",
             combined >= 5.0,
         )
     }

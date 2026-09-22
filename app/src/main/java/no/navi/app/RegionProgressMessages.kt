@@ -78,9 +78,10 @@ object RegionProgressMessages {
         index: Int,
         total: Int,
     ): String {
-        val name = regionName(regionId).ifBlank {
-            regionId.substringAfterLast('/').ifBlank { regionId }
-        }
+        val name =
+            regionName(regionId).ifBlank {
+                regionId.substringAfterLast('/').ifBlank { regionId }
+            }
         return "$name ($index of $total)=$state"
     }
 

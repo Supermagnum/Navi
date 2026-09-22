@@ -31,7 +31,10 @@ class LongTripCoordinatorPhaseCTest {
         )
 
     /** Real-size PBF + place-index stamp so ReuseInternal counts as Indexed. */
-    private fun seedIndexedStartRegion(dir: java.io.File, regionId: String) {
+    private fun seedIndexedStartRegion(
+        dir: java.io.File,
+        regionId: String,
+    ) {
         val stem = PackRegionAvailability.localStem(regionId)
         val pbf = java.io.File(dir, "$stem.osm.pbf")
         java.io.RandomAccessFile(pbf, "rw").use { it.setLength(RegionDownloadBackground.MIN_PBF_BYTES) }

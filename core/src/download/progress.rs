@@ -7,7 +7,7 @@
 //! like "Writing map archive…" become region-aware without threading the id
 //! through every call site.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
@@ -56,6 +56,9 @@ fn slots() -> &'static [Slot; 4] {
 
 thread_local! {
     static CURRENT: Cell<ProgressChannel> = const { Cell::new(ProgressChannel::Download) };
+    /// Per-thread so a convert/basemap worker cannot annotate another thread's
+    /// place-index / plan progress labels (and so tests stay isolated).
+    static REGION_TAG: RefCell<Option<RegionTag>> = const { RefCell::new(None) };
 }
 
 struct RegionTag {
@@ -67,22 +70,18 @@ struct RegionTag {
     total: Option<u32>,
 }
 
-fn region_tag() -> &'static Mutex<Option<RegionTag>> {
-    static TAG: OnceLock<Mutex<Option<RegionTag>>> = OnceLock::new();
-    TAG.get_or_init(|| Mutex::new(None))
-}
-
 /// Set the region identity attached to subsequent [`set`] / [`set_on`] labels.
 /// Pass empty `region_id` to clear. [index]/[total] are optional 1-based
 /// corridor positions (kept when both are `Some` and total > 0).
 pub fn set_region_tag(region_id: &str, index: Option<u32>, total: Option<u32>) {
     let id = region_id.trim().trim_matches('/').to_string();
-    let mut g = region_tag().lock().unwrap_or_else(|e| e.into_inner());
-    if id.is_empty() {
-        *g = None;
-    } else {
-        *g = Some(RegionTag { id, index, total });
-    }
+    REGION_TAG.with(|c| {
+        if id.is_empty() {
+            *c.borrow_mut() = None;
+        } else {
+            *c.borrow_mut() = Some(RegionTag { id, index, total });
+        }
+    });
 }
 
 /// Clear the region tag (same as `set_region_tag("", None, None)`).
@@ -91,26 +90,28 @@ pub fn clear_region_tag() {
 }
 
 fn annotate_with_region(label: &str) -> String {
-    let g = region_tag().lock().unwrap_or_else(|e| e.into_inner());
-    let Some(tag) = g.as_ref() else {
-        return label.to_string();
-    };
-    if tag.id.is_empty() {
-        return label.to_string();
-    }
-    let leaf = tag.id.rsplit('/').next().unwrap_or(tag.id.as_str());
-    let lower = label.to_ascii_lowercase();
-    if lower.contains(&tag.id.to_ascii_lowercase())
-        || (!leaf.is_empty() && lower.contains(&leaf.to_ascii_lowercase()))
-    {
-        return label.to_string();
-    }
-    match (tag.index, tag.total) {
-        (Some(i), Some(t)) if t > 0 && i > 0 => {
-            format!("{label} (region {i} of {t}: {leaf})")
+    REGION_TAG.with(|c| {
+        let g = c.borrow();
+        let Some(tag) = g.as_ref() else {
+            return label.to_string();
+        };
+        if tag.id.is_empty() {
+            return label.to_string();
         }
-        _ => format!("{label} ({leaf})"),
-    }
+        let leaf = tag.id.rsplit('/').next().unwrap_or(tag.id.as_str());
+        let lower = label.to_ascii_lowercase();
+        if lower.contains(&tag.id.to_ascii_lowercase())
+            || (!leaf.is_empty() && lower.contains(&leaf.to_ascii_lowercase()))
+        {
+            return label.to_string();
+        }
+        match (tag.index, tag.total) {
+            (Some(i), Some(t)) if t > 0 && i > 0 => {
+                format!("{label} (region {i} of {t}: {leaf})")
+            }
+            _ => format!("{label} ({leaf})"),
+        }
+    })
 }
 
 /// Restores the previous channel when dropped (including panic unwind).

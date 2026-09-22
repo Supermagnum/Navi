@@ -119,47 +119,44 @@ fun placeHitCountryIso(hit: uniffi.navi.PlaceHit): String? {
     return countryIsoFromRegionId(hit.regionId)
 }
 
+private val GEOFABRIK_SLUG_TO_ISO =
+    mapOf(
+        "germany" to "de",
+        "norway" to "no",
+        "sweden" to "se",
+        "denmark" to "dk",
+        "netherlands" to "nl",
+        "belgium" to "be",
+        "austria" to "at",
+        "finland" to "fi",
+        "poland" to "pl",
+        "france" to "fr",
+        "czech-republic" to "cz",
+    )
+
+private fun catalogIsoForPath(path: String): String? =
+    GeofabrikDownloadCatalog
+        .findByPath(path)
+        ?.iso
+        ?.lowercase()
+
 fun countryIsoFromRegionId(regionId: String): String? {
     val norm = GeofabrikDownloadCatalog.canonicalizePath(regionId)
     if (norm.isEmpty()) return null
-    GeofabrikDownloadCatalog
-        .findByPath(norm)
-        ?.iso
-        ?.lowercase()
-        ?.let { return it }
+    catalogIsoForPath(norm)?.let { return it }
     // Walk parents: europe/norway/vestlandet → europe/norway
     var cur = norm
     while (true) {
         val slash = cur.lastIndexOf('/')
         if (slash <= 0) break
         cur = cur.substring(0, slash)
-        GeofabrikDownloadCatalog
-            .findByPath(cur)
-            ?.iso
-            ?.lowercase()
-            ?.let { return it }
+        catalogIsoForPath(cur)?.let { return it }
     }
     // Fallback slug: europe/germany/... → de via known map
     val parts = norm.split('/')
-    if (parts.size >= 2) {
-        resolveCountryToken(parts[1].replace('-', ' '))?.let { return it }
-        // germany, norway, sweden already in aliases as full names — also try slug
-        val slug = parts[1].lowercase()
-        when (slug) {
-            "germany" -> return "de"
-            "norway" -> return "no"
-            "sweden" -> return "se"
-            "denmark" -> return "dk"
-            "netherlands" -> return "nl"
-            "belgium" -> return "be"
-            "austria" -> return "at"
-            "finland" -> return "fi"
-            "poland" -> return "pl"
-            "france" -> return "fr"
-            "czech-republic" -> return "cz"
-        }
-    }
-    return null
+    if (parts.size < 2) return null
+    resolveCountryToken(parts[1].replace('-', ' '))?.let { return it }
+    return GEOFABRIK_SLUG_TO_ISO[parts[1].lowercase()]
 }
 
 /** Admin / leaf region label from Geofabrik path (e.g. vestlandet → Vestlandet). */
