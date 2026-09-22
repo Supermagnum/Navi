@@ -105,6 +105,24 @@ pub enum UpdatePlan {
 
 const PENDING_PLAN_FILENAME: &str = "pending_osm_update.json";
 
+/// True when pack-server catalog generation differs from the install stamp.
+///
+/// Callers use this for `UpdatePlan::FullRedownload` and `force_rebuild` on
+/// place-index. Matching generations (including empty remote) must not force a
+/// place-index rebuild — incomplete/corrupt indexes are handled by the
+/// PLACE_INDEX resume path (`name_index_build.complete=0`), not generation.
+pub fn catalog_generation_requires_rebuild(
+    local_generation: Option<&str>,
+    catalog_generation: Option<&str>,
+) -> bool {
+    let local = local_generation.unwrap_or("").trim();
+    let remote = catalog_generation.unwrap_or("").trim();
+    if remote.is_empty() {
+        return false;
+    }
+    local.is_empty() || local != remote
+}
+
 pub fn save_pending_plan(data_dir: &Path, plan: &UpdatePlan) -> Result<()> {
     let p = data_dir.join(PENDING_PLAN_FILENAME);
     fs::write(&p, serde_json::to_string_pretty(plan)?)?;
@@ -336,8 +354,10 @@ pub fn check_for_updates(data_dir: &Path) -> Result<UpdatePlan> {
                             .unwrap_or(false)
                     };
                     if format_mismatch
-                        || (!remote_gen.is_empty()
-                            && (local_gen.is_empty() || remote_gen != local_gen))
+                        || catalog_generation_requires_rebuild(
+                            (!local_gen.is_empty()).then_some(local_gen.as_str()),
+                            (!remote_gen.is_empty()).then_some(remote_gen.as_str()),
+                        )
                     {
                         let reason = if format_mismatch {
                             format!(
@@ -1253,6 +1273,30 @@ timestamp=2024-01-15T01\\:02\\:03Z
         let dir = tempfile::tempdir().unwrap();
         let plan = check_for_updates(dir.path()).unwrap();
         assert!(matches!(plan, UpdatePlan::Unsupported { .. }));
+    }
+
+    #[test]
+    fn catalog_generation_same_does_not_require_rebuild() {
+        assert!(!catalog_generation_requires_rebuild(
+            Some("bake-1"),
+            Some("bake-1")
+        ));
+        assert!(!catalog_generation_requires_rebuild(Some("bake-1"), None));
+        assert!(!catalog_generation_requires_rebuild(None, None));
+        assert!(!catalog_generation_requires_rebuild(Some(""), Some("")));
+    }
+
+    #[test]
+    fn catalog_generation_change_requires_rebuild() {
+        assert!(catalog_generation_requires_rebuild(
+            Some("bake-1"),
+            Some("bake-2")
+        ));
+        assert!(catalog_generation_requires_rebuild(None, Some("bake-2")));
+        assert!(catalog_generation_requires_rebuild(
+            Some(""),
+            Some("bake-2")
+        ));
     }
 
     #[test]
