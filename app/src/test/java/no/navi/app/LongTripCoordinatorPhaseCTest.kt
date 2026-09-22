@@ -7,7 +7,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -108,7 +107,8 @@ class LongTripCoordinatorPhaseCTest {
         }
         assertTrue(
             "Tools (requireUnmetered=false) must claimWorker even when metered",
-            sawRunning || RegionDownloadBackground.loadQueue(dir).isNotEmpty() ||
+            sawRunning ||
+                RegionDownloadBackground.loadQueue(dir).isNotEmpty() ||
                 RegionDownloadBackground.loadJob(dir) != null,
         )
         // Cleanup any leftover claim.
