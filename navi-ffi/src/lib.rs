@@ -2331,9 +2331,13 @@ fn plan_car_route_chunked_legs(
     // Soft rest / overnight on the full concatenated polyline. Per-chunk POI was
     // skipped (4 GB: POI packs + graph co-resident → LMK). Finalize loads one
     // Ready POI pack per densify hop, then plans globally so hop joints cannot
-    // drop or double-count a pause.
+    // drop or double-count a pause. Use the same pack_dirs as corridor graph
+    // load so long-trip-packs/ (and Removable roots) are searchable.
+    let soft_pack_dirs =
+        plan_pack_dirs(std::path::Path::new(pbf_path.trim()), &data_dir, &pack_dir);
     let (break_pois_json, days_json, soft_report) = finalize_chunked_motor_soft_breaks(
         &data_dir,
+        &soft_pack_dirs,
         profile,
         &cache_dir,
         &polyline,
@@ -2387,6 +2391,7 @@ fn plan_car_route_chunked_legs(
 /// candidates are deduped by `osm_id` here and again in `plan_soft_rest_pauses`.
 fn finalize_chunked_motor_soft_breaks(
     data_dir: &str,
+    pack_dirs: &[PathBuf],
     profile: TravelProfile,
     cache_dir: &str,
     polyline: &str,
@@ -2457,7 +2462,9 @@ fn finalize_chunked_motor_soft_breaks(
     for &(km, want_overnight) in &marks {
         let (lat, lon) = interpolate_at_km(&samples, km);
         let Ok((poi, _barriers)) =
-            driver_break_core::routing::indexed::try_load_poi_pack_covering_point(&data, lat, lon)
+            driver_break_core::routing::indexed::try_load_poi_pack_covering_point_with_pack_dirs(
+                &data, pack_dirs, lat, lon,
+            )
         else {
             continue;
         };

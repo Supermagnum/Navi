@@ -28,7 +28,8 @@ pub use load::{
     load_wetland_pack, merge_tile_graphs, try_load_graph_for_plan, try_load_graph_for_plan_bbox,
     try_load_graph_for_plan_corridor, try_load_graph_for_plan_corridor_with_pack_dirs,
     try_load_poi_barrier_for_plan, try_load_poi_barrier_for_plan_bbox,
-    try_load_poi_pack_covering_point, try_load_wetland_for_plan, PackLoadError, PackedPlanData,
+    try_load_poi_pack_covering_point, try_load_poi_pack_covering_point_with_pack_dirs,
+    try_load_wetland_for_plan, PackLoadError, PackedPlanData,
 };
 pub use manifest::{
     bbox_intersects, graph_pack_filename, graph_tile_filename, manifest_path,

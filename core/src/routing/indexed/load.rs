@@ -1215,40 +1215,78 @@ pub fn try_load_poi_pack_covering_point(
     lat: f64,
     lon: f64,
 ) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
-    let Ok(entries) = fs::read_dir(data_dir) else {
-        return Err(PackLoadError::Missing);
-    };
-    let mut best: Option<(f64, NaviManifest)> = None;
-    for ent in entries.flatten() {
-        let name = ent.file_name();
-        let name = name.to_string_lossy();
-        let Some(_stem) = name.strip_suffix(".navi-manifest.json") else {
-            continue;
-        };
-        let Ok(man) = NaviManifest::load(&ent.path()) else {
-            continue;
-        };
-        if !stem_pack_ready(data_dir, &man) {
-            continue;
-        }
-        let Some(path) = pbf_stem_to_geofabrik_path(&man.stem) else {
-            continue;
-        };
-        let Some(region) = region_bbox(&path) else {
-            continue;
-        };
-        if !crate::routing::basemap::bbox_covers_point(region, lat, lon) {
+    try_load_poi_pack_covering_point_with_pack_dirs(data_dir, &[], lat, lon)
+}
+
+/// Like [`try_load_poi_pack_covering_point`], but also searches [pack_dirs]
+/// (e.g. `files/long-trip-packs` or a removable volume pack root) for Ready
+/// manifests — same multi-dir roots as
+/// [`try_load_graph_for_plan_corridor_with_pack_dirs`].
+pub fn try_load_poi_pack_covering_point_with_pack_dirs(
+    data_dir: &Path,
+    pack_dirs: &[PathBuf],
+    lat: f64,
+    lon: f64,
+) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
+    let mut owned: Vec<PathBuf> = Vec::new();
+    for p in pack_dirs {
+        if p.as_os_str().is_empty() {
             continue;
         }
-        let area = (region[2] - region[0]).max(0.0) * (region[3] - region[1]).max(0.0);
-        if best.as_ref().is_none_or(|(ba, _)| area < *ba) {
-            best = Some((area, man));
+        if p.is_dir() && !owned.iter().any(|x| x == p) {
+            owned.push(p.clone());
         }
     }
-    let Some((_, man)) = best else {
+    if !owned.iter().any(|x| x.as_path() == data_dir) {
+        owned.push(data_dir.to_path_buf());
+    }
+    let dirs: Vec<&Path> = owned.iter().map(|p| p.as_path()).collect();
+    try_load_poi_pack_covering_point_dirs(&dirs, lat, lon)
+}
+
+fn try_load_poi_pack_covering_point_dirs(
+    dirs: &[&Path],
+    lat: f64,
+    lon: f64,
+) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
+    // Smallest covering bbox across all search roots (same selection as the
+    // single-dir scan, extended over pack_dirs + data_dir).
+    let mut best: Option<(f64, PathBuf, NaviManifest)> = None;
+    for data_dir in dirs {
+        let Ok(entries) = fs::read_dir(data_dir) else {
+            continue;
+        };
+        for ent in entries.flatten() {
+            let name = ent.file_name();
+            let name = name.to_string_lossy();
+            let Some(_stem) = name.strip_suffix(".navi-manifest.json") else {
+                continue;
+            };
+            let Ok(man) = NaviManifest::load(&ent.path()) else {
+                continue;
+            };
+            if !stem_pack_ready(data_dir, &man) {
+                continue;
+            }
+            let Some(path) = pbf_stem_to_geofabrik_path(&man.stem) else {
+                continue;
+            };
+            let Some(region) = region_bbox(&path) else {
+                continue;
+            };
+            if !crate::routing::basemap::bbox_covers_point(region, lat, lon) {
+                continue;
+            }
+            let area = (region[2] - region[0]).max(0.0) * (region[3] - region[1]).max(0.0);
+            if best.as_ref().is_none_or(|(ba, _, _)| area < *ba) {
+                best = Some((area, data_dir.to_path_buf(), man));
+            }
+        }
+    }
+    let Some((_, home, man)) = best else {
         return Err(PackLoadError::Missing);
     };
-    load_poi_barrier_pack(&man.poi_barrier_path(data_dir))
+    load_poi_barrier_pack(&man.poi_barrier_path(&home))
 }
 
 /// Prefer indexed wetland pack when present and valid; else `Err` → PBF fallback.
