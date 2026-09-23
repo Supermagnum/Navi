@@ -2,8 +2,7 @@
 //!
 //! Geometry + undirected edges come from `data/region_adjacency.bin`, built by
 //! `scripts/generate-region-adjacency.py` (Geofabrik index polys, NE Sweden
-//! län, named fixed/legacy links). Rings are never hand-edited except the
-//! documented hedmark stub rectangle in that script.
+//! län, named fixed links). Rings are never hand-edited.
 //!
 //! [`ordered_needed_regions_for_trip`] is the **default** corridor source:
 //! containing-region PIP + shortest hop-count path (centroid-distance
@@ -556,11 +555,10 @@ mod tests {
             "missing Oresund named link in {links:?}"
         );
         assert!(
-            links.iter().any(|(a, b, note)| {
-                (*a == "europe/norway/hedmark" || *b == "europe/norway/hedmark")
-                    && note.contains("catalog legacy")
-            }),
-            "missing hedmark legacy link in {links:?}"
+            links
+                .iter()
+                .all(|(a, b, _)| *a != "europe/norway/hedmark" && *b != "europe/norway/hedmark"),
+            "hedmark must not appear in named links: {links:?}"
         );
     }
 
@@ -587,6 +585,11 @@ mod tests {
         );
         assert_eq!(
             region_containing(61.593, 10.332, None),
+            Some("europe/norway/ostlandet")
+        );
+        // Hamar is Østlandet (Hedmark is not a catalog region).
+        assert_eq!(
+            region_containing(60.792205, 11.085951, None),
             Some("europe/norway/ostlandet")
         );
     }

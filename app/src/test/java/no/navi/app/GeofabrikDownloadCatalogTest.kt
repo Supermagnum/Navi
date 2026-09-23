@@ -16,9 +16,12 @@ class GeofabrikDownloadCatalogTest {
         assertTrue(
             GeofabrikDownloadCatalog.norwayRegions.any { it.first == "ostlandet" },
         )
-        // hedmark is on the pack server but covered by Østlandet — not a separate chip.
+        // Hedmark is retired from the pack catalog — not a chip.
         assertFalse(
             GeofabrikDownloadCatalog.norwayRegions.any { it.first == "hedmark" },
+        )
+        assertFalse(
+            GeofabrikDownloadCatalog.isKnownPackRegionId("europe/norway/hedmark"),
         )
 
         assertTrue(GeofabrikDownloadCatalog.hasRegionChips("europe/sweden"))

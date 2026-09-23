@@ -109,13 +109,18 @@ fn graph_stats_and_named_links() {
         eprintln!("  named_link: {a} <-> {b} ({note})");
     }
     assert_eq!(n, adjacency_region_count());
-    assert_eq!(n, 117);
+    assert_eq!(n, 116);
     assert!(e > 150, "edges={e}");
     assert!(isolates.contains(&"europe/sweden/gotland"));
     assert!(links
         .iter()
         .any(|(_, _, n)| n.to_ascii_lowercase().contains("oresund")));
-    assert!(links.iter().any(|(_, _, n)| n.contains("catalog legacy")));
+    assert!(
+        links
+            .iter()
+            .all(|(a, b, _)| !a.contains("hedmark") && !b.contains("hedmark")),
+        "hedmark must not appear in named links: {links:?}"
+    );
 }
 
 #[test]
@@ -142,6 +147,10 @@ fn trip_klecken_innlandet_vs_recorded_brouter() {
             "adjacency missing {stem} in {adj:?}"
         );
     }
+    assert!(
+        adj.iter().all(|r| !r.contains("hedmark")),
+        "hedmark must not appear in corridor: {adj:?}"
+    );
     // Hop-count skips Hamburg when Niedersachsen borders Schleswig-Holstein
     // directly; recorded road corridor still crosses Hamburg. Report, do not
     // force-equalize.
