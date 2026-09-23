@@ -167,6 +167,7 @@ class ReprovisionOstlandetMeasureInstrumentedTest {
                 preferOfficialNetworks = false,
                 dataDir = "",
                 packDir = "",
+                longTripEnabled = false,
                 viaPoints = emptyList(),
             )
         val wallMs = System.currentTimeMillis() - t0

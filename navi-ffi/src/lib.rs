@@ -2016,7 +2016,16 @@ fn plan_pack_data_dir(pbf: &Path, data_dir: &str) -> PathBuf {
 /// Pack search roots for corridor load: optional long-trip pack dir first
 /// (internal `files/long-trip-packs` or a removable volume's pack root), then
 /// the app data / Tools root so ReuseInternal packs still resolve.
-fn plan_pack_dirs(pbf: &Path, data_dir: &str, pack_dir: &str) -> Vec<PathBuf> {
+///
+/// When `long_trip_enabled` is false, skip the nested `long-trip-packs/` probe so
+/// ordinary single-shot plans only see Tools packs (avoids multi-country tiles
+/// competing for the `MAX_PLAN_TILES` budget and disconnecting mid-span ODs).
+fn plan_pack_dirs(
+    pbf: &Path,
+    data_dir: &str,
+    pack_dir: &str,
+    long_trip_enabled: bool,
+) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let pd = pack_dir.trim();
     if !pd.is_empty() {
@@ -2026,12 +2035,13 @@ fn plan_pack_dirs(pbf: &Path, data_dir: &str, pack_dir: &str) -> Vec<PathBuf> {
         }
     }
     let primary = plan_pack_data_dir(pbf, data_dir);
-    // Internal default from Phase B: packs land under `{dataDir}/long-trip-packs`
-    // even when the volume pref is "internal". Always probe that subdir when it
-    // exists so a host that forgets pack_dir still finds corridor packs.
-    let nested = primary.join("long-trip-packs");
-    if nested.is_dir() && !out.iter().any(|d| d == &nested) {
-        out.push(nested);
+    // Long-trip corridor packs under `{dataDir}/long-trip-packs` (Phase B).
+    // Only when long-trip mode is on (or an explicit pack_dir was already added).
+    if long_trip_enabled {
+        let nested = primary.join("long-trip-packs");
+        if nested.is_dir() && !out.iter().any(|d| d == &nested) {
+            out.push(nested);
+        }
     }
     if !out.iter().any(|d| d == &primary) {
         out.push(primary);
@@ -2051,6 +2061,11 @@ fn plan_pack_dirs(pbf: &Path, data_dir: &str, pack_dir: &str) -> Vec<PathBuf> {
 /// `pack_dir` is the optional long-trip pack root ([`LongTripPackStorage`] on
 /// Android). Empty: search `data_dir` and `data_dir/long-trip-packs` when present.
 /// Pass `""` only when the PBF already lives next to the packs.
+///
+/// `long_trip_enabled` gates densify/chunk planning for spans above
+/// [`LONG_TRIP_CHUNK_DEG`]. Ordinary UI plans must pass `false` so mid-length
+/// single-region trips (e.g. Hamar→Dombås) stay on one A* graph; long-trip mode
+/// passes `true` so multi-country corridors still chunk.
 #[uniffi::export]
 pub fn plan_car_route(
     pbf_path: String,
@@ -2070,6 +2085,7 @@ pub fn plan_car_route(
     prefer_official_networks: bool,
     data_dir: String,
     pack_dir: String,
+    long_trip_enabled: bool,
     via_points: Vec<FfiLatLon>,
 ) -> CorridorRouteResult {
     plan_car_route_at(
@@ -2091,6 +2107,7 @@ pub fn plan_car_route(
         None,
         data_dir,
         pack_dir,
+        long_trip_enabled,
         via_points,
     )
 }
@@ -2122,6 +2139,7 @@ pub fn plan_car_route_at(
     departure_local_iso: Option<String>,
     data_dir: String,
     pack_dir: String,
+    long_trip_enabled: bool,
     via_points: Vec<FfiLatLon>,
 ) -> CorridorRouteResult {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -2148,7 +2166,8 @@ pub fn plan_car_route_at(
             data_dir,
             pack_dir,
             via_points,
-            /* allow_long_trip_chunk */ true,
+            long_trip_enabled,
+            /* is_chunk_leg */ false,
             /* relax_start_snap */ false,
             /* relax_end_snap */ false,
             /* tight_intermediate_snap */ false,
@@ -2250,7 +2269,8 @@ fn plan_car_route_chunked_legs(
             data_dir.clone(),
             pack_dir.clone(),
             Vec::new(),
-            /* allow_long_trip_chunk */ false,
+            /* long_trip_enabled */ false,
+            /* is_chunk_leg */ true,
             relax_start,
             relax_end,
             /* tight_intermediate_snap */ false,
@@ -2333,8 +2353,12 @@ fn plan_car_route_chunked_legs(
     // Ready POI pack per densify hop, then plans globally so hop joints cannot
     // drop or double-count a pause. Use the same pack_dirs as corridor graph
     // load so long-trip-packs/ (and Removable roots) are searchable.
-    let soft_pack_dirs =
-        plan_pack_dirs(std::path::Path::new(pbf_path.trim()), &data_dir, &pack_dir);
+    let soft_pack_dirs = plan_pack_dirs(
+        std::path::Path::new(pbf_path.trim()),
+        &data_dir,
+        &pack_dir,
+        /* long_trip_enabled */ true,
+    );
     let (break_pois_json, days_json, soft_report) = finalize_chunked_motor_soft_breaks(
         &data_dir,
         &soft_pack_dirs,
@@ -2657,7 +2681,8 @@ fn plan_car_route_inner(
     data_dir: String,
     pack_dir: String,
     via_points: Vec<FfiLatLon>,
-    allow_long_trip_chunk: bool,
+    long_trip_enabled: bool,
+    is_chunk_leg: bool,
     relax_start_snap: bool,
     relax_end_snap: bool,
     tight_intermediate_snap: bool,
@@ -2700,10 +2725,19 @@ fn plan_car_route_inner(
 
     // Long corridors (multi-landsdel) cannot merge every pack tile into one
     // graph on Automotive RAM. Densify hops and plan each leg separately.
-    // Nested chunk legs must not re-enter this path (stack overflow).
+    // Only when the host long-trip toggle is on — ordinary mid-span trips must
+    // stay on a single bbox A* (nested chunk legs never re-enter; stack overflow).
     let span = driver_break_core::routing::plan_bbox::trip_span_deg(&route_points);
-    if allow_long_trip_chunk && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG {
-        let pack_dirs = plan_pack_dirs(std::path::Path::new(pbf_path.trim()), &data_dir, &pack_dir);
+    if long_trip_enabled
+        && !is_chunk_leg
+        && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
+    {
+        let pack_dirs = plan_pack_dirs(
+            std::path::Path::new(pbf_path.trim()),
+            &data_dir,
+            &pack_dir,
+            long_trip_enabled,
+        );
         let pack_dir_refs: Vec<&std::path::Path> = pack_dirs.iter().map(|p| p.as_path()).collect();
         let hops = driver_break_core::routing::plan_bbox::densify_route_points_via_regions_dirs(
             &route_points,
@@ -2779,7 +2813,7 @@ fn plan_car_route_inner(
     let mut report = String::new();
     report.push_str("TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\n");
     report.push_str(&format!(
-        "profile={profile:?}; routing={routing_profile:?}; start={start_lat:.6},{start_lon:.6}; end={end_lat:.6},{end_lon:.6}; vias={}; use_eco={use_eco}\n",
+        "profile={profile:?}; routing={routing_profile:?}; start={start_lat:.6},{start_lon:.6}; end={end_lat:.6},{end_lon:.6}; vias={}; use_eco={use_eco}; long_trip_enabled={long_trip_enabled}\n",
         via_points.len()
     ));
     report.push_str(&format!(
@@ -2848,12 +2882,12 @@ fn plan_car_route_inner(
     let pad_schedule = {
         let full =
             driver_break_core::routing::plan_bbox::plan_bbox_pad_schedule_points(&route_points);
-        if allow_long_trip_chunk {
-            full
-        } else {
+        if is_chunk_leg {
             // Chunked legs: three pads (initial + two widens). Two was not enough
             // when the first pad snapped a densify hop onto a neighbour shore.
             full.into_iter().take(3).collect()
+        } else {
+            full
         }
     };
     let mut pad_attempts: Vec<f64> = Vec::new();
@@ -2889,7 +2923,7 @@ fn plan_car_route_inner(
 
         driver_break_core::download::progress::set(0, Some(5), "Loading map data for this route…");
         let t_graph = Instant::now();
-        let pack_dirs = plan_pack_dirs(pbf, &data_dir, &pack_dir);
+        let pack_dirs = plan_pack_dirs(pbf, &data_dir, &pack_dir, long_trip_enabled);
         let (primary_pack, extra_packs) = pack_dirs.split_last().unwrap();
         let pack_try =
             driver_break_core::routing::indexed::try_load_graph_for_plan_corridor_with_pack_dirs(
@@ -2987,7 +3021,7 @@ fn plan_car_route_inner(
             // Chunked densify legs must not open routes.db here: place-index /
             // config writers can hold the SQLite lock and park the plan thread
             // for minutes after a multi-tile graph load (observed on SM-P613).
-            let surface_mode = if !allow_long_trip_chunk {
+            let surface_mode = if is_chunk_leg {
                 SurfaceRoutingMode::Car
             } else {
                 match driver_break_core::storage::Storage::open(routes_db(&data_dir)) {
@@ -3274,7 +3308,7 @@ fn plan_car_route_inner(
     // Clip POI load to the same trip bbox (never a full Ostlandet POI scan).
     // Chunked intermediate legs skip POI packs entirely — they sit in RSS
     // alongside the route graph and pushed 4 GB devices into LMK (~3 GB).
-    let (poi_index, barriers, poi_pack_hit) = if !allow_long_trip_chunk {
+    let (poi_index, barriers, poi_pack_hit) = if is_chunk_leg {
         report.push_str("poi_skipped=chunk_leg\n");
         (PoiIndex::new(), DangerBarrierIndex::default(), false)
     } else {

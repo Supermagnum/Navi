@@ -93,6 +93,7 @@ fn main() {
         false,
         String::new(),
         String::new(),
+        false,
         Vec::new(),
     );
     println!("distance_km={:.3}", r.distance_km);

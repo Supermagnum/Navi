@@ -94,6 +94,7 @@ class SimOverspeedInstrumentedTest {
                         preferOfficialNetworks = false,
                         dataDir = "",
                         packDir = "",
+                        longTripEnabled = false,
                         viaPoints = emptyList(),
                     )
                 assertTrue(

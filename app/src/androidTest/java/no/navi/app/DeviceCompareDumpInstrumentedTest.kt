@@ -175,6 +175,7 @@ class DeviceCompareDumpInstrumentedTest {
                     false,
                     dataDir.absolutePath,
                     "",
+                    longTripEnabled = false,
                     viaPoints = emptyList(),
                 )
             val uiWallMs = System.currentTimeMillis() - tUi

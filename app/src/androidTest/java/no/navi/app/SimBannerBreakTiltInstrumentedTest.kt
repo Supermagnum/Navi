@@ -107,6 +107,7 @@ class SimBannerBreakTiltInstrumentedTest {
                         preferOfficialNetworks = false,
                         dataDir = "",
                         packDir = "",
+                        longTripEnabled = false,
                         viaPoints = emptyList(),
                     )
                 assertTrue(

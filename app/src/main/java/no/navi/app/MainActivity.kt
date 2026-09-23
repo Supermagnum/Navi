@@ -834,10 +834,8 @@ private fun NaviMapScreen() {
             val trip = NaviMapTestHooks.pendingTripPlan
             if (trip != null) {
                 NaviMapTestHooks.pendingTripPlan = null
-                if (trip.enableLongTrip) {
-                    longTripEnabled = true
-                    MapHudPrefs.saveLongTripEnabled(context, true)
-                }
+                longTripEnabled = trip.enableLongTrip
+                MapHudPrefs.saveLongTripEnabled(context, trip.enableLongTrip)
                 fromPoint =
                     Waypoint(
                         name = trip.fromName,
@@ -2004,6 +2002,13 @@ private fun NaviMapScreen() {
                                 vehicle = vehicle,
                                 preferOfficialNetworks = preferOfficialNetworks,
                                 preferPilgrimRoutes = preferPilgrimRoutes,
+                                longTripEnabled = longTripEnabled,
+                                packDir =
+                                    if (longTripEnabled) {
+                                        LongTripPackStorage.packDownloadDir(context).absolutePath
+                                    } else {
+                                        ""
+                                    },
                                 onProgress = { pct, detail ->
                                     routePlanPct = pct
                                     routePlanProgress = "Recalculating route… $detail"
@@ -2801,6 +2806,7 @@ private fun NaviMapScreen() {
                                         "NaviPlan",
                                         "planCarRoute pbf=${pbf!!.absolutePath} " +
                                             "packDir=$planPackDirPath dataDir=${dataDir.absolutePath} " +
+                                            "longTrip=$longTripEnabled " +
                                             "from=${start.lat},${start.lon} to=${toPoint.lat},${toPoint.lon}",
                                     )
                                     val ffiVias =
@@ -2830,6 +2836,7 @@ private fun NaviMapScreen() {
                                             preferOfficialNetworks,
                                             dataDir.absolutePath,
                                             planPackDirPath,
+                                            longTripEnabled = longTripEnabled,
                                             viaPoints = ffiVias,
                                         )
                                     RoutingPlanLog.progress(

@@ -124,6 +124,7 @@ class HardwareGallerySimScreenshotTest {
                         preferOfficialNetworks = false,
                         dataDir = "",
                         packDir = "",
+                        longTripEnabled = false,
                         viaPoints = emptyList(),
                     )
                 check(leg.report.contains("PASS") && leg.routePolyline.isNotBlank()) {

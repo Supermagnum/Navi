@@ -66,6 +66,8 @@ object RouteReplan {
         vehicle: FfiVehicleLimits,
         preferOfficialNetworks: Boolean,
         preferPilgrimRoutes: Boolean,
+        longTripEnabled: Boolean = false,
+        packDir: String = "",
         onProgress: (pct: Int, detail: String) -> Unit = { _, _ -> },
     ): CorridorRouteResult =
         withContext(Dispatchers.IO) {
@@ -135,7 +137,8 @@ object RouteReplan {
                     vehicle = vehicle,
                     preferOfficialNetworks = preferOfficialNetworks,
                     dataDir = dataDir.absolutePath,
-                    packDir = "",
+                    packDir = packDir,
+                    longTripEnabled = longTripEnabled,
                     viaPoints = vias,
                 )
             onProgress(100, "done")

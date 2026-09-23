@@ -93,6 +93,7 @@ class FarmSnapRouteInstrumentedTest {
                 preferOfficialNetworks = false,
                 dataDir = "",
                 packDir = "",
+                longTripEnabled = false,
                 viaPoints = emptyList(),
             )
         android.util.Log.i("FarmSnapRoute", route.report)

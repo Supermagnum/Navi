@@ -184,6 +184,7 @@ class DiagnosticLogOnDeviceInstrumentedTest {
                 preferOfficialNetworks = false,
                 dataDir = "",
                 packDir = "",
+                longTripEnabled = false,
                 viaPoints = emptyList(),
             )
         assertTrue("plan must PASS: ${result.report.take(800)}", result.report.contains("PASS"))

@@ -277,6 +277,7 @@ class FollowGpsPanZoomInstrumentedTest {
             preferOfficialNetworks = false,
             dataDir = "",
             packDir = "",
+            longTripEnabled = false,
             viaPoints = emptyList(),
         )
     }

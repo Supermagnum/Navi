@@ -283,11 +283,13 @@ fn select_tiles_within_budget(
     // Guarantee coverage of each route point and corridor samples so a tight
     // tile budget cannot drop the bridge between start and end (disconnected).
     // One midpoint is not enough when endpoint tiles do not touch (SA t2_1 and
-    // NI t2_4 on Stendal→Hannover); quarter-points pull the intervening leaves.
+    // NI t2_4 on Stendal→Hannover). Quarter-points still miss diagonal bridges
+    // (Hamar→Dombås: t2_3 and t3_2 only meet at a corner; t2_2 sits at ~0.625).
+    // Eighths pull those intervening same-stem leaves without raising max_tiles.
     let mut samples: Vec<(f64, f64)> = pts.to_vec();
     if pts.len() >= 2 {
         for w in pts.windows(2) {
-            for &t in &[0.25_f64, 0.5, 0.75] {
+            for &t in &[0.125_f64, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875] {
                 samples.push((
                     w[0].0 + (w[1].0 - w[0].0) * t,
                     w[0].1 + (w[1].1 - w[0].1) * t,

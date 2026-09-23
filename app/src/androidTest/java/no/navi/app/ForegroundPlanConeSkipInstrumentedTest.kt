@@ -119,6 +119,7 @@ class ForegroundPlanConeSkipInstrumentedTest {
                     preferOfficialNetworks = false,
                     dataDir = "",
                     packDir = "",
+                    longTripEnabled = false,
                     viaPoints = emptyList(),
                 )
             } finally {
