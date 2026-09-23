@@ -286,6 +286,7 @@ class LongTripMobileHomeAvdInstrumentedTest {
                         preferOfficialNetworks = false,
                         departureLocalIso = DEPARTURE_ISO,
                         dataDir = packDir.absolutePath,
+                        packDir = packDir.absolutePath,
                         viaPoints =
                             listOf(
                                 FfiLatLon(lat = LILLEHAMMER_LAT, lon = LILLEHAMMER_LON),

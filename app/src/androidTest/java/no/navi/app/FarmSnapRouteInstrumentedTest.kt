@@ -92,6 +92,7 @@ class FarmSnapRouteInstrumentedTest {
                 vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                 preferOfficialNetworks = false,
                 dataDir = "",
+                packDir = "",
                 viaPoints = emptyList(),
             )
         android.util.Log.i("FarmSnapRoute", route.report)

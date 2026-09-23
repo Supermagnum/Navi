@@ -306,14 +306,24 @@ object RegionCoverage {
      * every waypoint; otherwise any extract that covers at least one waypoint
      * (multi-stem tile load covers the rest). Country extracts are demoted so
      * landsdel packs are preferred when both exist.
+     *
+     * [packDir] is optional (long-trip [LongTripPackStorage.packDownloadDir]).
+     * Candidates there are searched **in addition to** [dataDir] top-level —
+     * Tools / ReuseInternal extracts still live directly under [dataDir].
      */
     fun resolvePlanPbf(
         dataDir: File,
         waypoints: List<Waypoint>,
+        packDir: File? = null,
     ): File? {
         val candidates =
             buildList {
                 dataDir.listFiles()?.forEach { f ->
+                    if (f.isFile && f.name.endsWith(".osm.pbf") && f.length() > 1_000_000L) {
+                        add(f)
+                    }
+                }
+                packDir?.listFiles()?.forEach { f ->
                     if (f.isFile && f.name.endsWith(".osm.pbf") && f.length() > 1_000_000L) {
                         add(f)
                     }

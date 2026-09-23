@@ -183,6 +183,7 @@ class DiagnosticLogOnDeviceInstrumentedTest {
                 vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                 preferOfficialNetworks = false,
                 dataDir = "",
+                packDir = "",
                 viaPoints = emptyList(),
             )
         assertTrue("plan must PASS: ${result.report.take(800)}", result.report.contains("PASS"))

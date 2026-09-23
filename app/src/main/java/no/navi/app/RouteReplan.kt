@@ -135,6 +135,7 @@ object RouteReplan {
                     vehicle = vehicle,
                     preferOfficialNetworks = preferOfficialNetworks,
                     dataDir = dataDir.absolutePath,
+                    packDir = "",
                     viaPoints = vias,
                 )
             onProgress(100, "done")

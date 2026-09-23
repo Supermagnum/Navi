@@ -1285,9 +1285,9 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_has_entries(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-    external fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`dataDir`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_navi_fn_func_plan_car_route_at(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`departureLocalIso`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_navi_fn_func_plan_car_route_at(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`departureLocalIso`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_plan_hiking_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`waypointsJson`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`preferPilgrimRoutes`: Byte,`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1863,10 +1863,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_place_index_has_entries() and 0xFFFF) != 5969) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 21945) {
+    if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 2423) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_plan_car_route_at() and 0xFFFF) != 3738) {
+    if ((lib.uniffi_navi_checksum_func_plan_car_route_at() and 0xFFFF) != 544) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_plan_hiking_route() and 0xFFFF) != 25693) {
@@ -6469,11 +6469,11 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
          *
          * [`TravelProfile::Hiking`] is rejected (call [`plan_hiking_route`]).
          *
-         * `data_dir` is the app data directory for pack/manifest lookup. It is **not**
-         * inferred from `pbf_path` (a fixture clone of the same extract must not send
-         * lookup to a directory with no packs). Pass `""` only when the PBF already
-         * lives next to the packs.
-         */ fun `planCarRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean, `profile`: TravelProfile, `avoidMotorways`: kotlin.Boolean, `tollPolicy`: FfiTollPolicy, `avoidFerries`: kotlin.Boolean, `avoidTunnels`: kotlin.Boolean, `vehicle`: FfiVehicleLimits, `preferOfficialNetworks`: kotlin.Boolean, `dataDir`: kotlin.String, `viaPoints`: List<FfiLatLon>): CorridorRouteResult {
+         * `data_dir` is the app data directory for pack/manifest lookup and DATEX cache.
+         * `pack_dir` is the optional long-trip pack root ([`LongTripPackStorage`] on
+         * Android). Empty: search `data_dir` and `data_dir/long-trip-packs` when present.
+         * Pass `""` only when the PBF already lives next to the packs.
+         */ fun `planCarRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean, `profile`: TravelProfile, `avoidMotorways`: kotlin.Boolean, `tollPolicy`: FfiTollPolicy, `avoidFerries`: kotlin.Boolean, `avoidTunnels`: kotlin.Boolean, `vehicle`: FfiVehicleLimits, `preferOfficialNetworks`: kotlin.Boolean, `dataDir`: kotlin.String, `packDir`: kotlin.String, `viaPoints`: List<FfiLatLon>): CorridorRouteResult {
             return FfiConverterTypeCorridorRouteResult.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_navi_fn_func_plan_car_route(
@@ -6495,6 +6495,7 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterTypeFfiVehicleLimits.lower(`vehicle`),
         FfiConverterBoolean.lower(`preferOfficialNetworks`),
         FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`packDir`),
         FfiConverterSequenceTypeFfiLatLon.lower(`viaPoints`),_status)
 }
     )
@@ -6509,7 +6510,7 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
          *
          * `via_points` are ordered intermediate stops (max [`MAX_ROUTE_VIA_POINTS`]).
          * More than four returns a clear FAIL result (no panic, no silent truncate).
-         */ fun `planCarRouteAt`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean, `profile`: TravelProfile, `avoidMotorways`: kotlin.Boolean, `tollPolicy`: FfiTollPolicy, `avoidFerries`: kotlin.Boolean, `avoidTunnels`: kotlin.Boolean, `vehicle`: FfiVehicleLimits, `preferOfficialNetworks`: kotlin.Boolean, `departureLocalIso`: kotlin.String?, `dataDir`: kotlin.String, `viaPoints`: List<FfiLatLon>): CorridorRouteResult {
+         */ fun `planCarRouteAt`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean, `profile`: TravelProfile, `avoidMotorways`: kotlin.Boolean, `tollPolicy`: FfiTollPolicy, `avoidFerries`: kotlin.Boolean, `avoidTunnels`: kotlin.Boolean, `vehicle`: FfiVehicleLimits, `preferOfficialNetworks`: kotlin.Boolean, `departureLocalIso`: kotlin.String?, `dataDir`: kotlin.String, `packDir`: kotlin.String, `viaPoints`: List<FfiLatLon>): CorridorRouteResult {
             return FfiConverterTypeCorridorRouteResult.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_navi_fn_func_plan_car_route_at(
@@ -6532,6 +6533,7 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterBoolean.lower(`preferOfficialNetworks`),
         FfiConverterOptionalString.lower(`departureLocalIso`),
         FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`packDir`),
         FfiConverterSequenceTypeFfiLatLon.lower(`viaPoints`),_status)
 }
     )

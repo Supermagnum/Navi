@@ -76,6 +76,49 @@ fn stem_pack_ready(data_dir: &Path, man: &NaviManifest) -> bool {
     man.status_pack_files(data_dir) == PackStatus::Ready
 }
 
+/// First directory among [dirs] where [stem] packs are Ready (manifest + graphs).
+fn home_dir_for_stem<'a>(dirs: &[&'a Path], stem: &str) -> Option<&'a Path> {
+    for d in dirs {
+        if let Ok(man) = load_ready_manifest(d, stem) {
+            if stem_pack_ready(d, &man) {
+                return Some(*d);
+            }
+        }
+    }
+    for d in dirs {
+        if load_ready_manifest(d, stem).is_ok() {
+            return Some(*d);
+        }
+    }
+    None
+}
+
+/// Resolve a pack-relative file across long-trip + internal pack dirs.
+fn resolve_pack_file(dirs: &[&Path], relative: &str) -> Option<PathBuf> {
+    for d in dirs {
+        let p = d.join(relative);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+fn graph_path_in_dirs(
+    man: &NaviManifest,
+    dirs: &[&Path],
+    profile: RoutingProfile,
+) -> Option<PathBuf> {
+    for d in dirs {
+        if let Some(p) = man.graph_path(d, profile) {
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    dirs.first().and_then(|d| man.graph_path(d, profile))
+}
+
 fn planning_stem(pbf: &Path) -> Result<String, PackLoadError> {
     pbf.file_name()
         .and_then(|s| s.to_str())
@@ -122,43 +165,50 @@ fn extra_corridor_manifests(
     primary_stem: &str,
     bbox: [f64; 4],
 ) -> Vec<NaviManifest> {
-    extra_corridor_manifests_segs(data_dir, primary_stem, &[bbox])
+    extra_corridor_manifests_segs(&[data_dir], primary_stem, &[bbox])
 }
 
 fn extra_corridor_manifests_segs(
-    data_dir: &Path,
+    dirs: &[&Path],
     primary_stem: &str,
     segs: &[[f64; 4]],
 ) -> Vec<NaviManifest> {
-    let Ok(entries) = fs::read_dir(data_dir) else {
-        return Vec::new();
-    };
     let mut out = Vec::new();
-    for ent in entries.flatten() {
-        let name = ent.file_name();
-        let name = name.to_string_lossy();
-        let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+    let mut seen = HashSet::new();
+    for data_dir in dirs {
+        let Ok(entries) = fs::read_dir(data_dir) else {
             continue;
         };
-        if stem == primary_stem {
-            continue;
+        for ent in entries.flatten() {
+            let name = ent.file_name();
+            let name = name.to_string_lossy();
+            let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+                continue;
+            };
+            if stem == primary_stem || seen.contains(stem) {
+                continue;
+            }
+            let Some(home) = home_dir_for_stem(dirs, stem) else {
+                continue;
+            };
+            let Ok(man) = load_ready_manifest(home, stem) else {
+                continue;
+            };
+            if !stem_pack_ready(home, &man) {
+                continue;
+            }
+            let Some(path) = pbf_stem_to_geofabrik_path(&man.stem) else {
+                continue;
+            };
+            let Some(region) = region_bbox(&path) else {
+                continue;
+            };
+            if !segs.iter().any(|b| bbox_intersects(region, *b)) {
+                continue;
+            }
+            seen.insert(stem.to_string());
+            out.push(man);
         }
-        let Ok(man) = NaviManifest::load(&ent.path()) else {
-            continue;
-        };
-        if !stem_pack_ready(data_dir, &man) {
-            continue;
-        }
-        let Some(path) = pbf_stem_to_geofabrik_path(&man.stem) else {
-            continue;
-        };
-        let Some(region) = region_bbox(&path) else {
-            continue;
-        };
-        if !segs.iter().any(|b| bbox_intersects(region, *b)) {
-            continue;
-        }
-        out.push(man);
     }
     out.sort_by(|a, b| a.stem.cmp(&b.stem));
     out
@@ -210,7 +260,7 @@ fn select_tiles_within_budget(
     mut candidates: Vec<(String, [f64; 4])>,
     route_points: Option<&[(f64, f64)]>,
     max_tiles: usize,
-    data_dir: Option<&Path>,
+    dirs: &[&Path],
 ) -> Vec<String> {
     if candidates.len() <= max_tiles {
         candidates.sort_by(|a, b| a.0.cmp(&b.0));
@@ -218,8 +268,8 @@ fn select_tiles_within_budget(
     }
     let pts = route_points.unwrap_or(&[]);
     let file_len = |name: &str| -> u64 {
-        data_dir
-            .and_then(|d| fs::metadata(d.join(name)).ok())
+        resolve_pack_file(dirs, name)
+            .and_then(|p| fs::metadata(p).ok())
             .map(|m| m.len())
             .unwrap_or(u64::MAX)
     };
@@ -440,19 +490,63 @@ pub fn try_load_graph_for_plan_corridor(
     clip_bbox: Option<[f64; 4]>,
     route_points: Option<&[(f64, f64)]>,
 ) -> Result<RouteGraph, PackLoadError> {
+    try_load_graph_for_plan_corridor_with_pack_dirs(
+        data_dir,
+        &[],
+        pbf,
+        profile,
+        clip_bbox,
+        route_points,
+    )
+}
+
+/// Like [`try_load_graph_for_plan_corridor`], but also searches [pack_dirs]
+/// (e.g. `files/long-trip-packs` or a removable volume pack root) for Ready
+/// manifests and tile files. [data_dir] remains the Tools / ReuseInternal root.
+pub fn try_load_graph_for_plan_corridor_with_pack_dirs(
+    data_dir: &Path,
+    pack_dirs: &[PathBuf],
+    pbf: &Path,
+    profile: RoutingProfile,
+    clip_bbox: Option<[f64; 4]>,
+    route_points: Option<&[(f64, f64)]>,
+) -> Result<RouteGraph, PackLoadError> {
+    let mut owned: Vec<PathBuf> = Vec::new();
+    for p in pack_dirs {
+        if p.as_os_str().is_empty() {
+            continue;
+        }
+        if p.is_dir() && !owned.iter().any(|x| x == p) {
+            owned.push(p.clone());
+        }
+    }
+    if !owned.iter().any(|x| x.as_path() == data_dir) {
+        owned.push(data_dir.to_path_buf());
+    }
+    let dirs: Vec<&Path> = owned.iter().map(|p| p.as_path()).collect();
+    try_load_graph_for_plan_corridor_dirs(&dirs, pbf, profile, clip_bbox, route_points)
+}
+
+fn try_load_graph_for_plan_corridor_dirs(
+    dirs: &[&Path],
+    pbf: &Path,
+    profile: RoutingProfile,
+    clip_bbox: Option<[f64; 4]>,
+    route_points: Option<&[(f64, f64)]>,
+) -> Result<RouteGraph, PackLoadError> {
     let pbf_stem = planning_stem(pbf)?;
     // Chunked long-trip legs still pass the origin PBF; re-home primary to the
     // Ready stem that covers the hop start so we do not merge Sachsen-Anhalt
     // tiles into every Norway leg.
-    let (stem, man) = pick_primary_manifest(data_dir, &pbf_stem, route_points)?;
+    let (stem, man, primary_dir) = pick_primary_manifest(dirs, &pbf_stem, route_points)?;
     if stem == pbf_stem {
-        match status_for_planning_pbf(data_dir, pbf, &man)? {
+        match status_for_planning_pbf(primary_dir, pbf, &man)? {
             PackStatus::Ready => {}
             PackStatus::Missing => return Err(PackLoadError::Missing),
             PackStatus::StalePbf => return Err(PackLoadError::Stale),
             PackStatus::VersionMismatch => return Err(PackLoadError::VersionMismatch),
         }
-    } else if !stem_pack_ready(data_dir, &man) {
+    } else if !stem_pack_ready(primary_dir, &man) {
         return Err(PackLoadError::Missing);
     }
 
@@ -477,9 +571,9 @@ pub fn try_load_graph_for_plan_corridor(
     let need_extra = corridor_needs_extra_stems(&stem, clip_bbox.or(edge_clip));
     let mut extras = if need_extra {
         if let Some(segs) = segs_ref {
-            extra_corridor_manifests_segs(data_dir, &stem, segs)
+            extra_corridor_manifests_segs(dirs, &stem, segs)
         } else if let Some(b) = clip_bbox {
-            extra_corridor_manifests(data_dir, &stem, b)
+            extra_corridor_manifests_segs(dirs, &stem, &[b])
         } else {
             Vec::new()
         }
@@ -552,10 +646,13 @@ pub fn try_load_graph_for_plan_corridor(
     log::info!(
         target: "NaviPlan",
         "try_load_graph stem={stem} (pbf_stem={pbf_stem}) profile={profile:?} \
-         need_extra={need_extra} extras={} corridor_segs={} data_dir={}",
+         need_extra={need_extra} extras={} corridor_segs={} dirs={}",
         extras.len(),
         corridor_segs.as_ref().map(|s| s.len()).unwrap_or(0),
-        data_dir.display()
+        dirs.iter()
+            .map(|d| d.display().to_string())
+            .collect::<Vec<_>>()
+            .join(";")
     );
     if !extras.is_empty() {
         crate::download::progress::set(0, Some(5), "Combining map data from multiple regions…");
@@ -592,7 +689,7 @@ pub fn try_load_graph_for_plan_corridor(
         tile_candidates.clone(),
         route_points,
         crate::routing::plan_bbox::MAX_PLAN_TILES,
-        Some(data_dir),
+        dirs,
     );
     // Same-stem short hops (e.g. eastern→western Skåne) need every intersecting
     // primary tile: endpoint tiles may only touch at a corner and A* then reports
@@ -663,7 +760,7 @@ pub fn try_load_graph_for_plan_corridor(
 
     if !tile_files.is_empty() {
         let mut graphs = vec![load_tiled_graph_files(
-            data_dir, tile_files, profile, edge_clip,
+            dirs, tile_files, profile, edge_clip,
         )?];
         // City-state packs (e.g. hamburg) are often a single untiled .rkyv.
         // Merge them whether they are the primary stem or an extra — otherwise
@@ -671,7 +768,7 @@ pub fn try_load_graph_for_plan_corridor(
         // tiles and cannot snap (same 6 km miss as a dropped destination pack).
         let primary_tiled = man.graph_tiles_for(profile).is_some_and(|t| !t.is_empty());
         if !primary_tiled {
-            if let Some(pp) = man.graph_path(data_dir, profile) {
+            if let Some(pp) = graph_path_in_dirs(&man, dirs, profile) {
                 graphs.push(load_graph_pack_bbox(&pp, profile, edge_clip)?);
             }
         }
@@ -682,7 +779,7 @@ pub fn try_load_graph_for_plan_corridor(
             if tiled {
                 continue;
             }
-            if let Some(ep) = extra.graph_path(data_dir, profile) {
+            if let Some(ep) = graph_path_in_dirs(extra, dirs, profile) {
                 graphs.push(load_graph_pack_bbox(&ep, profile, edge_clip)?);
             }
         }
@@ -697,9 +794,7 @@ pub fn try_load_graph_for_plan_corridor(
     }
 
     let mut graphs = Vec::new();
-    let path = man
-        .graph_path(data_dir, profile)
-        .ok_or(PackLoadError::Missing)?;
+    let path = graph_path_in_dirs(&man, dirs, profile).ok_or(PackLoadError::Missing)?;
     graphs.push(load_graph_pack_bbox(&path, profile, edge_clip)?);
     if !extras.is_empty() {
         let mut extra_candidates = Vec::new();
@@ -713,7 +808,7 @@ pub fn try_load_graph_for_plan_corridor(
                     clip_bbox,
                     segs_ref,
                 );
-            } else if let Some(ep) = extra.graph_path(data_dir, profile) {
+            } else if let Some(ep) = graph_path_in_dirs(extra, dirs, profile) {
                 graphs.push(load_graph_pack_bbox(&ep, profile, edge_clip)?);
             }
         }
@@ -721,11 +816,11 @@ pub fn try_load_graph_for_plan_corridor(
             extra_candidates,
             route_points,
             crate::routing::plan_bbox::MAX_PLAN_TILES,
-            Some(data_dir),
+            dirs,
         );
         if !extra_files.is_empty() {
             graphs.push(load_tiled_graph_files(
-                data_dir,
+                dirs,
                 extra_files,
                 profile,
                 edge_clip,
@@ -741,62 +836,72 @@ pub fn try_load_graph_for_plan_corridor(
 
 /// Choose the Ready manifest for planning: prefer a stem whose region covers
 /// the first route point when the PBF stem does not (chunked long-trip hops).
-fn pick_primary_manifest(
-    data_dir: &Path,
+fn pick_primary_manifest<'a>(
+    dirs: &[&'a Path],
     pbf_stem: &str,
     route_points: Option<&[(f64, f64)]>,
-) -> Result<(String, NaviManifest), PackLoadError> {
-    let default = load_ready_manifest(data_dir, pbf_stem)?;
+) -> Result<(String, NaviManifest, &'a Path), PackLoadError> {
+    let primary_dir = home_dir_for_stem(dirs, pbf_stem).ok_or(PackLoadError::Missing)?;
+    let default = load_ready_manifest(primary_dir, pbf_stem)?;
     let Some(pts) = route_points else {
-        return Ok((pbf_stem.to_string(), default));
+        return Ok((pbf_stem.to_string(), default, primary_dir));
     };
     if pts.is_empty() {
-        return Ok((pbf_stem.to_string(), default));
+        return Ok((pbf_stem.to_string(), default, primary_dir));
     }
     let (lat, lon) = pts[0];
     if let Some(path) = pbf_stem_to_geofabrik_path(pbf_stem) {
         if let Some(region) = region_bbox(&path) {
             if crate::routing::basemap::bbox_covers_point(region, lat, lon) {
-                return Ok((pbf_stem.to_string(), default));
+                return Ok((pbf_stem.to_string(), default, primary_dir));
             }
         }
     }
     // Scan Ready manifests for a covering stem; pick the smallest covering bbox.
-    let Ok(entries) = fs::read_dir(data_dir) else {
-        return Ok((pbf_stem.to_string(), default));
-    };
-    let mut best: Option<(f64, String, NaviManifest)> = None;
-    for ent in entries.flatten() {
-        let name = ent.file_name();
-        let name = name.to_string_lossy();
-        let Some(_stem) = name.strip_suffix(".navi-manifest.json") else {
+    let mut best: Option<(f64, String, NaviManifest, &'a Path)> = None;
+    let mut seen = HashSet::new();
+    for data_dir in dirs {
+        let Ok(entries) = fs::read_dir(data_dir) else {
             continue;
         };
-        let Ok(man) = NaviManifest::load(&ent.path()) else {
-            continue;
-        };
-        if !stem_pack_ready(data_dir, &man) {
-            continue;
-        }
-        let Some(path) = pbf_stem_to_geofabrik_path(&man.stem) else {
-            continue;
-        };
-        let Some(region) = region_bbox(&path) else {
-            continue;
-        };
-        if !crate::routing::basemap::bbox_covers_point(region, lat, lon) {
-            continue;
-        }
-        let area = (region[2] - region[0]).max(0.0) * (region[3] - region[1]).max(0.0);
-        match &best {
-            Some((a, _, _)) if *a <= area => {}
-            _ => best = Some((area, man.stem.clone(), man)),
+        for ent in entries.flatten() {
+            let name = ent.file_name();
+            let name = name.to_string_lossy();
+            let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+                continue;
+            };
+            if !seen.insert(stem.to_string()) {
+                continue;
+            }
+            let Some(home) = home_dir_for_stem(dirs, stem) else {
+                continue;
+            };
+            let Ok(man) = load_ready_manifest(home, stem) else {
+                continue;
+            };
+            if !stem_pack_ready(home, &man) {
+                continue;
+            }
+            let Some(path) = pbf_stem_to_geofabrik_path(&man.stem) else {
+                continue;
+            };
+            let Some(region) = region_bbox(&path) else {
+                continue;
+            };
+            if !crate::routing::basemap::bbox_covers_point(region, lat, lon) {
+                continue;
+            }
+            let area = (region[2] - region[0]).max(0.0) * (region[3] - region[1]).max(0.0);
+            match &best {
+                Some((a, _, _, _)) if *a <= area => {}
+                _ => best = Some((area, man.stem.clone(), man, home)),
+            }
         }
     }
-    if let Some((_, stem, man)) = best {
-        return Ok((stem, man));
+    if let Some((_, stem, man, home)) = best {
+        return Ok((stem, man, home));
     }
-    Ok((pbf_stem.to_string(), default))
+    Ok((pbf_stem.to_string(), default, primary_dir))
 }
 
 /// Key for deduplicating the same physical edge repeated on adjacent tile boundaries.
@@ -850,7 +955,7 @@ fn expand_bbox_deg(b: [f64; 4], pad: f64) -> [f64; 4] {
 }
 
 fn load_tiled_graph_files(
-    data_dir: &Path,
+    dirs: &[&Path],
     mut tile_files: Vec<String>,
     profile: RoutingProfile,
     bbox: Option<[f64; 4]>,
@@ -863,7 +968,7 @@ fn load_tiled_graph_files(
     // Always sequential + incremental merge: never hold all tile graphs in RAM.
     let mut merged: Option<RouteGraph> = None;
     for file in &tile_files {
-        let path = data_dir.join(file);
+        let path = resolve_pack_file(dirs, file).ok_or(PackLoadError::Missing)?;
         let g = load_graph_pack_bbox(&path, profile, bbox)?;
         if g.edges.is_empty() && g.nodes.is_empty() {
             continue;

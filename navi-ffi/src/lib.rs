@@ -2013,6 +2013,32 @@ fn plan_pack_data_dir(pbf: &Path, data_dir: &str) -> PathBuf {
     }
 }
 
+/// Pack search roots for corridor load: optional long-trip pack dir first
+/// (internal `files/long-trip-packs` or a removable volume's pack root), then
+/// the app data / Tools root so ReuseInternal packs still resolve.
+fn plan_pack_dirs(pbf: &Path, data_dir: &str, pack_dir: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let pd = pack_dir.trim();
+    if !pd.is_empty() {
+        let p = PathBuf::from(pd);
+        if p.is_dir() {
+            out.push(p);
+        }
+    }
+    let primary = plan_pack_data_dir(pbf, data_dir);
+    // Internal default from Phase B: packs land under `{dataDir}/long-trip-packs`
+    // even when the volume pref is "internal". Always probe that subdir when it
+    // exists so a host that forgets pack_dir still finds corridor packs.
+    let nested = primary.join("long-trip-packs");
+    if nested.is_dir() && !out.iter().any(|d| d == &nested) {
+        out.push(nested);
+    }
+    if !out.iter().any(|d| d == &primary) {
+        out.push(primary);
+    }
+    out
+}
+
 /// Plan a motor / bicycle route between two WGS84 points using a local OSM `.pbf`.
 ///
 /// Always builds a **bbox-clipped** graph (`[min_lat,min_lon,max_lat,max_lon]` padded
@@ -2021,10 +2047,10 @@ fn plan_pack_data_dir(pbf: &Path, data_dir: &str) -> PathBuf {
 ///
 /// [`TravelProfile::Hiking`] is rejected (call [`plan_hiking_route`]).
 ///
-/// `data_dir` is the app data directory for pack/manifest lookup. It is **not**
-/// inferred from `pbf_path` (a fixture clone of the same extract must not send
-/// lookup to a directory with no packs). Pass `""` only when the PBF already
-/// lives next to the packs.
+/// `data_dir` is the app data directory for pack/manifest lookup and DATEX cache.
+/// `pack_dir` is the optional long-trip pack root ([`LongTripPackStorage`] on
+/// Android). Empty: search `data_dir` and `data_dir/long-trip-packs` when present.
+/// Pass `""` only when the PBF already lives next to the packs.
 #[uniffi::export]
 pub fn plan_car_route(
     pbf_path: String,
@@ -2043,6 +2069,7 @@ pub fn plan_car_route(
     vehicle: FfiVehicleLimits,
     prefer_official_networks: bool,
     data_dir: String,
+    pack_dir: String,
     via_points: Vec<FfiLatLon>,
 ) -> CorridorRouteResult {
     plan_car_route_at(
@@ -2063,6 +2090,7 @@ pub fn plan_car_route(
         prefer_official_networks,
         None,
         data_dir,
+        pack_dir,
         via_points,
     )
 }
@@ -2093,6 +2121,7 @@ pub fn plan_car_route_at(
     prefer_official_networks: bool,
     departure_local_iso: Option<String>,
     data_dir: String,
+    pack_dir: String,
     via_points: Vec<FfiLatLon>,
 ) -> CorridorRouteResult {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -2117,6 +2146,7 @@ pub fn plan_car_route_at(
             prefer_official_networks,
             departure_local_iso,
             data_dir,
+            pack_dir,
             via_points,
             /* allow_long_trip_chunk */ true,
             /* relax_start_snap */ false,
@@ -2155,6 +2185,7 @@ fn plan_car_route_chunked_legs(
     prefer_official_networks: bool,
     departure_local_iso: Option<String>,
     data_dir: String,
+    pack_dir: String,
     hops: &[(f64, f64)],
 ) -> CorridorRouteResult {
     let mut report = String::from("TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\n");
@@ -2217,6 +2248,7 @@ fn plan_car_route_chunked_legs(
             prefer_official_networks,
             departure_local_iso.clone(),
             data_dir.clone(),
+            pack_dir.clone(),
             Vec::new(),
             /* allow_long_trip_chunk */ false,
             relax_start,
@@ -2616,6 +2648,7 @@ fn plan_car_route_inner(
     prefer_official_networks: bool,
     departure_local_iso: Option<String>,
     data_dir: String,
+    pack_dir: String,
     via_points: Vec<FfiLatLon>,
     allow_long_trip_chunk: bool,
     relax_start_snap: bool,
@@ -2663,10 +2696,11 @@ fn plan_car_route_inner(
     // Nested chunk legs must not re-enter this path (stack overflow).
     let span = driver_break_core::routing::plan_bbox::trip_span_deg(&route_points);
     if allow_long_trip_chunk && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG {
-        let pack_dir = plan_pack_data_dir(std::path::Path::new(pbf_path.trim()), &data_dir);
-        let hops = driver_break_core::routing::plan_bbox::densify_route_points_via_regions(
+        let pack_dirs = plan_pack_dirs(std::path::Path::new(pbf_path.trim()), &data_dir, &pack_dir);
+        let pack_dir_refs: Vec<&std::path::Path> = pack_dirs.iter().map(|p| p.as_path()).collect();
+        let hops = driver_break_core::routing::plan_bbox::densify_route_points_via_regions_dirs(
             &route_points,
-            &pack_dir,
+            &pack_dir_refs,
             driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
         );
         if hops.len() > 2 {
@@ -2684,6 +2718,7 @@ fn plan_car_route_inner(
                 prefer_official_networks,
                 departure_local_iso,
                 data_dir,
+                pack_dir,
                 &hops,
             );
         }
@@ -2837,24 +2872,28 @@ fn plan_car_route_inner(
 
         driver_break_core::download::progress::set(0, Some(5), "Loading map data for this route…");
         let t_graph = Instant::now();
-        let data_dir = plan_pack_data_dir(pbf, &data_dir);
-        let pack_try = driver_break_core::routing::indexed::try_load_graph_for_plan_corridor(
-            &data_dir,
-            pbf,
-            routing_profile,
-            Some(bbox),
-            Some(route_points.as_slice()),
-        );
+        let pack_dirs = plan_pack_dirs(pbf, &data_dir, &pack_dir);
+        let (primary_pack, extra_packs) = pack_dirs.split_last().unwrap();
+        let pack_try =
+            driver_break_core::routing::indexed::try_load_graph_for_plan_corridor_with_pack_dirs(
+                primary_pack,
+                extra_packs,
+                pbf,
+                routing_profile,
+                Some(bbox),
+                Some(route_points.as_slice()),
+            );
         let _pause_bg = if pack_try.is_err() {
             Some(driver_break_core::download::ForegroundPlanGuard::acquire())
         } else {
             None
         };
+        let build_data_dir = plan_pack_data_dir(pbf, &data_dir);
         let (mut built, hit, phit) = match pack_try {
             Ok(g) => (g, false, true),
             Err(_) => match load_or_build_reweighted_bbox(
                 pbf,
-                &data_dir,
+                &build_data_dir,
                 &cache,
                 routing_profile,
                 &elevation,
@@ -2899,9 +2938,7 @@ fn plan_car_route_inner(
             );
         }
         if profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric {
-            let bike_cap = match driver_break_core::storage::Storage::open(routes_db(
-                &data_dir.to_string_lossy(),
-            )) {
+            let bike_cap = match driver_break_core::storage::Storage::open(routes_db(&data_dir)) {
                 Ok(storage) => {
                     let store = driver_break_core::storage::ConfigStore::new(&storage);
                     BikeCapability::parse(
@@ -2925,9 +2962,8 @@ fn plan_car_route_inner(
             }
         }
         if matches!(routing_profile, RoutingProfile::Car | RoutingProfile::Truck) {
-            let surface_mode = match driver_break_core::storage::Storage::open(routes_db(
-                &data_dir.to_string_lossy(),
-            )) {
+            let surface_mode = match driver_break_core::storage::Storage::open(routes_db(&data_dir))
+            {
                 Ok(storage) => {
                     let store = driver_break_core::storage::ConfigStore::new(&storage);
                     SurfaceRoutingMode::parse(

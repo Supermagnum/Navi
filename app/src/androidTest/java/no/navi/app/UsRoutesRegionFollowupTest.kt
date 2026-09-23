@@ -211,6 +211,7 @@ class UsRoutesRegionFollowupTest {
                     EMPTY_VEHICLE,
                     false,
                     dataDir = "",
+                    packDir = "",
                     viaPoints = emptyList(),
                 )
             reports.appendLine(leg.report.take(300))

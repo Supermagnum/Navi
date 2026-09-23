@@ -116,6 +116,16 @@ pub fn densify_route_points_via_regions(
     data_dir: &std::path::Path,
     max_hop_deg: f64,
 ) -> Vec<(f64, f64)> {
+    densify_route_points_via_regions_dirs(points, &[data_dir], max_hop_deg)
+}
+
+/// Same as [`densify_route_points_via_regions`], scanning Ready packs across
+/// multiple directories (internal Tools root + long-trip pack dir).
+pub fn densify_route_points_via_regions_dirs(
+    points: &[(f64, f64)],
+    dirs: &[&std::path::Path],
+    max_hop_deg: f64,
+) -> Vec<(f64, f64)> {
     if points.len() < 2 {
         return points.to_vec();
     }
@@ -135,7 +145,7 @@ pub fn densify_route_points_via_regions(
         anchors.push((t.clamp(0.0, 1.0), p));
     }
 
-    let ready = collect_ready_region_entries(data_dir);
+    let ready = collect_ready_region_entries_dirs(dirs);
     for (path, bbox) in &ready {
         if densify_skip_country_when_leaves_ready(path, &ready) {
             continue;
@@ -198,7 +208,7 @@ pub fn densify_route_points_via_regions(
     // Subdivide remaining long gaps using Ready region centroids only — never
     // raw geometric midpoints (those land in Kattegat / Baltic and fail snap).
     if max_hop_deg > 0.0 {
-        out = densify_gaps_with_region_centroids(&out, data_dir, max_hop_deg);
+        out = densify_gaps_with_region_centroids(&out, dirs, max_hop_deg);
     }
     out
 }
@@ -207,10 +217,10 @@ pub fn densify_route_points_via_regions(
 /// region centroid closest to the geometric midpoint (land-only proxy).
 fn densify_gaps_with_region_centroids(
     points: &[(f64, f64)],
-    data_dir: &std::path::Path,
+    dirs: &[&std::path::Path],
     max_hop_deg: f64,
 ) -> Vec<(f64, f64)> {
-    let ready = collect_ready_region_entries(data_dir);
+    let ready = collect_ready_region_entries_dirs(dirs);
     if ready.is_empty() {
         return points.to_vec();
     }
@@ -232,24 +242,30 @@ fn densify_gaps_with_region_centroids(
     out
 }
 
-fn collect_ready_region_entries(data_dir: &std::path::Path) -> Vec<(String, [f64; 4])> {
+fn collect_ready_region_entries_dirs(dirs: &[&std::path::Path]) -> Vec<(String, [f64; 4])> {
     let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(data_dir) else {
-        return out;
-    };
-    for ent in entries.flatten() {
-        let name = ent.file_name();
-        let name = name.to_string_lossy();
-        let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+    let mut seen = std::collections::HashSet::new();
+    for data_dir in dirs {
+        let Ok(entries) = std::fs::read_dir(data_dir) else {
             continue;
         };
-        let Some(path) = crate::routing::basemap::pbf_stem_to_geofabrik_path(stem) else {
-            continue;
-        };
-        let Some(bbox) = crate::routing::basemap::region_bbox(&path) else {
-            continue;
-        };
-        out.push((path, bbox));
+        for ent in entries.flatten() {
+            let name = ent.file_name();
+            let name = name.to_string_lossy();
+            let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+                continue;
+            };
+            let Some(path) = crate::routing::basemap::pbf_stem_to_geofabrik_path(stem) else {
+                continue;
+            };
+            if !seen.insert(path.clone()) {
+                continue;
+            }
+            let Some(bbox) = crate::routing::basemap::region_bbox(&path) else {
+                continue;
+            };
+            out.push((path, bbox));
+        }
     }
     out
 }

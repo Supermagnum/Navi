@@ -114,6 +114,7 @@ class RouteShapeSmoothnessScreenshotTest {
                 vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                 preferOfficialNetworks = false,
                 dataDir = "",
+                packDir = "",
                 viaPoints = emptyList(),
             )
         assertTrue("plan failed: ${route.report}", route.routePolyline.contains(';'))

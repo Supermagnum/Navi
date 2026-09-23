@@ -2581,8 +2581,15 @@ private fun NaviMapScreen() {
             }
         }
         // Prefer a single downloaded extract that covers the trip.
+        val longTripPackDir =
+            if (longTripEnabled) {
+                LongTripPackStorage.packDownloadDir(context)
+            } else {
+                null
+            }
         val pbf =
-            RegionCoverage.resolvePlanPbf(dataDir, coverageWaypoints)
+            RegionCoverage.resolvePlanPbf(dataDir, coverageWaypoints, longTripPackDir)
+        val planPackDirPath = longTripPackDir?.absolutePath.orEmpty()
         val stagedOk =
             profile == TravelProfile.HIKING &&
                 NaviMapTestHooks.preferStagedHikingRoute &&
@@ -2816,6 +2823,7 @@ private fun NaviMapScreen() {
                                             loadVehicleLimits(dataDir.absolutePath),
                                             preferOfficialNetworks,
                                             dataDir.absolutePath,
+                                            planPackDirPath,
                                             viaPoints = ffiVias,
                                         )
                                     RoutingPlanLog.progress(

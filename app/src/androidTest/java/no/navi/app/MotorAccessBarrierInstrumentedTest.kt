@@ -121,6 +121,7 @@ class MotorAccessBarrierInstrumentedTest {
                     FfiVehicleLimits(null, null, null, null, null, null),
                     false,
                     dataDir = "",
+                    packDir = "",
                     viaPoints = emptyList(),
                 )
             check(warm.report.contains("PASS")) { "car prewarm failed: ${warm.report}" }
@@ -329,6 +330,7 @@ class MotorAccessBarrierInstrumentedTest {
                 FfiVehicleLimits(null, null, null, null, null, null),
                 false,
                 dataDir = "",
+                packDir = "",
                 viaPoints = emptyList(),
             )
         assertTrue("car PASS: ${car.report.take(300)}", car.report.contains("PASS"))
