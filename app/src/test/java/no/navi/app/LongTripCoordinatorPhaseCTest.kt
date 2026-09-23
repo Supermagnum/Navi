@@ -30,12 +30,17 @@ class LongTripCoordinatorPhaseCTest {
             "europe/norway/trondelag",
         )
 
-    /** Real-size PBF + place-index stamp so ReuseInternal counts as Indexed. */
+    /**
+     * Ready manifest + place-index stamp so ReuseInternal counts as Indexed.
+     * Coordinator readiness is pack-manifest based ([PackRegionAvailability.localBakeReady]);
+     * a full-size PBF alone no longer skips re-download.
+     */
     private fun seedIndexedStartRegion(
         dir: java.io.File,
         regionId: String,
     ) {
         val stem = PackRegionAvailability.localStem(regionId)
+        java.io.File(dir, "$stem.navi-manifest.json").writeText("{}")
         val pbf = java.io.File(dir, "$stem.osm.pbf")
         java.io.RandomAccessFile(pbf, "rw").use { it.setLength(RegionDownloadBackground.MIN_PBF_BYTES) }
         PlaceIndexReady.markReady(dir, regionId)
