@@ -37,8 +37,11 @@ object IndexedMapsBackground {
     private val running = AtomicBoolean(false)
     private val lastStatus = AtomicReference("idle")
     private val activeRegionId = AtomicReference("")
+
     /** regionId|pbfName keys that already failed stem mismatch — skip re-log spam. */
-    private val mismatchRefused = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val mismatchRefused =
+        java.util.concurrent.ConcurrentHashMap
+            .newKeySet<String>()
 
     fun isRunning(): Boolean = running.get()
 
