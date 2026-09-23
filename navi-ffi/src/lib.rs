@@ -2703,6 +2703,16 @@ fn plan_car_route_inner(
             &pack_dir_refs,
             driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
         );
+        log::info!(
+            target: "NaviPlan",
+            "long_trip densify span={span:.3} hops={} dirs={}",
+            hops.len(),
+            pack_dirs
+                .iter()
+                .map(|d| d.display().to_string())
+                .collect::<Vec<_>>()
+                .join(";")
+        );
         if hops.len() > 2 {
             return plan_car_route_chunked_legs(
                 pbf_path,
@@ -2924,8 +2934,13 @@ fn plan_car_route_inner(
         build_s = t_graph.elapsed().as_secs_f64();
         cache_hit = hit;
         pack_hit = phit;
-
-        // Apply preference filters once per pad attempt (same as historical single-shot).
+        log::info!(
+            target: "NaviPlan",
+            "graph_ready pack_hit={phit} nodes={} edges={} build_s={build_s:.2}",
+            built.nodes.len(),
+            built.edges.len()
+        );
+        driver_break_core::download::progress::set(1, Some(5), "Snapping to road network…");
         if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
             && prefer_official_networks
         {
@@ -2962,17 +2977,23 @@ fn plan_car_route_inner(
             }
         }
         if matches!(routing_profile, RoutingProfile::Car | RoutingProfile::Truck) {
-            let surface_mode = match driver_break_core::storage::Storage::open(routes_db(&data_dir))
-            {
-                Ok(storage) => {
-                    let store = driver_break_core::storage::ConfigStore::new(&storage);
-                    SurfaceRoutingMode::parse(
-                        &store
-                            .load_surface_routing_mode()
-                            .unwrap_or_else(|_| "car".to_string()),
-                    )
+            // Chunked densify legs must not open routes.db here: place-index /
+            // config writers can hold the SQLite lock and park the plan thread
+            // for minutes after a multi-tile graph load (observed on SM-P613).
+            let surface_mode = if !allow_long_trip_chunk {
+                SurfaceRoutingMode::Car
+            } else {
+                match driver_break_core::storage::Storage::open(routes_db(&data_dir)) {
+                    Ok(storage) => {
+                        let store = driver_break_core::storage::ConfigStore::new(&storage);
+                        SurfaceRoutingMode::parse(
+                            &store
+                                .load_surface_routing_mode()
+                                .unwrap_or_else(|_| "car".to_string()),
+                        )
+                    }
+                    Err(_) => SurfaceRoutingMode::Car,
                 }
-                Err(_) => SurfaceRoutingMode::Car,
             };
             built.surface_routing_mode = surface_mode;
             // Pack-hit graphs already carry classified `surface_quality` (format v8+).
@@ -2986,6 +3007,7 @@ fn plan_car_route_inner(
             }
         }
 
+        log::info!(target: "NaviPlan", "pre_snap nodes={} edges={}", built.nodes.len(), built.edges.len());
         if driver_break_core::download::plan_cancel::is_cancelled() {
             return plan_cancelled_result(report, &timer, &[("profile_map_ms", profile_map_ms)]);
         }
@@ -3039,6 +3061,12 @@ fn plan_car_route_inner(
         if !snap_ok {
             continue 'pads;
         }
+        log::info!(
+            target: "NaviPlan",
+            "snap_ok stops={} — starting A*",
+            snapped.len()
+        );
+        driver_break_core::download::progress::set(2, Some(5), "Searching route…");
 
         let mut full_path: Vec<osm4routing::NodeId> = Vec::new();
         let mut full_edges: Vec<usize> = Vec::new();

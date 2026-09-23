@@ -2797,6 +2797,12 @@ private fun NaviMapScreen() {
                                         ecoForPlan,
                                         detail = "motor_plan",
                                     )
+                                    android.util.Log.i(
+                                        "NaviPlan",
+                                        "planCarRoute pbf=${pbf!!.absolutePath} " +
+                                            "packDir=$planPackDirPath dataDir=${dataDir.absolutePath} " +
+                                            "from=${start.lat},${start.lon} to=${toPoint.lat},${toPoint.lon}",
+                                    )
                                     val ffiVias =
                                         viaPoints.map { v ->
                                             uniffi.navi.FfiLatLon(lat = v.lat, lon = v.lon)

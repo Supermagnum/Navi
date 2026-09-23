@@ -216,22 +216,24 @@ object LongTripCoordinator {
         val start = corridor.first()
         val states = ConcurrentHashMap<String, State>()
         for (r in corridor) states[r] = State.Needed
-        // Step 1: start region already installed → Indexed (planning can proceed).
+        // Step 1: start region already has packs → Installed (or Indexed when
+        // place-search is ready). Do not require place-index to skip re-download.
         when (val target = packTargetResolver.resolve(context, start)) {
             is LongTripPackStorage.PackTarget.ReuseInternal -> {
-                val pbfOk =
-                    PackRegionAvailability.resolvePbfForRegion(target.dataDir, start) != null
-                if (pbfOk && PlaceIndexReady.isReady(dataDir, start)) {
-                    states[start] = State.Indexed
-                }
+                markReadyIfPacksPresent(
+                    states,
+                    start,
+                    target.dataDir,
+                    dataDir,
+                )
             }
             is LongTripPackStorage.PackTarget.DownloadTo -> {
-                if (PackRegionAvailability.localBakeReady(target.packDir, start) &&
-                    PackRegionAvailability.resolvePbfForRegion(target.packDir, start) != null &&
-                    PlaceIndexReady.isReady(dataDir, start)
-                ) {
-                    states[start] = State.Indexed
-                }
+                markReadyIfPacksPresent(
+                    states,
+                    start,
+                    target.packDir,
+                    dataDir,
+                )
             }
         }
 
@@ -244,6 +246,12 @@ object LongTripCoordinator {
             val st = states[regionId]
             if (st == State.Indexed || st == State.Installed) continue
             enqueueRegion(context, dataDir, regionId, states)
+        }
+        // Drop a persisted re-download job when every corridor region already has
+        // Ready packs (e.g. stub PBF left a JOB_FILE that would resume HTTP).
+        if (corridorReadyForPlanning()) {
+            RegionDownloadBackground.cancelPending(dataDir)
+            Log.i(TAG, "corridor packs ready — cancelled leftover download job/queue")
         }
         return statusLine.get()
     }
@@ -305,16 +313,11 @@ object LongTripCoordinator {
         val target = packTargetResolver.resolve(context, regionId)
         when (target) {
             is LongTripPackStorage.PackTarget.ReuseInternal -> {
-                // Manifest alone is not enough when the PBF is a stub/missing —
-                // re-download so place-index / local bake can finish.
-                val pbfOk =
-                    PackRegionAvailability.resolvePbfForRegion(target.dataDir, regionId) != null
-                if (pbfOk && PlaceIndexReady.isReady(internal, regionId)) {
-                    states[regionId] = State.Indexed
-                    refreshStatusLine()
+                if (markReadyIfPacksPresent(states, regionId, target.dataDir, internal)) {
                     return
                 }
-                // Fall through to download path below via DownloadTo semantics.
+                // Manifest alone is not enough when the PBF is a stub/missing —
+                // re-download so place-index / local bake can finish.
                 val packPath = GeofabrikDownloadCatalog.canonicalizePath(regionId)
                 val extractPath = GeofabrikDownloadCatalog.extractPathForPbf(packPath)
                 val leaf = extractPath.substringAfterLast('/')
@@ -335,12 +338,7 @@ object LongTripCoordinator {
                 refreshStatusLine()
             }
             is LongTripPackStorage.PackTarget.DownloadTo -> {
-                if (PackRegionAvailability.localBakeReady(target.packDir, regionId) &&
-                    PackRegionAvailability.resolvePbfForRegion(target.packDir, regionId) != null &&
-                    PlaceIndexReady.isReady(internal, regionId)
-                ) {
-                    states[regionId] = State.Indexed
-                    refreshStatusLine()
+                if (markReadyIfPacksPresent(states, regionId, target.packDir, internal)) {
                     return
                 }
                 val packPath = GeofabrikDownloadCatalog.canonicalizePath(regionId)
@@ -363,6 +361,36 @@ object LongTripCoordinator {
                 refreshStatusLine()
             }
         }
+    }
+
+    /**
+     * If routing packs are already on disk under [packDir] (Ready manifest),
+     * mark [State.Installed] (or [State.Indexed] when place-search is ready) and
+     * skip HTTP re-download.
+     *
+     * A stub/missing Geofabrik `.osm.pbf` must **not** force re-download when
+     * pack-server tiles + manifest are present — corridor planning loads rkyv
+     * packs, and place-index is tracked separately via [PlaceIndexReady].
+     *
+     * @return true when the region was marked ready and the caller should stop.
+     */
+    private fun markReadyIfPacksPresent(
+        states: MutableMap<String, State>,
+        regionId: String,
+        packDir: File,
+        placeIndexDataDir: File,
+    ): Boolean {
+        if (!PackRegionAvailability.localBakeReady(packDir, regionId)) {
+            return false
+        }
+        states[regionId] =
+            if (PlaceIndexReady.isReady(placeIndexDataDir, regionId)) {
+                State.Indexed
+            } else {
+                State.Installed
+            }
+        refreshStatusLine()
+        return true
     }
 
     private fun onBackgroundPhase(

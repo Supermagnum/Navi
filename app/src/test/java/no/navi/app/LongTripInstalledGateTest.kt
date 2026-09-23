@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 /**
  * Corridor route resolution must proceed once every region is Installed
@@ -82,6 +83,47 @@ class LongTripInstalledGateTest {
             LongTripCoordinator.State.Indexed,
             LongTripCoordinator.currentPlan()!!.states[regions[1]],
         )
+        assertTrue(LongTripCoordinator.corridorReadyForPlanning())
+    }
+
+    @Test
+    fun packs_on_disk_without_place_index_skip_redownload_as_installed() {
+        val dir = tmp.newFolder("reuse-installed")
+        val packDir = tmp.newFolder("packs-reuse-installed")
+        val started = mutableListOf<String>()
+
+        for (id in regions) {
+            val stem = PackRegionAvailability.localStem(id)
+            // Manifest alone (pack-server Ready) — stub/missing PBF must not re-download.
+            File(packDir, "$stem.navi-manifest.json").writeText("{}")
+        }
+
+        LongTripCoordinator.setCorridorProviderForTests { _, _, _ -> Result.success(regions) }
+        LongTripCoordinator.setPackTargetResolverForTests { _, _ ->
+            LongTripPackStorage.PackTarget.DownloadTo(packDir, "internal", false)
+        }
+        LongTripCoordinator.setDownloadStarterForTests { _, _, _, _, path, _, _ ->
+            started.add(path)
+        }
+
+        LongTripCoordinator.enableWithDataDir(
+            context = null,
+            dataDir = dir,
+            waypoints = listOf(60.79 to 11.08, 55.67 to 12.57),
+        )
+
+        assertTrue(
+            "no HTTP when Ready manifests already under packDir",
+            started.isEmpty(),
+        )
+        val plan = LongTripCoordinator.currentPlan()!!
+        for (id in regions) {
+            assertEquals(
+                "packs without place-index must be Installed, not Downloading",
+                LongTripCoordinator.State.Installed,
+                plan.states[id],
+            )
+        }
         assertTrue(LongTripCoordinator.corridorReadyForPlanning())
     }
 

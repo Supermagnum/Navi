@@ -547,7 +547,10 @@ impl RouteGraph {
         prefer_better_surface: bool,
         max_m: f64,
     ) -> Result<(NodeId, f64), SnapTooFar> {
-        let (filtered_root, filtered_giant) = self.option_filtered_components(options);
+        // Rebuilding Union-Find over a multi-tile Automotive graph (~200k+ nodes)
+        // is multi-second work; skip it when RouteOptions do not remove edges.
+        let filtered = options_need_filtered_components(options)
+            .then(|| self.option_filtered_components(options));
         let linked = self.nodes.values().filter(|n| self.is_linked(n.id));
         let pool: Vec<&Node> = {
             let v: Vec<_> = linked.collect();
@@ -557,15 +560,29 @@ impl RouteGraph {
                 v
             }
         };
+        // Degree pad for a cheap reject before haversine (Automotive multi-tile
+        // graphs are 100k–200k nodes; full scans stall the plan thread).
+        let pad_deg = (max_m / 100_000.0).max(0.02);
+        let in_pad = |n: &Node| -> bool {
+            (n.coord.y - lat).abs() <= pad_deg && (n.coord.x - lon).abs() <= pad_deg
+        };
         let in_filtered_giant = |id: NodeId| -> bool {
-            match (filtered_giant, filtered_root.get(&id)) {
-                (Some(giant), Some(root)) => *root == giant,
-                _ => self.in_giant_component(id),
+            match &filtered {
+                Some((filtered_root, filtered_giant)) => {
+                    match (*filtered_giant, filtered_root.get(&id)) {
+                        (Some(giant), Some(root)) => *root == giant,
+                        _ => self.in_giant_component(id),
+                    }
+                }
+                None => self.in_giant_component(id),
             }
         };
         let mut nearest_any: Option<(&Node, f64)> = None;
         let mut nearest_giant: Option<(&Node, f64)> = None;
         for n in &pool {
+            if !in_pad(n) {
+                continue;
+            }
             if !self.node_has_allowed_incident(n.id, options) {
                 continue;
             }
@@ -580,6 +597,24 @@ impl RouteGraph {
                 nearest_giant = Some((n, dist));
             }
         }
+        // If the pad missed (coastal / sparse), fall back to full scan once.
+        if nearest_any.is_none() {
+            for n in &pool {
+                if !self.node_has_allowed_incident(n.id, options) {
+                    continue;
+                }
+                let dist = haversine_point_m(lat, lon, n);
+                if nearest_any.is_none_or(|(_, d)| dist < d) {
+                    nearest_any = Some((n, dist));
+                }
+                if dist <= max_m
+                    && in_filtered_giant(n.id)
+                    && nearest_giant.is_none_or(|(_, d)| dist < d)
+                {
+                    nearest_giant = Some((n, dist));
+                }
+            }
+        }
         let Some((best_any, nearest_m)) = nearest_any else {
             return Err(SnapTooFar {
                 nearest_m: f64::INFINITY,
@@ -592,8 +627,14 @@ impl RouteGraph {
         if use_surface_snap {
             if let Some((_, nearest_giant_m)) = nearest_giant {
                 let surface_limit_m = (nearest_giant_m + SURFACE_VIA_SNAP_SLACK_M).min(max_m);
+                let surface_pad = (surface_limit_m / 100_000.0).max(0.02);
                 let mut best_surface_giant: Option<(&Node, f64)> = None;
                 for n in &pool {
+                    if (n.coord.y - lat).abs() > surface_pad
+                        || (n.coord.x - lon).abs() > surface_pad
+                    {
+                        continue;
+                    }
                     if !self.node_has_allowed_incident(n.id, options) {
                         continue;
                     }
@@ -1696,6 +1737,19 @@ fn datex_penalize_multiplier(edge: &GraphEdge, options: &RouteOptions) -> Option
         .filter(|c| c.impact == crate::datex::DatexImpact::Penalize && edge_hit_by_datex(edge, c))
         .map(|c| c.penalize_mult.max(1.0))
         .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+}
+
+/// True when `options` can remove edges vs an unrestricted car graph. Snap then
+/// rebuilds Union-Find; skip that O(E) pass when nothing is filtered.
+fn options_need_filtered_components(options: &RouteOptions) -> bool {
+    options.avoid_motorways
+        || options.avoid_ferries
+        || options.avoid_tunnels
+        || options.toll_policy != crate::routing::toll::TollPolicy::Allow
+        || options.vehicle.is_some()
+        || !options.datex_impacts.is_empty()
+        || options.allowed_countries.is_some()
+        || options.departure_local.is_some()
 }
 
 fn edge_allowed_for_options(

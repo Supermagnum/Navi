@@ -163,9 +163,11 @@ pub fn densify_route_points_via_regions_dirs(
         if c.0 < lat_lo || c.0 > lat_hi {
             continue;
         }
-        // Wide pad so lateral corridor regions (Skåne east of the chord) stay
-        // eligible as land anchors.
-        let trip = trip_bbox_points(points, CORRIDOR_TILE_PAD_DEG.max(2.0));
+        // Wide pad so lateral corridor regions (Skåne east of the Hamar→Minden
+        // chord) stay eligible as land anchors. Pad 2.0 left Skåne's centroid
+        // (~13.53°E) outside the trip AABB (max OD lon + 2 ≈ 13.07) and forced
+        // Halland→NI geometric mids into Denmark spill.
+        let trip = trip_bbox_points(points, CORRIDOR_TILE_PAD_DEG.max(3.0));
         if c.0 < trip[0] || c.0 > trip[2] || c.1 < trip[1] || c.1 > trip[3] {
             continue;
         }
@@ -273,7 +275,10 @@ fn collect_ready_region_entries_dirs(dirs: &[&std::path::Path]) -> Vec<(String, 
 /// Country extracts (`europe/denmark`) spill across Öresund into Sweden. Omit the
 /// country centroid from densify when Ready leaf packs exist under that country,
 /// or when a foreign leaf bbox intersects the country box (DK∩Skåne).
-fn densify_skip_country_when_leaves_ready(path: &str, ready: &[(String, [f64; 4])]) -> bool {
+pub(crate) fn densify_skip_country_when_leaves_ready(
+    path: &str,
+    ready: &[(String, [f64; 4])],
+) -> bool {
     let mut parts = path.split('/');
     let (Some(cont), Some(country), None) = (parts.next(), parts.next(), parts.next()) else {
         return false;
@@ -574,6 +579,58 @@ mod tests {
         assert!(
             between,
             "expected Jutland/Zealand densify points between SH and Skåne; hops={hops:?}"
+        );
+    }
+
+    #[test]
+    fn densify_hamar_minden_keeps_skane_land_bridge() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        for stem in [
+            "denmark-latest",
+            "skane-latest",
+            "halland-latest",
+            "vastra_gotaland-latest",
+            "ostlandet-latest",
+            "niedersachsen-latest",
+            "schleswig-holstein-latest",
+            "detmold-regbez-latest",
+        ] {
+            let path = dir.path().join(format!("{stem}.navi-manifest.json"));
+            std::fs::write(
+                &path,
+                format!(
+                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":8}}"#
+                ),
+            )
+            .unwrap();
+        }
+        let pts = [
+            (60.7945, 11.0680), // Hamar
+            (52.2885, 8.9167),  // Minden
+        ];
+        let hops = densify_route_points_via_regions(&pts, dir.path(), LONG_TRIP_CHUNK_DEG);
+        let has_skane = hops
+            .iter()
+            .any(|(lat, lon)| (lat - 55.91).abs() < 0.05 && (lon - 13.525).abs() < 0.15);
+        assert!(
+            has_skane,
+            "Skåne must stay on Hamar→Minden densify (pad≥3°); hops={hops:?}"
+        );
+        // No consecutive hop whose only land cover is Denmark country spill
+        // between Halland and SH without a Swedish leaf endpoint.
+        let halland = (56.935_f64, 12.70_f64);
+        let has_halland_to_denmark_skip = hops.windows(2).any(|w| {
+            let a_h = (w[0].0 - halland.0).abs() < 0.05 && (w[0].1 - halland.1).abs() < 0.15;
+            let b_in_dk_only = w[1].0 > 54.5
+                && w[1].0 < 57.5
+                && w[1].1 > 8.0
+                && w[1].1 < 12.5
+                && (w[1].0 - 55.91).abs() > 0.3;
+            a_h && b_in_dk_only
+        });
+        assert!(
+            !has_halland_to_denmark_skip,
+            "must not jump Halland→Denmark without Skåne; hops={hops:?}"
         );
     }
 }

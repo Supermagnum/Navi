@@ -7,7 +7,7 @@ use memmap2::Mmap;
 use rkyv::rancor::Error as RkyvError;
 use thiserror::Error;
 
-use super::graph_pack::{ArchivedFlatGraphPack, FlatGraphPack, GRAPH_FORMAT_VERSION, MAGIC_GRAPH};
+use super::graph_pack::{ArchivedFlatGraphPack, GRAPH_FORMAT_VERSION, MAGIC_GRAPH};
 use super::header::Preamble;
 use super::io::archive_payload_offset;
 use super::manifest::{
@@ -257,16 +257,22 @@ fn append_intersecting_tile_files_corridor(
 /// Always retain at least one tile per endpoint (4 GB budget must not drop the
 /// destination). When scores tie, prefer smaller on-disk tiles.
 fn select_tiles_within_budget(
-    mut candidates: Vec<(String, [f64; 4])>,
+    candidates: Vec<(String, [f64; 4])>,
     route_points: Option<&[(f64, f64)]>,
     max_tiles: usize,
     dirs: &[&Path],
 ) -> Vec<String> {
-    if candidates.len() <= max_tiles {
-        candidates.sort_by(|a, b| a.0.cmp(&b.0));
-        return candidates.into_iter().map(|(f, _)| f).collect();
-    }
     let pts = route_points.unwrap_or(&[]);
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+    // No route geometry: keep up to max_tiles (deterministic name order).
+    if pts.is_empty() {
+        let mut names: Vec<String> = candidates.into_iter().map(|(f, _)| f).collect();
+        names.sort();
+        names.truncate(max_tiles);
+        return names;
+    }
     let file_len = |name: &str| -> u64 {
         resolve_pack_file(dirs, name)
             .and_then(|p| fs::metadata(p).ok())
@@ -291,6 +297,34 @@ fn select_tiles_within_budget(
     }
     let mut selected: Vec<(String, [f64; 4])> = Vec::new();
     let mut selected_names = HashSet::new();
+    // Ready geofabrik paths for spill-country suppression (DK∩Skåne).
+    let ready_paths: Vec<(String, [f64; 4])> = {
+        let mut ready = Vec::new();
+        let mut seen = HashSet::new();
+        for data_dir in dirs {
+            let Ok(entries) = fs::read_dir(data_dir) else {
+                continue;
+            };
+            for ent in entries.flatten() {
+                let name = ent.file_name();
+                let name = name.to_string_lossy();
+                let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+                    continue;
+                };
+                let Some(path) = pbf_stem_to_geofabrik_path(stem) else {
+                    continue;
+                };
+                if !seen.insert(path.clone()) {
+                    continue;
+                }
+                let Some(bbox) = region_bbox(&path) else {
+                    continue;
+                };
+                ready.push((path, bbox));
+            }
+        }
+        ready
+    };
     for &(lat, lon) in &samples {
         // Per sample: keep the smallest covering tile from each stem so a
         // border midpoint keeps both neighbour packs (NI+SH), not only one.
@@ -312,6 +346,21 @@ fn select_tiles_within_budget(
                 }
             }
         }
+        // When a leaf pack covers the sample, drop country extracts that densify
+        // would skip (europe/denmark spilling over Skåne/Halland) so they do not
+        // consume the tile budget and leave the real bridge stem unloaded.
+        let leaf_covers = best_per_stem.keys().any(|stem| {
+            pbf_stem_to_geofabrik_path(stem).is_some_and(|p| p.matches('/').count() >= 2)
+        });
+        if leaf_covers {
+            best_per_stem.retain(|stem, _| match pbf_stem_to_geofabrik_path(stem) {
+                Some(path) => !crate::routing::plan_bbox::densify_skip_country_when_leaves_ready(
+                    &path,
+                    &ready_paths,
+                ),
+                None => true,
+            });
+        }
         for (_, i) in best_per_stem.values() {
             let (name, bbox) = candidates[*i].clone();
             if selected_names.insert(name.clone()) {
@@ -320,6 +369,11 @@ fn select_tiles_within_budget(
         }
     }
 
+    // Cap only — never pad with leftover corridor-overlap candidates up to
+    // max_tiles. Loading every intersecting Ostlandet car tile (40–110 MB each)
+    // for a short densify hop peaks at ~450k edges and stalls snap/A* on device.
+    // Still fill a few bridge tiles toward max_tiles when samples alone leave
+    // a same-stem gap (endpoint tiles that only touch at a corner).
     let score = |bbox: [f64; 4]| -> (i32, i64) {
         if pts.is_empty() {
             return (2, 0);
@@ -340,10 +394,10 @@ fn select_tiles_within_budget(
         }
         (best_prio, best_d)
     };
-
     let mut rest: Vec<(String, [f64; 4])> = candidates
-        .into_iter()
+        .iter()
         .filter(|(n, _)| !selected_names.contains(n))
+        .cloned()
         .collect();
     rest.sort_by(|a, b| {
         let sa = score(a.1);
@@ -352,16 +406,58 @@ fn select_tiles_within_budget(
             .then_with(|| file_len(&a.0).cmp(&file_len(&b.0)))
             .then_with(|| a.0.cmp(&b.0))
     });
+    // At most two bridge fillers beyond sample coverage — enough for a corner
+    // gap, not enough to re-pull every Ostlandet corridor tile.
+    let bridge_cap = (selected.len() + 2).min(max_tiles);
     for (name, bbox) in rest {
-        if selected.len() >= max_tiles {
+        if selected.len() >= bridge_cap {
             break;
         }
         if selected_names.insert(name.clone()) {
             selected.push((name, bbox));
         }
     }
-    // If endpoint guarantees already exceeded budget, keep them anyway — snap
-    // failure is worse than a slightly higher peak RSS.
+
+    if selected.len() > max_tiles {
+        selected.sort_by(|a, b| {
+            file_len(&a.0)
+                .cmp(&file_len(&b.0))
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        // Keep endpoint coverage: re-run sample picks on the size-sorted prefix
+        // is lossy; prefer dropping largest extras while endpoints stay covered.
+        let covers = |files: &[(String, [f64; 4])], lat: f64, lon: f64| -> bool {
+            files
+                .iter()
+                .any(|(_, b)| crate::routing::basemap::bbox_covers_point(*b, lat, lon))
+        };
+        while selected.len() > max_tiles {
+            let mut dropped = false;
+            // Drop largest tile that is not the sole cover of any endpoint.
+            let order: Vec<usize> = {
+                let mut idx: Vec<usize> = (0..selected.len()).collect();
+                idx.sort_by(|&i, &j| file_len(&selected[j].0).cmp(&file_len(&selected[i].0)));
+                idx
+            };
+            for i in order {
+                let name = selected[i].0.clone();
+                let without: Vec<_> = selected
+                    .iter()
+                    .filter(|(n, _)| n != &name)
+                    .cloned()
+                    .collect();
+                if pts.iter().all(|&(lat, lon)| covers(&without, lat, lon)) {
+                    selected = without;
+                    selected_names.remove(&name);
+                    dropped = true;
+                    break;
+                }
+            }
+            if !dropped {
+                break;
+            }
+        }
+    }
     let mut files: Vec<String> = selected.into_iter().map(|(f, _)| f).collect();
     files.sort();
     files
@@ -423,9 +519,23 @@ pub fn load_graph_pack_bbox(
     let body = &mmap[archive_payload_offset()..];
     let archived = rkyv::access::<ArchivedFlatGraphPack, RkyvError>(body)
         .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
-    let pack: FlatGraphPack = rkyv::deserialize::<FlatGraphPack, RkyvError>(archived)
-        .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
-    Ok(pack.to_route_graph_bbox(profile, bbox))
+    // Materialize from the mmap'd archive — do **not** `rkyv::deserialize` into an
+    // owned FlatGraphPack first. That temporary peaks at roughly pack-file size in
+    // extra RAM (string tables) and thrashing-hangs multi-tile long-trip loads on
+    // Automotive devices when a merged graph already occupies hundreds of MB.
+    let file = path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
+    crate::download::progress::set(0, Some(1), &format!("Building graph {file}…"));
+    let t0 = std::time::Instant::now();
+    let g = archived.to_route_graph_bbox(profile, bbox);
+    log::info!(
+        target: "NaviPlan",
+        "load_graph_pack_bbox file={file} edges={} nodes={} bbox={} elapsed_ms={}",
+        g.edges.len(),
+        g.nodes.len(),
+        bbox.is_some(),
+        t0.elapsed().as_millis()
+    );
+    Ok(g)
 }
 
 pub fn load_poi_barrier_pack(path: &Path) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
@@ -705,15 +815,50 @@ fn try_load_graph_for_plan_corridor_dirs(
                             );
                     if same {
                         if let Some(tiles) = man.graph_tiles_for(profile) {
+                            let tile_bbox: HashMap<&str, [f64; 4]> =
+                                tiles.iter().map(|t| (t.file.as_str(), t.bbox)).collect();
+                            let selected_covers = |lat: f64, lon: f64| -> bool {
+                                tile_files.iter().any(|f| {
+                                    tile_bbox.get(f.as_str()).is_some_and(|b| {
+                                        crate::routing::basemap::bbox_covers_point(*b, lat, lon)
+                                    })
+                                })
+                            };
+                            // Budget selection already covers both ends: do **not**
+                            // pull every corridor-intersecting primary tile (Ostlandet
+                            // car tiles are 40–110 MB; four of them → ~450k edges and
+                            // multi-minute snap/A* on Automotive). Only fill when an
+                            // endpoint is still uncovered.
                             let mut seen: HashSet<String> = tile_files.iter().cloned().collect();
-                            for t in tiles {
-                                let hit = segs_ref.is_some_and(|segs| {
-                                    segs.iter().any(|s| bbox_intersects(t.bbox, *s))
-                                }) || clip_bbox
-                                    .is_some_and(|b| bbox_intersects(t.bbox, b));
-                                if hit && seen.insert(t.file.clone()) {
-                                    tile_files.push(t.file.clone());
-                                }
+                            if !(selected_covers(pts[0].0, pts[0].1)
+                                && selected_covers(pts[1].0, pts[1].1))
+                            {
+                                let mut extras_cands: Vec<(String, [f64; 4])> = tiles
+                                    .iter()
+                                    .filter(|t| {
+                                        let hit = segs_ref.is_some_and(|segs| {
+                                            segs.iter().any(|s| bbox_intersects(t.bbox, *s))
+                                        }) || clip_bbox
+                                            .is_some_and(|b| bbox_intersects(t.bbox, b));
+                                        hit && !seen.contains(&t.file)
+                                    })
+                                    .map(|t| (t.file.clone(), t.bbox))
+                                    .collect();
+                                // Prefer already-selected + smallest fillers.
+                                let mut merged_cands: Vec<(String, [f64; 4])> = tile_files
+                                    .iter()
+                                    .filter_map(|f| {
+                                        tile_bbox.get(f.as_str()).map(|b| (f.clone(), *b))
+                                    })
+                                    .collect();
+                                merged_cands.append(&mut extras_cands);
+                                tile_files = select_tiles_within_budget(
+                                    merged_cands,
+                                    route_points,
+                                    crate::routing::plan_bbox::MAX_PLAN_TILES,
+                                    dirs,
+                                );
+                                seen = tile_files.iter().cloned().collect();
                             }
                             // Neighbour stems near a densify endpoint (Halland
                             // north of Skåne, Denmark east of SH) must stay even
@@ -966,22 +1111,53 @@ fn load_tiled_graph_files(
     tile_files.sort();
 
     // Always sequential + incremental merge: never hold all tile graphs in RAM.
+    let total = tile_files.len() as u64;
     let mut merged: Option<RouteGraph> = None;
-    for file in &tile_files {
+    for (i, file) in tile_files.iter().enumerate() {
+        crate::download::progress::set(
+            i as u64,
+            Some(total),
+            &format!("Loading map tile {}/{}…", i + 1, total),
+        );
+        log::info!(
+            target: "NaviPlan",
+            "load_tiled_graph file={file} ({}/{})",
+            i + 1,
+            total
+        );
         let path = resolve_pack_file(dirs, file).ok_or(PackLoadError::Missing)?;
         let g = load_graph_pack_bbox(&path, profile, bbox)?;
         if g.edges.is_empty() && g.nodes.is_empty() {
             continue;
         }
+        let t_merge = std::time::Instant::now();
         merged = Some(match merged {
             None => g,
             Some(acc) => merge_tile_graphs(vec![acc, g], profile),
         });
+        if let Some(ref m) = merged {
+            log::info!(
+                target: "NaviPlan",
+                "load_tiled_graph merged after {}/{} edges={} nodes={} merge_ms={}",
+                i + 1,
+                total,
+                m.edges.len(),
+                m.nodes.len(),
+                t_merge.elapsed().as_millis()
+            );
+        }
     }
     let merged = merged.ok_or(PackLoadError::Missing)?;
     if merged.edges.is_empty() {
         return Err(PackLoadError::Missing);
     }
+    log::info!(
+        target: "NaviPlan",
+        "load_tiled_graph done tiles={} edges={} nodes={}",
+        total,
+        merged.edges.len(),
+        merged.nodes.len()
+    );
     Ok(merged)
 }
 

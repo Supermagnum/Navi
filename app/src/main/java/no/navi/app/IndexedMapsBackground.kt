@@ -37,6 +37,8 @@ object IndexedMapsBackground {
     private val running = AtomicBoolean(false)
     private val lastStatus = AtomicReference("idle")
     private val activeRegionId = AtomicReference("")
+    /** regionId|pbfName keys that already failed stem mismatch — skip re-log spam. */
+    private val mismatchRefused = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     fun isRunning(): Boolean = running.get()
 
@@ -130,24 +132,34 @@ object IndexedMapsBackground {
         val rid = regionId?.trim()?.trim('/').orEmpty()
         val resolvedPbf =
             if (rid.isNotEmpty()) {
-                val matched =
-                    PackRegionAvailability.resolvePbfForRegion(dataDir, rid)
-                        ?: pbf.takeIf { PackRegionAvailability.pbfMatchesRegion(it, rid) }
-                android.util.Log.i(
-                    TAG,
-                    "local-bake pbf resolved region_id=$rid pbf=${(matched ?: pbf).absolutePath} " +
-                        "expected_prefix=$rid",
-                )
-                if (matched == null || !PackRegionAvailability.pbfMatchesRegion(matched, rid)) {
-                    android.util.Log.e(
-                        TAG,
-                        "FAIL: PBF/region mismatch region_id=$rid pbf=${pbf.name} " +
-                            "expected_stem=${PackRegionAvailability.localStem(rid)} — refusing convert",
-                    )
+                val mismatchKey = "$rid|${pbf.name}"
+                // Known stem mismatch: skip resolve + INFO spam (was flooding logcat
+                // during long-trip plan while IndexedMapsBg retried every region).
+                if (mismatchRefused.contains(mismatchKey)) {
                     activeRegionId.set(rid)
                     lastStatus.set(annotate("failed (pbf/region mismatch)", rid))
                     return
                 }
+                val matched =
+                    PackRegionAvailability.resolvePbfForRegion(dataDir, rid)
+                        ?: pbf.takeIf { PackRegionAvailability.pbfMatchesRegion(it, rid) }
+                if (matched == null || !PackRegionAvailability.pbfMatchesRegion(matched, rid)) {
+                    if (mismatchRefused.add(mismatchKey)) {
+                        android.util.Log.e(
+                            TAG,
+                            "FAIL: PBF/region mismatch region_id=$rid pbf=${pbf.name} " +
+                                "expected_stem=${PackRegionAvailability.localStem(rid)} — refusing convert",
+                        )
+                    }
+                    activeRegionId.set(rid)
+                    lastStatus.set(annotate("failed (pbf/region mismatch)", rid))
+                    return
+                }
+                android.util.Log.i(
+                    TAG,
+                    "local-bake pbf resolved region_id=$rid pbf=${matched.absolutePath} " +
+                        "expected_prefix=$rid",
+                )
                 matched
             } else {
                 pbf

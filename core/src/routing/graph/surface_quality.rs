@@ -6,7 +6,6 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use osm4routing::NodeId;
-use rayon::prelude::*;
 
 use crate::config::Profile;
 
@@ -408,7 +407,9 @@ pub fn apply_surface_preference(
     if !matches!(graph.profile(), RoutingProfile::Car | RoutingProfile::Truck) {
         return;
     }
-    graph.edges.par_iter_mut().for_each(|edge| {
+    // Sequential: nested `par_iter` under Android's shared Rayon pool (place-index
+    // / convert) can park the plan thread indefinitely waiting for worker slots.
+    graph.edges.iter_mut().for_each(|edge| {
         let mult = edge_motor_soft_multiplier(edge, mode, cost_profile);
         if mult > 1.0 + 1e-9 {
             edge.base_weight *= mult;
