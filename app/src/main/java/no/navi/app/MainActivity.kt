@@ -90,6 +90,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1875,9 +1876,13 @@ private fun NaviMapScreen() {
         val resolved =
             withContext(Dispatchers.IO) {
                 val online =
-                    runCatching {
+                    try {
                         OnlinePlaceSearch.reverse(context, lat, lon)
-                    }.getOrNull()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
                 if (online != null) {
                     val label =
                         placeHitDisplayLabel(online).ifBlank { online.name.trim() }
@@ -4446,6 +4451,7 @@ private fun NaviMapScreen() {
         if (trimmed.length < 2) {
             hits = emptyList()
             searchIndexHint = ""
+            searchBusy = false
             return
         }
         // Accept WGS84 "lat, lon" for From / Via / To without place FTS.
@@ -4472,91 +4478,109 @@ private fun NaviMapScreen() {
             searchIndexHint = ""
             return
         }
-        searchBusy = true
+        val mode = searchMode
         searchJob =
             scope.launch {
-                delay(200)
-                val split = splitCountryQualifiedQuery(trimmed)
-                val placeQ = split.placeQuery.ifBlank { trimmed }
-                val countryIso = split.countryIso
-                val dbPath = resolvePlaceIndexDb().absolutePath
-                val hasEntries =
-                    withContext(Dispatchers.IO) {
-                        runCatching { placeIndexHasEntries(dbPath) }.getOrDefault(false)
-                    }
-                var list =
-                    withContext(Dispatchers.IO) {
-                        PlaceIndexReady.filterHitsToReadyRegions(
-                            dataDir,
-                            searchPlaces(dbPath, placeQ, 20u),
-                        )
-                    }
-                var usedOnline = false
-                // Prefer online geocode when networked: offline FTS is region-local
-                // and can mis-rank foreign towns (e.g. "Kalmar" → Kalmargaten in
-                // Bergen). Merge online first, then unique offline hits.
-                if (BasemapStyleResolver.hasNetwork(context)) {
-                    val online =
+                // Debounce before any SQLite / Nominatim work so rapid typing
+                // cancels prior jobs during delay (not mid Thread.sleep).
+                delay(250)
+                searchBusy = true
+                try {
+                    val outcome =
                         withContext(Dispatchers.IO) {
-                            OnlinePlaceSearch.search(
-                                context = context,
-                                query = trimmed,
-                                limit = 20,
-                                addressMode = searchMode == SearchMode.Address,
+                            ensureActive()
+                            val split = splitCountryQualifiedQuery(trimmed)
+                            val placeQ = split.placeQuery.ifBlank { trimmed }
+                            val countryIso = split.countryIso
+                            val dbPath = resolvePlaceIndexDb().absolutePath
+                            val hasEntries =
+                                runCatching { placeIndexHasEntries(dbPath) }.getOrDefault(false)
+                            ensureActive()
+                            var list =
+                                PlaceIndexReady.filterHitsToReadyRegions(
+                                    dataDir,
+                                    searchPlaces(dbPath, placeQ, 20u),
+                                )
+                            var usedOnline = false
+                            // Prefer online geocode when networked: offline FTS is
+                            // region-local and can mis-rank foreign towns (e.g.
+                            // "Kalmar" → Kalmargaten in Bergen). Merge online first.
+                            // Nominatim throttle/HTTP are suspend + interruptible so
+                            // searchJob.cancel() aborts in-flight work while typing.
+                            if (BasemapStyleResolver.hasNetwork(context)) {
+                                ensureActive()
+                                val online =
+                                    OnlinePlaceSearch.search(
+                                        context = context,
+                                        query = trimmed,
+                                        limit = 20,
+                                        addressMode = mode == SearchMode.Address,
+                                    )
+                                if (online.isNotEmpty()) {
+                                    usedOnline = true
+                                    list =
+                                        if (list.isEmpty()) {
+                                            online
+                                        } else {
+                                            mergeOnlineAndOfflinePlaceHits(placeQ, online, list)
+                                        }
+                                }
+                            }
+                            ensureActive()
+                            list = filterHitsByCountryIso(list, countryIso)
+                            val filtered =
+                                if (usedOnline) {
+                                    list
+                                } else {
+                                    when (mode) {
+                                        SearchMode.Place ->
+                                            list
+                                                .filter {
+                                                    val k = it.kind.lowercase()
+                                                    k.contains("place") ||
+                                                        k.contains("amenity") ||
+                                                        k.contains("tourism") ||
+                                                        k.contains("peak") ||
+                                                        k.contains("hut") ||
+                                                        k.contains("natural")
+                                                }.ifEmpty { list }
+                                        SearchMode.Address ->
+                                            list
+                                                .filter {
+                                                    val k = it.kind.lowercase()
+                                                    k.contains("highway") ||
+                                                        k.contains("place") ||
+                                                        k.contains("addr")
+                                                }.ifEmpty { list }
+                                    }
+                                }
+                            val onlineOk = BasemapStyleResolver.hasNetwork(context)
+                            PlaceSearchOutcome(
+                                hits = filtered,
+                                hasEntries = hasEntries,
+                                usedOnline = usedOnline,
+                                onlineOk = onlineOk,
                             )
                         }
-                    if (online.isNotEmpty()) {
-                        usedOnline = true
-                        list =
-                            if (list.isEmpty()) {
-                                online
-                            } else {
-                                mergeOnlineAndOfflinePlaceHits(placeQ, online, list)
-                            }
-                    }
+                    hits = outcome.hits
+                    searchIndexHint =
+                        placeSearchBuildingMessage(
+                            outcome.hits.isEmpty(),
+                            outcome.hasEntries,
+                            PlaceIndexBackground.isRunning(),
+                            onlineAvailable =
+                                outcome.usedOnline ||
+                                    (outcome.hits.isEmpty() && outcome.onlineOk),
+                        ).orEmpty()
+                    NaviMapTestHooks.lastSearchHitCount = hits.size
+                    NaviMapTestHooks.lastSearchQuery = trimmed
+                    val disambiguate = hits.size > 1
+                    NaviMapTestHooks.lastSearchHitNames =
+                        hits.map { placeHitSearchLabel(it, disambiguate) }
+                    NaviMapTestHooks.lastSearchIndexBuildingHint = searchIndexHint
+                } finally {
+                    searchBusy = false
                 }
-                list = filterHitsByCountryIso(list, countryIso)
-                hits =
-                    if (usedOnline) {
-                        list
-                    } else {
-                        when (searchMode) {
-                            SearchMode.Place ->
-                                list
-                                    .filter {
-                                        val k = it.kind.lowercase()
-                                        k.contains("place") ||
-                                            k.contains("amenity") ||
-                                            k.contains("tourism") ||
-                                            k.contains("peak") ||
-                                            k.contains("hut") ||
-                                            k.contains("natural")
-                                    }.ifEmpty { list }
-                            SearchMode.Address ->
-                                list
-                                    .filter {
-                                        val k = it.kind.lowercase()
-                                        k.contains("highway") ||
-                                            k.contains("place") ||
-                                            k.contains("addr")
-                                    }.ifEmpty { list }
-                        }
-                    }
-                val onlineOk = BasemapStyleResolver.hasNetwork(context)
-                searchIndexHint =
-                    placeSearchBuildingMessage(
-                        hits.isEmpty(),
-                        hasEntries,
-                        PlaceIndexBackground.isRunning(),
-                        onlineAvailable = usedOnline || (hits.isEmpty() && onlineOk),
-                    ).orEmpty()
-                NaviMapTestHooks.lastSearchHitCount = hits.size
-                NaviMapTestHooks.lastSearchQuery = trimmed
-                val disambiguate = hits.size > 1
-                NaviMapTestHooks.lastSearchHitNames =
-                    hits.map { placeHitSearchLabel(it, disambiguate) }
-                NaviMapTestHooks.lastSearchIndexBuildingHint = searchIndexHint
-                searchBusy = false
             }
     }
 

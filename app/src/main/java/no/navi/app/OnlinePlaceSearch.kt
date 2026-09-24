@@ -2,6 +2,9 @@ package no.navi.app
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.runInterruptible
 import org.json.JSONArray
 import uniffi.navi.PlaceHit
 import java.io.File
@@ -9,6 +12,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import kotlin.coroutines.coroutineContext
 
 /**
  * Online place / address search when the offline FTS place index is empty or
@@ -17,6 +21,10 @@ import java.nio.charset.StandardCharsets
  *
  * Key file (optional, least-preferred): first non-blank line of
  * `<app files>/ors_api_key.txt` or `<external files>/ors_api_key.txt`.
+ *
+ * All network entry points are **suspend** so place-search debounce can cancel
+ * in-flight Nominatim waits and HTTP (via [delay] / [runInterruptible]) when
+ * the user keeps typing.
  */
 object OnlinePlaceSearch {
     private const val TAG = "OnlinePlaceSearch"
@@ -41,7 +49,7 @@ object OnlinePlaceSearch {
     @Volatile
     internal var reverseOverrideForTests: ((Double, Double) -> PlaceHit?)? = null
 
-    fun search(
+    suspend fun search(
         context: Context,
         query: String,
         limit: Int,
@@ -65,6 +73,7 @@ object OnlinePlaceSearch {
                 nominatimQueryFallbacks(q)
             }
         for (candidate in candidates) {
+            coroutineContext.ensureActive()
             val nominatim =
                 searchNominatim(
                     candidate,
@@ -77,6 +86,7 @@ object OnlinePlaceSearch {
             if (countryIso == null && nominatim.isNotEmpty()) return nominatim
         }
 
+        coroutineContext.ensureActive()
         val key = readOrsApiKey(context)
         if (key.isNullOrBlank()) return emptyList()
         return filterHitsByCountryIso(searchOrs(placeQ, lim, key), countryIso)
@@ -113,7 +123,7 @@ object OnlinePlaceSearch {
      * Reverse-geocode [lat]/[lon] to a street / place label (Nominatim).
      * Used by Use GPS / map-mark when the offline place index has no nearby addr.
      */
-    fun reverse(
+    suspend fun reverse(
         context: Context,
         lat: Double,
         lon: Double,
@@ -285,13 +295,14 @@ object OnlinePlaceSearch {
         return out
     }
 
-    private fun searchNominatim(
+    private suspend fun searchNominatim(
         query: String,
         limit: Int,
         addressMode: Boolean,
         countryIso: String? = null,
     ): List<PlaceHit> {
         throttleNominatim()
+        coroutineContext.ensureActive()
         val enc = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
         // Nominatim has no layer= filter (that is Photon). Address mode just
         // uses the same free-text search; callers may bias the query string.
@@ -317,11 +328,12 @@ object OnlinePlaceSearch {
         }.getOrDefault(emptyList())
     }
 
-    private fun searchOrs(
+    private suspend fun searchOrs(
         query: String,
         limit: Int,
         apiKey: String,
     ): List<PlaceHit> {
+        coroutineContext.ensureActive()
         val enc = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
         val url = "$ORS_GEOCODE?text=$enc&size=$limit"
         return runCatching {
@@ -371,49 +383,55 @@ object OnlinePlaceSearch {
         return out
     }
 
-    private fun throttleNominatim() {
+    /**
+     * Nominatim polite-use gap. Uses cancellable [delay] so typing a new letter
+     * aborts the wait instead of [Thread.sleep] stacking on the IO pool.
+     */
+    internal suspend fun throttleNominatim() {
         val now = System.currentTimeMillis()
         val wait = 1100L - (now - lastNominatimMs)
         if (wait > 0) {
-            try {
-                Thread.sleep(wait)
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-            }
+            delay(wait)
         }
         lastNominatimMs = System.currentTimeMillis()
     }
 
-    private fun httpGet(
+    /** Test seam: reset throttle clock between unit tests. */
+    internal fun resetThrottleForTests() {
+        lastNominatimMs = 0L
+    }
+
+    private suspend fun httpGet(
         url: String,
         extraHeaders: Map<String, String> = emptyMap(),
         connectTimeoutMs: Int = 12_000,
         readTimeoutMs: Int = 20_000,
-    ): String {
-        val conn = (URL(url).openConnection() as HttpURLConnection)
-        conn.connectTimeout = connectTimeoutMs
-        conn.readTimeout = readTimeoutMs
-        conn.requestMethod = "GET"
-        conn.setRequestProperty("User-Agent", USER_AGENT)
-        conn.setRequestProperty("Accept", "application/json")
-        for ((k, v) in extraHeaders) {
-            conn.setRequestProperty(k, v)
-        }
-        try {
-            val code = conn.responseCode
-            val stream =
-                if (code in 200..299) {
-                    conn.inputStream
-                } else {
-                    conn.errorStream ?: conn.inputStream
-                }
-            val body = stream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-            if (code !in 200..299) {
-                error("HTTP $code: ${body.take(200)}")
+    ): String =
+        runInterruptible {
+            val conn = (URL(url).openConnection() as HttpURLConnection)
+            conn.connectTimeout = connectTimeoutMs
+            conn.readTimeout = readTimeoutMs
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("User-Agent", USER_AGENT)
+            conn.setRequestProperty("Accept", "application/json")
+            for ((k, v) in extraHeaders) {
+                conn.setRequestProperty(k, v)
             }
-            return body
-        } finally {
-            conn.disconnect()
+            try {
+                val code = conn.responseCode
+                val stream =
+                    if (code in 200..299) {
+                        conn.inputStream
+                    } else {
+                        conn.errorStream ?: conn.inputStream
+                    }
+                val body = stream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+                if (code !in 200..299) {
+                    error("HTTP $code: ${body.take(200)}")
+                }
+                body
+            } finally {
+                conn.disconnect()
+            }
         }
-    }
 }

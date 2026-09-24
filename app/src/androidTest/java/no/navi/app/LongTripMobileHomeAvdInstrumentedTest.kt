@@ -3,6 +3,7 @@ package no.navi.app
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -67,12 +68,14 @@ class LongTripMobileHomeAvdInstrumentedTest {
         }
         assertTrue("device must be online for Nominatim", BasemapStyleResolver.hasNetwork(context))
         val onlineHits =
-            OnlinePlaceSearch.search(
-                context,
-                "Bessheim Fjellstue",
-                limit = 5,
-                addressMode = false,
-            )
+            runBlocking {
+                OnlinePlaceSearch.search(
+                    context,
+                    "Bessheim Fjellstue",
+                    limit = 5,
+                    addressMode = false,
+                )
+            }
         Log.i(TAG, "online hits=${onlineHits.map { "${it.name}@${it.lat},${it.lon} region=${it.regionId}" }}")
         report.put(
             "online_bessheim",
@@ -120,12 +123,14 @@ class LongTripMobileHomeAvdInstrumentedTest {
         report.put("region_finder_path", bessheimRegion)
 
         val addrHits =
-            OnlinePlaceSearch.search(
-                context,
-                "Bahnhofstraße, Stendal, Germany",
-                limit = 5,
-                addressMode = true,
-            )
+            runBlocking {
+                OnlinePlaceSearch.search(
+                    context,
+                    "Bahnhofstraße, Stendal, Germany",
+                    limit = 5,
+                    addressMode = true,
+                )
+            }
         Log.i(TAG, "address hits=${addrHits.map { "${it.name}@${it.lat},${it.lon} region=${it.regionId}" }}")
         report.put("online_stendal_address_n", addrHits.size)
         if (addrHits.isNotEmpty()) {
@@ -141,7 +146,9 @@ class LongTripMobileHomeAvdInstrumentedTest {
             report.put("online_stendal_address_skipped", true)
         }
         val lille =
-            OnlinePlaceSearch.search(context, "Lillehammer", 5, addressMode = false)
+            runBlocking {
+                OnlinePlaceSearch.search(context, "Lillehammer", 5, addressMode = false)
+            }
         assertTrue(
             "Nominatim must return Lillehammer",
             lille.any { it.name.contains("Lillehammer", ignoreCase = true) },

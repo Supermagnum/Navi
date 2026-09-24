@@ -12,6 +12,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
@@ -335,7 +336,10 @@ class LongTripMultiCountryUiInstrumentedTest {
         // For search-only probes, pick the first matching UI name and resolve
         // coords from a single OnlinePlaceSearch (merged online-first list).
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        val online = OnlinePlaceSearch.search(ctx, query, limit = 5, addressMode = true)
+        val online =
+            runBlocking {
+                OnlinePlaceSearch.search(ctx, query, limit = 5, addressMode = true)
+            }
         val match =
             online.firstOrNull { hit ->
                 hit.name.contains(hint, ignoreCase = true) ||

@@ -2,8 +2,8 @@ package no.navi.app
 
 import android.os.SystemClock
 import android.util.Log
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.delay
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Cold Natural Earth country-grid build (`country_polys::build_index`) takes on

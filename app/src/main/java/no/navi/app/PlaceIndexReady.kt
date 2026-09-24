@@ -18,7 +18,26 @@ object PlaceIndexReady {
     const val READY_FILE = "place-index-ready.json"
     private const val TAG = "PlaceIndexReady"
 
+    /** Avoid re-healing / SQLite DISTINCT scans on every keystroke. */
+    private const val ALLOWED_CACHE_TTL_MS = 2_000L
+
+    @Volatile
+    private var allowedCacheDataDir: String? = null
+
+    @Volatile
+    private var allowedCacheAtMs: Long = 0L
+
+    @Volatile
+    private var allowedCacheValue: Set<String> = emptySet()
+
     fun readyFile(dataDir: File): File = File(dataDir, READY_FILE)
+
+    /** Drop the search-allowed region cache (call after stamp mutations). */
+    fun invalidateAllowedRegionsCache() {
+        allowedCacheDataDir = null
+        allowedCacheAtMs = 0L
+        allowedCacheValue = emptySet()
+    }
 
     fun load(dataDir: File): Set<String> {
         healReadyFromDownloads(dataDir)
@@ -168,19 +187,36 @@ object PlaceIndexReady {
      * (preferred) or lat/lon Geofabrik suggestion (legacy empty region_id).
      */
     fun searchAllowedRegions(dataDir: File): Set<String> {
+        val key = dataDir.absolutePath
+        val now = System.currentTimeMillis()
+        val cachedDir = allowedCacheDataDir
+        if (cachedDir == key && now - allowedCacheAtMs < ALLOWED_CACHE_TTL_MS) {
+            return allowedCacheValue
+        }
         val ready = load(dataDir)
-        if (ready.isEmpty()) return emptySet()
-        val downloaded =
-            RegionCoverage
-                .downloadedGeofabrikPaths(dataDir)
-                .map { PackRegionAvailability.normalize(it) }
-                .filter { it.isNotEmpty() }
-                .toSet()
-        if (downloaded.isEmpty()) return ready
-        return ready
-            .filter { r ->
-                downloaded.any { d -> regionMatches(d, r) }
-            }.toSet()
+        val computed =
+            if (ready.isEmpty()) {
+                emptySet()
+            } else {
+                val downloaded =
+                    RegionCoverage
+                        .downloadedGeofabrikPaths(dataDir)
+                        .map { PackRegionAvailability.normalize(it) }
+                        .filter { it.isNotEmpty() }
+                        .toSet()
+                if (downloaded.isEmpty()) {
+                    ready
+                } else {
+                    ready
+                        .filter { r ->
+                            downloaded.any { d -> regionMatches(d, r) }
+                        }.toSet()
+                }
+            }
+        allowedCacheDataDir = key
+        allowedCacheAtMs = now
+        allowedCacheValue = computed
+        return computed
     }
 
     /**
@@ -230,6 +266,7 @@ object PlaceIndexReady {
         dataDir: File,
         ids: Set<String>,
     ) {
+        invalidateAllowedRegionsCache()
         dataDir.mkdirs()
         val ordered = ids.map { PackRegionAvailability.normalize(it) }.filter { it.isNotEmpty() }.sorted()
         readyFile(dataDir).writeText(

@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
@@ -90,7 +91,9 @@ class PlaceSearchDisambiguationProbeInstrumentedTest {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val online =
             runCatching {
-                OnlinePlaceSearch.search(ctx, query, limit = 8, addressMode = false)
+                runBlocking {
+                    OnlinePlaceSearch.search(ctx, query, limit = 8, addressMode = false)
+                }
             }.getOrDefault(emptyList())
         val uiNames = NaviMapTestHooks.lastSearchHitNames
         val rows = JSONArray()
