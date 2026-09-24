@@ -836,6 +836,59 @@ mod tests {
         );
     }
 
+    /// Drammen→Berlevåg (Stay-in-Country / NO-only packs): geometric densify
+    /// through Ostlandet→Trondelag→Nord-Norge centroids inserts inland Finnmark
+    /// mids. Chunk legs only get three pad widens (cap 1.4°), so a fjord/coast
+    /// detour past that pad surfaces as `bbox_exhausted` (see resume13 GPS report).
+    #[test]
+    fn densify_drammen_berlevag_inland_chord_and_chunk_pad_cap() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        for stem in ["ostlandet-latest", "trondelag-latest", "nord-norge-latest"] {
+            let path = dir.path().join(format!("{stem}.navi-manifest.json"));
+            std::fs::write(
+                &path,
+                format!(
+                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":8}}"#
+                ),
+            )
+            .unwrap();
+        }
+        let start = (59.7401977_f64, 10.2015629_f64);
+        let end = (70.8578156_f64, 29.0860363_f64);
+        let hops = densify_route_points_via_regions(&[start, end], dir.path(), LONG_TRIP_CHUNK_DEG);
+        assert!(
+            hops.len() >= 10,
+            "NO-only densify must subdivide this span; hops={}",
+            hops.len()
+        );
+        // Nord-Norge catalog centroid sits inland (~68N, 20.75E). Geometric gap
+        // fill between Trondelag and that centroid crosses east of coastal E6.
+        let inland_leg = hops.windows(2).any(|w| {
+            let mid_lat = (w[0].0 + w[1].0) * 0.5;
+            let mid_lon = (w[0].1 + w[1].1) * 0.5;
+            mid_lat > 64.0
+                && mid_lat < 68.5
+                && mid_lon > 14.0
+                && mid_lon < 21.0
+                && (w[1].0 - w[0].0).abs().max((w[1].1 - w[0].1).abs())
+                    <= LONG_TRIP_CHUNK_DEG + 1e-6
+        });
+        assert!(
+            inland_leg,
+            "expected inland densify hop in Nordland/Troms band; hops={hops:?}"
+        );
+        // Chunk legs: take(3) of the short-hop schedule → max pad 1.4° (not 5.0).
+        let short = plan_bbox_pad_schedule(64.0, 11.5, 64.25, 12.08);
+        let chunk: Vec<f64> = short.into_iter().take(3).collect();
+        assert_eq!(chunk.len(), 3);
+        assert!((chunk[0] - PLAN_BBOX_PAD_MIN_DEG).abs() < 1e-9);
+        assert!((chunk[2] - 1.4).abs() < 1e-9);
+        assert!(
+            *chunk.last().unwrap() < PLAN_BBOX_PAD_CAP_DEG - 1.0,
+            "chunk take(3) must stop well below the full {PLAN_BBOX_PAD_CAP_DEG}° cap; got {chunk:?}"
+        );
+    }
+
     #[test]
     fn densify_hamar_minden_keeps_skane_land_bridge() {
         let dir = tempfile::tempdir().expect("tmpdir");
