@@ -489,6 +489,47 @@ pub fn tile_intersects_corridor(tile: [f64; 4], segments: &[[f64; 4]]) -> bool {
         .any(|seg| tile[0] <= seg[2] && tile[2] >= seg[0] && tile[1] <= seg[3] && tile[3] >= seg[1])
 }
 
+/// How plan-time graph loads choose edge clip boxes.
+///
+/// [`Self::CorridorBand`] is the RAM-safe default (fixed half-width along the
+/// OD chord). Pad schedule widens only the trip AABB used for **tile** picks —
+/// it does **not** grow the band — so land-bridge detours outside
+/// [`CORRIDOR_EDGE_HALF_WIDTH_DEG`] stay missing across every pad. After a
+/// `disconnected` A* on that stable band, callers should retry with
+/// [`Self::TripAabb`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PlanEdgeClipMode {
+    /// Small boxes along the OD polyline ([`corridor_band_bboxes`]).
+    #[default]
+    CorridorBand,
+    /// Single trip AABB (`clip_bbox` / pad-expanded). Includes far cross-track
+    /// detours that the band excludes.
+    TripAabb,
+}
+
+/// Edge clip boxes for a plan load.
+///
+/// - [`PlanEdgeClipMode::CorridorBand`]: band along `route_points` when ≥2 stops;
+///   otherwise `clip_bbox` alone.
+/// - [`PlanEdgeClipMode::TripAabb`]: `clip_bbox` only (ignore band), so pad
+///   widen actually expands materialization.
+pub fn plan_edge_clips(
+    route_points: Option<&[(f64, f64)]>,
+    clip_bbox: Option<[f64; 4]>,
+    mode: PlanEdgeClipMode,
+) -> Option<Vec<[f64; 4]>> {
+    match mode {
+        PlanEdgeClipMode::TripAabb => clip_bbox.map(|b| vec![b]),
+        PlanEdgeClipMode::CorridorBand => route_points
+            .filter(|pts| pts.len() >= 2)
+            .map(|pts| {
+                corridor_band_bboxes(pts, CORRIDOR_EDGE_HALF_WIDTH_DEG, CORRIDOR_BAND_STEP_DEG)
+            })
+            .filter(|b| !b.is_empty())
+            .or_else(|| clip_bbox.map(|b| vec![b])),
+    }
+}
+
 /// Build a corridor **band** of small axis-aligned clip boxes along `points`.
 ///
 /// Unlike [`corridor_segment_bboxes`] (one fat AABB per hop), this samples the
@@ -499,6 +540,9 @@ pub fn tile_intersects_corridor(tile: [f64; 4], segments: &[[f64; 4]]) -> bool {
 ///
 /// Endpoints use [`CORRIDOR_ENDPOINT_HALF_WIDTH_DEG`] so densify centroids keep
 /// enough network for the intermediate snap budget.
+///
+/// **Not** parameterized by plan pad: widening [`plan_bbox_pad_schedule`] does
+/// not change these boxes (see [`PlanEdgeClipMode::TripAabb`] fallback).
 pub fn corridor_band_bboxes(
     points: &[(f64, f64)],
     half_width_deg: f64,
@@ -528,6 +572,29 @@ pub fn corridor_band_bboxes(
         push(&mut out, b_lat, b_lon, end_w);
     }
     out
+}
+
+/// True when a `disconnected` A* on corridor-band materialization should retry
+/// with [`PlanEdgeClipMode::TripAabb`]. Pad widen alone cannot fix that case:
+/// band boxes ignore the pad schedule.
+pub fn should_fallback_to_trip_aabb(mode: PlanEdgeClipMode, terminate: &str) -> bool {
+    mode == PlanEdgeClipMode::CorridorBand && terminate == "disconnected"
+}
+
+/// Perpendicular distance (degrees, Chebyshev-ish) from `point` to the infinite
+/// line through `a`→`b`. Used to classify cross-track detours vs band half-width.
+pub fn cross_track_deg(a: (f64, f64), b: (f64, f64), point: (f64, f64)) -> f64 {
+    let (ax, ay) = (a.1, a.0); // lon, lat as x,y
+    let (bx, by) = (b.1, b.0);
+    let (px, py) = (point.1, point.0);
+    let dx = bx - ax;
+    let dy = by - ay;
+    let len2 = dx * dx + dy * dy;
+    if len2 < 1e-18 {
+        return (py - ay).abs().max((px - ax).abs());
+    }
+    // Distance from point to infinite line in lon/lat degrees.
+    ((dx * (ay - py) - (ax - px) * dy).abs()) / len2.sqrt()
 }
 
 /// True when a point lies inside any clip box.
@@ -628,6 +695,89 @@ mod tests {
             point_in_any_bbox(mid.0, mid.1, &band),
             "chord midpoint must stay inside corridor band"
         );
+    }
+
+    #[test]
+    fn pad_widen_does_not_expand_corridor_band_but_aabb_clip_does() {
+        // Leg13-class hop (Sognefjell densify): land-bridge detour beyond
+        // CORRIDOR_EDGE_HALF_WIDTH_DEG (0.40°) but still inside the trip AABB.
+        let start = (61.375314, 8.657898);
+        let end = (61.617086, 8.043864);
+        let pts = [start, end];
+        let pads = plan_bbox_pad_schedule_points(&pts);
+        assert!(pads.len() >= 2);
+        let aabb0 = trip_bbox_points(&pts, pads[0]);
+
+        let mid = ((start.0 + end.0) * 0.5, (start.1 + end.1) * 0.5);
+        let dlat = end.0 - start.0;
+        let dlon = end.1 - start.1;
+        let len = f64::sqrt(dlat * dlat + dlon * dlon);
+        let (px, py) = (-dlat / len, dlon / len);
+        // Pick the perp side that stays inside the narrowest pad AABB at 0.50°.
+        let mut detour = None;
+        for sign in [1.0_f64, -1.0_f64] {
+            let cand = (mid.0 + py * 0.50 * sign, mid.1 + px * 0.50 * sign);
+            let xt = cross_track_deg(start, end, cand);
+            let in_aabb = cand.0 >= aabb0[0]
+                && cand.0 <= aabb0[2]
+                && cand.1 >= aabb0[1]
+                && cand.1 <= aabb0[3];
+            if xt > CORRIDOR_EDGE_HALF_WIDTH_DEG && in_aabb {
+                detour = Some((cand, xt));
+                break;
+            }
+        }
+        let (detour, xt) = detour.expect("need a >0.40° cross-track point inside trip AABB");
+        assert!(
+            (xt - 0.50).abs() < 0.02,
+            "expected ~0.50° cross-track, got {xt}"
+        );
+
+        let band = corridor_band_bboxes(&pts, CORRIDOR_EDGE_HALF_WIDTH_DEG, CORRIDOR_BAND_STEP_DEG);
+        assert!(
+            !point_in_any_bbox(detour.0, detour.1, &band),
+            "cross-track detour must fall outside 0.40° corridor band"
+        );
+
+        // Pad schedule widens trip AABB but band boxes are identical (no pad arg).
+        let band_again =
+            corridor_band_bboxes(&pts, CORRIDOR_EDGE_HALF_WIDTH_DEG, CORRIDOR_BAND_STEP_DEG);
+        assert_eq!(
+            band, band_again,
+            "corridor band must not depend on pad widen"
+        );
+        for &pad in &pads {
+            let clips = plan_edge_clips(
+                Some(&pts),
+                Some(trip_bbox_points(&pts, pad)),
+                PlanEdgeClipMode::CorridorBand,
+            )
+            .expect("band clips");
+            assert!(
+                !point_in_any_bbox(detour.0, detour.1, &clips),
+                "pad={pad}: corridor-band mode still excludes detour"
+            );
+        }
+
+        let aabb_clips =
+            plan_edge_clips(Some(&pts), Some(aabb0), PlanEdgeClipMode::TripAabb).expect("aabb");
+        assert_eq!(aabb_clips.len(), 1);
+        assert!(
+            point_in_any_bbox(detour.0, detour.1, &aabb_clips),
+            "TripAabb fallback must materialize the cross-track detour"
+        );
+        assert!(should_fallback_to_trip_aabb(
+            PlanEdgeClipMode::CorridorBand,
+            "disconnected"
+        ));
+        assert!(!should_fallback_to_trip_aabb(
+            PlanEdgeClipMode::TripAabb,
+            "disconnected"
+        ));
+        assert!(!should_fallback_to_trip_aabb(
+            PlanEdgeClipMode::CorridorBand,
+            "snap_failed"
+        ));
     }
 
     #[test]

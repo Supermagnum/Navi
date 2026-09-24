@@ -2907,6 +2907,9 @@ fn plan_car_route_inner(
     let mut used_opts = route_opts.clone();
     let mut toll_avoidance_incomplete = false;
     let mut bbox = [0.0; 4];
+    // Corridor-band edge clip ignores pad widen (band is OD-only). After a
+    // disconnected A* on that stable materialization, retry with trip-AABB.
+    let mut edge_clip_mode = driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
 
     let profile_map_ms = timer.lap_ms();
     if driver_break_core::download::plan_cancel::is_cancelled() {
@@ -2914,18 +2917,24 @@ fn plan_car_route_inner(
     }
 
     'pads: for &pad in &pad_schedule {
-        pad_attempts.push(pad);
-        bbox = driver_break_core::routing::plan_bbox::trip_bbox_points(&route_points, pad);
-        report.push_str(&format!(
-            "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}\n",
-            bbox[0], bbox[1], bbox[2], bbox[3]
-        ));
+        // Inner loop: at most band then AABB on the same pad after disconnected.
+        loop {
+            pad_attempts.push(pad);
+            bbox = driver_break_core::routing::plan_bbox::trip_bbox_points(&route_points, pad);
+            report.push_str(&format!(
+                "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}; edge_clip={edge_clip_mode:?}\n",
+                bbox[0], bbox[1], bbox[2], bbox[3]
+            ));
 
-        driver_break_core::download::progress::set(0, Some(5), "Loading map data for this route…");
-        let t_graph = Instant::now();
-        let pack_dirs = plan_pack_dirs(pbf, &data_dir, &pack_dir, long_trip_enabled);
-        let (primary_pack, extra_packs) = pack_dirs.split_last().unwrap();
-        let pack_try =
+            driver_break_core::download::progress::set(
+                0,
+                Some(5),
+                "Loading map data for this route…",
+            );
+            let t_graph = Instant::now();
+            let pack_dirs = plan_pack_dirs(pbf, &data_dir, &pack_dir, long_trip_enabled);
+            let (primary_pack, extra_packs) = pack_dirs.split_last().unwrap();
+            let pack_try =
             driver_break_core::routing::indexed::try_load_graph_for_plan_corridor_with_pack_dirs(
                 primary_pack,
                 extra_packs,
@@ -2933,254 +2942,276 @@ fn plan_car_route_inner(
                 routing_profile,
                 Some(bbox),
                 Some(route_points.as_slice()),
+                edge_clip_mode,
             );
-        let _pause_bg = if pack_try.is_err() {
-            Some(driver_break_core::download::ForegroundPlanGuard::acquire())
-        } else {
-            None
-        };
-        let build_data_dir = plan_pack_data_dir(pbf, &data_dir);
-        let (mut built, hit, phit) = match pack_try {
-            Ok(g) => (g, false, true),
-            Err(_) => match load_or_build_reweighted_bbox(
-                pbf,
-                &build_data_dir,
-                &cache,
-                routing_profile,
-                &elevation,
-                &eco,
-                bbox,
-            ) {
-                Ok((g, hit)) => (g, hit, false),
-                Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
-                    return plan_cancelled_result(
-                        report,
-                        &timer,
-                        &[("profile_map_ms", profile_map_ms)],
-                    );
-                }
-                Err(e) => {
-                    report.push_str(&format!("FAIL: graph build: {e:#}\n"));
-                    let mut r = empty(report);
-                    r.toll_policy = toll_policy.as_diag_str().into();
-                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
-                    r.search_terminate_reason = "graph_build".into();
-                    return r;
-                }
-            },
-        };
-        if phit && use_eco {
-            built.apply_eco_reweighting(&elevation, &eco);
-        }
-        build_s = t_graph.elapsed().as_secs_f64();
-        cache_hit = hit;
-        pack_hit = phit;
-        log::info!(
-            target: "NaviPlan",
-            "graph_ready pack_hit={phit} nodes={} edges={} build_s={build_s:.2}",
-            built.nodes.len(),
-            built.edges.len()
-        );
-        driver_break_core::download::progress::set(1, Some(5), "Snapping to road network…");
-        if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
-            && prefer_official_networks
-        {
-            apply_network_pref_if_requested(
-                &mut built,
-                pbf,
-                OfficialNetworkKind::Cycling,
-                true,
-                &mut report,
-            );
-        }
-        if profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric {
-            let bike_cap = match driver_break_core::storage::Storage::open(routes_db(&data_dir)) {
-                Ok(storage) => {
-                    let store = driver_break_core::storage::ConfigStore::new(&storage);
-                    BikeCapability::parse(
-                        &store
-                            .load_bike_capability()
-                            .unwrap_or_else(|_| "trekking".to_string()),
-                    )
-                }
-                Err(_) => BikeCapability::Trekking,
-            };
-            // Hard suitability needs OSM way ids (PBF / bbox cache). Pack edge
-            // ids are node-node-idx — skip on pack hits (same as motor surface refine).
-            if !phit {
-                let _ = apply_bike_suitability_from_pbf(&mut built, pbf, bike_cap);
-            }
-            // Soft costs use packed highway + surface_quality (works for pack hits).
-            apply_bike_surface_preference(&mut built, bike_cap);
-            // Slow-road preference fights Road mode (penalizes fast asphalt).
-            if !matches!(bike_cap, BikeCapability::Road) {
-                apply_slow_road_preference(&mut built);
-            }
-        }
-        if matches!(routing_profile, RoutingProfile::Car | RoutingProfile::Truck) {
-            // Chunked densify legs must not open routes.db here: place-index /
-            // config writers can hold the SQLite lock and park the plan thread
-            // for minutes after a multi-tile graph load (observed on SM-P613).
-            let surface_mode = if is_chunk_leg {
-                SurfaceRoutingMode::Car
+            let _pause_bg = if pack_try.is_err() {
+                Some(driver_break_core::download::ForegroundPlanGuard::acquire())
             } else {
-                match driver_break_core::storage::Storage::open(routes_db(&data_dir)) {
-                    Ok(storage) => {
-                        let store = driver_break_core::storage::ConfigStore::new(&storage);
-                        SurfaceRoutingMode::parse(
-                            &store
-                                .load_surface_routing_mode()
-                                .unwrap_or_else(|_| "car".to_string()),
-                        )
+                None
+            };
+            let build_data_dir = plan_pack_data_dir(pbf, &data_dir);
+            let (mut built, hit, phit) = match pack_try {
+                Ok(g) => (g, false, true),
+                Err(_) => match load_or_build_reweighted_bbox(
+                    pbf,
+                    &build_data_dir,
+                    &cache,
+                    routing_profile,
+                    &elevation,
+                    &eco,
+                    bbox,
+                ) {
+                    Ok((g, hit)) => (g, hit, false),
+                    Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
+                        return plan_cancelled_result(
+                            report,
+                            &timer,
+                            &[("profile_map_ms", profile_map_ms)],
+                        );
                     }
-                    Err(_) => SurfaceRoutingMode::Car,
-                }
+                    Err(e) => {
+                        report.push_str(&format!("FAIL: graph build: {e:#}\n"));
+                        let mut r = empty(report);
+                        r.toll_policy = toll_policy.as_diag_str().into();
+                        r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                        r.search_terminate_reason = "graph_build".into();
+                        return r;
+                    }
+                },
             };
-            built.surface_routing_mode = surface_mode;
-            // Pack-hit graphs already carry classified `surface_quality` (format v8+).
-            // PBF refine is way-id based and must not run on pack edge ids (node-node-idx).
-            if !phit {
-                let _ = apply_surface_quality_from_pbf(&mut built, pbf);
+            if phit && use_eco {
+                built.apply_eco_reweighting(&elevation, &eco);
             }
-            if let Some(cost_profile) = MotorSoftCostProfile::from_travel_profile(profile.to_core())
-            {
-                apply_surface_preference(&mut built, surface_mode, cost_profile);
-            }
-        }
-
-        log::info!(target: "NaviPlan", "pre_snap nodes={} edges={}", built.nodes.len(), built.edges.len());
-        if driver_break_core::download::plan_cancel::is_cancelled() {
-            return plan_cancelled_result(report, &timer, &[("profile_map_ms", profile_map_ms)]);
-        }
-
-        // Snap every stop (start → vias → end), then A* each consecutive leg.
-        let mut snapped: Vec<(osm4routing::NodeId, f64)> = Vec::with_capacity(route_points.len());
-        let mut snap_ok = true;
-        let default_snap = max_waypoint_snap_m(built.profile());
-        let chunk_snap = if tight_intermediate_snap {
-            driver_break_core::routing::plan_bbox::CHUNK_SAME_REGION_SNAP_M
-        } else {
-            driver_break_core::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M
-        };
-        for (i, &(lat, lon)) in route_points.iter().enumerate() {
-            // Surface preference is vias-only: start/destination must snap to the
-            // literal nearest routable node (last-mile gravel driveways).
-            let prefer_better_surface = i > 0 && i + 1 < route_points.len();
-            let at_start = i == 0;
-            let at_end = i + 1 == route_points.len();
-            let snap_max = if (at_start && relax_start_snap) || (at_end && relax_end_snap) {
-                chunk_snap
-            } else {
-                default_snap
-            };
-            let label = if at_start {
-                "start".to_string()
-            } else if at_end {
-                "destination".to_string()
-            } else {
-                format!("via{i}")
-            };
+            build_s = t_graph.elapsed().as_secs_f64();
+            cache_hit = hit;
+            pack_hit = phit;
             log::info!(
                 target: "NaviPlan",
-                "snap_start stop={label} lat={lat:.5} lon={lon:.5} max_m={snap_max:.0} vehicle={}",
-                route_opts.vehicle.is_some()
+                "graph_ready pack_hit={phit} nodes={} edges={} build_s={build_s:.2}",
+                built.nodes.len(),
+                built.edges.len()
             );
-            let snap_t0 = std::time::Instant::now();
-            match built.nearest_routable_with_options_max(
-                lat,
-                lon,
-                &route_opts,
-                prefer_better_surface,
-                snap_max,
-            ) {
-                Ok(v) => {
-                    log::info!(
-                        target: "NaviPlan",
-                        "snap_end stop={label} ok dist_m={:.1} ms={}",
-                        v.1,
-                        snap_t0.elapsed().as_millis()
-                    );
-                    snapped.push(v);
+            driver_break_core::download::progress::set(1, Some(5), "Snapping to road network…");
+            if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
+                && prefer_official_networks
+            {
+                apply_network_pref_if_requested(
+                    &mut built,
+                    pbf,
+                    OfficialNetworkKind::Cycling,
+                    true,
+                    &mut report,
+                );
+            }
+            if profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric {
+                let bike_cap = match driver_break_core::storage::Storage::open(routes_db(&data_dir))
+                {
+                    Ok(storage) => {
+                        let store = driver_break_core::storage::ConfigStore::new(&storage);
+                        BikeCapability::parse(
+                            &store
+                                .load_bike_capability()
+                                .unwrap_or_else(|_| "trekking".to_string()),
+                        )
+                    }
+                    Err(_) => BikeCapability::Trekking,
+                };
+                // Hard suitability needs OSM way ids (PBF / bbox cache). Pack edge
+                // ids are node-node-idx — skip on pack hits (same as motor surface refine).
+                if !phit {
+                    let _ = apply_bike_suitability_from_pbf(&mut built, pbf, bike_cap);
                 }
-                Err(e) => {
-                    log::info!(
-                        target: "NaviPlan",
-                        "snap_end stop={label} fail nearest_m={:.1} ms={}",
-                        e.nearest_m,
-                        snap_t0.elapsed().as_millis()
-                    );
-                    last_terminate = "snap_failed";
+                // Soft costs use packed highway + surface_quality (works for pack hits).
+                apply_bike_surface_preference(&mut built, bike_cap);
+                // Slow-road preference fights Road mode (penalizes fast asphalt).
+                if !matches!(bike_cap, BikeCapability::Road) {
+                    apply_slow_road_preference(&mut built);
+                }
+            }
+            if matches!(routing_profile, RoutingProfile::Car | RoutingProfile::Truck) {
+                // Chunked densify legs must not open routes.db here: place-index /
+                // config writers can hold the SQLite lock and park the plan thread
+                // for minutes after a multi-tile graph load (observed on SM-P613).
+                let surface_mode = if is_chunk_leg {
+                    SurfaceRoutingMode::Car
+                } else {
+                    match driver_break_core::storage::Storage::open(routes_db(&data_dir)) {
+                        Ok(storage) => {
+                            let store = driver_break_core::storage::ConfigStore::new(&storage);
+                            SurfaceRoutingMode::parse(
+                                &store
+                                    .load_surface_routing_mode()
+                                    .unwrap_or_else(|_| "car".to_string()),
+                            )
+                        }
+                        Err(_) => SurfaceRoutingMode::Car,
+                    }
+                };
+                built.surface_routing_mode = surface_mode;
+                // Pack-hit graphs already carry classified `surface_quality` (format v8+).
+                // PBF refine is way-id based and must not run on pack edge ids (node-node-idx).
+                if !phit {
+                    let _ = apply_surface_quality_from_pbf(&mut built, pbf);
+                }
+                if let Some(cost_profile) =
+                    MotorSoftCostProfile::from_travel_profile(profile.to_core())
+                {
+                    apply_surface_preference(&mut built, surface_mode, cost_profile);
+                }
+            }
+
+            log::info!(target: "NaviPlan", "pre_snap nodes={} edges={}", built.nodes.len(), built.edges.len());
+            if driver_break_core::download::plan_cancel::is_cancelled() {
+                return plan_cancelled_result(
+                    report,
+                    &timer,
+                    &[("profile_map_ms", profile_map_ms)],
+                );
+            }
+
+            // Snap every stop (start → vias → end), then A* each consecutive leg.
+            let mut snapped: Vec<(osm4routing::NodeId, f64)> =
+                Vec::with_capacity(route_points.len());
+            let mut snap_ok = true;
+            let default_snap = max_waypoint_snap_m(built.profile());
+            let chunk_snap = if tight_intermediate_snap {
+                driver_break_core::routing::plan_bbox::CHUNK_SAME_REGION_SNAP_M
+            } else {
+                driver_break_core::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M
+            };
+            for (i, &(lat, lon)) in route_points.iter().enumerate() {
+                // Surface preference is vias-only: start/destination must snap to the
+                // literal nearest routable node (last-mile gravel driveways).
+                let prefer_better_surface = i > 0 && i + 1 < route_points.len();
+                let at_start = i == 0;
+                let at_end = i + 1 == route_points.len();
+                let snap_max = if (at_start && relax_start_snap) || (at_end && relax_end_snap) {
+                    chunk_snap
+                } else {
+                    default_snap
+                };
+                let label = if at_start {
+                    "start".to_string()
+                } else if at_end {
+                    "destination".to_string()
+                } else {
+                    format!("via{i}")
+                };
+                log::info!(
+                    target: "NaviPlan",
+                    "snap_start stop={label} lat={lat:.5} lon={lon:.5} max_m={snap_max:.0} vehicle={}",
+                    route_opts.vehicle.is_some()
+                );
+                let snap_t0 = std::time::Instant::now();
+                match built.nearest_routable_with_options_max(
+                    lat,
+                    lon,
+                    &route_opts,
+                    prefer_better_surface,
+                    snap_max,
+                ) {
+                    Ok(v) => {
+                        log::info!(
+                            target: "NaviPlan",
+                            "snap_end stop={label} ok dist_m={:.1} ms={}",
+                            v.1,
+                            snap_t0.elapsed().as_millis()
+                        );
+                        snapped.push(v);
+                    }
+                    Err(e) => {
+                        log::info!(
+                            target: "NaviPlan",
+                            "snap_end stop={label} fail nearest_m={:.1} ms={}",
+                            e.nearest_m,
+                            snap_t0.elapsed().as_millis()
+                        );
+                        last_terminate = "snap_failed";
+                        report.push_str(&format!(
+                            "snap_fail_{label} pad={pad:.2}: {}\n",
+                            format_snap_too_far(&label, e, built.profile())
+                        ));
+                        snap_ok = false;
+                        break;
+                    }
+                }
+            }
+            if !snap_ok {
+                break; // next pad (edge_clip_mode unchanged)
+            }
+            log::info!(
+                target: "NaviPlan",
+                "snap_ok stops={} — starting A*",
+                snapped.len()
+            );
+            driver_break_core::download::progress::set(2, Some(5), "Searching route…");
+
+            let mut full_path: Vec<osm4routing::NodeId> = Vec::new();
+            let mut full_edges: Vec<usize> = Vec::new();
+            let mut full_cost = 0.0;
+            let mut leg_expansions: u64 = 0;
+            let mut legs_ok = true;
+            for leg in 0..snapped.len() - 1 {
+                let (ss, _) = snapped[leg];
+                let (gg, _) = snapped[leg + 1];
+                let stats = built.shortest_path_with_options_stats(ss, gg, use_eco, &route_opts);
+                leg_expansions = leg_expansions.saturating_add(stats.expansions);
+                last_terminate = stats.terminate_reason;
+                let Some((p, e, c)) = stats.path else {
                     report.push_str(&format!(
-                        "snap_fail_{label} pad={pad:.2}: {}\n",
-                        format_snap_too_far(&label, e, built.profile())
+                        "no_route_leg{} pad={pad:.2} expansions={} reason={}\n",
+                        leg + 1,
+                        stats.expansions,
+                        stats.terminate_reason
                     ));
-                    snap_ok = false;
+                    legs_ok = false;
+                    break;
+                };
+                if p.len() < 2 {
+                    report.push_str(&format!("zero_length_leg{} pad={pad:.2}\n", leg + 1));
+                    legs_ok = false;
                     break;
                 }
+                full_cost += c;
+                if full_path.is_empty() {
+                    full_path = p;
+                    full_edges = e;
+                } else {
+                    full_path.extend(p.into_iter().skip(1));
+                    full_edges.extend(e);
+                }
             }
-        }
-        if !snap_ok {
-            continue 'pads;
-        }
-        log::info!(
-            target: "NaviPlan",
-            "snap_ok stops={} — starting A*",
-            snapped.len()
-        );
-        driver_break_core::download::progress::set(2, Some(5), "Searching route…");
-
-        let mut full_path: Vec<osm4routing::NodeId> = Vec::new();
-        let mut full_edges: Vec<usize> = Vec::new();
-        let mut full_cost = 0.0;
-        let mut leg_expansions: u64 = 0;
-        let mut legs_ok = true;
-        for leg in 0..snapped.len() - 1 {
-            let (ss, _) = snapped[leg];
-            let (gg, _) = snapped[leg + 1];
-            let stats = built.shortest_path_with_options_stats(ss, gg, use_eco, &route_opts);
-            leg_expansions = leg_expansions.saturating_add(stats.expansions);
-            last_terminate = stats.terminate_reason;
-            let Some((p, e, c)) = stats.path else {
-                report.push_str(&format!(
-                    "no_route_leg{} pad={pad:.2} expansions={} reason={}\n",
-                    leg + 1,
-                    stats.expansions,
-                    stats.terminate_reason
-                ));
-                legs_ok = false;
-                break;
-            };
-            if p.len() < 2 {
-                report.push_str(&format!("zero_length_leg{} pad={pad:.2}\n", leg + 1));
-                legs_ok = false;
-                break;
+            last_expansions = leg_expansions;
+            if legs_ok && full_path.len() >= 2 {
+                path = full_path;
+                path_edges = full_edges;
+                cost = full_cost;
+                s = snapped[0].0;
+                g = snapped[snapped.len() - 1].0;
+                snap_start_m = snapped[0].1;
+                snap_end_m = snapped[snapped.len() - 1].1;
+                graph = Some(built);
+                used_opts = route_opts.clone();
+                break 'pads;
             }
-            full_cost += c;
-            if full_path.is_empty() {
-                full_path = p;
-                full_edges = e;
-            } else {
-                full_path.extend(p.into_iter().skip(1));
-                full_edges.extend(e);
-            }
-        }
-        last_expansions = leg_expansions;
-        if legs_ok && full_path.len() >= 2 {
-            path = full_path;
-            path_edges = full_edges;
-            cost = full_cost;
-            s = snapped[0].0;
-            g = snapped[snapped.len() - 1].0;
-            snap_start_m = snapped[0].1;
-            snap_end_m = snapped[snapped.len() - 1].1;
+            report.push_str(&format!(
+                "no_route pad={pad:.2} expansions={leg_expansions} reason={last_terminate}\n"
+            ));
             graph = Some(built);
-            used_opts = route_opts.clone();
-            break 'pads;
-        }
-        report.push_str(&format!(
-            "no_route pad={pad:.2} expansions={leg_expansions} reason={last_terminate}\n"
-        ));
-        graph = Some(built);
+            // Pad widen does not expand corridor-band materialization. On disconnected,
+            // retry this pad with trip-AABB edge clip before advancing the pad schedule.
+            if driver_break_core::routing::plan_bbox::should_fallback_to_trip_aabb(
+                edge_clip_mode,
+                last_terminate,
+            ) {
+                edge_clip_mode = driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb;
+                report.push_str(
+                    "edge_clip_fallback=trip_aabb after disconnected on stable corridor band\n",
+                );
+                continue;
+            }
+            break; // next pad
+        } // band/AABB attempts for this pad
     }
 
     // NeverUse last resort: allow tolls (Penalize) on the widest graph so UI can

@@ -662,12 +662,16 @@ pub fn try_load_graph_for_plan_corridor(
         profile,
         clip_bbox,
         route_points,
+        crate::routing::plan_bbox::PlanEdgeClipMode::CorridorBand,
     )
 }
 
 /// Like [`try_load_graph_for_plan_corridor`], but also searches [pack_dirs]
 /// (e.g. `files/long-trip-packs` or a removable volume pack root) for Ready
 /// manifests and tile files. [data_dir] remains the Tools / ReuseInternal root.
+///
+/// `edge_clip_mode` selects corridor-band vs trip-AABB edge materialization
+/// ([`crate::routing::plan_bbox::PlanEdgeClipMode`]).
 pub fn try_load_graph_for_plan_corridor_with_pack_dirs(
     data_dir: &Path,
     pack_dirs: &[PathBuf],
@@ -675,6 +679,7 @@ pub fn try_load_graph_for_plan_corridor_with_pack_dirs(
     profile: RoutingProfile,
     clip_bbox: Option<[f64; 4]>,
     route_points: Option<&[(f64, f64)]>,
+    edge_clip_mode: crate::routing::plan_bbox::PlanEdgeClipMode,
 ) -> Result<RouteGraph, PackLoadError> {
     let mut owned: Vec<PathBuf> = Vec::new();
     for p in pack_dirs {
@@ -689,7 +694,14 @@ pub fn try_load_graph_for_plan_corridor_with_pack_dirs(
         owned.push(data_dir.to_path_buf());
     }
     let dirs: Vec<&Path> = owned.iter().map(|p| p.as_path()).collect();
-    try_load_graph_for_plan_corridor_dirs(&dirs, pbf, profile, clip_bbox, route_points)
+    try_load_graph_for_plan_corridor_dirs(
+        &dirs,
+        pbf,
+        profile,
+        clip_bbox,
+        route_points,
+        edge_clip_mode,
+    )
 }
 
 fn try_load_graph_for_plan_corridor_dirs(
@@ -698,6 +710,7 @@ fn try_load_graph_for_plan_corridor_dirs(
     profile: RoutingProfile,
     clip_bbox: Option<[f64; 4]>,
     route_points: Option<&[(f64, f64)]>,
+    edge_clip_mode: crate::routing::plan_bbox::PlanEdgeClipMode,
 ) -> Result<RouteGraph, PackLoadError> {
     let pbf_stem = planning_stem(pbf)?;
     // Chunked long-trip legs still pass the origin PBF; re-home primary to the
@@ -725,22 +738,18 @@ fn try_load_graph_for_plan_corridor_dirs(
         ))
     });
     let segs_ref = corridor_segs.as_deref();
-    // Edge materialization: corridor **band** of small boxes along the OD
-    // (not expand(union(segs)) — that fat AABB pulled ~1.1M edges / ~3 GiB RSS
-    // on the Bevensen→SH first densify hop). Fall back to clip_bbox when no
-    // polyline is available.
-    let edge_clips_owned: Option<Vec<[f64; 4]>> = route_points
-        .filter(|pts| pts.len() >= 2)
-        .map(|pts| {
-            crate::routing::plan_bbox::corridor_band_bboxes(
-                pts,
-                crate::routing::plan_bbox::CORRIDOR_EDGE_HALF_WIDTH_DEG,
-                crate::routing::plan_bbox::CORRIDOR_BAND_STEP_DEG,
-            )
-        })
-        .filter(|b| !b.is_empty())
-        .or_else(|| clip_bbox.map(|b| vec![b]));
+    // Edge materialization: default corridor **band** along the OD (not
+    // expand(union(segs)) — that fat AABB pulled ~1.1M edges / ~3 GiB RSS on
+    // the Bevensen→SH first densify hop). TripAabb mode uses clip_bbox so pad
+    // widen can recover cross-track detours the band permanently excludes.
+    let edge_clips_owned =
+        crate::routing::plan_bbox::plan_edge_clips(route_points, clip_bbox, edge_clip_mode);
     let edge_clips = edge_clips_owned.as_deref();
+    log::info!(
+        target: "NaviPlan",
+        "edge_clip_mode={edge_clip_mode:?} clips={}",
+        edge_clips.map(|c| c.len()).unwrap_or(0)
+    );
     // Coarse stem-spill gate still uses a modest expanded corridor AABB.
     let stem_clip = corridor_segs
         .as_ref()
