@@ -6,6 +6,7 @@
 //! - If corridor band finds a route under the current densify snap budget,
 //!   that is acceptable (band is sufficient).
 //! - If band disconnects, trip-AABB must still find a route (AABB fallback).
+//!
 //! Synthetic geometry (0.40° band vs cross-track detour) is covered
 //! unconditionally in `plan_bbox` unit tests.
 

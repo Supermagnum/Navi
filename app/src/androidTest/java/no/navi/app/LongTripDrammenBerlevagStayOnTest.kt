@@ -32,6 +32,7 @@ class LongTripDrammenBerlevagStayOnTest {
         val sdPacks =
             File("/mnt/media_rw/FEF6-BB2E/Android/data/no.navi.app/files/long-trip-packs")
         val internalPacks = File(dataDir, "long-trip-packs")
+
         fun hasManifest(
             dir: File,
             stem: String,
