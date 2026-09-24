@@ -2431,7 +2431,7 @@ fn finalize_chunked_motor_soft_breaks(
     }
     let cache = PathBuf::from(cache_dir);
     let data = PathBuf::from(data_dir);
-    let rest = load_rest_config_near_cache(&cache);
+    let rest = load_rest_config_for_plan(data_dir, &cache);
     let poi_radii = load_profile_poi_radii_near_cache(&cache)
         .for_profile(core_profile)
         .clone();
@@ -2689,6 +2689,9 @@ fn plan_car_route_inner(
 ) -> CorridorRouteResult {
     let empty = empty_corridor;
     let _cancel_guard = driver_break_core::download::plan_cancel::begin_plan();
+    // Host settings root (`navi.db` for rest / vehicle / fuel). Must not be
+    // confused with pack lookup dirs after `plan_pack_data_dir` rebinding.
+    let settings_data_dir = data_dir.clone();
 
     if profile == TravelProfile::Hiking {
         return empty("TEST_KIND=PLAN_CAR_ROUTE\nFAIL: use plan_hiking_route for hiking\n".into());
@@ -3454,7 +3457,7 @@ fn plan_car_route_inner(
     // Truck / TruckElectric: jurisdiction-keyed HOS (EC 561 or FMCSA).
     // MobileHome uses car soft break spacing (not commercial HGV legal tracking).
     let core_profile = profile.to_core();
-    let mut rest = load_rest_config_near_cache(&cache);
+    let mut rest = load_rest_config_for_plan(&settings_data_dir, &cache);
     let mut break_interval_km = motor_break_interval_km(core_profile, &rest, dist_km, eta_minutes);
     let mut days_json = String::from("[]");
     let mut truck_overnight_pins: Vec<serde_json::Value> = Vec::new();
@@ -5276,6 +5279,9 @@ pub struct FfiVehicleLimits {
 }
 
 /// Car rest / break settings. Edits persist as the profile default (not trip-only).
+///
+/// Also used for Motorcycle and MobileHome soft multi-day budgets
+/// ([`CarRestParams`] / [`motor_daily_budget`]).
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct FfiCarRestSettings {
     /// Desired hours between breaks (stored as both min and max interval).
@@ -5283,6 +5289,9 @@ pub struct FfiCarRestSettings {
     /// Desired break duration in minutes (stored as both min and max duration).
     pub rest_duration_minutes: u32,
     pub eco_mode_enabled: bool,
+    /// Soft daily driving-hours budget for overnight multi-day splits.
+    /// Persisted as `RestConfig.car.max_hours` (default 8.0).
+    pub max_hours: f64,
 }
 
 /// Per-profile POI search radii (metres) and road-link policy.
@@ -5814,6 +5823,9 @@ pub fn load_car_rest_settings(data_dir: String) -> FfiCarRestSettings {
         break_interval_hours: default.break_interval_min_hours,
         rest_duration_minutes: default.break_duration_min_minutes,
         eco_mode_enabled: default.eco_mode_enabled,
+        max_hours: default
+            .max_hours
+            .unwrap_or(driver_break_core::config::CAR_MAX_DAILY_HOURS),
     };
     let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
         return fallback;
@@ -5824,10 +5836,16 @@ pub fn load_car_rest_settings(data_dir: String) -> FfiCarRestSettings {
         break_interval_hours: rest.car.break_interval_min_hours,
         rest_duration_minutes: rest.car.break_duration_min_minutes,
         eco_mode_enabled: rest.car.eco_mode_enabled,
+        max_hours: rest
+            .car
+            .max_hours
+            .filter(|h| *h > 0.0)
+            .unwrap_or(driver_break_core::config::CAR_MAX_DAILY_HOURS),
     }
 }
 
-/// Persist car break interval / rest duration as the default RestConfig (not a one-trip override).
+/// Persist car break interval / rest duration / daily max hours as the default
+/// RestConfig (not a one-trip override).
 #[uniffi::export]
 pub fn save_car_rest_settings(data_dir: String, settings: FfiCarRestSettings) -> bool {
     let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
@@ -5837,11 +5855,13 @@ pub fn save_car_rest_settings(data_dir: String, settings: FfiCarRestSettings) ->
     let mut rest = store.load_rest_config().unwrap_or_default();
     let hours = settings.break_interval_hours.clamp(1.0, 12.0);
     let mins = settings.rest_duration_minutes.clamp(5, 120);
+    let max_h = settings.max_hours.clamp(1.0, 16.0);
     rest.car.break_interval_min_hours = hours;
     rest.car.break_interval_max_hours = hours;
     rest.car.break_duration_min_minutes = mins;
     rest.car.break_duration_max_minutes = mins;
     rest.car.eco_mode_enabled = settings.eco_mode_enabled;
+    rest.car.max_hours = Some(max_h);
     store.save_rest_config(&rest).is_ok()
 }
 
@@ -5923,14 +5943,36 @@ pub fn set_truck_exceptional_extension_armed(data_dir: String, armed: bool) -> b
     store.save_rest_config(&rest).is_ok()
 }
 
-fn load_rest_config_near_cache(cache: &Path) -> RestConfig {
-    let data_dir = cache.parent().unwrap_or(cache);
-    let Ok(storage) = driver_break_core::storage::Storage::open(data_dir.join("navi.db")) else {
-        return RestConfig::default();
+/// Load [`RestConfig`] for a plan.
+///
+/// Prefer the host `data_dir` (app settings / `navi.db` from
+/// [`save_car_rest_settings`]). Fall back to the cache parent only when
+/// `settings_dir` is empty — long-trip tests historically put the graph cache
+/// under the SD pack root, which must not create a fresh empty `navi.db` that
+/// shadows the real soft daily budget (`max_hours`).
+fn load_rest_config_for_plan(settings_dir: &str, cache: &Path) -> RestConfig {
+    let primary = {
+        let t = settings_dir.trim();
+        if !t.is_empty() {
+            PathBuf::from(t)
+        } else {
+            cache.parent().unwrap_or(cache).to_path_buf()
+        }
     };
-    driver_break_core::storage::ConfigStore::new(&storage)
-        .load_rest_config()
-        .unwrap_or_default()
+    if let Ok(storage) = driver_break_core::storage::Storage::open(primary.join("navi.db")) {
+        return driver_break_core::storage::ConfigStore::new(&storage)
+            .load_rest_config()
+            .unwrap_or_default();
+    }
+    let fallback = cache.parent().unwrap_or(cache);
+    if fallback != primary.as_path() {
+        if let Ok(storage) = driver_break_core::storage::Storage::open(fallback.join("navi.db")) {
+            return driver_break_core::storage::ConfigStore::new(&storage)
+                .load_rest_config()
+                .unwrap_or_default();
+        }
+    }
+    RestConfig::default()
 }
 
 fn load_profile_poi_radii_near_cache(cache: &Path) -> ProfilePoiRadiiTable {

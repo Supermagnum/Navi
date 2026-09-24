@@ -175,7 +175,7 @@ class LongTripMobileHomeAvdInstrumentedTest {
         assertTrue(
             saveCarRestSettings(
                 dataDir.absolutePath,
-                FfiCarRestSettings(2.0, 15u, ecoModeEnabled = true),
+                FfiCarRestSettings(2.0, 15u, ecoModeEnabled = true, maxHours = 8.0),
             ),
         )
         report.put("height_m", heightM)

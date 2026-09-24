@@ -1992,7 +1992,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_save_bike_capability() and 0xFFFF) != 29872) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_save_car_rest_settings() and 0xFFFF) != 3880) {
+    if ((lib.uniffi_navi_checksum_func_save_car_rest_settings() and 0xFFFF) != 29111) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_save_ebike_config() and 0xFFFF) != 43233) {
@@ -3091,6 +3091,9 @@ public object FfiConverterTypeCorridorRouteResult: FfiConverterRustBuffer<Corrid
 
 /**
  * Car rest / break settings. Edits persist as the profile default (not trip-only).
+ *
+ * Also used for Motorcycle and MobileHome soft multi-day budgets
+ * ([`CarRestParams`] / [`motor_daily_budget`]).
  */
 data class FfiCarRestSettings (
     /**
@@ -3104,6 +3107,12 @@ data class FfiCarRestSettings (
     var `restDurationMinutes`: kotlin.UInt
     , 
     var `ecoModeEnabled`: kotlin.Boolean
+    , 
+    /**
+     * Soft daily driving-hours budget for overnight multi-day splits.
+     * Persisted as `RestConfig.car.max_hours` (default 8.0).
+     */
+    var `maxHours`: kotlin.Double
     
 ){
     
@@ -3123,19 +3132,22 @@ public object FfiConverterTypeFfiCarRestSettings: FfiConverterRustBuffer<FfiCarR
             FfiConverterDouble.read(buf),
             FfiConverterUInt.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterDouble.read(buf),
         )
     }
 
     override fun allocationSize(value: FfiCarRestSettings) = (
             FfiConverterDouble.allocationSize(value.`breakIntervalHours`) +
             FfiConverterUInt.allocationSize(value.`restDurationMinutes`) +
-            FfiConverterBoolean.allocationSize(value.`ecoModeEnabled`)
+            FfiConverterBoolean.allocationSize(value.`ecoModeEnabled`) +
+            FfiConverterDouble.allocationSize(value.`maxHours`)
     )
 
     override fun write(value: FfiCarRestSettings, buf: ByteBuffer) {
             FfiConverterDouble.write(value.`breakIntervalHours`, buf)
             FfiConverterUInt.write(value.`restDurationMinutes`, buf)
             FfiConverterBoolean.write(value.`ecoModeEnabled`, buf)
+            FfiConverterDouble.write(value.`maxHours`, buf)
     }
 }
 
@@ -7167,7 +7179,8 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * Persist car break interval / rest duration as the default RestConfig (not a one-trip override).
+         * Persist car break interval / rest duration / daily max hours as the default
+         * RestConfig (not a one-trip override).
          */ fun `saveCarRestSettings`(`dataDir`: kotlin.String, `settings`: FfiCarRestSettings): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->

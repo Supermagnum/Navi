@@ -5770,6 +5770,7 @@ private fun NaviMapScreen() {
                                                             breakIntervalHours = rest.breakIntervalHours,
                                                             restDurationMinutes = rest.restDurationMinutes,
                                                             ecoModeEnabled = ecoEnabled,
+                                                            maxHours = rest.maxHours,
                                                         ),
                                                     )
                                                 }

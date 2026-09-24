@@ -209,6 +209,7 @@ class SimBannerBreakTiltInstrumentedTest {
                 breakIntervalHours = 2.0,
                 restDurationMinutes = 15u,
                 ecoModeEnabled = false,
+                maxHours = 8.0,
             ),
         )
         grantLocation()

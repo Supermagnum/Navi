@@ -1572,6 +1572,10 @@ fun DriveSettingsSheet(
                                         breakIntervalHours = hours,
                                         restDurationMinutes = mins.toUInt(),
                                         ecoModeEnabled = ecoActive,
+                                        maxHours =
+                                            runCatching {
+                                                loadCarRestSettings(dataDir).maxHours
+                                            }.getOrDefault(8.0),
                                     ),
                                 ).also { ok ->
                                     if (ok) {
