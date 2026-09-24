@@ -541,12 +541,13 @@ fun PluginSettingsSection(
             for (vol in options) {
                 val selected = vol.id == longTripPackVolumeId
                 val freeLabel =
-                    if (vol.mounted && vol.freeBytes > 0L) {
-                        " — ${formatBytesShort(vol.freeBytes)} free"
-                    } else if (!vol.mounted) {
-                        " — not mounted"
-                    } else {
-                        ""
+                    when {
+                        !vol.mounted -> " — not mounted"
+                        vol.appFilesDir == null && vol.id != NaviStorageVolumes.INTERNAL_ID ->
+                            " — not available for app files"
+                        vol.mounted && vol.freeBytes > 0L ->
+                            " — ${formatBytesShort(vol.freeBytes)} free"
+                        else -> ""
                     }
                 val mark = if (selected) "● " else "○ "
                 Text(
@@ -555,7 +556,11 @@ fun PluginSettingsSection(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .clickable(enabled = vol.mounted || vol.id == NaviStorageVolumes.INTERNAL_ID) {
+                            .clickable(
+                                enabled =
+                                    vol.id == NaviStorageVolumes.INTERNAL_ID ||
+                                        (vol.mounted && vol.appFilesDir != null),
+                            ) {
                                 onLongTripPackVolumeChange(vol.id)
                             }.testTag("long_trip_pack_volume_${vol.id}"),
                 )

@@ -53,4 +53,17 @@ class LongTripPackStorageTest {
         val empty = tmp.newFolder("empty")
         assertFalse(PackRegionAvailability.localBakeReady(empty, "europe/norway/ostlandet"))
     }
+
+    @Test
+    fun probeWritable_accepts_creatable_dir_and_rejects_file_path() {
+        // Host unit stand-in for volume selection: real SELinux MCS mismatch
+        // cannot be reproduced here, but resolveWritableAppFilesDir relies on
+        // this probe so a non-writable synthesize path is never returned.
+        val ok = tmp.newFolder("writable-packs")
+        assertTrue(NaviStorageVolumes.probeWritable(ok))
+        assertTrue(NaviStorageVolumes.probeWritable(File(ok, "nested-missing")))
+        val asFile = File(tmp.root, "not-a-dir")
+        asFile.writeText("x")
+        assertFalse(NaviStorageVolumes.probeWritable(asFile))
+    }
 }

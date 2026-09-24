@@ -50,19 +50,65 @@ object LongTripPackStorage {
     /**
      * Directory that receives **new** long-trip pack files only.
      * Always under the chosen volume's app-files tree + [PACKS_SUBDIR].
-     * Falls back to internal when the selected removable volume is missing/unmounted.
+     *
+     * When a removable volume is selected but not writable (unmounted / no app-files
+     * path — e.g. Android 15 public disk mounted without VISIBLE_FOR_WRITE), prefer
+     * another mounted removable with an app-files dir. **Does not** dump multi-GB
+     * packs onto internal merely because the preferred UUID is briefly unavailable.
      */
     fun packDownloadDir(context: Context): File {
         val id = selectedVolumeId(context)
         if (id == NaviStorageVolumes.INTERNAL_ID) {
-            return File(NaviAppData.resolve(context), PACKS_SUBDIR).also { it.mkdirs() }
+            val dir = File(NaviAppData.resolve(context), PACKS_SUBDIR).also { it.mkdirs() }
+            Log.i(TAG, "packDownloadDir id=internal path=${dir.absolutePath}")
+            return dir
         }
         val vol = NaviStorageVolumes.findById(context, id)
-        if (vol == null || !vol.mounted || vol.appFilesDir == null) {
-            Log.w(TAG, "volume $id unavailable; falling back to internal for packDownloadDir")
-            return File(NaviAppData.resolve(context), PACKS_SUBDIR).also { it.mkdirs() }
+        if (vol != null && vol.mounted && vol.appFilesDir != null) {
+            val dir = File(vol.appFilesDir, PACKS_SUBDIR)
+            if (NaviStorageVolumes.probeWritable(dir)) {
+                Log.i(
+                    TAG,
+                    "packDownloadDir id=$id path=${dir.absolutePath} " +
+                        "appFiles=${vol.appFilesDir}",
+                )
+                return dir
+            }
+            Log.w(
+                TAG,
+                "packDownloadDir id=$id appFiles=${vol.appFilesDir} not writable",
+            )
         }
-        return File(vol.appFilesDir, PACKS_SUBDIR).also { it.mkdirs() }
+        val alt =
+            NaviStorageVolumes
+                .listPickerOptions(context)
+                .firstOrNull {
+                    it.removable &&
+                        it.mounted &&
+                        it.appFilesDir != null &&
+                        it.id != id &&
+                        NaviStorageVolumes.probeWritable(File(it.appFilesDir, PACKS_SUBDIR))
+                }
+        if (alt != null) {
+            Log.w(
+                TAG,
+                "volume $id unavailable (mounted=${vol?.mounted} appFiles=${vol?.appFilesDir}); " +
+                    "using mounted removable ${alt.id} for packDownloadDir",
+            )
+            return File(alt.appFilesDir, PACKS_SUBDIR)
+        }
+        Log.e(
+            TAG,
+            "volume $id unavailable and no writable removable; " +
+                "refusing silent internal fallback for packDownloadDir " +
+                "(mounted=${vol?.mounted} appFiles=${vol?.appFilesDir})",
+        )
+        // Prefer a guessed visible path so packRoot logs the UUID and I/O fails
+        // into Unavailable — never dump multi-GB packs onto internal /data.
+        val uuid = id.removePrefix("uuid:")
+        return File(
+            "/storage/$uuid/Android/data/${context.packageName}/files/$PACKS_SUBDIR",
+        )
     }
 
     /**

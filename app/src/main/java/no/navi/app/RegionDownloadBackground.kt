@@ -309,6 +309,8 @@ object RegionDownloadBackground {
         val filename: String,
         val geofabrikPath: String,
         val phase: Phase = Phase.PACKS,
+        /** Absolute pack write root; null → [dataDir] (Tools / internal). */
+        val packDirPath: String? = null,
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -395,8 +397,60 @@ object RegionDownloadBackground {
         emitPhase(path, phase)
     }
 
-    /** Active pack write root (override or [dataDir]). */
+    /** Active pack write root (per-job path, override, long-trip prefs, or [dataDir]). */
     internal fun packRoot(dataDir: File): File = packDirOverride.get() ?: dataDir
+
+    private fun resolvePackRoot(
+        context: Context?,
+        dataDir: File,
+        job: Job,
+    ): File {
+        // Prefer the live long-trip volume selection over a stale job sidecar.
+        // After SD became unavailable, jobs were persisted with
+        // packDirPath=.../files/long-trip-packs (internal); resuming those must
+        // not keep dumping multi-GB packs onto internal once a writable
+        // removable volume is selected again.
+        if (context != null) {
+            val id = LongTripPackStorage.selectedVolumeId(context)
+            if (id != NaviStorageVolumes.INTERNAL_ID) {
+                val preferred = LongTripPackStorage.packDownloadDir(context)
+                val preferredPath = preferred.absolutePath
+                val staleInternal =
+                    job.packDirPath
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { path ->
+                            path != preferredPath &&
+                                path.contains("/${LongTripPackStorage.PACKS_SUBDIR}") &&
+                                !path.contains("/storage/") &&
+                                path.contains(dataDir.absolutePath)
+                        } == true
+                if (staleInternal) {
+                    Log.w(
+                        TAG,
+                        "ignoring stale internal job packDirPath=${job.packDirPath}; " +
+                            "using preferred $preferredPath",
+                    )
+                } else {
+                    job.packDirPath
+                        ?.takeIf { it.isNotBlank() && it == preferredPath }
+                        ?.let { path ->
+                            val dir = File(path)
+                            if (dir.mkdirs() || dir.isDirectory) return dir
+                        }
+                }
+                return preferred
+            }
+        }
+        job.packDirPath
+            ?.takeIf { it.isNotBlank() }
+            ?.let { path ->
+                val dir = File(path)
+                if (dir.mkdirs() || dir.isDirectory) return dir
+                Log.w(TAG, "job packDirPath unusable: $path")
+            }
+        packDirOverride.get()?.let { return it }
+        return dataDir
+    }
 
     /**
      * Cancel pending queue entries and clear the active job sidecar. Does **not**
@@ -452,6 +506,7 @@ object RegionDownloadBackground {
                 filename = jsonStringField(text, "filename") ?: return null,
                 geofabrikPath = jsonStringField(text, "geofabrikPath").orEmpty(),
                 phase = Phase.parse(jsonStringField(text, "phase")),
+                packDirPath = jsonStringField(text, "packDirPath"),
             )
         }.getOrNull()
     }
@@ -469,6 +524,10 @@ object RegionDownloadBackground {
                 append("\"filename\":").append(jsonQuote(job.filename)).append(',')
                 append("\"geofabrikPath\":").append(jsonQuote(job.geofabrikPath)).append(',')
                 append("\"phase\":").append(jsonQuote(job.phase.wire()))
+                val pack = job.packDirPath
+                if (!pack.isNullOrBlank()) {
+                    append(',').append("\"packDirPath\":").append(jsonQuote(pack))
+                }
                 append('}')
             },
         )
@@ -878,6 +937,12 @@ object RegionDownloadBackground {
             job.filename,
             job.geofabrikPath,
             startPhase = job.phase,
+            packDir =
+                job.packDirPath?.let { File(it) }
+                    ?: LongTripPackStorage.packDownloadDir(context).takeIf {
+                        LongTripPackStorage.selectedVolumeId(context) !=
+                            NaviStorageVolumes.INTERNAL_ID
+                    },
         )
     }
 
@@ -940,7 +1005,11 @@ object RegionDownloadBackground {
         unmeteredNow: Boolean,
     ) {
         requireUnmeteredGate.set(requireUnmetered)
-        packDirOverride.set(packDir)
+        // Never clear an in-flight long-trip pack root with a Tools null packDir.
+        if (packDir != null) {
+            packDirOverride.set(packDir)
+        }
+        val packDirPath = packDir?.absolutePath
         if (requireUnmetered && !unmeteredNow) {
             Log.i(TAG, "long-trip gate: not on Wi-Fi/Ethernet; pause enqueue of $geofabrikPath")
             val path = GeofabrikDownloadCatalog.canonicalizePath(geofabrikPath)
@@ -954,6 +1023,7 @@ object RegionDownloadBackground {
                     filename = filename,
                     geofabrikPath = path,
                     phase = startPhase,
+                    packDirPath = packDirPath,
                 )
             // Synchronous queue write (no claim) so Tools behaviour is unchanged when
             // requireUnmetered=false; long-trip can resume later via ensureStartedFromPending.
@@ -973,6 +1043,7 @@ object RegionDownloadBackground {
                     filename = filename,
                     geofabrikPath = path,
                     phase = startPhase,
+                    packDirPath = packDirPath,
                 )
             if (!startDrain) {
                 mutex.withLock {
@@ -1095,6 +1166,8 @@ object RegionDownloadBackground {
                         filename = filename,
                         geofabrikPath = o.optString("geofabrikPath", ""),
                         phase = Phase.parse(o.optString("phase").ifBlank { null }),
+                        packDirPath =
+                            o.optString("packDirPath", "").ifBlank { null },
                     ),
                 )
             }
@@ -1132,7 +1205,11 @@ object RegionDownloadBackground {
                     .put("url", j.url)
                     .put("filename", j.filename)
                     .put("geofabrikPath", j.geofabrikPath)
-                    .put("phase", j.phase.wire()),
+                    .put("phase", j.phase.wire())
+                    .also { o ->
+                        val p = j.packDirPath
+                        if (!p.isNullOrBlank()) o.put("packDirPath", p)
+                    },
             )
         }
         queueFile(dataDir).writeText(arr.toString())
@@ -1226,10 +1303,12 @@ object RegionDownloadBackground {
             activeRegionPath.set(geofabrikPath)
         }
         var startPhase = incoming.phase
-        val packs = packRoot(dataDir)
+        val packs = resolvePackRoot(context, dataDir, incoming)
+        // Keep override aligned for any nested callers still using packRoot().
+        packDirOverride.set(packs)
         val already = partialBytes(packs, filename)
         resuming.set(already > 0L || startPhase != Phase.PACKS)
-        writeJob(dataDir, incoming)
+        writeJob(dataDir, incoming.copy(packDirPath = packs.absolutePath))
         // Fresh pack download / complete-index replace: clear stamp + rows.
         // PLACE_INDEX resume with name_index_build.complete=0: stamp only —
         // keep partial name_entries so the next ensurePlaceIndex can finish
@@ -1573,6 +1652,7 @@ object RegionDownloadBackground {
                 filename = filename,
                 geofabrikPath = geofabrikPath,
                 phase = phase,
+                packDirPath = packDirOverride.get()?.absolutePath,
             ),
         )
     }

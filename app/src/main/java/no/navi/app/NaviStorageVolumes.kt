@@ -90,10 +90,8 @@ object NaviStorageVolumes {
                 continue
             }
             val rootPath = volumeFilesystemPath(vol)
-            val appDir = matchAppFilesDir(appDirs, rootPath)
             val mounted =
                 when {
-                    appDir != null -> true
                     rootPath != null -> {
                         val state =
                             if (Build.VERSION.SDK_INT >= 30 && vol.directory != null) {
@@ -101,10 +99,19 @@ object NaviStorageVolumes {
                             } else {
                                 vol.state
                             }
-                        Environment.MEDIA_MOUNTED == state
+                        Environment.MEDIA_MOUNTED == state ||
+                            Environment.MEDIA_MOUNTED_READ_ONLY == state
                     }
                     else -> false
                 }
+            // Prefer Context.getExternalFilesDirs (installd-backed, writable).
+            // Only synthesize a candidate path when the volume root is visible but
+            // the array slot is still missing — and only keep it if a write probe
+            // succeeds. Blind File.mkdirs() on public exfat creates root:media_rw
+            // trees the app UID cannot write (packRoot then looks like SD while
+            // downloads silently never land there).
+            val appDir =
+                resolveWritableAppFilesDir(context, appDirs, rootPath, mounted)
             val id = volumeId(vol)
             val label =
                 vol.getDescription(context)?.takeIf { it.isNotBlank() }
@@ -298,6 +305,82 @@ object NaviStorageVolumes {
             val p = dir.absolutePath
             p == root || p.startsWith("$root/")
         }
+    }
+
+    /**
+     * Resolve a **writable** app-files dir for [volumeRoot].
+     *
+     * 1. Match [Context.getExternalFilesDirs] (triggers installd).
+     * 2. If missing, try [StorageManager.mkdirs] on the scoped path, then
+     *    re-query getExternalFilesDirs.
+     * 3. Last resort: candidate under `/storage/<uuid>/...` only when a write
+     *    probe succeeds (never return a non-writable synthesize path).
+     */
+    private fun resolveWritableAppFilesDir(
+        context: Context,
+        appDirs: Array<File?>,
+        volumeRoot: String?,
+        mounted: Boolean,
+    ): File? {
+        if (!mounted || volumeRoot.isNullOrBlank()) return null
+        val root = volumeRoot.trimEnd('/')
+        matchAppFilesDir(appDirs, root)?.let { matched ->
+            if (probeWritable(matched)) return matched
+            Log.w(TAG, "getExternalFilesDirs match not writable: ${matched.absolutePath}")
+        }
+        if (!root.startsWith("/storage/")) return null
+        val candidate = File(root, "Android/data/${context.packageName}/files")
+        if (storageManagerMkdirs(context, candidate)) {
+            val refreshed = context.getExternalFilesDirs(null) ?: emptyArray()
+            matchAppFilesDir(refreshed, root)?.let { matched ->
+                if (probeWritable(matched)) return matched
+            }
+            if (probeWritable(candidate)) return candidate
+        }
+        if (probeWritable(candidate)) return candidate
+        Log.i(
+            TAG,
+            "no writable app-files dir for $root " +
+                "(externalDirs=${appDirs.map { it?.absolutePath }})",
+        )
+        return null
+    }
+
+    /** True when [dir] exists (or can be created) and accepts a create/delete probe. */
+    internal fun probeWritable(dir: File): Boolean =
+        runCatching {
+            if (!dir.exists() && !dir.mkdirs()) return false
+            val probe = File(dir, ".navi_write_probe")
+            probe.writeText("ok")
+            val ok = probe.isFile && probe.length() > 0L
+            probe.delete()
+            ok
+        }.getOrDefault(false)
+
+    /**
+     * Best-effort [StorageManager.mkdirs] (installd). Public on older APIs;
+     * hidden/removed on some platform builds — reflection keeps us compiling.
+     */
+    private fun storageManagerMkdirs(
+        context: Context,
+        dir: File,
+    ): Boolean {
+        val sm = context.getSystemService(StorageManager::class.java) ?: return false
+        return runCatching {
+            val m =
+                StorageManager::class.java.methods.firstOrNull { method ->
+                    method.name == "mkdirs" && method.parameterTypes.size == 1
+                } ?: return false
+            when (val argType = m.parameterTypes[0]) {
+                File::class.java -> m.invoke(sm, dir)
+                String::class.java -> m.invoke(sm, dir.absolutePath)
+                else -> return false.also {
+                    Log.w(TAG, "StorageManager.mkdirs unsupported arg=$argType")
+                }
+            }
+            dir.exists() || dir.mkdirs()
+        }.onFailure { Log.w(TAG, "StorageManager.mkdirs failed for ${dir.absolutePath}: $it") }
+            .getOrDefault(false)
     }
 
     private fun resolveVolumeIdForPath(

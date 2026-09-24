@@ -49,6 +49,24 @@ class RegionDownloadResumeTest {
     }
 
     @Test
+    fun write_load_roundtrip_preserves_packDirPath() {
+        val dir = tmp.newFolder("data")
+        val packDir = "/storage/ABCD-1234/Android/data/no.navi.app/files/long-trip-packs"
+        val job =
+            RegionDownloadBackground.Job(
+                url = "https://example.test/trondelag-latest.osm.pbf",
+                filename = "trondelag-latest.osm.pbf",
+                geofabrikPath = "europe/norway/trondelag",
+                phase = RegionDownloadBackground.Phase.PACKS,
+                packDirPath = packDir,
+            )
+        RegionDownloadBackground.writeJob(dir, job)
+        val loaded = RegionDownloadBackground.loadJob(dir)
+        assertNotNull(loaded)
+        assertEquals(packDir, loaded!!.packDirPath)
+    }
+
+    @Test
     fun discoverPending_keeps_job_when_pbf_exists_but_phase_incomplete() {
         val dir = tmp.newFolder("data")
         File(dir, "ostlandet-latest.osm.pbf").writeText("x".repeat(2_000_000))
