@@ -217,6 +217,9 @@ impl PmtilesDownloader {
             self.max_zoom
         };
 
+        let _region_tag =
+            crate::download::progress::RegionTagGuard::enter(&job.region_key, None, None);
+
         match extract_bbox_to_file(
             &planet_url,
             &final_path,

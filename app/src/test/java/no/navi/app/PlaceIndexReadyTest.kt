@@ -137,4 +137,43 @@ class PlaceIndexReadyTest {
             dir.deleteRecursively()
         }
     }
+
+    @Test
+    fun clear_ready_stamp_only_drops_stamp_without_requiring_db() {
+        val dir =
+            File.createTempFile("place-ready-stamp", "dir").apply {
+                delete()
+                mkdirs()
+            }
+        try {
+            PlaceIndexReady.readyFile(dir).writeText("""["europe/norway/ostlandet"]""")
+            assertTrue(PlaceIndexReady.isReady(dir, "europe/norway/ostlandet"))
+            PlaceIndexReady.clearReadyStampOnly(dir, "europe/norway/ostlandet")
+            assertFalse(PlaceIndexReady.isReady(dir, "europe/norway/ostlandet"))
+            assertEquals("[]", PlaceIndexReady.readyFile(dir).readText().trim())
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun prepare_pipeline_start_preserve_incomplete_uses_stamp_only() {
+        val dir =
+            File.createTempFile("place-ready-prep", "dir").apply {
+                delete()
+                mkdirs()
+            }
+        try {
+            PlaceIndexReady.readyFile(dir).writeText("""["europe/germany/hamburg"]""")
+            PlaceIndexReady.preparePipelineStart(
+                dir,
+                "europe/germany/hamburg",
+                preserveIncompleteRows = true,
+            )
+            assertFalse(PlaceIndexReady.isReady(dir, "europe/germany/hamburg"))
+            assertEquals("[]", PlaceIndexReady.readyFile(dir).readText().trim())
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
 }

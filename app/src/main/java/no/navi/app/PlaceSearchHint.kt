@@ -4,14 +4,27 @@ package no.navi.app
  * Place-search copy when the FTS index is empty or still building.
  * Distinct from a genuine zero-hit query on a populated index.
  */
-@Suppress("UNUSED_PARAMETER")
 fun placeSearchBuildingMessage(
     hitsEmpty: Boolean,
     indexHasEntries: Boolean,
     indexRunning: Boolean,
+    onlineAvailable: Boolean = false,
 ): String? {
-    if (!hitsEmpty || indexHasEntries) return null
-    return "Place index is still building — try coordinates or map tap for now"
+    if (!hitsEmpty) return null
+    return when {
+        onlineAvailable && !indexHasEntries ->
+            "No offline place index yet — showing online results (Nominatim). " +
+                "Selecting a hit also sets the Tools download region."
+        onlineAvailable && indexHasEntries ->
+            "No local match — showing online results (Nominatim). " +
+                "Selecting a hit sets the Tools download region for that place."
+        indexHasEntries -> null
+        indexRunning ->
+            "Place index is still building — try coordinates, map tap, or wait for Wi‑Fi search"
+        else ->
+            "No place index on device — connect to the network to search by name/address, " +
+                "or enter coordinates / tap the map"
+    }
 }
 
 /**

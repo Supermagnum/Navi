@@ -171,4 +171,53 @@ class RegionDownloadResumeTest {
             assertFalse(PlaceIndexBackground.isRunning())
         }
     }
+
+    @Test
+    fun shouldClearPlaceRows_true_when_no_incomplete_build_row() {
+        val dir = tmp.newFolder("incomplete-idx")
+        assertTrue(
+            RegionDownloadBackground.shouldClearPlaceRowsOnPipelineStart(
+                RegionDownloadBackground.Phase.PLACE_INDEX,
+                dir,
+                "europe/germany/hamburg",
+            ),
+        )
+        assertTrue(
+            RegionDownloadBackground.shouldClearPlaceRowsOnPipelineStart(
+                RegionDownloadBackground.Phase.PACKS,
+                dir,
+                "europe/germany/hamburg",
+            ),
+        )
+    }
+
+    @Test
+    fun process_death_model_place_index_job_survives_relaunch_discovery() {
+        // Closest host equivalent to "kill mid-index then relaunch": sidecar left
+        // on disk with PLACE_INDEX phase is rediscovered without manual tap.
+        val dir = tmp.newFolder("rediscover")
+        RegionDownloadBackground.writeJob(
+            dir,
+            RegionDownloadBackground.Job(
+                url = "https://download.geofabrik.de/europe/germany/hamburg-latest.osm.pbf",
+                filename = "hamburg-latest.osm.pbf",
+                geofabrikPath = "europe/germany/hamburg",
+                phase = RegionDownloadBackground.Phase.PLACE_INDEX,
+            ),
+        )
+        File(dir, "hamburg-latest.osm.pbf").writeText("x".repeat(2_000_000))
+        val pending = RegionDownloadBackground.discoverPending(dir)
+        assertNotNull(pending)
+        assertEquals(RegionDownloadBackground.Phase.PLACE_INDEX, pending!!.phase)
+        assertEquals("europe/germany/hamburg", pending.geofabrikPath)
+        assertFalse(
+            "PLACE_INDEX resume with no complete=0 row still clears on start " +
+                "(incomplete detection needs a real build row — covered on device)",
+            !RegionDownloadBackground.shouldClearPlaceRowsOnPipelineStart(
+                RegionDownloadBackground.Phase.PLACE_INDEX,
+                dir,
+                "europe/germany/hamburg",
+            ),
+        )
+    }
 }

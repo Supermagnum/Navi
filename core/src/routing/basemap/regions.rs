@@ -682,6 +682,12 @@ const PACK_LEAF_PATH_BBOX: &[(&str, [f64; 4])] = &[
         "europe/germany/schleswig-holstein",
         [53.36, 8.37, 55.06, 11.32],
     ),
+    // NRW Detmold Regierungsbezirk (Geofabrik leaf). Minden sits here — the
+    // Niedersachsen extract bbox overlaps but does not carry the city graph.
+    (
+        "europe/germany/nordrhein-westfalen/detmold-regbez",
+        [51.45, 8.11, 52.50, 9.44],
+    ),
     // Danish regions (published on some hosts; live host currently has country only).
     ("europe/denmark/syddanmark", [54.72, 8.07, 55.78, 10.95]),
     ("europe/denmark/sjaelland", [54.85, 10.85, 55.80, 12.55]),
@@ -951,6 +957,10 @@ mod tests {
         assert_eq!(
             pbf_stem_to_geofabrik_path("hamburg-latest"),
             Some("europe/germany/hamburg".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("detmold-regbez-latest"),
+            Some("europe/germany/nordrhein-westfalen/detmold-regbez".into())
         );
         assert_eq!(
             pbf_stem_to_geofabrik_path("schleswig-holstein-latest"),

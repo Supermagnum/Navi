@@ -67,6 +67,8 @@ class AreaGraphPackHitProfileInstrumentedTest {
                     vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                     preferOfficialNetworks = false,
                     dataDir = dataDir,
+                    packDir = "",
+                    longTripEnabled = false,
                     viaPoints = emptyList(),
                 )
             val wallMs = (System.nanoTime() - t0) / 1_000_000L

@@ -246,14 +246,6 @@
       "bake_id": "europe_germany_thueringen"
     },
     {
-      "region_id": "europe/norway/hedmark",
-      "generation": "20260911T152449Z-392414-3ae49c49",
-      "manifest_url": "/packs/europe/norway/hedmark/20260911T152449Z-392414-3ae49c49/manifest.json",
-      "has_delta_h": true,
-      "bytes": 473327929,
-      "bake_id": "hedmark"
-    },
-    {
       "region_id": "europe/norway/nord-norge",
       "generation": "20260911T152449Z-392414-3ae49c49",
       "manifest_url": "/packs/europe/norway/nord-norge/20260911T152449Z-392414-3ae49c49/manifest.json",

@@ -103,7 +103,7 @@ fn klecken_innlandet_seven_regions_after_dropping_niedersachsen() {
             .unwrap_or(false),
         "destination region should be last: {needed:?}"
     );
-    // Property checks (exact count can grow when catalog adds leaves like hedmark).
+    // Property checks (exact count can grow when catalog adds German/SE leaves).
     assert!(
         needed.len() >= 7,
         "Klecken→Innlandet expected ≥7 missing regions, got {}: {needed:?}",

@@ -174,6 +174,8 @@ class DeviceCompareDumpInstrumentedTest {
                     FfiVehicleLimits(null, null, null, null, null, null),
                     false,
                     dataDir.absolutePath,
+                    "",
+                    longTripEnabled = false,
                     viaPoints = emptyList(),
                 )
             val uiWallMs = System.currentTimeMillis() - tUi

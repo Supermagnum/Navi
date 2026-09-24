@@ -114,6 +114,43 @@ object PlaceIndexReady {
         runCatching { Log.i(TAG, "clear ready region=$id") }
     }
 
+    /**
+     * Drop the ready stamp so From/Via/To will not treat this region as
+     * searchable, but leave `name_entries` intact.
+     *
+     * Used when resuming [RegionDownloadBackground.Phase.PLACE_INDEX] with
+     * `name_index_build.complete=0`: wiping rows discarded insert-batch progress
+     * and left the region incomplete until a manual retry.
+     */
+    fun clearReadyStampOnly(
+        dataDir: File,
+        regionId: String,
+    ) {
+        val id = PackRegionAvailability.normalize(regionId)
+        if (id.isEmpty()) return
+        val next = loadStampOnly(dataDir).toMutableSet()
+        next.remove(id)
+        save(dataDir, next)
+        runCatching { Log.i(TAG, "clear ready stamp only (preserve rows) region=$id") }
+    }
+
+    /**
+     * Pipeline start for one region: either full [clearReady] (new download /
+     * finished index being replaced) or stamp-only when [preserveIncompleteRows]
+     * is true (PLACE_INDEX resume with complete=0).
+     */
+    fun preparePipelineStart(
+        dataDir: File,
+        regionId: String,
+        preserveIncompleteRows: Boolean,
+    ) {
+        if (preserveIncompleteRows) {
+            clearReadyStampOnly(dataDir, regionId)
+        } else {
+            clearReady(dataDir, regionId)
+        }
+    }
+
     fun isReady(
         dataDir: File,
         regionId: String,
@@ -233,6 +270,44 @@ object PlaceIndexReady {
     ) {
         val dbFile = File(dataDir, "place_index.db")
         if (!dbFile.isFile) return
+        // Same PLACE_INDEX_BUILD_LOCK as ensure_place_index (Task 4/5). Prefer
+        // rusqlite under that lock; fall back to Android SQLite still under the
+        // lock so -wal/-shm are never touched concurrently with a native build.
+        val native =
+            runCatching {
+                uniffi.navi.clearPlaceIndexRegionRows(dbFile.absolutePath, regionId)
+            }
+        if (native.isSuccess) {
+            val report = native.getOrDefault("")
+            if (!report.startsWith("PASS")) {
+                Log.w(TAG, "clearRegionRows native: $report")
+            }
+            return
+        }
+        val acquired =
+            runCatching { uniffi.navi.placeIndexBuildLockAcquire() }
+        val held = acquired.getOrNull()?.startsWith("PASS") == true
+        if (!held) {
+            Log.w(
+                TAG,
+                "clearRegionRows lock acquire unavailable: " +
+                    (acquired.getOrNull() ?: acquired.exceptionOrNull()?.message),
+            )
+        }
+        try {
+            clearRegionRowsAndroidSqlite(dbFile, regionId)
+        } finally {
+            if (held) {
+                runCatching { uniffi.navi.placeIndexBuildLockRelease() }
+                    .onFailure { Log.w(TAG, "clearRegionRows lock release: ${it.message}") }
+            }
+        }
+    }
+
+    private fun clearRegionRowsAndroidSqlite(
+        dbFile: File,
+        regionId: String,
+    ) {
         runCatching {
             SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
                 db.beginTransaction()

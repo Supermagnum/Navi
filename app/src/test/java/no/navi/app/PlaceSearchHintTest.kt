@@ -8,24 +8,40 @@ import org.junit.Test
 
 class PlaceSearchHintTest {
     @Test
-    fun showsMessageWhenIndexEmpty() {
+    fun showsOnlineMessageWhenNetworkAvailableAndIndexEmpty() {
         val msg =
             placeSearchBuildingMessage(
                 hitsEmpty = true,
                 indexHasEntries = false,
                 indexRunning = true,
+                onlineAvailable = true,
             )
+        assertTrue(msg!!.contains("online", ignoreCase = true))
+        assertTrue(msg.contains("Nominatim"))
+    }
+
+    @Test
+    fun showsBuildingMessageWhenOfflineAndIndexRunning() {
         assertEquals(
-            "Place index is still building — try coordinates or map tap for now",
-            msg,
+            "Place index is still building — try coordinates, map tap, or wait for Wi‑Fi search",
+            placeSearchBuildingMessage(
+                hitsEmpty = true,
+                indexHasEntries = false,
+                indexRunning = true,
+                onlineAvailable = false,
+            ),
         )
     }
 
     @Test
-    fun showsMessageForEmptyStubEvenIfJobNotRunning() {
-        assertEquals(
-            "Place index is still building — try coordinates or map tap for now",
-            placeSearchBuildingMessage(true, indexHasEntries = false, indexRunning = false),
+    fun showsConnectMessageWhenOfflineAndNoIndexJob() {
+        assertTrue(
+            placeSearchBuildingMessage(
+                hitsEmpty = true,
+                indexHasEntries = false,
+                indexRunning = false,
+                onlineAvailable = false,
+            )!!.contains("connect", ignoreCase = true),
         )
     }
 
@@ -52,6 +68,19 @@ class PlaceSearchHintTest {
     }
 
     @Test
+    fun showsOnlineMessageWhenPopulatedIndexMissesButNetworkOk() {
+        val msg =
+            placeSearchBuildingMessage(
+                hitsEmpty = true,
+                indexHasEntries = true,
+                indexRunning = false,
+                onlineAvailable = true,
+            )
+        assertTrue(msg!!.contains("online", ignoreCase = true))
+        assertTrue(msg.contains("download region", ignoreCase = true))
+    }
+
+    @Test
     fun skipsLiveGraphWorkOnlyWhilePlanActive() {
         assertTrue(skipLiveGraphWorkDuringForegroundPlan(true))
         assertFalse(skipLiveGraphWorkDuringForegroundPlan(false))
@@ -65,6 +94,43 @@ class PlaceSearchHintTest {
         assertEquals(75, monotonicPlanPercent(50, 75))
         assertEquals(50, monotonicPlanPercent(50, null))
         assertEquals(50, monotonicPlanPercent(50, -1))
+    }
+}
+
+class OnlinePlaceSearchParseTest {
+    @Test
+    fun parseNominatimMapsDisplayNameAndCoords() {
+        val json =
+            """
+            [{"place_id":1,"osm_id":844080404,"lat":"61.514623","lon":"8.852972",
+              "display_name":"Bessheim Fjellstue, Sjodalsvegen, Vågå, Innlandet, Norway",
+              "class":"tourism","type":"alpine_hut",
+              "address":{"municipality":"Vågå","suburb":"Sjodalen"}}]
+            """.trimIndent()
+        val hits = OnlinePlaceSearch.parseNominatimJson(json, 5)
+        assertEquals(1, hits.size)
+        assertEquals(844080404L, hits[0].osmId)
+        assertEquals(61.514623, hits[0].lat, 1e-6)
+        assertEquals(8.852972, hits[0].lon, 1e-6)
+        assertTrue(hits[0].name.contains("Bessheim"))
+        assertTrue(hits[0].kind.startsWith("online/"))
+        assertEquals("Vågå", hits[0].municipality)
+    }
+
+    @Test
+    fun parseOrsMapsLabelAndCoords() {
+        val json =
+            """
+            {"features":[{"geometry":{"coordinates":[10.467007,61.114545],"type":"Point"},
+              "properties":{"label":"Lillehammer, Innlandet, Norway","name":"Lillehammer",
+              "locality":"Lillehammer","county":"Innlandet"}}]}
+            """.trimIndent()
+        val hits = OnlinePlaceSearch.parseOrsJson(json, 5)
+        assertEquals(1, hits.size)
+        assertEquals(61.114545, hits[0].lat, 1e-6)
+        assertEquals(10.467007, hits[0].lon, 1e-6)
+        assertTrue(hits[0].name.contains("Lillehammer"))
+        assertEquals("online/ors/geocode", hits[0].kind)
     }
 }
 

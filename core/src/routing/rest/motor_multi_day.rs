@@ -241,6 +241,61 @@ pub fn plan_motor_multi_day(
     }
 }
 
+/// Soft rest-pause candidate collected along a chunked corridor (no live graph).
+#[derive(Debug, Clone)]
+pub struct SoftRestCandidate {
+    pub along_km: f64,
+    pub lat: f64,
+    pub lon: f64,
+    pub name: String,
+    pub kind: String,
+    pub icon_key: String,
+    pub osm_id: i64,
+}
+
+/// Place soft rest pauses every `interval_km` along the trip using pre-collected
+/// corridor candidates. Dedupes within 2 km so a POI near a densify hop joint is
+/// not emitted twice when two adjacent chunks both contributed it.
+pub fn plan_soft_rest_pauses(
+    total_km: f64,
+    interval_km: f64,
+    candidates: &[SoftRestCandidate],
+) -> Vec<SoftRestCandidate> {
+    if total_km < 1.0 || interval_km < 1.0 || candidates.is_empty() {
+        return Vec::new();
+    }
+    let mut stops = Vec::new();
+    let mut next = interval_km;
+    while next < total_km - 0.5 {
+        let Some(best) = candidates.iter().min_by(|a, b| {
+            let da = (a.along_km - next).abs();
+            let db = (b.along_km - next).abs();
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        }) else {
+            break;
+        };
+        // Reject if the nearest candidate is farther than half an interval along
+        // the route (would be a meaningless mid-leg jump).
+        if (best.along_km - next).abs() > interval_km * 0.5 {
+            next += interval_km;
+            continue;
+        }
+        let dup = stops.iter().any(|s: &SoftRestCandidate| {
+            let dlat = s.lat - best.lat;
+            let dlon = s.lon - best.lon;
+            // ~2 km crow-flies in deg² (same spirit as build_break_pois_json).
+            (dlat * dlat + dlon * dlon) < (2.0 / 111.0) * (2.0 / 111.0) || s.osm_id == best.osm_id
+        });
+        if !dup {
+            let mut chosen = best.clone();
+            chosen.along_km = next;
+            stops.push(chosen);
+        }
+        next += interval_km;
+    }
+    stops
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -338,5 +393,60 @@ mod tests {
         let cycling = CyclingRestParams::default();
         let b = motor_daily_budget(Profile::Cycling, &car, &cycling).unwrap();
         assert_eq!(b, MotorDailyBudget::DistanceKm(100.0));
+    }
+
+    #[test]
+    fn soft_rest_pauses_dedupe_chunk_boundary_duplicate() {
+        // Same OSM id contributed by two adjacent densify hops near 400 km.
+        let cands = vec![
+            SoftRestCandidate {
+                along_km: 398.0,
+                lat: 55.0,
+                lon: 12.0,
+                name: "Border Rest".into(),
+                kind: "rest_area".into(),
+                icon_key: "highway-rest_area".into(),
+                osm_id: 42,
+            },
+            SoftRestCandidate {
+                along_km: 401.0,
+                lat: 55.001,
+                lon: 12.001,
+                name: "Border Rest".into(),
+                kind: "rest_area".into(),
+                icon_key: "highway-rest_area".into(),
+                osm_id: 42,
+            },
+            SoftRestCandidate {
+                along_km: 700.0,
+                lat: 57.0,
+                lon: 12.5,
+                name: "North Rest".into(),
+                kind: "rest_area".into(),
+                icon_key: "highway-rest_area".into(),
+                osm_id: 99,
+            },
+        ];
+        let stops = plan_soft_rest_pauses(1000.0, 334.0, &cands);
+        assert_eq!(stops.len(), 2, "expected two pauses, got {stops:?}");
+        assert_eq!(stops[0].osm_id, 42);
+        assert_eq!(stops[1].osm_id, 99);
+        // Only one emission for the boundary-duplicated POI.
+        assert_eq!(stops.iter().filter(|s| s.osm_id == 42).count(), 1);
+    }
+
+    #[test]
+    fn twenty_six_hour_trip_is_multi_day_with_overnight_slots() {
+        // Matches the AVD Stendal→Bessheim soft budget (~26 h / ~1905 km).
+        let plan = plan_motor_multi_day(MotorDailyBudget::Hours(8.0), 26.2, 1905.0, &[]);
+        assert!(plan.multi_day);
+        assert!(
+            plan.days.len() >= 3 && plan.days.len() <= 4,
+            "days={}",
+            plan.days.len()
+        );
+        assert!(plan.days[..plan.days.len() - 1]
+            .iter()
+            .all(|d| d.overnight.is_some()));
     }
 }

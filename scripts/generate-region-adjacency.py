@@ -2,17 +2,14 @@
 """Generate the offline region-adjacency asset for long-trip corridors.
 
 Primary geometry: Geofabrik download index-v1.json polygons (exact catalog path
-match). Supplement: Natural Earth Admin-1 1:10m, Sweden län only. Manual:
-hedmark stub ring + named legacy edge to ostlandet (not inferred).
+match). Supplement: Natural Earth Admin-1 1:10m, Sweden län only.
 
 Fixed road/tunnel links (named, justified — never hand-drawn edges elsewhere):
   - europe/denmark ↔ europe/sweden/skane — Øresund Bridge / Drogden Tunnel
-  - europe/norway/hedmark ↔ europe/norway/ostlandet — catalog legacy (no GF/NE)
 
 Deferred (add one line when catalog splits Denmark into region leaves):
   - europe/denmark/syddanmark ↔ europe/denmark/sjaelland — Great Belt / Storebælt
 
-Never hand-edits vertices except the documented hedmark stub rectangle.
 Re-run:
 
   python3 scripts/generate-region-adjacency.py
@@ -32,7 +29,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from shapely.geometry import box, shape
+from shapely.geometry import shape
 from shapely.strtree import STRtree
 
 MAX_ASSET_BYTES = 8 * 1024 * 1024
@@ -75,12 +72,6 @@ NAMED_LINKS: list[tuple[str, str, str, int]] = [
         "Oresund Bridge / Drogden Tunnel",
         EDGE_FIXED_LINK,
     ),
-    (
-        "europe/norway/hedmark",
-        "europe/norway/ostlandet",
-        "manual, catalog legacy, no Geofabrik/NE match",
-        EDGE_MANUAL_LEGACY,
-    ),
     # Deferred until catalog publishes Danish region leaves:
     # ("europe/denmark/syddanmark", "europe/denmark/sjaelland",
     #  "Great Belt / Storebaelt Bridge", EDGE_FIXED_LINK),
@@ -116,19 +107,6 @@ CORRIDOR_GRAPH_EXCLUDE: set[str] = {
     "north-america/us-pacific",
     "north-america/us-south",
     "north-america/us-west",
-}
-
-# Hedmark: former fylke footprint as an explicit stub rectangle (lon/lat ring).
-# Not taken from Geofabrik or NE — documented manual geometry only.
-HEDMARK_STUB_BBOX = {
-    # Former Hedmark east of Gudbrandsdalen / Lillehammer (Oppland).
-    # Intentionally excludes (61.59, 10.33) Innlandet trip destination so
-    # ostlandet remains the containing region there.
-    # min_lon, min_lat, max_lon, max_lat
-    "min_lon": 10.55,
-    "min_lat": 59.90,
-    "max_lon": 12.90,
-    "max_lat": 62.55,
 }
 
 # Natural Earth name_en / name → catalog leaf under europe/sweden/.
@@ -182,6 +160,8 @@ def download(url: str, dest: Path) -> None:
 def load_catalog_ids(path: Path) -> list[str]:
     raw = json.loads(path.read_text())
     ids = [r["region_id"] for r in raw["regions"]]
+    # Hedmark is retired — never admit it even if an old current.json still lists it.
+    ids = [i for i in ids if i.strip().strip("/").lower() != "europe/norway/hedmark"]
     if not ids:
         raise SystemExit(f"empty catalog {path}")
     return ids
@@ -253,11 +233,6 @@ def load_sweden_ne(shp_dir: Path, catalog: set[str]) -> dict[str, object]:
         else:
             out[rid] = g
     return out
-
-
-def hedmark_stub() -> object:
-    b = HEDMARK_STUB_BBOX
-    return box(b["min_lon"], b["min_lat"], b["max_lon"], b["max_lat"])
 
 
 def geom_rings_lonlat(g) -> list[list[tuple[f64, f64]]]:
@@ -440,9 +415,6 @@ def main() -> int:
             raise SystemExit(f"duplicate geometry for {rid}")
         geoms_by_id[rid] = (g, SRC_NE_SWEDEN)
 
-    if "europe/norway/hedmark" in catalog_set:
-        geoms_by_id["europe/norway/hedmark"] = (hedmark_stub(), SRC_MANUAL_STUB)
-
     missing = [rid for rid in catalog_ids if rid not in geoms_by_id]
     if missing:
         raise SystemExit(f"no geometry for catalog regions: {missing}")
@@ -469,11 +441,9 @@ def main() -> int:
 
     id_to_i = {rid: i for i, rid in enumerate(ids)}
 
-    # Auto polygon edges — exclude hedmark (manual only), forced isolates, and
-    # multi-state extracts that must not participate in hop-count corridors.
-    skip_auto = (
-        {"europe/norway/hedmark"} | FORCE_ISOLATE | CORRIDOR_GRAPH_EXCLUDE
-    )
+    # Auto polygon edges — exclude forced isolates and multi-state extracts that
+    # must not participate in hop-count corridors.
+    skip_auto = FORCE_ISOLATE | CORRIDOR_GRAPH_EXCLUDE
     print("computing polygon adjacency …", flush=True)
     poly_pairs = build_polygon_edges(ids, geoms, skip_auto)
     edges: list[tuple[int, int, int]] = [
@@ -549,10 +519,6 @@ def main() -> int:
                 "version_hint": NE_VERSION,
                 "n_regions": sum(1 for r in regions if r["source"] == SRC_NE_SWEDEN),
             },
-            "manual_stub": {
-                "regions": ["europe/norway/hedmark"],
-                "note": "legacy catalog pack; rectangle stub, not GF/NE",
-            },
         },
         "named_links": [
             {
@@ -583,10 +549,6 @@ Geofabrik download index polygons (index-v1.json):
 Natural Earth Admin-1 (1:10m), Sweden only:
   Public Domain (CC0 1.0) — Natural Earth.
   Free vector and raster map data @ naturalearthdata.com.
-
-Manual stub / legacy edge:
-  europe/norway/hedmark — catalog legacy rectangle + edge to ostlandet;
-  not derived from Geofabrik or Natural Earth.
 
 Generated: {generated_utc}
 Asset sha256: {sha}

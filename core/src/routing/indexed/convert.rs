@@ -436,6 +436,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
     let mut peak_rss_mb = rss_mb();
     let stem = stem_of(&opts.pbf);
     let region_id = region_id_for_pbf(&opts.pbf);
+    let _region_tag = crate::download::progress::RegionTagGuard::enter(&region_id, None, None);
     crate::routing::region_lock::recover_stale(&opts.data_dir, &region_id);
     let mut convert_lock: Option<RegionLockGuard> = None;
     let (pbf_sz, pbf_mtime) = pbf_fingerprint(&opts.pbf)?;

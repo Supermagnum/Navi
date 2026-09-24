@@ -7,7 +7,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -30,6 +29,22 @@ class LongTripCoordinatorPhaseCTest {
             "europe/norway/vestlandet",
             "europe/norway/trondelag",
         )
+
+    /**
+     * Ready manifest + place-index stamp so ReuseInternal counts as Indexed.
+     * Coordinator readiness is pack-manifest based ([PackRegionAvailability.localBakeReady]);
+     * a full-size PBF alone no longer skips re-download.
+     */
+    private fun seedIndexedStartRegion(
+        dir: java.io.File,
+        regionId: String,
+    ) {
+        val stem = PackRegionAvailability.localStem(regionId)
+        java.io.File(dir, "$stem.navi-manifest.json").writeText("{}")
+        val pbf = java.io.File(dir, "$stem.osm.pbf")
+        java.io.RandomAccessFile(pbf, "rw").use { it.setLength(RegionDownloadBackground.MIN_PBF_BYTES) }
+        PlaceIndexReady.markReady(dir, regionId)
+    }
 
     @After
     fun tearDown() {
@@ -108,7 +123,8 @@ class LongTripCoordinatorPhaseCTest {
         }
         assertTrue(
             "Tools (requireUnmetered=false) must claimWorker even when metered",
-            sawRunning || RegionDownloadBackground.loadQueue(dir).isNotEmpty() ||
+            sawRunning ||
+                RegionDownloadBackground.loadQueue(dir).isNotEmpty() ||
                 RegionDownloadBackground.loadJob(dir) != null,
         )
         // Cleanup any leftover claim.
@@ -158,6 +174,7 @@ class LongTripCoordinatorPhaseCTest {
     fun non_blocking_planning_while_real_queue_holds_worker() {
         val dir = tmp.newFolder("nonblock")
         val packDir = tmp.newFolder("packs-nb")
+        seedIndexedStartRegion(dir, regions[0])
         val enqueued = CopyOnWriteArrayList<String>()
 
         // Hold the real queue slot (as an in-flight download would).
@@ -240,6 +257,7 @@ class LongTripCoordinatorPhaseCTest {
     fun scrub_stems_map_to_unavailable() {
         val dir = tmp.newFolder("scrub")
         val packDir = tmp.newFolder("packs-scrub")
+        seedIndexedStartRegion(dir, regions[0])
         LongTripCoordinator.setCorridorProviderForTests { _, _, _ -> Result.success(regions) }
         LongTripCoordinator.setPackTargetResolverForTests { _, id ->
             if (id == regions[0]) {

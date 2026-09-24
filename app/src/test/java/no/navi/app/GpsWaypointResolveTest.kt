@@ -94,3 +94,72 @@ class GpsWaypointResolveTest {
         assertTrue(snap!!.distM > WAYPOINT_ROUTE_PIN_MAX_M)
     }
 }
+
+class PlaceSearchMergeTest {
+    @Test
+    fun kalmarTokensRejectKalmargatenPrefix() {
+        assertTrue(placeNameContainsQueryTokens("Kalmar, Kalmar kommun", "Kalmar"))
+        assertTrue(!placeNameContainsQueryTokens("Kalmargaten barnehage", "Kalmar"))
+        assertTrue(!placeNameContainsQueryTokens("Kalmargaten 2, Engen, Bergen", "Kalmar"))
+    }
+
+    @Test
+    fun mergeDropsBergenFtsWhenOnlineHasKalmarSweden() {
+        val online =
+            listOf(
+                PlaceHit(
+                    1L,
+                    "Kalmar",
+                    "online/place/city",
+                    56.6628826,
+                    16.3662382,
+                    "",
+                    "Kalmar kommun",
+                    "europe/sweden/kalmar",
+                ),
+            )
+        val offline =
+            listOf(
+                PlaceHit(
+                    2L,
+                    "Kalmargaten barnehage",
+                    "amenity:kindergarten",
+                    60.39,
+                    5.32,
+                    "Engen",
+                    "Bergen",
+                    "europe/norway/vestlandet",
+                ),
+                PlaceHit(
+                    3L,
+                    "Kalmarhuset",
+                    "building:yes",
+                    60.39,
+                    5.33,
+                    "Jonsvollen",
+                    "Bergen",
+                    "europe/norway/vestlandet",
+                ),
+            )
+        val merged = mergeOnlineAndOfflinePlaceHits("Kalmar", online, offline)
+        assertEquals(1, merged.size)
+        assertEquals("Kalmar", merged[0].name)
+        assertTrue(merged.none { it.municipality.contains("Bergen", ignoreCase = true) })
+        assertTrue(merged.none { it.name.contains("Kalmargaten", ignoreCase = true) })
+    }
+
+    @Test
+    fun mergeKeepsOfflineWholeTokenMatch() {
+        val online =
+            listOf(
+                PlaceHit(1L, "Hamar", "online/place/city", 60.79, 11.07, "", "Hamar", ""),
+            )
+        val offline =
+            listOf(
+                PlaceHit(2L, "Hamar stasjon", "railway:station", 60.79, 11.08, "", "Hamar", ""),
+            )
+        // "Hamar" is a whole token in "Hamar stasjon"
+        val merged = mergeOnlineAndOfflinePlaceHits("Hamar", online, offline)
+        assertEquals(2, merged.size)
+    }
+}

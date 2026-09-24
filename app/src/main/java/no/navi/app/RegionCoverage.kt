@@ -30,8 +30,9 @@ object RegionCoverage {
         val lon: Double,
     )
 
-    fun displayName(geofabrikPath: String): String =
-        when (geofabrikPath.trim().trim('/').lowercase()) {
+    fun displayName(geofabrikPath: String): String {
+        val norm = geofabrikPath.trim().trim('/').lowercase()
+        return when (norm) {
             "europe/norway" -> "Norway"
             "europe/norway/ostlandet" -> "Ostlandet"
             "europe/norway/vestlandet" -> "Vestlandet"
@@ -54,10 +55,42 @@ object RegionCoverage {
             "north-america/us/west-virginia" -> "West Virginia"
             "north-america/us/nevada" -> "Nevada"
             "russia" -> "Russia"
-            else ->
-                GeofabrikDownloadCatalog.findByPath(geofabrikPath)?.label
+            else -> {
+                // Prefer exact leaf chip labels (Sweden län, German Länder, …)
+                // before findByPath parent-country fallback, so progress strings
+                // name "Västra Götaland" not "Sweden".
+                leafDisplayName(norm)
+                    ?: GeofabrikDownloadCatalog.findByPath(geofabrikPath)?.label
                     ?: geofabrikPath.substringAfterLast('/').ifBlank { geofabrikPath }
+            }
         }
+    }
+
+    private fun leafDisplayName(normPath: String): String? {
+        val leaf = normPath.substringAfterLast('/').ifBlank { return null }
+        val leafAlt = leaf.replace('-', '_')
+        val leafHyphen = leaf.replace('_', '-')
+
+        fun match(pairs: List<Pair<String, String>>): String? =
+            pairs
+                .firstOrNull {
+                    it.first.equals(leaf, ignoreCase = true) ||
+                        it.first.equals(leafAlt, ignoreCase = true) ||
+                        it.first.equals(leafHyphen, ignoreCase = true)
+                }?.second
+        return when {
+            normPath.startsWith("europe/norway/") -> match(GeofabrikDownloadCatalog.norwayRegions)
+            normPath.startsWith("europe/sweden/") -> match(GeofabrikDownloadCatalog.swedenRegions)
+            normPath.startsWith("europe/germany/baden-wuerttemberg/") ->
+                match(GeofabrikDownloadCatalog.germanyBadenWuerttembergRegions)
+            normPath.startsWith("europe/germany/bayern/") ->
+                match(GeofabrikDownloadCatalog.germanyBayernRegions)
+            normPath.startsWith("europe/germany/nordrhein-westfalen/") ->
+                match(GeofabrikDownloadCatalog.germanyNordrheinWestfalenRegions)
+            normPath.startsWith("europe/germany/") -> match(GeofabrikDownloadCatalog.germanyRegions)
+            else -> null
+        }
+    }
 
     fun geofabrikPathForPbfName(pbfName: String): String? {
         // Single source of truth: native pack-catalog stem map (no Norway parent-walk).
@@ -111,6 +144,36 @@ object RegionCoverage {
             }
         }
         return null
+    }
+
+    /**
+     * HUD road-sign gate without Natural Earth `country_iso_at` (cold load ANRs
+     * on SM-P613). Mirrors `resolve_road_sign_jurisdiction_at` coarse intent.
+     */
+    fun roadSignHudAllowed(
+        lat: Double,
+        lon: Double,
+    ): Boolean {
+        if (lat in 57.8..71.4 && lon in 4.0..31.5 && !eastOfNorwaySwedenBorder(lat, lon)) {
+            return true
+        }
+        // Same Innlandet carve as core road_sign.rs (coarse SE ring).
+        return lat in 59.3..63.5 && lon < 12.15
+    }
+
+    /**
+     * Speed-camera opt-in prompt gate without Natural Earth. Allowed ISO set is
+     * NO + GB (`SPEED_CAMERA_ALLOWED_ISO` in core).
+     */
+    fun speedCameraHudOptInAllowed(
+        lat: Double,
+        lon: Double,
+    ): Boolean {
+        if (lat in 57.8..71.4 && lon in 4.0..31.5 && !eastOfNorwaySwedenBorder(lat, lon)) {
+            return true
+        }
+        // Rough UK / Ireland box (GB only for the product table).
+        return lat in 49.8..61.0 && lon in -8.6..2.0
     }
 
     fun eastOfNorwaySwedenBorder(
@@ -243,14 +306,24 @@ object RegionCoverage {
      * every waypoint; otherwise any extract that covers at least one waypoint
      * (multi-stem tile load covers the rest). Country extracts are demoted so
      * landsdel packs are preferred when both exist.
+     *
+     * [packDir] is optional (long-trip [LongTripPackStorage.packDownloadDir]).
+     * Candidates there are searched **in addition to** [dataDir] top-level —
+     * Tools / ReuseInternal extracts still live directly under [dataDir].
      */
     fun resolvePlanPbf(
         dataDir: File,
         waypoints: List<Waypoint>,
+        packDir: File? = null,
     ): File? {
         val candidates =
             buildList {
                 dataDir.listFiles()?.forEach { f ->
+                    if (f.isFile && f.name.endsWith(".osm.pbf") && f.length() > 1_000_000L) {
+                        add(f)
+                    }
+                }
+                packDir?.listFiles()?.forEach { f ->
                     if (f.isFile && f.name.endsWith(".osm.pbf") && f.length() > 1_000_000L) {
                         add(f)
                     }

@@ -43,7 +43,6 @@ import uniffi.navi.FfiCarRestSettings
 import uniffi.navi.FfiEbikeConfig
 import uniffi.navi.FfiEvCarConfig
 import uniffi.navi.FfiFuelConfig
-import uniffi.navi.longTripOrsDisclosure
 import uniffi.navi.FfiIconTheme
 import uniffi.navi.FfiProfilePoiRadii
 import uniffi.navi.FfiTruckRestSettings
@@ -56,6 +55,7 @@ import uniffi.navi.loadEvCarConfig
 import uniffi.navi.loadFuelConfig
 import uniffi.navi.loadProfilePoiRadii
 import uniffi.navi.loadTruckRestSettings
+import uniffi.navi.longTripOrsDisclosure
 import uniffi.navi.rasterizeIconPng
 import uniffi.navi.saveCarRestSettings
 import uniffi.navi.saveEbikeConfig

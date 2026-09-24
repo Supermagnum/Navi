@@ -21,11 +21,24 @@ pub const NAMED_BUILDING_KIND: &str = "building";
 /// Commit SQLite/FTS inserts this often so a force-close cannot roll back the
 /// entire write, and so WAL readers are not blocked for minutes.
 const INSERT_COMMIT_BATCH: usize = 50_000;
+/// Refresh place-index UI labels during long PBF walks so Android does not
+/// appear frozen on a single "scanning ways…" / "scanning nodes…" string.
+const PLACE_INDEX_PROGRESS_HEARTBEAT: usize = 25_000;
 
 /// One writer at a time for discard + open + `load_from_pbf`. Android can
 /// launch PlaceIndexBackground and RegionDownloadBackground against the same
 /// DB; without this, both parse the PBF (~500 MB each) and OOM a 3.5 GB tablet.
+///
+/// Also serializes Kotlin `PlaceIndexReady.clearRegionRows` (via FFI
+/// acquire/release) so Android framework SQLite never races rusqlite WAL
+/// `-shm` (SIGBUS on deleted shm).
 static PLACE_INDEX_BUILD_LOCK: Mutex<()> = Mutex::new(());
+
+thread_local! {
+    /// FFI acquire/release holds the same mutex on this thread until release.
+    static PLACE_INDEX_BUILD_LOCK_TLS: std::cell::RefCell<Option<MutexGuard<'static, ()>>> =
+        const { std::cell::RefCell::new(None) };
+}
 
 /// Hold while building or cache-checking a place index. Poison is recovered so
 /// a panicked builder cannot deadlock later callers.
@@ -52,6 +65,60 @@ pub fn lock_place_index_build_with_progress() -> MutexGuard<'static, ()> {
         }
         Err(TryLockError::Poisoned(p)) => p.into_inner(),
     }
+}
+
+/// Acquire [`PLACE_INDEX_BUILD_LOCK`] on this thread for FFI / Kotlin callers.
+///
+/// Blocks until the lock is free (another `ensure_place_index` may be mid-build).
+/// Must be paired with [`place_index_build_lock_release`] on the **same** thread.
+/// Nested acquire on the same thread returns an error string rather than
+/// deadlocking.
+pub fn place_index_build_lock_acquire() -> Result<(), String> {
+    PLACE_INDEX_BUILD_LOCK_TLS.with(|slot| {
+        if slot.borrow().is_some() {
+            return Err("place_index_build_lock already held on this thread".into());
+        }
+        let guard = lock_place_index_build_with_progress();
+        *slot.borrow_mut() = Some(guard);
+        Ok(())
+    })
+}
+
+/// Release a prior [`place_index_build_lock_acquire`] on this thread.
+pub fn place_index_build_lock_release() -> Result<(), String> {
+    PLACE_INDEX_BUILD_LOCK_TLS.with(|slot| {
+        if slot.borrow_mut().take().is_none() {
+            return Err("place_index_build_lock not held on this thread".into());
+        }
+        Ok(())
+    })
+}
+
+/// True when this thread currently holds the build lock via FFI acquire.
+pub fn place_index_build_lock_held_on_thread() -> bool {
+    PLACE_INDEX_BUILD_LOCK_TLS.with(|slot| slot.borrow().is_some())
+}
+
+/// Delete one region's rows under [`PLACE_INDEX_BUILD_LOCK`] using rusqlite
+/// (same stack as `ensure_place_index`). Prefer this over Android framework
+/// SQLite for clears that may overlap a background index build.
+pub fn clear_place_index_region_rows(
+    index_db: impl AsRef<Path>,
+    region_id: &str,
+) -> Result<(), String> {
+    let index_db = index_db.as_ref();
+    let region_id = region_id.trim().trim_matches('/');
+    if region_id.is_empty() {
+        return Err("region_id empty".into());
+    }
+    if !index_db.is_file() {
+        return Ok(());
+    }
+    let _build = lock_place_index_build_with_progress();
+    let mut idx = NameIndex::open(index_db).map_err(|e| format!("open index: {e}"))?;
+    idx.clear_region(region_id)
+        .map_err(|e| format!("clear region: {e}"))?;
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -409,8 +476,19 @@ impl NameIndex {
         let ways_t0 = phase_timing::start("place_index.ways");
         let mut way_jobs: Vec<(i64, String, String, Vec<i64>)> = Vec::new();
         let mut needed_nodes: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        let mut ways_visited = 0usize;
+        let mut ways_last_hb = 0usize;
         {
             crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+                ways_visited += 1;
+                if ways_visited - ways_last_hb >= PLACE_INDEX_PROGRESS_HEARTBEAT {
+                    ways_last_hb = ways_visited;
+                    crate::download::progress::set(
+                        1,
+                        Some(PHASES),
+                        &format!("{phase_prefix}scanning ways… ({} found)", way_jobs.len()),
+                    );
+                }
                 let Element::Way(way) = element else {
                     return;
                 };
@@ -456,31 +534,44 @@ impl NameIndex {
         let nodes_t0 = phase_timing::start("place_index.nodes");
         let mut node_coords: std::collections::HashMap<i64, (f64, f64)> =
             std::collections::HashMap::with_capacity(needed_nodes.len());
+        let mut nodes_visited = 0usize;
+        let mut nodes_last_hb = 0usize;
         {
-            crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
-                Element::Node(node) => {
-                    let id = node.id();
-                    let lat = node.lat();
-                    let lon = node.lon();
-                    if needed_nodes.contains(&id) {
-                        node_coords.insert(id, (lat, lon));
-                    }
-                    if let Some(hit) = classify_named(id, lat, lon, node.tags()) {
-                        batch.push(hit);
-                    }
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+                nodes_visited += 1;
+                if nodes_visited - nodes_last_hb >= PLACE_INDEX_PROGRESS_HEARTBEAT {
+                    nodes_last_hb = nodes_visited;
+                    crate::download::progress::set(
+                        2,
+                        Some(PHASES),
+                        &format!("{phase_prefix}scanning nodes… ({} found)", batch.len()),
+                    );
                 }
-                Element::DenseNode(node) => {
-                    let id = node.id;
-                    let lat = node.lat();
-                    let lon = node.lon();
-                    if needed_nodes.contains(&id) {
-                        node_coords.insert(id, (lat, lon));
+                match element {
+                    Element::Node(node) => {
+                        let id = node.id();
+                        let lat = node.lat();
+                        let lon = node.lon();
+                        if needed_nodes.contains(&id) {
+                            node_coords.insert(id, (lat, lon));
+                        }
+                        if let Some(hit) = classify_named(id, lat, lon, node.tags()) {
+                            batch.push(hit);
+                        }
                     }
-                    if let Some(hit) = classify_named(id, lat, lon, node.tags()) {
-                        batch.push(hit);
+                    Element::DenseNode(node) => {
+                        let id = node.id;
+                        let lat = node.lat();
+                        let lon = node.lon();
+                        if needed_nodes.contains(&id) {
+                            node_coords.insert(id, (lat, lon));
+                        }
+                        if let Some(hit) = classify_named(id, lat, lon, node.tags()) {
+                            batch.push(hit);
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             })?;
         }
         let node_hits = batch.len();
@@ -494,10 +585,13 @@ impl NameIndex {
             ),
         );
 
-        // Invisible to progress UI: assemble way centroids from collected coords.
+        // Surface centroids on the progress UI — this pass used to leave the
+        // last "scanning nodes…" label frozen for a long stretch.
+        crate::download::progress::set(2, Some(PHASES), &format!("{phase_prefix}way centroids…"));
         let centroids_t0 = phase_timing::start("place_index.way_centroids");
         let mut way_hits = 0usize;
-        for (way_id, name, kind, refs) in way_jobs {
+        let centroid_total = way_jobs.len();
+        for (i, (way_id, name, kind, refs)) in way_jobs.into_iter().enumerate() {
             let mut sum_lat = 0.0;
             let mut sum_lon = 0.0;
             let mut n = 0usize;
@@ -513,6 +607,13 @@ impl NameIndex {
             }
             batch.push((way_id, name, kind, sum_lat / n as f64, sum_lon / n as f64));
             way_hits += 1;
+            if (i + 1) % PLACE_INDEX_PROGRESS_HEARTBEAT == 0 {
+                crate::download::progress::set(
+                    2,
+                    Some(PHASES),
+                    &format!("{phase_prefix}way centroids… ({way_hits} / {centroid_total})"),
+                );
+            }
         }
         drop(node_coords);
         phase_timing::end_detail(
@@ -1939,6 +2040,216 @@ mod tests {
         released.wait();
         waiter.join().expect("waiter");
         holder.join().expect("holder");
+    }
+
+    /// Task 4 race: ensure_place_index (build lock + WAL open) concurrent with
+    /// clear on the same DB. Pre-fix Android SQLite clear without this lock
+    /// SIGBUS'd ~1/4 of windows; under the shared lock every iteration must
+    /// keep max concurrent holders at 1 and finish without error.
+    #[test]
+    fn clear_region_rows_serializes_against_build_lock_stress() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+        use std::time::Duration;
+
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("place_index.db");
+        {
+            let mut idx = NameIndex::open(&db).expect("open");
+            idx.upsert_entry_with_region(
+                1,
+                "Alpha".into(),
+                "place".into(),
+                60.0,
+                10.0,
+                String::new(),
+                String::new(),
+                "europe/norway/ostlandet".into(),
+            )
+            .expect("upsert a");
+            idx.upsert_entry_with_region(
+                2,
+                "Beta".into(),
+                "place".into(),
+                57.0,
+                12.0,
+                String::new(),
+                String::new(),
+                "europe/sweden/halland".into(),
+            )
+            .expect("upsert b");
+        }
+
+        let concurrent = Arc::new(AtomicUsize::new(0));
+        let max_concurrent = Arc::new(AtomicUsize::new(0));
+        let failures = Arc::new(AtomicUsize::new(0));
+        const ITERS: usize = 100;
+
+        for i in 0..ITERS {
+            let barrier = Arc::new(Barrier::new(2));
+            let db_a = db.clone();
+            let db_b = db.clone();
+            let concurrent_a = concurrent.clone();
+            let max_a = max_concurrent.clone();
+            let concurrent_b = concurrent.clone();
+            let max_b = max_concurrent.clone();
+            let failures_b = failures.clone();
+            let region = if i % 2 == 0 {
+                "europe/sweden/halland"
+            } else {
+                "europe/norway/ostlandet"
+            };
+
+            let builder = thread::spawn({
+                let barrier = barrier.clone();
+                move || {
+                    // Mimic ensure_place_index: hold build lock + open WAL.
+                    let _g = lock_place_index_build();
+                    let now = concurrent_a.fetch_add(1, Ordering::SeqCst) + 1;
+                    max_a.fetch_max(now, Ordering::SeqCst);
+                    barrier.wait();
+                    let _idx = NameIndex::open(&db_a).expect("builder open");
+                    thread::sleep(Duration::from_millis(5));
+                    concurrent_a.fetch_sub(1, Ordering::SeqCst);
+                }
+            });
+            let clearer = thread::spawn({
+                let barrier = barrier.clone();
+                move || {
+                    barrier.wait();
+                    // Same lock + rusqlite stack as clear_place_index_region_rows
+                    // (and as Kotlin's preferred FFI path). Counting under the
+                    // lock proves we never overlap the builder's WAL open.
+                    let _g = lock_place_index_build();
+                    let now = concurrent_b.fetch_add(1, Ordering::SeqCst) + 1;
+                    max_b.fetch_max(now, Ordering::SeqCst);
+                    let clear_result = (|| {
+                        let mut idx = NameIndex::open(&db_b).map_err(|e| e.to_string())?;
+                        idx.clear_region(region).map_err(|e| e.to_string())?;
+                        Ok::<(), String>(())
+                    })();
+                    concurrent_b.fetch_sub(1, Ordering::SeqCst);
+                    drop(_g);
+                    if let Err(e) = clear_result {
+                        failures_b.fetch_add(1, Ordering::SeqCst);
+                        eprintln!("clear failed: {e}");
+                    }
+                }
+            });
+            builder.join().expect("builder");
+            clearer.join().expect("clearer");
+        }
+
+        assert_eq!(
+            failures.load(Ordering::SeqCst),
+            0,
+            "clear must not fail (was: database is locked / SIGBUS)"
+        );
+        assert_eq!(
+            max_concurrent.load(Ordering::SeqCst),
+            1,
+            "build lock must serialize builder and clearer ({ITERS} iters)"
+        );
+        // Re-open after the race window: WAL must still be readable (no
+        // truncated -shm / SIGBUS-class corruption).
+        NameIndex::open(&db).expect("reopen after stress");
+    }
+
+    #[test]
+    fn clear_place_index_region_rows_api_waits_on_build_lock() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("place_index.db");
+        {
+            let mut idx = NameIndex::open(&db).expect("open");
+            idx.upsert_entry_with_region(
+                1,
+                "X".into(),
+                "place".into(),
+                60.0,
+                10.0,
+                String::new(),
+                String::new(),
+                "europe/norway/ostlandet".into(),
+            )
+            .expect("upsert");
+        }
+
+        let hold = Arc::new(Barrier::new(2));
+        let released = Arc::new(Barrier::new(2));
+        let db_hold = db.clone();
+        let holder = thread::spawn({
+            let hold = hold.clone();
+            let released = released.clone();
+            move || {
+                let _g = lock_place_index_build();
+                let _idx = NameIndex::open(&db_hold).expect("hold open");
+                hold.wait();
+                thread::sleep(Duration::from_millis(50));
+                released.wait();
+            }
+        });
+        hold.wait();
+        let started = Instant::now();
+        let clearer = thread::spawn({
+            let db = db.clone();
+            move || clear_place_index_region_rows(&db, "europe/norway/ostlandet")
+        });
+        thread::sleep(Duration::from_millis(20));
+        assert!(
+            !clearer.is_finished(),
+            "clear_place_index_region_rows must block while build lock is held"
+        );
+        released.wait();
+        let result = clearer.join().expect("clearer");
+        holder.join().expect("holder");
+        assert!(result.is_ok(), "clear after release: {result:?}");
+        assert!(
+            started.elapsed() >= Duration::from_millis(50),
+            "clear returned before holder finished"
+        );
+    }
+
+    #[test]
+    fn ffi_acquire_release_blocks_concurrent_builder() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let hold = Arc::new(Barrier::new(2));
+        let released = Arc::new(Barrier::new(2));
+        let acquirer = thread::spawn({
+            let hold = hold.clone();
+            let released = released.clone();
+            move || {
+                place_index_build_lock_acquire().expect("acquire");
+                assert!(place_index_build_lock_held_on_thread());
+                hold.wait();
+                released.wait();
+                place_index_build_lock_release().expect("release");
+            }
+        });
+        hold.wait();
+        let started = Instant::now();
+        let builder = thread::spawn(|| {
+            let _g = lock_place_index_build();
+        });
+        thread::sleep(Duration::from_millis(40));
+        assert!(
+            !builder.is_finished(),
+            "builder must block while FFI acquire holds the lock"
+        );
+        released.wait();
+        builder.join().expect("builder");
+        acquirer.join().expect("acquirer");
+        assert!(
+            started.elapsed() >= Duration::from_millis(40),
+            "builder returned too fast"
+        );
     }
 
     /// Synthetic multi-region DB used to decide whether `backfill_legacy_complete`

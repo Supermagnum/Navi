@@ -79,5 +79,26 @@ class RegionCoverageTest {
                 .displayName("europe/norway/nord-norge")
                 .equals("Norway", ignoreCase = true),
         )
+        assertEquals(
+            "Västra Götaland",
+            RegionCoverage.displayName("europe/sweden/vastra_gotaland"),
+        )
+        assertEquals(
+            "Schleswig-Holstein",
+            RegionCoverage.displayName("europe/germany/schleswig-holstein"),
+        )
+    }
+
+    @Test
+    fun road_sign_hud_allows_norway_not_sweden() {
+        assertTrue(RegionCoverage.roadSignHudAllowed(60.79448, 11.06799)) // Hamar
+        assertFalse(RegionCoverage.roadSignHudAllowed(61.8975, 12.2685)) // Langflon SE
+    }
+
+    @Test
+    fun speed_camera_hud_opt_in_allows_norway_and_uk_box() {
+        assertTrue(RegionCoverage.speedCameraHudOptInAllowed(59.91, 10.75)) // Oslo
+        assertTrue(RegionCoverage.speedCameraHudOptInAllowed(51.5, -0.12)) // London
+        assertFalse(RegionCoverage.speedCameraHudOptInAllowed(48.85, 2.35)) // Paris
     }
 }

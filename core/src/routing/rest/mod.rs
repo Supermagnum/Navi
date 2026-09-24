@@ -18,8 +18,9 @@ pub use hiking_multi_day::{
 pub use hos_jurisdiction::resolve_driving_hours_pack_at;
 pub use motor_multi_day::{
     car_style_daily_hours, cycling_daily_km, motor_daily_budget, plan_motor_multi_day,
-    uses_motor_multi_day, MotorDailyBudget, MotorDaySegment, MotorMultiDayPlan,
-    MotorOvernightCandidate, MotorOvernightKind, MotorOvernightStop,
+    plan_soft_rest_pauses, uses_motor_multi_day, MotorDailyBudget, MotorDaySegment,
+    MotorMultiDayPlan, MotorOvernightCandidate, MotorOvernightKind, MotorOvernightStop,
+    SoftRestCandidate,
 };
 pub use truck_duty::{commit_truck_trip, evaluate_truck_trip, TruckDutyEvaluation};
 pub use truck_multi_day::{

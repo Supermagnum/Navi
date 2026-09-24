@@ -280,7 +280,7 @@ impl FlatGraphPack {
     }
 
     pub fn to_route_graph(&self, profile: RoutingProfile) -> RouteGraph {
-        self.to_route_graph_bbox(profile, None)
+        self.to_route_graph_clips(profile, None)
     }
 
     /// Materialize a [`RouteGraph`], optionally keeping only edges that touch `bbox`
@@ -291,16 +291,36 @@ impl FlatGraphPack {
         profile: RoutingProfile,
         bbox: Option<[f64; 4]>,
     ) -> RouteGraph {
+        match bbox {
+            Some(b) => self.to_route_graph_clips(profile, Some(std::slice::from_ref(&b))),
+            None => self.to_route_graph_clips(profile, None),
+        }
+    }
+
+    /// Like [`Self::to_route_graph_bbox`], keeping edges whose endpoints fall in
+    /// **any** clip box (corridor band of small squares along the OD polyline).
+    pub fn to_route_graph_clips(
+        &self,
+        profile: RoutingProfile,
+        clips: Option<&[[f64; 4]]>,
+    ) -> RouteGraph {
         let edge_ok = |i: usize| -> bool {
-            let Some(b) = bbox else {
+            let Some(clips) = clips else {
                 return true;
             };
+            if clips.is_empty() {
+                return true;
+            }
             let slat = self.edge_start_lat[i];
             let slon = self.edge_start_lon[i];
             let elat = self.edge_end_lat[i];
             let elon = self.edge_end_lon[i];
-            (slat >= b[0] && slat <= b[2] && slon >= b[1] && slon <= b[3])
-                || (elat >= b[0] && elat <= b[2] && elon >= b[1] && elon <= b[3])
+            let in_box = |lat: f64, lon: f64, b: &[f64; 4]| {
+                lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]
+            };
+            clips
+                .iter()
+                .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
         };
 
         let mut used_nodes: HashMap<u32, ()> = HashMap::new();
@@ -493,6 +513,282 @@ impl FlatGraphPack {
     }
 }
 
+fn archived_str_opt(s: &str) -> Option<String> {
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
+}
+
+#[inline]
+fn arch_f64(v: impl Into<f64>) -> f64 {
+    v.into()
+}
+
+#[inline]
+fn arch_u32(v: impl Into<u32>) -> u32 {
+    v.into()
+}
+
+#[inline]
+fn arch_i64(v: impl Into<i64>) -> i64 {
+    v.into()
+}
+
+#[inline]
+fn arch_u8(v: impl Into<u8>) -> u8 {
+    v.into()
+}
+
+fn archived_opt_metric_at(
+    vals: &rkyv::vec::ArchivedVec<rkyv::rend::f64_le>,
+    i: usize,
+) -> Option<f64> {
+    if i >= vals.len() {
+        return None;
+    }
+    let v = arch_f64(vals[i]);
+    if v.is_finite() {
+        Some(v)
+    } else {
+        None
+    }
+}
+
+impl ArchivedFlatGraphPack {
+    /// Materialize a [`RouteGraph`] from the mmap'd archive **without** owning a
+    /// full [`FlatGraphPack`]. Plan-time bbox clip then only allocates strings /
+    /// shapes for kept edges — critical when merging several 100MB+ tiles on
+    /// Automotive devices (full `rkyv::deserialize` peaks at pack size + graph).
+    pub fn to_route_graph_bbox(
+        &self,
+        profile: RoutingProfile,
+        bbox: Option<[f64; 4]>,
+    ) -> RouteGraph {
+        match bbox {
+            Some(b) => self.to_route_graph_clips(profile, Some(std::slice::from_ref(&b))),
+            None => self.to_route_graph_clips(profile, None),
+        }
+    }
+
+    /// Like [`Self::to_route_graph_bbox`], keeping edges whose endpoints fall in
+    /// **any** clip box (corridor band along the OD).
+    pub fn to_route_graph_clips(
+        &self,
+        profile: RoutingProfile,
+        clips: Option<&[[f64; 4]]>,
+    ) -> RouteGraph {
+        let n_edges = self.edge_src.len();
+        let edge_ok = |i: usize| -> bool {
+            let Some(clips) = clips else {
+                return true;
+            };
+            if clips.is_empty() {
+                return true;
+            }
+            let slat = arch_f64(self.edge_start_lat[i]);
+            let slon = arch_f64(self.edge_start_lon[i]);
+            let elat = arch_f64(self.edge_end_lat[i]);
+            let elon = arch_f64(self.edge_end_lon[i]);
+            let in_box = |lat: f64, lon: f64, b: &[f64; 4]| {
+                lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]
+            };
+            clips
+                .iter()
+                .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
+        };
+
+        let mut used_nodes: HashMap<u32, ()> = HashMap::new();
+        for i in 0..n_edges {
+            if edge_ok(i) {
+                used_nodes.insert(arch_u32(self.edge_src[i]), ());
+                used_nodes.insert(arch_u32(self.edge_tgt[i]), ());
+            }
+        }
+
+        let mut nodes: HashMap<NodeId, Node> = HashMap::with_capacity(used_nodes.len());
+        for &idx in used_nodes.keys() {
+            let i = idx as usize;
+            let id = NodeId(arch_i64(self.node_ids[i]));
+            nodes.insert(
+                id,
+                Node {
+                    id,
+                    coord: Coord {
+                        x: arch_f64(self.node_lons[i]),
+                        y: arch_f64(self.node_lats[i]),
+                    },
+                    uses: 2,
+                },
+            );
+        }
+
+        let mut edges = Vec::new();
+        for i in 0..n_edges {
+            if !edge_ok(i) {
+                continue;
+            }
+            let src = NodeId(arch_i64(self.node_ids[arch_u32(self.edge_src[i]) as usize]));
+            let tgt = NodeId(arch_i64(self.node_ids[arch_u32(self.edge_tgt[i]) as usize]));
+            let hw = self.edge_highway[i].as_str();
+            let name = self.edge_name[i].as_str();
+            let road_ref = self.edge_road_ref[i].as_str();
+            let maxspeed = arch_f64(self.edge_maxspeed_kmh[i]);
+            let shape = self.shape_for_edge(i);
+            edges.push(GraphEdge {
+                id: format!("{}-{}-{}", src.0, tgt.0, i),
+                source: src,
+                target: tgt,
+                length_m: arch_f64(self.edge_length_m[i]),
+                base_weight: arch_f64(self.edge_base_weight[i]),
+                eco_weight: Some(arch_f64(self.edge_base_weight[i])),
+                start_lat: arch_f64(self.edge_start_lat[i]),
+                start_lon: arch_f64(self.edge_start_lon[i]),
+                end_lat: arch_f64(self.edge_end_lat[i]),
+                end_lon: arch_f64(self.edge_end_lon[i]),
+                shape,
+                highway: archived_str_opt(hw),
+                maxspeed_kmh: if maxspeed.is_finite() {
+                    Some(maxspeed)
+                } else {
+                    None
+                },
+                maxspeed_practical_kmh: archived_opt_metric_at(
+                    &self.edge_maxspeed_practical_kmh,
+                    i,
+                ),
+                maxspeed_advisory_kmh: archived_opt_metric_at(&self.edge_maxspeed_advisory_kmh, i),
+                maxspeed_type: archived_str_opt(
+                    self.edge_maxspeed_type
+                        .get(i)
+                        .map(|s| s.as_str())
+                        .unwrap_or(""),
+                ),
+                maxspeed_variable: self
+                    .edge_maxspeed_variable
+                    .get(i)
+                    .copied()
+                    .map(arch_u8)
+                    .unwrap_or(0)
+                    != 0,
+                minspeed_kmh: archived_opt_metric_at(&self.edge_minspeed_kmh, i),
+                name: archived_str_opt(name),
+                road_ref: archived_str_opt(road_ref),
+                is_motorroad: self
+                    .edge_is_motorroad
+                    .get(i)
+                    .copied()
+                    .map(arch_u8)
+                    .unwrap_or(0)
+                    != 0,
+                is_expressway: self
+                    .edge_is_expressway
+                    .get(i)
+                    .copied()
+                    .map(arch_u8)
+                    .unwrap_or(0)
+                    != 0,
+                is_oneway: self
+                    .edge_is_oneway
+                    .get(i)
+                    .copied()
+                    .map(arch_u8)
+                    .unwrap_or(0)
+                    != 0,
+                lanes: {
+                    let n = self.edge_lanes.get(i).copied().map(arch_u8).unwrap_or(0);
+                    if n == 0 {
+                        None
+                    } else {
+                        Some(n)
+                    }
+                },
+                maxweight_t: archived_opt_metric_at(&self.edge_maxweight_t, i),
+                maxaxleload_t: archived_opt_metric_at(&self.edge_maxaxleload_t, i),
+                maxbogieweight_t: archived_opt_metric_at(&self.edge_maxbogieweight_t, i),
+                maxheight_m: archived_opt_metric_at(&self.edge_maxheight_m, i),
+                maxwidth_m: archived_opt_metric_at(&self.edge_maxwidth_m, i),
+                maxlength_m: archived_opt_metric_at(&self.edge_maxlength_m, i),
+                is_toll: arch_u8(self.edge_is_toll[i]) != 0,
+                is_ferry: arch_u8(self.edge_is_ferry[i]) != 0,
+                is_tunnel: false,
+                is_boardwalk_crossing: arch_u8(self.edge_is_boardwalk[i]) != 0,
+                is_roundabout: arch_u8(self.edge_is_roundabout[i]) != 0,
+                motor_vehicle_conditional: archived_str_opt(
+                    self.edge_motor_vehicle_conditional
+                        .get(i)
+                        .map(|s| s.as_str())
+                        .unwrap_or(""),
+                ),
+                access_conditional: archived_str_opt(
+                    self.edge_access_conditional
+                        .get(i)
+                        .map(|s| s.as_str())
+                        .unwrap_or(""),
+                ),
+                maxspeed_conditional: archived_str_opt(
+                    self.edge_maxspeed_conditional
+                        .get(i)
+                        .map(|s| s.as_str())
+                        .unwrap_or(""),
+                ),
+                access_forbidden: self
+                    .edge_access_forbidden
+                    .get(i)
+                    .copied()
+                    .map(arch_u8)
+                    .unwrap_or(0)
+                    != 0,
+                surface_quality: SurfaceQuality::from_u8(
+                    self.edge_surface_quality
+                        .get(i)
+                        .copied()
+                        .map(arch_u8)
+                        .unwrap_or_else(|| {
+                            if hw == "track" {
+                                SurfaceQuality::Poor.as_u8()
+                            } else {
+                                SurfaceQuality::Good.as_u8()
+                            }
+                        }),
+                ),
+            });
+        }
+
+        let mut blocked = std::collections::HashSet::new();
+        for (i, flag) in self.node_access_blocked.iter().enumerate() {
+            if arch_u8(*flag) != 0 && used_nodes.contains_key(&(i as u32)) {
+                blocked.insert(NodeId(arch_i64(self.node_ids[i])));
+            }
+        }
+        RouteGraph::from_parts_with_blocks(nodes, edges, profile, blocked)
+    }
+
+    fn shape_for_edge(&self, i: usize) -> Vec<(f64, f64)> {
+        if self.edge_shape_offsets.len() < 2 || i + 1 >= self.edge_shape_offsets.len() {
+            return Vec::new();
+        }
+        let start = arch_u32(self.edge_shape_offsets[i]) as usize;
+        let end = arch_u32(self.edge_shape_offsets[i + 1]) as usize;
+        if end > self.edge_shape_lons.len()
+            || end > self.edge_shape_lats.len()
+            || start > end
+            || self.edge_shape_lons.len() != self.edge_shape_lats.len()
+        {
+            return Vec::new();
+        }
+        (start..end)
+            .map(|j| {
+                (
+                    arch_f64(self.edge_shape_lons[j]),
+                    arch_f64(self.edge_shape_lats[j]),
+                )
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -582,6 +878,32 @@ mod tests {
             rkyv::deserialize::<FlatGraphPack, rkyv::rancor::Error>(archived).expect("deserialize");
         let back = restored.to_route_graph(RoutingProfile::Car);
         assert_eq!(back.edges[0].surface_quality, SurfaceQuality::Marginal);
+    }
+
+    #[test]
+    fn archived_bbox_matches_owned_materialize() {
+        let graph = tiny_curved_graph();
+        let pack = FlatGraphPack::from_route_graph(&graph, None);
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&pack).expect("serialize");
+        let archived =
+            rkyv::access::<ArchivedFlatGraphPack, rkyv::rancor::Error>(&bytes[..]).expect("access");
+        let bbox = Some([59.9, 9.9, 60.2, 10.3]);
+        let from_owned = pack.to_route_graph_bbox(RoutingProfile::Car, bbox);
+        let from_arch = archived.to_route_graph_bbox(RoutingProfile::Car, bbox);
+        assert_eq!(from_owned.edges.len(), from_arch.edges.len());
+        assert_eq!(from_owned.nodes.len(), from_arch.nodes.len());
+        assert_eq!(from_owned.edges[0].highway, from_arch.edges[0].highway);
+        assert_eq!(from_owned.edges[0].shape, from_arch.edges[0].shape);
+        // Outside bbox → empty graph either path.
+        let miss = Some([0.0, 0.0, 1.0, 1.0]);
+        assert!(pack
+            .to_route_graph_bbox(RoutingProfile::Car, miss)
+            .edges
+            .is_empty());
+        assert!(archived
+            .to_route_graph_bbox(RoutingProfile::Car, miss)
+            .edges
+            .is_empty());
     }
 
     #[test]

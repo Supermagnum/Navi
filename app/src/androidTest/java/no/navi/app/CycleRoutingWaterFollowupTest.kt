@@ -109,6 +109,8 @@ class CycleRoutingWaterFollowupTest {
                 EMPTY_VEHICLE,
                 true,
                 "",
+                "",
+                longTripEnabled = false,
                 viaPoints = emptyList(),
             )
         Log.i(TAG, "ELVERUM_TYNSET audit_report=${audit.report.take(600)}")

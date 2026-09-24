@@ -133,6 +133,28 @@ continent → country for offline maps — not a HOS/jurisdiction override. See
 
 Mobile home uses **car-style** soft breaks, not EC 561 tracking.
 
+### Long trip (multi-region)
+
+Opt-in in **Drive settings → Long trip** (off by default).
+
+1. Set **From** and **To** (vias optional), then turn **Long trip** on.
+2. Navi estimates which Geofabrik regions the corridor needs (adjacency graph;
+   online **BRouter** primary, **OpenRouteService** fallback for the preliminary
+   polyline). Settings show a short privacy disclosure: origin / vias /
+   destination coordinates may be sent to those services when online.
+3. Missing packs enqueue on the real region download queue with
+   **Wi‑Fi / Ethernet only** (metered mobile data is not used for long-trip
+   packs). Place index and ordinary Tools downloads stay on **internal**
+   storage.
+4. Optionally choose **Store long-trip packs on** a mounted removable volume
+   (app-specific directory). If that volume is ejected mid-write, the UI marks
+   those regions unavailable until you remount or move packs.
+5. When regions are installed and indexed, plan as usual. Soft rest and
+   overnight POIs run on chunked multi-day motor legs after routing.
+
+Turn **Long trip** off to cancel pending long-trip downloads (installed data is
+kept).
+
 ---
 
 ## Tools menu

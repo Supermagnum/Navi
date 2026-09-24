@@ -213,12 +213,36 @@ impl NaviManifest {
             return None;
         }
         let key = profile_key(profile);
-        self.graph_files.get(key).map(|n| data_dir.join(n))
+        if let Some(n) = self.graph_files.get(key) {
+            return Some(data_dir.join(n));
+        }
+        // Truck shares car topology (convert aliases; pack-server may omit truck).
+        if profile == RoutingProfile::Truck {
+            return self
+                .graph_files
+                .get(GRAPH_PROFILE_CAR)
+                .map(|n| data_dir.join(n));
+        }
+        None
     }
 
     pub fn graph_tiles_for(&self, profile: RoutingProfile) -> Option<&[GraphTileEntry]> {
         let key = profile_key(profile);
-        self.graph_tiles.get(key).map(|v| v.as_slice())
+        if let Some(v) = self.graph_tiles.get(key).filter(|t| !t.is_empty()) {
+            return Some(v.as_slice());
+        }
+        // Truck shares car topology (convert inserts a truck alias; published
+        // pack-server manifests often ship only car+foot keys). Without this
+        // fallback MobileHome densify hops PBF-build the origin extract alone
+        // and snap fails ~50 km short of the next region centroid.
+        if profile == RoutingProfile::Truck {
+            return self
+                .graph_tiles
+                .get(GRAPH_PROFILE_CAR)
+                .filter(|t| !t.is_empty())
+                .map(|v| v.as_slice());
+        }
+        None
     }
 
     pub fn poi_barrier_path(&self, data_dir: &Path) -> PathBuf {
