@@ -13,9 +13,9 @@ Instrumented classes:
 
 - `LongTripMobileHomeBevensenLiveTest` — earlier live run (height/weight left
   null when inputs were missing).
-- `LongTripMobileHomeBevensenResumePlanTest` — corrected resume + plan with T6
-  height/weight and 6 h/day soft budget wired through
-  `FfiCarRestSettings.maxHours`.
+- `LongTripMobileHomeBevensenResumePlanTest` — corrected resume + plan with
+  VW Transporter T6 2.0 BiTDi 4Motion camper height/weight and 6 h/day soft
+  budget wired through `FfiCarRestSettings.maxHours`.
 
 ---
 
@@ -28,13 +28,6 @@ Instrumented classes:
 | Internal storage | 128 GB |
 | RAM | 4 GB |
 | SD card | 512 GB (host image under `.avd-sd/`; not committed) |
-| Profile | MobileHome — project T6 camper |
-| Body height | 2.477 m |
-| Width (incl. mirrors) | 2.297 m |
-| Length | 5.304 m |
-| Loaded total weight | 3020.4 kg |
-| Rear axle load | 1661.2 kg |
-| Fuel tank | 70 L (learning / HUD only — see Known gaps) |
 | Origin | Bad Bevensen Kurpark Stellplatz ≈ 53.079686, 10.587198 |
 | Destination | 61.6170857, 8.0438639 |
 | Departure | `2026-06-01T08:00:00` local |
@@ -47,6 +40,31 @@ Instrumented classes:
 Packs download to the removable SD volume; plan `dataDir` / graph `cacheDir`
 stay under app internal data so `navi.db` rest settings resolve (same layout as
 MainActivity long-trip).
+
+### Vehicle — VW Transporter T6 2.0 BiTDi 4Motion camper
+
+Canonical MobileHome long-trip profile used by
+`LongTripMobileHomeAvdInstrumentedTest`,
+`LongTripMobileHomeBevensenLiveTest` (length/width/tank), and
+`LongTripMobileHomeBevensenResumePlanTest` (corrected height/weight wiring).
+Raised-roof conversion body height — **not** a stock VW California normal-roof
+(~1.99 m).
+
+| Spec | Value |
+|---|---|
+| Label | VW Transporter T6 2.0 BiTDi 4Motion camper |
+| Engine / drive | 2.0 L BiTDi twin-turbo I4, 199 PS, 4Motion (4×4) |
+| Wheelbase | 3.400 m (LWB) |
+| Length | 5.304 m (LWB) |
+| Width (excl. mirrors) | 1.904 m (on file; not passed to `FfiVehicleLimits`) |
+| Width (incl. mirrors) | 2.297 m (wired as `widthM`) |
+| Body height | 2.477 m (wired as `heightM` on corrected retest) |
+| Loaded total weight | 3020.4 kg (wired as `totalWeightKg`; 2–3 people + multi-day kit) |
+| Loaded rear axle | 1661.2 kg (wired as `axleWeightKg`) |
+| Loaded front axle | 1359.2 kg (total − rear; not separately wired) |
+| Fuel tank | 70 L (`FuelConfig` learning / HUD only — see Known gaps) |
+| Conservative GVWR (reference) | 2800 kg (Avd report bound; loaded total is over) |
+| Conservative GAWR front / rear | 1710 kg / 1625 kg (closest-variant bounds in Avd report; loaded rear is over) |
 
 ---
 
@@ -103,7 +121,7 @@ Fix:
 | Day 4 (final) | **286.1 km** / **3.78 h** |
 | Leg status | **13/13 PASS** |
 | Leg 13 clip | trip-AABB fallback **expected** |
-| Height / weight wired | **2.477 m** / **3020.4 kg** / **1661.2 kg** rear axle |
+| Vehicle limits wired | T6 BiTDi 4Motion — **2.477 m** / **2.297 m** width / **5.304 m** / **3020.4 kg** / **1661.2 kg** rear axle |
 | Break POIs | **16** (13 soft + 3 overnight) |
 
 Engine excludes ways by `RouteOptions.vehicle` (`maxheight` / `maxweight` /
