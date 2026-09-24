@@ -877,7 +877,7 @@ fn try_load_graph_for_plan_corridor_dirs(
     let mut tile_files = select_tiles_within_budget(
         tile_candidates.clone(),
         route_points,
-        crate::routing::plan_bbox::MAX_PLAN_TILES,
+        crate::routing::plan_bbox::effective_max_plan_tiles(),
         dirs,
     );
     // Same-stem short hops (e.g. eastern→western Skåne) need every intersecting
@@ -934,7 +934,7 @@ fn try_load_graph_for_plan_corridor_dirs(
                                 tile_files = select_tiles_within_budget(
                                     merged_cands,
                                     route_points,
-                                    crate::routing::plan_bbox::MAX_PLAN_TILES,
+                                    crate::routing::plan_bbox::effective_max_plan_tiles(),
                                     dirs,
                                 );
                                 seen = tile_files.iter().cloned().collect();
@@ -988,7 +988,7 @@ fn try_load_graph_for_plan_corridor_dirs(
                             tile_files = select_tiles_within_budget(
                                 near_cands,
                                 route_points,
-                                crate::routing::plan_bbox::MAX_PLAN_TILES,
+                                crate::routing::plan_bbox::effective_max_plan_tiles(),
                                 dirs,
                             );
                         }
@@ -1001,7 +1001,7 @@ fn try_load_graph_for_plan_corridor_dirs(
         target: "NaviPlan",
         "try_load_graph tile_files={} after primary+extras (budget={})",
         tile_files.len(),
-        crate::routing::plan_bbox::MAX_PLAN_TILES
+        crate::routing::plan_bbox::effective_max_plan_tiles()
     );
 
     if !tile_files.is_empty() {
@@ -1061,7 +1061,7 @@ fn try_load_graph_for_plan_corridor_dirs(
         let extra_files = select_tiles_within_budget(
             extra_candidates,
             route_points,
-            crate::routing::plan_bbox::MAX_PLAN_TILES,
+            crate::routing::plan_bbox::effective_max_plan_tiles(),
             dirs,
         );
         if !extra_files.is_empty() {

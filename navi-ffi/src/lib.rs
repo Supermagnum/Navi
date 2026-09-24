@@ -2979,10 +2979,16 @@ fn plan_car_route_inner(
     let pad_schedule = {
         let full =
             driver_break_core::routing::plan_bbox::plan_bbox_pad_schedule_points(&route_points);
-        if is_chunk_leg {
-            // Chunked legs: three pads (initial + two widens). Two was not enough
-            // when the first pad snapped a densify hop onto a neighbour shore.
-            full.into_iter().take(3).collect()
+        let force_chunk_take = std::env::var("NAVI_MEASURE_FORCE_CHUNK_PAD")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if is_chunk_leg || force_chunk_take {
+            // Chunked legs: default three pads (initial + two widens → 1.4°).
+            // Two was not enough when the first pad snapped a densify hop onto a
+            // neighbour shore. Measure overrides may raise take toward the full
+            // schedule (2.8° / 5.0°) via NAVI_MEASURE_CHUNK_PAD_TAKE.
+            let n = driver_break_core::routing::plan_bbox::effective_chunk_pad_schedule_take();
+            full.into_iter().take(n).collect()
         } else {
             full
         }
@@ -3174,7 +3180,7 @@ fn plan_car_route_inner(
             let chunk_snap = if tight_intermediate_snap {
                 driver_break_core::routing::plan_bbox::CHUNK_SAME_REGION_SNAP_M
             } else {
-                driver_break_core::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M
+                driver_break_core::routing::plan_bbox::effective_chunk_intermediate_snap_m()
             };
             for (i, &(lat, lon)) in route_points.iter().enumerate() {
                 // Surface preference is vias-only: start/destination must snap to the

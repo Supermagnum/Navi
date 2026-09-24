@@ -90,6 +90,36 @@ pub const CORRIDOR_BAND_STEP_DEG: f64 = 0.20;
 /// band (not a fat diagonal AABB) — count alone no longer dominates RSS.
 pub const MAX_PLAN_TILES: usize = 6;
 
+/// How many entries of [`plan_bbox_pad_schedule`] chunked long-trip legs keep.
+/// Full schedule reaches [`PLAN_BBOX_PAD_CAP_DEG`] (5.0°); the default three
+/// stops at 1.4° so per-leg RAM stays bounded. Override at measure time via
+/// `NAVI_MEASURE_CHUNK_PAD_TAKE`.
+pub const CHUNK_PAD_SCHEDULE_TAKE: usize = 3;
+
+fn measure_override_usize(key: &str) -> Option<usize> {
+    std::env::var(key).ok().and_then(|s| s.parse().ok())
+}
+
+fn measure_override_f64(key: &str) -> Option<f64> {
+    std::env::var(key).ok().and_then(|s| s.parse().ok())
+}
+
+/// Effective tile budget (see [`MAX_PLAN_TILES`]).
+pub fn effective_max_plan_tiles() -> usize {
+    measure_override_usize("NAVI_MEASURE_MAX_PLAN_TILES").unwrap_or(MAX_PLAN_TILES)
+}
+
+/// Effective corridor-band half-width (see [`CORRIDOR_EDGE_HALF_WIDTH_DEG`]).
+pub fn effective_corridor_edge_half_width_deg() -> f64 {
+    measure_override_f64("NAVI_MEASURE_CORRIDOR_HALF_WIDTH_DEG")
+        .unwrap_or(CORRIDOR_EDGE_HALF_WIDTH_DEG)
+}
+
+/// Effective chunk pad-schedule take (see [`CHUNK_PAD_SCHEDULE_TAKE`]).
+pub fn effective_chunk_pad_schedule_take() -> usize {
+    measure_override_usize("NAVI_MEASURE_CHUNK_PAD_TAKE").unwrap_or(CHUNK_PAD_SCHEDULE_TAKE)
+}
+
 /// Soft cap on on-disk tile bytes merged for one plan/leg. Prefer dropping the
 /// largest non-essential tiles before exceeding this; endpoints always stay.
 /// With corridor-band edge clip, ~280 MB disk stays well under 2.8 GiB RSS.
@@ -107,7 +137,13 @@ pub const MAX_PLAN_TILE_BYTES: u64 = 550 * 1024 * 1024;
 /// This constant affects **snap search only** (pad ≈ max_m/1e5 degrees). It does
 /// **not** widen tile selection or edge materialization — those use
 /// [`CORRIDOR_TILE_PAD_DEG`] / [`CORRIDOR_EDGE_HALF_WIDTH_DEG`].
-pub const CHUNK_INTERMEDIATE_SNAP_M: f64 = 25_000.0;
+pub const CHUNK_INTERMEDIATE_SNAP_M: f64 = 35_000.0;
+
+/// Effective densify-joint snap budget (see [`CHUNK_INTERMEDIATE_SNAP_M`]).
+pub fn effective_chunk_intermediate_snap_m() -> f64 {
+    measure_override_f64("NAVI_MEASURE_CHUNK_INTERMEDIATE_SNAP_M")
+        .unwrap_or(CHUNK_INTERMEDIATE_SNAP_M)
+}
 
 /// Tighter densify snap when both hop ends lie in the same catalog region.
 pub const CHUNK_SAME_REGION_SNAP_M: f64 = 8_000.0;
@@ -173,60 +209,87 @@ pub fn densify_route_points_via_regions_dirs(
     }
 
     let mut anchors: Vec<(f64, (f64, f64))> = Vec::new();
+    let ready = collect_ready_region_entries_dirs(dirs);
+    // Drammen→Berlevåg-class: OD vector is NE so 2D projection ranks Gudbrandsdalen
+    // west-dip towns (Dombås) before Hamar and produces southbound densify hops.
+    // Norway E6 spine applies sequence-ordered t; skip landsdel centroids then
+    // (their 2D/lat t would re-interleave Hamar/Oppdal / skip Karasjok).
+    let spine_anchors = norway_e6_spine_anchors(start, end, &ready);
+    let use_spine = !spine_anchors.is_empty();
+    let progress_t = |p: (f64, f64)| -> f64 {
+        (((p.0 - start.0) * vlat + (p.1 - start.1) * vlon) / v2).clamp(0.0, 1.0)
+    };
     // Keep explicit vias (everything except start/end) as forced anchors.
     for &p in &points[1..points.len() - 1] {
-        let t = ((p.0 - start.0) * vlat + (p.1 - start.1) * vlon) / v2;
-        anchors.push((t.clamp(0.0, 1.0), p));
+        let t = if use_spine {
+            // Place vias by latitude into the spine t range roughly.
+            let lat_t = if (end.0 - start.0).abs() > 1e-9 {
+                ((p.0 - start.0) / (end.0 - start.0)).clamp(0.0, 1.0)
+            } else {
+                progress_t(p)
+            };
+            0.04 + 0.92 * lat_t
+        } else {
+            progress_t(p)
+        };
+        anchors.push((t, p));
+    }
+    if !use_spine {
+        for (path, bbox) in &ready {
+            if densify_skip_country_when_leaves_ready(path, &ready) {
+                continue;
+            }
+            let c = ((bbox[0] + bbox[2]) * 0.5, (bbox[1] + bbox[3]) * 0.5);
+            let c = prefer_coastal_centroid(c, *bbox, path);
+            let t = progress_t(c);
+            if t <= 0.02 || t >= 0.98 {
+                continue;
+            }
+            let lat_lo = start.0.min(end.0) - 0.25;
+            let lat_hi = start.0.max(end.0) + 0.25;
+            if c.0 < lat_lo || c.0 > lat_hi {
+                continue;
+            }
+            let trip = trip_bbox_points(points, CORRIDOR_TILE_PAD_DEG.max(3.0));
+            if c.0 < trip[0] || c.0 > trip[2] || c.1 < trip[1] || c.1 > trip[3] {
+                continue;
+            }
+            anchors.push((t, c));
+        }
     }
 
-    let ready = collect_ready_region_entries_dirs(dirs);
-    for (path, bbox) in &ready {
-        if densify_skip_country_when_leaves_ready(path, &ready) {
-            continue;
-        }
-        let c = ((bbox[0] + bbox[2]) * 0.5, (bbox[1] + bbox[3]) * 0.5);
-        let t = ((c.0 - start.0) * vlat + (c.1 - start.1) * vlon) / v2;
-        if t <= 0.02 || t >= 0.98 {
-            continue;
-        }
-        // Reject hinterland centroids that progress in lon/lat mix but sit
-        // outside the OD latitude band (e.g. western Niedersachsen after
-        // Hamburg on a northbound Stendal→Norway chord).
-        let lat_lo = start.0.min(end.0) - 0.25;
-        let lat_hi = start.0.max(end.0) + 0.25;
-        if c.0 < lat_lo || c.0 > lat_hi {
-            continue;
-        }
-        // Wide pad so lateral corridor regions (Skåne east of the Hamar→Minden
-        // chord) stay eligible as land anchors. Pad 2.0 left Skåne's centroid
-        // (~13.53°E) outside the trip AABB (max OD lon + 2 ≈ 13.07) and forced
-        // Halland→NI geometric mids into Denmark spill.
-        let trip = trip_bbox_points(points, CORRIDOR_TILE_PAD_DEG.max(3.0));
-        if c.0 < trip[0] || c.0 > trip[2] || c.1 < trip[1] || c.1 > trip[3] {
-            continue;
-        }
-        anchors.push((t, c));
-    }
+    // Norway landsdel packs are huge; catalog centroids alone miss the E6
+    // (Gudbrandsdalen dips west to Dombås ≈9.13°E). Inject trunk waypoints so
+    // Stay-in-Country northbound densify follows the highway spine.
+    anchors.extend(spine_anchors.iter().copied());
 
     anchors.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     // Dedup near-duplicates along t, then keep only points that get closer to
     // the destination. Lon-weighted t alone can rank western Niedersachsen
     // after Hamburg and force a southbound chunk hop (then back again).
+    // Norway E6 spine waypoints are forced (like explicit vias): Gudbrandsdalen
+    // dips west (Dombås ≈9.13°E) which temporarily worsens Chebyshev-to-end.
     let cheb = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs().max((a.1 - b.1).abs());
     let via_set: std::collections::HashSet<(u64, u64)> = points[1..points.len() - 1]
         .iter()
         .map(|p| (p.0.to_bits(), p.1.to_bits()))
+        .collect();
+    let spine_set: std::collections::HashSet<(u64, u64)> = spine_anchors
+        .iter()
+        .map(|(_, p)| (p.0.to_bits(), p.1.to_bits()))
         .collect();
     let mut filtered: Vec<(f64, (f64, f64))> = Vec::new();
     let mut last_t = -1.0_f64;
     let mut best_to_end = cheb(start, end);
     for (t, p) in anchors {
         let is_via = via_set.contains(&(p.0.to_bits(), p.1.to_bits()));
-        if t - last_t < 0.04 && !filtered.is_empty() && !is_via {
+        let is_spine = spine_set.contains(&(p.0.to_bits(), p.1.to_bits()));
+        let forced = is_via || is_spine;
+        if t - last_t < 0.04 && !filtered.is_empty() && !forced {
             continue;
         }
         let d_end = cheb(p, end);
-        if !is_via && d_end >= best_to_end - 1e-6 {
+        if !forced && d_end >= best_to_end - 1e-6 {
             continue;
         }
         filtered.push((t, p));
@@ -265,7 +328,10 @@ fn densify_gaps_with_region_centroids(
     let centroids: Vec<(f64, f64)> = ready
         .iter()
         .filter(|(path, _)| !densify_skip_country_when_leaves_ready(path, &ready))
-        .map(|(_, b)| ((b[0] + b[2]) * 0.5, (b[1] + b[3]) * 0.5))
+        .map(|(path, b)| {
+            let c = ((b[0] + b[2]) * 0.5, (b[1] + b[3]) * 0.5);
+            prefer_coastal_centroid(c, *b, path)
+        })
         .collect();
     let mut out = Vec::with_capacity(points.len() * 2);
     out.push(points[0]);
@@ -392,12 +458,20 @@ fn insert_land_safe_mids(
         // sit in multi-country bbox spill (Öresund covered by DK + Skåne) — those
         // snap to the wrong shore and disconnect under a 4 GB tile budget.
         let mid = (a.0 + dlat * 0.5, a.1 + dlon * 0.5);
-        let mid_on_land = ready
+        let covering: Vec<[f64; 4]> = ready
             .iter()
-            .any(|(_, r)| crate::routing::basemap::bbox_covers_point(*r, mid.0, mid.1));
-        if !mid_on_land || densify_mid_in_country_spill(mid, a, b, ready) {
+            .filter(|(_, r)| crate::routing::basemap::bbox_covers_point(*r, mid.0, mid.1))
+            .map(|(_, r)| *r)
+            .collect();
+        if covering.is_empty() || densify_mid_in_country_spill(mid, a, b, ready) {
             return;
         }
+        // Large landsdel boxes (e.g. Nord-Norge) treat mountain plateaus as
+        // "on land". For NE Stay-in-Country climbs, insert a due-north mid at
+        // the western endpoint's longitude first so densify follows the coastal
+        // meridian before swinging east (avoids the inland catalog-centroid
+        // chord that pad/tile widening cannot fix within the 4 GB RSS budget).
+        let mid = prefer_north_then_east_mid(mid, a, b, &covering);
         let da = (mid.0 - a.0).abs().max((mid.1 - a.1).abs());
         let db = (mid.0 - b.0).abs().max((mid.1 - b.1).abs());
         if da < max_hop_deg * 0.2 || db < max_hop_deg * 0.2 {
@@ -416,6 +490,161 @@ fn insert_land_safe_mids(
     insert_land_safe_mids(out, a, c, centroids, ready, max_hop_deg);
     out.push(c);
     insert_land_safe_mids(out, c, b, centroids, ready, max_hop_deg);
+}
+
+/// Coastal densify helpers for large landsdel catalog boxes.
+///
+/// Catalog centroids for Nord-Norge / Trøndelag sit inland; straight chord mids
+/// land on mountain plateaus where chunk snap collapses (`zero_length_leg`) or
+/// exceeds [`CHUNK_INTERMEDIATE_SNAP_M`]. Pad / tile widening peaks at 2.3–3.3 GiB
+/// RSS and still fails — densify must prefer the E6 / coastal-highway spine.
+///
+/// E6 / trunk waypoints for long Norway northbound densify (Stay-in-Country).
+/// Landsdel catalog boxes alone cannot recover Gudbrandsdalen's west dip or the
+/// Finnmark east swing; these points are forced anchors (Chebyshev-to-end may
+/// temporarily worsen when the highway runs west).
+///
+/// Progress parameter follows **spine sequence order** (not 2D OD projection and
+/// not raw latitude): NE trips otherwise rank Oppdal before Hamar, and Finnmark
+/// must dip south through Karasjok before Tana.
+fn norway_e6_spine_anchors(
+    start: (f64, f64),
+    end: (f64, f64),
+    ready: &[(String, [f64; 4])],
+) -> Vec<(f64, (f64, f64))> {
+    let has_no_landsdel = ready.iter().any(|(p, _)| p.contains("/norway/"));
+    if !has_no_landsdel {
+        return Vec::new();
+    }
+    // Stay-in-Country / NO-only densify: do not inject when foreign Ready packs
+    // are present (Hamar→Minden still needs Halland/Skåne centroids).
+    let only_norway = ready
+        .iter()
+        .all(|(p, _)| p.contains("norway") || p.starts_with("test/"));
+    if !only_norway {
+        return Vec::new();
+    }
+    // Both endpoints inside the Norway catalog box.
+    const NO: [f64; 4] = [57.9, 4.5, 71.5, 31.5];
+    let inside = |p: (f64, f64)| p.0 >= NO[0] && p.0 <= NO[2] && p.1 >= NO[1] && p.1 <= NO[3];
+    if !inside(start) || !inside(end) {
+        return Vec::new();
+    }
+    // Substantial northbound progress (Drammen→Berlevåg class).
+    if end.0 - start.0 < 4.0 {
+        return Vec::new();
+    }
+    // Town-adjacent points on the E6 / E6+E75 trunk toward Finnmark (highway order).
+    const SPINE: &[(f64, f64)] = &[
+        (60.795, 11.068), // Hamar
+        (61.115, 10.466), // Lillehammer
+        (61.772, 9.420),  // Otta
+        (62.075, 9.128),  // Dombås
+        (62.594, 9.691),  // Oppdal
+        (63.430, 10.395), // Trondheim
+        (64.015, 11.495), // Steinkjer
+        (65.837, 13.191), // Mosjøen
+        (66.313, 14.143), // Mo i Rana
+        (67.259, 15.391), // Fauske
+        (68.438, 17.427), // Narvik
+        (69.217, 19.519), // Nordkjosbotn
+        (69.969, 23.272), // Alta
+        (70.051, 24.952), // Lakselv
+        (69.472, 25.511), // Karasjok (south dip on E6)
+        (70.199, 28.197), // Tana bru
+    ];
+    let lat_lo = start.0.min(end.0) - 1.0; // allow Karasjok south of Alta
+    let lat_hi = start.0.max(end.0) + 0.25;
+    // Lon pad must cover Gudbrandsdalen's west dip (Dombås ≈9.13°E) even when
+    // the OD chord is Drammen≈10.2°E → Berlevåg≈29°E.
+    let lon_lo = start.1.min(end.1) - 2.5;
+    let lon_hi = start.1.max(end.1) + 0.5;
+    let selected: Vec<(f64, f64)> = SPINE
+        .iter()
+        .copied()
+        .filter(|p| p.0 >= lat_lo && p.0 <= lat_hi && p.1 >= lon_lo && p.1 <= lon_hi)
+        .collect();
+    if selected.len() < 2 {
+        return Vec::new();
+    }
+    let denom = (selected.len() - 1) as f64;
+    selected
+        .into_iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let t = 0.04 + 0.92 * (i as f64) / denom;
+            (t, p)
+        })
+        .filter(|(t, _)| *t > 0.02 && *t < 0.98)
+        .collect()
+}
+
+fn landsdel_box_needs_coastal_bias(bbox: [f64; 4]) -> bool {
+    let lat_span = (bbox[2] - bbox[0]).abs();
+    let lon_span = (bbox[3] - bbox[1]).abs();
+    lat_span >= 2.5 && lon_span >= 4.0
+}
+
+/// Move a northern landsdel centroid onto the E6 / coastal-highway spine.
+///
+/// Uses ~0.55 of a capped lon span from the west edge — not the far-west
+/// third (0.35), which put Trøndelag anchors at ~10.25°E (Fosen fjords) while
+/// E6 runs Steinkjer≈11.5°E. Cap the span so ocean-wide Nord-Norge boxes do
+/// not pull anchors into the Norwegian Sea.
+fn prefer_coastal_centroid(c: (f64, f64), bbox: [f64; 4], path: &str) -> (f64, f64) {
+    // Only northern Norway landsdel packs — Ostlandet's west edge is Vestlandet
+    // mountains/fjords, not the E6 spine. Empty `path` is allowed for gap-fill
+    // covering lookups when the bbox itself is a northern landsdel box (lat≥62).
+    let northern = path.contains("nord-norge")
+        || path.contains("trondelag")
+        || (path.is_empty() && bbox[0] >= 62.0);
+    if !northern || !landsdel_box_needs_coastal_bias(bbox) {
+        return c;
+    }
+    let lon_span = (bbox[3] - bbox[1]).abs();
+    let spine_target = bbox[1] + lon_span.min(5.0) * 0.55;
+    let floor = c.1 - 6.0;
+    (c.0, c.1.min(spine_target).max(floor).max(bbox[1] + 0.5))
+}
+
+/// For NE gap-fill inside a large landsdel box, climb north while drifting
+/// toward the E6 spine — not freezing at the western endpoint (that parked
+/// hops on Fosen and `bbox_exhausted` / disconnected under Stay-in-Country).
+fn prefer_north_then_east_mid(
+    geometric: (f64, f64),
+    a: (f64, f64),
+    b: (f64, f64),
+    covering: &[[f64; 4]],
+) -> (f64, f64) {
+    let Some(bbox) = covering
+        .iter()
+        .min_by(|x, y| {
+            let aa = (x[2] - x[0]).abs() * (x[3] - x[1]).abs();
+            let bb = (y[2] - y[0]).abs() * (y[3] - y[1]).abs();
+            aa.partial_cmp(&bb).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .copied()
+    else {
+        return geometric;
+    };
+    if !landsdel_box_needs_coastal_bias(bbox) {
+        return geometric;
+    }
+    let dlat = b.0 - a.0;
+    let dlon = b.1 - a.1;
+    let spine_lon = prefer_coastal_centroid(a, bbox, "").1;
+    // Already primarily eastbound (Finnmark finale): keep geometric mid.
+    if dlon.abs() >= dlat.abs() && a.1.min(b.1) >= spine_lon - 0.5 {
+        return geometric;
+    }
+    // Climb north; blend toward the E6 spine and a fraction of geometric dlon
+    // so the corridor progresses east without the inland catalog-centroid chord.
+    if dlat.abs() > 0.15 {
+        let mid_lat = a.0 + dlat * 0.5;
+        let mid_lon = a.1 + (spine_lon - a.1) * 0.65 + dlon * 0.20;
+        return (mid_lat, mid_lon);
+    }
+    geometric
 }
 
 fn densify_region_country(path: &str) -> Option<&str> {
@@ -523,7 +752,11 @@ pub fn plan_edge_clips(
         PlanEdgeClipMode::CorridorBand => route_points
             .filter(|pts| pts.len() >= 2)
             .map(|pts| {
-                corridor_band_bboxes(pts, CORRIDOR_EDGE_HALF_WIDTH_DEG, CORRIDOR_BAND_STEP_DEG)
+                corridor_band_bboxes(
+                    pts,
+                    effective_corridor_edge_half_width_deg(),
+                    CORRIDOR_BAND_STEP_DEG,
+                )
             })
             .filter(|b| !b.is_empty())
             .or_else(|| clip_bbox.map(|b| vec![b])),
@@ -836,12 +1069,14 @@ mod tests {
         );
     }
 
-    /// Drammen→Berlevåg (Stay-in-Country / NO-only packs): geometric densify
-    /// through Ostlandet→Trondelag→Nord-Norge centroids inserts inland Finnmark
-    /// mids. Chunk legs only get three pad widens (cap 1.4°), so a fjord/coast
-    /// detour past that pad surfaces as `bbox_exhausted` (see resume13 GPS report).
+    /// Drammen→Berlevåg (Stay-in-Country / NO-only packs): large landsdel
+    /// boxes used to accept inland geometric mids (mountain plateaus), which
+    /// collapsed chunk snaps (`zero_length_leg`) or exceeded the intermediate
+    /// snap budget — and raising pad to 2.8°/5.0° peaked at 2.3–3.3 GiB
+    /// RSS. Coastal bias must keep Nordland densify mids west of the inland
+    /// catalog chord while still subdividing the span.
     #[test]
-    fn densify_drammen_berlevag_inland_chord_and_chunk_pad_cap() {
+    fn densify_drammen_berlevag_prefers_coastal_gap_fill() {
         let dir = tempfile::tempdir().expect("tmpdir");
         for stem in ["ostlandet-latest", "trondelag-latest", "nord-norge-latest"] {
             let path = dir.path().join(format!("{stem}.navi-manifest.json"));
@@ -861,31 +1096,62 @@ mod tests {
             "NO-only densify must subdivide this span; hops={}",
             hops.len()
         );
-        // Nord-Norge catalog centroid sits inland (~68N, 20.75E). Geometric gap
-        // fill between Trondelag and that centroid crosses east of coastal E6.
-        let inland_leg = hops.windows(2).any(|w| {
+        let dombas_dip = hops
+            .iter()
+            .any(|(lat, lon)| *lat > 61.7 && *lat < 62.4 && *lon > 8.8 && *lon < 9.6);
+        assert!(
+            dombas_dip,
+            "expected densify hop near Dombås on E6; hops={hops:?}"
+        );
+        let karasjok_dip = hops
+            .iter()
+            .any(|(lat, lon)| *lat > 69.2 && *lat < 69.7 && *lon > 25.0 && *lon < 26.2);
+        assert!(
+            karasjok_dip,
+            "expected densify hop near Karasjok on E6 Finnmark; hops={hops:?}"
+        );
+        // Between Trondelag and Nord-Norge latitudes, gap-fill must climb on the
+        // E6 spine (north-then-east) — not the inland chord toward the
+        // (68N, 20.75E) catalog centroid, and not the Fosen fjord meridian
+        // (~10.25°E) that disconnects under Stay-in-Country.
+        let inland_chord = hops.windows(2).any(|w| {
             let mid_lat = (w[0].0 + w[1].0) * 0.5;
             let mid_lon = (w[0].1 + w[1].1) * 0.5;
-            mid_lat > 64.0
-                && mid_lat < 68.5
-                && mid_lon > 14.0
-                && mid_lon < 21.0
+            mid_lat > 64.5
+                && mid_lat < 68.0
+                && mid_lon > 18.5
                 && (w[1].0 - w[0].0).abs().max((w[1].1 - w[0].1).abs())
                     <= LONG_TRIP_CHUNK_DEG + 1e-6
         });
         assert!(
-            inland_leg,
-            "expected inland densify hop in Nordland/Troms band; hops={hops:?}"
+            !inland_chord,
+            "densify must not gap-fill inland of 18.5°E in Nordland; hops={hops:?}"
         );
-        // Chunk legs: take(3) of the short-hop schedule → max pad 1.4° (not 5.0).
+        let fosen_trap = hops
+            .iter()
+            .any(|(lat, lon)| *lat > 63.5 && *lat < 65.0 && *lon < 10.7);
+        assert!(
+            !fosen_trap,
+            "densify must not park hops west of E6 (Fosen) in Trøndelag; hops={hops:?}"
+        );
+        let coastal_climb = hops.windows(2).any(|w| {
+            let mid_lat = (w[0].0 + w[1].0) * 0.5;
+            let mid_lon = (w[0].1 + w[1].1) * 0.5;
+            mid_lat > 64.5 && mid_lat < 68.0 && (11.0..=15.5).contains(&mid_lon)
+        });
+        assert!(
+            coastal_climb,
+            "expected E6-spine coastal climb in Nordland band; hops={hops:?}"
+        );
+        // Chunk legs: CHUNK_PAD_SCHEDULE_TAKE of the short-hop schedule → max pad 1.4° (not 5.0).
         let short = plan_bbox_pad_schedule(64.0, 11.5, 64.25, 12.08);
-        let chunk: Vec<f64> = short.into_iter().take(3).collect();
-        assert_eq!(chunk.len(), 3);
+        let chunk: Vec<f64> = short.into_iter().take(CHUNK_PAD_SCHEDULE_TAKE).collect();
+        assert_eq!(chunk.len(), CHUNK_PAD_SCHEDULE_TAKE);
         assert!((chunk[0] - PLAN_BBOX_PAD_MIN_DEG).abs() < 1e-9);
         assert!((chunk[2] - 1.4).abs() < 1e-9);
         assert!(
             *chunk.last().unwrap() < PLAN_BBOX_PAD_CAP_DEG - 1.0,
-            "chunk take(3) must stop well below the full {PLAN_BBOX_PAD_CAP_DEG}° cap; got {chunk:?}"
+            "chunk take({CHUNK_PAD_SCHEDULE_TAKE}) must stop well below the full {PLAN_BBOX_PAD_CAP_DEG}° cap; got {chunk:?}"
         );
     }
 
