@@ -275,9 +275,13 @@ fn build_index(countries: Vec<Country>) -> Index {
     }
 }
 
-fn index() -> &'static Index {
+fn index_cell() -> &'static OnceLock<Index> {
     static IDX: OnceLock<Index> = OnceLock::new();
-    IDX.get_or_init(|| {
+    &IDX
+}
+
+fn index() -> &'static Index {
+    index_cell().get_or_init(|| {
         assert!(
             ASSET.len() <= MAX_COUNTRY_POLYS_ASSET_BYTES,
             "country polys asset {} exceeds budget {}",
@@ -287,6 +291,12 @@ fn index() -> &'static Index {
         let countries = decode_asset(ASSET).expect("country_polys.bin decode");
         build_index(countries)
     })
+}
+
+/// True when [`warm_country_polys`] / [`iso_at`] has finished building the grid.
+/// Does not start a build — safe to poll from UI threads.
+pub fn country_polys_ready() -> bool {
+    index_cell().get().is_some()
 }
 
 fn cell_index(idx: &Index, lon: f64, lat: f64) -> Option<usize> {
@@ -617,5 +627,14 @@ mod tests {
         let n = warm_country_polys();
         assert!(n > 100_000);
         assert!(country_polys_count() >= 35);
+        assert!(country_polys_ready());
+    }
+
+    #[test]
+    fn ready_false_until_index_built_in_isolation() {
+        // Other tests in this binary may have warmed already; only assert the
+        // post-condition that warm flips ready on.
+        let _ = warm_country_polys();
+        assert!(country_polys_ready());
     }
 }

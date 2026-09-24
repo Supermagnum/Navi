@@ -697,6 +697,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_country_iso_at(
     ): Int
+    external fun uniffi_navi_checksum_func_country_polys_ready(
+    ): Int
     external fun uniffi_navi_checksum_func_current_speed_kmh(
     ): Int
     external fun uniffi_navi_checksum_func_current_speed_limit_kmh(
@@ -1011,6 +1013,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_update_gps_fix(
     ): Int
+    external fun uniffi_navi_checksum_func_warm_country_polys(
+    ): Int
     external fun uniffi_navi_checksum_func_water_pois_along_polyline(
     ): Int
     external fun uniffi_navi_checksum_func_weather_attribution_text(
@@ -1113,6 +1117,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_country_iso_at(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_country_polys_ready(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     external fun uniffi_navi_fn_func_current_speed_kmh(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_current_speed_limit_kmh(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`maxM`: Double,uniffi_out_err: UniffiRustCallStatus, 
@@ -1427,6 +1433,8 @@ internal object UniffiLib {
     ): Byte
     external fun uniffi_navi_fn_func_update_gps_fix(`lat`: Double,`lon`: Double,`available`: Byte,`speedKmh`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_navi_fn_func_warm_country_polys(uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
     external fun uniffi_navi_fn_func_water_pois_along_polyline(`dataDir`: RustBuffer.ByValue,`pbfPath`: RustBuffer.ByValue,`polyline`: RustBuffer.ByValue,`sampleStepKm`: Double,`radiusM`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_weather_attribution_text(uniffi_out_err: UniffiRustCallStatus, 
@@ -1604,6 +1612,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_country_iso_at() and 0xFFFF) != 819) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_country_polys_ready() and 0xFFFF) != 885) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_current_speed_kmh() and 0xFFFF) != 56021) {
@@ -2075,6 +2086,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_update_gps_fix() and 0xFFFF) != 6378) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_warm_country_polys() and 0xFFFF) != 6689) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_water_pois_along_polyline() and 0xFFFF) != 64266) {
@@ -5226,6 +5240,20 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Non-blocking poll: true after [`warm_country_polys`] / [`country_iso_at`]
+         * finished building the index.
+         */ fun `countryPolysReady`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_country_polys_ready(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
          * Live GPS speed (km/h) from the last [`update_gps_fix`], or `None` when the
          * host has not pushed a fix / did not supply speed.
          */ fun `currentSpeedKmh`(): kotlin.Double? {
@@ -7604,6 +7632,24 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterOptionalDouble.lower(`speedKmh`),_status)
 }
     
+    
+
+        /**
+         * Build the Natural Earth country grid off the calling thread. Returns decoded
+         * resident bytes (same contract as core [`warm_country_polys`]).
+         *
+         * Android must call this on a background dispatcher at process start — the
+         * cold `OnceLock` build is minutes on Automotive AVDs and must never run on
+         * the main looper (blocks Compose seed / UI).
+         */ fun `warmCountryPolys`(): kotlin.ULong {
+            return FfiConverterULong.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_warm_country_polys(
+    
+        _status)
+}
+    )
+    }
     
 
         /**

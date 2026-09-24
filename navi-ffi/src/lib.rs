@@ -2726,6 +2726,24 @@ pub fn country_iso_at(lat: f64, lon: f64) -> Option<String> {
     driver_break_core::routing::elevation::country_iso_at(lat, lon).map(str::to_owned)
 }
 
+/// Build the Natural Earth country grid off the calling thread. Returns decoded
+/// resident bytes (same contract as core [`warm_country_polys`]).
+///
+/// Android must call this on a background dispatcher at process start — the
+/// cold `OnceLock` build is minutes on Automotive AVDs and must never run on
+/// the main looper (blocks Compose seed / UI).
+#[uniffi::export]
+pub fn warm_country_polys() -> u64 {
+    driver_break_core::routing::elevation::warm_country_polys() as u64
+}
+
+/// Non-blocking poll: true after [`warm_country_polys`] / [`country_iso_at`]
+/// finished building the index.
+#[uniffi::export]
+pub fn country_polys_ready() -> bool {
+    driver_break_core::routing::elevation::country_polys_ready()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn plan_car_route_inner(
     pbf_path: String,

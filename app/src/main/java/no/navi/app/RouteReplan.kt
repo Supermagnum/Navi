@@ -117,6 +117,36 @@ object RouteReplan {
                 waypoints.drop(1).dropLast(1).map { uniffi.navi.FfiLatLon(it.lat, it.lon) }
             val allowedCountries =
                 if (stayInCountry) {
+                    if (!CountryPolysWarm.awaitReady()) {
+                        return@withContext CorridorRouteResult(
+                            report =
+                                "TEST_KIND=PLAN_CAR_ROUTE\n" +
+                                    "FAIL: Country map still loading for Stay in Country. Try again in a moment.\n",
+                            distanceKm = 0.0,
+                            etaMinutes = 0.0,
+                            cacheHit = false,
+                            coldBuildS = 0.0,
+                            warmLoadS = 0.0,
+                            routePolyline = "",
+                            poiLat = 0.0,
+                            poiLon = 0.0,
+                            poiName = "",
+                            poiIconKey = "",
+                            breakPoisJson = "[]",
+                            daysJson = "[]",
+                            simSamplesJson = "[]",
+                            maneuversJson = "[]",
+                            priorityPathSharePct = 0.0,
+                            routeSegmentsJson = "[]",
+                            offTrailAdvisory = "",
+                            tollPolicy = "allow",
+                            padAttemptsJson = "[]",
+                            searchExpansions = 0u,
+                            searchTerminateReason = "fail",
+                            tollAvoidanceIncomplete = false,
+                            routeUsesTolls = false,
+                        )
+                    }
                     val iso =
                         runCatching { uniffi.navi.countryIsoAt(start.lat, start.lon) }.getOrNull()
                     StayInCountry.allowedCountriesForPlan(true, iso)
