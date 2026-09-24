@@ -232,6 +232,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Vehicle size** | Save height/width/length/weight limits so the route skips roads that are too tight. | Done |
 | **E-bike specs** | Battery size, motor torque, and wheel size help estimate battery use and steep climbs. Live cable telemetry is planned later. | Done (planning); live data later |
 | **Avoidances** | You can ask to avoid motorways, tolls, or ferries. Motorways here means OSM `highway=motorway` / `motorway_link`, `motorroad=yes` / `expressway=yes`, or a dual carriageway with `lanes>=2` and `maxspeed>=90` — not every E-road or urban arterial. | Done |
+| **Stay in Country** | Avoid crossing international borders, even if a foreign route is faster. Uses your trip origin country (Natural Earth Admin-0). Off by default. | Done |
 | **Official trails** | For hiking/cycling, optionally prefer marked long-distance trails (off by default). Normal paths still work if the marked trail has a gap. | Done |
 | **Bike surface suitability** | Bicycle / e-bike Drive setting: **Road / Gravel / MTB**. Unsuitable OSM surfaces and tracks are hard-excluded after the graph loads (does not rebuild packs). Default is Gravel (trekking). | Done |
 | **Motor surface preference** | Car, truck, motorhome, and motorcycle: soft preference for good driveable surfaces (`surface` / `tracktype`) on connector snaps and along the route; untagged `highway=track` is treated cautiously. Internal costing only — no warnings in the UI. Default **Car**; **Offroad** / 4×4 relaxes the weighting (stored in config; no Drive-menu toggle yet). | Done |
@@ -695,6 +696,7 @@ display choices in app preferences).
 | **Network hut member (DNT/STF/…)** | Hiking only: when on, overnight may prefer network huts; when off (default), prefer non-network cabins and flag network stops as membership-required |
 | **Follow pilgrim routes** | Hiking only; soft preference (off by default), falls back to normal hiking |
 | **Long trip** | Opt-in multi-region corridor downloads (off by default). When on: Wi‑Fi/Ethernet-only pack queue along the route, optional removable storage for those packs, and a privacy note about BRouter / OpenRouteService for the preliminary region estimate. Status line shows needed / downloading / indexed regions |
+| **Stay in Country** | Avoid crossing international borders, even if a foreign route is faster (off by default). Origin country from Natural Earth; may be longer/slower than a cross-border shortcut |
 | **Hours between breaks** | How often you *want* a break (cars), or truck mandatory break-after time |
 | **Rest time** | How long a break should last (suggestion / truck continuous break) |
 | **Next break as Time / Distance** | Show break countdown in minutes, or as km/mi at an assumed cruising speed |
@@ -704,7 +706,8 @@ display choices in app preferences).
 | **Vehicle limits** | Height/width/length/axle weight for clearance |
 
 Route planning chrome (**Route**): From / To / Via, Plan, Simulate, avoidances
-(**Avoid motorways** excludes `highway=motorway` / `motorway_link`, `motorroad=yes` / `expressway=yes`, and dual carriageways with `lanes>=2` and `maxspeed>=90`; E-road `ref` is display-only),
+(**Avoid motorways** excludes `highway=motorway` / `motorway_link`, `motorroad=yes` / `expressway=yes`, and dual carriageways with `lanes>=2` and `maxspeed>=90`; E-road `ref` is display-only;
+**Stay in Country** keeps the route inside the starting country),
 saved routes.
 
 ### Tools (downloads and diagnostic logging)

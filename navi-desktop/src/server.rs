@@ -432,6 +432,7 @@ async fn api_plan(State(state): State<AppState>, Json(body): Json<PlanBody>) -> 
             String::new(),
             String::new(),
             false,
+            None,
             Vec::new(),
         )
     })

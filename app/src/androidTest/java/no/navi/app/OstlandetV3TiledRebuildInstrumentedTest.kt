@@ -72,6 +72,7 @@ class OstlandetV3TiledRebuildInstrumentedTest {
                 dataDir = "",
                 packDir = "",
                 longTripEnabled = false,
+                allowedCountries = null,
                 viaPoints = emptyList(),
             )
         android.util.Log.i("OstlandetV3Tiled", "FALLBACK ${r.report}")
@@ -166,6 +167,7 @@ class OstlandetV3TiledRebuildInstrumentedTest {
                 dataDir = "",
                 packDir = "",
                 longTripEnabled = false,
+                allowedCountries = null,
                 viaPoints = emptyList(),
             )
         android.util.Log.i("OstlandetV3Tiled", "SUMMER ${summer.report}")
@@ -197,6 +199,7 @@ class OstlandetV3TiledRebuildInstrumentedTest {
                 dataDir = "",
                 packDir = "",
                 longTripEnabled = false,
+                allowedCountries = null,
                 viaPoints = emptyList(),
             )
         android.util.Log.i("OstlandetV3Tiled", "WINTER ${winter.report}")

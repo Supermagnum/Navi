@@ -123,6 +123,7 @@ class MotorAccessBarrierInstrumentedTest {
                     dataDir = "",
                     packDir = "",
                     longTripEnabled = false,
+                    allowedCountries = null,
                     viaPoints = emptyList(),
                 )
             check(warm.report.contains("PASS")) { "car prewarm failed: ${warm.report}" }
@@ -333,6 +334,7 @@ class MotorAccessBarrierInstrumentedTest {
                 dataDir = "",
                 packDir = "",
                 longTripEnabled = false,
+                allowedCountries = null,
                 viaPoints = emptyList(),
             )
         assertTrue("car PASS: ${car.report.take(300)}", car.report.contains("PASS"))

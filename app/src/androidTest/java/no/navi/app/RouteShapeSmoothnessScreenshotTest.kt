@@ -116,6 +116,7 @@ class RouteShapeSmoothnessScreenshotTest {
                 dataDir = "",
                 packDir = "",
                 longTripEnabled = false,
+                allowedCountries = null,
                 viaPoints = emptyList(),
             )
         assertTrue("plan failed: ${route.report}", route.routePolyline.contains(';'))

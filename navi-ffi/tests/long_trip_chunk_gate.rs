@@ -102,6 +102,7 @@ fn plan(
         data_dir.display().to_string(),
         String::new(),
         long_trip_enabled,
+        None,
         Vec::new(),
     )
 }

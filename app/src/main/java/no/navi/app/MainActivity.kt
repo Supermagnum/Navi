@@ -581,13 +581,22 @@ private fun userFacingStatus(raw: String): String {
                 withIndexedPackMissHint(withToll, t)
             }
             t.contains("PASS") -> withIndexedPackMissHint("Done", t)
-            t.lineSequence().any { it.startsWith("FAIL") } ->
-                t
-                    .lineSequence()
-                    .first { it.startsWith("FAIL") }
-                    .removePrefix("FAIL:")
-                    .trim()
-                    .take(100)
+            t.lineSequence().any { it.startsWith("FAIL") } -> {
+                val failLine =
+                    t
+                        .lineSequence()
+                        .first { it.startsWith("FAIL") }
+                        .removePrefix("FAIL:")
+                        .trim()
+                if (t.contains("terminate=outside_countries") ||
+                    t.contains("search_terminate_reason=outside_countries") ||
+                    failLine.contains("Stay in Country on")
+                ) {
+                    failLine.take(200)
+                } else {
+                    failLine.take(100)
+                }
+            }
             else -> ""
         }
     }
@@ -753,6 +762,10 @@ private fun NaviMapScreen() {
     var longTripEnabled by remember {
         mutableStateOf(MapHudPrefs.loadLongTripEnabled(context))
     }
+    var stayInCountry by remember {
+        mutableStateOf(MapHudPrefs.loadStayInCountry(context))
+    }
+    var stayInCountryInfoExpanded by remember { mutableStateOf(false) }
     var longTripStatusLine by remember { mutableStateOf("") }
     var longTripPackVolumeId by remember {
         mutableStateOf(MapHudPrefs.loadLongTripPackVolumeId(context))
@@ -2003,6 +2016,7 @@ private fun NaviMapScreen() {
                                 preferOfficialNetworks = preferOfficialNetworks,
                                 preferPilgrimRoutes = preferPilgrimRoutes,
                                 longTripEnabled = longTripEnabled,
+                                stayInCountry = stayInCountry,
                                 packDir =
                                     if (longTripEnabled) {
                                         LongTripPackStorage.packDownloadDir(context).absolutePath
@@ -2813,6 +2827,46 @@ private fun NaviMapScreen() {
                                         viaPoints.map { v ->
                                             uniffi.navi.FfiLatLon(lat = v.lat, lon = v.lon)
                                         }
+                                    val allowedCountries =
+                                        if (stayInCountry) {
+                                            val iso =
+                                                runCatching {
+                                                    uniffi.navi.countryIsoAt(start.lat, start.lon)
+                                                }.getOrNull()
+                                            StayInCountry.allowedCountriesForPlan(true, iso)
+                                        } else {
+                                            null
+                                        }
+                                    if (stayInCountry && allowedCountries == null) {
+                                        return@runCatching uniffi.navi.CorridorRouteResult(
+                                            report =
+                                                "TEST_KIND=PLAN_CAR_ROUTE\n" +
+                                                    "FAIL: Could not determine starting country for Stay in Country.\n",
+                                            distanceKm = 0.0,
+                                            etaMinutes = 0.0,
+                                            cacheHit = false,
+                                            coldBuildS = 0.0,
+                                            warmLoadS = 0.0,
+                                            routePolyline = "",
+                                            poiLat = 0.0,
+                                            poiLon = 0.0,
+                                            poiName = "",
+                                            poiIconKey = "",
+                                            breakPoisJson = "[]",
+                                            daysJson = "[]",
+                                            simSamplesJson = "[]",
+                                            maneuversJson = "[]",
+                                            priorityPathSharePct = 0.0,
+                                            routeSegmentsJson = "[]",
+                                            offTrailAdvisory = "",
+                                            tollPolicy = "allow",
+                                            padAttemptsJson = "[]",
+                                            searchExpansions = 0u,
+                                            searchTerminateReason = "fail",
+                                            tollAvoidanceIncomplete = false,
+                                            routeUsesTolls = false,
+                                        )
+                                    }
                                     val planned =
                                         uniffi.navi.planCarRoute(
                                             pbf.absolutePath,
@@ -2837,6 +2891,7 @@ private fun NaviMapScreen() {
                                             dataDir.absolutePath,
                                             planPackDirPath,
                                             longTripEnabled = longTripEnabled,
+                                            allowedCountries = allowedCountries,
                                             viaPoints = ffiVias,
                                         )
                                     RoutingPlanLog.progress(
@@ -5720,6 +5775,48 @@ private fun NaviMapScreen() {
                                                 profile == TravelProfile.BICYCLE ||
                                                 profile == TravelProfile.BICYCLE_ELECTRIC,
                                         modifier = Modifier.testTag("toggle_avoid_tunnels"),
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text(StayInCountry.LABEL)
+                                    Switch(
+                                        checked = stayInCountry,
+                                        onCheckedChange = { on ->
+                                            stayInCountry = on
+                                            MapHudPrefs.saveStayInCountry(context, on)
+                                            DiagnosticLog.logToggle("stay_in_country", on)
+                                            DiagnosticLog.logSettingSaved("stay_in_country", on)
+                                        },
+                                        enabled =
+                                            profile == TravelProfile.CAR ||
+                                                profile == TravelProfile.TRUCK ||
+                                                profile == TravelProfile.MOBILE_HOME ||
+                                                profile == TravelProfile.MOTORCYCLE ||
+                                                profile == TravelProfile.CAR_ELECTRIC ||
+                                                profile == TravelProfile.TRUCK_ELECTRIC ||
+                                                profile == TravelProfile.MOTORCYCLE_ELECTRIC,
+                                        modifier = Modifier.testTag("toggle_stay_in_country"),
+                                    )
+                                }
+                                Text(
+                                    StayInCountry.SHORT_DESCRIPTION,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                stayInCountryInfoExpanded = !stayInCountryInfoExpanded
+                                            }.testTag("stay_in_country_short"),
+                                )
+                                if (stayInCountryInfoExpanded) {
+                                    Text(
+                                        StayInCountry.DETAILS,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.testTag("stay_in_country_details"),
                                     )
                                 }
                                 Text(

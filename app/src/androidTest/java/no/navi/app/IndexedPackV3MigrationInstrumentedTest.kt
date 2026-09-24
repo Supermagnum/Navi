@@ -233,6 +233,7 @@ class IndexedPackV3MigrationConvertInstrumentedTest {
                 dataDir = "",
                 packDir = "",
                 longTripEnabled = false,
+                allowedCountries = null,
                 viaPoints = emptyList(),
             )
         assertTrue("summer plan failed:\n${summer.report}", summer.report.contains("PASS"))
@@ -266,6 +267,7 @@ class IndexedPackV3MigrationConvertInstrumentedTest {
                 dataDir = "",
                 packDir = "",
                 longTripEnabled = false,
+                allowedCountries = null,
                 viaPoints = emptyList(),
             )
         // Pack-hit + seasonal filter: closed mountain road is no longer snap/routable.

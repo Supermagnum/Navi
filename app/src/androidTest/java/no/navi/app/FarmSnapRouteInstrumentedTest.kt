@@ -94,6 +94,7 @@ class FarmSnapRouteInstrumentedTest {
                 dataDir = "",
                 packDir = "",
                 longTripEnabled = false,
+                allowedCountries = null,
                 viaPoints = emptyList(),
             )
         android.util.Log.i("FarmSnapRoute", route.report)

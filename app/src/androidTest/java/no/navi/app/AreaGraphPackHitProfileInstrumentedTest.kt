@@ -69,6 +69,7 @@ class AreaGraphPackHitProfileInstrumentedTest {
                     dataDir = dataDir,
                     packDir = "",
                     longTripEnabled = false,
+                    allowedCountries = null,
                     viaPoints = emptyList(),
                 )
             val wallMs = (System.nanoTime() - t0) / 1_000_000L

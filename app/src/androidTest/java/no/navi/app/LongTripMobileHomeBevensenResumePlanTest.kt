@@ -302,6 +302,7 @@ class LongTripMobileHomeBevensenResumePlanTest {
                     dataDir = dataDir.absolutePath,
                     packDir = packDir.absolutePath,
                     longTripEnabled = true,
+                    allowedCountries = null,
                     viaPoints = emptyList(),
                 )
             report.put("plan_elapsed_ms", System.currentTimeMillis() - tPlan)

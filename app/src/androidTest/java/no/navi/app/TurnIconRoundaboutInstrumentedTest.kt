@@ -179,6 +179,7 @@ class TurnIconRoundaboutInstrumentedTest {
                     dataDir = "",
                     packDir = "",
                     longTripEnabled = false,
+                    allowedCountries = null,
                     viaPoints = emptyList(),
                 )
             assertTrue("leg PASS: ${leg.report.take(200)}", leg.report.contains("PASS"))

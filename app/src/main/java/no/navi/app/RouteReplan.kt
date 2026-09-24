@@ -67,6 +67,7 @@ object RouteReplan {
         preferOfficialNetworks: Boolean,
         preferPilgrimRoutes: Boolean,
         longTripEnabled: Boolean = false,
+        stayInCountry: Boolean = false,
         packDir: String = "",
         onProgress: (pct: Int, detail: String) -> Unit = { _, _ -> },
     ): CorridorRouteResult =
@@ -114,6 +115,14 @@ object RouteReplan {
             val end = waypoints.last()
             val vias =
                 waypoints.drop(1).dropLast(1).map { uniffi.navi.FfiLatLon(it.lat, it.lon) }
+            val allowedCountries =
+                if (stayInCountry) {
+                    val iso =
+                        runCatching { uniffi.navi.countryIsoAt(start.lat, start.lon) }.getOrNull()
+                    StayInCountry.allowedCountriesForPlan(true, iso)
+                } else {
+                    null
+                }
             val result =
                 planCarRoute(
                     pbfPath = pbf.absolutePath,
@@ -139,6 +148,7 @@ object RouteReplan {
                     dataDir = dataDir.absolutePath,
                     packDir = packDir,
                     longTripEnabled = longTripEnabled,
+                    allowedCountries = allowedCountries,
                     viaPoints = vias,
                 )
             onProgress(100, "done")

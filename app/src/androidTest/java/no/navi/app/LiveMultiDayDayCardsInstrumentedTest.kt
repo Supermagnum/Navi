@@ -160,6 +160,7 @@ class LiveMultiDayDayCardsInstrumentedTest {
                     dataDir = "",
                     packDir = "",
                     longTripEnabled = false,
+                    allowedCountries = null,
                     viaPoints = emptyList(),
                 )
             planElapsedMs = System.currentTimeMillis() - t0

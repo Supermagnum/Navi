@@ -695,6 +695,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_convert_progress_snapshot(
     ): Int
+    external fun uniffi_navi_checksum_func_country_iso_at(
+    ): Int
     external fun uniffi_navi_checksum_func_current_speed_kmh(
     ): Int
     external fun uniffi_navi_checksum_func_current_speed_limit_kmh(
@@ -1109,6 +1111,8 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_func_convert_progress_snapshot(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_country_iso_at(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_current_speed_kmh(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_current_speed_limit_kmh(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`maxM`: Double,uniffi_out_err: UniffiRustCallStatus, 
@@ -1285,9 +1289,9 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_has_entries(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-    external fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`longTripEnabled`: Byte,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`longTripEnabled`: Byte,`allowedCountries`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_navi_fn_func_plan_car_route_at(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`departureLocalIso`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`longTripEnabled`: Byte,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_navi_fn_func_plan_car_route_at(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`departureLocalIso`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`longTripEnabled`: Byte,`allowedCountries`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_plan_hiking_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`waypointsJson`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`preferPilgrimRoutes`: Byte,`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1599,6 +1603,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_convert_progress_snapshot() and 0xFFFF) != 28171) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_country_iso_at() and 0xFFFF) != 819) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_current_speed_kmh() and 0xFFFF) != 56021) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1863,10 +1870,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_place_index_has_entries() and 0xFFFF) != 5969) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 27682) {
+    if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 11367) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_plan_car_route_at() and 0xFFFF) != 8343) {
+    if ((lib.uniffi_navi_checksum_func_plan_car_route_at() and 0xFFFF) != 44788) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_plan_hiking_route() and 0xFFFF) != 25693) {
@@ -4776,6 +4783,38 @@ public object FfiConverterOptionalSequenceDouble: FfiConverterRustBuffer<List<ko
 /**
  * @suppress
  */
+public object FfiConverterOptionalSequenceString: FfiConverterRustBuffer<List<kotlin.String>?> {
+    override fun read(buf: ByteBuffer): List<kotlin.String>? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterSequenceString.read(buf)
+    }
+
+    override fun allocationSize(value: List<kotlin.String>?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterSequenceString.allocationSize(value)
+        }
+    }
+
+    override fun write(value: List<kotlin.String>?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterSequenceString.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceDouble: FfiConverterRustBuffer<List<kotlin.Double>> {
     override fun read(buf: ByteBuffer): List<kotlin.Double> {
         val len = buf.getInt()
@@ -5163,6 +5202,24 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     UniffiLib.uniffi_navi_fn_func_convert_progress_snapshot(
     
         _status)
+}
+    )
+    }
+    
+
+        /**
+         * Offline ISO-3166-1 alpha-2 for a WGS84 point (Natural Earth Admin-0).
+         *
+         * Safe to call from a background thread. Avoid the Android main looper —
+         * cold-loading polygons can ANR.
+         */ fun `countryIsoAt`(`lat`: kotlin.Double, `lon`: kotlin.Double): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_country_iso_at(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),_status)
 }
     )
     }
@@ -6490,7 +6547,11 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
          * [`LONG_TRIP_CHUNK_DEG`]. Ordinary UI plans must pass `false` so mid-length
          * single-region trips (e.g. Hamar→Dombås) stay on one A* graph; long-trip mode
          * passes `true` so multi-country corridors still chunk.
-         */ fun `planCarRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean, `profile`: TravelProfile, `avoidMotorways`: kotlin.Boolean, `tollPolicy`: FfiTollPolicy, `avoidFerries`: kotlin.Boolean, `avoidTunnels`: kotlin.Boolean, `vehicle`: FfiVehicleLimits, `preferOfficialNetworks`: kotlin.Boolean, `dataDir`: kotlin.String, `packDir`: kotlin.String, `longTripEnabled`: kotlin.Boolean, `viaPoints`: List<FfiLatLon>): CorridorRouteResult {
+         *
+         * `allowed_countries`: when `Some` (non-empty), hard-filters the graph to those
+         * ISO-3166-1 alpha-2 codes ([`RouteOptions::allowed_countries`]). Host "Stay in
+         * Country" passes `Some([start_country])`; `None` keeps cross-border routing.
+         */ fun `planCarRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean, `profile`: TravelProfile, `avoidMotorways`: kotlin.Boolean, `tollPolicy`: FfiTollPolicy, `avoidFerries`: kotlin.Boolean, `avoidTunnels`: kotlin.Boolean, `vehicle`: FfiVehicleLimits, `preferOfficialNetworks`: kotlin.Boolean, `dataDir`: kotlin.String, `packDir`: kotlin.String, `longTripEnabled`: kotlin.Boolean, `allowedCountries`: List<kotlin.String>?, `viaPoints`: List<FfiLatLon>): CorridorRouteResult {
             return FfiConverterTypeCorridorRouteResult.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_navi_fn_func_plan_car_route(
@@ -6514,6 +6575,7 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterString.lower(`dataDir`),
         FfiConverterString.lower(`packDir`),
         FfiConverterBoolean.lower(`longTripEnabled`),
+        FfiConverterOptionalSequenceString.lower(`allowedCountries`),
         FfiConverterSequenceTypeFfiLatLon.lower(`viaPoints`),_status)
 }
     )
@@ -6528,7 +6590,7 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
          *
          * `via_points` are ordered intermediate stops (max [`MAX_ROUTE_VIA_POINTS`]).
          * More than four returns a clear FAIL result (no panic, no silent truncate).
-         */ fun `planCarRouteAt`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean, `profile`: TravelProfile, `avoidMotorways`: kotlin.Boolean, `tollPolicy`: FfiTollPolicy, `avoidFerries`: kotlin.Boolean, `avoidTunnels`: kotlin.Boolean, `vehicle`: FfiVehicleLimits, `preferOfficialNetworks`: kotlin.Boolean, `departureLocalIso`: kotlin.String?, `dataDir`: kotlin.String, `packDir`: kotlin.String, `longTripEnabled`: kotlin.Boolean, `viaPoints`: List<FfiLatLon>): CorridorRouteResult {
+         */ fun `planCarRouteAt`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `startLat`: kotlin.Double, `startLon`: kotlin.Double, `endLat`: kotlin.Double, `endLon`: kotlin.Double, `useEco`: kotlin.Boolean, `profile`: TravelProfile, `avoidMotorways`: kotlin.Boolean, `tollPolicy`: FfiTollPolicy, `avoidFerries`: kotlin.Boolean, `avoidTunnels`: kotlin.Boolean, `vehicle`: FfiVehicleLimits, `preferOfficialNetworks`: kotlin.Boolean, `departureLocalIso`: kotlin.String?, `dataDir`: kotlin.String, `packDir`: kotlin.String, `longTripEnabled`: kotlin.Boolean, `allowedCountries`: List<kotlin.String>?, `viaPoints`: List<FfiLatLon>): CorridorRouteResult {
             return FfiConverterTypeCorridorRouteResult.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_navi_fn_func_plan_car_route_at(
@@ -6553,6 +6615,7 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterString.lower(`dataDir`),
         FfiConverterString.lower(`packDir`),
         FfiConverterBoolean.lower(`longTripEnabled`),
+        FfiConverterOptionalSequenceString.lower(`allowedCountries`),
         FfiConverterSequenceTypeFfiLatLon.lower(`viaPoints`),_status)
 }
     )

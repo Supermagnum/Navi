@@ -92,6 +92,7 @@ class TruckMaxheightAvoidanceInstrumentedTest {
                     "",
                     "",
                     longTripEnabled = false,
+                    allowedCountries = null,
                     viaPoints = emptyList(),
                 )
             android.util.Log.i(

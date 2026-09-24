@@ -59,6 +59,7 @@ class LongTripChunkGateInstrumentedTest {
             dataDir = dataDir.absolutePath,
             packDir = "",
             longTripEnabled = false,
+            allowedCountries = null,
             viaPoints = emptyList(),
         )
 

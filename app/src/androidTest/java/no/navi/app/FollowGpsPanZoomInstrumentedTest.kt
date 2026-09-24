@@ -278,6 +278,7 @@ class FollowGpsPanZoomInstrumentedTest {
             dataDir = "",
             packDir = "",
             longTripEnabled = false,
+            allowedCountries = null,
             viaPoints = emptyList(),
         )
     }

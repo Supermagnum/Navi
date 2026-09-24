@@ -2066,6 +2066,10 @@ fn plan_pack_dirs(
 /// [`LONG_TRIP_CHUNK_DEG`]. Ordinary UI plans must pass `false` so mid-length
 /// single-region trips (e.g. Hamar→Dombås) stay on one A* graph; long-trip mode
 /// passes `true` so multi-country corridors still chunk.
+///
+/// `allowed_countries`: when `Some` (non-empty), hard-filters the graph to those
+/// ISO-3166-1 alpha-2 codes ([`RouteOptions::allowed_countries`]). Host "Stay in
+/// Country" passes `Some([start_country])`; `None` keeps cross-border routing.
 #[uniffi::export]
 pub fn plan_car_route(
     pbf_path: String,
@@ -2086,6 +2090,7 @@ pub fn plan_car_route(
     data_dir: String,
     pack_dir: String,
     long_trip_enabled: bool,
+    allowed_countries: Option<Vec<String>>,
     via_points: Vec<FfiLatLon>,
 ) -> CorridorRouteResult {
     plan_car_route_at(
@@ -2108,6 +2113,7 @@ pub fn plan_car_route(
         data_dir,
         pack_dir,
         long_trip_enabled,
+        allowed_countries,
         via_points,
     )
 }
@@ -2140,6 +2146,7 @@ pub fn plan_car_route_at(
     data_dir: String,
     pack_dir: String,
     long_trip_enabled: bool,
+    allowed_countries: Option<Vec<String>>,
     via_points: Vec<FfiLatLon>,
 ) -> CorridorRouteResult {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -2167,6 +2174,7 @@ pub fn plan_car_route_at(
             pack_dir,
             via_points,
             long_trip_enabled,
+            allowed_countries,
             /* is_chunk_leg */ false,
             /* relax_start_snap */ false,
             /* relax_end_snap */ false,
@@ -2206,6 +2214,7 @@ fn plan_car_route_chunked_legs(
     data_dir: String,
     pack_dir: String,
     hops: &[(f64, f64)],
+    allowed_countries: Option<Vec<String>>,
 ) -> CorridorRouteResult {
     let mut report = String::from("TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\n");
     report.push_str(&format!(
@@ -2270,6 +2279,7 @@ fn plan_car_route_chunked_legs(
             pack_dir.clone(),
             Vec::new(),
             /* long_trip_enabled */ false,
+            allowed_countries.clone(),
             /* is_chunk_leg */ true,
             relax_start,
             relax_end,
@@ -2661,6 +2671,62 @@ fn toll_policy_diag(policy: FfiTollPolicy) -> String {
         .into()
 }
 
+fn normalize_allowed_countries(raw: Option<Vec<String>>) -> Option<Vec<String>> {
+    let list = raw?;
+    let mut out: Vec<String> = list
+        .into_iter()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| s.len() == 2 && s.chars().all(|c| c.is_ascii_alphabetic()))
+        .collect();
+    out.sort();
+    out.dedup();
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+fn stay_in_country_label(allowed: Option<&[String]>) -> String {
+    let Some(list) = allowed.filter(|c| !c.is_empty()) else {
+        return "the starting country".into();
+    };
+    list.iter()
+        .map(|iso| country_iso_display_name(iso))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn country_iso_display_name(iso: &str) -> String {
+    match iso.trim().to_ascii_lowercase().as_str() {
+        "no" => "Norway".into(),
+        "se" => "Sweden".into(),
+        "dk" => "Denmark".into(),
+        "fi" => "Finland".into(),
+        "de" => "Germany".into(),
+        "nl" => "Netherlands".into(),
+        "be" => "Belgium".into(),
+        "at" => "Austria".into(),
+        "pl" => "Poland".into(),
+        "fr" => "France".into(),
+        "gb" => "United Kingdom".into(),
+        "us" => "United States".into(),
+        "cz" => "Czechia".into(),
+        other if !other.is_empty() => other.to_ascii_uppercase(),
+        _ => "the starting country".into(),
+    }
+}
+
+/// Offline ISO-3166-1 alpha-2 for a WGS84 point (Natural Earth Admin-0).
+///
+/// Safe to call from a background thread. Avoid the Android main looper —
+/// cold-loading polygons can ANR.
+#[uniffi::export]
+pub fn country_iso_at(lat: f64, lon: f64) -> Option<String> {
+    driver_break_core::routing::elevation::country_iso_at(lat, lon).map(str::to_owned)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn plan_car_route_inner(
     pbf_path: String,
     elev_dir: String,
@@ -2682,6 +2748,7 @@ fn plan_car_route_inner(
     pack_dir: String,
     via_points: Vec<FfiLatLon>,
     long_trip_enabled: bool,
+    allowed_countries: Option<Vec<String>>,
     is_chunk_leg: bool,
     relax_start_snap: bool,
     relax_end_snap: bool,
@@ -2774,6 +2841,7 @@ fn plan_car_route_inner(
                 data_dir,
                 pack_dir,
                 &hops,
+                allowed_countries,
             );
         }
     }
@@ -2802,6 +2870,7 @@ fn plan_car_route_inner(
         .filter(|c| c.impact == driver_break_core::datex::DatexImpact::Penalize)
         .count();
 
+    let allowed_countries_norm = normalize_allowed_countries(allowed_countries);
     let route_opts = RouteOptions {
         avoid_motorways,
         toll_policy,
@@ -2810,7 +2879,7 @@ fn plan_car_route_inner(
         vehicle: vehicle_limits.clone(),
         departure_local,
         datex_impacts,
-        allowed_countries: None,
+        allowed_countries: allowed_countries_norm.clone(),
     };
 
     let mut report = String::new();
@@ -2818,6 +2887,13 @@ fn plan_car_route_inner(
     report.push_str(&format!(
         "profile={profile:?}; routing={routing_profile:?}; start={start_lat:.6},{start_lon:.6}; end={end_lat:.6},{end_lon:.6}; vias={}; use_eco={use_eco}; long_trip_enabled={long_trip_enabled}\n",
         via_points.len()
+    ));
+    report.push_str(&format!(
+        "allowed_countries={}\n",
+        match &allowed_countries_norm {
+            Some(c) if !c.is_empty() => c.join(","),
+            _ => "none".to_string(),
+        }
     ));
     report.push_str(&format!(
         "avoid_motorways={avoid_motorways}; toll_policy={}; avoid_ferries={avoid_ferries}; avoid_tunnels={avoid_tunnels}; vehicle_limits={}\n",
@@ -3328,9 +3404,16 @@ fn plan_car_route_inner(
         if driver_break_core::download::plan_cancel::is_cancelled() {
             return plan_cancelled_result(report, &timer, &[("profile_map_ms", profile_map_ms)]);
         }
-        report.push_str(&format!(
-            "FAIL: no route between snapped nodes; terminate={last_terminate}; expansions={last_expansions}; pads={pad_attempts:?}\n"
-        ));
+        if last_terminate == "outside_countries" {
+            let label = stay_in_country_label(allowed_countries_norm.as_deref());
+            report.push_str(&format!(
+                "FAIL: No route found that stays within {label} with Stay in Country on. Try turning it off, or add a via point.\n"
+            ));
+        } else {
+            report.push_str(&format!(
+                "FAIL: no route between snapped nodes; terminate={last_terminate}; expansions={last_expansions}; pads={pad_attempts:?}\n"
+            ));
+        }
         let mut r = empty(report);
         r.toll_policy = toll_policy.as_diag_str().into();
         r.pad_attempts_json = serde_json::to_string(&pad_attempts).unwrap_or_else(|_| "[]".into());

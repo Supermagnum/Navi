@@ -35,6 +35,7 @@ object MapHudPrefs {
     private const val KEY_DATEX_WIFI_ONLY = "datex_wifi_only"
     private const val KEY_LONG_TRIP_ENABLED = "long_trip_enabled"
     private const val KEY_LONG_TRIP_PACK_VOLUME_ID = "long_trip_pack_volume_id"
+    private const val KEY_STAY_IN_COUNTRY = "stay_in_country"
     private const val KEY_ORS_API_KEY = "ors_api_key"
     private const val KEY_ORS_BASE_URL = "ors_base_url"
     private const val KEY_POI_LOOKAHEAD_ENABLED = "poi_lookahead_enabled"
@@ -549,6 +550,25 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_LONG_TRIP_ENABLED, enabled)
+            .apply()
+    }
+
+    /** Stay in Country route option — default OFF. */
+    const val STAY_IN_COUNTRY_DEFAULT = false
+
+    fun loadStayInCountry(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_STAY_IN_COUNTRY, STAY_IN_COUNTRY_DEFAULT)
+
+    fun saveStayInCountry(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_STAY_IN_COUNTRY, enabled)
             .apply()
     }
 

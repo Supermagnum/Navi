@@ -288,6 +288,7 @@ class LongTripMobileHomeAvdInstrumentedTest {
                         dataDir = packDir.absolutePath,
                         packDir = packDir.absolutePath,
                         longTripEnabled = true,
+                        allowedCountries = null,
                         viaPoints =
                             listOf(
                                 FfiLatLon(lat = LILLEHAMMER_LAT, lon = LILLEHAMMER_LON),

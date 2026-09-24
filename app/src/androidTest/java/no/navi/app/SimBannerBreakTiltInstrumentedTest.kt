@@ -108,6 +108,7 @@ class SimBannerBreakTiltInstrumentedTest {
                         dataDir = "",
                         packDir = "",
                         longTripEnabled = false,
+                        allowedCountries = null,
                         viaPoints = emptyList(),
                     )
                 assertTrue(

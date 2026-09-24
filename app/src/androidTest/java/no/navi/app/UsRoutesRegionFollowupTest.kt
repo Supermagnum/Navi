@@ -213,6 +213,7 @@ class UsRoutesRegionFollowupTest {
                     dataDir = "",
                     packDir = "",
                     longTripEnabled = false,
+                    allowedCountries = null,
                     viaPoints = emptyList(),
                 )
             reports.appendLine(leg.report.take(300))

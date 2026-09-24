@@ -284,6 +284,7 @@ class LongTripMobileHomeBevensenLiveTest {
                     dataDir = dataDir.absolutePath,
                     packDir = packDir.absolutePath,
                     longTripEnabled = true,
+                    allowedCountries = null,
                     viaPoints = emptyList(),
                 )
             val elapsed = System.currentTimeMillis() - planStart
