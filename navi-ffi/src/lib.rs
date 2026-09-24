@@ -3073,6 +3073,19 @@ fn plan_car_route_inner(
             } else {
                 default_snap
             };
+            let label = if at_start {
+                "start".to_string()
+            } else if at_end {
+                "destination".to_string()
+            } else {
+                format!("via{i}")
+            };
+            log::info!(
+                target: "NaviPlan",
+                "snap_start stop={label} lat={lat:.5} lon={lon:.5} max_m={snap_max:.0} vehicle={}",
+                route_opts.vehicle.is_some()
+            );
+            let snap_t0 = std::time::Instant::now();
             match built.nearest_routable_with_options_max(
                 lat,
                 lon,
@@ -3080,16 +3093,23 @@ fn plan_car_route_inner(
                 prefer_better_surface,
                 snap_max,
             ) {
-                Ok(v) => snapped.push(v),
+                Ok(v) => {
+                    log::info!(
+                        target: "NaviPlan",
+                        "snap_end stop={label} ok dist_m={:.1} ms={}",
+                        v.1,
+                        snap_t0.elapsed().as_millis()
+                    );
+                    snapped.push(v);
+                }
                 Err(e) => {
+                    log::info!(
+                        target: "NaviPlan",
+                        "snap_end stop={label} fail nearest_m={:.1} ms={}",
+                        e.nearest_m,
+                        snap_t0.elapsed().as_millis()
+                    );
                     last_terminate = "snap_failed";
-                    let label = if at_start {
-                        "start".to_string()
-                    } else if at_end {
-                        "destination".to_string()
-                    } else {
-                        format!("via{i}")
-                    };
                     report.push_str(&format!(
                         "snap_fail_{label} pad={pad:.2}: {}\n",
                         format_snap_too_far(&label, e, built.profile())
@@ -3174,14 +3194,39 @@ fn plan_car_route_inner(
             let mut snap_ok = true;
             for (i, &(lat, lon)) in route_points.iter().enumerate() {
                 let prefer_better_surface = i > 0 && i + 1 < route_points.len();
+                let label = if i == 0 {
+                    "start"
+                } else if i + 1 == route_points.len() {
+                    "destination"
+                } else {
+                    "via"
+                };
+                log::info!(
+                    target: "NaviPlan",
+                    "snap_start stop={label}_toll_fb lat={lat:.5} lon={lon:.5}"
+                );
+                let snap_t0 = std::time::Instant::now();
                 match built.nearest_routable_with_options(
                     lat,
                     lon,
                     &fallback_opts,
                     prefer_better_surface,
                 ) {
-                    Ok(v) => snapped.push(v),
+                    Ok(v) => {
+                        log::info!(
+                            target: "NaviPlan",
+                            "snap_end stop={label}_toll_fb ok dist_m={:.1} ms={}",
+                            v.1,
+                            snap_t0.elapsed().as_millis()
+                        );
+                        snapped.push(v);
+                    }
                     Err(_) => {
+                        log::info!(
+                            target: "NaviPlan",
+                            "snap_end stop={label}_toll_fb fail ms={}",
+                            snap_t0.elapsed().as_millis()
+                        );
                         snap_ok = false;
                         break;
                     }

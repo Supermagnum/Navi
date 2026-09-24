@@ -577,13 +577,23 @@ impl RouteGraph {
                 None => self.in_giant_component(id),
             }
         };
+        // When RouteOptions remove edges (vehicle limits, avoid-*, …), the
+        // filtered Union-Find map keys *are* the allowed-incident set — O(1).
+        // Never fall back to scanning all edges per candidate: that is O(E)
+        // and hangs ~200k-node / ~450k-edge first densify hops under MobileHome.
+        let has_allowed_incident = |id: NodeId| -> bool {
+            match &filtered {
+                Some((filtered_root, _)) => filtered_root.contains_key(&id),
+                None => self.node_has_allowed_incident_unfiltered(id, options),
+            }
+        };
         let mut nearest_any: Option<(&Node, f64)> = None;
         let mut nearest_giant: Option<(&Node, f64)> = None;
         for n in &pool {
             if !in_pad(n) {
                 continue;
             }
-            if !self.node_has_allowed_incident(n.id, options) {
+            if !has_allowed_incident(n.id) {
                 continue;
             }
             let dist = haversine_point_m(lat, lon, n);
@@ -600,7 +610,7 @@ impl RouteGraph {
         // If the pad missed (coastal / sparse), fall back to full scan once.
         if nearest_any.is_none() {
             for n in &pool {
-                if !self.node_has_allowed_incident(n.id, options) {
+                if !has_allowed_incident(n.id) {
                     continue;
                 }
                 let dist = haversine_point_m(lat, lon, n);
@@ -635,7 +645,7 @@ impl RouteGraph {
                     {
                         continue;
                     }
-                    if !self.node_has_allowed_incident(n.id, options) {
+                    if !has_allowed_incident(n.id) {
                         continue;
                     }
                     let dist = haversine_point_m(lat, lon, n);
@@ -668,16 +678,21 @@ impl RouteGraph {
         Ok((best_any.id, nearest_m))
     }
 
-    fn node_has_allowed_incident(&self, id: NodeId, options: &RouteOptions) -> bool {
-        self.adjacency
+    /// Allowed-incident check when `options` do **not** remove edges vs the
+    /// base graph (no vehicle / avoid-* rebuild). O(degree) outgoing, then
+    /// O(1) `incident` for one-way sinks — never O(E).
+    fn node_has_allowed_incident_unfiltered(&self, id: NodeId, options: &RouteOptions) -> bool {
+        if self
+            .adjacency
             .get(&id)
             .into_iter()
             .flatten()
             .any(|&idx| edge_allowed_for_options(&self.edges[idx], options, self.profile))
-            || self
-                .edges
-                .iter()
-                .any(|e| e.target == id && edge_allowed_for_options(e, options, self.profile))
+        {
+            return true;
+        }
+        // Incoming-only sink under unrestricted options: still linked.
+        self.incident.contains(&id)
     }
 
     /// Weak components using only edges allowed under `options`.
@@ -2786,6 +2801,101 @@ mod tests {
             .nearest_routable(60.0, 10.0)
             .expect("island still within budget");
         assert_eq!(id, NodeId(1));
+        assert!(dist < 50.0, "dist_m={dist}");
+    }
+
+    /// Regression: vehicle-filtered snap must not scan all edges per candidate.
+    ///
+    /// Mirrors the MobileHome long-trip hang (Bad Bevensen first densify hop):
+    /// ~10k nodes / ~20k edges inside a 25 km pad, most edges fail maxwidth, so
+    /// the old adjacency-miss → `edges.iter()` path was O(N·E). With filtered
+    /// component roots this stays O(E) once + O(N) lookups.
+    #[test]
+    fn vehicle_filtered_snap_uses_o1_incident_not_full_edge_scan() {
+        const N: i64 = 10_000;
+        let mut nodes = HashMap::new();
+        let mut edges = Vec::with_capacity((N as usize) * 2 + 4);
+        // Dense cluster well inside CHUNK_INTERMEDIATE_SNAP_M (25 km / pad≈0.25°).
+        for i in 0..N {
+            let row = (i / 100) as f64;
+            let col = (i % 100) as f64;
+            let lat = 60.0 + row * 0.001;
+            let lon = 10.0 + col * 0.001;
+            let (nid, n) = test_node(i, lat, lon);
+            nodes.insert(nid, n);
+            if i + 1 < N {
+                let mut e = test_edge(i, i + 1, lat, lon, lat, lon + 0.001);
+                e.maxwidth_m = Some(2.0); // fails MobileHome width 2.297
+                edges.push(e);
+                let mut e_back = test_edge(i + 1, i, lat, lon + 0.001, lat, lon);
+                e_back.maxwidth_m = Some(2.0);
+                edges.push(e_back);
+            }
+        }
+        // Wide spine next to the query — only legal network under vehicle limits.
+        for (a, b, lat, lon0, lon1) in [
+            (N, N + 1, 60.0, 10.0, 10.002),
+            (N + 1, N + 2, 60.0, 10.002, 10.004),
+        ] {
+            let (na, na_n) = test_node(a, lat, lon0);
+            let (nb, nb_n) = test_node(b, lat, lon1);
+            nodes.insert(na, na_n);
+            nodes.insert(nb, nb_n);
+            let mut fwd = test_edge(a, b, lat, lon0, lat, lon1);
+            fwd.maxwidth_m = Some(3.0);
+            fwd.highway = Some("primary".into());
+            edges.push(fwd);
+            let mut back = test_edge(b, a, lat, lon1, lat, lon0);
+            back.maxwidth_m = Some(3.0);
+            back.highway = Some("primary".into());
+            edges.push(back);
+        }
+        let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Truck);
+        let opts = RouteOptions {
+            vehicle: Some(crate::config::VehicleLimits {
+                width_m: Some(2.297),
+                length_m: Some(5.304),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let t0 = std::time::Instant::now();
+        let (id, dist) = graph
+            .nearest_routable_with_options_max(60.0, 10.0, &opts, false, 25_000.0)
+            .expect("wide spine within 25 km snap");
+        let ms = t0.elapsed().as_millis();
+        assert!(
+            ms < 1_500,
+            "vehicle-filtered snap took {ms} ms — likely reintroduced O(E) per-node scan"
+        );
+        assert!(
+            id.0 >= N,
+            "must snap onto wide spine (id>={N}), got {id:?} dist_m={dist}"
+        );
+        assert!(dist < 500.0, "dist_m={dist}");
+    }
+
+    /// Unfiltered (no vehicle) snap still succeeds on the same graph quickly.
+    #[test]
+    fn unfiltered_snap_unaffected_on_large_synthetic_graph() {
+        const N: i64 = 2_000;
+        let mut nodes = HashMap::new();
+        let mut edges = Vec::new();
+        for i in 0..N {
+            let lat = 60.0 + (i as f64) * 0.0001;
+            let (nid, n) = test_node(i, lat, 10.0);
+            nodes.insert(nid, n);
+            if i + 1 < N {
+                edges.push(test_edge(i, i + 1, lat, 10.0, lat + 0.0001, 10.0));
+                edges.push(test_edge(i + 1, i, lat + 0.0001, 10.0, lat, 10.0));
+            }
+        }
+        let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        let t0 = std::time::Instant::now();
+        let (id, dist) = graph.nearest_routable(60.0, 10.0).expect("unfiltered snap");
+        let ms = t0.elapsed().as_millis();
+        assert!(ms < 500, "unfiltered snap took {ms} ms");
+        assert_eq!(id, NodeId(0));
         assert!(dist < 50.0, "dist_m={dist}");
     }
 
