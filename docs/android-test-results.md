@@ -521,3 +521,20 @@ Implementation: `core/src/download/pbf_priority.rs`, `progress.rs` channels,
 `load_or_build_reweighted_bbox` skip + serialize, Kotlin
 `foregroundPlanEnter`/`Leave` + `skipLiveGraphWorkDuringForegroundPlan`.
 Canonical product copy: README [Indexing](../README.md#indexing-background-after-download).
+
+## Item 17 — Bad Bevensen → Norway MobileHome campaign (AVD, 2026-09-24)
+
+Full campaign write-up (setup, ordered bug fixes, corrected retest numbers,
+known gaps): [`bevensen-mobilehome-campaign.md`](bevensen-mobilehome-campaign.md).
+
+| Claim | Result |
+|---|---|
+| Corrected plan at 6 h/day soft budget | **PASS** — 1648.6 km, ~21.78 h, 4 days (454.2 km × 3 + 286.1 km / 3.78 h) |
+| Legs | **13/13 PASS** (leg 13 trip-AABB fallback expected) |
+| Height / weight wired | **2.477 m** / **3020.4 kg** / **1661.2 kg** rear axle |
+| Break POIs | **16** (13 soft + 3 overnight) |
+| Fuel-stop planning | **gap** — `FuelConfig` learning/HUD only |
+
+Branch: **`dev`** only as of 2026-09-24 (not merged to **`main`**).
+Instrumented: `LongTripMobileHomeBevensenResumePlanTest` (corrected);
+`LongTripMobileHomeBevensenLiveTest` (earlier live path).
