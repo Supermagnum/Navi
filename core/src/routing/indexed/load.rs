@@ -460,6 +460,45 @@ fn select_tiles_within_budget(
             }
         }
     }
+    // Soft disk-byte budget: drop largest non-essential tiles while endpoints stay
+    // covered. Prevents six ~70–130 MB car tiles (~1.1M edges) on densify hops.
+    let max_bytes = crate::routing::plan_bbox::MAX_PLAN_TILE_BYTES;
+    let total_bytes = |files: &[(String, [f64; 4])]| -> u64 {
+        files
+            .iter()
+            .map(|(n, _)| file_len(n))
+            .fold(0u64, u64::saturating_add)
+    };
+    let covers = |files: &[(String, [f64; 4])], lat: f64, lon: f64| -> bool {
+        files
+            .iter()
+            .any(|(_, b)| crate::routing::basemap::bbox_covers_point(*b, lat, lon))
+    };
+    while total_bytes(&selected) > max_bytes && selected.len() > 2 {
+        let mut dropped = false;
+        let order: Vec<usize> = {
+            let mut idx: Vec<usize> = (0..selected.len()).collect();
+            idx.sort_by(|&i, &j| file_len(&selected[j].0).cmp(&file_len(&selected[i].0)));
+            idx
+        };
+        for i in order {
+            let name = selected[i].0.clone();
+            let without: Vec<_> = selected
+                .iter()
+                .filter(|(n, _)| n != &name)
+                .cloned()
+                .collect();
+            if pts.iter().all(|&(lat, lon)| covers(&without, lat, lon)) {
+                selected = without;
+                selected_names.remove(&name);
+                dropped = true;
+                break;
+            }
+        }
+        if !dropped {
+            break;
+        }
+    }
     let mut files: Vec<String> = selected.into_iter().map(|(f, _)| f).collect();
     files.sort();
     files
@@ -516,6 +555,20 @@ pub fn load_graph_pack_bbox(
     profile: RoutingProfile,
     bbox: Option<[f64; 4]>,
 ) -> Result<RouteGraph, PackLoadError> {
+    match bbox {
+        Some(b) => load_graph_pack_clips(path, profile, Some(std::slice::from_ref(&b))),
+        None => load_graph_pack_clips(path, profile, None),
+    }
+}
+
+/// Like [`load_graph_pack_bbox`], keeping edges that touch **any** clip box
+/// (corridor band). Prefer this for densify hops so diagonal AABBs do not
+/// materialize ~1M edges on 4 GB Automotive.
+pub fn load_graph_pack_clips(
+    path: &Path,
+    profile: RoutingProfile,
+    clips: Option<&[[f64; 4]]>,
+) -> Result<RouteGraph, PackLoadError> {
     let mmap = map_file(path)?;
     check_preamble(&mmap, MAGIC_GRAPH, GRAPH_FORMAT_VERSION)?;
     let body = &mmap[archive_payload_offset()..];
@@ -528,13 +581,13 @@ pub fn load_graph_pack_bbox(
     let file = path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
     crate::download::progress::set(0, Some(1), &format!("Building graph {file}…"));
     let t0 = std::time::Instant::now();
-    let g = archived.to_route_graph_bbox(profile, bbox);
+    let g = archived.to_route_graph_clips(profile, clips);
     log::info!(
         target: "NaviPlan",
-        "load_graph_pack_bbox file={file} edges={} nodes={} bbox={} elapsed_ms={}",
+        "load_graph_pack_bbox file={file} edges={} nodes={} clips={} elapsed_ms={}",
         g.edges.len(),
         g.nodes.len(),
-        bbox.is_some(),
+        clips.map(|c| c.len()).unwrap_or(0),
         t0.elapsed().as_millis()
     );
     Ok(g)
@@ -672,15 +725,30 @@ fn try_load_graph_for_plan_corridor_dirs(
         ))
     });
     let segs_ref = corridor_segs.as_deref();
-    // Modest keep-pad so legal detours near the corridor stay; keep tight for
-    // 4 GB peak RSS (wide pads materialize too many edges per tile).
-    let edge_clip = corridor_segs
+    // Edge materialization: corridor **band** of small boxes along the OD
+    // (not expand(union(segs)) — that fat AABB pulled ~1.1M edges / ~3 GiB RSS
+    // on the Bevensen→SH first densify hop). Fall back to clip_bbox when no
+    // polyline is available.
+    let edge_clips_owned: Option<Vec<[f64; 4]>> = route_points
+        .filter(|pts| pts.len() >= 2)
+        .map(|pts| {
+            crate::routing::plan_bbox::corridor_band_bboxes(
+                pts,
+                crate::routing::plan_bbox::CORRIDOR_EDGE_HALF_WIDTH_DEG,
+                crate::routing::plan_bbox::CORRIDOR_BAND_STEP_DEG,
+            )
+        })
+        .filter(|b| !b.is_empty())
+        .or_else(|| clip_bbox.map(|b| vec![b]));
+    let edge_clips = edge_clips_owned.as_deref();
+    // Coarse stem-spill gate still uses a modest expanded corridor AABB.
+    let stem_clip = corridor_segs
         .as_ref()
         .and_then(|segs| union_bboxes(segs))
-        .map(|b| expand_bbox_deg(b, 0.15))
+        .map(|b| expand_bbox_deg(b, 0.05))
         .or(clip_bbox);
 
-    let need_extra = corridor_needs_extra_stems(&stem, clip_bbox.or(edge_clip));
+    let need_extra = corridor_needs_extra_stems(&stem, stem_clip.or(clip_bbox));
     let mut extras = if need_extra {
         if let Some(segs) = segs_ref {
             extra_corridor_manifests_segs(dirs, &stem, segs)
@@ -865,6 +933,21 @@ fn try_load_graph_for_plan_corridor_dirs(
                             // Neighbour stems near a densify endpoint (Halland
                             // north of Skåne, Denmark east of SH) must stay even
                             // when the primary stem already filled the tile budget.
+                            let mut all_bbox: HashMap<String, [f64; 4]> = tile_bbox
+                                .iter()
+                                .map(|(k, v)| ((*k).to_string(), *v))
+                                .collect();
+                            for extra in &extras {
+                                if let Some(tiles) = extra.graph_tiles_for(profile) {
+                                    for t in tiles {
+                                        all_bbox.insert(t.file.clone(), t.bbox);
+                                    }
+                                }
+                            }
+                            let mut near_cands: Vec<(String, [f64; 4])> = tile_files
+                                .iter()
+                                .filter_map(|f| all_bbox.get(f).map(|b| (f.clone(), *b)))
+                                .collect();
                             for extra in &extras {
                                 if let Some(tiles) = extra.graph_tiles_for(profile) {
                                     for t in tiles {
@@ -886,12 +969,19 @@ fn try_load_graph_for_plan_corridor_dirs(
                                             dlat.max(dlon) <= 0.30
                                         });
                                         if near_end && seen.insert(t.file.clone()) {
-                                            tile_files.push(t.file.clone());
+                                            near_cands.push((t.file.clone(), t.bbox));
                                         }
                                     }
                                 }
                             }
-                            tile_files.sort();
+                            // Re-apply count + byte budget so near_end cannot
+                            // unbounded-grow past MAX_PLAN_TILES / MAX_PLAN_TILE_BYTES.
+                            tile_files = select_tiles_within_budget(
+                                near_cands,
+                                route_points,
+                                crate::routing::plan_bbox::MAX_PLAN_TILES,
+                                dirs,
+                            );
                         }
                     }
                 }
@@ -907,7 +997,7 @@ fn try_load_graph_for_plan_corridor_dirs(
 
     if !tile_files.is_empty() {
         let mut graphs = vec![load_tiled_graph_files(
-            dirs, tile_files, profile, edge_clip,
+            dirs, tile_files, profile, edge_clips,
         )?];
         // City-state packs (e.g. hamburg) are often a single untiled .rkyv.
         // Merge them whether they are the primary stem or an extra — otherwise
@@ -916,7 +1006,7 @@ fn try_load_graph_for_plan_corridor_dirs(
         let primary_tiled = man.graph_tiles_for(profile).is_some_and(|t| !t.is_empty());
         if !primary_tiled {
             if let Some(pp) = graph_path_in_dirs(&man, dirs, profile) {
-                graphs.push(load_graph_pack_bbox(&pp, profile, edge_clip)?);
+                graphs.push(load_graph_pack_clips(&pp, profile, edge_clips)?);
             }
         }
         for extra in &extras {
@@ -927,7 +1017,7 @@ fn try_load_graph_for_plan_corridor_dirs(
                 continue;
             }
             if let Some(ep) = graph_path_in_dirs(extra, dirs, profile) {
-                graphs.push(load_graph_pack_bbox(&ep, profile, edge_clip)?);
+                graphs.push(load_graph_pack_clips(&ep, profile, edge_clips)?);
             }
         }
         if graphs.len() == 1 {
@@ -942,7 +1032,7 @@ fn try_load_graph_for_plan_corridor_dirs(
 
     let mut graphs = Vec::new();
     let path = graph_path_in_dirs(&man, dirs, profile).ok_or(PackLoadError::Missing)?;
-    graphs.push(load_graph_pack_bbox(&path, profile, edge_clip)?);
+    graphs.push(load_graph_pack_clips(&path, profile, edge_clips)?);
     if !extras.is_empty() {
         let mut extra_candidates = Vec::new();
         let mut extra_seen = HashSet::new();
@@ -956,7 +1046,7 @@ fn try_load_graph_for_plan_corridor_dirs(
                     segs_ref,
                 );
             } else if let Some(ep) = graph_path_in_dirs(extra, dirs, profile) {
-                graphs.push(load_graph_pack_bbox(&ep, profile, edge_clip)?);
+                graphs.push(load_graph_pack_clips(&ep, profile, edge_clips)?);
             }
         }
         let extra_files = select_tiles_within_budget(
@@ -970,7 +1060,7 @@ fn try_load_graph_for_plan_corridor_dirs(
                 dirs,
                 extra_files,
                 profile,
-                edge_clip,
+                edge_clips,
             )?);
         }
     }
@@ -1105,7 +1195,7 @@ fn load_tiled_graph_files(
     dirs: &[&Path],
     mut tile_files: Vec<String>,
     profile: RoutingProfile,
-    bbox: Option<[f64; 4]>,
+    clips: Option<&[[f64; 4]]>,
 ) -> Result<RouteGraph, PackLoadError> {
     if tile_files.is_empty() {
         return Err(PackLoadError::Missing);
@@ -1128,7 +1218,7 @@ fn load_tiled_graph_files(
             total
         );
         let path = resolve_pack_file(dirs, file).ok_or(PackLoadError::Missing)?;
-        let g = load_graph_pack_bbox(&path, profile, bbox)?;
+        let g = load_graph_pack_clips(&path, profile, clips)?;
         if g.edges.is_empty() && g.nodes.is_empty() {
             continue;
         }
@@ -1502,6 +1592,8 @@ mod multi_stem_corridor_tests {
 #[cfg(test)]
 mod fingerprint_pbf_tests {
     use super::*;
+    use crate::routing::graph::RoutingProfile;
+    use crate::routing::indexed::manifest::{GraphTileEntry, GRAPH_PROFILE_CAR};
     use std::collections::BTreeMap;
 
     fn man_for(pbf_filename: &str) -> NaviManifest {
@@ -1549,5 +1641,26 @@ mod fingerprint_pbf_tests {
         )
         .unwrap_err();
         assert!(matches!(err, PackLoadError::Missing));
+    }
+
+    #[test]
+    fn truck_graph_tiles_fall_back_to_car_when_truck_key_absent() {
+        let mut man = man_for("ostlandet-latest.osm.pbf");
+        man.graph_tiles.insert(
+            GRAPH_PROFILE_CAR.into(),
+            vec![GraphTileEntry {
+                file: "ostlandet-latest.navi-graph-car.t0_0.rkyv".into(),
+                bbox: [60.0, 10.0, 61.0, 11.0],
+            }],
+        );
+        let truck = man
+            .graph_tiles_for(RoutingProfile::Truck)
+            .expect("truck must fall back to car tiles");
+        assert_eq!(truck.len(), 1);
+        assert!(truck[0].file.contains("navi-graph-car"));
+        assert!(
+            man.graph_tiles_for(RoutingProfile::Foot).is_none(),
+            "foot must not fall back to car"
+        );
     }
 }

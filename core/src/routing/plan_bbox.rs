@@ -60,19 +60,53 @@ pub const LONG_TRIP_CHUNK_DEG: f64 = 1.15;
 
 /// Pad (degrees) around each consecutive OD segment when selecting graph tiles
 /// for multi-region corridors. Keeps RAM bounded vs the full trip AABB.
-pub const CORRIDOR_TILE_PAD_DEG: f64 = 0.40;
+///
+/// Kept modest (0.25° ≈ 28 km): densify hops are already ≤ [`LONG_TRIP_CHUNK_DEG`];
+/// a 0.40° pad pulled entire neighbour tiles into the first Bevensen→SH hop and
+/// LMK'd ~3 GiB RSS on 4 GB Automotive before snap.
+pub const CORRIDOR_TILE_PAD_DEG: f64 = 0.30;
+
+/// Chebyshev half-width (degrees) for **edge materialization** along the OD
+/// polyline. Tiles are still selected with [`CORRIDOR_TILE_PAD_DEG`], but only
+/// edges near the chord are kept — a diagonal hop's AABB otherwise materializes
+/// ~1M edges (~1 GiB host / ~3 GiB device) for a ~120 km leg.
+///
+/// 0.40° (~45 km) leaves room for land-bridge detours (e.g. NI↔SH around
+/// Hamburg when the city-state pack is absent) while still excluding the far
+/// corners of the hop's diagonal AABB.
+pub const CORRIDOR_EDGE_HALF_WIDTH_DEG: f64 = 0.40;
+
+/// Extra half-width at densify / hop **endpoints** so region centroids retain
+/// enough clearance-legal network for [`CHUNK_INTERMEDIATE_SNAP_M`] (25 km ≈ 0.25°).
+pub const CORRIDOR_ENDPOINT_HALF_WIDTH_DEG: f64 = 0.40;
+
+/// Sample step (degrees) when building the corridor band of small clip boxes.
+pub const CORRIDOR_BAND_STEP_DEG: f64 = 0.20;
 
 /// Hard cap on graph tiles merged for one plan/leg on Automotive (4 GB).
 /// Large car tiles are 80–150 MB on disk; rkyv materialization peaks higher.
 /// Endpoint-covering tiles are always kept even if this is exceeded slightly.
-/// Six leaves room for a two-stem border hop (e.g. SA↔NI) without dropping the
-/// bridge tile that sits between the endpoint tiles.
+/// Six leaves room for a two-stem border hop once edge clipping is a corridor
+/// band (not a fat diagonal AABB) — count alone no longer dominates RSS.
 pub const MAX_PLAN_TILES: usize = 6;
+
+/// Soft cap on on-disk tile bytes merged for one plan/leg. Prefer dropping the
+/// largest non-essential tiles before exceeding this; endpoints always stay.
+/// With corridor-band edge clip, ~280 MB disk stays well under 2.8 GiB RSS.
+/// Soft cap on on-disk tile bytes merged for one plan/leg. Prefer dropping the
+/// largest non-essential tiles before exceeding this; endpoints always stay.
+/// Ostlandet car tiles are ~100–150 MB; a same-stem short hop needs three of
+/// them so the mid bridge is not dropped under a tighter cap.
+pub const MAX_PLAN_TILE_BYTES: u64 = 550 * 1024 * 1024;
 
 /// Snap budget for densify hop endpoints (region centroids), not user stops.
 /// Centroids can sit several km offshore / inland of the nearest clearance-legal
 /// road (SH→DK water approaches needed ~11–22 km). Same-stem tile fill prevents
 /// the false Skåne→Halland component jump that a large snap used to cause.
+///
+/// This constant affects **snap search only** (pad ≈ max_m/1e5 degrees). It does
+/// **not** widen tile selection or edge materialization — those use
+/// [`CORRIDOR_TILE_PAD_DEG`] / [`CORRIDOR_EDGE_HALF_WIDTH_DEG`].
 pub const CHUNK_INTERMEDIATE_SNAP_M: f64 = 25_000.0;
 
 /// Tighter densify snap when both hop ends lie in the same catalog region.
@@ -455,6 +489,54 @@ pub fn tile_intersects_corridor(tile: [f64; 4], segments: &[[f64; 4]]) -> bool {
         .any(|seg| tile[0] <= seg[2] && tile[2] >= seg[0] && tile[1] <= seg[3] && tile[3] >= seg[1])
 }
 
+/// Build a corridor **band** of small axis-aligned clip boxes along `points`.
+///
+/// Unlike [`corridor_segment_bboxes`] (one fat AABB per hop), this samples the
+/// polyline every `step_deg` and emits a `2 * half_width_deg` square at each
+/// sample. Edge materialization that keeps edges touching **any** box therefore
+/// follows the chord instead of filling the diagonal rectangle — critical for
+/// 4 GB Automotive densify hops.
+///
+/// Endpoints use [`CORRIDOR_ENDPOINT_HALF_WIDTH_DEG`] so densify centroids keep
+/// enough network for the intermediate snap budget.
+pub fn corridor_band_bboxes(
+    points: &[(f64, f64)],
+    half_width_deg: f64,
+    step_deg: f64,
+) -> Vec<[f64; 4]> {
+    if points.is_empty() || half_width_deg <= 0.0 {
+        return Vec::new();
+    }
+    let step = step_deg.max(1e-3);
+    let end_w = CORRIDOR_ENDPOINT_HALF_WIDTH_DEG.max(half_width_deg);
+    let mut out = Vec::new();
+    let push = |out: &mut Vec<[f64; 4]>, lat: f64, lon: f64, w: f64| {
+        out.push([lat - w, lon - w, lat + w, lon + w]);
+    };
+    push(&mut out, points[0].0, points[0].1, end_w);
+    for w in points.windows(2) {
+        let (a_lat, a_lon) = w[0];
+        let (b_lat, b_lon) = w[1];
+        let dlat = b_lat - a_lat;
+        let dlon = b_lon - a_lon;
+        let dist = dlat.abs().max(dlon.abs());
+        let n = ((dist / step).ceil() as usize).max(1);
+        for i in 1..n {
+            let t = i as f64 / n as f64;
+            push(&mut out, a_lat + dlat * t, a_lon + dlon * t, half_width_deg);
+        }
+        push(&mut out, b_lat, b_lon, end_w);
+    }
+    out
+}
+
+/// True when a point lies inside any clip box.
+pub fn point_in_any_bbox(lat: f64, lon: f64, clips: &[[f64; 4]]) -> bool {
+    clips
+        .iter()
+        .any(|b| lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3])
+}
+
 fn points_bounds(points: &[(f64, f64)]) -> (f64, f64, f64, f64) {
     let mut min_lat = f64::INFINITY;
     let mut min_lon = f64::INFINITY;
@@ -524,6 +606,28 @@ mod tests {
         // Tile near the Stendal→Lillehammer chord.
         let mid = [56.5, 10.5, 57.5, 11.5];
         assert!(tile_intersects_corridor(mid, &segs));
+    }
+
+    #[test]
+    fn corridor_band_excludes_diagonal_aabb_corners() {
+        // Bevensen-class NW hop: fat AABB covers NE/SW corners the band must not.
+        let pts = [(53.079686, 10.587198), (54.168273, 9.728913)];
+        let aabb = trip_bbox_points(&pts, CORRIDOR_TILE_PAD_DEG);
+        let band = corridor_band_bboxes(&pts, CORRIDOR_EDGE_HALF_WIDTH_DEG, CORRIDOR_BAND_STEP_DEG);
+        assert!(!band.is_empty());
+        // NE corner of the hop AABB (east of Bevensen, north of start).
+        let ne_lat = aabb[2] - 0.01;
+        let ne_lon = aabb[3] - 0.01;
+        assert!(
+            !point_in_any_bbox(ne_lat, ne_lon, &band),
+            "NE AABB corner ({ne_lat},{ne_lon}) must fall outside corridor band"
+        );
+        // Midpoint on the chord must stay inside.
+        let mid = ((pts[0].0 + pts[1].0) * 0.5, (pts[0].1 + pts[1].1) * 0.5);
+        assert!(
+            point_in_any_bbox(mid.0, mid.1, &band),
+            "chord midpoint must stay inside corridor band"
+        );
     }
 
     #[test]

@@ -275,7 +275,7 @@ impl FlatGraphPack {
     }
 
     pub fn to_route_graph(&self, profile: RoutingProfile) -> RouteGraph {
-        self.to_route_graph_bbox(profile, None)
+        self.to_route_graph_clips(profile, None)
     }
 
     /// Materialize a [`RouteGraph`], optionally keeping only edges that touch `bbox`
@@ -286,16 +286,36 @@ impl FlatGraphPack {
         profile: RoutingProfile,
         bbox: Option<[f64; 4]>,
     ) -> RouteGraph {
+        match bbox {
+            Some(b) => self.to_route_graph_clips(profile, Some(std::slice::from_ref(&b))),
+            None => self.to_route_graph_clips(profile, None),
+        }
+    }
+
+    /// Like [`Self::to_route_graph_bbox`], keeping edges whose endpoints fall in
+    /// **any** clip box (corridor band of small squares along the OD polyline).
+    pub fn to_route_graph_clips(
+        &self,
+        profile: RoutingProfile,
+        clips: Option<&[[f64; 4]]>,
+    ) -> RouteGraph {
         let edge_ok = |i: usize| -> bool {
-            let Some(b) = bbox else {
+            let Some(clips) = clips else {
                 return true;
             };
+            if clips.is_empty() {
+                return true;
+            }
             let slat = self.edge_start_lat[i];
             let slon = self.edge_start_lon[i];
             let elat = self.edge_end_lat[i];
             let elon = self.edge_end_lon[i];
-            (slat >= b[0] && slat <= b[2] && slon >= b[1] && slon <= b[3])
-                || (elat >= b[0] && elat <= b[2] && elon >= b[1] && elon <= b[3])
+            let in_box = |lat: f64, lon: f64, b: &[f64; 4]| {
+                lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]
+            };
+            clips
+                .iter()
+                .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
         };
 
         let mut used_nodes: HashMap<u32, ()> = HashMap::new();
@@ -545,17 +565,37 @@ impl ArchivedFlatGraphPack {
         profile: RoutingProfile,
         bbox: Option<[f64; 4]>,
     ) -> RouteGraph {
+        match bbox {
+            Some(b) => self.to_route_graph_clips(profile, Some(std::slice::from_ref(&b))),
+            None => self.to_route_graph_clips(profile, None),
+        }
+    }
+
+    /// Like [`Self::to_route_graph_bbox`], keeping edges whose endpoints fall in
+    /// **any** clip box (corridor band along the OD).
+    pub fn to_route_graph_clips(
+        &self,
+        profile: RoutingProfile,
+        clips: Option<&[[f64; 4]]>,
+    ) -> RouteGraph {
         let n_edges = self.edge_src.len();
         let edge_ok = |i: usize| -> bool {
-            let Some(b) = bbox else {
+            let Some(clips) = clips else {
                 return true;
             };
+            if clips.is_empty() {
+                return true;
+            }
             let slat = arch_f64(self.edge_start_lat[i]);
             let slon = arch_f64(self.edge_start_lon[i]);
             let elat = arch_f64(self.edge_end_lat[i]);
             let elon = arch_f64(self.edge_end_lon[i]);
-            (slat >= b[0] && slat <= b[2] && slon >= b[1] && slon <= b[3])
-                || (elat >= b[0] && elat <= b[2] && elon >= b[1] && elon <= b[3])
+            let in_box = |lat: f64, lon: f64, b: &[f64; 4]| {
+                lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]
+            };
+            clips
+                .iter()
+                .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
         };
 
         let mut used_nodes: HashMap<u32, ()> = HashMap::new();
