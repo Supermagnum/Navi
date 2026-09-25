@@ -207,8 +207,9 @@ fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
 
 /// Snap `(lat,lon)` to a linked graph node within the profile snap budget.
 ///
-/// Endpoint semantics (`prefer_better_surface: false`): literal nearest routable
-/// node on the filtered giant component. Not for intermediate via surface bias.
+/// Endpoint semantics (`prefer_better_surface: false`): nearest allowed edge on
+/// the filtered giant component, then its closer endpoint. Intermediate OSM way
+/// nodes are kept in the graph so address snaps stay on the nearest way node.
 fn nearest(graph: &RouteGraph, lat: f64, lon: f64) -> Result<(NodeId, f64), SnapTooFar> {
     graph.nearest_routable(lat, lon)
 }

@@ -32,17 +32,21 @@ fn bbox() -> [f64; 4] {
 }
 
 fn assert_no_service_parallel_geometry(graph: &RouteGraph, path_edges: &[usize]) {
-    let coords = graph.path_coords_lat_lon_from_edges(path_edges);
-    assert!(
-        coords.len() <= 4,
-        "secondary chord geometry should be short; service loop has many vertices (got {})",
-        coords.len()
-    );
+    // Keep-all-nodes densifies secondary mid-way vertices; still reject the
+    // long service loop by overlay shape, not by a hard vertex-count cap.
     let poly = graph.path_overlay_polyline_from_edges(path_edges);
     assert!(
         !poly.contains("11.3153482"),
         "service-road shape must not appear in overlay polyline"
     );
+    for &idx in path_edges {
+        let e = &graph.edges[idx];
+        assert!(
+            !e.id.contains(SERVICE_WAY),
+            "path must not record service parallel way {SERVICE_WAY}, got {}",
+            e.id
+        );
+    }
 }
 
 fn build_car_graph(pbf: &std::path::Path) -> RouteGraph {
@@ -64,12 +68,18 @@ fn budorvegen_path_geometry_uses_secondary_not_service_parallel() {
     let graph = build_car_graph(&pbf);
     let opts = RouteOptions::default();
 
-    let start = (60.88416, 11.3125);
-    let end = (60.88360, 11.3155);
+    // Pin snaps to the parallel-junction endpoints. With mid-way OSM nodes kept
+    // and edge-based nearest, off-junction lat/lon near the service loop would
+    // land on that loop; this regression is about A* preferring the secondary
+    // chord between the shared endpoints.
+    let start = (60.8841608, 11.3138178);
+    let end = (60.8836048, 11.3134738);
     let (s, _) = graph
         .nearest_routable(start.0, start.1)
         .expect("snap start");
     let (g, _) = graph.nearest_routable(end.0, end.1).expect("snap end");
+    assert_eq!(s.0, JUNCTION_A, "start must snap to parallel junction A");
+    assert_eq!(g.0, JUNCTION_B, "end must snap to parallel junction B");
 
     let (path, path_edges, cost) = graph
         .shortest_path_with_options(s, g, false, &opts)
@@ -127,12 +137,14 @@ fn budorvegen_indexed_pack_geometry_uses_secondary_not_service_parallel() {
     );
     let opts = RouteOptions::default();
 
-    let start = (60.88416, 11.3125);
-    let end = (60.88360, 11.3155);
+    let start = (60.8841608, 11.3138178);
+    let end = (60.8836048, 11.3134738);
     let (s, _) = graph
         .nearest_routable(start.0, start.1)
         .expect("snap start");
     let (g, _) = graph.nearest_routable(end.0, end.1).expect("snap end");
+    assert_eq!(s.0, JUNCTION_A, "start must snap to parallel junction A");
+    assert_eq!(g.0, JUNCTION_B, "end must snap to parallel junction B");
 
     let (path, path_edges, cost) = graph
         .shortest_path_with_options(s, g, false, &opts)
@@ -155,7 +167,7 @@ fn budorvegen_indexed_pack_geometry_uses_secondary_not_service_parallel() {
             assert_eq!(
                 e.highway.as_deref(),
                 Some("secondary"),
-                "parallel junction must use Budorvegen secondary, got {:?}",
+                "parallel junction must use secondary chord, got {:?}",
                 e.highway
             );
         }
@@ -197,12 +209,14 @@ fn budorvegen_tiled_merge_geometry_uses_secondary_not_service_parallel() {
         parallel.len()
     );
 
-    let start = (60.88416, 11.3125);
-    let end = (60.88360, 11.3155);
+    let start = (60.8841608, 11.3138178);
+    let end = (60.8836048, 11.3134738);
     let (s, _) = graph
         .nearest_routable(start.0, start.1)
         .expect("snap start");
     let (g, _) = graph.nearest_routable(end.0, end.1).expect("snap end");
+    assert_eq!(s.0, JUNCTION_A, "start must snap to parallel junction A");
+    assert_eq!(g.0, JUNCTION_B, "end must snap to parallel junction B");
 
     let (_path, path_edges, cost) = graph
         .shortest_path_with_options(s, g, false, &opts)
