@@ -29,6 +29,7 @@ object RoutingPlanLog {
                 "waypoints=${waypointNames.joinToString("|")}",
         )
         progress(0, ecoEnabled, detail = "queued")
+        NaviManeuverDump.noteProfile(profile)
         DiagnosticLog.logRoutePlanStart(profile, startLat, startLon, endLat, endLon)
     }
 
@@ -62,6 +63,7 @@ object RoutingPlanLog {
         )
         logPois(result.breakPoisJson)
         DiagnosticLog.logRoutePlanComplete(result)
+        NaviManeuverDump.dump(result)
     }
 
     fun failed(
