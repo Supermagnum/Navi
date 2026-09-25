@@ -11,7 +11,7 @@ use osmpbf::{Element, ElementReader};
 use serde::Deserialize;
 
 use crate::nav::{ApproachPhase, APPROACH_APPEAR_M, APPROACH_HIDE_M, APPROACH_URGENCY_M};
-use crate::routing::elevation::country_iso_at;
+use crate::routing::elevation::{country_iso_at, country_polys_ready};
 
 const OSM_TAGS_JSON: &str = include_str!("../icons/road-signs/database/osm_tags.json");
 
@@ -315,6 +315,11 @@ pub fn nearest_road_sign_warning(
     lat: f64,
     lon: f64,
 ) -> Option<RoadSignWarning> {
+    // HUD callers hit this from the main looper; never start Natural Earth here.
+    // Return None while warming — Kotlin re-evaluates the last GPS once ready.
+    if !country_polys_ready() {
+        return None;
+    }
     if resolve_road_sign_jurisdiction_at(lat, lon) != RoadSignJurisdiction::Norway {
         return None;
     }

@@ -911,7 +911,7 @@ private fun NaviMapScreen() {
         }
     roadSignsJsonRef.set(roadSignsJson)
     // GPS applyFix runs on the main looper — never call country_iso_at there.
-    // null = not warmed yet (skip road-sign checks until IO finishes).
+    // null = not warmed yet (defer road-sign checks until CountryPolysWarm finishes).
     val roadSignJurisdictionAllowedRef =
         remember {
             java.util.concurrent.atomic
@@ -1728,6 +1728,38 @@ private fun NaviMapScreen() {
             !MapHudPrefs.loadSpeedCameraPromptShown(context)
         ) {
             showSpeedCameraPrompt = true
+        }
+    }
+    // Hazards/cameras deferred while CountryPolysWarm runs must be evaluated as
+    // soon as the grid is ready — do not silently drop the last in-range warning.
+    LaunchedEffect(Unit) {
+        var wasReady = CountryPolysWarm.isReady()
+        while (true) {
+            if (!wasReady && CountryPolysWarm.isReady()) {
+                val lat = NaviMapTestHooks.lastGpsLat
+                val lon = NaviMapTestHooks.lastGpsLon
+                if (lat != 0.0 || lon != 0.0) {
+                    val loc =
+                        android.location.Location("navi-country-polys-warm").apply {
+                            latitude = lat
+                            longitude = lon
+                            NaviMapTestHooks.gpsBearingDeg?.let { bearing = it.toFloat() }
+                        }
+                    withContext(Dispatchers.Main.immediate) {
+                        // Full applyFix: on-route + live-cone speed cameras,
+                        // road signs, and hazards (all gated on isReady above).
+                        applyFixRef.get().invoke(loc)
+                    }
+                    android.util.Log.i(
+                        "CountryPolysWarm",
+                        "post-warm HUD re-eval (cameras/signs/hazards) lat=$lat lon=$lon",
+                    )
+                }
+                break
+            }
+            wasReady = CountryPolysWarm.isReady()
+            if (wasReady) break
+            delay(100)
         }
     }
     // Single effect for live-hazard layers + speed cameras: at most one PBF camera
@@ -3363,7 +3395,10 @@ private fun NaviMapScreen() {
                         NaviMapTestHooks.lastApproachPhase = ApproachUiPhase.Hidden
                         NaviMapTestHooks.lastApproachIconKey = null
                     }
-                    if (speedCameraOptIn && speedCamerasJson != "[]") {
+                    if (speedCameraOptIn &&
+                        speedCamerasJson != "[]" &&
+                        CountryPolysWarm.isReady()
+                    ) {
                         val warnJson =
                             uniffi.navi.nearestSpeedCameraWarningJson(
                                 speedCamerasJson,
@@ -3525,7 +3560,7 @@ private fun NaviMapScreen() {
                             null
                         }
                     val camJson =
-                        if (speedCameraOptIn) {
+                        if (speedCameraOptIn && CountryPolysWarm.isReady()) {
                             uniffi.navi.liveHazardConeSpeedCameraWarningJson(
                                 loc.latitude,
                                 loc.longitude,
@@ -3539,18 +3574,30 @@ private fun NaviMapScreen() {
                         speedCameraWarningFromJson(camJson).copy(
                             unitSystem = driveHud.unitSystem,
                         )
+                    // Live-hazard jurisdiction uses Natural Earth; defer until
+                    // CountryPolysWarm finishes - otherwise applyFix ANRs on the
+                    // OnceLock while the warm thread builds the grid. A
+                    // LaunchedEffect re-runs applyFix with the last GPS once warm.
                     val signJson =
-                        uniffi.navi.liveHazardConeRoadSignWarningJson(
-                            loc.latitude,
-                            loc.longitude,
-                            headingDeg,
-                        )
+                        if (CountryPolysWarm.isReady()) {
+                            uniffi.navi.liveHazardConeRoadSignWarningJson(
+                                loc.latitude,
+                                loc.longitude,
+                                headingDeg,
+                            )
+                        } else {
+                            "{}"
+                        }
                     val schoolFallbackJson =
-                        uniffi.navi.liveHazardConeChildrenWarningJson(
-                            loc.latitude,
-                            loc.longitude,
-                            headingDeg,
-                        )
+                        if (CountryPolysWarm.isReady()) {
+                            uniffi.navi.liveHazardConeChildrenWarningJson(
+                                loc.latitude,
+                                loc.longitude,
+                                headingDeg,
+                            )
+                        } else {
+                            "{}"
+                        }
                     val signState = roadSignWarningFromJson(signJson)
                     val schoolState = roadSignWarningFromJson(schoolFallbackJson)
                     var finalRoadSignJson =
