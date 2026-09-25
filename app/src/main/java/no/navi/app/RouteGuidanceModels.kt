@@ -28,6 +28,8 @@ data class RouteManeuver(
     val roundaboutExit: Int?,
     /** Explicit Navit icon stem from Rust when present; preferred over [kind] mapping. */
     val icon: String? = null,
+    /** Optional next-maneuver hint when the following step is 30–60 m ahead. */
+    val then: String? = null,
 ) {
     fun iconKey(): String {
         icon?.takeIf { it.isNotBlank() }?.let { return it }
@@ -147,6 +149,12 @@ fun parseRouteManeuvers(json: String): List<RouteManeuver> {
                     } else {
                         o.optString("icon").takeIf { it.isNotBlank() && it != "null" }
                     }
+                val thenRaw =
+                    if (o.isNull("then")) {
+                        null
+                    } else {
+                        o.optString("then").takeIf { it.isNotBlank() && it != "null" }
+                    }
                 add(
                     RouteManeuver(
                         lat = o.getDouble("lat"),
@@ -158,6 +166,7 @@ fun parseRouteManeuvers(json: String): List<RouteManeuver> {
                         postcode = post ?: postRaw,
                         roundaboutExit = exit,
                         icon = iconRaw,
+                        then = thenRaw,
                     ),
                 )
             }

@@ -3,9 +3,9 @@
 use osm4routing::NodeId;
 use serde::Serialize;
 
-use crate::nav::{prefer_street_label, ManeuverKind};
+use crate::nav::{maneuver_street_label, prefer_street_label, same_road_name_ref, ManeuverKind};
 use crate::routing::eta::{edge_speed_kmh, highway_fallback_kmh};
-use crate::routing::graph::RouteGraph;
+use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile};
 
 /// Minimum absolute delta for a turn (Navit `min_turn_limit`).
 const MIN_TURN_DEG: f64 = 25.0;
@@ -17,6 +17,30 @@ const SHARP_TURN_LIMIT_DEG: f64 = 110.0;
 const U_TURN_LIMIT_DEG: f64 = 165.0;
 /// Sample spacing along each edge for speed-limit playback (metres).
 const SAMPLE_STEP_M: f64 = 20.0;
+
+/// OSRM-style representative heading: base lookahead before lane bump.
+const LOOKAHEAD_BASE_M: f64 = 10.0;
+/// Assumed lane width (metres) for lookahead bump (`ASSUMED_LANE_WIDTH`).
+const ASSUMED_LANE_WIDTH_M: f64 = 3.25;
+/// Cap on local-heading look-ahead along edge shape.
+const LOOKAHEAD_MAX_M: f64 = 40.0;
+/// Skip the first metres at the junction tip (noisy shared node).
+const LOOKAHEAD_SKIP_M: f64 = 2.0;
+/// Alternate must deviate at least this × route deviation to count as distinct.
+const DISTINCTION_RATIO: f64 = 2.0;
+/// Higher-class alternative within this of straight → not an obvious continue.
+const FUZZY_ANGLE_DIFFERENCE_DEG: f64 = 25.0;
+/// Car profiles: service/driveway shorter than this is a stub (relative to main).
+const SERVICE_STUB_MAX_M: f64 = 80.0;
+/// Collapse consecutive announced maneuvers closer than this (except RA pairs).
+const COLLAPSE_PAIR_M: f64 = 30.0;
+/// Drop silent name-change segments shorter than this.
+const NAME_CHANGE_MIN_M: f64 = 105.0;
+/// Merge a turn-channel / link edge up to this length into the following maneuver.
+const CHANNEL_MERGE_MAX_M: f64 = 200.0;
+/// Optional `then` hint when the next maneuver is this far ahead (inclusive).
+const THEN_HINT_MIN_M: f64 = 30.0;
+const THEN_HINT_MAX_M: f64 = 60.0;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SimSample {
@@ -49,6 +73,9 @@ pub struct RouteManeuver {
     /// Explicit Navit icon stem (e.g. `nav_roundabout_r3`) when set; overrides kind mapping.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// Optional short hint for the maneuver that follows within 30–60 m.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub then: Option<String>,
 }
 
 fn bearing_deg(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
@@ -172,6 +199,169 @@ fn icon_for_kind(kind: ManeuverKind, delta_deg: f64) -> String {
     }
 }
 
+fn motor_or_bike_guidance(graph: &RouteGraph) -> bool {
+    matches!(
+        graph.profile(),
+        RoutingProfile::Car | RoutingProfile::Truck | RoutingProfile::Bicycle
+    )
+}
+
+fn lookahead_m(lanes: Option<u8>) -> f64 {
+    let bump = f64::from(lanes.unwrap_or(1).saturating_sub(1)) * ASSUMED_LANE_WIDTH_M;
+    (LOOKAHEAD_BASE_M + bump).min(LOOKAHEAD_MAX_M)
+}
+
+fn edge_shape_verts(e: &GraphEdge) -> Vec<(f64, f64)> {
+    // GraphEdge.shape stores intermediate points as `(lon, lat)`; helpers use `(lat, lon)`.
+    let mut verts: Vec<(f64, f64)> = Vec::with_capacity(e.shape.len() + 2);
+    verts.push((e.start_lat, e.start_lon));
+    for &(lon, lat) in &e.shape {
+        verts.push((lat, lon));
+    }
+    verts.push((e.end_lat, e.end_lon));
+    if verts.len() < 2 {
+        vec![(e.start_lat, e.start_lon), (e.end_lat, e.end_lon)]
+    } else {
+        verts
+    }
+}
+
+/// Bearing of travel along `e` near the end (inbound into the junction).
+fn local_bearing_inbound(e: &GraphEdge) -> f64 {
+    local_bearing_along_edge(e, /*from_start=*/ false)
+}
+
+/// Bearing of travel along `e` near the start (outbound leaving the junction).
+fn local_bearing_outbound(e: &GraphEdge) -> f64 {
+    local_bearing_along_edge(e, /*from_start=*/ true)
+}
+
+fn local_bearing_along_edge(e: &GraphEdge, from_start: bool) -> f64 {
+    let verts = edge_shape_verts(e);
+    let n = verts.len();
+    if n < 2 {
+        return bearing_deg(e.start_lat, e.start_lon, e.end_lat, e.end_lon);
+    }
+    let mut seg_lens = Vec::with_capacity(n - 1);
+    let mut total = 0.0;
+    for w in verts.windows(2) {
+        let d = haversine_m_local(w[0].0, w[0].1, w[1].0, w[1].1);
+        seg_lens.push(d);
+        total += d;
+    }
+    let look = lookahead_m(e.lanes).min(total.max(1.0));
+    let skip = LOOKAHEAD_SKIP_M.min(look * 0.5);
+    let (a, b) = if from_start {
+        let p0 = point_along_verts(&verts, &seg_lens, skip);
+        let p1 = point_along_verts(&verts, &seg_lens, look.max(skip + 1.0));
+        (p0, p1)
+    } else {
+        let p0 = point_along_verts(&verts, &seg_lens, (total - look).max(0.0));
+        let p1 = point_along_verts(&verts, &seg_lens, (total - skip).max(0.0));
+        (p0, p1)
+    };
+    if haversine_m_local(a.0, a.1, b.0, b.1) < 0.5 {
+        return bearing_deg(e.start_lat, e.start_lon, e.end_lat, e.end_lon);
+    }
+    bearing_deg(a.0, a.1, b.0, b.1)
+}
+
+fn highway_priority(e: &GraphEdge) -> i32 {
+    let h = e.highway.as_deref().unwrap_or("");
+    let base = match h {
+        "motorway" => 100,
+        "motorway_link" => 95,
+        "trunk" => 90,
+        "trunk_link" => 85,
+        "primary" => 80,
+        "primary_link" => 75,
+        "secondary" => 70,
+        "secondary_link" => 65,
+        "tertiary" => 60,
+        "tertiary_link" => 55,
+        "unclassified" => 50,
+        "residential" => 40,
+        "living_street" => 35,
+        "service" => 20,
+        "track" => 10,
+        "path" | "footway" | "cycleway" | "bridleway" | "steps" | "pedestrian" => 5,
+        _ => 30,
+    };
+    let mut p = base;
+    if e.is_motorroad || e.is_expressway {
+        p = p.max(90);
+    }
+    p
+}
+
+fn is_link_highway(h: &str) -> bool {
+    h.ends_with("_link")
+}
+
+fn is_ramp_or_channel(e: &GraphEdge) -> bool {
+    let h = e.highway.as_deref().unwrap_or("");
+    is_link_highway(h) || e.is_motorroad || e.is_expressway
+}
+
+fn is_short_service_stub(e: &GraphEdge, route_priority: i32) -> bool {
+    let h = e.highway.as_deref().unwrap_or("");
+    // Only filter low-class stubs relative to a higher-class through route.
+    // Named service used as the route itself must still announce turns.
+    let stub_class = matches!(h, "service" | "track") || h == "busway";
+    if !stub_class {
+        return false;
+    }
+    if route_priority < 50 {
+        // Route itself is unclassified/residential/service — keep alternatives.
+        return false;
+    }
+    e.length_m < SERVICE_STUB_MAX_M && highway_priority(e) + 25 < route_priority
+}
+
+fn edge_is_real_alternative(
+    graph: &RouteGraph,
+    e: &GraphEdge,
+    route_target: NodeId,
+    inbound_from: NodeId,
+    route_out: &GraphEdge,
+) -> bool {
+    if e.target == route_target || e.target == inbound_from {
+        return false;
+    }
+    if e.access_forbidden {
+        return false;
+    }
+    // Wrong-way against a oneway: directed graph usually omits reverse; still
+    // drop obvious reverse of the inbound edge when tagged oneway.
+    if e.is_oneway && e.target == inbound_from {
+        return false;
+    }
+    if motor_or_bike_guidance(graph)
+        && matches!(graph.profile(), RoutingProfile::Car | RoutingProfile::Truck)
+        && is_short_service_stub(e, highway_priority(route_out))
+    {
+        return false;
+    }
+    true
+}
+
+fn collect_real_alternatives<'a>(
+    graph: &'a RouteGraph,
+    turn_node: NodeId,
+    route_target: NodeId,
+    inbound_from: NodeId,
+    route_out: &GraphEdge,
+) -> Vec<&'a GraphEdge> {
+    let mut alts = Vec::new();
+    for &ei in graph.outgoing_edge_indices(turn_node) {
+        let e = &graph.edges[ei];
+        if edge_is_real_alternative(graph, e, route_target, inbound_from, route_out) {
+            alts.push(e);
+        }
+    }
+    alts
+}
+
 /// Count same-direction alternatives at a junction (Navit strengthening criterion).
 fn count_same_dir_alternatives(
     graph: &RouteGraph,
@@ -180,22 +370,13 @@ fn count_same_dir_alternatives(
     route_delta: f64,
     route_target: NodeId,
     inbound_from: NodeId,
+    route_out: &GraphEdge,
 ) -> (usize, usize) {
     let mut more_ways = 0usize;
     let mut turn_no = 0usize;
     let route_left = route_delta < 0.0;
-    let Some(node_n) = graph.nodes.get(&turn_node) else {
-        return (0, 0);
-    };
-    for &ei in graph.outgoing_edge_indices(turn_node) {
-        let e = &graph.edges[ei];
-        if e.target == route_target || e.target == inbound_from {
-            continue;
-        }
-        let Some(tn) = graph.nodes.get(&e.target) else {
-            continue;
-        };
-        let out_b = bearing_deg(node_n.coord.y, node_n.coord.x, tn.coord.y, tn.coord.x);
+    for e in collect_real_alternatives(graph, turn_node, route_target, inbound_from, route_out) {
+        let out_b = local_bearing_outbound(e);
         let dw = turn_delta_deg(in_bearing, out_b);
         if route_left {
             if dw < -MIN_TURN_DEG {
@@ -214,23 +395,15 @@ fn count_same_dir_alternatives(
     (more_ways, turn_no)
 }
 
-/// True when the turn node has any outgoing way other than the route continue
-/// and the inbound reverse — i.e. a real junction / cross-street, not a mere
-/// shape vertex on a single through-road.
+/// True when the turn node has any real alternative outgoing way.
 fn junction_has_other_ways(
     graph: &RouteGraph,
     turn_node: NodeId,
     route_target: NodeId,
     inbound_from: NodeId,
+    route_out: &GraphEdge,
 ) -> bool {
-    for &ei in graph.outgoing_edge_indices(turn_node) {
-        let e = &graph.edges[ei];
-        if e.target == route_target || e.target == inbound_from {
-            continue;
-        }
-        return true;
-    }
-    false
+    !collect_real_alternatives(graph, turn_node, route_target, inbound_from, route_out).is_empty()
 }
 
 fn maybe_keep_left_right(
@@ -240,22 +413,14 @@ fn maybe_keep_left_right(
     route_delta: f64,
     route_target: NodeId,
     inbound_from: NodeId,
+    route_out: &GraphEdge,
 ) -> Option<ManeuverKind> {
-    // Navit: when |delta| < min_turn but a neighbour fork exists on one side only → keep.
-    let mut left_closest = f64::NEG_INFINITY; // least-negative left delta (closest to 0 from left)
+    let mut left_closest = f64::NEG_INFINITY;
     let mut right_closest = f64::INFINITY;
     let mut has_left = false;
     let mut has_right = false;
-    let node_n = graph.nodes.get(&turn_node)?;
-    for &ei in graph.outgoing_edge_indices(turn_node) {
-        let e = &graph.edges[ei];
-        if e.target == route_target || e.target == inbound_from {
-            continue;
-        }
-        let Some(tn) = graph.nodes.get(&e.target) else {
-            continue;
-        };
-        let out_b = bearing_deg(node_n.coord.y, node_n.coord.x, tn.coord.y, tn.coord.x);
+    for e in collect_real_alternatives(graph, turn_node, route_target, inbound_from, route_out) {
+        let out_b = local_bearing_outbound(e);
         let dw = turn_delta_deg(in_bearing, out_b);
         if dw < 0.0 {
             has_left = true;
@@ -265,7 +430,6 @@ fn maybe_keep_left_right(
             right_closest = right_closest.min(dw);
         }
     }
-    // Navit: left neighbor only → keep right (and vice versa) — logical XOR of sides.
     let has_left_neighbor = has_left && (left_closest - route_delta > 2.0 * -MIN_TURN_DEG);
     let has_right_neighbor = has_right && (right_closest - route_delta < 2.0 * MIN_TURN_DEG);
     match (has_left_neighbor, has_right_neighbor) {
@@ -275,28 +439,30 @@ fn maybe_keep_left_right(
     }
 }
 
-fn maybe_merge_or_exit(
-    e_in: &crate::routing::graph::GraphEdge,
-    e_out: &crate::routing::graph::GraphEdge,
-    delta: f64,
-) -> Option<ManeuverKind> {
+fn maybe_merge_or_exit(e_in: &GraphEdge, e_out: &GraphEdge, delta: f64) -> Option<ManeuverKind> {
     let in_h = e_in.highway.as_deref().unwrap_or("");
     let out_h = e_out.highway.as_deref().unwrap_or("");
-    let in_mw = matches!(in_h, "motorway" | "motorway_link" | "trunk" | "trunk_link");
-    let out_mw = matches!(out_h, "motorway" | "motorway_link" | "trunk" | "trunk_link");
-    let in_ramp = matches!(in_h, "motorway_link" | "trunk_link");
-    let out_ramp = matches!(out_h, "motorway_link" | "trunk_link");
+    let in_link = is_link_highway(in_h) || e_in.is_motorroad || e_in.is_expressway;
+    let out_link = is_link_highway(out_h) || e_out.is_motorroad || e_out.is_expressway;
+    let in_through = matches!(
+        in_h,
+        "motorway" | "trunk" | "primary" | "secondary" | "tertiary"
+    ) || ((e_in.is_motorroad || e_in.is_expressway) && !is_link_highway(in_h));
+    let out_through = matches!(
+        out_h,
+        "motorway" | "trunk" | "primary" | "secondary" | "tertiary"
+    ) || ((e_out.is_motorroad || e_out.is_expressway) && !is_link_highway(out_h));
     let left = delta < 0.0;
-    // Exit: motorway/trunk → link.
-    if in_mw && !in_ramp && out_ramp {
+    // Exit: through / motorroad → link / channel.
+    if (in_through || matches!(in_h, "motorway" | "trunk")) && !is_link_highway(in_h) && out_link {
         return Some(if left {
             ManeuverKind::ExitLeft
         } else {
             ManeuverKind::ExitRight
         });
     }
-    // Merge: link → motorway/trunk through.
-    if in_ramp && out_mw && !out_ramp {
+    // Merge: link / channel → through.
+    if in_link && out_through && !is_link_highway(out_h) {
         return Some(if left {
             ManeuverKind::MergeLeft
         } else {
@@ -304,6 +470,85 @@ fn maybe_merge_or_exit(
         });
     }
     None
+}
+
+/// Obvious continuation: straightest option, same road or clear distinction, no
+/// higher-class fuzzy competitor. Used for motor/bike suppressions.
+fn is_obvious_continuation(
+    graph: &RouteGraph,
+    turn_node: NodeId,
+    in_bearing: f64,
+    route_delta: f64,
+    route_target: NodeId,
+    inbound_from: NodeId,
+    e_in: &GraphEdge,
+    e_out: &GraphEdge,
+) -> bool {
+    let same = same_road_name_ref(
+        e_in.name.as_deref(),
+        e_in.road_ref.as_deref(),
+        e_out.name.as_deref(),
+        e_out.road_ref.as_deref(),
+    );
+    let alts = collect_real_alternatives(graph, turn_node, route_target, inbound_from, e_out);
+    if alts.is_empty() {
+        // Degree-2: same-road kink is obvious; identity/class change is not.
+        let class_change = highway_priority(e_in) / 10 != highway_priority(e_out) / 10;
+        return same && !class_change;
+    }
+    let route_dev = route_delta.abs();
+    let mut min_alt_dev = f64::INFINITY;
+    let mut second_best = f64::INFINITY;
+    for e in &alts {
+        let dw = turn_delta_deg(in_bearing, local_bearing_outbound(e)).abs();
+        if dw < min_alt_dev {
+            second_best = min_alt_dev;
+            min_alt_dev = dw;
+        } else if dw < second_best {
+            second_best = dw;
+        }
+    }
+    let route_is_straightest = route_dev <= min_alt_dev + 1e-6;
+    if !route_is_straightest {
+        return false;
+    }
+    let distinguished = min_alt_dev >= DISTINCTION_RATIO * route_dev.max(1.0);
+    if !(same || distinguished) {
+        return false;
+    }
+    let route_prio = highway_priority(e_out).max(highway_priority(e_in));
+    for e in &alts {
+        let dw = turn_delta_deg(in_bearing, local_bearing_outbound(e)).abs();
+        if highway_priority(e) > route_prio && dw <= 100.0 {
+            return false;
+        }
+    }
+    let _ = second_best;
+    true
+}
+
+/// Emit Straight only when a higher-priority cross creates real ambiguity.
+fn should_emit_straight_at_cross(
+    graph: &RouteGraph,
+    turn_node: NodeId,
+    in_bearing: f64,
+    route_target: NodeId,
+    inbound_from: NodeId,
+    e_in: &GraphEdge,
+    e_out: &GraphEdge,
+) -> bool {
+    let route_prio = highway_priority(e_out).max(highway_priority(e_in));
+    for e in collect_real_alternatives(graph, turn_node, route_target, inbound_from, e_out) {
+        if highway_priority(e) <= route_prio {
+            continue;
+        }
+        // Higher-class cross (any angle) or higher-class near-straight fork.
+        let dw = turn_delta_deg(in_bearing, local_bearing_outbound(e)).abs();
+        if dw <= 100.0 || dw <= FUZZY_ANGLE_DIFFERENCE_DEG + MIN_TURN_DEG {
+            return true;
+        }
+    }
+    false
 }
 
 /// Navit roundabout icon from entry→exit bearing change (`navigation_analyze_roundabout`).
@@ -686,10 +931,11 @@ pub fn build_maneuvers_from_edges(
     path: &[NodeId],
     edge_indices: &[usize],
 ) -> Vec<RouteManeuver> {
-    let mut out = Vec::new();
+    let mut raw: Vec<InternalStep> = Vec::new();
     if path.len() < 2 || edge_indices.is_empty() {
-        return out;
+        return Vec::new();
     }
+    let suppress = motor_or_bike_guidance(graph);
     let spans = find_roundabout_spans(graph, path);
     let mut cum = 0.0;
     for i in 0..path.len().saturating_sub(2) {
@@ -713,19 +959,22 @@ pub fn build_maneuvers_from_edges(
                 edge_indices
                     .get(span.leave_idx)
                     .map(|&idx| &graph.edges[idx])
-                    .and_then(|e| prefer_street_label(e.name.as_deref(), e.road_ref.as_deref()))
+                    .and_then(|e| maneuver_street_label(e.name.as_deref(), e.road_ref.as_deref()))
             } else {
                 None
             };
             let node = &graph.nodes[&n1];
-            out.push(RouteManeuver {
+            raw.push(InternalStep {
                 lat: node.coord.y,
                 lon: node.coord.x,
                 cum_m: cum,
-                kind: kind_key(ManeuverKind::Roundabout).to_string(),
+                kind: ManeuverKind::Roundabout,
                 street,
                 roundabout_exit: Some(span.exit_number),
                 icon: Some(span.icon_key.to_string()),
+                silent_name_change: false,
+                is_roundabout: true,
+                is_channel: false,
             });
             continue;
         }
@@ -733,49 +982,121 @@ pub fn build_maneuvers_from_edges(
             .iter()
             .any(|s| turn_node_idx > s.entry_idx && turn_node_idx <= s.leave_idx)
         {
-            // Internal ring vertices and the leave turn — covered by entry maneuver.
             continue;
         }
 
-        let in_b = bearing_deg(e_in.start_lat, e_in.start_lon, e_in.end_lat, e_in.end_lon);
-        let out_b = bearing_deg(
-            e_out.start_lat,
-            e_out.start_lon,
-            e_out.end_lat,
-            e_out.end_lon,
-        );
+        let in_b = if suppress {
+            local_bearing_inbound(e_in)
+        } else {
+            bearing_deg(e_in.start_lat, e_in.start_lon, e_in.end_lat, e_in.end_lon)
+        };
+        let out_b = if suppress {
+            local_bearing_outbound(e_out)
+        } else {
+            bearing_deg(
+                e_out.start_lat,
+                e_out.start_lon,
+                e_out.end_lat,
+                e_out.end_lon,
+            )
+        };
         let delta = turn_delta_deg(in_b, out_b);
+
+        if suppress {
+            if is_obvious_continuation(graph, n1, in_b, delta, n2, n0, e_in, e_out) {
+                // Silent name-change step when class/ref identity changes on an
+                // otherwise obvious continue — collapse may promote to announce.
+                let same = same_road_name_ref(
+                    e_in.name.as_deref(),
+                    e_in.road_ref.as_deref(),
+                    e_out.name.as_deref(),
+                    e_out.road_ref.as_deref(),
+                );
+                if !same && (e_out.name.is_some() || e_out.road_ref.is_some()) {
+                    let node = &graph.nodes[&n1];
+                    raw.push(InternalStep {
+                        lat: node.coord.y,
+                        lon: node.coord.x,
+                        cum_m: cum,
+                        kind: ManeuverKind::Straight,
+                        street: maneuver_street_label(
+                            e_out.name.as_deref(),
+                            e_out.road_ref.as_deref(),
+                        ),
+                        roundabout_exit: None,
+                        icon: Some(icon_for_kind(ManeuverKind::Straight, delta)),
+                        silent_name_change: true,
+                        is_roundabout: false,
+                        is_channel: is_ramp_or_channel(e_out) || is_ramp_or_channel(e_in),
+                    });
+                }
+                continue;
+            }
+            // F3: no real alternative → suppress same-road kinks; still announce
+            // when name/ref/class changes (continue onto X) or a real turn angle
+            // onto a differently identified road.
+            if !junction_has_other_ways(graph, n1, n2, n0, e_out) {
+                let same = same_road_name_ref(
+                    e_in.name.as_deref(),
+                    e_in.road_ref.as_deref(),
+                    e_out.name.as_deref(),
+                    e_out.road_ref.as_deref(),
+                );
+                let class_change = highway_priority(e_in) / 10 != highway_priority(e_out) / 10;
+                if same && !class_change {
+                    continue;
+                }
+                // Fall through to classify/emit (name or class change on degree-2).
+            }
+        }
 
         let kind = if let Some(k) = maybe_merge_or_exit(e_in, e_out, delta) {
             k
         } else if delta.abs() < MIN_TURN_DEG {
-            match maybe_keep_left_right(graph, n1, in_b, delta, n2, n0) {
+            match maybe_keep_left_right(graph, n1, in_b, delta, n2, n0, e_out) {
                 Some(k) => k,
+                None if suppress => {
+                    if should_emit_straight_at_cross(graph, n1, in_b, n2, n0, e_in, e_out) {
+                        ManeuverKind::Straight
+                    } else {
+                        // Ambiguous fork without keep → still Keep toward the
+                        // side with a neighbour if any; else suppress.
+                        continue;
+                    }
+                }
                 None => ManeuverKind::Straight,
             }
         } else {
-            let (more, turn_no) = count_same_dir_alternatives(graph, n1, in_b, delta, n2, n0);
+            let (more, turn_no) =
+                count_same_dir_alternatives(graph, n1, in_b, delta, n2, n0, e_out);
             classify_turn_navit(delta, more, turn_no)
         };
-        if kind == ManeuverKind::Straight {
-            // Product choice: do not emit "continue straight" at every shape
-            // node (dense grids would spam the approach UI). Emit Straight only
-            // at a real junction — other outgoing ways exist besides inbound and
-            // the route continue — so the icon reassures at ambiguous
-            // straight-through crossings. Keep L/R already covers one-sided forks.
-            if !junction_has_other_ways(graph, n1, n2, n0) {
-                continue;
-            }
+
+        if !suppress
+            && kind == ManeuverKind::Straight
+            && !junction_has_other_ways(graph, n1, n2, n0, e_out)
+        {
+            continue;
         }
+        if suppress
+            && kind == ManeuverKind::Straight
+            && !should_emit_straight_at_cross(graph, n1, in_b, n2, n0, e_in, e_out)
+        {
+            continue;
+        }
+
         let node = &graph.nodes[&n1];
-        out.push(RouteManeuver {
+        raw.push(InternalStep {
             lat: node.coord.y,
             lon: node.coord.x,
             cum_m: cum,
-            kind: kind_key(kind).to_string(),
-            street: prefer_street_label(e_out.name.as_deref(), e_out.road_ref.as_deref()),
+            kind,
+            street: maneuver_street_label(e_out.name.as_deref(), e_out.road_ref.as_deref()),
             roundabout_exit: None,
             icon: Some(icon_for_kind(kind, delta)),
+            silent_name_change: false,
+            is_roundabout: false,
+            is_channel: is_ramp_or_channel(e_in) || is_ramp_or_channel(e_out),
         });
     }
     // Destination at end.
@@ -789,14 +1110,195 @@ pub fn build_maneuvers_from_edges(
                     .map(|i| graph.edges[i].length_m)
             })
             .sum::<f64>();
-        out.push(RouteManeuver {
+        raw.push(InternalStep {
             lat: node.coord.y,
             lon: node.coord.x,
             cum_m: total,
-            kind: kind_key(ManeuverKind::Destination).to_string(),
+            kind: ManeuverKind::Destination,
             street: None,
             roundabout_exit: None,
             icon: Some(ManeuverKind::Destination.icon_key().to_string()),
+            silent_name_change: false,
+            is_roundabout: false,
+            is_channel: false,
+        });
+    }
+
+    let collapsed = if suppress {
+        collapse_maneuvers(raw)
+    } else {
+        raw.into_iter().filter(|s| !s.silent_name_change).collect()
+    };
+    attach_then_hints(collapsed)
+}
+
+#[derive(Debug, Clone)]
+struct InternalStep {
+    lat: f64,
+    lon: f64,
+    cum_m: f64,
+    kind: ManeuverKind,
+    street: Option<String>,
+    roundabout_exit: Option<u8>,
+    icon: Option<String>,
+    silent_name_change: bool,
+    is_roundabout: bool,
+    is_channel: bool,
+}
+
+fn collapse_maneuvers(steps: Vec<InternalStep>) -> Vec<InternalStep> {
+    if steps.is_empty() {
+        return steps;
+    }
+    // 1) Drop silent name changes that are short or return to previous name.
+    let mut filtered: Vec<InternalStep> = Vec::new();
+    let mut prev_street: Option<String> = None;
+    let mut i = 0usize;
+    while i < steps.len() {
+        let s = &steps[i];
+        if s.silent_name_change {
+            let next_cum = steps
+                .get(i + 1)
+                .map(|n| n.cum_m)
+                .unwrap_or(s.cum_m + NAME_CHANGE_MIN_M + 1.0);
+            let span = next_cum - s.cum_m;
+            let returns = prev_street
+                .as_ref()
+                .zip(steps.get(i + 1).and_then(|n| n.street.as_ref()))
+                .is_some_and(|(p, n)| p == n);
+            if span < NAME_CHANGE_MIN_M || returns {
+                i += 1;
+                continue;
+            }
+            // Promote durable name/ref change to an announced continue (Straight).
+            let mut promoted = s.clone();
+            promoted.silent_name_change = false;
+            filtered.push(promoted);
+            prev_street = s.street.clone();
+            i += 1;
+            continue;
+        }
+        prev_street = s.street.clone().or(prev_street);
+        filtered.push(s.clone());
+        i += 1;
+    }
+
+    // 2) Merge turn channels (≤200 m) into the following maneuver.
+    let mut merged: Vec<InternalStep> = Vec::new();
+    let mut j = 0usize;
+    while j < filtered.len() {
+        let cur = &filtered[j];
+        if cur.is_channel
+            && !cur.is_roundabout
+            && cur.kind != ManeuverKind::Destination
+            && j + 1 < filtered.len()
+        {
+            let nxt = &filtered[j + 1];
+            let gap = nxt.cum_m - cur.cum_m;
+            if gap <= CHANNEL_MERGE_MAX_M && !nxt.is_roundabout {
+                // Keep the later maneuver; inherit Exit/Merge if earlier had it.
+                let mut keep = nxt.clone();
+                if matches!(
+                    cur.kind,
+                    ManeuverKind::ExitLeft
+                        | ManeuverKind::ExitRight
+                        | ManeuverKind::MergeLeft
+                        | ManeuverKind::MergeRight
+                        | ManeuverKind::KeepLeft
+                        | ManeuverKind::KeepRight
+                ) && matches!(
+                    nxt.kind,
+                    ManeuverKind::Straight | ManeuverKind::SlightLeft | ManeuverKind::SlightRight
+                ) {
+                    keep.kind = cur.kind;
+                    keep.icon = cur.icon.clone().or(keep.icon);
+                    keep.lat = cur.lat;
+                    keep.lon = cur.lon;
+                    keep.cum_m = cur.cum_m;
+                }
+                merged.push(keep);
+                j += 2;
+                continue;
+            }
+        }
+        merged.push(cur.clone());
+        j += 1;
+    }
+
+    // 3) Collapse pairs < 30 m (except consecutive roundabouts).
+    let mut out: Vec<InternalStep> = Vec::new();
+    for s in merged {
+        if let Some(prev) = out.last_mut() {
+            let gap = s.cum_m - prev.cum_m;
+            if gap < COLLAPSE_PAIR_M
+                && !(prev.is_roundabout && s.is_roundabout)
+                && s.kind != ManeuverKind::Destination
+                && prev.kind != ManeuverKind::Destination
+            {
+                // Keep the stronger / later turn; prefer roundabout.
+                if s.is_roundabout {
+                    *prev = s;
+                } else if !prev.is_roundabout
+                    && maneuver_strength(s.kind) >= maneuver_strength(prev.kind)
+                {
+                    let cum = prev.cum_m;
+                    let lat = prev.lat;
+                    let lon = prev.lon;
+                    *prev = s;
+                    prev.cum_m = cum;
+                    prev.lat = lat;
+                    prev.lon = lon;
+                }
+                continue;
+            }
+        }
+        out.push(s);
+    }
+    out
+}
+
+fn maneuver_strength(k: ManeuverKind) -> i32 {
+    match k {
+        ManeuverKind::Destination => 100,
+        ManeuverKind::Roundabout => 90,
+        ManeuverKind::UTurn => 85,
+        ManeuverKind::SharpLeft | ManeuverKind::SharpRight => 80,
+        ManeuverKind::Left | ManeuverKind::Right => 70,
+        ManeuverKind::ExitLeft | ManeuverKind::ExitRight => 65,
+        ManeuverKind::MergeLeft | ManeuverKind::MergeRight => 60,
+        ManeuverKind::SlightLeft | ManeuverKind::SlightRight => 50,
+        ManeuverKind::KeepLeft | ManeuverKind::KeepRight => 40,
+        ManeuverKind::Straight => 20,
+        ManeuverKind::Unknown => 10,
+    }
+}
+
+fn attach_then_hints(steps: Vec<InternalStep>) -> Vec<RouteManeuver> {
+    let n = steps.len();
+    let mut out = Vec::with_capacity(n);
+    for (i, s) in steps.iter().enumerate() {
+        let then = if i + 1 < n {
+            let gap = steps[i + 1].cum_m - s.cum_m;
+            if (THEN_HINT_MIN_M..=THEN_HINT_MAX_M).contains(&gap)
+                && steps[i + 1].kind != ManeuverKind::Destination
+                && !s.is_roundabout
+            {
+                Some(kind_key(steps[i + 1].kind).to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        out.push(RouteManeuver {
+            lat: s.lat,
+            lon: s.lon,
+            cum_m: s.cum_m,
+            kind: kind_key(s.kind).to_string(),
+            street: s.street.clone(),
+            roundabout_exit: s.roundabout_exit,
+            icon: s.icon.clone(),
+            then,
         });
     }
     out
@@ -843,33 +1345,79 @@ fn roundabout_bearings(
 ) -> (f64, f64, f64, f64) {
     let entry_node = path[entry_idx];
     let leave_node = path[leave_idx];
+    let use_local = motor_or_bike_guidance(graph);
     let entry_in_brng = if entry_idx > 0 {
-        let a = &graph.nodes[&path[entry_idx - 1]];
-        let b = &graph.nodes[&entry_node];
-        bearing_deg(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
+        if let Some(idx) = graph.edge_index(path[entry_idx - 1], entry_node) {
+            let e = &graph.edges[idx];
+            if use_local {
+                local_bearing_inbound(e)
+            } else {
+                bearing_deg(e.start_lat, e.start_lon, e.end_lat, e.end_lon)
+            }
+        } else {
+            let a = &graph.nodes[&path[entry_idx - 1]];
+            let b = &graph.nodes[&entry_node];
+            bearing_deg(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
+        }
+    } else if let Some(idx) = graph.edge_index(entry_node, path[entry_idx + 1]) {
+        let e = &graph.edges[idx];
+        if use_local {
+            local_bearing_outbound(e)
+        } else {
+            bearing_deg(e.start_lat, e.start_lon, e.end_lat, e.end_lon)
+        }
     } else {
         let a = &graph.nodes[&entry_node];
         let b = &graph.nodes[&path[entry_idx + 1]];
         bearing_deg(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
     };
     let leave_out_brng = if leave_idx + 1 < path.len() {
-        let a = &graph.nodes[&leave_node];
-        let b = &graph.nodes[&path[leave_idx + 1]];
-        bearing_deg(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
+        if let Some(idx) = graph.edge_index(leave_node, path[leave_idx + 1]) {
+            let e = &graph.edges[idx];
+            if use_local {
+                local_bearing_outbound(e)
+            } else {
+                bearing_deg(e.start_lat, e.start_lon, e.end_lat, e.end_lon)
+            }
+        } else {
+            let a = &graph.nodes[&leave_node];
+            let b = &graph.nodes[&path[leave_idx + 1]];
+            bearing_deg(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
+        }
+    } else if leave_idx > 0 {
+        if let Some(idx) = graph.edge_index(path[leave_idx - 1], leave_node) {
+            let e = &graph.edges[idx];
+            if use_local {
+                local_bearing_inbound(e)
+            } else {
+                bearing_deg(e.start_lat, e.start_lon, e.end_lat, e.end_lon)
+            }
+        } else {
+            let a = &graph.nodes[&path[leave_idx - 1]];
+            let b = &graph.nodes[&leave_node];
+            bearing_deg(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
+        }
     } else {
-        let a = &graph.nodes[&path[leave_idx - 1]];
-        let b = &graph.nodes[&leave_node];
-        bearing_deg(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
+        0.0
     };
-    let leave_in_brng = {
-        let a = &graph.nodes[&path[leave_idx.saturating_sub(1)]];
-        let b = &graph.nodes[&leave_node];
-        bearing_deg(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
+    let leave_in_brng = if leave_idx > 0 {
+        if let Some(idx) = graph.edge_index(path[leave_idx - 1], leave_node) {
+            let e = &graph.edges[idx];
+            if use_local {
+                local_bearing_inbound(e)
+            } else {
+                bearing_deg(e.start_lat, e.start_lon, e.end_lat, e.end_lon)
+            }
+        } else {
+            let a = &graph.nodes[&path[leave_idx.saturating_sub(1)]];
+            let b = &graph.nodes[&leave_node];
+            bearing_deg(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
+        }
+    } else {
+        leave_out_brng
     };
     let leave_delta = turn_delta_deg(leave_in_brng, leave_out_brng);
-    // Delta to stay in roundabout: continue on any RA out at leave node.
     let mut dtsir = 0.0_f64;
-    let leave_n = &graph.nodes[&leave_node];
     for &ei in graph.outgoing_edge_indices(leave_node) {
         let e = &graph.edges[ei];
         if !e.is_roundabout {
@@ -878,10 +1426,15 @@ fn roundabout_bearings(
         if leave_idx > 0 && e.target == path[leave_idx - 1] {
             continue;
         }
-        let Some(tn) = graph.nodes.get(&e.target) else {
-            continue;
+        let out_b = if use_local {
+            local_bearing_outbound(e)
+        } else {
+            let leave_n = &graph.nodes[&leave_node];
+            let Some(tn) = graph.nodes.get(&e.target) else {
+                continue;
+            };
+            bearing_deg(leave_n.coord.y, leave_n.coord.x, tn.coord.y, tn.coord.x)
         };
-        let out_b = bearing_deg(leave_n.coord.y, leave_n.coord.x, tn.coord.y, tn.coord.x);
         dtsir = turn_delta_deg(leave_in_brng, out_b);
         break;
     }
@@ -936,21 +1489,89 @@ fn count_roundabout_exit(
     leave_idx: usize,
 ) -> u8 {
     let mut n = 0u8;
+    let use_local = motor_or_bike_guidance(graph);
     for i in (entry_idx + 1)..=leave_idx {
         let node = path[i];
         let prev = path[i - 1];
-        let Some(prev_n) = graph.nodes.get(&prev) else {
-            continue;
+        let in_brng = if let Some(idx) = graph.edge_index(prev, node) {
+            let e = &graph.edges[idx];
+            if use_local {
+                local_bearing_inbound(e)
+            } else {
+                bearing_deg(e.start_lat, e.start_lon, e.end_lat, e.end_lon)
+            }
+        } else {
+            let Some(prev_n) = graph.nodes.get(&prev) else {
+                continue;
+            };
+            let Some(node_n) = graph.nodes.get(&node) else {
+                continue;
+            };
+            bearing_deg(
+                prev_n.coord.y,
+                prev_n.coord.x,
+                node_n.coord.y,
+                node_n.coord.x,
+            )
         };
-        let Some(node_n) = graph.nodes.get(&node) else {
-            continue;
+
+        // Dummy route-out for stub filter: prefer the leave edge when at leave_idx.
+        let route_out_idx = if i == leave_idx && i + 1 < path.len() {
+            graph.edge_index(node, path[i + 1])
+        } else {
+            None
         };
-        let in_brng = bearing_deg(
-            prev_n.coord.y,
-            prev_n.coord.x,
-            node_n.coord.y,
-            node_n.coord.x,
-        );
+        let route_out_fallback;
+        let route_out = if let Some(idx) = route_out_idx {
+            &graph.edges[idx]
+        } else if let Some(idx) = graph.edge_index(prev, node) {
+            &graph.edges[idx]
+        } else {
+            // Minimal placeholder so stub filter still has a class.
+            route_out_fallback = GraphEdge {
+                id: "ra_placeholder".into(),
+                source: node,
+                target: node,
+                length_m: 100.0,
+                base_weight: 100.0,
+                eco_weight: None,
+                start_lat: 0.0,
+                start_lon: 0.0,
+                end_lat: 0.0,
+                end_lon: 0.0,
+                shape: Vec::new(),
+                highway: Some("primary".into()),
+                maxspeed_kmh: None,
+                maxspeed_practical_kmh: None,
+                maxspeed_advisory_kmh: None,
+                maxspeed_type: None,
+                maxspeed_variable: false,
+                minspeed_kmh: None,
+                name: None,
+                road_ref: None,
+                is_motorroad: false,
+                is_expressway: false,
+                is_oneway: false,
+                lanes: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_tunnel: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
+            };
+            &route_out_fallback
+        };
 
         let mut exits: Vec<(f64, NodeId)> = Vec::new();
         for &ei in graph.outgoing_edge_indices(node) {
@@ -961,10 +1582,29 @@ fn count_roundabout_exit(
             if e.target == prev {
                 continue;
             }
-            let Some(tn) = graph.nodes.get(&e.target) else {
-                continue;
+            if !edge_is_real_alternative(
+                graph,
+                e,
+                /*route_target*/ NodeId(i64::MIN),
+                prev,
+                route_out,
+            ) {
+                // Still allow the taken leave road even if stub filter would drop it.
+                if !(i == leave_idx && i + 1 < path.len() && e.target == path[i + 1]) {
+                    continue;
+                }
+            }
+            let out_b = if use_local {
+                local_bearing_outbound(e)
+            } else {
+                let Some(node_n) = graph.nodes.get(&node) else {
+                    continue;
+                };
+                let Some(tn) = graph.nodes.get(&e.target) else {
+                    continue;
+                };
+                bearing_deg(node_n.coord.y, node_n.coord.x, tn.coord.y, tn.coord.x)
             };
-            let out_b = bearing_deg(node_n.coord.y, node_n.coord.x, tn.coord.y, tn.coord.x);
             let delta = turn_delta_deg(in_brng, out_b);
             exits.push((delta, e.target));
         }
@@ -1470,7 +2110,8 @@ mod tests {
             }
         }
 
-        // Straight through with a cross-street at the middle node → emit Straight.
+        // Same-name through with a side street of equal class → obvious continue;
+        // Straight must NOT be emitted (deliberate policy change from F2).
         let mut nodes = std::collections::HashMap::new();
         for (id, n) in [
             node(1, 10.0, 60.0),
@@ -1481,17 +2122,17 @@ mod tests {
             nodes.insert(id, n);
         }
         let edges = vec![
-            edge("in", 1, 2, 60.0, 10.0, 60.0, 10.001),
-            edge("out", 2, 3, 60.0, 10.001, 60.0, 10.002),
-            edge("side", 2, 4, 60.0, 10.001, 60.001, 10.001),
-            edge("side_back", 4, 2, 60.001, 10.001, 60.0, 10.001),
+            edge("Main", 1, 2, 60.0, 10.0, 60.0, 10.001),
+            edge("Main", 2, 3, 60.0, 10.001, 60.0, 10.002),
+            edge("Side", 2, 4, 60.0, 10.001, 60.001, 10.001),
+            edge("Side_back", 4, 2, 60.001, 10.001, 60.0, 10.001),
         ];
         let graph =
             RouteGraph::from_parts(nodes, edges, crate::routing::graph::RoutingProfile::Car);
         let mans = build_maneuvers(&graph, &[NodeId(1), NodeId(2), NodeId(3)]);
         assert!(
-            mans.iter().any(|m| m.kind == "straight"),
-            "expected straight at cross-street junction, got {mans:?}"
+            mans.iter().all(|m| m.kind != "straight"),
+            "obvious same-road continue must not emit straight, got {mans:?}"
         );
 
         // No side way — only through nodes → no Straight spam.
@@ -1514,6 +2155,77 @@ mod tests {
         assert!(
             mans2.iter().all(|m| m.kind != "straight"),
             "trivial through-node must not emit straight, got {mans2:?}"
+        );
+
+        // Higher-class cross near straight → Straight is allowed (real ambiguity).
+        fn edge_hw(
+            id: &str,
+            s: i64,
+            t: i64,
+            lat0: f64,
+            lon0: f64,
+            lat1: f64,
+            lon1: f64,
+            hw: &str,
+            name: &str,
+        ) -> crate::routing::graph::GraphEdge {
+            let mut e = edge(id, s, t, lat0, lon0, lat1, lon1);
+            e.highway = Some(hw.into());
+            e.name = Some(name.into());
+            e
+        }
+        let mut nodes3 = std::collections::HashMap::new();
+        for (id, n) in [
+            node(1, 10.0, 60.0),
+            node(2, 10.001, 60.0),
+            node(3, 10.002, 60.0),
+            node(4, 10.001, 60.001),
+            node(5, 10.001, 59.999),
+        ] {
+            nodes3.insert(id, n);
+        }
+        let edges3 = vec![
+            edge_hw("res_in", 1, 2, 60.0, 10.0, 60.0, 10.001, "residential", "A"),
+            edge_hw(
+                "res_out",
+                2,
+                3,
+                60.0,
+                10.001,
+                60.0,
+                10.002,
+                "residential",
+                "A",
+            ),
+            edge_hw(
+                "primary_n",
+                2,
+                4,
+                60.0,
+                10.001,
+                60.001,
+                10.001,
+                "primary",
+                "P",
+            ),
+            edge_hw(
+                "primary_s",
+                2,
+                5,
+                60.0,
+                10.001,
+                59.999,
+                10.001,
+                "primary",
+                "P",
+            ),
+        ];
+        let graph3 =
+            RouteGraph::from_parts(nodes3, edges3, crate::routing::graph::RoutingProfile::Car);
+        let mans3 = build_maneuvers(&graph3, &[NodeId(1), NodeId(2), NodeId(3)]);
+        assert!(
+            mans3.iter().any(|m| m.kind == "straight"),
+            "higher-class cross should allow straight, got {mans3:?}"
         );
     }
 
