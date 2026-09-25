@@ -329,7 +329,7 @@ jobs:
           cargo test -p driver-break-core --lib
           pack_server::place_index_after:: -- --nocapture
 
-  # Distinct job: Friisvegen-style seasonal motor_vehicle:conditional (winter).
+  # Distinct job: seasonal motor_vehicle:conditional (winter) on a synthetic edge.
   winter-road-closure:
     name: winter-road-closure
     runs-on: ubuntu-latest
@@ -351,10 +351,10 @@ jobs:
         with:
           shared-key: winter-road-closure
 
-      - name: Friisvegen-style winter closure (car/truck blocked, foot/bike not)
+      - name: Seasonal winter closure (car/truck blocked, foot/bike not)
         run: >
           cargo test -p driver-break-core --lib
-          friisvegen_style_conditional_blocks_car_not_foot -- --nocapture
+          seasonal_conditional_blocks_car_not_foot -- --nocapture
 
   android-build:
     name: android-build

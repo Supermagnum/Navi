@@ -196,6 +196,10 @@ fn brastein_boardwalk_survives_wetland_pack_path() {
         tip_m < 25.0,
         "route must reach boardwalk tip; tip_min_m={tip_m:.1}"
     );
+    assert!(
+        mid_m < 25.0,
+        "route must traverse boardwalk mid; mid_min_m={mid_m:.1}"
+    );
     eprintln!(
         "POSITIVE pack-path: kept={kept} hard={hard} tip_m={tip_m:.1} mid_m={mid_m:.1} dist_km={:.3}",
         r_pos.distance_km

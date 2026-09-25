@@ -232,6 +232,70 @@ pub struct RouteGraph {
     pub surface_routing_mode: SurfaceRoutingMode,
 }
 
+/// Indices into `hard_candidates` that must be restored (as soft cost) so every
+/// boardwalk-touching component stays linked to the giant component of `kept`.
+fn wetland_boardwalk_bridges(
+    kept: &[GraphEdge],
+    hard_candidates: &[GraphEdge],
+    boardwalk_nodes: &HashSet<NodeId>,
+) -> Vec<usize> {
+    let mut parent: HashMap<NodeId, NodeId> = HashMap::new();
+    let mut size: HashMap<NodeId, usize> = HashMap::new();
+    let ensure =
+        |id: NodeId, parent: &mut HashMap<NodeId, NodeId>, size: &mut HashMap<NodeId, usize>| {
+            parent.entry(id).or_insert(id);
+            size.entry(id).or_insert(1);
+        };
+    for e in kept {
+        ensure(e.source, &mut parent, &mut size);
+        ensure(e.target, &mut parent, &mut size);
+        uf_union(&mut parent, &mut size, e.source, e.target);
+    }
+    for e in hard_candidates {
+        ensure(e.source, &mut parent, &mut size);
+        ensure(e.target, &mut parent, &mut size);
+    }
+
+    // Roots of components that already contain a boardwalk node via kept edges.
+    let mut bw_roots: HashSet<NodeId> = HashSet::new();
+    for &bw in boardwalk_nodes {
+        if kept.iter().any(|e| e.source == bw || e.target == bw) {
+            bw_roots.insert(uf_find(&mut parent, bw));
+        }
+    }
+    if bw_roots.is_empty() {
+        return Vec::new();
+    }
+
+    // Restore every hard candidate that joins a boardwalk-touched component to a
+    // different component (repeat until fixed point so chains grow).
+    let mut restore: HashSet<usize> = HashSet::new();
+    let mut progressed = true;
+    while progressed {
+        progressed = false;
+        for (i, e) in hard_candidates.iter().enumerate() {
+            if restore.contains(&i) {
+                continue;
+            }
+            let ru = uf_find(&mut parent, e.source);
+            let rv = uf_find(&mut parent, e.target);
+            if ru == rv {
+                continue;
+            }
+            if !(bw_roots.contains(&ru) || bw_roots.contains(&rv)) {
+                continue;
+            }
+            restore.insert(i);
+            uf_union(&mut parent, &mut size, e.source, e.target);
+            bw_roots.remove(&ru);
+            bw_roots.remove(&rv);
+            bw_roots.insert(uf_find(&mut parent, e.source));
+            progressed = true;
+        }
+    }
+    restore.into_iter().collect()
+}
+
 impl RouteGraph {
     pub fn build_from_pbf(path: impl AsRef<Path>, profile: RoutingProfile) -> anyhow::Result<Self> {
         let (nodes, edges) = Reader::new()
@@ -493,10 +557,11 @@ impl RouteGraph {
 
     /// Nearest linked graph node within the profile snap budget.
     ///
-    /// Prefers the largest weakly-connected component when a candidate exists
-    /// inside the snap budget so farms on leftover private-track islands snap
-    /// to the public road network instead of a disconnected courtyard. Returns
-    /// [`SnapTooFar`] when the closest linked node exceeds
+    /// Chooses the nearest allowed edge (polyline distance), then its closer
+    /// eligible endpoint. Prefers the largest weakly-connected component when a
+    /// candidate exists inside the snap budget so farms on leftover private-track
+    /// islands snap to the public road network instead of a disconnected
+    /// courtyard. Returns [`SnapTooFar`] when the closest linked node exceeds
     /// [`max_waypoint_snap_m`] — callers must treat that as unreachable, not
     /// silently substitute a distant network node.
     ///
@@ -513,10 +578,16 @@ impl RouteGraph {
     /// pass [`edge_allowed_for_options`], so avoid-toll / avoid-motorway / ferry
     /// / clearance settings cannot snap onto an island that A* cannot leave.
     ///
+    /// Snaps to the **nearest allowed edge** (polyline distance via
+    /// [`edge_distance_m`](super::edge_distance_m)), then the closer eligible
+    /// endpoint of that edge. Graph build keeps intermediate OSM way nodes as
+    /// topology (not shape-only), so address snaps can land on the nearest way
+    /// node instead of a farther junction on a parallel or connecting edge.
+    ///
     /// When `prefer_better_surface` is true (intermediate vias only) and the
-    /// graph is in car surface mode, among giant-component candidates within
-    /// [`SURFACE_VIA_SNAP_SLACK_M`] of the literal nearest node, prefer better
-    /// `worst_incident_surface` (distance is the tiebreaker). Start and
+    /// graph is in car surface mode, among giant-component *nodes* within
+    /// [`SURFACE_VIA_SNAP_SLACK_M`] of the literal nearest edge snap, prefer
+    /// better `worst_incident_surface` (distance is the tiebreaker). Start and
     /// destination snaps must pass `false` so rural addresses keep the last
     /// metres of gravel driveway instead of jumping to a paved road hundreds
     /// of metres away.
@@ -551,21 +622,16 @@ impl RouteGraph {
         // is multi-second work; skip it when RouteOptions do not remove edges.
         let filtered = options_need_filtered_components(options)
             .then(|| self.option_filtered_components(options));
-        let linked = self.nodes.values().filter(|n| self.is_linked(n.id));
-        let pool: Vec<&Node> = {
-            let v: Vec<_> = linked.collect();
-            if v.is_empty() {
-                self.nodes.values().collect()
-            } else {
-                v
-            }
-        };
-        // Degree pad for a cheap reject before haversine (Automotive multi-tile
-        // graphs are 100k–200k nodes; full scans stall the plan thread).
+        // Degree pad for a cheap reject before edge distance (Automotive
+        // multi-tile graphs are 100k–200k nodes / ~450k edges).
         let pad_deg = (max_m / 100_000.0).max(0.02);
-        let in_pad = |n: &Node| -> bool {
-            (n.coord.y - lat).abs() <= pad_deg && (n.coord.x - lon).abs() <= pad_deg
+        let endpoint_in_pad = |id: NodeId| -> bool {
+            self.nodes.get(&id).is_some_and(|n| {
+                (n.coord.y - lat).abs() <= pad_deg && (n.coord.x - lon).abs() <= pad_deg
+            })
         };
+        let edge_in_pad =
+            |e: &GraphEdge| -> bool { endpoint_in_pad(e.source) || endpoint_in_pad(e.target) };
         let in_filtered_giant = |id: NodeId| -> bool {
             match &filtered {
                 Some((filtered_root, filtered_giant)) => {
@@ -579,53 +645,60 @@ impl RouteGraph {
         };
         // When RouteOptions remove edges (vehicle limits, avoid-*, …), the
         // filtered Union-Find map keys *are* the allowed-incident set — O(1).
-        // Never fall back to scanning all edges per candidate: that is O(E)
-        // and hangs ~200k-node / ~450k-edge first densify hops under MobileHome.
         let has_allowed_incident = |id: NodeId| -> bool {
             match &filtered {
                 Some((filtered_root, _)) => filtered_root.contains_key(&id),
                 None => self.node_has_allowed_incident_unfiltered(id, options),
             }
         };
-        let mut nearest_any: Option<(&Node, f64)> = None;
-        let mut nearest_giant: Option<(&Node, f64)> = None;
-        for n in &pool {
-            if !in_pad(n) {
-                continue;
-            }
-            if !has_allowed_incident(n.id) {
-                continue;
-            }
-            let dist = haversine_point_m(lat, lon, n);
-            if nearest_any.is_none_or(|(_, d)| dist < d) {
-                nearest_any = Some((n, dist));
-            }
-            if dist <= max_m
-                && in_filtered_giant(n.id)
-                && nearest_giant.is_none_or(|(_, d)| dist < d)
-            {
-                nearest_giant = Some((n, dist));
-            }
-        }
-        // If the pad missed (coastal / sparse), fall back to full scan once.
-        if nearest_any.is_none() {
-            for n in &pool {
-                if !has_allowed_incident(n.id) {
+        let closer_endpoint = |e: &GraphEdge, require_giant: bool| -> Option<(NodeId, f64)> {
+            let mut best: Option<(NodeId, f64)> = None;
+            for id in [e.source, e.target] {
+                if !has_allowed_incident(id) {
                     continue;
                 }
-                let dist = haversine_point_m(lat, lon, n);
-                if nearest_any.is_none_or(|(_, d)| dist < d) {
-                    nearest_any = Some((n, dist));
+                if require_giant && !in_filtered_giant(id) {
+                    continue;
                 }
-                if dist <= max_m
-                    && in_filtered_giant(n.id)
-                    && nearest_giant.is_none_or(|(_, d)| dist < d)
+                let Some(n) = self.nodes.get(&id) else {
+                    continue;
+                };
+                let dist = haversine_point_m(lat, lon, n);
+                if best.is_none_or(|(_, d)| dist < d) {
+                    best = Some((id, dist));
+                }
+            }
+            best
+        };
+        let mut nearest_any_edge: Option<(usize, f64)> = None;
+        let mut nearest_giant_edge: Option<(usize, f64)> = None;
+        for pass in 0..2 {
+            // Pass 0: pad only. Pass 1: full scan if pad missed.
+            if pass == 1 && nearest_any_edge.is_some() {
+                break;
+            }
+            for (idx, e) in self.edges.iter().enumerate() {
+                if pass == 0 && !edge_in_pad(e) {
+                    continue;
+                }
+                if !edge_allowed_for_options(e, options, self.profile) {
+                    continue;
+                }
+                let edge_d = super::edge_distance_m(e, lat, lon);
+                if closer_endpoint(e, false).is_some()
+                    && nearest_any_edge.is_none_or(|(_, d)| edge_d < d)
                 {
-                    nearest_giant = Some((n, dist));
+                    nearest_any_edge = Some((idx, edge_d));
+                }
+                if edge_d <= max_m
+                    && closer_endpoint(e, true).is_some()
+                    && nearest_giant_edge.is_none_or(|(_, d)| edge_d < d)
+                {
+                    nearest_giant_edge = Some((idx, edge_d));
                 }
             }
         }
-        let Some((best_any, nearest_m)) = nearest_any else {
+        let Some((best_any_idx, nearest_edge_m)) = nearest_any_edge else {
             return Err(SnapTooFar {
                 nearest_m: f64::INFINITY,
                 max_m,
@@ -635,47 +708,61 @@ impl RouteGraph {
             && self.surface_routing_mode == SurfaceRoutingMode::Car
             && matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
         if use_surface_snap {
-            if let Some((_, nearest_giant_m)) = nearest_giant {
-                let surface_limit_m = (nearest_giant_m + SURFACE_VIA_SNAP_SLACK_M).min(max_m);
-                let surface_pad = (surface_limit_m / 100_000.0).max(0.02);
-                let mut best_surface_giant: Option<(&Node, f64)> = None;
-                for n in &pool {
-                    if (n.coord.y - lat).abs() > surface_pad
-                        || (n.coord.x - lon).abs() > surface_pad
-                    {
-                        continue;
-                    }
-                    if !has_allowed_incident(n.id) {
-                        continue;
-                    }
-                    let dist = haversine_point_m(lat, lon, n);
-                    if dist > surface_limit_m || !in_filtered_giant(n.id) {
-                        continue;
-                    }
-                    let sq = worst_incident_surface(self, n.id);
-                    let replace = match best_surface_giant {
-                        None => true,
-                        Some((prev_n, prev_d)) => {
-                            let prev_sq = worst_incident_surface(self, prev_n.id);
-                            sq < prev_sq || (sq == prev_sq && dist < prev_d)
+            // Literal nearest is edge-based; surface preference still compares
+            // *nodes* within slack of that snap so a long Good connector edge
+            // cannot leap to a paved end outside the slack budget.
+            if let Some((idx, _)) = nearest_giant_edge {
+                if let Some((_, nearest_giant_m)) = closer_endpoint(&self.edges[idx], true) {
+                    let surface_limit_m = (nearest_giant_m + SURFACE_VIA_SNAP_SLACK_M).min(max_m);
+                    let surface_pad = (surface_limit_m / 100_000.0).max(0.02);
+                    let mut best_surface_giant: Option<(NodeId, f64)> = None;
+                    for (n_id, n) in &self.nodes {
+                        if (n.coord.y - lat).abs() > surface_pad
+                            || (n.coord.x - lon).abs() > surface_pad
+                        {
+                            continue;
                         }
-                    };
-                    if replace {
-                        best_surface_giant = Some((n, dist));
+                        if !has_allowed_incident(*n_id) {
+                            continue;
+                        }
+                        let dist = haversine_point_m(lat, lon, n);
+                        if dist > surface_limit_m || !in_filtered_giant(*n_id) {
+                            continue;
+                        }
+                        let sq = worst_incident_surface(self, *n_id);
+                        let replace = match best_surface_giant {
+                            None => true,
+                            Some((prev_id, prev_d)) => {
+                                let prev_sq = worst_incident_surface(self, prev_id);
+                                sq < prev_sq || (sq == prev_sq && dist < prev_d)
+                            }
+                        };
+                        if replace {
+                            best_surface_giant = Some((*n_id, dist));
+                        }
                     }
-                }
-                if let Some((n, dist)) = best_surface_giant {
-                    return Ok((n.id, dist));
+                    if let Some((id, dist)) = best_surface_giant {
+                        return Ok((id, dist));
+                    }
                 }
             }
         }
-        if let Some((n, dist)) = nearest_giant {
-            return Ok((n.id, dist));
+        if let Some((idx, _)) = nearest_giant_edge {
+            if let Some((id, dist)) = closer_endpoint(&self.edges[idx], true) {
+                return Ok((id, dist));
+            }
         }
+        // Nearest edge exists but no giant-component endpoint within budget.
+        let Some((id, nearest_m)) = closer_endpoint(&self.edges[best_any_idx], false) else {
+            return Err(SnapTooFar {
+                nearest_m: nearest_edge_m,
+                max_m,
+            });
+        };
         if nearest_m > max_m {
             return Err(SnapTooFar { nearest_m, max_m });
         }
-        Ok((best_any.id, nearest_m))
+        Ok((id, nearest_m))
     }
 
     /// Allowed-incident check when `options` do **not** remove edges vs the
@@ -770,7 +857,14 @@ impl RouteGraph {
         let mut soft = 0usize;
         let mut hard_removed = 0usize;
         let mut boardwalk_kept = 0usize;
+        let boardwalk_nodes: HashSet<NodeId> = self
+            .edges
+            .iter()
+            .filter(|e| e.is_boardwalk_crossing)
+            .flat_map(|e| [e.source, e.target])
+            .collect();
         let mut kept = Vec::with_capacity(self.edges.len());
+        let mut hard_candidates: Vec<GraphEdge> = Vec::new();
         for mut edge in self.edges.drain(..) {
             let mid_lat = (edge.start_lat + edge.end_lat) * 0.5;
             let mid_lon = (edge.start_lon + edge.end_lon) * 0.5;
@@ -780,7 +874,7 @@ impl RouteGraph {
                         boardwalk_kept += 1;
                         kept.push(edge);
                     } else {
-                        hard_removed += 1;
+                        hard_candidates.push(edge);
                     }
                 }
                 Some(WetlandClass::SoftAvoid) => {
@@ -793,6 +887,30 @@ impl RouteGraph {
                 }
                 None => kept.push(edge),
             }
+        }
+        // Keep-all mid-way nodes make hard-avoid midpoints punch holes in ways that
+        // previously survived as one long edge. Restore a soft-penalized bridge set
+        // so boardwalk components stay attached to the giant hiking network.
+        if !boardwalk_nodes.is_empty() && !hard_candidates.is_empty() {
+            let bridges = wetland_boardwalk_bridges(&kept, &hard_candidates, &boardwalk_nodes);
+            let mut use_bridge = vec![false; hard_candidates.len()];
+            for i in bridges {
+                use_bridge[i] = true;
+            }
+            for (i, mut edge) in hard_candidates.into_iter().enumerate() {
+                if use_bridge[i] {
+                    soft += 1;
+                    edge.base_weight *= WETLAND_SOFT_COST_MULT;
+                    if let Some(w) = edge.eco_weight.as_mut() {
+                        *w *= WETLAND_SOFT_COST_MULT;
+                    }
+                    kept.push(edge);
+                } else {
+                    hard_removed += 1;
+                }
+            }
+        } else {
+            hard_removed += hard_candidates.len();
         }
         self.edges = kept;
         self.rebuild_adjacency();
@@ -2725,7 +2843,7 @@ mod tests {
 
     #[test]
     fn parallel_edges_resolve_to_cheapest_for_path_geometry() {
-        // Same endpoints as Budorvegen: secondary chord vs longer service loop.
+        // Same endpoints: secondary chord vs longer service loop.
         let mut nodes = HashMap::new();
         for (id, lat, lon) in [
             (3397900348_i64, 60.8841608, 11.3138178),
@@ -3256,10 +3374,10 @@ mod tests {
     }
 
     #[test]
-    fn friisvegen_style_conditional_blocks_car_not_foot() {
+    fn seasonal_conditional_blocks_car_not_foot() {
         use chrono::NaiveDate;
         let mut edge = GraphEdge {
-            id: "361797686-0".into(),
+            id: "cond-seasonal-0".into(),
             source: NodeId(1),
             target: NodeId(2),
             length_m: 100.0,
@@ -3277,7 +3395,7 @@ mod tests {
             maxspeed_type: None,
             maxspeed_variable: false,
             minspeed_kmh: None,
-            name: Some("Friisvegen".into()),
+            name: Some("SeasonalRoad".into()),
             road_ref: None,
             is_motorroad: false,
             is_expressway: false,

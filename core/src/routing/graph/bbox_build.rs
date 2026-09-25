@@ -984,11 +984,12 @@ fn graph_from_raw_ways(
         }
     }
 
+    // Keep every OSM node that appears on a profile-allowed way — including
+    // intermediate way nodes (not only junctions). Contracting mid-way nodes
+    // into edge shape made address snaps land on distant junctions when the
+    // nearest real way node was only tens of metres from the address.
     let mut nodes: HashMap<NodeId, Node> = HashMap::new();
     for (&id, &count) in &uses {
-        if count <= 1 {
-            continue;
-        }
         let Some(&(lat, lon)) = coords.get(&id) else {
             continue;
         };
@@ -1101,9 +1102,9 @@ fn graph_from_raw_ways(
             }
             prev = Some((*id, lat, lon));
 
-            let is_end = source.is_some() && uses.get(id).copied().unwrap_or(0) > 1;
+            let is_end = source.is_some() && nodes.contains_key(&NodeId(*id));
             if source.is_none() {
-                if uses.get(id).copied().unwrap_or(0) > 1 {
+                if nodes.contains_key(&NodeId(*id)) {
                     source = Some(*id);
                     length_m = 0.0;
                     shape.clear();
