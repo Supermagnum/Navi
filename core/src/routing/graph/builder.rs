@@ -580,9 +580,10 @@ impl RouteGraph {
     ///
     /// Snaps to the **nearest allowed edge** (polyline distance via
     /// [`edge_distance_m`](super::edge_distance_m)), then the closer eligible
-    /// endpoint of that edge. Graph build keeps intermediate OSM way nodes as
-    /// topology (not shape-only), so address snaps can land on the nearest way
-    /// node instead of a farther junction on a parallel or connecting edge.
+    /// endpoint of that edge. Mid-way OSM nodes stay in edge shape (not graph
+    /// topology); edge distance is what the snap budget compares against so
+    /// addresses beside long ways still resolve within
+    /// [`max_waypoint_snap_m`].
     ///
     /// When `prefer_better_surface` is true (intermediate vias only) and the
     /// graph is in car surface mode, among giant-component *nodes* within
@@ -888,9 +889,9 @@ impl RouteGraph {
                 None => kept.push(edge),
             }
         }
-        // Keep-all mid-way nodes make hard-avoid midpoints punch holes in ways that
-        // previously survived as one long edge. Restore a soft-penalized bridge set
-        // so boardwalk components stay attached to the giant hiking network.
+        // Soft-penalized bridges keep boardwalk-touched components attached to
+        // the giant hiking network when hard-avoid wetlands would otherwise
+        // isolate approach edges.
         if !boardwalk_nodes.is_empty() && !hard_candidates.is_empty() {
             let bridges = wetland_boardwalk_bridges(&kept, &hard_candidates, &boardwalk_nodes);
             let mut use_bridge = vec![false; hard_candidates.len()];
