@@ -1,9 +1,9 @@
 //! Approximate country bounding boxes for elevation country jobs, plus shared
 //! offline ISO point-in-polygon detection ([`iso_at`]).
 //!
-//! Host UI should prefer Geofabrik `.poly` / OSM admin boundaries when available
-//! for a bound extract; the rings in [`super::country_polys`] are the on-device
-//! fallback used by HOS jurisdiction resolution and available for other callers.
+//! [`iso_at`] uses Natural Earth Admin-0 polygons (see
+//! [`super::country_polys`]); [`lookup`] remains a coarse bbox table for
+//! elevation tile downloads only.
 
 pub use super::country_polys::iso_at;
 

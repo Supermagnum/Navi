@@ -27,11 +27,12 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * Regions are processed **one at a time**. When several are requested, the
  * region containing the user's current GPS fix is first; remaining regions
- * keep request order. For each region: download packs + Geofabrik extract +
- * basemap to completion; on local-bake, build place index from the extract
- * next (not gated on full convert), then hand convert to IndexedMapsBackground.
- * Never start place-index while that region's downloads are still in progress;
- * never start the next region's download until this region's place index finishes.
+ * keep request order. For each region: download packs + Geofabrik extract to
+ * Installed (routing-ready); basemap + place index continue in the background
+ * so the next corridor download is not gated on indexing. Local-bake still
+ * builds place index from the extract before handing convert to
+ * IndexedMapsBackground. Never start place-index while that region's pack /
+ * extract downloads are still in progress.
  * A force-stop still kills the HTTP stream, but [JOB_FILE] (with [Phase]) plus
  * `.partial` / [QUEUE_FILE] let the next launch resume without tapping Download
  * again.
@@ -308,6 +309,8 @@ object RegionDownloadBackground {
         val filename: String,
         val geofabrikPath: String,
         val phase: Phase = Phase.PACKS,
+        /** Absolute pack write root; null → [dataDir] (Tools / internal). */
+        val packDirPath: String? = null,
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -315,6 +318,32 @@ object RegionDownloadBackground {
     private val running = AtomicBoolean(false)
     private val lastStatus = AtomicReference("")
     private val resuming = AtomicBoolean(false)
+
+    /** Geofabrik path of the region currently in the pipeline (for progress labels). */
+    private val activeRegionPath = AtomicReference("")
+
+    /** Region id currently driving download/index progress (empty when idle). */
+    fun activeRegionPath(): String = activeRegionPath.get()
+
+    /**
+     * Set [lastStatus] so the line always names the active region (and N-of-M
+     * when a long-trip corridor plan is present).
+     */
+    private fun setStatus(
+        message: String,
+        regionId: String = activeRegionPath.get(),
+    ) {
+        val id = regionId.trim().trim('/')
+        if (id.isEmpty()) {
+            lastStatus.set(message)
+            return
+        }
+        val seq = RegionProgressMessages.sequenceFor(id)
+        val line =
+            RegionProgressMessages.annotate(message, id, seq?.first, seq?.second)
+        lastStatus.set(line)
+        Log.i(TAG, "status: $line")
+    }
 
     /** Last successful region path (for UI style refresh after full `done`). */
     private val lastCompletedPath = AtomicReference("")
@@ -324,6 +353,124 @@ object RegionDownloadBackground {
      * while basemap may still be downloading. Consumed once by the UI.
      */
     private val lastUsablePath = AtomicReference("")
+
+    /**
+     * When set, pack/PBF writes go here while job/queue sidecars and place index
+     * stay on the [dataDir] passed to [ensureStarted] (internal [NaviAppData]).
+     */
+    private val packDirOverride = AtomicReference<File?>(null)
+
+    /** When true, [ensureStarted] refuses to drain unless Wi‑Fi/Ethernet. */
+    private val requireUnmeteredGate = AtomicBoolean(false)
+
+    fun interface PhaseListener {
+        fun onRegionPhase(
+            geofabrikPath: String,
+            phase: String,
+        )
+    }
+
+    private val phaseListeners = java.util.concurrent.CopyOnWriteArrayList<PhaseListener>()
+
+    fun addPhaseListener(listener: PhaseListener) {
+        phaseListeners.addIfAbsent(listener)
+    }
+
+    fun removePhaseListener(listener: PhaseListener) {
+        phaseListeners.remove(listener)
+    }
+
+    private fun emitPhase(
+        path: String,
+        phase: String,
+    ) {
+        for (l in phaseListeners) {
+            runCatching { l.onRegionPhase(path, phase) }
+        }
+    }
+
+    /** Host-test helper: fan-out a synthetic phase to [PhaseListener]s. */
+    internal fun emitPhaseForTests(
+        path: String,
+        phase: String,
+    ) {
+        emitPhase(path, phase)
+    }
+
+    /** Active pack write root (per-job path, override, long-trip prefs, or [dataDir]). */
+    internal fun packRoot(dataDir: File): File = packDirOverride.get() ?: dataDir
+
+    private fun resolvePackRoot(
+        context: Context?,
+        dataDir: File,
+        job: Job,
+    ): File {
+        // Prefer the live long-trip volume selection over a stale job sidecar.
+        // After SD became unavailable, jobs were persisted with
+        // packDirPath=.../files/long-trip-packs (internal); resuming those must
+        // not keep dumping multi-GB packs onto internal once a writable
+        // removable volume is selected again.
+        if (context != null) {
+            val id = LongTripPackStorage.selectedVolumeId(context)
+            if (id != NaviStorageVolumes.INTERNAL_ID) {
+                val preferred = LongTripPackStorage.packDownloadDir(context)
+                val preferredPath = preferred.absolutePath
+                val staleInternal =
+                    job.packDirPath
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { path ->
+                            path != preferredPath &&
+                                path.contains("/${LongTripPackStorage.PACKS_SUBDIR}") &&
+                                !path.contains("/storage/") &&
+                                path.contains(dataDir.absolutePath)
+                        } == true
+                if (staleInternal) {
+                    Log.w(
+                        TAG,
+                        "ignoring stale internal job packDirPath=${job.packDirPath}; " +
+                            "using preferred $preferredPath",
+                    )
+                } else {
+                    job.packDirPath
+                        ?.takeIf { it.isNotBlank() && it == preferredPath }
+                        ?.let { path ->
+                            val dir = File(path)
+                            if (dir.mkdirs() || dir.isDirectory) return dir
+                        }
+                }
+                return preferred
+            }
+        }
+        job.packDirPath
+            ?.takeIf { it.isNotBlank() }
+            ?.let { path ->
+                val dir = File(path)
+                if (dir.mkdirs() || dir.isDirectory) return dir
+                Log.w(TAG, "job packDirPath unusable: $path")
+            }
+        packDirOverride.get()?.let { return it }
+        return dataDir
+    }
+
+    /**
+     * Cancel pending queue entries and clear the active job sidecar. Does **not**
+     * delete installed packs or place-index data (long-trip toggle OFF).
+     */
+    fun cancelPending(dataDir: File) {
+        mutex.tryLock().let { locked ->
+            try {
+                saveQueue(dataDir, emptyList())
+                clearJob(dataDir)
+                setStatus("cancelled")
+                Log.i(TAG, "cancelPending cleared queue+job under ${dataDir.absolutePath}")
+            } finally {
+                if (locked) mutex.unlock()
+            }
+        }
+        // Best-effort if mutex busy (drain in flight): still wipe files.
+        saveQueue(dataDir, emptyList())
+        clearJob(dataDir)
+    }
 
     fun isRunning(): Boolean = running.get()
 
@@ -359,6 +506,7 @@ object RegionDownloadBackground {
                 filename = jsonStringField(text, "filename") ?: return null,
                 geofabrikPath = jsonStringField(text, "geofabrikPath").orEmpty(),
                 phase = Phase.parse(jsonStringField(text, "phase")),
+                packDirPath = jsonStringField(text, "packDirPath"),
             )
         }.getOrNull()
     }
@@ -376,6 +524,10 @@ object RegionDownloadBackground {
                 append("\"filename\":").append(jsonQuote(job.filename)).append(',')
                 append("\"geofabrikPath\":").append(jsonQuote(job.geofabrikPath)).append(',')
                 append("\"phase\":").append(jsonQuote(job.phase.wire()))
+                val pack = job.packDirPath
+                if (!pack.isNullOrBlank()) {
+                    append(',').append("\"packDirPath\":").append(jsonQuote(pack))
+                }
                 append('}')
             },
         )
@@ -674,12 +826,63 @@ object RegionDownloadBackground {
         }.getOrDefault(true)
 
     /**
+     * True when `name_index_build` explicitly records complete=0 for [regionId].
+     * Missing DB / missing row / legacy DB → false (not an interrupted mid-build).
+     */
+    internal fun placeIndexBuildIncomplete(
+        dataDir: File,
+        regionId: String,
+    ): Boolean {
+        val rid = regionId.trim().trim('/')
+        if (rid.isEmpty()) return false
+        val dbFile = File(dataDir, "place_index.db")
+        if (!dbFile.isFile || dbFile.length() < 100L) return false
+        return runCatching {
+            android.database.sqlite.SQLiteDatabase
+                .openDatabase(
+                    dbFile.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+                ).use { db ->
+                    db
+                        .rawQuery(
+                            "SELECT complete FROM name_index_build WHERE region_id = ? LIMIT 1",
+                            arrayOf(rid),
+                        ).use { c ->
+                            if (!c.moveToFirst()) return@use false
+                            c.getInt(0) == 0
+                        }
+                }
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Whether pipeline start should wipe `name_entries` for [regionId].
+     * False only for PLACE_INDEX resume with an explicit complete=0 build row.
+     */
+    internal fun shouldClearPlaceRowsOnPipelineStart(
+        phase: Phase,
+        dataDir: File,
+        regionId: String,
+    ): Boolean = !(phase == Phase.PLACE_INDEX && placeIndexBuildIncomplete(dataDir, regionId))
+
+    /**
      * Native download-slot snapshot as (raw label, formatted "label N% (done / tot)").
      * [runCatching] so JVM unit tests without libnavi still compile and run.
+     * Labels are annotated with the active region name / N-of-M when missing.
      */
     private fun formattedNativeSnapshot(): Pair<String, String>? {
         val snap = runCatching { downloadProgressSnapshot() }.getOrNull() ?: return null
         if (snap.label.isBlank()) return null
+        val region = activeRegionPath.get()
+        val seq = RegionProgressMessages.sequenceFor(region)
+        val label =
+            RegionProgressMessages.annotate(
+                snap.label,
+                region,
+                seq?.first,
+                seq?.second,
+            )
         val tot = snap.unitsTotal
         val done = snap.unitsDone
         val pct =
@@ -690,11 +893,11 @@ object RegionDownloadBackground {
             }
         val formatted =
             when {
-                pct != null && tot != null -> "${snap.label} $pct% ($done / $tot)"
-                pct != null -> "${snap.label} $pct%"
-                else -> snap.label
+                pct != null && tot != null -> "$label $pct% ($done / $tot)"
+                pct != null -> "$label $pct%"
+                else -> label
             }
-        return snap.label to formatted
+        return label to formatted
     }
 
     fun uiLine(): String {
@@ -711,7 +914,10 @@ object RegionDownloadBackground {
             discoverPending(dataDir)
                 ?: discoverIncompleteForPath(dataDir, preferredPath)
                 ?: return
-        lastStatus.set(
+        if (job.geofabrikPath.isNotBlank()) {
+            activeRegionPath.set(job.geofabrikPath.trim().trim('/'))
+        }
+        setStatus(
             when (job.phase) {
                 Phase.PACKS ->
                     if (partialBytes(dataDir, job.filename) > 0L) {
@@ -722,6 +928,7 @@ object RegionDownloadBackground {
                 Phase.PLACE_INDEX -> "Resuming place index for ${job.geofabrikPath}…"
                 Phase.BASEMAP -> "Resuming basemap for ${job.geofabrikPath}…"
             },
+            job.geofabrikPath,
         )
         ensureStarted(
             context,
@@ -730,6 +937,12 @@ object RegionDownloadBackground {
             job.filename,
             job.geofabrikPath,
             startPhase = job.phase,
+            packDir =
+                job.packDirPath?.let { File(it) }
+                    ?: LongTripPackStorage.packDownloadDir(context).takeIf {
+                        LongTripPackStorage.selectedVolumeId(context) !=
+                            NaviStorageVolumes.INTERNAL_ID
+                    },
         )
     }
 
@@ -754,7 +967,73 @@ object RegionDownloadBackground {
         startPhase: Phase = Phase.PACKS,
         userLat: Double? = null,
         userLon: Double? = null,
+        /** Long-trip pack directory; null → write packs into [dataDir]. */
+        packDir: File? = null,
+        /** When true, apply [NetworkUnmetered] at this real wiring point. */
+        requireUnmetered: Boolean = false,
     ) {
+        ensureStartedWithNetworkState(
+            context = context,
+            dataDir = dataDir,
+            url = url,
+            filename = filename,
+            geofabrikPath = geofabrikPath,
+            startPhase = startPhase,
+            userLat = userLat,
+            userLon = userLon,
+            packDir = packDir,
+            requireUnmetered = requireUnmetered,
+            unmeteredNow = NetworkUnmetered.isWifiOrEthernet(context),
+        )
+    }
+
+    /**
+     * Same as [ensureStarted] but with an explicit unmetered reading so host tests
+     * can prove the Wi‑Fi/Ethernet gate at this wiring point without a live radio.
+     */
+    internal fun ensureStartedWithNetworkState(
+        context: Context?,
+        dataDir: File,
+        url: String,
+        filename: String,
+        geofabrikPath: String,
+        startPhase: Phase = Phase.PACKS,
+        userLat: Double? = null,
+        userLon: Double? = null,
+        packDir: File? = null,
+        requireUnmetered: Boolean = false,
+        unmeteredNow: Boolean,
+    ) {
+        requireUnmeteredGate.set(requireUnmetered)
+        // Never clear an in-flight long-trip pack root with a Tools null packDir.
+        if (packDir != null) {
+            packDirOverride.set(packDir)
+        }
+        val packDirPath = packDir?.absolutePath
+        if (requireUnmetered && !unmeteredNow) {
+            Log.i(TAG, "long-trip gate: not on Wi-Fi/Ethernet; pause enqueue of $geofabrikPath")
+            val path = GeofabrikDownloadCatalog.canonicalizePath(geofabrikPath)
+            activeRegionPath.set(path)
+            setStatus("Paused — waiting for Wi-Fi/Ethernet", path)
+            emitPhase(path, "paused_unmetered")
+            // Still record the job on the queue so remount/unmetered resume can drain.
+            val job =
+                Job(
+                    url = url,
+                    filename = filename,
+                    geofabrikPath = path,
+                    phase = startPhase,
+                    packDirPath = packDirPath,
+                )
+            // Synchronous queue write (no claim) so Tools behaviour is unchanged when
+            // requireUnmetered=false; long-trip can resume later via ensureStartedFromPending.
+            runCatching {
+                kotlinx.coroutines.runBlocking {
+                    mutex.withLock { enqueueJobLocked(dataDir, job, userLat, userLon) }
+                }
+            }
+            return
+        }
         val startDrain = claimWorker()
         scope.launch {
             val path = GeofabrikDownloadCatalog.canonicalizePath(geofabrikPath)
@@ -764,6 +1043,7 @@ object RegionDownloadBackground {
                     filename = filename,
                     geofabrikPath = path,
                     phase = startPhase,
+                    packDirPath = packDirPath,
                 )
             if (!startDrain) {
                 mutex.withLock {
@@ -771,18 +1051,32 @@ object RegionDownloadBackground {
                 }
                 Log.i(TAG, "queued behind active download path=$path")
                 lastStatus.set(queueStatusLine(dataDir, path))
+                emitPhase(path, "queued")
                 return@launch
             }
             try {
                 mutex.withLock {
                     enqueueJobLocked(dataDir, job, userLat, userLon)
                 }
-                drainQueue(context, dataDir)
+                // Production drain needs a Context; host gate/queue tests never reach here
+                // with a null context (they pause or only enqueue behind an active claim).
+                val ctx =
+                    context
+                        ?: run {
+                            Log.e(TAG, "ensureStarted drain skipped: null Context")
+                            return@launch
+                        }
+                drainQueue(ctx, dataDir)
             } finally {
+                packDirOverride.set(null)
+                requireUnmeteredGate.set(false)
                 releaseWorker()
             }
         }
     }
+
+    /** True when the long-trip unmetered gate is armed on the active worker. */
+    internal fun requireUnmeteredGateArmed(): Boolean = requireUnmeteredGate.get()
 
     private fun queueStatusLine(
         dataDir: File,
@@ -790,11 +1084,25 @@ object RegionDownloadBackground {
     ): String {
         val n = loadQueue(dataDir).size
         val active = loadJob(dataDir)?.geofabrikPath.orEmpty()
-        return when {
-            active.isNotBlank() && n > 0 ->
-                "Queued $justQueued (after $active; $n waiting)…"
-            n > 0 -> "Queued $justQueued ($n waiting)…"
-            else -> "Queued $justQueued…"
+        val queuedName = RegionProgressMessages.regionName(justQueued).ifBlank { justQueued }
+        val activeName =
+            if (active.isNotBlank()) {
+                RegionProgressMessages.regionName(active).ifBlank { active }
+            } else {
+                ""
+            }
+        val seq = RegionProgressMessages.sequenceFor(justQueued)
+        val base =
+            when {
+                activeName.isNotBlank() && n > 0 ->
+                    "Queued $queuedName (after $activeName; $n waiting)…"
+                n > 0 -> "Queued $queuedName ($n waiting)…"
+                else -> "Queued $queuedName…"
+            }
+        return if (seq != null) {
+            RegionProgressMessages.annotate(base, justQueued, seq.first, seq.second)
+        } else {
+            base
         }
     }
 
@@ -858,6 +1166,8 @@ object RegionDownloadBackground {
                         filename = filename,
                         geofabrikPath = o.optString("geofabrikPath", ""),
                         phase = Phase.parse(o.optString("phase").ifBlank { null }),
+                        packDirPath =
+                            o.optString("packDirPath", "").ifBlank { null },
                     ),
                 )
             }
@@ -895,7 +1205,11 @@ object RegionDownloadBackground {
                     .put("url", j.url)
                     .put("filename", j.filename)
                     .put("geofabrikPath", j.geofabrikPath)
-                    .put("phase", j.phase.wire()),
+                    .put("phase", j.phase.wire())
+                    .also { o ->
+                        val p = j.packDirPath
+                        if (!p.isNullOrBlank()) o.put("packDirPath", p)
+                    },
             )
         }
         queueFile(dataDir).writeText(arr.toString())
@@ -957,6 +1271,11 @@ object RegionDownloadBackground {
         dataDir: File,
     ) {
         while (true) {
+            if (requireUnmeteredGate.get() && !NetworkUnmetered.isWifiOrEthernet(context)) {
+                setStatus("Paused — waiting for Wi-Fi/Ethernet")
+                Log.i(TAG, "drainQueue paused: unmetered gate")
+                break
+            }
             val next =
                 mutex.withLock {
                     popQueue(dataDir)
@@ -980,16 +1299,37 @@ object RegionDownloadBackground {
         val url = incoming.url
         val filename = incoming.filename
         val geofabrikPath = incoming.geofabrikPath.trim().trim('/')
-        var startPhase = incoming.phase
-        val already = partialBytes(dataDir, filename)
-        resuming.set(already > 0L || startPhase != Phase.PACKS)
-        writeJob(dataDir, incoming)
-        // In-progress download must not leave searchable place rows for this region.
         if (geofabrikPath.isNotBlank()) {
-            PlaceIndexReady.clearReady(dataDir, geofabrikPath)
+            activeRegionPath.set(geofabrikPath)
+        }
+        var startPhase = incoming.phase
+        val packs = resolvePackRoot(context, dataDir, incoming)
+        // Keep override aligned for any nested callers still using packRoot().
+        packDirOverride.set(packs)
+        val already = partialBytes(packs, filename)
+        resuming.set(already > 0L || startPhase != Phase.PACKS)
+        writeJob(dataDir, incoming.copy(packDirPath = packs.absolutePath))
+        // Fresh pack download / complete-index replace: clear stamp + rows.
+        // PLACE_INDEX resume with name_index_build.complete=0: stamp only —
+        // keep partial name_entries so the next ensurePlaceIndex can finish
+        // (full PBF reparse is accepted; discarding rows left regions stuck).
+        if (geofabrikPath.isNotBlank()) {
+            val clearRows =
+                shouldClearPlaceRowsOnPipelineStart(startPhase, dataDir, geofabrikPath)
+            PlaceIndexReady.preparePipelineStart(
+                dataDir,
+                geofabrikPath,
+                preserveIncompleteRows = !clearRows,
+            )
+            if (!clearRows) {
+                Log.i(
+                    TAG,
+                    "PLACE_INDEX resume: preserving incomplete name_entries for $geofabrikPath",
+                )
+            }
         }
         if (lastStatus.get().isBlank() || !lastStatus.get().startsWith("Resuming")) {
-            lastStatus.set(
+            setStatus(
                 if (already > 0L || startPhase != Phase.PACKS) {
                     "Resuming download of $geofabrikPath…"
                 } else {
@@ -997,24 +1337,40 @@ object RegionDownloadBackground {
                 },
             )
         }
+        emitPhase(geofabrikPath, "downloading")
         Log.i(
             TAG,
             "start provision filename=$filename resume_bytes=$already " +
-                "path=$geofabrikPath phase=$startPhase",
+                "path=$geofabrikPath phase=$startPhase packRoot=${packs.absolutePath}",
         )
+        LongTripPackStorage.beginPackWrite(packs)
         try {
-            runOneRegionPipeline(context, dataDir, url, filename, geofabrikPath, startPhase)
+            runOneRegionPipeline(context, dataDir, packs, url, filename, geofabrikPath, startPhase)
+        } catch (e: java.io.IOException) {
+            setStatus("failed: ${e.message}")
+            Log.e(TAG, "provisionRegionData crashed", e)
+            val stems = LongTripPackStorage.handleWriteIoFailure(context, packs, e)
+            emitPhase(geofabrikPath, "unavailable:${stems.joinToString(",")}")
         } catch (t: Throwable) {
-            lastStatus.set("failed: ${t.message}")
+            setStatus("failed: ${t.message}")
             Log.e(TAG, "provisionRegionData crashed", t)
+            if (t.cause is java.io.IOException) {
+                val stems = LongTripPackStorage.handleWriteIoFailure(context, packs, t)
+                emitPhase(geofabrikPath, "unavailable:${stems.joinToString(",")}")
+            } else {
+                emitPhase(geofabrikPath, "failed")
+            }
         } finally {
+            LongTripPackStorage.endPackWrite(packs)
             clearJob(dataDir)
+            activeRegionPath.set("")
         }
     }
 
     private fun runOneRegionPipeline(
         context: Context,
         dataDir: File,
+        packDir: File,
         url: String,
         filename: String,
         geofabrikPath: String,
@@ -1034,22 +1390,23 @@ object RegionDownloadBackground {
                 "FAIL: unknown or blank region for pipeline filename=$filename " +
                     "path=$pathForDecision (pass an explicit pack-server region id)",
             )
-            lastStatus.set("failed (unknown region)")
+            setStatus("failed (unknown region)", pathForDecision)
             lastCompletedPath.set(pathForDecision)
             return
         }
+        activeRegionPath.set(pathForDecision)
         var phase = startPhase
         if (phase == Phase.PACKS) {
             val checkStarted = System.nanoTime()
             val decideT0 = phaseStart("pipeline.decide_acquisition")
-            lastStatus.set("Fetching from pack server…")
+            setStatus("Fetching from pack server…")
             persistPhase(dataDir, url, filename, pathForDecision, Phase.PACKS)
             val decision =
                 runCatching {
                     decideRegionAcquisition(
                         regionId = pathForDecision,
                         packServerBaseUrl = null,
-                        dataDir = dataDir.absolutePath,
+                        dataDir = packDir.absolutePath,
                     )
                 }.getOrElse { t ->
                     Log.i(
@@ -1076,10 +1433,10 @@ object RegionDownloadBackground {
                 )
                 if (!decision.executeLocalConvert) {
                     val packPathT0 = phaseStart("pipeline.pack_server_path")
-                    lastStatus.set("Installing packs from ${decision.dataSource}…")
+                    setStatus("Installing packs from ${decision.dataSource}…")
                     runCatching {
                         bindGeofabrikRegion(
-                            dataDir = dataDir.absolutePath,
+                            dataDir = packDir.absolutePath,
                             geofabrikRegion = pathForDecision,
                             pbfFilename = filename,
                             localSequence = null,
@@ -1089,11 +1446,11 @@ object RegionDownloadBackground {
                         MapHudPrefs.saveGeofabrikPath(context, geofabrikPath)
                     }
                     // Download Geofabrik extract BEFORE place index / basemap.
-                    lastStatus.set("Downloading extract for place index…")
+                    setStatus("Downloading extract for place index…")
                     val pbfT0 = phaseStart("pipeline.provision_pbf_dem")
                     val pbfReport =
                         provisionRegionData(
-                            dataDir = dataDir.absolutePath,
+                            dataDir = packDir.absolutePath,
                             pbfUrl = url,
                             pbfFilename = filename,
                             elevationTarUrl = null,
@@ -1105,48 +1462,29 @@ object RegionDownloadBackground {
                     )
                     Log.i(TAG, "pack-server PBF provision: ${pbfReport.take(240)}")
                     if (!pbfReport.contains("PASS")) {
-                        lastStatus.set("failed (extract download)")
+                        setStatus("failed (extract download)")
                         lastCompletedPath.set(pathForDecision)
                         return
                     }
-                    phase = Phase.BASEMAP
-                    persistPhase(dataDir, url, filename, pathForDecision, phase)
-                    val basemapT0 = phaseStart("pipeline.basemap_pmtiles")
-                    val basemapOk =
-                        downloadBasemapPmtiles(context, dataDir, pathForDecision)
-                    phaseEnd(
-                        "pipeline.basemap_pmtiles",
-                        basemapT0,
-                        "ok=$basemapOk",
+                    // Packs + extract are enough for multi-stem routing and
+                    // rest/overnight POI packs. Do not block the corridor queue
+                    // on basemap or place-index (Phase 0: planning must not wait
+                    // on indexing of non-start regions).
+                    emitInstalledForRouting(pathForDecision)
+                    handOffBasemapAndPlaceIndex(
+                        context = context,
+                        dataDir = dataDir,
+                        packDir = packDir,
+                        filename = filename,
+                        regionId = pathForDecision,
                     )
-                    if (!basemapOk) {
-                        lastCompletedPath.set(pathForDecision)
-                        lastStatus.set("done (basemap failed)")
-                        return
-                    }
-                    phase = Phase.PLACE_INDEX
-                    persistPhase(dataDir, url, filename, pathForDecision, phase)
-                    val placeT0 = phaseStart("pipeline.place_index")
-                    val placeOk = runPlaceIndexLocal(dataDir, filename, pathForDecision)
-                    phaseEnd(
-                        "pipeline.place_index",
-                        placeT0,
-                        "ok=$placeOk",
-                    )
-                    if (!placeOk) {
-                        lastStatus.set("done (place index failed)")
-                        lastCompletedPath.set(pathForDecision)
-                        return
-                    }
-                    PlaceIndexReady.markReady(dataDir, pathForDecision)
-                    markUsable(pathForDecision)
                     lastCompletedPath.set(pathForDecision)
-                    lastStatus.set("done")
+                    setStatus("done (packs installed; indexing in background)")
                     phaseEnd("pipeline.pack_server_path", packPathT0)
                     Log.i(
                         TAG,
-                        "pack server install + extract + basemap + place index finished " +
-                            "for $pathForDecision",
+                        "pack server install + extract finished for $pathForDecision; " +
+                            "basemap + place index handed off",
                     )
                     return
                 }
@@ -1162,7 +1500,7 @@ object RegionDownloadBackground {
                         downloadBasemapPmtiles(context, dataDir, pathForDecision)
                     if (!basemapOk) {
                         lastCompletedPath.set(pathForDecision)
-                        lastStatus.set("done (basemap failed)")
+                        setStatus("done (basemap failed)")
                         return
                     }
                 }
@@ -1172,44 +1510,44 @@ object RegionDownloadBackground {
             if (phase == Phase.PLACE_INDEX) {
                 persistPhase(dataDir, url, filename, pathForDecision, Phase.PLACE_INDEX)
                 val ok =
-                    if (PackRegionAvailability.localBakeReady(dataDir, pathForDecision) &&
+                    if (PackRegionAvailability.localBakeReady(packDir, pathForDecision) &&
                         pathForDecision.isNotBlank() &&
-                        File(dataDir, filename).length() >= MIN_PBF_BYTES
+                        File(packDir, filename).length() >= MIN_PBF_BYTES
                     ) {
-                        runPlaceIndexLocal(dataDir, filename, pathForDecision)
-                    } else if (PackRegionAvailability.localBakeReady(dataDir, pathForDecision) &&
+                        runPlaceIndexLocal(dataDir, packDir, filename, pathForDecision)
+                    } else if (PackRegionAvailability.localBakeReady(packDir, pathForDecision) &&
                         pathForDecision.isNotBlank()
                     ) {
                         // Packs present but extract missing — fetch then index.
-                        lastStatus.set("Downloading extract for place index…")
+                        setStatus("Downloading extract for place index…")
                         val pbfReport =
                             provisionRegionData(
-                                dataDir = dataDir.absolutePath,
+                                dataDir = packDir.absolutePath,
                                 pbfUrl = url,
                                 pbfFilename = filename,
                                 elevationTarUrl = null,
                             )
                         if (!pbfReport.contains("PASS")) {
-                            lastStatus.set("done (place index failed)")
+                            setStatus("done (place index failed)")
                             lastCompletedPath.set(pathForDecision)
                             return
                         }
-                        runPlaceIndexLocal(dataDir, filename, pathForDecision)
+                        runPlaceIndexLocal(dataDir, packDir, filename, pathForDecision)
                     } else {
-                        runPlaceIndexLocal(dataDir, filename, pathForDecision)
+                        runPlaceIndexLocal(dataDir, packDir, filename, pathForDecision)
                     }
                 if (!ok) {
-                    lastStatus.set("done (place index failed)")
+                    setStatus("done (place index failed)")
                     lastCompletedPath.set(pathForDecision)
                     return
                 }
                 PlaceIndexReady.markReady(dataDir, pathForDecision)
                 markUsable(pathForDecision)
                 // Local-bake resume: place index is done; convert is non-blocking.
-                val resumePbf = File(dataDir, filename)
+                val resumePbf = File(packDir, filename)
                 if (resumePbf.isFile &&
                     resumePbf.length() >= MIN_PBF_BYTES &&
-                    PackRegionAvailability.localBakeReady(dataDir, pathForDecision)
+                    PackRegionAvailability.localBakeReady(packDir, pathForDecision)
                 ) {
                     val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
                     IndexedMapsBackground.ensureStarted(
@@ -1225,18 +1563,18 @@ object RegionDownloadBackground {
                     )
                 }
                 lastCompletedPath.set(pathForDecision)
-                lastStatus.set("done")
+                setStatus("done")
                 return
             }
         }
 
-        lastStatus.set(
+        setStatus(
             if (resuming.get()) "Resuming download…" else "Downloading region… 0%",
         )
         persistPhase(dataDir, url, filename, pathForDecision, Phase.PACKS)
         val report =
             provisionRegionData(
-                dataDir = dataDir.absolutePath,
+                dataDir = packDir.absolutePath,
                 pbfUrl = url,
                 pbfFilename = filename,
                 elevationTarUrl = null,
@@ -1247,7 +1585,7 @@ object RegionDownloadBackground {
                 MapHudPrefs.saveGeofabrikPath(context, geofabrikPath)
                 runCatching {
                     bindGeofabrikRegion(
-                        dataDir = dataDir.absolutePath,
+                        dataDir = packDir.absolutePath,
                         geofabrikRegion = geofabrikPath,
                         pbfFilename = filename,
                         localSequence = null,
@@ -1260,17 +1598,17 @@ object RegionDownloadBackground {
                 persistPhase(dataDir, url, filename, basemapPath, Phase.BASEMAP)
                 if (!downloadBasemapPmtiles(context, dataDir, basemapPath)) {
                     lastCompletedPath.set(basemapPath)
-                    lastStatus.set("done (basemap failed)")
+                    setStatus("done (basemap failed)")
                     return
                 }
             }
-            val pbf = File(dataDir, filename)
+            val pbf = File(packDir, filename)
             if (pbf.isFile && pbf.length() >= MIN_PBF_BYTES) {
                 // Place index only needs the OSM extract — do not wait on a
                 // multi-hour local convert (same readiness as pack-server path).
                 persistPhase(dataDir, url, filename, basemapPath, Phase.PLACE_INDEX)
-                if (!runPlaceIndexLocal(dataDir, filename, basemapPath)) {
-                    lastStatus.set("done (place index failed)")
+                if (!runPlaceIndexLocal(dataDir, packDir, filename, basemapPath)) {
+                    setStatus("done (place index failed)")
                     lastCompletedPath.set(basemapPath)
                     return
                 }
@@ -1294,9 +1632,9 @@ object RegionDownloadBackground {
                 )
             }
             lastCompletedPath.set(basemapPath)
-            lastStatus.set("done")
+            setStatus("done")
         } else {
-            lastStatus.set("failed")
+            setStatus("failed")
         }
     }
 
@@ -1314,24 +1652,71 @@ object RegionDownloadBackground {
                 filename = filename,
                 geofabrikPath = geofabrikPath,
                 phase = phase,
+                packDirPath = packDirOverride.get()?.absolutePath,
             ),
         )
+    }
+
+    private fun emitInstalledForRouting(path: String) {
+        val trimmed = path.trim().trim('/')
+        if (trimmed.isEmpty()) return
+        emitPhase(trimmed, "installed")
+        lastUsablePath.set(trimmed)
+        setStatus("Packs installed — region ready for routing")
+        Log.i(TAG, "region installed for routing path=$trimmed")
+    }
+
+    /**
+     * After pack-server packs + extract are Ready, finish basemap + place index
+     * without holding the region download queue (next corridor leaf may download).
+     * Does not touch [JOB_FILE] — the download worker clears that sidecar.
+     */
+    private fun handOffBasemapAndPlaceIndex(
+        context: Context,
+        dataDir: File,
+        packDir: File,
+        filename: String,
+        regionId: String,
+    ) {
+        val rid = regionId.trim().trim('/')
+        if (rid.isEmpty()) return
+        scope.launch {
+            val basemapOk =
+                runCatching {
+                    downloadBasemapPmtiles(context, dataDir, rid)
+                }.getOrDefault(false)
+            if (!basemapOk) {
+                Log.w(TAG, "background basemap failed for $rid")
+            }
+            val placeOk =
+                runCatching {
+                    runPlaceIndexLocal(dataDir, packDir, filename, rid)
+                }.getOrDefault(false)
+            if (placeOk) {
+                PlaceIndexReady.markReady(dataDir, rid)
+                markUsable(rid)
+                Log.i(TAG, "background place index ready for $rid")
+            } else {
+                Log.w(TAG, "background place index failed for $rid")
+            }
+        }
     }
 
     private fun markUsable(path: String) {
         val trimmed = path.trim().trim('/')
         if (trimmed.isEmpty()) return
         lastUsablePath.set(trimmed)
-        lastStatus.set("$USABLE_STATUS_PREFIX — region ready for routing and search")
+        setStatus("$USABLE_STATUS_PREFIX — region ready for routing and search")
         Log.i(TAG, "region usable for routing/search path=$trimmed")
     }
 
     private fun runPlaceIndexLocal(
-        dataDir: File,
+        indexDataDir: File,
+        pbfDir: File,
         filename: String,
         regionId: String,
     ): Boolean {
-        val pbf = File(dataDir, filename)
+        val pbf = File(pbfDir, filename)
         if (!pbf.isFile || pbf.length() < MIN_PBF_BYTES) return false
         val rid = regionId.trim().trim('/')
         if (rid.isEmpty() || !GeofabrikDownloadCatalog.isKnownPackRegionId(rid)) {
@@ -1339,7 +1724,7 @@ object RegionDownloadBackground {
                 TAG,
                 "FAIL: refusing place index under unknown region_id=$rid pbf=${pbf.name}",
             )
-            lastStatus.set("failed (unknown region)")
+            setStatus("failed (unknown region)")
             return false
         }
         Log.i(
@@ -1352,17 +1737,19 @@ object RegionDownloadBackground {
                 "FAIL: PBF/region mismatch for place index region_id=$rid pbf=${pbf.name} " +
                     "expected_stem=${PackRegionAvailability.localStem(rid)}",
             )
-            lastStatus.set("failed (pbf/region mismatch)")
+            setStatus("failed (pbf/region mismatch)")
             return false
         }
-        lastStatus.set("Place index: starting… 0% (0 / 6)")
+        emitPhase(rid, "indexing")
+        setStatus("Place index: starting… 0% (0 / 6)")
         // Native `ensure_place_index` single-flights discard/open/load so a
-        // concurrent PlaceIndexBackground caller waits then cache-hits.
+        // concurrent PlaceIndexBackground caller waits then cache-hits
+        // (PLACE_INDEX_BUILD_LOCK in core).
         val placeReport =
             runCatching {
                 ensurePlaceIndex(
                     pbf.absolutePath,
-                    File(dataDir, "place_index.db").absolutePath,
+                    File(indexDataDir, "place_index.db").absolutePath,
                     rid,
                 )
             }.getOrElse { t ->
@@ -1371,7 +1758,8 @@ object RegionDownloadBackground {
             }
         Log.i(TAG, "local-bake place index: ${placeReport.take(400)}")
         if (placeReport.contains("PASS")) {
-            lastStatus.set("Place index ready 100% (6 / 6)")
+            setStatus("Place index ready 100% (6 / 6)")
+            emitPhase(rid, "indexed")
         }
         return placeReport.contains("PASS")
     }
@@ -1393,7 +1781,7 @@ object RegionDownloadBackground {
             Log.i(TAG, "basemap already present for $path ($key)")
             return true
         }
-        lastStatus.set("Downloading basemap (PMTiles)…")
+        setStatus("Downloading basemap (PMTiles)…")
         Log.i(TAG, "starting PMTiles extract for $path")
         val job =
             runCatching {

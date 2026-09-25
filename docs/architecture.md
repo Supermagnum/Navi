@@ -27,9 +27,16 @@ Workspace members are declared in the root `Cargo.toml`. Default members:
 Core routing, rest planning, and POI queries work fully offline once a region
 extract is on disk. Network access is an **opt-in enhancement layer** (DEM
 tiles, Geofabrik update checks, fixture downloads, optional PMTiles basemap
-download, live OpenFreeMap tiles when no local PMTiles cover the camera). Map
-data is never replaced silently in the background — see
+download, live OpenFreeMap tiles when no local PMTiles cover the camera, and
+**Long trip** preliminary corridor estimates via BRouter / OpenRouteService).
+Map data is never replaced silently in the background — see
 [`docs/osm-updates.md`](docs/osm-updates.md) and [`docs/map-styles.md`](docs/map-styles.md).
+
+Opt-in **Long trip** orchestration lives under `core/src/long_trip/` (adjacency
+corridor, preliminary route providers) and
+`app/.../LongTripCoordinator.kt` / `LongTripPackStorage.kt` (Wi‑Fi-gated queue,
+optional removable pack root). See README Features and
+[`how-to-use.md`](how-to-use.md#long-trip-multi-region).
 
 ## Thread priority tiers
 

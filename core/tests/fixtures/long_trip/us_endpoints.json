@@ -1,0 +1,30 @@
+{
+  "geocoder": "Nominatim OpenStreetMap",
+  "queried_utc": "2026-09-19",
+  "user_agent": "NaviLongTripTest/0.1",
+  "points": {
+    "red_ball_garage": {
+      "lat": 40.7439301,
+      "lon": -73.9803488,
+      "display_name": "Red Ball Garage, 142, East 31st Street, Murray Hill, Manhattan, New York, 10016, United States",
+      "osm_type": "way",
+      "osm_id": 248143116,
+      "note": "OSM places garage on East 31st Street (sources disagree 31st vs 32nd)"
+    },
+    "portofino_hotel": {
+      "lat": 33.8450175,
+      "lon": -118.3971954,
+      "display_name": "Portofino Hotel & Marina, 260, Portofino Way, Redondo Beach, California, 90277, United States",
+      "osm_type": "way",
+      "osm_id": 439541336
+    },
+    "north_coast_inn": {
+      "lat": 41.76106,
+      "lon": -124.198702,
+      "display_name": "North Coast Inn, Redwood Highway, Crescent City, Del Norte County, California, 75531, United States",
+      "osm_type": "way",
+      "osm_id": 872120270,
+      "note": "Confirmed in OSM; usable as Cannonball-style Crescent City finish"
+    }
+  }
+}

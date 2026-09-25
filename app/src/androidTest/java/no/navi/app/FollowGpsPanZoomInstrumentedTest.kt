@@ -276,6 +276,9 @@ class FollowGpsPanZoomInstrumentedTest {
                 ),
             preferOfficialNetworks = false,
             dataDir = "",
+            packDir = "",
+            longTripEnabled = false,
+            allowedCountries = null,
             viaPoints = emptyList(),
         )
     }

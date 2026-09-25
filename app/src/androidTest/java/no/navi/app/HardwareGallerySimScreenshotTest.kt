@@ -123,6 +123,9 @@ class HardwareGallerySimScreenshotTest {
                         vehicle = vehicle,
                         preferOfficialNetworks = false,
                         dataDir = "",
+                        packDir = "",
+                        longTripEnabled = false,
+                        allowedCountries = null,
                         viaPoints = emptyList(),
                     )
                 check(leg.report.contains("PASS") && leg.routePolyline.isNotBlank()) {

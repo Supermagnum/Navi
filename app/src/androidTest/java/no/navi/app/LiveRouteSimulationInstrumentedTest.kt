@@ -116,6 +116,9 @@ class LiveRouteSimulationInstrumentedTest {
                         vehicle = vehicle,
                         preferOfficialNetworks = false,
                         dataDir = "",
+                        packDir = "",
+                        longTripEnabled = false,
+                        allowedCountries = null,
                         viaPoints = emptyList(),
                     )
                 assertTrue(

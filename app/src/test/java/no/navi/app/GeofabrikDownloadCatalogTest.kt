@@ -16,9 +16,12 @@ class GeofabrikDownloadCatalogTest {
         assertTrue(
             GeofabrikDownloadCatalog.norwayRegions.any { it.first == "ostlandet" },
         )
-        // hedmark is on the pack server but covered by Østlandet — not a separate chip.
+        // Hedmark is retired from the pack catalog — not a chip.
         assertFalse(
             GeofabrikDownloadCatalog.norwayRegions.any { it.first == "hedmark" },
+        )
+        assertFalse(
+            GeofabrikDownloadCatalog.isKnownPackRegionId("europe/norway/hedmark"),
         )
 
         assertTrue(GeofabrikDownloadCatalog.hasRegionChips("europe/sweden"))
@@ -46,6 +49,27 @@ class GeofabrikDownloadCatalogTest {
             "europe/sweden/stockholm",
             GeofabrikDownloadCatalog.canonicalizePath("europe/sweden/stockholm"),
         )
+    }
+
+    @Test
+    fun long_trip_picker_has_hamburg_and_vastra_gotaland_not_denmark_leaves() {
+        assertTrue(GeofabrikDownloadCatalog.germanyRegions.any { it.first == "hamburg" })
+        assertTrue(
+            GeofabrikDownloadCatalog.germanyRegions.any { it.first == "schleswig-holstein" },
+        )
+        assertTrue(GeofabrikDownloadCatalog.germanyRegions.any { it.first == "niedersachsen" })
+        assertTrue(
+            GeofabrikDownloadCatalog.swedenRegions.any { it.first == "vastra_gotaland" },
+        )
+        assertFalse(
+            GeofabrikDownloadCatalog.swedenRegions.any { it.first == "vastra-gotaland" },
+        )
+        assertTrue(GeofabrikDownloadCatalog.swedenRegions.any { it.first == "skane" })
+        assertTrue(GeofabrikDownloadCatalog.swedenRegions.any { it.first == "halland" })
+        // Pack host publishes europe/denmark as a country leaf; the picker has no
+        // Syddanmark / Sjaelland / Hovedstaden / Midtjylland / Nordjylland chips.
+        assertFalse(GeofabrikDownloadCatalog.hasRegionChips("europe/denmark"))
+        assertFalse(GeofabrikDownloadCatalog.hasRegionChips("europe/denmark/syddanmark"))
     }
 
     @Test

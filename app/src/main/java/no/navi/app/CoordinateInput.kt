@@ -176,7 +176,7 @@ fun snapWaypointToRoutePolyline(
 ): RoutePinSnap? = nearestPointOnPolyline(pts, lat, lon)
 
 /** Max distance (metres) for resolving a GPS From/Via/To label to a nearby name. */
-const val GPS_WAYPOINT_RESOLVE_RADIUS_M = 12.0
+const val GPS_WAYPOINT_RESOLVE_RADIUS_M = 75.0
 
 /**
  * Pick a human waypoint label from [nearbyPlaces] hits already filtered to
@@ -217,4 +217,52 @@ fun placeHitDisplayLabel(hit: uniffi.navi.PlaceHit): String {
     add(hit.subArea)
     add(hit.municipality)
     return parts.joinToString(", ")
+}
+
+/**
+ * True when every significant query token appears as a whole word in [name]
+ * (not merely a prefix of a longer compound). Used to drop local FTS
+ * prefix hits like `Kalmar*` → `Kalmargaten` (Bergen) when merging with
+ * online geocode results for `Kalmar` (Sweden).
+ */
+fun placeNameContainsQueryTokens(
+    name: String,
+    query: String,
+): Boolean {
+    val tokens =
+        query
+            .split(Regex("[\\s,]+"))
+            .map { it.trim() }
+            .filter { it.length >= 2 }
+    if (tokens.isEmpty()) return true
+    return tokens.all { tok ->
+        Regex(
+            """(?iu)(^|[^\p{L}\p{N}])${Regex.escape(tok)}($|[^\p{L}\p{N}])""",
+        ).containsMatchIn(name)
+    }
+}
+
+/**
+ * Merge online geocode hits ahead of local FTS, dropping offline prefix
+ * expansions that do not contain the query as whole tokens.
+ */
+fun mergeOnlineAndOfflinePlaceHits(
+    query: String,
+    online: List<uniffi.navi.PlaceHit>,
+    offline: List<uniffi.navi.PlaceHit>,
+): List<uniffi.navi.PlaceHit> {
+    if (online.isEmpty()) return offline
+    if (offline.isEmpty()) return online
+    val offlineKeep =
+        offline.filter { hit ->
+            placeNameContainsQueryTokens(hit.name, query) ||
+                placeNameContainsQueryTokens(placeHitDisplayLabel(hit), query)
+        }
+    val seen = HashSet<String>()
+    val merged = ArrayList<uniffi.navi.PlaceHit>(online.size + offlineKeep.size)
+    for (h in online + offlineKeep) {
+        val key = "${h.name.lowercase()}|${"%.4f".format(h.lat)}|${"%.4f".format(h.lon)}"
+        if (seen.add(key)) merged.add(h)
+    }
+    return merged
 }

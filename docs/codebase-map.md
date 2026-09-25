@@ -140,6 +140,8 @@ next maneuver”).
 | Spoken escalating overspeed | Spec only: [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) |
 | Place-index interim | UniFFI `nearby_places` + `streetLabelFromNearbyPlaces` |
 | Empty-index search hint | `PlaceSearchHint.kt` + UniFFI `place_index_has_entries` |
+| Long-trip corridor + pack queue | `core/src/long_trip/`, `LongTripCoordinator.kt`, `LongTripPackStorage.kt`, UniFFI `long_trip_ordered_regions_json` / `long_trip_ors_*` |
+| Place-index resume (keep rows) | `PlaceIndexReady.preparePipelineStart` / `clearReadyStampOnly`; `RegionDownloadBackground.shouldClearPlaceRowsOnPipelineStart` |
 | Bottom HUD line | `BottomDriveHud` / `DriveHudState.currentStreet` |
 | Unicode pipeline notes | [`unicode-road-names.md`](unicode-road-names.md) |
 

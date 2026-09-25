@@ -113,6 +113,9 @@ class GpsMovingBehaviorInstrumentedTest {
                         vehicle = vehicle,
                         preferOfficialNetworks = false,
                         dataDir = "",
+                        packDir = "",
+                        longTripEnabled = false,
+                        allowedCountries = null,
                         viaPoints = emptyList(),
                     )
                 assertTrue(

@@ -388,6 +388,9 @@ class OffRouteBehaviorInstrumentedTest {
             vehicle = FfiVehicleLimits(null, null, null, null, null, null),
             preferOfficialNetworks = false,
             dataDir = "",
+            packDir = "",
+            longTripEnabled = false,
+            allowedCountries = null,
             viaPoints = emptyList(),
         )
     }

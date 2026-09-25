@@ -1,0 +1,13 @@
+{
+  "meta": {
+    "attempt": 1,
+    "error": "BRouter rate limited or asked to retry later",
+    "http_status": 0,
+    "navi_fixture": "recorded",
+    "recorded_utc": "2026-09-19T22:37:53.148900064+00:00",
+    "trip_id": "us_a_redball_portofino",
+    "wall_time_ms": 188
+  },
+  "navi_fixture": "recorded",
+  "response_body": "BRouter rate limited or asked to retry later"
+}

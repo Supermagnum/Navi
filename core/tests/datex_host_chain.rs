@@ -2,7 +2,7 @@
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -12,6 +12,15 @@ use driver_break_core::datex::{
     DATEX_SERVER_SITUATION_POLL_SECS, DATEX_WIFI_ONLY_DEFAULT,
 };
 use driver_break_core::pack_server::PackDataSource;
+
+/// Process-global DATEX session is shared across this binary — serialize tests
+/// so `reset_session_for_tests` / sticky counters cannot race.
+fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
 
 const MINI_SITUATION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <d2LogicalModel xmlns="http://datex2.eu/schema/3/d2Payload"
@@ -101,6 +110,7 @@ fn serve_navi_root(hits: Arc<Mutex<Vec<String>>>) -> String {
 
 #[test]
 fn wifi_only_skips_network() {
+    let _lock = test_lock();
     reset_session_for_tests();
     let cfg = DatexConfig {
         enabled: true,
@@ -129,6 +139,7 @@ fn poll_interval_clamped_regression() {
 
 #[test]
 fn both_hosts_unreachable_no_stale_actives() {
+    let _lock = test_lock();
     reset_session_for_tests();
     // Seed a stale cache that must NOT become active when hosts are down.
     with_session(|s| {
@@ -165,6 +176,7 @@ fn both_hosts_unreachable_no_stale_actives() {
 
 #[test]
 fn chain_falls_to_second_host_tagged_duckdns() {
+    let _lock = test_lock();
     reset_session_for_tests();
     let hits = Arc::new(Mutex::new(Vec::new()));
     let duck = serve_navi_root(hits.clone());
@@ -212,6 +224,7 @@ fn chain_falls_to_second_host_tagged_duckdns() {
 
 #[test]
 fn sticky_skips_lan_reprobe_on_second_cycle() {
+    let _lock = test_lock();
     reset_session_for_tests();
     let hits = Arc::new(Mutex::new(Vec::new()));
     let base = serve_navi_root(hits.clone());

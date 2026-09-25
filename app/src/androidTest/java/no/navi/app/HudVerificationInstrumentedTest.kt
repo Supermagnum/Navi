@@ -404,6 +404,7 @@ class HudVerificationInstrumentedTest {
                     breakIntervalHours = restForEco.breakIntervalHours,
                     restDurationMinutes = restForEco.restDurationMinutes,
                     ecoModeEnabled = true,
+                    maxHours = restForEco.maxHours,
                 ),
             ),
         )
@@ -473,6 +474,7 @@ class HudVerificationInstrumentedTest {
                     breakIntervalHours = restForEco.breakIntervalHours,
                     restDurationMinutes = restForEco.restDurationMinutes,
                     ecoModeEnabled = false,
+                    maxHours = restForEco.maxHours,
                 ),
             ),
         )
@@ -495,6 +497,7 @@ class HudVerificationInstrumentedTest {
                     breakIntervalHours = restForEco.breakIntervalHours,
                     restDurationMinutes = restForEco.restDurationMinutes,
                     ecoModeEnabled = true,
+                    maxHours = restForEco.maxHours,
                 ),
             ),
         )

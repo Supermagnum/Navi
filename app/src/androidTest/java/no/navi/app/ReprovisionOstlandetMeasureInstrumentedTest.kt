@@ -166,6 +166,9 @@ class ReprovisionOstlandetMeasureInstrumentedTest {
                 vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                 preferOfficialNetworks = false,
                 dataDir = "",
+                packDir = "",
+                longTripEnabled = false,
+                allowedCountries = null,
                 viaPoints = emptyList(),
             )
         val wallMs = System.currentTimeMillis() - t0

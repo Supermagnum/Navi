@@ -87,9 +87,9 @@ On-device and emulator results:
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
 **v0.3.4-beta** (`versionName` 0.3.4-beta, `versionCode` 9). Download from the
-[`v0.3.4-beta` tag](https://github.com/Supermagnum/Navi/tree/v0.3.4-beta)
-or the latest
-[`dev` branch](https://github.com/Supermagnum/Navi/tree/dev) copy. Android
+[`main` branch](https://github.com/Supermagnum/Navi/tree/main/compiled)
+(latest tester build) or the pinned
+[`v0.3.4-beta` tag](https://github.com/Supermagnum/Navi/tree/v0.3.4-beta). Android
 validates the APK signature on install; the separate GPG files
 ([`compiled/SHA256SUMS`](compiled/SHA256SUMS),
 [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc)) are optional provenance
@@ -196,6 +196,9 @@ It can:
 - For bicycle / e-bike, pick **Road / Gravel / MTB** so unsuitable tracks are skipped
 - Prefer gentler / less energy-hungry roads when **eco mode** is on (hills matter)
 - Suggest rest stops and overnight places along longer trips
+- Opt-in **Long trip** mode: estimate which Geofabrik regions a cross-border route
+  needs, download those packs on Wi‑Fi/Ethernet (optional SD card), then plan
+  offline with soft rest / overnight stops on multi-day legs
 - Respect truck driving-time rules where it knows the country rules
 - Show a simple map with your route, turns, and place names
 - Optional elevation **contours** and **hillshade** from Mapterhorn terrain (independent toggles)
@@ -229,6 +232,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Vehicle size** | Save height/width/length/weight limits so the route skips roads that are too tight. | Done |
 | **E-bike specs** | Battery size, motor torque, and wheel size help estimate battery use and steep climbs. Live cable telemetry is planned later. | Done (planning); live data later |
 | **Avoidances** | You can ask to avoid motorways, tolls, or ferries. Motorways here means OSM `highway=motorway` / `motorway_link`, `motorroad=yes` / `expressway=yes`, or a dual carriageway with `lanes>=2` and `maxspeed>=90` — not every E-road or urban arterial. | Done |
+| **Stay in Country** | Avoid crossing international borders, even if a foreign route is faster. Uses your trip origin country (Natural Earth Admin-0). Off by default. | Done |
 | **Official trails** | For hiking/cycling, optionally prefer marked long-distance trails (off by default). Normal paths still work if the marked trail has a gap. | Done |
 | **Bike surface suitability** | Bicycle / e-bike Drive setting: **Road / Gravel / MTB**. Unsuitable OSM surfaces and tracks are hard-excluded after the graph loads (does not rebuild packs). Default is Gravel (trekking). | Done |
 | **Motor surface preference** | Car, truck, motorhome, and motorcycle: soft preference for good driveable surfaces (`surface` / `tracktype`) on connector snaps and along the route; untagged `highway=track` is treated cautiously. Internal costing only — no warnings in the UI. Default **Car**; **Offroad** / 4×4 relaxes the weighting (stored in config; no Drive-menu toggle yet). | Done |
@@ -239,7 +243,8 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **3D hillshade** | Optional hill shading from Mapterhorn DEM. Independent of contours — either, both, or neither. Offline needs **Download terrain DEM**. | Done |
 | **Eco routing** | Prefer routes that use less energy by taking hills into account. A small leaf icon shows when eco is on. | Done |
 | **Offline planning** | Download a region once, then plan and see the route on the device. | Done |
-| **Indexing** | After a region download, a background job turns the OSM extract into compact routing packs so later plans are fast. You can plan while it runs; convert and place-index **pause** during a foreground plan so the PBF fallback is not starved. | Done |
+| **Long trip** | Opt-in under Drive settings (off by default). With From/To set, Navi estimates a corridor of Geofabrik regions (adjacency graph; online BRouter primary / OpenRouteService fallback for the preliminary polyline), queues pack downloads on **Wi‑Fi/Ethernet only**, and can store those packs on a removable volume. Place index and Tools downloads stay on internal storage. Offline planning then uses multi-region packs with soft rest / overnight POIs on chunked multi-day legs. Privacy disclosure is shown in settings when enabled. | Done |
+| **Indexing** | After a region download, a background job turns the OSM extract into compact routing packs so later plans are fast. You can plan while it runs; convert and place-index **pause** during a foreground plan so the PBF fallback is not starved. Interrupted place-index builds **resume without wiping** already-written rows; OSM updates skip a full place-index rebuild when the catalog generation is unchanged. | Done |
 | **Place search** | Search places and set From / Via / To. While the place index is still empty/building, search shows a building hint (coordinates and map tap still work). | Done |
 | **Multiple vias** | Up to **4** intermediate stops for car / truck / bicycle (and hiking waypoints). The Via chip shows **Via (n/4)**; each pick **adds** a stop and clears the search box for the next. A list under the chips has **Remove** / **Clear all**. Off-route replan keeps remaining vias. | Done |
 | **Use GPS** | Fill From / Via / To from the live fix: coordinates appear immediately, then an optional nearby road-name upgrade. The field is the chip active when you tap — not whichever chip is selected after resolution finishes. GPS as Via upgrades the last via in place (does not duplicate). | Done |
@@ -409,8 +414,10 @@ If you leave or force-stop the app mid-download, the next launch resumes from
 queue file, and any `.partial` Geofabrik file — Tools shows **Resuming download
 of…** / **Resuming basemap…** / **Resuming place index…** without needing to tap
 Download again. Pack install restarts from the current file when mid-file resume
-is unavailable; place index and basemap reuse existing on-disk work where the
-pipeline already supports it.
+is unavailable; basemap reuses on-disk work where supported. An incomplete
+**place index** keeps already-written SQLite rows on resume (it does not clear
+the region and start from zero). After an OSM update, if the catalog generation
+is unchanged, the place-index path skips a forced full rebuild.
 
 While a **Plan route** (or auto-reroute) is running on that PBF fallback,
 background convert and place-index **yield** so they do not contend for the
@@ -688,6 +695,8 @@ display choices in app preferences).
 | **Use networked cabins** | Hiking / bicycle / e-bike: allow DNT/STF-style **network** huts as auto-via / waypoint candidates (off by default). Does **not** change overnight membership rules |
 | **Network hut member (DNT/STF/…)** | Hiking only: when on, overnight may prefer network huts; when off (default), prefer non-network cabins and flag network stops as membership-required |
 | **Follow pilgrim routes** | Hiking only; soft preference (off by default), falls back to normal hiking |
+| **Long trip** | Opt-in multi-region corridor downloads (off by default). When on: Wi‑Fi/Ethernet-only pack queue along the route, optional removable storage for those packs, and a privacy note about BRouter / OpenRouteService for the preliminary region estimate. Status line shows needed / downloading / indexed regions |
+| **Stay in Country** | Avoid crossing international borders, even if a foreign route is faster (off by default). Origin country from Natural Earth; may be longer/slower than a cross-border shortcut |
 | **Hours between breaks** | How often you *want* a break (cars), or truck mandatory break-after time |
 | **Rest time** | How long a break should last (suggestion / truck continuous break) |
 | **Next break as Time / Distance** | Show break countdown in minutes, or as km/mi at an assumed cruising speed |
@@ -697,7 +706,8 @@ display choices in app preferences).
 | **Vehicle limits** | Height/width/length/axle weight for clearance |
 
 Route planning chrome (**Route**): From / To / Via, Plan, Simulate, avoidances
-(**Avoid motorways** excludes `highway=motorway` / `motorway_link`, `motorroad=yes` / `expressway=yes`, and dual carriageways with `lanes>=2` and `maxspeed>=90`; E-road `ref` is display-only),
+(**Avoid motorways** excludes `highway=motorway` / `motorway_link`, `motorroad=yes` / `expressway=yes`, and dual carriageways with `lanes>=2` and `maxspeed>=90`; E-road `ref` is display-only;
+**Stay in Country** keeps the route inside the starting country),
 saved routes.
 
 ### Tools (downloads and diagnostic logging)
@@ -908,6 +918,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/debugging.md`](docs/debugging.md) | Debugging |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | Physical device checklist |
 | [`docs/android-test-results.md`](docs/android-test-results.md) | Chronological on-device / emulator instrumented evidence |
+| [`docs/bevensen-mobilehome-campaign.md`](docs/bevensen-mobilehome-campaign.md) | Bad Bevensen → Norway MobileHome AVD campaign (setup, bug fixes, corrected retest) |
 | [`docs/status.md`](docs/status.md) | Which docs are live status vs historical evidence |
 | [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Tracked future-proofing / open risk items |
 | [`docs/indexed-map-format-plan.md`](docs/indexed-map-format-plan.md) | Phased evaluation of preprocess-once indexed routing maps |
@@ -1033,9 +1044,9 @@ You do not need a Rust/NDK toolchain to install it.
 1. On the device: enable **Developer options** and allow installs from your
    browser or file manager (USB debugging only needed for `adb`).
 2. Download
-   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/v0.3.4-beta/compiled/navi-release.apk)
-   (pinned tag) or the latest
-   [`dev` copy](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-release.apk).
+   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/main/compiled/navi-release.apk)
+   (latest on `main`) or the pinned
+   [`v0.3.4-beta` tag](https://github.com/Supermagnum/Navi/raw/v0.3.4-beta/compiled/navi-release.apk).
 3. Optional integrity check on a PC:
 
 ```bash
@@ -1072,9 +1083,9 @@ adb shell am start -n no.navi.app/.MainActivity
 ```
 
 Browser download:
-[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/blob/dev/compiled/navi-debug.apk)
+[`compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/blob/main/compiled/navi-debug.apk)
 or
-[`raw/dev/compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-debug.apk).
+[`raw/main/compiled/navi-debug.apk`](https://github.com/Supermagnum/Navi/raw/main/compiled/navi-debug.apk).
 
 To rebuild from source, follow the sections below.
 

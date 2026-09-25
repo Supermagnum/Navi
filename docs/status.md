@@ -1,6 +1,6 @@
 # Documentation status map (canonical sources)
 
-Last updated: 2026-08-28.
+Last updated: 2026-09-24.
 
 Readers should not need to cross-reference half a dozen overlapping “status”
 documents. Use this map. Point-in-time reports stay as historical evidence;
@@ -11,11 +11,13 @@ they are **not** the live product status.
 | Question | Canonical doc | Notes |
 |---|---|---|
 | What is the current product / feature status? | [`../README.md`](../README.md) Features table + Known issues | Single live summary. Update here when status changes. |
+| Long-trip multi-region packs | README Features (**Long trip**); [`how-to-use.md`](how-to-use.md#long-trip-multi-region) | **Shipped (opt-in).** Adjacency corridor + Wi‑Fi pack queue; BRouter/ORS preliminary polyline; place-index resume keeps incomplete rows. |
 | How do I mark a map point / use Saved places? | [`map-marking-saved-places.md`](map-marking-saved-places.md) | User how-to (NO: [`kartmerking-lagrede-steder.md`](kartmerking-lagrede-steder.md)). |
 | How do the parts fit together? | [`architecture.md`](architecture.md) | Design intent, not a rolling QA log. |
 | Where do I edit code for X? | [`codebase-map.md`](codebase-map.md) | Contributor file map. |
 | Host (Rust) integration evidence | [`test-results.md`](test-results.md) | Chronological evidence; supersede with newer dated sections. |
 | Android / emulator instrumented evidence | [`android-test-results.md`](android-test-results.md) | Chronological evidence; later Items win over earlier contradictory rows. |
+| Bad Bevensen → Norway MobileHome campaign | [`bevensen-mobilehome-campaign.md`](bevensen-mobilehome-campaign.md) | AVD long-trip campaign (2026-09-24); fixes on **`dev`**, not yet on **`main`**. |
 | Point-in-time closing / audit reports | e.g. [`closing-pass-report.md`](closing-pass-report.md), [`future-proofing-audit-2026-07.md`](future-proofing-audit-2026-07.md) | Keep for history; do **not** treat as live status unless the audit table is actively maintained. |
 | Indexed map format evaluation (phased) | [`indexed-map-format-plan.md`](indexed-map-format-plan.md) | **Live** phase status for preprocess-once routing index work; update when phases complete. Includes pack-miss PBF priority / cone-skip evidence (2026-08-24). |
 | Precomputed packs / town-to-town cache (direction) | [`precomputed-index-and-route-cache.md`](precomputed-index-and-route-cache.md) | **Not shipped.** Mirror (e.g. navi.app) of Navi packs; local convert as offline fallback; optional city-pair route cache. Contrast with commercial bundled DBs. |

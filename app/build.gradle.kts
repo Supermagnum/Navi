@@ -89,6 +89,11 @@ android {
         compose = true
     }
 
+    testOptions {
+        // Host JVM unit tests: stub android.jar methods (Log.i, etc.) instead of throwing.
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         jniLibs {
             useLegacyPackaging = true

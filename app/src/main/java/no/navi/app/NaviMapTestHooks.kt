@@ -64,6 +64,24 @@ object NaviMapTestHooks {
     var pendingCamera: Triple<Double, Double, Double>? = null
 
     /**
+     * Cold-start / adb trip seed for standalone long-trip runs (not under
+     * instrumentation). Consumed once by [MainActivity] / NaviMapScreen.
+     */
+    data class PendingTripPlan(
+        val fromName: String,
+        val fromLat: Double,
+        val fromLon: Double,
+        val toName: String,
+        val toLat: Double,
+        val toLon: Double,
+        val enableLongTrip: Boolean = true,
+        val autoPlan: Boolean = true,
+    )
+
+    @Volatile
+    var pendingTripPlan: PendingTripPlan? = null
+
+    /**
      * When true, live GPS never enables follow mode or retargets the map camera
      * (instrumented screenshots at a fixed [pendingCamera]).
      */
@@ -331,6 +349,16 @@ object NaviMapTestHooks {
     /** Immediate coord label from the last Use GPS tap (before roadLabelNear). */
     @Volatile
     var lastGpsImmediateCoord: String = ""
+
+    /** Last place hit applied via search / GPS / map-mark (instrumented asserts). */
+    @Volatile
+    var lastAppliedHitName: String = ""
+
+    @Volatile
+    var lastAppliedHitLat: Double = Double.NaN
+
+    @Volatile
+    var lastAppliedHitLon: Double = Double.NaN
 
     /** When true, MainActivity clears the search query field (test helper). */
     @Volatile

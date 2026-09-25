@@ -66,9 +66,8 @@ Display names use Geofabrik’s local spelling where available (including
 Norwegian Æ/Ø/Å and other diacritics). Pack path ids stay ASCII
 (`ostlandet`, `sorlandet`, …).
 
-**Norway / Hedmark:** the pack server still lists `europe/norway/hedmark`,
-but that area is covered by **Østlandet**; this doc omits Hedmark as a
-separate subregion (same rule as the app region chips).
+**Norway:** Hedmark is not a catalog region; Hamar and former Hedmark geography
+use **Østlandet** (`europe/norway/ostlandet`).
 
 ## Table of contents
 
@@ -2199,7 +2198,7 @@ extracts) include a short explanation on the same line.
 - Country-level pack: no (subregions only)
 - Geofabrik country PBF size: **1.28 GB** (`1374794406` bytes)
 - Geofabrik URL: https://download.geofabrik.de/europe/norway.html
-- Note: `europe/norway/hedmark` exists on the pack server but is omitted here; coverage is under **Østlandet**.
+- Note: Hedmark is not listed; that geography is covered by **Østlandet**.
 - Subregions (sizes from pack server `current.json`):
   - **Nord-Norge** `europe/norway/nord-norge` — pack **836 MB** (`876694995` bytes)
   - **Østlandet** `europe/norway/ostlandet` — pack **2.43 GB** (`2613668860` bytes)

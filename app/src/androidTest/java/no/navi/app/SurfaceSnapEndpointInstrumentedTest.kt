@@ -92,6 +92,9 @@ class SurfaceSnapEndpointInstrumentedTest {
                 vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                 preferOfficialNetworks = false,
                 dataDir = dataDir.absolutePath,
+                packDir = "",
+                longTripEnabled = false,
+                allowedCountries = null,
                 viaPoints = emptyList(),
             )
         Log.i(TAG, "$label report_head=${result.report.take(900)}")

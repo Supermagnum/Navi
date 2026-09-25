@@ -63,12 +63,20 @@ pub fn region_bbox(geofabrik_path: &str) -> Option<[f64; 4]> {
     {
         return Some(bbox);
     }
+    if let Some(bbox) = PACK_LEAF_PATH_BBOX
+        .iter()
+        .find(|(p, _)| *p == path)
+        .map(|(_, b)| *b)
+    {
+        return Some(bbox);
+    }
     // Unknown subpath under a known extract: walk parents (e.g.
     // europe/germany/bayern/oberbayern → europe/germany).
     let mut rest = path.as_str();
     while let Some((parent, _)) = rest.rsplit_once('/') {
         if let Some(bbox) = GEOFABRIK_PATH_BBOX
             .iter()
+            .chain(PACK_LEAF_PATH_BBOX.iter())
             .find(|(p, _)| *p == parent)
             .map(|(_, b)| *b)
         {
@@ -269,6 +277,7 @@ pub fn is_exact_catalog_path(path: &str) -> bool {
     }
     NORWAY_LANDSDEL.iter().any(|(p, _)| *p == path)
         || GEOFABRIK_PATH_BBOX.iter().any(|(p, _)| *p == path)
+        || PACK_LEAF_PATH_BBOX.iter().any(|(p, _)| *p == path)
 }
 
 fn unique_leaf_catalog_path(leaf: &str) -> Option<&'static str> {
@@ -276,12 +285,19 @@ fn unique_leaf_catalog_path(leaf: &str) -> Option<&'static str> {
         .iter()
         .map(|(p, _)| *p)
         .chain(GEOFABRIK_PATH_BBOX.iter().map(|(p, _)| *p))
+        .chain(PACK_LEAF_PATH_BBOX.iter().map(|(p, _)| *p))
         .filter(|p| p.rsplit('/').next() == Some(leaf))
         .collect();
     hits.sort_unstable();
     hits.dedup();
     match hits.as_slice() {
         [only] => Some(*only),
+        // Prefer underscore Västra Götaland when both spellings are table entries.
+        _ if leaf == "vastra_gotaland" || leaf == "vastra-gotaland" => hits
+            .iter()
+            .find(|p| p.ends_with("vastra_gotaland"))
+            .copied()
+            .or_else(|| hits.first().copied()),
         _ => None,
     }
 }
@@ -651,6 +667,240 @@ const GEOFABRIK_PATH_BBOX: &[(&str, [f64; 4])] = &[
     ),
 ];
 
+/// Pack-catalog leaf bboxes for DE/DK/SE (and similar) extracts that Geofabrik
+/// only publishes as country files. Approximate `[min_lat, min_lon, max_lat,
+/// max_lon]` for corridor PIP / multi-stem merge. Prefer catalog polygons when
+/// the host publishes them; until then these boxes minimise — but do not
+/// eliminate — false positives from overlaps (see
+/// [`crate::pack_server::ordered_regions_along_corridor`]).
+const PACK_LEAF_PATH_BBOX: &[(&str, [f64; 4])] = &[
+    // Germany Bundesländer used on the Klecken→Innlandet corridor (+ neighbours).
+    ("europe/germany/hamburg", [53.38, 9.73, 53.75, 10.35]),
+    ("europe/germany/bremen", [53.00, 8.50, 53.23, 8.99]),
+    ("europe/germany/niedersachsen", [51.29, 6.65, 53.90, 11.60]),
+    (
+        "europe/germany/schleswig-holstein",
+        [53.36, 8.37, 55.06, 11.32],
+    ),
+    // NRW Detmold Regierungsbezirk (Geofabrik leaf). Minden sits here — the
+    // Niedersachsen extract bbox overlaps but does not carry the city graph.
+    (
+        "europe/germany/nordrhein-westfalen/detmold-regbez",
+        [51.45, 8.11, 52.50, 9.44],
+    ),
+    // Danish regions (published on some hosts; live host currently has country only).
+    ("europe/denmark/syddanmark", [54.72, 8.07, 55.78, 10.95]),
+    ("europe/denmark/sjaelland", [54.85, 10.85, 55.80, 12.55]),
+    ("europe/denmark/hovedstaden", [55.58, 12.00, 56.13, 12.70]),
+    ("europe/denmark/midtjylland", [55.78, 8.10, 56.85, 11.20]),
+    ("europe/denmark/nordjylland", [56.70, 8.15, 57.76, 10.95]),
+    // Sweden län along the Øresund–Svinesund corridor.
+    ("europe/sweden/skane", [55.32, 12.45, 56.50, 14.60]),
+    ("europe/sweden/halland", [56.32, 11.85, 57.55, 13.55]),
+    (
+        "europe/sweden/vastra_gotaland",
+        [57.15, 10.95, 59.36, 14.80],
+    ),
+    // Hyphen spelling kept as an exact table entry so stem/alias lookups hit
+    // before parent-walk; published underscore form is preferred via aliases.
+    (
+        "europe/sweden/vastra-gotaland",
+        [57.15, 10.95, 59.36, 14.80],
+    ),
+    // US state / CA split leaves for long-trip corridor PIP (catalog ids).
+    (
+        "north-america/us/alabama",
+        [30.223, -88.473, 35.008, -84.889],
+    ),
+    (
+        "north-america/us/alaska",
+        [51.214, -179.148, 71.538, -129.979],
+    ),
+    (
+        "north-america/us/arizona",
+        [31.332, -114.818, 37.004, -109.045],
+    ),
+    (
+        "north-america/us/arkansas",
+        [33.004, -94.618, 36.5, -89.644],
+    ),
+    (
+        "north-america/us/california/norcal",
+        [36.0, -124.482, 42.009, -119.0],
+    ),
+    (
+        "north-america/us/california/socal",
+        [32.512, -121.5, 36.0, -114.131],
+    ),
+    (
+        "north-america/us/colorado",
+        [36.993, -109.06, 41.003, -102.042],
+    ),
+    (
+        "north-america/us/connecticut",
+        [40.986, -73.728, 42.05, -71.787],
+    ),
+    (
+        "north-america/us/delaware",
+        [38.451, -75.789, 39.839, -75.049],
+    ),
+    (
+        "north-america/us/district-of-columbia",
+        [38.791, -77.12, 38.996, -76.909],
+    ),
+    (
+        "north-america/us/florida",
+        [24.396, -87.635, 31.001, -79.974],
+    ),
+    (
+        "north-america/us/georgia",
+        [30.356, -85.605, 35.001, -80.841],
+    ),
+    (
+        "north-america/us/hawaii",
+        [18.865, -160.247, 22.293, -154.807],
+    ),
+    (
+        "north-america/us/idaho",
+        [41.988, -117.243, 49.001, -111.044],
+    ),
+    (
+        "north-america/us/illinois",
+        [36.97, -91.513, 42.508, -87.02],
+    ),
+    (
+        "north-america/us/indiana",
+        [37.771, -88.098, 41.761, -84.784],
+    ),
+    ("north-america/us/iowa", [40.375, -96.639, 43.501, -90.14]),
+    (
+        "north-america/us/kansas",
+        [36.993, -102.052, 40.004, -94.588],
+    ),
+    (
+        "north-america/us/kentucky",
+        [36.497, -89.571, 39.148, -81.965],
+    ),
+    (
+        "north-america/us/louisiana",
+        [28.927, -94.043, 33.019, -88.816],
+    ),
+    ("north-america/us/maine", [43.057, -71.084, 47.46, -66.949]),
+    (
+        "north-america/us/maryland",
+        [37.886, -79.487, 39.723, -75.049],
+    ),
+    (
+        "north-america/us/massachusetts",
+        [41.239, -73.508, 42.887, -69.928],
+    ),
+    (
+        "north-america/us/michigan",
+        [41.696, -90.418, 48.306, -82.122],
+    ),
+    (
+        "north-america/us/minnesota",
+        [43.499, -97.239, 49.384, -89.483],
+    ),
+    (
+        "north-america/us/mississippi",
+        [30.174, -91.655, 34.996, -88.098],
+    ),
+    (
+        "north-america/us/missouri",
+        [35.995, -95.774, 40.614, -89.099],
+    ),
+    (
+        "north-america/us/montana",
+        [44.358, -116.05, 49.001, -104.04],
+    ),
+    (
+        "north-america/us/nebraska",
+        [39.999, -104.053, 43.002, -95.308],
+    ),
+    (
+        "north-america/us/new-hampshire",
+        [42.697, -72.557, 45.306, -70.704],
+    ),
+    (
+        "north-america/us/new-jersey",
+        [38.928, -75.559, 41.357, -73.894],
+    ),
+    (
+        "north-america/us/new-mexico",
+        [31.332, -109.05, 37.0, -103.002],
+    ),
+    (
+        "north-america/us/new-york",
+        [40.496, -79.762, 45.016, -71.856],
+    ),
+    (
+        "north-america/us/north-carolina",
+        [33.842, -84.322, 36.588, -75.46],
+    ),
+    (
+        "north-america/us/north-dakota",
+        [45.935, -104.049, 49.001, -96.555],
+    ),
+    ("north-america/us/ohio", [38.403, -84.82, 41.978, -80.518]),
+    (
+        "north-america/us/oklahoma",
+        [33.616, -103.002, 37.002, -94.431],
+    ),
+    (
+        "north-america/us/oregon",
+        [41.992, -124.703, 46.292, -116.463],
+    ),
+    (
+        "north-america/us/pennsylvania",
+        [39.719, -80.519, 42.269, -74.69],
+    ),
+    (
+        "north-america/us/rhode-island",
+        [41.146, -71.862, 42.019, -71.12],
+    ),
+    (
+        "north-america/us/south-carolina",
+        [32.034, -83.354, 35.215, -78.541],
+    ),
+    (
+        "north-america/us/south-dakota",
+        [42.48, -104.058, 45.945, -96.436],
+    ),
+    (
+        "north-america/us/tennessee",
+        [34.983, -90.31, 36.678, -81.647],
+    ),
+    (
+        "north-america/us/texas",
+        [25.837, -106.646, 36.501, -93.508],
+    ),
+    (
+        "north-america/us/utah",
+        [36.998, -114.053, 42.002, -109.041],
+    ),
+    (
+        "north-america/us/vermont",
+        [42.727, -73.437, 45.017, -71.465],
+    ),
+    (
+        "north-america/us/virginia",
+        [36.541, -83.675, 39.466, -75.166],
+    ),
+    (
+        "north-america/us/washington",
+        [45.543, -124.848, 49.002, -116.915],
+    ),
+    (
+        "north-america/us/wisconsin",
+        [42.492, -92.889, 47.081, -86.805],
+    ),
+    (
+        "north-america/us/wyoming",
+        [40.995, -111.057, 45.006, -104.052],
+    ),
+];
+
 const NORWAY_LANDSDEL: &[(&str, [f64; 4])] = &[
     ("europe/norway", [57.9, 4.5, 71.5, 31.5]),
     ("europe/norway/ostlandet", [58.5, 7.5, 62.8, 13.5]),
@@ -692,7 +942,68 @@ mod tests {
             region_bbox("europe/germany/bayern/oberbayern"),
             Some(country)
         );
-        assert_eq!(region_bbox("europe/germany/bremen"), Some(country));
+        // Bremen is an exact pack-leaf entry (not only a country parent-walk).
+        let bremen = region_bbox("europe/germany/bremen").unwrap();
+        assert_ne!(bremen, country);
+        assert!(bbox_covers_point(bremen, 53.08, 8.80));
+    }
+
+    #[test]
+    fn pack_leaf_stems_map_to_catalog_paths() {
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("niedersachsen-latest"),
+            Some("europe/germany/niedersachsen".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("hamburg-latest"),
+            Some("europe/germany/hamburg".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("detmold-regbez-latest"),
+            Some("europe/germany/nordrhein-westfalen/detmold-regbez".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("schleswig-holstein-latest"),
+            Some("europe/germany/schleswig-holstein".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("syddanmark-latest"),
+            Some("europe/denmark/syddanmark".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("sjaelland-latest"),
+            Some("europe/denmark/sjaelland".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("vastra_gotaland-latest"),
+            Some("europe/sweden/vastra_gotaland".into())
+        );
+        assert!(!is_exact_catalog_path("europe/norway/niedersachsen"));
+        assert!(is_exact_catalog_path("europe/germany"));
+        assert!(is_exact_catalog_path("europe/germany/niedersachsen"));
+        assert!(is_exact_catalog_path("europe/norway/ostlandet"));
+    }
+
+    #[test]
+    fn long_trip_boundary_bboxes_intersect_neighbours() {
+        use crate::routing::indexed::bbox_intersects;
+        let great_belt = [55.30, 10.90, 55.45, 11.50];
+        let syd = region_bbox("europe/denmark/syddanmark").unwrap();
+        let sja = region_bbox("europe/denmark/sjaelland").unwrap();
+        assert!(bbox_intersects(syd, great_belt));
+        assert!(bbox_intersects(sja, great_belt));
+
+        let oresund = [55.55, 12.50, 55.75, 13.10];
+        let hoved = region_bbox("europe/denmark/hovedstaden").unwrap();
+        let skane = region_bbox("europe/sweden/skane").unwrap();
+        assert!(bbox_intersects(hoved, oresund));
+        assert!(bbox_intersects(skane, oresund));
+
+        let svinesund = [58.95, 11.05, 59.20, 11.45];
+        let vg = region_bbox("europe/sweden/vastra_gotaland").unwrap();
+        let ost = region_bbox("europe/norway/ostlandet").unwrap();
+        assert!(bbox_intersects(vg, svinesund));
+        assert!(bbox_intersects(ost, svinesund));
     }
 
     #[test]
@@ -764,6 +1075,36 @@ mod tests {
         assert_eq!(
             suggest_geofabrik_path_for_point(59.91, 10.75),
             Some("europe/norway/ostlandet")
+        );
+    }
+
+    /// Catalog bbox for Ostlandet reaches lon 13.5 — well into Sweden — so
+    /// attributing edges by pack stem / catalog path would silently allow SE
+    /// roads. Country rings (`country_iso_at`) are the hard-constraint source.
+    #[test]
+    fn ostlandet_catalog_bbox_spills_into_sweden() {
+        let bbox = region_bbox("europe/norway/ostlandet").expect("ostlandet bbox");
+        // [min_lat, min_lon, max_lat, max_lon]
+        assert!(
+            bbox[3] > 12.5,
+            "ostlandet max_lon={:.2} should extend past the border into SE",
+            bbox[3]
+        );
+        let east_mid_lat = (bbox[0] + bbox[2]) * 0.5;
+        let east_lon = bbox[3] - 0.05;
+        assert_eq!(
+            crate::routing::elevation::country_iso_at(east_mid_lat, east_lon),
+            Some("se"),
+            "east edge of ostlandet catalog bbox must resolve as Sweden"
+        );
+        // Known SE town inside the ostlandet bbox footprint.
+        assert_eq!(
+            crate::routing::elevation::country_iso_at(61.8975, 12.2685),
+            Some("se")
+        );
+        assert_eq!(
+            crate::routing::elevation::country_iso_at(59.91, 10.75),
+            Some("no")
         );
     }
 
@@ -854,27 +1195,11 @@ mod tests {
 
     #[test]
     fn pbf_stem_unknown_leaves_are_not_invented_under_norway() {
-        // GEOFABRIK_PATH_BBOX has country `europe/germany` only — no
-        // `europe/germany/niedersachsen` leaf. Parent-walk must not mint
-        // `europe/norway/niedersachsen`.
-        assert!(
-            !GEOFABRIK_PATH_BBOX
-                .iter()
-                .any(|(p, _)| *p == "europe/germany/niedersachsen"),
-            "test expectation: niedersachsen is not an exact bbox-table leaf"
-        );
-        assert_eq!(pbf_stem_to_geofabrik_path("niedersachsen-latest"), None);
+        // Leaf must not be invented under europe/norway/{leaf}.
         assert_eq!(
-            pbf_stem_to_geofabrik_path("niedersachsen-latest.osm.pbf"),
+            pbf_stem_to_geofabrik_path("this-region-does-not-exist-zz-latest"),
             None
         );
-        assert_eq!(pbf_stem_to_geofabrik_path("hamburg-latest"), None);
-        assert_eq!(
-            pbf_stem_to_geofabrik_path("schleswig-holstein-latest"),
-            None
-        );
-        assert_eq!(pbf_stem_to_geofabrik_path("syddanmark-latest"), None);
-        assert_eq!(pbf_stem_to_geofabrik_path("sjaelland-latest"), None);
         assert!(!is_exact_catalog_path("europe/norway/niedersachsen"));
         assert!(is_exact_catalog_path("europe/germany"));
         assert!(is_exact_catalog_path("europe/norway/ostlandet"));

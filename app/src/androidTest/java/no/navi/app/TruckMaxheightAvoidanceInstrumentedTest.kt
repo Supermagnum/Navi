@@ -90,6 +90,9 @@ class TruckMaxheightAvoidanceInstrumentedTest {
                     FfiVehicleLimits(null, null, 2.8, null, null, null),
                     false,
                     "",
+                    "",
+                    longTripEnabled = false,
+                    allowedCountries = null,
                     viaPoints = emptyList(),
                 )
             android.util.Log.i(

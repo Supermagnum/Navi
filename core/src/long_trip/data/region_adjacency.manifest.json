@@ -1,0 +1,67 @@
+{
+  "format": "NAVIRADJ",
+  "format_version": 1,
+  "coord_scale": 10000000,
+  "generated_utc": "2026-09-23T01:36:40Z",
+  "sha256": "1199fcdf070f8fc1aeaa22e98f9635fc06a0dc0a22d3e739bb622a4ec5e184c8",
+  "bytes": 265115,
+  "n_regions": 116,
+  "n_edges": 231,
+  "n_named_links": 1,
+  "sources": {
+    "geofabrik": {
+      "url": "https://download.geofabrik.de/index-v1.json",
+      "n_regions": 95
+    },
+    "natural_earth_admin1_sweden": {
+      "url": "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_1_states_provinces.zip",
+      "version_hint": "5.1.1",
+      "n_regions": 21
+    }
+  },
+  "named_links": [
+    {
+      "a": "europe/denmark",
+      "b": "europe/sweden/skane",
+      "note": "Oresund Bridge / Drogden Tunnel",
+      "kind": 1
+    }
+  ],
+  "denied_edges": [
+    {
+      "a": "europe/germany/mecklenburg-vorpommern",
+      "b": "europe/denmark",
+      "note": "Fehmarnbelt: tunnel not open; Geofabrik extract polys intersect across water"
+    }
+  ],
+  "isolates": [
+    "europe/norway/svalbard-janmayen",
+    "europe/sweden/gotland",
+    "north-america/us-midwest",
+    "north-america/us-northeast",
+    "north-america/us-pacific",
+    "north-america/us-south",
+    "north-america/us-west",
+    "north-america/us/alaska",
+    "north-america/us/hawaii",
+    "north-america/us/puerto-rico",
+    "north-america/us/us-virgin-islands"
+  ],
+  "force_isolate": [
+    "europe/norway/svalbard-janmayen",
+    "europe/sweden/gotland",
+    "north-america/us/alaska",
+    "north-america/us/hawaii",
+    "north-america/us/puerto-rico",
+    "north-america/us/us-virgin-islands"
+  ],
+  "corridor_graph_exclude": [
+    "north-america/us-midwest",
+    "north-america/us-northeast",
+    "north-america/us-pacific",
+    "north-america/us-south",
+    "north-america/us-west"
+  ],
+  "touch_tolerance_m": 1500.0,
+  "catalog": "core/tests/fixtures/long_trip/current.json"
+}

@@ -430,6 +430,9 @@ async fn api_plan(State(state): State<AppState>, Json(body): Json<PlanBody>) -> 
             vehicle,
             false,
             String::new(),
+            String::new(),
+            false,
+            None,
             Vec::new(),
         )
     })

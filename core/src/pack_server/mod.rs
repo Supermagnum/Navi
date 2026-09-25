@@ -33,21 +33,31 @@
 //!   `/packs/<region_id>/<generation>/`. Use this for cache invalidation.
 
 mod acquisition;
+mod corridor_regions;
 mod fetch;
 mod place_index_after;
+mod region_plan;
 
 pub use acquisition::{
     discover_pack_catalog, ensure_indexed_packs_prefer_server, leaf_stem_for_region_id,
     normalize_region_id, pack_catalog_region_id_aliases, pack_server_base_url,
     pack_server_discovery_bases, path_covered_by_ready_ids, plan_region_acquisition,
-    region_ids_match_for_catalog, resolve_region_id_for_leaf, resolve_region_source,
-    EnsureIndexedPacksResult, PackCatalogSnapshot, PackDataSource, RegionAcquisitionPlan,
-    RegionSource,
+    region_ids_match_for_catalog, resolve_area_to_catalog, resolve_areas_to_catalog,
+    resolve_region_id_for_leaf, resolve_region_source, EnsureIndexedPacksResult,
+    PackCatalogSnapshot, PackDataSource, RegionAcquisitionPlan, RegionSource,
+};
+pub use corridor_regions::{
+    catalog_entries_from_ready_ids, ordered_regions_along_corridor, CatalogRegionEntry,
+    CatalogRegionGeom,
 };
 pub use fetch::{try_fetch_region_packs, ServerInstallStamp};
 pub use place_index_after::{
     ensure_geofabrik_pbf_for_region, ensure_place_index_after_pack_install, PackPlaceIndexReport,
     MIN_REAL_PBF_BYTES, PLACE_INDEX_DB_NAME,
+};
+pub use region_plan::{
+    ensure_corridor_regions_installed, region_plan_error_from_snap_or_no_route,
+    region_plan_error_from_terminate_reason, trip_corridor_waypoints, RegionPlanError,
 };
 
 use std::time::Duration;

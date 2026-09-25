@@ -106,6 +106,9 @@ class SimBannerBreakTiltInstrumentedTest {
                         vehicle = vehicle,
                         preferOfficialNetworks = false,
                         dataDir = "",
+                        packDir = "",
+                        longTripEnabled = false,
+                        allowedCountries = null,
                         viaPoints = emptyList(),
                     )
                 assertTrue(
@@ -207,6 +210,7 @@ class SimBannerBreakTiltInstrumentedTest {
                 breakIntervalHours = 2.0,
                 restDurationMinutes = 15u,
                 ecoModeEnabled = false,
+                maxHours = 8.0,
             ),
         )
         grantLocation()

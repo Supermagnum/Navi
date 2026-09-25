@@ -175,6 +175,9 @@ pub fn build_place_index_from_pbf(
 /// Pack-server follow-up: real Geofabrik PBF + full place index.
 ///
 /// `force_rebuild` re-indexes this region’s rows only (additive across regions).
+/// Pass `force_rebuild = catalog_generation_requires_rebuild(local, catalog)` so
+/// an unchanged pack-server generation does not wipe and rebuild the place index;
+/// incomplete indexes resume via `name_index_build.complete=0` instead.
 pub fn ensure_place_index_after_pack_install(
     data_dir: &Path,
     region_id: &str,

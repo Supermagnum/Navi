@@ -66,6 +66,9 @@ object RouteReplan {
         vehicle: FfiVehicleLimits,
         preferOfficialNetworks: Boolean,
         preferPilgrimRoutes: Boolean,
+        longTripEnabled: Boolean = false,
+        stayInCountry: Boolean = false,
+        packDir: String = "",
         onProgress: (pct: Int, detail: String) -> Unit = { _, _ -> },
     ): CorridorRouteResult =
         withContext(Dispatchers.IO) {
@@ -112,6 +115,44 @@ object RouteReplan {
             val end = waypoints.last()
             val vias =
                 waypoints.drop(1).dropLast(1).map { uniffi.navi.FfiLatLon(it.lat, it.lon) }
+            val allowedCountries =
+                if (stayInCountry) {
+                    if (!CountryPolysWarm.awaitReady()) {
+                        return@withContext CorridorRouteResult(
+                            report =
+                                "TEST_KIND=PLAN_CAR_ROUTE\n" +
+                                    "FAIL: Country map still loading for Stay in Country. Try again in a moment.\n",
+                            distanceKm = 0.0,
+                            etaMinutes = 0.0,
+                            cacheHit = false,
+                            coldBuildS = 0.0,
+                            warmLoadS = 0.0,
+                            routePolyline = "",
+                            poiLat = 0.0,
+                            poiLon = 0.0,
+                            poiName = "",
+                            poiIconKey = "",
+                            breakPoisJson = "[]",
+                            daysJson = "[]",
+                            simSamplesJson = "[]",
+                            maneuversJson = "[]",
+                            priorityPathSharePct = 0.0,
+                            routeSegmentsJson = "[]",
+                            offTrailAdvisory = "",
+                            tollPolicy = "allow",
+                            padAttemptsJson = "[]",
+                            searchExpansions = 0u,
+                            searchTerminateReason = "fail",
+                            tollAvoidanceIncomplete = false,
+                            routeUsesTolls = false,
+                        )
+                    }
+                    val iso =
+                        runCatching { uniffi.navi.countryIsoAt(start.lat, start.lon) }.getOrNull()
+                    StayInCountry.allowedCountriesForPlan(true, iso)
+                } else {
+                    null
+                }
             val result =
                 planCarRoute(
                     pbfPath = pbf.absolutePath,
@@ -135,6 +176,9 @@ object RouteReplan {
                     vehicle = vehicle,
                     preferOfficialNetworks = preferOfficialNetworks,
                     dataDir = dataDir.absolutePath,
+                    packDir = packDir,
+                    longTripEnabled = longTripEnabled,
+                    allowedCountries = allowedCountries,
                     viaPoints = vias,
                 )
             onProgress(100, "done")

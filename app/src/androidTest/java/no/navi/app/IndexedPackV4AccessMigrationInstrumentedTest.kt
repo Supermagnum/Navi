@@ -326,6 +326,9 @@ class IndexedPackV4AccessMigrationConvertInstrumentedTest {
                 vehicle(),
                 false,
                 dataDir = "",
+                packDir = "",
+                longTripEnabled = false,
+                allowedCountries = null,
                 viaPoints = emptyList(),
             )
         android.util.Log.i(TAG, "FALLBACK ${r.report}")
@@ -428,6 +431,9 @@ class IndexedPackV4AccessMigrationConvertInstrumentedTest {
                 vehicle(),
                 false,
                 dataDir = "",
+                packDir = "",
+                longTripEnabled = false,
+                allowedCountries = null,
                 viaPoints = emptyList(),
             )
         android.util.Log.i(TAG, "PACK_CAR_TORGGATA ${carTor.report}")
@@ -463,6 +469,9 @@ class IndexedPackV4AccessMigrationConvertInstrumentedTest {
                 vehicle(),
                 false,
                 dataDir = "",
+                packDir = "",
+                longTripEnabled = false,
+                allowedCountries = null,
                 viaPoints = emptyList(),
             )
         android.util.Log.i(TAG, "PACK_CAR_KIRKEBY ${carKirk.report}")

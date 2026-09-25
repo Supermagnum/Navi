@@ -373,6 +373,7 @@ pub fn edge_bike_soft_multiplier(edge: &GraphEdge, cap: BikeCapability) -> f64 {
             };
             let surf_mult = match sq {
                 SurfaceQuality::Good => 1.0,
+                SurfaceQuality::Unknown => BIKE_ROAD_SURFACE_MARGINAL,
                 SurfaceQuality::Marginal => BIKE_ROAD_SURFACE_MARGINAL,
                 SurfaceQuality::Poor => BIKE_ROAD_SURFACE_POOR,
             };
@@ -393,7 +394,7 @@ pub fn edge_bike_soft_multiplier(edge: &GraphEdge, cap: BikeCapability) -> f64 {
                     mult *= BIKE_GRAVEL_ASPHALT_LOCAL;
                 }
                 SurfaceQuality::Good => {}
-                SurfaceQuality::Marginal => {}
+                SurfaceQuality::Unknown | SurfaceQuality::Marginal => {}
                 SurfaceQuality::Poor => mult *= BIKE_GRAVEL_SURFACE_POOR,
             }
             mult

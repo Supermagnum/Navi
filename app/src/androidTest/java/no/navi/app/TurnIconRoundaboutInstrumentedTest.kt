@@ -177,6 +177,9 @@ class TurnIconRoundaboutInstrumentedTest {
                     vehicle = FfiVehicleLimits(null, null, null, null, null, null),
                     preferOfficialNetworks = false,
                     dataDir = "",
+                    packDir = "",
+                    longTripEnabled = false,
+                    allowedCountries = null,
                     viaPoints = emptyList(),
                 )
             assertTrue("leg PASS: ${leg.report.take(200)}", leg.report.contains("PASS"))

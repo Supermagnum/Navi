@@ -1136,7 +1136,6 @@ object GeofabrikDownloadCatalog {
     val norwayRegions: List<Pair<String, String>> =
         listOf(
             // Slugs match navi-server current.json under europe/norway.
-            // europe/norway/hedmark is published too but is covered by Østlandet — omit.
             "nord-norge" to "Nord-Norge",
             "ostlandet" to "Østlandet",
             "sorlandet" to "Sørlandet",
