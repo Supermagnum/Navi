@@ -83,6 +83,12 @@ object NaviMapTestHooks {
         val forceLocalPbf: Boolean = false,
         val avoidFerries: Boolean? = null,
         val restoreSettingsAfter: Boolean = true,
+        /**
+         * When true (default for [NaviDebugIntent] trips), pin the GPS mark at
+         * [fromLat]/[fromLon] and ignore live LocationManager fixes so the
+         * emulator's real fix cannot trigger off-route recalculation.
+         */
+        val injectGpsAtFrom: Boolean = true,
     )
 
     @Volatile
@@ -621,6 +627,22 @@ object NaviMapTestHooks {
      */
     @Volatile
     var pendingInjectFixLatLon: Pair<Double, Double>? = null
+
+    /**
+     * After [MainActivity.applyPlannedRoute], re-queue [pendingInjectFixLatLon]
+     * at these coords so the progress tracker sees an on-route fix (debug trip
+     * seed). Cleared when re-queued (one-shot); never a permanent pin.
+     */
+    @Volatile
+    var pinGpsAfterPlanLatLon: Pair<Double, Double>? = null
+
+    /**
+     * When true, the next consumed [pendingInjectFixLatLon] clears
+     * [ignoreLiveGpsFixes] after apply so adb geo-fix / sim drives can move.
+     * Set by debug-trip post-plan re-pin only.
+     */
+    @Volatile
+    var releaseIgnoreLiveGpsAfterNextInject: Boolean = false
 
     /**
      * When true, ignore LocationManager / other non-test providers so a real

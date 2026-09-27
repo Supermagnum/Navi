@@ -9,8 +9,8 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Debug-only adb trip intent extras (profile, vias, graph path, cabin toggles,
- * avoid-ferries). Gated like [NaviManeuverDump]: release / non-debuggable APKs
- * ignore every planning extra.
+ * avoid-ferries, GPS pin at from). Gated like [NaviManeuverDump]: release /
+ * non-debuggable APKs ignore every planning extra.
  *
  * Cabin keys supported on this build (baseline stack):
  * - `navi_use_networked_cabins`
@@ -18,6 +18,10 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * Part B keys (e.g. `navi_use_unlocked_cabins`) log a warning and are not
  * applied until that build adds them — dump records only applied values.
+ *
+ * `navi_inject_gps` (default true): one-shot pin of the map GPS mark at
+ * `navi_from_*` through plan apply; released on the first subsequent inject
+ * so adb geo-fix / simulated drives can still progress.
  *
  * Settings go through the same UniFFI save/load path as the UI toggles.
  * Snapshot + restore avoids one case leaking into the next.
@@ -139,6 +143,11 @@ object NaviDebugIntent {
         val restoreAfter =
             !intent.hasExtra("navi_restore_settings") ||
                 intent.getBooleanExtra("navi_restore_settings", true)
+        // Default true: matrix / adb trips pin GPS at from so the emulator's
+        // real fix cannot trigger off-route recalculation after auto-plan.
+        val injectGps =
+            !intent.hasExtra("navi_inject_gps") ||
+                intent.getBooleanExtra("navi_inject_gps", true)
 
         val snapshot =
             runCatching {
@@ -191,7 +200,8 @@ object NaviDebugIntent {
             "applied profile=${ctx.profile} bike=${ctx.bikeCapability} " +
                 "graph=${ctx.graph} vias=${ctx.vias.size} " +
                 "settings=${ctx.appliedSettings} ignored=${ctx.ignoredSettings} " +
-                "avoid_ferries=${ctx.avoidFerries} restore=$restoreAfter",
+                "avoid_ferries=${ctx.avoidFerries} restore=$restoreAfter " +
+                "inject_gps=$injectGps",
         )
 
         return NaviMapTestHooks.PendingTripPlan(
@@ -209,6 +219,7 @@ object NaviDebugIntent {
             forceLocalPbf = forcePbf,
             avoidFerries = avoidFerries,
             restoreSettingsAfter = restoreAfter,
+            injectGpsAtFrom = injectGps,
         )
     }
 

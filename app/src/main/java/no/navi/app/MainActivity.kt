@@ -237,6 +237,7 @@ class MainActivity : ComponentActivity() {
      *   [--ed navi_via1_lat … --ed navi_via1_lon …] (up to via4)
      *   [--es navi_graph pack|pbf] [--ez navi_avoid_ferries …]
      *   [--ez navi_use_networked_cabins …] [--ez navi_network_hut_member …]
+     *   [--ez navi_inject_gps true|false] (default true: pin GPS at from)
      */
     private fun applyNaviLaunchExtras(intent: Intent?) {
         if (intent == null) return
@@ -871,6 +872,15 @@ private fun NaviMapScreen() {
                     avoidFerries = on
                 }
                 NaviMapTestHooks.forceLocalPbf = trip.forceLocalPbf
+                if (trip.injectGpsAtFrom) {
+                    // Pin puck at from immediately and again after plan so the
+                    // progress tracker does not see the emulator's far-away fix.
+                    NaviMapTestHooks.ignoreLiveGpsFixes = true
+                    NaviMapTestHooks.pendingInjectFixLatLon = trip.fromLat to trip.fromLon
+                    NaviMapTestHooks.pinGpsAfterPlanLatLon = trip.fromLat to trip.fromLon
+                } else {
+                    NaviMapTestHooks.pinGpsAfterPlanLatLon = null
+                }
                 status = "Trip seeded: ${trip.fromName} → ${trip.toName}"
                 if (trip.autoPlan) {
                     delay(1_200)
@@ -1488,6 +1498,14 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.reroutingActive = false
         NaviMapTestHooks.hikingReroutePromptVisible = false
         NaviMapTestHooks.lastOffRoute = false
+        // Debug-intent trips: one-shot re-pin at from now that the tracker exists.
+        // Released on the next inject consume so adb geo-fix / sim can progress.
+        NaviMapTestHooks.pinGpsAfterPlanLatLon?.let { pin ->
+            NaviMapTestHooks.pendingInjectFixLatLon = pin
+            NaviMapTestHooks.ignoreLiveGpsFixes = true
+            NaviMapTestHooks.pinGpsAfterPlanLatLon = null
+            NaviMapTestHooks.releaseIgnoreLiveGpsAfterNextInject = true
+        }
         lastViaToastIndex = -1
         status =
             userFacingStatus(
@@ -4062,8 +4080,13 @@ private fun NaviMapScreen() {
                             if (simulatingRef.get()) {
                                 stopRouteSimulation()
                             }
-                            // Keep device GPS from immediately undoing the inject.
-                            NaviMapTestHooks.ignoreLiveGpsFixes = true
+                            val releaseIgnoreAfter =
+                                NaviMapTestHooks.releaseIgnoreLiveGpsAfterNextInject
+                            if (!releaseIgnoreAfter) {
+                                // Instrumented off-route injects: keep live GPS
+                                // from immediately undoing the inject.
+                                NaviMapTestHooks.ignoreLiveGpsFixes = true
+                            }
                             val loc =
                                 android.location.Location("navi-test-inject").apply {
                                     latitude = inject.first
@@ -4076,6 +4099,12 @@ private fun NaviMapScreen() {
                                 }
                             NaviMapTestHooks.pendingInjectFixSpeedKmh = null
                             applyFixRef.get().invoke(loc)
+                            if (releaseIgnoreAfter) {
+                                // Debug-trip one-shot pin: allow subsequent geo-fix
+                                // / sim injects to move the puck.
+                                NaviMapTestHooks.ignoreLiveGpsFixes = false
+                                NaviMapTestHooks.releaseIgnoreLiveGpsAfterNextInject = false
+                            }
                         }
                         val hikeAns = NaviMapTestHooks.requestHikingRerouteAnswer
                         if (hikeAns != null && showHikingReroutePrompt) {
