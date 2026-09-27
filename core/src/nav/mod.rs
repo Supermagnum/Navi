@@ -195,14 +195,29 @@ pub fn prefer_street_label(name: Option<&str>, systematic_ref: Option<&str>) -> 
         .map(|s| s.to_string())
 }
 
+/// Format an OSM `ref` for display: split multi-value `;` and join with `/`
+/// (OSM token order preserved). Identity matching still splits on `;` separately.
+pub fn format_ref_for_display(systematic_ref: &str) -> String {
+    systematic_ref
+        .split(';')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Maneuver approach-box street: `name (ref)` when both exist, else whichever is present.
+/// Multi-value refs use `/` for display (e.g. `3/25`, `Chausseen (25/3)`).
 pub fn maneuver_street_label(name: Option<&str>, systematic_ref: Option<&str>) -> Option<String> {
     let n = name.map(str::trim).filter(|s| !s.is_empty());
-    let r = systematic_ref.map(str::trim).filter(|s| !s.is_empty());
+    let r = systematic_ref
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(format_ref_for_display);
     match (n, r) {
         (Some(n), Some(r)) => Some(format!("{n} ({r})")),
         (Some(n), None) => Some(n.to_string()),
-        (None, Some(r)) => Some(r.to_string()),
+        (None, Some(r)) => Some(r),
         (None, None) => None,
     }
 }
@@ -326,6 +341,20 @@ mod tests {
             Some("E6".into())
         );
         assert_eq!(prefer_street_label(None, None), None);
+    }
+
+    #[test]
+    fn maneuver_street_formats_multi_value_refs() {
+        assert_eq!(
+            maneuver_street_label(None, Some("3;25")),
+            Some("3/25".into())
+        );
+        assert_eq!(
+            maneuver_street_label(Some("Chausseen"), Some("25;3")),
+            Some("Chausseen (25/3)".into())
+        );
+        assert_eq!(format_ref_for_display(" 3 ; 25 "), "3/25");
+        assert_eq!(format_ref_for_display("E6"), "E6");
     }
 
     #[test]

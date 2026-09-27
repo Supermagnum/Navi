@@ -41,6 +41,9 @@ const CHANNEL_MERGE_MAX_M: f64 = 200.0;
 /// Optional `then` hint when the next maneuver is this far ahead (inclusive).
 const THEN_HINT_MIN_M: f64 = 30.0;
 const THEN_HINT_MAX_M: f64 = 60.0;
+/// When an exit/roundabout leave edge is unnamed, search this far along the
+/// continuing path for the next name or numbered `ref`.
+const STREET_LOOKAHEAD_M: f64 = 500.0;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SimSample {
@@ -204,6 +207,70 @@ fn motor_or_bike_guidance(graph: &RouteGraph) -> bool {
         graph.profile(),
         RoutingProfile::Car | RoutingProfile::Truck | RoutingProfile::Bicycle
     )
+}
+
+/// Next `name`/`ref` label along `edge_indices` starting at `from_edge_i`.
+///
+/// Stops at whichever comes first:
+/// - [`STREET_LOOKAHEAD_M`] of unnamed walking, or
+/// - an edge whose **start** cum-distance along the path is `>= stop_before_cum_m`
+///   (the next announced maneuver) — so we never borrow a name only reached
+///   through a later turn.
+fn street_label_along_path(
+    graph: &RouteGraph,
+    edge_indices: &[usize],
+    from_edge_i: usize,
+    stop_before_cum_m: f64,
+) -> Option<String> {
+    let mut edge_start_cum = 0.0;
+    for &ei in edge_indices.iter().take(from_edge_i) {
+        edge_start_cum += graph.edges[ei].length_m;
+    }
+    let mut walked = 0.0;
+    for &ei in edge_indices.iter().skip(from_edge_i) {
+        if edge_start_cum + 1e-6 >= stop_before_cum_m {
+            break;
+        }
+        let e = &graph.edges[ei];
+        if let Some(label) = maneuver_street_label(e.name.as_deref(), e.road_ref.as_deref()) {
+            return Some(label);
+        }
+        walked += e.length_m;
+        edge_start_cum += e.length_m;
+        if walked >= STREET_LOOKAHEAD_M {
+            break;
+        }
+    }
+    None
+}
+
+/// Fill empty exit/roundabout streets from the next named/ref edge **before** the
+/// next announced maneuver (and within [`STREET_LOOKAHEAD_M`]).
+fn fill_exit_roundabout_streets(
+    graph: &RouteGraph,
+    edge_indices: &[usize],
+    steps: &mut [InternalStep],
+) {
+    for i in 0..steps.len() {
+        let needs = steps[i].street.is_none()
+            && steps[i].street_look_from_edge_i.is_some()
+            && (steps[i].is_roundabout
+                || matches!(
+                    steps[i].kind,
+                    ManeuverKind::ExitLeft | ManeuverKind::ExitRight
+                ));
+        if !needs {
+            continue;
+        }
+        let from = steps[i].street_look_from_edge_i.expect("checked");
+        let stop_before = steps
+            .get(i + 1)
+            .map(|n| n.cum_m)
+            .unwrap_or(steps[i].cum_m + STREET_LOOKAHEAD_M);
+        if let Some(label) = street_label_along_path(graph, edge_indices, from, stop_before) {
+            steps[i].street = Some(label);
+        }
+    }
 }
 
 fn lookahead_m(lanes: Option<u8>) -> f64 {
@@ -979,13 +1046,19 @@ pub fn build_maneuvers_from_edges(
         let turn_node_idx = i + 1;
 
         if let Some(span) = spans.iter().find(|s| s.entry_idx == turn_node_idx) {
-            let street = if span.leave_idx + 1 < path.len() {
-                edge_indices
+            let (street, look_from) = if span.leave_idx + 1 < path.len() {
+                let leave_label = edge_indices
                     .get(span.leave_idx)
                     .map(|&idx| &graph.edges[idx])
-                    .and_then(|e| maneuver_street_label(e.name.as_deref(), e.road_ref.as_deref()))
+                    .and_then(|e| maneuver_street_label(e.name.as_deref(), e.road_ref.as_deref()));
+                let look = if leave_label.is_none() {
+                    Some(span.leave_idx)
+                } else {
+                    None
+                };
+                (leave_label, look)
             } else {
-                None
+                (None, None)
             };
             let node = &graph.nodes[&n1];
             raw.push(InternalStep {
@@ -999,6 +1072,7 @@ pub fn build_maneuvers_from_edges(
                 silent_name_change: false,
                 is_roundabout: true,
                 is_channel: false,
+                street_look_from_edge_i: look_from,
             });
             continue;
         }
@@ -1052,6 +1126,7 @@ pub fn build_maneuvers_from_edges(
                         silent_name_change: true,
                         is_roundabout: false,
                         is_channel: is_ramp_or_channel(e_out) || is_ramp_or_channel(e_in),
+                        street_look_from_edge_i: None,
                     });
                 }
                 continue;
@@ -1109,18 +1184,27 @@ pub fn build_maneuvers_from_edges(
             continue;
         }
 
+        let street = maneuver_street_label(e_out.name.as_deref(), e_out.road_ref.as_deref());
+        let look_from = if street.is_none()
+            && matches!(kind, ManeuverKind::ExitLeft | ManeuverKind::ExitRight)
+        {
+            Some(i + 1)
+        } else {
+            None
+        };
         let node = &graph.nodes[&n1];
         raw.push(InternalStep {
             lat: node.coord.y,
             lon: node.coord.x,
             cum_m: cum,
             kind,
-            street: maneuver_street_label(e_out.name.as_deref(), e_out.road_ref.as_deref()),
+            street,
             roundabout_exit: None,
             icon: Some(icon_for_kind(kind, delta)),
             silent_name_change: false,
             is_roundabout: false,
             is_channel: is_ramp_or_channel(e_in) || is_ramp_or_channel(e_out),
+            street_look_from_edge_i: look_from,
         });
     }
     // Destination at end.
@@ -1145,14 +1229,16 @@ pub fn build_maneuvers_from_edges(
             silent_name_change: false,
             is_roundabout: false,
             is_channel: false,
+            street_look_from_edge_i: None,
         });
     }
 
-    let collapsed = if suppress {
+    let mut collapsed = if suppress {
         collapse_maneuvers(raw)
     } else {
         raw.into_iter().filter(|s| !s.silent_name_change).collect()
     };
+    fill_exit_roundabout_streets(graph, edge_indices, &mut collapsed);
     attach_then_hints(collapsed)
 }
 
@@ -1168,6 +1254,9 @@ struct InternalStep {
     silent_name_change: bool,
     is_roundabout: bool,
     is_channel: bool,
+    /// When street is empty on exit/roundabout: first `edge_indices` index to
+    /// search for a borrowable name (leave / out edge). Cleared after fill.
+    street_look_from_edge_i: Option<usize>,
 }
 
 fn collapse_maneuvers(steps: Vec<InternalStep>) -> Vec<InternalStep> {
