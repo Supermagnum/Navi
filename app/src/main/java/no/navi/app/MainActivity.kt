@@ -230,6 +230,13 @@ class MainActivity : ComponentActivity() {
      *   am start -n no.navi.app/.MainActivity \
      *     --ed navi_camera_lat 62.1592913 --ed navi_camera_lon 11.3584086 --ed navi_camera_zoom 16
      * Also accepts --ef / --es for the same keys.
+     *
+     * Debug trip seed (debuggable builds only — see [NaviDebugIntent]):
+     *   --ed navi_from_lat … --ed navi_from_lon … --ed navi_to_lat … --ed navi_to_lon …
+     *   [--es navi_profile car|bicycle|hiking|…] [--es navi_bike_capability road|trekking|mountain]
+     *   [--ed navi_via1_lat … --ed navi_via1_lon …] (up to via4)
+     *   [--es navi_graph pack|pbf] [--ez navi_avoid_ferries …]
+     *   [--ez navi_use_networked_cabins …] [--ez navi_network_hut_member …]
      */
     private fun applyNaviLaunchExtras(intent: Intent?) {
         if (intent == null) return
@@ -263,39 +270,24 @@ class MainActivity : ComponentActivity() {
         } else if (intent.action == Intent.ACTION_MAIN) {
             NaviMapTestHooks.disableGpsFollow = false
         }
-        val fromLat = intentDoubleExtra(intent, "navi_from_lat")
-        val fromLon = intentDoubleExtra(intent, "navi_from_lon")
-        val toLat = intentDoubleExtra(intent, "navi_to_lat")
-        val toLon = intentDoubleExtra(intent, "navi_to_lon")
-        if (!fromLat.isNaN() && !fromLon.isNaN() && !toLat.isNaN() && !toLon.isNaN()) {
-            val fromName =
-                intent.getStringExtra("navi_from_name").orEmpty().ifBlank {
-                    formatCoordWaypointName(fromLat, fromLon)
-                }
-            val toName =
-                intent.getStringExtra("navi_to_name").orEmpty().ifBlank {
-                    formatCoordWaypointName(toLat, toLon)
-                }
-            val enableLong =
-                !intent.hasExtra("navi_long_trip") ||
-                    intent.getBooleanExtra("navi_long_trip", true)
-            val autoPlan =
-                !intent.hasExtra("navi_auto_plan") ||
-                    intent.getBooleanExtra("navi_auto_plan", true)
-            NaviMapTestHooks.pendingTripPlan =
-                NaviMapTestHooks.PendingTripPlan(
-                    fromName = fromName,
-                    fromLat = fromLat,
-                    fromLon = fromLon,
-                    toName = toName,
-                    toLat = toLat,
-                    toLon = toLon,
-                    enableLongTrip = enableLong,
-                    autoPlan = autoPlan,
-                )
+        // Trip / profile / settings / graph: debug builds only.
+        val dataDirPath = filesDir.absolutePath
+        val debugTrip =
+            NaviDebugIntent.consumeTripExtras(this, intent, dataDirPath)
+        if (debugTrip != null) {
+            NaviMapTestHooks.pendingTripPlan = debugTrip
+            debugTrip.profile?.let { NaviMapTestHooks.requestTravelProfile = it }
+            if (debugTrip.vias.isNotEmpty()) {
+                NaviMapTestHooks.pendingViaPoints = debugTrip.vias
+            }
+            NaviMapTestHooks.forceLocalPbf = debugTrip.forceLocalPbf
+            debugTrip.avoidFerries?.let { NaviMapTestHooks.requestAvoidFerries = it }
+            debugTrip.bikeCapability?.let { NaviMapTestHooks.requestBikeCapability = it }
             android.util.Log.i(
                 "NaviTrip",
-                "pendingTripPlan from=$fromName to=$toName long=$enableLong plan=$autoPlan",
+                "pendingTripPlan from=${debugTrip.fromName} to=${debugTrip.toName} " +
+                    "long=${debugTrip.enableLongTrip} plan=${debugTrip.autoPlan} " +
+                    "profile=${debugTrip.profile} graph=${if (debugTrip.forceLocalPbf) "pbf" else "pack"}",
             )
         }
     }
@@ -864,6 +856,21 @@ private fun NaviMapScreen() {
                         lat = trip.toLat,
                         lon = trip.toLon,
                     )
+                if (trip.vias.isNotEmpty()) {
+                    viaPoints = trip.vias
+                }
+                // Profile / eco / driveHud: applyNaviLaunchExtras already set
+                // requestTravelProfile; the later hook poll updates Compose state
+                // after driveHud is in scope.
+                trip.bikeCapability?.let { id ->
+                    bikeCapability = id
+                }
+                trip.avoidFerries?.let { on ->
+                    // Snapshot current UI value so we can restore after the plan.
+                    NaviMapTestHooks.restoreAvoidFerriesAfterPlan = avoidFerries
+                    avoidFerries = on
+                }
+                NaviMapTestHooks.forceLocalPbf = trip.forceLocalPbf
                 status = "Trip seeded: ${trip.fromName} → ${trip.toName}"
                 if (trip.autoPlan) {
                     delay(1_200)
@@ -2647,7 +2654,16 @@ private fun NaviMapScreen() {
             }
         val pbf =
             RegionCoverage.resolvePlanPbf(dataDir, coverageWaypoints, longTripPackDir)
-        val planPackDirPath = longTripPackDir?.absolutePath.orEmpty()
+        val planPackDirPath =
+            when {
+                NaviMapTestHooks.forceLocalPbf -> NaviDebugIntent.FORCE_PBF_PACK_DIR
+                longTripPackDir != null -> longTripPackDir.absolutePath
+                else -> ""
+            }
+        // One-shot: clear after this plan kick consumes it.
+        if (NaviMapTestHooks.forceLocalPbf) {
+            NaviMapTestHooks.forceLocalPbf = false
+        }
         val stagedOk =
             profile == TravelProfile.HIKING &&
                 NaviMapTestHooks.preferStagedHikingRoute &&
@@ -4268,6 +4284,29 @@ private fun NaviMapScreen() {
                                     )
                             }
                             status = "Profile: ${profileReq.name.lowercase()}"
+                        }
+                        val avoidFerryReq = NaviMapTestHooks.requestAvoidFerries
+                        if (avoidFerryReq != null) {
+                            NaviMapTestHooks.requestAvoidFerries = null
+                            avoidFerries = avoidFerryReq
+                        }
+                        val bikeCapReq = NaviMapTestHooks.requestBikeCapability
+                        if (bikeCapReq != null) {
+                            NaviMapTestHooks.requestBikeCapability = null
+                            bikeCapability = bikeCapReq
+                        }
+                        if (NaviMapTestHooks.requestReloadCabinSettings) {
+                            NaviMapTestHooks.requestReloadCabinSettings = false
+                            useNetworkedCabins =
+                                uniffi.navi.loadUseNetworkedCabins(dataDir.absolutePath)
+                            networkHutMember =
+                                uniffi.navi.loadNetworkHutMember(dataDir.absolutePath)
+                            bikeCapability =
+                                uniffi.navi.loadBikeCapability(dataDir.absolutePath)
+                            NaviMapTestHooks.restoreAvoidFerriesAfterPlan?.let { prev ->
+                                NaviMapTestHooks.restoreAvoidFerriesAfterPlan = null
+                                avoidFerries = prev
+                            }
                         }
                         val hookAlt = NaviMapTestHooks.gpsAltitudeM
                         if (hookAlt != null && driveHud.altitudeM != hookAlt) {

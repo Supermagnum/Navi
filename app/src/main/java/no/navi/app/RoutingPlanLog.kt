@@ -64,6 +64,8 @@ object RoutingPlanLog {
         logPois(result.breakPoisJson)
         DiagnosticLog.logRoutePlanComplete(result)
         NaviManeuverDump.dump(result)
+        // Debug intent: restore cabin/bike settings snapshotted before the plan.
+        restoreDebugIntentSettings()
     }
 
     fun failed(
@@ -88,6 +90,7 @@ object RoutingPlanLog {
             "planning_failed eco=$ecoEnabled duration_ms=$durationMs reason=$reason$diag",
         )
         DiagnosticLog.logRoutePlanFailed(reason, result)
+        restoreDebugIntentSettings()
     }
 
     fun cancelled(
@@ -101,6 +104,19 @@ object RoutingPlanLog {
             "planning_cancelled eco=$ecoEnabled duration_ms=$durationMs reason=$reason",
         )
         DiagnosticLog.logRoutePlanCancelled(reason, report)
+        restoreDebugIntentSettings()
+    }
+
+    private fun restoreDebugIntentSettings() {
+        runCatching {
+            val at = Class.forName("android.app.ActivityThread")
+            val app = at.getMethod("currentApplication").invoke(null) as? android.content.Context
+            val dir = app?.filesDir?.absolutePath
+            if (dir != null) {
+                NaviDebugIntent.restoreAfterPlan(dir)
+                NaviMapTestHooks.requestReloadCabinSettings = true
+            }
+        }
     }
 
     fun logPois(breakPoisJson: String) {

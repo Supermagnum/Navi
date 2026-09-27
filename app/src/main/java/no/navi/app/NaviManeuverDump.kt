@@ -32,10 +32,19 @@ object NaviManeuverDump {
     private const val CHUNK_CHARS = 3_500
 
     private val lastProfile = AtomicReference("unknown")
+    private val lastDebugContext = AtomicReference<NaviDebugIntent.AppliedContext?>(null)
 
     fun noteProfile(profile: String) {
         if (!debugBuild()) return
         lastProfile.set(profile.ifBlank { "unknown" })
+    }
+
+    fun noteDebugContext(ctx: NaviDebugIntent.AppliedContext) {
+        if (!debugBuild()) return
+        lastDebugContext.set(ctx)
+        if (ctx.profile.isNotBlank() && ctx.profile != "default") {
+            lastProfile.set(ctx.profile)
+        }
     }
 
     fun dump(result: CorridorRouteResult) {
@@ -62,14 +71,46 @@ object NaviManeuverDump {
                 ?.groupValues
                 ?.getOrNull(1)
                 ?.equals("true", ignoreCase = true) == true
+        val dbg = lastDebugContext.get()
         val obj =
             JSONObject().apply {
                 put("profile", lastProfile.get())
+                dbg?.bikeCapability?.let { put("bike_capability", it) }
                 put("pack_hit", packHit)
+                put(
+                    "graph",
+                    dbg?.graph
+                        ?: if (packHit) {
+                            "pack-hit"
+                        } else {
+                            "local-pbf"
+                        },
+                )
                 put("distance_km", result.distanceKm)
                 put("eta_minutes", result.etaMinutes)
                 put("edge_hash", edgeHash(result.routePolyline))
                 put("maneuvers", maneuvers)
+                if (dbg != null) {
+                    val viasArr = JSONArray()
+                    for ((lat, lon) in dbg.vias) {
+                        viasArr.put(
+                            JSONObject().apply {
+                                put("lat", lat)
+                                put("lon", lon)
+                            },
+                        )
+                    }
+                    put("vias", viasArr)
+                    dbg.avoidFerries?.let { put("avoid_ferries", it) }
+                    val settingsObj = JSONObject()
+                    for ((k, v) in dbg.appliedSettings) {
+                        settingsObj.put(k, v)
+                    }
+                    put("settings_applied", settingsObj)
+                    if (dbg.ignoredSettings.isNotEmpty()) {
+                        put("settings_ignored", JSONArray(dbg.ignoredSettings))
+                    }
+                }
             }
         return obj.toString()
     }

@@ -66,6 +66,7 @@ object NaviMapTestHooks {
     /**
      * Cold-start / adb trip seed for standalone long-trip runs (not under
      * instrumentation). Consumed once by [MainActivity] / NaviMapScreen.
+     * Extended fields are filled only by [NaviDebugIntent] on debuggable builds.
      */
     data class PendingTripPlan(
         val fromName: String,
@@ -76,10 +77,42 @@ object NaviMapTestHooks {
         val toLon: Double,
         val enableLongTrip: Boolean = true,
         val autoPlan: Boolean = true,
+        val profile: uniffi.navi.TravelProfile? = null,
+        val bikeCapability: String? = null,
+        val vias: List<Waypoint> = emptyList(),
+        val forceLocalPbf: Boolean = false,
+        val avoidFerries: Boolean? = null,
+        val restoreSettingsAfter: Boolean = true,
     )
 
     @Volatile
     var pendingTripPlan: PendingTripPlan? = null
+
+    /**
+     * When true, the next plan uses pack_dir [NaviDebugIntent.FORCE_PBF_PACK_DIR]
+     * so indexed packs are skipped (local-PBF graph build).
+     */
+    @Volatile
+    var forceLocalPbf: Boolean = false
+
+    /** One-shot avoid-ferries injection (same path as the UI toggle). */
+    @Volatile
+    var requestAvoidFerries: Boolean? = null
+
+    /** One-shot bike capability id (`road` / `trekking` / `mountain`). */
+    @Volatile
+    var requestBikeCapability: String? = null
+
+    /**
+     * After a debug-intent plan, restore in-memory avoid-ferries to this value
+     * (cabins/bike capability are restored via UniFFI in [NaviDebugIntent]).
+     */
+    @Volatile
+    var restoreAvoidFerriesAfterPlan: Boolean? = null
+
+    /** Reload cabin / bike Compose state from UniFFI after debug-intent restore. */
+    @Volatile
+    var requestReloadCabinSettings: Boolean = false
 
     /**
      * When true, live GPS never enables follow mode or retargets the map camera

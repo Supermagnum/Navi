@@ -2027,6 +2027,14 @@ fn plan_pack_dirs(
     pack_dir: &str,
     long_trip_enabled: bool,
 ) -> Vec<PathBuf> {
+    // Debug-intent sentinel from NaviDebugIntent.FORCE_PBF_PACK_DIR. Ordinary
+    // pack_dir values are filesystem paths (long-trip pack roots) or empty —
+    // never a region name or search string. Rust accepts the sentinel
+    // unconditionally; only debuggable Kotlin sets it (release ignores the
+    // intent and always passes "" or a real pack directory).
+    if pack_dir.trim() == "__navi_force_pbf__" {
+        return Vec::new();
+    }
     let mut out = Vec::new();
     let pd = pack_dir.trim();
     if !pd.is_empty() {
