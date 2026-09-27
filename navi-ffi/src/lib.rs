@@ -3045,17 +3045,23 @@ fn plan_car_route_inner(
             );
             let t_graph = Instant::now();
             let pack_dirs = plan_pack_dirs(pbf, &data_dir, &pack_dir, long_trip_enabled);
-            let (primary_pack, extra_packs) = pack_dirs.split_last().unwrap();
-            let pack_try =
-            driver_break_core::routing::indexed::try_load_graph_for_plan_corridor_with_pack_dirs(
-                primary_pack,
-                extra_packs,
-                pbf,
-                routing_profile,
-                Some(bbox),
-                Some(route_points.as_slice()),
-                edge_clip_mode,
-            );
+            // Empty when `pack_dir` is the debug `__navi_force_pbf__` sentinel
+            // (or no pack roots exist): skip pack load and cold-build from PBF.
+            let pack_try = match pack_dirs.split_last() {
+                Some((primary_pack, extra_packs)) => {
+                    driver_break_core::routing::indexed::try_load_graph_for_plan_corridor_with_pack_dirs(
+                        primary_pack,
+                        extra_packs,
+                        pbf,
+                        routing_profile,
+                        Some(bbox),
+                        Some(route_points.as_slice()),
+                        edge_clip_mode,
+                    )
+                }
+                // Debug `__navi_force_pbf__` (or no pack roots): skip pack load.
+                None => Err(driver_break_core::routing::indexed::PackLoadError::Missing),
+            };
             let _pause_bg = if pack_try.is_err() {
                 Some(driver_break_core::download::ForegroundPlanGuard::acquire())
             } else {
