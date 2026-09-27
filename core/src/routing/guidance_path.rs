@@ -362,6 +362,28 @@ fn collect_real_alternatives<'a>(
     alts
 }
 
+/// Outbound bearing for an alternative at `turn_node`.
+///
+/// Motor/bike use OSRM-style local edge heading; foot keeps endpoint→target
+/// bearings so hiking Keep/Straight lists stay kind-for-kind with baseline.
+fn alternative_outbound_bearing(
+    graph: &RouteGraph,
+    turn_node: NodeId,
+    e: &GraphEdge,
+    use_local: bool,
+) -> f64 {
+    if use_local {
+        return local_bearing_outbound(e);
+    }
+    let Some(node_n) = graph.nodes.get(&turn_node) else {
+        return local_bearing_outbound(e);
+    };
+    let Some(tn) = graph.nodes.get(&e.target) else {
+        return bearing_deg(e.start_lat, e.start_lon, e.end_lat, e.end_lon);
+    };
+    bearing_deg(node_n.coord.y, node_n.coord.x, tn.coord.y, tn.coord.x)
+}
+
 /// Count same-direction alternatives at a junction (Navit strengthening criterion).
 fn count_same_dir_alternatives(
     graph: &RouteGraph,
@@ -375,8 +397,9 @@ fn count_same_dir_alternatives(
     let mut more_ways = 0usize;
     let mut turn_no = 0usize;
     let route_left = route_delta < 0.0;
+    let use_local = motor_or_bike_guidance(graph);
     for e in collect_real_alternatives(graph, turn_node, route_target, inbound_from, route_out) {
-        let out_b = local_bearing_outbound(e);
+        let out_b = alternative_outbound_bearing(graph, turn_node, e, use_local);
         let dw = turn_delta_deg(in_bearing, out_b);
         if route_left {
             if dw < -MIN_TURN_DEG {
@@ -419,8 +442,9 @@ fn maybe_keep_left_right(
     let mut right_closest = f64::INFINITY;
     let mut has_left = false;
     let mut has_right = false;
+    let use_local = motor_or_bike_guidance(graph);
     for e in collect_real_alternatives(graph, turn_node, route_target, inbound_from, route_out) {
-        let out_b = local_bearing_outbound(e);
+        let out_b = alternative_outbound_bearing(graph, turn_node, e, use_local);
         let dw = turn_delta_deg(in_bearing, out_b);
         if dw < 0.0 {
             has_left = true;
