@@ -742,6 +742,10 @@ object NaviMapTestHooks {
     @Volatile
     var lastViaIndex: Int = -1
 
+    /** Latest localized status line when [lastViaIndex] advances (toast / debug hook). */
+    @Volatile
+    var lastViaReachedSpeech: String = ""
+
     @Volatile
     var lastSimAlongM: Double = 0.0
 

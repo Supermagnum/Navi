@@ -44,6 +44,14 @@ const THEN_HINT_MAX_M: f64 = 60.0;
 /// When an exit/roundabout leave edge is unnamed, search this far along the
 /// continuing path for the next name or numbered `ref`.
 const STREET_LOOKAHEAD_M: f64 = 500.0;
+/// Via tip must lie within this of an announced maneuver to consider a spur.
+const VIA_SPUR_TIP_M: f64 = 80.0;
+/// Mans within this of the via pin are tip-redundant (dropped); approach/rejoin stay.
+const VIA_TIP_DROP_M: f64 = 40.0;
+/// Leave and rejoin maneuvers of an out-and-back must be this close (same junction).
+const VIA_SPUR_REJOIN_M: f64 = 50.0;
+/// Max cum-distance span of a via spur leave→rejoin window.
+const VIA_SPUR_MAX_SPAN_M: f64 = 500.0;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SimSample {
@@ -79,6 +87,10 @@ pub struct RouteManeuver {
     /// Optional short hint for the maneuver that follows within 30–60 m.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub then: Option<String>,
+    /// 0-based intermediate-via ordinal when this is a via-reached marker.
+    /// Absent on ordinary turns and the final destination. Host renders UI copy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub via_index: Option<u32>,
 }
 
 fn bearing_deg(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
@@ -1022,6 +1034,20 @@ pub fn build_maneuvers_from_edges(
     path: &[NodeId],
     edge_indices: &[usize],
 ) -> Vec<RouteManeuver> {
+    build_maneuvers_from_edges_with_vias(graph, path, edge_indices, &[])
+}
+
+/// Like [`build_maneuvers_from_edges`], collapsing short via out-and-backs.
+///
+/// Intermediate `vias` (lat, lon) — not start/end — drop tip-redundant mans and
+/// insert via-reached markers (`destination` + `via_index`). Host renders copy.
+/// Host GPS via toasts still come from `RouteProgressTracker`.
+pub fn build_maneuvers_from_edges_with_vias(
+    graph: &RouteGraph,
+    path: &[NodeId],
+    edge_indices: &[usize],
+    vias: &[(f64, f64)],
+) -> Vec<RouteManeuver> {
     let mut raw: Vec<InternalStep> = Vec::new();
     if path.len() < 2 || edge_indices.is_empty() {
         return Vec::new();
@@ -1073,6 +1099,7 @@ pub fn build_maneuvers_from_edges(
                 is_roundabout: true,
                 is_channel: false,
                 street_look_from_edge_i: look_from,
+                via_index: None,
             });
             continue;
         }
@@ -1127,6 +1154,7 @@ pub fn build_maneuvers_from_edges(
                         is_roundabout: false,
                         is_channel: is_ramp_or_channel(e_out) || is_ramp_or_channel(e_in),
                         street_look_from_edge_i: None,
+                        via_index: None,
                     });
                 }
                 continue;
@@ -1205,6 +1233,7 @@ pub fn build_maneuvers_from_edges(
             is_roundabout: false,
             is_channel: is_ramp_or_channel(e_in) || is_ramp_or_channel(e_out),
             street_look_from_edge_i: look_from,
+            via_index: None,
         });
     }
     // Destination at end.
@@ -1230,6 +1259,7 @@ pub fn build_maneuvers_from_edges(
             is_roundabout: false,
             is_channel: false,
             street_look_from_edge_i: None,
+            via_index: None,
         });
     }
 
@@ -1239,7 +1269,202 @@ pub fn build_maneuvers_from_edges(
         raw.into_iter().filter(|s| !s.silent_name_change).collect()
     };
     fill_exit_roundabout_streets(graph, edge_indices, &mut collapsed);
+    if suppress && !vias.is_empty() {
+        collapsed = collapse_via_out_and_backs(graph, path, edge_indices, collapsed, vias);
+    }
     attach_then_hints(collapsed)
+}
+
+/// Project a via onto the path; return `(cum_m, dist_m)` of the closest point.
+fn via_cum_on_path(
+    graph: &RouteGraph,
+    path: &[NodeId],
+    edge_indices: &[usize],
+    vlat: f64,
+    vlon: f64,
+) -> Option<(f64, f64)> {
+    if path.len() < 2 || edge_indices.is_empty() {
+        return None;
+    }
+    let mut best_d = f64::MAX;
+    let mut best_cum = 0.0;
+    let mut cum = 0.0;
+    for (i, &ei) in edge_indices.iter().enumerate() {
+        let a = &graph.nodes[&path[i]];
+        let b = &graph.nodes[&path[i + 1]];
+        let len = graph.edges[ei].length_m.max(1e-3);
+        // Sample endpoints + midpoint (adequate for via pin placement).
+        for t in [0.0_f64, 0.5, 1.0] {
+            let lat = a.coord.y + (b.coord.y - a.coord.y) * t;
+            let lon = a.coord.x + (b.coord.x - a.coord.x) * t;
+            let d = haversine_m_local(vlat, vlon, lat, lon);
+            if d < best_d {
+                best_d = d;
+                best_cum = cum + len * t;
+            }
+        }
+        cum += len;
+    }
+    Some((best_cum, best_d))
+}
+
+/// Collapse tip-redundant maneuvers at intermediate vias.
+///
+/// Keeps every turn needed to reach the via and to rejoin the route (leave into
+/// the side road, rejoin back out). Drops only mans within [`VIA_TIP_DROP_M`] of
+/// the via pin inside a leave→rejoin spur window (tip U-turn / repeated
+/// same-street turn). Inserts one via-reached marker (`destination` kind with
+/// `via_index`, empty street) at every via that lies on the path.
+fn collapse_via_out_and_backs(
+    graph: &RouteGraph,
+    path: &[NodeId],
+    edge_indices: &[usize],
+    steps: Vec<InternalStep>,
+    vias: &[(f64, f64)],
+) -> Vec<InternalStep> {
+    if steps.is_empty() || vias.is_empty() {
+        return steps;
+    }
+    let mut remove = vec![false; steps.len()];
+    let mut insert_via: Vec<InternalStep> = Vec::new();
+    for (via_i, &(vlat, vlon)) in vias.iter().enumerate() {
+        let Some((via_cum, path_d)) = via_cum_on_path(graph, path, edge_indices, vlat, vlon) else {
+            continue;
+        };
+        // Via must lie on / beside the driven path.
+        if path_d > VIA_SPUR_TIP_M {
+            continue;
+        }
+
+        let mut tip = None;
+        let mut tip_d = f64::MAX;
+        for (i, s) in steps.iter().enumerate() {
+            if s.kind == ManeuverKind::Destination {
+                continue;
+            }
+            let d = haversine_m_local(vlat, vlon, s.lat, s.lon);
+            if d < tip_d {
+                tip_d = d;
+                tip = Some(i);
+            }
+        }
+        if let Some(tip) = tip.filter(|_| tip_d <= VIA_SPUR_TIP_M) {
+            // Confirm leave→rejoin spur: earliest rejoin after tip, leftmost leave.
+            let mut window: Option<(usize, usize)> = None;
+            'rejoin: for right in (tip + 1)..steps.len() {
+                if steps[right].kind == ManeuverKind::Destination {
+                    break;
+                }
+                if steps[right].cum_m - steps[tip].cum_m > VIA_SPUR_MAX_SPAN_M {
+                    break;
+                }
+                let d_right = haversine_m_local(vlat, vlon, steps[right].lat, steps[right].lon);
+                if d_right + 10.0 < tip_d {
+                    continue;
+                }
+                for left in (0..tip).rev() {
+                    if steps[left].kind == ManeuverKind::Destination {
+                        break;
+                    }
+                    if steps[tip].cum_m - steps[left].cum_m > VIA_SPUR_MAX_SPAN_M {
+                        break;
+                    }
+                    let span = steps[right].cum_m - steps[left].cum_m;
+                    if !(5.0..=VIA_SPUR_MAX_SPAN_M).contains(&span) {
+                        continue;
+                    }
+                    let d_ends = haversine_m_local(
+                        steps[left].lat,
+                        steps[left].lon,
+                        steps[right].lat,
+                        steps[right].lon,
+                    );
+                    if d_ends > VIA_SPUR_REJOIN_M {
+                        continue;
+                    }
+                    let d_left = haversine_m_local(vlat, vlon, steps[left].lat, steps[left].lon);
+                    if d_left + 10.0 < tip_d {
+                        continue;
+                    }
+                    window = Some((left, right));
+                }
+                if window.is_some() {
+                    break 'rejoin;
+                }
+            }
+            if let Some((leave, rejoin)) = window {
+                // Drop only tip-redundant mans (near the via), never leave or rejoin.
+                for i in leave..=rejoin {
+                    if i == leave || i == rejoin {
+                        continue;
+                    }
+                    let d = haversine_m_local(vlat, vlon, steps[i].lat, steps[i].lon);
+                    if d <= VIA_TIP_DROP_M {
+                        remove[i] = true;
+                    }
+                }
+                // Always drop the tip man itself (closest-to-via inside the spur).
+                if tip != leave && tip != rejoin {
+                    remove[tip] = true;
+                }
+            }
+        }
+        // Always announce via-reached when the via lies on the path.
+        // Street stays empty — host renders localized copy from via_index.
+        insert_via.push(InternalStep {
+            lat: vlat,
+            lon: vlon,
+            cum_m: via_cum,
+            kind: ManeuverKind::Destination,
+            street: None,
+            roundabout_exit: None,
+            icon: Some(ManeuverKind::Destination.icon_key().to_string()),
+            silent_name_change: false,
+            is_roundabout: false,
+            is_channel: false,
+            street_look_from_edge_i: None,
+            via_index: Some(via_i as u32),
+        });
+    }
+    let mut out: Vec<InternalStep> = Vec::with_capacity(steps.len());
+    for (i, s) in steps.into_iter().enumerate() {
+        if !remove[i] {
+            out.push(s);
+        }
+    }
+    insert_via.sort_by(|a, b| {
+        a.cum_m
+            .partial_cmp(&b.cum_m)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    if insert_via.is_empty() {
+        return out;
+    }
+    let mut merged = Vec::with_capacity(out.len() + insert_via.len());
+    let mut vi = 0usize;
+    for s in out {
+        while vi < insert_via.len() && insert_via[vi].cum_m <= s.cum_m + 1e-6 {
+            if s.kind == ManeuverKind::Destination
+                && (insert_via[vi].cum_m - s.cum_m).abs() < 1e-6
+                && s.via_index.is_none()
+            {
+                merged.push(insert_via[vi].clone());
+                vi += 1;
+                break;
+            }
+            if s.kind == ManeuverKind::Destination && s.via_index.is_some() {
+                break;
+            }
+            merged.push(insert_via[vi].clone());
+            vi += 1;
+        }
+        merged.push(s);
+    }
+    while vi < insert_via.len() {
+        merged.push(insert_via[vi].clone());
+        vi += 1;
+    }
+    merged
 }
 
 #[derive(Debug, Clone)]
@@ -1257,6 +1482,8 @@ struct InternalStep {
     /// When street is empty on exit/roundabout: first `edge_indices` index to
     /// search for a borrowable name (leave / out edge). Cleared after fill.
     street_look_from_edge_i: Option<usize>,
+    /// Set on inserted via-reached markers; None elsewhere.
+    via_index: Option<u32>,
 }
 
 fn collapse_maneuvers(steps: Vec<InternalStep>) -> Vec<InternalStep> {
@@ -1412,6 +1639,7 @@ fn attach_then_hints(steps: Vec<InternalStep>) -> Vec<RouteManeuver> {
             roundabout_exit: s.roundabout_exit,
             icon: s.icon.clone(),
             then,
+            via_index: s.via_index,
         });
     }
     out

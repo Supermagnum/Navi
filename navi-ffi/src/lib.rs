@@ -32,9 +32,10 @@ use driver_break_core::routing::safety::{
 };
 use driver_break_core::routing::workers::WorkerPoolPlan;
 use driver_break_core::routing::{
-    build_maneuvers, build_maneuvers_from_edges, build_sim_samples, build_sim_samples_from_edges,
-    build_sim_samples_from_lat_lon, maneuvers_to_json, motor_path_minutes_from_edges,
-    plan_hybrid_hiking_path, samples_to_json, HikingWaypoint, WetlandIndex, OFF_TRAIL_ADVISORY,
+    build_maneuvers, build_maneuvers_from_edges_with_vias, build_sim_samples,
+    build_sim_samples_from_edges, build_sim_samples_from_lat_lon, maneuvers_to_json,
+    motor_path_minutes_from_edges, plan_hybrid_hiking_path, samples_to_json, HikingWaypoint,
+    WetlandIndex, OFF_TRAIL_ADVISORY,
 };
 use driver_break_core::routing::{
     commit_truck_multi_day_plan, evaluate_fmcsa_trip, evaluate_truck_trip,
@@ -3502,7 +3503,18 @@ fn plan_car_route_inner(
     let eta_minutes = motor_path_minutes_from_edges(&graph, &path_edges);
     let sim_samples_json =
         samples_to_json(&build_sim_samples_from_edges(&graph, &path, &path_edges));
-    let maneuvers_json = maneuvers_to_json(&build_maneuvers_from_edges(&graph, &path, &path_edges));
+    // Intermediate vias only (exclude start/end) — collapse short out-and-backs.
+    let intermediate_vias: Vec<(f64, f64)> = if route_points.len() > 2 {
+        route_points[1..route_points.len() - 1].to_vec()
+    } else {
+        Vec::new()
+    };
+    let maneuvers_json = maneuvers_to_json(&build_maneuvers_from_edges_with_vias(
+        &graph,
+        &path,
+        &path_edges,
+        &intermediate_vias,
+    ));
     let path_nodes = path.len();
     let polyline_ms = timer.lap_ms();
     driver_break_core::download::progress::set(4, Some(5), "Planning route: break stops…");

@@ -3401,14 +3401,45 @@ private fun NaviMapScreen() {
                         NaviMapTestHooks.lastApproachIconKey = null
                     } else if (man != null && snap.distanceToManeuverM.isFinite()) {
                         val endWp = toPoint
-                        val useEndAddr = man.kind == "destination"
+                        val mans = tracker.maneuverCount()
+                        val isFinalDest =
+                            man.kind == "destination" && snap.maneuverIndex >= mans - 1
+                        val isViaReached =
+                            man.kind == "destination" &&
+                                (man.viaIndex != null || !isFinalDest)
+                        val useEndAddr = isFinalDest && !isViaReached
+                        val viaLabel =
+                            if (isViaReached) {
+                                viaReachedDisplayLabel(
+                                    context.resources,
+                                    man.viaIndex ?: snap.viaIndexReached.takeIf { it >= 0 },
+                                    viaPoints.size,
+                                )
+                            } else {
+                                null
+                            }
                         val (street, house, post) =
                             parseAddressDisplayLines(
-                                street = if (useEndAddr) endWp.street else man.street,
-                                houseNumber = if (useEndAddr) endWp.houseNumber else man.houseNumber,
+                                street =
+                                    when {
+                                        isViaReached -> viaLabel
+                                        useEndAddr -> endWp.street
+                                        else -> man.street
+                                    },
+                                houseNumber =
+                                    if (useEndAddr) endWp.houseNumber else man.houseNumber,
                                 postcode = if (useEndAddr) endWp.postcode else man.postcode,
-                                combined = if (useEndAddr && endWp.street == null) endWp.name else null,
+                                combined =
+                                    if (useEndAddr && endWp.street == null) endWp.name else null,
                             )
+                        if (isViaReached) {
+                            android.util.Log.i(
+                                "NaviViaReached",
+                                "approach display=${viaLabel ?: "via"} " +
+                                    "dist_m=${snap.distanceToManeuverM} " +
+                                    "lat=${man.lat} lon=${man.lon} via_index=${man.viaIndex}",
+                            )
+                        }
                         val icon = man.iconKey()
                         approachGuidance =
                             ApproachGuidanceState(
@@ -3530,10 +3561,19 @@ private fun NaviMapScreen() {
                     }
                     if (snap.viaIndexReached > lastViaToastIndex) {
                         lastViaToastIndex = snap.viaIndexReached
-                        val viaName =
-                            viaPoints.getOrNull(snap.viaIndexReached)?.name
-                                ?: "Via ${snap.viaIndexReached + 1}"
-                        status = "Passed $viaName — continuing"
+                        val via = viaPoints.getOrNull(snap.viaIndexReached)
+                        val label =
+                            viaReachedDisplayLabel(
+                                context.resources,
+                                snap.viaIndexReached,
+                                viaPoints.size,
+                            )
+                        status = label
+                        NaviMapTestHooks.lastViaReachedSpeech = label
+                        android.util.Log.i(
+                            "NaviViaReached",
+                            "$label lat=${via?.lat} lon=${via?.lon} name=${via?.name}",
+                        )
                     }
                     if (snap.arrivedAtEnd) {
                         if (simulatingRef.get()) {
