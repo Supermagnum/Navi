@@ -500,6 +500,7 @@ class IndexedPackV4AccessMigrationConvertInstrumentedTest {
                 preferOfficialNetworks = false,
                 preferPilgrimRoutes = false,
                 dataDir = "",
+                avoidFerries = false,
             )
         android.util.Log.i(TAG, "PACK_HIKE_KIRKEBY ${hike.report}")
         assertTrue("Kirkeby hike:\n${hike.report}", hike.report.contains("PASS"))

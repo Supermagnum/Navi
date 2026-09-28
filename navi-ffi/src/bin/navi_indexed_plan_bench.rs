@@ -43,6 +43,7 @@ fn main() {
             false,
             false,
             String::new(),
+            false,
         );
         (
             result.distance_km,

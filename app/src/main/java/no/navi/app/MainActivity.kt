@@ -2852,6 +2852,7 @@ private fun NaviMapScreen() {
                                             preferOfficialNetworks,
                                             preferPilgrimRoutes,
                                             dataDir.absolutePath,
+                                            avoidFerries,
                                         )
                                     RoutingPlanLog.progress(
                                         90,

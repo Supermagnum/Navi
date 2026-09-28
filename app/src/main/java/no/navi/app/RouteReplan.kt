@@ -94,6 +94,7 @@ object RouteReplan {
                         preferOfficialNetworks,
                         preferPilgrimRoutes,
                         dataDir.absolutePath,
+                        avoidFerries,
                     )
                 onProgress(100, "hiking_done")
                 return@withContext hike

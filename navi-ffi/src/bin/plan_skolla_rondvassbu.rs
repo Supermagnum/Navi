@@ -31,6 +31,7 @@ fn main() {
         true,  // prefer official hiking networks for this corridor helper
         false, // pilgrim soft-pref off for this helper
         String::new(),
+        false, // avoid_ferries
     );
     print!("{}", r.report);
     if !r.report.contains("PASS") {

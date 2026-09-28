@@ -34,8 +34,8 @@ use driver_break_core::routing::workers::WorkerPoolPlan;
 use driver_break_core::routing::{
     build_maneuvers, build_maneuvers_from_edges_with_vias, build_sim_samples,
     build_sim_samples_from_edges, build_sim_samples_from_lat_lon, maneuvers_to_json,
-    motor_path_minutes_from_edges, plan_hybrid_hiking_path, samples_to_json, HikingWaypoint,
-    WetlandIndex, OFF_TRAIL_ADVISORY,
+    motor_path_minutes_from_edges, plan_hybrid_hiking_path_with_options, samples_to_json,
+    HikingWaypoint, WetlandIndex, OFF_TRAIL_ADVISORY,
 };
 use driver_break_core::routing::{
     commit_truck_multi_day_plan, evaluate_fmcsa_trip, evaluate_truck_trip,
@@ -720,6 +720,25 @@ fn days_json_from_hiking(plan: &HikingMultiDayPlan) -> String {
                         String::new(),
                     ),
                 };
+            let (osm_id, is_network, membership_required, cabin_class) = match &d.overnight {
+                Some(o) => {
+                    let class = if o.membership_required || o.is_network {
+                        "networked"
+                    } else if o.safety_rejected {
+                        "other"
+                    } else {
+                        // Non-network hut/shelter — "unlocked"/open stay when not rejected.
+                        "unlocked"
+                    };
+                    (
+                        Some(o.osm_id),
+                        Some(o.is_network),
+                        Some(o.membership_required),
+                        Some(class.to_string()),
+                    )
+                }
+                None => (None, None, None, None),
+            };
             json!({
                 "day_index": d.day_index,
                 "date": "",
@@ -735,11 +754,13 @@ fn days_json_from_hiking(plan: &HikingMultiDayPlan) -> String {
                 "overnight_found": overnight_found,
                 "safety_rejected": d.overnight.as_ref().map(|o| o.safety_rejected).unwrap_or(false),
                 "safety_reason": safety_reason,
-                "membership_required": d
-                    .overnight
-                    .as_ref()
-                    .map(|o| o.membership_required)
-                    .unwrap_or(false),
+                "membership_required": membership_required,
+                "osm_id": osm_id,
+                "is_network": is_network,
+                "category": rest_kind,
+                "cabin_class": cabin_class,
+                "lat": d.overnight.as_ref().map(|o| o.lat),
+                "lon": d.overnight.as_ref().map(|o| o.lon),
                 "not_in_cab": false,
                 "compensation": "",
                 "is_final": is_final,
@@ -2246,6 +2267,7 @@ fn plan_car_route_chunked_legs(
     let mut expansions: u64 = 0;
     let mut toll_incomplete = false;
     let mut route_uses_tolls = false;
+    let mut route_uses_ferry = false;
     let mut pad_attempts: Vec<f64> = Vec::new();
     let mut priority_share_acc = 0.0;
     let mut priority_share_w = 0.0;
@@ -2297,6 +2319,7 @@ fn plan_car_route_chunked_legs(
         );
         report.push_str(&format!("--- leg{} report ---\n", i + 1));
         report.push_str(&leg.report);
+        route_uses_ferry = route_uses_ferry || leg.report.contains("route_uses_ferry=true");
         if leg.distance_km <= 0.0
             || leg.search_terminate_reason == "snap_failed"
             || leg.search_terminate_reason == "fail"
@@ -2311,6 +2334,14 @@ fn plan_car_route_chunked_legs(
                 i + 1,
                 leg.search_terminate_reason
             );
+            if avoid_ferries
+                && !fail.contains("no_route_without_ferry=")
+                && !leg.report.contains("no_route_without_ferry=")
+            {
+                fail.push_str(
+                    "no_route_without_ferry=true; FAIL: no route without ferry (avoid_ferries on)\n",
+                );
+            }
             fail.push_str(&report);
             let mut r = empty_corridor(fail);
             r.search_terminate_reason = leg.search_terminate_reason;
@@ -2392,7 +2423,7 @@ fn plan_car_route_chunked_legs(
     report.push_str(&soft_report);
     let _ = break_pois; // per-leg breaks were empty (poi_skipped); replaced above
     report.push_str(&format!(
-        "chunked_distance_km={distance_km:.3}; chunked_eta_min={eta_minutes:.1}; hops={}\nPASS\n",
+        "chunked_distance_km={distance_km:.3}; chunked_eta_min={eta_minutes:.1}; hops={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         hops.len().saturating_sub(1)
     ));
     driver_break_core::download::progress::set(5, Some(5), "Planning route: done");
@@ -3453,6 +3484,11 @@ fn plan_car_route_inner(
             report.push_str(&format!(
                 "FAIL: no route between snapped nodes; terminate={last_terminate}; expansions={last_expansions}; pads={pad_attempts:?}\n"
             ));
+            if avoid_ferries {
+                report.push_str(
+                    "no_route_without_ferry=true; FAIL: no route without ferry (avoid_ferries on)\n",
+                );
+            }
         }
         let mut r = empty(report);
         r.toll_policy = toll_policy.as_diag_str().into();
@@ -3490,6 +3526,7 @@ fn plan_car_route_inner(
         ));
     }
     let route_uses_tolls = graph.path_uses_tolls(&path_edges);
+    let route_uses_ferry = graph.path_uses_ferries(&path_edges);
     let astar_ms = timer.lap_ms();
 
     let mut distance_m = 0.0;
@@ -4049,7 +4086,7 @@ fn plan_car_route_inner(
         ],
     );
     report.push_str(&format!(
-        "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={path_nodes}; path_cost={cost:.0}; polyline_chars={}; break_pois={}\nPASS\n",
+        "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={path_nodes}; path_cost={cost:.0}; polyline_chars={}; break_pois={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         polyline.len(),
         break_pois_json
     ));
@@ -4108,6 +4145,7 @@ pub fn plan_hiking_route(
     prefer_official_networks: bool,
     prefer_pilgrim_routes: bool,
     data_dir: String,
+    avoid_ferries: bool,
 ) -> CorridorRouteResult {
     let _ch = driver_break_core::download::progress::ChannelGuard::enter(
         driver_break_core::download::progress::ProgressChannel::Plan,
@@ -4127,6 +4165,7 @@ pub fn plan_hiking_route(
         "prefer_official_networks={prefer_official_networks}; prefer_pilgrim_routes={prefer_pilgrim_routes}\n"
     ));
     report.push_str("avoid_motorways=true (locked for hiking)\n");
+    report.push_str(&format!("avoid_ferries={avoid_ferries}\n"));
     let use_networked_cabins = load_use_networked_cabins_near_cache(&PathBuf::from(&cache_dir));
     report.push_str(&format!("use_networked_cabins={use_networked_cabins}\n"));
     let network_hut_member = load_network_hut_member_near_cache(&PathBuf::from(&cache_dir));
@@ -4370,12 +4409,17 @@ pub fn plan_hiking_route(
         );
     }
 
-    let mut hybrid = match plan_hybrid_hiking_path(
+    let hike_opts = RouteOptions {
+        avoid_ferries,
+        ..RouteOptions::default()
+    };
+    let mut hybrid = match plan_hybrid_hiking_path_with_options(
         &graph,
         &elevation,
         &wetlands,
         &eco,
         &to_hiking_waypoints(&user_wps),
+        &hike_opts,
     ) {
         Ok(h) => h,
         Err(e)
@@ -4395,6 +4439,11 @@ pub fn plan_hiking_route(
         }
         Err(e) => {
             report.push_str(&format!("FAIL: {e}\n"));
+            if avoid_ferries {
+                report.push_str(
+                    "no_route_without_ferry=true; FAIL: no route without ferry (avoid_ferries on)\n",
+                );
+            }
             return empty_corridor(report);
         }
     };
@@ -4533,12 +4582,13 @@ pub fn plan_hiking_route(
             names.join("|")
         ));
         let merged = merge_hiking_waypoints_with_auto_vias(&user_wps, &user_cum_km, &autos);
-        match plan_hybrid_hiking_path(
+        match plan_hybrid_hiking_path_with_options(
             &graph,
             &elevation,
             &wetlands,
             &eco,
             &to_hiking_waypoints(&merged),
+            &hike_opts,
         ) {
             Ok(h) => {
                 full_path = h.path_nodes.clone();
@@ -4628,8 +4678,8 @@ pub fn plan_hiking_route(
             ));
             if let Some(o) = &d.overnight {
                 report.push_str(&format!(
-                    "hiking_overnight: name={:?}; network={}; membership_required={}; safety_rejected={}; safety_reason={:?}; dist_m={:.0}; lat={:.5}; lon={:.5}\n",
-                    o.name, o.is_network, o.membership_required, o.safety_rejected, o.safety_reason, o.distance_from_target_m, o.lat, o.lon
+                    "hiking_overnight: osm_id={}; name={:?}; network={}; membership_required={}; safety_rejected={}; safety_reason={:?}; dist_m={:.0}; lat={:.5}; lon={:.5}\n",
+                    o.osm_id, o.name, o.is_network, o.membership_required, o.safety_rejected, o.safety_reason, o.distance_from_target_m, o.lat, o.lon
                 ));
                 hiking_overnight_pins.push(json!({
                     "name": if o.safety_rejected {
@@ -4644,7 +4694,16 @@ pub fn plan_hiking_route(
                     "icon_key": o.icon_key,
                     "along_km": d.end_km,
                     "overnight": true,
+                    "osm_id": o.osm_id,
                     "membership_required": o.membership_required,
+                    "is_network": o.is_network,
+                    "cabin_class": if o.membership_required || o.is_network {
+                        "networked"
+                    } else if o.safety_rejected {
+                        "other"
+                    } else {
+                        "unlocked"
+                    },
                     "safety_rejected": o.safety_rejected,
                     "safety_reason": o.safety_reason,
                 }));
@@ -4712,8 +4771,10 @@ pub fn plan_hiking_route(
     let end = wps.last().unwrap();
     // Hiking: fixed 16 min/km (no climb adjustment in this pass).
     let eta_minutes = fixed_pace_minutes(dist_km, HIKING_MIN_PER_KM);
+    let hike_path_edges = graph.path_edge_indices_with_options(&full_path, false, &hike_opts);
+    let route_uses_ferry = graph.path_uses_ferries(&hike_path_edges);
     report.push_str(&format!(
-        "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={}; break_pois={break_pois_json}\n",
+        "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={}; break_pois={break_pois_json}; route_uses_ferry={route_uses_ferry}\n",
         full_path.len()
     ));
     {
