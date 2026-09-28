@@ -43,7 +43,7 @@ fn main() {
             false,
             false,
             String::new(),
-            false,
+            false, // avoid_ferries
         );
         (
             result.distance_km,

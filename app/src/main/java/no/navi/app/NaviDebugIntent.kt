@@ -12,12 +12,14 @@ import java.util.concurrent.atomic.AtomicReference
  * avoid-ferries, GPS pin at from). Gated like [NaviManeuverDump]: release /
  * non-debuggable APKs ignore every planning extra.
  *
- * Cabin keys supported on this build (baseline stack):
- * - `navi_use_networked_cabins`
- * - `navi_network_hut_member`
+ * Cabin keys supported on this build (Part B):
+ * - `navi_use_networked_cabins` (membership/networked; absorbs legacy
+ *   `network_hut_member` via config migration)
+ * - `navi_use_unlocked_cabins`
  *
- * Part B keys (e.g. `navi_use_unlocked_cabins`) log a warning and are not
- * applied until that build adds them — dump records only applied values.
+ * `navi_inject_gps` (default true): pin the map GPS mark at `navi_from_*` and
+ * ignore live LocationManager fixes so emulator GPS cannot trigger off-route
+ * recalculation after auto-plan.
  *
  * `navi_inject_gps` (default true): one-shot pin of the map GPS mark at
  * `navi_from_*` through plan apply; released on the first subsequent inject
@@ -32,18 +34,15 @@ object NaviDebugIntent {
     /** pack_dir sentinel: empty pack roots → cold PBF graph build. */
     const val FORCE_PBF_PACK_DIR = "__navi_force_pbf__"
 
-    /** Keys this build can apply (old cabin settings). */
+    /** Keys this build can apply (Part B cabin settings). */
     private val SUPPORTED_CABIN_KEYS =
         setOf(
             "use_networked_cabins",
-            "network_hut_member",
-        )
-
-    /** Keys known for branch/Part B — warn, do not apply on baseline. */
-    private val BRANCH_ONLY_CABIN_KEYS =
-        setOf(
             "use_unlocked_cabins",
         )
+
+    /** No longer a separate setting — handled as networked alias. */
+    private val BRANCH_ONLY_CABIN_KEYS = emptySet<String>()
 
     private fun classifyCabinSetting(settingKey: String): CabinSettingClass =
         when {
@@ -60,7 +59,7 @@ object NaviDebugIntent {
 
     data class SettingsSnapshot(
         val useNetworkedCabins: Boolean,
-        val networkHutMember: Boolean,
+        val useUnlockedCabins: Boolean,
         val bikeCapability: String,
     )
 
@@ -153,7 +152,7 @@ object NaviDebugIntent {
             runCatching {
                 SettingsSnapshot(
                     useNetworkedCabins = uniffi.navi.loadUseNetworkedCabins(dataDirPath),
-                    networkHutMember = uniffi.navi.loadNetworkHutMember(dataDirPath),
+                    useUnlockedCabins = uniffi.navi.loadUseUnlockedCabins(dataDirPath),
                     bikeCapability = uniffi.navi.loadBikeCapability(dataDirPath),
                 )
             }.getOrNull()
@@ -228,27 +227,30 @@ object NaviDebugIntent {
         val snap = pendingRestore.getAndSet(null) ?: return
         runCatching {
             uniffi.navi.saveUseNetworkedCabins(dataDirPath, snap.useNetworkedCabins)
-            uniffi.navi.saveNetworkHutMember(dataDirPath, snap.networkHutMember)
+            uniffi.navi.saveUseUnlockedCabins(dataDirPath, snap.useUnlockedCabins)
             uniffi.navi.saveBikeCapability(dataDirPath, snap.bikeCapability)
+            // Release GPS pin so interactive use is not stuck ignoring live fixes.
+            NaviMapTestHooks.ignoreLiveGpsFixes = false
+            NaviMapTestHooks.pinGpsAfterPlanLatLon = null
             Log.i(
                 TAG,
                 "restored use_networked_cabins=${snap.useNetworkedCabins} " +
-                    "network_hut_member=${snap.networkHutMember} " +
+                    "use_unlocked_cabins=${snap.useUnlockedCabins} " +
                     "bike_capability=${snap.bikeCapability}",
             )
         }.onFailure { Log.w(TAG, "restore failed: ${it.message}") }
     }
 
-    /** Defaults match first-run UI (networked/membership off, trekking bike). */
+    /** Defaults match first-run UI (networked/unlocked off, trekking bike). */
     private fun resetSettingsToDefaults(dataDirPath: String) {
         runCatching {
             uniffi.navi.saveUseNetworkedCabins(dataDirPath, false)
-            uniffi.navi.saveNetworkHutMember(dataDirPath, false)
+            uniffi.navi.saveUseUnlockedCabins(dataDirPath, false)
             uniffi.navi.saveBikeCapability(dataDirPath, "trekking")
             Log.i(
                 TAG,
                 "reset to defaults use_networked_cabins=false " +
-                    "network_hut_member=false bike_capability=trekking",
+                    "use_unlocked_cabins=false bike_capability=trekking",
             )
         }.onFailure { Log.w(TAG, "reset to defaults failed: ${it.message}") }
     }
@@ -287,8 +289,8 @@ object NaviDebugIntent {
                     when (settingKey) {
                         "use_networked_cabins" ->
                             uniffi.navi.saveUseNetworkedCabins(dataDirPath, value)
-                        "network_hut_member" ->
-                            uniffi.navi.saveNetworkHutMember(dataDirPath, value)
+                        "use_unlocked_cabins" ->
+                            uniffi.navi.saveUseUnlockedCabins(dataDirPath, value)
                     }
                     applied[settingKey] = value
                 }
@@ -306,8 +308,18 @@ object NaviDebugIntent {
             }
         }
         handle("navi_use_networked_cabins", "use_networked_cabins")
-        handle("navi_network_hut_member", "network_hut_member")
         handle("navi_use_unlocked_cabins", "use_unlocked_cabins")
+        // Legacy extra: Part B migrated network_hut_member into use_networked_cabins.
+        if (intent.hasExtra("navi_network_hut_member")) {
+            val value = intent.getBooleanExtra("navi_network_hut_member", false)
+            if (!intent.hasExtra("navi_use_networked_cabins")) {
+                uniffi.navi.saveUseNetworkedCabins(dataDirPath, value)
+                applied["use_networked_cabins"] = value
+                Log.i(TAG, "legacy navi_network_hut_member aliased to use_networked_cabins=$value")
+            } else {
+                Log.w(TAG, "navi_network_hut_member ignored (navi_use_networked_cabins present)")
+            }
+        }
     }
 
     private fun parseForcePbf(intent: Intent): Boolean {

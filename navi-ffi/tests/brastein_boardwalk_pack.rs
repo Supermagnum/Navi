@@ -92,7 +92,7 @@ fn plan(
         false,
         false,
         String::new(),
-        false,
+        false, // avoid_ferries
     )
 }
 

@@ -693,6 +693,7 @@ private fun NaviMapScreen() {
     var preferOfficialNetworks by remember { mutableStateOf(false) }
     var preferPilgrimRoutes by remember { mutableStateOf(false) }
     var useNetworkedCabins by remember { mutableStateOf(false) }
+    var useUnlockedCabins by remember { mutableStateOf(false) }
     var bikeCapability by remember { mutableStateOf("trekking") }
     var networkHutMember by remember { mutableStateOf(false) }
 
@@ -1566,8 +1567,10 @@ private fun NaviMapScreen() {
         preferOfficialNetworks = uniffi.navi.loadPreferOfficialNetworks(dataDir.absolutePath)
         preferPilgrimRoutes = uniffi.navi.loadPreferPilgrimRoutes(dataDir.absolutePath)
         useNetworkedCabins = uniffi.navi.loadUseNetworkedCabins(dataDir.absolutePath)
+        useUnlockedCabins = uniffi.navi.loadUseUnlockedCabins(dataDir.absolutePath)
+        // Migrated into useNetworkedCabins; keep local mirror for any leftover UI reads.
+        networkHutMember = useNetworkedCabins
         bikeCapability = uniffi.navi.loadBikeCapability(dataDir.absolutePath)
-        networkHutMember = uniffi.navi.loadNetworkHutMember(dataDir.absolutePath)
         NaviMapTestHooks.lastSnapRotationBack = driveHud.snapRotationBackToMode
     }
     val iconsDir =
@@ -5716,32 +5719,90 @@ private fun NaviMapScreen() {
                                             },
                                         )
                                     }
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Text("Use networked cabins")
-                                        Switch(
-                                            checked = useNetworkedCabins,
-                                            onCheckedChange = { on ->
-                                                useNetworkedCabins = on
-                                                uniffi.navi.saveUseNetworkedCabins(
-                                                    dataDir.absolutePath,
-                                                    on,
-                                                )
-                                                DiagnosticLog.logToggle(
-                                                    "use_networked_cabins",
-                                                    on,
-                                                    mapOf("profile" to profile.name),
-                                                )
-                                                DiagnosticLog.logSettingSaved(
-                                                    "use_networked_cabins",
-                                                    on,
-                                                )
-                                            },
-                                            modifier = Modifier.testTag("toggle_use_networked_cabins"),
-                                        )
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        val cabinTogglesLive = profile == TravelProfile.HIKING
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text("Use unlocked cabins")
+                                                if (cabinTogglesLive && useUnlockedCabins) {
+                                                    Text(
+                                                        "Uses cabins/huts that are unlocked.",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                    )
+                                                }
+                                            }
+                                            Switch(
+                                                checked = useUnlockedCabins,
+                                                onCheckedChange = { on ->
+                                                    if (!cabinTogglesLive) return@Switch
+                                                    useUnlockedCabins = on
+                                                    uniffi.navi.saveUseUnlockedCabins(
+                                                        dataDir.absolutePath,
+                                                        on,
+                                                    )
+                                                    DiagnosticLog.logToggle(
+                                                        "use_unlocked_cabins",
+                                                        on,
+                                                        mapOf("profile" to profile.name),
+                                                    )
+                                                    DiagnosticLog.logSettingSaved(
+                                                        "use_unlocked_cabins",
+                                                        on,
+                                                    )
+                                                },
+                                                enabled = cabinTogglesLive,
+                                                modifier = Modifier.testTag("toggle_use_unlocked_cabins"),
+                                            )
+                                        }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text("Use networked cabins")
+                                                if (cabinTogglesLive && useNetworkedCabins) {
+                                                    Text(
+                                                        "Uses cabins/huts that are networked.",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                    )
+                                                }
+                                            }
+                                            Switch(
+                                                checked = useNetworkedCabins,
+                                                onCheckedChange = { on ->
+                                                    if (!cabinTogglesLive) return@Switch
+                                                    useNetworkedCabins = on
+                                                    networkHutMember = on
+                                                    uniffi.navi.saveUseNetworkedCabins(
+                                                        dataDir.absolutePath,
+                                                        on,
+                                                    )
+                                                    DiagnosticLog.logToggle(
+                                                        "use_networked_cabins",
+                                                        on,
+                                                        mapOf("profile" to profile.name),
+                                                    )
+                                                    DiagnosticLog.logSettingSaved(
+                                                        "use_networked_cabins",
+                                                        on,
+                                                    )
+                                                },
+                                                enabled = cabinTogglesLive,
+                                                modifier = Modifier.testTag("toggle_use_networked_cabins"),
+                                            )
+                                        }
+                                        if (!cabinTogglesLive) {
+                                            Text(
+                                                "Applies to hiking overnight planning only.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier = Modifier.testTag("cabin_toggles_hiking_only_note"),
+                                            )
+                                        }
                                     }
                                 }
                                 if (profile == TravelProfile.BICYCLE ||
@@ -5786,33 +5847,6 @@ private fun NaviMapScreen() {
                                     }
                                 }
                                 if (profile == TravelProfile.HIKING) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Text("Network hut member (DNT/STF/…)")
-                                        Switch(
-                                            checked = networkHutMember,
-                                            onCheckedChange = { on ->
-                                                networkHutMember = on
-                                                uniffi.navi.saveNetworkHutMember(
-                                                    dataDir.absolutePath,
-                                                    on,
-                                                )
-                                                DiagnosticLog.logToggle(
-                                                    "network_hut_member",
-                                                    on,
-                                                    mapOf("profile" to profile.name),
-                                                )
-                                                DiagnosticLog.logSettingSaved(
-                                                    "network_hut_member",
-                                                    on,
-                                                )
-                                            },
-                                            modifier = Modifier.testTag("toggle_network_hut_member"),
-                                        )
-                                    }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,

@@ -508,6 +508,16 @@ fn empty_corridor(msg: String) -> CorridorRouteResult {
     }
 }
 
+fn panic_payload_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_string()
+    }
+}
+
 /// When false (default), planners skip stage Instant samples and do not emit
 /// `plan_duration_ms` / `ROUTE_PLAN_STAGES` into the report. Hosts turn this on
 /// with the Diagnostic logging toggle ([`set_route_plan_timing_enabled`]).
@@ -2213,9 +2223,13 @@ pub fn plan_car_route_at(
         )
     })) {
         Ok(result) => result,
-        Err(_) => empty_corridor(
-            "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: native panic during plan_car_route\n".into(),
-        ),
+        Err(payload) => {
+            let msg = panic_payload_message(&payload);
+            log::error!(target: "NaviPlan", "plan_car_route panicked: {msg}");
+            empty_corridor(format!(
+                "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: native panic during plan_car_route: {msg}\n"
+            ))
+        }
     }
 }
 
@@ -4168,8 +4182,11 @@ pub fn plan_hiking_route(
     report.push_str(&format!("avoid_ferries={avoid_ferries}\n"));
     let use_networked_cabins = load_use_networked_cabins_near_cache(&PathBuf::from(&cache_dir));
     report.push_str(&format!("use_networked_cabins={use_networked_cabins}\n"));
-    let network_hut_member = load_network_hut_member_near_cache(&PathBuf::from(&cache_dir));
-    report.push_str(&format!("network_hut_member={network_hut_member}\n"));
+    let use_unlocked_cabins = load_use_unlocked_cabins_near_cache(&PathBuf::from(&cache_dir));
+    report.push_str(&format!("use_unlocked_cabins={use_unlocked_cabins}\n"));
+    // Legacy report key: networked cabins now carries the old membership meaning.
+    report.push_str(&format!("network_hut_member={use_networked_cabins}\n"));
+    report.push_str(&format!("avoid_ferries={avoid_ferries}\n"));
     let user_wps: Vec<HikingWp> = match serde_json::from_str::<Vec<Wp>>(&waypoints_json) {
         Ok(v) => v
             .into_iter()
@@ -4662,7 +4679,8 @@ pub fn plan_hiking_route(
         &overnight_ctx.0,
         &poi_index,
         &overnight_ctx.1,
-        network_hut_member,
+        use_networked_cabins,
+        use_unlocked_cabins,
     );
     let days_json = days_json_from_hiking(&multi);
     let mut hiking_overnight_pins: Vec<serde_json::Value> = Vec::new();
@@ -5900,6 +5918,25 @@ pub fn save_use_networked_cabins(data_dir: String, prefer: bool) -> bool {
     store.save_use_networked_cabins(prefer).is_ok()
 }
 
+/// Prefer overnight stops at cabins/huts that are unlocked without a key/membership.
+#[uniffi::export]
+pub fn load_use_unlocked_cabins(data_dir: String) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.load_use_unlocked_cabins().unwrap_or(false)
+}
+
+#[uniffi::export]
+pub fn save_use_unlocked_cabins(data_dir: String, prefer: bool) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.save_use_unlocked_cabins(prefer).is_ok()
+}
+
 /// Bicycle / electric-cycle terrain capability: `road`, `trekking`, or `mountain`.
 #[uniffi::export]
 pub fn load_bike_capability(data_dir: String) -> String {
@@ -6190,13 +6227,13 @@ fn load_use_networked_cabins_near_cache(cache: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn load_network_hut_member_near_cache(cache: &Path) -> bool {
+fn load_use_unlocked_cabins_near_cache(cache: &Path) -> bool {
     let data_dir = cache.parent().unwrap_or(cache);
     let Ok(storage) = driver_break_core::storage::Storage::open(data_dir.join("navi.db")) else {
         return false;
     };
     driver_break_core::storage::ConfigStore::new(&storage)
-        .load_network_hut_member()
+        .load_use_unlocked_cabins()
         .unwrap_or(false)
 }
 

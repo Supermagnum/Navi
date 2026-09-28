@@ -839,6 +839,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_load_use_networked_cabins(
     ): Int
+    external fun uniffi_navi_checksum_func_load_use_unlocked_cabins(
+    ): Int
     external fun uniffi_navi_checksum_func_load_vehicle_limits(
     ): Int
     external fun uniffi_navi_checksum_func_long_trip_ordered_regions_json(
@@ -986,6 +988,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_save_truck_rest_settings(
     ): Int
     external fun uniffi_navi_checksum_func_save_use_networked_cabins(
+    ): Int
+    external fun uniffi_navi_checksum_func_save_use_unlocked_cabins(
     ): Int
     external fun uniffi_navi_checksum_func_save_vehicle_limits(
     ): Int
@@ -1259,6 +1263,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_load_use_networked_cabins(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_load_use_unlocked_cabins(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     external fun uniffi_navi_fn_func_load_vehicle_limits(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_long_trip_ordered_regions_json(`waypointsLatLonJson`: RustBuffer.ByValue,`installedRegionIdsJson`: RustBuffer.ByValue,`countryIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1406,6 +1412,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_save_truck_rest_settings(`dataDir`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_save_use_networked_cabins(`dataDir`: RustBuffer.ByValue,`prefer`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_save_use_unlocked_cabins(`dataDir`: RustBuffer.ByValue,`prefer`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_save_vehicle_limits(`dataDir`: RustBuffer.ByValue,`limits`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
@@ -1827,6 +1835,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_load_use_networked_cabins() and 0xFFFF) != 28922) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_load_use_unlocked_cabins() and 0xFFFF) != 34857) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_load_vehicle_limits() and 0xFFFF) != 18436) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2047,6 +2058,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_save_use_networked_cabins() and 0xFFFF) != 35198) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_save_use_unlocked_cabins() and 0xFFFF) != 24217) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_save_vehicle_limits() and 0xFFFF) != 48043) {
@@ -6284,6 +6298,20 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
+
+        /**
+         * Prefer overnight stops at cabins/huts that are unlocked without a key/membership.
+         */ fun `loadUseUnlockedCabins`(`dataDir`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_load_use_unlocked_cabins(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
  fun `loadVehicleLimits`(`dataDir`: kotlin.String): FfiVehicleLimits {
             return FfiConverterTypeFfiVehicleLimits.lift(
     uniffiRustCall() { _status ->
@@ -7436,6 +7464,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_navi_fn_func_save_use_networked_cabins(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterBoolean.lower(`prefer`),_status)
+}
+    )
+    }
+    
+ fun `saveUseUnlockedCabins`(`dataDir`: kotlin.String, `prefer`: kotlin.Boolean): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_save_use_unlocked_cabins(
     
         
         FfiConverterString.lower(`dataDir`),
