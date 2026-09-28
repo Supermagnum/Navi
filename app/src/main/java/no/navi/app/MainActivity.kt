@@ -689,6 +689,8 @@ private fun NaviMapScreen() {
     var avoidMotorways by remember { mutableStateOf(false) }
     var avoidTolls by remember { mutableStateOf(false) }
     var avoidFerries by remember { mutableStateOf(false) }
+    /** Last plan's `graph_ferry_edges=N`; null until a plan reports it. */
+    var graphFerryEdges by remember { mutableStateOf<Int?>(null) }
     var avoidTunnels by remember { mutableStateOf(false) }
     var preferOfficialNetworks by remember { mutableStateOf(false) }
     var preferPilgrimRoutes by remember { mutableStateOf(false) }
@@ -1028,6 +1030,7 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastBreakPoiCount = 0
         NaviMapTestHooks.lastArrivedAtEnd = false
         NaviMapTestHooks.lastCurrentStreet = null
+        graphFerryEdges = null
         status = message
     }
 
@@ -1508,6 +1511,7 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.releaseIgnoreLiveGpsAfterNextInject = true
         }
         lastViaToastIndex = -1
+        graphFerryEdges = AvoidFerriesUi.parseGraphFerryEdges(pending.report)
         status =
             userFacingStatus(
                 if (pending.distanceKm > 0.0) {
@@ -5957,10 +5961,43 @@ private fun NaviMapScreen() {
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text("Avoid ferries")
+                                    val profileIsMotor =
+                                        profile == TravelProfile.CAR ||
+                                            profile == TravelProfile.TRUCK ||
+                                            profile == TravelProfile.MOBILE_HOME ||
+                                            profile == TravelProfile.MOTORCYCLE ||
+                                            profile == TravelProfile.CAR_ELECTRIC ||
+                                            profile == TravelProfile.TRUCK_ELECTRIC ||
+                                            profile == TravelProfile.MOTORCYCLE_ELECTRIC
+                                    val profileIsHikingOrBike =
+                                        profile == TravelProfile.HIKING ||
+                                            profile == TravelProfile.BICYCLE ||
+                                            profile == TravelProfile.BICYCLE_ELECTRIC
+                                    val avoidFerriesEnabled =
+                                        AvoidFerriesUi.toggleEnabled(
+                                            profileIsMotor = profileIsMotor,
+                                            profileIsHikingOrBike = profileIsHikingOrBike,
+                                            graphFerryEdges = graphFerryEdges,
+                                        )
+                                    val avoidFerriesNote =
+                                        AvoidFerriesUi.unavailableNote(graphFerryEdges)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Avoid ferries")
+                                        // Same bodySmall note pattern as cabin toggles
+                                        // ("Applies to hiking overnight planning only.").
+                                        if (avoidFerriesNote != null) {
+                                            Text(
+                                                avoidFerriesNote,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier =
+                                                    Modifier.testTag("avoid_ferries_unavailable_note"),
+                                            )
+                                        }
+                                    }
                                     Switch(
                                         checked = avoidFerries,
                                         onCheckedChange = { on ->
+                                            if (!avoidFerriesEnabled) return@Switch
                                             avoidFerries = on
                                             DiagnosticLog.logToggle("avoid_ferries", on)
                                             status =
@@ -5976,14 +6013,8 @@ private fun NaviMapScreen() {
                                                     prioritySharePct,
                                                 )
                                         },
-                                        enabled =
-                                            profile == TravelProfile.CAR ||
-                                                profile == TravelProfile.TRUCK ||
-                                                profile == TravelProfile.MOBILE_HOME ||
-                                                profile == TravelProfile.MOTORCYCLE ||
-                                                profile == TravelProfile.CAR_ELECTRIC ||
-                                                profile == TravelProfile.TRUCK_ELECTRIC ||
-                                                profile == TravelProfile.MOTORCYCLE_ELECTRIC,
+                                        enabled = avoidFerriesEnabled,
+                                        modifier = Modifier.testTag("toggle_avoid_ferries"),
                                     )
                                 }
                                 Row(

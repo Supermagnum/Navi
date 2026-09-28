@@ -588,6 +588,22 @@ fn append_route_plan_timing(report: &mut String, total_ms: u64, stages: &[(&str,
     report.push('\n');
 }
 
+/// Count of `is_ferry` edges in the loaded plan graph (pack or cold PBF).
+/// UI uses this to grey out Avoid ferries when the graph has none.
+fn append_graph_ferry_edges(report: &mut String, graph: &RouteGraph) {
+    let n = graph.edges.iter().filter(|e| e.is_ferry).count();
+    report.push_str(&format!("graph_ferry_edges={n}\n"));
+}
+
+fn parse_graph_ferry_edges_token(report: &str) -> Option<u64> {
+    for part in report.split(['\n', ';', ' ']) {
+        if let Some(rest) = part.strip_prefix("graph_ferry_edges=") {
+            return rest.parse().ok();
+        }
+    }
+    None
+}
+
 fn plan_cancelled_result(
     mut report: String,
     timer: &PlanStageTimer,
@@ -2282,6 +2298,7 @@ fn plan_car_route_chunked_legs(
     let mut toll_incomplete = false;
     let mut route_uses_tolls = false;
     let mut route_uses_ferry = false;
+    let mut graph_ferry_edges: u64 = 0;
     let mut pad_attempts: Vec<f64> = Vec::new();
     let mut priority_share_acc = 0.0;
     let mut priority_share_w = 0.0;
@@ -2334,6 +2351,9 @@ fn plan_car_route_chunked_legs(
         report.push_str(&format!("--- leg{} report ---\n", i + 1));
         report.push_str(&leg.report);
         route_uses_ferry = route_uses_ferry || leg.report.contains("route_uses_ferry=true");
+        if let Some(n) = parse_graph_ferry_edges_token(&leg.report) {
+            graph_ferry_edges = graph_ferry_edges.max(n);
+        }
         if leg.distance_km <= 0.0
             || leg.search_terminate_reason == "snap_failed"
             || leg.search_terminate_reason == "fail"
@@ -2436,6 +2456,7 @@ fn plan_car_route_chunked_legs(
     );
     report.push_str(&soft_report);
     let _ = break_pois; // per-leg breaks were empty (poi_skipped); replaced above
+    report.push_str(&format!("graph_ferry_edges={graph_ferry_edges}\n"));
     report.push_str(&format!(
         "chunked_distance_km={distance_km:.3}; chunked_eta_min={eta_minutes:.1}; hops={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         hops.len().saturating_sub(1)
@@ -3525,6 +3546,7 @@ fn plan_car_route_inner(
         graph.edges.len(),
         pad_attempts
     ));
+    append_graph_ferry_edges(&mut report, &graph);
     let seasonal_n = graph.seasonal_closure_excluded_in_graph(&used_opts);
     report.push_str(&format!("seasonal_closure_excluded_edges={seasonal_n}\n"));
     {
@@ -4334,6 +4356,7 @@ pub fn plan_hiking_route(
         graph.nodes.len(),
         graph.edges.len()
     ));
+    append_graph_ferry_edges(&mut report, &graph);
 
     if driver_break_core::download::plan_cancel::is_cancelled() {
         return plan_cancelled_result(
@@ -8649,6 +8672,19 @@ pub fn weather_map_symbols_json(
 #[cfg(test)]
 mod hiking_auto_via_tests {
     use super::*;
+
+    #[test]
+    fn parse_graph_ferry_edges_token_reads_report_line() {
+        assert_eq!(
+            parse_graph_ferry_edges_token("pack_hit=true\ngraph_ferry_edges=0\n"),
+            Some(0)
+        );
+        assert_eq!(
+            parse_graph_ferry_edges_token("graph_ferry_edges=204; route_uses_ferry=true"),
+            Some(204)
+        );
+        assert_eq!(parse_graph_ferry_edges_token("pack_hit=true\n"), None);
+    }
 
     #[test]
     fn sample_polyline_km_returns_lat_lon_order() {
