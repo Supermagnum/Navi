@@ -17,7 +17,7 @@ split (Navi does not implement the RF layer) over Meshtastic BLE:
    vendor dialects.
 2. Only drive radios whose Hamlib backend is **Stable** and supports the
    functions auto-tune needs.
-3. Look up nearby **NFM** (narrow FM) amateur **repeaters**.
+3. Look up nearby **NFM** (narrow FM or other modes that the radio can do ) amateur **repeaters**.
 4. If one is within **150 km**, program **VFO 1** with output frequency, duplex
    offset/shift, and CTCSS/DCS (subtone).
 5. For repeaters in a **network** (e.g. LA5MR / Innlandsnettet), automatically
