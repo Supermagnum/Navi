@@ -5960,6 +5960,26 @@ pub fn save_use_unlocked_cabins(data_dir: String, prefer: bool) -> bool {
     store.save_use_unlocked_cabins(prefer).is_ok()
 }
 
+/// Persist Avoid-ferries preference (default off). Survives process death;
+/// UI grey-out from `graph_ferry_edges` does not clear this value.
+#[uniffi::export]
+pub fn load_avoid_ferries(data_dir: String) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.load_avoid_ferries().unwrap_or(false)
+}
+
+#[uniffi::export]
+pub fn save_avoid_ferries(data_dir: String, avoid: bool) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.save_avoid_ferries(avoid).is_ok()
+}
+
 /// Bicycle / electric-cycle terrain capability: `road`, `trekking`, or `mountain`.
 #[uniffi::export]
 pub fn load_bike_capability(data_dir: String) -> String {

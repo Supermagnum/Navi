@@ -9,6 +9,10 @@ package no.navi.app
  *
  * Recomputed on every successful plan (and cleared when the route is cleared);
  * not a one-time app-start check.
+ *
+ * The user's ON/OFF preference is separate: it lives in ConfigStore
+ * (`app_config.avoid_ferries`) and must survive process death even while the
+ * toggle is greyed out, so a later ferry-capable plan still honors it.
  */
 object AvoidFerriesUi {
     const val NO_FERRY_DATA_NOTE = "No ferry crossings in this area's map data"

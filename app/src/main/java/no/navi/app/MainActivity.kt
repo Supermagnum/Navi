@@ -1575,6 +1575,7 @@ private fun NaviMapScreen() {
         // Migrated into useNetworkedCabins; keep local mirror for any leftover UI reads.
         networkHutMember = useNetworkedCabins
         bikeCapability = uniffi.navi.loadBikeCapability(dataDir.absolutePath)
+        avoidFerries = uniffi.navi.loadAvoidFerries(dataDir.absolutePath)
         NaviMapTestHooks.lastSnapRotationBack = driveHud.snapRotationBackToMode
     }
     val iconsDir =
@@ -5999,7 +6000,12 @@ private fun NaviMapScreen() {
                                         onCheckedChange = { on ->
                                             if (!avoidFerriesEnabled) return@Switch
                                             avoidFerries = on
+                                            uniffi.navi.saveAvoidFerries(
+                                                dataDir.absolutePath,
+                                                on,
+                                            )
                                             DiagnosticLog.logToggle("avoid_ferries", on)
+                                            DiagnosticLog.logSettingSaved("avoid_ferries", on)
                                             status =
                                                 formatRouteAvoidanceReport(
                                                     avoidMotorways,

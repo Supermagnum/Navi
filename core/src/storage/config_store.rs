@@ -19,6 +19,7 @@ const PREFER_OFFICIAL_NETWORKS_KEY: &str = "prefer_official_networks";
 const PREFER_PILGRIM_ROUTES_KEY: &str = "prefer_pilgrim_routes";
 const USE_NETWORKED_CABINS_KEY: &str = "use_networked_cabins";
 const USE_UNLOCKED_CABINS_KEY: &str = "use_unlocked_cabins";
+const AVOID_FERRIES_KEY: &str = "avoid_ferries";
 const BIKE_CAPABILITY_KEY: &str = "bike_capability";
 const SURFACE_ROUTING_MODE_KEY: &str = "surface_routing_mode";
 /// Legacy key — migrated into [`USE_NETWORKED_CABINS_KEY`] on first load.
@@ -133,6 +134,19 @@ impl<'a> ConfigStore<'a> {
 
     pub fn save_use_unlocked_cabins(&self, prefer: bool) -> SqlResult<()> {
         self.save_json(USE_UNLOCKED_CABINS_KEY, &prefer)
+    }
+
+    /// User preference for avoiding ferry edges when planning.
+    ///
+    /// Independent of UI grey-out (`graph_ferry_edges=0`): the stored ON/OFF
+    /// value must survive process death so it still applies on later
+    /// ferry-capable plans. Default off.
+    pub fn load_avoid_ferries(&self) -> SqlResult<bool> {
+        self.load_json(AVOID_FERRIES_KEY, || false)
+    }
+
+    pub fn save_avoid_ferries(&self, avoid: bool) -> SqlResult<()> {
+        self.save_json(AVOID_FERRIES_KEY, &avoid)
     }
 
     /// Bicycle / electric-cycle terrain capability (`road`, `trekking`, `mountain`).
@@ -332,5 +346,27 @@ mod tests {
         let loaded = store.load_profile_poi_radii().unwrap();
         assert_eq!(loaded.hiking.search_radius_m, 12_000.0);
         assert!(loaded.car.require_road_link);
+    }
+
+    #[test]
+    fn avoid_ferries_round_trip_distinct_from_cabin_keys() {
+        let storage = Storage::open_in_memory().unwrap();
+        let store = ConfigStore::new(&storage);
+        assert!(!store.load_avoid_ferries().unwrap());
+        store.save_avoid_ferries(true).unwrap();
+        store.save_use_networked_cabins(true).unwrap();
+        store.save_use_unlocked_cabins(false).unwrap();
+        assert!(store.load_avoid_ferries().unwrap());
+        assert!(store.load_use_networked_cabins().unwrap());
+        assert!(!store.load_use_unlocked_cabins().unwrap());
+        // Flipping cabins must not clobber avoid_ferries (distinct app_config keys).
+        store.save_use_networked_cabins(false).unwrap();
+        store.save_use_unlocked_cabins(true).unwrap();
+        assert!(store.load_avoid_ferries().unwrap());
+        assert!(!store.load_use_networked_cabins().unwrap());
+        assert!(store.load_use_unlocked_cabins().unwrap());
+        store.save_avoid_ferries(false).unwrap();
+        assert!(!store.load_avoid_ferries().unwrap());
+        assert!(store.load_use_unlocked_cabins().unwrap());
     }
 }

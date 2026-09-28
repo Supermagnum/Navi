@@ -92,4 +92,29 @@ class AvoidFerriesUiTest {
         )
         assertNull(AvoidFerriesUi.unavailableNote(null))
     }
+
+    @Test
+    fun greyOutDoesNotImplyClearingPreference() {
+        // Preference (Compose/ConfigStore) is independent of toggleEnabled.
+        // When graph_ferry_edges=0 the Switch is disabled but checked may stay ON.
+        val preferenceOn = true
+        assertFalse(
+            AvoidFerriesUi.toggleEnabled(
+                profileIsMotor = true,
+                profileIsHikingOrBike = false,
+                graphFerryEdges = 0,
+            ),
+        )
+        assertEquals(AvoidFerriesUi.NO_FERRY_DATA_NOTE, AvoidFerriesUi.unavailableNote(0))
+        // Surviving preference: still ON while greyed; later ferry-capable graphs
+        // re-enable the Switch without resetting the stored value.
+        assertTrue(preferenceOn)
+        assertTrue(
+            AvoidFerriesUi.toggleEnabled(
+                profileIsMotor = true,
+                profileIsHikingOrBike = false,
+                graphFerryEdges = 12,
+            ),
+        )
+    }
 }
