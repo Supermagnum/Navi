@@ -256,6 +256,22 @@ fn append_intersecting_tile_files_corridor(
 /// Prefer tiles covering hop endpoints, then those closest to the endpoints.
 /// Always retain at least one tile per endpoint (4 GB budget must not drop the
 /// destination). When scores tie, prefer smaller on-disk tiles.
+/// True when two tile bboxes share an edge (or overlap) on the index grid.
+///
+/// Used to rank bridge fillers: a tile adjoining two already-selected leaves is
+/// a true corridor bridge (e.g. Ostlandet `t2_3` between `t1_3` and `t2_4`).
+fn tile_bboxes_adjacent(a: [f64; 4], b: [f64; 4]) -> bool {
+    const EPS: f64 = 1e-5;
+    let lat_overlap = a[0] < b[2] - EPS && b[0] < a[2] - EPS;
+    let lon_overlap = a[1] < b[3] - EPS && b[1] < a[3] - EPS;
+    if lat_overlap && lon_overlap {
+        return true;
+    }
+    let lat_touch = (a[2] - b[0]).abs() < EPS || (b[2] - a[0]).abs() < EPS;
+    let lon_touch = (a[3] - b[1]).abs() < EPS || (b[3] - a[1]).abs() < EPS;
+    (lat_touch && lon_overlap) || (lon_touch && lat_overlap)
+}
+
 fn select_tiles_within_budget(
     candidates: Vec<(String, [f64; 4])>,
     route_points: Option<&[(f64, f64)]>,
@@ -376,6 +392,12 @@ fn select_tiles_within_budget(
     // for a short densify hop peaks at ~450k edges and stalls snap/A* on device.
     // Still fill a few bridge tiles toward max_tiles when samples alone leave
     // a same-stem gap (endpoint tiles that only touch at a corner).
+    //
+    // Bridge ranking prefers tiles that **adjoin the most already-selected
+    // tiles** (true spatial bridges on the grid). Chord eighth-samples alone
+    // miss off-chord highway corridors (R4b: start→via jumps t1_3→t2_4 and
+    // never hits western-E6 t2_3); nearest-to-endpoint scoring then filled
+    // t1_4+t2_5 and dropped t2_3, forcing a southern Minnesund pack detour.
     let score = |bbox: [f64; 4]| -> (i32, i64) {
         if pts.is_empty() {
             return (2, 0);
@@ -396,15 +418,22 @@ fn select_tiles_within_budget(
         }
         (best_prio, best_d)
     };
+    let adjacency = |bbox: [f64; 4]| -> i32 {
+        selected
+            .iter()
+            .filter(|(_, sb)| tile_bboxes_adjacent(*sb, bbox))
+            .count() as i32
+    };
     let mut rest: Vec<(String, [f64; 4])> = candidates
         .iter()
         .filter(|(n, _)| !selected_names.contains(n))
         .cloned()
         .collect();
     rest.sort_by(|a, b| {
-        let sa = score(a.1);
-        let sb = score(b.1);
-        sa.cmp(&sb)
+        // Higher adjacency first, then nearer-to-endpoints, then smaller file.
+        adjacency(b.1)
+            .cmp(&adjacency(a.1))
+            .then_with(|| score(a.1).cmp(&score(b.1)))
             .then_with(|| file_len(&a.0).cmp(&file_len(&b.0)))
             .then_with(|| a.0.cmp(&b.0))
     });
@@ -1463,6 +1492,162 @@ pub fn try_load_wetland_for_plan(
         index = WetlandIndex::from_parts(parts);
     }
     Ok(index)
+}
+
+#[cfg(test)]
+mod select_tiles_budget_tests {
+    use super::{select_tiles_within_budget, tile_bboxes_adjacent};
+    use std::fs;
+    use std::path::Path;
+
+    /// Ostlandet-like 2×3 car tile grid covering R4b / Espa corridors.
+    fn ostlandet_grid() -> Vec<(String, [f64; 4])> {
+        vec![
+            (
+                "ostlandet-latest.navi-graph-car.t1_3.rkyv".into(),
+                [59.8216129, 9.95466715, 60.7594758, 10.813263566666668],
+            ),
+            (
+                "ostlandet-latest.navi-graph-car.t1_4.rkyv".into(),
+                [
+                    59.8216129,
+                    10.813263566666668,
+                    60.7594758,
+                    11.671859983333333,
+                ],
+            ),
+            (
+                "ostlandet-latest.navi-graph-car.t1_5.rkyv".into(),
+                [59.8216129, 11.671859983333334, 60.7594758, 12.5304564],
+            ),
+            (
+                "ostlandet-latest.navi-graph-car.t2_3.rkyv".into(),
+                [60.7594758, 9.95466715, 61.6973387, 10.813263566666668],
+            ),
+            (
+                "ostlandet-latest.navi-graph-car.t2_4.rkyv".into(),
+                [
+                    60.7594758,
+                    10.813263566666668,
+                    61.6973387,
+                    11.671859983333333,
+                ],
+            ),
+            (
+                "ostlandet-latest.navi-graph-car.t2_5.rkyv".into(),
+                [60.7594758, 11.671859983333334, 61.6973387, 12.5304564],
+            ),
+        ]
+    }
+
+    fn touch_sized(dir: &Path, name: &str, bytes: usize) {
+        fs::write(dir.join(name), vec![0u8; bytes]).expect("touch tile stub");
+    }
+
+    #[test]
+    fn tile_bboxes_adjacent_detects_shared_grid_edge() {
+        let t1_3 = [59.8216129, 9.95466715, 60.7594758, 10.813263566666668];
+        let t2_3 = [60.7594758, 9.95466715, 61.6973387, 10.813263566666668];
+        let t2_4 = [
+            60.7594758,
+            10.813263566666668,
+            61.6973387,
+            11.671859983333333,
+        ];
+        let t2_5 = [60.7594758, 11.671859983333334, 61.6973387, 12.5304564];
+        assert!(tile_bboxes_adjacent(t1_3, t2_3));
+        assert!(tile_bboxes_adjacent(t2_3, t2_4));
+        assert!(tile_bboxes_adjacent(t2_4, t2_5));
+        assert!(
+            !tile_bboxes_adjacent(t1_3, t2_5),
+            "diagonal-only must not count as adjacent"
+        );
+    }
+
+    /// R4b: chord samples hit only t1_3+t2_4; bridge fill must still keep t2_3
+    /// (western E6 / Vestheim). Pre-fix nearest-to-endpoint fill kept t2_5 instead.
+    #[test]
+    fn r4b_bridge_keeps_western_e6_t2_3() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        // Relative sizes mirror device Ostlandet car tiles (proportional bytes).
+        for (name, bytes) in [
+            ("ostlandet-latest.navi-graph-car.t1_3.rkyv", 112usize),
+            ("ostlandet-latest.navi-graph-car.t1_4.rkyv", 106),
+            ("ostlandet-latest.navi-graph-car.t1_5.rkyv", 37),
+            ("ostlandet-latest.navi-graph-car.t2_3.rkyv", 60),
+            ("ostlandet-latest.navi-graph-car.t2_4.rkyv", 42),
+            ("ostlandet-latest.navi-graph-car.t2_5.rkyv", 17),
+        ] {
+            touch_sized(dir.path(), name, bytes);
+        }
+        let pts = [
+            (60.7278503, 10.6109705), // start
+            (60.821469, 11.200060),   // via
+            (61.1638011, 11.4539336), // goal
+        ];
+        let selected = select_tiles_within_budget(ostlandet_grid(), Some(&pts), 6, &[dir.path()]);
+        assert!(
+            selected
+                .iter()
+                .any(|f| f.contains("navi-graph-car.t2_3.rkyv")),
+            "t2_3 (western E6) must be selected for R4b; got {selected:?}"
+        );
+        assert!(
+            selected.len() <= 6,
+            "must stay within MAX_PLAN_TILES; got {}",
+            selected.len()
+        );
+        // Still only four tiles for this OD (samples 2 + bridge 2) — swap in
+        // t2_3 rather than raising the tile count / RSS ceiling.
+        assert_eq!(
+            selected.len(),
+            4,
+            "R4b should stay at 4 tiles (2 samples + 2 bridges); got {selected:?}"
+        );
+    }
+
+    /// Espa→Atnbrua chord already samples t2_3; selection must keep it under budget.
+    #[test]
+    fn espa_atnbrua_keeps_t2_3() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let mut cands = ostlandet_grid();
+        // Espa span also pulls row-3 / col-2 neighbours.
+        cands.extend([
+            (
+                "ostlandet-latest.navi-graph-car.t2_2.rkyv".into(),
+                [60.7594758, 9.096070733333336, 61.6973387, 9.95466715],
+            ),
+            (
+                "ostlandet-latest.navi-graph-car.t3_2.rkyv".into(),
+                [61.6973387, 9.096070733333336, 62.6352016, 9.95466715],
+            ),
+            (
+                "ostlandet-latest.navi-graph-car.t3_3.rkyv".into(),
+                [61.6973387, 9.95466715, 62.6352016, 10.813263566666668],
+            ),
+            (
+                "ostlandet-latest.navi-graph-car.t3_4.rkyv".into(),
+                [
+                    61.6973387,
+                    10.813263566666668,
+                    62.6352016,
+                    11.671859983333333,
+                ],
+            ),
+        ]);
+        for (name, _) in &cands {
+            touch_sized(dir.path(), name, 40);
+        }
+        let pts = [(60.5621914, 11.2561239), (61.8512500, 10.2338420)];
+        let selected = select_tiles_within_budget(cands, Some(&pts), 6, &[dir.path()]);
+        assert!(
+            selected
+                .iter()
+                .any(|f| f.contains("navi-graph-car.t2_3.rkyv")),
+            "Espa→Atnbrua must keep t2_3; got {selected:?}"
+        );
+        assert!(selected.len() <= 6);
+    }
 }
 
 #[cfg(test)]
