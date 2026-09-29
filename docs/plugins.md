@@ -178,9 +178,9 @@ data (or accepts sanitized commands) through capability-gated HostApi imports.
 | `accessory_events` | Optional push of connect/disconnect / permission-denied |
 
 Until those land, **host-native** services (as already sketched for ECU Bluetooth /
-USB, CAT serial/USB, DIY e-bike USB-serial) may open the link and push snapshots
-into core; a future WASM guest then only calls `ecu_read` / `cat_vfo_set` /
-`ebike_telemetry_read`-class imports.
+USB, CAT via Hamlib — see [`CAT.md`](CAT.md) — and DIY e-bike USB-serial) may open
+the link and push snapshots into core; a future WASM guest then only calls
+`ecu_read` / `cat_vfo_set` / `ebike_telemetry_read`-class imports.
 
 Specs that need a cable or radio (**ECU**, **CAT**, **ebike_telemetry**,
 **lora_convoy**, APRS TNC, future instruments) must document which
@@ -334,8 +334,8 @@ internet weather overlay.
 | | |
 |---|---|
 | **Benefit** | Set VFO frequency / offset / CTCSS from nearby NFM repeaters while driving |
-| **Docs** | [`CAT.md`](CAT.md) — auto-tune algorithm, RepeaterBook + OSM onboard DB, Innlandsnettet example |
-| **Host duties** | Serial/USB CAT dialect (Kenwood/Yaesu/Icom/…); never auto-TX; honour plugin enable/disable (close sessions when off) |
+| **Docs** | [`CAT.md`](CAT.md) — Hamlib 4.6.5 (NDK + FFI), Android transport, auto-tune, RepeaterBook + OSM onboard DB, Innlandsnettet example |
+| **Host duties** | CAT through **Hamlib 4.6.5** (NDK-built `libhamlib.so` + Navi’s minimal FFI crate); host owns the transport (USB/BT serial → loopback TCP, or remote `rigctld`) — see [`CAT.md`](CAT.md). Never auto-TX (`rig_get_ptt` interlock; never `rig_set_ptt`). Honour plugin enable/disable (close sessions when off). |
 | **Proposed caps** | `position_read`, `repeater_query` (new), `cat_vfo_set` (new, host-gated), `accessory_*` (USB), `log` |
 | **Safety** | Read/query free; **TX inhibited** unless user explicitly arms PTT path |
 
