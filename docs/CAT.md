@@ -331,21 +331,140 @@ transparent serial-byte bridge on loopback, with a normal Kenwood/Yaesu/Icom
 
 ### Onboard database (preferred offline)
 
-Populate from:
+Populate by importing and cross-referencing the sources in
+[Repeater data import and cross-referencing](#repeater-data-import-and-cross-referencing):
 
 1. **OSM** — nodes/ways tagged
    `communication:amateur_radio:repeater=yes` (and related frequency / CTCSS /
    shift / modulation tags), grouped by `type=network` relations.
-2. **Bundled extract** — regional SQLite table (callsign, lat, lon, freq_out_mhz,
-   shift_mhz, ctcss_hz, modulation, network_id) shipped or user-imported.
-3. Optional sync from RepeaterBook (or similar) when the user enables network —
-   merge into the onboard DB; never require cloud for the 150 km search.
+2. **User AnyTone CPS CSV** — channel / zone / gps-roaming / offset exports.
+3. **OpenRepeater** / **RadioID** — community / DMR directories (downloadable).
+4. **Bundled extract** — regional SQLite table (callsign, lat, lon, freq_out_mhz,
+   shift_mhz, ctcss_hz, modulation, network_id) shipped or built from the above.
+5. **RepeaterBook** — optional online sync only after written API permission
+   (see below); never required for the 150 km search.
 
 ### RepeaterBook (optional online)
 
-When enabled: query by position/bbox, filter NFM, upsert into onboard DB with
-expiry. API keys and ToS stay host-side. Offline search must still work from the
-last successful sync / OSM import.
+RepeaterBook remains an optional source as sketched here, but its API requires
+**written permission from RepeaterBook** for use inside an app. Until that
+permission is obtained, RepeaterBook sync stays **disabled**, and no other
+import path, auto-tune path, or onboard DB build may depend on it.
+
+When permission exists and the user enables network: query by position/bbox,
+filter to modes the radio profile supports, upsert into onboard DB with expiry.
+API keys and ToS stay host-side. Offline search must still work from OSM,
+CSV, OpenRepeater, RadioID, and the last successful local imports.
+
+---
+
+## Repeater data import and cross-referencing
+
+**Status:** specified here; **not implemented**. Doc-only planning for the
+future `cat` plugin / host importer.
+
+### Sources the plugin must accept
+
+#### 1. AnyTone CPS CSV exports
+
+Accept sample-shaped exports such as `channel.csv`, `zone.csv`,
+`gps-roaming.csv`, and `offset.csv`.
+
+Encoding and newlines: accept **UTF-8** and **Windows-1252**, **CRLF** or **LF**.
+
+**`channel.csv`** — one row per channel. Observed key columns:
+
+| Column | Role |
+|---|---|
+| Channel Name | Display / match key (max 16 chars in CPS) |
+| Receive Frequency / Transmit Frequency | MHz |
+| Channel Type | `A-Analog` or `D-Digital` (DMR) |
+| Band Width | `12.5K` / `25K` |
+| CTCSS/DCS Encode / Decode | Analog access tones |
+| RX Color Code, Slot | DMR |
+| Contact / Contact TG/DMR ID | DMR talkgroup / contact |
+| APRS RX and other APRS columns | Used to **exclude** APRS rows (see Filtering) |
+
+There are **no coordinates** in `channel.csv`.
+
+Name patterns observed:
+
+- Max **16 characters**.
+- Analog-style: `Town CALLSIGN` (e.g. `Innland LA5MR`).
+- DMR-style: `Town 242` / `Town lokal` (often **no callsign**).
+- Norwegian letters are transliterated and truncated (`Toensberg`, `Bodoe`,
+  `Mjoesa`, `Aalesund`, `Kr.sund N`).
+
+One physical DMR repeater often appears as **several channels** (different
+TG/slot). Deduplicate to one repeater by **RX + TX frequency + color code**.
+
+**`zone.csv`** — zones with pipe-separated member names and RX/TX frequencies.
+Zone names such as `ANALOG INNLANDET` are a **region hint only**, not a
+precise location.
+
+**`gps-roaming.csv`** — zone roaming points as degrees + minutes with N/S and
+E/W flags and a radius. All-zero rows mean unused.
+
+**`offset.csv`** — may be empty (header only); still accept the file.
+
+#### 2. OpenRepeater (openrepeater.org)
+
+Community directory, **CC0** data, downloadable. Covers FM, DMR, D-STAR,
+Fusion/YSF, M17, AX.25, and related modes. Use as a position- and
+parameter-rich merge source after filtering (see below).
+
+#### 3. RadioID (radioid.net)
+
+DMR repeater data. Useful for DMR identity / TG context and coordinates when
+matching AnyTone digital channels and OSM/OpenRepeater rows.
+
+#### 4. RepeaterBook (repeaterbook.com)
+
+Optional online source as already described under
+[RepeaterBook (optional online)](#repeaterbook-optional-online). Remains
+**disabled** until written API permission is obtained; nothing else may depend
+on it.
+
+#### 5. OpenStreetMap
+
+`communication:amateur_radio:repeater` nodes and `type=network` relations, as
+already described in this document (see
+[Example: Innlandsnettet OSM relation](#example-innlandsnettet-osm-relation)).
+
+### Cross-referencing
+
+Match records across sources in this order:
+
+1. **Callsign** (when present).
+2. **RX + TX frequency pair**, plus **color code** for DMR or **CTCSS/DCS** for
+   analog.
+3. **Town / channel name**, after normalizing CPS transliteration and 16-char
+   truncation (so `Toensberg` can meet `Tønsberg`, `Kr.sund N` can meet
+   `Kristiansund`, etc.).
+
+**Position priority** (store accuracy with the record):
+
+1. OSM node coordinates.
+2. Exact lat/lon from OpenRepeater, RadioID, or RepeaterBook (when enabled).
+3. Maidenhead locator centre as **fallback only**. A 6-character locator such
+   as `JP65OU` is a subsquare several km across (roughly 4–5 km at Norwegian
+   latitudes); never treat it as precise GPS.
+
+When sources **disagree** on frequency, shift, or tone: keep **all** values,
+prefer **OSM** or the **user’s own CSV**, and **flag the conflict in the UI**.
+
+**CSV-only** repeaters with no match elsewhere get **no position** and are
+**not** offered for distance-based auto-tune; they remain available for
+**manual** selection.
+
+### Filtering
+
+- **Exclude APRS** stations and channels (digipeaters, iGates, AX.25 packet):
+  by source mode/type, by channel name containing `APRS`, by APRS columns in
+  the CSV, and by known APRS frequencies (e.g. **144.800 MHz** in Europe).
+- **Simplex** entries (`RX = TX`, e.g. `Channel VFO A`) are **not** repeaters.
+- Apply the existing mode rule: only repeaters whose mode the **radio profile**
+  supports.
 
 ---
 
@@ -459,7 +578,10 @@ radio is still required.
 | `navi-cat` rigctld client (own crate) | Not implemented |
 | Backend gating (`dump_caps`) | Not implemented |
 | Onboard repeater DB / OSM import | Not implemented |
-| RepeaterBook sync | Not implemented |
+| AnyTone CPS CSV import | Specified here; not implemented |
+| OpenRepeater / RadioID import | Specified here; not implemented |
+| Cross-source repeater merge / conflict UI | Specified here; not implemented |
+| RepeaterBook sync | Disabled until written API permission; not implemented |
 | Auto-tune → VFO 1 | Specified here; not implemented |
 | Network follow mode | Specified here; not implemented |
 | Dummy-rig test suite | Not implemented |
