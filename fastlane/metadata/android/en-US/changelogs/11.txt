@@ -1,0 +1,4 @@
+0.3.6-beta
+
+- Graph packs: accept formats 8 and 9 (client-first v9 rollout)
+- Tools: delete downloaded region cleanup (#112)
