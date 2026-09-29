@@ -323,7 +323,12 @@ object NaviDebugIntent {
     }
 
     private fun parseForcePbf(intent: Intent): Boolean {
-        val g = intent.getStringExtra("navi_graph")?.trim()?.lowercase().orEmpty()
+        val g =
+            intent
+                .getStringExtra("navi_graph")
+                ?.trim()
+                ?.lowercase()
+                .orEmpty()
         return when (g) {
             "pbf", "local-pbf", "local_pbf", "local" -> true
             "pack", "pack-hit", "pack_hit", "" -> false

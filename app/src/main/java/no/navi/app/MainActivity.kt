@@ -689,6 +689,7 @@ private fun NaviMapScreen() {
     var avoidMotorways by remember { mutableStateOf(false) }
     var avoidTolls by remember { mutableStateOf(false) }
     var avoidFerries by remember { mutableStateOf(false) }
+
     /** Last plan's `graph_ferry_edges=N`; null until a plan reports it. */
     var graphFerryEdges by remember { mutableStateOf<Int?>(null) }
     var avoidTunnels by remember { mutableStateOf(false) }

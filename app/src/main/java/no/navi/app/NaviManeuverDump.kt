@@ -223,7 +223,8 @@ object NaviManeuverDump {
                 report.contains("search_terminate_reason=disconnected")
         val noWithout =
             when {
-                avoid == true && failed &&
+                avoid == true &&
+                    failed &&
                     (
                         report.contains("no route without ferry", ignoreCase = true) ||
                             report.contains("no_route_without_ferry=true") ||

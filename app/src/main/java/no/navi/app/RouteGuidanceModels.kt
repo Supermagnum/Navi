@@ -318,8 +318,8 @@ fun viaReachedDisplayLabel(
     resources: android.content.res.Resources,
     viaIndex0Based: Int?,
     viaCount: Int,
-): String {
-    return if (viaIndex0Based != null && viaCount > 0) {
+): String =
+    if (viaIndex0Based != null && viaCount > 0) {
         resources.getString(
             R.string.via_point_n_of_m_reached,
             viaIndex0Based + 1,
@@ -328,7 +328,6 @@ fun viaReachedDisplayLabel(
     } else {
         resources.getString(R.string.via_point_reached)
     }
-}
 
 /** Approximate great-circle distance in metres (HUD throttle helpers). */
 fun haversineMApprox(

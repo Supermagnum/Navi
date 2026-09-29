@@ -27,7 +27,10 @@ import uniffi.navi.saveUseUnlockedCabins
 @RunWith(AndroidJUnit4::class)
 class AvoidFerriesPersistInstrumentedTest {
     private fun dataDir(): String =
-        NaviAppData.resolve(InstrumentationRegistry.getInstrumentation().targetContext).absolutePath
+        NaviAppData
+            .resolve(
+                InstrumentationRegistry.getInstrumentation().targetContext,
+            ).absolutePath
 
     @Test
     fun seed_persistsAvoidFerriesAndCabins() {
