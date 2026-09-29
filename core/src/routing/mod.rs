@@ -57,8 +57,8 @@ pub use guidance_path::{
     samples_to_json, RoundaboutIconProbe, RoundaboutSpan, RouteManeuver, SimSample,
 };
 pub use hiking_hybrid::{
-    plan_hybrid_hiking_path, HikingWaypoint, HybridHikingPath, RouteSegment, SegmentKind,
-    OFF_TRAIL_ADVISORY,
+    plan_hybrid_hiking_path, plan_hybrid_hiking_path_with_options, HikingWaypoint,
+    HybridHikingPath, RouteSegment, SegmentKind, OFF_TRAIL_ADVISORY,
 };
 pub use osm_update::{
     apply_pending_update, apply_update_plan, bind_geofabrik_extract,

@@ -291,6 +291,7 @@ class MotorAccessBarrierInstrumentedTest {
                 false,
                 false,
                 dataDir = "",
+                avoidFerries = false,
             )
         assertTrue("hiking PASS: ${hike.report.take(300)}", hike.report.contains("PASS"))
         val near = minDistToPolylineM(hike.routePolyline, BOLLARD.first, BOLLARD.second)
