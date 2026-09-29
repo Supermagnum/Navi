@@ -646,6 +646,7 @@ private fun NaviMapScreen() {
     var searchBusy by remember { mutableStateOf(false) }
     var searchIndexHint by remember { mutableStateOf("") }
     var showTools by remember { mutableStateOf(false) }
+    var confirmDeleteRegion by remember { mutableStateOf(false) }
     var diagnosticLogging by remember {
         mutableStateOf(MapHudPrefs.loadDiagnosticLogging(context))
     }
@@ -5100,6 +5101,52 @@ private fun NaviMapScreen() {
                 },
             )
         }
+        if (confirmDeleteRegion) {
+            val deletePath = selectedGeofabrikPath.trim().trim('/')
+            val deleteLabel = RegionCoverage.displayName(deletePath)
+            AlertDialog(
+                onDismissRequest = { confirmDeleteRegion = false },
+                title = { Text("Delete downloaded region?") },
+                text = {
+                    Text(
+                        "Remove packs, basemap, place-index rows, and graph cache for " +
+                            "$deleteLabel. You can download it again later. " +
+                            "This does not affect other installed regions.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            confirmDeleteRegion = false
+                            scope.launch {
+                                val result =
+                                    withContext(Dispatchers.IO) {
+                                        DownloadedRegionDelete.delete(
+                                            context = context,
+                                            dataDir = dataDir,
+                                            geofabrikPath = deletePath,
+                                        )
+                                    }
+                                status = result.message
+                                if (result.ok) {
+                                    packCatalogEpoch += 1
+                                    offlineIntegrity =
+                                        OfflineDataIntegrity.inspect(context, dataDir)
+                                    styleEpoch += 1
+                                }
+                            }
+                        },
+                        modifier = Modifier.testTag("btn_confirm_delete_region"),
+                    ) { Text("Delete") }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { confirmDeleteRegion = false },
+                        modifier = Modifier.testTag("btn_cancel_delete_region"),
+                    ) { Text("Cancel") }
+                },
+            )
+        }
 
         Column(
             modifier =
@@ -7176,6 +7223,39 @@ private fun NaviMapScreen() {
                             Text(
                                 PackRegionAvailability.downloadRegionButtonLabel(selectedServerReady),
                             )
+                        }
+                        val selectedLocalReady =
+                            PackRegionAvailability.localInstalledReady(
+                                dataDir,
+                                selectedGeofabrikPath,
+                            ) ||
+                                PackRegionAvailability.localBakeReady(
+                                    dataDir,
+                                    selectedGeofabrikPath,
+                                ) ||
+                                PlaceIndexReady.isReady(dataDir, selectedGeofabrikPath)
+                        Button(
+                            onClick = {
+                                val path = selectedGeofabrikPath.trim().trim('/')
+                                if (path.isEmpty()) {
+                                    status = "Select a Geofabrik path first."
+                                    return@Button
+                                }
+                                val block =
+                                    DownloadedRegionDelete.blockReason(path, dataDir)
+                                if (block != null) {
+                                    status = block
+                                    return@Button
+                                }
+                                confirmDeleteRegion = true
+                            },
+                            enabled = selectedLocalReady,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag("btn_delete_downloaded_region"),
+                        ) {
+                            Text("Delete downloaded region")
                         }
                         Button(
                             onClick = {
