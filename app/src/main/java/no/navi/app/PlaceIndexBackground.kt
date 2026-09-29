@@ -31,6 +31,9 @@ object PlaceIndexBackground {
 
     fun isRunning(): Boolean = running.get()
 
+    /** Geofabrik path currently being indexed, or blank when idle. */
+    fun activeRegionId(): String = activeRegionId.get()
+
     /**
      * Claim before launching IO so a concurrent [ensureStarted] sees busy.
      * Pair with [RegionDownloadBackground.isRunning] at call sites: the region

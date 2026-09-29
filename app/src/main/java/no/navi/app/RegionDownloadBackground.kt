@@ -583,6 +583,39 @@ object RegionDownloadBackground {
         jobFile(dataDir).delete()
     }
 
+    /**
+     * Drop [JOB_FILE] / queue entries for [geofabrikPath] so a deleted region
+     * cannot resume as a ghost download. Does not cancel an in-flight worker
+     * (callers must [DownloadedRegionDelete.blockReason] first).
+     */
+    fun clearBookkeepingForRegion(
+        dataDir: File,
+        geofabrikPath: String,
+    ) {
+        val path = PackRegionAvailability.normalize(geofabrikPath)
+        if (path.isEmpty()) return
+        val job = loadJob(dataDir)
+        if (job != null) {
+            val jobPath =
+                job.geofabrikPath.ifBlank {
+                    RegionCoverage.geofabrikPathForPbfName(job.filename).orEmpty()
+                }
+            if (PackRegionAvailability.regionIdsMatchForCatalog(jobPath, path)) {
+                clearJob(dataDir)
+                Log.i(TAG, "cleared region-download.json for $path")
+            }
+        }
+        val queue = loadQueue(dataDir)
+        val kept =
+            queue.filterNot {
+                PackRegionAvailability.regionIdsMatchForCatalog(it.geofabrikPath, path)
+            }
+        if (kept.size != queue.size) {
+            saveQueue(dataDir, kept)
+            Log.i(TAG, "removed $path from region-download-queue.json")
+        }
+    }
+
     fun partialBytes(
         dataDir: File,
         filename: String,

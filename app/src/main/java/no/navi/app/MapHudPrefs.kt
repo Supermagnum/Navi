@@ -433,6 +433,19 @@ object MapHudPrefs {
         prefs.edit().putStringSet(KEY_DOWNLOADED_PMTILES_REGIONS, next).apply()
     }
 
+    /** Drop a PMTiles region key after user delete (or failed install cleanup). */
+    fun forgetDownloadedPmtilesRegion(
+        context: Context,
+        regionKey: String,
+    ) {
+        val key = regionKey.trim()
+        if (key.isEmpty()) return
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val next = prefs.getStringSet(KEY_DOWNLOADED_PMTILES_REGIONS, emptySet())!!.toMutableSet()
+        if (!next.remove(key)) return
+        prefs.edit().putStringSet(KEY_DOWNLOADED_PMTILES_REGIONS, next).apply()
+    }
+
     /** Weather overlay plugin — defaults OFF per plugins.md. */
     fun loadWeatherPluginEnabled(context: Context): Boolean =
         context
