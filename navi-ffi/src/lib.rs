@@ -720,6 +720,25 @@ fn days_json_from_hiking(plan: &HikingMultiDayPlan) -> String {
                         String::new(),
                     ),
                 };
+            let (osm_id, is_network, membership_required, cabin_class) = match &d.overnight {
+                Some(o) => {
+                    let class = if o.membership_required || o.is_network {
+                        "networked"
+                    } else if o.safety_rejected {
+                        "other"
+                    } else {
+                        // Non-network hut/shelter — "unlocked"/open stay when not rejected.
+                        "unlocked"
+                    };
+                    (
+                        Some(o.osm_id),
+                        Some(o.is_network),
+                        Some(o.membership_required),
+                        Some(class.to_string()),
+                    )
+                }
+                None => (None, None, None, None),
+            };
             json!({
                 "day_index": d.day_index,
                 "date": "",
@@ -735,11 +754,13 @@ fn days_json_from_hiking(plan: &HikingMultiDayPlan) -> String {
                 "overnight_found": overnight_found,
                 "safety_rejected": d.overnight.as_ref().map(|o| o.safety_rejected).unwrap_or(false),
                 "safety_reason": safety_reason,
-                "membership_required": d
-                    .overnight
-                    .as_ref()
-                    .map(|o| o.membership_required)
-                    .unwrap_or(false),
+                "membership_required": membership_required,
+                "osm_id": osm_id,
+                "is_network": is_network,
+                "category": rest_kind,
+                "cabin_class": cabin_class,
+                "lat": d.overnight.as_ref().map(|o| o.lat),
+                "lon": d.overnight.as_ref().map(|o| o.lon),
                 "not_in_cab": false,
                 "compensation": "",
                 "is_final": is_final,
@@ -3453,6 +3474,11 @@ fn plan_car_route_inner(
             report.push_str(&format!(
                 "FAIL: no route between snapped nodes; terminate={last_terminate}; expansions={last_expansions}; pads={pad_attempts:?}\n"
             ));
+            if avoid_ferries {
+                report.push_str(
+                    "no_route_without_ferry=true; FAIL: no route without ferry (avoid_ferries on)\n",
+                );
+            }
         }
         let mut r = empty(report);
         r.toll_policy = toll_policy.as_diag_str().into();
@@ -3490,6 +3516,7 @@ fn plan_car_route_inner(
         ));
     }
     let route_uses_tolls = graph.path_uses_tolls(&path_edges);
+    let route_uses_ferry = graph.path_uses_ferries(&path_edges);
     let astar_ms = timer.lap_ms();
 
     let mut distance_m = 0.0;
@@ -4049,7 +4076,7 @@ fn plan_car_route_inner(
         ],
     );
     report.push_str(&format!(
-        "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={path_nodes}; path_cost={cost:.0}; polyline_chars={}; break_pois={}\nPASS\n",
+        "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={path_nodes}; path_cost={cost:.0}; polyline_chars={}; break_pois={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         polyline.len(),
         break_pois_json
     ));
@@ -4628,8 +4655,8 @@ pub fn plan_hiking_route(
             ));
             if let Some(o) = &d.overnight {
                 report.push_str(&format!(
-                    "hiking_overnight: name={:?}; network={}; membership_required={}; safety_rejected={}; safety_reason={:?}; dist_m={:.0}; lat={:.5}; lon={:.5}\n",
-                    o.name, o.is_network, o.membership_required, o.safety_rejected, o.safety_reason, o.distance_from_target_m, o.lat, o.lon
+                    "hiking_overnight: osm_id={}; name={:?}; network={}; membership_required={}; safety_rejected={}; safety_reason={:?}; dist_m={:.0}; lat={:.5}; lon={:.5}\n",
+                    o.osm_id, o.name, o.is_network, o.membership_required, o.safety_rejected, o.safety_reason, o.distance_from_target_m, o.lat, o.lon
                 ));
                 hiking_overnight_pins.push(json!({
                     "name": if o.safety_rejected {
@@ -4644,7 +4671,16 @@ pub fn plan_hiking_route(
                     "icon_key": o.icon_key,
                     "along_km": d.end_km,
                     "overnight": true,
+                    "osm_id": o.osm_id,
                     "membership_required": o.membership_required,
+                    "is_network": o.is_network,
+                    "cabin_class": if o.membership_required || o.is_network {
+                        "networked"
+                    } else if o.safety_rejected {
+                        "other"
+                    } else {
+                        "unlocked"
+                    },
                     "safety_rejected": o.safety_rejected,
                     "safety_reason": o.safety_reason,
                 }));

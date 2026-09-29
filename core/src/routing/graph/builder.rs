@@ -1323,6 +1323,11 @@ impl RouteGraph {
         edge_indices.iter().any(|&i| self.edges[i].is_toll)
     }
 
+    /// True when any edge on the path is a ferry.
+    pub fn path_uses_ferries(&self, edge_indices: &[usize]) -> bool {
+        edge_indices.iter().any(|&i| self.edges[i].is_ferry)
+    }
+
     /// Count edges excluded specifically by seasonal access conditionals at departure.
     pub fn seasonal_closure_excluded_count(
         &self,
