@@ -7,7 +7,10 @@ use memmap2::Mmap;
 use rkyv::rancor::Error as RkyvError;
 use thiserror::Error;
 
-use super::graph_pack::{ArchivedFlatGraphPack, GRAPH_FORMAT_VERSION, MAGIC_GRAPH};
+use super::graph_pack::{
+    graph_format_version_accepted, ArchivedFlatGraphPack, GRAPH_FORMAT_VERSION, MAGIC_GRAPH,
+};
+use super::graph_pack_v8::ArchivedFlatGraphPackV8;
 use super::header::Preamble;
 use super::io::archive_payload_offset;
 use super::manifest::{
@@ -572,6 +575,14 @@ fn check_preamble(mmap: &Mmap, expect_magic: u32, expect_ver: u32) -> Result<(),
     Ok(())
 }
 
+fn check_graph_preamble(mmap: &Mmap) -> Result<u32, PackLoadError> {
+    let p = Preamble::from_bytes(mmap).ok_or(PackLoadError::VersionMismatch)?;
+    if p.magic != MAGIC_GRAPH || !graph_format_version_accepted(p.format_version) {
+        return Err(PackLoadError::VersionMismatch);
+    }
+    Ok(p.format_version)
+}
+
 /// Deserialize graph pack body after preamble validation. Materializes owned
 /// [`RouteGraph`] (adapter to existing planners). Does **not** interpret a
 /// mismatched header.
@@ -599,21 +610,34 @@ pub fn load_graph_pack_clips(
     clips: Option<&[[f64; 4]]>,
 ) -> Result<RouteGraph, PackLoadError> {
     let mmap = map_file(path)?;
-    check_preamble(&mmap, MAGIC_GRAPH, GRAPH_FORMAT_VERSION)?;
+    let format_version = check_graph_preamble(&mmap)?;
     let body = &mmap[archive_payload_offset()..];
-    let archived = rkyv::access::<ArchivedFlatGraphPack, RkyvError>(body)
-        .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
     // Materialize from the mmap'd archive — do **not** `rkyv::deserialize` into an
     // owned FlatGraphPack first. That temporary peaks at roughly pack-file size in
     // extra RAM (string tables) and thrashing-hangs multi-tile long-trip loads on
     // Automotive devices when a merged graph already occupies hundreds of MB.
+    //
+    // v8 and v9 have different rkyv layouts (`edge_is_tunnel` only on v9); pick the
+    // archived type from the preamble. v8 materializes `is_tunnel = false`.
     let file = path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
     crate::download::progress::set(0, Some(1), &format!("Building graph {file}…"));
     let t0 = std::time::Instant::now();
-    let g = archived.to_route_graph_clips(profile, clips);
+    let g = match format_version {
+        super::graph_pack::GRAPH_FORMAT_VERSION_V8 => {
+            let archived = rkyv::access::<ArchivedFlatGraphPackV8, RkyvError>(body)
+                .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
+            archived.to_route_graph_clips(profile, clips)
+        }
+        GRAPH_FORMAT_VERSION => {
+            let archived = rkyv::access::<ArchivedFlatGraphPack, RkyvError>(body)
+                .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
+            archived.to_route_graph_clips(profile, clips)
+        }
+        _ => return Err(PackLoadError::VersionMismatch),
+    };
     log::info!(
         target: "NaviPlan",
-        "load_graph_pack_bbox file={file} edges={} nodes={} clips={} elapsed_ms={}",
+        "load_graph_pack_bbox file={file} format={format_version} edges={} nodes={} clips={} elapsed_ms={}",
         g.edges.len(),
         g.nodes.len(),
         clips.map(|c| c.len()).unwrap_or(0),

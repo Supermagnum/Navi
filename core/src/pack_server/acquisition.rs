@@ -787,7 +787,7 @@ mod tests {
         );
         assert_eq!(
             classify_fetch_failure(
-                "server pack graph_format_version=8 (client needs 9) — not installing"
+                "server pack graph_format_version=7 (client accepts 8 or 9) — not installing"
             ),
             "format_gate"
         );
