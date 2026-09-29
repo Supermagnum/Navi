@@ -5,6 +5,7 @@
 
 mod convert;
 mod graph_pack;
+mod graph_pack_v8;
 mod header;
 mod io;
 mod load;
@@ -20,7 +21,11 @@ pub use crate::routing::region_lock::{
     REGION_CONVERT_IN_PROGRESS,
 };
 pub use convert::{convert_region_packs, ConvertOptions, ConvertReport};
-pub use graph_pack::{ArchivedFlatGraphPack, FlatGraphPack, GRAPH_FORMAT_VERSION, MAGIC_GRAPH};
+pub use graph_pack::{
+    graph_format_version_accepted, preferred_graph_format_version, ArchivedFlatGraphPack,
+    FlatGraphPack, GRAPH_FORMAT_VERSION, GRAPH_FORMAT_VERSION_V8, MAGIC_GRAPH,
+};
+pub use graph_pack_v8::{ArchivedFlatGraphPackV8, FlatGraphPackV8};
 pub use header::{read_preamble, Preamble, PREAMBLE_LEN};
 pub use io::{archive_payload_offset, write_archive_atomic};
 pub use load::{
