@@ -18,6 +18,7 @@ class DownloadedRegionDeleteTest {
 
     private fun seedInstalled(dir: File): Long {
         var bytes = 0L
+
         fun put(
             name: String,
             size: Int,
