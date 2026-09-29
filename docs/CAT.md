@@ -13,7 +13,8 @@ split (Navi does not implement the RF layer) over Meshtastic BLE:
 
 ## Goals
 
-1. Talk to a mobile transceiver over serial/USB CAT (vendor dialect).
+1. Talk to a mobile transceiver over CAT via **upstream Hamlib** (shared library
+   on Android), not hand-written vendor dialect adapters.
 2. Look up nearby **NFM** (narrow FM) amateur **repeaters**.
 3. If one is within **150 km**, program **VFO 1** with output frequency, duplex
    offset/shift, and CTCSS/DCS (subtone).
@@ -31,9 +32,9 @@ split (Navi does not implement the RF layer) over Meshtastic BLE:
 4. Pick best candidate (nearest usable, or user-selected from a short list).
 5. Resolve:
      - frequency_out (repeater downlink / mobile receive)
-     - shift / offset (duplex; apply vendor sign convention for VFO TX)
+     - shift / offset (duplex; apply Hamlib rptr_shift + rptr_offs)
      - CTCSS encode (and decode if the radio supports separate tones)
-6. CAT: set VFO 1 RX/TX (or RX + offset), tone, and narrow FM mode.
+6. CAT: set VFO 1 RX/TX (or RX + offset), tone, and narrow FM mode via Hamlib.
 7. UI: show callsign, distance, freq, shift, tone; require user confirm if
    “auto-apply” is off.
 ```
@@ -53,12 +54,128 @@ user override.
 European OSM tags sometimes use a comma as decimal separator (`-0,6 Mhz`);
 normalize to MHz with `.` before CAT.
 
+Hamlib unit conventions (pass these to the FFI, not MHz floats):
+
+| Concept | Hamlib unit | Example |
+|---|---|---|
+| Frequency (`freq_t`) | Hz | 145.7250 MHz → `145725000` |
+| Duplex shift | `rig_set_rptr_shift(RIG_RPT_SHIFT_MINUS` / `PLUS` / `NONE)` | Sign comes from the shift enum, not the offset |
+| Duplex offset | `rig_set_rptr_offs` absolute offset in Hz | 0.6 MHz → `600000` |
+| CTCSS | Tenths of Hz | 88.5 Hz → `885` |
+| DCS | Code number | As listed by the repeater / radio manual |
+| Mode | `RIG_MODE_FM` with a narrow passband, or `RIG_MODE_FMN` if the backend supports it | If narrow is unsupported, fall back to `RIG_MODE_FM` with the backend’s default passband and log a warning |
+| “VFO 1” | `RIG_VFO_A` (use `RIG_VFO_MAIN` on Main/Sub rigs) | Per-profile override allowed |
+
 ### Safety interlocks
 
 - Default: **RX + memory/VFO program only**; PTT remains manual.
-- No auto-tune while the radio is transmitting.
-- Abort if CAT dialect is unknown or the radio rejects the command.
+- Host calls `rig_get_ptt` before every programming sequence and **aborts** if TX
+  is active or PTT state is unknown. Navi never calls `rig_set_ptt`.
+- Abort if the radio profile / Hamlib model is unknown or the radio rejects the
+  command.
+- Hamlib is **not thread-safe**: one dedicated worker thread owns the rig handle;
+  all CAT calls go through it with timeouts.
 - Log frequency changes for the user; do not phone-home callsigns.
+
+---
+
+## Hamlib integration
+
+### Do not use crates.io Hamlib crates
+
+Do **not** add Rust Hamlib crates from crates.io (e.g. historical `hamlib` /
+`hamlib-sys` bindings). They are years out of date, bind old Hamlib APIs, and
+are unmaintained. Navi must not depend on them.
+
+### Upstream Hamlib (C library)
+
+Use **upstream Hamlib** (current 4.x line), **pinned to release tag 4.6.5**.
+Path/unit docs and the network-path check below were verified against that tag;
+the future Android build script must fetch that same tag. Cross-compile for
+Android with the NDK and ship as a shared library:
+
+| ABI | Role |
+|---|---|
+| `arm64-v8a` | Primary device |
+| `armeabi-v7a` | 32-bit ARM devices |
+| `x86_64` | Emulator |
+
+Install as `libhamlib.so` under `jniLibs` for each ABI.
+
+### Navi-owned FFI crate
+
+Navi owns a minimal FFI crate (bindgen against the pinned headers, or
+hand-written `extern` blocks) covering only:
+
+```text
+rig_init
+rig_open
+rig_close
+rig_cleanup
+rig_set_vfo
+rig_set_freq
+rig_set_mode
+rig_set_rptr_shift
+rig_set_rptr_offs
+rig_set_ctcss_tone
+rig_set_dcs_code
+rig_get_ptt          (TX interlock; never rig_set_ptt)
+rig_get_info         (or equivalent for model detection / logging)
+```
+
+No broad wrap of the entire Hamlib API.
+
+### Build (described; not checked in yet)
+
+A future `scripts/build-hamlib-android.sh` should:
+
+1. Fetch the pinned Hamlib release tag source (**4.6.5**).
+2. Cross-compile with autotools + the Android NDK toolchain for the three ABIs
+   above.
+3. Disable Android-unneeded bits: C++ / Perl / Python / Tcl bindings, readline,
+   and libusb-dependent backends (unless Navi later builds libusb for those
+   backends).
+4. Produce `libhamlib.so` artifacts suitable for packaging under `jniLibs`.
+5. Be cacheable in CI (keyed on pinned tag + NDK version + script hash).
+
+Do not invent ad-hoc vendor CAT parsers in Rust or Kotlin when Hamlib already
+covers the radio.
+
+### Licensing
+
+Hamlib is **LGPL-2.1+**. Ship it **dynamically linked** (`libhamlib.so`). Keep
+the pinned source/tag and the build script public so users can rebuild or
+replace the `.so` (LGPL replacement requirement).
+
+Navi itself is **GPL-3.0-or-later** (`LICENSE`, root `Cargo.toml`). Dynamically
+linking an LGPL-2.1+ shared library into a GPL-3.0-or-later application is
+compatible; there is **no license conflict** for this plan. Static linking or
+shipping without a replaceable `.so` / corresponding source would be a
+problem — do not do that.
+
+---
+
+## Android transport
+
+Non-rooted Android apps cannot open `/dev/ttyUSB*` or `/dev/ttyACM*`. Hamlib
+expects a device path (`rig_pathname` / `-r`). Options:
+
+| Option | Role | Notes |
+|---|---|---|
+| **(a) USB serial → loopback TCP** | **Primary** | Kotlin uses Android `UsbManager` (e.g. usb-serial-for-android) and bridges bytes to a loopback TCP socket. Hamlib gets `127.0.0.1:<port>` as the rig path. |
+| **(b) Bluetooth SPP → loopback TCP** | Secondary | Same loopback bridge for radios with Bluetooth CAT. |
+| **(c) Remote `rigctld`** | Secondary | Hamlib **NET rigctl** model to a `rigctld` on another box (e.g. Pi in the vehicle) over Wi-Fi/LAN. |
+
+Rust / Hamlib usage is the same in all three cases; only the Kotlin bridge (or
+none, for remote `rigctld`) differs.
+
+**Hamlib 4 network-path verification (tag 4.6.5):** Confirmed. The `rigctl`
+man page documents `-r` / `--rig-file` as accepting a network `address:port`
+(example `127.0.0.1:12345`). Hamlib detects such pathnames and opens
+`RIG_PORT_NETWORK` (TCP). That is the intended path for (a) and (b): a
+transparent serial-byte bridge on loopback, with a normal Kenwood/Yaesu/Icom
+(etc.) model number. Option (c) uses the separate **NET rigctl** model against
+`rigctld` (default port 4532), not raw serial framing.
 
 ---
 
@@ -146,11 +263,27 @@ many site rows, shared defaults overridden per site.
 | Capability | Behaviour |
 |---|---|
 | `repeater_query` | Input: lat, lon, radius_km (≤ 150). Output: JSON list of NFM sites |
-| `cat_vfo_set` | Input: freq_out_mhz, shift_mhz, ctcss_hz, mode=`NFM`, vfo=`1`. Host executes CAT |
+| `cat_vfo_set` | Input: freq_out_mhz, shift_mhz, ctcss_hz, mode=`NFM`, vfo=`1`. Host executes CAT via Hamlib |
 
-Dialects (Kenwood `FA`/`FB`, Yaesu, Icom CI-V, …) are **host adapters**, not
-WASM. Document baud rates per radio profile when an adapter lands
-(common starting points: 9600 or 38400 8N1 — verify per manual).
+Hamlib provides vendor dialects (Kenwood, Yaesu, Icom CI-V, …). Navi’s radio
+profile maps to a Hamlib rig **model number** plus port settings (baud, data
+bits, stop bits, handshake, CI-V address where relevant). Navi does **not**
+write its own dialect adapters. Document baud rates and CI-V address per radio
+profile when a profile lands (common starting points: 9600 or 38400 8N1 —
+verify per manual).
+
+---
+
+## Testing
+
+Verify on the Android emulator with real repeater data (OSM import around the
+Innlandsnettet example):
+
+1. Run Hamlib **dummy** rig (model 1) and/or `rigctld` on the host.
+2. From the emulator, reach the host at `10.0.2.2:4532` using the Hamlib
+   **NET rigctl** model.
+3. Drive auto-tune / `cat_vfo_set` with Innlandsnettet-style NFM parameters.
+4. Log frequency, shift, and tone read back from the dummy / `rigctld` session.
 
 ---
 
@@ -158,7 +291,10 @@ WASM. Document baud rates per radio profile when an adapter lands
 
 | Piece | Status |
 |---|---|
-| CAT serial adapters | Not implemented |
+| Hamlib Android build (NDK) | Not implemented |
+| Hamlib FFI crate | Not implemented |
+| Android USB/BT serial bridge | Not implemented |
+| CAT serial adapters | Replaced by Hamlib; not implemented |
 | Onboard repeater DB / OSM import | Not implemented |
 | RepeaterBook sync | Not implemented |
 | Auto-tune → VFO 1 | Specified here; not implemented |
