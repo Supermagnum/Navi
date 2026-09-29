@@ -904,7 +904,7 @@ mod tests {
                 "foot": format!("{bake}.navi-graph-foot.rkyv")
             },
             "graph_tiles": {},
-            "graph_format_version": 6,
+            "graph_format_version": 8,
             "poi_barrier_file": format!("{bake}.navi-poi-barrier.rkyv"),
             "poi_barrier_format_version": POI_BARRIER_FORMAT_VERSION,
             "wetland_file": format!("{bake}.navi-wetland.rkyv"),
@@ -962,7 +962,7 @@ mod tests {
         };
         let err = try_fetch_region_packs(&ready, &base, Some(dir.path())).unwrap_err();
         assert!(
-            err.contains("graph_format_version=6"),
+            err.contains("graph_format_version=8"),
             "expected format rejection, got {err}"
         );
         assert_eq!(fs::read_to_string(&sentinel).unwrap(), "keep-me");

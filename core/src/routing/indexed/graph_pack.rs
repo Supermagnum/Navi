@@ -13,18 +13,18 @@ use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile, SurfaceQualit
 pub const MAGIC_GRAPH: u32 = 0x4E_56_52_4B;
 /// Packed graph archive format version.
 ///
-/// **Do not bump without navi-server sign-off.** Pack-server only bakes and
-/// serves this version; a unilateral client bump rejects every server pack and
-/// silently falls back to local PBF rebuild. Wire-layout changes to
-/// [`FlatGraphPack`] must ship as a coordinated client+server release.
+/// Coordinated with navi-server PR #6 / commit `ee0c6ab` (v9 + ferries +
+/// tunnel flags). Client accepts **only** this version (full flip: v8 packs
+/// are [`crate::routing::indexed::PackLoadError::VersionMismatch`]). Wire-layout
+/// changes to [`FlatGraphPack`] must ship as a coordinated client+server release.
+///
+/// v9: v8 + `edge_is_tunnel` (`Vec<u8>`, 0/1), immediately after `edge_is_ferry`.
 ///
 /// v8: v7 + per-edge `surface_quality` (OSM surface/tracktype class).
 /// SurfaceQuality wire bytes: `0` Good, `1` Marginal, `2` Poor, `3` Unknown
 /// (Unknown appended; v8 ordinals 0–2 unchanged so old packs load without
-/// reinterpretation). No format-version bump: layout is identical; rebake is
-/// required only to *reclassify* previously untagged edges that were baked as
-/// Good under the pre–Option-C defaults.
-pub const GRAPH_FORMAT_VERSION: u32 = 8;
+/// reinterpretation).
+pub const GRAPH_FORMAT_VERSION: u32 = 9;
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone)]
 pub struct FlatGraphPack {
@@ -75,6 +75,8 @@ pub struct FlatGraphPack {
     pub edge_maxlength_m: Vec<f64>,
     pub edge_is_toll: Vec<u8>,
     pub edge_is_ferry: Vec<u8>,
+    /// OSM `tunnel=*` with any value other than `no`. `0`/`1`.
+    pub edge_is_tunnel: Vec<u8>,
     pub edge_is_roundabout: Vec<u8>,
     pub edge_is_boardwalk: Vec<u8>,
     /// CSR: `edge_shape_offsets.len() == edge_src.len() + 1`.
@@ -152,6 +154,7 @@ impl FlatGraphPack {
         let mut edge_maxlength_m = Vec::with_capacity(n);
         let mut edge_is_toll = Vec::with_capacity(n);
         let mut edge_is_ferry = Vec::with_capacity(n);
+        let mut edge_is_tunnel = Vec::with_capacity(n);
         let mut edge_is_roundabout = Vec::with_capacity(n);
         let mut edge_is_boardwalk = Vec::with_capacity(n);
         let mut edge_shape_offsets = Vec::with_capacity(n + 1);
@@ -200,6 +203,7 @@ impl FlatGraphPack {
             edge_maxlength_m.push(pack_opt_metric(e.maxlength_m));
             edge_is_toll.push(u8::from(e.is_toll));
             edge_is_ferry.push(u8::from(e.is_ferry));
+            edge_is_tunnel.push(u8::from(e.is_tunnel));
             edge_is_roundabout.push(u8::from(e.is_roundabout));
             edge_is_boardwalk.push(u8::from(e.is_boardwalk_crossing));
             edge_motor_vehicle_conditional
@@ -265,6 +269,7 @@ impl FlatGraphPack {
             edge_maxlength_m,
             edge_is_toll,
             edge_is_ferry,
+            edge_is_tunnel,
             edge_is_roundabout,
             edge_is_boardwalk,
             edge_shape_offsets,
@@ -428,9 +433,7 @@ impl FlatGraphPack {
                 maxlength_m: unpack_opt_metric(&self.edge_maxlength_m, i),
                 is_toll: self.edge_is_toll[i] != 0,
                 is_ferry: self.edge_is_ferry[i] != 0,
-                // Not in v8 pack wire format (pending navi-server v9 sign-off).
-                // Soft-avoid still works for graphs built from PBF in-process.
-                is_tunnel: false,
+                is_tunnel: self.edge_is_tunnel[i] != 0,
                 is_boardwalk_crossing: self.edge_is_boardwalk[i] != 0,
                 is_roundabout: self.edge_is_roundabout[i] != 0,
                 motor_vehicle_conditional: {
@@ -712,7 +715,7 @@ impl ArchivedFlatGraphPack {
                 maxlength_m: archived_opt_metric_at(&self.edge_maxlength_m, i),
                 is_toll: arch_u8(self.edge_is_toll[i]) != 0,
                 is_ferry: arch_u8(self.edge_is_ferry[i]) != 0,
-                is_tunnel: false,
+                is_tunnel: arch_u8(self.edge_is_tunnel[i]) != 0,
                 is_boardwalk_crossing: arch_u8(self.edge_is_boardwalk[i]) != 0,
                 is_roundabout: arch_u8(self.edge_is_roundabout[i]) != 0,
                 motor_vehicle_conditional: archived_str_opt(
@@ -1116,16 +1119,125 @@ mod tests {
         assert_ne!(unrestricted.0, limited.0);
     }
 
-    /// Pack-server currently bakes and serves v8 only. Changing this constant
-    /// without a matching navi-server release rejects every pack and forces
-    /// local PBF rebuild. Update this assertion only as part of a coordinated
-    /// client+server format bump.
+    /// Pack-server bakes and serves v9 (`ee0c6ab` / PR #6). Changing this
+    /// constant without a matching navi-server release rejects every pack and
+    /// forces local PBF rebuild. Update only as part of a coordinated bump.
     #[test]
     fn graph_format_version_matches_pack_server() {
         assert_eq!(
-            GRAPH_FORMAT_VERSION, 8,
+            GRAPH_FORMAT_VERSION, 9,
             "GRAPH_FORMAT_VERSION bumped without navi-server sign-off — \
              revert or coordinate a pack-server release first"
+        );
+    }
+
+    fn tunnel_pair_graph() -> RouteGraph {
+        let n1 = NodeId(1);
+        let n2 = NodeId(2);
+        let n3 = NodeId(3);
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [(n1, 60.0, 10.0), (n2, 60.0, 10.01), (n3, 60.0, 10.02)] {
+            nodes.insert(
+                id,
+                Node {
+                    id,
+                    coord: Coord { x: lon, y: lat },
+                    uses: 2,
+                },
+            );
+        }
+        let mut tunnel = diamond_edge("tunnel", n1, n2, 60.0, 10.0, 60.0, 10.01, 100.0, None);
+        tunnel.is_tunnel = true;
+        let surface = diamond_edge("surface", n2, n3, 60.0, 10.01, 60.0, 10.02, 100.0, None);
+        RouteGraph::from_parts(nodes, vec![tunnel, surface], RoutingProfile::Car)
+    }
+
+    #[test]
+    fn pack_materialize_preserves_edge_is_tunnel_owned_and_archived() {
+        let graph = tunnel_pair_graph();
+        let pack = FlatGraphPack::from_route_graph(&graph, None);
+        assert_eq!(pack.edge_is_tunnel, vec![1, 0]);
+
+        let from_owned = pack.to_route_graph(RoutingProfile::Car);
+        assert_eq!(from_owned.edges.len(), 2);
+        let owned_tunnel = from_owned
+            .edges
+            .iter()
+            .find(|e| e.source == NodeId(1) && e.target == NodeId(2))
+            .expect("tunnel edge");
+        let owned_surface = from_owned
+            .edges
+            .iter()
+            .find(|e| e.source == NodeId(2) && e.target == NodeId(3))
+            .expect("surface edge");
+        assert!(owned_tunnel.is_tunnel);
+        assert!(!owned_surface.is_tunnel);
+
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&pack).expect("serialize");
+        let archived =
+            rkyv::access::<ArchivedFlatGraphPack, rkyv::rancor::Error>(&bytes[..]).expect("access");
+        let from_arch = archived.to_route_graph_bbox(RoutingProfile::Car, None);
+        assert_eq!(from_arch.edges.len(), 2);
+        let arch_tunnel = from_arch
+            .edges
+            .iter()
+            .find(|e| e.source == NodeId(1) && e.target == NodeId(2))
+            .expect("archived tunnel edge");
+        let arch_surface = from_arch
+            .edges
+            .iter()
+            .find(|e| e.source == NodeId(2) && e.target == NodeId(3))
+            .expect("archived surface edge");
+        assert!(arch_tunnel.is_tunnel);
+        assert!(!arch_surface.is_tunnel);
+    }
+
+    #[test]
+    fn load_rejects_v8_graph_preamble() {
+        use crate::routing::indexed::header::Preamble;
+        use crate::routing::indexed::io::write_archive_atomic;
+        use crate::routing::indexed::load::{load_graph_pack, PackLoadError};
+
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let path = dir.path().join("stale.navi-graph-car.rkyv");
+        write_archive_atomic(&path, Preamble::new(MAGIC_GRAPH, 8), b"v8-body-ignored")
+            .expect("write v8 preamble pack");
+        let err = match load_graph_pack(&path, RoutingProfile::Car) {
+            Err(e) => e,
+            Ok(_) => panic!("v8 preamble must fail load, got Ok"),
+        };
+        assert!(
+            matches!(err, PackLoadError::VersionMismatch),
+            "v8 preamble must be VersionMismatch, got {err}"
+        );
+    }
+
+    #[test]
+    fn manifest_v8_graph_format_is_version_mismatch() {
+        use crate::routing::indexed::manifest::{NaviManifest, PackStatus};
+        use crate::routing::indexed::poi_barrier_pack::POI_BARRIER_FORMAT_VERSION;
+
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let man = NaviManifest {
+            schema: NaviManifest::SCHEMA,
+            stem: "tiny".into(),
+            pbf_filename: "tiny.osm.pbf".into(),
+            pbf_size_bytes: 0,
+            pbf_modified_unix_secs: 0,
+            graph_files: Default::default(),
+            graph_tiles: Default::default(),
+            graph_format_version: 8,
+            poi_barrier_file: "tiny.navi-poi-barrier.rkyv".into(),
+            poi_barrier_format_version: POI_BARRIER_FORMAT_VERSION,
+            wetland_file: None,
+            wetland_tiles: Vec::new(),
+            wetland_format_version: 0,
+            has_delta_h: false,
+            elev_dir: None,
+        };
+        assert_eq!(
+            man.status_pack_files(dir.path()),
+            PackStatus::VersionMismatch
         );
     }
 }

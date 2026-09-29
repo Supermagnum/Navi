@@ -1129,7 +1129,7 @@ GAP (stubbed in this test):
 
 ### Ferry handling
 EXISTS:
-  v8 FlatGraphPack.edge_is_ferry (core/src/routing/indexed/graph_pack.rs GRAPH_FORMAT_VERSION=8)
+  FlatGraphPack.edge_is_ferry (core/src/routing/indexed/graph_pack.rs; v9+)
   bbox_build.rs / builder.rs: route=ferry or ferry=* or highway=ferry
   Car profile uses ferry edges unless RouteOptions.avoid_ferries
   edge_name / edge_road_ref stored; OSM duration is NOT stored or used
