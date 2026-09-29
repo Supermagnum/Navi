@@ -79,6 +79,7 @@ fn main() {
             official,
             false, // pilgrim off
             String::new(),
+            false, // avoid_ferries
         );
         let elapsed = t0.elapsed();
         eprintln!("plan_wall_s={:.1}", elapsed.as_secs_f64());

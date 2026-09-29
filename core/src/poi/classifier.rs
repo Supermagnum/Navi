@@ -147,6 +147,55 @@ pub fn classify_tags(tags: &HashMap<String, String>) -> Vec<PoiCategory> {
     out
 }
 
+/// Whether OSM tags name a recognised network-hut operator (same tokens as
+/// [`classify_tags`] NetworkHut detection: `operator` / `network` / `brand`).
+fn tags_name_network_hut_operator(tags: &HashMap<String, String>) -> bool {
+    for key in ["operator", "network", "brand"] {
+        if tags
+            .get(key)
+            .is_some_and(|v| NETWORK_TAGS.iter().any(|tag| v.contains(tag)))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Strict "unlocked without key/membership" test for overnight cabins.
+///
+/// A cabin is unlocked **only** if:
+/// - it has explicit `locked=no` (always wins, including network huts); or
+/// - it is `amenity=shelter` with `shelter_type=basic_hut` or `lean_to`, is not
+///   classified as a network hut (no operator/network/brand matching
+///   [`NETWORK_TAGS`]), and is not otherwise a NetworkHut candidate.
+///
+/// Untagged `tourism=wilderness_hut` (any operator) is **not** unlocked — many
+/// DNT unstaffed cabins omit `locked=*` yet require the DNT key.
+pub fn poi_is_unlocked_overnight(tags: &HashMap<String, String>) -> bool {
+    let locked = tags.get("locked").map(|s| s.to_ascii_lowercase());
+    if locked.as_deref() == Some("yes") || locked.as_deref() == Some("true") {
+        return false;
+    }
+    // Explicit unlocked always wins (including network / wilderness_hut).
+    if locked.as_deref() == Some("no") || locked.as_deref() == Some("false") {
+        return true;
+    }
+
+    let amenity = tags.get("amenity").map(String::as_str);
+    let shelter_type = tags.get("shelter_type").map(String::as_str);
+    if amenity == Some("shelter")
+        && matches!(shelter_type, Some("basic_hut") | Some("lean_to"))
+        && !tags_name_network_hut_operator(tags)
+    {
+        // Also reject if classify_tags would mark NetworkHut (alpine/wilderness + network).
+        let cats = classify_tags(tags);
+        if !cats.contains(&PoiCategory::NetworkHut) {
+            return true;
+        }
+    }
+    false
+}
+
 /// True when tags (or derived icon key) suggest a full-service stop suitable
 /// for EC 561 weekly rest (typically `highway=services`, not bare rest areas).
 pub fn rest_area_suitable_for_weekly(tags: &HashMap<String, String>, icon_key: &str) -> bool {
@@ -269,5 +318,39 @@ mod tests {
         assert!(classify_tags(&tags(&[("tourism", "artwork")])).contains(&PoiCategory::General));
         assert!(!classify_tags(&tags(&[("tourism", "artwork")])).contains(&PoiCategory::Lodging));
         assert!(!classify_tags(&tags(&[("tourism", "artwork")])).contains(&PoiCategory::Cabin));
+    }
+
+    #[test]
+    fn unlocked_requires_locked_no_or_non_network_basic_shelter() {
+        // Untagged DNT wilderness_hut is NOT unlocked.
+        assert!(!poi_is_unlocked_overnight(&tags(&[
+            ("tourism", "wilderness_hut"),
+            ("operator", "DNT"),
+        ])));
+        assert!(!poi_is_unlocked_overnight(&tags(&[(
+            "tourism",
+            "wilderness_hut"
+        )])));
+        // Explicit locked=no wins even on a network hut.
+        assert!(poi_is_unlocked_overnight(&tags(&[
+            ("tourism", "wilderness_hut"),
+            ("operator", "DNT"),
+            ("locked", "no"),
+        ])));
+        // Basic open shelter without network tags.
+        assert!(poi_is_unlocked_overnight(&tags(&[
+            ("amenity", "shelter"),
+            ("shelter_type", "basic_hut"),
+        ])));
+        assert!(poi_is_unlocked_overnight(&tags(&[
+            ("amenity", "shelter"),
+            ("shelter_type", "lean_to"),
+        ])));
+        // Shelter with DNT operator is not unlocked.
+        assert!(!poi_is_unlocked_overnight(&tags(&[
+            ("amenity", "shelter"),
+            ("shelter_type", "basic_hut"),
+            ("operator", "DNT Oslo og Omegn"),
+        ])));
     }
 }

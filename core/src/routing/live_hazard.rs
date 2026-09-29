@@ -17,6 +17,7 @@ use std::path::Path;
 use osmpbf::{Element, ElementReader};
 
 use crate::nav::{ApproachPhase, APPROACH_APPEAR_M, APPROACH_HIDE_M, APPROACH_URGENCY_M};
+use crate::routing::elevation::country_polys_ready;
 use crate::routing::graph::{edge_distance_m, RouteGraph};
 use crate::routing::road_sign::{
     load_catalog, resolve_road_sign_jurisdiction_at, RoadSignJurisdiction, RoadSignRecord,
@@ -614,6 +615,12 @@ pub fn live_sign_and_children(
     Option<RoadSignWarning>,
     Option<(RoadSignWarning, &'static str)>,
 ) {
+    // GPS applyFix calls this on the main looper. Never start Natural Earth
+    // build here — CountryPolysWarm owns that on a background thread.
+    // Return empty while warming; Kotlin re-runs applyFix once ready.
+    if !country_polys_ready() {
+        return (None, None);
+    }
     let norway = resolve_road_sign_jurisdiction_at(lat, lon) == RoadSignJurisdiction::Norway;
     let mut best: Option<RoadSignWarning> = None;
     let mut best_key = (u8::MAX, u8::MAX, f64::INFINITY);
@@ -719,6 +726,12 @@ pub fn nearest_live_speed_camera_warning(
     opted_in: bool,
 ) -> Option<SpeedCameraWarning> {
     if !opted_in {
+        return None;
+    }
+    // Same main-looper rule as live_sign_and_children — jurisdiction uses
+    // country_iso_at which would otherwise block on OnceLock warm.
+    // Return None while warming; Kotlin re-runs applyFix once ready.
+    if !country_polys_ready() {
         return None;
     }
     if resolve_speed_camera_jurisdiction_at(lat, lon) != SpeedCameraJurisdiction::AllowedOptIn {

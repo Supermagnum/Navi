@@ -299,6 +299,24 @@ pub fn country_polys_ready() -> bool {
     index_cell().get().is_some()
 }
 
+/// Same as [`iso_at`], but never starts the Natural Earth grid build.
+///
+/// Returns `None` while the index is still warming. GPS / live-hazard HUD
+/// paths must use this (or gate on [`country_polys_ready`]) — calling
+/// [`iso_at`] on the main looper blocks for minutes on Automotive AVDs.
+pub fn iso_at_if_ready(lat: f64, lon: f64) -> Option<&'static str> {
+    let idx = index_cell().get()?;
+    LOOKUP_TOTAL.fetch_add(1, Ordering::Relaxed);
+    if let Some(ci) = cell_index(idx, lon, lat) {
+        if let Some(owner) = idx.cell_owner[ci] {
+            LOOKUP_GRID_HIT.fetch_add(1, Ordering::Relaxed);
+            return Some(idx.iso_static[owner as usize]);
+        }
+    }
+    LOOKUP_EXACT.fetch_add(1, Ordering::Relaxed);
+    iso_at_exact(idx, lat, lon)
+}
+
 fn cell_index(idx: &Index, lon: f64, lat: f64) -> Option<usize> {
     let i = ((lon - idx.origin_lon) / idx.cell_deg).floor() as isize;
     let j = ((lat - idx.origin_lat) / idx.cell_deg).floor() as isize;
@@ -636,5 +654,12 @@ mod tests {
         // post-condition that warm flips ready on.
         let _ = warm_country_polys();
         assert!(country_polys_ready());
+    }
+
+    #[test]
+    fn iso_at_if_ready_matches_iso_at_after_warm() {
+        let _ = warm_country_polys();
+        assert_eq!(iso_at_if_ready(59.91, 10.75), iso_at(59.91, 10.75));
+        assert_eq!(iso_at_if_ready(59.91, 10.75), Some("no"));
     }
 }

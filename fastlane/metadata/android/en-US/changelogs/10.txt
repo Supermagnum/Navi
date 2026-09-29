@@ -1,0 +1,5 @@
+0.3.5-beta
+
+- Cabin overnight prefs: networked/unlocked toggles (Part B migration)
+- Avoid ferries: grey out when graph has no ferry edges; persist across process death
+- Pack routing: keep western-E6 tile under plan tile budget (fixes R4b / Espa–Atnbrua south detours)

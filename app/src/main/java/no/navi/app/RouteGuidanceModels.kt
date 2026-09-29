@@ -28,6 +28,10 @@ data class RouteManeuver(
     val roundaboutExit: Int?,
     /** Explicit Navit icon stem from Rust when present; preferred over [kind] mapping. */
     val icon: String? = null,
+    /** Optional next-maneuver hint when the following step is 30–60 m ahead. */
+    val then: String? = null,
+    /** 0-based intermediate-via ordinal when this is a via-reached marker. */
+    val viaIndex: Int? = null,
 ) {
     fun iconKey(): String {
         icon?.takeIf { it.isNotBlank() }?.let { return it }
@@ -147,6 +151,18 @@ fun parseRouteManeuvers(json: String): List<RouteManeuver> {
                     } else {
                         o.optString("icon").takeIf { it.isNotBlank() && it != "null" }
                     }
+                val thenRaw =
+                    if (o.isNull("then")) {
+                        null
+                    } else {
+                        o.optString("then").takeIf { it.isNotBlank() && it != "null" }
+                    }
+                val viaIndex =
+                    if (o.has("via_index") && !o.isNull("via_index")) {
+                        o.optInt("via_index").takeIf { it >= 0 }
+                    } else {
+                        null
+                    }
                 add(
                     RouteManeuver(
                         lat = o.getDouble("lat"),
@@ -158,6 +174,8 @@ fun parseRouteManeuvers(json: String): List<RouteManeuver> {
                         postcode = post ?: postRaw,
                         roundaboutExit = exit,
                         icon = iconRaw,
+                        then = thenRaw,
+                        viaIndex = viaIndex,
                     ),
                 )
             }
@@ -186,8 +204,11 @@ fun mergeManeuvers(legs: List<List<RouteManeuver>>): List<RouteManeuver> {
         if (leg.isEmpty()) continue
         val lastCum = leg.lastOrNull()?.cumM ?: 0.0
         for (m in leg) {
-            // Drop mid-leg "destination" markers except on the final leg.
-            if (m.kind == "destination" && idx < legs.lastIndex) continue
+            // Drop unmarked mid-leg destination markers (chunked leg ends). Keep
+            // via-reached markers that carry via_index.
+            if (m.kind == "destination" && idx < legs.lastIndex && m.viaIndex == null) {
+                continue
+            }
             out.add(m.copy(cumM = m.cumM + offset))
         }
         offset += lastCum
@@ -288,6 +309,25 @@ fun streetLabelFromNearbyPlaces(hits: List<uniffi.navi.PlaceHit>): String? {
         ).first()
         .key
 }
+
+/**
+ * Localized via-reached label for toast / approach box.
+ * Uses [viaIndex0Based] when present; otherwise a generic "Via point reached".
+ */
+fun viaReachedDisplayLabel(
+    resources: android.content.res.Resources,
+    viaIndex0Based: Int?,
+    viaCount: Int,
+): String =
+    if (viaIndex0Based != null && viaCount > 0) {
+        resources.getString(
+            R.string.via_point_n_of_m_reached,
+            viaIndex0Based + 1,
+            viaCount,
+        )
+    } else {
+        resources.getString(R.string.via_point_reached)
+    }
 
 /** Approximate great-circle distance in metres (HUD throttle helpers). */
 fun haversineMApprox(

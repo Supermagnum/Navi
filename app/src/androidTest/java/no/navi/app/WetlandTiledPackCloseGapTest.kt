@@ -110,6 +110,7 @@ class WetlandTiledPackCloseGapTest {
                 preferOfficialNetworks = false,
                 preferPilgrimRoutes = false,
                 dataDir = "",
+                avoidFerries = false,
             )
         dump("short_hike_atnbrufossen.txt", hike.report)
         setRoutePlanTimingEnabled(false)

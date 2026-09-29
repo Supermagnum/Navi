@@ -15,7 +15,7 @@ use crate::nav::{ApproachPhase, APPROACH_APPEAR_M, APPROACH_HIDE_M, APPROACH_URG
 use crate::routing::conditional::{
     conditional_maxspeed_kmh_at, departure_or_now, extract_oh_condition, oh_condition_matches_at,
 };
-use crate::routing::elevation::country_iso_at;
+use crate::routing::elevation::{country_iso_at, country_polys_ready};
 use crate::routing::eta::parse_maxspeed_kmh;
 
 /// ISO codes where speed-camera display may be offered (opt-in).
@@ -437,6 +437,11 @@ pub fn nearest_speed_camera_warning(
     at: Option<NaiveDateTime>,
 ) -> Option<SpeedCameraWarning> {
     if !opted_in {
+        return None;
+    }
+    // HUD callers hit this from the main looper; never start Natural Earth here.
+    // Return None while warming — Kotlin re-evaluates the last GPS once ready.
+    if !country_polys_ready() {
         return None;
     }
     if resolve_speed_camera_jurisdiction_at(lat, lon) != SpeedCameraJurisdiction::AllowedOptIn {
