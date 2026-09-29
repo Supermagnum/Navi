@@ -35,7 +35,7 @@ snapshots into the core; WASM guests must not get raw sockets.
 
 ### Current state (2026-08)
 
-- `plugin-host` pins **wasmtime** major **`48`** (lockfile **`48.0.1`**), with
+- `plugin-host` pins **wasmtime** major **`48`** (lockfile **`48.0.3`**), with
   features `cranelift` + `runtime` + `gc-drc` only (not Winch).
 - **No shipped artifact links `plugin-host` today.** `navi-ffi` (Android
   `libnavi.so`), `navi-desktop`, `navi-linux`, and `driver-break-core` do not
@@ -83,7 +83,7 @@ snapshots into the core; WASM guests must not get raw sockets.
 
 ### Required before linking into a shipped binary
 
-The version bump (wasmtime 29 → 48.0.1), deny/audit ignore cleanup, feature
+The version bump (wasmtime 29 → 48.0.3), deny/audit ignore cleanup, feature
 graph confirmation, and Android **aarch64** isolation smoke are **done**.
 **Before** depending on `navi-plugin-host` from `navi-ffi`, the Android native
 build / APK packaging path, or `navi-desktop` (or any other user-facing
@@ -536,7 +536,7 @@ via UniFFI without WASM.
    Android APK, or `navi-desktop` until the remaining steps in the
    [wasmtime upgrade gate](#gate-upgrade-wasmtime-before-shipping-any-product-plugin)
    are done (aarch64 smoke kept green; gate script updated when linking).
-   The crate pin is 48.0.1 with Cranelift-only features confirmed.
+   The crate pin is 48.0.3 with Cranelift-only features confirmed.
 2. **Offline-first:** network is opt-in; core routing must work with plugins
    disabled.
 3. **Enable / disable:** every plugin has a user-facing on/off control; disabled
