@@ -8,7 +8,7 @@ mod index;
 mod lookahead;
 
 pub use categories::PoiCategory;
-pub use classifier::{classify_tags, rest_area_suitable_for_weekly};
+pub use classifier::{classify_tags, poi_is_unlocked_overnight, rest_area_suitable_for_weekly};
 pub use corridor_band::CorridorBand;
 pub use icons::osm_icon_key;
 pub use index::{PoiIndex, PoiOvernightLoadProfile, PoiQuery, PoiRecord};

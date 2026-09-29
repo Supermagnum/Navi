@@ -50,15 +50,15 @@ pub use graph::{
     WetlandApplyStats, NON_NETWORK_PENALTY,
 };
 pub use guidance_path::{
-    build_maneuvers, build_maneuvers_from_edges, build_maneuvers_with_options, build_sim_samples,
-    build_sim_samples_from_edges, build_sim_samples_from_lat_lon, build_sim_samples_with_options,
-    maneuvers_to_json, navit_roundabout_icon, navit_roundabout_sector, probe_roundabout_icon,
-    probe_roundabout_spans, samples_to_json, RoundaboutIconProbe, RoundaboutSpan, RouteManeuver,
-    SimSample,
+    build_maneuvers, build_maneuvers_from_edges, build_maneuvers_from_edges_with_vias,
+    build_maneuvers_with_options, build_sim_samples, build_sim_samples_from_edges,
+    build_sim_samples_from_lat_lon, build_sim_samples_with_options, maneuvers_to_json,
+    navit_roundabout_icon, navit_roundabout_sector, probe_roundabout_icon, probe_roundabout_spans,
+    samples_to_json, RoundaboutIconProbe, RoundaboutSpan, RouteManeuver, SimSample,
 };
 pub use hiking_hybrid::{
-    plan_hybrid_hiking_path, HikingWaypoint, HybridHikingPath, RouteSegment, SegmentKind,
-    OFF_TRAIL_ADVISORY,
+    plan_hybrid_hiking_path, plan_hybrid_hiking_path_with_options, HikingWaypoint,
+    HybridHikingPath, RouteSegment, SegmentKind, OFF_TRAIL_ADVISORY,
 };
 pub use osm_update::{
     apply_pending_update, apply_update_plan, bind_geofabrik_extract,

@@ -195,6 +195,66 @@ pub fn prefer_street_label(name: Option<&str>, systematic_ref: Option<&str>) -> 
         .map(|s| s.to_string())
 }
 
+/// Format an OSM `ref` for display: split multi-value `;` and join with `/`
+/// (OSM token order preserved). Identity matching still splits on `;` separately.
+pub fn format_ref_for_display(systematic_ref: &str) -> String {
+    systematic_ref
+        .split(';')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Maneuver approach-box street: `name (ref)` when both exist, else whichever is present.
+/// Multi-value refs use `/` for display (e.g. `3/25`, `Chausseen (25/3)`).
+pub fn maneuver_street_label(name: Option<&str>, systematic_ref: Option<&str>) -> Option<String> {
+    let n = name.map(str::trim).filter(|s| !s.is_empty());
+    let r = systematic_ref
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(format_ref_for_display);
+    match (n, r) {
+        (Some(n), Some(r)) => Some(format!("{n} ({r})")),
+        (Some(n), None) => Some(n.to_string()),
+        (None, Some(r)) => Some(r),
+        (None, None) => None,
+    }
+}
+
+/// True when two edges share a normalised name or ref token (case-fold, strip
+/// spaces/dashes, split on `;`; any shared token counts).
+pub fn same_road_name_ref(
+    name_a: Option<&str>,
+    ref_a: Option<&str>,
+    name_b: Option<&str>,
+    ref_b: Option<&str>,
+) -> bool {
+    let tokens_a = road_identity_tokens(name_a, ref_a);
+    let tokens_b = road_identity_tokens(name_b, ref_b);
+    if tokens_a.is_empty() || tokens_b.is_empty() {
+        return false;
+    }
+    tokens_a.iter().any(|t| tokens_b.contains(t))
+}
+
+fn road_identity_tokens(name: Option<&str>, systematic_ref: Option<&str>) -> Vec<String> {
+    let mut out = Vec::new();
+    for raw in [name, systematic_ref].into_iter().flatten() {
+        for part in raw.split(';') {
+            let norm = part
+                .chars()
+                .filter(|c| !c.is_whitespace() && *c != '-')
+                .flat_map(|c| c.to_lowercase())
+                .collect::<String>();
+            if !norm.is_empty() && !out.contains(&norm) {
+                out.push(norm);
+            }
+        }
+    }
+    out
+}
+
 /// Label for the road the vehicle is **currently on**.
 ///
 /// Order: OSM `name`, else `ref`, else human highway-class label (never a raw
@@ -281,6 +341,37 @@ mod tests {
             Some("E6".into())
         );
         assert_eq!(prefer_street_label(None, None), None);
+    }
+
+    #[test]
+    fn maneuver_street_formats_multi_value_refs() {
+        assert_eq!(
+            maneuver_street_label(None, Some("3;25")),
+            Some("3/25".into())
+        );
+        assert_eq!(
+            maneuver_street_label(Some("Chausseen"), Some("25;3")),
+            Some("Chausseen (25/3)".into())
+        );
+        assert_eq!(format_ref_for_display(" 3 ; 25 "), "3/25");
+        assert_eq!(format_ref_for_display("E6"), "E6");
+    }
+
+    #[test]
+    fn same_road_normalises_ref_spacing() {
+        assert!(same_road_name_ref(None, Some("E6"), None, Some("E 6")));
+        assert!(same_road_name_ref(
+            Some("Gudbrandsdalsvegen"),
+            Some("E6"),
+            Some("Gudbrandsdalsvegen"),
+            Some("E 6")
+        ));
+        assert!(!same_road_name_ref(
+            Some("Kirkegata"),
+            None,
+            Some("Storgata"),
+            None
+        ));
     }
 
     #[test]

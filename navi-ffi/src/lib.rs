@@ -32,9 +32,10 @@ use driver_break_core::routing::safety::{
 };
 use driver_break_core::routing::workers::WorkerPoolPlan;
 use driver_break_core::routing::{
-    build_maneuvers, build_maneuvers_from_edges, build_sim_samples, build_sim_samples_from_edges,
-    build_sim_samples_from_lat_lon, maneuvers_to_json, motor_path_minutes_from_edges,
-    plan_hybrid_hiking_path, samples_to_json, HikingWaypoint, WetlandIndex, OFF_TRAIL_ADVISORY,
+    build_maneuvers, build_maneuvers_from_edges_with_vias, build_sim_samples,
+    build_sim_samples_from_edges, build_sim_samples_from_lat_lon, maneuvers_to_json,
+    motor_path_minutes_from_edges, plan_hybrid_hiking_path_with_options, samples_to_json,
+    HikingWaypoint, WetlandIndex, OFF_TRAIL_ADVISORY,
 };
 use driver_break_core::routing::{
     commit_truck_multi_day_plan, evaluate_fmcsa_trip, evaluate_truck_trip,
@@ -507,6 +508,16 @@ fn empty_corridor(msg: String) -> CorridorRouteResult {
     }
 }
 
+fn panic_payload_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_string()
+    }
+}
+
 /// When false (default), planners skip stage Instant samples and do not emit
 /// `plan_duration_ms` / `ROUTE_PLAN_STAGES` into the report. Hosts turn this on
 /// with the Diagnostic logging toggle ([`set_route_plan_timing_enabled`]).
@@ -575,6 +586,22 @@ fn append_route_plan_timing(report: &mut String, total_ms: u64, stages: &[(&str,
         report.push_str(&format!(" {k}={v}"));
     }
     report.push('\n');
+}
+
+/// Count of `is_ferry` edges in the loaded plan graph (pack or cold PBF).
+/// UI uses this to grey out Avoid ferries when the graph has none.
+fn append_graph_ferry_edges(report: &mut String, graph: &RouteGraph) {
+    let n = graph.edges.iter().filter(|e| e.is_ferry).count();
+    report.push_str(&format!("graph_ferry_edges={n}\n"));
+}
+
+fn parse_graph_ferry_edges_token(report: &str) -> Option<u64> {
+    for part in report.split(['\n', ';', ' ']) {
+        if let Some(rest) = part.strip_prefix("graph_ferry_edges=") {
+            return rest.parse().ok();
+        }
+    }
+    None
 }
 
 fn plan_cancelled_result(
@@ -719,6 +746,25 @@ fn days_json_from_hiking(plan: &HikingMultiDayPlan) -> String {
                         String::new(),
                     ),
                 };
+            let (osm_id, is_network, membership_required, cabin_class) = match &d.overnight {
+                Some(o) => {
+                    let class = if o.membership_required || o.is_network {
+                        "networked"
+                    } else if o.safety_rejected {
+                        "other"
+                    } else {
+                        // Non-network hut/shelter — "unlocked"/open stay when not rejected.
+                        "unlocked"
+                    };
+                    (
+                        Some(o.osm_id),
+                        Some(o.is_network),
+                        Some(o.membership_required),
+                        Some(class.to_string()),
+                    )
+                }
+                None => (None, None, None, None),
+            };
             json!({
                 "day_index": d.day_index,
                 "date": "",
@@ -734,11 +780,13 @@ fn days_json_from_hiking(plan: &HikingMultiDayPlan) -> String {
                 "overnight_found": overnight_found,
                 "safety_rejected": d.overnight.as_ref().map(|o| o.safety_rejected).unwrap_or(false),
                 "safety_reason": safety_reason,
-                "membership_required": d
-                    .overnight
-                    .as_ref()
-                    .map(|o| o.membership_required)
-                    .unwrap_or(false),
+                "membership_required": membership_required,
+                "osm_id": osm_id,
+                "is_network": is_network,
+                "category": rest_kind,
+                "cabin_class": cabin_class,
+                "lat": d.overnight.as_ref().map(|o| o.lat),
+                "lon": d.overnight.as_ref().map(|o| o.lon),
                 "not_in_cab": false,
                 "compensation": "",
                 "is_final": is_final,
@@ -2027,6 +2075,14 @@ fn plan_pack_dirs(
     pack_dir: &str,
     long_trip_enabled: bool,
 ) -> Vec<PathBuf> {
+    // Debug-intent sentinel from NaviDebugIntent.FORCE_PBF_PACK_DIR. Ordinary
+    // pack_dir values are filesystem paths (long-trip pack roots) or empty —
+    // never a region name or search string. Rust accepts the sentinel
+    // unconditionally; only debuggable Kotlin sets it (release ignores the
+    // intent and always passes "" or a real pack directory).
+    if pack_dir.trim() == "__navi_force_pbf__" {
+        return Vec::new();
+    }
     let mut out = Vec::new();
     let pd = pack_dir.trim();
     if !pd.is_empty() {
@@ -2183,9 +2239,13 @@ pub fn plan_car_route_at(
         )
     })) {
         Ok(result) => result,
-        Err(_) => empty_corridor(
-            "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: native panic during plan_car_route\n".into(),
-        ),
+        Err(payload) => {
+            let msg = panic_payload_message(&payload);
+            log::error!(target: "NaviPlan", "plan_car_route panicked: {msg}");
+            empty_corridor(format!(
+                "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: native panic during plan_car_route: {msg}\n"
+            ))
+        }
     }
 }
 
@@ -2237,6 +2297,8 @@ fn plan_car_route_chunked_legs(
     let mut expansions: u64 = 0;
     let mut toll_incomplete = false;
     let mut route_uses_tolls = false;
+    let mut route_uses_ferry = false;
+    let mut graph_ferry_edges: u64 = 0;
     let mut pad_attempts: Vec<f64> = Vec::new();
     let mut priority_share_acc = 0.0;
     let mut priority_share_w = 0.0;
@@ -2288,6 +2350,10 @@ fn plan_car_route_chunked_legs(
         );
         report.push_str(&format!("--- leg{} report ---\n", i + 1));
         report.push_str(&leg.report);
+        route_uses_ferry = route_uses_ferry || leg.report.contains("route_uses_ferry=true");
+        if let Some(n) = parse_graph_ferry_edges_token(&leg.report) {
+            graph_ferry_edges = graph_ferry_edges.max(n);
+        }
         if leg.distance_km <= 0.0
             || leg.search_terminate_reason == "snap_failed"
             || leg.search_terminate_reason == "fail"
@@ -2302,6 +2368,14 @@ fn plan_car_route_chunked_legs(
                 i + 1,
                 leg.search_terminate_reason
             );
+            if avoid_ferries
+                && !fail.contains("no_route_without_ferry=")
+                && !leg.report.contains("no_route_without_ferry=")
+            {
+                fail.push_str(
+                    "no_route_without_ferry=true; FAIL: no route without ferry (avoid_ferries on)\n",
+                );
+            }
             fail.push_str(&report);
             let mut r = empty_corridor(fail);
             r.search_terminate_reason = leg.search_terminate_reason;
@@ -2382,8 +2456,9 @@ fn plan_car_route_chunked_legs(
     );
     report.push_str(&soft_report);
     let _ = break_pois; // per-leg breaks were empty (poi_skipped); replaced above
+    report.push_str(&format!("graph_ferry_edges={graph_ferry_edges}\n"));
     report.push_str(&format!(
-        "chunked_distance_km={distance_km:.3}; chunked_eta_min={eta_minutes:.1}; hops={}\nPASS\n",
+        "chunked_distance_km={distance_km:.3}; chunked_eta_min={eta_minutes:.1}; hops={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         hops.len().saturating_sub(1)
     ));
     driver_break_core::download::progress::set(5, Some(5), "Planning route: done");
@@ -3037,17 +3112,23 @@ fn plan_car_route_inner(
             );
             let t_graph = Instant::now();
             let pack_dirs = plan_pack_dirs(pbf, &data_dir, &pack_dir, long_trip_enabled);
-            let (primary_pack, extra_packs) = pack_dirs.split_last().unwrap();
-            let pack_try =
-            driver_break_core::routing::indexed::try_load_graph_for_plan_corridor_with_pack_dirs(
-                primary_pack,
-                extra_packs,
-                pbf,
-                routing_profile,
-                Some(bbox),
-                Some(route_points.as_slice()),
-                edge_clip_mode,
-            );
+            // Empty when `pack_dir` is the debug `__navi_force_pbf__` sentinel
+            // (or no pack roots exist): skip pack load and cold-build from PBF.
+            let pack_try = match pack_dirs.split_last() {
+                Some((primary_pack, extra_packs)) => {
+                    driver_break_core::routing::indexed::try_load_graph_for_plan_corridor_with_pack_dirs(
+                        primary_pack,
+                        extra_packs,
+                        pbf,
+                        routing_profile,
+                        Some(bbox),
+                        Some(route_points.as_slice()),
+                        edge_clip_mode,
+                    )
+                }
+                // Debug `__navi_force_pbf__` (or no pack roots): skip pack load.
+                None => Err(driver_break_core::routing::indexed::PackLoadError::Missing),
+            };
             let _pause_bg = if pack_try.is_err() {
                 Some(driver_break_core::download::ForegroundPlanGuard::acquire())
             } else {
@@ -3438,6 +3519,11 @@ fn plan_car_route_inner(
             report.push_str(&format!(
                 "FAIL: no route between snapped nodes; terminate={last_terminate}; expansions={last_expansions}; pads={pad_attempts:?}\n"
             ));
+            if avoid_ferries {
+                report.push_str(
+                    "no_route_without_ferry=true; FAIL: no route without ferry (avoid_ferries on)\n",
+                );
+            }
         }
         let mut r = empty(report);
         r.toll_policy = toll_policy.as_diag_str().into();
@@ -3460,6 +3546,7 @@ fn plan_car_route_inner(
         graph.edges.len(),
         pad_attempts
     ));
+    append_graph_ferry_edges(&mut report, &graph);
     let seasonal_n = graph.seasonal_closure_excluded_in_graph(&used_opts);
     report.push_str(&format!("seasonal_closure_excluded_edges={seasonal_n}\n"));
     {
@@ -3475,6 +3562,7 @@ fn plan_car_route_inner(
         ));
     }
     let route_uses_tolls = graph.path_uses_tolls(&path_edges);
+    let route_uses_ferry = graph.path_uses_ferries(&path_edges);
     let astar_ms = timer.lap_ms();
 
     let mut distance_m = 0.0;
@@ -3488,7 +3576,18 @@ fn plan_car_route_inner(
     let eta_minutes = motor_path_minutes_from_edges(&graph, &path_edges);
     let sim_samples_json =
         samples_to_json(&build_sim_samples_from_edges(&graph, &path, &path_edges));
-    let maneuvers_json = maneuvers_to_json(&build_maneuvers_from_edges(&graph, &path, &path_edges));
+    // Intermediate vias only (exclude start/end) — collapse short out-and-backs.
+    let intermediate_vias: Vec<(f64, f64)> = if route_points.len() > 2 {
+        route_points[1..route_points.len() - 1].to_vec()
+    } else {
+        Vec::new()
+    };
+    let maneuvers_json = maneuvers_to_json(&build_maneuvers_from_edges_with_vias(
+        &graph,
+        &path,
+        &path_edges,
+        &intermediate_vias,
+    ));
     let path_nodes = path.len();
     let polyline_ms = timer.lap_ms();
     driver_break_core::download::progress::set(4, Some(5), "Planning route: break stops…");
@@ -4023,7 +4122,7 @@ fn plan_car_route_inner(
         ],
     );
     report.push_str(&format!(
-        "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={path_nodes}; path_cost={cost:.0}; polyline_chars={}; break_pois={}\nPASS\n",
+        "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={path_nodes}; path_cost={cost:.0}; polyline_chars={}; break_pois={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         polyline.len(),
         break_pois_json
     ));
@@ -4082,6 +4181,7 @@ pub fn plan_hiking_route(
     prefer_official_networks: bool,
     prefer_pilgrim_routes: bool,
     data_dir: String,
+    avoid_ferries: bool,
 ) -> CorridorRouteResult {
     let _ch = driver_break_core::download::progress::ChannelGuard::enter(
         driver_break_core::download::progress::ProgressChannel::Plan,
@@ -4101,10 +4201,14 @@ pub fn plan_hiking_route(
         "prefer_official_networks={prefer_official_networks}; prefer_pilgrim_routes={prefer_pilgrim_routes}\n"
     ));
     report.push_str("avoid_motorways=true (locked for hiking)\n");
+    report.push_str(&format!("avoid_ferries={avoid_ferries}\n"));
     let use_networked_cabins = load_use_networked_cabins_near_cache(&PathBuf::from(&cache_dir));
     report.push_str(&format!("use_networked_cabins={use_networked_cabins}\n"));
-    let network_hut_member = load_network_hut_member_near_cache(&PathBuf::from(&cache_dir));
-    report.push_str(&format!("network_hut_member={network_hut_member}\n"));
+    let use_unlocked_cabins = load_use_unlocked_cabins_near_cache(&PathBuf::from(&cache_dir));
+    report.push_str(&format!("use_unlocked_cabins={use_unlocked_cabins}\n"));
+    // Legacy report key: networked cabins now carries the old membership meaning.
+    report.push_str(&format!("network_hut_member={use_networked_cabins}\n"));
+    report.push_str(&format!("avoid_ferries={avoid_ferries}\n"));
     let user_wps: Vec<HikingWp> = match serde_json::from_str::<Vec<Wp>>(&waypoints_json) {
         Ok(v) => v
             .into_iter()
@@ -4252,6 +4356,7 @@ pub fn plan_hiking_route(
         graph.nodes.len(),
         graph.edges.len()
     ));
+    append_graph_ferry_edges(&mut report, &graph);
 
     if driver_break_core::download::plan_cancel::is_cancelled() {
         return plan_cancelled_result(
@@ -4344,12 +4449,17 @@ pub fn plan_hiking_route(
         );
     }
 
-    let mut hybrid = match plan_hybrid_hiking_path(
+    let hike_opts = RouteOptions {
+        avoid_ferries,
+        ..RouteOptions::default()
+    };
+    let mut hybrid = match plan_hybrid_hiking_path_with_options(
         &graph,
         &elevation,
         &wetlands,
         &eco,
         &to_hiking_waypoints(&user_wps),
+        &hike_opts,
     ) {
         Ok(h) => h,
         Err(e)
@@ -4369,6 +4479,11 @@ pub fn plan_hiking_route(
         }
         Err(e) => {
             report.push_str(&format!("FAIL: {e}\n"));
+            if avoid_ferries {
+                report.push_str(
+                    "no_route_without_ferry=true; FAIL: no route without ferry (avoid_ferries on)\n",
+                );
+            }
             return empty_corridor(report);
         }
     };
@@ -4507,12 +4622,13 @@ pub fn plan_hiking_route(
             names.join("|")
         ));
         let merged = merge_hiking_waypoints_with_auto_vias(&user_wps, &user_cum_km, &autos);
-        match plan_hybrid_hiking_path(
+        match plan_hybrid_hiking_path_with_options(
             &graph,
             &elevation,
             &wetlands,
             &eco,
             &to_hiking_waypoints(&merged),
+            &hike_opts,
         ) {
             Ok(h) => {
                 full_path = h.path_nodes.clone();
@@ -4586,7 +4702,8 @@ pub fn plan_hiking_route(
         &overnight_ctx.0,
         &poi_index,
         &overnight_ctx.1,
-        network_hut_member,
+        use_networked_cabins,
+        use_unlocked_cabins,
     );
     let days_json = days_json_from_hiking(&multi);
     let mut hiking_overnight_pins: Vec<serde_json::Value> = Vec::new();
@@ -4602,8 +4719,8 @@ pub fn plan_hiking_route(
             ));
             if let Some(o) = &d.overnight {
                 report.push_str(&format!(
-                    "hiking_overnight: name={:?}; network={}; membership_required={}; safety_rejected={}; safety_reason={:?}; dist_m={:.0}; lat={:.5}; lon={:.5}\n",
-                    o.name, o.is_network, o.membership_required, o.safety_rejected, o.safety_reason, o.distance_from_target_m, o.lat, o.lon
+                    "hiking_overnight: osm_id={}; name={:?}; network={}; membership_required={}; safety_rejected={}; safety_reason={:?}; dist_m={:.0}; lat={:.5}; lon={:.5}\n",
+                    o.osm_id, o.name, o.is_network, o.membership_required, o.safety_rejected, o.safety_reason, o.distance_from_target_m, o.lat, o.lon
                 ));
                 hiking_overnight_pins.push(json!({
                     "name": if o.safety_rejected {
@@ -4618,7 +4735,16 @@ pub fn plan_hiking_route(
                     "icon_key": o.icon_key,
                     "along_km": d.end_km,
                     "overnight": true,
+                    "osm_id": o.osm_id,
                     "membership_required": o.membership_required,
+                    "is_network": o.is_network,
+                    "cabin_class": if o.membership_required || o.is_network {
+                        "networked"
+                    } else if o.safety_rejected {
+                        "other"
+                    } else {
+                        "unlocked"
+                    },
                     "safety_rejected": o.safety_rejected,
                     "safety_reason": o.safety_reason,
                 }));
@@ -4686,8 +4812,10 @@ pub fn plan_hiking_route(
     let end = wps.last().unwrap();
     // Hiking: fixed 16 min/km (no climb adjustment in this pass).
     let eta_minutes = fixed_pace_minutes(dist_km, HIKING_MIN_PER_KM);
+    let hike_path_edges = graph.path_edge_indices_with_options(&full_path, false, &hike_opts);
+    let route_uses_ferry = graph.path_uses_ferries(&hike_path_edges);
     report.push_str(&format!(
-        "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={}; break_pois={break_pois_json}\n",
+        "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={}; break_pois={break_pois_json}; route_uses_ferry={route_uses_ferry}\n",
         full_path.len()
     ));
     {
@@ -5813,6 +5941,45 @@ pub fn save_use_networked_cabins(data_dir: String, prefer: bool) -> bool {
     store.save_use_networked_cabins(prefer).is_ok()
 }
 
+/// Prefer overnight stops at cabins/huts that are unlocked without a key/membership.
+#[uniffi::export]
+pub fn load_use_unlocked_cabins(data_dir: String) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.load_use_unlocked_cabins().unwrap_or(false)
+}
+
+#[uniffi::export]
+pub fn save_use_unlocked_cabins(data_dir: String, prefer: bool) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.save_use_unlocked_cabins(prefer).is_ok()
+}
+
+/// Persist Avoid-ferries preference (default off). Survives process death;
+/// UI grey-out from `graph_ferry_edges` does not clear this value.
+#[uniffi::export]
+pub fn load_avoid_ferries(data_dir: String) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.load_avoid_ferries().unwrap_or(false)
+}
+
+#[uniffi::export]
+pub fn save_avoid_ferries(data_dir: String, avoid: bool) -> bool {
+    let Ok(storage) = driver_break_core::storage::Storage::open(routes_db(&data_dir)) else {
+        return false;
+    };
+    let store = driver_break_core::storage::ConfigStore::new(&storage);
+    store.save_avoid_ferries(avoid).is_ok()
+}
+
 /// Bicycle / electric-cycle terrain capability: `road`, `trekking`, or `mountain`.
 #[uniffi::export]
 pub fn load_bike_capability(data_dir: String) -> String {
@@ -6103,13 +6270,13 @@ fn load_use_networked_cabins_near_cache(cache: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn load_network_hut_member_near_cache(cache: &Path) -> bool {
+fn load_use_unlocked_cabins_near_cache(cache: &Path) -> bool {
     let data_dir = cache.parent().unwrap_or(cache);
     let Ok(storage) = driver_break_core::storage::Storage::open(data_dir.join("navi.db")) else {
         return false;
     };
     driver_break_core::storage::ConfigStore::new(&storage)
-        .load_network_hut_member()
+        .load_use_unlocked_cabins()
         .unwrap_or(false)
 }
 
@@ -8525,6 +8692,19 @@ pub fn weather_map_symbols_json(
 #[cfg(test)]
 mod hiking_auto_via_tests {
     use super::*;
+
+    #[test]
+    fn parse_graph_ferry_edges_token_reads_report_line() {
+        assert_eq!(
+            parse_graph_ferry_edges_token("pack_hit=true\ngraph_ferry_edges=0\n"),
+            Some(0)
+        );
+        assert_eq!(
+            parse_graph_ferry_edges_token("graph_ferry_edges=204; route_uses_ferry=true"),
+            Some(204)
+        );
+        assert_eq!(parse_graph_ferry_edges_token("pack_hit=true\n"), None);
+    }
 
     #[test]
     fn sample_polyline_km_returns_lat_lon_order() {

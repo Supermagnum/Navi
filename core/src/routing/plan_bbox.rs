@@ -858,6 +858,7 @@ fn points_bounds(points: &[(f64, f64)]) -> (f64, f64, f64, f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::routing::indexed::GRAPH_FORMAT_VERSION;
 
     #[test]
     fn schedule_starts_clamped_and_caps() {
@@ -1031,7 +1032,7 @@ mod tests {
             std::fs::write(
                 &path,
                 format!(
-                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":8}}"#
+                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":{GRAPH_FORMAT_VERSION}}}"#
                 ),
             )
             .unwrap();
@@ -1083,7 +1084,7 @@ mod tests {
             std::fs::write(
                 &path,
                 format!(
-                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":8}}"#
+                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":{GRAPH_FORMAT_VERSION}}}"#
                 ),
             )
             .unwrap();
@@ -1172,7 +1173,7 @@ mod tests {
             std::fs::write(
                 &path,
                 format!(
-                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":8}}"#
+                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":{GRAPH_FORMAT_VERSION}}}"#
                 ),
             )
             .unwrap();

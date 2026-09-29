@@ -807,6 +807,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_live_speed_limit_cone_json(
     ): Int
+    external fun uniffi_navi_checksum_func_load_avoid_ferries(
+    ): Int
     external fun uniffi_navi_checksum_func_load_bike_capability(
     ): Int
     external fun uniffi_navi_checksum_func_load_car_rest_settings(
@@ -838,6 +840,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_load_truck_rest_settings(
     ): Int
     external fun uniffi_navi_checksum_func_load_use_networked_cabins(
+    ): Int
+    external fun uniffi_navi_checksum_func_load_use_unlocked_cabins(
     ): Int
     external fun uniffi_navi_checksum_func_load_vehicle_limits(
     ): Int
@@ -959,6 +963,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_run_car_corridor_smoke_test(
     ): Int
+    external fun uniffi_navi_checksum_func_save_avoid_ferries(
+    ): Int
     external fun uniffi_navi_checksum_func_save_bike_capability(
     ): Int
     external fun uniffi_navi_checksum_func_save_car_rest_settings(
@@ -986,6 +992,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_save_truck_rest_settings(
     ): Int
     external fun uniffi_navi_checksum_func_save_use_networked_cabins(
+    ): Int
+    external fun uniffi_navi_checksum_func_save_use_unlocked_cabins(
     ): Int
     external fun uniffi_navi_checksum_func_save_vehicle_limits(
     ): Int
@@ -1227,6 +1235,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_live_speed_limit_cone_json(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`headingDeg`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`currentLimitKmh`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_load_avoid_ferries(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     external fun uniffi_navi_fn_func_load_bike_capability(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_load_car_rest_settings(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1258,6 +1268,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_load_truck_rest_settings(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_load_use_networked_cabins(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_load_use_unlocked_cabins(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_load_vehicle_limits(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1299,7 +1311,7 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_plan_car_route_at(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`departureLocalIso`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`longTripEnabled`: Byte,`allowedCountries`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_navi_fn_func_plan_hiking_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`waypointsJson`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`preferPilgrimRoutes`: Byte,`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_navi_fn_func_plan_hiking_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`waypointsJson`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`preferPilgrimRoutes`: Byte,`dataDir`: RustBuffer.ByValue,`avoidFerries`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_plan_progress_clear(uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1379,6 +1391,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_run_car_corridor_smoke_test(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`breakIntervalHours`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_save_avoid_ferries(`dataDir`: RustBuffer.ByValue,`avoid`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     external fun uniffi_navi_fn_func_save_bike_capability(`dataDir`: RustBuffer.ByValue,`capability`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_save_car_rest_settings(`dataDir`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1406,6 +1420,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_save_truck_rest_settings(`dataDir`: RustBuffer.ByValue,`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_save_use_networked_cabins(`dataDir`: RustBuffer.ByValue,`prefer`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_save_use_unlocked_cabins(`dataDir`: RustBuffer.ByValue,`prefer`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_save_vehicle_limits(`dataDir`: RustBuffer.ByValue,`limits`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
@@ -1779,6 +1795,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_live_speed_limit_cone_json() and 0xFFFF) != 60314) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_load_avoid_ferries() and 0xFFFF) != 49923) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_load_bike_capability() and 0xFFFF) != 47185) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1825,6 +1844,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_load_use_networked_cabins() and 0xFFFF) != 28922) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_load_use_unlocked_cabins() and 0xFFFF) != 34857) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_load_vehicle_limits() and 0xFFFF) != 18436) {
@@ -1887,7 +1909,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_plan_car_route_at() and 0xFFFF) != 44788) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_plan_hiking_route() and 0xFFFF) != 25693) {
+    if ((lib.uniffi_navi_checksum_func_plan_hiking_route() and 0xFFFF) != 13048) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_plan_progress_clear() and 0xFFFF) != 42192) {
@@ -2007,6 +2029,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_run_car_corridor_smoke_test() and 0xFFFF) != 24362) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_save_avoid_ferries() and 0xFFFF) != 50485) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_save_bike_capability() and 0xFFFF) != 29872) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2047,6 +2072,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_save_use_networked_cabins() and 0xFFFF) != 35198) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_save_use_unlocked_cabins() and 0xFFFF) != 24217) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_save_vehicle_limits() and 0xFFFF) != 48043) {
@@ -6074,6 +6102,21 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Persist Avoid-ferries preference (default off). Survives process death;
+         * UI grey-out from `graph_ferry_edges` does not clear this value.
+         */ fun `loadAvoidFerries`(`dataDir`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_load_avoid_ferries(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Bicycle / electric-cycle terrain capability: `road`, `trekking`, or `mountain`.
          */ fun `loadBikeCapability`(`dataDir`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
@@ -6277,6 +6320,20 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_navi_fn_func_load_use_networked_cabins(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Prefer overnight stops at cabins/huts that are unlocked without a key/membership.
+         */ fun `loadUseUnlockedCabins`(`dataDir`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_load_use_unlocked_cabins(
     
         
         FfiConverterString.lower(`dataDir`),_status)
@@ -6663,7 +6720,7 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
          *
          * `data_dir` is the app data directory for pack/manifest lookup (same as
          * [`plan_car_route`]). Empty: PBF parent.
-         */ fun `planHikingRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `waypointsJson`: kotlin.String, `preferOfficialNetworks`: kotlin.Boolean, `preferPilgrimRoutes`: kotlin.Boolean, `dataDir`: kotlin.String): CorridorRouteResult {
+         */ fun `planHikingRoute`(`pbfPath`: kotlin.String, `elevDir`: kotlin.String, `cacheDir`: kotlin.String, `waypointsJson`: kotlin.String, `preferOfficialNetworks`: kotlin.Boolean, `preferPilgrimRoutes`: kotlin.Boolean, `dataDir`: kotlin.String, `avoidFerries`: kotlin.Boolean): CorridorRouteResult {
             return FfiConverterTypeCorridorRouteResult.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_navi_fn_func_plan_hiking_route(
@@ -6675,7 +6732,8 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterString.lower(`waypointsJson`),
         FfiConverterBoolean.lower(`preferOfficialNetworks`),
         FfiConverterBoolean.lower(`preferPilgrimRoutes`),
-        FfiConverterString.lower(`dataDir`),_status)
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterBoolean.lower(`avoidFerries`),_status)
 }
     )
     }
@@ -7256,6 +7314,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
+ fun `saveAvoidFerries`(`dataDir`: kotlin.String, `avoid`: kotlin.Boolean): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_save_avoid_ferries(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterBoolean.lower(`avoid`),_status)
+}
+    )
+    }
+    
  fun `saveBikeCapability`(`dataDir`: kotlin.String, `capability`: kotlin.String): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
@@ -7435,6 +7505,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_navi_fn_func_save_use_networked_cabins(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterBoolean.lower(`prefer`),_status)
+}
+    )
+    }
+    
+ fun `saveUseUnlockedCabins`(`dataDir`: kotlin.String, `prefer`: kotlin.Boolean): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_save_use_unlocked_cabins(
     
         
         FfiConverterString.lower(`dataDir`),

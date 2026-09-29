@@ -15,8 +15,8 @@ Repo: https://github.com/Supermagnum/Navi.git
 # Rust source (see Builds[].prebuild / Builds[].build).
 
 Builds:
-  - versionName: 0.3.4-beta
-    versionCode: 9
+  - versionName: 0.3.5-beta
+    versionCode: 10
     commit: PLACEHOLDER_COMMIT
     timeout: 14400
     subdir: app
@@ -30,18 +30,27 @@ Builds:
         python3
         pkg-config
         libssl-dev
+      # Non-fatal on images where alternatives are already set.
       - update-java-alternatives -a || true
       - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs
         | bash -s -- -y --default-toolchain stable
-      - bash -lc 'source "$HOME/.cargo/env" && rustup toolchain install 1.98.0 --profile minimal && rustup default 1.98.0 && rustup target add aarch64-linux-android x86_64-linux-android'
+      # Each item is its own login shell (sudo steps do not share env).
+      - bash -lc 'source "$HOME/.cargo/env" && rustup toolchain install 1.98.0 --profile
+        minimal'
+      - bash -lc 'source "$HOME/.cargo/env" && rustup default 1.98.0'
+      - bash -lc 'source "$HOME/.cargo/env" && rustup target add aarch64-linux-android
+        x86_64-linux-android'
+    # List form: fdroidserver joins with "; " and runs under bash -e -u -o pipefail,
+    # so a failed step still aborts the recipe (same fail-fast as former && chains).
     prebuild:
+      - export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${CARGO_HOME:-$HOME/.cargo}/bin:${PATH:-}"
+      - . "${CARGO_HOME:-$HOME/.cargo}/env" 2>/dev/null || true
+      - NDK="$$NDK$$"
+      - test -n "$NDK"
+      - test -d "$NDK"
+      - CLANG_PRE="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+      - mkdir -p ../.cargo
       - |
-        export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${CARGO_HOME:-$HOME/.cargo}/bin:${PATH:-}"
-        . "${CARGO_HOME:-$HOME/.cargo}/env" 2>/dev/null || true
-        NDK="$$NDK$$"
-        test -n "$NDK" && test -d "$NDK"
-        CLANG_PRE="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-        mkdir -p ../.cargo
         printf '%s\n' \
           '[target.x86_64-linux-android]' \
           "linker = \"$CLANG_PRE/x86_64-linux-android34-clang\"" \
@@ -51,29 +60,31 @@ Builds:
           "linker = \"$CLANG_PRE/aarch64-linux-android34-clang\"" \
           'rustflags = ["-C", "link-arg=-lc++_shared"]' \
           > ../.cargo/config.toml
-        rm -f ../app/src/main/jniLibs/*/libnavi.so
-        printf 'sdk.dir=%s\nndk.dir=%s\n' "$$SDK$$" "$$NDK$$" > ../local.properties
+      - rm -f ../app/src/main/jniLibs/*/libnavi.so
+      - printf 'sdk.dir=%s\nndk.dir=%s\n' "$$SDK$$" "$$NDK$$" > ../local.properties
     build:
-      - |
-        export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${CARGO_HOME:-$HOME/.cargo}/bin:${PATH:-}"
-        . "${CARGO_HOME:-$HOME/.cargo}/env" 2>/dev/null || true
-        export ANDROID_NDK_HOME="$$NDK$$"
-        export ANDROID_HOME="$$SDK$$"
-        test ! -e ../app/src/main/jniLibs/arm64-v8a/libnavi.so
-        test ! -e ../app/src/main/jniLibs/x86_64/libnavi.so
-        ../scripts/build-android-native.sh aarch64-linux-android release
-        ../scripts/build-android-native.sh x86_64-linux-android release
-        test -f ../app/src/main/jniLibs/arm64-v8a/libnavi.so
-        test -f ../app/src/main/jniLibs/x86_64/libnavi.so
-        sha256sum ../app/src/main/jniLibs/arm64-v8a/libnavi.so \
-          ../app/src/main/jniLibs/x86_64/libnavi.so
-        gradle assembleRelease
+      - export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${CARGO_HOME:-$HOME/.cargo}/bin:${PATH:-}"
+      - . "${CARGO_HOME:-$HOME/.cargo}/env" 2>/dev/null || true
+      - export ANDROID_NDK_HOME="$$NDK$$"
+      - export ANDROID_HOME="$$SDK$$"
+      - test ! -e ../app/src/main/jniLibs/arm64-v8a/libnavi.so
+      - test ! -e ../app/src/main/jniLibs/x86_64/libnavi.so
+      - ../scripts/build-android-native.sh aarch64-linux-android release
+      - ../scripts/build-android-native.sh x86_64-linux-android release
+      - test -f ../app/src/main/jniLibs/arm64-v8a/libnavi.so
+      - test -f ../app/src/main/jniLibs/x86_64/libnavi.so
+      - sha256sum ../app/src/main/jniLibs/arm64-v8a/libnavi.so ../app/src/main/jniLibs/x86_64/libnavi.so
+      - gradle assembleRelease
     ndk: r27c
     gradle:
       - yes
 
 MaintainerNotes: |
-  Local F-Droid buildability check metadata (not yet submitted to fdroiddata).
+  Local F-Droid buildability check metadata (not the fdroiddata submission).
+  Real shipped ABIs (app/build.gradle.kts abiFilters + verified release APK):
+  arm64-v8a and x86_64 only — not armeabi / armeabi-v7a / x86 / mips / mips64.
+  Per ABI: libnavi.so, libmaplibre.so, libjnidispatch.so,
+  libandroidx.graphics.path.so. No libc++_shared.so in the packaged APK.
   Rust via rustup in sudo:; .cargo/config.toml rewritten from $$NDK$$ in prebuild.
   dependenciesInfo.includeInApk/Bundle are false in app/build.gradle.kts.
   libnavi.so: prebuild rm removes committed jniLibs prebuilts; build:
@@ -85,5 +96,5 @@ MaintainerNotes: |
   Do not globally exclude (breaks instrumented-test UTP). False-positive tracker flag.
 
 ArchivePolicy: 0 versions
-CurrentVersion: 0.3.4-beta
-CurrentVersionCode: 9
+CurrentVersion: 0.3.5-beta
+CurrentVersionCode: 10

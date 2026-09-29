@@ -116,6 +116,25 @@ pub fn plan_hybrid_hiking_path(
     eco: &EcoConfig,
     wps: &[HikingWaypoint],
 ) -> Result<HybridHikingPath, String> {
+    plan_hybrid_hiking_path_with_options(
+        graph,
+        elevation,
+        wetlands,
+        eco,
+        wps,
+        &crate::routing::graph::RouteOptions::default(),
+    )
+}
+
+/// Like [`plan_hybrid_hiking_path`] with routing filters (e.g. avoid ferries).
+pub fn plan_hybrid_hiking_path_with_options(
+    graph: &RouteGraph,
+    elevation: &ElevationService,
+    wetlands: &WetlandIndex,
+    eco: &EcoConfig,
+    wps: &[HikingWaypoint],
+    options: &crate::routing::graph::RouteOptions,
+) -> Result<HybridHikingPath, String> {
     if wps.len() < 2 {
         return Err("need at least start and end waypoints".into());
     }
@@ -127,7 +146,7 @@ pub fn plan_hybrid_hiking_path(
     for pair in wps.windows(2) {
         let a = &pair[0];
         let b = &pair[1];
-        let leg = plan_leg(graph, elevation, wetlands, eco, a, b)?;
+        let leg = plan_leg(graph, elevation, wetlands, eco, a, b, options)?;
         for seg in leg.segments {
             if seg.kind == SegmentKind::OffTrail {
                 off_trail_m += seg.length_m;
@@ -162,6 +181,7 @@ fn plan_leg(
     eco: &EcoConfig,
     a: &HikingWaypoint,
     b: &HikingWaypoint,
+    options: &crate::routing::graph::RouteOptions,
 ) -> Result<LegResult, String> {
     let snap_a = graph.nearest_routable(a.lat, a.lon).ok();
     let snap_b = graph.nearest_routable(b.lat, b.lon).ok();
@@ -170,7 +190,9 @@ fn plan_leg(
         return Err("cancelled".into());
     }
     if let (Some((sa, _)), Some((sb, _))) = (snap_a, snap_b) {
-        if let Some((path, _path_edges, _)) = graph.shortest_path(sa, sb, false) {
+        if let Some((path, _path_edges, _)) =
+            graph.shortest_path_with_options(sa, sb, false, options)
+        {
             if path.len() >= 2 {
                 let coords = graph.path_coords_lat_lon(&path);
                 let length_m = path_length_m(graph, &path);
@@ -189,7 +211,9 @@ fn plan_leg(
     }
 
     // Gap-fill: prefer graph to a trailhead, then terrain for the remainder.
-    gap_fill_leg(graph, elevation, wetlands, eco, a, b, snap_a, snap_b)
+    gap_fill_leg(
+        graph, elevation, wetlands, eco, a, b, snap_a, snap_b, options,
+    )
 }
 
 fn gap_fill_leg(
@@ -201,6 +225,7 @@ fn gap_fill_leg(
     b: &HikingWaypoint,
     snap_a: Option<(NodeId, f64)>,
     snap_b: Option<(NodeId, f64)>,
+    options: &crate::routing::graph::RouteOptions,
 ) -> Result<LegResult, String> {
     if crate::download::plan_cancel::is_cancelled() {
         return Err("cancelled".into());
@@ -217,7 +242,9 @@ fn gap_fill_leg(
     if let Some((sa, _)) = snap_a {
         if let Some((tb, tdist)) = graph.nearest_linked_unbounded(b.lat, b.lon) {
             if tdist <= TERRAIN_MAX_GAP_M {
-                if let Some((path, _path_edges, _)) = graph.shortest_path(sa, tb, false) {
+                if let Some((path, _path_edges, _)) =
+                    graph.shortest_path_with_options(sa, tb, false, options)
+                {
                     if path.len() >= 2 {
                         let mut segments = Vec::new();
                         let on_coords = graph.path_coords_lat_lon(&path);
@@ -252,7 +279,9 @@ fn gap_fill_leg(
     if let Some((sb, _)) = snap_b {
         if let Some((ta, tdist)) = graph.nearest_linked_unbounded(a.lat, a.lon) {
             if tdist <= TERRAIN_MAX_GAP_M {
-                if let Some((path, _path_edges, _)) = graph.shortest_path(ta, sb, false) {
+                if let Some((path, _path_edges, _)) =
+                    graph.shortest_path_with_options(ta, sb, false, options)
+                {
                     if path.len() >= 2 {
                         let mut segments = Vec::new();
                         let (tlat, tlon) = node_latlon(graph, ta);

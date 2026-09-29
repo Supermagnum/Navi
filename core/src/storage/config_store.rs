@@ -18,10 +18,13 @@ const EV_CAR_CONFIG_KEY: &str = "ev_car_config";
 const PREFER_OFFICIAL_NETWORKS_KEY: &str = "prefer_official_networks";
 const PREFER_PILGRIM_ROUTES_KEY: &str = "prefer_pilgrim_routes";
 const USE_NETWORKED_CABINS_KEY: &str = "use_networked_cabins";
+const USE_UNLOCKED_CABINS_KEY: &str = "use_unlocked_cabins";
+const AVOID_FERRIES_KEY: &str = "avoid_ferries";
 const BIKE_CAPABILITY_KEY: &str = "bike_capability";
 const SURFACE_ROUTING_MODE_KEY: &str = "surface_routing_mode";
-/// User asserts DNT/STF/… membership — gates *overnight stay* preference only.
+/// Legacy key — migrated into [`USE_NETWORKED_CABINS_KEY`] on first load.
 const NETWORK_HUT_MEMBER_KEY: &str = "network_hut_member";
+const NETWORK_HUT_MEMBER_MIGRATED_KEY: &str = "network_hut_member_migrated_v1";
 const TRUCK_DRIVING_HISTORY_KEY: &str = "truck_driving_history";
 const PROFILE_POI_RADII_KEY: &str = "profile_poi_radii";
 
@@ -108,14 +111,42 @@ impl<'a> ConfigStore<'a> {
         self.save_json(PREFER_PILGRIM_ROUTES_KEY, &prefer)
     }
 
-    /// Allow networked (DNT/STF/…) huts as hiking auto-via waypoints (off by default).
-    /// Geographic via only — does not imply membership or right of entry.
+    /// Allow networked (DNT/STF/…) huts for overnight preference and auto-via.
+    ///
+    /// One-time migration: if `network_hut_member` was ever saved, that value
+    /// becomes the networked-cabins preference (membership is the stronger
+    /// signal); otherwise the legacy `use_networked_cabins` value is kept.
     pub fn load_use_networked_cabins(&self) -> SqlResult<bool> {
+        self.migrate_networked_cabins_once()?;
         self.load_json(USE_NETWORKED_CABINS_KEY, || false)
     }
 
     pub fn save_use_networked_cabins(&self, prefer: bool) -> SqlResult<()> {
+        self.migrate_networked_cabins_once()?;
         self.save_json(USE_NETWORKED_CABINS_KEY, &prefer)
+    }
+
+    /// Prefer overnight stops at cabins/huts/shelters that are unlocked without
+    /// a key or membership (conservative OSM-tag definition).
+    pub fn load_use_unlocked_cabins(&self) -> SqlResult<bool> {
+        self.load_json(USE_UNLOCKED_CABINS_KEY, || false)
+    }
+
+    pub fn save_use_unlocked_cabins(&self, prefer: bool) -> SqlResult<()> {
+        self.save_json(USE_UNLOCKED_CABINS_KEY, &prefer)
+    }
+
+    /// User preference for avoiding ferry edges when planning.
+    ///
+    /// Independent of UI grey-out (`graph_ferry_edges=0`): the stored ON/OFF
+    /// value must survive process death so it still applies on later
+    /// ferry-capable plans. Default off.
+    pub fn load_avoid_ferries(&self) -> SqlResult<bool> {
+        self.load_json(AVOID_FERRIES_KEY, || false)
+    }
+
+    pub fn save_avoid_ferries(&self, avoid: bool) -> SqlResult<()> {
+        self.save_json(AVOID_FERRIES_KEY, &avoid)
     }
 
     /// Bicycle / electric-cycle terrain capability (`road`, `trekking`, `mountain`).
@@ -136,14 +167,38 @@ impl<'a> ConfigStore<'a> {
         self.save_json(SURFACE_ROUTING_MODE_KEY, &mode)
     }
 
-    /// Whether the user is a DNT/STF/… network hut member (off by default).
-    /// Gates overnight-stay preference for network huts only — not auto-via waypoints.
+    /// Legacy DNT/STF membership flag. Prefer [`Self::load_use_networked_cabins`]
+    /// after migration; kept for one release so old FFI callers still compile.
     pub fn load_network_hut_member(&self) -> SqlResult<bool> {
-        self.load_json(NETWORK_HUT_MEMBER_KEY, || false)
+        self.load_use_networked_cabins()
     }
 
     pub fn save_network_hut_member(&self, is_member: bool) -> SqlResult<()> {
-        self.save_json(NETWORK_HUT_MEMBER_KEY, &is_member)
+        self.save_use_networked_cabins(is_member)
+    }
+
+    fn migrate_networked_cabins_once(&self) -> SqlResult<()> {
+        let already: bool = self
+            .load_json(NETWORK_HUT_MEMBER_MIGRATED_KEY, || false)
+            .unwrap_or(false);
+        if already {
+            return Ok(());
+        }
+        // Prefer explicit membership if that key was ever written.
+        let member = self
+            .storage
+            .with_conn(|conn| load_json_conn_opt::<bool>(conn, NETWORK_HUT_MEMBER_KEY))?;
+        let legacy_networked = self
+            .storage
+            .with_conn(|conn| load_json_conn_opt::<bool>(conn, USE_NETWORKED_CABINS_KEY))?;
+        let merged = match (member, legacy_networked) {
+            (Some(m), _) => m,
+            (None, Some(n)) => n,
+            (None, None) => false,
+        };
+        self.save_json(USE_NETWORKED_CABINS_KEY, &merged)?;
+        self.save_json(NETWORK_HUT_MEMBER_MIGRATED_KEY, &true)?;
+        Ok(())
     }
 
     /// Rolling truck duty history for EC 561 weekly / fortnightly caps.
@@ -184,13 +239,30 @@ fn load_json_conn<T>(conn: &Connection, key: &str, default: fn() -> T) -> SqlRes
 where
     T: for<'de> Deserialize<'de>,
 {
+    match load_json_conn_opt(conn, key)? {
+        Some(v) => Ok(v),
+        None => Ok(default()),
+    }
+}
+
+fn load_json_conn_opt<T>(conn: &Connection, key: &str) -> SqlResult<Option<T>>
+where
+    T: for<'de> Deserialize<'de>,
+{
     let mut stmt = conn.prepare("SELECT value_json FROM app_config WHERE key = ?1")?;
     let result = stmt.query_row(params![key], |row| row.get::<_, String>(0));
     match result {
-        Ok(json) => serde_json::from_str(&json).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-        }),
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(default()),
+        Ok(json) => {
+            let v = serde_json::from_str(&json).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?;
+            Ok(Some(v))
+        }
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
         Err(e) => Err(e),
     }
 }
@@ -274,5 +346,27 @@ mod tests {
         let loaded = store.load_profile_poi_radii().unwrap();
         assert_eq!(loaded.hiking.search_radius_m, 12_000.0);
         assert!(loaded.car.require_road_link);
+    }
+
+    #[test]
+    fn avoid_ferries_round_trip_distinct_from_cabin_keys() {
+        let storage = Storage::open_in_memory().unwrap();
+        let store = ConfigStore::new(&storage);
+        assert!(!store.load_avoid_ferries().unwrap());
+        store.save_avoid_ferries(true).unwrap();
+        store.save_use_networked_cabins(true).unwrap();
+        store.save_use_unlocked_cabins(false).unwrap();
+        assert!(store.load_avoid_ferries().unwrap());
+        assert!(store.load_use_networked_cabins().unwrap());
+        assert!(!store.load_use_unlocked_cabins().unwrap());
+        // Flipping cabins must not clobber avoid_ferries (distinct app_config keys).
+        store.save_use_networked_cabins(false).unwrap();
+        store.save_use_unlocked_cabins(true).unwrap();
+        assert!(store.load_avoid_ferries().unwrap());
+        assert!(!store.load_use_networked_cabins().unwrap());
+        assert!(store.load_use_unlocked_cabins().unwrap());
+        store.save_avoid_ferries(false).unwrap();
+        assert!(!store.load_avoid_ferries().unwrap());
+        assert!(store.load_use_unlocked_cabins().unwrap());
     }
 }

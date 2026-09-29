@@ -66,6 +66,7 @@ object NaviMapTestHooks {
     /**
      * Cold-start / adb trip seed for standalone long-trip runs (not under
      * instrumentation). Consumed once by [MainActivity] / NaviMapScreen.
+     * Extended fields are filled only by [NaviDebugIntent] on debuggable builds.
      */
     data class PendingTripPlan(
         val fromName: String,
@@ -76,10 +77,48 @@ object NaviMapTestHooks {
         val toLon: Double,
         val enableLongTrip: Boolean = true,
         val autoPlan: Boolean = true,
+        val profile: uniffi.navi.TravelProfile? = null,
+        val bikeCapability: String? = null,
+        val vias: List<Waypoint> = emptyList(),
+        val forceLocalPbf: Boolean = false,
+        val avoidFerries: Boolean? = null,
+        val restoreSettingsAfter: Boolean = true,
+        /**
+         * When true (default for [NaviDebugIntent] trips), pin the GPS mark at
+         * [fromLat]/[fromLon] and ignore live LocationManager fixes so the
+         * emulator's real fix cannot trigger off-route recalculation.
+         */
+        val injectGpsAtFrom: Boolean = true,
     )
 
     @Volatile
     var pendingTripPlan: PendingTripPlan? = null
+
+    /**
+     * When true, the next plan uses pack_dir [NaviDebugIntent.FORCE_PBF_PACK_DIR]
+     * so indexed packs are skipped (local-PBF graph build).
+     */
+    @Volatile
+    var forceLocalPbf: Boolean = false
+
+    /** One-shot avoid-ferries injection (same path as the UI toggle). */
+    @Volatile
+    var requestAvoidFerries: Boolean? = null
+
+    /** One-shot bike capability id (`road` / `trekking` / `mountain`). */
+    @Volatile
+    var requestBikeCapability: String? = null
+
+    /**
+     * After a debug-intent plan, restore in-memory avoid-ferries to this value
+     * (cabins/bike capability are restored via UniFFI in [NaviDebugIntent]).
+     */
+    @Volatile
+    var restoreAvoidFerriesAfterPlan: Boolean? = null
+
+    /** Reload cabin / bike Compose state from UniFFI after debug-intent restore. */
+    @Volatile
+    var requestReloadCabinSettings: Boolean = false
 
     /**
      * When true, live GPS never enables follow mode or retargets the map camera
@@ -590,6 +629,22 @@ object NaviMapTestHooks {
     var pendingInjectFixLatLon: Pair<Double, Double>? = null
 
     /**
+     * After [MainActivity.applyPlannedRoute], re-queue [pendingInjectFixLatLon]
+     * at these coords so the progress tracker sees an on-route fix (debug trip
+     * seed). Cleared when re-queued (one-shot); never a permanent pin.
+     */
+    @Volatile
+    var pinGpsAfterPlanLatLon: Pair<Double, Double>? = null
+
+    /**
+     * When true, the next consumed [pendingInjectFixLatLon] clears
+     * [ignoreLiveGpsFixes] after apply so adb geo-fix / sim drives can move.
+     * Set by debug-trip post-plan re-pin only.
+     */
+    @Volatile
+    var releaseIgnoreLiveGpsAfterNextInject: Boolean = false
+
+    /**
      * When true, ignore LocationManager / other non-test providers so a real
      * device GPS fix cannot overwrite [pendingInjectFixLatLon] / sim positions
      * during off-route instrumented tests.
@@ -686,6 +741,10 @@ object NaviMapTestHooks {
 
     @Volatile
     var lastViaIndex: Int = -1
+
+    /** Latest localized status line when [lastViaIndex] advances (toast / debug hook). */
+    @Volatile
+    var lastViaReachedSpeech: String = ""
 
     @Volatile
     var lastSimAlongM: Double = 0.0

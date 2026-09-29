@@ -230,6 +230,14 @@ class MainActivity : ComponentActivity() {
      *   am start -n no.navi.app/.MainActivity \
      *     --ed navi_camera_lat 62.1592913 --ed navi_camera_lon 11.3584086 --ed navi_camera_zoom 16
      * Also accepts --ef / --es for the same keys.
+     *
+     * Debug trip seed (debuggable builds only — see [NaviDebugIntent]):
+     *   --ed navi_from_lat … --ed navi_from_lon … --ed navi_to_lat … --ed navi_to_lon …
+     *   [--es navi_profile car|bicycle|hiking|…] [--es navi_bike_capability road|trekking|mountain]
+     *   [--ed navi_via1_lat … --ed navi_via1_lon …] (up to via4)
+     *   [--es navi_graph pack|pbf] [--ez navi_avoid_ferries …]
+     *   [--ez navi_use_networked_cabins …] [--ez navi_network_hut_member …]
+     *   [--ez navi_inject_gps true|false] (default true: pin GPS at from)
      */
     private fun applyNaviLaunchExtras(intent: Intent?) {
         if (intent == null) return
@@ -263,39 +271,24 @@ class MainActivity : ComponentActivity() {
         } else if (intent.action == Intent.ACTION_MAIN) {
             NaviMapTestHooks.disableGpsFollow = false
         }
-        val fromLat = intentDoubleExtra(intent, "navi_from_lat")
-        val fromLon = intentDoubleExtra(intent, "navi_from_lon")
-        val toLat = intentDoubleExtra(intent, "navi_to_lat")
-        val toLon = intentDoubleExtra(intent, "navi_to_lon")
-        if (!fromLat.isNaN() && !fromLon.isNaN() && !toLat.isNaN() && !toLon.isNaN()) {
-            val fromName =
-                intent.getStringExtra("navi_from_name").orEmpty().ifBlank {
-                    formatCoordWaypointName(fromLat, fromLon)
-                }
-            val toName =
-                intent.getStringExtra("navi_to_name").orEmpty().ifBlank {
-                    formatCoordWaypointName(toLat, toLon)
-                }
-            val enableLong =
-                !intent.hasExtra("navi_long_trip") ||
-                    intent.getBooleanExtra("navi_long_trip", true)
-            val autoPlan =
-                !intent.hasExtra("navi_auto_plan") ||
-                    intent.getBooleanExtra("navi_auto_plan", true)
-            NaviMapTestHooks.pendingTripPlan =
-                NaviMapTestHooks.PendingTripPlan(
-                    fromName = fromName,
-                    fromLat = fromLat,
-                    fromLon = fromLon,
-                    toName = toName,
-                    toLat = toLat,
-                    toLon = toLon,
-                    enableLongTrip = enableLong,
-                    autoPlan = autoPlan,
-                )
+        // Trip / profile / settings / graph: debug builds only.
+        val dataDirPath = filesDir.absolutePath
+        val debugTrip =
+            NaviDebugIntent.consumeTripExtras(this, intent, dataDirPath)
+        if (debugTrip != null) {
+            NaviMapTestHooks.pendingTripPlan = debugTrip
+            debugTrip.profile?.let { NaviMapTestHooks.requestTravelProfile = it }
+            if (debugTrip.vias.isNotEmpty()) {
+                NaviMapTestHooks.pendingViaPoints = debugTrip.vias
+            }
+            NaviMapTestHooks.forceLocalPbf = debugTrip.forceLocalPbf
+            debugTrip.avoidFerries?.let { NaviMapTestHooks.requestAvoidFerries = it }
+            debugTrip.bikeCapability?.let { NaviMapTestHooks.requestBikeCapability = it }
             android.util.Log.i(
                 "NaviTrip",
-                "pendingTripPlan from=$fromName to=$toName long=$enableLong plan=$autoPlan",
+                "pendingTripPlan from=${debugTrip.fromName} to=${debugTrip.toName} " +
+                    "long=${debugTrip.enableLongTrip} plan=${debugTrip.autoPlan} " +
+                    "profile=${debugTrip.profile} graph=${if (debugTrip.forceLocalPbf) "pbf" else "pack"}",
             )
         }
     }
@@ -696,10 +689,14 @@ private fun NaviMapScreen() {
     var avoidMotorways by remember { mutableStateOf(false) }
     var avoidTolls by remember { mutableStateOf(false) }
     var avoidFerries by remember { mutableStateOf(false) }
+
+    /** Last plan's `graph_ferry_edges=N`; null until a plan reports it. */
+    var graphFerryEdges by remember { mutableStateOf<Int?>(null) }
     var avoidTunnels by remember { mutableStateOf(false) }
     var preferOfficialNetworks by remember { mutableStateOf(false) }
     var preferPilgrimRoutes by remember { mutableStateOf(false) }
     var useNetworkedCabins by remember { mutableStateOf(false) }
+    var useUnlockedCabins by remember { mutableStateOf(false) }
     var bikeCapability by remember { mutableStateOf("trekking") }
     var networkHutMember by remember { mutableStateOf(false) }
 
@@ -864,6 +861,30 @@ private fun NaviMapScreen() {
                         lat = trip.toLat,
                         lon = trip.toLon,
                     )
+                if (trip.vias.isNotEmpty()) {
+                    viaPoints = trip.vias
+                }
+                // Profile / eco / driveHud: applyNaviLaunchExtras already set
+                // requestTravelProfile; the later hook poll updates Compose state
+                // after driveHud is in scope.
+                trip.bikeCapability?.let { id ->
+                    bikeCapability = id
+                }
+                trip.avoidFerries?.let { on ->
+                    // Snapshot current UI value so we can restore after the plan.
+                    NaviMapTestHooks.restoreAvoidFerriesAfterPlan = avoidFerries
+                    avoidFerries = on
+                }
+                NaviMapTestHooks.forceLocalPbf = trip.forceLocalPbf
+                if (trip.injectGpsAtFrom) {
+                    // Pin puck at from immediately and again after plan so the
+                    // progress tracker does not see the emulator's far-away fix.
+                    NaviMapTestHooks.ignoreLiveGpsFixes = true
+                    NaviMapTestHooks.pendingInjectFixLatLon = trip.fromLat to trip.fromLon
+                    NaviMapTestHooks.pinGpsAfterPlanLatLon = trip.fromLat to trip.fromLon
+                } else {
+                    NaviMapTestHooks.pinGpsAfterPlanLatLon = null
+                }
                 status = "Trip seeded: ${trip.fromName} → ${trip.toName}"
                 if (trip.autoPlan) {
                     delay(1_200)
@@ -911,7 +932,7 @@ private fun NaviMapScreen() {
         }
     roadSignsJsonRef.set(roadSignsJson)
     // GPS applyFix runs on the main looper — never call country_iso_at there.
-    // null = not warmed yet (skip road-sign checks until IO finishes).
+    // null = not warmed yet (defer road-sign checks until CountryPolysWarm finishes).
     val roadSignJurisdictionAllowedRef =
         remember {
             java.util.concurrent.atomic
@@ -1010,6 +1031,7 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastBreakPoiCount = 0
         NaviMapTestHooks.lastArrivedAtEnd = false
         NaviMapTestHooks.lastCurrentStreet = null
+        graphFerryEdges = null
         status = message
     }
 
@@ -1481,7 +1503,16 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.reroutingActive = false
         NaviMapTestHooks.hikingReroutePromptVisible = false
         NaviMapTestHooks.lastOffRoute = false
+        // Debug-intent trips: one-shot re-pin at from now that the tracker exists.
+        // Released on the next inject consume so adb geo-fix / sim can progress.
+        NaviMapTestHooks.pinGpsAfterPlanLatLon?.let { pin ->
+            NaviMapTestHooks.pendingInjectFixLatLon = pin
+            NaviMapTestHooks.ignoreLiveGpsFixes = true
+            NaviMapTestHooks.pinGpsAfterPlanLatLon = null
+            NaviMapTestHooks.releaseIgnoreLiveGpsAfterNextInject = true
+        }
         lastViaToastIndex = -1
+        graphFerryEdges = AvoidFerriesUi.parseGraphFerryEdges(pending.report)
         status =
             userFacingStatus(
                 if (pending.distanceKm > 0.0) {
@@ -1541,8 +1572,11 @@ private fun NaviMapScreen() {
         preferOfficialNetworks = uniffi.navi.loadPreferOfficialNetworks(dataDir.absolutePath)
         preferPilgrimRoutes = uniffi.navi.loadPreferPilgrimRoutes(dataDir.absolutePath)
         useNetworkedCabins = uniffi.navi.loadUseNetworkedCabins(dataDir.absolutePath)
+        useUnlockedCabins = uniffi.navi.loadUseUnlockedCabins(dataDir.absolutePath)
+        // Migrated into useNetworkedCabins; keep local mirror for any leftover UI reads.
+        networkHutMember = useNetworkedCabins
         bikeCapability = uniffi.navi.loadBikeCapability(dataDir.absolutePath)
-        networkHutMember = uniffi.navi.loadNetworkHutMember(dataDir.absolutePath)
+        avoidFerries = uniffi.navi.loadAvoidFerries(dataDir.absolutePath)
         NaviMapTestHooks.lastSnapRotationBack = driveHud.snapRotationBackToMode
     }
     val iconsDir =
@@ -1728,6 +1762,38 @@ private fun NaviMapScreen() {
             !MapHudPrefs.loadSpeedCameraPromptShown(context)
         ) {
             showSpeedCameraPrompt = true
+        }
+    }
+    // Hazards/cameras deferred while CountryPolysWarm runs must be evaluated as
+    // soon as the grid is ready — do not silently drop the last in-range warning.
+    LaunchedEffect(Unit) {
+        var wasReady = CountryPolysWarm.isReady()
+        while (true) {
+            if (!wasReady && CountryPolysWarm.isReady()) {
+                val lat = NaviMapTestHooks.lastGpsLat
+                val lon = NaviMapTestHooks.lastGpsLon
+                if (lat != 0.0 || lon != 0.0) {
+                    val loc =
+                        android.location.Location("navi-country-polys-warm").apply {
+                            latitude = lat
+                            longitude = lon
+                            NaviMapTestHooks.gpsBearingDeg?.let { bearing = it.toFloat() }
+                        }
+                    withContext(Dispatchers.Main.immediate) {
+                        // Full applyFix: on-route + live-cone speed cameras,
+                        // road signs, and hazards (all gated on isReady above).
+                        applyFixRef.get().invoke(loc)
+                    }
+                    android.util.Log.i(
+                        "CountryPolysWarm",
+                        "post-warm HUD re-eval (cameras/signs/hazards) lat=$lat lon=$lon",
+                    )
+                }
+                break
+            }
+            wasReady = CountryPolysWarm.isReady()
+            if (wasReady) break
+            delay(100)
         }
     }
     // Single effect for live-hazard layers + speed cameras: at most one PBF camera
@@ -2615,7 +2681,16 @@ private fun NaviMapScreen() {
             }
         val pbf =
             RegionCoverage.resolvePlanPbf(dataDir, coverageWaypoints, longTripPackDir)
-        val planPackDirPath = longTripPackDir?.absolutePath.orEmpty()
+        val planPackDirPath =
+            when {
+                NaviMapTestHooks.forceLocalPbf -> NaviDebugIntent.FORCE_PBF_PACK_DIR
+                longTripPackDir != null -> longTripPackDir.absolutePath
+                else -> ""
+            }
+        // One-shot: clear after this plan kick consumes it.
+        if (NaviMapTestHooks.forceLocalPbf) {
+            NaviMapTestHooks.forceLocalPbf = false
+        }
         val stagedOk =
             profile == TravelProfile.HIKING &&
                 NaviMapTestHooks.preferStagedHikingRoute &&
@@ -2786,6 +2861,7 @@ private fun NaviMapScreen() {
                                             preferOfficialNetworks,
                                             preferPilgrimRoutes,
                                             dataDir.absolutePath,
+                                            avoidFerries,
                                         )
                                     RoutingPlanLog.progress(
                                         90,
@@ -3335,14 +3411,45 @@ private fun NaviMapScreen() {
                         NaviMapTestHooks.lastApproachIconKey = null
                     } else if (man != null && snap.distanceToManeuverM.isFinite()) {
                         val endWp = toPoint
-                        val useEndAddr = man.kind == "destination"
+                        val mans = tracker.maneuverCount()
+                        val isFinalDest =
+                            man.kind == "destination" && snap.maneuverIndex >= mans - 1
+                        val isViaReached =
+                            man.kind == "destination" &&
+                                (man.viaIndex != null || !isFinalDest)
+                        val useEndAddr = isFinalDest && !isViaReached
+                        val viaLabel =
+                            if (isViaReached) {
+                                viaReachedDisplayLabel(
+                                    context.resources,
+                                    man.viaIndex ?: snap.viaIndexReached.takeIf { it >= 0 },
+                                    viaPoints.size,
+                                )
+                            } else {
+                                null
+                            }
                         val (street, house, post) =
                             parseAddressDisplayLines(
-                                street = if (useEndAddr) endWp.street else man.street,
-                                houseNumber = if (useEndAddr) endWp.houseNumber else man.houseNumber,
+                                street =
+                                    when {
+                                        isViaReached -> viaLabel
+                                        useEndAddr -> endWp.street
+                                        else -> man.street
+                                    },
+                                houseNumber =
+                                    if (useEndAddr) endWp.houseNumber else man.houseNumber,
                                 postcode = if (useEndAddr) endWp.postcode else man.postcode,
-                                combined = if (useEndAddr && endWp.street == null) endWp.name else null,
+                                combined =
+                                    if (useEndAddr && endWp.street == null) endWp.name else null,
                             )
+                        if (isViaReached) {
+                            android.util.Log.i(
+                                "NaviViaReached",
+                                "approach display=${viaLabel ?: "via"} " +
+                                    "dist_m=${snap.distanceToManeuverM} " +
+                                    "lat=${man.lat} lon=${man.lon} via_index=${man.viaIndex}",
+                            )
+                        }
                         val icon = man.iconKey()
                         approachGuidance =
                             ApproachGuidanceState(
@@ -3363,7 +3470,10 @@ private fun NaviMapScreen() {
                         NaviMapTestHooks.lastApproachPhase = ApproachUiPhase.Hidden
                         NaviMapTestHooks.lastApproachIconKey = null
                     }
-                    if (speedCameraOptIn && speedCamerasJson != "[]") {
+                    if (speedCameraOptIn &&
+                        speedCamerasJson != "[]" &&
+                        CountryPolysWarm.isReady()
+                    ) {
                         val warnJson =
                             uniffi.navi.nearestSpeedCameraWarningJson(
                                 speedCamerasJson,
@@ -3461,10 +3571,19 @@ private fun NaviMapScreen() {
                     }
                     if (snap.viaIndexReached > lastViaToastIndex) {
                         lastViaToastIndex = snap.viaIndexReached
-                        val viaName =
-                            viaPoints.getOrNull(snap.viaIndexReached)?.name
-                                ?: "Via ${snap.viaIndexReached + 1}"
-                        status = "Passed $viaName — continuing"
+                        val via = viaPoints.getOrNull(snap.viaIndexReached)
+                        val label =
+                            viaReachedDisplayLabel(
+                                context.resources,
+                                snap.viaIndexReached,
+                                viaPoints.size,
+                            )
+                        status = label
+                        NaviMapTestHooks.lastViaReachedSpeech = label
+                        android.util.Log.i(
+                            "NaviViaReached",
+                            "$label lat=${via?.lat} lon=${via?.lon} name=${via?.name}",
+                        )
                     }
                     if (snap.arrivedAtEnd) {
                         if (simulatingRef.get()) {
@@ -3525,7 +3644,7 @@ private fun NaviMapScreen() {
                             null
                         }
                     val camJson =
-                        if (speedCameraOptIn) {
+                        if (speedCameraOptIn && CountryPolysWarm.isReady()) {
                             uniffi.navi.liveHazardConeSpeedCameraWarningJson(
                                 loc.latitude,
                                 loc.longitude,
@@ -3539,18 +3658,30 @@ private fun NaviMapScreen() {
                         speedCameraWarningFromJson(camJson).copy(
                             unitSystem = driveHud.unitSystem,
                         )
+                    // Live-hazard jurisdiction uses Natural Earth; defer until
+                    // CountryPolysWarm finishes - otherwise applyFix ANRs on the
+                    // OnceLock while the warm thread builds the grid. A
+                    // LaunchedEffect re-runs applyFix with the last GPS once warm.
                     val signJson =
-                        uniffi.navi.liveHazardConeRoadSignWarningJson(
-                            loc.latitude,
-                            loc.longitude,
-                            headingDeg,
-                        )
+                        if (CountryPolysWarm.isReady()) {
+                            uniffi.navi.liveHazardConeRoadSignWarningJson(
+                                loc.latitude,
+                                loc.longitude,
+                                headingDeg,
+                            )
+                        } else {
+                            "{}"
+                        }
                     val schoolFallbackJson =
-                        uniffi.navi.liveHazardConeChildrenWarningJson(
-                            loc.latitude,
-                            loc.longitude,
-                            headingDeg,
-                        )
+                        if (CountryPolysWarm.isReady()) {
+                            uniffi.navi.liveHazardConeChildrenWarningJson(
+                                loc.latitude,
+                                loc.longitude,
+                                headingDeg,
+                            )
+                        } else {
+                            "{}"
+                        }
                     val signState = roadSignWarningFromJson(signJson)
                     val schoolState = roadSignWarningFromJson(schoolFallbackJson)
                     var finalRoadSignJson =
@@ -3999,8 +4130,13 @@ private fun NaviMapScreen() {
                             if (simulatingRef.get()) {
                                 stopRouteSimulation()
                             }
-                            // Keep device GPS from immediately undoing the inject.
-                            NaviMapTestHooks.ignoreLiveGpsFixes = true
+                            val releaseIgnoreAfter =
+                                NaviMapTestHooks.releaseIgnoreLiveGpsAfterNextInject
+                            if (!releaseIgnoreAfter) {
+                                // Instrumented off-route injects: keep live GPS
+                                // from immediately undoing the inject.
+                                NaviMapTestHooks.ignoreLiveGpsFixes = true
+                            }
                             val loc =
                                 android.location.Location("navi-test-inject").apply {
                                     latitude = inject.first
@@ -4013,6 +4149,12 @@ private fun NaviMapScreen() {
                                 }
                             NaviMapTestHooks.pendingInjectFixSpeedKmh = null
                             applyFixRef.get().invoke(loc)
+                            if (releaseIgnoreAfter) {
+                                // Debug-trip one-shot pin: allow subsequent geo-fix
+                                // / sim injects to move the puck.
+                                NaviMapTestHooks.ignoreLiveGpsFixes = false
+                                NaviMapTestHooks.releaseIgnoreLiveGpsAfterNextInject = false
+                            }
                         }
                         val hikeAns = NaviMapTestHooks.requestHikingRerouteAnswer
                         if (hikeAns != null && showHikingReroutePrompt) {
@@ -4221,6 +4363,29 @@ private fun NaviMapScreen() {
                                     )
                             }
                             status = "Profile: ${profileReq.name.lowercase()}"
+                        }
+                        val avoidFerryReq = NaviMapTestHooks.requestAvoidFerries
+                        if (avoidFerryReq != null) {
+                            NaviMapTestHooks.requestAvoidFerries = null
+                            avoidFerries = avoidFerryReq
+                        }
+                        val bikeCapReq = NaviMapTestHooks.requestBikeCapability
+                        if (bikeCapReq != null) {
+                            NaviMapTestHooks.requestBikeCapability = null
+                            bikeCapability = bikeCapReq
+                        }
+                        if (NaviMapTestHooks.requestReloadCabinSettings) {
+                            NaviMapTestHooks.requestReloadCabinSettings = false
+                            useNetworkedCabins =
+                                uniffi.navi.loadUseNetworkedCabins(dataDir.absolutePath)
+                            networkHutMember =
+                                uniffi.navi.loadNetworkHutMember(dataDir.absolutePath)
+                            bikeCapability =
+                                uniffi.navi.loadBikeCapability(dataDir.absolutePath)
+                            NaviMapTestHooks.restoreAvoidFerriesAfterPlan?.let { prev ->
+                                NaviMapTestHooks.restoreAvoidFerriesAfterPlan = null
+                                avoidFerries = prev
+                            }
                         }
                         val hookAlt = NaviMapTestHooks.gpsAltitudeM
                         if (hookAlt != null && driveHud.altitudeM != hookAlt) {
@@ -5560,32 +5725,90 @@ private fun NaviMapScreen() {
                                             },
                                         )
                                     }
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Text("Use networked cabins")
-                                        Switch(
-                                            checked = useNetworkedCabins,
-                                            onCheckedChange = { on ->
-                                                useNetworkedCabins = on
-                                                uniffi.navi.saveUseNetworkedCabins(
-                                                    dataDir.absolutePath,
-                                                    on,
-                                                )
-                                                DiagnosticLog.logToggle(
-                                                    "use_networked_cabins",
-                                                    on,
-                                                    mapOf("profile" to profile.name),
-                                                )
-                                                DiagnosticLog.logSettingSaved(
-                                                    "use_networked_cabins",
-                                                    on,
-                                                )
-                                            },
-                                            modifier = Modifier.testTag("toggle_use_networked_cabins"),
-                                        )
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        val cabinTogglesLive = profile == TravelProfile.HIKING
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text("Use unlocked cabins")
+                                                if (cabinTogglesLive && useUnlockedCabins) {
+                                                    Text(
+                                                        "Uses cabins/huts that are unlocked.",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                    )
+                                                }
+                                            }
+                                            Switch(
+                                                checked = useUnlockedCabins,
+                                                onCheckedChange = { on ->
+                                                    if (!cabinTogglesLive) return@Switch
+                                                    useUnlockedCabins = on
+                                                    uniffi.navi.saveUseUnlockedCabins(
+                                                        dataDir.absolutePath,
+                                                        on,
+                                                    )
+                                                    DiagnosticLog.logToggle(
+                                                        "use_unlocked_cabins",
+                                                        on,
+                                                        mapOf("profile" to profile.name),
+                                                    )
+                                                    DiagnosticLog.logSettingSaved(
+                                                        "use_unlocked_cabins",
+                                                        on,
+                                                    )
+                                                },
+                                                enabled = cabinTogglesLive,
+                                                modifier = Modifier.testTag("toggle_use_unlocked_cabins"),
+                                            )
+                                        }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text("Use networked cabins")
+                                                if (cabinTogglesLive && useNetworkedCabins) {
+                                                    Text(
+                                                        "Uses cabins/huts that are networked.",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                    )
+                                                }
+                                            }
+                                            Switch(
+                                                checked = useNetworkedCabins,
+                                                onCheckedChange = { on ->
+                                                    if (!cabinTogglesLive) return@Switch
+                                                    useNetworkedCabins = on
+                                                    networkHutMember = on
+                                                    uniffi.navi.saveUseNetworkedCabins(
+                                                        dataDir.absolutePath,
+                                                        on,
+                                                    )
+                                                    DiagnosticLog.logToggle(
+                                                        "use_networked_cabins",
+                                                        on,
+                                                        mapOf("profile" to profile.name),
+                                                    )
+                                                    DiagnosticLog.logSettingSaved(
+                                                        "use_networked_cabins",
+                                                        on,
+                                                    )
+                                                },
+                                                enabled = cabinTogglesLive,
+                                                modifier = Modifier.testTag("toggle_use_networked_cabins"),
+                                            )
+                                        }
+                                        if (!cabinTogglesLive) {
+                                            Text(
+                                                "Applies to hiking overnight planning only.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier = Modifier.testTag("cabin_toggles_hiking_only_note"),
+                                            )
+                                        }
                                     }
                                 }
                                 if (profile == TravelProfile.BICYCLE ||
@@ -5630,33 +5853,6 @@ private fun NaviMapScreen() {
                                     }
                                 }
                                 if (profile == TravelProfile.HIKING) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Text("Network hut member (DNT/STF/…)")
-                                        Switch(
-                                            checked = networkHutMember,
-                                            onCheckedChange = { on ->
-                                                networkHutMember = on
-                                                uniffi.navi.saveNetworkHutMember(
-                                                    dataDir.absolutePath,
-                                                    on,
-                                                )
-                                                DiagnosticLog.logToggle(
-                                                    "network_hut_member",
-                                                    on,
-                                                    mapOf("profile" to profile.name),
-                                                )
-                                                DiagnosticLog.logSettingSaved(
-                                                    "network_hut_member",
-                                                    on,
-                                                )
-                                            },
-                                            modifier = Modifier.testTag("toggle_network_hut_member"),
-                                        )
-                                    }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
@@ -5767,12 +5963,50 @@ private fun NaviMapScreen() {
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text("Avoid ferries")
+                                    val profileIsMotor =
+                                        profile == TravelProfile.CAR ||
+                                            profile == TravelProfile.TRUCK ||
+                                            profile == TravelProfile.MOBILE_HOME ||
+                                            profile == TravelProfile.MOTORCYCLE ||
+                                            profile == TravelProfile.CAR_ELECTRIC ||
+                                            profile == TravelProfile.TRUCK_ELECTRIC ||
+                                            profile == TravelProfile.MOTORCYCLE_ELECTRIC
+                                    val profileIsHikingOrBike =
+                                        profile == TravelProfile.HIKING ||
+                                            profile == TravelProfile.BICYCLE ||
+                                            profile == TravelProfile.BICYCLE_ELECTRIC
+                                    val avoidFerriesEnabled =
+                                        AvoidFerriesUi.toggleEnabled(
+                                            profileIsMotor = profileIsMotor,
+                                            profileIsHikingOrBike = profileIsHikingOrBike,
+                                            graphFerryEdges = graphFerryEdges,
+                                        )
+                                    val avoidFerriesNote =
+                                        AvoidFerriesUi.unavailableNote(graphFerryEdges)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Avoid ferries")
+                                        // Same bodySmall note pattern as cabin toggles
+                                        // ("Applies to hiking overnight planning only.").
+                                        if (avoidFerriesNote != null) {
+                                            Text(
+                                                avoidFerriesNote,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier =
+                                                    Modifier.testTag("avoid_ferries_unavailable_note"),
+                                            )
+                                        }
+                                    }
                                     Switch(
                                         checked = avoidFerries,
                                         onCheckedChange = { on ->
+                                            if (!avoidFerriesEnabled) return@Switch
                                             avoidFerries = on
+                                            uniffi.navi.saveAvoidFerries(
+                                                dataDir.absolutePath,
+                                                on,
+                                            )
                                             DiagnosticLog.logToggle("avoid_ferries", on)
+                                            DiagnosticLog.logSettingSaved("avoid_ferries", on)
                                             status =
                                                 formatRouteAvoidanceReport(
                                                     avoidMotorways,
@@ -5786,14 +6020,8 @@ private fun NaviMapScreen() {
                                                     prioritySharePct,
                                                 )
                                         },
-                                        enabled =
-                                            profile == TravelProfile.CAR ||
-                                                profile == TravelProfile.TRUCK ||
-                                                profile == TravelProfile.MOBILE_HOME ||
-                                                profile == TravelProfile.MOTORCYCLE ||
-                                                profile == TravelProfile.CAR_ELECTRIC ||
-                                                profile == TravelProfile.TRUCK_ELECTRIC ||
-                                                profile == TravelProfile.MOTORCYCLE_ELECTRIC,
+                                        enabled = avoidFerriesEnabled,
+                                        modifier = Modifier.testTag("toggle_avoid_ferries"),
                                     )
                                 }
                                 Row(

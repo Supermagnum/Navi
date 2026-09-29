@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
-use super::graph_pack::GRAPH_FORMAT_VERSION;
+use super::graph_pack::graph_format_version_accepted;
 use super::poi_barrier_pack::POI_BARRIER_FORMAT_VERSION;
 use super::wetland_pack::WETLAND_FORMAT_VERSION;
 use crate::routing::graph::RoutingProfile;
@@ -160,7 +160,7 @@ impl NaviManifest {
     ///
     /// Used for pack-server installs (no published `.osm.pbf` in the tree).
     pub fn status_pack_files(&self, data_dir: &Path) -> PackStatus {
-        if self.graph_format_version != GRAPH_FORMAT_VERSION
+        if !graph_format_version_accepted(self.graph_format_version)
             || self.poi_barrier_format_version != POI_BARRIER_FORMAT_VERSION
             || self.schema != Self::SCHEMA
         {
