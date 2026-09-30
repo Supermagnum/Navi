@@ -15,9 +15,9 @@ import java.time.ZonedDateTime
 /**
  * Item 4: fire-ban window uses Europe/Oslo local calendar (clock_read contract).
  *
- * HostApi `clock_read` is not yet wired through UniFFI (wasmtime gate closed);
- * this test verifies the same local-date contract the native embedder uses:
- * device timezone Europe/Oslo + local Y-M-D for the 15 Apr–15 Sep rule.
+ * HostApi `clock_read` is UniFFI-wired (Phase 5a) with device-local Y-M-D and
+ * IANA timezone from `camping_plugin_configure`. This test still verifies the
+ * Europe/Oslo local-date contract for the 15 Apr–15 Sep fire window.
  */
 @RunWith(AndroidJUnit4::class)
 @LargeTest

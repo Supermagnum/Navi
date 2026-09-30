@@ -80,6 +80,10 @@ case "$TARGET" in
 esac
 
 echo "Building navi-ffi for $TARGET ($PROFILE) with NDK $ANDROID_NDK_HOME ($NDK_HOST_TAG)..."
+
+# Stage wasm guests from source into assets/ (F-Droid / no committed binaries).
+"$ROOT/scripts/build-plugin-wasm.sh"
+
 CARGO_PROFILE_ARGS=()
 case "$PROFILE" in
   release)

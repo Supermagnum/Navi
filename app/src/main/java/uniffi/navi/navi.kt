@@ -1047,6 +1047,30 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_weather_refresh_json(
     ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_capability_sources_json(
+    ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_clear_clock_override(
+    ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_configure(
+    ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_install_guest(
+    ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_is_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_run_isolation_guest(
+    ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_run_suggest(
+    ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_session_disabled_reason(
+    ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_set_clock_ymd(
+    ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_set_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_set_nav_context(
+    ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_set_residency_country(
+    ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_all(
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_expire(
@@ -1474,6 +1498,30 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_weather_read_json(`dataDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_weather_refresh_json(`dataDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`enabled`: Byte,`appActive`: Byte,`manual`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_camping_plugin_capability_sources_json(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_camping_plugin_clear_clock_override(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_camping_plugin_configure(`filesDir`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_camping_plugin_install_guest(`name`: RustBuffer.ByValue,`manifestJson`: RustBuffer.ByValue,`wasmBytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_camping_plugin_is_enabled(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_camping_plugin_run_isolation_guest(`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_camping_plugin_run_suggest(`jobJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_camping_plugin_session_disabled_reason(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_camping_plugin_set_clock_ymd(`year`: Int,`month`: Int,`day`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_camping_plugin_set_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_camping_plugin_set_nav_context(`waypointsJson`: RustBuffer.ByValue,`destLat`: RustBuffer.ByValue,`destLon`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`professionalDriver`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_camping_plugin_set_residency_country(`iso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -2155,6 +2203,42 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_weather_refresh_json() and 0xFFFF) != 44672) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_capability_sources_json() and 0xFFFF) != 44778) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_clear_clock_override() and 0xFFFF) != 48969) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_configure() and 0xFFFF) != 65097) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_install_guest() and 0xFFFF) != 19565) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_is_enabled() and 0xFFFF) != 41845) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_run_isolation_guest() and 0xFFFF) != 29556) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_run_suggest() and 0xFFFF) != 54787) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_session_disabled_reason() and 0xFFFF) != 15225) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_set_clock_ymd() and 0xFFFF) != 15493) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_set_enabled() and 0xFFFF) != 4893) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_set_nav_context() and 0xFFFF) != 46018) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_set_residency_country() and 0xFFFF) != 64366) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_all() and 0xFFFF) != 684) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2383,6 +2467,29 @@ public object FfiConverterUInt: FfiConverter<UInt, Int> {
 
     override fun write(value: UInt, buf: ByteBuffer) {
         buf.putInt(value.toInt())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterInt: FfiConverter<Int, Int> {
+    override fun lift(value: Int): Int {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Int {
+        return buf.getInt()
+    }
+
+    override fun lower(value: Int): Int {
+        return value
+    }
+
+    override fun allocationSize(value: Int) = 4UL
+
+    override fun write(value: Int, buf: ByteBuffer) {
+        buf.putInt(value)
     }
 }
 
@@ -2923,6 +3030,60 @@ public object FfiConverterTypeFfiTrackStore: FfiConverter<FfiTrackStore, Long> {
 
     override fun write(value: FfiTrackStore, buf: ByteBuffer) {
         buf.putLong(lower(value))
+    }
+}
+
+
+
+data class CampingCallResult (
+    var `kind`: CampingCallKind
+    , 
+    var `message`: kotlin.String
+    , 
+    /**
+     * Wall-clock milliseconds spent in the guest call (worker thread).
+     */
+    var `elapsedMs`: kotlin.ULong
+    , 
+    /**
+     * Result JSON from `rtr_suggest_result` when present.
+     */
+    var `resultJson`: kotlin.String?
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCampingCallResult: FfiConverterRustBuffer<CampingCallResult> {
+    override fun read(buf: ByteBuffer): CampingCallResult {
+        return CampingCallResult(
+            FfiConverterTypeCampingCallKind.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: CampingCallResult) = (
+            FfiConverterTypeCampingCallKind.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`message`) +
+            FfiConverterULong.allocationSize(value.`elapsedMs`) +
+            FfiConverterOptionalString.allocationSize(value.`resultJson`)
+    )
+
+    override fun write(value: CampingCallResult, buf: ByteBuffer) {
+            FfiConverterTypeCampingCallKind.write(value.`kind`, buf)
+            FfiConverterString.write(value.`message`, buf)
+            FfiConverterULong.write(value.`elapsedMs`, buf)
+            FfiConverterOptionalString.write(value.`resultJson`, buf)
     }
 }
 
@@ -4437,6 +4598,46 @@ public object FfiConverterTypeWaterPoiAlongRoute: FfiConverterRustBuffer<WaterPo
             FfiConverterDouble.write(value.`distM`, buf)
     }
 }
+
+
+
+
+enum class CampingCallKind {
+    
+    OK,
+    FUEL_EXHAUSTED,
+    TIMEOUT,
+    MEMORY_EXCEEDED,
+    TRAP,
+    DISABLED,
+    UNAVAILABLE,
+    ERROR;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCampingCallKind: FfiConverterRustBuffer<CampingCallKind> {
+    override fun read(buf: ByteBuffer) = try {
+        CampingCallKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: CampingCallKind) = 4UL
+
+    override fun write(value: CampingCallKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
 
 
 
@@ -7907,6 +8108,166 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterBoolean.lower(`enabled`),
         FfiConverterBoolean.lower(`appActive`),
         FfiConverterBoolean.lower(`manual`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Capability source map for diagnostics / Phase 5a report verification.
+         */ fun `campingPluginCapabilitySourcesJson`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_capability_sources_json(
+    
+        _status)
+}
+    )
+    }
+    
+ fun `campingPluginClearClockOverride`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_clear_clock_override(
+    
+        _status)
+}
+    
+    
+
+        /**
+         * Configure paths. Safe to call more than once (rebinds session).
+         */ fun `campingPluginConfigure`(`filesDir`: kotlin.String, `dataDir`: kotlin.String, `timezone`: kotlin.String)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_configure(
+    
+        
+        FfiConverterString.lower(`filesDir`),
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`timezone`),_status)
+}
+    
+    
+
+        /**
+         * Install or replace a plugin directory under `filesDir/plugins/<name>/`.
+         * `wasm_bytes` and `manifest_json` are built from source at APK build time
+         * (assets) and copied here by the Android host — never committed binaries.
+         */ fun `campingPluginInstallGuest`(`name`: kotlin.String, `manifestJson`: kotlin.String, `wasmBytes`: kotlin.ByteArray): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_install_guest(
+    
+        
+        FfiConverterString.lower(`name`),
+        FfiConverterString.lower(`manifestJson`),
+        FfiConverterByteArray.lower(`wasmBytes`),_status)
+}
+    )
+    }
+    
+ fun `campingPluginIsEnabled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_is_enabled(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Run a staged isolation guest (`busy_loop`, `trap_guest`, `memory_bomb`) under
+         * the same sandbox. Used by instrumented emulator tests. Never crashes the app.
+         */ fun `campingPluginRunIsolationGuest`(`name`: kotlin.String): CampingCallResult {
+            return FfiConverterTypeCampingCallResult.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_run_isolation_guest(
+    
+        
+        FfiConverterString.lower(`name`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Write suggest job, invoke guest on a worker thread, return result JSON.
+         * Caller (Kotlin) must not run this on the Android main thread.
+         */ fun `campingPluginRunSuggest`(`jobJson`: kotlin.String): CampingCallResult {
+            return FfiConverterTypeCampingCallResult.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_run_suggest(
+    
+        
+        FfiConverterString.lower(`jobJson`),_status)
+}
+    )
+    }
+    
+ fun `campingPluginSessionDisabledReason`(): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_session_disabled_reason(
+    
+        _status)
+}
+    )
+    }
+    
+ fun `campingPluginSetClockYmd`(`year`: kotlin.Int, `month`: kotlin.UInt, `day`: kotlin.UInt)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_set_clock_ymd(
+    
+        
+        FfiConverterInt.lower(`year`),
+        FfiConverterUInt.lower(`month`),
+        FfiConverterUInt.lower(`day`),_status)
+}
+    
+    
+
+        /**
+         * Enable/disable via [`PluginEnableStore`] (default OFF). Disabling deletes the night store.
+         */ fun `campingPluginSetEnabled`(`enabled`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_set_enabled(
+    
+        
+        FfiConverterBoolean.lower(`enabled`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Push live navigation context (closes production destination-null).
+         */ fun `campingPluginSetNavContext`(`waypointsJson`: kotlin.String, `destLat`: kotlin.Double?, `destLon`: kotlin.Double?, `profile`: TravelProfile, `professionalDriver`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_set_nav_context(
+    
+        
+        FfiConverterString.lower(`waypointsJson`),
+        FfiConverterOptionalDouble.lower(`destLat`),
+        FfiConverterOptionalDouble.lower(`destLon`),
+        FfiConverterTypeTravelProfile.lower(`profile`),
+        FfiConverterBoolean.lower(`professionalDriver`),_status)
+}
+    )
+    }
+    
+ fun `campingPluginSetResidencyCountry`(`iso`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_set_residency_country(
+    
+        
+        FfiConverterOptionalString.lower(`iso`),_status)
 }
     )
     }

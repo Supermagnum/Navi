@@ -23,6 +23,8 @@ app/keystore/
 *.keystore
 # Built by scripts/build-android-native.sh — do not commit rebuilt copies.
 app/src/main/jniLibs/**/*.so
+# Built by scripts/build-plugin-wasm.sh — never commit guest binaries.
+app/src/main/assets/plugins/
 # Kotlin/IDE incremental compile scratch
 .kotlin/
 

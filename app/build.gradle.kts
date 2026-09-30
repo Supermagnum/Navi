@@ -174,3 +174,13 @@ tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
         md.required.set(false)
     }
 }
+
+// F-Droid / reproducible: stage wasm guests from source (no committed binaries).
+tasks.register<Exec>("buildPluginWasm") {
+    workingDir = rootProject.projectDir
+    commandLine("bash", "scripts/build-plugin-wasm.sh")
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("buildPluginWasm")
+}

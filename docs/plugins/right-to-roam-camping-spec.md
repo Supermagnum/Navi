@@ -1,6 +1,8 @@
 # Right-to-roam overnight camping plugin (specification)
 
-**Status:** specification only — not implemented.  
+**Status:** Phase 5a implemented on Android (wasmtime gate lifted, HostApi wired,
+PluginEnableStore default OFF, sandbox fuel/epoch/memory). Phase 5b presentation
+(map pins, suggestion cards, settings UI) not yet.  
 **Path:** `docs/plugins/right-to-roam-camping-spec.md`  
 **Architecture:** WASM guest via `plugin-host` / `plugin-sdk` and capability-gated
 `HostApi` ([`plugins.md`](../plugins.md)). No new core routing; the plugin
@@ -926,8 +928,10 @@ wiring them is a **separate data/ingest branch**:
 | France seashore / listed sites / drinking-water catchments / *espaces boisés classés* | FR roadside hard excludes | Layers not available → no FR roadside |
 | USFS MVUM | USFS vehicle camping | Without MVUM → designated only |
 
-`vehicle_profile_read` and `route_destination_read` are HostApi-wired; production
-defaults remain unknown / null.
+`vehicle_profile_read` and `route_destination_read` are HostApi-wired on Android
+(Phase 5a): travel profile + professional flag from the live nav session;
+destination from `camping_plugin_set_nav_context`. Layers in the table above
+remain not ingested.
 
 ---
 

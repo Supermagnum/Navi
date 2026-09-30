@@ -39,7 +39,7 @@ Builds:
         minimal'
       - bash -lc 'source "$HOME/.cargo/env" && rustup default 1.98.0'
       - bash -lc 'source "$HOME/.cargo/env" && rustup target add aarch64-linux-android
-        x86_64-linux-android'
+        x86_64-linux-android wasm32-unknown-unknown'
     # List form: fdroidserver joins with "; " and runs under bash -e -u -o pipefail,
     # so a failed step still aborts the recipe (same fail-fast as former && chains).
     prebuild:
@@ -69,11 +69,16 @@ Builds:
       - export ANDROID_HOME="$$SDK$$"
       - test ! -e ../app/src/main/jniLibs/arm64-v8a/libnavi.so
       - test ! -e ../app/src/main/jniLibs/x86_64/libnavi.so
+      # Guest .wasm is built from source (never committed). Gradle preBuild also
+      # runs this; invoke explicitly so F-Droid logs show the wasm stage.
+      - ../scripts/build-plugin-wasm.sh
+      - test -f ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
       - ../scripts/build-android-native.sh aarch64-linux-android release
       - ../scripts/build-android-native.sh x86_64-linux-android release
       - test -f ../app/src/main/jniLibs/arm64-v8a/libnavi.so
       - test -f ../app/src/main/jniLibs/x86_64/libnavi.so
       - sha256sum ../app/src/main/jniLibs/arm64-v8a/libnavi.so ../app/src/main/jniLibs/x86_64/libnavi.so
+      - sha256sum ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
       - gradle assembleRelease
     ndk: r27c
     gradle:
@@ -88,8 +93,12 @@ MaintainerNotes: |
   Rust via rustup in sudo:; .cargo/config.toml rewritten from $$NDK$$ in prebuild.
   dependenciesInfo.includeInApk/Bundle are false in app/build.gradle.kts.
   libnavi.so: prebuild rm removes committed jniLibs prebuilts; build:
-  runs scripts/build-android-native.sh for aarch64 and x86_64 before assembleRelease
+  runs scripts/build-plugin-wasm.sh (wasm32-unknown-unknown guests into
+  app/src/main/assets/plugins/, never committed) then
+  scripts/build-android-native.sh for aarch64 and x86_64 before assembleRelease
   (asserts absence before compile and presence after).
+  Phase 5a: navi-ffi links navi-plugin-host (wasmtime 48 Cranelift JIT).
+  Shipped ABIs arm64-v8a + x86_64 both have Cranelift; no armeabi-v7a.
   io.opencensus: AGP Unified Test Platform host tooling only
   (com.google.testing.platform via com.android.tools.utp) — not on
   releaseRuntimeClasspath, not shipped in the APK, not used for app telemetry.

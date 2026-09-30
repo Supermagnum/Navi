@@ -14,8 +14,8 @@ import java.io.File
 /**
  * Item 5: real on-device plugin_kv file persistence for the 2-night rule.
  *
- * HostApi `plugin_kv` is not UniFFI-wired yet (wasmtime gate closed). This uses
- * the same JSON map format as [navi_plugin_host::FilePluginKv] under app filesDir
+ * HostApi `plugin_kv` is UniFFI-wired (Phase 5a). This fixture still seeds the
+ * same JSON map format as [navi_plugin_host::FilePluginKv] under app filesDir
  * and proves survival across force-stop (seed / load split).
  *
  * Run order:
