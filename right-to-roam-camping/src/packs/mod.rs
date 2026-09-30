@@ -2,6 +2,7 @@
 
 mod estonia;
 mod finland;
+mod iceland;
 mod norway;
 mod scotland;
 mod sweden;
@@ -11,6 +12,7 @@ mod validate;
 
 pub use estonia::estonia_pack;
 pub use finland::{aland_tier_d_pack, finland_pack};
+pub use iceland::iceland_pack;
 pub use norway::norway_pack;
 pub use scotland::scotland_pack;
 pub use sweden::sweden_pack;
@@ -185,6 +187,7 @@ pub fn pack_for_location(country_iso: Option<&str>, subdivision_iso: Option<&str
         Some("no") => norway_pack(),
         Some("se") => sweden_pack(),
         Some("fi") => {
+            // Mainland FI only; Åland as FI subdivision must never use the FI pack.
             if sub
                 .as_deref()
                 .map(|s| s == "AX" || s.ends_with("-AX") || s.contains("ALAND") || s.contains("ÅLAND"))
@@ -197,8 +200,10 @@ pub fn pack_for_location(country_iso: Option<&str>, subdivision_iso: Option<&str
         }
         Some("ax") => aland_tier_d_pack(),
         Some("ee") => estonia_pack(),
+        Some("is") => iceland_pack(),
         Some("sj") => svalbard_decline_pack(),
         Some("gb") => {
+            // Scotland Tier A only on positive GB-SCT; else Tier D until England/Wales Tier C (3b).
             if sub
                 .as_deref()
                 .map(|s| s == "GB-SCT" || s.ends_with("-SCT") || s == "SCT")
@@ -227,8 +232,9 @@ pub fn builtin_enabled_packs() -> Vec<RulePack> {
         finland_pack(),
         estonia_pack(),
         scotland_pack(),
-        aland_tier_d_pack(),
+        iceland_pack(),
         svalbard_decline_pack(),
+        aland_tier_d_pack(),
     ]
 }
 

@@ -1,4 +1,4 @@
-//! Phase 3a pack fixture tests (SYNTHETIC hosts — no map pack required).
+//! Card-completeness checks for every Phase 3a pack.
 
 use navi_right_to_roam_camping::{
     builtin_enabled_packs, suggest_overnight_fixed_probes, CampingHost, LocalDate, OvernightSafety,
@@ -81,6 +81,13 @@ fn every_builtin_pack_declares_completeness_fields() {
             assert!(!pack.guidance_notes.is_empty(), "{:?} missing guidance", pack.id);
             assert!(!pack.sources.is_empty(), "{:?} missing sources", pack.id);
         }
+        let _ = (
+            &pack.distance,
+            &pack.duration,
+            &pack.fire,
+            pack.farmland_not_checked_when_landcover_unknown,
+            pack.decline_when_protected_unknown,
+        );
     }
 }
 
@@ -126,6 +133,7 @@ fn finland_mainland_accepts_aland_is_tier_d() {
     assert!(out.probe_log.iter().any(|e| e.reason.contains("tier_d")));
     assert!(out.list.cards.iter().any(|c| c.tier == Tier::D && c.country_iso == "ax"));
 
+    // FI country with Åland subdivision must also be Tier D (never mainland pack).
     let mut fi_ax = FixtureHost {
         country: "fi".into(),
         subdivision: Some("AX".into()),
@@ -157,7 +165,7 @@ fn scotland_unknown_subdivision_is_tier_d_fixture_sct_is_tier_a() {
             year: 2026,
             month: 1,
             day: 15,
-        },
+        }, // outside CMZ season
         kv: HashMap::new(),
     };
     let out = suggest_overnight_fixed_probes(&mut gb, &[(56.8, -5.1)], Some(1));
@@ -193,6 +201,37 @@ fn scotland_cmz_season_without_layer_declines() {
         .probe_log
         .iter()
         .any(|e| e.reason == "scotland_cmz_unproven_outside"));
+}
+
+#[test]
+fn iceland_declines_when_protected_unknown_accepts_when_clear() {
+    let mut is = FixtureHost {
+        country: "is".into(),
+        subdivision: None,
+        protected: ProtectedAreaStatus::Unknown,
+        cmz_ready: false,
+        cmz_inside: false,
+        safety: OvernightSafety::default(),
+        date: LocalDate {
+            year: 2026,
+            month: 7,
+            day: 1,
+        },
+        kv: HashMap::new(),
+    };
+    let out = suggest_overnight_fixed_probes(&mut is, &[(64.1, -21.9)], Some(1));
+    assert!(out
+        .probe_log
+        .iter()
+        .any(|e| e.reason == "iceland_protected_area_unknown"));
+
+    is.protected = ProtectedAreaStatus::Clear;
+    let out = suggest_overnight_fixed_probes(&mut is, &[(64.1, -21.9)], Some(1));
+    assert!(
+        out.list.cards.iter().any(|c| c.accepted && c.country_iso == "is"),
+        "fixture Clear should allow Iceland Tier A; log={:?}",
+        out.probe_log
+    );
 }
 
 #[test]
