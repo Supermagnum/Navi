@@ -3,6 +3,7 @@
 mod estonia;
 mod finland;
 mod norway;
+mod scotland;
 mod sweden;
 mod svalbard;
 mod tier_d;
@@ -11,6 +12,7 @@ mod validate;
 pub use estonia::estonia_pack;
 pub use finland::{aland_tier_d_pack, finland_pack};
 pub use norway::norway_pack;
+pub use scotland::scotland_pack;
 pub use sweden::sweden_pack;
 pub use svalbard::svalbard_decline_pack;
 pub use tier_d::tier_d_pack;
@@ -196,6 +198,17 @@ pub fn pack_for_location(country_iso: Option<&str>, subdivision_iso: Option<&str
         Some("ax") => aland_tier_d_pack(),
         Some("ee") => estonia_pack(),
         Some("sj") => svalbard_decline_pack(),
+        Some("gb") => {
+            if sub
+                .as_deref()
+                .map(|s| s == "GB-SCT" || s.ends_with("-SCT") || s == "SCT")
+                .unwrap_or(false)
+            {
+                scotland_pack()
+            } else {
+                tier_d_pack("gb")
+            }
+        }
         Some(other) => tier_d_pack(other),
         None => tier_d_pack("unknown"),
     }
@@ -213,6 +226,7 @@ pub fn builtin_enabled_packs() -> Vec<RulePack> {
         sweden_pack(),
         finland_pack(),
         estonia_pack(),
+        scotland_pack(),
         aland_tier_d_pack(),
         svalbard_decline_pack(),
     ]

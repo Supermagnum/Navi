@@ -145,6 +145,57 @@ fn finland_mainland_accepts_aland_is_tier_d() {
 }
 
 #[test]
+fn scotland_unknown_subdivision_is_tier_d_fixture_sct_is_tier_a() {
+    let mut gb = FixtureHost {
+        country: "gb".into(),
+        subdivision: None,
+        protected: ProtectedAreaStatus::Unknown,
+        cmz_ready: false,
+        cmz_inside: false,
+        safety: OvernightSafety::default(),
+        date: LocalDate {
+            year: 2026,
+            month: 1,
+            day: 15,
+        },
+        kv: HashMap::new(),
+    };
+    let out = suggest_overnight_fixed_probes(&mut gb, &[(56.8, -5.1)], Some(1));
+    assert!(out.probe_log.iter().any(|e| e.reason.contains("tier_d")));
+
+    gb.subdivision = Some("GB-SCT".into());
+    let out = suggest_overnight_fixed_probes(&mut gb, &[(56.8, -5.1)], Some(1));
+    assert!(
+        out.list.cards.iter().any(|c| c.accepted && c.tier == Tier::A),
+        "injected GB-SCT outside CMZ season should accept; log={:?}",
+        out.probe_log
+    );
+}
+
+#[test]
+fn scotland_cmz_season_without_layer_declines() {
+    let mut gb = FixtureHost {
+        country: "gb".into(),
+        subdivision: Some("GB-SCT".into()),
+        protected: ProtectedAreaStatus::Unknown,
+        cmz_ready: false,
+        cmz_inside: false,
+        safety: OvernightSafety::default(),
+        date: LocalDate {
+            year: 2026,
+            month: 6,
+            day: 15,
+        },
+        kv: HashMap::new(),
+    };
+    let out = suggest_overnight_fixed_probes(&mut gb, &[(56.2, -4.6)], Some(1));
+    assert!(out
+        .probe_log
+        .iter()
+        .any(|e| e.reason == "scotland_cmz_unproven_outside"));
+}
+
+#[test]
 fn accepted_cards_carry_disclaimer_and_sources() {
     let mut se = FixtureHost {
         country: "se".into(),
