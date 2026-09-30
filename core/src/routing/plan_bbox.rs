@@ -933,6 +933,11 @@ fn prefer_coastal_centroid(c: (f64, f64), bbox: [f64; 4], path: &str) -> (f64, f
 /// For NE gap-fill inside a large landsdel box, climb north while drifting
 /// toward the E6 spine — not freezing at the western endpoint (that parked
 /// hops on Fosen and `bbox_exhausted` / disconnected under Stay-in-Country).
+///
+/// Must not rewrite west/south approaches (Ottadal→Dalsøren class): applying
+/// the 20%-of-dlon blend on negative `dlat` left a half-step mid (~8.78°E) that
+/// forced a second mountain densify joint and a ~5× road/GC micro-hop
+/// (~100–140 km excess on Bevensen→Dalsøren).
 fn prefer_north_then_east_mid(
     geometric: (f64, f64),
     a: (f64, f64),
@@ -955,19 +960,21 @@ fn prefer_north_then_east_mid(
     }
     let dlat = b.0 - a.0;
     let dlon = b.1 - a.1;
+    // Northbound climbs only (positive dlat). Westbound / southbound gap-fill
+    // must keep the geometric mid so Chebyshev splits evenly.
+    if dlat < 0.15 {
+        return geometric;
+    }
     let spine_lon = prefer_coastal_centroid(a, bbox, "").1;
     // Already primarily eastbound (Finnmark finale): keep geometric mid.
-    if dlon.abs() >= dlat.abs() && a.1.min(b.1) >= spine_lon - 0.5 {
+    if dlon.abs() >= dlat && a.1.min(b.1) >= spine_lon - 0.5 {
         return geometric;
     }
     // Climb north; blend toward the E6 spine and a fraction of geometric dlon
     // so the corridor progresses east without the inland catalog-centroid chord.
-    if dlat.abs() > 0.15 {
-        let mid_lat = a.0 + dlat * 0.5;
-        let mid_lon = a.1 + (spine_lon - a.1) * 0.65 + dlon * 0.20;
-        return (mid_lat, mid_lon);
-    }
-    geometric
+    let mid_lat = a.0 + dlat * 0.5;
+    let mid_lon = a.1 + (spine_lon - a.1) * 0.65 + dlon * 0.20;
+    (mid_lat, mid_lon)
 }
 
 fn densify_region_country(path: &str) -> Option<&str> {
@@ -1732,6 +1739,79 @@ mod tests {
             !long_sea,
             "must densify Zealand→Skåne across leaf land, not one sea chord; hops={hops:?}"
         );
+    }
+
+    /// Ottadal→Dalsøren is a short westbound fjord approach. `prefer_north_then_east_mid`
+    /// must not apply the Nord-Norge 20%-dlon climb here: that parked a half-step mid
+    /// at ~8.78°E, forced a second mountain joint, and produced a ~5× road/GC micro-hop
+    /// (~100–140 km of the Bevensen campaign overshoot).
+    #[test]
+    fn densify_ottadal_dalsoren_keeps_even_chord_mid() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        for stem in [
+            "niedersachsen-latest",
+            "schleswig-holstein-latest",
+            "denmark-latest",
+            "skane-latest",
+            "halland-latest",
+            "vastra_gotaland-latest",
+            "ostlandet-latest",
+            "vestlandet-latest",
+        ] {
+            let path = dir.path().join(format!("{stem}.navi-manifest.json"));
+            std::fs::write(
+                &path,
+                format!(
+                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":{GRAPH_FORMAT_VERSION}}}"#
+                ),
+            )
+            .unwrap();
+        }
+        let bevensen = (53.079686_f64, 10.587198_f64);
+        let ottadal = (61.8691419_f64, 9.1055130_f64);
+        let dalsoren = (61.4433766_f64, 7.4614016_f64);
+        let hops = densify_route_points_via_regions(
+            &[bevensen, ottadal, dalsoren],
+            dir.path(),
+            LONG_TRIP_CHUNK_DEG,
+        );
+        let via_i = hops
+            .iter()
+            .position(|(lat, lon)| {
+                (lat - ottadal.0).abs() < 1e-6 && (lon - ottadal.1).abs() < 1e-6
+            })
+            .expect("Ottadal via must remain an anchor");
+        let after = &hops[via_i..];
+        // At most one densify joint between via and dest (even Chebyshev split).
+        assert!(
+            after.len() <= 3,
+            "via→dest must not micro-step mountain densify; after_via={after:?} hops={hops:?}"
+        );
+        // Reject the former NE-climb half-step mid (~8.777°E) that matched the
+        // campaign's catastrophic leg14.
+        let half_step = after.iter().any(|(lat, lon)| {
+            (lat - 61.65626).abs() < 0.02 && (lon - 8.77669).abs() < 0.05
+        });
+        assert!(
+            !half_step,
+            "must not insert NE-climb half-step mid on westbound via→dest; after_via={after:?}"
+        );
+        if after.len() == 3 {
+            let mid = after[1];
+            let geo_lon = (ottadal.1 + dalsoren.1) * 0.5;
+            assert!(
+                (mid.1 - geo_lon).abs() < 0.20,
+                "single via→dest mid must stay near chord lon {geo_lon}; mid={mid:?}"
+            );
+            let cheb = |p: (f64, f64), q: (f64, f64)| {
+                (p.0 - q.0).abs().max((p.1 - q.1).abs())
+            };
+            assert!(
+                cheb(ottadal, mid) <= LONG_TRIP_CHUNK_DEG + 1e-6
+                    && cheb(mid, dalsoren) <= LONG_TRIP_CHUNK_DEG + 1e-6,
+                "even split must keep both sub-hops ≤ chunk; mid={mid:?}"
+            );
+        }
     }
 
     /// Geography-agnostic: a point covered by two country boxes is spill/water.
