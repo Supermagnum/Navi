@@ -69,14 +69,14 @@ Builds:
       - export ANDROID_HOME="$$SDK$$"
       - test ! -e ../app/src/main/jniLibs/arm64-v8a/libnavi.so
       - test ! -e ../app/src/main/jniLibs/x86_64/libnavi.so
-      # Guest .wasm is built from source (never committed). Gradle preBuild also
-      # runs this; invoke explicitly so F-Droid logs show the wasm stage.
-      - ../scripts/build-plugin-wasm.sh
-      - test -f ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
+      # plugin.wasm staged by build-android-native.sh (build-plugin-wasm.sh).
+      # Do not also call build-plugin-wasm.sh here — redundant with that script and
+      # with Gradle preBuild (buildPluginWasm) during assembleRelease.
       - ../scripts/build-android-native.sh aarch64-linux-android release
       - ../scripts/build-android-native.sh x86_64-linux-android release
       - test -f ../app/src/main/jniLibs/arm64-v8a/libnavi.so
       - test -f ../app/src/main/jniLibs/x86_64/libnavi.so
+      - test -f ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
       - sha256sum ../app/src/main/jniLibs/arm64-v8a/libnavi.so ../app/src/main/jniLibs/x86_64/libnavi.so
       - sha256sum ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
       - gradle assembleRelease
@@ -93,10 +93,12 @@ MaintainerNotes: |
   Rust via rustup in sudo:; .cargo/config.toml rewritten from $$NDK$$ in prebuild.
   dependenciesInfo.includeInApk/Bundle are false in app/build.gradle.kts.
   libnavi.so: prebuild rm removes committed jniLibs prebuilts; build:
-  runs scripts/build-plugin-wasm.sh (wasm32-unknown-unknown guests into
-  app/src/main/assets/plugins/, never committed) then
-  scripts/build-android-native.sh for aarch64 and x86_64 before assembleRelease
-  (asserts absence before compile and presence after).
+  runs scripts/build-android-native.sh (which stages wasm guests via
+  build-plugin-wasm.sh into app/src/main/assets/plugins/, never committed)
+  for aarch64 and x86_64 before assembleRelease.
+  Explicit recipe build-plugin-wasm.sh is redundant with that and with Gradle
+  preBuild; keep Gradle preBuild for local Gradle-only assembles.
+  plugin.wasm sha256 matches across clean trees in different directories.
   Phase 5a: navi-ffi links navi-plugin-host (wasmtime 48 Cranelift JIT).
   Shipped ABIs arm64-v8a + x86_64 both have Cranelift; no armeabi-v7a.
   io.opencensus: AGP Unified Test Platform host tooling only
