@@ -48,12 +48,11 @@ const SWEDEN_SOURCES: &[CitedSource] = &[
     },
 ];
 
-/// Building distance is Navi SafetyConfig (not a Swedish statutory metre); still a
-/// hard Navi safety filter, cited against Naturvårdsverket privacy guidance.
+/// Building distance is Navi SafetyConfig (not a Swedish statutory metre).
 const SWEDEN_HARD: &[HardFilterSpec] = &[HardFilterSpec {
     id: "building_distance_navi_safety_default",
     sources: &[CitedSource {
-        url: "https://www.naturvardsverket.se/allemansratten",
-        quality: SourceQuality::Official,
+        url: "navi:safety_config/min_building_distance_m",
+        quality: SourceQuality::NaviSafetyDefault,
     }],
 }];

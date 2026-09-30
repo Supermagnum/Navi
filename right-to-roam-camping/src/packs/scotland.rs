@@ -11,7 +11,7 @@ pub fn scotland_pack() -> RulePack {
         legal_basis: "Scottish Outdoor Access Code — responsible camping",
         sources: SCOTLAND_SOURCES,
         distance: DistanceRule::NotVerifiedUsesSafetyDefault {
-            label: "Navi safety default — keep well away from buildings (Scottish Code)",
+            label: "Navi safety default, not Scottish law",
         },
         duration: DurationRule::SoftGuidance {
             note: "Lightweight, small numbers, max 2–3 nights in one place.",
@@ -60,8 +60,8 @@ const SCOTLAND_HARD: &[HardFilterSpec] = &[
     HardFilterSpec {
         id: "building_distance_navi_safety_default",
         sources: &[CitedSource {
-            url: "https://www.outdooraccess-scotland.scot/practical-guide-all/camping",
-            quality: SourceQuality::Official,
+            url: "navi:safety_config/min_building_distance_m",
+            quality: SourceQuality::NaviSafetyDefault,
         }],
     },
     HardFilterSpec {

@@ -1,6 +1,7 @@
-use super::{builtin_enabled_packs, RulePack, SourceQuality};
+use super::{builtin_enabled_packs, DistanceRule, RulePack, SourceQuality};
 
-/// HARD filters may only cite official sources. NGO / secondary → test failure.
+/// Law-backed HARD filters may only cite Official. NGO / secondary → test failure.
+/// SafetyConfig-derived building-distance HARD filters must cite NaviSafetyDefault only.
 pub fn assert_hard_filters_official_only(pack: &RulePack) {
     for hf in pack.hard_filters {
         assert!(
@@ -9,18 +10,40 @@ pub fn assert_hard_filters_official_only(pack: &RulePack) {
             pack.id,
             hf.id
         );
+        let safety_default = is_navi_safety_default_filter(hf.id, &pack.distance);
         for src in hf.sources {
-            assert_eq!(
-                src.quality,
-                SourceQuality::Official,
-                "pack {:?}: hard filter {} cites non-official source {} ({:?})",
-                pack.id,
-                hf.id,
-                src.url,
-                src.quality
-            );
+            if safety_default {
+                assert_eq!(
+                    src.quality,
+                    SourceQuality::NaviSafetyDefault,
+                    "pack {:?}: SafetyConfig-derived hard filter {} must use NaviSafetyDefault, got {:?} ({})",
+                    pack.id,
+                    hf.id,
+                    src.quality,
+                    src.url
+                );
+            } else {
+                assert_eq!(
+                    src.quality,
+                    SourceQuality::Official,
+                    "pack {:?}: hard filter {} cites non-official source {} ({:?})",
+                    pack.id,
+                    hf.id,
+                    src.url,
+                    src.quality
+                );
+            }
         }
     }
+}
+
+fn is_navi_safety_default_filter(id: &str, distance: &DistanceRule) -> bool {
+    id.contains("navi_safety_default")
+        || matches!(
+            distance,
+            DistanceRule::NotVerifiedUsesSafetyDefault { .. }
+                | DistanceRule::NoneInLawUsesSafetyDefault { .. }
+        ) && id.contains("building_distance")
 }
 
 pub fn validate_all_builtin_packs() {
@@ -31,7 +54,20 @@ pub fn validate_all_builtin_packs() {
             "pack {:?}: empty legal_basis",
             pack.id
         );
-        // Tier A packs must declare distance/duration/fire explicitly (enum variants).
+        match pack.distance {
+            DistanceRule::NotVerifiedUsesSafetyDefault { label }
+            | DistanceRule::NoneInLawUsesSafetyDefault { label } => {
+                assert!(
+                    label.contains("Navi safety default")
+                        && label.contains("not ")
+                        && label.contains("law"),
+                    "pack {:?}: SafetyConfig-as-default card label must say \
+'Navi safety default, not <country> law', got {label}",
+                    pack.id
+                );
+            }
+            DistanceRule::SafetyConfigLabeled { .. } | DistanceRule::NotApplicable => {}
+        }
         let _ = (&pack.distance, &pack.duration, &pack.fire);
     }
 }
@@ -39,7 +75,7 @@ pub fn validate_all_builtin_packs() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::packs::{estonia_pack, SourceQuality};
+    use crate::packs::{estonia_pack, finland_pack, sweden_pack, SourceQuality};
 
     #[test]
     fn all_builtin_hard_filters_are_official() {
@@ -79,6 +115,76 @@ mod tests {
             cloudberry_note: false,
         };
         assert_hard_filters_official_only(&pack);
+    }
+
+    #[test]
+    #[should_panic(expected = "NaviSafetyDefault")]
+    fn safety_config_hard_filter_tagged_official_fails_validator() {
+        use super::super::{
+            CitedSource, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack,
+            SourceQuality, Tier,
+        };
+        let pack = RulePack {
+            id: PackId::Sweden,
+            tier: Tier::A,
+            country_iso: "se".into(),
+            legal_basis: "synthetic mis-tagged safety default",
+            sources: &[],
+            distance: DistanceRule::NoneInLawUsesSafetyDefault {
+                label: "Navi safety default, not Swedish law",
+            },
+            duration: DurationRule::NotVerified,
+            fire: FireRule::NotVerified,
+            guidance_notes: &[],
+            farmland_not_checked_when_landcover_unknown: false,
+            hard_filters: &[HardFilterSpec {
+                id: "building_distance_navi_safety_default",
+                sources: &[CitedSource {
+                    url: "https://example.org/mislabelled",
+                    quality: SourceQuality::Official,
+                }],
+            }],
+            maintainer_flag_default_off: false,
+            required_subdivision: None,
+            missing_subdivision_fallback: None,
+            decline_when_protected_unknown: false,
+            cmz: None,
+            cloudberry_note: false,
+        };
+        assert_hard_filters_official_only(&pack);
+    }
+
+    #[test]
+    fn se_fi_ee_safety_default_hard_filters_are_navi_not_official() {
+        for pack in [sweden_pack(), finland_pack(), estonia_pack()] {
+            let safety_hards: Vec<_> = pack
+                .hard_filters
+                .iter()
+                .filter(|hf| hf.id.contains("navi_safety_default"))
+                .collect();
+            assert!(
+                !safety_hards.is_empty(),
+                "{:?} must declare a navi_safety_default hard filter",
+                pack.id
+            );
+            for hf in safety_hards {
+                for s in hf.sources {
+                    assert_eq!(
+                        s.quality,
+                        SourceQuality::NaviSafetyDefault,
+                        "{:?} {} must not be Official",
+                        pack.id,
+                        hf.id
+                    );
+                }
+            }
+            let label = pack.distance_card_label().expect("label");
+            assert!(
+                label.contains("Navi safety default") && label.contains("not ") && label.contains("law"),
+                "{:?} card label must say Navi safety default, not <country> law; got {label}",
+                pack.id
+            );
+        }
     }
 
     #[test]

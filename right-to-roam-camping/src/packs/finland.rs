@@ -11,7 +11,7 @@ pub fn finland_pack() -> RulePack {
         legal_basis: "Everyman's rights (jokaisenoikeudet) — mainland Finland",
         sources: FINLAND_SOURCES,
         distance: DistanceRule::NotVerifiedUsesSafetyDefault {
-            label: "Navi safety default — Finnish statutory metres not verified",
+            label: "Navi safety default, not Finnish law",
         },
         duration: DurationRule::SoftGuidance {
             note: "Temporary stay is typically 1–2 nights where movement is allowed.",
@@ -73,7 +73,7 @@ const FINLAND_SOURCES: &[CitedSource] = &[
 const FINLAND_HARD: &[HardFilterSpec] = &[HardFilterSpec {
     id: "building_distance_navi_safety_default",
     sources: &[CitedSource {
-        url: "https://valtioneuvosto.fi/-//1410903/saako-toisen-mailla-hiihtaa-enta-saako-jaalle-tehda-avannon-usein-kysyttya-ymparistosta-palveluun-koottu-yhteen-kysymyksia-ja-vastauksia-jokaisenoikeuksista",
-        quality: SourceQuality::Official,
+        url: "navi:safety_config/min_building_distance_m",
+        quality: SourceQuality::NaviSafetyDefault,
     }],
 }];

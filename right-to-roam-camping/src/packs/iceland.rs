@@ -13,7 +13,7 @@ pub fn iceland_pack() -> RulePack {
         legal_basis: "Nature Conservation Act no. 60/2013 — camping provisions",
         sources: ICELAND_SOURCES,
         distance: DistanceRule::NotVerifiedUsesSafetyDefault {
-            label: "Navi safety default — Icelandic statutory metres not verified",
+            label: "Navi safety default, not Icelandic law",
         },
         duration: DurationRule::SoftGuidance {
             note: "Along public routes in inhabited areas: one night, traditional tent only, \
@@ -61,8 +61,8 @@ const ICELAND_HARD: &[HardFilterSpec] = &[
     HardFilterSpec {
         id: "building_distance_navi_safety_default",
         sources: &[CitedSource {
-            url: "https://ust.is/english/visiting-iceland/travel-information/where-can-you-camp/",
-            quality: SourceQuality::Official,
+            url: "navi:safety_config/min_building_distance_m",
+            quality: SourceQuality::NaviSafetyDefault,
         }],
     },
 ];

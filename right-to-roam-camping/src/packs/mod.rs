@@ -44,12 +44,15 @@ pub enum PackId {
     TierD,
 }
 
-/// Citation quality. HARD filters may only cite [`SourceQuality::Official`].
+/// Citation quality. Law-backed HARD filters may only cite [`SourceQuality::Official`].
+/// SafetyConfig-derived building distance must use [`SourceQuality::NaviSafetyDefault`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SourceQuality {
     Official,
     Ngo,
     Secondary,
+    /// Navi OvernightSafety metres — not a statutory figure for the jurisdiction.
+    NaviSafetyDefault,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

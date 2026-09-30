@@ -12,7 +12,7 @@ pub fn estonia_pack() -> RulePack {
         sources: ESTONIA_SOURCES,
         // 150 m figure is secondary (Postimees) → NOT a hard rule.
         distance: DistanceRule::NotVerifiedUsesSafetyDefault {
-            label: "Navi safety default — Estonian 150 m figure is secondary (re-verify)",
+            label: "Navi safety default, not Estonian law",
         },
         duration: DurationRule::HardMaxConsecutiveNights {
             nights: 1,
@@ -67,8 +67,8 @@ const ESTONIA_HARD: &[HardFilterSpec] = &[
     HardFilterSpec {
         id: "building_distance_navi_safety_default",
         sources: &[CitedSource {
-            url: "https://rmk.ee/en/exploring-nature/rules-of-conduct/freedom-to-roam/",
-            quality: SourceQuality::Official,
+            url: "navi:safety_config/min_building_distance_m",
+            quality: SourceQuality::NaviSafetyDefault,
         }],
     },
 ];
