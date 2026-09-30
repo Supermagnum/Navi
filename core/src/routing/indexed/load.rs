@@ -275,6 +275,40 @@ fn tile_bboxes_adjacent(a: [f64; 4], b: [f64; 4]) -> bool {
     (lat_touch && lon_overlap) || (lon_touch && lat_overlap)
 }
 
+/// True when a selected tile may count as covering a hop endpoint for budget
+/// retention. Country extracts whose AABB spills over Ready foreign leaves
+/// (e.g. `europe/denmark` over Skåne) must not satisfy endpoint coverage — that
+/// let the budget drop the real leaf stem and left densify centroids
+/// unsnappable on every sea-adjacent corridor.
+fn tile_counts_as_endpoint_cover(
+    tile_name: &str,
+    tile_bbox: [f64; 4],
+    lat: f64,
+    lon: f64,
+    ready_paths: &[(String, [f64; 4])],
+) -> bool {
+    if !crate::routing::basemap::bbox_covers_point(tile_bbox, lat, lon) {
+        return false;
+    }
+    let stem = tile_name
+        .split(".navi-graph-")
+        .next()
+        .unwrap_or(tile_name);
+    let Some(path) = pbf_stem_to_geofabrik_path(stem) else {
+        return true;
+    };
+    let leaf_ready_covers = ready_paths.iter().any(|(p, b)| {
+        p.matches('/').count() >= 2
+            && crate::routing::basemap::bbox_covers_point(*b, lat, lon)
+    });
+    if leaf_ready_covers
+        && crate::routing::plan_bbox::densify_skip_country_when_leaves_ready(&path, ready_paths)
+    {
+        return false;
+    }
+    true
+}
+
 fn select_tiles_within_budget(
     candidates: Vec<(String, [f64; 4])>,
     route_points: Option<&[(f64, f64)]>,
@@ -460,10 +494,11 @@ fn select_tiles_within_budget(
         });
         // Keep endpoint coverage: re-run sample picks on the size-sorted prefix
         // is lossy; prefer dropping largest extras while endpoints stay covered.
+        // Country AABB spill must not count as covering a leaf endpoint.
         let covers = |files: &[(String, [f64; 4])], lat: f64, lon: f64| -> bool {
-            files
-                .iter()
-                .any(|(_, b)| crate::routing::basemap::bbox_covers_point(*b, lat, lon))
+            files.iter().any(|(n, b)| {
+                tile_counts_as_endpoint_cover(n, *b, lat, lon, &ready_paths)
+            })
         };
         while selected.len() > max_tiles {
             let mut dropped = false;
@@ -502,9 +537,9 @@ fn select_tiles_within_budget(
             .fold(0u64, u64::saturating_add)
     };
     let covers = |files: &[(String, [f64; 4])], lat: f64, lon: f64| -> bool {
-        files
-            .iter()
-            .any(|(_, b)| crate::routing::basemap::bbox_covers_point(*b, lat, lon))
+        files.iter().any(|(n, b)| {
+            tile_counts_as_endpoint_cover(n, *b, lat, lon, &ready_paths)
+        })
     };
     while total_bytes(&selected) > max_bytes && selected.len() > 2 {
         let mut dropped = false;
@@ -1520,9 +1555,48 @@ pub fn try_load_wetland_for_plan(
 
 #[cfg(test)]
 mod select_tiles_budget_tests {
-    use super::{select_tiles_within_budget, tile_bboxes_adjacent};
+    use super::{select_tiles_within_budget, tile_bboxes_adjacent, tile_counts_as_endpoint_cover};
     use std::fs;
     use std::path::Path;
+
+    #[test]
+    fn country_spill_tile_does_not_cover_foreign_leaf_endpoint() {
+        // Denmark country AABB covers western Skåne; with Skåne Ready it must
+        // not satisfy endpoint coverage so budget retention keeps Skåne tiles.
+        let ready = vec![
+            (
+                "europe/denmark".to_string(),
+                [54.44065_f64, 7.7011, 58.06239, 15.65449],
+            ),
+            (
+                "europe/sweden/skane".to_string(),
+                [55.32_f64, 12.45, 56.50, 14.60],
+            ),
+        ];
+        let skane_pt = (55.91_f64, 13.525_f64);
+        let dk_tile_bbox = [54.5_f64, 10.0, 56.5, 14.0]; // spills into Skåne
+        assert!(
+            !tile_counts_as_endpoint_cover(
+                "denmark-latest.navi-graph-car.t0_0.rkyv",
+                dk_tile_bbox,
+                skane_pt.0,
+                skane_pt.1,
+                &ready,
+            ),
+            "DK country tile must not count as covering Skåne endpoint"
+        );
+        let skane_tile_bbox = [55.5_f64, 13.0, 56.2, 14.0];
+        assert!(
+            tile_counts_as_endpoint_cover(
+                "skane-latest.navi-graph-car.t0_0.rkyv",
+                skane_tile_bbox,
+                skane_pt.0,
+                skane_pt.1,
+                &ready,
+            ),
+            "Skåne leaf tile must cover Skåne endpoint"
+        );
+    }
 
     /// Ostlandet-like 2×3 car tile grid covering R4b / Espa corridors.
     fn ostlandet_grid() -> Vec<(String, [f64; 4])> {
