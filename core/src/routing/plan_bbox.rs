@@ -583,6 +583,9 @@ fn insert_land_safe_mids(
         if densify_point_in_multi_country_spill(c, ready) {
             continue;
         }
+        if !densify_point_has_leaf_cover(c, ready) {
+            continue;
+        }
         if densify_reverses_hop_axis(a, b, c) {
             continue;
         }
@@ -602,7 +605,10 @@ fn insert_land_safe_mids(
             .filter(|(_, r)| crate::routing::basemap::bbox_covers_point(*r, mid.0, mid.1))
             .map(|(_, r)| *r)
             .collect();
-        if !covering.is_empty() && !densify_point_in_multi_country_spill(mid, ready) {
+        if !covering.is_empty()
+            && !densify_point_in_multi_country_spill(mid, ready)
+            && densify_point_has_leaf_cover(mid, ready)
+        {
             // Large landsdel boxes (e.g. Nord-Norge) treat mountain plateaus as
             // "on land". For NE Stay-in-Country climbs, insert a due-north mid at
             // the western endpoint's longitude first so densify follows the coastal
@@ -674,6 +680,9 @@ fn densify_land_bridge_mid(
         if densify_point_in_multi_country_spill(c, ready) {
             continue;
         }
+        if !densify_point_has_leaf_cover(c, ready) {
+            continue;
+        }
         if densify_reverses_hop_axis(a, b, c) {
             continue;
         }
@@ -710,6 +719,9 @@ fn densify_land_bridge_mid(
     let mut best_step: Option<(f64, f64, (f64, f64))> = None; // (db, t, c)
     for &c in &candidates {
         if densify_point_in_multi_country_spill(c, ready) {
+            continue;
+        }
+        if !densify_point_has_leaf_cover(c, ready) {
             continue;
         }
         if densify_reverses_hop_axis(a, b, c) {
@@ -956,6 +968,15 @@ fn densify_region_country(path: &str) -> Option<&str> {
     let mut parts = path.split('/');
     let _cont = parts.next()?;
     parts.next()
+}
+
+/// True when a Ready **leaf** (path depth ≥ 2) covers `pt`. Country AABBs alone
+/// often include open water; densify endpoints must sit in a leaf box.
+fn densify_point_has_leaf_cover(pt: (f64, f64), ready: &[(String, [f64; 4])]) -> bool {
+    ready.iter().any(|(path, bbox)| {
+        path.matches('/').count() >= 2
+            && crate::routing::basemap::bbox_covers_point(*bbox, pt.0, pt.1)
+    })
 }
 
 /// Reject densify points that sit in multi-country catalog bbox spill.
