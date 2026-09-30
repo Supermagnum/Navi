@@ -7,8 +7,17 @@
 mod abi;
 mod host;
 mod manifest;
+mod plugin_enable;
 pub mod smoke;
 
-pub use abi::{Capability, HostApi, PoiWrite, Position, WeatherSampleView};
+pub use abi::{
+    AdminRegionView, Capability, ClockView, HostApi, LandTenureView, LandcoverQueryView,
+    LayerStatus, MemoryPluginKv, PoiWrite, Position, ProtectedAreaHit, ProtectedAreaQueryView,
+    RoadTrackJunction, RouteDestinationView, RouteView, SafetyConfigView, TravelModeView,
+    TravellerProfileView, VehicleProfileView, WeatherSampleView,
+};
 pub use host::{CallOutcome, PluginError, PluginHost, PluginLimits};
 pub use manifest::PluginManifest;
+pub use plugin_enable::{
+    plugin_list, plugin_set_enabled, PluginEnableStore, PluginListEntry,
+};

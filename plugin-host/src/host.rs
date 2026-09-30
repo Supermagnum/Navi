@@ -332,6 +332,201 @@ fn install_imports(
         )?;
     }
 
+    if allowed.contains(&Capability::RouteRead) {
+        linker.func_wrap(
+            "navi",
+            "route_read",
+            |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
+                let view = caller.data().api.route_read();
+                write_json_view(&mut caller, out_ptr, out_cap, &view, "route_read")
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::RouteDestinationRead) {
+        linker.func_wrap(
+            "navi",
+            "route_destination_read",
+            |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
+                let view = caller.data().api.route_destination_read();
+                write_json_view(&mut caller, out_ptr, out_cap, &view, "route_destination_read")
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::SafetyConfigRead) {
+        linker.func_wrap(
+            "navi",
+            "safety_config_read",
+            |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
+                let view = caller.data().api.safety_config_read();
+                write_json_view(&mut caller, out_ptr, out_cap, &view, "safety_config_read")
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::AdminRegionRead) {
+        linker.func_wrap(
+            "navi",
+            "admin_region_read",
+            |mut caller: Caller<'_, StoreData>,
+             lat_bits: u64,
+             lon_bits: u64,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let lat = f64::from_bits(lat_bits);
+                let lon = f64::from_bits(lon_bits);
+                let view = caller.data().api.admin_region_read(lat, lon);
+                write_json_view(&mut caller, out_ptr, out_cap, &view, "admin_region_read")
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::ClockRead) {
+        linker.func_wrap(
+            "navi",
+            "clock_read",
+            |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
+                let view = caller.data().api.clock_read();
+                write_json_view(&mut caller, out_ptr, out_cap, &view, "clock_read")
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::PluginKv) {
+        linker.func_wrap(
+            "navi",
+            "plugin_kv_get",
+            |mut caller: Caller<'_, StoreData>,
+             key_ptr: u32,
+             key_len: u32,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let key = read_guest_string(&mut caller, key_ptr, key_len)?;
+                match caller.data().api.plugin_kv_get(&key) {
+                    Some(v) => {
+                        let written =
+                            write_guest_bytes(&mut caller, out_ptr, out_cap, v.as_bytes())?;
+                        Ok(written as i32)
+                    }
+                    None => Ok(-1),
+                }
+            },
+        )?;
+        linker.func_wrap(
+            "navi",
+            "plugin_kv_set",
+            |mut caller: Caller<'_, StoreData>,
+             key_ptr: u32,
+             key_len: u32,
+             val_ptr: u32,
+             val_len: u32|
+             -> wasmtime::Result<i32> {
+                let key = read_guest_string(&mut caller, key_ptr, key_len)?;
+                let val = read_guest_string(&mut caller, val_ptr, val_len)?;
+                match caller.data_mut().api.plugin_kv_set(&key, &val) {
+                    Ok(()) => Ok(0),
+                    Err(_) => Ok(1),
+                }
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::ProtectedAreaQuery) {
+        linker.func_wrap(
+            "navi",
+            "protected_area_query",
+            |mut caller: Caller<'_, StoreData>,
+             lat_bits: u64,
+             lon_bits: u64,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let lat = f64::from_bits(lat_bits);
+                let lon = f64::from_bits(lon_bits);
+                let view = caller.data().api.protected_area_query(lat, lon);
+                write_json_view(&mut caller, out_ptr, out_cap, &view, "protected_area_query")
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::LandTenureQuery) {
+        linker.func_wrap(
+            "navi",
+            "land_tenure_query",
+            |mut caller: Caller<'_, StoreData>,
+             lat_bits: u64,
+             lon_bits: u64,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let lat = f64::from_bits(lat_bits);
+                let lon = f64::from_bits(lon_bits);
+                let view = caller.data().api.land_tenure_query(lat, lon);
+                write_json_view(&mut caller, out_ptr, out_cap, &view, "land_tenure_query")
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::LandcoverQuery) {
+        linker.func_wrap(
+            "navi",
+            "landcover_query",
+            |mut caller: Caller<'_, StoreData>,
+             lat_bits: u64,
+             lon_bits: u64,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let lat = f64::from_bits(lat_bits);
+                let lon = f64::from_bits(lon_bits);
+                let view = caller.data().api.landcover_query(lat, lon);
+                write_json_view(&mut caller, out_ptr, out_cap, &view, "landcover_query")
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::TravelModeRead) {
+        linker.func_wrap(
+            "navi",
+            "travel_mode_read",
+            |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
+                let view = caller.data().api.travel_mode_read();
+                write_json_view(&mut caller, out_ptr, out_cap, &view, "travel_mode_read")
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::VehicleProfileRead) {
+        linker.func_wrap(
+            "navi",
+            "vehicle_profile_read",
+            |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
+                let view = caller.data().api.vehicle_profile_read();
+                write_json_view(&mut caller, out_ptr, out_cap, &view, "vehicle_profile_read")
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::TravellerProfileRead) {
+        linker.func_wrap(
+            "navi",
+            "traveller_profile_read",
+            |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
+                let view = caller.data().api.traveller_profile_read();
+                write_json_view(
+                    &mut caller,
+                    out_ptr,
+                    out_cap,
+                    &view,
+                    "traveller_profile_read",
+                )
+            },
+        )?;
+    }
+
     // Always provide a no-op alloc helper so guests can request scratch space
     // without WASI. Guests that ship their own allocator ignore this.
     linker.func_wrap(
@@ -341,6 +536,19 @@ fn install_imports(
     )?;
 
     Ok(())
+}
+
+fn write_json_view<T: serde::Serialize>(
+    caller: &mut Caller<'_, StoreData>,
+    out_ptr: u32,
+    out_cap: u32,
+    value: &T,
+    label: &str,
+) -> wasmtime::Result<i32> {
+    let json = serde_json::to_string(value)
+        .map_err(|e| wasmtime::Error::msg(format!("serialize {label}: {e}")))?;
+    let written = write_guest_bytes(caller, out_ptr, out_cap, json.as_bytes())?;
+    Ok(written as i32)
 }
 
 fn hits_as_json(hits: &[PoiWrite]) -> Vec<serde_json::Value> {

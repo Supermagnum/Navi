@@ -1,0 +1,15 @@
+[package]
+name = "navi-right-to-roam-camping"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Right-to-roam overnight camping rule engine (native; WASM guest wraps this)"
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+driver-break-core = { path = "../core" }

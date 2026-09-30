@@ -40,15 +40,7 @@ impl HostApi for MockApi {
 }
 
 fn full_policy() -> HashSet<Capability> {
-    [
-        Capability::Log,
-        Capability::PositionRead,
-        Capability::PoiQuery,
-        Capability::PoiWrite,
-        Capability::WeatherRead,
-    ]
-    .into_iter()
-    .collect()
+    Capability::all().iter().copied().collect()
 }
 
 /// Run the three isolation checks against pre-staged plugin fixture dirs.
