@@ -17,8 +17,10 @@ pub fn sweden_pack() -> RulePack {
             note: "No statutory night limit; official rule of thumb is a single day or so.",
         },
         fire: FireRule::GuidanceNote {
-            text: "Follow local fire bans and never light a fire where it can spread; \
-municipal rules may be stricter than allemansrätten summaries.",
+            // Spec Sweden pack has no Fire field. This is Navi general safety text,
+            // not sourced from Swedish law or Naturvårdsverket.
+            text: "General safety guidance, not Swedish law: follow local fire bans and \
+never light a fire where it can spread.",
         },
         guidance_notes: &[
             "Pitch well away from homes, out of sight of their windows.",

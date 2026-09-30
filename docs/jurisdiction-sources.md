@@ -33,6 +33,15 @@ Last sources batch: 2026-09 (Phase 3a pack wiring)
 | Naturvårdsverket — allemansrätten | https://www.naturvardsverket.se/allemansratten | copied from spec 2026-09, not re-verified |
 | Handbok göra allemansrätt (PDF) | https://prod-egp.naturvardsverket.se/497366/globalassets/vagledning/allemansratten/material/handbok-gora-allemansratt-a4.pdf | copied from spec 2026-09, not re-verified |
 
+
+### Sweden fire text (Phase 3 fix)
+
+The Sweden pack table in the camping spec has **no Fire field**. The previous card
+fire wording was Navi-authored guidance from Phase 3a, not copied from
+Naturvårdsverket. Fetch of `https://www.naturvardsverket.se/allemansratten` during
+this fix returned HTTP 404, so the card now labels fire as
+**"general safety guidance, not Swedish law"** rather than claiming an official source.
+
 ## Finland
 
 | Document | URL | Verified on |
