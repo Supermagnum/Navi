@@ -4,8 +4,8 @@
 # 1) Premature-link guard: navi-desktop / navi-linux must not depend on
 #    navi-plugin-host until those hosts also wire the camping (or other) product
 #    plugin. navi-ffi (Android libnavi.so) is allowed — Phase 5a lifted that gate.
-# 2) wasmtime feature guard: plugin-host must only enable cranelift+runtime+gc-drc
-#    (no wasi / component-model / winch / default feature set).
+# 2) wasmtime feature guard: plugin-host must only enable cranelift+runtime
+#    (no wasi / component-model / winch / gc / default feature set).
 #
 # Uses POSIX grep (not ripgrep) so GitHub-hosted runners without rg still pass.
 set -euo pipefail
@@ -59,7 +59,7 @@ else
     case "$line" in
       *wasmtime*)
         lower="$(echo "$line" | tr '[:upper:]' '[:lower:]')"
-        for bad in wasi component-model winch pooling-allocator; do
+        for bad in wasi component-model winch pooling-allocator wat cache profiling coredump demangle addr2line gc-drc gc-copying; do
           if echo "$lower" | grep -E -q "(^|[,( ])${bad}([,)]|$)"; then
             echo "FAIL: wasmtime feature tree enables '$bad': $line" >&2
             fail=1
@@ -70,13 +70,13 @@ else
   done <<< "$FEATURES"
 fi
 
-if ! grep -F -q 'wasmtime = { version = "48", default-features = false, features = ["cranelift", "runtime", "gc-drc"] }' \
+if ! grep -F -q 'wasmtime = { version = "48", default-features = false, features = ["cranelift", "runtime"] }' \
   plugin-host/Cargo.toml; then
   echo "FAIL: plugin-host/Cargo.toml wasmtime pin/features drifted" >&2
   grep -n 'wasmtime' plugin-host/Cargo.toml || true
   fail=1
 else
-  echo "ok: plugin-host wasmtime pin is cranelift+runtime+gc-drc, default-features=false"
+  echo "ok: plugin-host wasmtime pin is cranelift+runtime, default-features=false"
 fi
 
 echo "==> workspace wasmtime uniqueness"

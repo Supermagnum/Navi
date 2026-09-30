@@ -38,7 +38,9 @@ snapshots into the core; WASM guests must not get raw sockets.
 ### Current state (2026-09 Phase 5a)
 
 - `plugin-host` pins **wasmtime** major **`48`** (lockfile **`48.0.3`**), with
-  features `cranelift` + `runtime` + `gc-drc` only (not Winch).
+  features `cranelift` + `runtime` only (`default-features = false`; no Winch,
+  WASI, component-model, wat, cache, profiling, coredump, addr2line/demangle,
+  parallel-compilation, or GC collectors — guests do not use Wasm GC).
 - **`navi-ffi` (Android `libnavi.so`) links `navi-plugin-host`.** The right-to-roam
   camping guest runs under Cranelift JIT on shipped ABIs (`arm64-v8a`, `x86_64`).
   `navi-desktop` / `navi-linux` still must **not** depend on `navi-plugin-host`
@@ -59,7 +61,8 @@ snapshots into the core; WASM guests must not get raw sockets.
 - The wasmtime 29-era RustSec ignores remain **cleared from**
   [`deny.toml`](../deny.toml). Example-guest `wee_alloc` ignore remains for fixtures.
 - **Feature / backend confirmation:** `cargo tree -p navi-plugin-host -e features -i
-  wasmtime` shows only `cranelift`, `runtime`, and `gc-drc`. Only `plugin-host`
+  wasmtime` shows only `cranelift` and `runtime` (plus transitive `std` /
+  unwinder / icache-coherence those enable). Only `plugin-host`
   declares `wasmtime` in the workspace.
 - **Android aarch64 verification (kept green):** CI
   `plugin-host-android-aarch64` / `scripts/plugin-host-android-aarch64-smoke.sh`
