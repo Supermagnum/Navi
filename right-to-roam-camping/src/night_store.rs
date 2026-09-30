@@ -455,8 +455,10 @@ mod tests {
     fn retention_derives_from_longest_pack_window() {
         assert_eq!(default_night_store_retention_days(), 2);
         let no = crate::packs::norway_pack();
-        assert_eq!(night_store_retention_days(&[&no]), 2);
+        let ee = crate::packs::estonia_pack();
+        assert_eq!(night_store_retention_days(&[&no, &ee]), 2);
         assert_eq!(no.night_store_retention_days(), Some(2));
+        assert_eq!(ee.night_store_retention_days(), Some(1));
     }
 
     #[test]

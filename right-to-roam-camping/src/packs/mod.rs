@@ -1,5 +1,6 @@
 //! Explicit rule packs — no shared Default; every field set per pack.
 
+mod estonia;
 mod finland;
 mod norway;
 mod sweden;
@@ -7,6 +8,7 @@ mod svalbard;
 mod tier_d;
 mod validate;
 
+pub use estonia::estonia_pack;
 pub use finland::{aland_tier_d_pack, finland_pack};
 pub use norway::norway_pack;
 pub use sweden::sweden_pack;
@@ -192,6 +194,7 @@ pub fn pack_for_location(country_iso: Option<&str>, subdivision_iso: Option<&str
             }
         }
         Some("ax") => aland_tier_d_pack(),
+        Some("ee") => estonia_pack(),
         Some("sj") => svalbard_decline_pack(),
         Some(other) => tier_d_pack(other),
         None => tier_d_pack("unknown"),
@@ -209,6 +212,7 @@ pub fn builtin_enabled_packs() -> Vec<RulePack> {
         norway_pack(),
         sweden_pack(),
         finland_pack(),
+        estonia_pack(),
         aland_tier_d_pack(),
         svalbard_decline_pack(),
     ]

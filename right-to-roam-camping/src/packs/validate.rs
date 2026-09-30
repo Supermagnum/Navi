@@ -39,6 +39,7 @@ pub fn validate_all_builtin_packs() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::packs::{estonia_pack, SourceQuality};
 
     #[test]
     fn all_builtin_hard_filters_are_official() {
@@ -78,5 +79,24 @@ mod tests {
             cloudberry_note: false,
         };
         assert_hard_filters_official_only(&pack);
+    }
+
+    #[test]
+    fn estonia_secondary_150m_is_not_a_hard_filter() {
+        let p = estonia_pack();
+        assert!(p.sources.iter().any(|s| s.quality == SourceQuality::Secondary));
+        for hf in p.hard_filters {
+            assert!(
+                !hf.id.contains("150"),
+                "150 m must not be a hard filter id"
+            );
+            for s in hf.sources {
+                assert_ne!(s.quality, SourceQuality::Secondary);
+            }
+        }
+        assert!(
+            p.guidance_notes.iter().any(|n| n.contains("re-verify")),
+            "secondary 150 m must appear as a re-verify note"
+        );
     }
 }
