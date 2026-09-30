@@ -1,5 +1,6 @@
 //! Right-to-roam overnight camping — shared rule engine (no wasmtime).
 
+#[cfg(feature = "native")]
 mod candidates;
 mod card;
 mod engine;
@@ -7,19 +8,27 @@ mod fire;
 mod host;
 mod night_store;
 pub mod packs;
+mod safety_view;
 
+#[cfg(feature = "native")]
 pub use candidates::{
     find_road_track_junctions, probe_along_track, JunctionRank, RoadTrackSeed, ProbePoint,
     CORRIDOR_SEED_RADIUS_M, DEFAULT_TRACK_WALK_M, SERVICE_TRACK_MIN_CONTINUE_M,
 };
 pub use card::{CampingCard, DeclineKind, SuggestionList};
+#[cfg(feature = "native")]
+pub use engine::SuggestInput;
 pub use engine::{
-    cloudberry_decision, suggest_overnight, suggest_overnight_fixed_probes, CloudberryDecision,
-    ProbeLogEntry, SuggestInput, SuggestOutcome,
+    cloudberry_decision, suggest_overnight_fixed_probes, CloudberryDecision, ProbeLogEntry,
+    SuggestOutcome,
 };
+#[cfg(feature = "native")]
+pub use engine::suggest_overnight;
+#[cfg(feature = "native")]
+pub use fire::local_date_europe_oslo_from_utc;
 pub use fire::{
-    fire_guidance_norway, in_norway_fire_ban_window, local_date_europe_oslo_from_utc, FireGuidance,
-    BARE_ROCK_NOTE, CAUTIOUS_FIRE_UNKNOWN_DATE, LEAVE_NO_TRACE_NOTE, PROTECTED_SPECIES_NOTE,
+    fire_guidance_norway, in_norway_fire_ban_window, FireGuidance, BARE_ROCK_NOTE,
+    CAUTIOUS_FIRE_UNKNOWN_DATE, LEAVE_NO_TRACE_NOTE, PROTECTED_SPECIES_NOTE,
 };
 pub use host::{CampingHost, LocalDate, TravelMode};
 pub use night_store::{
@@ -28,6 +37,7 @@ pub use night_store::{
     LOCATION_GRID_DEG,
 };
 pub use packs::{PackId, RulePack, Tier};
+pub use safety_view::{wild_overnight_reject, OvernightSafety};
 
 /// Layers the host cannot check yet — shown on every Tier A card.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]

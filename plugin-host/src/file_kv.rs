@@ -48,6 +48,11 @@ impl FilePluginKv {
         self.flush()
     }
 
+    /// Snapshot of keys currently stored (for night-store prune sweeps).
+    pub fn keys(&self) -> Vec<String> {
+        self.map.keys().cloned().collect()
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
     }

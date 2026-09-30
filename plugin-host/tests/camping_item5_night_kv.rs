@@ -2,21 +2,20 @@
 
 use navi_plugin_host::FilePluginKv;
 use navi_right_to_roam_camping::{
-    location_id_from_lat_lon, CampingHost, LocalDate, NightStore, TravelMode,
+    location_id_from_lat_lon, CampingHost, LocalDate, NightStore, OvernightSafety, TravelMode,
 };
-use driver_break_core::config::SafetyConfig;
 use std::path::PathBuf;
 
 struct FileCampingHost {
     kv: FilePluginKv,
     available: bool,
-    safety: Option<SafetyConfig>,
+    safety: Option<OvernightSafety>,
     date: Option<LocalDate>,
 }
 
 impl CampingHost for FileCampingHost {
-    fn safety_config(&self) -> Option<SafetyConfig> {
-        self.safety.clone()
+    fn safety_config(&self) -> Option<OvernightSafety> {
+        self.safety
     }
     fn clock_local(&self) -> Option<LocalDate> {
         self.date
@@ -51,7 +50,7 @@ fn open_host(path: PathBuf, available: bool) -> FileCampingHost {
     FileCampingHost {
         kv: FilePluginKv::open(path).expect("open kv"),
         available,
-        safety: Some(SafetyConfig::default()),
+        safety: Some(OvernightSafety::default()),
         date: Some(LocalDate {
             year: 2026,
             month: 7,
@@ -173,4 +172,52 @@ fn file_kv_third_night_gap_move_and_reopen() {
             2
         ));
     }
+}
+
+#[test]
+fn prune_uses_pack_max_not_magic_number() {
+    use navi_right_to_roam_camping::{
+        default_night_store_retention_days, on_camping_plugin_enable_changed,
+    };
+    assert_eq!(default_night_store_retention_days(), 2);
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("camping_night.json");
+    let loc = location_id_from_lat_lon(61.14, 10.60);
+    {
+        let mut h = open_host(path.clone(), true);
+        h.date = Some(LocalDate {
+            year: 2026,
+            month: 6,
+            day: 1,
+        });
+        NightStore::record_night(
+            &mut h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 6,
+                day: 1,
+            },
+        )
+        .unwrap();
+        let keys = h.kv.keys();
+        let cleared = NightStore::prune_older_than(
+            &mut h,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 1,
+            },
+            default_night_store_retention_days(),
+            &keys,
+        );
+        assert!(cleared >= 1);
+        assert!(h.kv.get(&format!("rtr_night:no:{loc}")).is_none());
+    }
+
+    std::fs::write(&path, r#"{"x":"1"}"#).unwrap();
+    assert!(on_camping_plugin_enable_changed("right_to_roam_camping", false, &path).unwrap());
+    assert!(!path.exists());
 }

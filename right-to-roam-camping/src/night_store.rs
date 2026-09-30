@@ -1,9 +1,14 @@
 //! Plugin-local consecutive-night store. Keys are lat/lon grid cells — never
 //! graph node ids (navi-server rebakes weekly; OSM ids are not stable).
+//!
+//! Persistence file (Android: `plugin_kv/camping_night.json`) is a log of where
+//! the user slept. Entries are pruned using the pack max consecutive nights
+//! (not a magic number). The file is deleted when the plugin is disabled.
 
 use serde::{Deserialize, Serialize};
 
 use crate::host::{CampingHost, LocalDate};
+use crate::packs::{norway_pack, RulePack};
 
 /// ~111 m at equator; stable across pack rebakes.
 pub const LOCATION_GRID_DEG: f64 = 0.001;
@@ -40,6 +45,24 @@ fn parse_date(s: &str) -> Option<chrono::NaiveDate> {
 
 fn kv_key(pack: &str, location_id: &str) -> String {
     format!("rtr_night:{pack}:{location_id}")
+}
+
+fn active_pointer_key(pack: &str) -> String {
+    format!("rtr_night_active:{pack}")
+}
+
+/// Retention window (days) from the longest `max_consecutive_nights` among packs.
+pub fn night_store_retention_days(packs: &[&RulePack]) -> u32 {
+    packs
+        .iter()
+        .filter_map(|p| p.max_consecutive_nights)
+        .max()
+        .unwrap_or(0)
+}
+
+/// Built-in packs (Norway → 2 consecutive nights).
+pub fn default_night_store_retention_days() -> u32 {
+    night_store_retention_days(&[&norway_pack()])
 }
 
 pub struct NightStore;
@@ -152,7 +175,7 @@ impl NightStore {
         // Clear other location keys for this pack (camping elsewhere resets).
         // Spec: reset when user camps elsewhere. We only store one active key
         // per pack via a pointer.
-        let active_key = format!("rtr_night_active:{pack}");
+        let active_key = active_pointer_key(pack);
         if let Some(prev) = host.kv_get(&active_key) {
             if prev != location_id {
                 let _ = host.kv_set(&kv_key(pack, &prev), "");
@@ -161,26 +184,90 @@ impl NightStore {
         host.kv_set(&active_key, location_id)?;
         host.kv_set(&key, &serde_json::to_string(&rec).unwrap())
     }
+
+    /// Drop `rtr_night:*` entries whose `last_night` is older than retention.
+    /// `keys` is the full KV key list (FilePluginKv / MemoryPluginKv inventory).
+    pub fn prune_older_than(
+        host: &mut dyn CampingHost,
+        tonight: LocalDate,
+        retention_days: u32,
+        keys: &[String],
+    ) -> usize {
+        if !host.plugin_kv_available() || retention_days == 0 {
+            return 0;
+        }
+        let Some(today) = tonight.to_naive() else {
+            return 0;
+        };
+        let mut cleared = 0usize;
+        for key in keys {
+            if !key.starts_with("rtr_night:") || key.starts_with("rtr_night_active:") {
+                continue;
+            }
+            let Some(raw) = host.kv_get(key) else {
+                continue;
+            };
+            let stale = match serde_json::from_str::<NightRecord>(&raw) {
+                Ok(rec) => match parse_date(&rec.last_night) {
+                    Some(last) => (today - last).num_days() > i64::from(retention_days),
+                    None => true,
+                },
+                Err(_) => true,
+            };
+            if stale {
+                let _ = host.kv_set(key, "");
+                cleared += 1;
+            }
+        }
+        cleared
+    }
+}
+
+/// Delete the on-disk night log when the camping plugin is turned off.
+pub fn delete_night_store_file(path: &std::path::Path) -> std::io::Result<bool> {
+    if path.is_file() {
+        std::fs::remove_file(path)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+/// Enable-store hook: disabling the camping plugin removes the night log.
+pub fn on_camping_plugin_enable_changed(
+    plugin_name: &str,
+    enabled: bool,
+    night_store_path: &std::path::Path,
+) -> std::io::Result<bool> {
+    let is_camping = matches!(
+        plugin_name,
+        "right_to_roam_camping" | "right-to-roam-camping" | "allemannsretten_camping"
+    );
+    if is_camping && !enabled {
+        delete_night_store_file(night_store_path)
+    } else {
+        Ok(false)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::host::{CampingHost, TravelMode};
-    use driver_break_core::config::SafetyConfig;
+    use crate::safety_view::OvernightSafety;
     use std::collections::HashMap;
 
     struct MemHost {
         kv: HashMap<String, String>,
         available: bool,
-        safety: Option<SafetyConfig>,
+        safety: Option<OvernightSafety>,
         date: Option<LocalDate>,
         buildings: Vec<(f64, f64)>,
     }
 
     impl CampingHost for MemHost {
-        fn safety_config(&self) -> Option<SafetyConfig> {
-            self.safety.clone()
+        fn safety_config(&self) -> Option<OvernightSafety> {
+            self.safety
         }
         fn clock_local(&self) -> Option<LocalDate> {
             self.date
@@ -192,7 +279,11 @@ mod tests {
             self.kv.get(key).cloned().filter(|s| !s.is_empty())
         }
         fn kv_set(&mut self, key: &str, value: &str) -> Result<(), String> {
-            self.kv.insert(key.into(), value.into());
+            if value.is_empty() {
+                self.kv.remove(key);
+            } else {
+                self.kv.insert(key.into(), value.into());
+            }
             Ok(())
         }
         fn admin_country_iso(&self, _: f64, _: f64) -> Option<String> {
@@ -216,7 +307,7 @@ mod tests {
         MemHost {
             kv: HashMap::new(),
             available: true,
-            safety: Some(SafetyConfig::default()),
+            safety: Some(OvernightSafety::default()),
             date: Some(LocalDate {
                 year: 2026,
                 month: 7,
@@ -355,5 +446,63 @@ mod tests {
             },
             2
         ));
+    }
+
+    #[test]
+    fn retention_derives_from_norway_pack_max() {
+        assert_eq!(default_night_store_retention_days(), 2);
+        assert_eq!(
+            night_store_retention_days(&[&norway_pack()]),
+            norway_pack().max_consecutive_nights.unwrap()
+        );
+    }
+
+    #[test]
+    fn prune_drops_entries_older_than_pack_retention() {
+        let mut h = host();
+        let loc = location_id_from_lat_lon(61.1, 10.5);
+        NightStore::record_night(
+            &mut h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 6,
+                day: 1,
+            },
+        )
+        .unwrap();
+        let key = format!("rtr_night:no:{loc}");
+        assert!(h.kv_get(&key).is_some());
+        let keys: Vec<String> = h.kv.keys().cloned().collect();
+        let cleared = NightStore::prune_older_than(
+            &mut h,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 1,
+            },
+            default_night_store_retention_days(),
+            &keys,
+        );
+        assert_eq!(cleared, 1);
+        assert!(h.kv_get(&key).is_none());
+    }
+
+    #[test]
+    fn disable_plugin_deletes_night_store_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("camping_night.json");
+        std::fs::write(&path, r#"{"rtr_night:no:cell:1:1":"{}"}"#).unwrap();
+        assert!(path.is_file());
+        assert!(
+            on_camping_plugin_enable_changed("right_to_roam_camping", false, &path).unwrap()
+        );
+        assert!(!path.exists());
+        // Re-enable / unknown plugin must not require the file.
+        assert!(
+            !on_camping_plugin_enable_changed("right_to_roam_camping", true, &path).unwrap()
+        );
+        assert!(!on_camping_plugin_enable_changed("weather", false, &path).unwrap());
     }
 }
