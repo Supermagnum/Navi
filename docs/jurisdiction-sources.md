@@ -30,17 +30,18 @@ Last sources batch: 2026-09 (Phase 3a pack wiring)
 
 | Document | URL | Verified on |
 |---|---|---|
-| Naturvårdsverket — allemansrätten | https://www.naturvardsverket.se/allemansratten | copied from spec 2026-09, not re-verified |
-| Handbok göra allemansrätt (PDF) | https://prod-egp.naturvardsverket.se/497366/globalassets/vagledning/allemansratten/material/handbok-gora-allemansratt-a4.pdf | copied from spec 2026-09, not re-verified |
+| Naturvårdsverket — allemansrätten hub | https://www.naturvardsverket.se/amnesomraden/allemansratten/ | 2026-09-30 (GET 200; overnight in tent mentioned) |
+| Naturvårdsverket — tältning | https://www.naturvardsverket.se/amnesomraden/allemansratten/sa-gor-vi-allemansratt/taltning/ | 2026-09-30 (GET 200; 1–2 nights; away from houses; not farmland; parks) |
+| Naturvårdsverket — eldning | https://www.naturvardsverket.se/amnesomraden/allemansratten/sa-gor-vi-allemansratt/eldning/ | 2026-09-30 (GET 200; no automatic fire right; eldningsförbud; no fire on berghällar) |
+| Handbok göra allemansrätt (PDF, current NV host) | https://www.naturvardsverket.se/497366/globalassets/vagledning/allemansratten/material/handbok-gora-allemansratt-a4.pdf | 2026-09-30 (GET 200) |
+| Legacy short URL (still 200, same hub) | https://www.naturvardsverket.se/allemansratten | 2026-09-30 (GET 200; previously reported 404) |
+| Legacy prod-egp handbook URL | https://prod-egp.naturvardsverket.se/497366/globalassets/vagledning/allemansratten/material/handbok-gora-allemansratt-a4.pdf | not re-fetched this pass |
 
+### Sweden fire text
 
-### Sweden fire text (Phase 3 fix)
-
-The Sweden pack table in the camping spec has **no Fire field**. The previous card
-fire wording was Navi-authored guidance from Phase 3a, not copied from
-Naturvårdsverket. Fetch of `https://www.naturvardsverket.se/allemansratten` during
-this fix returned HTTP 404, so the card now labels fire as
-**"general safety guidance, not Swedish law"** rather than claiming an official source.
+The current official *eldning* page covers fire. The pack fire field is now a
+sourced Naturvårdsverket note (no automatic right; local bans; do not let fire
+spread; no fire on bare rock). Distance remains labelled Navi safety default.
 
 ## Finland
 

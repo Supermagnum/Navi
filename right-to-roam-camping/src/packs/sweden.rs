@@ -17,10 +17,9 @@ pub fn sweden_pack() -> RulePack {
             note: "No statutory night limit; official rule of thumb is a single day or so.",
         },
         fire: FireRule::GuidanceNote {
-            // Spec Sweden pack has no Fire field. This is Navi general safety text,
-            // not sourced from Swedish law or Naturvårdsverket.
-            text: "General safety guidance, not Swedish law: follow local fire bans and \
-never light a fire where it can spread.",
+            text: "Naturvårdsverket (eldning): allemansrätten gives no automatic right \
+to light a fire. Follow local eldningsförbud; do not light a fire where it can \
+spread; do not fire on bare rock (berghällar).",
         },
         guidance_notes: &[
             "Pitch well away from homes, out of sight of their windows.",
@@ -50,11 +49,19 @@ never light a fire where it can spread.",
 
 const SWEDEN_SOURCES: &[CitedSource] = &[
     CitedSource {
-        url: "https://www.naturvardsverket.se/allemansratten",
+        url: "https://www.naturvardsverket.se/amnesomraden/allemansratten/",
         quality: SourceQuality::Official,
     },
     CitedSource {
-        url: "https://prod-egp.naturvardsverket.se/497366/globalassets/vagledning/allemansratten/material/handbok-gora-allemansratt-a4.pdf",
+        url: "https://www.naturvardsverket.se/amnesomraden/allemansratten/sa-gor-vi-allemansratt/taltning/",
+        quality: SourceQuality::Official,
+    },
+    CitedSource {
+        url: "https://www.naturvardsverket.se/amnesomraden/allemansratten/sa-gor-vi-allemansratt/eldning/",
+        quality: SourceQuality::Official,
+    },
+    CitedSource {
+        url: "https://www.naturvardsverket.se/497366/globalassets/vagledning/allemansratten/material/handbok-gora-allemansratt-a4.pdf",
         quality: SourceQuality::Official,
     },
 ];
