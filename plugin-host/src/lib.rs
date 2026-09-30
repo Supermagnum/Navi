@@ -19,7 +19,7 @@ pub use abi::{
 };
 pub use file_kv::{FileKvHostApi, FilePluginKv};
 pub use host::{
-    cranelift_abi_supported, CallOutcome, PluginError, PluginHost, PluginLimits,
+    cranelift_abi_supported, CallOutcome, GuestCallStats, PluginError, PluginHost, PluginLimits,
     DEFAULT_MEMORY_BYTES,
 };
 pub use manifest::PluginManifest;

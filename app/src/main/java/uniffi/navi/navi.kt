@@ -1053,6 +1053,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_configure(
     ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_evaluation_backend(
+    ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_install_guest(
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_is_enabled(
@@ -1511,6 +1513,8 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_func_camping_plugin_configure(`filesDir`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_navi_fn_func_camping_plugin_evaluation_backend(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_install_guest(`name`: RustBuffer.ByValue,`manifestJson`: RustBuffer.ByValue,`wasmBytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_is_enabled(uniffi_out_err: UniffiRustCallStatus, 
@@ -2224,6 +2228,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_camping_plugin_configure() and 0xFFFF) != 65097) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_evaluation_backend() and 0xFFFF) != 36555) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_camping_plugin_install_guest() and 0xFFFF) != 19565) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2257,7 +2264,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_camping_plugin_set_timezone() and 0xFFFF) != 56396) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_camping_plugin_suggest_along_route() and 0xFFFF) != 16081) {
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_suggest_along_route() and 0xFFFF) != 55349) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_all() and 0xFFFF) != 684) {
@@ -3070,6 +3077,11 @@ data class CampingCallResult (
      * Result JSON from `rtr_suggest_result` when present.
      */
     var `resultJson`: kotlin.String?
+    , 
+    /**
+     * Guest linear-memory size after the last wasmtime call (0 if no guest ran).
+     */
+    var `peakGuestMemoryBytes`: kotlin.ULong
     
 ){
     
@@ -3090,6 +3102,7 @@ public object FfiConverterTypeCampingCallResult: FfiConverterRustBuffer<CampingC
             FfiConverterString.read(buf),
             FfiConverterULong.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterULong.read(buf),
         )
     }
 
@@ -3097,7 +3110,8 @@ public object FfiConverterTypeCampingCallResult: FfiConverterRustBuffer<CampingC
             FfiConverterTypeCampingCallKind.allocationSize(value.`kind`) +
             FfiConverterString.allocationSize(value.`message`) +
             FfiConverterULong.allocationSize(value.`elapsedMs`) +
-            FfiConverterOptionalString.allocationSize(value.`resultJson`)
+            FfiConverterOptionalString.allocationSize(value.`resultJson`) +
+            FfiConverterULong.allocationSize(value.`peakGuestMemoryBytes`)
     )
 
     override fun write(value: CampingCallResult, buf: ByteBuffer) {
@@ -3105,6 +3119,7 @@ public object FfiConverterTypeCampingCallResult: FfiConverterRustBuffer<CampingC
             FfiConverterString.write(value.`message`, buf)
             FfiConverterULong.write(value.`elapsedMs`, buf)
             FfiConverterOptionalString.write(value.`resultJson`, buf)
+            FfiConverterULong.write(value.`peakGuestMemoryBytes`, buf)
     }
 }
 
@@ -8257,6 +8272,20 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Production evaluation backend. Always `wasmtime` — native `suggest_overnight`
+         * is not called from navi-ffi (test crates only).
+         */ fun `campingPluginEvaluationBackend`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_evaluation_backend(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
          * Install or replace a plugin directory under `filesDir/plugins/<name>/`.
          * `wasm_bytes` and `manifest_json` are built from source at APK build time
          * (assets) and copied here by the Android host — never committed binaries.
@@ -8407,10 +8436,9 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * Discover overnight spots along the live nav corridor using the native engine
-         * (graph + proximity packs under `data_dir`). Phase 5b: returns full
-         * `CampingCard` lists in `result_json` without routing probe evaluation through
-         * wasmtime; the wasm guest path remains [`camping_plugin_run_suggest`].
+         * Discover overnight spots along the live nav corridor.
+         * Host: graph load, road∩track junctions, probe walk, nearby buildings.
+         * Guest: every rule, filter, and card decision via wasmtime.
          */ fun `campingPluginSuggestAlongRoute`(`maxSuggestions`: kotlin.UInt): CampingCallResult {
             return FfiConverterTypeCampingCallResult.lift(
     uniffiRustCall() { _status ->

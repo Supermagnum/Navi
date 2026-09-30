@@ -105,6 +105,7 @@ class CampingPhase5bPresentationInstrumentedTest {
                 suggestParsed()
             } ?: return
         assertTrue(parsed.disclaimer.contains("not legal advice"))
+        assertTrue("must evaluate in wasmtime guest", parsed.via == "wasmtime")
         val cards = parsed.list.cards + parsed.onFootFromHere.cards
         assumeTrue("expected at least one card along Lillehammer corridor", cards.isNotEmpty())
         val noCards = cards.filter { it.countryIso.equals("no", ignoreCase = true) }

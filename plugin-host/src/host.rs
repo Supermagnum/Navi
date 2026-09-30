@@ -73,6 +73,12 @@ pub enum CallOutcome {
     MemoryExceeded,
 }
 
+/// Guest linear-memory size after a call (bytes). Used as peak RSS proxy.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GuestCallStats {
+    pub memory_bytes: u64,
+}
+
 struct StoreData {
     api: Box<dyn HostApi>,
     /// Capability set retained for future per-call enforcement audits.
@@ -185,6 +191,14 @@ impl PluginHost {
 
     /// Invoke the exported entry function under fuel + wall-clock + memory limits.
     pub fn call(&self, api: Box<dyn HostApi>) -> Result<CallOutcome, PluginError> {
+        self.call_with_stats(api).map(|(outcome, _)| outcome)
+    }
+
+    /// Like [`call`], plus guest linear-memory size after the export returns.
+    pub fn call_with_stats(
+        &self,
+        api: Box<dyn HostApi>,
+    ) -> Result<(CallOutcome, GuestCallStats), PluginError> {
         let mut linker = Linker::new(&self.engine);
         install_imports(&mut linker, &self.allowed)?;
 
@@ -235,9 +249,15 @@ impl PluginHost {
         stop.store(true, Ordering::SeqCst);
         let _ = ticker.join();
 
+        let memory_bytes = instance
+            .get_memory(&mut store, "memory")
+            .map(|m| m.data_size(&store) as u64)
+            .unwrap_or(0);
+        let stats = GuestCallStats { memory_bytes };
+
         match result {
-            Ok(()) => Ok(CallOutcome::Ok),
-            Err(err) => classify_trap(err),
+            Ok(()) => Ok((CallOutcome::Ok, stats)),
+            Err(err) => classify_trap(err).map(|o| (o, stats)),
         }
     }
 }

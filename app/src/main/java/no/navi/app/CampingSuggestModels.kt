@@ -69,6 +69,8 @@ data class CampingSuggestResult(
     val rejected: Int,
     val vehicleAccepted: Int,
     val onFootAccepted: Int,
+    val via: String,
+    val peakGuestMemoryBytes: Long,
 )
 
 private fun jsonStr(obj: JSONObject, key: String, default: String = ""): String {
@@ -87,6 +89,8 @@ fun parseCampingSuggestResultJson(json: String): CampingSuggestResult {
         rejected = root.optInt("rejected", 0),
         vehicleAccepted = root.optInt("vehicle_accepted", 0),
         onFootAccepted = root.optInt("on_foot_accepted", 0),
+        via = jsonStr(root, "via"),
+        peakGuestMemoryBytes = root.optLong("peak_guest_memory_bytes", 0L),
     )
 }
 

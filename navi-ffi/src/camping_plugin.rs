@@ -3,7 +3,7 @@
 //! Runs the wasm guest under wasmtime with fuel / epoch / memory limits on a
 //! worker thread. Misbehaviour disables the plugin for the session (fail closed).
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -19,13 +19,13 @@ use driver_break_core::routing::indexed::{
 use driver_break_core::routing::safety::OvernightProximityIndex;
 use driver_break_core::storage::{ConfigStore, Storage};
 use navi_right_to_roam_camping::{
-    suggest_overnight, CampingHost, DISCLAIMER, LocalDate, SuggestInput, SuggestOutcome, TravelMode,
-    VehicleClass, VehicleProfile,
+    find_road_track_junctions, probe_along_track, CORRIDOR_SEED_RADIUS_M, DEFAULT_TRACK_WALK_M,
+    OvernightSafety,
 };
 use navi_plugin_host::{
     cranelift_abi_supported, plugin_set_enabled, AdminRegionView, CallOutcome, Capability,
-    ClockView, FilePluginKv, HostApi, LayerStatus, PluginEnableStore, PluginError, PluginHost,
-    PluginKvStatus, PluginLimits, PoiWrite, Position, RouteDestinationView, RouteView,
+    ClockView, FilePluginKv, HostApi, LayerStatus, PluginEnableStore, PluginError,
+    PluginHost, PluginKvStatus, PluginLimits, PoiWrite, Position, RouteDestinationView, RouteView,
     SafetyConfigView, TravelModeView, TravellerProfileView, VehicleProfileView, DEFAULT_MEMORY_BYTES,
 };
 use navi_right_to_roam_camping::on_camping_plugin_enable_changed;
@@ -57,6 +57,8 @@ pub struct CampingCallResult {
     pub elapsed_ms: u64,
     /// Result JSON from `rtr_suggest_result` when present.
     pub result_json: Option<String>,
+    /// Guest linear-memory size after the last wasmtime call (0 if no guest ran).
+    pub peak_guest_memory_bytes: u64,
 }
 
 struct Session {
@@ -118,44 +120,11 @@ fn profile_to_travel_mode(p: TravelProfile) -> TravelModeView {
     }
 }
 
-fn travel_profile_to_camping_mode(p: TravelProfile) -> TravelMode {
-    match p {
-        TravelProfile::Hiking | TravelProfile::Bicycle | TravelProfile::BicycleElectric => {
-            TravelMode::NonMotorised
-        }
-        TravelProfile::Car
-        | TravelProfile::CarElectric
-        | TravelProfile::Truck
-        | TravelProfile::TruckElectric
-        | TravelProfile::MobileHome
-        | TravelProfile::Motorcycle
-        | TravelProfile::MotorcycleElectric => TravelMode::Motorised,
-    }
-}
-
 fn routing_profile_for_travel(p: TravelProfile) -> RoutingProfile {
     if p == TravelProfile::Hiking {
         RoutingProfile::Foot
     } else {
         RoutingProfile::from(p.to_core())
-    }
-}
-
-fn camping_vehicle_profile(p: TravelProfile, professional: bool) -> VehicleProfile {
-    let class = match p {
-        TravelProfile::Car
-        | TravelProfile::CarElectric
-        | TravelProfile::Motorcycle
-        | TravelProfile::MotorcycleElectric => VehicleClass::Car,
-        TravelProfile::MobileHome => VehicleClass::CampervanMotorhome,
-        TravelProfile::Truck | TravelProfile::TruckElectric => VehicleClass::Hgv,
-        TravelProfile::Hiking | TravelProfile::Bicycle | TravelProfile::BicycleElectric => {
-            VehicleClass::Unknown
-        }
-    };
-    VehicleProfile {
-        class,
-        is_professional_driver_under_rest_rules: professional,
     }
 }
 
@@ -231,136 +200,6 @@ fn load_overnight_geometry(
         })
     });
     (prox.buildings, prox.glacier_rings)
-}
-
-fn rtr_suggest_result_json(out: &SuggestOutcome) -> String {
-    let mut accepted = 0usize;
-    let mut rejected = 0usize;
-    let mut reasons: BTreeMap<String, usize> = BTreeMap::new();
-    for e in &out.probe_log {
-        if e.road_highway == "vehicle" {
-            continue;
-        }
-        *reasons.entry(e.reason.clone()).or_default() += 1;
-        if e.accepted {
-            accepted += 1;
-        } else {
-            rejected += 1;
-        }
-    }
-    let list = serde_json::to_value(&out.list).unwrap_or(serde_json::Value::Null);
-    let vehicle = serde_json::to_value(&out.vehicle).unwrap_or(serde_json::Value::Null);
-    let on_foot_from_here =
-        serde_json::to_value(&out.on_foot_from_here).unwrap_or(serde_json::Value::Null);
-    serde_json::json!({
-        "accepted": accepted,
-        "rejected": rejected,
-        "reasons": reasons,
-        "vehicle_accepted": out.vehicle.probes_accepted,
-        "on_foot_accepted": out.on_foot_from_here.probes_accepted,
-        "on_foot_rejected": out.on_foot_from_here.cards.iter().filter(|c| !c.accepted).count(),
-        "list": list,
-        "vehicle": vehicle,
-        "on_foot_from_here": on_foot_from_here,
-        "disclaimer": DISCLAIMER,
-    })
-    .to_string()
-}
-
-/// Native camping host for `suggest_overnight` (mirrors test embedder essentials).
-struct FfiCampingHost {
-    safety: SafetyConfig,
-    clock_override: Option<(i32, u32, u32)>,
-    kv: FilePluginKv,
-    travel_profile: TravelProfile,
-    professional_driver: bool,
-    buildings: Vec<(f64, f64)>,
-    glacier_rings: Vec<Vec<[f64; 2]>>,
-    destination: Option<(f64, f64)>,
-    residency: Option<String>,
-}
-
-impl FfiCampingHost {
-    fn open(session: &Session, buildings: Vec<(f64, f64)>, glacier_rings: Vec<Vec<[f64; 2]>>) -> Result<Self, String> {
-        let kv = FilePluginKv::open(session.kv_path()).map_err(|e| e.to_string())?;
-        let safety = load_safety(&session.data_dir).unwrap_or_default();
-        let residency = load_traveller(&session.data_dir).residency_country;
-        Ok(Self {
-            safety,
-            clock_override: session.clock_override,
-            kv,
-            travel_profile: session.travel_profile,
-            professional_driver: session.professional_driver,
-            buildings,
-            glacier_rings,
-            destination: session.destination,
-            residency,
-        })
-    }
-}
-
-impl CampingHost for FfiCampingHost {
-    fn safety_config(&self) -> Option<navi_right_to_roam_camping::OvernightSafety> {
-        Some((&self.safety).into())
-    }
-
-    fn clock_local(&self) -> Option<LocalDate> {
-        let now = Local::now();
-        let (year, month, day) = if let Some((y, m, d)) = self.clock_override {
-            (y, m, d)
-        } else {
-            (now.year(), now.month(), now.day())
-        };
-        Some(LocalDate {
-            year,
-            month,
-            day,
-        })
-    }
-
-    fn plugin_kv_available(&self) -> bool {
-        true
-    }
-
-    fn kv_get(&self, key: &str) -> Option<String> {
-        self.kv.get(key)
-    }
-
-    fn kv_set(&mut self, key: &str, value: &str) -> Result<(), String> {
-        self.kv.set(key, value).map_err(|e| e.to_string())
-    }
-
-    fn admin_country_iso(&self, lat: f64, lon: f64) -> Option<String> {
-        admin_region_at(lat, lon).country_iso
-    }
-
-    fn admin_subdivision_iso(&self, lat: f64, lon: f64) -> Option<String> {
-        admin_region_at(lat, lon).subdivision_iso
-    }
-
-    fn travel_mode(&self) -> TravelMode {
-        travel_profile_to_camping_mode(self.travel_profile)
-    }
-
-    fn overnight_buildings(&self) -> &[(f64, f64)] {
-        &self.buildings
-    }
-
-    fn overnight_glacier_rings(&self) -> &[Vec<[f64; 2]>] {
-        &self.glacier_rings
-    }
-
-    fn vehicle_overnight_profile(&self) -> VehicleProfile {
-        camping_vehicle_profile(self.travel_profile, self.professional_driver)
-    }
-
-    fn route_destination(&self) -> Option<(f64, f64)> {
-        self.destination
-    }
-
-    fn residency_country_iso(&self) -> Option<String> {
-        self.residency.clone()
-    }
 }
 
 fn profile_to_vehicle(p: TravelProfile, professional: bool) -> VehicleProfileView {
@@ -817,6 +656,75 @@ pub fn camping_plugin_set_residency_country(iso: Option<String>) -> String {
     }
 }
 
+/// Production evaluation backend. Always `wasmtime` — native `suggest_overnight`
+/// is not called from navi-ffi (test crates only).
+#[uniffi::export]
+pub fn camping_plugin_evaluation_backend() -> String {
+    "wasmtime".into()
+}
+
+fn travel_mode_job_str(p: TravelProfile) -> &'static str {
+    match profile_to_travel_mode(p) {
+        TravelModeView::Motorised => "motorised",
+        TravelModeView::NonMotorised => "non_motorised",
+        TravelModeView::Unknown => "unknown",
+    }
+}
+
+fn vehicle_class_job_str(p: TravelProfile) -> &'static str {
+    match p {
+        TravelProfile::Car
+        | TravelProfile::CarElectric
+        | TravelProfile::Motorcycle
+        | TravelProfile::MotorcycleElectric => "car",
+        TravelProfile::MobileHome => "campervan_motorhome",
+        TravelProfile::Truck | TravelProfile::TruckElectric => "hgv",
+        TravelProfile::Hiking | TravelProfile::Bicycle | TravelProfile::BicycleElectric => {
+            "unknown"
+        }
+    }
+}
+
+fn buildings_near_probes(
+    buildings: &[(f64, f64)],
+    probes: &[(f64, f64)],
+    pad_deg: f64,
+) -> Vec<[f64; 2]> {
+    if probes.is_empty() {
+        return Vec::new();
+    }
+    buildings
+        .iter()
+        .copied()
+        .filter(|&(lat, lon)| {
+            probes.iter().any(|&(plat, plon)| {
+                (lat - plat).abs() <= pad_deg && (lon - plon).abs() <= pad_deg
+            })
+        })
+        .map(|(lat, lon)| [lat, lon])
+        .collect()
+}
+
+fn merge_guest_meta(
+    result_json: Option<String>,
+    timing: serde_json::Value,
+    peak_guest_memory_bytes: u64,
+) -> Option<String> {
+    let mut v = result_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert("via".into(), serde_json::Value::String("wasmtime".into()));
+        obj.insert("timing_ms".into(), timing);
+        obj.insert(
+            "peak_guest_memory_bytes".into(),
+            serde_json::Value::from(peak_guest_memory_bytes),
+        );
+    }
+    Some(v.to_string())
+}
+
 /// Write suggest job, invoke guest, return result JSON.
 /// `timezone` is the device IANA id at call time (must not be a configure-time cache).
 #[uniffi::export]
@@ -825,10 +733,9 @@ pub fn camping_plugin_run_suggest(job_json: String, timezone: String) -> Camping
     run_camping_guest(Some(job_json))
 }
 
-/// Discover overnight spots along the live nav corridor using the native engine
-/// (graph + proximity packs under `data_dir`). Phase 5b: returns full
-/// `CampingCard` lists in `result_json` without routing probe evaluation through
-/// wasmtime; the wasm guest path remains [`camping_plugin_run_suggest`].
+/// Discover overnight spots along the live nav corridor.
+/// Host: graph load, road∩track junctions, probe walk, nearby buildings.
+/// Guest: every rule, filter, and card decision via wasmtime.
 #[uniffi::export]
 pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallResult {
     let started = Instant::now();
@@ -839,6 +746,7 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
             message: "not configured".into(),
             elapsed_ms: 0,
             result_json: None,
+            peak_guest_memory_bytes: 0,
         };
     };
     if let Some(reason) = &session.session_disable_reason {
@@ -847,6 +755,7 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
             message: reason.clone(),
             elapsed_ms: 0,
             result_json: None,
+            peak_guest_memory_bytes: 0,
         };
     }
     if !PluginEnableStore::open(session.enable_path())
@@ -858,6 +767,7 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
             message: "camping plugin is disabled (default OFF)".into(),
             elapsed_ms: 0,
             result_json: None,
+            peak_guest_memory_bytes: 0,
         };
     }
     if session.route_waypoints.is_empty() {
@@ -866,11 +776,13 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
             message: "route_waypoints empty — call camping_plugin_set_nav_context first".into(),
             elapsed_ms: 0,
             result_json: None,
+            peak_guest_memory_bytes: 0,
         };
     }
     let data_dir = session.data_dir.clone();
     let waypoints = session.route_waypoints.clone();
     let travel_profile = session.travel_profile;
+    let professional_driver = session.professional_driver;
     drop(guard);
 
     let Some(bbox) = corridor_bbox_from_waypoints(&waypoints) else {
@@ -879,6 +791,7 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
             message: "could not derive corridor bbox".into(),
             elapsed_ms: started.elapsed().as_millis() as u64,
             result_json: None,
+            peak_guest_memory_bytes: 0,
         };
     };
     let Some(pbf) = find_planning_pbf(&data_dir) else {
@@ -890,10 +803,12 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
             ),
             elapsed_ms: started.elapsed().as_millis() as u64,
             result_json: None,
+            peak_guest_memory_bytes: 0,
         };
     };
     let routing_profile = routing_profile_for_travel(travel_profile);
     let route_points: Vec<(f64, f64)> = waypoints.iter().map(|w| (w[0], w[1])).collect();
+    let t_graph = Instant::now();
     let graph = match try_load_graph_for_plan_corridor(
         &data_dir,
         &pbf,
@@ -908,57 +823,109 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
                 message: format!("corridor graph load failed: {e:?}"),
                 elapsed_ms: started.elapsed().as_millis() as u64,
                 result_json: None,
+                peak_guest_memory_bytes: 0,
             };
         }
     };
+    let graph_ms = t_graph.elapsed().as_millis() as u64;
 
-    let (buildings, glacier_rings) = load_overnight_geometry(&data_dir, &pbf, bbox);
-    let guard = session_lock().lock().expect("camping session lock");
-    let Some(session) = guard.as_ref() else {
-        return CampingCallResult {
-            kind: CampingCallKind::Error,
-            message: "session cleared during load".into(),
-            elapsed_ms: started.elapsed().as_millis() as u64,
-            result_json: None,
-        };
-    };
-    let mut host = match FfiCampingHost::open(session, buildings, glacier_rings) {
-        Ok(h) => h,
-        Err(e) => {
-            return CampingCallResult {
-                kind: CampingCallKind::Error,
-                message: e,
-                elapsed_ms: started.elapsed().as_millis() as u64,
-                result_json: None,
-            };
+    let t_junc = Instant::now();
+    let seeds = find_road_track_junctions(&graph, &waypoints, CORRIDOR_SEED_RADIUS_M);
+    let junction_ms = t_junc.elapsed().as_millis() as u64;
+
+    let t_walk = Instant::now();
+    let mut probes: Vec<(f64, f64)> = Vec::new();
+    for seed in &seeds {
+        if let Some(p) = probe_along_track(&graph, seed, DEFAULT_TRACK_WALK_M, None) {
+            probes.push((p.lat, p.lon));
+        } else {
+            probes.push((seed.lat, seed.lon));
         }
-    };
-    drop(guard);
+    }
+    let probe_walk_ms = t_walk.elapsed().as_millis() as u64;
 
+    let t_bldg = Instant::now();
+    let (all_buildings, glacier_rings) = load_overnight_geometry(&data_dir, &pbf, bbox);
+    let buildings = buildings_near_probes(&all_buildings, &probes, 0.008);
+    let buildings_ms = t_bldg.elapsed().as_millis() as u64;
+
+    let t_admin = Instant::now();
+    let countries: Vec<(f64, f64, String)> = probes
+        .iter()
+        .map(|&(lat, lon)| {
+            (
+                lat,
+                lon,
+                admin_region_at(lat, lon)
+                    .country_iso
+                    .unwrap_or_else(|| "unknown".into()),
+            )
+        })
+        .collect();
+    let subdivisions: Vec<(f64, f64, String)> = probes
+        .iter()
+        .filter_map(|&(lat, lon)| {
+            admin_region_at(lat, lon)
+                .subdivision_iso
+                .map(|iso| (lat, lon, iso))
+        })
+        .collect();
+    let admin_ms = t_admin.elapsed().as_millis() as u64;
+
+    let safety: OvernightSafety = (&load_safety(&data_dir).unwrap_or_default()).into();
     let max = if max_suggestions == 0 {
         None
     } else {
         Some(max_suggestions as usize)
     };
-    let out = suggest_overnight(
-        &mut host,
-        &SuggestInput {
-            graph: &graph,
-            corridor_waypoints: &waypoints,
-            track_walk_m: None,
-            corridor_radius_m: None,
-            max_suggestions: max,
-        },
+
+    let t_ser = Instant::now();
+    let job = serde_json::json!({
+        "probes": probes.iter().map(|&(la, lo)| [la, lo]).collect::<Vec<_>>(),
+        "max_suggestions": max,
+        "buildings": buildings,
+        "glaciers": glacier_rings,
+        "safety": safety,
+        "clock": serde_json::Value::Null,
+        "kv_ok": true,
+        "countries": countries,
+        "subdivisions": subdivisions,
+        "travel_mode": travel_mode_job_str(travel_profile),
+        "vehicle_class": vehicle_class_job_str(travel_profile),
+        "is_professional_driver_under_rest_rules": professional_driver,
+    });
+    let job_json = job.to_string();
+    let job_bytes = job_json.len();
+    let serialize_ms = t_ser.elapsed().as_millis() as u64;
+
+    let t_guest = Instant::now();
+    let mut call = run_camping_guest(Some(job_json));
+    let guest_ms = t_guest.elapsed().as_millis() as u64;
+    let timing = serde_json::json!({
+        "graph": graph_ms,
+        "junctions": junction_ms,
+        "probe_walk": probe_walk_ms,
+        "buildings": buildings_ms,
+        "admin": admin_ms,
+        "serialize": serialize_ms,
+        "guest": guest_ms,
+        "total": started.elapsed().as_millis() as u64,
+    });
+    log::info!(
+        target: "NaviCamping",
+        "suggest_along_route via=wasmtime job_bytes={job_bytes} probes={} buildings={} timing={timing}",
+        probes.len(),
+        buildings.len()
     );
-    let result_json = Some(rtr_suggest_result_json(&out));
-    let elapsed_ms = started.elapsed().as_millis() as u64;
-    CampingCallResult {
-        kind: CampingCallKind::Ok,
-        message: "ok".into(),
-        elapsed_ms,
-        result_json,
-    }
+    call.result_json = merge_guest_meta(
+        call.result_json,
+        timing,
+        call.peak_guest_memory_bytes,
+    );
+    call.elapsed_ms = started.elapsed().as_millis() as u64;
+    call
 }
+
 
 fn run_camping_guest(job_json: Option<String>) -> CampingCallResult {
     let mut guard = session_lock().lock().expect("camping session lock");
@@ -968,6 +935,7 @@ fn run_camping_guest(job_json: Option<String>) -> CampingCallResult {
             message: "not configured".into(),
             elapsed_ms: 0,
             result_json: None,
+            peak_guest_memory_bytes: 0,
         };
     };
     if let Some(reason) = &session.session_disable_reason {
@@ -976,6 +944,7 @@ fn run_camping_guest(job_json: Option<String>) -> CampingCallResult {
             message: reason.clone(),
             elapsed_ms: 0,
             result_json: None,
+            peak_guest_memory_bytes: 0,
         };
     }
     if !PluginEnableStore::open(session.enable_path())
@@ -987,6 +956,7 @@ fn run_camping_guest(job_json: Option<String>) -> CampingCallResult {
             message: "camping plugin is disabled (default OFF)".into(),
             elapsed_ms: 0,
             result_json: None,
+            peak_guest_memory_bytes: 0,
         };
     }
     if let Err(e) = ensure_camping_loaded(session) {
@@ -995,6 +965,7 @@ fn run_camping_guest(job_json: Option<String>) -> CampingCallResult {
             message: e,
             elapsed_ms: 0,
             result_json: None,
+            peak_guest_memory_bytes: 0,
         };
     }
 
@@ -1007,6 +978,7 @@ fn run_camping_guest(job_json: Option<String>) -> CampingCallResult {
                         message: e,
                         elapsed_ms: 0,
                         result_json: None,
+                        peak_guest_memory_bytes: 0,
                     };
                 }
             }
@@ -1018,6 +990,7 @@ fn run_camping_guest(job_json: Option<String>) -> CampingCallResult {
                 message: e,
                 elapsed_ms: 0,
                 result_json: None,
+                peak_guest_memory_bytes: 0,
             };
         }
     };
@@ -1038,8 +1011,44 @@ fn run_camping_guest(job_json: Option<String>) -> CampingCallResult {
     let started = Instant::now();
     // Kotlin callers must use Dispatchers.Default / a background thread; the
     // guest itself is killed by fuel / epoch / memory if it misbehaves.
-    let outcome = host.call(Box::new(api));
+    let (outcome, stats) = match host.call_with_stats(Box::new(api)) {
+        Ok(pair) => pair,
+        Err(err) => {
+            let elapsed_ms = started.elapsed().as_millis() as u64;
+            let mut guard = session_lock().lock().expect("camping session lock");
+            let Some(session) = guard.as_mut() else {
+                let (kind, message) = map_plugin_error(err);
+                return CampingCallResult {
+                    kind,
+                    message,
+                    elapsed_ms,
+                    result_json: None,
+                    peak_guest_memory_bytes: 0,
+                };
+            };
+            session.camping_host = Some(host);
+            let (kind, message) = map_plugin_error(err);
+            if matches!(
+                kind,
+                CampingCallKind::Trap
+                    | CampingCallKind::FuelExhausted
+                    | CampingCallKind::Timeout
+                    | CampingCallKind::MemoryExceeded
+            ) {
+                session.session_disable_reason = Some(message.clone());
+                session.camping_host = None;
+            }
+            return CampingCallResult {
+                kind,
+                message,
+                elapsed_ms,
+                result_json: None,
+                peak_guest_memory_bytes: 0,
+            };
+        }
+    };
     let elapsed_ms = started.elapsed().as_millis() as u64;
+    let peak_mem = stats.memory_bytes;
     let result_json = FilePluginKv::open(files_dir.join(KV_REL))
         .ok()
         .and_then(|kv| kv.get("rtr_suggest_result"));
@@ -1060,18 +1069,27 @@ fn run_camping_guest(job_json: Option<String>) -> CampingCallResult {
             message: "session cleared during call".into(),
             elapsed_ms,
             result_json: None,
+            peak_guest_memory_bytes: peak_mem,
         };
     };
     session.camping_host = Some(host);
 
     match outcome {
-        Ok(CallOutcome::Ok) => CampingCallResult {
-            kind: CampingCallKind::Ok,
-            message: "ok".into(),
-            elapsed_ms,
-            result_json,
-        },
-        Ok(other) => {
+        CallOutcome::Ok => {
+            let json = merge_guest_meta(
+                result_json,
+                serde_json::json!({ "guest": elapsed_ms }),
+                peak_mem,
+            );
+            CampingCallResult {
+                kind: CampingCallKind::Ok,
+                message: "ok".into(),
+                elapsed_ms,
+                result_json: json,
+                peak_guest_memory_bytes: peak_mem,
+            }
+        }
+        other => {
             let (kind, message) = map_outcome(other);
             session.session_disable_reason = Some(message.clone());
             session.camping_host = None;
@@ -1080,25 +1098,7 @@ fn run_camping_guest(job_json: Option<String>) -> CampingCallResult {
                 message,
                 elapsed_ms,
                 result_json: None,
-            }
-        }
-        Err(err) => {
-            let (kind, message) = map_plugin_error(err);
-            if matches!(
-                kind,
-                CampingCallKind::Trap
-                    | CampingCallKind::FuelExhausted
-                    | CampingCallKind::Timeout
-                    | CampingCallKind::MemoryExceeded
-            ) {
-                session.session_disable_reason = Some(message.clone());
-                session.camping_host = None;
-            }
-            CampingCallResult {
-                kind,
-                message,
-                elapsed_ms,
-                result_json: None,
+                peak_guest_memory_bytes: peak_mem,
             }
         }
     }
@@ -1115,6 +1115,7 @@ pub fn camping_plugin_run_isolation_guest(name: String) -> CampingCallResult {
             message: "not configured".into(),
             elapsed_ms: 0,
             result_json: None,
+            peak_guest_memory_bytes: 0,
         };
     };
     if !cranelift_abi_supported() {
@@ -1126,6 +1127,7 @@ pub fn camping_plugin_run_isolation_guest(name: String) -> CampingCallResult {
             ),
             elapsed_ms: 0,
             result_json: None,
+            peak_guest_memory_bytes: 0,
         };
     }
     let dir = session.plugins_root().join(&name);
@@ -1151,6 +1153,7 @@ pub fn camping_plugin_run_isolation_guest(name: String) -> CampingCallResult {
                 message,
                 elapsed_ms: 0,
                 result_json: None,
+                peak_guest_memory_bytes: 0,
             };
         }
     };
@@ -1162,34 +1165,35 @@ pub fn camping_plugin_run_isolation_guest(name: String) -> CampingCallResult {
                 message: e,
                 elapsed_ms: 0,
                 result_json: None,
+                peak_guest_memory_bytes: 0,
             };
         }
     };
     drop(guard);
 
     let started = Instant::now();
-    let outcome = host.call(Box::new(api));
-    let elapsed_ms = started.elapsed().as_millis() as u64;
-
-    match outcome {
-        Ok(o) => {
-            let (kind, message) = map_outcome(o);
-            CampingCallResult {
-                kind,
-                message,
-                elapsed_ms,
-                result_json: None,
-            }
-        }
+    let (outcome, stats) = match host.call_with_stats(Box::new(api)) {
+        Ok(pair) => pair,
         Err(e) => {
+            let elapsed_ms = started.elapsed().as_millis() as u64;
             let (kind, message) = map_plugin_error(e);
-            CampingCallResult {
+            return CampingCallResult {
                 kind,
                 message,
                 elapsed_ms,
                 result_json: None,
-            }
+                peak_guest_memory_bytes: 0,
+            };
         }
+    };
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+    let (kind, message) = map_outcome(outcome);
+    CampingCallResult {
+        kind,
+        message,
+        elapsed_ms,
+        result_json: None,
+        peak_guest_memory_bytes: stats.memory_bytes,
     }
 }
 

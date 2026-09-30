@@ -3,6 +3,7 @@ package no.navi.app
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -100,6 +101,48 @@ class CampingSandboxInstrumentedTest {
             r.kind,
         )
         assertTrue(r.elapsedMs < 5_000uL)
+    }
+
+    @Test
+    fun uiPath_isolationGuests_viaRunSuggest() {
+        campingPluginSetEnabled(true)
+        val campingDir = File(filesDir, "plugins/right_to_roam_camping")
+        for (name in listOf("busy_loop", "trap_guest", "memory_bomb")) {
+            val src = File(filesDir, "plugins/$name")
+            src.copyRecursively(campingDir, overwrite = true)
+            campingPluginConfigure(
+                filesDir.absolutePath,
+                dataDir.absolutePath,
+                TimeZone.getDefault().id,
+            )
+            campingPluginSetEnabled(true)
+            val r =
+                kotlinx.coroutines.runBlocking {
+                    CampingPluginApi.runSuggest("{}")
+                }
+            when (name) {
+                "busy_loop" ->
+                    assertTrue(
+                        "busy_loop via UI path kind=${r.kind} ${r.message}",
+                        r.kind == CampingCallKind.FUEL_EXHAUSTED || r.kind == CampingCallKind.TIMEOUT,
+                    )
+                "trap_guest" ->
+                    assertEquals("trap via UI path ${r.message}", CampingCallKind.TRAP, r.kind)
+                "memory_bomb" ->
+                    assertEquals(
+                        "memory_bomb via UI path ${r.message}",
+                        CampingCallKind.MEMORY_EXCEEDED,
+                        r.kind,
+                    )
+            }
+        }
+        installAssetGuest("right_to_roam_camping")
+        campingPluginConfigure(
+            filesDir.absolutePath,
+            dataDir.absolutePath,
+            TimeZone.getDefault().id,
+        )
+        campingPluginSetEnabled(false)
     }
 
     @Test
