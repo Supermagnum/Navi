@@ -3004,6 +3004,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "navi-plugin-memory-bomb"
+version = "0.1.0"
+dependencies = [
+ "wee_alloc",
+]
+
+[[package]]
 name = "navi-plugin-poi-lookahead"
 version = "0.1.0"
 dependencies = [
@@ -3024,6 +3031,13 @@ dependencies = [
 [[package]]
 name = "navi-plugin-sdk"
 version = "0.1.0"
+
+[[package]]
+name = "navi-plugin-trap-guest"
+version = "0.1.0"
+dependencies = [
+ "wee_alloc",
+]
 
 [[package]]
 name = "navi-plugin-weather"
