@@ -360,6 +360,7 @@ fn install_imports(
             "safety_config_read",
             |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
                 let view = caller.data().api.safety_config_read();
+                // `null` JSON when unavailable — guests must not treat as 0 m.
                 write_json_view(&mut caller, out_ptr, out_cap, &view, "safety_config_read")
             },
         )?;
@@ -397,6 +398,18 @@ fn install_imports(
     if allowed.contains(&Capability::PluginKv) {
         linker.func_wrap(
             "navi",
+            "plugin_kv_status",
+            |caller: Caller<'_, StoreData>| -> wasmtime::Result<i32> {
+                Ok(
+                    match caller.data().api.plugin_kv_status() {
+                        crate::abi::PluginKvStatus::Available => 1,
+                        crate::abi::PluginKvStatus::Unavailable => 0,
+                    },
+                )
+            },
+        )?;
+        linker.func_wrap(
+            "navi",
             "plugin_kv_get",
             |mut caller: Caller<'_, StoreData>,
              key_ptr: u32,
@@ -404,6 +417,9 @@ fn install_imports(
              out_ptr: u32,
              out_cap: u32|
              -> wasmtime::Result<i32> {
+                if caller.data().api.plugin_kv_status() == crate::abi::PluginKvStatus::Unavailable {
+                    return Ok(-2); // unavailable (distinct from missing key -1)
+                }
                 let key = read_guest_string(&mut caller, key_ptr, key_len)?;
                 match caller.data().api.plugin_kv_get(&key) {
                     Some(v) => {
@@ -424,6 +440,9 @@ fn install_imports(
              val_ptr: u32,
              val_len: u32|
              -> wasmtime::Result<i32> {
+                if caller.data().api.plugin_kv_status() == crate::abi::PluginKvStatus::Unavailable {
+                    return Ok(2); // unavailable
+                }
                 let key = read_guest_string(&mut caller, key_ptr, key_len)?;
                 let val = read_guest_string(&mut caller, val_ptr, val_len)?;
                 match caller.data_mut().api.plugin_kv_set(&key, &val) {

@@ -5,6 +5,7 @@
 //! cannot starve routing/sensor/UI threads.
 
 mod abi;
+mod file_kv;
 mod host;
 mod manifest;
 mod plugin_enable;
@@ -12,10 +13,11 @@ pub mod smoke;
 
 pub use abi::{
     AdminRegionView, Capability, ClockView, HostApi, LandTenureView, LandcoverQueryView,
-    LayerStatus, MemoryPluginKv, PoiWrite, Position, ProtectedAreaHit, ProtectedAreaQueryView,
-    RoadTrackJunction, RouteDestinationView, RouteView, SafetyConfigView, TravelModeView,
-    TravellerProfileView, VehicleProfileView, WeatherSampleView,
+    LayerStatus, MemoryPluginKv, PluginKvStatus, PoiWrite, Position, ProtectedAreaHit,
+    ProtectedAreaQueryView, RoadTrackJunction, RouteDestinationView, RouteView, SafetyConfigView,
+    TravelModeView, TravellerProfileView, VehicleProfileView, WeatherSampleView,
 };
+pub use file_kv::{FileKvHostApi, FilePluginKv};
 pub use host::{CallOutcome, PluginError, PluginHost, PluginLimits};
 pub use manifest::PluginManifest;
 pub use plugin_enable::{

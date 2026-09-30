@@ -8,8 +8,12 @@ description = "Right-to-roam overnight camping rule engine (native; WASM guest w
 rust-version.workspace = true
 
 [dependencies]
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+driver-break-core = { path = "../core" }
+osm4routing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
-driver-break-core = { path = "../core" }
+tempfile = "3"

@@ -18,4 +18,7 @@ name = "android_isolation_smoke"
 path = "src/bin/android_isolation_smoke.rs"
 
 [dev-dependencies]
+chrono = { workspace = true }
+driver-break-core = { path = "../core" }
+navi-right-to-roam-camping = { path = "../right-to-roam-camping" }
 tempfile = "3"
