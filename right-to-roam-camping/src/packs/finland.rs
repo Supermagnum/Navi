@@ -1,5 +1,5 @@
 use super::{
-    CitedSource, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack,
+    CitedSource, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack, SuggestionMode,
     SourceQuality, Tier,
 };
 
@@ -33,6 +33,15 @@ everyman's rights. In national parks, fire only at maintained fire sites.",
         decline_when_protected_unknown: false,
         cmz: None,
         cloudberry_note: false,
+        suggestion_mode: SuggestionMode::WildCamp,
+        flag_id: None,
+        designated_layer: None,
+        host_conditions: &[],
+        flag_off_fallback: None,
+        conditions_unmet_fallback: None,
+        requires_land_tenure: false,
+        stay_policy: None,
+        secondary_card_notes: &[],
     }
 }
 
@@ -56,6 +65,15 @@ pub fn aland_tier_d_pack() -> RulePack {
         decline_when_protected_unknown: false,
         cmz: None,
         cloudberry_note: false,
+        suggestion_mode: SuggestionMode::WildCamp,
+        flag_id: None,
+        designated_layer: None,
+        host_conditions: &[],
+        flag_off_fallback: None,
+        conditions_unmet_fallback: None,
+        requires_land_tenure: false,
+        stay_policy: None,
+        secondary_card_notes: &[],
     }
 }
 

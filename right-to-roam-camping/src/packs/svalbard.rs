@@ -1,5 +1,5 @@
 use super::{
-    CitedSource, DistanceRule, DurationRule, FireRule, PackId, RulePack, SourceQuality, Tier,
+    CitedSource, DistanceRule, DurationRule, FireRule, PackId, RulePack, SuggestionMode, SourceQuality, Tier,
 };
 
 pub fn svalbard_decline_pack() -> RulePack {
@@ -21,6 +21,15 @@ pub fn svalbard_decline_pack() -> RulePack {
         decline_when_protected_unknown: false,
         cmz: None,
         cloudberry_note: false,
+        suggestion_mode: SuggestionMode::WildCamp,
+        flag_id: None,
+        designated_layer: None,
+        host_conditions: &[],
+        flag_off_fallback: None,
+        conditions_unmet_fallback: None,
+        requires_land_tenure: false,
+        stay_policy: None,
+        secondary_card_notes: &[],
     }
 }
 

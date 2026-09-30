@@ -204,3 +204,9 @@ Luxembourg, Liechtenstein, and every country not listed in the camping spec:
 6. **CGCT L2213-2:** prompt said search legifrance.
    Direct article URL used:
    `https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000043976727`.
+
+## Phase 3b / 3c pack wiring
+
+URLs cited by Tier B/C, territory, land-manager and world packs added in Phase 3b/3c
+are labelled **copied from spec 2026-09, not re-verified** unless a fetch is recorded
+above. No new live verification was performed during this wiring pass.

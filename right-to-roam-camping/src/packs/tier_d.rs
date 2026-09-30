@@ -1,4 +1,4 @@
-use super::{DistanceRule, DurationRule, FireRule, PackId, RulePack, Tier};
+use super::{DistanceRule, DurationRule, FireRule, PackId, RulePack, SuggestionMode, Tier};
 
 pub fn tier_d_pack(country_iso: &str) -> RulePack {
     RulePack {
@@ -19,5 +19,14 @@ pub fn tier_d_pack(country_iso: &str) -> RulePack {
         decline_when_protected_unknown: false,
         cmz: None,
         cloudberry_note: false,
+        suggestion_mode: SuggestionMode::WildCamp,
+        flag_id: None,
+        designated_layer: None,
+        host_conditions: &[],
+        flag_off_fallback: None,
+        conditions_unmet_fallback: None,
+        requires_land_tenure: false,
+        stay_policy: None,
+        secondary_card_notes: &[],
     }
 }

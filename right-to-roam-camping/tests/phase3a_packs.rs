@@ -72,7 +72,7 @@ fn every_builtin_pack_declares_completeness_fields() {
     for pack in builtin_enabled_packs() {
         assert!(!pack.legal_basis.is_empty(), "{:?}", pack.id);
         assert!(
-            pack.tier == Tier::A || pack.tier == Tier::D,
+            matches!(pack.tier, Tier::A | Tier::B | Tier::C | Tier::D),
             "{:?} unexpected tier {:?}",
             pack.id,
             pack.tier
@@ -153,7 +153,7 @@ fn finland_mainland_accepts_aland_is_tier_d() {
 }
 
 #[test]
-fn scotland_unknown_subdivision_is_tier_d_fixture_sct_is_tier_a() {
+fn scotland_unknown_subdivision_is_england_wales_tier_c_fixture_sct_is_tier_a() {
     let mut gb = FixtureHost {
         country: "gb".into(),
         subdivision: None,
@@ -169,7 +169,15 @@ fn scotland_unknown_subdivision_is_tier_d_fixture_sct_is_tier_a() {
         kv: HashMap::new(),
     };
     let out = suggest_overnight_fixed_probes(&mut gb, &[(56.8, -5.1)], Some(1));
-    assert!(out.probe_log.iter().any(|e| e.reason.contains("tier_d")));
+    // Without GB-SCT → England/Wales Tier C (TentSite-only; empty without POIs).
+    assert!(
+        out.probe_log
+            .iter()
+            .any(|e| e.reason == "no_tentsite_poi" || e.reason.contains("designated")),
+        "unknown GB subdivision should be Tier C TentSite path; log={:?}",
+        out.probe_log
+    );
+    assert!(!out.list.cards.iter().any(|c| c.accepted && c.tier == Tier::A));
 
     gb.subdivision = Some("GB-SCT".into());
     let out = suggest_overnight_fixed_probes(&mut gb, &[(56.8, -5.1)], Some(1));

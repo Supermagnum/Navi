@@ -10,10 +10,11 @@ use crate::candidates::{
 };
 use crate::card::{CampingCard, DeclineKind, SuggestionList};
 use crate::fire::{fire_guidance_norway, LEAVE_NO_TRACE_NOTE, PROTECTED_SPECIES_NOTE};
-use crate::host::{CampingHost, ProtectedAreaStatus};
+use crate::host::{CampingHost, LandTenureStatus, ProtectedAreaStatus};
 use crate::night_store::{location_id_from_lat_lon, NightStore};
 use crate::packs::{
-    in_cmz_season, pack_for_location, DurationRule, FireRule, PackId, Tier,
+    in_cmz_season, pack_for_location, pack_for_location_with_tenure, DistanceRule, DurationRule,
+    FireRule, HostCondition, PackId, SuggestionMode, Tier,
 };
 use crate::safety_view::{wild_overnight_reject, OvernightSafety};
 use crate::NotCheckedLayers;
@@ -289,6 +290,147 @@ enum ProbeDecision {
     },
 }
 
+fn unmet_host_condition(
+    host: &dyn CampingHost,
+    probe: &EvalProbe,
+    conditions: &[HostCondition],
+) -> Option<&'static str> {
+    for c in conditions {
+        match c {
+            HostCondition::NonMotorisedTravel => {
+                if !matches!(host.travel_mode(), crate::host::TravelMode::NonMotorised) {
+                    return Some("condition_not_non_motorised");
+                }
+            }
+            HostCondition::NotForest => match host.is_forest(probe.lat, probe.lon) {
+                Some(true) => return Some("condition_is_forest"),
+                None => return Some("condition_forest_unknown"),
+                Some(false) => {}
+            },
+            HostCondition::NotProtectedArea => {
+                match host.protected_area_status(probe.lat, probe.lon) {
+                    ProtectedAreaStatus::Inside => return Some("condition_inside_protected"),
+                    ProtectedAreaStatus::Unknown => return Some("condition_protected_unknown"),
+                    ProtectedAreaStatus::Clear => {}
+                }
+            }
+            HostCondition::NotResidential => match host.is_residential_ground(probe.lat, probe.lon)
+            {
+                Some(true) => return Some("condition_residential"),
+                None => return Some("condition_residential_unknown"),
+                Some(false) => {}
+            },
+            HostCondition::AboveTreeline => match host.above_treeline(probe.lat, probe.lon) {
+                Some(true) => {}
+                Some(false) => return Some("condition_below_treeline"),
+                None => return Some("condition_treeline_unknown"),
+            },
+            HostCondition::DesignatedLayerReady(layer) => {
+                if !host.designated_layer_ready(*layer) {
+                    return Some("designated_layer_not_classified");
+                }
+            }
+            HostCondition::LandTenureKnown => {
+                if matches!(
+                    host.land_tenure_status(probe.lat, probe.lon),
+                    LandTenureStatus::Unknown
+                ) {
+                    return Some("tenure_unknown");
+                }
+            }
+        }
+    }
+    None
+}
+
+fn designated_tent_sites_only(
+    host: &dyn CampingHost,
+    probe: &EvalProbe,
+    pack: &crate::packs::RulePack,
+    not_checked: NotCheckedLayers,
+    source_urls: &[&str],
+) -> ProbeDecision {
+    if let Some(layer) = pack.designated_layer {
+        if !host.designated_layer_ready(layer) {
+            // Spec: designated layer not classified → empty (no fabricated spots).
+            return ProbeDecision::Reject {
+                reason: "designated_layer_not_classified".into(),
+                card: None,
+            };
+        }
+    }
+    let sites = host.tent_sites_near(probe.lat, probe.lon, 2_000.0);
+    if sites.is_empty() {
+        return ProbeDecision::Reject {
+            reason: "no_tentsite_poi".into(),
+            card: None,
+        };
+    }
+    let site = &sites[0];
+    let mut notes: Vec<String> = pack.guidance_notes.iter().map(|s| (*s).to_string()).collect();
+    notes.extend(pack.secondary_card_notes.iter().map(|s| (*s).to_string()));
+    notes.push("Designated TentSite from host POI data (not a wild-camp suggestion).".into());
+    ProbeDecision::Accept(CampingCard {
+        lat: site.lat,
+        lon: site.lon,
+        accepted: true,
+        decline: None,
+        reject_reason: None,
+        tier: Tier::C,
+        country_iso: pack.country_iso.clone(),
+        subdivision_iso: None,
+        legal_basis: pack.legal_basis.into(),
+        sources: source_urls.iter().map(|s| (*s).to_string()).collect(),
+        fire_text: None,
+        bare_rock_note: None,
+        notes,
+        not_checked,
+        disclaimer: crate::DISCLAIMER.into(),
+        location_id: location_id_from_lat_lon(site.lat, site.lon),
+        seed_road_highway: None,
+        walk_m: None,
+    })
+}
+
+fn degrade_to_fallback(
+    host: &dyn CampingHost,
+    probe: &EvalProbe,
+    pack: &crate::packs::RulePack,
+    fallback: Tier,
+    reason: &str,
+    not_checked: NotCheckedLayers,
+    source_urls: &[&str],
+) -> ProbeDecision {
+    match fallback {
+        Tier::C => {
+            let mut c_pack = pack.clone();
+            c_pack.tier = Tier::C;
+            c_pack.suggestion_mode = SuggestionMode::DesignatedTentSitesOnly;
+            match designated_tent_sites_only(host, probe, &c_pack, not_checked, source_urls) {
+                ProbeDecision::Reject { reason: inner, card } => ProbeDecision::Reject {
+                    reason: format!("{reason}_fallback_c_{inner}"),
+                    card,
+                },
+                other => other,
+            }
+        }
+        _ => ProbeDecision::Reject {
+            reason: reason.into(),
+            card: Some(CampingCard::decline_campsites_only(
+                probe.lat,
+                probe.lon,
+                &pack.country_iso,
+                pack.legal_basis,
+                source_urls,
+                not_checked,
+                &[
+                    "Pack degraded: maintainer flag OFF or host conditions not checkable.",
+                ],
+            )),
+        },
+    }
+}
+
 fn evaluate_probe(
     host: &mut dyn CampingHost,
     safety: &OvernightSafety,
@@ -297,13 +439,105 @@ fn evaluate_probe(
 ) -> ProbeDecision {
     let country = host.admin_country_iso(probe.lat, probe.lon);
     let subdivision = host.admin_subdivision_iso(probe.lat, probe.lon);
-    let pack = pack_for_location(country.as_deref(), subdivision.as_deref());
+    let tenure = host.land_tenure_manager(probe.lat, probe.lon);
+    let mut pack =
+        pack_for_location_with_tenure(country.as_deref(), subdivision.as_deref(), tenure.as_deref());
     let not_checked = NotCheckedLayers::from_host_status(
         host.protected_area_layer_ready(),
         host.landcover_layer_ready(),
     );
     let loc_id = location_id_from_lat_lon(probe.lat, probe.lon);
-    let source_urls: Vec<&str> = pack.source_urls();
+    let mut source_urls: Vec<&str> = pack.source_urls();
+
+    // Maintainer flag OFF → degrade to declared fallback (usually C or D).
+    if let Some(flag) = pack.flag_id {
+        if !host.camping_pack_flag_enabled(flag) {
+            let fb = pack.flag_off_fallback.unwrap_or(Tier::D);
+            return degrade_to_fallback(
+                host,
+                probe,
+                &pack,
+                fb,
+                &format!("flag_off_{flag}"),
+                not_checked.clone(),
+                &source_urls,
+            );
+        }
+    }
+
+    // Land-manager / Tier B host conditions.
+    if !pack.host_conditions.is_empty() {
+        if let Some(reason) = unmet_host_condition(host, probe, pack.host_conditions) {
+            let fb = pack.conditions_unmet_fallback.unwrap_or(Tier::D);
+            return degrade_to_fallback(
+                host,
+                probe,
+                &pack,
+                fb,
+                reason,
+                not_checked.clone(),
+                &source_urls,
+            );
+        }
+    }
+
+    if pack.requires_land_tenure
+        && matches!(
+            host.land_tenure_status(probe.lat, probe.lon),
+            LandTenureStatus::Unknown
+        )
+    {
+        return ProbeDecision::Reject {
+            reason: "tenure_unknown".into(),
+            card: Some(CampingCard::decline_campsites_only(
+                probe.lat,
+                probe.lon,
+                country.as_deref().unwrap_or(&pack.country_iso),
+                pack.legal_basis,
+                &source_urls,
+                not_checked.clone(),
+                &["Land tenure unknown — wild camp declined."],
+            )),
+        };
+    }
+
+    if matches!(pack.distance, DistanceRule::NotVerifiedDeclines) {
+        return ProbeDecision::Reject {
+            reason: "distance_not_verified_declines".into(),
+            card: Some(CampingCard::decline_campsites_only(
+                probe.lat,
+                probe.lon,
+                &pack.country_iso,
+                pack.legal_basis,
+                &source_urls,
+                not_checked.clone(),
+                &["Statutory/access distance not verified — declining rather than inventing metres."],
+            )),
+        };
+    }
+
+    match pack.suggestion_mode {
+        SuggestionMode::DesignatedTentSitesOnly => {
+            return designated_tent_sites_only(host, probe, &pack, not_checked, &source_urls);
+        }
+        SuggestionMode::DeclineCampsitesGuidance => {
+            let mut notes: Vec<&str> = pack.guidance_notes.to_vec();
+            notes.extend(pack.secondary_card_notes.iter().copied());
+            return ProbeDecision::Reject {
+                reason: format!("decline_{:?}", pack.id).to_ascii_lowercase(),
+                card: Some(CampingCard::decline_campsites_only(
+                    probe.lat,
+                    probe.lon,
+                    &pack.country_iso,
+                    pack.legal_basis,
+                    &source_urls,
+                    not_checked.clone(),
+                    &notes,
+                )),
+            };
+        }
+        SuggestionMode::WildCamp => {}
+    }
 
     match pack.id {
         PackId::SvalbardDecline => {
@@ -312,7 +546,18 @@ fn evaluate_probe(
                 card: Some(CampingCard::svalbard_decline(probe.lat, probe.lon, clock)),
             };
         }
-        PackId::TierD | PackId::AlandTierD => {
+        PackId::TierD
+        | PackId::AlandTierD
+        | PackId::TerritoryFo
+        | PackId::TerritoryGl
+        | PackId::TerritoryGbNir
+        | PackId::TerritoryIm
+        | PackId::TerritoryJe
+        | PackId::TerritoryGg
+        | PackId::TerritoryGi
+        | PackId::Mexico
+        | PackId::Japan
+        | PackId::WorldTierD => {
             return ProbeDecision::Reject {
                 reason: format!(
                     "tier_d_country_{}",
@@ -325,16 +570,11 @@ fn evaluate_probe(
                     pack.legal_basis,
                     &source_urls,
                     not_checked,
-                    &[],
+                    pack.secondary_card_notes,
                 )),
             };
         }
-        PackId::Norway
-        | PackId::Sweden
-        | PackId::Finland
-        | PackId::Estonia
-        | PackId::Scotland
-        | PackId::Iceland => {}
+        _ => {}
     }
 
     // Iceland exception: unknown protected-area status → campsites only.

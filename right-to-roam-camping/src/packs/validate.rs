@@ -46,6 +46,30 @@ fn is_navi_safety_default_filter(id: &str, distance: &DistanceRule) -> bool {
         ) && id.contains("building_distance")
 }
 
+pub fn assert_tier_b_and_land_manager_flags_default_off() {
+    for pack in crate::packs::all_declared_packs() {
+        if pack.tier == crate::packs::Tier::B || pack.requires_land_tenure {
+            assert!(
+                pack.maintainer_flag_default_off,
+                "{:?} must ship with maintainer_flag_default_off",
+                pack.id
+            );
+            assert!(
+                pack.flag_id.is_some(),
+                "{:?} Tier B / land-manager pack must declare flag_id",
+                pack.id
+            );
+        }
+        if let Some(flag) = pack.flag_id {
+            assert!(
+                pack.maintainer_flag_default_off,
+                "flag {flag} on {:?} must default OFF in committed config",
+                pack.id
+            );
+        }
+    }
+}
+
 pub fn validate_all_builtin_packs() {
     for pack in builtin_enabled_packs() {
         assert_hard_filters_official_only(&pack);
@@ -66,7 +90,9 @@ pub fn validate_all_builtin_packs() {
                     pack.id
                 );
             }
-            DistanceRule::SafetyConfigLabeled { .. } | DistanceRule::NotApplicable => {}
+            DistanceRule::SafetyConfigLabeled { .. }
+            | DistanceRule::NotApplicable
+            | DistanceRule::NotVerifiedDeclines => {}
         }
         let _ = (&pack.distance, &pack.duration, &pack.fire);
     }
@@ -83,11 +109,16 @@ mod tests {
     }
 
     #[test]
+    fn every_tier_b_and_land_manager_flag_defaults_off() {
+        assert_tier_b_and_land_manager_flags_default_off();
+    }
+
+    #[test]
     #[should_panic(expected = "non-official source")]
     fn hard_filter_backed_only_by_ngo_fails_validator() {
         use super::super::{
             CitedSource, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack,
-            SourceQuality, Tier,
+            SourceQuality, SuggestionMode, Tier,
         };
         let pack = RulePack {
             id: PackId::TierD,
@@ -113,6 +144,15 @@ mod tests {
             decline_when_protected_unknown: false,
             cmz: None,
             cloudberry_note: false,
+            suggestion_mode: SuggestionMode::WildCamp,
+            flag_id: None,
+            designated_layer: None,
+            host_conditions: &[],
+            flag_off_fallback: None,
+            conditions_unmet_fallback: None,
+            requires_land_tenure: false,
+            stay_policy: None,
+            secondary_card_notes: &[],
         };
         assert_hard_filters_official_only(&pack);
     }
@@ -122,7 +162,7 @@ mod tests {
     fn safety_config_hard_filter_tagged_official_fails_validator() {
         use super::super::{
             CitedSource, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack,
-            SourceQuality, Tier,
+            SourceQuality, SuggestionMode, Tier,
         };
         let pack = RulePack {
             id: PackId::Sweden,
@@ -150,6 +190,15 @@ mod tests {
             decline_when_protected_unknown: false,
             cmz: None,
             cloudberry_note: false,
+            suggestion_mode: SuggestionMode::WildCamp,
+            flag_id: None,
+            designated_layer: None,
+            host_conditions: &[],
+            flag_off_fallback: None,
+            conditions_unmet_fallback: None,
+            requires_land_tenure: false,
+            stay_policy: None,
+            secondary_card_notes: &[],
         };
         assert_hard_filters_official_only(&pack);
     }

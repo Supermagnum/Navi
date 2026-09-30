@@ -1,6 +1,6 @@
 use super::{
     CitedSource, CmzPolicy, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId,
-    RulePack, SourceQuality, Tier,
+    RulePack, SourceQuality, SuggestionMode, Tier,
 };
 
 pub fn scotland_pack() -> RulePack {
@@ -42,6 +42,15 @@ prove are outside the CMZ.",
             season_end_day: 30,
         }),
         cloudberry_note: false,
+        suggestion_mode: SuggestionMode::WildCamp,
+        flag_id: None,
+        designated_layer: None,
+        host_conditions: &[],
+        flag_off_fallback: None,
+        conditions_unmet_fallback: None,
+        requires_land_tenure: false,
+        stay_policy: None,
+        secondary_card_notes: &[],
     }
 }
 
