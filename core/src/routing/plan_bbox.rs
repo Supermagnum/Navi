@@ -989,23 +989,37 @@ fn densify_point_has_leaf_cover(pt: (f64, f64), ready: &[(String, [f64; 4])]) ->
 ///
 /// Country/leaf AABBs routinely cover open water between shores (Baltic,
 /// Kattegat, Öresund, Channel approaches, etc.). A point covered by two or more
-/// countries is treated as a water chord / disconnected mid for **any** OD —
+/// **countries** is treated as a water chord / disconnected mid for **any** OD —
 /// not only same-country hops. Cross-sea densify must use land-safe leaf
 /// centroids or grid samples instead of inventing geometric sea endpoints.
+///
+/// When a Ready **leaf** covers the point, foreign **country** AABBs that spill
+/// over that leaf (Denmark⊃western Skåne) must not count — otherwise land-bridge
+/// densify cannot place joints on the approached shore and Öresund-class hops
+/// stay as one disconnected sea chord.
 fn densify_point_in_multi_country_spill(
     pt: (f64, f64),
     ready: &[(String, [f64; 4])],
 ) -> bool {
-    let mut countries = std::collections::HashSet::new();
+    let mut leaf_countries = std::collections::HashSet::new();
+    let mut country_only = std::collections::HashSet::new();
     for (path, bbox) in ready {
         if !crate::routing::basemap::bbox_covers_point(*bbox, pt.0, pt.1) {
             continue;
         }
-        if let Some(c) = densify_region_country(path) {
-            countries.insert(c);
+        let Some(c) = densify_region_country(path) else {
+            continue;
+        };
+        if path.matches('/').count() >= 2 {
+            leaf_countries.insert(c);
+        } else {
+            country_only.insert(c);
         }
     }
-    countries.len() >= 2
+    if !leaf_countries.is_empty() {
+        return leaf_countries.len() >= 2;
+    }
+    country_only.len() >= 2
 }
 
 /// One padded bbox per consecutive point pair (start→via→…→end).
@@ -1700,6 +1714,24 @@ mod tests {
             "corridor must still densify into multiple land hops; hops={}",
             hops.len()
         );
+        // Øresund-class: must not leave a single >chunk hop from Zealand to raw
+        // Skåne center — land-bridge must use Skåne leaf interior despite DK spill.
+        let long_sea = hops.windows(2).any(|w| {
+            let dlat = (w[1].0 - w[0].0).abs();
+            let dlon = (w[1].1 - w[0].1).abs();
+            let cheb = dlat.max(dlon);
+            cheb > LONG_TRIP_CHUNK_DEG + 1e-6
+                && w[0].0 > 55.4
+                && w[0].0 < 56.0
+                && w[0].1 > 11.8
+                && w[0].1 < 12.5
+                && w[1].0 > 55.7
+                && w[1].1 > 13.2
+        });
+        assert!(
+            !long_sea,
+            "must densify Zealand→Skåne across leaf land, not one sea chord; hops={hops:?}"
+        );
     }
 
     /// Geography-agnostic: a point covered by two country boxes is spill/water.
@@ -1718,11 +1750,28 @@ mod tests {
                 "europe/alpha/leaf".to_string(),
                 [10.0_f64, 10.0, 14.0, 14.0],
             ),
+            (
+                "europe/beta/leaf".to_string(),
+                [16.0_f64, 16.0, 24.0, 24.0],
+            ),
         ];
-        // Overlap of alpha∩beta country boxes.
-        assert!(densify_point_in_multi_country_spill((17.0, 17.0), &ready));
-        // Exclusive alpha leaf interior.
+        // Overlap of alpha∩beta country boxes with no leaf cover.
+        assert!(densify_point_in_multi_country_spill((15.5, 15.5), &ready));
+        // Exclusive alpha leaf interior — foreign beta country AABB must not
+        // mark leaf-interior land as spill.
         assert!(!densify_point_in_multi_country_spill((12.0, 12.0), &ready));
+        // Two foreign leaves covering the same point → still spill.
+        let dual_leaf = vec![
+            (
+                "europe/alpha/leaf".to_string(),
+                [10.0_f64, 10.0, 18.0, 18.0],
+            ),
+            (
+                "europe/beta/leaf".to_string(),
+                [15.0_f64, 15.0, 25.0, 25.0],
+            ),
+        ];
+        assert!(densify_point_in_multi_country_spill((16.0, 16.0), &dual_leaf));
     }
 
     /// Second corridor: Skåne↔Halland must not mid-hop Öresund water, and
