@@ -46,13 +46,19 @@ class CampingNightKvInstrumentedTest {
         f.writeText(o.toString())
     }
 
-    private fun cellKey(lat: Double, lon: Double): String {
+    private fun cellKey(
+        lat: Double,
+        lon: Double,
+    ): String {
         val glat = Math.round(lat / 0.001).toLong()
         val glon = Math.round(lon / 0.001).toLong()
         return "cell:$glat:$glon"
     }
 
-    private fun nightKey(pack: String, loc: String) = "rtr_night:$pack:$loc"
+    private fun nightKey(
+        pack: String,
+        loc: String,
+    ) = "rtr_night:$pack:$loc"
 
     private fun activeKey(pack: String) = "rtr_night_active:$pack"
 
@@ -119,12 +125,15 @@ class CampingNightKvInstrumentedTest {
                 .put("nights_used", 2)
         o.put(nightKey("no", a), recA.toString())
         // Move to B clears A (FilePluginKv stores empty by deletion of key).
-        o.put(nightKey("no", b), JSONObject()
-            .put("location_id", b)
-            .put("first_night", "2026-07-03")
-            .put("last_night", "2026-07-03")
-            .put("nights_used", 1)
-            .toString())
+        o.put(
+            nightKey("no", b),
+            JSONObject()
+                .put("location_id", b)
+                .put("first_night", "2026-07-03")
+                .put("last_night", "2026-07-03")
+                .put("nights_used", 1)
+                .toString(),
+        )
         o.put(activeKey("no"), b)
         // Simulate move-clear of A:
         o.remove(nightKey("no", a))
@@ -168,8 +177,15 @@ class CampingNightKvInstrumentedTest {
         return next > maxNights
     }
 
-    private data class LocalYmd(val y: Int, val m: Int, val d: Int) {
-        fun toEpochDay(): Long = java.time.LocalDate.of(y, m, d).toEpochDay()
+    private data class LocalYmd(
+        val y: Int,
+        val m: Int,
+        val d: Int,
+    ) {
+        fun toEpochDay(): Long =
+            java.time.LocalDate
+                .of(y, m, d)
+                .toEpochDay()
 
         companion object {
             fun parse(s: String): LocalYmd {

@@ -6,7 +6,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -289,7 +288,12 @@ class CampingPhase5bPresentationInstrumentedTest {
              "travel_mode":"non_motorised","vehicle_class":"unknown",
              "is_professional_driver_under_rest_rules":false}
             """.trimIndent()
-        fun suggestOn(y: Int, m: UInt, d: UInt): CampingSuggestResult {
+
+        fun suggestOn(
+            y: Int,
+            m: UInt,
+            d: UInt,
+        ): CampingSuggestResult {
             campingPluginSetClockYmd(y, m, d)
             val call =
                 kotlinx.coroutines.runBlocking {
@@ -302,12 +306,20 @@ class CampingPhase5bPresentationInstrumentedTest {
             )
             return parseCampingSuggestResultJson(call.resultJson!!)
         }
-        fun campHere(y: Int, m: UInt, d: UInt, la: Double = lat, lo: Double = lon): String {
+
+        fun campHere(
+            y: Int,
+            m: UInt,
+            d: UInt,
+            la: Double = lat,
+            lo: Double = lon,
+        ): String {
             campingPluginSetClockYmd(y, m, d)
             val msg = uniffi.navi.campingPluginCampHereTonight(la, lo, "no", "no-34")
             android.util.Log.i("NaviCampingNight", "camp_here date=$y-$m-$d msg=$msg kv=${kv.takeIf { it.isFile }?.readText()}")
             return msg
         }
+
         fun nightKeysPresent(): Boolean {
             if (!kv.isFile) return false
             val text = kv.readText()
