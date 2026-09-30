@@ -183,6 +183,32 @@ Croatia, Slovenia, Spain, Italy, Portugal, Greece, Hungary, Slovakia,
 Luxembourg, Liechtenstein, and every country not listed in the camping spec:
 **not verified** — TODO; no URLs.
 
+## Tier C designated-only packs — empty-result cause (Phase 4)
+
+In unit/fixture tests the host does **not** load TentSite POI data. Where a
+real pack would still seek TentSite hits, an empty result in those tests is
+**"C, unverified"** (pack loaded; POIs not supplied). Where the pack also
+requires a designated polygon layer that is not classified, the effective
+outcome remains empty even with POIs until that layer exists.
+
+| Pack / country | Effective tier in tests | Why empty |
+|---|---|---|
+| England / Wales | C, unverified | Pack loaded; TentSite POIs not loaded in tests |
+| Denmark | C, unverified | Pack loaded; TentSite POIs not loaded in tests |
+| Netherlands | C, unverified | Pack loaded; TentSite not loaded; Paalkamp layer not classified |
+| Belgium (Flanders) | C, unverified | Pack loaded; TentSite not loaded; Bivakzones layer not classified |
+| Poland | C, unverified | Pack loaded; TentSite not loaded; Zanocuj w lesie not classified |
+| Czechia | C, unverified | Pack loaded; TentSite POIs not loaded in tests |
+| Lithuania | C, unverified | Pack loaded; TentSite POIs not loaded in tests |
+| Ireland | C, unverified | Pack loaded; TentSite POIs not loaded in tests |
+| France (tents) | C, unverified | Pack loaded; TentSite POIs not loaded in tests |
+| Germany (other Länder) | C, unverified | Pack loaded; TentSite not loaded; Trekkingplätze not classified |
+| Austria (Kärnten/NÖ/Tirol) | C, unverified | Pack loaded; TentSite POIs not loaded in tests |
+
+When TentSite POIs are present on a real graph and no extra polygon layer is
+required, Tier C can return designated hits. Empty then means **no TentSite
+POIs in radius**, not "pack not loaded".
+
 ---
 
 ## Dead / replaced links (for commit message)
