@@ -9,6 +9,8 @@ members = [
     "plugin-sdk",
     "plugins/log-hello",
     "plugins/busy-loop",
+    "plugins/trap-guest",
+    "plugins/memory-bomb",
     "plugins/weather",
     "plugins/datex",
     "plugins/poi-lookahead",

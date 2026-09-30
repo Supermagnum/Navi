@@ -1,0 +1,10 @@
+{
+  "name": "memory_bomb",
+  "version": "0.1.0",
+  "entry": "plugin_main",
+  "capabilities": ["log"],
+  "fuel_limit": 50000000,
+  "timeout_ms": 2000,
+  "memory_limit_bytes": 1048576,
+  "wasm": "plugin.wasm"
+}

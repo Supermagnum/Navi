@@ -99,6 +99,7 @@ fn run_guest_job(stage: &Path, job: &serde_json::Value) -> (usize, usize, BTreeM
         PluginLimits {
             fuel: 500_000_000,
             timeout_ms: 60_000,
+            memory_bytes: navi_plugin_host::DEFAULT_MEMORY_BYTES,
         },
     )
     .expect("load camping guest");
@@ -232,6 +233,7 @@ fn empty_host_fail_safes_through_guest() {
         PluginLimits {
             fuel: 5_000_000,
             timeout_ms: 2_000,
+            memory_bytes: navi_plugin_host::DEFAULT_MEMORY_BYTES,
         },
     )
     .expect("load guest");

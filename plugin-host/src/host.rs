@@ -1,4 +1,4 @@
-//! Wasmtime loader with fuel + epoch (wall-clock) isolation.
+//! Wasmtime loader with fuel + epoch (wall-clock) + memory isolation.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -9,7 +9,9 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use thiserror::Error;
-use wasmtime::{Caller, Config, Engine, Linker, Module, Store, Trap};
+use wasmtime::{
+    Caller, Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, Trap,
+};
 
 use crate::abi::{Capability, HostApi, PoiWrite};
 use crate::manifest::PluginManifest;
@@ -18,11 +20,15 @@ use crate::manifest::PluginManifest;
 pub const DEFAULT_FUEL: u64 = 5_000_000;
 /// Default wall-clock budget per `call` when the manifest omits `timeout_ms`.
 pub const DEFAULT_TIMEOUT_MS: u64 = 250;
+/// Default linear-memory ceiling per guest call (16 MiB).
+pub const DEFAULT_MEMORY_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct PluginLimits {
     pub fuel: u64,
     pub timeout_ms: u64,
+    /// Max bytes any single linear memory may grow to during a call.
+    pub memory_bytes: usize,
 }
 
 impl Default for PluginLimits {
@@ -30,6 +36,7 @@ impl Default for PluginLimits {
         Self {
             fuel: DEFAULT_FUEL,
             timeout_ms: DEFAULT_TIMEOUT_MS,
+            memory_bytes: DEFAULT_MEMORY_BYTES,
         }
     }
 }
@@ -42,8 +49,12 @@ pub enum PluginError {
     FuelExhausted,
     #[error("plugin exceeded wall-clock timeout")]
     Timeout,
+    #[error("plugin exceeded memory limit")]
+    MemoryExceeded,
     #[error("plugin trap: {0}")]
     Trap(String),
+    #[error("plugin unavailable on this ABI ({0})")]
+    UnsupportedAbi(String),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -59,6 +70,7 @@ pub enum CallOutcome {
     Ok,
     FuelExhausted,
     Timeout,
+    MemoryExceeded,
 }
 
 struct StoreData {
@@ -66,6 +78,13 @@ struct StoreData {
     /// Capability set retained for future per-call enforcement audits.
     #[allow(dead_code)]
     allowed: HashSet<Capability>,
+    limits: StoreLimits,
+}
+
+/// Cranelift native compilation is supported for the ABIs Navi ships
+/// (`arm64-v8a` / `aarch64`, `x86_64`). Anything else fails closed.
+pub fn cranelift_abi_supported() -> bool {
+    matches!(std::env::consts::ARCH, "aarch64" | "x86_64")
 }
 
 /// Loaded, capability-checked plugin ready for sandboxed calls.
@@ -100,6 +119,13 @@ impl PluginHost {
         host_policy: &HashSet<Capability>,
         default_limits: PluginLimits,
     ) -> Result<Self, PluginError> {
+        if !cranelift_abi_supported() {
+            return Err(PluginError::UnsupportedAbi(format!(
+                "{} — Cranelift unavailable; plugin disabled (fail closed)",
+                std::env::consts::ARCH
+            )));
+        }
+
         let requested = manifest.capability_set();
         for cap in &requested {
             if !host_policy.contains(cap) {
@@ -126,6 +152,9 @@ impl PluginHost {
         let limits = PluginLimits {
             fuel: manifest.fuel_limit.unwrap_or(default_limits.fuel),
             timeout_ms: manifest.timeout_ms.unwrap_or(default_limits.timeout_ms),
+            memory_bytes: manifest
+                .memory_limit_bytes
+                .unwrap_or(default_limits.memory_bytes),
         };
 
         Ok(Self {
@@ -154,18 +183,28 @@ impl PluginHost {
         &self.wasm_path
     }
 
-    /// Invoke the exported entry function under fuel + wall-clock limits.
+    /// Invoke the exported entry function under fuel + wall-clock + memory limits.
     pub fn call(&self, api: Box<dyn HostApi>) -> Result<CallOutcome, PluginError> {
         let mut linker = Linker::new(&self.engine);
         install_imports(&mut linker, &self.allowed)?;
+
+        let store_limits = StoreLimitsBuilder::new()
+            .memory_size(self.limits.memory_bytes)
+            .instances(1)
+            .memories(1)
+            .tables(4)
+            .trap_on_grow_failure(true)
+            .build();
 
         let mut store = Store::new(
             &self.engine,
             StoreData {
                 api,
                 allowed: self.allowed.clone(),
+                limits: store_limits,
             },
         );
+        store.limiter(|data| &mut data.limits);
         store.set_fuel(self.limits.fuel)?;
         store.set_epoch_deadline(1);
 
@@ -209,6 +248,9 @@ fn classify_trap(err: wasmtime::Error) -> Result<CallOutcome, PluginError> {
         match trap {
             Trap::OutOfFuel => return Ok(CallOutcome::FuelExhausted),
             Trap::Interrupt => return Ok(CallOutcome::Timeout),
+            Trap::AllocationTooLarge | Trap::MemoryOutOfBounds => {
+                return Ok(CallOutcome::MemoryExceeded);
+            }
             _ => {}
         }
     }
@@ -218,6 +260,14 @@ fn classify_trap(err: wasmtime::Error) -> Result<CallOutcome, PluginError> {
     }
     if lower.contains("epoch") || lower.contains("interrupt") || lower.contains("deadline") {
         return Ok(CallOutcome::Timeout);
+    }
+    if lower.contains("growing memory")
+        || lower.contains("memory growth")
+        || lower.contains("out of memory")
+        || lower.contains("allocation too large")
+        || lower.contains("exceeded memory")
+    {
+        return Ok(CallOutcome::MemoryExceeded);
     }
     Err(PluginError::Trap(msg))
 }
