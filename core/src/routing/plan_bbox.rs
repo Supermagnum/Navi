@@ -242,14 +242,10 @@ pub fn densify_route_points_via_regions_dirs(
             let c = ((bbox[0] + bbox[2]) * 0.5, (bbox[1] + bbox[3]) * 0.5);
             let c = prefer_coastal_centroid(c, *bbox, path);
             // Pull large-leaf catalog centers toward the OD entry into the leaf so
-            // densify joints stay near the approached border (snappable + local tiles),
-            // not deep AABB centers that miss the loaded graph (any country).
-            let biased = prefer_trip_entry_centroid(c, *bbox, start, end, path);
-            let c = if densify_point_in_multi_country_spill(biased, &ready) {
-                c
-            } else {
-                biased
-            };
+            // densify joints stay near the approached border (snappable + local tiles).
+            // Do not reject via multi-country spill: foreign country AABBs routinely
+            // cover leaf interiors across water (DK over western Skåne).
+            let c = prefer_trip_entry_centroid(c, *bbox, start, end, path);
             let t = progress_t(c);
             if t <= 0.02 || t >= 0.98 {
                 continue;
@@ -368,12 +364,9 @@ fn densify_gaps_with_region_centroids(
         .map(|(path, b)| {
             let c = ((b[0] + b[2]) * 0.5, (b[1] + b[3]) * 0.5);
             let c = prefer_coastal_centroid(c, *b, path);
-            let biased = prefer_trip_entry_centroid(c, *b, trip_start, trip_end, path);
-            if densify_point_in_multi_country_spill(biased, &ready) {
-                c
-            } else {
-                biased
-            }
+            // Same as anchor path: leaf-interior entry bias must not be undone by
+            // foreign country AABB spill.
+            prefer_trip_entry_centroid(c, *b, trip_start, trip_end, path)
         })
         .collect();
     let mut out = Vec::with_capacity(points.len() * 2);
