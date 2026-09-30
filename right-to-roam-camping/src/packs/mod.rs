@@ -1,11 +1,13 @@
 //! Explicit rule packs — no shared Default; every field set per pack.
 
 mod norway;
+mod sweden;
 mod svalbard;
 mod tier_d;
 mod validate;
 
 pub use norway::norway_pack;
+pub use sweden::sweden_pack;
 pub use svalbard::svalbard_decline_pack;
 pub use tier_d::tier_d_pack;
 pub use validate::{assert_hard_filters_official_only, validate_all_builtin_packs};
@@ -175,6 +177,7 @@ pub fn pack_for_location(country_iso: Option<&str>, subdivision_iso: Option<&str
     let _sub = subdivision_iso.map(|s| s.to_ascii_uppercase());
     match c.as_deref() {
         Some("no") => norway_pack(),
+        Some("se") => sweden_pack(),
         Some("sj") => svalbard_decline_pack(),
         Some(other) => tier_d_pack(other),
         None => tier_d_pack("unknown"),
@@ -188,7 +191,7 @@ pub fn pack_for_country(country_iso: Option<&str>) -> RulePack {
 
 /// All Tier A / special packs that ship in Phase 3a (for validators + retention).
 pub fn builtin_enabled_packs() -> Vec<RulePack> {
-    vec![norway_pack(), svalbard_decline_pack()]
+    vec![norway_pack(), sweden_pack(), svalbard_decline_pack()]
 }
 
 pub fn in_cmz_season(policy: &CmzPolicy, d: crate::host::LocalDate) -> bool {

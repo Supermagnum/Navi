@@ -764,7 +764,7 @@ mod tests {
     }
 
     #[test]
-    fn sweden_is_still_tier_d_until_sweden_pack() {
+    fn sweden_is_tier_a() {
         let mut h = MemHost {
             kv: HashMap::new(),
             kv_ok: true,
@@ -791,13 +791,12 @@ mod tests {
             date,
         );
         match d {
-            ProbeDecision::Reject { reason, card } => {
-                assert!(reason.contains("tier_d"));
-                let c = card.unwrap();
-                assert_eq!(c.tier, Tier::D);
+            ProbeDecision::Accept(c) => {
+                assert_eq!(c.tier, Tier::A);
                 assert_eq!(c.country_iso, "se");
+                assert!(c.notes.iter().any(|n| n.contains("Navi safety default, not Swedish law")));
             }
-            _ => panic!("expected Tier D reject before Sweden pack lands"),
+            _ => panic!("expected Sweden Tier A accept"),
         }
     }
 

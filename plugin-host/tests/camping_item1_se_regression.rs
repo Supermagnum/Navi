@@ -1,12 +1,14 @@
-//! Item 1 follow-up: SE Tier D cards were **not** on Lillehammer→Sjusjøen.
+//! Item 1 follow-up: SE cards on Kongsvinger→Charlottenberg are now Tier A.
+//!
+//! Phase 3a deliberately flips the prior Tier D regression: Sweden has a real
+//! Tier A pack, so the SE coordinate that previously declined must accept with
+//! Swedish allemansrätt guidance (building distance labelled as Navi safety
+//! default, not Swedish law).
 //!
 //! Real-pack dump (Ostlandet foot tiles, 2026-09-30):
 //! - Lillehammer→Sjusjøen: **0** SE cards (all accepted country_iso=no).
-//! - Separate Kongsvinger→Charlottenberg corridor produced the two SE cards:
-//!   both at lat=59.889366 lon=12.192353 with admin_region_at country=se.
-//!
-//! Root cause of the Phase 2 report confusion: the cross-border test output was
-//! narrated next to the Lillehammer results. Not an admin_region_at bug.
+//! - Separate Kongsvinger→Charlottenberg corridor produced SE cards at
+//!   lat=59.889366 lon=12.192353 with admin_region_at country=se.
 
 mod common;
 
@@ -51,7 +53,7 @@ fn lillehammer_corridor_has_zero_se_cards() {
         .iter()
         .filter(|c| c.country_iso == "se")
         .count();
-    assert_eq!(se, 0, "Innlandet corridor must not emit SE Tier D cards");
+    assert_eq!(se, 0, "Innlandet corridor must not emit SE cards");
     for c in out.list.cards.iter().filter(|c| c.accepted) {
         let ar = admin_region_at(c.lat, c.lon);
         assert_eq!(ar.country_iso.as_deref(), Some("no"));
@@ -69,7 +71,7 @@ fn real_se_card_coordinate_is_sweden() {
 }
 
 #[test]
-fn cross_border_corridor_still_emits_se_tier_d() {
+fn cross_border_corridor_emits_se_tier_a() {
     let dir = data_dir();
     if !packs_present(&dir) {
         eprintln!("SKIP: missing ostlandet packs");
@@ -97,14 +99,22 @@ fn cross_border_corridor_still_emits_se_tier_d() {
         .iter()
         .filter(|c| c.country_iso == "se")
         .collect();
-    assert!(!se.is_empty(), "cross-border corridor must still yield SE Tier D");
+    assert!(
+        !se.is_empty(),
+        "cross-border corridor must yield Swedish Tier A cards"
+    );
     for c in &se {
         let ar = admin_region_at(c.lat, c.lon);
         eprintln!(
-            "SE card dump: lat={:.6} lon={:.6} admin={:?} reason={:?}",
-            c.lat, c.lon, ar, c.reject_reason
+            "SE card dump: lat={:.6} lon={:.6} admin={:?} accepted={} tier={:?} reason={:?}",
+            c.lat, c.lon, ar, c.accepted, c.tier, c.reject_reason
         );
         assert_eq!(ar.country_iso.as_deref(), Some("se"));
-        assert_eq!(c.tier, Tier::D);
+        assert_eq!(c.tier, Tier::A);
+        assert!(c.accepted, "Phase 3a: SE must accept under Swedish Tier A pack");
+        assert!(c
+            .notes
+            .iter()
+            .any(|n| n.contains("Navi safety default, not Swedish law")));
     }
 }

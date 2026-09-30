@@ -346,6 +346,96 @@ fn wasmtime_lillehammer_parity_cap12_and_uncapped() {
     );
 }
 
+/// Phase 3a: Swedish Tier A at the captured Charlottenberg SE coordinate —
+/// native fixed-probe and wasmtime guest must both accept.
+#[test]
+fn wasmtime_sweden_charlottenberg_tier_a() {
+    let stage = build_camping_guest();
+    let lat = 59.889366;
+    let lon = 12.192353;
+    let probes = vec![(lat, lon)];
+    let safety = OvernightSafety::default();
+    let clock = navi_right_to_roam_camping::LocalDate {
+        year: 2026,
+        month: 7,
+        day: 1,
+    };
+
+    struct SeHost {
+        safety: OvernightSafety,
+        clock: navi_right_to_roam_camping::LocalDate,
+        kv: HashMap<String, String>,
+    }
+    impl CampingHost for SeHost {
+        fn safety_config(&self) -> Option<OvernightSafety> {
+            Some(self.safety)
+        }
+        fn clock_local(&self) -> Option<navi_right_to_roam_camping::LocalDate> {
+            Some(self.clock)
+        }
+        fn plugin_kv_available(&self) -> bool {
+            true
+        }
+        fn kv_get(&self, key: &str) -> Option<String> {
+            self.kv.get(key).cloned().filter(|s| !s.is_empty())
+        }
+        fn kv_set(&mut self, key: &str, value: &str) -> Result<(), String> {
+            if value.is_empty() {
+                self.kv.remove(key);
+            } else {
+                self.kv.insert(key.into(), value.into());
+            }
+            Ok(())
+        }
+        fn admin_country_iso(&self, _: f64, _: f64) -> Option<String> {
+            Some("se".into())
+        }
+        fn admin_subdivision_iso(&self, _: f64, _: f64) -> Option<String> {
+            None
+        }
+        fn travel_mode(&self) -> navi_right_to_roam_camping::TravelMode {
+            navi_right_to_roam_camping::TravelMode::NonMotorised
+        }
+        fn overnight_buildings(&self) -> &[(f64, f64)] {
+            &[]
+        }
+        fn overnight_glacier_rings(&self) -> &[Vec<[f64; 2]>] {
+            &[]
+        }
+    }
+
+    let mut native = SeHost {
+        safety,
+        clock,
+        kv: HashMap::new(),
+    };
+    let out = suggest_overnight_fixed_probes(&mut native, &probes, Some(1));
+    assert!(
+        out.list
+            .cards
+            .iter()
+            .any(|c| c.accepted && c.country_iso == "se" && c.tier == navi_right_to_roam_camping::Tier::A),
+        "native SE fixed probe must accept Tier A; log={:?}",
+        out.probe_log
+    );
+    let native_counts = reason_counts(&out.probe_log);
+
+    let job = json!({
+        "probes": [[lat, lon]],
+        "max_suggestions": 1,
+        "buildings": [],
+        "glaciers": [],
+        "safety": safety,
+        "clock": clock,
+        "kv_ok": true,
+        "countries": [[lat, lon, "se"]],
+        "subdivisions": [],
+    });
+    let (g_acc, _g_rej, g_counts) = run_guest_job(&stage, &job);
+    assert_eq!(g_counts, native_counts, "wasmtime SE reasons must match native");
+    assert!(g_acc >= 1, "wasmtime guest must accept Swedish Tier A");
+}
+
 #[test]
 fn fail_safe_defaults_match_audit_table() {
     let h = EmptyHost;

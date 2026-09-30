@@ -204,7 +204,7 @@ country_iso=no for all accepted."
 }
 
 #[test]
-fn sweden_cross_border_se_tier_d_dump() {
+fn sweden_cross_border_se_tier_a_dump() {
     let dir = data_dir();
     if !packs_present(&dir) {
         eprintln!("SKIP real pack: missing ostlandet under {}", dir.display());
@@ -239,39 +239,36 @@ fn sweden_cross_border_se_tier_d_dump() {
         .collect();
     eprintln!("=== SEPARATE TEST: Kongsvinger→Charlottenberg cross-border ===");
     eprintln!(
-        "seeds={} accepted={} se_decline_cards={}",
+        "seeds={} accepted={} se_cards={}",
         out.list.seeds_considered,
         out.list.probes_accepted,
         se_cards.len()
     );
     assert!(
         !se_cards.is_empty(),
-        "expected at least one SE Tier D card on a corridor that enters Sweden"
+        "expected at least one SE Tier A card on a corridor that enters Sweden"
     );
     for (i, c) in se_cards.iter().enumerate() {
         let ar = admin_region_at(c.lat, c.lon);
         eprintln!(
             "SE card {}: lat={:.6} lon={:.6} admin_region_at={:?} tier={:?} \
-decline={:?} reject_reason={:?}",
+accepted={} reject_reason={:?}",
             i + 1,
             c.lat,
             c.lon,
             ar,
             c.tier,
-            c.decline,
+            c.accepted,
             c.reject_reason
         );
-        assert_eq!(c.tier, Tier::D);
-        assert!(!c.accepted);
+        assert_eq!(c.tier, Tier::A);
+        assert!(c.accepted);
         assert_eq!(ar.country_iso.as_deref(), Some("se"));
-    }
-    for c in out.list.cards.iter().filter(|c| c.accepted) {
-        assert_eq!(c.country_iso, "no");
     }
 }
 
 #[test]
-fn sweden_inland_point_tier_d() {
+fn sweden_inland_point_is_tier_a_pack() {
     let iso = admin_region_at(SWEDEN_INLAND.0, SWEDEN_INLAND.1)
         .country_iso
         .unwrap_or_default();
@@ -281,19 +278,10 @@ fn sweden_inland_point_tier_d() {
     );
     assert_eq!(iso, "se");
     let pack = navi_right_to_roam_camping::packs::pack_for_country(Some("se"));
-    assert_eq!(pack.tier, Tier::D);
-    let urls = pack.source_urls();
-    let card = CampingCard::decline_campsites_only(
-        SWEDEN_INLAND.0,
-        SWEDEN_INLAND.1,
-        "se",
-        pack.legal_basis,
-        &urls,
-        navi_right_to_roam_camping::NotCheckedLayers::both_unknown(),
-        &[],
-    );
-    assert_eq!(card.tier, Tier::D);
-    assert!(!card.accepted);
+    assert_eq!(pack.tier, Tier::A);
+    assert!(pack
+        .distance_card_label()
+        .is_some_and(|l| l.contains("Navi safety default, not Swedish law")));
 }
 
 fn format_card(c: &CampingCard) -> String {

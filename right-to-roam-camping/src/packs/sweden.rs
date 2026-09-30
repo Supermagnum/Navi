@@ -1,0 +1,59 @@
+use super::{
+    CitedSource, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack,
+    SourceQuality, Tier,
+};
+
+pub fn sweden_pack() -> RulePack {
+    RulePack {
+        id: PackId::Sweden,
+        tier: Tier::A,
+        country_iso: "se".into(),
+        legal_basis: "Allemansrätten (customary / Naturvårdsverket guidance)",
+        sources: SWEDEN_SOURCES,
+        distance: DistanceRule::NoneInLawUsesSafetyDefault {
+            label: "Navi safety default, not Swedish law",
+        },
+        duration: DurationRule::NoneInLaw {
+            note: "No statutory night limit; official rule of thumb is a single day or so.",
+        },
+        fire: FireRule::GuidanceNote {
+            text: "Follow local fire bans and never light a fire where it can spread; \
+municipal rules may be stricter than allemansrätten summaries.",
+        },
+        guidance_notes: &[
+            "Pitch well away from homes, out of sight of their windows.",
+            "Not on farmland, pasture or plantations (land cover not checked when layer unknown).",
+            "National parks, nature reserves and municipal rules may ban tents.",
+            "Clean up after yourself (leave no trace).",
+        ],
+        farmland_not_checked_when_landcover_unknown: true,
+        hard_filters: SWEDEN_HARD,
+        maintainer_flag_default_off: false,
+        required_subdivision: None,
+        missing_subdivision_fallback: None,
+        decline_when_protected_unknown: false,
+        cmz: None,
+        cloudberry_note: false,
+    }
+}
+
+const SWEDEN_SOURCES: &[CitedSource] = &[
+    CitedSource {
+        url: "https://www.naturvardsverket.se/allemansratten",
+        quality: SourceQuality::Official,
+    },
+    CitedSource {
+        url: "https://prod-egp.naturvardsverket.se/497366/globalassets/vagledning/allemansratten/material/handbok-gora-allemansratt-a4.pdf",
+        quality: SourceQuality::Official,
+    },
+];
+
+/// Building distance is Navi SafetyConfig (not a Swedish statutory metre); still a
+/// hard Navi safety filter, cited against Naturvårdsverket privacy guidance.
+const SWEDEN_HARD: &[HardFilterSpec] = &[HardFilterSpec {
+    id: "building_distance_navi_safety_default",
+    sources: &[CitedSource {
+        url: "https://www.naturvardsverket.se/allemansratten",
+        quality: SourceQuality::Official,
+    }],
+}];
