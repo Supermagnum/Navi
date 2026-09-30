@@ -916,8 +916,8 @@ Last verified: 2026-09
 
 Vehicle overnight (§3.5) is implemented as a **separate suggestion path**. It
 never derives sites from a right-to-roam pack. Missing host data fails safe
-(empty / decline). The following layers are **not** ingested in this branch;
-wiring them is a **separate data/ingest branch**:
+(empty / decline). The following layers are **not** ingested yet; wiring them
+is **future work on `right-to-roam`** (not a separate branch):
 
 | Host data | Needed for | Status in this branch |
 |---|---|---|
