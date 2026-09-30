@@ -274,16 +274,18 @@ class CampingPhase5bPresentationInstrumentedTest {
     }
 
     @Test
-    fun nightStore_wasmPath_twoNightsThirdSuppressedPersistsThenDisableDeletes() {
+    fun nightStore_displayThreeDaysNeverRecords_campHereBlocksThird_differentSpotsOk() {
         campingPluginSetEnabled(true)
         val kv = File(filesDir, "plugin_kv/camping_night.json")
         if (kv.isFile) kv.delete()
+        val lat = 61.11515
+        val lon = 10.46628
         val jobBase =
             """
-            {"probes":[[61.11515,10.46628]],"max_suggestions":4,"buildings":[],"glaciers":[],
+            {"probes":[[$lat,$lon]],"max_suggestions":4,"buildings":[],"glaciers":[],
              "safety":{"min_building_distance_m":150.0,"min_glacier_distance_m":1000.0},
              "clock":null,"kv_ok":true,
-             "countries":[[61.11515,10.46628,"no"]],"subdivisions":[[61.11515,10.46628,"no-34"]],
+             "countries":[[$lat,$lon,"no"]],"subdivisions":[[$lat,$lon,"no-34"]],
              "travel_mode":"non_motorised","vehicle_class":"unknown",
              "is_professional_driver_under_rest_rules":false}
             """.trimIndent()
@@ -296,43 +298,76 @@ class CampingPhase5bPresentationInstrumentedTest {
             assumeTrue("wasm suggest ${call.kind} ${call.message}", call.kind == CampingCallKind.OK)
             android.util.Log.i(
                 "NaviCampingNight",
-                "date=$y-$m-$d kv_exists=${kv.isFile} kv_bytes=${kv.length()} json=${call.resultJson}",
+                "suggest date=$y-$m-$d kv_exists=${kv.isFile} kv_bytes=${if (kv.isFile) kv.length() else 0} json=${call.resultJson}",
             )
             return parseCampingSuggestResultJson(call.resultJson!!)
         }
+        fun campHere(y: Int, m: UInt, d: UInt, la: Double = lat, lo: Double = lon): String {
+            campingPluginSetClockYmd(y, m, d)
+            val msg = uniffi.navi.campingPluginCampHereTonight(la, lo, "no", "no-34")
+            android.util.Log.i("NaviCampingNight", "camp_here date=$y-$m-$d msg=$msg kv=${kv.takeIf { it.isFile }?.readText()}")
+            return msg
+        }
+        // Display-only across three days must never write the night store or block.
+        for (day in 1u..3u) {
+            val shown = suggestOn(2026, 7u, day)
+            assumeTrue(
+                "display day $day should accept",
+                shown.list.probesAccepted > 0 || shown.list.cards.any { it.accepted },
+            )
+            assertTrue(
+                "display/suggest must not create night store (day $day)",
+                !kv.isFile || kv.readText().let { it == "{}" || it == "" },
+            )
+        }
+        // Explicit Camp here on 07-01 and 07-02 → 07-03 declined for same spot.
+        assertTrue(campHere(2026, 7u, 1u).startsWith("OK:"))
+        assertTrue("Camp here must create night store", kv.isFile)
         val d1 = suggestOn(2026, 7u, 1u)
-        assumeTrue(
-            "night 1 should accept",
-            d1.list.probesAccepted > 0 || d1.list.cards.any { it.accepted },
-        )
-        assertTrue("night store after first night", kv.isFile)
+        assumeTrue(d1.list.cards.any { it.accepted })
+        assertTrue(campHere(2026, 7u, 2u).startsWith("OK:"))
         val d2 = suggestOn(2026, 7u, 2u)
-        assumeTrue(
-            "night 2 should accept",
-            d2.list.probesAccepted > 0 || d2.list.cards.any { it.accepted },
-        )
+        assumeTrue(d2.list.cards.any { it.accepted })
         val d3 = suggestOn(2026, 7u, 3u)
-        val d3accepted = d3.list.cards.any { it.accepted } || d3.list.probesAccepted > 0
-        assertTrue("third consecutive night must be suppressed", !d3accepted)
-        val kvBeforeStop = kv.readText()
-        campingPluginConfigure(
-            filesDir.absolutePath,
-            dataDir.absolutePath,
-            TimeZone.getDefault().id,
-        )
-        installGuest("right_to_roam_camping")
-        campingPluginSetEnabled(true)
-        assertTrue("night store must survive session rebind", kv.isFile)
-        assertEquals(kvBeforeStop, kv.readText())
-        android.util.Log.i("NaviCampingNight", "after_relaunch kv=$kvBeforeStop")
-        val d3b = suggestOn(2026, 7u, 3u)
         assertTrue(
-            "third night still suppressed after relaunch",
-            !(d3b.list.cards.any { it.accepted } || d3b.list.probesAccepted > 0),
+            "third consecutive Camp-here night must be declined",
+            !(d3.list.cards.any { it.accepted } || d3.list.probesAccepted > 0),
         )
-        campingPluginSetEnabled(false)
-        assertTrue("disable must delete night store", !kv.isFile)
-        android.util.Log.i("NaviCampingNight", "after_disable kv_exists=${kv.isFile}")
+        // Undo today (with clock on 07-02) then verify, then different spots do not block.
+        campingPluginSetClockYmd(2026, 7u, 2u)
+        val undo = uniffi.navi.campingPluginUndoCampHereTonight(lat, lon, "no", "no-34")
+        android.util.Log.i("NaviCampingNight", "undo msg=$undo")
+        assertTrue(undo.startsWith("OK:"))
+        // Re-camp 07-02 after undo so we still have two nights for force-stop suite elsewhere.
+        assertTrue(campHere(2026, 7u, 2u).startsWith("OK:"))
+
+        // Different spots: camp A on 07-01, B on 07-02 → B still accepted on 07-03.
+        if (kv.isFile) kv.delete()
+        assertTrue(campHere(2026, 7u, 1u, lat, lon).startsWith("OK:"))
+        val latB = 61.20000
+        val lonB = 10.70000
+        assertTrue(campHere(2026, 7u, 2u, latB, lonB).startsWith("OK:"))
+        val jobB =
+            """
+            {"probes":[[$latB,$lonB]],"max_suggestions":4,"buildings":[],"glaciers":[],
+             "safety":{"min_building_distance_m":150.0,"min_glacier_distance_m":1000.0},
+             "clock":null,"kv_ok":true,
+             "countries":[[$latB,$lonB,"no"]],"subdivisions":[[$latB,$lonB,"no-34"]],
+             "travel_mode":"non_motorised","vehicle_class":"unknown",
+             "is_professional_driver_under_rest_rules":false}
+            """.trimIndent()
+        campingPluginSetClockYmd(2026, 7u, 3u)
+        val callB =
+            kotlinx.coroutines.runBlocking {
+                CampingPluginApi.runSuggest(jobB)
+            }
+        assumeTrue(callB.kind == CampingCallKind.OK)
+        val parsedB = parseCampingSuggestResultJson(callB.resultJson!!)
+        assertTrue(
+            "different spots must not block",
+            parsedB.list.cards.any { it.accepted } || parsedB.list.probesAccepted > 0,
+        )
+        android.util.Log.i("NaviCampingNight", "different_spots_ok via=${parsedB.via}")
     }
 
     @Test

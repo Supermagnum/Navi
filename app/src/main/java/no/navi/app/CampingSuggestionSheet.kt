@@ -58,6 +58,8 @@ fun CampingSuggestionSheet(
     sessionDisableMessage: String?,
     onReEnableSession: () -> Unit,
     onClose: () -> Unit,
+    onCampHereTonight: (CampingCardModel) -> Unit = {},
+    onUndoCampHereTonight: (CampingCardModel) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val motorised = isMotorisedTravelProfile(profile)
@@ -113,7 +115,13 @@ fun CampingSuggestionSheet(
                         }
                     } else {
                         itemsIndexed(result.vehicle.cards, key = { idx, c -> "veh-$idx-${c.locationId}" }) { idx, card ->
-                            CampingCardBlock(card, sectionTag = "vehicle", index = idx)
+                            CampingCardBlock(
+                                card,
+                                sectionTag = "vehicle",
+                                index = idx,
+                                onCampHereTonight = onCampHereTonight,
+                                onUndoCampHereTonight = onUndoCampHereTonight,
+                            )
                         }
                     }
                     item(key = "hdr_on_foot") {
@@ -138,7 +146,13 @@ fun CampingSuggestionSheet(
                             result.onFootFromHere.cards,
                             key = { idx, c -> "foot-$idx-${c.locationId}" },
                         ) { idx, card ->
-                            CampingCardBlock(card, sectionTag = "on_foot", index = idx)
+                            CampingCardBlock(
+                                card,
+                                sectionTag = "on_foot",
+                                index = idx,
+                                onCampHereTonight = onCampHereTonight,
+                                onUndoCampHereTonight = onUndoCampHereTonight,
+                            )
                         }
                     }
                 } else {
@@ -151,7 +165,13 @@ fun CampingSuggestionSheet(
                         }
                     } else {
                         itemsIndexed(result.list.cards, key = { idx, c -> "list-$idx-${c.locationId}" }) { idx, card ->
-                            CampingCardBlock(card, sectionTag = "list", index = idx)
+                            CampingCardBlock(
+                                card,
+                                sectionTag = "list",
+                                index = idx,
+                                onCampHereTonight = onCampHereTonight,
+                                onUndoCampHereTonight = onUndoCampHereTonight,
+                            )
                         }
                     }
                 }
@@ -177,6 +197,8 @@ private fun CampingCardBlock(
     card: CampingCardModel,
     sectionTag: String,
     index: Int,
+    onCampHereTonight: (CampingCardModel) -> Unit,
+    onUndoCampHereTonight: (CampingCardModel) -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     val svalbard = card.decline == CampingDeclineKind.SVALBARD
@@ -276,6 +298,25 @@ private fun CampingCardBlock(
             }
             if (card.disclaimer.isNotBlank() && card.disclaimer != CAMPING_PLUGIN_DISCLAIMER) {
                 Text(card.disclaimer, style = MaterialTheme.typography.bodySmall)
+            }
+            if (card.accepted) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Button(
+                        onClick = { onCampHereTonight(card) },
+                        modifier = Modifier.testTag("camping_camp_here_${sectionTag}_$index"),
+                    ) {
+                        Text("Camp here tonight")
+                    }
+                    TextButton(
+                        onClick = { onUndoCampHereTonight(card) },
+                        modifier = Modifier.testTag("camping_undo_camp_${sectionTag}_$index"),
+                    ) {
+                        Text("Not camping here")
+                    }
+                }
             }
         }
     }

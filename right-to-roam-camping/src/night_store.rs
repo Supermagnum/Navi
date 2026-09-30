@@ -7,6 +7,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use chrono::Datelike;
+
 use crate::host::{CampingHost, LocalDate};
 use crate::packs::RulePack;
 
@@ -115,8 +117,8 @@ impl NightStore {
         next_count > max_nights
     }
 
-    /// Record that the user is attributed a night at this spot (call when a
-    /// suggestion is accepted / shown as planned overnight).
+    /// Record that the user explicitly chose to camp at this spot tonight
+    /// (UI "Camp here tonight"). Suggest/display/Accept must not call this.
     pub fn record_night(
         host: &mut dyn CampingHost,
         pack: &str,
@@ -186,6 +188,52 @@ impl NightStore {
         }
         host.kv_set(&active_key, location_id)?;
         host.kv_set(&key, &serde_json::to_string(&rec).unwrap())
+    }
+
+    /// Undo a same-day "Camp here tonight" for this spot.
+    /// When `last_night` is today: drop today only (decrement or delete). No-op otherwise.
+    pub fn undo_night_today(
+        host: &mut dyn CampingHost,
+        pack: &str,
+        location_id: &str,
+        tonight: LocalDate,
+    ) -> Result<bool, String> {
+        if !host.plugin_kv_available() {
+            return Err("plugin_kv unavailable".into());
+        }
+        let key = kv_key(pack, location_id);
+        let today_s = date_key(tonight);
+        let Some(raw) = host.kv_get(&key) else {
+            return Ok(false);
+        };
+        let Ok(mut rec) = serde_json::from_str::<NightRecord>(&raw) else {
+            return Ok(false);
+        };
+        if rec.last_night != today_s {
+            return Ok(false);
+        }
+        let active_key = active_pointer_key(pack);
+        if rec.nights_used <= 1 {
+            host.kv_set(&key, "")?;
+            if host.kv_get(&active_key).as_deref() == Some(location_id) {
+                host.kv_set(&active_key, "")?;
+            }
+            return Ok(true);
+        }
+        // Drop today: rewind last_night by one calendar day and nights_used by 1.
+        let Some(today) = tonight.to_naive() else {
+            return Err("bad date".into());
+        };
+        let prev = today - chrono::Duration::days(1);
+        rec.last_night = format!(
+            "{:04}-{:02}-{:02}",
+            prev.year(),
+            prev.month(),
+            prev.day()
+        );
+        rec.nights_used -= 1;
+        host.kv_set(&key, &serde_json::to_string(&rec).unwrap())?;
+        Ok(true)
     }
 
     /// Drop `rtr_night:*` entries whose `last_night` is older than retention.
@@ -500,6 +548,117 @@ mod tests {
             &keys,
         );
         assert_eq!(cleared, 0, "D+1 record must survive prune on D+2 with retention=2");
+        assert!(NightStore::would_exceed(
+            &h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 3,
+            },
+            2
+        ));
+    }
+
+    #[test]
+    fn undo_night_today_clears_same_day_record() {
+        let mut h = host();
+        let loc = location_id_from_lat_lon(61.1, 10.5);
+        let d1 = LocalDate {
+            year: 2026,
+            month: 7,
+            day: 1,
+        };
+        NightStore::record_night(&mut h, "no", &loc, d1).unwrap();
+        assert!(NightStore::undo_night_today(&mut h, "no", &loc, d1).unwrap());
+        assert!(!NightStore::would_exceed(
+            &h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 2,
+            },
+            2
+        ));
+        // Undo for a different day is a no-op.
+        NightStore::record_night(&mut h, "no", &loc, d1).unwrap();
+        assert!(!NightStore::undo_night_today(
+            &mut h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 2,
+            }
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn undo_night_today_rewinds_consecutive_without_wiping_prior() {
+        let mut h = host();
+        let loc = location_id_from_lat_lon(61.1, 10.5);
+        NightStore::record_night(
+            &mut h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 1,
+            },
+        )
+        .unwrap();
+        NightStore::record_night(
+            &mut h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 2,
+            },
+        )
+        .unwrap();
+        assert!(NightStore::undo_night_today(
+            &mut h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 2,
+            }
+        )
+        .unwrap());
+        // After undoing day 2, day 3 is still allowed (only one night remains).
+        assert!(!NightStore::would_exceed(
+            &h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 3,
+            },
+            2
+        ));
+        // Re-recording day 2 then day 3 exceeds.
+        NightStore::record_night(
+            &mut h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 2,
+            },
+        )
+        .unwrap();
         assert!(NightStore::would_exceed(
             &h,
             "no",

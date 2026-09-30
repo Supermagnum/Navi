@@ -1047,6 +1047,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_weather_refresh_json(
     ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_camp_here_tonight(
+    ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_capability_sources_json(
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_clear_clock_override(
@@ -1078,6 +1080,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_camping_plugin_set_timezone(
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_suggest_along_route(
+    ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_undo_camp_here_tonight(
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_all(
     ): Int
@@ -1507,6 +1511,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_weather_refresh_json(`dataDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`enabled`: Byte,`appActive`: Byte,`manual`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_camping_plugin_camp_here_tonight(`lat`: Double,`lon`: Double,`countryIso`: RustBuffer.ByValue,`subdivisionIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_capability_sources_json(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_clear_clock_override(uniffi_out_err: UniffiRustCallStatus, 
@@ -1538,6 +1544,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_camping_plugin_set_timezone(`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_camping_plugin_suggest_along_route(`maxSuggestions`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_camping_plugin_undo_camp_here_tonight(`lat`: Double,`lon`: Double,`countryIso`: RustBuffer.ByValue,`subdivisionIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -2219,6 +2227,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_weather_refresh_json() and 0xFFFF) != 44672) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_camp_here_tonight() and 0xFFFF) != 57967) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_camping_plugin_capability_sources_json() and 0xFFFF) != 44778) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2265,6 +2276,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_camping_plugin_suggest_along_route() and 0xFFFF) != 55349) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_undo_camp_here_tonight() and 0xFFFF) != 24878) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_all() and 0xFFFF) != 684) {
@@ -8235,6 +8249,24 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Explicit "Camp here tonight" — records one night using `clock_read` date.
+         * Suggest / Accept must never call this.
+         */ fun `campingPluginCampHereTonight`(`lat`: kotlin.Double, `lon`: kotlin.Double, `countryIso`: kotlin.String?, `subdivisionIso`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_camp_here_tonight(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),
+        FfiConverterOptionalString.lower(`countryIso`),
+        FfiConverterOptionalString.lower(`subdivisionIso`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Capability source map for diagnostics / Phase 5a report verification.
          */ fun `campingPluginCapabilitySourcesJson`(): kotlin.String {
             return FfiConverterString.lift(
@@ -8446,6 +8478,23 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
         
         FfiConverterUInt.lower(`maxSuggestions`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Same-day undo / "not camping here" for an explicit Camp-here record.
+         */ fun `campingPluginUndoCampHereTonight`(`lat`: kotlin.Double, `lon`: kotlin.Double, `countryIso`: kotlin.String?, `subdivisionIso`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_undo_camp_here_tonight(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),
+        FfiConverterOptionalString.lower(`countryIso`),
+        FfiConverterOptionalString.lower(`subdivisionIso`),_status)
 }
     )
     }

@@ -5098,6 +5098,28 @@ private fun NaviMapScreen() {
                 sessionDisableMessage = campingSessionDisableMessage,
                 onReEnableSession = campingReEnableSession,
                 onClose = { showCampingSheet = false },
+                onCampHereTonight = { card ->
+                    val msg =
+                        uniffi.navi.campingPluginCampHereTonight(
+                            card.lat,
+                            card.lon,
+                            card.countryIso.ifBlank { null },
+                            card.subdivisionIso,
+                        )
+                    android.util.Log.i("NaviCamping", "camp_here_tonight: $msg")
+                    status = msg
+                },
+                onUndoCampHereTonight = { card ->
+                    val msg =
+                        uniffi.navi.campingPluginUndoCampHereTonight(
+                            card.lat,
+                            card.lon,
+                            card.countryIso.ifBlank { null },
+                            card.subdivisionIso,
+                        )
+                    android.util.Log.i("NaviCamping", "undo_camp_here: $msg")
+                    status = msg
+                },
                 modifier =
                     Modifier
                         .align(Alignment.BottomCenter)

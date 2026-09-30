@@ -75,7 +75,8 @@ struct Session {
     /// Set when a sandbox limit or trap fires; cleared on re-enable.
     session_disable_reason: Option<String>,
     camping_host: Option<PluginHost>,
-    /// Corridor job JSON keyed by waypoints + graph path + travel + clock.
+    /// Corridor geometry job JSON keyed by route + pack fingerprint + SafetyConfig.
+    /// Travel/clock/profile are NOT part of the key — overlaid fresh every guest call.
     suggest_job_cache: Option<(String, String)>,
 }
 
@@ -581,14 +582,21 @@ pub fn camping_plugin_set_nav_context(
         Ok(v) => v,
         Err(e) => return format!("FAIL: waypoints json: {e}"),
     };
-    session.route_waypoints = waypoints;
-    session.suggest_job_cache = None;
-    session.destination = match (dest_lat, dest_lon) {
+    let destination = match (dest_lat, dest_lon) {
         (Some(lat), Some(lon)) => Some((lat, lon)),
         _ => None,
     };
+    let route_changed =
+        session.route_waypoints != waypoints || session.destination != destination;
+    session.route_waypoints = waypoints;
+    session.destination = destination;
     session.travel_profile = profile;
     session.professional_driver = professional_driver;
+    // Geometry cache keys on route (+ pack + safety). Profile/travel changes stay
+    // fresh via job_with_live_profile + live HostApi; do not drop geometry.
+    if route_changed {
+        session.suggest_job_cache = None;
+    }
     "OK".into()
 }
 
@@ -597,7 +605,7 @@ pub fn camping_plugin_set_clock_ymd(year: i32, month: u32, day: u32) {
     let mut guard = session_lock().lock().expect("camping session lock");
     if let Some(session) = guard.as_mut() {
         session.clock_override = Some((year, month, day));
-        session.suggest_job_cache = None;
+        // Geometry cache is independent of clock; guest reads clock_read live.
     }
 }
 
@@ -606,7 +614,6 @@ pub fn camping_plugin_clear_clock_override() {
     let mut guard = session_lock().lock().expect("camping session lock");
     if let Some(session) = guard.as_mut() {
         session.clock_override = None;
-        session.suggest_job_cache = None;
     }
 }
 
@@ -693,6 +700,102 @@ fn vehicle_class_job_str(p: TravelProfile) -> &'static str {
             "unknown"
         }
     }
+}
+
+/// Geometry-cache fingerprint for installed region packs (weekly rebakes).
+/// Keyed on every `*.navi-manifest.json` / `*.navi-server-install.json` name+size+mtime
+/// plus the planning PBF size+mtime.
+fn pack_geometry_fingerprint(data_dir: &Path, pbf: &Path) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Ok(meta) = fs::metadata(pbf) {
+        let mt = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        parts.push(format!("pbf:{}:{}", meta.len(), mt));
+    }
+    let Ok(rd) = fs::read_dir(data_dir) else {
+        return parts.join("|");
+    };
+    let mut files: Vec<PathBuf> = rd.filter_map(|e| e.ok().map(|e| e.path())).collect();
+    files.sort();
+    for path in files {
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+        if !(name.ends_with(".navi-manifest.json") || name.ends_with(".navi-server-install.json"))
+        {
+            continue;
+        }
+        if let Ok(meta) = fs::metadata(&path) {
+            let mt = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            parts.push(format!("{name}:{}:{}", meta.len(), mt));
+        }
+    }
+    parts.join("|")
+}
+
+fn safety_geometry_fingerprint(data_dir: &Path) -> String {
+    match load_safety(data_dir) {
+        Some(s) => format!(
+            "bldg:{:.3}|glacier:{:.3}|water:{:.3}|cabin:{:.3}|general:{:.3}",
+            s.min_building_distance_m,
+            s.min_glacier_distance_m,
+            s.poi_radius_water_m,
+            s.poi_radius_cabin_m,
+            s.poi_radius_general_m
+        ),
+        None => "safety:none".into(),
+    }
+}
+
+/// Geometry cache key: route + planning PBF identity + pack version/hash fingerprint + SafetyConfig.
+/// Travel mode, vehicle, residency, clock, and night-store are intentionally absent — the guest
+/// re-runs every call with live HostApi reads / overlaid job fields.
+fn geometry_cache_key(
+    waypoints: &[[f64; 2]],
+    pbf: &Path,
+    data_dir: &Path,
+    max_suggestions: u32,
+) -> String {
+    format!(
+        "{:?}|{}|{}|{}|{max_suggestions}",
+        waypoints,
+        pbf.display(),
+        pack_geometry_fingerprint(data_dir, pbf),
+        safety_geometry_fingerprint(data_dir),
+    )
+}
+
+/// Overlay live session fields onto a cached geometry job so travel/vehicle stay fresh.
+fn job_with_live_profile(geometry_job_json: &str, travel: TravelProfile, professional: bool) -> String {
+    let mut v: serde_json::Value =
+        serde_json::from_str(geometry_job_json).unwrap_or_else(|_| serde_json::json!({}));
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert(
+            "travel_mode".into(),
+            serde_json::Value::String(travel_mode_job_str(travel).into()),
+        );
+        obj.insert(
+            "vehicle_class".into(),
+            serde_json::Value::String(vehicle_class_job_str(travel).into()),
+        );
+        obj.insert(
+            "is_professional_driver_under_rest_rules".into(),
+            serde_json::Value::Bool(professional),
+        );
+        obj.insert("clock".into(), serde_json::Value::Null);
+    }
+    v.to_string()
 }
 
 fn buildings_near_probes(
@@ -793,7 +896,6 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
     let waypoints = session.route_waypoints.clone();
     let travel_profile = session.travel_profile;
     let professional_driver = session.professional_driver;
-    let clock_key = session.clock_override;
     drop(guard);
 
     let Some(bbox) = corridor_bbox_from_waypoints(&waypoints) else {
@@ -817,24 +919,17 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
             peak_guest_memory_bytes: 0,
         };
     };
-    let cache_key = format!(
-        "{:?}|{}|{:?}|{}|{}|{max_suggestions}",
-        waypoints,
-        pbf.display(),
-        travel_profile,
-        professional_driver,
-        clock_key
-            .map(|(y, m, d)| format!("{y:04}-{m:02}-{d:02}"))
-            .unwrap_or_default()
-    );
-    let cached_job = {
+    let cache_key = geometry_cache_key(&waypoints, &pbf, &data_dir, max_suggestions);
+    let cached_geometry = {
         let guard = session_lock().lock().expect("camping session lock");
         guard
             .as_ref()
             .and_then(|s| s.suggest_job_cache.clone())
             .and_then(|(k, job)| if k == cache_key { Some(job) } else { None })
     };
-    if let Some(job_json) = cached_job {
+    if let Some(geometry_json) = cached_geometry {
+        // Warm path: release session lock before guest (see warm_path_releases_lock_before_guest).
+        let job_json = job_with_live_profile(&geometry_json, travel_profile, professional_driver);
         let job_bytes = job_json.len();
         let t_guest = Instant::now();
         let mut call = run_camping_guest(Some(job_json));
@@ -1271,6 +1366,285 @@ pub fn camping_plugin_capability_sources_json() -> String {
         "landcover_query": "LayerStatus::Unknown until ingest lands",
         "enable": "PluginEnableStore at filesDir/plugin_enable.json (default OFF)",
         "weather_datex": "untouched (MapHudPrefs)",
+        "camp_here_tonight": "explicit UI action only — NightStore::record_night with clock_read date",
+        "undo_camp_here_tonight": "same-day undo — NightStore::undo_night_today",
     })
     .to_string()
+}
+
+/// Thin CampingHost over FilePluginKv for night-store mutations (not suggest eval).
+struct NightKvHost {
+    kv: FilePluginKv,
+    clock: navi_right_to_roam_camping::LocalDate,
+}
+
+impl navi_right_to_roam_camping::CampingHost for NightKvHost {
+    fn safety_config(&self) -> Option<navi_right_to_roam_camping::OvernightSafety> {
+        None
+    }
+    fn clock_local(&self) -> Option<navi_right_to_roam_camping::LocalDate> {
+        Some(self.clock)
+    }
+    fn plugin_kv_available(&self) -> bool {
+        true
+    }
+    fn kv_get(&self, key: &str) -> Option<String> {
+        self.kv.get(key)
+    }
+    fn kv_set(&mut self, key: &str, value: &str) -> Result<(), String> {
+        self.kv.set(key, value).map_err(|e| e.to_string())
+    }
+    fn admin_country_iso(&self, _: f64, _: f64) -> Option<String> {
+        None
+    }
+    fn admin_subdivision_iso(&self, _: f64, _: f64) -> Option<String> {
+        None
+    }
+    fn travel_mode(&self) -> navi_right_to_roam_camping::TravelMode {
+        navi_right_to_roam_camping::TravelMode::Unknown
+    }
+    fn overnight_buildings(&self) -> &[(f64, f64)] {
+        &[]
+    }
+    fn overnight_glacier_rings(&self) -> &[Vec<[f64; 2]>] {
+        &[]
+    }
+}
+
+fn night_store_key_for_location(
+    lat: f64,
+    lon: f64,
+    country_iso: Option<String>,
+    subdivision_iso: Option<String>,
+) -> Result<(String, String), String> {
+    let country = country_iso.or_else(|| {
+        admin_region_at(lat, lon)
+            .country_iso
+    });
+    let subdiv = subdivision_iso.or_else(|| {
+        admin_region_at(lat, lon)
+            .subdivision_iso
+    });
+    let pack = navi_right_to_roam_camping::pack_for_location(
+        country.as_deref(),
+        subdiv.as_deref(),
+    );
+    let (max_n, store_key) = pack
+        .hard_max_nights()
+        .ok_or_else(|| "pack has no hard consecutive-night limit".to_string())?;
+    let _ = max_n;
+    let loc = navi_right_to_roam_camping::location_id_from_lat_lon(lat, lon);
+    Ok((store_key.to_string(), loc))
+}
+
+fn open_night_kv_host() -> Result<NightKvHost, String> {
+    let guard = session_lock().lock().expect("camping session lock");
+    let session = guard.as_ref().ok_or_else(|| "not configured".to_string())?;
+    let api = AndroidCampingApi::open(session)?;
+    let c = api
+        .clock_read()
+        .ok_or_else(|| "clock_read unavailable".to_string())?;
+    let clock = navi_right_to_roam_camping::LocalDate {
+        year: c.year,
+        month: c.month,
+        day: c.day,
+    };
+    Ok(NightKvHost { kv: api.kv, clock })
+}
+
+/// Explicit "Camp here tonight" — records one night using `clock_read` date.
+/// Suggest / Accept must never call this.
+#[uniffi::export]
+pub fn camping_plugin_camp_here_tonight(
+    lat: f64,
+    lon: f64,
+    country_iso: Option<String>,
+    subdivision_iso: Option<String>,
+) -> String {
+    let (store_key, loc) = match night_store_key_for_location(lat, lon, country_iso, subdivision_iso)
+    {
+        Ok(v) => v,
+        Err(e) => return format!("FAIL: {e}"),
+    };
+    let mut host = match open_night_kv_host() {
+        Ok(h) => h,
+        Err(e) => return format!("FAIL: {e}"),
+    };
+    let tonight = host.clock;
+    match navi_right_to_roam_camping::NightStore::record_night(
+        &mut host, &store_key, &loc, tonight,
+    ) {
+        Ok(()) => {
+            log::info!(
+                target: "NaviCamping",
+                "camp_here_tonight pack={store_key} loc={loc} date={:04}-{:02}-{:02}",
+                tonight.year, tonight.month, tonight.day
+            );
+            format!(
+                "OK: recorded {store_key}/{loc} on {:04}-{:02}-{:02}",
+                tonight.year, tonight.month, tonight.day
+            )
+        }
+        Err(e) => format!("FAIL: {e}"),
+    }
+}
+
+/// Same-day undo / "not camping here" for an explicit Camp-here record.
+#[uniffi::export]
+pub fn camping_plugin_undo_camp_here_tonight(
+    lat: f64,
+    lon: f64,
+    country_iso: Option<String>,
+    subdivision_iso: Option<String>,
+) -> String {
+    let (store_key, loc) = match night_store_key_for_location(lat, lon, country_iso, subdivision_iso)
+    {
+        Ok(v) => v,
+        Err(e) => return format!("FAIL: {e}"),
+    };
+    let mut host = match open_night_kv_host() {
+        Ok(h) => h,
+        Err(e) => return format!("FAIL: {e}"),
+    };
+    let tonight = host.clock;
+    match navi_right_to_roam_camping::NightStore::undo_night_today(
+        &mut host, &store_key, &loc, tonight,
+    ) {
+        Ok(true) => {
+            log::info!(
+                target: "NaviCamping",
+                "undo_camp_here_tonight pack={store_key} loc={loc} date={:04}-{:02}-{:02}",
+                tonight.year, tonight.month, tonight.day
+            );
+            format!(
+                "OK: undone {store_key}/{loc} on {:04}-{:02}-{:02}",
+                tonight.year, tonight.month, tonight.day
+            )
+        }
+        Ok(false) => "OK: nothing to undo for today".into(),
+        Err(e) => format!("FAIL: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod geometry_cache_tests {
+    use super::*;
+    use std::io::Write;
+
+    fn temp_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "navi-camping-cache-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("create temp dir for geometry cache test");
+        dir
+    }
+
+    fn touch_manifest(dir: &Path, name: &str, body: &[u8]) {
+        let mut f = fs::File::create(dir.join(name)).unwrap();
+        f.write_all(body).unwrap();
+    }
+
+    #[test]
+    fn geometry_cache_key_changes_on_route_pack_and_safety() {
+        let dir = temp_dir();
+        let pbf = dir.join("ostlandet-latest.osm.pbf");
+        fs::write(&pbf, b"pbf-v1").unwrap();
+        touch_manifest(
+            &dir,
+            "ostlandet-latest.navi-manifest.json",
+            br#"{"schema":1,"stem":"ostlandet-latest"}"#,
+        );
+        let wp1 = vec![[61.1, 10.5], [61.2, 10.6]];
+        let wp2 = vec![[61.1, 10.5], [61.3, 10.7]];
+        let k1 = geometry_cache_key(&wp1, &pbf, &dir, 12);
+        let k2 = geometry_cache_key(&wp2, &pbf, &dir, 12);
+        assert_ne!(k1, k2, "route change must invalidate geometry cache");
+
+        // Pack rebake: manifest content/mtime fingerprint changes.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        touch_manifest(
+            &dir,
+            "ostlandet-latest.navi-manifest.json",
+            br#"{"schema":1,"stem":"ostlandet-latest","rebake":2}"#,
+        );
+        let k3 = geometry_cache_key(&wp1, &pbf, &dir, 12);
+        assert_ne!(k1, k3, "pack version/hash change must invalidate geometry cache");
+
+        let s_fp = safety_geometry_fingerprint(&dir);
+        assert!(
+            k1.contains(&s_fp),
+            "geometry key must include SafetyConfig fingerprint ({s_fp})"
+        );
+        let s_a = "bldg:150.000|glacier:1000.000|water:1.000|cabin:1.000|general:1.000";
+        let s_b = "bldg:200.000|glacier:1000.000|water:1.000|cabin:1.000|general:1.000";
+        assert_ne!(s_a, s_b, "SafetyConfig change must invalidate geometry cache");
+        let k_safety_a = format!("{:?}|{}|pack|{s_a}|12", wp1, pbf.display());
+        let k_safety_b = format!("{:?}|{}|pack|{s_b}|12", wp1, pbf.display());
+        assert_ne!(k_safety_a, k_safety_b);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn live_profile_overlay_keeps_geometry_but_refreshes_travel() {
+        let geometry = r#"{"probes":[[61.1,10.5]],"travel_mode":"non_motorised","vehicle_class":"unknown","is_professional_driver_under_rest_rules":false,"clock":null}"#;
+        let over = job_with_live_profile(geometry, TravelProfile::Car, true);
+        let v: serde_json::Value = serde_json::from_str(&over).unwrap();
+        assert_eq!(v["travel_mode"], "motorised");
+        assert_eq!(v["vehicle_class"], "car");
+        assert_eq!(v["is_professional_driver_under_rest_rules"], true);
+        assert_eq!(v["probes"][0][0], 61.1);
+        assert!(v["clock"].is_null());
+    }
+
+    #[test]
+    fn geometry_cache_key_omits_travel_clock_and_residency() {
+        let dir = temp_dir();
+        let pbf = dir.join("x.osm.pbf");
+        fs::write(&pbf, b"x").unwrap();
+        let k = geometry_cache_key(&[[1.0, 2.0]], &pbf, &dir, 4);
+        assert!(
+            !k.contains("motorised")
+                && !k.contains("Hiking")
+                && !k.contains("2026-")
+                && !k.contains("residency"),
+            "geometry key must not include travel/clock/residency: {k}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Regression: warm path must clone the cached job and drop the session lock
+    /// before `run_camping_guest` (which re-acquires the same Mutex). Holding the
+    /// lock across the guest call deadlocks the warm path (~9 ms target).
+    #[test]
+    fn warm_path_releases_lock_before_guest() {
+        let src = include_str!("camping_plugin.rs");
+        let warm = src
+            .split("if let Some(geometry_json) = cached_geometry")
+            .nth(1)
+            .expect("warm-path cache hit arm");
+        let warm_arm = warm.split("let routing_profile").next().unwrap();
+        assert!(
+            warm_arm.contains("run_camping_guest(Some(job_json))"),
+            "warm path must still invoke the guest"
+        );
+        assert!(
+            !warm_arm.contains("session_lock().lock()"),
+            "warm path must not re-lock session across run_camping_guest"
+        );
+        let run = src
+            .split("fn run_camping_guest")
+            .nth(1)
+            .expect("run_camping_guest");
+        let before_call = run.split("host.call_with_stats").next().unwrap();
+        assert!(
+            before_call.contains("drop(guard)"),
+            "run_camping_guest must drop session lock before guest call"
+        );
+    }
 }

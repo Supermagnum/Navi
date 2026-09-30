@@ -916,10 +916,6 @@ declining (no silent rule bypass)."
         crate::host::TravelMode::NonMotorised => {}
     }
 
-    if let (Some(( _, store_key)), Some(d)) = (pack.hard_max_nights(), clock) {
-        let _ = NightStore::record_night(host, store_key, &loc_id, d);
-    }
-
     ProbeDecision::Accept(CampingCard {
         lat: probe.lat,
         lon: probe.lon,
@@ -1203,5 +1199,135 @@ mod tests {
             cloudberry_decision(Some("NO-34")),
             CloudberryDecision::OmitOutsideNorthern { .. }
         ));
+    }
+
+    fn norway_host(day: u32) -> MemHost {
+        MemHost {
+            kv: HashMap::new(),
+            kv_ok: true,
+            safety: Some(OvernightSafety::default()),
+            date: Some(LocalDate {
+                year: 2026,
+                month: 7,
+                day,
+            }),
+            buildings: vec![],
+            country: Some("no".into()),
+        }
+    }
+
+    #[test]
+    fn displaying_suggestions_three_days_never_records_or_blocks() {
+        let probes = &[(61.11515, 10.46628)];
+        for day in [1u32, 2, 3] {
+            let mut h = norway_host(day);
+            let out = suggest_overnight_fixed_probes(&mut h, probes, Some(4));
+            assert!(
+                out.list.probes_accepted > 0 || out.list.cards.iter().any(|c| c.accepted),
+                "day {day} should accept without any Camp-here record"
+            );
+            assert!(
+                h.kv.is_empty(),
+                "suggest/display must not write night-store keys (day {day})"
+            );
+        }
+    }
+
+    #[test]
+    fn camp_here_same_spot_two_nights_third_declined() {
+        let probes = &[(61.11515, 10.46628)];
+        let loc = location_id_from_lat_lon(61.11515, 10.46628);
+        let mut h = norway_host(1);
+        let d1 = suggest_overnight_fixed_probes(&mut h, probes, Some(4));
+        assert!(d1.list.cards.iter().any(|c| c.accepted));
+        NightStore::record_night(
+            &mut h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 1,
+            },
+        )
+        .unwrap();
+        h.date = Some(LocalDate {
+            year: 2026,
+            month: 7,
+            day: 2,
+        });
+        let d2 = suggest_overnight_fixed_probes(&mut h, probes, Some(4));
+        assert!(d2.list.cards.iter().any(|c| c.accepted));
+        NightStore::record_night(
+            &mut h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 2,
+            },
+        )
+        .unwrap();
+        h.date = Some(LocalDate {
+            year: 2026,
+            month: 7,
+            day: 3,
+        });
+        let d3 = suggest_overnight_fixed_probes(&mut h, probes, Some(4));
+        assert!(
+            !d3.list.cards.iter().any(|c| c.accepted) && d3.list.probes_accepted == 0,
+            "third consecutive Camp-here night must be declined"
+        );
+        assert!(
+            d3.probe_log
+                .iter()
+                .any(|e| e.reason == "max_consecutive_nights"),
+            "probe log must record max_consecutive_nights"
+        );
+    }
+
+    #[test]
+    fn camp_here_different_spots_never_blocks() {
+        let a = (61.11515, 10.46628);
+        let b = (61.20000, 10.70000);
+        let mut h = norway_host(1);
+        NightStore::record_night(
+            &mut h,
+            "no",
+            &location_id_from_lat_lon(a.0, a.1),
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 1,
+            },
+        )
+        .unwrap();
+        h.date = Some(LocalDate {
+            year: 2026,
+            month: 7,
+            day: 2,
+        });
+        NightStore::record_night(
+            &mut h,
+            "no",
+            &location_id_from_lat_lon(b.0, b.1),
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 2,
+            },
+        )
+        .unwrap();
+        h.date = Some(LocalDate {
+            year: 2026,
+            month: 7,
+            day: 3,
+        });
+        let out = suggest_overnight_fixed_probes(&mut h, &[b], Some(4));
+        assert!(
+            out.list.cards.iter().any(|c| c.accepted) || out.list.probes_accepted > 0,
+            "moving spots must reset consecutive-night block"
+        );
     }
 }
