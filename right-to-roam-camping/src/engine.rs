@@ -916,6 +916,10 @@ declining (no silent rule bypass)."
         crate::host::TravelMode::NonMotorised => {}
     }
 
+    if let (Some(( _, store_key)), Some(d)) = (pack.hard_max_nights(), clock) {
+        let _ = NightStore::record_night(host, store_key, &loc_id, d);
+    }
+
     ProbeDecision::Accept(CampingCard {
         lat: probe.lat,
         lon: probe.lon,
