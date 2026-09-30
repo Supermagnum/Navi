@@ -551,6 +551,9 @@ fn insert_land_safe_mids(
         if densify_point_in_multi_country_spill(c, ready) {
             continue;
         }
+        if densify_reverses_hop_axis(a, b, c) {
+            continue;
+        }
         if best.is_none_or(|(bt, _)| t < bt) {
             best = Some((t, c));
         }
@@ -639,6 +642,9 @@ fn densify_land_bridge_mid(
         if densify_point_in_multi_country_spill(c, ready) {
             continue;
         }
+        if densify_reverses_hop_axis(a, b, c) {
+            continue;
+        }
         let t = ((c.0 - a.0) * dlat + (c.1 - a.1) * dlon) / v2;
         if t <= 0.02 || t >= 0.98 {
             continue;
@@ -651,7 +657,10 @@ fn densify_land_bridge_mid(
         let da = cheb(c, a);
         let db = cheb(c, b);
         let sub = da.max(db);
-        if sub >= dist - 1e-9 || da < max_hop_deg * 0.15 || db < max_hop_deg * 0.15 {
+        // Require a *meaningful* split — tiny Chebyshev gains with reverse on a
+        // secondary axis (e.g. south of SH while heading north) used to park
+        // chunk ends on coastal grid samples and thrash A*.
+        if sub >= dist * 0.92 || da < max_hop_deg * 0.15 || db < max_hop_deg * 0.15 {
             continue;
         }
         if best_split.is_none_or(|(bs, bp, _)| sub < bs - 1e-9 || ((sub - bs).abs() < 1e-9 && perp < bp))
@@ -671,6 +680,9 @@ fn densify_land_bridge_mid(
         if densify_point_in_multi_country_spill(c, ready) {
             continue;
         }
+        if densify_reverses_hop_axis(a, b, c) {
+            continue;
+        }
         let t = ((c.0 - a.0) * dlat + (c.1 - a.1) * dlon) / v2;
         if t <= 0.02 || t >= 0.98 {
             continue;
@@ -686,6 +698,35 @@ fn densify_land_bridge_mid(
         }
     }
     best_step.map(|(_, _, c)| c)
+}
+
+/// True when `c` reverses past `a` on a hop axis that has clear travel direction.
+/// Blocks southbound densify steps on a northbound sea-avoiding land bridge (and
+/// the symmetric cases) without hardcoding any corridor.
+fn densify_reverses_hop_axis(a: (f64, f64), b: (f64, f64), c: (f64, f64)) -> bool {
+    const AXIS_MIN: f64 = 0.25;
+    const SLACK: f64 = 0.02;
+    let dlat = b.0 - a.0;
+    let dlon = b.1 - a.1;
+    if dlat.abs() >= AXIS_MIN {
+        let step = c.0 - a.0;
+        if dlat > 0.0 && step < -SLACK {
+            return true;
+        }
+        if dlat < 0.0 && step > SLACK {
+            return true;
+        }
+    }
+    if dlon.abs() >= AXIS_MIN {
+        let step = c.1 - a.1;
+        if dlon > 0.0 && step < -SLACK {
+            return true;
+        }
+        if dlon < 0.0 && step > SLACK {
+            return true;
+        }
+    }
+    false
 }
 
 /// Coarse interior samples of Ready **leaf** boxes that intersect hop AB.
@@ -1570,6 +1611,16 @@ mod tests {
                 "must not insert SH→Halland water chord point ({blat}, {blon}); hops={hops:?}"
             );
         }
+        // Land-bridge must not step south of SH on a northbound corridor.
+        let south_of_sh = hops.windows(2).any(|w| {
+            (w[0].0 - sh.0).abs() < 1e-3
+                && (w[0].1 - sh.1).abs() < 1e-3
+                && w[1].0 < sh.0 - 0.05
+        });
+        assert!(
+            !south_of_sh,
+            "must not densify south of SH on northbound trip; hops={hops:?}"
+        );
         let _ = (sh, halland);
         assert!(
             hops.len() >= 6,
