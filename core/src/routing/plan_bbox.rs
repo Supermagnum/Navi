@@ -241,6 +241,7 @@ pub fn densify_route_points_via_regions_dirs(
             }
             let c = ((bbox[0] + bbox[2]) * 0.5, (bbox[1] + bbox[3]) * 0.5);
             let c = prefer_coastal_centroid(c, *bbox, path);
+            let c = prefer_corridor_centroid(c, *bbox, start, end);
             let t = progress_t(c);
             if t <= 0.02 || t >= 0.98 {
                 continue;
@@ -351,12 +352,15 @@ fn densify_gaps_with_region_centroids(
     }
     // Prefer leaf centroids for gap fill, but keep country boxes for land checks
     // so SH→Skåne still densifies across Jutland (europe/denmark).
+    let trip_start = points[0];
+    let trip_end = *points.last().unwrap();
     let centroids: Vec<(f64, f64)> = ready
         .iter()
         .filter(|(path, _)| !densify_skip_country_when_leaves_ready(path, &ready))
         .map(|(path, b)| {
             let c = ((b[0] + b[2]) * 0.5, (b[1] + b[3]) * 0.5);
-            prefer_coastal_centroid(c, *b, path)
+            let c = prefer_coastal_centroid(c, *b, path);
+            prefer_corridor_centroid(c, *b, trip_start, trip_end)
         })
         .collect();
     let mut out = Vec::with_capacity(points.len() * 2);
@@ -908,6 +912,56 @@ fn landsdel_box_needs_coastal_bias(bbox: [f64; 4]) -> bool {
     lat_span >= 2.5 && lon_span >= 4.0
 }
 
+/// Pull a large leaf catalog centroid toward the OD corridor through that leaf.
+///
+/// Raw AABB centers can sit far off the approached highway spine (Skåne center
+/// at ~13.5°E on a NW Bevensen→Ottadal chord that clamps to the Öresund edge
+/// ~12.6°E), forcing an east-then-west zigzag of tens of km. Blend toward the
+/// OD segment clamped inside a leaf inset — geography-agnostic, no corridor
+/// hardcoding. Milder than the reverted trip-start entry bias (which thrashed
+/// some border snaps).
+fn prefer_corridor_centroid(
+    c: (f64, f64),
+    bbox: [f64; 4],
+    start: (f64, f64),
+    end: (f64, f64),
+) -> (f64, f64) {
+    let lat_span = (bbox[2] - bbox[0]).abs();
+    let lon_span = (bbox[3] - bbox[1]).abs();
+    // Modest leaves: center is already near any corridor entry.
+    if lat_span < 1.2 && lon_span < 1.2 {
+        return c;
+    }
+    const INSET: f64 = 0.20;
+    let lat0 = bbox[0] + INSET;
+    let lon0 = bbox[1] + INSET;
+    let lat1 = bbox[2] - INSET;
+    let lon1 = bbox[3] - INSET;
+    if lat1 <= lat0 + 1e-9 || lon1 <= lon0 + 1e-9 {
+        return c;
+    }
+    // Nearest point on the OD segment to the catalog center, clamped into leaf.
+    let dlat = end.0 - start.0;
+    let dlon = end.1 - start.1;
+    let v2 = dlat * dlat + dlon * dlon;
+    let entry = if v2 < 1e-12 {
+        (start.0.clamp(lat0, lat1), start.1.clamp(lon0, lon1))
+    } else {
+        let t = (((c.0 - start.0) * dlat + (c.1 - start.1) * dlon) / v2).clamp(0.0, 1.0);
+        let on = (start.0 + t * dlat, start.1 + t * dlon);
+        (on.0.clamp(lat0, lat1), on.1.clamp(lon0, lon1))
+    };
+    let cheb = (c.0 - entry.0).abs().max((c.1 - entry.1).abs());
+    if cheb < 0.40 {
+        return c;
+    }
+    let blended = (entry.0 * 0.65 + c.0 * 0.35, entry.1 * 0.65 + c.1 * 0.35);
+    (
+        blended.0.clamp(lat0, lat1),
+        blended.1.clamp(lon0, lon1),
+    )
+}
+
 /// Move a northern landsdel centroid onto the E6 / coastal-highway spine.
 ///
 /// Uses ~0.55 of a capped lon span from the west edge — not the far-west
@@ -1380,18 +1434,19 @@ mod tests {
             !hit,
             "densify must not insert Skåne↔Denmark Öresund mid; hops={hops:?}"
         );
-        let has_halland = hops
-            .iter()
-            .any(|(lat, lon)| (lat - 56.935).abs() < 0.05 && (lon - 12.70).abs() < 0.15);
+        let has_halland = hops.iter().any(|(lat, lon)| {
+            // Corridor-biased Halland leaf (not necessarily raw AABB center).
+            *lat > 56.32 && *lat < 57.55 && *lon > 11.85 && *lon < 13.55
+        });
         assert!(
             has_halland,
-            "expected Halland leaf centroid on corridor; hops={hops:?}"
+            "expected Halland leaf densify hop on corridor; hops={hops:?}"
         );
         // SH→Skåne must still densify across Denmark (not one 3° hop).
         let sh = (54.210_f64, 9.845_f64);
-        let sk = (55.910_f64, 13.525_f64);
+        let sk_lat_lo = 55.32_f64;
         let between = hops.iter().any(|(lat, lon)| {
-            *lat > sh.0 + 0.2 && *lat < sk.0 - 0.2 && *lon > sh.1 + 0.3 && *lon < sk.1 - 0.3
+            *lat > sh.0 + 0.2 && *lat < sk_lat_lo - 0.05 && *lon > sh.1 + 0.3 && *lon < 13.0
         });
         assert!(
             between,
@@ -1512,9 +1567,9 @@ mod tests {
             (52.2885, 8.9167),  // Minden
         ];
         let hops = densify_route_points_via_regions(&pts, dir.path(), LONG_TRIP_CHUNK_DEG);
-        let has_skane = hops
-            .iter()
-            .any(|(lat, lon)| (lat - 55.91).abs() < 0.05 && (lon - 13.525).abs() < 0.15);
+        let has_skane = hops.iter().any(|(lat, lon)| {
+            *lat > 55.32 && *lat < 56.50 && *lon > 12.45 && *lon < 14.60
+        });
         assert!(
             has_skane,
             "Skåne must stay on Hamar→Minden densify (pad≥3°); hops={hops:?}"
@@ -1710,11 +1765,20 @@ mod tests {
         );
         let _ = (sh, halland);
         let has_skane = hops.iter().any(|(lat, lon)| {
-            (lat - 55.91).abs() < 0.08 && (lon - 13.525).abs() < 0.25
+            *lat > 55.32 && *lat < 56.50 && *lon > 12.45 && *lon < 14.60
         });
         assert!(
             has_skane,
             "Skåne leaf must survive t-dedup on NW OD densify; hops={hops:?}"
+        );
+        // Corridor bias must not park Skåne densify at the deep AABB center
+        // (13.525°E) on a NW Bevensen→Ottadal chord — that forces an east zigzag.
+        let deep_skane_center = hops.iter().any(|(lat, lon)| {
+            (lat - 55.91).abs() < 0.05 && (lon - 13.525).abs() < 0.08
+        });
+        assert!(
+            !deep_skane_center,
+            "Skåne densify must bias toward OD corridor, not raw center; hops={hops:?}"
         );
         assert!(
             hops.len() >= 6,
