@@ -282,12 +282,13 @@ fn sweden_inland_point_tier_d() {
     assert_eq!(iso, "se");
     let pack = navi_right_to_roam_camping::packs::pack_for_country(Some("se"));
     assert_eq!(pack.tier, Tier::D);
+    let urls = pack.source_urls();
     let card = CampingCard::decline_campsites_only(
         SWEDEN_INLAND.0,
         SWEDEN_INLAND.1,
         "se",
         pack.legal_basis,
-        pack.sources,
+        &urls,
         navi_right_to_roam_camping::NotCheckedLayers::both_unknown(),
         &[],
     );

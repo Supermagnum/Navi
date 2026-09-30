@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::host::{CampingHost, LocalDate};
-use crate::packs::{norway_pack, RulePack};
+use crate::packs::RulePack;
 
 /// ~111 m at equator; stable across pack rebakes.
 pub const LOCATION_GRID_DEG: f64 = 0.001;
@@ -51,18 +51,21 @@ fn active_pointer_key(pack: &str) -> String {
     format!("rtr_night_active:{pack}")
 }
 
-/// Retention window (days) from the longest `max_consecutive_nights` among packs.
+/// Retention window (days) from the longest night-store window any pack needs
+/// (`DurationRule::HardMaxConsecutiveNights.retention_days`), not from the night count alone.
 pub fn night_store_retention_days(packs: &[&RulePack]) -> u32 {
     packs
         .iter()
-        .filter_map(|p| p.max_consecutive_nights)
+        .filter_map(|p| p.night_store_retention_days())
         .max()
         .unwrap_or(0)
 }
 
-/// Built-in packs (Norway → 2 consecutive nights).
+/// Built-in enabled packs that declare a retention window.
 pub fn default_night_store_retention_days() -> u32 {
-    night_store_retention_days(&[&norway_pack()])
+    let packs = crate::packs::builtin_enabled_packs();
+    let refs: Vec<&RulePack> = packs.iter().collect();
+    night_store_retention_days(&refs)
 }
 
 pub struct NightStore;
@@ -449,12 +452,63 @@ mod tests {
     }
 
     #[test]
-    fn retention_derives_from_norway_pack_max() {
+    fn retention_derives_from_longest_pack_window() {
         assert_eq!(default_night_store_retention_days(), 2);
-        assert_eq!(
-            night_store_retention_days(&[&norway_pack()]),
-            norway_pack().max_consecutive_nights.unwrap()
+        let no = crate::packs::norway_pack();
+        assert_eq!(night_store_retention_days(&[&no]), 2);
+        assert_eq!(no.night_store_retention_days(), Some(2));
+    }
+
+    #[test]
+    fn prune_keeps_norway_streak_through_day_after_second_night() {
+        // Boundary: night 1 on D, night 2 on D+1, prune on D+2 → still suppressed.
+        let mut h = host();
+        let loc = location_id_from_lat_lon(61.1, 10.5);
+        NightStore::record_night(
+            &mut h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 1,
+            },
+        )
+        .unwrap();
+        NightStore::record_night(
+            &mut h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 2,
+            },
+        )
+        .unwrap();
+        let keys: Vec<String> = h.kv.keys().cloned().collect();
+        let cleared = NightStore::prune_older_than(
+            &mut h,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 3,
+            },
+            default_night_store_retention_days(),
+            &keys,
         );
+        assert_eq!(cleared, 0, "D+1 record must survive prune on D+2 with retention=2");
+        assert!(NightStore::would_exceed(
+            &h,
+            "no",
+            &loc,
+            LocalDate {
+                year: 2026,
+                month: 7,
+                day: 3,
+            },
+            2
+        ));
     }
 
     #[test]

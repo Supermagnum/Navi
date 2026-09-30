@@ -30,13 +30,17 @@ pub use fire::{
     fire_guidance_norway, in_norway_fire_ban_window, FireGuidance, BARE_ROCK_NOTE,
     CAUTIOUS_FIRE_UNKNOWN_DATE, LEAVE_NO_TRACE_NOTE, PROTECTED_SPECIES_NOTE,
 };
-pub use host::{CampingHost, LocalDate, TravelMode};
+pub use host::{CampingHost, LocalDate, ProtectedAreaStatus, TravelMode};
 pub use night_store::{
     default_night_store_retention_days, delete_night_store_file, location_id_from_lat_lon,
     night_store_retention_days, on_camping_plugin_enable_changed, NightRecord, NightStore,
     LOCATION_GRID_DEG,
 };
-pub use packs::{PackId, RulePack, Tier};
+pub use packs::{
+    builtin_enabled_packs, in_cmz_season, norway_pack, pack_for_country, pack_for_location,
+    svalbard_decline_pack, tier_d_pack, validate_all_builtin_packs, CitedSource, CmzPolicy,
+    DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack, SourceQuality, Tier,
+};
 pub use safety_view::{wild_overnight_reject, OvernightSafety};
 
 /// Layers the host cannot check yet — shown on every Tier A card.

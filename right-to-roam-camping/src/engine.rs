@@ -10,9 +10,11 @@ use crate::candidates::{
 };
 use crate::card::{CampingCard, DeclineKind, SuggestionList};
 use crate::fire::{fire_guidance_norway, LEAVE_NO_TRACE_NOTE, PROTECTED_SPECIES_NOTE};
-use crate::host::CampingHost;
+use crate::host::{CampingHost, ProtectedAreaStatus};
 use crate::night_store::{location_id_from_lat_lon, NightStore};
-use crate::packs::{pack_for_country, PackId, Tier};
+use crate::packs::{
+    in_cmz_season, pack_for_location, DurationRule, FireRule, PackId, Tier,
+};
 use crate::safety_view::{wild_overnight_reject, OvernightSafety};
 use crate::NotCheckedLayers;
 
@@ -220,8 +222,9 @@ declining wild-camp suggestions (campsites only)."
         let pack_min = {
             // Probe needs country at seed first for pack min road — use seed coords.
             let iso = host.admin_country_iso(seed.lat, seed.lon);
-            let pack = pack_for_country(iso.as_deref());
-            pack.min_road_distance_m
+            let _pack = pack_for_location(iso.as_deref(), None);
+            // Phase 3a packs do not set a statutory min road distance.
+            None::<f64>
         };
 
         let Some(probe) = probe_along_track(input.graph, seed, walk, pack_min) else {
@@ -294,12 +297,13 @@ fn evaluate_probe(
 ) -> ProbeDecision {
     let country = host.admin_country_iso(probe.lat, probe.lon);
     let subdivision = host.admin_subdivision_iso(probe.lat, probe.lon);
-    let pack = pack_for_country(country.as_deref());
+    let pack = pack_for_location(country.as_deref(), subdivision.as_deref());
     let not_checked = NotCheckedLayers::from_host_status(
         host.protected_area_layer_ready(),
         host.landcover_layer_ready(),
     );
     let loc_id = location_id_from_lat_lon(probe.lat, probe.lon);
+    let source_urls: Vec<&str> = pack.source_urls();
 
     match pack.id {
         PackId::SvalbardDecline => {
@@ -308,7 +312,7 @@ fn evaluate_probe(
                 card: Some(CampingCard::svalbard_decline(probe.lat, probe.lon, clock)),
             };
         }
-        PackId::TierD => {
+        PackId::TierD | PackId::AlandTierD => {
             return ProbeDecision::Reject {
                 reason: format!(
                     "tier_d_country_{}",
@@ -317,19 +321,100 @@ fn evaluate_probe(
                 card: Some(CampingCard::decline_campsites_only(
                     probe.lat,
                     probe.lon,
-                    country.as_deref().unwrap_or("unknown"),
+                    country.as_deref().unwrap_or(&pack.country_iso),
                     pack.legal_basis,
-                    pack.sources,
+                    &source_urls,
                     not_checked,
                     &[],
                 )),
             };
         }
-        PackId::Norway => {}
+        PackId::Norway
+        | PackId::Sweden
+        | PackId::Finland
+        | PackId::Estonia
+        | PackId::Scotland
+        | PackId::Iceland => {}
     }
 
-    // Norway hard filters
-    if pack.max_consecutive_nights.is_some() && !host.plugin_kv_available() {
+    // Iceland exception: unknown protected-area status → campsites only.
+    if pack.decline_when_protected_unknown {
+        match host.protected_area_status(probe.lat, probe.lon) {
+            ProtectedAreaStatus::Unknown => {
+                return ProbeDecision::Reject {
+                    reason: "iceland_protected_area_unknown".into(),
+                    card: Some(CampingCard::decline_campsites_only(
+                        probe.lat,
+                        probe.lon,
+                        "is",
+                        pack.legal_basis,
+                        &source_urls,
+                        not_checked,
+                        &[
+                            "Protected-area status unknown — Iceland pack declines wild camp \
+(campsites only) until the host can prove the spot is outside protected areas.",
+                        ],
+                    )),
+                };
+            }
+            ProtectedAreaStatus::Inside => {
+                return ProbeDecision::Reject {
+                    reason: "iceland_inside_protected_area".into(),
+                    card: Some(CampingCard::decline_campsites_only(
+                        probe.lat,
+                        probe.lon,
+                        "is",
+                        pack.legal_basis,
+                        &source_urls,
+                        not_checked,
+                        &["Inside a protected area — wild camp declined for Iceland."],
+                    )),
+                };
+            }
+            ProtectedAreaStatus::Clear => {}
+        }
+    }
+
+    // Scotland CMZ: in season without CMZ layer (or inside CMZ) → no suggestion.
+    if let Some(cmz) = &pack.cmz {
+        let in_season = clock.map(|d| in_cmz_season(cmz, d)).unwrap_or(true);
+        if in_season {
+            if !host.cmz_layer_ready() {
+                return ProbeDecision::Reject {
+                    reason: "scotland_cmz_unproven_outside".into(),
+                    card: Some(CampingCard::decline_campsites_only(
+                        probe.lat,
+                        probe.lon,
+                        "gb",
+                        pack.legal_basis,
+                        &source_urls,
+                        not_checked,
+                        &[
+                            "Loch Lomond & Trossachs CMZ season (1 Mar–30 Sep): without a CMZ \
+polygon layer this pack cannot prove the spot is outside a management zone — no wild-camp \
+suggestion.",
+                        ],
+                    )),
+                };
+            }
+            if host.cmz_contains(probe.lat, probe.lon) {
+                return ProbeDecision::Reject {
+                    reason: "scotland_inside_cmz".into(),
+                    card: Some(CampingCard::decline_campsites_only(
+                        probe.lat,
+                        probe.lon,
+                        "gb",
+                        pack.legal_basis,
+                        &source_urls,
+                        not_checked,
+                        &["Inside a Loch Lomond & Trossachs Camping Management Zone — permit or campsite required in season."],
+                    )),
+                };
+            }
+        }
+    }
+
+    if pack.hard_max_nights().is_some() && !host.plugin_kv_available() {
         return ProbeDecision::Reject {
             reason: "plugin_kv_unavailable".into(),
             card: Some(CampingCard {
@@ -339,38 +424,37 @@ fn evaluate_probe(
                 decline: Some(DeclineKind::HardFilter),
                 reject_reason: Some("plugin_kv_unavailable".into()),
                 tier: pack.tier,
-                country_iso: "no".into(),
+                country_iso: pack.country_iso.clone(),
                 subdivision_iso: subdivision.clone(),
                 legal_basis: pack.legal_basis.into(),
-                sources: pack.sources.iter().map(|s| (*s).to_string()).collect(),
+                sources: source_urls.iter().map(|s| (*s).to_string()).collect(),
                 fire_text: None,
                 bare_rock_note: None,
                 notes: vec![
-                    "2-night consecutive limit cannot be enforced without plugin KV; \
+                    "Consecutive-night limit cannot be enforced without plugin KV; \
 declining (no silent rule bypass)."
                         .into(),
                 ],
-                not_checked,
+                not_checked: not_checked.clone(),
                 disclaimer: crate::DISCLAIMER.into(),
-                location_id: loc_id,
+                location_id: loc_id.clone(),
                 seed_road_highway: Some(probe.road_highway.clone()),
                 walk_m: Some(probe.walk_m),
             }),
         };
     }
 
-    if let Some(max_n) = pack.max_consecutive_nights {
+    if let Some((max_n, store_key)) = pack.hard_max_nights() {
         let tonight = match clock {
             Some(d) => d,
             None => {
-                // Without a date the night store cannot run — decline.
                 return ProbeDecision::Reject {
                     reason: "clock_unavailable_for_night_store".into(),
                     card: None,
                 };
             }
         };
-        if NightStore::would_exceed(host, "no", &loc_id, tonight, max_n) {
+        if NightStore::would_exceed(host, store_key, &loc_id, tonight, max_n) {
             return ProbeDecision::Reject {
                 reason: "max_consecutive_nights".into(),
                 card: None,
@@ -378,43 +462,73 @@ declining (no silent rule bypass)."
         }
     }
 
-    if let Some(label) = wild_overnight_reject(
-        probe.lat,
-        probe.lon,
-        safety,
-        host.overnight_buildings(),
-        host.overnight_glacier_rings(),
-    ) {
-        return ProbeDecision::Reject {
-            reason: label.into(),
-            card: None,
-        };
+    if pack.uses_safety_config_distance() {
+        if let Some(label) = wild_overnight_reject(
+            probe.lat,
+            probe.lon,
+            safety,
+            host.overnight_buildings(),
+            host.overnight_glacier_rings(),
+        ) {
+            return ProbeDecision::Reject {
+                reason: label.into(),
+                card: None,
+            };
+        }
     }
 
-    let fire = fire_guidance_norway(clock);
-    let mut notes: Vec<String> = Vec::new();
-    notes.push(PROTECTED_SPECIES_NOTE.into());
-    notes.push(LEAVE_NO_TRACE_NOTE.into());
-    // Cloudberry only when subdivision is known Nordland/Troms/Finnmark.
-    match cloudberry_decision(subdivision.as_deref()) {
-        CloudberryDecision::Show => {
-            notes.push(
-                "Northern Norway (Nordland, Troms, Finnmark) has special cloudberry picking rules."
-                    .into(),
-            );
+    let fire_text = match pack.fire {
+        FireRule::NorwayDateGated => {
+            let fire = fire_guidance_norway(clock);
+            (Some(fire.text), Some(fire.bare_rock_note.to_string()))
         }
-        CloudberryDecision::OmitOutsideNorthern { iso } => {
-            eprintln!(
-                "cloudberry note omitted: subdivision={iso} is outside Nordland/Troms/Finnmark"
-            );
+        FireRule::AlwaysNeedsLandownerPermission { text }
+        | FireRule::GuidanceNote { text } => (Some(text.to_string()), None),
+        FireRule::NoneInLaw | FireRule::NotVerified => (None, None),
+    };
+
+    let mut notes: Vec<String> = pack.guidance_notes.iter().map(|s| (*s).to_string()).collect();
+    if let Some(label) = pack.distance_card_label() {
+        notes.push(format!(
+            "Building distance: {label} ({} m from SafetyConfig).",
+            safety.min_building_distance_m
+        ));
+    }
+    match pack.duration {
+        DurationRule::SoftGuidance { note } | DurationRule::NoneInLaw { note } => {
+            notes.push(note.into());
         }
-        CloudberryDecision::OmitUnknown => {
-            eprintln!("cloudberry note omitted: subdivision unknown");
+        DurationRule::HardMaxConsecutiveNights { nights, .. } => {
+            notes.push(format!("Hard limit: max {nights} consecutive night(s) at the same spot."));
+        }
+        DurationRule::NotVerified => {}
+    }
+    if pack.cloudberry_note {
+        notes.retain(|n| !n.contains("protected from picking")); // NO pack lists it in guidance; keep engine cloudberry
+        notes.push(PROTECTED_SPECIES_NOTE.into());
+        if !notes.iter().any(|n| n.contains("leave no trace")) {
+            notes.push(LEAVE_NO_TRACE_NOTE.into());
+        }
+        match cloudberry_decision(subdivision.as_deref()) {
+            CloudberryDecision::Show => {
+                notes.push(
+                    "Northern Norway (Nordland, Troms, Finnmark) has special cloudberry picking rules."
+                        .into(),
+                );
+            }
+            CloudberryDecision::OmitOutsideNorthern { iso } => {
+                eprintln!(
+                    "cloudberry note omitted: subdivision={iso} is outside Nordland/Troms/Finnmark"
+                );
+            }
+            CloudberryDecision::OmitUnknown => {
+                eprintln!("cloudberry note omitted: subdivision unknown");
+            }
         }
     }
     notes.extend(
         not_checked
-            .card_notes(pack.farmland_filter)
+            .card_notes(pack.farmland_not_checked_when_landcover_unknown)
             .into_iter()
             .map(str::to_string),
     );
@@ -424,7 +538,7 @@ declining (no silent rule bypass)."
         }
         crate::host::TravelMode::Motorised => {
             notes.push(
-                "travel mode is motorised — vehicle overnight rules are not applied in Phase 2 \
+                "travel mode is motorised — vehicle overnight rules are not applied here \
 (tent guidance only)."
                     .into(),
             );
@@ -438,13 +552,13 @@ declining (no silent rule bypass)."
         accepted: true,
         decline: None,
         reject_reason: None,
-        tier: Tier::A,
-        country_iso: "no".into(),
+        tier: pack.tier,
+        country_iso: pack.country_iso.clone(),
         subdivision_iso: subdivision,
         legal_basis: pack.legal_basis.into(),
-        sources: pack.sources.iter().map(|s| (*s).to_string()).collect(),
-        fire_text: Some(fire.text),
-        bare_rock_note: Some(fire.bare_rock_note.into()),
+        sources: source_urls.iter().map(|s| (*s).to_string()).collect(),
+        fire_text: fire_text.0,
+        bare_rock_note: fire_text.1,
         notes,
         not_checked,
         disclaimer: crate::DISCLAIMER.into(),
@@ -650,7 +764,7 @@ mod tests {
     }
 
     #[test]
-    fn sweden_is_tier_d() {
+    fn sweden_is_still_tier_d_until_sweden_pack() {
         let mut h = MemHost {
             kv: HashMap::new(),
             kv_ok: true,
@@ -683,7 +797,7 @@ mod tests {
                 assert_eq!(c.tier, Tier::D);
                 assert_eq!(c.country_iso, "se");
             }
-            _ => panic!("expected Tier D reject"),
+            _ => panic!("expected Tier D reject before Sweden pack lands"),
         }
     }
 

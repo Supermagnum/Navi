@@ -22,6 +22,17 @@ impl LocalDate {
     }
 }
 
+/// Protected-area query from the host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProtectedAreaStatus {
+    /// Layer not ready / unknown — Iceland declines; other Tier A packs note it.
+    Unknown,
+    /// Layer ready and point is not inside a protected area.
+    Clear,
+    /// Layer ready and point is inside a protected area.
+    Inside,
+}
+
 /// What the camping engine needs from the host. Fail-safe: unavailable → decline.
 pub trait CampingHost {
     fn safety_config(&self) -> Option<OvernightSafety>;
@@ -36,11 +47,26 @@ pub trait CampingHost {
     /// Overnight building points for the building-distance hard filter.
     fn overnight_buildings(&self) -> &[(f64, f64)];
     fn overnight_glacier_rings(&self) -> &[Vec<[f64; 2]>];
-    /// Protected-area layer ready?
+    /// Prefer [`Self::protected_area_status`]. Default: layer not ready.
     fn protected_area_layer_ready(&self) -> bool {
         false
     }
+    fn protected_area_status(&self, _lat: f64, _lon: f64) -> ProtectedAreaStatus {
+        if self.protected_area_layer_ready() {
+            ProtectedAreaStatus::Clear
+        } else {
+            ProtectedAreaStatus::Unknown
+        }
+    }
     fn landcover_layer_ready(&self) -> bool {
+        false
+    }
+    /// Loch Lomond & Trossachs CMZ polygon layer available.
+    fn cmz_layer_ready(&self) -> bool {
+        false
+    }
+    /// When CMZ layer is ready: is the point inside a management zone?
+    fn cmz_contains(&self, _lat: f64, _lon: f64) -> bool {
         false
     }
 }

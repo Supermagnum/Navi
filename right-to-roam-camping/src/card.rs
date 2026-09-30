@@ -111,7 +111,7 @@ polar bears; the Governor recommends a firearm (deterrent requirement)."
             country_iso: "sj".into(),
             subdivision_iso: None,
             legal_basis: pack.legal_basis.into(),
-            sources: pack.sources.iter().map(|s| (*s).to_string()).collect(),
+            sources: pack.source_urls().iter().map(|s| (*s).to_string()).collect(),
             fire_text: None,
             bare_rock_note: None,
             notes,
