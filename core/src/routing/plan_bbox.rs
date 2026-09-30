@@ -241,10 +241,6 @@ pub fn densify_route_points_via_regions_dirs(
             }
             let c = ((bbox[0] + bbox[2]) * 0.5, (bbox[1] + bbox[3]) * 0.5);
             let c = prefer_coastal_centroid(c, *bbox, path);
-            // Pull large-leaf catalog centers toward the OD entry into the leaf so
-            // densify joints stay near the approached border (snappable + local tiles),
-            // not deep AABB centers that miss the loaded graph (any country).
-            let c = prefer_trip_entry_centroid(c, *bbox, start, end);
             let t = progress_t(c);
             if t <= 0.02 || t >= 0.98 {
                 continue;
@@ -355,15 +351,12 @@ fn densify_gaps_with_region_centroids(
     }
     // Prefer leaf centroids for gap fill, but keep country boxes for land checks
     // so SH→Skåne still densifies across Jutland (europe/denmark).
-    let trip_start = points[0];
-    let trip_end = *points.last().unwrap();
     let centroids: Vec<(f64, f64)> = ready
         .iter()
         .filter(|(path, _)| !densify_skip_country_when_leaves_ready(path, &ready))
         .map(|(path, b)| {
             let c = ((b[0] + b[2]) * 0.5, (b[1] + b[3]) * 0.5);
-            let c = prefer_coastal_centroid(c, *b, path);
-            prefer_trip_entry_centroid(c, *b, trip_start, trip_end)
+            prefer_coastal_centroid(c, *b, path)
         })
         .collect();
     let mut out = Vec::with_capacity(points.len() * 2);
@@ -915,40 +908,6 @@ fn landsdel_box_needs_coastal_bias(bbox: [f64; 4]) -> bool {
     lat_span >= 2.5 && lon_span >= 4.0
 }
 
-/// Pull a leaf catalog centroid toward the trip's entry into that leaf bbox.
-///
-/// Large leaf AABBs (any country) place raw centers far from the approached
-/// border. Chunk legs then snap-fail when the destination pack's near-border
-/// tiles are the ones actually loaded, or when the center sits tens of km from
-/// clearance-legal roads. Blend toward the OD start clamped inside an inset of
-/// the leaf — geography-agnostic, no corridor hardcoding.
-fn prefer_trip_entry_centroid(
-    c: (f64, f64),
-    bbox: [f64; 4],
-    start: (f64, f64),
-    _end: (f64, f64),
-) -> (f64, f64) {
-    let inset = 0.12_f64;
-    let lat0 = bbox[0] + inset;
-    let lon0 = bbox[1] + inset;
-    let lat1 = bbox[2] - inset;
-    let lon1 = bbox[3] - inset;
-    if lat1 <= lat0 + 1e-9 || lon1 <= lon0 + 1e-9 {
-        return c;
-    }
-    let entry = (start.0.clamp(lat0, lat1), start.1.clamp(lon0, lon1));
-    let cheb = (c.0 - entry.0).abs().max((c.1 - entry.1).abs());
-    // Small leaves / centers already near the entry: keep catalog center.
-    if cheb < 0.35 {
-        return c;
-    }
-    let blended = (entry.0 * 0.55 + c.0 * 0.45, entry.1 * 0.55 + c.1 * 0.45);
-    (
-        blended.0.clamp(lat0, lat1),
-        blended.1.clamp(lon0, lon1),
-    )
-}
-
 /// Move a northern landsdel centroid onto the E6 / coastal-highway spine.
 ///
 /// Uses ~0.55 of a capped lon span from the west edge — not the far-west
@@ -1400,19 +1359,18 @@ mod tests {
             !hit,
             "densify must not insert Skåne↔Denmark Öresund mid; hops={hops:?}"
         );
-        let has_halland = hops.iter().any(|(lat, lon)| {
-            // Entry-biased Halland leaf (not necessarily raw AABB center).
-            *lat > 56.32 && *lat < 57.55 && *lon > 11.85 && *lon < 13.55
-        });
+        let has_halland = hops
+            .iter()
+            .any(|(lat, lon)| (lat - 56.935).abs() < 0.05 && (lon - 12.70).abs() < 0.15);
         assert!(
             has_halland,
-            "expected Halland leaf densify hop on corridor; hops={hops:?}"
+            "expected Halland leaf centroid on corridor; hops={hops:?}"
         );
         // SH→Skåne must still densify across Denmark (not one 3° hop).
         let sh = (54.210_f64, 9.845_f64);
-        let sk_lat_lo = 55.32_f64;
+        let sk = (55.910_f64, 13.525_f64);
         let between = hops.iter().any(|(lat, lon)| {
-            *lat > sh.0 + 0.2 && *lat < sk_lat_lo - 0.05 && *lon > sh.1 + 0.3 && *lon < 13.0
+            *lat > sh.0 + 0.2 && *lat < sk.0 - 0.2 && *lon > sh.1 + 0.3 && *lon < sk.1 - 0.3
         });
         assert!(
             between,
@@ -1533,9 +1491,9 @@ mod tests {
             (52.2885, 8.9167),  // Minden
         ];
         let hops = densify_route_points_via_regions(&pts, dir.path(), LONG_TRIP_CHUNK_DEG);
-        let has_skane = hops.iter().any(|(lat, lon)| {
-            *lat > 55.32 && *lat < 56.50 && *lon > 12.45 && *lon < 14.60
-        });
+        let has_skane = hops
+            .iter()
+            .any(|(lat, lon)| (lat - 55.91).abs() < 0.05 && (lon - 13.525).abs() < 0.15);
         assert!(
             has_skane,
             "Skåne must stay on Hamar→Minden densify (pad≥3°); hops={hops:?}"
@@ -1544,16 +1502,12 @@ mod tests {
         // between Halland and SH without a Swedish leaf endpoint.
         let halland = (56.935_f64, 12.70_f64);
         let has_halland_to_denmark_skip = hops.windows(2).any(|w| {
-            let a_h = w[0].0 > 56.32
-                && w[0].0 < 57.55
-                && w[0].1 > 11.85
-                && w[0].1 < 13.55
-                && (w[0].0 - halland.0).abs() < 0.55;
+            let a_h = (w[0].0 - halland.0).abs() < 0.05 && (w[0].1 - halland.1).abs() < 0.15;
             let b_in_dk_only = w[1].0 > 54.5
                 && w[1].0 < 57.5
                 && w[1].1 > 8.0
                 && w[1].1 < 12.5
-                && !(w[1].0 > 55.32 && w[1].0 < 56.50 && w[1].1 > 12.45 && w[1].1 < 14.60);
+                && (w[1].0 - 55.91).abs() > 0.3;
             a_h && b_in_dk_only
         });
         assert!(
@@ -1735,7 +1689,7 @@ mod tests {
         );
         let _ = (sh, halland);
         let has_skane = hops.iter().any(|(lat, lon)| {
-            *lat > 55.32 && *lat < 56.50 && *lon > 12.45 && *lon < 14.60
+            (lat - 55.91).abs() < 0.08 && (lon - 13.525).abs() < 0.25
         });
         assert!(
             has_skane,
@@ -1951,29 +1905,5 @@ mod tests {
         let past_dover = (51.20_f64, 0.50_f64);
         assert!(densify_centroid_overshoots_via(calais, past_dover, dover));
         assert!(!densify_centroid_overshoots_via(brussels, calais, london));
-    }
-
-    #[test]
-    fn densify_trip_entry_centroid_pulls_large_leaf_toward_od_entry() {
-        // Synthetic large leaf: catalog center far from OD start clamped entry.
-        let bbox = [0.0_f64, 0.0, 4.0, 4.0];
-        let center = (2.0_f64, 2.0_f64);
-        let start = (-1.0_f64, -1.0_f64);
-        let end = (5.0_f64, 5.0_f64);
-        let biased = prefer_trip_entry_centroid(center, bbox, start, end);
-        assert!(
-            biased.0 < center.0 && biased.1 < center.1,
-            "entry bias must pull toward SW entry; got {biased:?}"
-        );
-        assert!(
-            biased.0 >= 0.12 && biased.1 >= 0.12,
-            "must stay inset inside leaf; got {biased:?}"
-        );
-        // Small offset from entry: keep center.
-        let near = prefer_trip_entry_centroid(center, bbox, (1.9, 1.9), end);
-        assert!(
-            (near.0 - center.0).abs() < 1e-9 && (near.1 - center.1).abs() < 1e-9,
-            "near-entry leaf must keep catalog center; got {near:?}"
-        );
     }
 }
