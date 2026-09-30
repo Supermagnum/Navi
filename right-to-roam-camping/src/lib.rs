@@ -13,8 +13,8 @@ pub mod vehicle;
 
 #[cfg(feature = "native")]
 pub use candidates::{
-    find_road_track_junctions, probe_along_track, JunctionRank, RoadTrackSeed, ProbePoint,
-    CORRIDOR_SEED_RADIUS_M, DEFAULT_TRACK_WALK_M, SERVICE_TRACK_MIN_CONTINUE_M,
+    find_road_track_junctions, probe_along_track, probe_along_tracks, JunctionRank, RoadTrackSeed,
+    ProbePoint, CORRIDOR_SEED_RADIUS_M, DEFAULT_TRACK_WALK_M, SERVICE_TRACK_MIN_CONTINUE_M,
 };
 pub use card::{CampingCard, DeclineKind, SuggestionList};
 #[cfg(feature = "native")]

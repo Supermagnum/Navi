@@ -236,7 +236,9 @@ class CampingPhase5bPresentationInstrumentedTest {
         android.util.Log.i(
             "NaviCampingTiming",
             "Lillehammer suggest cold_ms=${cold.elapsedMs} warm_ms=${warm.elapsedMs} " +
-                "guest_memory_cap_bytes=33554432",
+                "cold_peak_guest=${cold.peakGuestMemoryBytes} warm_peak_guest=${warm.peakGuestMemoryBytes} " +
+                "cold_timing=${org.json.JSONObject(cold.resultJson!!).optJSONObject("timing_ms")} " +
+                "warm_timing=${org.json.JSONObject(warm.resultJson!!).optJSONObject("timing_ms")}",
         )
         assertTrue(cold.elapsedMs.toLong() >= 0L)
         assertTrue(warm.elapsedMs.toLong() >= 0L)

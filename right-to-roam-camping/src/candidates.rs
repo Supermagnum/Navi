@@ -1,5 +1,7 @@
 //! Road ∩ track seed finding and track-walk probes (§1).
 
+use std::collections::HashMap;
+
 use driver_break_core::routing::graph::RouteGraph;
 use driver_break_core::tracks::haversine_km;
 use osm4routing::NodeId;
@@ -65,6 +67,44 @@ fn near_corridor(lat: f64, lon: f64, waypoints: &[[f64; 2]], radius_m: f64) -> b
     waypoints.iter().any(|w| dist_m((lat, lon), (w[0], w[1])) <= radius_m)
 }
 
+fn corridor_bbox(waypoints: &[[f64; 2]], radius_m: f64) -> (f64, f64, f64, f64) {
+    if waypoints.is_empty() {
+        return (-90.0, 90.0, -180.0, 180.0);
+    }
+    let pad = (radius_m / 111_320.0) + 0.002;
+    let mut min_lat = f64::MAX;
+    let mut max_lat = f64::MIN;
+    let mut min_lon = f64::MAX;
+    let mut max_lon = f64::MIN;
+    for w in waypoints {
+        min_lat = min_lat.min(w[0]);
+        max_lat = max_lat.max(w[0]);
+        min_lon = min_lon.min(w[1]);
+        max_lon = max_lon.max(w[1]);
+    }
+    (min_lat - pad, max_lat + pad, min_lon - pad, max_lon + pad)
+}
+
+/// Undirected incidence index so junction walks are O(degree), not O(|edges|).
+fn undirected_incident(graph: &RouteGraph) -> HashMap<NodeId, Vec<usize>> {
+    let mut incident: HashMap<NodeId, Vec<usize>> = HashMap::new();
+    for (ei, e) in graph.edges.iter().enumerate() {
+        incident.entry(e.source).or_default().push(ei);
+        if e.target != e.source {
+            incident.entry(e.target).or_default().push(ei);
+        }
+    }
+    incident
+}
+
+fn empty_eis() -> &'static [usize] {
+    &[]
+}
+
+fn incident_eis<'a>(index: &'a HashMap<NodeId, Vec<usize>>, node: NodeId) -> &'a [usize] {
+    index.get(&node).map(|v| v.as_slice()).unwrap_or(empty_eis())
+}
+
 /// Enumerate road∩track junctions near the corridor. Service seeds are included
 /// only when the track continues ≥ [`SERVICE_TRACK_MIN_CONTINUE_M`].
 pub fn find_road_track_junctions(
@@ -74,36 +114,22 @@ pub fn find_road_track_junctions(
 ) -> Vec<RoadTrackSeed> {
     let mut out = Vec::new();
     let mut seen = std::collections::HashSet::new();
+    let incident = undirected_incident(graph);
+    let (min_lat, max_lat, min_lon, max_lon) = corridor_bbox(corridor_waypoints, corridor_radius_m);
 
-        for (&node_id, node) in &graph.nodes {
-        if !near_corridor(
-            node.coord.y,
-            node.coord.x,
-            corridor_waypoints,
-            corridor_radius_m,
-        ) {
+    for (&node_id, node) in &graph.nodes {
+        let lat = node.coord.y;
+        let lon = node.coord.x;
+        if lat < min_lat || lat > max_lat || lon < min_lon || lon > max_lon {
             continue;
         }
-        let idxs = graph.outgoing_edge_indices(node_id);
-        if idxs.len() < 2 {
-            // Also check undirected: collect incident via all edges.
+        if !near_corridor(lat, lon, corridor_waypoints, corridor_radius_m) {
+            continue;
         }
         let mut roads: Vec<(usize, JunctionRank, String)> = Vec::new();
         let mut tracks: Vec<usize> = Vec::new();
-        for &ei in idxs {
+        for &ei in incident_eis(&incident, node_id) {
             let e = &graph.edges[ei];
-            let Some(ref hw) = e.highway else { continue };
-            if is_track(hw) {
-                tracks.push(ei);
-            } else if let Some(rank) = is_real_road(hw) {
-                roads.push((ei, rank, hw.clone()));
-            }
-        }
-        // Undirected incident: also scan edges that end at this node.
-        for (ei, e) in graph.edges.iter().enumerate() {
-            if e.target != node_id && e.source != node_id {
-                continue;
-            }
             let Some(ref hw) = e.highway else { continue };
             if is_track(hw) {
                 if !tracks.contains(&ei) {
@@ -129,7 +155,7 @@ pub fn find_road_track_junctions(
             .unwrap();
 
         for &tei in &tracks {
-            let continues = track_continue_length_m(graph, node_id, tei);
+            let continues = track_continue_length_m(graph, &incident, node_id, tei);
             if best_rank == JunctionRank::Service && continues < SERVICE_TRACK_MIN_CONTINUE_M {
                 continue;
             }
@@ -157,15 +183,19 @@ pub fn find_road_track_junctions(
     out
 }
 
-fn track_continue_length_m(graph: &RouteGraph, from: NodeId, edge_idx: usize) -> f64 {
+fn track_continue_length_m(
+    graph: &RouteGraph,
+    incident: &HashMap<NodeId, Vec<usize>>,
+    from: NodeId,
+    edge_idx: usize,
+) -> f64 {
     let e = &graph.edges[edge_idx];
     let mut total = e.length_m;
     let mut cur = if e.source == from { e.target } else { e.source };
     let mut prev = from;
-    // Walk further track edges greedily up to a few hops.
     for _ in 0..8 {
         let mut next_e: Option<usize> = None;
-        for &ei in graph.outgoing_edge_indices(cur) {
+        for &ei in incident_eis(incident, cur) {
             let ed = &graph.edges[ei];
             let other = if ed.source == cur { ed.target } else { ed.source };
             if other == prev {
@@ -174,22 +204,6 @@ fn track_continue_length_m(graph: &RouteGraph, from: NodeId, edge_idx: usize) ->
             if ed.highway.as_deref() == Some("track") {
                 next_e = Some(ei);
                 break;
-            }
-        }
-        // Also undirected
-        if next_e.is_none() {
-            for (ei, ed) in graph.edges.iter().enumerate() {
-                if ed.source != cur && ed.target != cur {
-                    continue;
-                }
-                let other = if ed.source == cur { ed.target } else { ed.source };
-                if other == prev {
-                    continue;
-                }
-                if ed.highway.as_deref() == Some("track") {
-                    next_e = Some(ei);
-                    break;
-                }
             }
         }
         let Some(ei) = next_e else { break };
@@ -219,8 +233,37 @@ pub fn probe_along_track(
         return None;
     }
     let goal = target_m.min(seed.track_continues_m.max(walk_m * 0.5));
+    let incident = undirected_incident(graph);
+    probe_along_track_indexed(graph, &incident, seed, goal)
+}
 
-    let _e = &graph.edges[seed.track_edge_idx];
+/// Walk every seed using one undirected index (not rebuilt per seed).
+pub fn probe_along_tracks(
+    graph: &RouteGraph,
+    seeds: &[RoadTrackSeed],
+    walk_m: f64,
+    pack_min_road_m: Option<f64>,
+) -> Vec<ProbePoint> {
+    let incident = undirected_incident(graph);
+    seeds
+        .iter()
+        .filter_map(|seed| {
+            let target_m = pack_min_road_m.unwrap_or(0.0).max(walk_m);
+            if seed.track_continues_m + 1.0 < target_m && pack_min_road_m.is_some() {
+                return None;
+            }
+            let goal = target_m.min(seed.track_continues_m.max(walk_m * 0.5));
+            probe_along_track_indexed(graph, &incident, seed, goal)
+        })
+        .collect()
+}
+
+fn probe_along_track_indexed(
+    graph: &RouteGraph,
+    incident: &HashMap<NodeId, Vec<usize>>,
+    seed: &RoadTrackSeed,
+    goal: f64,
+) -> Option<ProbePoint> {
     let mut travelled = 0.0;
     let mut cur = seed.node;
     let mut edge_idx = seed.track_edge_idx;
@@ -246,9 +289,8 @@ pub fn probe_along_track(
         let back = cur;
         cur = next;
 
-        // Next track hop
         let mut found = None;
-        for &ei in graph.outgoing_edge_indices(cur) {
+        for &ei in incident_eis(incident, cur) {
             let ed2 = &graph.edges[ei];
             let other = if ed2.source == cur {
                 ed2.target
@@ -261,25 +303,6 @@ pub fn probe_along_track(
             if ed2.highway.as_deref() == Some("track") {
                 found = Some(ei);
                 break;
-            }
-        }
-        if found.is_none() {
-            for (ei, ed2) in graph.edges.iter().enumerate() {
-                if ed2.source != cur && ed2.target != cur {
-                    continue;
-                }
-                let other = if ed2.source == cur {
-                    ed2.target
-                } else {
-                    ed2.source
-                };
-                if other == back {
-                    continue;
-                }
-                if ed2.highway.as_deref() == Some("track") {
-                    found = Some(ei);
-                    break;
-                }
             }
         }
         edge_idx = found?;

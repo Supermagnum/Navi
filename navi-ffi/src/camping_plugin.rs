@@ -19,7 +19,7 @@ use driver_break_core::routing::indexed::{
 use driver_break_core::routing::safety::OvernightProximityIndex;
 use driver_break_core::storage::{ConfigStore, Storage};
 use navi_right_to_roam_camping::{
-    find_road_track_junctions, probe_along_track, CORRIDOR_SEED_RADIUS_M, DEFAULT_TRACK_WALK_M,
+    find_road_track_junctions, probe_along_tracks, CORRIDOR_SEED_RADIUS_M, DEFAULT_TRACK_WALK_M,
     OvernightSafety,
 };
 use navi_plugin_host::{
@@ -75,6 +75,8 @@ struct Session {
     /// Set when a sandbox limit or trap fires; cleared on re-enable.
     session_disable_reason: Option<String>,
     camping_host: Option<PluginHost>,
+    /// Corridor job JSON keyed by waypoints + graph path + travel + clock.
+    suggest_job_cache: Option<(String, String)>,
 }
 
 impl Session {
@@ -477,7 +479,12 @@ pub fn camping_plugin_configure(files_dir: String, data_dir: String, timezone: S
         clock_override: None,
         session_disable_reason: None,
         camping_host: None,
+        suggest_job_cache: None,
     });
+    drop(guard);
+    // Natural Earth country polygons are first-use expensive; do not pay that
+    // on the suggest path (was ~10s of admin_region_at on Lillehammer).
+    let _ = admin_region_at(61.11515, 10.46628);
 }
 
 /// Install or replace a plugin directory under `filesDir/plugins/<name>/`.
@@ -575,6 +582,7 @@ pub fn camping_plugin_set_nav_context(
         Err(e) => return format!("FAIL: waypoints json: {e}"),
     };
     session.route_waypoints = waypoints;
+    session.suggest_job_cache = None;
     session.destination = match (dest_lat, dest_lon) {
         (Some(lat), Some(lon)) => Some((lat, lon)),
         _ => None,
@@ -589,6 +597,7 @@ pub fn camping_plugin_set_clock_ymd(year: i32, month: u32, day: u32) {
     let mut guard = session_lock().lock().expect("camping session lock");
     if let Some(session) = guard.as_mut() {
         session.clock_override = Some((year, month, day));
+        session.suggest_job_cache = None;
     }
 }
 
@@ -597,6 +606,7 @@ pub fn camping_plugin_clear_clock_override() {
     let mut guard = session_lock().lock().expect("camping session lock");
     if let Some(session) = guard.as_mut() {
         session.clock_override = None;
+        session.suggest_job_cache = None;
     }
 }
 
@@ -783,6 +793,7 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
     let waypoints = session.route_waypoints.clone();
     let travel_profile = session.travel_profile;
     let professional_driver = session.professional_driver;
+    let clock_key = session.clock_override;
     drop(guard);
 
     let Some(bbox) = corridor_bbox_from_waypoints(&waypoints) else {
@@ -806,6 +817,52 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
             peak_guest_memory_bytes: 0,
         };
     };
+    let cache_key = format!(
+        "{:?}|{}|{:?}|{}|{}|{max_suggestions}",
+        waypoints,
+        pbf.display(),
+        travel_profile,
+        professional_driver,
+        clock_key
+            .map(|(y, m, d)| format!("{y:04}-{m:02}-{d:02}"))
+            .unwrap_or_default()
+    );
+    let cached_job = {
+        let guard = session_lock().lock().expect("camping session lock");
+        guard
+            .as_ref()
+            .and_then(|s| s.suggest_job_cache.clone())
+            .and_then(|(k, job)| if k == cache_key { Some(job) } else { None })
+    };
+    if let Some(job_json) = cached_job {
+        let job_bytes = job_json.len();
+        let t_guest = Instant::now();
+        let mut call = run_camping_guest(Some(job_json));
+        let guest_ms = t_guest.elapsed().as_millis() as u64;
+        let timing = serde_json::json!({
+            "graph": 0,
+            "junctions": 0,
+            "probe_walk": 0,
+            "buildings": 0,
+            "admin": 0,
+            "serialize": 0,
+            "guest": guest_ms,
+            "cache_hit": true,
+            "total": started.elapsed().as_millis() as u64,
+        });
+        log::info!(
+            target: "NaviCamping",
+            "suggest_along_route via=wasmtime cache_hit job_bytes={job_bytes} timing={timing}"
+        );
+        call.result_json = merge_guest_meta(
+            call.result_json,
+            timing,
+            call.peak_guest_memory_bytes,
+        );
+        call.elapsed_ms = started.elapsed().as_millis() as u64;
+        return call;
+    }
+
     let routing_profile = routing_profile_for_travel(travel_profile);
     let route_points: Vec<(f64, f64)> = waypoints.iter().map(|w| (w[0], w[1])).collect();
     let t_graph = Instant::now();
@@ -830,17 +887,15 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
     let graph_ms = t_graph.elapsed().as_millis() as u64;
 
     let t_junc = Instant::now();
-    let seeds = find_road_track_junctions(&graph, &waypoints, CORRIDOR_SEED_RADIUS_M);
+    let mut seeds = find_road_track_junctions(&graph, &waypoints, CORRIDOR_SEED_RADIUS_M);
+    seeds.truncate(80);
     let junction_ms = t_junc.elapsed().as_millis() as u64;
 
     let t_walk = Instant::now();
-    let mut probes: Vec<(f64, f64)> = Vec::new();
-    for seed in &seeds {
-        if let Some(p) = probe_along_track(&graph, seed, DEFAULT_TRACK_WALK_M, None) {
-            probes.push((p.lat, p.lon));
-        } else {
-            probes.push((seed.lat, seed.lon));
-        }
+    let walked = probe_along_tracks(&graph, &seeds, DEFAULT_TRACK_WALK_M, None);
+    let mut probes: Vec<(f64, f64)> = walked.iter().map(|p| (p.lat, p.lon)).collect();
+    if probes.is_empty() {
+        probes = seeds.iter().map(|s| (s.lat, s.lon)).collect();
     }
     let probe_walk_ms = t_walk.elapsed().as_millis() as u64;
 
@@ -850,26 +905,19 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
     let buildings_ms = t_bldg.elapsed().as_millis() as u64;
 
     let t_admin = Instant::now();
-    let countries: Vec<(f64, f64, String)> = probes
-        .iter()
-        .map(|&(lat, lon)| {
-            (
-                lat,
-                lon,
-                admin_region_at(lat, lon)
-                    .country_iso
-                    .unwrap_or_else(|| "unknown".into()),
-            )
-        })
-        .collect();
-    let subdivisions: Vec<(f64, f64, String)> = probes
-        .iter()
-        .filter_map(|&(lat, lon)| {
-            admin_region_at(lat, lon)
-                .subdivision_iso
-                .map(|iso| (lat, lon, iso))
-        })
-        .collect();
+    let mut countries: Vec<(f64, f64, String)> = Vec::with_capacity(probes.len());
+    let mut subdivisions: Vec<(f64, f64, String)> = Vec::new();
+    for &(lat, lon) in &probes {
+        let ar = admin_region_at(lat, lon);
+        countries.push((
+            lat,
+            lon,
+            ar.country_iso.unwrap_or_else(|| "unknown".into()),
+        ));
+        if let Some(iso) = ar.subdivision_iso {
+            subdivisions.push((lat, lon, iso));
+        }
+    }
     let admin_ms = t_admin.elapsed().as_millis() as u64;
 
     let safety: OvernightSafety = (&load_safety(&data_dir).unwrap_or_default()).into();
@@ -897,6 +945,13 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
     let job_json = job.to_string();
     let job_bytes = job_json.len();
     let serialize_ms = t_ser.elapsed().as_millis() as u64;
+    if let Some(session) = session_lock()
+        .lock()
+        .expect("camping session lock")
+        .as_mut()
+    {
+        session.suggest_job_cache = Some((cache_key, job_json.clone()));
+    }
 
     let t_guest = Instant::now();
     let mut call = run_camping_guest(Some(job_json));
@@ -909,6 +964,7 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
         "admin": admin_ms,
         "serialize": serialize_ms,
         "guest": guest_ms,
+        "cache_hit": false,
         "total": started.elapsed().as_millis() as u64,
     });
     log::info!(
