@@ -154,6 +154,61 @@ fn corridor_needs_extra_stems(primary_stem: &str, bbox: Option<[f64; 4]>) -> boo
     }
 }
 
+/// True when a hop endpoint lies in a Ready **leaf** that is not the primary
+/// stem (and not a child of it). Country AABBs routinely contain foreign leaves
+/// (Denmark over Skåne); without this, `corridor_needs_extra_stems` stays false
+/// and the destination leaf never loads — densify centroids then snap-fail.
+fn corridor_needs_extra_for_endpoint_leaves(
+    primary_stem: &str,
+    route_points: Option<&[(f64, f64)]>,
+    dirs: &[&Path],
+) -> bool {
+    let Some(pts) = route_points else {
+        return false;
+    };
+    if pts.is_empty() {
+        return false;
+    }
+    let Some(primary_path) = pbf_stem_to_geofabrik_path(primary_stem) else {
+        return false;
+    };
+    let primary_prefix = format!("{primary_path}/");
+    for data_dir in dirs {
+        let Ok(entries) = fs::read_dir(data_dir) else {
+            continue;
+        };
+        for ent in entries.flatten() {
+            let name = ent.file_name();
+            let name = name.to_string_lossy();
+            let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+                continue;
+            };
+            if stem == primary_stem {
+                continue;
+            }
+            let Some(path) = pbf_stem_to_geofabrik_path(stem) else {
+                continue;
+            };
+            if path.matches('/').count() < 2 {
+                continue;
+            }
+            if path == primary_path || path.starts_with(&primary_prefix) {
+                continue;
+            }
+            let Some(region) = region_bbox(&path) else {
+                continue;
+            };
+            if pts
+                .iter()
+                .any(|&(lat, lon)| crate::routing::basemap::bbox_covers_point(region, lat, lon))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn load_ready_manifest(data_dir: &Path, stem: &str) -> Result<NaviManifest, PackLoadError> {
     let man_path = manifest_path(data_dir, stem);
     if !man_path.is_file() {
@@ -845,7 +900,8 @@ fn try_load_graph_for_plan_corridor_dirs(
         .map(|b| expand_bbox_deg(b, 0.05))
         .or(clip_bbox);
 
-    let need_extra = corridor_needs_extra_stems(&stem, stem_clip.or(clip_bbox));
+    let need_extra = corridor_needs_extra_stems(&stem, stem_clip.or(clip_bbox))
+        || corridor_needs_extra_for_endpoint_leaves(&stem, route_points, dirs);
     let mut extras = if need_extra {
         if let Some(segs) = segs_ref {
             extra_corridor_manifests_segs(dirs, &stem, segs)
@@ -1854,7 +1910,8 @@ mod merge_tile_graphs_tests {
 
 #[cfg(test)]
 mod multi_stem_corridor_tests {
-    use super::{bbox_contained, corridor_needs_extra_stems};
+    use super::{bbox_contained, corridor_needs_extra_for_endpoint_leaves, corridor_needs_extra_stems};
+    use std::fs;
 
     #[test]
     fn bbox_contained_requires_full_inclusion() {
@@ -1878,6 +1935,38 @@ mod multi_stem_corridor_tests {
         ));
         // No bbox → never pull extras.
         assert!(!corridor_needs_extra_stems("ostlandet-latest", None));
+    }
+
+    #[test]
+    fn corridor_needs_extra_when_endpoint_in_foreign_ready_leaf() {
+        // Denmark AABB contains Skåne; bbox-only gate would skip extras. A Ready
+        // Skåne leaf covering the destination must still force multi-stem load.
+        let dir = tempfile::tempdir().expect("tmpdir");
+        fs::write(
+            dir.path().join("skane-latest.navi-manifest.json"),
+            r#"{"schema":1,"stem":"skane-latest","pbf_filename":"skane-latest.osm.pbf","graph_files":{},"graph_format_version":9}"#,
+        )
+        .unwrap();
+        let pts = [(55.626_f64, 12.144_f64), (55.910_f64, 13.525_f64)];
+        assert!(
+            corridor_needs_extra_for_endpoint_leaves("denmark-latest", Some(&pts), &[dir.path()]),
+            "Skåne Ready leaf covering hop end must force extras under Denmark primary"
+        );
+        // Same-stem family: Ostlandet primary with only Ostlandet leaf present.
+        fs::write(
+            dir.path().join("ostlandet-latest.navi-manifest.json"),
+            r#"{"schema":1,"stem":"ostlandet-latest","pbf_filename":"ostlandet-latest.osm.pbf","graph_files":{},"graph_format_version":9}"#,
+        )
+        .unwrap();
+        let no_pts = [(60.5_f64, 10.5_f64), (61.0_f64, 11.0_f64)];
+        assert!(
+            !corridor_needs_extra_for_endpoint_leaves(
+                "ostlandet-latest",
+                Some(&no_pts),
+                &[dir.path()]
+            ),
+            "in-stem Ostlandet endpoints must not force foreign extras"
+        );
     }
 }
 
