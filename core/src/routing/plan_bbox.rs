@@ -292,7 +292,13 @@ pub fn densify_route_points_via_regions_dirs(
         let is_spine = spine_set.contains(&(p.0.to_bits(), p.1.to_bits()));
         let forced = is_via || is_spine;
         if t - last_t < 0.04 && !filtered.is_empty() && !forced {
-            continue;
+            // OD progress_t can cluster far-apart leaves (SH vs Skåne on a NW
+            // chord). Keep the new point when it is a real geographic hop.
+            let prev = filtered.last().map(|(_, q)| *q).unwrap_or(start);
+            let geo = cheb(prev, p);
+            if geo < LONG_TRIP_CHUNK_DEG * 0.75 {
+                continue;
+            }
         }
         let d_end = cheb(p, end);
         if !forced && d_end >= best_to_end - 1e-6 {
@@ -1682,15 +1688,18 @@ mod tests {
             "border-spill leaf proxies (Hovedstaden∩Skåne) must not be densify hops; hops={hops:?}"
         );
         let _ = (sh, halland);
+        let has_skane = hops.iter().any(|(lat, lon)| {
+            (lat - 55.91).abs() < 0.08 && (lon - 13.525).abs() < 0.25
+        });
+        assert!(
+            has_skane,
+            "Skåne leaf must survive t-dedup on NW OD densify; hops={hops:?}"
+        );
         assert!(
             hops.len() >= 6,
             "corridor must still densify into multiple land hops; hops={}",
             hops.len()
         );
-        // Prefer land-safe hops: no hop may start at SH and end on the open-sea
-        // mid that failed the campaign (already checked). Remaining long hops
-        // are OK only if gap-fill could not find land (depth-capped); the
-        // critical invariant is no multi-country water endpoint.
     }
 
     /// Geography-agnostic: a point covered by two country boxes is spill/water.
