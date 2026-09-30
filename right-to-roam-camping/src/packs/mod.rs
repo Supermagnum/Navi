@@ -1,11 +1,13 @@
 //! Explicit rule packs — no shared Default; every field set per pack.
 
+mod finland;
 mod norway;
 mod sweden;
 mod svalbard;
 mod tier_d;
 mod validate;
 
+pub use finland::{aland_tier_d_pack, finland_pack};
 pub use norway::norway_pack;
 pub use sweden::sweden_pack;
 pub use svalbard::svalbard_decline_pack;
@@ -174,10 +176,22 @@ impl RulePack {
 /// Resolve pack for a point. Subdivision required for Scotland (GB-SCT) and AX.
 pub fn pack_for_location(country_iso: Option<&str>, subdivision_iso: Option<&str>) -> RulePack {
     let c = country_iso.map(|s| s.to_ascii_lowercase());
-    let _sub = subdivision_iso.map(|s| s.to_ascii_uppercase());
+    let sub = subdivision_iso.map(|s| s.to_ascii_uppercase());
     match c.as_deref() {
         Some("no") => norway_pack(),
         Some("se") => sweden_pack(),
+        Some("fi") => {
+            if sub
+                .as_deref()
+                .map(|s| s == "AX" || s.ends_with("-AX") || s.contains("ALAND") || s.contains("ÅLAND"))
+                .unwrap_or(false)
+            {
+                aland_tier_d_pack()
+            } else {
+                finland_pack()
+            }
+        }
+        Some("ax") => aland_tier_d_pack(),
         Some("sj") => svalbard_decline_pack(),
         Some(other) => tier_d_pack(other),
         None => tier_d_pack("unknown"),
@@ -191,7 +205,13 @@ pub fn pack_for_country(country_iso: Option<&str>) -> RulePack {
 
 /// All Tier A / special packs that ship in Phase 3a (for validators + retention).
 pub fn builtin_enabled_packs() -> Vec<RulePack> {
-    vec![norway_pack(), sweden_pack(), svalbard_decline_pack()]
+    vec![
+        norway_pack(),
+        sweden_pack(),
+        finland_pack(),
+        aland_tier_d_pack(),
+        svalbard_decline_pack(),
+    ]
 }
 
 pub fn in_cmz_season(policy: &CmzPolicy, d: crate::host::LocalDate) -> bool {
