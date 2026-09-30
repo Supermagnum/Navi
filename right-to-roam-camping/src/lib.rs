@@ -14,15 +14,19 @@ pub use candidates::{
 };
 pub use card::{CampingCard, DeclineKind, SuggestionList};
 pub use engine::{
-    cloudberry_decision, suggest_overnight, CloudberryDecision, ProbeLogEntry, SuggestInput,
-    SuggestOutcome,
+    cloudberry_decision, suggest_overnight, suggest_overnight_fixed_probes, CloudberryDecision,
+    ProbeLogEntry, SuggestInput, SuggestOutcome,
 };
 pub use fire::{
     fire_guidance_norway, in_norway_fire_ban_window, local_date_europe_oslo_from_utc, FireGuidance,
     BARE_ROCK_NOTE, CAUTIOUS_FIRE_UNKNOWN_DATE, LEAVE_NO_TRACE_NOTE, PROTECTED_SPECIES_NOTE,
 };
 pub use host::{CampingHost, LocalDate, TravelMode};
-pub use night_store::{location_id_from_lat_lon, NightStore, LOCATION_GRID_DEG};
+pub use night_store::{
+    default_night_store_retention_days, delete_night_store_file, location_id_from_lat_lon,
+    night_store_retention_days, on_camping_plugin_enable_changed, NightRecord, NightStore,
+    LOCATION_GRID_DEG,
+};
 pub use packs::{PackId, RulePack, Tier};
 
 /// Layers the host cannot check yet — shown on every Tier A card.

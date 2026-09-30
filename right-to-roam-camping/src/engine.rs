@@ -56,6 +56,108 @@ pub struct ProbeLogEntry {
     pub road_highway: String,
 }
 
+/// Evaluate fixed lat/lon probes through the same Norway filters as
+/// [`suggest_overnight`] (no graph / track walk). Used for glacier probes and
+/// wasm guest parity when the host already selected candidates.
+pub fn suggest_overnight_fixed_probes(
+    host: &mut dyn CampingHost,
+    probes: &[(f64, f64)],
+    max_suggestions: Option<usize>,
+) -> SuggestOutcome {
+    let mut list = SuggestionList::new();
+    list.seeds_considered = probes.len();
+    let mut probe_log = Vec::new();
+
+    let Some(safety) = host.safety_config() else {
+        list.cards.push(CampingCard {
+            lat: probes.first().map(|p| p.0).unwrap_or(0.0),
+            lon: probes.first().map(|p| p.1).unwrap_or(0.0),
+            accepted: false,
+            decline: Some(DeclineKind::HardFilter),
+            reject_reason: Some("safety_config_unavailable".into()),
+            tier: Tier::D,
+            country_iso: "unknown".into(),
+            subdivision_iso: None,
+            legal_basis: "SafetyConfig unavailable — wild camp declined".into(),
+            sources: vec![],
+            fire_text: None,
+            bare_rock_note: None,
+            notes: vec![
+                "Building-distance rule cannot be checked without SafetyConfig; \
+declining wild-camp suggestions (campsites only)."
+                    .into(),
+            ],
+            not_checked: NotCheckedLayers::both_unknown(),
+            disclaimer: crate::DISCLAIMER.into(),
+            location_id: "n/a".into(),
+            seed_road_highway: None,
+            walk_m: None,
+        });
+        return SuggestOutcome {
+            list,
+            seeds: Vec::new(),
+            probe_log,
+        };
+    };
+
+    let clock = host.clock_local();
+    let wild_poi = wild_camp_poi();
+    for &(lat, lon) in probes {
+        let seed = RoadTrackSeed {
+            lat,
+            lon,
+            node: osm4routing::NodeId(0),
+            road_highway: "track".into(),
+            rank: crate::candidates::JunctionRank::Preferred,
+            track_edge_idx: 0,
+            track_continues_m: 500.0,
+        };
+        let probe = ProbePoint {
+            lat,
+            lon,
+            seed: seed.clone(),
+            walk_m: 0.0,
+        };
+        match evaluate_probe(host, &safety, &wild_poi, &probe, clock) {
+            ProbeDecision::Accept(card) => {
+                probe_log.push(ProbeLogEntry {
+                    lat,
+                    lon,
+                    accepted: true,
+                    reason: "accepted".into(),
+                    road_highway: "track".into(),
+                });
+                list.probes_accepted += 1;
+                list.cards.push(card);
+                if let Some(max) = max_suggestions {
+                    if list.probes_accepted >= max {
+                        break;
+                    }
+                }
+            }
+            ProbeDecision::Reject { reason, card } => {
+                probe_log.push(ProbeLogEntry {
+                    lat,
+                    lon,
+                    accepted: false,
+                    reason,
+                    road_highway: "track".into(),
+                });
+                list.probes_rejected += 1;
+                if let Some(c) = card {
+                    list.cards.push(c);
+                }
+            }
+        }
+    }
+
+    SuggestOutcome {
+        list,
+        seeds: Vec::new(),
+        probe_log,
+    }
+}
+
 /// Run the Phase 2 camping engine against a loaded graph + host backends.
 pub fn suggest_overnight(
     host: &mut dyn CampingHost,
