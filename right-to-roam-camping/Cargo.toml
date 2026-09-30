@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 driver-break-core = { path = "../core" }
 osm4routing = { workspace = true }
 serde = { workspace = true }

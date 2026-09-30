@@ -18,8 +18,8 @@ pub use engine::{
     SuggestOutcome,
 };
 pub use fire::{
-    fire_guidance_norway, FireGuidance, BARE_ROCK_NOTE, CAUTIOUS_FIRE_UNKNOWN_DATE,
-    LEAVE_NO_TRACE_NOTE, PROTECTED_SPECIES_NOTE,
+    fire_guidance_norway, in_norway_fire_ban_window, local_date_europe_oslo_from_utc, FireGuidance,
+    BARE_ROCK_NOTE, CAUTIOUS_FIRE_UNKNOWN_DATE, LEAVE_NO_TRACE_NOTE, PROTECTED_SPECIES_NOTE,
 };
 pub use host::{CampingHost, LocalDate, TravelMode};
 pub use night_store::{location_id_from_lat_lon, NightStore, LOCATION_GRID_DEG};

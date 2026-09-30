@@ -58,6 +58,7 @@ png = "0.18"
 rkyv = { version = "0.8", features = ["alloc"] }
 memmap2 = "0.9"
 chrono = { version = "0.4", default-features = true, features = ["clock"] }
+chrono-tz = "0.10"
 # opening-hours 2.x is stable on our pinned toolchain (1.98).
 opening-hours = "=2.1.4"
 roxmltree = "0.21"
