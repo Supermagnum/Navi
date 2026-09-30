@@ -1809,4 +1809,101 @@ mod tests {
         let lillehammer = (61.115_f64, 10.467_f64);
         assert!(!densify_centroid_overshoots_via(stendal, sh, lillehammer));
     }
+
+    /// Geography-agnostic gap-fill: overlapping country AABBs must not receive
+    /// the geometric chord mid; a leaf-covered land centroid must be preferred.
+    #[test]
+    fn densify_insert_land_safe_mids_skips_synthetic_sea_spill() {
+        let ready = vec![
+            (
+                "europe/westland".to_string(),
+                [0.0_f64, 0.0, 10.0, 10.0],
+            ),
+            (
+                "europe/eastland".to_string(),
+                [0.0_f64, 5.0, 10.0, 15.0],
+            ),
+            (
+                "europe/westland/coast".to_string(),
+                [2.0_f64, 1.0, 8.0, 4.5],
+            ),
+            (
+                "europe/eastland/coast".to_string(),
+                [2.0_f64, 10.5, 8.0, 14.0],
+            ),
+        ];
+        let west_c = (5.0_f64, 2.75_f64);
+        let east_c = (5.0_f64, 12.25_f64);
+        let centroids = vec![west_c, east_c];
+        let a = (5.0_f64, 2.0_f64);
+        let b = (5.0_f64, 13.0_f64);
+        let mid = ((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5);
+        assert!(
+            densify_point_in_multi_country_spill(mid, &ready),
+            "synthetic chord mid must sit in westland∩eastland spill"
+        );
+        let mut out = Vec::new();
+        insert_land_safe_mids(&mut out, a, b, &centroids, &ready, 4.0, 0);
+        assert!(
+            !out.iter().any(|(lat, lon)| {
+                (lat - mid.0).abs() < 1e-6 && (lon - mid.1).abs() < 1e-6
+            }),
+            "must not insert multi-country spill mid; out={out:?}"
+        );
+        assert!(
+            !out.is_empty(),
+            "must still densify via a land-safe leaf centroid; out={out:?}"
+        );
+        for &p in &out {
+            assert!(
+                !densify_point_in_multi_country_spill(p, &ready),
+                "inserted hop must not be spill; p={p:?} out={out:?}"
+            );
+            assert!(
+                densify_point_has_leaf_cover(p, &ready),
+                "inserted hop must have leaf cover; p={p:?} out={out:?}"
+            );
+        }
+    }
+
+    /// Non-Baltic corridor: Brussels→London must not densify onto English
+    /// Channel water covered by France∩UK country AABBs.
+    #[test]
+    fn densify_rejects_channel_water_mid_on_be_uk_corridor() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        for stem in [
+            "belgium-latest",
+            "france-latest",
+            "england-latest",
+            "greater-london-latest",
+        ] {
+            let path = dir.path().join(format!("{stem}.navi-manifest.json"));
+            std::fs::write(
+                &path,
+                format!(
+                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":{GRAPH_FORMAT_VERSION}}}"#
+                ),
+            )
+            .unwrap();
+        }
+        let brussels = (50.8503_f64, 4.3517_f64);
+        let london = (51.5074_f64, -0.1278_f64);
+        let hops =
+            densify_route_points_via_regions(&[brussels, london], dir.path(), LONG_TRIP_CHUNK_DEG);
+        let channel_mid = ((brussels.0 + london.0) * 0.5, (brussels.1 + london.1) * 0.5);
+        let on_channel_chord = hops.iter().any(|(lat, lon)| {
+            (lat - channel_mid.0).abs() < 0.2 && (lon - channel_mid.1).abs() < 0.35
+        });
+        assert!(
+            !on_channel_chord,
+            "Brussels→London must not densify onto Channel water mid; hops={hops:?}"
+        );
+        // Overshoot-via remains geometry-agnostic: a point past an imminent via
+        // on the approach axis is skipped; a land-bridge dip is kept.
+        let calais = (50.95_f64, 1.85_f64);
+        let dover = (51.13_f64, 1.31_f64);
+        let past_dover = (51.20_f64, 0.50_f64);
+        assert!(densify_centroid_overshoots_via(calais, past_dover, dover));
+        assert!(!densify_centroid_overshoots_via(brussels, calais, london));
+    }
 }
