@@ -25,7 +25,7 @@ Repo: https://github.com/Supermagnum/Navi.git
 Builds:
   - versionName: 0.3.6-beta
     versionCode: 11
-    commit: 17f0c8b6
+    commit: 2ae24b3be0288e6b7f00e67be9b18d41a88e1b6f
     timeout: 14400
     subdir: app
     sudo:
@@ -39,9 +39,10 @@ Builds:
         pkg-config
         libssl-dev
       - update-java-alternatives -a || true
+    gradle: yes
     rm:
-      - src/main/jniLibs/arm64-v8a/libnavi.so
-      - src/main/jniLibs/x86_64/libnavi.so
+      - app/src/main/jniLibs/arm64-v8a/libnavi.so
+      - app/src/main/jniLibs/x86_64/libnavi.so
     prebuild:
       - export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${HOME}/.cargo/bin:${PATH:-}"
       - |
@@ -76,8 +77,8 @@ Builds:
       - rustup target list --installed
       - export ANDROID_NDK_HOME="$$NDK$$"
       - export ANDROID_HOME="$$SDK$$"
-      - test ! -e src/main/jniLibs/arm64-v8a/libnavi.so
-      - test ! -e src/main/jniLibs/x86_64/libnavi.so
+      - test ! -e ../app/src/main/jniLibs/arm64-v8a/libnavi.so
+      - test ! -e ../app/src/main/jniLibs/x86_64/libnavi.so
       - ../scripts/build-android-native.sh aarch64-linux-android release
       - ../scripts/build-android-native.sh x86_64-linux-android release
       - test -f ../app/src/main/jniLibs/arm64-v8a/libnavi.so
@@ -87,15 +88,14 @@ Builds:
       - sha256sum ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
       - gradle assembleRelease
     ndk: r27c
-    gradle:
-      - yes
 
 MaintainerNotes: |
   Local F-Droid buildability check metadata (not the fdroiddata submission).
-  Rust 1.98.0 is installed in prebuild as the fdroid build user (not only root),
-  with aarch64-linux-android, x86_64-linux-android, and wasm32-unknown-unknown.
-  rm: lists only files (prebuilt libnavi.so). Each ABI is built once via
-  scripts/build-android-native.sh, which stages plugin.wasm.
+  sudo: installs apt packages only (no rustup package, no rustup as root).
+  Rust 1.98.0 is installed in prebuild as the fdroid build user, with
+  aarch64-linux-android, x86_64-linux-android, and wasm32-unknown-unknown.
+  rm: repo-root paths to prebuilt libnavi.so only.
+  build: one scripts/build-android-native.sh per ABI, asserts plugin.wasm, then Gradle.
   Shipped ABIs: arm64-v8a and x86_64.
 
 ArchivePolicy: 0 versions
