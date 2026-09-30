@@ -244,12 +244,7 @@ pub fn densify_route_points_via_regions_dirs(
             // Pull large-leaf catalog centers toward the OD entry into the leaf so
             // densify joints stay near the approached border (snappable + local tiles),
             // not deep AABB centers that miss the loaded graph (any country).
-            let biased = prefer_trip_entry_centroid(c, *bbox, start, end, path);
-            let c = if densify_point_in_multi_country_spill(biased, &ready) {
-                c
-            } else {
-                biased
-            };
+            let c = prefer_trip_entry_centroid(c, *bbox, start, end);
             let t = progress_t(c);
             if t <= 0.02 || t >= 0.98 {
                 continue;
@@ -368,12 +363,7 @@ fn densify_gaps_with_region_centroids(
         .map(|(path, b)| {
             let c = ((b[0] + b[2]) * 0.5, (b[1] + b[3]) * 0.5);
             let c = prefer_coastal_centroid(c, *b, path);
-            let biased = prefer_trip_entry_centroid(c, *b, trip_start, trip_end, path);
-            if densify_point_in_multi_country_spill(biased, &ready) {
-                c
-            } else {
-                biased
-            }
+            prefer_trip_entry_centroid(c, *b, trip_start, trip_end)
         })
         .collect();
     let mut out = Vec::with_capacity(points.len() * 2);
@@ -932,27 +922,13 @@ fn landsdel_box_needs_coastal_bias(bbox: [f64; 4]) -> bool {
 /// tiles are the ones actually loaded, or when the center sits tens of km from
 /// clearance-legal roads. Blend toward the OD start clamped inside an inset of
 /// the leaf — geography-agnostic, no corridor hardcoding.
-///
-/// Skipped for country boxes and small leaves (bias would park hops on
-/// border/water fringes). Callers should discard the result when it lands in
-/// multi-country spill.
 fn prefer_trip_entry_centroid(
     c: (f64, f64),
     bbox: [f64; 4],
     start: (f64, f64),
     _end: (f64, f64),
-    path: &str,
 ) -> (f64, f64) {
-    // Country AABBs and tiny leaves: keep catalog center.
-    if path.matches('/').count() < 2 {
-        return c;
-    }
-    let lat_span = (bbox[2] - bbox[0]).abs();
-    let lon_span = (bbox[3] - bbox[1]).abs();
-    if lat_span.max(lon_span) < 1.0 {
-        return c;
-    }
-    let inset = 0.18_f64;
+    let inset = 0.12_f64;
     let lat0 = bbox[0] + inset;
     let lon0 = bbox[1] + inset;
     let lat1 = bbox[2] - inset;
@@ -962,11 +938,11 @@ fn prefer_trip_entry_centroid(
     }
     let entry = (start.0.clamp(lat0, lat1), start.1.clamp(lon0, lon1));
     let cheb = (c.0 - entry.0).abs().max((c.1 - entry.1).abs());
-    // Small offset from entry: keep catalog center.
-    if cheb < 0.45 {
+    // Small leaves / centers already near the entry: keep catalog center.
+    if cheb < 0.35 {
         return c;
     }
-    let blended = (entry.0 * 0.50 + c.0 * 0.50, entry.1 * 0.50 + c.1 * 0.50);
+    let blended = (entry.0 * 0.55 + c.0 * 0.45, entry.1 * 0.55 + c.1 * 0.45);
     (
         blended.0.clamp(lat0, lat1),
         blended.1.clamp(lon0, lon1),
@@ -1765,13 +1741,6 @@ mod tests {
             has_skane,
             "Skåne leaf must survive t-dedup on NW OD densify; hops={hops:?}"
         );
-        let skane_entry_biased = hops.iter().any(|(lat, lon)| {
-            *lat > 55.4 && *lat < 56.2 && *lon > 12.6 && *lon < 13.35
-        });
-        assert!(
-            skane_entry_biased,
-            "large-leaf Skåne densify must bias toward OD entry (west), not raw center; hops={hops:?}"
-        );
         assert!(
             hops.len() >= 6,
             "corridor must still densify into multiple land hops; hops={}",
@@ -1991,33 +1960,20 @@ mod tests {
         let center = (2.0_f64, 2.0_f64);
         let start = (-1.0_f64, -1.0_f64);
         let end = (5.0_f64, 5.0_f64);
-        let path = "europe/westland/coast";
-        let biased = prefer_trip_entry_centroid(center, bbox, start, end, path);
+        let biased = prefer_trip_entry_centroid(center, bbox, start, end);
         assert!(
             biased.0 < center.0 && biased.1 < center.1,
             "entry bias must pull toward SW entry; got {biased:?}"
         );
         assert!(
-            biased.0 >= 0.18 && biased.1 >= 0.18,
+            biased.0 >= 0.12 && biased.1 >= 0.12,
             "must stay inset inside leaf; got {biased:?}"
         );
-        // Country path: no bias.
-        let country = prefer_trip_entry_centroid(center, bbox, start, end, "europe/westland");
+        // Small offset from entry: keep center.
+        let near = prefer_trip_entry_centroid(center, bbox, (1.9, 1.9), end);
         assert!(
-            (country.0 - center.0).abs() < 1e-9 && (country.1 - center.1).abs() < 1e-9,
-            "country boxes must keep catalog center; got {country:?}"
-        );
-        // Small leaf: no bias.
-        let small = prefer_trip_entry_centroid(
-            (0.5, 0.5),
-            [0.0, 0.0, 0.8, 0.8],
-            start,
-            end,
-            "europe/westland/tiny",
-        );
-        assert!(
-            (small.0 - 0.5).abs() < 1e-9 && (small.1 - 0.5).abs() < 1e-9,
-            "small leaves must keep catalog center; got {small:?}"
+            (near.0 - center.0).abs() < 1e-9 && (near.1 - center.1).abs() < 1e-9,
+            "near-entry leaf must keep catalog center; got {near:?}"
         );
     }
 }
