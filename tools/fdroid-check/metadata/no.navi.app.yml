@@ -1,8 +1,16 @@
+AntiFeatures:
+  TetheredNet:
+    en-US: Optional map downloads use Geofabrik OpenStreetMap extracts, OpenFreeMap
+      for online basemap tiles, and Mapterhorn for elevation data. Routing and navigation
+      run offline after those files are on the device.
+Categories:
+  - Navigation
 License: GPL-3.0-or-later
 AuthorName: Navi contributors
 WebSite: https://github.com/Supermagnum/Navi
 SourceCode: https://github.com/Supermagnum/Navi
 IssueTracker: https://github.com/Supermagnum/Navi/issues
+Changelog: https://github.com/Supermagnum/Navi/releases
 Donate: https://github.com/Supermagnum/Navi#support-navi
 
 AutoName: Navi
@@ -11,13 +19,13 @@ RepoType: git
 Repo: https://github.com/Supermagnum/Navi.git
 
 # Convenience prebuilts under jniLibs/ are for local/CI Gradle-only assemble.
-# F-Droid must not package them: prebuild deletes them, then cross-compiles from
-# Rust source (see Builds[].prebuild / Builds[].build).
+# F-Droid must not package them: rm: deletes those files, then the recipe
+# cross-compiles from Rust source.
 
 Builds:
   - versionName: 0.3.6-beta
     versionCode: 11
-    commit: PLACEHOLDER_COMMIT
+    commit: 17f0c8b6
     timeout: 14400
     subdir: app
     sudo:
@@ -30,21 +38,21 @@ Builds:
         python3
         pkg-config
         libssl-dev
-      # Non-fatal on images where alternatives are already set.
       - update-java-alternatives -a || true
-      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs
-        | bash -s -- -y --default-toolchain stable
-      # Each item is its own login shell (sudo steps do not share env).
-      - bash -lc 'source "$HOME/.cargo/env" && rustup toolchain install 1.98.0 --profile
-        minimal'
-      - bash -lc 'source "$HOME/.cargo/env" && rustup default 1.98.0'
-      - bash -lc 'source "$HOME/.cargo/env" && rustup target add aarch64-linux-android
-        x86_64-linux-android wasm32-unknown-unknown'
-    # List form: fdroidserver joins with "; " and runs under bash -e -u -o pipefail,
-    # so a failed step still aborts the recipe (same fail-fast as former && chains).
+    rm:
+      - src/main/jniLibs/arm64-v8a/libnavi.so
+      - src/main/jniLibs/x86_64/libnavi.so
     prebuild:
-      - export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${CARGO_HOME:-$HOME/.cargo}/bin:${PATH:-}"
-      - . "${CARGO_HOME:-$HOME/.cargo}/env" 2>/dev/null || true
+      - export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${HOME}/.cargo/bin:${PATH:-}"
+      - |
+        if ! command -v rustup >/dev/null 2>&1; then
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y --default-toolchain 1.98.0 --profile minimal
+        fi
+      - . "$HOME/.cargo/env"
+      - rustup toolchain install 1.98.0 --profile minimal
+      - rustup default 1.98.0
+      - rustup target add aarch64-linux-android x86_64-linux-android wasm32-unknown-unknown
+      - rustc --version
       - NDK="$$NDK$$"
       - test -n "$NDK"
       - test -d "$NDK"
@@ -60,18 +68,16 @@ Builds:
           "linker = \"$CLANG_PRE/aarch64-linux-android34-clang\"" \
           'rustflags = ["-C", "link-arg=-lc++_shared"]' \
           > ../.cargo/config.toml
-      - rm -f ../app/src/main/jniLibs/*/libnavi.so
       - printf 'sdk.dir=%s\nndk.dir=%s\n' "$$SDK$$" "$$NDK$$" > ../local.properties
     build:
-      - export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${CARGO_HOME:-$HOME/.cargo}/bin:${PATH:-}"
-      - . "${CARGO_HOME:-$HOME/.cargo}/env" 2>/dev/null || true
+      - export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${HOME}/.cargo/bin:${PATH:-}"
+      - . "$HOME/.cargo/env"
+      - rustc --version
+      - rustup target list --installed
       - export ANDROID_NDK_HOME="$$NDK$$"
       - export ANDROID_HOME="$$SDK$$"
-      - test ! -e ../app/src/main/jniLibs/arm64-v8a/libnavi.so
-      - test ! -e ../app/src/main/jniLibs/x86_64/libnavi.so
-      # plugin.wasm staged by build-android-native.sh (build-plugin-wasm.sh).
-      # Do not also call build-plugin-wasm.sh here — redundant with that script and
-      # with Gradle preBuild (buildPluginWasm) during assembleRelease.
+      - test ! -e src/main/jniLibs/arm64-v8a/libnavi.so
+      - test ! -e src/main/jniLibs/x86_64/libnavi.so
       - ../scripts/build-android-native.sh aarch64-linux-android release
       - ../scripts/build-android-native.sh x86_64-linux-android release
       - test -f ../app/src/main/jniLibs/arm64-v8a/libnavi.so
@@ -86,25 +92,11 @@ Builds:
 
 MaintainerNotes: |
   Local F-Droid buildability check metadata (not the fdroiddata submission).
-  Real shipped ABIs (app/build.gradle.kts abiFilters + verified release APK):
-  arm64-v8a and x86_64 only — not armeabi / armeabi-v7a / x86 / mips / mips64.
-  Per ABI: libnavi.so, libmaplibre.so, libjnidispatch.so,
-  libandroidx.graphics.path.so. No libc++_shared.so in the packaged APK.
-  Rust via rustup in sudo:; .cargo/config.toml rewritten from $$NDK$$ in prebuild.
-  dependenciesInfo.includeInApk/Bundle are false in app/build.gradle.kts.
-  libnavi.so: prebuild rm removes committed jniLibs prebuilts; build:
-  runs scripts/build-android-native.sh (which stages wasm guests via
-  build-plugin-wasm.sh into app/src/main/assets/plugins/, never committed)
-  for aarch64 and x86_64 before assembleRelease.
-  Explicit recipe build-plugin-wasm.sh is redundant with that and with Gradle
-  preBuild; keep Gradle preBuild for local Gradle-only assembles.
-  plugin.wasm sha256 matches across clean trees in different directories.
-  Phase 5a: navi-ffi links navi-plugin-host (wasmtime 48 Cranelift JIT).
-  Shipped ABIs arm64-v8a + x86_64 both have Cranelift; no armeabi-v7a.
-  io.opencensus: AGP Unified Test Platform host tooling only
-  (com.google.testing.platform via com.android.tools.utp) — not on
-  releaseRuntimeClasspath, not shipped in the APK, not used for app telemetry.
-  Do not globally exclude (breaks instrumented-test UTP). False-positive tracker flag.
+  Rust 1.98.0 is installed in prebuild as the fdroid build user (not only root),
+  with aarch64-linux-android, x86_64-linux-android, and wasm32-unknown-unknown.
+  rm: lists only files (prebuilt libnavi.so). Each ABI is built once via
+  scripts/build-android-native.sh, which stages plugin.wasm.
+  Shipped ABIs: arm64-v8a and x86_64.
 
 ArchivePolicy: 0 versions
 CurrentVersion: 0.3.6-beta
