@@ -278,6 +278,12 @@ pub fn densify_route_points_via_regions_dirs(
         .iter()
         .map(|(_, p)| (p.0.to_bits(), p.1.to_bits()))
         .collect();
+    // Explicit vias with their densify t (same order basis as anchors).
+    let via_ts: Vec<(f64, (f64, f64))> = anchors
+        .iter()
+        .copied()
+        .filter(|(_, p)| via_set.contains(&(p.0.to_bits(), p.1.to_bits())))
+        .collect();
     let mut filtered: Vec<(f64, (f64, f64))> = Vec::new();
     let mut last_t = -1.0_f64;
     let mut best_to_end = cheb(start, end);
@@ -291,6 +297,20 @@ pub fn densify_route_points_via_regions_dirs(
         let d_end = cheb(p, end);
         if !forced && d_end >= best_to_end - 1e-6 {
             continue;
+        }
+        // Skip densify centroids that overshoot an *imminent* explicit via on
+        // the approach axis. Vestlandet (60.75, 6.25) ranks just before
+        // Sognefjell on NW OD progress_t but lies west of the via, forcing a
+        // fjord loop then NE back (~350–520 km excess on Bevensen→Dalsøren).
+        // Far vias (e.g. Lillehammer) must still allow Skåne/Halland land-bridge
+        // swings that temporarily leave the via's meridian.
+        if !forced {
+            let prev = filtered.last().map(|(_, q)| *q).unwrap_or(start);
+            if let Some(&(t_via, next_via)) = via_ts.iter().find(|(tv, _)| *tv > t + 1e-9) {
+                if t_via - t < 0.15 && densify_centroid_overshoots_via(prev, p, next_via) {
+                    continue;
+                }
+            }
         }
         filtered.push((t, p));
         last_t = t;
@@ -319,7 +339,7 @@ fn densify_gaps_with_region_centroids(
     dirs: &[&std::path::Path],
     max_hop_deg: f64,
 ) -> Vec<(f64, f64)> {
-    let ready = collect_ready_region_entries_dirs(dirs);
+    let ready = densify_ready_with_leaf_proxies(collect_ready_region_entries_dirs(dirs));
     if ready.is_empty() {
         return points.to_vec();
     }
@@ -338,10 +358,41 @@ fn densify_gaps_with_region_centroids(
     for w in points.windows(2) {
         let a = w[0];
         let b = w[1];
-        insert_land_safe_mids(&mut out, a, b, &centroids, &ready, max_hop_deg);
+        insert_land_safe_mids(&mut out, a, b, &centroids, &ready, max_hop_deg, 0);
         out.push(b);
     }
     out
+}
+
+/// When a country pack is Ready but skipped because foreign leaves intersect its
+/// sea-spilling AABB (and no own leaves are Ready), inject catalog leaf bboxes as
+/// densify-only waypoints. Pack load still uses the country extract; this does not
+/// require leaf downloads or force bridges/ferries.
+fn densify_ready_with_leaf_proxies(
+    mut ready: Vec<(String, [f64; 4])>,
+) -> Vec<(String, [f64; 4])> {
+    let snapshot = ready.clone();
+    let mut seen: std::collections::HashSet<String> =
+        snapshot.iter().map(|(p, _)| p.clone()).collect();
+    for (path, _) in &snapshot {
+        let mut parts = path.split('/');
+        let (Some(_), Some(_), None) = (parts.next(), parts.next(), parts.next()) else {
+            continue;
+        };
+        if !densify_skip_country_when_leaves_ready(path, &snapshot) {
+            continue;
+        }
+        let own_prefix = format!("{path}/");
+        if snapshot.iter().any(|(p, _)| p.starts_with(&own_prefix)) {
+            continue;
+        }
+        for (leaf, bbox) in crate::routing::basemap::catalog_leaf_bboxes_under(path) {
+            if seen.insert(leaf.to_string()) {
+                ready.push((leaf.to_string(), bbox));
+            }
+        }
+    }
+    ready
 }
 
 fn collect_ready_region_entries_dirs(dirs: &[&std::path::Path]) -> Vec<(String, [f64; 4])> {
@@ -370,6 +421,50 @@ fn collect_ready_region_entries_dirs(dirs: &[&std::path::Path]) -> Vec<(String, 
         }
     }
     out
+}
+
+/// True when densify centroid `c` lies past explicit via `via` relative to `prev`
+/// on the approach axis (or a large secondary-axis reverse).
+///
+/// progress_t on the OD chord can rank a sideways landsdel centroid *before* a
+/// user via that is the better corridor anchor (Vestlandet before Sognefjell on
+/// Bevensen→Dalsøren). Inserting that centroid forces a reverse hop back to the via.
+///
+/// Modest land-bridge dips on a secondary axis (Schleswig-Holstein west of a
+/// near-meridian Lillehammer via on a lat-dominant Stendal→NO leg) must still
+/// be allowed.
+fn densify_centroid_overshoots_via(
+    prev: (f64, f64),
+    c: (f64, f64),
+    via: (f64, f64),
+) -> bool {
+    const MIN_OVERSHOOT_DEG: f64 = 0.35;
+    const LARGE_SECONDARY_DEG: f64 = 1.0;
+    let dlat = via.0 - prev.0;
+    let dlon = via.1 - prev.1;
+    let lon_over = (c.1 - via.1).abs();
+    let lat_over = (c.0 - via.0).abs();
+    let lon_past = dlon * (c.1 - via.1) > 0.0 && lon_over > MIN_OVERSHOOT_DEG;
+    let lat_past = dlat * (c.0 - via.0) > 0.0 && lat_over > MIN_OVERSHOOT_DEG;
+    if !lon_past && !lat_past {
+        return false;
+    }
+    let primary_lon = dlon.abs() >= dlat.abs();
+    if primary_lon && lon_past {
+        return true;
+    }
+    if !primary_lon && lat_past {
+        return true;
+    }
+    // Secondary-axis reverse past the via: only large absolute overshoots
+    // (Vestlandet ~1.8° west of Sognefjell), not SH's ~0.6° land-bridge dip.
+    if lon_past && lon_over > LARGE_SECONDARY_DEG && lon_over > dlon.abs() * 0.5 {
+        return true;
+    }
+    if lat_past && lat_over > LARGE_SECONDARY_DEG && lat_over > dlat.abs() * 0.5 {
+        return true;
+    }
+    false
 }
 
 /// Country extracts (`europe/denmark`) spill across Öresund into Sweden. Omit the
@@ -408,33 +503,39 @@ fn insert_land_safe_mids(
     centroids: &[(f64, f64)],
     ready: &[(String, [f64; 4])],
     max_hop_deg: f64,
+    depth: u32,
 ) {
     let dlat = b.0 - a.0;
     let dlon = b.1 - a.1;
     let dist = dlat.abs().max(dlon.abs());
-    if dist <= max_hop_deg + 1e-9 {
+    if dist <= max_hop_deg + 1e-9 || depth > 16 {
         return;
     }
     let v2 = dlat * dlat + dlon * dlon;
     if v2 < 1e-12 {
         return;
     }
+    let cheb = |p: (f64, f64), q: (f64, f64)| (p.0 - q.0).abs().max((p.1 - q.1).abs());
+    let proj_t = |c: (f64, f64)| ((c.0 - a.0) * dlat + (c.1 - a.1) * dlon) / v2;
+    let perp_of = |c: (f64, f64), t: f64| {
+        let proj = (a.0 + t * dlat, a.1 + t * dlon);
+        (c.0 - proj.0).abs() + (c.1 - proj.1).abs()
+    };
+
     // Walk forward along AB using 2D projection. Dominant-axis-only t wrongly
     // treated Schleswig-Holstein (north) as between Stendal and Niedersachsen
     // because their longitudes nest.
     let mut best: Option<(f64, (f64, f64))> = None;
     for &c in centroids {
-        let t = ((c.0 - a.0) * dlat + (c.1 - a.1) * dlon) / v2;
+        let t = proj_t(c);
         if t <= 0.05 || t >= 0.95 {
             continue;
         }
-        let proj = (a.0 + t * dlat, a.1 + t * dlon);
-        let perp = (c.0 - proj.0).abs() + (c.1 - proj.1).abs();
-        if perp > max_hop_deg * 0.85 {
+        if perp_of(c, t) > max_hop_deg * 0.85 {
             continue;
         }
-        let da = (c.0 - a.0).abs().max((c.1 - a.1).abs());
-        let db = (c.0 - b.0).abs().max((c.1 - b.1).abs());
+        let da = cheb(c, a);
+        let db = cheb(c, b);
         if da < max_hop_deg * 0.05
             || db < max_hop_deg * 0.05
             || da >= dist * 0.98
@@ -447,38 +548,54 @@ fn insert_land_safe_mids(
         if db >= dist * 0.98 {
             continue;
         }
+        if densify_point_in_multi_country_spill(c, ready) {
+            continue;
+        }
         if best.is_none_or(|(bt, _)| t < bt) {
             best = Some((t, c));
         }
     }
-    let c = if let Some((_, c)) = best {
-        c
-    } else {
+
+    let Some(c) = best.map(|(_, c)| c).or_else(|| {
         // Geometric midpoint when it lies inside a Ready region. Reject mids that
-        // sit in multi-country bbox spill (Öresund covered by DK + Skåne) — those
-        // snap to the wrong shore and disconnect under a 4 GB tile budget.
+        // sit in multi-country bbox spill (Baltic / Kattegat / Öresund) — catalog
+        // AABBs cover water between shores; those endpoints disconnect under a
+        // 4 GB tile budget. Applies to every OD, not only same-country hops.
         let mid = (a.0 + dlat * 0.5, a.1 + dlon * 0.5);
         let covering: Vec<[f64; 4]> = ready
             .iter()
             .filter(|(_, r)| crate::routing::basemap::bbox_covers_point(*r, mid.0, mid.1))
             .map(|(_, r)| *r)
             .collect();
-        if covering.is_empty() || densify_mid_in_country_spill(mid, a, b, ready) {
-            return;
+        if !covering.is_empty() && !densify_point_in_multi_country_spill(mid, ready) {
+            // Large landsdel boxes (e.g. Nord-Norge) treat mountain plateaus as
+            // "on land". For NE Stay-in-Country climbs, insert a due-north mid at
+            // the western endpoint's longitude first so densify follows the coastal
+            // meridian before swinging east.
+            let mid = prefer_north_then_east_mid(mid, a, b, &covering);
+            if !densify_point_in_multi_country_spill(mid, ready) {
+                let da = cheb(mid, a);
+                let db = cheb(mid, b);
+                if da >= max_hop_deg * 0.2 && db >= max_hop_deg * 0.2 {
+                    return Some(mid);
+                }
+            }
         }
-        // Large landsdel boxes (e.g. Nord-Norge) treat mountain plateaus as
-        // "on land". For NE Stay-in-Country climbs, insert a due-north mid at
-        // the western endpoint's longitude first so densify follows the coastal
-        // meridian before swinging east (avoids the inland catalog-centroid
-        // chord that pad/tile widening cannot fix within the 4 GB RSS budget).
-        let mid = prefer_north_then_east_mid(mid, a, b, &covering);
-        let da = (mid.0 - a.0).abs().max((mid.1 - a.1).abs());
-        let db = (mid.0 - b.0).abs().max((mid.1 - b.1).abs());
-        if da < max_hop_deg * 0.2 || db < max_hop_deg * 0.2 {
-            return;
-        }
-        mid
+        // Chord mid is open water / multi-country spill (or unusable). Prefer a
+        // land-safe Ready/leaf candidate off the chord rather than inventing a
+        // sea endpoint.
+        densify_land_bridge_mid(a, b, centroids, ready, max_hop_deg)
+    }) else {
+        return;
     };
+
+    // Require a strict Chebyshev split so recursion cannot micro-step forever.
+    let da = cheb(c, a);
+    let db = cheb(c, b);
+    if da.max(db) >= dist - 1e-6 {
+        return;
+    }
+
     if let Some(prev) = out.last() {
         if (prev.0 - c.0).abs() < 1e-4 && (prev.1 - c.1).abs() < 1e-4 {
             return;
@@ -487,9 +604,124 @@ fn insert_land_safe_mids(
     if (c.0 - b.0).abs() < 1e-4 && (c.1 - b.1).abs() < 1e-4 {
         return;
     }
-    insert_land_safe_mids(out, a, c, centroids, ready, max_hop_deg);
+    insert_land_safe_mids(out, a, c, centroids, ready, max_hop_deg, depth + 1);
     out.push(c);
-    insert_land_safe_mids(out, c, b, centroids, ready, max_hop_deg);
+    insert_land_safe_mids(out, c, b, centroids, ready, max_hop_deg, depth + 1);
+}
+
+/// When a water chord mid is rejected, pick a land-safe densify candidate that
+/// shortens the Chebyshev hop. Uses Ready/leaf centroids plus a coarse grid
+/// inside leaf boxes (any country) so sea-spilling country AABBs are not the only
+/// gap-fill option. Does not inject bridges, ferries, or road segments.
+fn densify_land_bridge_mid(
+    a: (f64, f64),
+    b: (f64, f64),
+    centroids: &[(f64, f64)],
+    ready: &[(String, [f64; 4])],
+    max_hop_deg: f64,
+) -> Option<(f64, f64)> {
+    let dlat = b.0 - a.0;
+    let dlon = b.1 - a.1;
+    let dist = dlat.abs().max(dlon.abs());
+    let v2 = dlat * dlat + dlon * dlon;
+    if v2 < 1e-12 {
+        return None;
+    }
+    let cheb = |p: (f64, f64), q: (f64, f64)| (p.0 - q.0).abs().max((p.1 - q.1).abs());
+    let mut candidates: Vec<(f64, f64)> = centroids.to_vec();
+    candidates.extend(densify_leaf_grid_samples(a, b, ready, max_hop_deg));
+
+    // Prefer the candidate that most evenly splits the hop (min max(da,db)),
+    // allowing larger cross-track than the tight chord search — the OD chord is
+    // the water line we are avoiding.
+    let mut best_split: Option<(f64, f64, (f64, f64))> = None; // (max_sub, perp, c)
+    for &c in &candidates {
+        if densify_point_in_multi_country_spill(c, ready) {
+            continue;
+        }
+        let t = ((c.0 - a.0) * dlat + (c.1 - a.1) * dlon) / v2;
+        if t <= 0.02 || t >= 0.98 {
+            continue;
+        }
+        let proj = (a.0 + t * dlat, a.1 + t * dlon);
+        let perp = (c.0 - proj.0).abs() + (c.1 - proj.1).abs();
+        if perp > max_hop_deg * 2.5 {
+            continue;
+        }
+        let da = cheb(c, a);
+        let db = cheb(c, b);
+        let sub = da.max(db);
+        if sub >= dist - 1e-9 || da < max_hop_deg * 0.15 || db < max_hop_deg * 0.15 {
+            continue;
+        }
+        if best_split.is_none_or(|(bs, bp, _)| sub < bs - 1e-9 || ((sub - bs).abs() < 1e-9 && perp < bp))
+        {
+            best_split = Some((sub, perp, c));
+        }
+    }
+    if let Some((_, _, c)) = best_split {
+        return Some(c);
+    }
+
+    // Greedy land step from `a`: one chunk toward `b` along AB (0<t<1), preferring
+    // the candidate closest to `b`. Used when no even split exists (long sea chords
+    // where the first land entry is a hinterland detour in Chebyshev).
+    let mut best_step: Option<(f64, f64, (f64, f64))> = None; // (db, t, c)
+    for &c in &candidates {
+        if densify_point_in_multi_country_spill(c, ready) {
+            continue;
+        }
+        let t = ((c.0 - a.0) * dlat + (c.1 - a.1) * dlon) / v2;
+        if t <= 0.02 || t >= 0.98 {
+            continue;
+        }
+        let da = cheb(c, a);
+        let db = cheb(c, b);
+        if da < max_hop_deg * 0.15 || da > max_hop_deg + 1e-9 {
+            continue;
+        }
+        if best_step.is_none_or(|(bdb, bt, _)| db < bdb - 1e-9 || ((db - bdb).abs() < 1e-9 && t > bt))
+        {
+            best_step = Some((db, t, c));
+        }
+    }
+    best_step.map(|(_, _, c)| c)
+}
+
+/// Coarse interior samples of Ready **leaf** boxes that intersect hop AB.
+/// Country-level AABBs are skipped (they often cover open sea).
+fn densify_leaf_grid_samples(
+    a: (f64, f64),
+    b: (f64, f64),
+    ready: &[(String, [f64; 4])],
+    max_hop_deg: f64,
+) -> Vec<(f64, f64)> {
+    let hop = trip_bbox_points(&[a, b], max_hop_deg.max(0.5));
+    let step = (max_hop_deg * 0.45).clamp(0.35, 0.55);
+    let mut out = Vec::new();
+    for (path, bbox) in ready {
+        if path.matches('/').count() < 2 {
+            continue;
+        }
+        if bbox[0] > hop[2] || bbox[2] < hop[0] || bbox[1] > hop[3] || bbox[3] < hop[1] {
+            continue;
+        }
+        let mut lat = bbox[0] + step * 0.5;
+        while lat < bbox[2] {
+            let mut lon = bbox[1] + step * 0.5;
+            while lon < bbox[3] {
+                let p = (lat, lon);
+                if crate::routing::basemap::bbox_covers_point(hop, p.0, p.1)
+                    && !densify_point_in_multi_country_spill(p, ready)
+                {
+                    out.push(p);
+                }
+                lon += step;
+            }
+            lat += step;
+        }
+    }
+    out
 }
 
 /// Coastal densify helpers for large landsdel catalog boxes.
@@ -653,51 +885,27 @@ fn densify_region_country(path: &str) -> Option<&str> {
     parts.next()
 }
 
-fn densify_point_country(pt: (f64, f64), ready: &[(String, [f64; 4])]) -> Option<&str> {
-    let mut best: Option<(f64, &str)> = None;
+/// Reject densify points that sit in multi-country catalog bbox spill.
+///
+/// Country/leaf AABBs routinely cover open water between shores (Baltic,
+/// Kattegat, Öresund, Channel approaches, etc.). A point covered by two or more
+/// countries is treated as a water chord / disconnected mid for **any** OD —
+/// not only same-country hops. Cross-sea densify must use land-safe leaf
+/// centroids or grid samples instead of inventing geometric sea endpoints.
+fn densify_point_in_multi_country_spill(
+    pt: (f64, f64),
+    ready: &[(String, [f64; 4])],
+) -> bool {
+    let mut countries = std::collections::HashSet::new();
     for (path, bbox) in ready {
         if !crate::routing::basemap::bbox_covers_point(*bbox, pt.0, pt.1) {
             continue;
         }
-        let Some(country) = densify_region_country(path) else {
-            continue;
-        };
-        let area = (bbox[2] - bbox[0]).max(0.0) * (bbox[3] - bbox[1]).max(0.0);
-        if best.is_none_or(|(ba, _)| area < ba) {
-            best = Some((area, country));
+        if let Some(c) = densify_region_country(path) {
+            countries.insert(c);
         }
     }
-    best.map(|(_, c)| c)
-}
-
-/// Reject geometric mids on same-country hops that also fall inside a foreign
-/// country box (Öresund: Skåne→Halland mid covered by europe/denmark spill).
-/// Cross-country hops (SH→Denmark) must still densify across DE∩DK Baltic boxes.
-fn densify_mid_in_country_spill(
-    mid: (f64, f64),
-    a: (f64, f64),
-    b: (f64, f64),
-    ready: &[(String, [f64; 4])],
-) -> bool {
-    let Some(home) = densify_point_country(a, ready) else {
-        return false;
-    };
-    if densify_point_country(b, ready) != Some(home) {
-        return false;
-    }
-    let mut home_covers = false;
-    let mut foreign_covers = false;
-    for (path, bbox) in ready {
-        if !crate::routing::basemap::bbox_covers_point(*bbox, mid.0, mid.1) {
-            continue;
-        }
-        match densify_region_country(path) {
-            Some(c) if c == home => home_covers = true,
-            Some(_) => foreign_covers = true,
-            None => {}
-        }
-    }
-    home_covers && foreign_covers
+    countries.len() >= 2
 }
 
 /// One padded bbox per consecutive point pair (start→via→…→end).
@@ -1206,5 +1414,279 @@ mod tests {
             !has_halland_to_denmark_skip,
             "must not jump Halland→Denmark without Skåne; hops={hops:?}"
         );
+    }
+
+    /// Bevensen→Dalsøren with Sognefjell via: Vestlandet landsdel centroid
+    /// (60.75, 6.25) ranks before the via on NW OD progress_t and used to force
+    /// a west fjord loop then NE back (~350–520 km excess). Densify must keep
+    /// the via as the corridor anchor and not insert that west reverse.
+    #[test]
+    fn densify_bevensen_dalsoren_skips_vestlandet_before_sognefjell_via() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        for stem in [
+            "niedersachsen-latest",
+            "schleswig-holstein-latest",
+            "denmark-latest",
+            "skane-latest",
+            "halland-latest",
+            "vastra_gotaland-latest",
+            "ostlandet-latest",
+            "vestlandet-latest",
+        ] {
+            let path = dir.path().join(format!("{stem}.navi-manifest.json"));
+            std::fs::write(
+                &path,
+                format!(
+                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":{GRAPH_FORMAT_VERSION}}}"#
+                ),
+            )
+            .unwrap();
+        }
+        let bevensen = (53.079686_f64, 10.587198_f64);
+        let sognefjell = (61.6170857_f64, 8.0438639_f64);
+        let dalsoren = (61.4433766_f64, 7.4614016_f64);
+        let vestlandet = (60.75_f64, 6.25_f64);
+
+        let hops = densify_route_points_via_regions(
+            &[bevensen, sognefjell, dalsoren],
+            dir.path(),
+            LONG_TRIP_CHUNK_DEG,
+        );
+        let has_vestlandet = hops.iter().any(|(lat, lon)| {
+            (lat - vestlandet.0).abs() < 0.05 && (lon - vestlandet.1).abs() < 0.15
+        });
+        assert!(
+            !has_vestlandet,
+            "must not insert Vestlandet centroid before Sognefjell via; hops={hops:?}"
+        );
+        let has_via = hops.iter().any(|(lat, lon)| {
+            (lat - sognefjell.0).abs() < 1e-6 && (lon - sognefjell.1).abs() < 1e-6
+        });
+        assert!(has_via, "Sognefjell via must remain an anchor; hops={hops:?}");
+        // No hop that swings west of the via then returns NE to it.
+        let west_then_back = hops.windows(3).any(|w| {
+            let mid_west = w[1].1 < sognefjell.1 - 0.35;
+            let ends_at_via = (w[2].0 - sognefjell.0).abs() < 1e-6
+                && (w[2].1 - sognefjell.1).abs() < 1e-6;
+            mid_west && ends_at_via && w[0].1 > sognefjell.1
+        });
+        assert!(
+            !west_then_back,
+            "densify must not create west reverse into Sognefjell; hops={hops:?}"
+        );
+
+        // Campaign plan vias (Landskrona → Ängelholm → Gothenburg → Sognefjell).
+        let landskrona = (55.870_f64, 12.830_f64);
+        let angelholm = (56.243_f64, 12.864_f64);
+        let gothenburg = (57.708_f64, 11.975_f64);
+        let hops_campaign = densify_route_points_via_regions(
+            &[
+                bevensen,
+                landskrona,
+                angelholm,
+                gothenburg,
+                sognefjell,
+                dalsoren,
+            ],
+            dir.path(),
+            LONG_TRIP_CHUNK_DEG,
+        );
+        let has_vestlandet_campaign = hops_campaign.iter().any(|(lat, lon)| {
+            (lat - vestlandet.0).abs() < 0.05 && (lon - vestlandet.1).abs() < 0.15
+        });
+        assert!(
+            !has_vestlandet_campaign,
+            "campaign vias must not densify Vestlandet before Sognefjell; hops={hops_campaign:?}"
+        );
+
+        // User counterexample via (Ottadal corridor) must likewise not pull west.
+        let ottadal = (61.8691419_f64, 9.1055130_f64);
+        let hops_otta = densify_route_points_via_regions(
+            &[bevensen, ottadal, dalsoren],
+            dir.path(),
+            LONG_TRIP_CHUNK_DEG,
+        );
+        let has_vestlandet_otta = hops_otta.iter().any(|(lat, lon)| {
+            (lat - vestlandet.0).abs() < 0.05 && (lon - vestlandet.1).abs() < 0.15
+        });
+        assert!(
+            !has_vestlandet_otta,
+            "must not insert Vestlandet before Ottadal via; hops={hops_otta:?}"
+        );
+    }
+
+    /// Gap-fill must not invent the SH→Halland Baltic geometric chord
+    /// `(54.89125, 10.55875)` (multi-country DE∩DK water). Leaf proxies +
+    /// land-bridge retry keep densify on land-safe candidates for any OD that
+    /// would otherwise mid-hop the sea.
+    #[test]
+    fn densify_rejects_baltic_water_chord_mid_on_de_se_corridor() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        for stem in [
+            "niedersachsen-latest",
+            "schleswig-holstein-latest",
+            "denmark-latest",
+            "skane-latest",
+            "halland-latest",
+            "vastra_gotaland-latest",
+            "ostlandet-latest",
+            "vestlandet-latest",
+        ] {
+            let path = dir.path().join(format!("{stem}.navi-manifest.json"));
+            std::fs::write(
+                &path,
+                format!(
+                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":{GRAPH_FORMAT_VERSION}}}"#
+                ),
+            )
+            .unwrap();
+        }
+        let bevensen = (53.079686_f64, 10.587198_f64);
+        let otta = (61.8691419_f64, 9.1055130_f64);
+        let dalsoren = (61.4433766_f64, 7.4614016_f64);
+        let hops = densify_route_points_via_regions(
+            &[bevensen, otta, dalsoren],
+            dir.path(),
+            LONG_TRIP_CHUNK_DEG,
+        );
+        let baltic_mid = hops.iter().any(|(lat, lon)| {
+            (lat - 54.89125).abs() < 1e-4 && (lon - 10.55875).abs() < 1e-4
+        });
+        assert!(
+            !baltic_mid,
+            "must not insert SH→Halland Baltic water mid; hops={hops:?}"
+        );
+        // Must not park hops on the geometric SH→Halland sea chord (the former
+        // failing mid and its recursive halves).
+        let sh = (54.21_f64, 9.845_f64);
+        let halland = (56.935_f64, 12.7_f64);
+        let baltic_chain = [(54.89125_f64, 10.55875_f64), (55.5725, 11.2725), (56.25375, 11.98625)];
+        for &(blat, blon) in &baltic_chain {
+            let hit = hops.iter().any(|(lat, lon)| {
+                (lat - blat).abs() < 1e-3 && (lon - blon).abs() < 1e-3
+            });
+            assert!(
+                !hit,
+                "must not insert SH→Halland water chord point ({blat}, {blon}); hops={hops:?}"
+            );
+        }
+        let _ = (sh, halland);
+        assert!(
+            hops.len() >= 6,
+            "corridor must still densify into multiple land hops; hops={}",
+            hops.len()
+        );
+        // Prefer land-safe hops: no hop may start at SH and end on the open-sea
+        // mid that failed the campaign (already checked). Remaining long hops
+        // are OK only if gap-fill could not find land (depth-capped); the
+        // critical invariant is no multi-country water endpoint.
+    }
+
+    /// Geography-agnostic: a point covered by two country boxes is spill/water.
+    #[test]
+    fn densify_multi_country_spill_is_geography_agnostic() {
+        let ready = vec![
+            (
+                "europe/alpha".to_string(),
+                [10.0_f64, 10.0, 20.0, 20.0],
+            ),
+            (
+                "europe/beta".to_string(),
+                [15.0_f64, 15.0, 25.0, 25.0],
+            ),
+            (
+                "europe/alpha/leaf".to_string(),
+                [10.0_f64, 10.0, 14.0, 14.0],
+            ),
+        ];
+        // Overlap of alpha∩beta country boxes.
+        assert!(densify_point_in_multi_country_spill((17.0, 17.0), &ready));
+        // Exclusive alpha leaf interior.
+        assert!(!densify_point_in_multi_country_spill((12.0, 12.0), &ready));
+    }
+
+    /// Second corridor: Skåne↔Halland must not mid-hop Öresund water, and
+    /// Stendal→Lillehammer must still densify without Baltic chord mids.
+    #[test]
+    fn densify_skane_halland_and_stendal_avoid_water_chord_mids() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        for stem in [
+            "denmark-latest",
+            "skane-latest",
+            "halland-latest",
+            "vastra_gotaland-latest",
+            "ostlandet-latest",
+            "sachsen-anhalt-latest",
+            "niedersachsen-latest",
+            "hamburg-latest",
+            "schleswig-holstein-latest",
+        ] {
+            let path = dir.path().join(format!("{stem}.navi-manifest.json"));
+            std::fs::write(
+                &path,
+                format!(
+                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":{GRAPH_FORMAT_VERSION}}}"#
+                ),
+            )
+            .unwrap();
+        }
+        let skane = (55.91_f64, 13.525_f64);
+        let halland = (56.935_f64, 12.7_f64);
+        // Direct densify of a short SE hop that previously accepted DK-spill mids.
+        let se_hops =
+            densify_route_points_via_regions(&[skane, halland], dir.path(), LONG_TRIP_CHUNK_DEG);
+        let oresundish = se_hops.iter().any(|(lat, lon)| {
+            *lat > 55.9 && *lat < 56.3 && *lon > 12.4 && *lon < 12.9 && {
+                // Geometric mid of Skåne→Halland is ~ (56.42, 13.11) — reject
+                // anything sitting on that chord with multi-country cover.
+                let mid_lat = (skane.0 + halland.0) * 0.5;
+                let mid_lon = (skane.1 + halland.1) * 0.5;
+                (lat - mid_lat).abs() < 0.15 && (lon - mid_lon).abs() < 0.15
+            }
+        });
+        assert!(
+            !oresundish,
+            "Skåne→Halland must not densify onto Öresund mid; hops={se_hops:?}"
+        );
+
+        let stendal = (52.605766_f64, 11.859277_f64);
+        let lillehammer = (61.114545_f64, 10.467007_f64);
+        let no_hops = densify_route_points_via_regions(
+            &[stendal, lillehammer],
+            dir.path(),
+            LONG_TRIP_CHUNK_DEG,
+        );
+        let baltic = no_hops.iter().any(|(lat, lon)| {
+            (lat - 54.89125).abs() < 1e-4 && (lon - 10.55875).abs() < 1e-4
+        });
+        assert!(
+            !baltic,
+            "Stendal→Lillehammer must not use Baltic water mid; hops={no_hops:?}"
+        );
+        assert!(
+            no_hops.len() >= 4,
+            "northbound DE→NO must still densify; hops={}",
+            no_hops.len()
+        );
+    }
+
+    #[test]
+    fn densify_centroid_overshoots_via_detects_vestlandet_past_sognefjell() {
+        let prev = (60.65_f64, 10.50_f64); // Ostlandet-ish
+        let vestlandet = (60.75_f64, 6.25_f64);
+        let sognefjell = (61.617_f64, 8.044_f64);
+        assert!(densify_centroid_overshoots_via(prev, vestlandet, sognefjell));
+        let ostlandet = (60.65_f64, 10.50_f64);
+        let gothenburg = (57.71_f64, 11.97_f64);
+        assert!(!densify_centroid_overshoots_via(
+            gothenburg,
+            ostlandet,
+            sognefjell
+        ));
+        // Lat-dominant Stendal→Lillehammer: SH west dip is a land bridge, not a reverse.
+        let stendal = (52.606_f64, 11.859_f64);
+        let sh = (54.210_f64, 9.845_f64);
+        let lillehammer = (61.115_f64, 10.467_f64);
+        assert!(!densify_centroid_overshoots_via(stendal, sh, lillehammer));
     }
 }

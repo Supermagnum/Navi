@@ -268,6 +268,23 @@ pub fn pbf_stem_to_geofabrik_path(stem: &str) -> Option<String> {
     }
 }
 
+/// Catalog leaf bboxes under a country path (e.g. `europe/denmark` → Syddanmark,
+/// Sjælland, …). Used by densify as land waypoints when only the country pack is
+/// Ready but foreign leaves make the country centroid unusable (sea-spilling AABB).
+pub fn catalog_leaf_bboxes_under(country_path: &str) -> Vec<(&'static str, [f64; 4])> {
+    let path = country_path.trim().trim_matches('/').to_ascii_lowercase();
+    if path.is_empty() {
+        return Vec::new();
+    }
+    let prefix = format!("{path}/");
+    PACK_LEAF_PATH_BBOX
+        .iter()
+        .chain(NORWAY_LANDSDEL.iter())
+        .filter(|(p, _)| p.starts_with(&prefix))
+        .map(|(p, b)| (*p, *b))
+        .collect()
+}
+
 /// True when [path] is an exact entry in the pack bbox / Norway landsdel tables
 /// (no parent-walk).
 pub fn is_exact_catalog_path(path: &str) -> bool {
