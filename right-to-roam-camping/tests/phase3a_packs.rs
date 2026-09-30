@@ -153,7 +153,7 @@ fn finland_mainland_accepts_aland_is_tier_d() {
 }
 
 #[test]
-fn scotland_unknown_subdivision_is_england_wales_tier_c_fixture_sct_is_tier_a() {
+fn scotland_unknown_subdivision_is_tier_d_fixture_sct_is_tier_a() {
     let mut gb = FixtureHost {
         country: "gb".into(),
         subdivision: None,
@@ -165,19 +165,23 @@ fn scotland_unknown_subdivision_is_england_wales_tier_c_fixture_sct_is_tier_a() 
             year: 2026,
             month: 1,
             day: 15,
-        }, // outside CMZ season
+        },
         kv: HashMap::new(),
     };
     let out = suggest_overnight_fixed_probes(&mut gb, &[(56.8, -5.1)], Some(1));
-    // Without GB-SCT → England/Wales Tier C (TentSite-only; empty without POIs).
     assert!(
-        out.probe_log
-            .iter()
-            .any(|e| e.reason == "no_tentsite_poi" || e.reason.contains("designated")),
-        "unknown GB subdivision should be Tier C TentSite path; log={:?}",
+        out.list.cards.iter().any(|c| c.tier == Tier::D && !c.accepted),
+        "unknown GB subdivision must be Tier D; log={:?}",
         out.probe_log
     );
-    assert!(!out.list.cards.iter().any(|c| c.accepted && c.tier == Tier::A));
+    let card = out.list.cards.iter().find(|c| c.tier == Tier::D).expect("D card");
+    assert!(
+        !card.legal_basis.to_ascii_lowercase().contains("england")
+            && !card.legal_basis.to_ascii_lowercase().contains("wales")
+            && !card.legal_basis.to_ascii_lowercase().contains("darwall"),
+        "must not claim England/Wales law; got {}",
+        card.legal_basis
+    );
 
     gb.subdivision = Some("GB-SCT".into());
     let out = suggest_overnight_fixed_probes(&mut gb, &[(56.8, -5.1)], Some(1));
@@ -186,6 +190,37 @@ fn scotland_unknown_subdivision_is_england_wales_tier_c_fixture_sct_is_tier_a() 
         "injected GB-SCT outside CMZ season should accept; log={:?}",
         out.probe_log
     );
+}
+
+#[test]
+fn belfast_and_scottish_point_unknown_subdivision_are_tier_d() {
+    // Belfast approx 54.597, -5.930
+    let mut belfast = FixtureHost {
+        country: "gb".into(),
+        subdivision: None,
+        protected: ProtectedAreaStatus::Unknown,
+        cmz_ready: false,
+        cmz_inside: false,
+        safety: OvernightSafety::default(),
+        date: LocalDate {
+            year: 2026,
+            month: 7,
+            day: 1,
+        },
+        kv: HashMap::new(),
+    };
+    let out = suggest_overnight_fixed_probes(&mut belfast, &[(54.597, -5.930)], Some(1));
+    assert!(out.list.cards.iter().any(|c| c.tier == Tier::D));
+    let card = out.list.cards.iter().find(|c| c.tier == Tier::D).unwrap();
+    let blob = format!("{} {}", card.legal_basis, card.notes.join(" "));
+    assert!(!blob.to_ascii_lowercase().contains("england/wales"));
+    assert!(!blob.to_ascii_lowercase().contains("darwall"));
+    assert!(!blob.to_ascii_lowercase().contains("scottish outdoor access"));
+
+    // Scottish Highlands point with unknown subdivision — still D, not SCT pack.
+    let out = suggest_overnight_fixed_probes(&mut belfast, &[(56.8, -5.1)], Some(1));
+    assert!(out.list.cards.iter().any(|c| c.tier == Tier::D));
+    assert!(!out.list.cards.iter().any(|c| c.accepted && c.tier == Tier::A));
 }
 
 #[test]

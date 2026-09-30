@@ -34,7 +34,7 @@ pub use svalbard::svalbard_decline_pack;
 pub use territories::{all_territory_packs, territory_pack};
 pub use tier_b::{all_tier_b_packs, tier_b_pack_by_flag};
 pub use tier_c::{all_tier_c_packs, england_wales_pack};
-pub use tier_d::tier_d_pack;
+pub use tier_d::{gb_unknown_subdivision_tier_d_pack, tier_d_pack};
 pub use validate::{
     assert_hard_filters_official_only, assert_tier_b_and_land_manager_flags_default_off,
     validate_all_builtin_packs,
@@ -332,9 +332,16 @@ pub fn pack_for_location_with_tenure(
                 scotland_pack()
             } else if sub_is(sub.as_deref(), &["NIR", "GB-NIR"]) {
                 territory_pack("gb-nir").unwrap_or_else(|| tier_d_pack("gb-nir"))
-            } else {
-                // England/Wales Tier C (Dartmoor is a flagged Tier B overlay).
+            } else if sub_is(sub.as_deref(), &["ENG", "GB-ENG", "WLS", "GB-WLS"])
+                || sub.as_deref().is_some_and(|s| {
+                    // Positive England/Wales ISO-3166-2 country subdivision only.
+                    s.starts_with("GB-E") || s.starts_with("GB-W")
+                })
+            {
                 england_wales_pack()
+            } else {
+                // Phase 1: unknown GB subdivision → Tier D; never claim England/Wales law.
+                gb_unknown_subdivision_tier_d_pack()
             }
         }
         Some("dk") => tier_c::denmark_pack(),
