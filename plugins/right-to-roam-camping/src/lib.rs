@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use navi_right_to_roam_camping::{
     suggest_overnight_fixed_probes, CampingHost, LocalDate, OvernightSafety, TravelMode,
-    VehicleClass, VehicleProfile,
+    VehicleClass, VehicleProfile, DISCLAIMER,
 };
 
 struct SdkHost {
@@ -322,6 +322,10 @@ pub extern "C" fn plugin_main() {
             rejected += 1;
         }
     }
+    let list = serde_json::to_value(&out.list).unwrap_or(serde_json::Value::Null);
+    let vehicle = serde_json::to_value(&out.vehicle).unwrap_or(serde_json::Value::Null);
+    let on_foot_from_here =
+        serde_json::to_value(&out.on_foot_from_here).unwrap_or(serde_json::Value::Null);
     let result = serde_json::json!({
         "accepted": accepted,
         "rejected": rejected,
@@ -329,6 +333,10 @@ pub extern "C" fn plugin_main() {
         "vehicle_accepted": out.vehicle.probes_accepted,
         "on_foot_accepted": out.on_foot_from_here.probes_accepted,
         "on_foot_rejected": out.on_foot_from_here.cards.iter().filter(|c| !c.accepted).count(),
+        "list": list,
+        "vehicle": vehicle,
+        "on_foot_from_here": on_foot_from_here,
+        "disclaimer": DISCLAIMER,
     });
     let text = result.to_string();
     let _ = navi_plugin_sdk::host_plugin_kv_set("rtr_suggest_result", &text);

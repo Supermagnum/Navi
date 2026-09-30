@@ -1075,6 +1075,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_set_timezone(
     ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_suggest_along_route(
+    ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_all(
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_expire(
@@ -1531,6 +1533,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_set_timezone(`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_navi_fn_func_camping_plugin_suggest_along_route(`maxSuggestions`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -2251,6 +2255,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_camping_plugin_set_timezone() and 0xFFFF) != 56396) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_suggest_along_route() and 0xFFFF) != 16081) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_all() and 0xFFFF) != 684) {
@@ -8397,6 +8404,23 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterString.lower(`timezone`),_status)
 }
     
+    
+
+        /**
+         * Discover overnight spots along the live nav corridor using the native engine
+         * (graph + proximity packs under `data_dir`). Phase 5b: returns full
+         * `CampingCard` lists in `result_json` without routing probe evaluation through
+         * wasmtime; the wasm guest path remains [`camping_plugin_run_suggest`].
+         */ fun `campingPluginSuggestAlongRoute`(`maxSuggestions`: kotlin.UInt): CampingCallResult {
+            return FfiConverterTypeCampingCallResult.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_suggest_along_route(
+    
+        
+        FfiConverterUInt.lower(`maxSuggestions`),_status)
+}
+    )
+    }
     
 
 

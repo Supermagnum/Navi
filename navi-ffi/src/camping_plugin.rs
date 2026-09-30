@@ -3,7 +3,7 @@
 //! Runs the wasm guest under wasmtime with fuel / epoch / memory limits on a
 //! worker thread. Misbehaviour disables the plugin for the session (fail closed).
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -12,7 +12,16 @@ use std::time::Instant;
 use chrono::{Datelike, Local};
 use driver_break_core::admin_region_at;
 use driver_break_core::config::{SafetyConfig, TravellerProfile};
+use driver_break_core::routing::graph::RoutingProfile;
+use driver_break_core::routing::indexed::{
+    try_load_graph_for_plan_corridor, try_load_poi_barrier_for_plan_bbox,
+};
+use driver_break_core::routing::safety::OvernightProximityIndex;
 use driver_break_core::storage::{ConfigStore, Storage};
+use navi_right_to_roam_camping::{
+    suggest_overnight, CampingHost, DISCLAIMER, LocalDate, SuggestInput, SuggestOutcome, TravelMode,
+    VehicleClass, VehicleProfile,
+};
 use navi_plugin_host::{
     cranelift_abi_supported, plugin_set_enabled, AdminRegionView, CallOutcome, Capability,
     ClockView, FilePluginKv, HostApi, LayerStatus, PluginEnableStore, PluginError, PluginHost,
@@ -106,6 +115,251 @@ fn profile_to_travel_mode(p: TravelProfile) -> TravelModeView {
         | TravelProfile::MobileHome
         | TravelProfile::Motorcycle
         | TravelProfile::MotorcycleElectric => TravelModeView::Motorised,
+    }
+}
+
+fn travel_profile_to_camping_mode(p: TravelProfile) -> TravelMode {
+    match p {
+        TravelProfile::Hiking | TravelProfile::Bicycle | TravelProfile::BicycleElectric => {
+            TravelMode::NonMotorised
+        }
+        TravelProfile::Car
+        | TravelProfile::CarElectric
+        | TravelProfile::Truck
+        | TravelProfile::TruckElectric
+        | TravelProfile::MobileHome
+        | TravelProfile::Motorcycle
+        | TravelProfile::MotorcycleElectric => TravelMode::Motorised,
+    }
+}
+
+fn routing_profile_for_travel(p: TravelProfile) -> RoutingProfile {
+    if p == TravelProfile::Hiking {
+        RoutingProfile::Foot
+    } else {
+        RoutingProfile::from(p.to_core())
+    }
+}
+
+fn camping_vehicle_profile(p: TravelProfile, professional: bool) -> VehicleProfile {
+    let class = match p {
+        TravelProfile::Car
+        | TravelProfile::CarElectric
+        | TravelProfile::Motorcycle
+        | TravelProfile::MotorcycleElectric => VehicleClass::Car,
+        TravelProfile::MobileHome => VehicleClass::CampervanMotorhome,
+        TravelProfile::Truck | TravelProfile::TruckElectric => VehicleClass::Hgv,
+        TravelProfile::Hiking | TravelProfile::Bicycle | TravelProfile::BicycleElectric => {
+            VehicleClass::Unknown
+        }
+    };
+    VehicleProfile {
+        class,
+        is_professional_driver_under_rest_rules: professional,
+    }
+}
+
+fn corridor_bbox_from_waypoints(waypoints: &[[f64; 2]]) -> Option<[f64; 4]> {
+    if waypoints.is_empty() {
+        return None;
+    }
+    let mut min_lat = f64::INFINITY;
+    let mut max_lat = f64::NEG_INFINITY;
+    let mut min_lon = f64::INFINITY;
+    let mut max_lon = f64::NEG_INFINITY;
+    for w in waypoints {
+        min_lat = min_lat.min(w[0]);
+        max_lat = max_lat.max(w[0]);
+        min_lon = min_lon.min(w[1]);
+        max_lon = max_lon.max(w[1]);
+    }
+    let span = (max_lat - min_lat).max(max_lon - min_lon);
+    let pad = (span * 0.25).clamp(0.15, 0.55);
+    Some([
+        min_lat - pad,
+        min_lon - pad,
+        max_lat + pad,
+        max_lon + pad,
+    ])
+}
+
+fn find_planning_pbf(data_dir: &Path) -> Option<PathBuf> {
+    let mut fallback = None;
+    if let Ok(entries) = fs::read_dir(data_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".osm.pbf") {
+                continue;
+            }
+            if name.contains("-latest.osm.pbf") {
+                return Some(path);
+            }
+            if fallback.is_none() {
+                fallback = Some(path);
+            }
+        }
+    }
+    fallback
+}
+
+fn load_overnight_geometry(
+    data_dir: &Path,
+    pbf: &Path,
+    bbox: [f64; 4],
+) -> (Vec<(f64, f64)>, Vec<Vec<[f64; 2]>>) {
+    let Ok((poi, barriers)) = try_load_poi_barrier_for_plan_bbox(data_dir, pbf, Some(bbox)) else {
+        return (Vec::new(), Vec::new());
+    };
+    let [min_lat, min_lon, max_lat, max_lon] = bbox;
+    let buildings: Vec<(f64, f64)> = poi
+        .overnight_buildings()
+        .iter()
+        .copied()
+        .filter(|&(lat, lon)| lat >= min_lat && lat <= max_lat && lon >= min_lon && lon <= max_lon)
+        .collect();
+    let mut prox = OvernightProximityIndex::from_poi_buildings_and_barriers(buildings, &barriers);
+    prox.glacier_rings.retain(|ring| {
+        ring.iter().any(|p| {
+            let (lon, lat) = (p[0], p[1]);
+            lat >= min_lat && lat <= max_lat && lon >= min_lon && lon <= max_lon
+        })
+    });
+    (prox.buildings, prox.glacier_rings)
+}
+
+fn rtr_suggest_result_json(out: &SuggestOutcome) -> String {
+    let mut accepted = 0usize;
+    let mut rejected = 0usize;
+    let mut reasons: BTreeMap<String, usize> = BTreeMap::new();
+    for e in &out.probe_log {
+        if e.road_highway == "vehicle" {
+            continue;
+        }
+        *reasons.entry(e.reason.clone()).or_default() += 1;
+        if e.accepted {
+            accepted += 1;
+        } else {
+            rejected += 1;
+        }
+    }
+    let list = serde_json::to_value(&out.list).unwrap_or(serde_json::Value::Null);
+    let vehicle = serde_json::to_value(&out.vehicle).unwrap_or(serde_json::Value::Null);
+    let on_foot_from_here =
+        serde_json::to_value(&out.on_foot_from_here).unwrap_or(serde_json::Value::Null);
+    serde_json::json!({
+        "accepted": accepted,
+        "rejected": rejected,
+        "reasons": reasons,
+        "vehicle_accepted": out.vehicle.probes_accepted,
+        "on_foot_accepted": out.on_foot_from_here.probes_accepted,
+        "on_foot_rejected": out.on_foot_from_here.cards.iter().filter(|c| !c.accepted).count(),
+        "list": list,
+        "vehicle": vehicle,
+        "on_foot_from_here": on_foot_from_here,
+        "disclaimer": DISCLAIMER,
+    })
+    .to_string()
+}
+
+/// Native camping host for `suggest_overnight` (mirrors test embedder essentials).
+struct FfiCampingHost {
+    safety: SafetyConfig,
+    clock_override: Option<(i32, u32, u32)>,
+    kv: FilePluginKv,
+    travel_profile: TravelProfile,
+    professional_driver: bool,
+    buildings: Vec<(f64, f64)>,
+    glacier_rings: Vec<Vec<[f64; 2]>>,
+    destination: Option<(f64, f64)>,
+    residency: Option<String>,
+}
+
+impl FfiCampingHost {
+    fn open(session: &Session, buildings: Vec<(f64, f64)>, glacier_rings: Vec<Vec<[f64; 2]>>) -> Result<Self, String> {
+        let kv = FilePluginKv::open(session.kv_path()).map_err(|e| e.to_string())?;
+        let safety = load_safety(&session.data_dir).unwrap_or_default();
+        let residency = load_traveller(&session.data_dir).residency_country;
+        Ok(Self {
+            safety,
+            clock_override: session.clock_override,
+            kv,
+            travel_profile: session.travel_profile,
+            professional_driver: session.professional_driver,
+            buildings,
+            glacier_rings,
+            destination: session.destination,
+            residency,
+        })
+    }
+}
+
+impl CampingHost for FfiCampingHost {
+    fn safety_config(&self) -> Option<navi_right_to_roam_camping::OvernightSafety> {
+        Some((&self.safety).into())
+    }
+
+    fn clock_local(&self) -> Option<LocalDate> {
+        let now = Local::now();
+        let (year, month, day) = if let Some((y, m, d)) = self.clock_override {
+            (y, m, d)
+        } else {
+            (now.year(), now.month(), now.day())
+        };
+        Some(LocalDate {
+            year,
+            month,
+            day,
+        })
+    }
+
+    fn plugin_kv_available(&self) -> bool {
+        true
+    }
+
+    fn kv_get(&self, key: &str) -> Option<String> {
+        self.kv.get(key)
+    }
+
+    fn kv_set(&mut self, key: &str, value: &str) -> Result<(), String> {
+        self.kv.set(key, value).map_err(|e| e.to_string())
+    }
+
+    fn admin_country_iso(&self, lat: f64, lon: f64) -> Option<String> {
+        admin_region_at(lat, lon).country_iso
+    }
+
+    fn admin_subdivision_iso(&self, lat: f64, lon: f64) -> Option<String> {
+        admin_region_at(lat, lon).subdivision_iso
+    }
+
+    fn travel_mode(&self) -> TravelMode {
+        travel_profile_to_camping_mode(self.travel_profile)
+    }
+
+    fn overnight_buildings(&self) -> &[(f64, f64)] {
+        &self.buildings
+    }
+
+    fn overnight_glacier_rings(&self) -> &[Vec<[f64; 2]>] {
+        &self.glacier_rings
+    }
+
+    fn vehicle_overnight_profile(&self) -> VehicleProfile {
+        camping_vehicle_profile(self.travel_profile, self.professional_driver)
+    }
+
+    fn route_destination(&self) -> Option<(f64, f64)> {
+        self.destination
+    }
+
+    fn residency_country_iso(&self) -> Option<String> {
+        self.residency.clone()
     }
 }
 
@@ -569,6 +823,141 @@ pub fn camping_plugin_set_residency_country(iso: Option<String>) -> String {
 pub fn camping_plugin_run_suggest(job_json: String, timezone: String) -> CampingCallResult {
     camping_plugin_set_timezone(timezone);
     run_camping_guest(Some(job_json))
+}
+
+/// Discover overnight spots along the live nav corridor using the native engine
+/// (graph + proximity packs under `data_dir`). Phase 5b: returns full
+/// `CampingCard` lists in `result_json` without routing probe evaluation through
+/// wasmtime; the wasm guest path remains [`camping_plugin_run_suggest`].
+#[uniffi::export]
+pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallResult {
+    let started = Instant::now();
+    let guard = session_lock().lock().expect("camping session lock");
+    let Some(session) = guard.as_ref() else {
+        return CampingCallResult {
+            kind: CampingCallKind::Error,
+            message: "not configured".into(),
+            elapsed_ms: 0,
+            result_json: None,
+        };
+    };
+    if let Some(reason) = &session.session_disable_reason {
+        return CampingCallResult {
+            kind: CampingCallKind::Disabled,
+            message: reason.clone(),
+            elapsed_ms: 0,
+            result_json: None,
+        };
+    }
+    if !PluginEnableStore::open(session.enable_path())
+        .map(|s| s.is_enabled(CAMPING_NAME))
+        .unwrap_or(false)
+    {
+        return CampingCallResult {
+            kind: CampingCallKind::Disabled,
+            message: "camping plugin is disabled (default OFF)".into(),
+            elapsed_ms: 0,
+            result_json: None,
+        };
+    }
+    if session.route_waypoints.is_empty() {
+        return CampingCallResult {
+            kind: CampingCallKind::Error,
+            message: "route_waypoints empty — call camping_plugin_set_nav_context first".into(),
+            elapsed_ms: 0,
+            result_json: None,
+        };
+    }
+    let data_dir = session.data_dir.clone();
+    let waypoints = session.route_waypoints.clone();
+    let travel_profile = session.travel_profile;
+    drop(guard);
+
+    let Some(bbox) = corridor_bbox_from_waypoints(&waypoints) else {
+        return CampingCallResult {
+            kind: CampingCallKind::Error,
+            message: "could not derive corridor bbox".into(),
+            elapsed_ms: started.elapsed().as_millis() as u64,
+            result_json: None,
+        };
+    };
+    let Some(pbf) = find_planning_pbf(&data_dir) else {
+        return CampingCallResult {
+            kind: CampingCallKind::Unavailable,
+            message: format!(
+                "no .osm.pbf under {} for overnight corridor graph",
+                data_dir.display()
+            ),
+            elapsed_ms: started.elapsed().as_millis() as u64,
+            result_json: None,
+        };
+    };
+    let routing_profile = routing_profile_for_travel(travel_profile);
+    let route_points: Vec<(f64, f64)> = waypoints.iter().map(|w| (w[0], w[1])).collect();
+    let graph = match try_load_graph_for_plan_corridor(
+        &data_dir,
+        &pbf,
+        routing_profile,
+        Some(bbox),
+        Some(&route_points),
+    ) {
+        Ok(g) => g,
+        Err(e) => {
+            return CampingCallResult {
+                kind: CampingCallKind::Unavailable,
+                message: format!("corridor graph load failed: {e:?}"),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+                result_json: None,
+            };
+        }
+    };
+
+    let (buildings, glacier_rings) = load_overnight_geometry(&data_dir, &pbf, bbox);
+    let guard = session_lock().lock().expect("camping session lock");
+    let Some(session) = guard.as_ref() else {
+        return CampingCallResult {
+            kind: CampingCallKind::Error,
+            message: "session cleared during load".into(),
+            elapsed_ms: started.elapsed().as_millis() as u64,
+            result_json: None,
+        };
+    };
+    let mut host = match FfiCampingHost::open(session, buildings, glacier_rings) {
+        Ok(h) => h,
+        Err(e) => {
+            return CampingCallResult {
+                kind: CampingCallKind::Error,
+                message: e,
+                elapsed_ms: started.elapsed().as_millis() as u64,
+                result_json: None,
+            };
+        }
+    };
+    drop(guard);
+
+    let max = if max_suggestions == 0 {
+        None
+    } else {
+        Some(max_suggestions as usize)
+    };
+    let out = suggest_overnight(
+        &mut host,
+        &SuggestInput {
+            graph: &graph,
+            corridor_waypoints: &waypoints,
+            track_walk_m: None,
+            corridor_radius_m: None,
+            max_suggestions: max,
+        },
+    );
+    let result_json = Some(rtr_suggest_result_json(&out));
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+    CampingCallResult {
+        kind: CampingCallKind::Ok,
+        message: "ok".into(),
+        elapsed_ms,
+        result_json,
+    }
 }
 
 fn run_camping_guest(job_json: Option<String>) -> CampingCallResult {

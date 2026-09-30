@@ -1,8 +1,12 @@
 # Right-to-roam overnight camping plugin (specification)
 
 **Status:** Phase 5a implemented on Android (wasmtime gate lifted, HostApi wired,
-PluginEnableStore default OFF, sandbox fuel/epoch/memory). Phase 5b presentation
-(map pins, suggestion cards, settings UI) not yet.  
+PluginEnableStore default OFF, sandbox fuel/epoch/memory). Phase 5b implemented:
+Compose suggestion list + settings (enable default OFF, residency unknown,
+professional driver), session-disable banner, host-side rendering only. Map pins
+via `camping-suggest` GeoJSON when results exist (list-first). Vehicle host data
+layers still not ingested (§6.1). Emulator captures:
+`docs/images/camping-5b/`.  
 **Path:** `docs/plugins/right-to-roam-camping-spec.md`  
 **Architecture:** WASM guest via `plugin-host` / `plugin-sdk` and capability-gated
 `HostApi` ([`plugins.md`](../plugins.md)). No new core routing; the plugin

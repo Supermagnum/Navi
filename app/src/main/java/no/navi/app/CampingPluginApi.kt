@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 import uniffi.navi.CampingCallResult
 import uniffi.navi.campingPluginRunSuggest
 import uniffi.navi.campingPluginSetTimezone
+import uniffi.navi.campingPluginSuggestAlongRoute
 import java.util.TimeZone
 
 /**
@@ -28,6 +29,16 @@ object CampingPluginApi {
     suspend fun runSuggest(jobJson: String): CampingCallResult =
         withContext(Dispatchers.Default) {
             runSuggestBlocking(jobJson)
+        }
+
+    /**
+     * Native corridor overnight suggest (Phase 5b). Refreshes timezone on the worker thread.
+     */
+    suspend fun suggestAlongRoute(max: UInt = 12u): CampingCallResult =
+        withContext(Dispatchers.Default) {
+            assertOffMainThread("campingPluginSuggestAlongRoute")
+            campingPluginSetTimezone(TimeZone.getDefault().id)
+            campingPluginSuggestAlongRoute(max)
         }
 
     fun assertOffMainThread(label: String) {

@@ -45,6 +45,7 @@ class CampingSandboxInstrumentedTest {
         installAssetGuest("trap_guest")
         installAssetGuest("memory_bomb")
         installAssetGuest("right_to_roam_camping")
+        campingPluginSetEnabled(false)
     }
 
     private fun installAssetGuest(name: String) {
