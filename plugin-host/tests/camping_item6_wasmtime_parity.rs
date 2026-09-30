@@ -205,6 +205,20 @@ fn build_job_from_native(
         "kv_ok": emb.kv_available,
         "countries": countries,
         "subdivisions": subdivisions,
+        "travel_mode": match emb.travel_mode() {
+            navi_right_to_roam_camping::TravelMode::Motorised => "motorised",
+            navi_right_to_roam_camping::TravelMode::NonMotorised => "non_motorised",
+            navi_right_to_roam_camping::TravelMode::Unknown => "unknown",
+        },
+        "vehicle_class": match emb.vehicle_overnight_profile().class {
+            navi_right_to_roam_camping::VehicleClass::Car => "car",
+            navi_right_to_roam_camping::VehicleClass::CampervanMotorhome => "campervan_motorhome",
+            navi_right_to_roam_camping::VehicleClass::Hgv => "hgv",
+            navi_right_to_roam_camping::VehicleClass::Unknown => "unknown",
+        },
+        "is_professional_driver_under_rest_rules": emb
+            .vehicle_overnight_profile()
+            .is_professional_driver_under_rest_rules,
     })
 }
 
@@ -340,6 +354,90 @@ fn wasmtime_lillehammer_parity_cap12_and_uncapped() {
             eval_entries.iter().filter(|e| !e.accepted).count()
         );
     }
+}
+
+#[test]
+fn wasmtime_lillehammer_motorised_on_foot_exact_parity() {
+    let dir = data_dir();
+    if !packs_present(&dir) {
+        eprintln!("SKIP: missing ostlandet packs");
+        return;
+    }
+    let stage = build_camping_guest();
+    let (graph, waypoints) = plan_corridor(&dir, LILLEHAMMER, SJUSJOEN).expect("plan");
+    let bbox = [
+        LILLEHAMMER.0.min(SJUSJOEN.0) - 0.2,
+        LILLEHAMMER.1.min(SJUSJOEN.1) - 0.2,
+        LILLEHAMMER.0.max(SJUSJOEN.0) + 0.2,
+        LILLEHAMMER.1.max(SJUSJOEN.1) + 0.2,
+    ];
+    let prox = load_proximity(&dir, bbox);
+    let storage = Storage::open_in_memory().unwrap();
+    {
+        let store = driver_break_core::storage::ConfigStore::new(&storage);
+        store.save_safety_config(&SafetyConfig::default()).unwrap();
+    }
+    let mut emb =
+        NativeCampingEmbedder::with_real_backends(&storage, prox.as_ref(), Profile::MobileHome);
+    emb.set_route(waypoints.clone(), Some(SJUSJOEN));
+    emb.buildings.retain(|&(blat, blon)| {
+        waypoints
+            .iter()
+            .any(|w| (blat - w[0]).abs() < 0.008 && (blon - w[1]).abs() < 0.008)
+    });
+    emb.glacier_rings.clear();
+    let native = suggest_overnight(
+        &mut emb,
+        &SuggestInput {
+            graph: &graph,
+            corridor_waypoints: &waypoints,
+            track_walk_m: None,
+            corridor_radius_m: None,
+            max_suggestions: Some(12),
+        },
+    );
+    assert_eq!(native.list.probes_accepted, 0);
+    let tent_entries: Vec<_> = native
+        .probe_log
+        .iter()
+        .filter(|e| e.road_highway != "vehicle" && e.reason != "track_too_short_for_walk_or_pack_min_road")
+        .cloned()
+        .collect();
+    let probes: Vec<(f64, f64)> = tent_entries.iter().map(|e| (e.lat, e.lon)).collect();
+    let native_tent = reason_counts(&tent_entries);
+    let mut emb2 = emb.clone_for_replay();
+    let fixed = suggest_overnight_fixed_probes(&mut emb2, &probes, None);
+    let fixed_tent: Vec<_> = fixed
+        .probe_log
+        .iter()
+        .filter(|e| e.road_highway != "vehicle")
+        .cloned()
+        .collect();
+    assert_eq!(
+        reason_counts(&fixed_tent),
+        native_tent,
+        "fixed-probe tent log must match native graph evaluate_probe subset"
+    );
+    assert_eq!(
+        fixed.on_foot_from_here.probes_accepted,
+        tent_entries.iter().filter(|e| e.accepted).count()
+    );
+
+    let job = build_job_from_native(&emb2, &probes, None);
+    let (g_acc, g_rej, g_counts) = run_guest_job(&stage, &job);
+    eprintln!("motorised native_tent={native_tent:?}");
+    eprintln!("motorised guest accepted={g_acc} rejected={g_rej} reasons={g_counts:?}");
+    assert_eq!(g_counts, native_tent, "wasm tent reasons must match native");
+    assert_eq!(
+        g_acc,
+        tent_entries.iter().filter(|e| e.accepted).count(),
+        "wasm on-foot accepts must match native tent accepts"
+    );
+    assert_eq!(
+        g_rej,
+        tent_entries.iter().filter(|e| !e.accepted).count(),
+        "wasm tent rejects must match native"
+    );
 
     eprintln!(
         "GATE STAYS CLOSED for Android: wasmtime parity verified on native host only"

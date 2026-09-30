@@ -103,6 +103,8 @@ fn motorised_tent_spots_only_in_on_foot_section_with_notes() {
         assert!(c.notes.iter().any(|n| n.contains("On foot from here")));
         assert!(c.notes.iter().any(|n| n.contains("motorferdselloven")));
         assert!(c.walk_m.is_some());
+        assert!(c.fire_text.is_some());
+        assert!(c.bare_rock_note.is_some());
         assert!(!c
             .seed_road_highway
             .as_deref()

@@ -232,6 +232,9 @@ pub extern "C" fn plugin_main() {
     let mut rejected = 0usize;
     let mut reasons: BTreeMap<String, usize> = BTreeMap::new();
     for e in &out.probe_log {
+        if e.road_highway == "vehicle" {
+            continue;
+        }
         *reasons.entry(e.reason.clone()).or_default() += 1;
         if e.accepted {
             accepted += 1;
@@ -245,6 +248,7 @@ pub extern "C" fn plugin_main() {
         "reasons": reasons,
         "vehicle_accepted": out.vehicle.probes_accepted,
         "on_foot_accepted": out.on_foot_from_here.probes_accepted,
+        "on_foot_rejected": out.on_foot_from_here.cards.iter().filter(|c| !c.accepted).count(),
     });
     let text = result.to_string();
     let _ = navi_plugin_sdk::host_plugin_kv_set("rtr_suggest_result", &text);

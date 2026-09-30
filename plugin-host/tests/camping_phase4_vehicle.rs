@@ -131,6 +131,8 @@ fn dump_card(label: &str, c: &CampingCard) {
     eprintln!("=== {label} ===");
     eprintln!("accepted={} tier={:?} country={}", c.accepted, c.tier, c.country_iso);
     eprintln!("legal_basis={}", c.legal_basis);
+    eprintln!("fire_text={:?}", c.fire_text);
+    eprintln!("bare_rock_note={:?}", c.bare_rock_note);
     eprintln!("walk_m={:?}", c.walk_m);
     eprintln!("seed={:?}", c.seed_road_highway);
     eprintln!("sources={:?}", c.sources);
@@ -232,21 +234,22 @@ fn phase4_norway_profiles_native_and_wasmtime() {
             assert!(c.notes.iter().any(|n| n.contains("On foot from here")));
             assert!(c.notes.iter().any(|n| n.contains("motorferdselloven")));
             assert!(c.walk_m.is_some());
+            assert!(c.fire_text.is_some(), "on-foot NO card must carry date-gated fire text");
+            assert!(c.bare_rock_note.is_some(), "on-foot NO card must carry bare-rock note");
             if !pasted_on_foot {
                 dump_card("FULL Norwegian On foot from here card", c);
                 pasted_on_foot = true;
             }
         }
 
-        // wasmtime parity on fixed probes from native on-foot accepts.
-        let probes: Vec<(f64, f64)> = out
-            .on_foot_from_here
-            .cards
+        // Exact tent-probe set (no arbitrary take) so wasmtime matches native.
+        let tent_entries: Vec<_> = out
+            .probe_log
             .iter()
-            .filter(|c| c.accepted)
-            .map(|c| (c.lat, c.lon))
-            .take(8)
+            .filter(|e| e.road_highway != "vehicle" && e.reason != "track_too_short_for_walk_or_pack_min_road")
+            .cloned()
             .collect();
+        let probes: Vec<(f64, f64)> = tent_entries.iter().map(|e| (e.lat, e.lon)).collect();
         let safety: navi_right_to_roam_camping::OvernightSafety = (&emb.safety).into();
         let countries: Vec<_> = probes
             .iter()
@@ -261,7 +264,7 @@ fn phase4_norway_profiles_native_and_wasmtime() {
             .collect();
         let job = json!({
             "probes": probes.iter().map(|&(a,b)| [a,b]).collect::<Vec<_>>(),
-            "max_suggestions": 12,
+            "max_suggestions": null,
             "buildings": emb.buildings.iter().map(|&(a,b)| [a,b]).collect::<Vec<_>>(),
             "glaciers": [],
             "safety": safety,
@@ -279,9 +282,10 @@ fn phase4_norway_profiles_native_and_wasmtime() {
             "is_professional_driver_under_rest_rules": pro,
         });
         let (g_veh, g_foot) = run_guest_job(&stage, &job);
-        eprintln!("--- PROFILE {label} (wasmtime) vehicle={g_veh} on_foot={g_foot} ---");
+        let native_foot = tent_entries.iter().filter(|e| e.accepted).count();
+        eprintln!("--- PROFILE {label} (wasmtime) vehicle={g_veh} on_foot={g_foot} native_foot={native_foot} ---");
         assert_eq!(g_veh, 0, "{label}: wasm vehicle must stay empty without NVDB");
-        assert!(g_foot > 0, "{label}: wasm on_foot must accept");
+        assert_eq!(g_foot, native_foot, "{label}: wasm on-foot accepts must match native");
     }
 
     assert!(pasted_on_foot, "must paste one full Norwegian on-foot card");

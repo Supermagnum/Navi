@@ -325,5 +325,89 @@ fn accepted_cards_carry_disclaimer_and_sources() {
         "expected single protected-area not-checked line; notes={:?}",
         card.notes
     );
-    assert!(card.fire_text.as_deref().is_some_and(|t| t.contains("not Swedish law")));
+    assert!(card.fire_text.as_deref().is_some_and(|t| t.contains("Naturvårdsverket")));
+    assert!(card.fire_text.as_deref().is_some_and(|t| t.contains("eldningsförbud")));
+}
+
+#[test]
+fn norway_on_foot_cards_carry_fire_and_bare_rock() {
+    struct Motor {
+        inner: FixtureHost,
+    }
+    impl CampingHost for Motor {
+        fn safety_config(&self) -> Option<OvernightSafety> {
+            self.inner.safety_config()
+        }
+        fn clock_local(&self) -> Option<LocalDate> {
+            self.inner.clock_local()
+        }
+        fn plugin_kv_available(&self) -> bool {
+            true
+        }
+        fn kv_get(&self, key: &str) -> Option<String> {
+            self.inner.kv_get(key)
+        }
+        fn kv_set(&mut self, key: &str, value: &str) -> Result<(), String> {
+            self.inner.kv_set(key, value)
+        }
+        fn admin_country_iso(&self, lat: f64, lon: f64) -> Option<String> {
+            self.inner.admin_country_iso(lat, lon)
+        }
+        fn admin_subdivision_iso(&self, lat: f64, lon: f64) -> Option<String> {
+            self.inner.admin_subdivision_iso(lat, lon)
+        }
+        fn travel_mode(&self) -> TravelMode {
+            TravelMode::Motorised
+        }
+        fn overnight_buildings(&self) -> &[(f64, f64)] {
+            self.inner.overnight_buildings()
+        }
+        fn overnight_glacier_rings(&self) -> &[Vec<[f64; 2]>] {
+            self.inner.overnight_glacier_rings()
+        }
+        fn vehicle_overnight_profile(&self) -> navi_right_to_roam_camping::VehicleProfile {
+            navi_right_to_roam_camping::VehicleProfile {
+                class: navi_right_to_roam_camping::VehicleClass::CampervanMotorhome,
+                is_professional_driver_under_rest_rules: false,
+            }
+        }
+    }
+    let mut h = Motor {
+        inner: FixtureHost {
+            country: "no".into(),
+            subdivision: Some("no-34".into()),
+            protected: ProtectedAreaStatus::Unknown,
+            cmz_ready: false,
+            cmz_inside: false,
+            safety: OvernightSafety::default(),
+            date: LocalDate {
+                year: 2026,
+                month: 7,
+                day: 1,
+            },
+            kv: HashMap::new(),
+        },
+    };
+    let out = suggest_overnight_fixed_probes(&mut h, &[(61.12, 10.47)], Some(1));
+    let card = out
+        .on_foot_from_here
+        .cards
+        .iter()
+        .find(|c| c.accepted)
+        .expect("NO on-foot accept");
+    assert!(
+        card.fire_text
+            .as_deref()
+            .is_some_and(|t| t.contains("15 April") && t.contains("15 September")),
+        "date-gated fire text missing; fire={:?}",
+        card.fire_text
+    );
+    assert!(
+        card.bare_rock_note
+            .as_deref()
+            .is_some_and(|t| t.contains("bare rock")),
+        "bare-rock note missing; note={:?}",
+        card.bare_rock_note
+    );
+    assert!(card.notes.iter().any(|n| n.contains("On foot from here")));
 }
