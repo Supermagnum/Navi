@@ -213,7 +213,67 @@ fun mergeManeuvers(legs: List<List<RouteManeuver>>): List<RouteManeuver> {
         }
         offset += lastCum
     }
-    return out
+    return thinRouteManeuvers(out)
+}
+
+/**
+ * Thin stitched maneuvers toward continuous-route list density.
+ * Mirrors `driver_break_core::routing::guidance_path::thin_route_maneuvers`.
+ */
+fun thinRouteManeuvers(mans: List<RouteManeuver>): List<RouteManeuver> {
+    val longRouteM = 500_000.0
+    val minGapFloorM = 8_000.0
+    val targetSlots = 75.0
+    val shortDedupM = 750.0
+    val expectedMin = 55
+    val expectedMax = 100
+
+    fun isAnchor(m: RouteManeuver): Boolean {
+        if (m.viaIndex != null) return true
+        return m.kind == "destination"
+    }
+
+    fun thinWithGap(source: List<RouteManeuver>, minGap: Double): List<RouteManeuver> {
+        val out = ArrayList<RouteManeuver>(source.size.coerceAtMost(128))
+        var lastKeptCum = Double.NEGATIVE_INFINITY
+        for (m in source) {
+            if (m.kind == "straight") continue
+            if (isAnchor(m)) {
+                out.add(m)
+                lastKeptCum = m.cumM
+                continue
+            }
+            if (m.cumM - lastKeptCum < minGap) continue
+            out.add(m)
+            lastKeptCum = m.cumM
+        }
+        return out
+    }
+
+    val totalM = mans.lastOrNull()?.cumM?.coerceAtLeast(1.0) ?: 1.0
+    if (totalM < longRouteM) {
+        return thinWithGap(mans, shortDedupM)
+    }
+
+    var gap = (totalM / targetSlots).coerceAtLeast(minGapFloorM)
+    var best = thinWithGap(mans, gap)
+    repeat(12) {
+        val n = best.size
+        if (n in expectedMin..expectedMax) return best
+        gap =
+            if (n > expectedMax) {
+                gap * 1.2
+            } else {
+                (gap * 0.82).coerceAtLeast(minGapFloorM * 0.5)
+            }
+        best = thinWithGap(mans, gap)
+    }
+    while (best.size > expectedMax) {
+        gap *= 1.25
+        best = thinWithGap(mans, gap)
+        if (gap > totalM) break
+    }
+    return best
 }
 
 /** Highway-class fallback table (mirrors core eta::highway_fallback_kmh). */

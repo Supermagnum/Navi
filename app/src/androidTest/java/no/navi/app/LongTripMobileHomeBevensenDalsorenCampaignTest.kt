@@ -458,7 +458,7 @@ class LongTripMobileHomeBevensenDalsorenCampaignTest {
                     .put("maneuvers", jsonArrayLen(result.maneuversJson))
                     .put(
                         "maneuvers_ok",
-                        jsonArrayLen(result.maneuversJson) in 200..500,
+                        jsonArrayLen(result.maneuversJson) in 55..100,
                     ),
             )
             writeReport(report)

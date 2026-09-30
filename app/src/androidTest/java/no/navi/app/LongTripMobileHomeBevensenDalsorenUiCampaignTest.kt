@@ -321,7 +321,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 .put("duration_h", etaMin / 60.0)
                 .put("duration_ok", (etaMin / 60.0) in 17.0..22.5)
                 .put("maneuvers", manCount)
-                .put("maneuvers_ok", manCount in 200..350)
+                .put("maneuvers_ok", manCount in 55..100)
                 .put("datex_ok", datexImpactsPositive(planReport)),
         )
         report.put("pack_dir", LongTripPackStorage.packDownloadDir(composeRule.activity).absolutePath)

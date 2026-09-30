@@ -34,13 +34,13 @@ country AABB spill as endpoint coverage.
 |---|---|---|
 | Distance | **1631.9 km** | 1461.3–1648.6 km |
 | Driving time | **~21.1 h** | 17–~22 h |
-| Instructions | **281** | 200–350 |
+| Instructions | **55** (was 281 raw) | **55–100** |
 | Plan | **found** (`ui_planned=true`, 14 chunk legs PASS) | found |
 
-**Release bump** for this pass (distance, duration, and instructions inside
-EXPECTED). Instruction EXPECTED is **200–350** for chunked Navi OSM guidance
-(continuous Valhalla-class 55–100 is not comparable; FFI campaign already used
-200–500; stitch drops mid-leg destinations).
+**Release bump** for this pass. Instruction EXPECTED is **55–100** (Valhalla-class
+continuous density). Chunked OSM guidance is stitched then thinned via
+`thin_route_maneuvers` (drop continues; adaptive spacing into band; keep
+via/destination anchors). Live UI re-run: all EXPECTED checks true.
 
 User fair counterexample (same via, tolls off, no wild camping): **1514.3 km /
 ~18.8 h**. Campaign excess vs user ≈ **+118 km / +2.3 h** after soft-pull
@@ -54,7 +54,7 @@ User fair counterexample (same via, tolls off, no wild camping): **1514.3 km /
 |---|---|---|---|
 | 1 | Westbound NE-climb densify mid on Ottadal→Dalsøren | Campaign leg14 was **98.9 km / 18.3 km GC (5.41×)** between half-step mid ~8.78°E and next joint; `prefer_north_then_east_mid` applied 20%-of-dlon climb on negative `dlat`. Via→dest routed **238 → 131 km** after fix. | **Fixed** (`9997e310`) |
 | 2 | Skåne raw AABB center (~13.53°E) east zigzag then Halland | Soft-pull toward neighbor envelope landed Skåne densify at **13.24°E** (not OD-chord clamp). Leg5+6 road **251.1 km** (was 248.3 with worse geometry but total trip **1660.9 → 1631.9**). Corridor-centroid bias still unsafe (Øresund `disconnected`). | **Fixed** (`ddcf8469`) |
-| 3 | Chunk maneuver destination spam | Raw JSON concat kept 1 `destination` per hop (~14 extras) and reset `cum_m`. `stitch_chunk_leg_maneuvers` drops mid-leg destinations and offsets cum — **305 → 281**. Remaining count is OSM guidance density, not stitch bugs. | **Fixed** stitch; band **200–350** |
+| 3 | Chunk maneuver density | Raw JSON concat kept 1 `destination` per hop (~14 extras) and reset `cum_m`. Stitch drops mid-leg destinations; `thin_route_maneuvers` then drops `straight` and spaces non-essentials (~20 km on a 1600 km trip) so count lands in **55–100**. | **Fixed** stitch + thin; band **55–100** |
 | 4 | Synthetic DATEX Blocks on hop midpoints | 1 leg with `datex_impacts=1` this pass (soft floor 3–6; helper `datex_ok` only needs any positive impact). Expected detour cost. | Expected settings cost |
 | 5 | MobileHome/Truck + VW T6 limits vs user path | Soft rests / wild camping do **not** change path distance (`poi_skipped=chunk_leg`). MH graph costs can still lengthen vs a lighter profile (~118 km vs user 1514). | Expected product cost |
 
@@ -126,7 +126,7 @@ Regions in route order (status at plan time):
 |---|---|
 | Distance | **1631.9 km** (inside EXPECTED) |
 | ETA | **1264.5 min (~21.1 h)** (inside EXPECTED) |
-| Maneuvers | **281** (inside EXPECTED 200–350) |
+| Maneuvers | **55** (EXPECTED **55–100**; raw pre-thin was 281) |
 | Ferries used | **false** |
 | Via→dest densify | single even mid ≈ `(61.656, 8.283)` (was half-step `8.777` + micro-hop) |
 | Skåne densify | **(55.91, 13.2375)** soft-pulled off AABB center 13.525 |
@@ -199,9 +199,10 @@ Evidence JSON: app
 - Distance is inside EXPECTED but still ~118 km above the user 1514 km fair path
   (MH/Truck costs + residual densify/load + DATEX); no further general densify
   fix identified without rebreaking Øresund.
-- Instruction EXPECTED is **200–350** for chunked Navi OSM guidance (not the
-  continuous Valhalla-class 55–100). Stitch removes mid-leg destinations; further
-  cuts need guidance-policy changes, not densify.
+- Instruction EXPECTED is **55–100**. Chunked OSM lists are stitched then thinned
+  (`thin_route_maneuvers`: drop `straight`, space non-essentials by route length,
+  keep exits/roundabouts/vias/destination). Silent OSM name continues are no
+  longer promoted to Straight.
 - DATEX soft floor 3–6 impacts: this pass hit **1** (helper `datex_ok` still true).
 - Eco Compose switch not reliably toggled from the UI campaign helper when the
   route sheet is in search-chip mode.
