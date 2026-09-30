@@ -387,12 +387,44 @@ fn densify_ready_with_leaf_proxies(
             continue;
         }
         for (leaf, bbox) in crate::routing::basemap::catalog_leaf_bboxes_under(path) {
+            // Skip border-spill leaves that intersect a foreign Ready leaf AABB
+            // (e.g. Hovedstaden∩Skåne). Those centroids pull densify onto
+            // coastal/Øresund chords that snap-fail under the intermediate budget.
+            if densify_leaf_intersects_foreign_ready(leaf, bbox, &snapshot) {
+                continue;
+            }
             if seen.insert(leaf.to_string()) {
                 ready.push((leaf.to_string(), bbox));
             }
         }
     }
     ready
+}
+
+fn densify_leaf_intersects_foreign_ready(
+    leaf_path: &str,
+    leaf_bbox: [f64; 4],
+    ready: &[(String, [f64; 4])],
+) -> bool {
+    let Some(home) = densify_region_country(leaf_path) else {
+        return false;
+    };
+    // Skip leaves whose *centroid* sits on a foreign Ready leaf fringe
+    // (Hovedstaden hugging Skåne). Full AABB intersection is too aggressive —
+    // Sjælland's box nicks Skåne but its centroid is inland on Zealand.
+    const BORDER_FRINGE_DEG: f64 = 0.25;
+    let c = (
+        (leaf_bbox[0] + leaf_bbox[2]) * 0.5,
+        (leaf_bbox[1] + leaf_bbox[3]) * 0.5,
+    );
+    ready.iter().any(|(p, bb)| {
+        if densify_region_country(p) == Some(home) || p.matches('/').count() < 2 {
+            return false;
+        }
+        let lat = c.0.clamp(bb[0], bb[2]);
+        let lon = c.1.clamp(bb[1], bb[3]);
+        (c.0 - lat).abs().max((c.1 - lon).abs()) < BORDER_FRINGE_DEG
+    })
 }
 
 fn collect_ready_region_entries_dirs(dirs: &[&std::path::Path]) -> Vec<(String, [f64; 4])> {
@@ -1620,6 +1652,13 @@ mod tests {
         assert!(
             !south_of_sh,
             "must not densify south of SH on northbound trip; hops={hops:?}"
+        );
+        let hovedstaden = hops.iter().any(|(lat, lon)| {
+            (lat - 55.855).abs() < 0.05 && (lon - 12.35).abs() < 0.15
+        });
+        assert!(
+            !hovedstaden,
+            "border-spill leaf proxies (Hovedstaden∩Skåne) must not be densify hops; hops={hops:?}"
         );
         let _ = (sh, halland);
         assert!(
