@@ -94,6 +94,23 @@ pub struct NativeCampingEmbedder {
 }
 
 impl NativeCampingEmbedder {
+    /// Copy host backends for a second evaluate pass (same safety/buildings/clock).
+    pub fn clone_for_replay(&self) -> Self {
+        Self {
+            safety: self.safety.clone(),
+            clock: self.clock,
+            kv: HashMap::new(),
+            kv_available: self.kv_available,
+            travel_profile: self.travel_profile,
+            buildings: self.buildings.clone(),
+            glacier_rings: self.glacier_rings.clone(),
+            route_waypoints: self.route_waypoints.clone(),
+            destination: self.destination,
+            protected_ready: self.protected_ready,
+            landcover_ready: self.landcover_ready,
+        }
+    }
+
     /// Real backends: ConfigStore safety, OS local clock, empty KV store, optional
     /// OvernightProximityIndex from the downloaded poi-barrier pack.
     pub fn with_real_backends(
@@ -129,8 +146,8 @@ impl NativeCampingEmbedder {
 }
 
 impl CampingHost for NativeCampingEmbedder {
-    fn safety_config(&self) -> Option<SafetyConfig> {
-        Some(self.safety.clone())
+    fn safety_config(&self) -> Option<navi_right_to_roam_camping::OvernightSafety> {
+        Some((&self.safety).into())
     }
 
     fn clock_local(&self) -> Option<LocalDate> {

@@ -12,6 +12,7 @@ members = [
     "plugins/weather",
     "plugins/datex",
     "plugins/poi-lookahead",
+    "plugins/right-to-roam-camping",
     "right-to-roam-camping",
 ]
 default-members = ["core", "plugin-host"]

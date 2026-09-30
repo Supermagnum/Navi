@@ -3012,6 +3012,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "navi-plugin-right-to-roam-camping"
+version = "0.1.0"
+dependencies = [
+ "navi-plugin-sdk",
+ "navi-right-to-roam-camping",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "navi-plugin-sdk"
 version = "0.1.0"
 

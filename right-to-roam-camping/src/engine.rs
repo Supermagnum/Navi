@@ -1,11 +1,9 @@
 //! Overnight suggestion engine (Phase 2: Norway + SJ decline + Tier D).
 
-use std::collections::HashMap;
-
-use driver_break_core::poi::PoiRecord;
+#[cfg(feature = "native")]
 use driver_break_core::routing::graph::RouteGraph;
-use driver_break_core::routing::safety::{check_overnight_candidate, OvernightRejectReason};
 
+#[cfg(feature = "native")]
 use crate::candidates::{
     find_road_track_junctions, probe_along_track, ProbePoint, RoadTrackSeed, CORRIDOR_SEED_RADIUS_M,
     DEFAULT_TRACK_WALK_M,
@@ -15,20 +13,30 @@ use crate::fire::{fire_guidance_norway, LEAVE_NO_TRACE_NOTE, PROTECTED_SPECIES_N
 use crate::host::CampingHost;
 use crate::night_store::{location_id_from_lat_lon, NightStore};
 use crate::packs::{pack_for_country, PackId, Tier};
+use crate::safety_view::{wild_overnight_reject, OvernightSafety};
 use crate::NotCheckedLayers;
 
-fn wild_camp_poi() -> PoiRecord {
-    PoiRecord {
-        osm_id: 0,
-        lat: 0.0,
-        lon: 0.0,
-        categories: vec![],
-        icon_key: String::new(),
-        tags: HashMap::new(),
-        name: None,
+#[derive(Debug, Clone)]
+struct EvalProbe {
+    lat: f64,
+    lon: f64,
+    road_highway: String,
+    walk_m: f64,
+}
+
+#[cfg(feature = "native")]
+impl From<&ProbePoint> for EvalProbe {
+    fn from(p: &ProbePoint) -> Self {
+        Self {
+            lat: p.lat,
+            lon: p.lon,
+            road_highway: p.seed.road_highway.clone(),
+            walk_m: p.walk_m,
+        }
     }
 }
 
+#[cfg(feature = "native")]
 #[derive(Clone)]
 pub struct SuggestInput<'a> {
     pub graph: &'a RouteGraph,
@@ -43,11 +51,12 @@ pub struct SuggestInput<'a> {
 #[derive(Debug, Clone)]
 pub struct SuggestOutcome {
     pub list: SuggestionList,
+    #[cfg(feature = "native")]
     pub seeds: Vec<RoadTrackSeed>,
     pub probe_log: Vec<ProbeLogEntry>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProbeLogEntry {
     pub lat: f64,
     pub lon: f64,
@@ -95,30 +104,21 @@ declining wild-camp suggestions (campsites only)."
         });
         return SuggestOutcome {
             list,
+            #[cfg(feature = "native")]
             seeds: Vec::new(),
             probe_log,
         };
     };
 
     let clock = host.clock_local();
-    let wild_poi = wild_camp_poi();
     for &(lat, lon) in probes {
-        let seed = RoadTrackSeed {
+        let probe = EvalProbe {
             lat,
             lon,
-            node: osm4routing::NodeId(0),
             road_highway: "track".into(),
-            rank: crate::candidates::JunctionRank::Preferred,
-            track_edge_idx: 0,
-            track_continues_m: 500.0,
-        };
-        let probe = ProbePoint {
-            lat,
-            lon,
-            seed: seed.clone(),
             walk_m: 0.0,
         };
-        match evaluate_probe(host, &safety, &wild_poi, &probe, clock) {
+        match evaluate_probe(host, &safety, &probe, clock) {
             ProbeDecision::Accept(card) => {
                 probe_log.push(ProbeLogEntry {
                     lat,
@@ -153,12 +153,14 @@ declining wild-camp suggestions (campsites only)."
 
     SuggestOutcome {
         list,
+        #[cfg(feature = "native")]
         seeds: Vec::new(),
         probe_log,
     }
 }
 
 /// Run the Phase 2 camping engine against a loaded graph + host backends.
+#[cfg(feature = "native")]
 pub fn suggest_overnight(
     host: &mut dyn CampingHost,
     input: &SuggestInput<'_>,
@@ -213,7 +215,6 @@ declining wild-camp suggestions (campsites only)."
     };
 
     let clock = host.clock_local();
-    let wild_poi = wild_camp_poi();
 
     for seed in &seeds {
         let pack_min = {
@@ -235,7 +236,8 @@ declining wild-camp suggestions (campsites only)."
             continue;
         };
 
-        match evaluate_probe(host, &safety, &wild_poi, &probe, clock) {
+        let eval = EvalProbe::from(&probe);
+        match evaluate_probe(host, &safety, &eval, clock) {
             ProbeDecision::Accept(card) => {
                 probe_log.push(ProbeLogEntry {
                     lat: probe.lat,
@@ -286,9 +288,8 @@ enum ProbeDecision {
 
 fn evaluate_probe(
     host: &mut dyn CampingHost,
-    safety: &driver_break_core::config::SafetyConfig,
-    wild_poi: &PoiRecord,
-    probe: &ProbePoint,
+    safety: &OvernightSafety,
+    probe: &EvalProbe,
     clock: Option<crate::host::LocalDate>,
 ) -> ProbeDecision {
     let country = host.admin_country_iso(probe.lat, probe.lon);
@@ -352,7 +353,7 @@ declining (no silent rule bypass)."
                 not_checked,
                 disclaimer: crate::DISCLAIMER.into(),
                 location_id: loc_id,
-                seed_road_highway: Some(probe.seed.road_highway.clone()),
+                seed_road_highway: Some(probe.road_highway.clone()),
                 walk_m: Some(probe.walk_m),
             }),
         };
@@ -377,18 +378,13 @@ declining (no silent rule bypass)."
         }
     }
 
-    if let Some(reason) = check_overnight_candidate(
+    if let Some(label) = wild_overnight_reject(
         probe.lat,
         probe.lon,
         safety,
-        wild_poi,
         host.overnight_buildings(),
         host.overnight_glacier_rings(),
     ) {
-        let label = match reason {
-            OvernightRejectReason::TooCloseToBuilding => "too_close_to_building",
-            OvernightRejectReason::TooCloseToGlacier => "too_close_to_glacier",
-        };
         return ProbeDecision::Reject {
             reason: label.into(),
             card: None,
@@ -453,7 +449,7 @@ declining (no silent rule bypass)."
         not_checked,
         disclaimer: crate::DISCLAIMER.into(),
         location_id: loc_id,
-        seed_road_highway: Some(probe.seed.road_highway.clone()),
+        seed_road_highway: Some(probe.road_highway.clone()),
         walk_m: Some(probe.walk_m),
     })
 }
@@ -495,24 +491,25 @@ fn cloudberry_applies(subdivision_iso: Option<&str>) -> bool {
 }
 
 #[cfg(test)]
+#[cfg(feature = "native")]
 mod tests {
     use super::*;
     use crate::host::{CampingHost, LocalDate, TravelMode};
-    use driver_break_core::config::SafetyConfig;
+    use crate::safety_view::OvernightSafety;
     use std::collections::HashMap;
 
     struct MemHost {
         kv: HashMap<String, String>,
         kv_ok: bool,
-        safety: Option<SafetyConfig>,
+        safety: Option<OvernightSafety>,
         date: Option<LocalDate>,
         buildings: Vec<(f64, f64)>,
         country: Option<String>,
     }
 
     impl CampingHost for MemHost {
-        fn safety_config(&self) -> Option<SafetyConfig> {
-            self.safety.clone()
+        fn safety_config(&self) -> Option<OvernightSafety> {
+            self.safety
         }
         fn clock_local(&self) -> Option<LocalDate> {
             self.date
@@ -587,7 +584,7 @@ mod tests {
         let mut h = MemHost {
             kv: HashMap::new(),
             kv_ok: false,
-            safety: Some(SafetyConfig::default()),
+            safety: Some(OvernightSafety::default()),
             date: Some(LocalDate {
                 year: 2026,
                 month: 7,
@@ -614,14 +611,14 @@ mod tests {
 
     #[test]
     fn building_distance_follows_safety_config() {
-        let mut safety = SafetyConfig::default();
+        let mut safety = OvernightSafety::default();
         safety.min_building_distance_m = 150.0;
         // ~111 m north of building (0.001° lat).
         let buildings = vec![(61.1000, 10.5000)];
         let mut h = MemHost {
             kv: HashMap::new(),
             kv_ok: true,
-            safety: Some(safety.clone()),
+            safety: Some(safety),
             date: Some(LocalDate {
                 year: 2026,
                 month: 10,
@@ -630,30 +627,22 @@ mod tests {
             buildings: buildings.clone(),
             country: Some("no".into()),
         };
-        let probe = ProbePoint {
+        let probe = EvalProbe {
             lat: 61.1010,
             lon: 10.5000,
-            seed: RoadTrackSeed {
-                lat: 61.1,
-                lon: 10.5,
-                node: osm4routing::NodeId(1),
-                road_highway: "tertiary".into(),
-                rank: crate::candidates::JunctionRank::Preferred,
-                track_edge_idx: 0,
-                track_continues_m: 200.0,
-            },
+            road_highway: "tertiary".into(),
             walk_m: 120.0,
         };
         let date = h.date;
-        let d1 = evaluate_probe(&mut h, &safety, &wild_camp_poi(), &probe, date);
+        let d1 = evaluate_probe(&mut h, &safety, &probe, date);
         assert!(
             matches!(d1, ProbeDecision::Reject { reason, .. } if reason == "too_close_to_building"),
             "expected reject at 150 m threshold"
         );
 
         safety.min_building_distance_m = 80.0;
-        h.safety = Some(safety.clone());
-        let d2 = evaluate_probe(&mut h, &safety, &wild_camp_poi(), &probe, date);
+        h.safety = Some(safety);
+        let d2 = evaluate_probe(&mut h, &safety, &probe, date);
         assert!(
             matches!(d2, ProbeDecision::Accept(_)),
             "expected accept when threshold drops below building distance"
@@ -665,7 +654,7 @@ mod tests {
         let mut h = MemHost {
             kv: HashMap::new(),
             kv_ok: true,
-            safety: Some(SafetyConfig::default()),
+            safety: Some(OvernightSafety::default()),
             date: Some(LocalDate {
                 year: 2026,
                 month: 7,
@@ -674,25 +663,16 @@ mod tests {
             buildings: vec![],
             country: Some("se".into()),
         };
-        let probe = ProbePoint {
+        let probe = EvalProbe {
             lat: 60.0,
             lon: 12.5,
-            seed: RoadTrackSeed {
-                lat: 60.0,
-                lon: 12.5,
-                node: osm4routing::NodeId(1),
-                road_highway: "tertiary".into(),
-                rank: crate::candidates::JunctionRank::Preferred,
-                track_edge_idx: 0,
-                track_continues_m: 200.0,
-            },
+            road_highway: "tertiary".into(),
             walk_m: 120.0,
         };
         let date = h.date;
         let d = evaluate_probe(
             &mut h,
-            &SafetyConfig::default(),
-            &wild_camp_poi(),
+            &OvernightSafety::default(),
             &probe,
             date,
         );

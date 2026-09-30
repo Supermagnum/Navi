@@ -1,0 +1,21 @@
+{
+  "name": "right_to_roam_camping",
+  "version": "0.1.0",
+  "entry": "plugin_main",
+  "capabilities": [
+    "log",
+    "route_read",
+    "safety_config_read",
+    "admin_region_read",
+    "clock_read",
+    "plugin_kv",
+    "travel_mode_read",
+    "protected_area_query",
+    "landcover_query",
+    "land_tenure_query",
+    "route_destination_read"
+  ],
+  "fuel_limit": 500000000,
+  "timeout_ms": 60000,
+  "wasm": "plugin.wasm"
+}

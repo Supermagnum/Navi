@@ -3,8 +3,8 @@
 //! The ban window is a **local calendar** rule for Europe/Oslo. Embedders must
 //! supply the device-local Y-M-D via `clock_read` (never raw UTC Y-M-D).
 
-use chrono::{Datelike, TimeZone, Utc};
-use chrono_tz::Europe::Oslo;
+#[cfg(feature = "native")]
+use chrono::Datelike;
 
 use crate::host::LocalDate;
 
@@ -66,6 +66,7 @@ pub fn fire_guidance_norway(date: Option<LocalDate>) -> FireGuidance {
 }
 
 /// Convert a UTC instant to the Europe/Oslo local calendar date (fire + night rules).
+#[cfg(feature = "native")]
 pub fn local_date_europe_oslo_from_utc(
     year: i32,
     month: u32,
@@ -74,6 +75,8 @@ pub fn local_date_europe_oslo_from_utc(
     min: u32,
     sec: u32,
 ) -> Option<LocalDate> {
+    use chrono::{TimeZone, Utc};
+    use chrono_tz::Europe::Oslo;
     let utc = Utc
         .with_ymd_and_hms(year, month, day, hour, min, sec)
         .single()?;
@@ -110,6 +113,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "native")]
     fn utc_late_apr14_is_already_apr15_in_oslo() {
         // 2026-04-14T23:30Z → 2026-04-15 01:30 CEST
         let local = local_date_europe_oslo_from_utc(2026, 4, 14, 23, 30, 0).unwrap();
@@ -119,6 +123,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "native")]
     fn utc_late_sep15_is_already_sep16_in_oslo() {
         // 2026-09-15T22:30Z → 2026-09-16 00:30 CEST
         let local = local_date_europe_oslo_from_utc(2026, 9, 15, 22, 30, 0).unwrap();
@@ -128,6 +133,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "native")]
     fn dst_spring_forward_2026() {
         // Europe/Oslo springs forward 2026-03-29 02:00 → 03:00 local.
         // 2026-03-29T00:30Z = 01:30 CET (still 29 Mar).
@@ -140,6 +146,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "native")]
     fn dst_fall_back_2026() {
         // Europe/Oslo falls back 2026-10-25 03:00 → 02:00 local.
         let local = local_date_europe_oslo_from_utc(2026, 10, 25, 0, 30, 0).unwrap();

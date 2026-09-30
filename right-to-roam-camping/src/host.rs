@@ -1,6 +1,6 @@
 //! Host port for the camping engine (filled by native embedder or HostApi adapter).
 
-use driver_break_core::config::SafetyConfig;
+use crate::safety_view::OvernightSafety;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TravelMode {
@@ -9,7 +9,7 @@ pub enum TravelMode {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LocalDate {
     pub year: i32,
     pub month: u32,
@@ -24,7 +24,7 @@ impl LocalDate {
 
 /// What the camping engine needs from the host. Fail-safe: unavailable → decline.
 pub trait CampingHost {
-    fn safety_config(&self) -> Option<SafetyConfig>;
+    fn safety_config(&self) -> Option<OvernightSafety>;
     /// Device-local calendar date. `None` → cautious fire text only.
     fn clock_local(&self) -> Option<LocalDate>;
     fn plugin_kv_available(&self) -> bool;

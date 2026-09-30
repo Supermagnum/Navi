@@ -7,13 +7,19 @@ repository.workspace = true
 description = "Right-to-roam overnight camping rule engine (native; WASM guest wraps this)"
 rust-version.workspace = true
 
+[features]
+default = ["native"]
+native = ["dep:driver-break-core", "dep:osm4routing", "dep:chrono-tz", "chrono/clock"]
+
 [dependencies]
-chrono = { workspace = true }
-chrono-tz = { workspace = true }
-driver-break-core = { path = "../core" }
-osm4routing = { workspace = true }
+# alloc-only chrono for wasm guest; native feature adds clock.
+chrono = { version = "0.4", default-features = false, features = ["alloc"] }
+chrono-tz = { workspace = true, optional = true }
+driver-break-core = { path = "../core", optional = true }
+osm4routing = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+driver-break-core = { path = "../core" }
