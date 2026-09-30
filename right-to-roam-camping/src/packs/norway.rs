@@ -11,7 +11,7 @@ pub fn norway_pack() -> RulePack {
         legal_basis: "Friluftsloven (allemannsretten); Motorferdselloven; forskrift om brannforebygging § 3",
         sources: NORWAY_SOURCES,
         distance: DistanceRule::SafetyConfigLabeled {
-            label: "shared SafetyConfig building distance (Norwegian pack default)",
+            label: "150 m (friluftsloven), from Navi SafetyConfig",
         },
         duration: DurationRule::HardMaxConsecutiveNights {
             nights: 2,

@@ -850,10 +850,19 @@ declining (no silent rule bypass)."
         .map(str::to_string)
         .collect();
     if let Some(label) = pack.distance_card_label() {
-        notes.push(format!(
-            "Building distance: {label} ({} m from SafetyConfig).",
-            safety.min_building_distance_m
-        ));
+        if pack.id == PackId::Norway {
+            notes.push("Building distance: 150 m (friluftsloven), from Navi SafetyConfig".into());
+            if safety.min_building_distance_m < 150.0 {
+                notes.push(
+                    "configured distance is below the 150 m in friluftsloven § 9".into(),
+                );
+            }
+        } else {
+            notes.push(format!(
+                "Building distance: {label} ({} m from SafetyConfig).",
+                safety.min_building_distance_m
+            ));
+        }
     }
     match pack.duration {
         DurationRule::SoftGuidance { note } | DurationRule::NoneInLaw { note } => {
@@ -1118,10 +1127,25 @@ mod tests {
         safety.min_building_distance_m = 80.0;
         h.safety = Some(safety);
         let d2 = evaluate_probe(&mut h, &safety, &probe, date);
-        assert!(
-            matches!(d2, ProbeDecision::Accept(_)),
-            "expected accept when threshold drops below building distance"
-        );
+        match d2 {
+            ProbeDecision::Accept(c) => {
+                assert!(
+                    c.notes.iter().any(|n| {
+                        n == "Building distance: 150 m (friluftsloven), from Navi SafetyConfig"
+                    }),
+                    "notes={:?}",
+                    c.notes
+                );
+                assert!(
+                    c.notes.iter().any(|n| {
+                        n == "configured distance is below the 150 m in friluftsloven § 9"
+                    }),
+                    "expected § 9 warning when SafetyConfig is below 150; notes={:?}",
+                    c.notes
+                );
+            }
+            _ => panic!("expected accept when threshold drops below building distance"),
+        }
     }
 
     #[test]
