@@ -727,7 +727,14 @@ declining (no silent rule bypass)."
         FireRule::NoneInLaw | FireRule::NotVerified => (None, None),
     };
 
-    let mut notes: Vec<String> = pack.guidance_notes.iter().map(|s| (*s).to_string()).collect();
+    let mut notes: Vec<String> = not_checked
+        .filter_pack_guidance(
+            pack.guidance_notes,
+            pack.farmland_not_checked_when_landcover_unknown,
+        )
+        .into_iter()
+        .map(str::to_string)
+        .collect();
     if let Some(label) = pack.distance_card_label() {
         notes.push(format!(
             "Building distance: {label} ({} m from SafetyConfig).",

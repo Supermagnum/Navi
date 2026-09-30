@@ -299,5 +299,31 @@ fn accepted_cards_carry_disclaimer_and_sources() {
     assert!(!card.sources.is_empty());
     assert!(!card.legal_basis.is_empty());
     assert!(!card.notes.is_empty());
-    assert!(card.not_checked.protected_area || card.not_checked.landcover);
+    assert!(card.not_checked.protected_area);
+    assert!(card.not_checked.landcover);
+    // One NotChecked line per topic — pack farmland/park guidance dropped while layers unknown.
+    let farmland_lines = card
+        .notes
+        .iter()
+        .filter(|n| n.to_ascii_lowercase().contains("farmland"))
+        .count();
+    assert_eq!(
+        farmland_lines, 1,
+        "expected single farmland/landcover not-checked line; notes={:?}",
+        card.notes
+    );
+    let park_lines = card
+        .notes
+        .iter()
+        .filter(|n| {
+            let l = n.to_ascii_lowercase();
+            l.contains("national park") || l.contains("nature reserve")
+        })
+        .count();
+    assert_eq!(
+        park_lines, 1,
+        "expected single protected-area not-checked line; notes={:?}",
+        card.notes
+    );
+    assert!(card.fire_text.as_deref().is_some_and(|t| t.contains("not Swedish law")));
 }

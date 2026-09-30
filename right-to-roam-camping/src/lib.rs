@@ -88,6 +88,39 @@ impl NotCheckedLayers {
         }
         notes
     }
+
+    /// Drop pack guidance lines that repeat a NotChecked topic (kept in pack data;
+    /// they return automatically when the layer becomes checkable).
+    pub fn filter_pack_guidance<'a>(
+        &self,
+        guidance: &[&'a str],
+        farmland_filter_applies: bool,
+    ) -> Vec<&'a str> {
+        guidance
+            .iter()
+            .copied()
+            .filter(|n| {
+                let lower = n.to_ascii_lowercase();
+                if self.protected_area
+                    && (lower.contains("national park")
+                        || lower.contains("nature reserve")
+                        || lower.contains("protected area")
+                        || lower.contains("nature conservation"))
+                {
+                    return false;
+                }
+                if self.landcover && farmland_filter_applies
+                    && (lower.contains("farmland")
+                        || lower.contains("pasture")
+                        || lower.contains("plantation")
+                        || lower.contains("cultivated"))
+                {
+                    return false;
+                }
+                true
+            })
+            .collect()
+    }
 }
 
 /// Spec disclaimer — every suggestion list and about screen.
