@@ -15,6 +15,7 @@ use driver_break_core::routing::indexed::{
 };
 use driver_break_core::routing::safety::OvernightProximityIndex;
 use driver_break_core::storage::{ConfigStore, Storage};
+use driver_break_core::subdivision_ring_count;
 use navi_plugin_host::{
     AdminRegionView, ClockView, HostApi, LayerStatus, PluginKvStatus, PoiWrite, Position,
     RouteDestinationView, RouteView, RoadTrackJunction, SafetyConfigView, TravelModeView,
@@ -40,6 +41,11 @@ pub fn packs_present(dir: &Path) -> bool {
         && dir
             .join("ostlandet-latest.navi-poi-barrier.rkyv")
             .is_file()
+}
+
+/// Warm hook (baked fylke asset loads on first subdivision query).
+pub fn warm_ostlandet_subdivisions(_dir: &Path) -> usize {
+    subdivision_ring_count()
 }
 
 /// Map core travel [`Profile`] to camping travel mode.

@@ -6,6 +6,7 @@
 //! points exist in [`ecu`] for a future isolated plugin.
 
 pub mod admin_region;
+pub mod admin_subdivision;
 pub mod bus;
 pub mod config;
 pub mod datex;
@@ -25,6 +26,9 @@ pub mod tracks;
 pub mod weather;
 
 pub use admin_region::{admin_region_at, territory_override_at, AdminRegion, TerritoryOverride};
+pub use admin_subdivision::{
+    subdivision_iso_at, subdivision_name_at, subdivision_ring_count, warm_subdivisions_from_pbf,
+};
 pub use config::{
     EbikeConfig, EvCarConfig, FuelConfig, Profile, RestConfig, SafetyConfig, TravellerProfile,
     VehicleLimits, VehicleOvernightClass, VehicleOvernightConfig, VehicleProfileView,

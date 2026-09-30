@@ -12,7 +12,8 @@ mod common;
 
 use common::native_embedder::{
     data_dir, junctions_for_route, load_proximity, packs_present, plan_corridor,
-    NativeCampingEmbedder, LILLEHAMMER, SJUSJOEN, SWEDEN_INLAND, SWEDEN_NEAR_BORDER,
+    warm_ostlandet_subdivisions, NativeCampingEmbedder, LILLEHAMMER, SJUSJOEN, SWEDEN_INLAND,
+    SWEDEN_NEAR_BORDER,
 };
 use driver_break_core::admin_region_at;
 use driver_break_core::config::{Profile, SafetyConfig};
@@ -78,6 +79,7 @@ fn lillehammer_sjusjoen_real_pack_report() {
         );
         return;
     }
+    let _ = warm_ostlandet_subdivisions(&dir);
 
     let planned = plan_corridor(&dir, LILLEHAMMER, SJUSJOEN);
     let Some((graph, waypoints)) = planned else {

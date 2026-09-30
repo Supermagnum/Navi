@@ -23,5 +23,11 @@ fn sj_override_beats_ne_and_tromso_stays_no() {
 
     let tromso = admin_region_at(69.6492, 18.9553);
     assert_eq!(tromso.country_iso.as_deref(), Some("no"));
-    assert!(tromso.subdivision_iso.is_none());
+    // Coastal Tromsø can miss the NE Admin-1 polygon; when it hits, expect Troms.
+    if let Some(sub) = tromso.subdivision_iso.as_deref() {
+        assert!(
+            sub == "no-19" || sub == "no-54" || sub == "no-55",
+            "unexpected Tromsø subdivision {sub}"
+        );
+    }
 }

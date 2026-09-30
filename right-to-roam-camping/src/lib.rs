@@ -13,7 +13,10 @@ pub use candidates::{
     CORRIDOR_SEED_RADIUS_M, DEFAULT_TRACK_WALK_M, SERVICE_TRACK_MIN_CONTINUE_M,
 };
 pub use card::{CampingCard, DeclineKind, SuggestionList};
-pub use engine::{suggest_overnight, ProbeLogEntry, SuggestInput, SuggestOutcome};
+pub use engine::{
+    cloudberry_decision, suggest_overnight, CloudberryDecision, ProbeLogEntry, SuggestInput,
+    SuggestOutcome,
+};
 pub use fire::{
     fire_guidance_norway, FireGuidance, BARE_ROCK_NOTE, CAUTIOUS_FIRE_UNKNOWN_DATE,
     LEAVE_NO_TRACE_NOTE, PROTECTED_SPECIES_NOTE,

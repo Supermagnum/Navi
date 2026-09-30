@@ -298,11 +298,21 @@ declining (no silent rule bypass)."
     notes.push(PROTECTED_SPECIES_NOTE.into());
     notes.push(LEAVE_NO_TRACE_NOTE.into());
     // Cloudberry only when subdivision is known Nordland/Troms/Finnmark.
-    if cloudberry_applies(subdivision.as_deref()) {
-        notes.push(
-            "Northern Norway (Nordland, Troms, Finnmark) has special cloudberry picking rules."
-                .into(),
-        );
+    match cloudberry_decision(subdivision.as_deref()) {
+        CloudberryDecision::Show => {
+            notes.push(
+                "Northern Norway (Nordland, Troms, Finnmark) has special cloudberry picking rules."
+                    .into(),
+            );
+        }
+        CloudberryDecision::OmitOutsideNorthern { iso } => {
+            eprintln!(
+                "cloudberry note omitted: subdivision={iso} is outside Nordland/Troms/Finnmark"
+            );
+        }
+        CloudberryDecision::OmitUnknown => {
+            eprintln!("cloudberry note omitted: subdivision unknown");
+        }
     }
     notes.extend(
         not_checked
@@ -346,6 +356,21 @@ declining (no silent rule bypass)."
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CloudberryDecision {
+    Show,
+    OmitOutsideNorthern { iso: String },
+    OmitUnknown,
+}
+
+pub fn cloudberry_decision(subdivision_iso: Option<&str>) -> CloudberryDecision {
+    match subdivision_iso {
+        None => CloudberryDecision::OmitUnknown,
+        Some(s) if cloudberry_applies(Some(s)) => CloudberryDecision::Show,
+        Some(s) => CloudberryDecision::OmitOutsideNorthern { iso: s.to_string() },
+    }
+}
+
 fn cloudberry_applies(subdivision_iso: Option<&str>) -> bool {
     // Omitted while subdivision is unknown (Phase 2 decision).
     match subdivision_iso {
@@ -355,6 +380,8 @@ fn cloudberry_applies(subdivision_iso: Option<&str>) -> bool {
                 || u.contains("NO-19") // Troms (legacy)
                 || u.contains("NO-20") // Finnmark (legacy)
                 || u.contains("NO-54") // Troms og Finnmark
+                || u.contains("NO-55") // Troms (2024+)
+                || u.contains("NO-56") // Finnmark (2024+)
                 || u.contains("NORDLAND")
                 || u.contains("TROMS")
                 || u.contains("FINNMARK")
@@ -578,7 +605,17 @@ mod tests {
 
     #[test]
     fn cloudberry_omitted_when_subdivision_unknown() {
-        assert!(!cloudberry_applies(None));
-        assert!(cloudberry_applies(Some("NO-18")));
+        assert_eq!(
+            cloudberry_decision(None),
+            CloudberryDecision::OmitUnknown
+        );
+        assert_eq!(
+            cloudberry_decision(Some("NO-18")),
+            CloudberryDecision::Show
+        );
+        assert!(matches!(
+            cloudberry_decision(Some("NO-34")),
+            CloudberryDecision::OmitOutsideNorthern { .. }
+        ));
     }
 }

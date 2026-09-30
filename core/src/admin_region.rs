@@ -177,7 +177,14 @@ pub fn admin_region_at(lat: f64, lon: f64) -> AdminRegion {
     }
 
     match country_iso_at(lat, lon) {
-        Some(iso) => AdminRegion::country(iso),
+        Some(iso) => {
+            let mut r = AdminRegion::country(iso);
+            // Prefer warmed OSM admin_level=4 ISO3166-2 when available.
+            if let Some(sub) = crate::admin_subdivision::subdivision_iso_at(lat, lon) {
+                r.subdivision_iso = Some(sub);
+            }
+            r
+        }
         None => AdminRegion::unknown(),
     }
 }
