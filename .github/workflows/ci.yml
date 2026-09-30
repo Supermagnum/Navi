@@ -69,6 +69,8 @@ jobs:
           cargo clippy --workspace --all-targets
           --exclude navi-plugin-log-hello
           --exclude navi-plugin-busy-loop
+          --exclude navi-plugin-trap-guest
+          --exclude navi-plugin-memory-bomb
           --exclude navi-plugin-weather
           --exclude navi-plugin-datex
           --exclude navi-plugin-poi-lookahead
@@ -101,6 +103,8 @@ jobs:
           --exclude navi-desktop
           --exclude navi-plugin-log-hello
           --exclude navi-plugin-busy-loop
+          --exclude navi-plugin-trap-guest
+          --exclude navi-plugin-memory-bomb
           --exclude navi-plugin-weather
           --exclude navi-plugin-datex
           --exclude navi-plugin-poi-lookahead
@@ -227,6 +231,8 @@ jobs:
             --exclude navi-desktop \
             --exclude navi-plugin-log-hello \
             --exclude navi-plugin-busy-loop \
+            --exclude navi-plugin-trap-guest \
+            --exclude navi-plugin-memory-bomb \
             --exclude navi-plugin-weather \
             --exclude navi-plugin-datex \
             --exclude navi-plugin-poi-lookahead

@@ -233,7 +233,10 @@ fun thinRouteManeuvers(mans: List<RouteManeuver>): List<RouteManeuver> {
         return m.kind == "destination"
     }
 
-    fun thinWithGap(source: List<RouteManeuver>, minGap: Double): List<RouteManeuver> {
+    fun thinWithGap(
+        source: List<RouteManeuver>,
+        minGap: Double,
+    ): List<RouteManeuver> {
         val out = ArrayList<RouteManeuver>(source.size.coerceAtMost(128))
         var lastKeptCum = Double.NEGATIVE_INFINITY
         for (m in source) {

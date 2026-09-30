@@ -73,7 +73,11 @@ data class CampingSuggestResult(
     val peakGuestMemoryBytes: Long,
 )
 
-private fun jsonStr(obj: JSONObject, key: String, default: String = ""): String {
+private fun jsonStr(
+    obj: JSONObject,
+    key: String,
+    default: String = "",
+): String {
     if (!obj.has(key) || obj.isNull(key)) return default
     return obj.optString(key, default).ifBlank { default }
 }
@@ -105,11 +109,12 @@ private fun parseSuggestionList(obj: JSONObject?): CampingSuggestionListModel {
         )
     }
     val cardsArr = obj.optJSONArray("cards") ?: JSONArray()
-    val cards = buildList {
-        for (i in 0 until cardsArr.length()) {
-            add(parseCard(cardsArr.getJSONObject(i)))
+    val cards =
+        buildList {
+            for (i in 0 until cardsArr.length()) {
+                add(parseCard(cardsArr.getJSONObject(i)))
+            }
         }
-    }
     return CampingSuggestionListModel(
         cards = cards,
         seedsConsidered = obj.optInt("seeds_considered", 0),
@@ -209,6 +214,7 @@ fun campingWaypointsJson(waypoints: List<DoubleArray>): String {
 
 fun allCampingPinLatLon(result: CampingSuggestResult): List<Pair<Double, Double>> {
     val out = linkedSetOf<Pair<Double, Double>>()
+
     fun add(list: CampingSuggestionListModel) {
         for (c in list.cards) {
             out.add(c.lat to c.lon)

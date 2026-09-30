@@ -42,7 +42,7 @@ MERGE_BASE="$(git merge-base HEAD "$BASE")"
 echo "==> version bump gate (base=$BASE merge-base=$MERGE_BASE)"
 
 # Paths that require a version bump when touched.
-PRODUCT_REGEX='^(app/src/main/|app/build\.gradle\.kts|navi-ffi/|core/|plugin-host/|plugin-sdk/|plugins/|right-to-roam-camping/|driver-break-core/)'
+PRODUCT_REGEX='^(app/src/main/|app/build\.gradle\.kts|navi-ffi/|core/|plugin-host/|plugin-sdk/|plugins/|driver-break-core/)'
 
 CHANGED="$(git diff --name-only "$MERGE_BASE"...HEAD || true)"
 if [[ -z "$CHANGED" ]]; then

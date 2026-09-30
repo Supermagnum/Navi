@@ -15,7 +15,7 @@ members = [
     "plugins/datex",
     "plugins/poi-lookahead",
     "plugins/right-to-roam-camping",
-    "right-to-roam-camping",
+    "plugins/right-to-roam-camping/engine",
 ]
 default-members = ["core", "plugin-host"]
 

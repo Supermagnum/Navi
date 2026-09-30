@@ -829,14 +829,16 @@ fn densify_leaf_grid_samples(
 /// exceeds [`CHUNK_INTERMEDIATE_SNAP_M`]. Pad / tile widening peaks at 2.3–3.3 GiB
 /// RSS and still fails — densify must prefer the E6 / coastal-highway spine.
 ///
-/// E6 / trunk waypoints for long Norway northbound densify (Stay-in-Country).
+/// E6 / trunk waypoints for long Norway densify (Stay-in-Country), both
+/// northbound (Drammen→Berlevåg) and southbound (Bugøynes→Østlandet).
 /// Landsdel catalog boxes alone cannot recover Gudbrandsdalen's west dip or the
 /// Finnmark east swing; these points are forced anchors (Chebyshev-to-end may
 /// temporarily worsen when the highway runs west).
 ///
 /// Progress parameter follows **spine sequence order** (not 2D OD projection and
 /// not raw latitude): NE trips otherwise rank Oppdal before Hamar, and Finnmark
-/// must dip south through Karasjok before Tana.
+/// must dip south through Karasjok before Tana. Southbound trips reverse the
+/// same highway order so densify does not chord through Finnmark plateaus.
 fn norway_e6_spine_anchors(
     start: (f64, f64),
     end: (f64, f64),
@@ -846,24 +848,21 @@ fn norway_e6_spine_anchors(
     if !has_no_landsdel {
         return Vec::new();
     }
-    // Stay-in-Country / NO-only densify: do not inject when foreign Ready packs
-    // are present (Hamar→Minden still needs Halland/Skåne centroids).
-    let only_norway = ready
-        .iter()
-        .all(|(p, _)| p.contains("norway") || p.starts_with("test/"));
-    if !only_norway {
-        return Vec::new();
-    }
-    // Both endpoints inside the Norway catalog box.
+    // Both endpoints inside the Norway catalog box. This alone excludes
+    // Hamar→Minden (Minden is outside NO); leftover foreign Ready packs
+    // (e.g. Västra Götaland from an earlier campaign) must not disable the
+    // E6 spine for Norway-internal ODs such as Bugøynes→Sjuvasslia.
     const NO: [f64; 4] = [57.9, 4.5, 71.5, 31.5];
     let inside = |p: (f64, f64)| p.0 >= NO[0] && p.0 <= NO[2] && p.1 >= NO[1] && p.1 <= NO[3];
     if !inside(start) || !inside(end) {
         return Vec::new();
     }
-    // Substantial northbound progress (Drammen→Berlevåg class).
-    if end.0 - start.0 < 4.0 {
+    // Substantial north/south progress (Drammen→Berlevåg / Bugøynes→Sjuvasslia).
+    let dlat = end.0 - start.0;
+    if dlat.abs() < 4.0 {
         return Vec::new();
     }
+    let southbound = dlat < 0.0;
     // Town-adjacent points on the E6 / E6+E75 trunk toward Finnmark (highway order).
     const SPINE: &[(f64, f64)] = &[
         (60.795, 11.068), // Hamar
@@ -889,13 +888,17 @@ fn norway_e6_spine_anchors(
     // the OD chord is Drammen≈10.2°E → Berlevåg≈29°E.
     let lon_lo = start.1.min(end.1) - 2.5;
     let lon_hi = start.1.max(end.1) + 0.5;
-    let selected: Vec<(f64, f64)> = SPINE
+    let mut selected: Vec<(f64, f64)> = SPINE
         .iter()
         .copied()
         .filter(|p| p.0 >= lat_lo && p.0 <= lat_hi && p.1 >= lon_lo && p.1 <= lon_hi)
         .collect();
     if selected.len() < 2 {
         return Vec::new();
+    }
+    // Southbound OD: walk the highway from Finnmark toward Østlandet.
+    if southbound {
+        selected.reverse();
     }
     let denom = (selected.len() - 1) as f64;
     selected
@@ -1548,6 +1551,79 @@ mod tests {
         assert!(
             *chunk.last().unwrap() < PLAN_BBOX_PAD_CAP_DEG - 1.0,
             "chunk take({CHUNK_PAD_SCHEDULE_TAKE}) must stop well below the full {PLAN_BBOX_PAD_CAP_DEG}° cap; got {chunk:?}"
+        );
+    }
+
+    /// Bugøynes→Sjuvasslia (southbound Stay-in-Country): without the E6 spine
+    /// the geometric chord cuts Finnmark plateaus and chunk legs disconnect
+    /// (`bbox_exhausted` / `disconnected`). Spine must reverse for southbound.
+    #[test]
+    fn densify_bugoynes_sjuvasslia_southbound_uses_e6_spine() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        // Include a leftover foreign Ready pack — must not suppress the spine.
+        for stem in [
+            "ostlandet-latest",
+            "trondelag-latest",
+            "nord-norge-latest",
+            "vastra_gotaland-latest",
+        ] {
+            let path = dir.path().join(format!("{stem}.navi-manifest.json"));
+            std::fs::write(
+                &path,
+                format!(
+                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":{GRAPH_FORMAT_VERSION}}}"#
+                ),
+            )
+            .unwrap();
+        }
+        // Elsa's caravan & galleri (Bugøynes) → Sjuvasslia Camping.
+        let start = (69.9741435_f64, 29.6337571_f64);
+        let end = (59.803175_f64, 9.397871_f64);
+        let hops = densify_route_points_via_regions(&[start, end], dir.path(), LONG_TRIP_CHUNK_DEG);
+        assert!(
+            hops.len() >= 10,
+            "southbound NO densify must subdivide this span; hops={}",
+            hops.len()
+        );
+        let alta = hops
+            .iter()
+            .any(|(lat, lon)| *lat > 69.7 && *lat < 70.2 && *lon > 22.5 && *lon < 24.0);
+        assert!(
+            alta,
+            "expected densify hop near Alta on E6; hops={hops:?}"
+        );
+        let narvik = hops
+            .iter()
+            .any(|(lat, lon)| *lat > 68.2 && *lat < 68.7 && *lon > 16.8 && *lon < 18.0);
+        assert!(
+            narvik,
+            "expected densify hop near Narvik on E6; hops={hops:?}"
+        );
+        let plateau_chord = hops.windows(2).any(|w| {
+            let mid_lat = (w[0].0 + w[1].0) * 0.5;
+            let mid_lon = (w[0].1 + w[1].1) * 0.5;
+            // Former failing chunk_leg9 band: geometric chord ~68.9N, 21.7E.
+            mid_lat > 68.6
+                && mid_lat < 69.2
+                && mid_lon > 20.5
+                && mid_lon < 23.0
+                && (w[1].0 - w[0].0).abs().max((w[1].1 - w[0].1).abs())
+                    <= LONG_TRIP_CHUNK_DEG + 1e-6
+        });
+        assert!(
+            !plateau_chord,
+            "densify must not chord Finnmark plateau ~21–23E; hops={hops:?}"
+        );
+        // Hops must generally lose latitude (southbound), not climb back north.
+        let mut north_jumps = 0usize;
+        for w in hops.windows(2) {
+            if w[1].0 > w[0].0 + 0.35 {
+                north_jumps += 1;
+            }
+        }
+        assert!(
+            north_jumps <= 2,
+            "southbound spine must not re-climb north often; north_jumps={north_jumps} hops={hops:?}"
         );
     }
 

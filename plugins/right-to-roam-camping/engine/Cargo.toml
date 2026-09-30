@@ -15,11 +15,11 @@ native = ["dep:driver-break-core", "dep:osm4routing", "dep:chrono-tz", "chrono/c
 # alloc-only chrono for wasm guest; native feature adds clock.
 chrono = { version = "0.4", default-features = false, features = ["alloc"] }
 chrono-tz = { workspace = true, optional = true }
-driver-break-core = { path = "../core", optional = true }
+driver-break-core = { path = "../../../core", optional = true }
 osm4routing = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
-driver-break-core = { path = "../core" }
+driver-break-core = { path = "../../../core" }

@@ -201,9 +201,14 @@ pub fn geofabrik_extract_path(region: &str) -> String {
 }
 
 /// Geofabrik base URLs for a region path like `europe/norway/ostlandet`.
+///
+/// Uses a trailing slash on the `-latest.osm.pbf` path. Geofabrik answers the
+/// slashless form with `301` → `…-latest.osm.pbf/`, then `302` to the dated
+/// extract; reqwest can enter a redirect loop on the slashless URL (seen on
+/// Nord-Norge place-index extract downloads). The slash form resolves cleanly.
 pub fn geofabrik_latest_pbf_url(region: &str) -> String {
     let region = geofabrik_extract_path(region);
-    format!("https://download.geofabrik.de/{region}-latest.osm.pbf")
+    format!("https://download.geofabrik.de/{region}-latest.osm.pbf/")
 }
 
 pub fn geofabrik_updates_base(region: &str) -> String {
@@ -1000,7 +1005,7 @@ timestamp=2024-01-15T01\\:02\\:03Z
         assert_eq!(canonicalize_geofabrik_region_path("enfield"), want);
         assert_eq!(
             geofabrik_latest_pbf_url("europe/united-kingdom/england/london/enfield"),
-            format!("https://download.geofabrik.de/{want}-latest.osm.pbf")
+            format!("https://download.geofabrik.de/{want}-latest.osm.pbf/")
         );
         assert_eq!(canonicalize_geofabrik_region_path(want), want);
         assert_eq!(
@@ -1021,7 +1026,7 @@ timestamp=2024-01-15T01\\:02\\:03Z
         );
         assert_eq!(
             geofabrik_latest_pbf_url("europe/sweden/stockholm"),
-            "https://download.geofabrik.de/europe/sweden-latest.osm.pbf"
+            "https://download.geofabrik.de/europe/sweden-latest.osm.pbf/"
         );
         assert_eq!(
             canonicalize_geofabrik_region_path("europe/sweden/stockholm"),
@@ -1154,7 +1159,8 @@ timestamp=2024-01-15T01\\:02\\:03Z
             "no .osc.gz must be fetched when osmium is unavailable; got {log:?}"
         );
         assert!(
-            log.iter().any(|u| u.ends_with("-latest.osm.pbf")),
+            log.iter()
+                .any(|u| u.ends_with("-latest.osm.pbf") || u.ends_with("-latest.osm.pbf/")),
             "expected full PBF download; got {log:?}"
         );
         test_hooks::reset();
@@ -1231,7 +1237,8 @@ timestamp=2024-01-15T01\\:02\\:03Z
             "osmium path must fetch .osc.gz; got {log:?}"
         );
         assert!(
-            log.iter().all(|u| !u.ends_with("-latest.osm.pbf")),
+            log.iter()
+                .all(|u| !u.ends_with("-latest.osm.pbf") && !u.ends_with("-latest.osm.pbf/")),
             "osmium path must not fall back to full PBF; got {log:?}"
         );
     }

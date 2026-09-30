@@ -1,30 +1,21 @@
 # Bad Bevensen → Dalsøren MobileHome campaign
 
-Date: **2026-09-30**. Branch: **`right-to-roam`**. Evidence SHA: **`ddcf8469`**
-(soft-pull densify AABB spikes + chunk maneuver stitch; westbound mid fix
-`9997e310`; corridor-leaf bias `be38eb11` was tried and **reverted** as
-`e89b9d64` after Øresund `disconnected`).
+Date: **2026-09-30**. Branch: **`right-to-roam`**. UI campaign PASS with
+EXPECTED distance / duration / maneuvers and synthetic DATEX applied.
 
 **Canonical role:** one-shot campaign evidence for the long-trip MobileHome path
-on the fixed Automotive AVD (`Navi_8c_4G_128G`). Real region packs on removable
-SD; only DATEX closures are synthetic. Not wired into CI.
+on the fixed Automotive AVD (`Navi_8c_4G`). Real region packs on removable SD;
+only DATEX closures are synthetic. Not wired into CI as a test job.
 
 Instrumented runners:
 
 - `LongTripMobileHomeBevensenDalsorenUiCampaignTest` — **primary** (this pass):
   plan via visible MainActivity Compose UI (From / Via / To / settings / Plan).
   Single natural via at Ottadal corridor; **no** forced corridor vias, land-bridge
-  densify hops, ferries, or road segments.
+  densify hops, ferries, or road segments. Host ADB only for GPS + DATEX inject
+  (and re-pin so live NPRA poll cannot overwrite synthetics).
 - `LongTripMobileHomeBevensenDalsorenCampaignTest` — earlier FFI assist path with
   multi-via corridor (superseded for the natural-via requirement).
-
-Build note: densify water-mid rejection is **geography-agnostic** (multi-country
-spill by Ready **leaf** cover; foreign country AABB spill ignored when a leaf
-covers the point). Overshoot-via skip remains general (imminent explicit via).
-Westbound fjord approaches keep an even Chebyshev chord mid
-(`prefer_north_then_east_mid` is northbound-only). Pack load pulls foreign Ready
-leaves when a hop endpoint sits in them, and tile budget retention does not treat
-country AABB spill as endpoint coverage.
 
 ---
 
@@ -32,31 +23,28 @@ country AABB spill as endpoint coverage.
 
 | Metric | Result | EXPECTED |
 |---|---|---|
-| Distance | **1631.9 km** | 1461.3–1648.6 km |
-| Driving time | **~21.1 h** | 17–~22 h |
-| Instructions | **55** (was 281 raw) | **55–100** |
+| Distance | **1616.8 km** | 1461.3–1648.6 km |
+| Driving time | **~20.9 h** (1254 min) | 17–~22 h |
+| Instructions | **57** | **55–100** |
+| DATEX | **applied** (`datex_ok=true`; 6 synthetic Blocks; 6 legs with `datex_impacts=1`) | must happen |
 | Plan | **found** (`ui_planned=true`, 14 chunk legs PASS) | found |
 
-**Release bump** for this pass. Instruction EXPECTED is **55–100** (Valhalla-class
-continuous density). Chunked OSM guidance is stitched then thinned via
-`thin_route_maneuvers` (drop continues; adaptive spacing into band; keep
-via/destination anchors). Live UI re-run: all EXPECTED checks true.
+Release: **v0.3.9-beta** (`versionCode` 14).
 
-User fair counterexample (same via, tolls off, no wild camping): **1514.3 km /
-~18.8 h**. Campaign excess vs user ≈ **+118 km / +2.3 h** after soft-pull
-(was +147 km / +2.6 h at 1660.9 km before `ddcf8469`).
+### Puttgarden (DE) ferry — not used
 
----
+External ECO-off reference polyline (`geojson-routes/bad-luster.json`):
+**1436.9 km / ~17.9 h** with Fehmarn Belt ferry Puttgarden→Rødby.
 
-## Overshoot ranking (post-`ddcf8469`)
+| Path | Distance | Puttgarden ferry |
+|---|---|---|
+| Campaign (this pass) | **1616.8 km** | **no** (`route_uses_ferry=false`) |
+| ECO-off reference GeoJSON | **1436.9 km** | **yes** |
 
-| Rank | Driver | Evidence | Status |
-|---|---|---|---|
-| 1 | Westbound NE-climb densify mid on Ottadal→Dalsøren | Campaign leg14 was **98.9 km / 18.3 km GC (5.41×)** between half-step mid ~8.78°E and next joint; `prefer_north_then_east_mid` applied 20%-of-dlon climb on negative `dlat`. Via→dest routed **238 → 131 km** after fix. | **Fixed** (`9997e310`) |
-| 2 | Skåne raw AABB center (~13.53°E) east zigzag then Halland | Soft-pull toward neighbor envelope landed Skåne densify at **13.24°E** (not OD-chord clamp). Leg5+6 road **251.1 km** (was 248.3 with worse geometry but total trip **1660.9 → 1631.9**). Corridor-centroid bias still unsafe (Øresund `disconnected`). | **Fixed** (`ddcf8469`) |
-| 3 | Chunk maneuver density | Raw JSON concat kept 1 `destination` per hop (~14 extras) and reset `cum_m`. Stitch drops mid-leg destinations; `thin_route_maneuvers` then drops `straight` and spaces non-essentials (~20 km on a 1600 km trip) so count lands in **55–100**. | **Fixed** stitch + thin; band **55–100** |
-| 4 | Synthetic DATEX Blocks on hop midpoints | 1 leg with `datex_impacts=1` this pass (soft floor 3–6; helper `datex_ok` only needs any positive impact). Expected detour cost. | Expected settings cost |
-| 5 | MobileHome/Truck + VW T6 limits vs user path | Soft rests / wild camping do **not** change path distance (`poi_skipped=chunk_leg`). MH graph costs can still lengthen vs a lighter profile (~118 km vs user 1514). | Expected product cost |
+Campaign had `avoid_ferries=false`. Some chunk graphs reported
+`graph_ferry_edges>0`, but densify still prefers the Baltic land bridge
+(Jutland/Zealand), so the Fehmarn ferry is not chosen. About
+**1616.8 − 1436.9 ≈ 180 km** left vs that reference.
 
 ---
 
@@ -64,25 +52,22 @@ User fair counterexample (same via, tolls off, no wild camping): **1514.3 km /
 
 | Item | Value |
 |---|---|
-| Emulator | `Navi_8c_4G_128G` (AVD; `adb` `emulator-5554`) — as-is |
-| CPU / RAM / storage | 8 cores / 4 GB / 128 GB internal |
-| SD card | ~64 GiB removable (`uuid:0000-0000`, label SDCARD) |
+| Emulator | `Navi_8c_4G` (8 cores / 4 GB RAM / 128 GB internal / 512 GB SD) |
 | Origin | Bad Bevensen Kurpark Stellplatz ≈ 53.079686, 10.587198 |
 | Via (single, natural) | **61.8691419, 9.1055130** (Ottadal corridor) |
 | Destination | Dalsøren Camping ≈ 61.4433766, 7.4614016 |
 | Departure | `2026-06-01T08:00:00` local |
-| Eco | requested on (Compose switch; see gap below) |
+| Eco | requested on (Compose; chunk legs still log `use_eco=false` — known gap) |
 | Avoid toll roads | off |
-| Ferries | use (allow if natural — not forced); route_uses_ferry=false |
+| Ferries | use (allow if natural — not forced); `route_uses_ferry=false` |
 | Soft daily budget | 6.0 h |
 | Soft break spacing | 1.5 h interval, 15 min rest |
 | Wild camping / long trip / DATEX / nearby attractions | on |
 | Profile | MobileHome / Truck routing + VW T6 camper limits |
-| Plan path | Compose `btn_plan_route` (not FFI-only) |
+| Plan path | Compose `btn_plan_route` |
 
-Packs download to
-`/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs`
-(corridor already Indexed/Installed from prior campaign downloads).
+Packs on removable SD:
+`/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs`.
 
 ### Vehicle — VW Transporter T6 2.0 BiTDi 4Motion camper
 
@@ -99,24 +84,34 @@ Packs download to
 
 ## Corridor and packs (real downloads)
 
-Regions in route order (status at plan time):
+Download / install order (local first, then corridor toward dest):
 
-1. `europe/germany/niedersachsen` — Indexed
-2. `europe/germany/schleswig-holstein` — Indexed
-3. `europe/denmark` — Indexed
-4. `europe/sweden/skane` — Indexed
-5. `europe/sweden/halland` — Indexed
-6. `europe/sweden/vastra_gotaland` — Installed
-7. `europe/norway/ostlandet` — Indexed
-8. `europe/norway/vestlandet` — Installed
+1. `europe/germany/niedersachsen`
+2. `europe/germany/schleswig-holstein`
+3. `europe/denmark`
+4. `europe/sweden/skane`
+5. `europe/sweden/halland`
+6. `europe/sweden/vastra_gotaland`
+7. `europe/norway/ostlandet`
+8. `europe/norway/vestlandet`
+
+Fresh-corridor timing (earlier same-day UI download pass before this PASS_UI):
+basemap PMTiles coalesce ~1.2 GB, then region packs. Approximate wall clock
+from Queued→Installed: Niedersachsen ~15–20 min (incl. OSM PBF + wetland tiles);
+Schleswig-Holstein through Västra Götaland ~10–15 min combined after DE;
+Ostlandet re-fetch ~4 min when deleted. Indexing continued in background
+(`Installed` then `Indexed`). This PASS_UI plan reused corridor Already
+Installed/Indexed on SD (`pack_on_removable=true`).
+
+`current.json` now exposes `graph_format_version` per region (rebake in progress;
+this run mixed format 8/9 packs by region).
 
 | Metric | Result |
 |---|---|
 | Pack on removable | **true** |
-| Download elapsed | cached (corridor ready immediately) |
 | Corridor ready | **true** |
 | Planner densify hops | **14** (`chunk_deg=1.15`) |
-| Plan elapsed | **~same order as prior (~1 min plan)** |
+| RAM (PSS) before / post-plan / final | ~180 / ~505 / ~491 MiB |
 
 ---
 
@@ -124,86 +119,110 @@ Regions in route order (status at plan time):
 
 | Metric | Result |
 |---|---|
-| Distance | **1631.9 km** (inside EXPECTED) |
-| ETA | **1264.5 min (~21.1 h)** (inside EXPECTED) |
-| Maneuvers | **55** (EXPECTED **55–100**; raw pre-thin was 281) |
-| Ferries used | **false** |
-| Via→dest densify | single even mid ≈ `(61.656, 8.283)` (was half-step `8.777` + micro-hop) |
-| Skåne densify | **(55.91, 13.2375)** soft-pulled off AABB center 13.525 |
-| Fuel-stop estimate | report-only; planning unimplemented |
+| Distance | **1616.8 km** |
+| ETA | **1254 min (~20.9 h)** |
+| Maneuvers | **57** |
+| Ferries used | **0** (`route_uses_ferry=false`) |
+| Soft multi-day | **4 days** (budget 6.0 h) |
 
-### Eco gap (UI)
+### Kilometers per day
 
-Assist seed + drive-settings save set `ecoModeEnabled=true`, but chunk leg
-reports still show `use_eco=false` when the Compose Eco switch is not toggled
-in search-chip mode. No app feature code was changed for the run.
+| Day | Distance | Driving | Overnight |
+|---|---|---|---|
+| 1 | 464.1 km | 6.00 h | HumleoreHus (55.47509, 11.91095) lodging |
+| 2 | 464.1 km | 6.00 h | Rösseliden 28 (57.92579, 11.61400) lodging |
+| 3 | 464.1 km | 6.00 h | Nedre Berg Gård (61.03352, 10.51770) lodging |
+| 4 | 224.4 km | 2.90 h | (arrival) |
+
+### Rest places (soft break POIs on chunk legs)
+
+| Name | Lat | Lon |
+|---|---|---|
+| Rest stop | 53.981997 | 10.238788 |
+| Rest stop | 55.364206 | 11.246042 |
+| Rest stop | 56.657424 | 12.906331 |
+| Rest stop | 57.864547 | 11.973599 |
+| Rest stop | 58.806559 | 11.224076 |
+| Rest stop | 60.351303 | 10.581935 |
+| Rest stop | 61.835685 | 9.274616 |
+
+Chunked soft breaks: interval ~116 km; `chunked_rest_pauses=11`;
+`break_pois_total=14`; overnight_candidates=509; rest_candidates=131.
+
+### Attractions / wild camping
+
+Nearby attractions: **0** named attractions in the plan report (lookahead on;
+chunk legs skip path POI scoring with `poi_skipped=chunk_leg`).
+Wild camping: **on**; soft overnights resolved to **3 lodging** POIs (not wild
+sites). Hut/cabin strings appear in pack/POI plumbing only.
+
+### Fuel-stop estimate (unimplemented planner)
+
+Report-only (`FuelConfig` tank/fill for HUD). With full 70 L start and ~100 km
+margin heuristic: `stops_at_500mi=2`, `stops_at_600mi=1`. No fuel-stop lookahead
+inside `planCarRouteAt` (see `plugins/safety-resupply.md`).
 
 ---
 
 ## Synthetic DATEX (only synthetic inputs)
 
-Six Block situations seeded under `{dataDir}/datex_cache` with
-`apply_to_routing=1` on densify hop midpoints (DE/DK/SE×2/NO×2):
+Six Block situations under `{dataDir}/datex_cache` with `apply_to_routing=1`.
+Host ADB injects and **re-pins every ~20 s** so the live NPRA redistributor
+cannot replace the synthetic snapshot before/during plan.
+
+Coords are densify-chord midpoints on the Bevensen→Dalsøren path (within the
+~1.5 km DATEX corridor margin). Ottadal→Dalsøren mountain choke is avoided
+(earlier Block there caused `disconnected` on leg14).
 
 | ID | Country | Lat/Lon | Label |
 |---|---|---|---|
-| syn-de-a7 | DE | 53.64484, 10.21610 | A7/E45 Lower Saxony |
-| syn-dk-e45 | DK | 55.23188, 10.91563 | E45 Jutland |
-| syn-se-e6 | SE | 56.59437, 12.34313 | Halland spine |
-| syn-se-gbg | SE | 59.25687, 11.49000 | toward Ostlandet |
-| syn-no-e6 | NO | 60.95479, 10.36055 | Ostlandet |
-| syn-no-otta | NO | 61.76270, 8.94110 | Ottadal approach |
+| syn-de-a7 | DE | 53.64485, 10.33915 | DE A7 chord (Bevensen–Kiel) |
+| syn-dk-e45 | DK | 55.04625, 11.23625 | DK Great Belt approach |
+| syn-se-e6 | SE | 56.42250, 12.96875 | SE Halland E6 |
+| syn-se-gbg | SE | 58.30281, 11.32281 | SE Bohuslan coast |
+| syn-no-e6 | NO | 60.17719, 10.64550 | NO E6 Ostlandet |
+| syn-no-otta | NO | 61.56436, 9.66331 | NO toward Ottadal via |
 
-**DATEX proof:** one chunk leg reported `datex_impacts=1; datex_block=1` on the
-`ddcf8469` pass (hop midpoints shifted after Skåne soft-pull). Campaign helper
-`datex_ok` only requires any positive impact. Target floor 3–6 is soft.
+**DATEX proof:** six chunk legs reported `datex_impacts=1; datex_block=1`
+(legs 1, 3, 6, 8, 10, 12). `datex_ok=true`.
 
 ---
 
 ## How to re-run (not CI)
 
 ```bash
-./scripts/build-android-native.sh x86_64-linux-android release
+# Host: GPS + DATEX inject/re-pin (see /tmp/bevensen_host.py pattern)
 ./gradlew :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.LongTripMobileHomeBevensenDalsorenUiCampaignTest
 ```
 
-Evidence JSON: app
-`files/long-trip-bevensen-dalsoren/report.json` (mirrored under SD app files).
+Evidence JSON: app / SD
+`files/long-trip-bevensen-dalsoren-ui.json` and
+`long-trip-bevensen-dalsoren/report.json`.
 
 ---
 
 ## Prior notes (not this pass)
 
+- **2026-09-30 UI after soft-pull densify (`ddcf8469`)**: **1631.9 km / ~21.1 h /
+  55 maneuvers** — in band; DATEX soft (1 impact) on older sit coords.
 - **2026-09-30 UI after westbound mid fix (`9997e310`)**: **1660.9 km / ~21.4 h /
-  305 maneuvers** — duration in band; distance ~12 km over; maneuvers far above
-  continuous-style 55–100.
-- **2026-09-30 UI after densify spill fixes (`24f4c1c2`)**: **1768.6 km / ~23.3 h /
-  317 maneuvers** — plan succeeded; Vestlandet west-loop gone; remaining +254 km
-  vs user dominated by westbound mid bug + Skåne zigzag.
-- **2026-09-30 corridor-centroid bias (`be38eb11`)**: densify pulled Skåne/Halland
-  west; plan failed `chunk_leg6` Øresund-class `disconnected` / `bbox_exhausted`
-  (19 hops). Reverted (`e89b9d64`).
-- **2026-09-30 earlier UI attempts** failed on Baltic water mids / Skåne
-  `snap_failed` / Øresund `disconnected` before densify+load fixes.
-- **2026-09-30 FFI multi-via** (`Landskrona → Ängelholm → Gothenburg → Sognefjell`):
-  completed at **2035.8 km / ~28.4 h / 380 maneuvers** — outside EXPECTED band;
-  used forced corridor vias (superseded by natural Ottadal via requirement).
-- **2026-09-24** dest = Sognefjell itself (ferries avoided): **1648.6 km / ~21.78 h**
-  on `dev` — upper edge of today’s EXPECTED distance band.
+  305 maneuvers** — duration in band; maneuvers far above 55–100.
+- **2026-09-30 FFI multi-via**: **2035.8 km / ~28.4 h / 380 maneuvers** — OOB;
+  forced corridor vias.
+- Live NPRA overwrite of synthetic DATEX caused Vestlandet leg14
+  `disconnected` until host re-pin kept synthetics on disk.
 
 ---
 
 ## Known gaps
 
-- Distance is inside EXPECTED but still ~118 km above the user 1514 km fair path
-  (MH/Truck costs + residual densify/load + DATEX); no further general densify
-  fix identified without rebreaking Øresund.
-- Instruction EXPECTED is **55–100**. Chunked OSM lists are stitched then thinned
-  (`thin_route_maneuvers`: drop `straight`, space non-essentials by route length,
-  keep exits/roundabouts/vias/destination). Silent OSM name continues are no
-  longer promoted to Straight.
-- DATEX soft floor 3–6 impacts: this pass hit **1** (helper `datex_ok` still true).
-- Eco Compose switch not reliably toggled from the UI campaign helper when the
-  route sheet is in search-chip mode.
+- Puttgarden ferry still unused (~180 km vs ECO-off ferry reference) because
+  densify Baltic land-bridge policy steers west of Fehmarn.
+- Eco Compose switch not reliably reflected in chunk `use_eco` flags.
 - Fuel-stop planning unimplemented (`FuelConfig` HUD only).
+- Tools UI `DownloadedRegionDelete.blockReason` does not see SD-only
+  long-trip-packs (precheck can report “Nothing installed” while corridor
+  still shows Installed on removable). Delete clicks still attempted via UI.
+- `graph_format_version` in `current.json` / mid-rebake: mixed format 8/9 packs
+  across corridor regions this day.

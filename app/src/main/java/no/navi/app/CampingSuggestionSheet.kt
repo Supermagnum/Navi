@@ -98,83 +98,83 @@ fun CampingSuggestionSheet(
             item(key = "top_disclaimer") {
                 CampingDisclaimerBlock(listDisclaimer.ifBlank { result.disclaimer })
             }
-                if (motorised) {
-                    item(key = "hdr_vehicle") {
+            if (motorised) {
+                item(key = "hdr_vehicle") {
+                    Text(
+                        "Vehicle overnight",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.testTag("camping_section_vehicle"),
+                    )
+                }
+                if (result.vehicle.cards.isEmpty()) {
+                    item(key = "vehicle_empty") {
                         Text(
-                            "Vehicle overnight",
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.testTag("camping_section_vehicle"),
+                            "No vehicle overnight spots along this corridor.",
+                            style = MaterialTheme.typography.bodySmall,
                         )
-                    }
-                    if (result.vehicle.cards.isEmpty()) {
-                        item(key = "vehicle_empty") {
-                            Text(
-                                "No vehicle overnight spots along this corridor.",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    } else {
-                        itemsIndexed(result.vehicle.cards, key = { idx, c -> "veh-$idx-${c.locationId}" }) { idx, card ->
-                            CampingCardBlock(
-                                card,
-                                sectionTag = "vehicle",
-                                index = idx,
-                                onCampHereTonight = onCampHereTonight,
-                                onUndoCampHereTonight = onUndoCampHereTonight,
-                            )
-                        }
-                    }
-                    item(key = "hdr_on_foot") {
-                        Text(
-                            "On foot from here",
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier =
-                                Modifier
-                                    .padding(top = 4.dp)
-                                    .testTag("camping_section_on_foot"),
-                        )
-                    }
-                    if (result.onFootFromHere.cards.isEmpty()) {
-                        item(key = "on_foot_empty") {
-                            Text(
-                                "No walk-in tent spots from the corridor.",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    } else {
-                        itemsIndexed(
-                            result.onFootFromHere.cards,
-                            key = { idx, c -> "foot-$idx-${c.locationId}" },
-                        ) { idx, card ->
-                            CampingCardBlock(
-                                card,
-                                sectionTag = "on_foot",
-                                index = idx,
-                                onCampHereTonight = onCampHereTonight,
-                                onUndoCampHereTonight = onUndoCampHereTonight,
-                            )
-                        }
                     }
                 } else {
-                    if (result.list.cards.isEmpty()) {
-                        item(key = "list_empty") {
-                            Text(
-                                "No tent spots found along this corridor.",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    } else {
-                        itemsIndexed(result.list.cards, key = { idx, c -> "list-$idx-${c.locationId}" }) { idx, card ->
-                            CampingCardBlock(
-                                card,
-                                sectionTag = "list",
-                                index = idx,
-                                onCampHereTonight = onCampHereTonight,
-                                onUndoCampHereTonight = onUndoCampHereTonight,
-                            )
-                        }
+                    itemsIndexed(result.vehicle.cards, key = { idx, c -> "veh-$idx-${c.locationId}" }) { idx, card ->
+                        CampingCardBlock(
+                            card,
+                            sectionTag = "vehicle",
+                            index = idx,
+                            onCampHereTonight = onCampHereTonight,
+                            onUndoCampHereTonight = onUndoCampHereTonight,
+                        )
                     }
                 }
+                item(key = "hdr_on_foot") {
+                    Text(
+                        "On foot from here",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier =
+                            Modifier
+                                .padding(top = 4.dp)
+                                .testTag("camping_section_on_foot"),
+                    )
+                }
+                if (result.onFootFromHere.cards.isEmpty()) {
+                    item(key = "on_foot_empty") {
+                        Text(
+                            "No walk-in tent spots from the corridor.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                } else {
+                    itemsIndexed(
+                        result.onFootFromHere.cards,
+                        key = { idx, c -> "foot-$idx-${c.locationId}" },
+                    ) { idx, card ->
+                        CampingCardBlock(
+                            card,
+                            sectionTag = "on_foot",
+                            index = idx,
+                            onCampHereTonight = onCampHereTonight,
+                            onUndoCampHereTonight = onUndoCampHereTonight,
+                        )
+                    }
+                }
+            } else {
+                if (result.list.cards.isEmpty()) {
+                    item(key = "list_empty") {
+                        Text(
+                            "No tent spots found along this corridor.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                } else {
+                    itemsIndexed(result.list.cards, key = { idx, c -> "list-$idx-${c.locationId}" }) { idx, card ->
+                        CampingCardBlock(
+                            card,
+                            sectionTag = "list",
+                            index = idx,
+                            onCampHereTonight = onCampHereTonight,
+                            onUndoCampHereTonight = onUndoCampHereTonight,
+                        )
+                    }
+                }
+            }
             item(key = "bottom_disclaimer") {
                 CampingDisclaimerBlock(result.disclaimer)
             }

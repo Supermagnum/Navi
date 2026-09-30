@@ -6,7 +6,6 @@ import android.util.Log
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
@@ -46,25 +45,26 @@ import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 /**
- * Bevensen → Ottadal via → Dalsøren MobileHome campaign via **visible Compose UI**.
+ * Elsa's caravan & galleri (Bugøynes) → Sjuvasslia Camping MobileHome campaign
+ * via **visible Compose UI**.
  *
- * Primary plan path: chip_from / chip_via / chip_to + btn_plan_route on MainActivity.
- * UniFFI is assist-only (vehicle/rest seed, camping guest install). Synthetic DATEX is
- * injected by host ADB (marker BEVENSEN_AWAIT_DATEX). GPS start is host ADB.
- * Regions are deleted via Tools UI before plan. Not wired into CI.
+ * Primary plan path: chip_from / chip_to + btn_plan_route on MainActivity.
+ * Settings / region delete / downloads / plan are UI-driven. Synthetic DATEX is
+ * injected by host ADB (see marker ELSA_AWAIT_DATEX). GPS start is host ADB.
+ * Not wired into CI. Does not modify app or plugin production code.
  */
 @RunWith(AndroidJUnit4::class)
 @LargeTest
-class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
+class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
     companion object {
-        private const val TAG = "BevensenUiCampaign"
+        private const val TAG = "ElsaSjuvassliaUiCampaign"
 
-        private const val ORIGIN_LAT = 53.079686
-        private const val ORIGIN_LON = 10.587198
-        private const val VIA_LAT = 61.8691419
-        private const val VIA_LON = 9.1055130
-        private const val DEST_LAT = 61.4433766
-        private const val DEST_LON = 7.4614016
+        // Elsa's caravan & galleri, Bugøynes (elevation ~4 m).
+        private const val ORIGIN_LAT = 69.9741435
+        private const val ORIGIN_LON = 29.6337571
+        private const val ORIGIN_ELEV_M = 4.0
+        private const val DEST_LAT = 59.803175
+        private const val DEST_LON = 9.397871
 
         private const val WIDTH_INCL_MIRRORS_M = 2.297
         private const val LENGTH_M = 5.304
@@ -78,19 +78,17 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         private val DOWNLOAD_DEADLINE_MS = TimeUnit.HOURS.toMillis(20)
         private val PLAN_DEADLINE_MS = TimeUnit.HOURS.toMillis(6)
 
-        // Host ADB injects these (3–6 Blocks across DE/DK/SE/NO).
-        // Coords are densify-chord midpoints on the known Bevensen→Dalsøren path
-        // (within DATEX corridor margin). Avoid Ottadal→Dalsøren mountain choke.
+        // Synthetic DATEX Blocks along likely E6 / inland spine Bugøynes→Sjuvasslia.
+        // Host ADB injects these (not UniFFI). Coords are corridor candidates for timing.
         private val DATEX_SITS =
             listOf(
-                Sit("syn-de-a7", "DE", 53.64485, 10.33915, "Synthetic DE A7 chord (Bevensen-Kiel)"),
-                Sit("syn-dk-e45", "DK", 55.04625, 11.23625, "Synthetic DK Great Belt approach"),
-                Sit("syn-se-e6", "SE", 56.42250, 12.96875, "Synthetic SE Halland E6"),
-                Sit("syn-se-gbg", "SE", 58.30281, 11.32281, "Synthetic SE Bohuslan coast"),
-                Sit("syn-no-e6", "NO", 60.17719, 10.64550, "Synthetic NO E6 Ostlandet"),
-                Sit("syn-no-otta", "NO", 61.56436, 9.66331, "Synthetic NO toward Ottadal via"),
+                Sit("syn-no-alta", "NO", 69.96890, 23.27170, "Synthetic NO E6 Alta approach"),
+                Sit("syn-no-narvik", "NO", 68.43850, 17.42720, "Synthetic NO E6 Narvik"),
+                Sit("syn-no-mosjoen", "NO", 65.83610, 13.19060, "Synthetic NO E6 Mosjøen"),
+                Sit("syn-no-trondheim", "NO", 63.43050, 10.39510, "Synthetic NO E6 Trondheim"),
+                Sit("syn-no-lillehammer", "NO", 61.11530, 10.46620, "Synthetic NO E6 Lillehammer"),
+                Sit("syn-no-buskerud", "NO", 59.95500, 9.62000, "Synthetic NO approach Sjuvasslia"),
             )
-
         private val REGIONS_TO_DELETE_CANDIDATES =
             listOf(
                 "europe/denmark",
@@ -99,7 +97,6 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 "europe/sweden/halland",
                 "europe/sweden/skane",
                 "europe/sweden/vastra-gotaland",
-                "europe/sweden/vastra_gotaland",
                 "europe/norway/vestlandet",
                 "europe/norway/ostlandet",
                 "europe/norway/nord-norge",
@@ -170,22 +167,25 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         NaviMapTestHooks.lastRoutePolyline = ""
         NaviMapTestHooks.lastRoutePolylineChars = 0
         NaviMapTestHooks.lastManeuversJson = "[]"
-        report.put("campaign", "bevensen_dalsoren_mobilehome_ui")
+        report.put("campaign", "elsa_sjuvasslia_mobilehome_ui")
         report.put("branch_note", "right-to-roam")
         report.put("started_unix", System.currentTimeMillis() / 1000)
         report.put("departure_iso", DEPARTURE_ISO)
         report.put("ram_before_mib", processPssMib())
         report.put(
             "origin",
-            JSONObject().put("lat", ORIGIN_LAT).put("lon", ORIGIN_LON).put("name", "Bad Bevensen Kurpark Stellplatz"),
-        )
-        report.put(
-            "via",
-            JSONObject().put("lat", VIA_LAT).put("lon", VIA_LON).put("name", "Ottadal corridor via"),
+            JSONObject()
+                .put("lat", ORIGIN_LAT)
+                .put("lon", ORIGIN_LON)
+                .put("elev_m", ORIGIN_ELEV_M)
+                .put("name", "Elsa's caravan & galleri, Bugøynes"),
         )
         report.put(
             "dest",
-            JSONObject().put("lat", DEST_LAT).put("lon", DEST_LON).put("name", "Dalsøren Camping"),
+            JSONObject()
+                .put("lat", DEST_LAT)
+                .put("lon", DEST_LON)
+                .put("name", "Sjuvasslia Camping"),
         )
     }
 
@@ -198,12 +198,13 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
     }
 
     @Test
-    fun bevensen_ottadal_dalsoren_ui_plan_campaign() {
+    fun elsa_sjuvasslia_ui_plan_campaign() {
         settle(1_200)
         noteUi("activity_foreground", "MainActivity compose rule launched")
         screenshot("01_launch")
+        Log.i(TAG, "ELSA_GPS_HINT lon=$ORIGIN_LON lat=$ORIGIN_LAT elev_m=$ORIGIN_ELEV_M")
 
-        // Assist: vehicle / soft rest / fuel / camping guest (disk). No DATEX here.
+        // Assist: vehicle/rest/fuel/camping guest on disk (UI also configures). No DATEX here.
         seedAssistSettings()
         report.put("current_json_regions", fetchCurrentJsonRegions())
         writeReport()
@@ -222,6 +223,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         // Re-enable long trip after deletes (delete path turns it off when a plan was active).
         confirmPluginsAndLongTripViaToolsUi()
         openRoutePanel()
+        // Hard-check long trip is ON before waypoints/plan (prior run stuck "Long trip off").
         runCatching {
             clickTagSoft("btn_tools")
             settle(500)
@@ -251,26 +253,16 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         configureMobileHomeVehicleAndRestViaUi()
         screenshot("04_vehicle_rest")
 
-        // Eco: selecting Mobile home resets ecoEnabled to profile default (off).
-        // Turn Eco routing ON via the visible route-sheet switch before Plan.
         openRoutePanel()
         enableEcoRoutingViaUi()
-        runCatching {
-            composeRule.onNodeWithText("Avoid toll roads", useUnmergedTree = true).assertExists()
-            noteUi("avoid_tolls_row", "visible; default OFF (avoidTolls=false)")
-        }
+        enableAvoidTollsViaUi()
 
-        // From / Via / To — typed coordinates on visible search field.
-        typeCoordAndPickHit("chip_from", ORIGIN_LAT, ORIGIN_LON, "from_bevensen")
+        // From / To — typed coordinates on visible search field (no forced vias).
+        typeCoordAndPickHit("chip_from", ORIGIN_LAT, ORIGIN_LON, "from_elsa")
         screenshot("05_from_set")
-        typeCoordAndPickHit("chip_via", VIA_LAT, VIA_LON, "via_ottadal")
-        screenshot("06_via_set")
-        typeCoordAndPickHit("chip_to", DEST_LAT, DEST_LON, "to_dalsoren")
+        typeCoordAndPickHit("chip_to", DEST_LAT, DEST_LON, "to_sjuvasslia")
         screenshot("07_to_set")
-        noteUi(
-            "waypoints_summary",
-            waypointSummary(),
-        )
+        noteUi("waypoints_summary", waypointSummary())
         report.put("waypoints_summary", waypointSummary())
         writeReport()
 
@@ -278,14 +270,14 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         awaitHostDatexInjection()
         screenshot("07b_datex_injected")
 
-        // Re-assert MobileHome after long Tools/delete flows.
+        // Re-assert MobileHome after long downloads: Compose remember can reset
+        // to Car if the activity is recreated while packs fetch.
         openRoutePanel()
         runCatching {
             clickTag("chip_profile_mobile_home")
             noteUi("chip_profile_mobile_home", "re-asserted before plan")
             settle(300)
         }
-        enableEcoRoutingViaUi()
 
         // PRIMARY PLAN PATH: visible Plan button.
         composeRule.onNodeWithTag("btn_plan_route", useUnmergedTree = true).performScrollTo()
@@ -380,11 +372,11 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
             "expected_check",
             JSONObject()
                 .put("distance_km", distanceKm)
-                .put("distance_ok", distanceKm in 1461.3..1648.6)
+                .put("distance_ok", distanceKm in 1800.0..2300.0)
                 .put("duration_h", etaMin / 60.0)
-                .put("duration_ok", (etaMin / 60.0) in 17.0..22.5)
+                .put("duration_ok", (etaMin / 60.0) in 20.0..31.0)
                 .put("maneuvers", manCount)
-                .put("maneuvers_ok", manCount in 55..100)
+                .put("maneuvers_ok", manCount in 150..170)
                 .put("datex_ok", datexImpactsPositive(planReport)),
         )
         report.put("pack_dir", LongTripPackStorage.packDownloadDir(composeRule.activity).absolutePath)
@@ -395,10 +387,9 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         writeReport()
 
         assertTrue(
-            "UI waypoints must be set (saw From/Via/To interactions)",
-            uiEvents.toString().contains("from_bevensen") &&
-                uiEvents.toString().contains("via_ottadal") &&
-                uiEvents.toString().contains("to_dalsoren"),
+            "UI waypoints must be set (saw From/To interactions)",
+            uiEvents.toString().contains("from_elsa") &&
+                uiEvents.toString().contains("to_sjuvasslia"),
         )
         assertTrue(
             "Plan button must have been clicked on UI",
@@ -408,10 +399,65 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
             "UI plan must produce a route (km=$distanceKm chars=${NaviMapTestHooks.lastRoutePolylineChars})",
             distanceKm > 100.0 && NaviMapTestHooks.lastRoutePolylineChars >= 8,
         )
+        report.put(
+            "attractions",
+            sampleAttractionsFromReport(planReport),
+        )
+        report.put(
+            "rest_places",
+            extractBreakPois(planReport),
+        )
+        report.put(
+            "maneuver_kinds",
+            summarizeManeuverKinds(maneuvers),
+        )
+        writeReport()
         Log.i(
             TAG,
             "PASS_UI dist=$distanceKm etaMin=$etaMin man=$manCount datex=${datexImpactsPositive(planReport)}",
         )
+        Log.i(TAG, "ELSA_CAMPAIGN_DONE")
+    }
+
+    private fun summarizeManeuverKinds(raw: String): JSONObject {
+        val counts = JSONObject()
+        try {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                val k = arr.optJSONObject(i)?.optString("kind") ?: "unknown"
+                counts.put(k, counts.optInt(k) + 1)
+            }
+        } catch (_: Throwable) {
+        }
+        return counts
+    }
+
+    private fun extractBreakPois(rep: String): JSONArray {
+        val out = JSONArray()
+        val re = Regex("""\"lat\":([0-9.+-]+),\"lon\":([0-9.+-]+),\"name\":\"([^\"]*)\"""")
+        for (m in re.findAll(rep)) {
+            out.put(
+                JSONObject()
+                    .put("lat", m.groupValues[1].toDoubleOrNull())
+                    .put("lon", m.groupValues[2].toDoubleOrNull())
+                    .put("name", m.groupValues[3]),
+            )
+            if (out.length() >= 80) break
+        }
+        return out
+    }
+
+    private fun sampleAttractionsFromReport(rep: String): JSONObject {
+        val lines =
+            rep
+                .lineSequence()
+                .filter {
+                    it.contains("attraction", ignoreCase = true) ||
+                        it.contains("poi_", ignoreCase = true) ||
+                        it.contains("lookahead", ignoreCase = true)
+                }.take(60)
+                .toList()
+        return JSONObject().put("lines", JSONArray(lines)).put("count_lines", lines.size)
     }
 
     private fun seedAssistSettings() {
@@ -464,7 +510,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
             "settings",
             JSONObject()
                 .put("eco", true)
-                .put("avoid_toll_roads", false)
+                .put("avoid_toll_roads", true)
                 .put("ferries", "use")
                 .put("soft_daily_budget_h", MAX_DAILY_HOURS)
                 .put("soft_break_interval_h", 1.5)
@@ -671,7 +717,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         val cacheDir = File(dataDir, "datex_cache").also { it.mkdirs() }
         val marker = File(cacheDir, "apply_to_routing")
         val xml = File(cacheDir, "datex-GetSituation.xml")
-        Log.i(TAG, "BEVENSEN_AWAIT_DATEX path=${cacheDir.absolutePath}")
+        Log.i(TAG, "ELSA_AWAIT_DATEX path=${cacheDir.absolutePath}")
         noteUi("datex_await", cacheDir.absolutePath)
         val deadline = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(10)
         while (System.currentTimeMillis() < deadline) {
@@ -701,8 +747,42 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         throw AssertionError("Host ADB DATEX injection timed out at ${cacheDir.absolutePath}")
     }
 
+    private fun enableAvoidTollsViaUi() {
+        device.wait(Until.findObject(By.text("Avoid toll roads")), 3_000)
+        val label =
+            device.findObject(By.text("Avoid toll roads"))
+                ?: device.findObject(By.textContains("Avoid toll"))
+        if (label == null) {
+            noteUi("avoid_tolls_switch", "label not found")
+            return
+        }
+        val parent = label.parent
+        var sw = parent?.findObject(By.checkable(true))
+        if (sw == null) {
+            val labelBounds = label.visibleBounds
+            sw =
+                device.findObjects(By.checkable(true)).firstOrNull { obj ->
+                    kotlin.math.abs(obj.visibleBounds.centerY() - labelBounds.centerY()) < 80
+                }
+        }
+        if (sw == null) {
+            noteUi("avoid_tolls_switch", "switch not found")
+            return
+        }
+        if (!sw.isChecked) {
+            sw.click()
+            settle(300)
+            if (!sw.isChecked) {
+                sw.click()
+                settle(300)
+            }
+        }
+        noteUi("avoid_tolls_switch", if (sw.isChecked) "ON" else "still OFF")
+    }
+
     private fun deleteDownloadedRegionsViaUi() {
         val deleted = JSONArray()
+        // Long-trip plan blocks delete — turn long trip off first via Tools.
         clickTagSoft("btn_tools")
         settle(500)
         runCatching {
@@ -721,56 +801,42 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 settle(400)
             }
         }
-        // Always attempt UI delete for every corridor candidate. blockReason only
-        // sees internal dataDir — SD long-trip-packs are invisible to it, so
-        // "Nothing installed" must not skip (packs live on the removable volume).
         for (path in REGIONS_TO_DELETE_CANDIDATES) {
-            var block = DownloadedRegionDelete.blockReason(path, dataDir)
-            var waitedMs = 0L
-            // Cap wait: cancelled basemap jobs can leave isRunning stuck.
-            while (block != null &&
-                (
-                    block.contains("download", ignoreCase = true) ||
-                        block.contains("index", ignoreCase = true) ||
-                        block.contains("Long trip", ignoreCase = true)
-                ) &&
-                waitedMs < TimeUnit.MINUTES.toMillis(2)
-            ) {
-                noteUi("delete_wait", "$path -> $block (${waitedMs}ms)")
-                settle(10_000)
-                waitedMs += 10_000
-                block = DownloadedRegionDelete.blockReason(path, dataDir)
+            val block = DownloadedRegionDelete.blockReason(path, dataDir)
+            // Probe SD packs: treat "Nothing installed" as skip.
+            if (block != null && block.startsWith("Nothing installed")) {
+                continue
             }
-            if (block != null && !block.startsWith("Nothing installed")) {
+            if (block != null) {
                 noteUi("delete_block_precheck", "$path -> $block")
             }
             runCatching {
                 setField("field_geofabrik_path", path)
-                settle(400)
+                settle(300)
                 composeRule
                     .onNodeWithTag("btn_delete_downloaded_region", useUnmergedTree = true)
                     .performScrollTo()
                 clickTagSoft("btn_delete_downloaded_region")
-                settle(500)
+                settle(400)
                 clickTagSoft("btn_confirm_delete_region")
-                settle(1_200)
+                settle(800)
                 deleted.put(
                     JSONObject()
                         .put("path", path)
                         .put("pre_block", block ?: JSONObject.NULL)
-                        .put("attempted", true)
-                        .put("waited_ms", waitedMs),
+                        .put("attempted", true),
                 )
                 noteUi("delete_region", path)
             }.onFailure { e ->
-                noteUi("delete_region_fail", "$path: ${e.message}")
+                noteUi("delete_region_soft_fail", "$path ${e.message}")
             }
         }
-        report.put("regions_deleted_via_ui", deleted)
         NaviMapTestHooks.requestCloseTools = true
         settle(400)
         clickTagSoft("btn_close_tools")
         clickTagSoft("btn_save_tools")
+        report.put("regions_deleted_via_ui", deleted)
+        writeReport()
     }
 
     private fun installCampingGuest() {
@@ -797,12 +863,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
             for (i in 0 until arr.length()) {
                 val r = arr.optJSONObject(i) ?: continue
                 val id = r.optString("region_id")
-                if (id.contains("germany") ||
-                    id.contains("denmark") ||
-                    id.contains("sweden") ||
-                    id.contains("norway") ||
-                    id == "europe/denmark"
-                ) {
+                if (id.contains("norway") || id.contains("sweden") || id.contains("finland")) {
                     want.put(
                         JSONObject()
                             .put("region_id", id)
@@ -890,14 +951,14 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
 
     private fun screenshot(name: String) {
         runCatching {
-            val dir = File("/sdcard/Pictures/bevensen-ui").also { it.mkdirs() }
+            val dir = File("/sdcard/Pictures/elsa-sjuvasslia-ui").also { it.mkdirs() }
             val f = File(dir, "$name.png")
             device.takeScreenshot(f)
             noteUi("screenshot", f.absolutePath)
             // Also pull-friendly path
             runCatching {
-                File("/data/local/tmp/bevensen-ui").also { it.mkdirs() }
-                device.takeScreenshot(File("/data/local/tmp/bevensen-ui/$name.png"))
+                File("/data/local/tmp/elsa-sjuvasslia-ui").also { it.mkdirs() }
+                device.takeScreenshot(File("/data/local/tmp/elsa-sjuvasslia-ui/$name.png"))
             }
         }
     }
@@ -956,7 +1017,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
     private fun writeReport() {
         val text = report.toString(2)
         runCatching {
-            File(dataDir, "long-trip-bevensen-dalsoren").also { it.mkdirs() }.let {
+            File(dataDir, "long-trip-elsa-sjuvasslia").also { it.mkdirs() }.let {
                 File(it, "report.json").writeText(text)
             }
         }
@@ -967,14 +1028,14 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 ?.appFilesDir
         if (sd != null) {
             runCatching {
-                val dir = File(sd, "long-trip-bevensen-dalsoren").also { it.mkdirs() }
+                val dir = File(sd, "long-trip-elsa-sjuvasslia").also { it.mkdirs() }
                 File(dir, "report.json").writeText(text)
             }
         }
-        runCatching { File("/data/local/tmp/long-trip-bevensen-dalsoren-ui.json").writeText(text) }
+        runCatching { File("/data/local/tmp/long-trip-elsa-sjuvasslia-ui.json").writeText(text) }
         runCatching {
             composeRule.activity.getExternalFilesDir(null)?.let {
-                File(it, "long-trip-bevensen-dalsoren-ui.json").writeText(text)
+                File(it, "long-trip-elsa-sjuvasslia-ui.json").writeText(text)
             }
         }
         Log.i(TAG, "report written (${text.length} chars)")
