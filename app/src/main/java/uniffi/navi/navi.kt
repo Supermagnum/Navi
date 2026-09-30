@@ -1057,6 +1057,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_is_enabled(
     ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_peek_clock(
+    ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_run_isolation_guest(
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_run_suggest(
@@ -1070,6 +1072,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_camping_plugin_set_nav_context(
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_set_residency_country(
+    ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_set_timezone(
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_all(
     ): Int
@@ -1509,9 +1513,11 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_is_enabled(uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_camping_plugin_peek_clock(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_run_isolation_guest(`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_navi_fn_func_camping_plugin_run_suggest(`jobJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_navi_fn_func_camping_plugin_run_suggest(`jobJson`: RustBuffer.ByValue,`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_session_disabled_reason(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1523,6 +1529,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_set_residency_country(`iso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_camping_plugin_set_timezone(`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -2218,10 +2226,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_camping_plugin_is_enabled() and 0xFFFF) != 41845) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_peek_clock() and 0xFFFF) != 42319) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_camping_plugin_run_isolation_guest() and 0xFFFF) != 29556) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_camping_plugin_run_suggest() and 0xFFFF) != 54787) {
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_run_suggest() and 0xFFFF) != 44153) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_camping_plugin_session_disabled_reason() and 0xFFFF) != 15225) {
@@ -2237,6 +2248,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_camping_plugin_set_residency_country() and 0xFFFF) != 64366) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_set_timezone() and 0xFFFF) != 56396) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_all() and 0xFFFF) != 684) {
@@ -3084,6 +3098,59 @@ public object FfiConverterTypeCampingCallResult: FfiConverterRustBuffer<CampingC
             FfiConverterString.write(value.`message`, buf)
             FfiConverterULong.write(value.`elapsedMs`, buf)
             FfiConverterOptionalString.write(value.`resultJson`, buf)
+    }
+}
+
+
+
+data class CampingClockSnapshot (
+    var `year`: kotlin.Int
+    , 
+    var `month`: kotlin.UInt
+    , 
+    var `day`: kotlin.UInt
+    , 
+    var `timezone`: kotlin.String
+    , 
+    var `unixSecs`: kotlin.Long
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCampingClockSnapshot: FfiConverterRustBuffer<CampingClockSnapshot> {
+    override fun read(buf: ByteBuffer): CampingClockSnapshot {
+        return CampingClockSnapshot(
+            FfiConverterInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterLong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: CampingClockSnapshot) = (
+            FfiConverterInt.allocationSize(value.`year`) +
+            FfiConverterUInt.allocationSize(value.`month`) +
+            FfiConverterUInt.allocationSize(value.`day`) +
+            FfiConverterString.allocationSize(value.`timezone`) +
+            FfiConverterLong.allocationSize(value.`unixSecs`)
+    )
+
+    override fun write(value: CampingClockSnapshot, buf: ByteBuffer) {
+            FfiConverterInt.write(value.`year`, buf)
+            FfiConverterUInt.write(value.`month`, buf)
+            FfiConverterUInt.write(value.`day`, buf)
+            FfiConverterString.write(value.`timezone`, buf)
+            FfiConverterLong.write(value.`unixSecs`, buf)
     }
 }
 
@@ -4952,6 +5019,38 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
         } else {
             buf.put(1)
             FfiConverterByteArray.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeCampingClockSnapshot: FfiConverterRustBuffer<CampingClockSnapshot?> {
+    override fun read(buf: ByteBuffer): CampingClockSnapshot? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeCampingClockSnapshot.read(buf)
+    }
+
+    override fun allocationSize(value: CampingClockSnapshot?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeCampingClockSnapshot.allocationSize(value)
+        }
+    }
+
+    override fun write(value: CampingClockSnapshot?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeCampingClockSnapshot.write(value, buf)
         }
     }
 }
@@ -8179,6 +8278,19 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Peek the clock HostApi would supply right now (fresh Local date + current timezone id).
+         */ fun `campingPluginPeekClock`(): CampingClockSnapshot? {
+            return FfiConverterOptionalTypeCampingClockSnapshot.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_peek_clock(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
          * Run a staged isolation guest (`busy_loop`, `trap_guest`, `memory_bomb`) under
          * the same sandbox. Used by instrumented emulator tests. Never crashes the app.
          */ fun `campingPluginRunIsolationGuest`(`name`: kotlin.String): CampingCallResult {
@@ -8194,15 +8306,16 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * Write suggest job, invoke guest on a worker thread, return result JSON.
-         * Caller (Kotlin) must not run this on the Android main thread.
-         */ fun `campingPluginRunSuggest`(`jobJson`: kotlin.String): CampingCallResult {
+         * Write suggest job, invoke guest, return result JSON.
+         * `timezone` is the device IANA id at call time (must not be a configure-time cache).
+         */ fun `campingPluginRunSuggest`(`jobJson`: kotlin.String, `timezone`: kotlin.String): CampingCallResult {
             return FfiConverterTypeCampingCallResult.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_navi_fn_func_camping_plugin_run_suggest(
     
         
-        FfiConverterString.lower(`jobJson`),_status)
+        FfiConverterString.lower(`jobJson`),
+        FfiConverterString.lower(`timezone`),_status)
 }
     )
     }
@@ -8271,6 +8384,19 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
 }
     )
     }
+    
+
+        /**
+         * Refresh the IANA timezone id used by the next `clock_read` (call before every suggest).
+         */ fun `campingPluginSetTimezone`(`timezone`: kotlin.String)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_set_timezone(
+    
+        
+        FfiConverterString.lower(`timezone`),_status)
+}
+    
     
 
 

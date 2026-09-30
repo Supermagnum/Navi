@@ -230,6 +230,7 @@ impl HostApi for AndroidCampingApi {
     }
 
     fn clock_read(&self) -> Option<ClockView> {
+        // Always sample the device clock at call time (never a configure-time snapshot).
         let now = Local::now();
         let (year, month, day) = if let Some((y, m, d)) = self.clock_override {
             (y, m, d)
@@ -241,6 +242,8 @@ impl HostApi for AndroidCampingApi {
             year,
             month,
             day,
+            // Timezone id is refreshed on every suggest/isolation entry (see
+            // camping_plugin_set_timezone / run_suggest timezone arg).
             timezone: self.timezone.clone(),
         })
     }
@@ -504,6 +507,44 @@ pub fn camping_plugin_clear_clock_override() {
     }
 }
 
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct CampingClockSnapshot {
+    pub year: i32,
+    pub month: u32,
+    pub day: u32,
+    pub timezone: String,
+    pub unix_secs: i64,
+}
+
+/// Refresh the IANA timezone id used by the next `clock_read` (call before every suggest).
+#[uniffi::export]
+pub fn camping_plugin_set_timezone(timezone: String) {
+    let mut guard = session_lock().lock().expect("camping session lock");
+    if let Some(session) = guard.as_mut() {
+        session.timezone = if timezone.trim().is_empty() {
+            "local".into()
+        } else {
+            timezone
+        };
+    }
+}
+
+/// Peek the clock HostApi would supply right now (fresh Local date + current timezone id).
+#[uniffi::export]
+pub fn camping_plugin_peek_clock() -> Option<CampingClockSnapshot> {
+    let guard = session_lock().lock().expect("camping session lock");
+    let session = guard.as_ref()?;
+    let api = AndroidCampingApi::open(session).ok()?;
+    let c = api.clock_read()?;
+    Some(CampingClockSnapshot {
+        year: c.year,
+        month: c.month,
+        day: c.day,
+        timezone: c.timezone,
+        unix_secs: c.unix_secs,
+    })
+}
+
 #[uniffi::export]
 pub fn camping_plugin_set_residency_country(iso: Option<String>) -> String {
     let guard = session_lock().lock().expect("camping session lock");
@@ -522,10 +563,11 @@ pub fn camping_plugin_set_residency_country(iso: Option<String>) -> String {
     }
 }
 
-/// Write suggest job, invoke guest on a worker thread, return result JSON.
-/// Caller (Kotlin) must not run this on the Android main thread.
+/// Write suggest job, invoke guest, return result JSON.
+/// `timezone` is the device IANA id at call time (must not be a configure-time cache).
 #[uniffi::export]
-pub fn camping_plugin_run_suggest(job_json: String) -> CampingCallResult {
+pub fn camping_plugin_run_suggest(job_json: String, timezone: String) -> CampingCallResult {
+    camping_plugin_set_timezone(timezone);
     run_camping_guest(Some(job_json))
 }
 
@@ -767,7 +809,7 @@ pub fn camping_plugin_run_isolation_guest(name: String) -> CampingCallResult {
 pub fn camping_plugin_capability_sources_json() -> String {
     serde_json::json!({
         "safety_config_read": "ConfigStore via data_dir/navi.db",
-        "clock_read": "device Local date + IANA timezone from camping_plugin_configure",
+        "clock_read": "device Local::now() Y-M-D at every guest call + IANA timezone refreshed via camping_plugin_set_timezone / run_suggest",
         "plugin_kv": "filesDir/plugin_kv/camping_night.json (FilePluginKv)",
         "admin_region_read": "driver_break_core::admin_region_at",
         "travel_mode_read": "active TravelProfile from camping_plugin_set_nav_context",
