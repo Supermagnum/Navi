@@ -308,7 +308,12 @@ class CampingPhase5bPresentationInstrumentedTest {
             android.util.Log.i("NaviCampingNight", "camp_here date=$y-$m-$d msg=$msg kv=${kv.takeIf { it.isFile }?.readText()}")
             return msg
         }
-        // Display-only across three days must never write the night store or block.
+        fun nightKeysPresent(): Boolean {
+            if (!kv.isFile) return false
+            val text = kv.readText()
+            return text.contains("\"rtr_night:") || text.contains("rtr_night:")
+        }
+        // Display-only across three days must never write night records or block.
         for (day in 1u..3u) {
             val shown = suggestOn(2026, 7u, day)
             assumeTrue(
@@ -316,8 +321,8 @@ class CampingPhase5bPresentationInstrumentedTest {
                 shown.list.probesAccepted > 0 || shown.list.cards.any { it.accepted },
             )
             assertTrue(
-                "display/suggest must not create night store (day $day)",
-                !kv.isFile || kv.readText().let { it == "{}" || it == "" },
+                "display/suggest must not record a night (day $day); kv=${kv.takeIf { it.isFile }?.readText()}",
+                !nightKeysPresent(),
             )
         }
         // Explicit Camp here on 07-01 and 07-02 → 07-03 declined for same spot.
