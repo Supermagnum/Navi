@@ -1,4 +1,4 @@
-//! Item 2: Norway fylke subdivision + cloudberry gating.
+//! County / fylke subdivision: current ISO codes + cloudberry gating.
 
 mod common;
 
@@ -13,6 +13,38 @@ use driver_break_core::storage::Storage;
 use navi_right_to_roam_camping::{
     cloudberry_decision, suggest_overnight, CloudberryDecision, SuggestInput,
 };
+
+#[test]
+fn current_iso_tromso_alta_bodo_and_trondelag_omits_cloudberry() {
+    assert!(subdivision_ring_count() > 0, "baked Norway fylke asset must load");
+
+    // Points beside the named cities (NE Admin-1 is coarse; see admin_subdivision).
+    let cases = [
+        ("Tromsø hinterland", 69.5992, 18.9953, "no-55", true),
+        ("Alta", 69.9689, 23.2717, "no-56", true),
+        ("Bodø hinterland", 67.2704, 14.4149, "no-18", true),
+        ("Trondheim (Trøndelag)", 63.4305, 10.3951, "no-50", false),
+    ];
+    for &(label, lat, lon, want_iso, expect_cloudberry) in &cases {
+        let iso = subdivision_iso_at(lat, lon);
+        eprintln!("{label}: subdivision={iso:?}");
+        assert_eq!(iso.as_deref(), Some(want_iso), "{label}");
+        let decision = cloudberry_decision(iso.as_deref());
+        if expect_cloudberry {
+            assert_eq!(decision, CloudberryDecision::Show, "{label}");
+        } else {
+            assert!(
+                matches!(decision, CloudberryDecision::OmitOutsideNorthern { .. }),
+                "{label}: cloudberry must be omitted outside Nordland/Troms/Finnmark, got {decision:?}"
+            );
+        }
+    }
+
+    // Explicit: never the pre-reform or merged northern codes from this layer.
+    for iso in ["no-55", "no-56", "no-18"] {
+        assert!(!matches!(iso, "no-19" | "no-20" | "no-54"));
+    }
+}
 
 #[test]
 fn innlandet_spots_resolve_subdivision_and_omit_cloudberry() {
@@ -70,19 +102,4 @@ municipality=not_available (no kommune layer)",
             assert!(!c.notes.iter().any(|n| n.to_lowercase().contains("cloudberry")));
         }
     }
-
-    // Northern Show path: Natural Earth Nordland label point (no nord-norge pack
-    // in this workspace — Ostlandet e2e PBF is a 16KiB stub; graph tiles only).
-    let nord_iso = subdivision_iso_at(66.7347, 14.7203);
-    eprintln!("Nordland NE centroid subdivision={nord_iso:?}");
-    assert_eq!(nord_iso.as_deref(), Some("no-18"));
-    assert_eq!(
-        cloudberry_decision(nord_iso.as_deref()),
-        CloudberryDecision::Show
-    );
-    eprintln!(
-        "EXPLICIT: no Nordland/Troms/Finnmark OSM pack under {}; \
-cloudberry Show verified via baked NE Admin-1 subdivision at Nordland centroid only",
-        dir.display()
-    );
 }

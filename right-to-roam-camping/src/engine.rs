@@ -372,16 +372,18 @@ pub fn cloudberry_decision(subdivision_iso: Option<&str>) -> CloudberryDecision 
 }
 
 fn cloudberry_applies(subdivision_iso: Option<&str>) -> bool {
-    // Omitted while subdivision is unknown (Phase 2 decision).
+    // Informational note only — never a hard overnight filter. Prefer current
+    // ISO 3166-2 (NO-18 / NO-55 / NO-56). Accept legacy NO-19/NO-20 and the
+    // 2020–2023 merged NO-54 if an older layer ever surfaces them.
     match subdivision_iso {
         Some(s) => {
             let u = s.to_ascii_uppercase();
             u.contains("NO-18") // Nordland
-                || u.contains("NO-19") // Troms (legacy)
-                || u.contains("NO-20") // Finnmark (legacy)
-                || u.contains("NO-54") // Troms og Finnmark
                 || u.contains("NO-55") // Troms (2024+)
                 || u.contains("NO-56") // Finnmark (2024+)
+                || u.contains("NO-19") // Troms (pre-2020)
+                || u.contains("NO-20") // Finnmark (pre-2020)
+                || u.contains("NO-54") // Troms og Finnmark (2020–2023)
                 || u.contains("NORDLAND")
                 || u.contains("TROMS")
                 || u.contains("FINNMARK")

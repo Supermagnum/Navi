@@ -3,8 +3,15 @@
 //! Root cause of empty `subdivision_iso`: `admin_region_at` had no subdivision
 //! layer. The Ostlandet e2e `*.osm.pbf` is a stub (16 KiB zeros), so fylke cannot
 //! be extracted from the regional pack. Instead we ship a compact Natural Earth
-//! Admin-1 (10m) Norway asset (legacy fylke codes mapped to current ISO where
-//! needed, e.g. Hedmark/Oppland → `no-34` Innlandet).
+//! Admin-1 (10m) Norway asset with codes remapped to **current** ISO 3166-2:
+//! Hedmark/Oppland → `no-34` Innlandet; Troms → `no-55`; Finnmark → `no-56`;
+//! Nordland stays `no-18`. Natural Earth predates the 2024 county reform and
+//! never carried the 2020–2023 merged `no-54` (Troms og Finnmark).
+//!
+//! **Coarse / informational only:** coastal cities often miss the low-res
+//! polygons; municipality (kommune) is not available. Callers may use this
+//! layer to gate informational notes (e.g. cloudberry), never as a hard
+//! reject filter for overnight suggestions.
 
 use std::sync::OnceLock;
 
@@ -161,15 +168,40 @@ mod tests {
     }
 
     #[test]
-    fn nordland_centroid_resolves_for_cloudberry() {
-        // Natural Earth label point for Nordland (coastal cities can miss polygons).
-        let (iso, _) = lookup(66.7347, 14.7203).expect("Nordland");
-        assert_eq!(iso, "no-18");
+    fn current_iso_codes_tromso_alta_bodo_trondheim() {
+        // NE Admin-1 is coarse: city centres on the coast often miss polygons.
+        // Use the nearest inland hit beside each city (documented above).
+        let (troms_iso, troms_name) = lookup(69.5992, 18.9953).expect("Tromsø hinterland");
+        assert_eq!(troms_iso, "no-55", "Troms must be current ISO, not no-19/no-54");
+        assert!(troms_name.to_lowercase().contains("troms"));
+
+        let (finn_iso, finn_name) = lookup(69.9689, 23.2717).expect("Alta");
+        assert_eq!(finn_iso, "no-56", "Finnmark must be current ISO, not no-20/no-54");
+        assert!(finn_name.to_lowercase().contains("finnmark"));
+
+        let (nord_iso, _) = lookup(67.2704, 14.4149).expect("Bodø hinterland");
+        assert_eq!(nord_iso, "no-18");
+
+        let (trond_iso, trond_name) = lookup(63.4305, 10.3951).expect("Trondheim");
+        assert_eq!(trond_iso, "no-50");
+        assert!(trond_name.to_lowercase().contains("trøndelag") || trond_name.to_lowercase().contains("trondelag"));
     }
 
     #[test]
-    fn troms_centroid_resolves_for_cloudberry() {
-        let (iso, _) = lookup(68.9053, 19.0835).expect("Troms");
-        assert_eq!(iso, "no-19");
+    fn never_emits_pre_2024_northern_codes() {
+        for &(lat, lon) in &[
+            (69.5992, 18.9953),
+            (68.9053, 19.0835),
+            (69.9689, 23.2717),
+            (70.0, 25.0),
+            (66.7347, 14.7203),
+        ] {
+            if let Some(iso) = subdivision_iso_at(lat, lon) {
+                assert!(
+                    !matches!(iso.as_str(), "no-19" | "no-20" | "no-54"),
+                    "legacy/merged code {iso} at {lat},{lon}"
+                );
+            }
+        }
     }
 }
