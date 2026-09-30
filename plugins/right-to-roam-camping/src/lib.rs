@@ -2,7 +2,8 @@
 //!
 //! Host selects road∩track probes (native graph) and writes a JSON job to
 //! `plugin_kv` key `rtr_suggest_job`. This guest evaluates with the same rule
-//! engine and writes `rtr_suggest_result`. Android ship gate stays closed.
+//! engine and writes `rtr_suggest_result`. Live `clock_read` / `safety_config_read`
+//! / destination / residency from HostApi prefer over job fields when present.
 
 use std::collections::BTreeMap;
 
@@ -21,6 +22,8 @@ struct SdkHost {
     subdivisions: BTreeMap<(i64, i64), String>,
     travel_mode: TravelMode,
     vehicle: VehicleProfile,
+    destination: Option<(f64, f64)>,
+    residency: Option<String>,
 }
 
 fn cell(lat: f64, lon: f64) -> (i64, i64) {
@@ -62,6 +65,12 @@ impl CampingHost for SdkHost {
     }
     fn vehicle_overnight_profile(&self) -> VehicleProfile {
         self.vehicle
+    }
+    fn route_destination(&self) -> Option<(f64, f64)> {
+        self.destination
+    }
+    fn residency_country_iso(&self) -> Option<String> {
+        self.residency.clone()
     }
 }
 
@@ -107,11 +116,80 @@ fn parse_vehicle_class(s: Option<&str>) -> VehicleClass {
 pub extern "C" fn plugin_main() {
     let mut safety_buf = [0u8; 512];
     let safety_n = navi_plugin_sdk::host_safety_config_read(&mut safety_buf);
-    let mut clock_buf = [0u8; 128];
+    let live_safety = if safety_n > 0 {
+        std::str::from_utf8(&safety_buf[..safety_n])
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .and_then(|v| {
+                if v.is_null() {
+                    return None;
+                }
+                Some(OvernightSafety {
+                    min_building_distance_m: v.get("min_building_distance_m")?.as_f64()?,
+                    min_glacier_distance_m: v
+                        .get("min_glacier_distance_m")
+                        .and_then(|x| x.as_f64())
+                        .unwrap_or(1_000.0),
+                })
+            })
+    } else {
+        None
+    };
+
+    let mut clock_buf = [0u8; 256];
     let clock_n = navi_plugin_sdk::host_clock_read(&mut clock_buf);
+    let live_clock = if clock_n > 0 {
+        std::str::from_utf8(&clock_buf[..clock_n])
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .and_then(|v| {
+                if v.is_null() {
+                    return None;
+                }
+                Some(LocalDate {
+                    year: v.get("year")?.as_i64()? as i32,
+                    month: v.get("month")?.as_u64()? as u32,
+                    day: v.get("day")?.as_u64()? as u32,
+                })
+            })
+    } else {
+        None
+    };
     navi_plugin_sdk::host_log(&format!(
-        "rtr_camping: failsafe safety_bytes={safety_n} clock_bytes={clock_n}"
+        "rtr_camping: live safety={} clock={}",
+        live_safety.is_some(),
+        live_clock.is_some()
     ));
+
+    let mut dest_buf = [0u8; 128];
+    let dest_n = navi_plugin_sdk::host_route_destination_read(&mut dest_buf);
+    let live_dest = if dest_n > 0 {
+        std::str::from_utf8(&dest_buf[..dest_n])
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .and_then(|v| {
+                let lat = v.get("lat")?.as_f64()?;
+                let lon = v.get("lon")?.as_f64()?;
+                Some((lat, lon))
+            })
+    } else {
+        None
+    };
+
+    let mut trav_buf = [0u8; 128];
+    let trav_n = navi_plugin_sdk::host_traveller_profile_read(&mut trav_buf);
+    let live_residency = if trav_n > 0 {
+        std::str::from_utf8(&trav_buf[..trav_n])
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .and_then(|v| {
+                v.get("residency_country")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+            })
+    } else {
+        None
+    };
 
     let mut job_buf = vec![0u8; 1024 * 1024];
     let Some(n) = navi_plugin_sdk::host_plugin_kv_get("rtr_suggest_job", &mut job_buf) else {
@@ -218,13 +296,15 @@ pub extern "C" fn plugin_main() {
     let mut host = SdkHost {
         buildings,
         glaciers: job.glaciers,
-        safety: job.safety,
-        clock: job.clock,
+        safety: live_safety.or(job.safety),
+        clock: live_clock.or(job.clock),
         kv_ok: job.kv_ok,
         countries,
         subdivisions,
         travel_mode,
         vehicle,
+        destination: live_dest,
+        residency: live_residency,
     };
 
     let out = suggest_overnight_fixed_probes(&mut host, &probes, job.max_suggestions);

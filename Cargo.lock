@@ -2945,6 +2945,8 @@ dependencies = [
  "geo-types",
  "log",
  "memmap2 0.9.11",
+ "navi-plugin-host",
+ "navi-right-to-roam-camping",
  "osm4routing",
  "osmpbf",
  "pathfinding",

@@ -53,6 +53,9 @@ use serde_json::json;
 
 uniffi::setup_scaffolding!();
 
+mod camping_plugin;
+pub use camping_plugin::*;
+
 fn ensure_native_logging() {
     #[cfg(target_os = "android")]
     {

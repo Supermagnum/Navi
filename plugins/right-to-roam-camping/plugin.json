@@ -19,5 +19,6 @@
   ],
   "fuel_limit": 500000000,
   "timeout_ms": 60000,
+  "memory_limit_bytes": 33554432,
   "wasm": "plugin.wasm"
 }
