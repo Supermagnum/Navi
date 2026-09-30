@@ -12,9 +12,9 @@ pub mod smoke;
 
 pub use abi::{
     AdminRegionView, Capability, ClockView, HostApi, LandTenureView, LandcoverQueryView,
-    LayerStatus, MemoryPluginKv, PoiWrite, Position, ProtectedAreaHit, ProtectedAreaQueryView,
-    RoadTrackJunction, RouteDestinationView, RouteView, SafetyConfigView, TravelModeView,
-    TravellerProfileView, VehicleProfileView, WeatherSampleView,
+    LayerStatus, MemoryPluginKv, PluginKvStatus, PoiWrite, Position, ProtectedAreaHit,
+    ProtectedAreaQueryView, RoadTrackJunction, RouteDestinationView, RouteView, SafetyConfigView,
+    TravelModeView, TravellerProfileView, VehicleProfileView, WeatherSampleView,
 };
 pub use host::{CallOutcome, PluginError, PluginHost, PluginLimits};
 pub use manifest::PluginManifest;

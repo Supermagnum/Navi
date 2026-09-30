@@ -139,7 +139,7 @@ pub enum LayerStatus {
     Ready,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SafetyConfigView {
     pub min_building_distance_m: f64,
     pub min_glacier_distance_m: Option<f64>,
@@ -153,14 +153,23 @@ pub struct AdminRegionView {
     pub subdivision_iso: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+/// Local calendar clock for date-gated packs. Embedder supplies device-local date.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClockView {
     pub unix_secs: i64,
     pub year: i32,
     pub month: u32,
     pub day: u32,
-    /// `"utc"` or `"local"`.
+    /// Always `"local"` when available — fire windows and night store are local-date rules.
     pub timezone: String,
+}
+
+/// Whether plugin-local KV is backed (required for max_nights hard filters).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginKvStatus {
+    Available,
+    Unavailable,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -279,14 +288,9 @@ pub trait HostApi: Send + Sync {
         RouteDestinationView::default()
     }
 
-    fn safety_config_read(&self) -> SafetyConfigView {
-        SafetyConfigView {
-            // Embedders that grant this cap must override with core SafetyConfig.
-            // Default 0 would be unsafe if used as a filter; guests must treat
-            // missing override as a host bug when the cap is declared.
-            min_building_distance_m: 0.0,
-            min_glacier_distance_m: None,
-        }
+    /// `None` = unavailable. Guests must decline wild camp (never treat as 0 m).
+    fn safety_config_read(&self) -> Option<SafetyConfigView> {
+        None
     }
 
     fn admin_region_read(&self, lat: f64, lon: f64) -> AdminRegionView {
@@ -294,8 +298,15 @@ pub trait HostApi: Send + Sync {
         AdminRegionView::default()
     }
 
-    fn clock_read(&self) -> ClockView {
-        ClockView::default()
+    /// `None` = unavailable. Guests must use the cautious fire text, never the
+    /// permissive outside-window wording.
+    fn clock_read(&self) -> Option<ClockView> {
+        None
+    }
+
+    /// Default: KV not backed. Packs with max_nights hard filters must decline.
+    fn plugin_kv_status(&self) -> PluginKvStatus {
+        PluginKvStatus::Unavailable
     }
 
     fn plugin_kv_get(&self, key: &str) -> Option<String> {
@@ -305,7 +316,7 @@ pub trait HostApi: Send + Sync {
 
     fn plugin_kv_set(&mut self, key: &str, value: &str) -> Result<(), String> {
         let _ = (key, value);
-        Err("plugin_kv not backed by host".into())
+        Err("plugin_kv unavailable".into())
     }
 
     fn protected_area_query(&self, lat: f64, lon: f64) -> ProtectedAreaQueryView {

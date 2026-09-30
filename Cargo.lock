@@ -2975,6 +2975,9 @@ name = "navi-plugin-host"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
+ "driver-break-core",
+ "navi-right-to-roam-camping",
  "serde",
  "serde_json",
  "tempfile",
@@ -3014,9 +3017,12 @@ dependencies = [
 name = "navi-right-to-roam-camping"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "driver-break-core",
+ "osm4routing",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

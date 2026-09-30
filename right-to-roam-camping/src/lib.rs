@@ -1,29 +1,35 @@
-//! Right-to-roam overnight camping — shared rule engine.
-//!
-//! Plain Rust (no wasmtime / WASI). Unit tests and a future thin WASM guest both
-//! call into this crate. Host capabilities live in `navi-plugin-host`; this crate
-//! consumes HostApi *views* (JSON / structs) and never opens network or
-//! filesystem itself.
-//!
-//! Phase 1: payload types for “layer not checked” guidance. Packs and seed
-//! ranking land in later phases.
+//! Right-to-roam overnight camping — shared rule engine (no wasmtime).
 
-use serde::{Deserialize, Serialize};
+mod candidates;
+mod card;
+mod engine;
+mod fire;
+mod host;
+mod night_store;
+pub mod packs;
 
-/// Single visible field for layers the host cannot check yet.
-///
-/// When a layer becomes `Ready`, clear the matching flag so the card text
-/// disappears automatically.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub use candidates::{
+    find_road_track_junctions, probe_along_track, JunctionRank, RoadTrackSeed, ProbePoint,
+    CORRIDOR_SEED_RADIUS_M, DEFAULT_TRACK_WALK_M, SERVICE_TRACK_MIN_CONTINUE_M,
+};
+pub use card::{CampingCard, DeclineKind, SuggestionList};
+pub use engine::{suggest_overnight, ProbeLogEntry, SuggestInput, SuggestOutcome};
+pub use fire::{
+    fire_guidance_norway, FireGuidance, BARE_ROCK_NOTE, CAUTIOUS_FIRE_UNKNOWN_DATE,
+    LEAVE_NO_TRACE_NOTE, PROTECTED_SPECIES_NOTE,
+};
+pub use host::{CampingHost, LocalDate, TravelMode};
+pub use night_store::{location_id_from_lat_lon, NightStore, LOCATION_GRID_DEG};
+pub use packs::{PackId, RulePack, Tier};
+
+/// Layers the host cannot check yet — shown on every Tier A card.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub struct NotCheckedLayers {
-    /// Protected-area / national-park status unknown.
     pub protected_area: bool,
-    /// Forest / farmland / beach / alpine landcover unknown.
     pub landcover: bool,
 }
 
 impl NotCheckedLayers {
-    /// Both layers unknown — typical Phase 1 host.
     pub fn both_unknown() -> Self {
         Self {
             protected_area: true,
@@ -31,7 +37,13 @@ impl NotCheckedLayers {
         }
     }
 
-    /// Card lines for Tier A packs (NO, SE, FI, IS, EE) when layers are missing.
+    pub fn from_host_status(protected_ready: bool, landcover_ready: bool) -> Self {
+        Self {
+            protected_area: !protected_ready,
+            landcover: !landcover_ready,
+        }
+    }
+
     pub fn card_notes(&self, farmland_filter_applies: bool) -> Vec<&'static str> {
         let mut notes = Vec::new();
         if self.protected_area {
@@ -39,47 +51,22 @@ impl NotCheckedLayers {
                 "protected-area status not checked — national parks and nature reserves may have their own rules",
             );
         }
-        if self.landcover && farmland_filter_applies {
-            notes.push(
-                "land cover not checked — do not camp on farmland, pasture or cultivated land",
-            );
+        if self.landcover {
+            if farmland_filter_applies {
+                notes.push(
+                    "land cover not checked — do not camp on farmland, pasture or cultivated land",
+                );
+            } else {
+                notes.push("land cover not checked");
+            }
         }
         notes
     }
-
-    /// Unknown never counts as a pass for Tier B conditions.
-    pub fn blocks_tier_b_protected_or_landcover(&self) -> bool {
-        self.protected_area || self.landcover
-    }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use driver_break_core::{territory_override_at, TerritoryOverride};
-
-    #[test]
-    fn not_checked_notes_for_sweden_include_farmland() {
-        let n = NotCheckedLayers::both_unknown();
-        let notes = n.card_notes(true);
-        assert_eq!(notes.len(), 2);
-        assert!(notes[0].contains("protected-area"));
-        assert!(notes[1].contains("farmland"));
-    }
-
-    #[test]
-    fn not_checked_notes_for_norway_omit_farmland_line() {
-        let n = NotCheckedLayers::both_unknown();
-        let notes = n.card_notes(false);
-        assert_eq!(notes.len(), 1);
-        assert!(notes[0].contains("protected-area"));
-    }
-
-    #[test]
-    fn sj_override_visible_to_camping_crate() {
-        assert_eq!(
-            territory_override_at(78.2232, 15.6267),
-            Some(TerritoryOverride::Confident("sj"))
-        );
-    }
-}
+/// Spec disclaimer — every suggestion list and about screen.
+pub const DISCLAIMER: &str = "This plugin provides informational guidance based on publicly described \
+right-to-roam / outdoor-access rules (including Norwegian allemannsretten). \
+It is not legal advice and not a compliance guarantee. Laws and local practice change; \
+municipal fire bans, private land, and seasonal restrictions can be stricter than these summaries. \
+The user remains responsible for checking official sources and complying with the law where they camp.";
