@@ -1,13 +1,18 @@
 package no.navi.app
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.navi.CampingCallKind
@@ -26,6 +31,9 @@ import java.util.TimeZone
 @RunWith(AndroidJUnit4::class)
 @LargeTest
 class CampingPhase5bPresentationInstrumentedTest {
+    @get:Rule
+    val composeRule = createComposeRule()
+
     private lateinit var filesDir: File
     private lateinit var dataDir: File
 
@@ -75,6 +83,21 @@ class CampingPhase5bPresentationInstrumentedTest {
                 doubleArrayOf(61.1475, 10.6980),
             )
         return campingWaypointsJson(wps)
+    }
+
+    private fun installVarmlandPack(): File? {
+        val src = File("/data/local/tmp/navi_varmland")
+        if (!src.isDirectory) return null
+        val dest = File(filesDir, "varmland_pack")
+        dest.mkdirs()
+        src.listFiles()?.forEach { f ->
+            f.copyTo(File(dest, f.name), overwrite = true)
+        }
+        File(dest, "europe_sweden_varmland-latest.osm.pbf").writeBytes(ByteArray(0))
+        File(dest, "europe_sweden_varmland-latest.navi-server-install.json").writeText("{}")
+        return dest.takeIf {
+            File(it, "europe_sweden_varmland-latest.navi-manifest.json").isFile
+        }
     }
 
     private suspend fun suggestParsed(): CampingSuggestResult? {
@@ -177,13 +200,24 @@ class CampingPhase5bPresentationInstrumentedTest {
 
     @Test
     fun kongsvingerCharlottenberg_swedishTierASafetyDefault() {
-        val pbf = regionPbf()
-        assumeTrue("ostlandet PBF required", pbf != null)
+        val pack = installVarmlandPack()
+        assumeTrue(
+            "Värmland navi pack required under /data/local/tmp/navi_varmland",
+            pack != null,
+        )
+        campingPluginConfigure(
+            filesDir.absolutePath,
+            pack!!.absolutePath,
+            TimeZone.getDefault().id,
+        )
+        installGuest("right_to_roam_camping")
+        campingPluginSetEnabled(true)
+        campingPluginSetTimezone("Europe/Oslo")
         campingPluginSetNavContext(
             waypointsJson =
                 campingWaypointsJson(
                     listOf(
-                        doubleArrayOf(60.1910, 12.0080),
+                        doubleArrayOf(59.889366, 12.192353),
                         doubleArrayOf(59.8840, 12.3040),
                     ),
                 ),
@@ -198,11 +232,12 @@ class CampingPhase5bPresentationInstrumentedTest {
             }
         assumeTrue("graph ${call.kind} ${call.message}", call.kind == CampingCallKind.OK)
         val parsed = parseCampingSuggestResultJson(call.resultJson!!)
+        assertTrue("must evaluate in wasmtime guest", parsed.via == "wasmtime")
         val se =
             (parsed.list.cards + parsed.onFootFromHere.cards).filter {
                 it.countryIso.equals("se", ignoreCase = true)
             }
-        assumeTrue("expected Swedish cards Kongsvinger–Charlottenberg", se.isNotEmpty())
+        assumeTrue("expected Swedish cards on Värmland pack at Charlottenberg", se.isNotEmpty())
         assertTrue(
             se.any { c ->
                 c.notes.any { n ->
@@ -211,6 +246,93 @@ class CampingPhase5bPresentationInstrumentedTest {
                 }
             },
         )
+        composeRule.setContent {
+            MaterialTheme {
+                CampingSuggestionSheet(
+                    result = parsed,
+                    profile = TravelProfile.HIKING,
+                    listDisclaimer = parsed.disclaimer,
+                    sessionDisableMessage = null,
+                    onReEnableSession = {},
+                    onClose = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("camping_suggestion_sheet").assertExists()
+        composeRule.waitForIdle()
+        val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+        assertNotNull(shot)
+        val outDir = File("/sdcard/Download/navi_camping_screenshots")
+        outDir.mkdirs()
+        File(outDir, "camping_sweden_tier_a.png").outputStream().use { os ->
+            shot!!.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, os)
+        }
+        android.util.Log.i(
+            "NaviCampingSweden",
+            "wasm se_cards=${se.size} via=${parsed.via} pack=europe/sweden/varmland",
+        )
+    }
+
+    @Test
+    fun nightStore_wasmPath_twoNightsThirdSuppressedPersistsThenDisableDeletes() {
+        campingPluginSetEnabled(true)
+        val kv = File(filesDir, "plugin_kv/camping_night.json")
+        if (kv.isFile) kv.delete()
+        val jobBase =
+            """
+            {"probes":[[61.11515,10.46628]],"max_suggestions":4,"buildings":[],"glaciers":[],
+             "safety":{"min_building_distance_m":150.0,"min_glacier_distance_m":1000.0},
+             "clock":null,"kv_ok":true,
+             "countries":[[61.11515,10.46628,"no"]],"subdivisions":[[61.11515,10.46628,"no-34"]],
+             "travel_mode":"non_motorised","vehicle_class":"unknown",
+             "is_professional_driver_under_rest_rules":false}
+            """.trimIndent()
+        fun suggestOn(y: Int, m: UInt, d: UInt): CampingSuggestResult {
+            campingPluginSetClockYmd(y, m, d)
+            val call =
+                kotlinx.coroutines.runBlocking {
+                    CampingPluginApi.runSuggest(jobBase)
+                }
+            assumeTrue("wasm suggest ${call.kind} ${call.message}", call.kind == CampingCallKind.OK)
+            android.util.Log.i(
+                "NaviCampingNight",
+                "date=$y-$m-$d kv_exists=${kv.isFile} kv_bytes=${kv.length()} json=${call.resultJson}",
+            )
+            return parseCampingSuggestResultJson(call.resultJson!!)
+        }
+        val d1 = suggestOn(2026, 7u, 1u)
+        assumeTrue(
+            "night 1 should accept",
+            d1.list.probesAccepted > 0 || d1.list.cards.any { it.accepted },
+        )
+        assertTrue("night store after first night", kv.isFile)
+        val d2 = suggestOn(2026, 7u, 2u)
+        assumeTrue(
+            "night 2 should accept",
+            d2.list.probesAccepted > 0 || d2.list.cards.any { it.accepted },
+        )
+        val d3 = suggestOn(2026, 7u, 3u)
+        val d3accepted = d3.list.cards.any { it.accepted } || d3.list.probesAccepted > 0
+        assertTrue("third consecutive night must be suppressed", !d3accepted)
+        val kvBeforeStop = kv.readText()
+        campingPluginConfigure(
+            filesDir.absolutePath,
+            dataDir.absolutePath,
+            TimeZone.getDefault().id,
+        )
+        installGuest("right_to_roam_camping")
+        campingPluginSetEnabled(true)
+        assertTrue("night store must survive session rebind", kv.isFile)
+        assertEquals(kvBeforeStop, kv.readText())
+        android.util.Log.i("NaviCampingNight", "after_relaunch kv=$kvBeforeStop")
+        val d3b = suggestOn(2026, 7u, 3u)
+        assertTrue(
+            "third night still suppressed after relaunch",
+            !(d3b.list.cards.any { it.accepted } || d3b.list.probesAccepted > 0),
+        )
+        campingPluginSetEnabled(false)
+        assertTrue("disable must delete night store", !kv.isFile)
+        android.util.Log.i("NaviCampingNight", "after_disable kv_exists=${kv.isFile}")
     }
 
     @Test

@@ -1,4 +1,9 @@
-//! Phase 2 real-pack verification: Lillehammer → Sjusjøen + Sweden Tier D.
+//! Phase 2 real-pack verification: Lillehammer → Sjusjøen.
+//!
+//! Ostlandet OSM does **not** include Charlottenberg (Sweden). Earlier SE
+//! Tier A results at 59.889366, 12.192353 used `admin_region_at` on fixed
+//! probes, not ostlandet graph coverage. Swedish corridor UI uses the
+//! europe/sweden/varmland pack.
 //!
 //! Verified against **real** downloaded Ostlandet packs under `target/espa-dombas-e2e`
 //! when present. Fail-safe / fire-window / night-store unit coverage lives in the
