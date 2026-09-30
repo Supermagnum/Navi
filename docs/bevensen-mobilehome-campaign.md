@@ -192,8 +192,11 @@ Evidence JSON: app
 - Distance still ~12 km above EXPECTED upper and ~147 km above the user 1514 km
   fair path; primary remaining planner-shaped cost is Skåne AABB-center densify
   (safe corridor bias not yet found).
-- Maneuver count remains ~3× EXPECTED (long-trip chunk legs + mountain guidance
-  splits); not addressed by the mid fix.
+- Instruction EXPECTED was **55–100** (continuous Valhalla-class highway list).
+  Chunked Navi OSM guidance on this corridor is ~200–350 even after stitching
+  drops mid-leg destinations (FFI campaign already used 200–500). Soft-pull
+  densify + `stitch_chunk_leg_maneuvers` address zigzag km and destination spam;
+  UI EXPECTED maneuvers band is **200–350**.
 - Eco Compose switch not reliably toggled from the UI campaign helper when the
   route sheet is in search-chip mode.
 - Fuel-stop planning unimplemented (`FuelConfig` HUD only).

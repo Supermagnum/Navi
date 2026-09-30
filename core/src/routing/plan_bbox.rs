@@ -335,6 +335,13 @@ pub fn densify_route_points_via_regions_dirs(
     if max_hop_deg > 0.0 {
         out = densify_gaps_with_region_centroids(&out, dirs, max_hop_deg);
     }
+    // Pull leaf AABB centers that spike far off the neighbor envelope back
+    // toward the land corridor (Skåne 13.5°E between Zealand/Halland ~12.7°E).
+    // Soft pull — not OD-chord clamp — so Öresund fringe stays intact.
+    let ready = densify_ready_with_leaf_proxies(collect_ready_region_entries_dirs(dirs));
+    let mut forced = via_set;
+    forced.extend(spine_set.iter().copied());
+    smooth_densify_secondary_spikes(&mut out, &forced, &ready);
     out
 }
 
@@ -983,6 +990,65 @@ fn densify_region_country(path: &str) -> Option<&str> {
     parts.next()
 }
 
+/// Soft-pull densify joints that spike far outside the lat/lon envelope of their
+/// neighbors (catalog AABB centers sitting deep inland of a coastal land bridge).
+///
+/// Full OD-chord centroid bias was tried and reverted: Bevensen→Ottadal's chord
+/// clamps to Skåne's west edge (Öresund) and disconnected chunk A*. Neighbor
+/// envelope uses the already-chosen land hops (Zealand / Halland), so the pull
+/// stays on the E6-side interior without forcing bridges or road segments.
+fn smooth_densify_secondary_spikes(
+    points: &mut [(f64, f64)],
+    forced: &std::collections::HashSet<(u64, u64)>,
+    ready: &[(String, [f64; 4])],
+) {
+    const SPIKE_DEG: f64 = 0.45;
+    const EDGE_PAD: f64 = 0.25;
+    if points.len() < 3 || ready.is_empty() {
+        return;
+    }
+    for i in 1..points.len() - 1 {
+        let cur = points[i];
+        if forced.contains(&(cur.0.to_bits(), cur.1.to_bits())) {
+            continue;
+        }
+        let prev = points[i - 1];
+        let next = points[i + 1];
+        let lon_lo = prev.1.min(next.1) - EDGE_PAD;
+        let lon_hi = prev.1.max(next.1) + EDGE_PAD;
+        let lat_lo = prev.0.min(next.0) - EDGE_PAD;
+        let lat_hi = prev.0.max(next.0) + EDGE_PAD;
+        let mut lat = cur.0;
+        let mut lon = cur.1;
+        let mut changed = false;
+        // Soft half-step toward the envelope edge — enough to cut tens of km of
+        // zigzag without parking on the multi-country spill fringe.
+        if lon > lon_hi + SPIKE_DEG {
+            lon = (lon + lon_hi) * 0.5;
+            changed = true;
+        } else if lon < lon_lo - SPIKE_DEG {
+            lon = (lon + lon_lo) * 0.5;
+            changed = true;
+        }
+        if lat > lat_hi + SPIKE_DEG {
+            lat = (lat + lat_hi) * 0.5;
+            changed = true;
+        } else if lat < lat_lo - SPIKE_DEG {
+            lat = (lat + lat_lo) * 0.5;
+            changed = true;
+        }
+        if !changed {
+            continue;
+        }
+        let p = (lat, lon);
+        if densify_point_in_multi_country_spill(p, ready) || !densify_point_has_leaf_cover(p, ready)
+        {
+            continue;
+        }
+        points[i] = p;
+    }
+}
+
 /// True when a Ready **leaf** (path depth ≥ 2) covers `pt`. Country AABBs alone
 /// often include open water; densify endpoints must sit in a leaf box.
 fn densify_point_has_leaf_cover(pt: (f64, f64), ready: &[(String, [f64; 4])]) -> bool {
@@ -1512,9 +1578,9 @@ mod tests {
             (52.2885, 8.9167),  // Minden
         ];
         let hops = densify_route_points_via_regions(&pts, dir.path(), LONG_TRIP_CHUNK_DEG);
-        let has_skane = hops
-            .iter()
-            .any(|(lat, lon)| (lat - 55.91).abs() < 0.05 && (lon - 13.525).abs() < 0.15);
+        let has_skane = hops.iter().any(|(lat, lon)| {
+            *lat > 55.70 && *lat < 56.20 && *lon > 12.90 && *lon < 14.60
+        });
         assert!(
             has_skane,
             "Skåne must stay on Hamar→Minden densify (pad≥3°); hops={hops:?}"
@@ -1710,11 +1776,20 @@ mod tests {
         );
         let _ = (sh, halland);
         let has_skane = hops.iter().any(|(lat, lon)| {
-            (lat - 55.91).abs() < 0.08 && (lon - 13.525).abs() < 0.25
+            *lat > 55.32 && *lat < 56.50 && *lon > 12.45 && *lon < 14.60
         });
         assert!(
             has_skane,
             "Skåne leaf must survive t-dedup on NW OD densify; hops={hops:?}"
+        );
+        // Neighbor-envelope soft-pull must not leave the raw AABB center
+        // (13.525°E) when Zealand/Halland neighbors sit near ~12.7°E.
+        let deep_skane_center = hops.iter().any(|(lat, lon)| {
+            (lat - 55.91).abs() < 0.05 && (lon - 13.525).abs() < 0.08
+        });
+        assert!(
+            !deep_skane_center,
+            "Skåne densify must soft-pull off raw AABB center; hops={hops:?}"
         );
         assert!(
             hops.len() >= 6,
@@ -1812,6 +1887,72 @@ mod tests {
                 "even split must keep both sub-hops ≤ chunk; mid={mid:?}"
             );
         }
+    }
+
+    /// Bevensen→Ottadal densify must soft-pull Skåne off the raw AABB center
+    /// (~13.53°E) toward the Zealand/Halland neighbor envelope without parking
+    /// on the Öresund west fringe (that OD-chord bias disconnected chunk A*).
+    #[test]
+    fn densify_bevensen_ottadal_soft_pulls_skane_off_aabb_center() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        for stem in [
+            "niedersachsen-latest",
+            "schleswig-holstein-latest",
+            "denmark-latest",
+            "skane-latest",
+            "halland-latest",
+            "vastra_gotaland-latest",
+            "ostlandet-latest",
+            "vestlandet-latest",
+        ] {
+            let path = dir.path().join(format!("{stem}.navi-manifest.json"));
+            std::fs::write(
+                &path,
+                format!(
+                    r#"{{"schema":1,"stem":"{stem}","pbf_filename":"{stem}.osm.pbf","graph_files":{{}},"graph_format_version":{GRAPH_FORMAT_VERSION}}}"#
+                ),
+            )
+            .unwrap();
+        }
+        let bevensen = (53.079686_f64, 10.587198_f64);
+        let ottadal = (61.8691419_f64, 9.1055130_f64);
+        let dalsoren = (61.4433766_f64, 7.4614016_f64);
+        let hops = densify_route_points_via_regions(
+            &[bevensen, ottadal, dalsoren],
+            dir.path(),
+            LONG_TRIP_CHUNK_DEG,
+        );
+        // Catalog-centroid class hop (not the Øresund approach mid near 12.6°E).
+        let skane_centerish: Vec<_> = hops
+            .iter()
+            .copied()
+            .filter(|(lat, lon)| *lat > 55.70 && *lat < 56.20 && *lon > 12.90 && *lon < 14.60)
+            .collect();
+        assert!(
+            !skane_centerish.is_empty(),
+            "expected a Skåne interior densify hop; hops={hops:?}"
+        );
+        assert!(
+            skane_centerish
+                .iter()
+                .all(|(_, lon)| (*lon - 13.525).abs() > 0.08),
+            "Skåne hop must not sit on raw AABB center 13.525; skane={skane_centerish:?} hops={hops:?}"
+        );
+        // Soft-pull must stay inland of the Öresund west fringe (~12.65) that
+        // disconnected corridor-centroid bias, while still west of the AABB center.
+        assert!(
+            skane_centerish
+                .iter()
+                .all(|(_, lon)| *lon > 12.95 && *lon < 13.45),
+            "Skåne soft-pull must land mid-west of AABB center; skane={skane_centerish:?}"
+        );
+        let has_halland = hops.iter().any(|(lat, lon)| {
+            *lat > 56.32 && *lat < 57.55 && (*lon - 12.70).abs() < 0.35
+        });
+        assert!(
+            has_halland,
+            "Halland leaf must remain on corridor; hops={hops:?}"
+        );
     }
 
     /// Geography-agnostic: a point covered by two country boxes is spill/water.

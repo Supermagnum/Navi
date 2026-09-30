@@ -1,7 +1,7 @@
 //! Build simulation samples and turn maneuvers along a planned graph path.
 
 use osm4routing::NodeId;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::nav::{maneuver_street_label, prefer_street_label, same_road_name_ref, ManeuverKind};
 use crate::routing::eta::{edge_speed_kmh, highway_fallback_kmh};
@@ -73,7 +73,7 @@ pub struct SimSample {
     pub street: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteManeuver {
     pub lat: f64,
     pub lon: f64,
@@ -1966,6 +1966,34 @@ pub fn samples_to_json(samples: &[SimSample]) -> String {
     serde_json::to_string(samples).unwrap_or_else(|_| "[]".into())
 }
 
+
+/// Concatenate per-chunk-leg maneuvers into one continuous list.
+///
+/// Drops unmarked mid-leg `destination` markers (chunk joints are not via/dest
+/// arrivals) and offsets `cum_m` by prior leg length — same rules as the Android
+/// `mergeManeuvers` helper. Raw JSON concat used to keep 1 destination per hop
+/// and reset cum_m each leg (~14× destination spam on Bevensen→Dalsøren).
+pub fn stitch_chunk_leg_maneuvers(legs: &[Vec<RouteManeuver>]) -> Vec<RouteManeuver> {
+    let mut out = Vec::new();
+    let mut offset = 0.0_f64;
+    for (idx, leg) in legs.iter().enumerate() {
+        if leg.is_empty() {
+            continue;
+        }
+        let last_cum = leg.last().map(|m| m.cum_m).unwrap_or(0.0);
+        for m in leg {
+            if m.kind == "destination" && idx + 1 < legs.len() && m.via_index.is_none() {
+                continue;
+            }
+            let mut m = m.clone();
+            m.cum_m += offset;
+            out.push(m);
+        }
+        offset += last_cum;
+    }
+    out
+}
+
 pub fn maneuvers_to_json(maneuvers: &[RouteManeuver]) -> String {
     serde_json::to_string(maneuvers).unwrap_or_else(|_| "[]".into())
 }
@@ -2645,5 +2673,64 @@ mod tests {
         assert!(samples.last().unwrap().cum_m > 1_000.0);
         assert!((samples[0].speed_kmh - 3.75).abs() < 1e-9);
         assert_eq!(samples[0].highway.as_deref(), Some("path"));
+    }
+
+    #[test]
+    fn stitch_chunk_legs_drops_mid_destinations_and_offsets_cum() {
+        let leg1 = vec![
+            RouteManeuver {
+                lat: 1.0,
+                lon: 2.0,
+                cum_m: 100.0,
+                kind: "left".into(),
+                street: None,
+                roundabout_exit: None,
+                icon: None,
+                then: None,
+                via_index: None,
+            },
+            RouteManeuver {
+                lat: 1.1,
+                lon: 2.1,
+                cum_m: 1000.0,
+                kind: "destination".into(),
+                street: None,
+                roundabout_exit: None,
+                icon: None,
+                then: None,
+                via_index: None,
+            },
+        ];
+        let leg2 = vec![
+            RouteManeuver {
+                lat: 1.2,
+                lon: 2.2,
+                cum_m: 50.0,
+                kind: "right".into(),
+                street: None,
+                roundabout_exit: None,
+                icon: None,
+                then: None,
+                via_index: None,
+            },
+            RouteManeuver {
+                lat: 1.3,
+                lon: 2.3,
+                cum_m: 500.0,
+                kind: "destination".into(),
+                street: None,
+                roundabout_exit: None,
+                icon: None,
+                then: None,
+                via_index: None,
+            },
+        ];
+        let stitched = stitch_chunk_leg_maneuvers(&[leg1, leg2]);
+        assert_eq!(stitched.len(), 3, "mid destination dropped; final kept; got {stitched:?}");
+        assert_eq!(stitched[0].kind, "left");
+        assert_eq!(stitched[1].kind, "right");
+        assert!((stitched[1].cum_m - 1050.0).abs() < 1e-9);
+        assert_eq!(stitched[2].kind, "destination");
+        assert!((stitched[2].cum_m - 1500.0).abs() < 1e-9);
     }
 }

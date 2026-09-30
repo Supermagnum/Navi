@@ -54,7 +54,8 @@ pub use guidance_path::{
     build_maneuvers_with_options, build_sim_samples, build_sim_samples_from_edges,
     build_sim_samples_from_lat_lon, build_sim_samples_with_options, maneuvers_to_json,
     navit_roundabout_icon, navit_roundabout_sector, probe_roundabout_icon, probe_roundabout_spans,
-    samples_to_json, RoundaboutIconProbe, RoundaboutSpan, RouteManeuver, SimSample,
+    samples_to_json, stitch_chunk_leg_maneuvers, RoundaboutIconProbe, RoundaboutSpan,
+    RouteManeuver, SimSample,
 };
 pub use hiking_hybrid::{
     plan_hybrid_hiking_path, plan_hybrid_hiking_path_with_options, HikingWaypoint,
