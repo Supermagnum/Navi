@@ -85,6 +85,8 @@ pub struct NativeCampingEmbedder {
     pub kv: HashMap<String, String>,
     pub kv_available: bool,
     pub travel_profile: Profile,
+    /// User-set; never inferred from weight/size. Default false.
+    pub is_professional_driver_under_rest_rules: bool,
     pub buildings: Vec<(f64, f64)>,
     pub glacier_rings: Vec<Vec<[f64; 2]>>,
     pub route_waypoints: Vec<[f64; 2]>,
@@ -102,6 +104,7 @@ impl NativeCampingEmbedder {
             kv: HashMap::new(),
             kv_available: self.kv_available,
             travel_profile: self.travel_profile,
+            is_professional_driver_under_rest_rules: self.is_professional_driver_under_rest_rules,
             buildings: self.buildings.clone(),
             glacier_rings: self.glacier_rings.clone(),
             route_waypoints: self.route_waypoints.clone(),
@@ -126,6 +129,7 @@ impl NativeCampingEmbedder {
             kv: HashMap::new(),
             kv_available: true,
             travel_profile,
+            is_professional_driver_under_rest_rules: false,
             buildings: prox
                 .map(|p| p.buildings.clone())
                 .unwrap_or_default(),
@@ -196,6 +200,28 @@ impl CampingHost for NativeCampingEmbedder {
 
     fn landcover_layer_ready(&self) -> bool {
         self.landcover_ready
+    }
+
+    fn vehicle_overnight_profile(&self) -> navi_right_to_roam_camping::VehicleProfile {
+        use navi_right_to_roam_camping::{VehicleClass, VehicleProfile};
+        let class = match self.travel_profile {
+            Profile::Car
+            | Profile::CarElectric
+            | Profile::Motorcycle
+            | Profile::MotorcycleElectric => VehicleClass::Car,
+            Profile::MobileHome => VehicleClass::CampervanMotorhome,
+            Profile::Truck | Profile::TruckElectric => VehicleClass::Hgv,
+            Profile::Hiking | Profile::Cycling | Profile::CyclingElectric => VehicleClass::Unknown,
+        };
+        VehicleProfile {
+            class,
+            is_professional_driver_under_rest_rules: self
+                .is_professional_driver_under_rest_rules,
+        }
+    }
+
+    fn route_destination(&self) -> Option<(f64, f64)> {
+        self.destination
     }
 }
 
@@ -291,10 +317,17 @@ impl HostApi for NativeCampingEmbedder {
     }
 
     fn vehicle_profile_read(&self) -> VehicleProfileView {
+        let p = self.vehicle_overnight_profile();
+        let class = match p.class {
+            navi_right_to_roam_camping::VehicleClass::Car => "car",
+            navi_right_to_roam_camping::VehicleClass::CampervanMotorhome => "campervan_motorhome",
+            navi_right_to_roam_camping::VehicleClass::Hgv => "hgv",
+            navi_right_to_roam_camping::VehicleClass::Unknown => "unknown",
+        };
         VehicleProfileView {
-            class: "unknown".into(),
+            class: class.into(),
             gross_weight_kg: None,
-            is_professional_driver_under_rest_rules: false,
+            is_professional_driver_under_rest_rules: p.is_professional_driver_under_rest_rules,
         }
     }
 

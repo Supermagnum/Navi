@@ -9,6 +9,7 @@ mod host;
 mod night_store;
 pub mod packs;
 mod safety_view;
+pub mod vehicle;
 
 #[cfg(feature = "native")]
 pub use candidates::{
@@ -47,6 +48,11 @@ pub use packs::{
     HostCondition, PackId, RulePack, SourceQuality, SuggestionMode, Tier,
 };
 pub use safety_view::{wild_overnight_reject, OvernightSafety};
+pub use vehicle::{
+    annotate_on_foot_from_here, exclude_non_motorised_only_pack_in_motorised,
+    suggest_vehicle_overnight, NvdbRestKind, VehicleClass, VehicleProfile, VehicleSiteHit,
+    VehicleSiteKind, VehicleSuggestOutcome,
+};
 
 /// Layers the host cannot check yet — shown on every Tier A card.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]

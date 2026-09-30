@@ -106,4 +106,35 @@ pub trait CampingHost {
     fn residency_country_iso(&self) -> Option<String> {
         None
     }
+
+    // --- Phase 4 vehicle overnight (defaults are fail-safe) ---
+
+    fn vehicle_overnight_profile(&self) -> crate::vehicle::VehicleProfile {
+        crate::vehicle::VehicleProfile::default()
+    }
+    fn route_destination(&self) -> Option<(f64, f64)> {
+        None
+    }
+    /// Positive NVDB rest-site classification. `None` → never invent 809/39.
+    fn nvdb_rest_kind(&self, _lat: f64, _lon: f64) -> Option<crate::vehicle::NvdbRestKind> {
+        None
+    }
+    fn vehicle_sites_near(
+        &self,
+        _lat: f64,
+        _lon: f64,
+        _radius_m: f64,
+    ) -> Vec<crate::vehicle::VehicleSiteHit> {
+        Vec::new()
+    }
+    /// France seashore / listed / catchment / EBC layers all available.
+    fn france_vehicle_exclude_layers_ready(&self) -> bool {
+        false
+    }
+    fn france_vehicle_exclude_clear(&self, _lat: f64, _lon: f64) -> bool {
+        false
+    }
+    fn usfs_mvum_layer_ready(&self) -> bool {
+        false
+    }
 }

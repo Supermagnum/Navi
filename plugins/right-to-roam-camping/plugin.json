@@ -10,6 +10,8 @@
     "clock_read",
     "plugin_kv",
     "travel_mode_read",
+    "vehicle_profile_read",
+    "traveller_profile_read",
     "protected_area_query",
     "landcover_query",
     "land_tenure_query",

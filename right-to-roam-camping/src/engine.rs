@@ -54,6 +54,10 @@ pub struct SuggestInput<'a> {
 #[derive(Debug, Clone)]
 pub struct SuggestOutcome {
     pub list: SuggestionList,
+    /// Phase 4: vehicle overnight cards (empty in non-motorised mode).
+    pub vehicle: SuggestionList,
+    /// Phase 4: tent pack suggestions when travel mode is motorised.
+    pub on_foot_from_here: SuggestionList,
     #[cfg(feature = "native")]
     pub seeds: Vec<RoadTrackSeed>,
     pub probe_log: Vec<ProbeLogEntry>,
@@ -77,8 +81,17 @@ pub fn suggest_overnight_fixed_probes(
     max_suggestions: Option<usize>,
 ) -> SuggestOutcome {
     let mut list = SuggestionList::new();
+    let mut vehicle = SuggestionList::new();
+    let mut on_foot = SuggestionList::new();
     list.seeds_considered = probes.len();
     let mut probe_log = Vec::new();
+    let motorised = matches!(host.travel_mode(), crate::host::TravelMode::Motorised);
+
+    if motorised {
+        let vout = crate::vehicle::suggest_vehicle_overnight(host, probes, max_suggestions);
+        vehicle = vout.vehicle;
+        probe_log.extend(vout.probe_log);
+    }
 
     let Some(safety) = host.safety_config() else {
         list.cards.push(CampingCard {
@@ -107,6 +120,8 @@ declining wild-camp suggestions (campsites only)."
         });
         return SuggestOutcome {
             list,
+            vehicle,
+            on_foot_from_here: on_foot,
             #[cfg(feature = "native")]
             seeds: Vec::new(),
             probe_log,
@@ -123,18 +138,48 @@ declining wild-camp suggestions (campsites only)."
         };
         match evaluate_probe(host, &safety, &probe, clock) {
             ProbeDecision::Accept(card) => {
+                let requires_nm = pack_requires_non_motorised(host, lat, lon);
+                if motorised
+                    && crate::vehicle::exclude_non_motorised_only_pack_in_motorised(
+                        requires_nm,
+                        host.travel_mode(),
+                    )
+                {
+                    probe_log.push(ProbeLogEntry {
+                        lat,
+                        lon,
+                        accepted: false,
+                        reason: "non_motorised_pack_excluded_in_motorised".into(),
+                        road_highway: "track".into(),
+                    });
+                    list.probes_rejected += 1;
+                    continue;
+                }
                 probe_log.push(ProbeLogEntry {
                     lat,
                     lon,
                     accepted: true,
-                    reason: "accepted".into(),
+                    reason: if motorised {
+                        "accepted_on_foot_from_here".into()
+                    } else {
+                        "accepted".into()
+                    },
                     road_highway: "track".into(),
                 });
-                list.probes_accepted += 1;
-                list.cards.push(card);
-                if let Some(max) = max_suggestions {
-                    if list.probes_accepted >= max {
-                        break;
+                if motorised {
+                    let walk = card.walk_m.unwrap_or(0.0);
+                    let country = card.country_iso.clone();
+                    on_foot.cards.push(crate::vehicle::annotate_on_foot_from_here(
+                        card, walk, &country,
+                    ));
+                    on_foot.probes_accepted += 1;
+                } else {
+                    list.probes_accepted += 1;
+                    list.cards.push(card);
+                    if let Some(max) = max_suggestions {
+                        if list.probes_accepted >= max {
+                            break;
+                        }
                     }
                 }
             }
@@ -148,7 +193,11 @@ declining wild-camp suggestions (campsites only)."
                 });
                 list.probes_rejected += 1;
                 if let Some(c) = card {
-                    list.cards.push(c);
+                    if motorised {
+                        on_foot.cards.push(c);
+                    } else {
+                        list.cards.push(c);
+                    }
                 }
             }
         }
@@ -156,10 +205,21 @@ declining wild-camp suggestions (campsites only)."
 
     SuggestOutcome {
         list,
+        vehicle,
+        on_foot_from_here: on_foot,
         #[cfg(feature = "native")]
         seeds: Vec::new(),
         probe_log,
     }
+}
+
+fn pack_requires_non_motorised(host: &dyn CampingHost, lat: f64, lon: f64) -> bool {
+    let country = host.admin_country_iso(lat, lon);
+    let sub = host.admin_subdivision_iso(lat, lon);
+    let pack = pack_for_location(country.as_deref(), sub.as_deref());
+    pack.host_conditions
+        .iter()
+        .any(|c| matches!(c, HostCondition::NonMotorisedTravel))
 }
 
 /// Run the Phase 2 camping engine against a loaded graph + host backends.
@@ -173,8 +233,22 @@ pub fn suggest_overnight(
     let seeds = find_road_track_junctions(input.graph, input.corridor_waypoints, radius);
 
     let mut list = SuggestionList::new();
+    let mut vehicle = SuggestionList::new();
+    let mut on_foot = SuggestionList::new();
     list.seeds_considered = seeds.len();
     let mut probe_log = Vec::new();
+    let motorised = matches!(host.travel_mode(), crate::host::TravelMode::Motorised);
+
+    if motorised {
+        let probes: Vec<(f64, f64)> = seeds.iter().map(|s| (s.lat, s.lon)).collect();
+        let vout = crate::vehicle::suggest_vehicle_overnight(
+            host,
+            &probes,
+            input.max_suggestions,
+        );
+        vehicle = vout.vehicle;
+        probe_log.extend(vout.probe_log);
+    }
 
     // Fail-safe: no SafetyConfig → zero suggestions (wild camp declined).
     let Some(safety) = host.safety_config() else {
@@ -212,6 +286,8 @@ declining wild-camp suggestions (campsites only)."
         });
         return SuggestOutcome {
             list,
+            vehicle,
+            on_foot_from_here: on_foot,
             seeds,
             probe_log,
         };
@@ -221,10 +297,8 @@ declining wild-camp suggestions (campsites only)."
 
     for seed in &seeds {
         let pack_min = {
-            // Probe needs country at seed first for pack min road — use seed coords.
             let iso = host.admin_country_iso(seed.lat, seed.lon);
             let _pack = pack_for_location(iso.as_deref(), None);
-            // Phase 3a packs do not set a statutory min road distance.
             None::<f64>
         };
 
@@ -243,18 +317,53 @@ declining wild-camp suggestions (campsites only)."
         let eval = EvalProbe::from(&probe);
         match evaluate_probe(host, &safety, &eval, clock) {
             ProbeDecision::Accept(card) => {
+                let requires_nm = pack_requires_non_motorised(host, probe.lat, probe.lon);
+                if motorised
+                    && crate::vehicle::exclude_non_motorised_only_pack_in_motorised(
+                        requires_nm,
+                        host.travel_mode(),
+                    )
+                {
+                    probe_log.push(ProbeLogEntry {
+                        lat: probe.lat,
+                        lon: probe.lon,
+                        accepted: false,
+                        reason: "non_motorised_pack_excluded_in_motorised".into(),
+                        road_highway: seed.road_highway.clone(),
+                    });
+                    list.probes_rejected += 1;
+                    continue;
+                }
                 probe_log.push(ProbeLogEntry {
                     lat: probe.lat,
                     lon: probe.lon,
                     accepted: true,
-                    reason: "accepted".into(),
+                    reason: if motorised {
+                        "accepted_on_foot_from_here".into()
+                    } else {
+                        "accepted".into()
+                    },
                     road_highway: seed.road_highway.clone(),
                 });
-                list.probes_accepted += 1;
-                list.cards.push(card);
-                if let Some(max) = input.max_suggestions {
-                    if list.probes_accepted >= max {
-                        break;
+                if motorised {
+                    let w = card.walk_m.unwrap_or(probe.walk_m);
+                    let country = card.country_iso.clone();
+                    on_foot.cards.push(crate::vehicle::annotate_on_foot_from_here(
+                        card, w, &country,
+                    ));
+                    on_foot.probes_accepted += 1;
+                    if let Some(max) = input.max_suggestions {
+                        if on_foot.probes_accepted >= max {
+                            break;
+                        }
+                    }
+                } else {
+                    list.probes_accepted += 1;
+                    list.cards.push(card);
+                    if let Some(max) = input.max_suggestions {
+                        if list.probes_accepted >= max {
+                            break;
+                        }
                     }
                 }
             }
@@ -268,8 +377,11 @@ declining wild-camp suggestions (campsites only)."
                 });
                 list.probes_rejected += 1;
                 if let Some(c) = card {
-                    // Keep decline cards for SJ / Tier D sample reporting.
-                    list.cards.push(c);
+                    if motorised {
+                        on_foot.cards.push(c);
+                    } else {
+                        list.cards.push(c);
+                    }
                 }
             }
         }
@@ -277,6 +389,8 @@ declining wild-camp suggestions (campsites only)."
 
     SuggestOutcome {
         list,
+        vehicle,
+        on_foot_from_here: on_foot,
         seeds,
         probe_log,
     }

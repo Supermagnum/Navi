@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 use navi_right_to_roam_camping::{
     suggest_overnight_fixed_probes, CampingHost, LocalDate, OvernightSafety, TravelMode,
+    VehicleClass, VehicleProfile,
 };
 
 struct SdkHost {
@@ -18,6 +19,8 @@ struct SdkHost {
     kv_ok: bool,
     countries: BTreeMap<(i64, i64), String>,
     subdivisions: BTreeMap<(i64, i64), String>,
+    travel_mode: TravelMode,
+    vehicle: VehicleProfile,
 }
 
 fn cell(lat: f64, lon: f64) -> (i64, i64) {
@@ -49,13 +52,16 @@ impl CampingHost for SdkHost {
         self.subdivisions.get(&cell(lat, lon)).cloned()
     }
     fn travel_mode(&self) -> TravelMode {
-        TravelMode::NonMotorised
+        self.travel_mode
     }
     fn overnight_buildings(&self) -> &[(f64, f64)] {
         &self.buildings
     }
     fn overnight_glacier_rings(&self) -> &[Vec<[f64; 2]>] {
         &self.glaciers
+    }
+    fn vehicle_overnight_profile(&self) -> VehicleProfile {
+        self.vehicle
     }
 }
 
@@ -70,6 +76,31 @@ struct SuggestJob {
     kv_ok: bool,
     countries: Vec<(f64, f64, String)>,
     subdivisions: Vec<(f64, f64, String)>,
+    #[serde(default)]
+    travel_mode: Option<String>,
+    #[serde(default)]
+    vehicle_class: Option<String>,
+    #[serde(default)]
+    is_professional_driver_under_rest_rules: bool,
+}
+
+fn parse_travel_mode(s: Option<&str>) -> TravelMode {
+    match s.map(|x| x.to_ascii_lowercase()).as_deref() {
+        Some("motorised") | Some("motorized") => TravelMode::Motorised,
+        Some("non_motorised") | Some("non_motorized") => TravelMode::NonMotorised,
+        _ => TravelMode::Unknown,
+    }
+}
+
+fn parse_vehicle_class(s: Option<&str>) -> VehicleClass {
+    match s.map(|x| x.to_ascii_lowercase()).as_deref() {
+        Some("car") => VehicleClass::Car,
+        Some("campervan_motorhome") | Some("campervan") | Some("mobilehome") => {
+            VehicleClass::CampervanMotorhome
+        }
+        Some("hgv") | Some("truck") => VehicleClass::Hgv,
+        _ => VehicleClass::Unknown,
+    }
 }
 
 #[no_mangle]
@@ -110,6 +141,80 @@ pub extern "C" fn plugin_main() {
     let buildings: Vec<(f64, f64)> = job.buildings.iter().map(|p| (p[0], p[1])).collect();
     let probes: Vec<(f64, f64)> = job.probes.iter().map(|p| (p[0], p[1])).collect();
 
+    // Prefer live host travel/vehicle reads when present; fall back to job fields.
+    let mut mode_buf = [0u8; 64];
+    let mode_n = navi_plugin_sdk::host_travel_mode_read(&mut mode_buf);
+    let host_mode = if mode_n > 0 {
+        std::str::from_utf8(&mode_buf[..mode_n])
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .and_then(|v| {
+                v.get("mode")
+                    .or_else(|| v.as_str().map(|_| &v))
+                    .and_then(|m| m.as_str())
+                    .map(|m| parse_travel_mode(Some(m)))
+            })
+    } else {
+        None
+    };
+
+    let mut veh_buf = [0u8; 512];
+    let veh_n = navi_plugin_sdk::host_vehicle_profile_read(&mut veh_buf);
+    let host_vehicle = if veh_n > 0 {
+        std::str::from_utf8(&veh_buf[..veh_n])
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .map(|v| {
+                let class = v
+                    .get("class")
+                    .and_then(|c| c.as_str())
+                    .map(|c| parse_vehicle_class(Some(c)))
+                    .unwrap_or(VehicleClass::Unknown);
+                let pro = v
+                    .get("is_professional_driver_under_rest_rules")
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(false);
+                VehicleProfile {
+                    class,
+                    is_professional_driver_under_rest_rules: pro,
+                }
+            })
+    } else {
+        None
+    };
+
+    let travel_mode = match host_mode {
+        Some(TravelMode::Motorised) | Some(TravelMode::NonMotorised) => host_mode.unwrap(),
+        _ => {
+            let from_job = parse_travel_mode(job.travel_mode.as_deref());
+            if matches!(from_job, TravelMode::Unknown) {
+                // Legacy jobs omitted travel_mode; tent path remains non-motorised.
+                TravelMode::NonMotorised
+            } else {
+                from_job
+            }
+        }
+    };
+    let vehicle = match host_vehicle {
+        Some(v) if !matches!(v.class, VehicleClass::Unknown) || v.is_professional_driver_under_rest_rules => v,
+        Some(v) => {
+            // Host returned explicit unknown with default pro flag — still honour job overrides.
+            if job.vehicle_class.is_some() {
+                VehicleProfile {
+                    class: parse_vehicle_class(job.vehicle_class.as_deref()),
+                    is_professional_driver_under_rest_rules: job
+                        .is_professional_driver_under_rest_rules,
+                }
+            } else {
+                v
+            }
+        }
+        None => VehicleProfile {
+            class: parse_vehicle_class(job.vehicle_class.as_deref()),
+            is_professional_driver_under_rest_rules: job.is_professional_driver_under_rest_rules,
+        },
+    };
+
     let mut host = SdkHost {
         buildings,
         glaciers: job.glaciers,
@@ -118,6 +223,8 @@ pub extern "C" fn plugin_main() {
         kv_ok: job.kv_ok,
         countries,
         subdivisions,
+        travel_mode,
+        vehicle,
     };
 
     let out = suggest_overnight_fixed_probes(&mut host, &probes, job.max_suggestions);
@@ -136,10 +243,14 @@ pub extern "C" fn plugin_main() {
         "accepted": accepted,
         "rejected": rejected,
         "reasons": reasons,
+        "vehicle_accepted": out.vehicle.probes_accepted,
+        "on_foot_accepted": out.on_foot_from_here.probes_accepted,
     });
     let text = result.to_string();
     let _ = navi_plugin_sdk::host_plugin_kv_set("rtr_suggest_result", &text);
     navi_plugin_sdk::host_log(&format!(
-        "rtr_camping: done accepted={accepted} rejected={rejected}"
+        "rtr_camping: done accepted={accepted} rejected={rejected} vehicle={} on_foot={}",
+        out.vehicle.probes_accepted,
+        out.on_foot_from_here.probes_accepted
     ));
 }
