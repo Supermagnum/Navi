@@ -1511,9 +1511,14 @@ object RegionDownloadBackground {
                     Log.i(TAG, "pack-server PBF provision: ${pbfReport.take(240)}")
                     if (!pbfReport.contains("PASS")) {
                         setStatus("failed (extract download)")
+                        emitPhase(pathForDecision, "failed")
                         lastCompletedPath.set(pathForDecision)
                         return
                     }
+                    // Sweden län share europe/sweden → sweden-latest.osm.pbf.
+                    // Pack-server still wrote a 16 KiB leaf stub (skane-latest…);
+                    // drop it so Tools / ferry overlay never treat stubs as data.
+                    scrubPackServerLeafStub(packDir, pathForDecision, filename)
                     // Packs + extract are enough for multi-stem routing and
                     // rest/overnight POI packs. Do not block the corridor queue
                     // on basemap or place-index (Phase 0: planning must not wait
@@ -1576,10 +1581,12 @@ object RegionDownloadBackground {
                                 elevationTarUrl = null,
                             )
                         if (!pbfReport.contains("PASS")) {
-                            setStatus("done (place index failed)")
+                            setStatus("failed (extract download)")
+                            emitPhase(pathForDecision, "failed")
                             lastCompletedPath.set(pathForDecision)
                             return
                         }
+                        scrubPackServerLeafStub(packDir, pathForDecision, filename)
                         runPlaceIndexLocal(dataDir, packDir, filename, pathForDecision)
                     } else {
                         runPlaceIndexLocal(dataDir, packDir, filename, pathForDecision)
@@ -1712,6 +1719,26 @@ object RegionDownloadBackground {
         lastUsablePath.set(trimmed)
         setStatus("Packs installed — region ready for routing")
         Log.i(TAG, "region installed for routing path=$trimmed")
+    }
+
+    /**
+     * After a real Geofabrik extract lands (possibly under the country stem for
+     * Sweden län), delete the pack-server 16 KiB `{leaf}-latest.osm.pbf` stub
+     * when it is not the extract filename itself.
+     */
+    internal fun scrubPackServerLeafStub(
+        packDir: File,
+        geofabrikPath: String,
+        extractFilename: String,
+    ) {
+        val leafName = "${PackRegionAvailability.localStem(geofabrikPath)}.osm.pbf"
+        if (leafName.equals(extractFilename, ignoreCase = true)) return
+        val stub = File(packDir, leafName)
+        if (!stub.isFile) return
+        if (stub.length() >= MIN_PBF_BYTES) return
+        if (stub.delete()) {
+            Log.i(TAG, "removed pack-server stub PBF ${stub.name} after real extract $extractFilename")
+        }
     }
 
     /**

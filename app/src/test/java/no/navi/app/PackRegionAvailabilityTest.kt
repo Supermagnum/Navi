@@ -109,6 +109,39 @@ class PackRegionAvailabilityTest {
     }
 
     @Test
+    fun resolvePbfForRegion_sweden_lan_uses_country_extract() {
+        val dir = createTempDirectory("navi-se-pbf").toFile()
+        try {
+            val country = File(dir, "sweden-latest.osm.pbf")
+            java.io.RandomAccessFile(country, "rw").use { raf ->
+                raf.setLength(RegionDownloadBackground.MIN_PBF_BYTES)
+            }
+            File(dir, "skane-latest.osm.pbf").writeBytes(ByteArray(16_384))
+            val got = PackRegionAvailability.resolvePbfForRegion(dir, "europe/sweden/skane")
+            assertEquals(country.canonicalFile, got?.canonicalFile)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun scrub_pack_server_leaf_stub_after_country_extract() {
+        val dir = createTempDirectory("navi-scrub-stub").toFile()
+        try {
+            val stub = File(dir, "skane-latest.osm.pbf")
+            stub.writeBytes(ByteArray(16_384))
+            RegionDownloadBackground.scrubPackServerLeafStub(
+                dir,
+                "europe/sweden/skane",
+                "sweden-latest.osm.pbf",
+            )
+            assertFalse(stub.exists())
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun statusLine_server_ready() {
         val line =
             PackRegionAvailability.statusLine(

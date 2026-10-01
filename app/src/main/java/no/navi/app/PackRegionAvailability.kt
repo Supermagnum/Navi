@@ -103,6 +103,9 @@ object PackRegionAvailability {
             buildList {
                 add(normalize(geofabrikPath))
                 addAll(packCatalogRegionIdAliases(geofabrikPath))
+                // Sweden län share the country extract filename.
+                val extract = GeofabrikDownloadCatalog.extractPathForPbf(geofabrikPath)
+                if (extract != normalize(geofabrikPath)) add(extract)
             }
         for (path in candidates) {
             val f = File(dataDir, "${localStem(path)}.osm.pbf")

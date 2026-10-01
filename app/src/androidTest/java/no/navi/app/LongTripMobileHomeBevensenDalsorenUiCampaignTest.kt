@@ -91,6 +91,8 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 Sit("syn-no-otta", "NO", 61.56436, 9.66331, "Synthetic NO toward Ottadal via"),
             )
 
+        // Corridor + leftover SD stems from prior runs. Delete via Tools UI only;
+        // long-trip Plan auto-downloads the corridor afterward (no manual fetch taps).
         private val REGIONS_TO_DELETE_CANDIDATES =
             listOf(
                 "europe/denmark",
@@ -100,6 +102,13 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 "europe/sweden/skane",
                 "europe/sweden/vastra-gotaland",
                 "europe/sweden/vastra_gotaland",
+                "europe/sweden/dalarna",
+                "europe/sweden/jamtland",
+                "europe/sweden/vasternorrland",
+                "europe/sweden/vasterbotten",
+                "europe/sweden/norrbotten",
+                "europe/sweden",
+                "europe/finland",
                 "europe/norway/vestlandet",
                 "europe/norway/ostlandet",
                 "europe/norway/nord-norge",
@@ -216,7 +225,13 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         screenshot("03_tools_plugins")
 
         // Delete previously downloaded regions via Tools UI before planning.
+        // No manual region download taps — Plan + long-trip auto-fetches corridor.
         deleteDownloadedRegionsViaUi()
+        report.put("downloads_mode", "long_trip_auto_corridor_only")
+        report.put(
+            "downloads_policy",
+            "Regions wiped via Tools UI; corridor packs fetched only by long-trip Plan auto-download",
+        )
         screenshot("03b_regions_deleted")
 
         // Re-enable long trip after deletes (delete path turns it off when a plan was active).
@@ -703,6 +718,22 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
 
     private fun deleteDownloadedRegionsViaUi() {
         val deleted = JSONArray()
+        // Stop any leftover auto-download/index from a prior plan so Tools delete
+        // is not blocked and does not race the place-index DB (SIGBUS risk).
+        RegionDownloadBackground.cancelPending(dataDir)
+        var idleWait = 0L
+        while ((RegionDownloadBackground.isRunning() || PlaceIndexBackground.isRunning()) &&
+            idleWait < TimeUnit.MINUTES.toMillis(5)
+        ) {
+            noteUi(
+                "download_cancel_wait",
+                "running download=${RegionDownloadBackground.isRunning()} " +
+                    "index=${PlaceIndexBackground.isRunning()} (${idleWait}ms)",
+            )
+            settle(5_000)
+            idleWait += 5_000
+            RegionDownloadBackground.cancelPending(dataDir)
+        }
         clickTagSoft("btn_tools")
         settle(500)
         runCatching {
@@ -725,7 +756,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         // sees internal dataDir — SD long-trip-packs are invisible to it, so
         // "Nothing installed" must not skip (packs live on the removable volume).
         for (path in REGIONS_TO_DELETE_CANDIDATES) {
-            var block = DownloadedRegionDelete.blockReason(path, dataDir)
+            var block = DownloadedRegionDelete.blockReason(path, dataDir, listOf(LongTripPackStorage.packDownloadDir(composeRule.activity)))
             var waitedMs = 0L
             // Cap wait: cancelled basemap jobs can leave isRunning stuck.
             while (block != null &&
@@ -734,15 +765,28 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                         block.contains("index", ignoreCase = true) ||
                         block.contains("Long trip", ignoreCase = true)
                 ) &&
-                waitedMs < TimeUnit.MINUTES.toMillis(2)
+                waitedMs < TimeUnit.MINUTES.toMillis(3)
             ) {
                 noteUi("delete_wait", "$path -> $block (${waitedMs}ms)")
-                settle(10_000)
-                waitedMs += 10_000
-                block = DownloadedRegionDelete.blockReason(path, dataDir)
+                RegionDownloadBackground.cancelPending(dataDir)
+                settle(5_000)
+                waitedMs += 5_000
+                block =
+                    DownloadedRegionDelete.blockReason(
+                        path,
+                        dataDir,
+                        listOf(LongTripPackStorage.packDownloadDir(composeRule.activity)),
+                    )
             }
             if (block != null && !block.startsWith("Nothing installed")) {
                 noteUi("delete_block_precheck", "$path -> $block")
+            }
+            // Avoid racing place-index workers during multi-GB SD deletes.
+            var idxWait = 0L
+            while (PlaceIndexBackground.isRunning() && idxWait < TimeUnit.MINUTES.toMillis(2)) {
+                noteUi("delete_index_idle", "$path index still running (${idxWait}ms)")
+                settle(5_000)
+                idxWait += 5_000
             }
             runCatching {
                 setField("field_geofabrik_path", path)
@@ -753,7 +797,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 clickTagSoft("btn_delete_downloaded_region")
                 settle(500)
                 clickTagSoft("btn_confirm_delete_region")
-                settle(1_200)
+                settle(2_500)
                 deleted.put(
                     JSONObject()
                         .put("path", path)

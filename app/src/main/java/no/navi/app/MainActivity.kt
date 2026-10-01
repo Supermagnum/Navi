@@ -7411,6 +7411,10 @@ private fun NaviMapScreen() {
                                 PackRegionAvailability.downloadRegionButtonLabel(selectedServerReady),
                             )
                         }
+                        val packDirForDelete =
+                            runCatching {
+                                LongTripPackStorage.packDownloadDir(context)
+                            }.getOrNull()
                         val selectedLocalReady =
                             PackRegionAvailability.localInstalledReady(
                                 dataDir,
@@ -7419,6 +7423,18 @@ private fun NaviMapScreen() {
                                 PackRegionAvailability.localBakeReady(
                                     dataDir,
                                     selectedGeofabrikPath,
+                                ) ||
+                                (
+                                    packDirForDelete != null &&
+                                        PackRegionAvailability.localBakeReady(
+                                            packDirForDelete,
+                                            selectedGeofabrikPath,
+                                        )
+                                ) ||
+                                DownloadedRegionDelete.hasAnyInstall(
+                                    dataDir,
+                                    selectedGeofabrikPath,
+                                    listOfNotNull(packDirForDelete),
                                 ) ||
                                 PlaceIndexReady.isReady(dataDir, selectedGeofabrikPath)
                         Button(
@@ -7429,7 +7445,11 @@ private fun NaviMapScreen() {
                                     return@Button
                                 }
                                 val block =
-                                    DownloadedRegionDelete.blockReason(path, dataDir)
+                                    DownloadedRegionDelete.blockReason(
+                                        path,
+                                        dataDir,
+                                        listOfNotNull(packDirForDelete),
+                                    )
                                 if (block != null) {
                                     status = block
                                     return@Button
