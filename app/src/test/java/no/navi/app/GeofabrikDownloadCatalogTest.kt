@@ -20,8 +20,13 @@ class GeofabrikDownloadCatalogTest {
         assertFalse(
             GeofabrikDownloadCatalog.norwayRegions.any { it.first == "hedmark" },
         )
-        assertFalse(
+        // Retired path remaps to ostlandet, so indexing/download accepts it as known.
+        assertTrue(
             GeofabrikDownloadCatalog.isKnownPackRegionId("europe/norway/hedmark"),
+        )
+        assertEquals(
+            "europe/norway/ostlandet",
+            GeofabrikDownloadCatalog.canonicalizePath("europe/norway/hedmark"),
         )
 
         assertTrue(GeofabrikDownloadCatalog.hasRegionChips("europe/sweden"))
@@ -48,6 +53,22 @@ class GeofabrikDownloadCatalogTest {
         assertEquals(
             "europe/sweden/stockholm",
             GeofabrikDownloadCatalog.canonicalizePath("europe/sweden/stockholm"),
+        )
+    }
+
+    @Test
+    fun retired_norway_fylke_paths_remap_to_ostlandet() {
+        assertEquals(
+            "europe/norway/ostlandet",
+            GeofabrikDownloadCatalog.canonicalizePath("europe/norway/oppland"),
+        )
+        assertEquals(
+            "europe/norway/ostlandet",
+            GeofabrikDownloadCatalog.canonicalizePath("europe/norway/hedmark"),
+        )
+        assertEquals(
+            "europe/norway/ostlandet",
+            GeofabrikDownloadCatalog.extractPathForPbf("europe/norway/oppland"),
         )
     }
 

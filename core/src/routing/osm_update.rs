@@ -185,6 +185,14 @@ pub fn canonicalize_geofabrik_region_path(region: &str) -> String {
     if let Some(rest) = path.strip_prefix("europe/great-britain/") {
         return format!("europe/united-kingdom/{rest}");
     }
+    // Retired Norway fylke extracts (merged into Ostlandet).
+    if path == "europe/norway/oppland"
+        || path == "europe/norway/hedmark"
+        || path == "oppland"
+        || path == "hedmark"
+    {
+        return "europe/norway/ostlandet".to_string();
+    }
     path
 }
 
@@ -201,9 +209,14 @@ pub fn geofabrik_extract_path(region: &str) -> String {
 }
 
 /// Geofabrik base URLs for a region path like `europe/norway/ostlandet`.
+///
+/// Returns the logical `-latest.osm.pbf/` catalog URL. Downloaders resolve this
+/// to the newest dated extract via region HTML (with 5xx retries), `-latest`
+/// redirect `Location`, or recent `{leaf}-YYMMDD` probes when Geofabrik's
+/// `-latest` alias 301-loops / 404s / 502s (see `resolve_geofabrik_latest_to_dated_url`).
 pub fn geofabrik_latest_pbf_url(region: &str) -> String {
     let region = geofabrik_extract_path(region);
-    format!("https://download.geofabrik.de/{region}-latest.osm.pbf")
+    format!("https://download.geofabrik.de/{region}-latest.osm.pbf/")
 }
 
 pub fn geofabrik_updates_base(region: &str) -> String {
@@ -1000,7 +1013,7 @@ timestamp=2024-01-15T01\\:02\\:03Z
         assert_eq!(canonicalize_geofabrik_region_path("enfield"), want);
         assert_eq!(
             geofabrik_latest_pbf_url("europe/united-kingdom/england/london/enfield"),
-            format!("https://download.geofabrik.de/{want}-latest.osm.pbf")
+            format!("https://download.geofabrik.de/{want}-latest.osm.pbf/")
         );
         assert_eq!(canonicalize_geofabrik_region_path(want), want);
         assert_eq!(
@@ -1021,11 +1034,31 @@ timestamp=2024-01-15T01\\:02\\:03Z
         );
         assert_eq!(
             geofabrik_latest_pbf_url("europe/sweden/stockholm"),
-            "https://download.geofabrik.de/europe/sweden-latest.osm.pbf"
+            "https://download.geofabrik.de/europe/sweden-latest.osm.pbf/"
         );
         assert_eq!(
             canonicalize_geofabrik_region_path("europe/sweden/stockholm"),
             "europe/sweden/stockholm"
+        );
+    }
+
+    #[test]
+    fn retired_norway_fylke_paths_remap_to_ostlandet() {
+        assert_eq!(
+            canonicalize_geofabrik_region_path("europe/norway/oppland"),
+            "europe/norway/ostlandet"
+        );
+        assert_eq!(
+            canonicalize_geofabrik_region_path("europe/norway/hedmark"),
+            "europe/norway/ostlandet"
+        );
+        assert_eq!(
+            geofabrik_latest_pbf_url("europe/norway/oppland"),
+            "https://download.geofabrik.de/europe/norway/ostlandet-latest.osm.pbf/"
+        );
+        assert_eq!(
+            geofabrik_latest_pbf_url("hedmark"),
+            "https://download.geofabrik.de/europe/norway/ostlandet-latest.osm.pbf/"
         );
     }
 
@@ -1154,7 +1187,8 @@ timestamp=2024-01-15T01\\:02\\:03Z
             "no .osc.gz must be fetched when osmium is unavailable; got {log:?}"
         );
         assert!(
-            log.iter().any(|u| u.ends_with("-latest.osm.pbf")),
+            log.iter()
+                .any(|u| u.ends_with("-latest.osm.pbf") || u.ends_with("-latest.osm.pbf/")),
             "expected full PBF download; got {log:?}"
         );
         test_hooks::reset();
@@ -1231,7 +1265,8 @@ timestamp=2024-01-15T01\\:02\\:03Z
             "osmium path must fetch .osc.gz; got {log:?}"
         );
         assert!(
-            log.iter().all(|u| !u.ends_with("-latest.osm.pbf")),
+            log.iter()
+                .all(|u| !u.ends_with("-latest.osm.pbf") && !u.ends_with("-latest.osm.pbf/")),
             "osmium path must not fall back to full PBF; got {log:?}"
         );
     }

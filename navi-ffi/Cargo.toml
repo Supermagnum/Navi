@@ -12,6 +12,8 @@ name = "navi"
 
 [dependencies]
 driver-break-core = { path = "../core" }
+navi-plugin-host = { path = "../plugin-host" }
+navi-right-to-roam-camping = { path = "../plugins/right-to-roam-camping/engine", default-features = false, features = ["native"] }
 chrono = { workspace = true }
 uniffi = { workspace = true, features = ["cli"] }
 osm4routing = { workspace = true }

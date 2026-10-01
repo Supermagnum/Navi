@@ -268,6 +268,23 @@ pub fn pbf_stem_to_geofabrik_path(stem: &str) -> Option<String> {
     }
 }
 
+/// Catalog leaf bboxes under a country path (e.g. `europe/denmark` → Syddanmark,
+/// Sjælland, …). Used by densify as land waypoints when only the country pack is
+/// Ready but foreign leaves make the country centroid unusable (sea-spilling AABB).
+pub fn catalog_leaf_bboxes_under(country_path: &str) -> Vec<(&'static str, [f64; 4])> {
+    let path = country_path.trim().trim_matches('/').to_ascii_lowercase();
+    if path.is_empty() {
+        return Vec::new();
+    }
+    let prefix = format!("{path}/");
+    PACK_LEAF_PATH_BBOX
+        .iter()
+        .chain(NORWAY_LANDSDEL.iter())
+        .filter(|(p, _)| p.starts_with(&prefix))
+        .map(|(p, b)| (*p, *b))
+        .collect()
+}
+
 /// True when [path] is an exact entry in the pack bbox / Norway landsdel tables
 /// (no parent-walk).
 pub fn is_exact_catalog_path(path: &str) -> bool {
@@ -690,13 +707,37 @@ const PACK_LEAF_PATH_BBOX: &[(&str, [f64; 4])] = &[
     ),
     // Danish regions (published on some hosts; live host currently has country only).
     ("europe/denmark/syddanmark", [54.72, 8.07, 55.78, 10.95]),
-    ("europe/denmark/sjaelland", [54.85, 10.85, 55.80, 12.55]),
+    // South edge includes Lolland/Falster (Rødby ≈54.65) so Fehmarn ferry
+    // approaches have leaf cover for densify — Geofabrik's sjaelland extract
+    // covers the islands; the old 54.85 cut left them as country-only water.
+    ("europe/denmark/sjaelland", [54.55, 10.85, 55.80, 12.55]),
     ("europe/denmark/hovedstaden", [55.58, 12.00, 56.13, 12.70]),
     ("europe/denmark/midtjylland", [55.78, 8.10, 56.85, 11.20]),
     ("europe/denmark/nordjylland", [56.70, 8.15, 57.76, 10.95]),
-    // Sweden län along the Øresund–Svinesund corridor.
-    ("europe/sweden/skane", [55.32, 12.45, 56.50, 14.60]),
+    // Sweden län (pack-server product ids). Southern three cover Øresund–
+    // Svinesund; northern län unlock Bugøynes→Østlandet via Norrbotten /
+    // Västerbotten (Pajala–Umeå class) instead of the coastal E6 spine.
+    // Bboxes from Natural Earth admin1 (same source as region_adjacency.bin).
+    ("europe/sweden/blekinge", [56.00, 14.41, 56.51, 16.07]),
+    ("europe/sweden/dalarna", [59.88, 12.16, 62.27, 16.72]),
+    ("europe/sweden/gavleborg", [60.21, 14.48, 62.36, 17.52]),
+    ("europe/sweden/gotland", [56.91, 18.10, 58.39, 19.34]),
     ("europe/sweden/halland", [56.32, 11.85, 57.55, 13.55]),
+    ("europe/sweden/jamtland", [61.58, 11.99, 65.12, 16.97]),
+    ("europe/sweden/jonkoping", [56.89, 13.09, 58.22, 15.67]),
+    ("europe/sweden/kalmar", [56.22, 15.35, 58.13, 17.12]),
+    ("europe/sweden/kronoberg", [56.38, 13.31, 57.24, 15.85]),
+    ("europe/sweden/norrbotten", [65.07, 15.43, 69.04, 24.16]),
+    ("europe/sweden/orebro", [58.65, 14.31, 60.12, 15.81]),
+    ("europe/sweden/ostergotland", [57.71, 14.43, 59.01, 16.94]),
+    ("europe/sweden/skane", [55.32, 12.45, 56.50, 14.60]),
+    ("europe/sweden/sodermanland", [58.63, 15.64, 59.53, 17.63]),
+    ("europe/sweden/stockholm", [58.86, 17.28, 60.22, 19.09]),
+    ("europe/sweden/uppsala", [59.39, 16.79, 60.65, 18.60]),
+    ("europe/sweden/varmland", [58.74, 11.67, 61.06, 14.48]),
+    ("europe/sweden/vasterbotten", [63.41, 14.33, 66.35, 21.61]),
+    ("europe/sweden/vasternorrland", [62.15, 14.82, 64.02, 19.32]),
+    ("europe/sweden/vastmanland", [59.21, 15.45, 60.31, 17.39]),
     (
         "europe/sweden/vastra_gotaland",
         [57.15, 10.95, 59.36, 14.80],
@@ -1146,6 +1187,22 @@ mod tests {
         assert_eq!(
             pbf_stem_to_geofabrik_path("sweden-latest"),
             Some("europe/sweden".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("norrbotten-latest"),
+            Some("europe/sweden/norrbotten".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("vasterbotten-latest"),
+            Some("europe/sweden/vasterbotten".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("jamtland-latest"),
+            Some("europe/sweden/jamtland".into())
+        );
+        assert_eq!(
+            pbf_stem_to_geofabrik_path("dalarna-latest"),
+            Some("europe/sweden/dalarna".into())
         );
         assert_eq!(
             pbf_stem_to_geofabrik_path("us-latest"),

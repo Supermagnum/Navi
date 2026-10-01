@@ -35,7 +35,7 @@ use driver_break_core::routing::{
     build_maneuvers, build_maneuvers_from_edges_with_vias, build_sim_samples,
     build_sim_samples_from_edges, build_sim_samples_from_lat_lon, maneuvers_to_json,
     motor_path_minutes_from_edges, plan_hybrid_hiking_path_with_options, samples_to_json,
-    HikingWaypoint, WetlandIndex, OFF_TRAIL_ADVISORY,
+    stitch_chunk_leg_maneuvers, HikingWaypoint, RouteManeuver, WetlandIndex, OFF_TRAIL_ADVISORY,
 };
 use driver_break_core::routing::{
     commit_truck_multi_day_plan, evaluate_fmcsa_trip, evaluate_truck_trip,
@@ -52,6 +52,9 @@ use serde::Deserialize;
 use serde_json::json;
 
 uniffi::setup_scaffolding!();
+
+mod camping_plugin;
+pub use camping_plugin::*;
 
 fn ensure_native_logging() {
     #[cfg(target_os = "android")]
@@ -2289,11 +2292,10 @@ fn plan_car_route_chunked_legs(
     let mut cache_hit = true;
     let mut polyline = String::new();
     let mut sim_samples = String::from("[");
-    let mut maneuvers = String::from("[");
     let mut break_pois = String::from("[");
     let mut sim_first = true;
-    let mut man_first = true;
     let mut break_first = true;
+    let mut leg_maneuvers: Vec<Vec<RouteManeuver>> = Vec::new();
     let mut expansions: u64 = 0;
     let mut toll_incomplete = false;
     let mut route_uses_tolls = false;
@@ -2408,7 +2410,9 @@ fn plan_car_route_chunked_legs(
             }
         }
         append_json_array_elems(&mut sim_samples, &mut sim_first, &leg.sim_samples_json);
-        append_json_array_elems(&mut maneuvers, &mut man_first, &leg.maneuvers_json);
+        let mans: Vec<RouteManeuver> =
+            serde_json::from_str(&leg.maneuvers_json).unwrap_or_default();
+        leg_maneuvers.push(mans);
         append_json_array_elems(&mut break_pois, &mut break_first, &leg.break_pois_json);
         // Clear large leftover strings so the next hop starts with less retained
         // RSS on 4 GB Automotive (LMK previously killed ~2.9 GB RSS).
@@ -2426,7 +2430,7 @@ fn plan_car_route_chunked_legs(
         drop((leftover_days, leftover_segs, leftover_adv));
     }
     sim_samples.push(']');
-    maneuvers.push(']');
+    let maneuvers = maneuvers_to_json(&stitch_chunk_leg_maneuvers(&leg_maneuvers));
     let priority_path_share_pct = if priority_share_w > 0.0 {
         priority_share_acc / priority_share_w
     } else {
@@ -2717,6 +2721,16 @@ fn finalize_chunked_motor_soft_breaks(
         pauses.len(),
         break_arr.len()
     ));
+    for (i, poi) in break_arr.iter().take(24).enumerate() {
+        report.push_str(&format!(
+            "chunked_break_poi: idx={i}; name={}; kind={}; lat={}; lon={}; along_km={}\n",
+            poi.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+            poi.get("kind").and_then(|v| v.as_str()).unwrap_or(""),
+            poi.get("lat").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            poi.get("lon").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            poi.get("along_km").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        ));
+    }
     let break_pois_json = serde_json::to_string(&break_arr).unwrap_or_else(|_| "[]".into());
     (break_pois_json, days_json, report)
 }
@@ -8861,6 +8875,23 @@ fn poi_lookahead_hits_json(hits: &[driver_break_core::poi::PoiLookaheadHit]) -> 
     .to_string()
 }
 
+fn parse_pack_dirs_json(raw: &str) -> Vec<PathBuf> {
+    let Ok(arr) = serde_json::from_str::<Vec<String>>(raw) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for s in arr {
+        let p = PathBuf::from(s.trim());
+        if p.as_os_str().is_empty() {
+            continue;
+        }
+        if p.is_dir() && !out.iter().any(|x| x == &p) {
+            out.push(p);
+        }
+    }
+    out
+}
+
 /// Load POI pack (preferred) or full PBF into the look-ahead store.
 #[uniffi::export]
 pub fn ensure_poi_lookahead_loaded(data_dir: String, pbf_path: String) -> FfiPoiLookaheadLoadStats {
@@ -8896,6 +8927,73 @@ pub fn ensure_poi_lookahead_loaded(data_dir: String, pbf_path: String) -> FfiPoi
                     };
                 }
             },
+        };
+    let out = FfiPoiLookaheadLoadStats {
+        records: index.len() as u32,
+        cone_m: POI_LOOKAHEAD_CONE_M,
+        half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+    };
+    if let Ok(mut guard) = POI_LOOKAHEAD_STORE.lock() {
+        *guard = Some(PoiLookaheadStore { key, index });
+    }
+    out
+}
+
+/// Load the Ready POI pack that covers `lat,lon` (long-trip-packs / Removable
+/// roots via `pack_dirs_json`). One pack at a time — never co-resident with a
+/// route graph. Cell key (~0.5°) avoids thrashing when GPS jitters inside a region.
+#[uniffi::export]
+pub fn ensure_poi_lookahead_covering(
+    data_dir: String,
+    pack_dirs_json: String,
+    lat: f64,
+    lon: f64,
+) -> FfiPoiLookaheadLoadStats {
+    use driver_break_core::poi::{POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG, POI_LOOKAHEAD_CONE_M};
+    let cell_lat = (lat * 2.0).round() / 2.0;
+    let cell_lon = (lon * 2.0).round() / 2.0;
+    let pack_dirs = parse_pack_dirs_json(&pack_dirs_json);
+    let key = format!(
+        "cover|{data_dir}|{:.1}|{:.1}|{}",
+        cell_lat,
+        cell_lon,
+        pack_dirs
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(";")
+    );
+    {
+        let guard = POI_LOOKAHEAD_STORE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(store) = guard.as_ref() {
+            if store.key == key {
+                return FfiPoiLookaheadLoadStats {
+                    records: store.index.len() as u32,
+                    cone_m: POI_LOOKAHEAD_CONE_M,
+                    half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+                };
+            }
+        }
+    }
+    let data = PathBuf::from(&data_dir);
+    let index =
+        match driver_break_core::routing::indexed::try_load_poi_pack_covering_point_with_pack_dirs(
+            &data, &pack_dirs, lat, lon,
+        ) {
+            Ok((poi, _)) => poi,
+            Err(e) => {
+                log::warn!(
+                    target: "NaviNative",
+                    "poi_lookahead covering load failed at {lat:.4},{lon:.4}: {e:?}"
+                );
+                return FfiPoiLookaheadLoadStats {
+                    records: 0,
+                    cone_m: POI_LOOKAHEAD_CONE_M,
+                    half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+                };
+            }
         };
     let out = FfiPoiLookaheadLoadStats {
         records: index.len() as u32,

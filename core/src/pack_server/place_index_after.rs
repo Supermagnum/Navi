@@ -61,7 +61,10 @@ impl PackPlaceIndexReport {
 }
 
 fn pbf_filename_for_region(region_id: &str) -> String {
-    format!("{}.osm.pbf", leaf_stem_for_region_id(region_id))
+    // Sweden län keep pack region ids but Geofabrik only publishes the country
+    // extract — share `sweden-latest.osm.pbf` across län (no per-län stubs).
+    let extract = crate::routing::geofabrik_extract_path(region_id);
+    format!("{}.osm.pbf", leaf_stem_for_region_id(&extract))
 }
 
 /// Ensure `data_dir/<leaf>-latest.osm.pbf` is a real Geofabrik extract.
@@ -234,7 +237,7 @@ mod tests {
         );
         assert_eq!(
             pbf_filename_for_region("europe/sweden/gotland"),
-            "gotland-latest.osm.pbf"
+            "sweden-latest.osm.pbf"
         );
     }
 

@@ -388,6 +388,14 @@ fun PluginSettingsSection(
     onPoiLookaheadChange: (Boolean) -> Unit = {},
     poiLookaheadStrictHoursUnknown: Boolean = false,
     onPoiLookaheadStrictHoursUnknownChange: (Boolean) -> Unit = {},
+    campingPluginEnabled: Boolean = false,
+    onCampingPluginChange: (Boolean) -> Unit = {},
+    campingResidencyCountry: String = MapHudPrefs.CAMPING_RESIDENCY_DEFAULT,
+    onCampingResidencyChange: (String) -> Unit = {},
+    campingProfessionalDriver: Boolean = false,
+    onCampingProfessionalDriverChange: (Boolean) -> Unit = {},
+    campingSessionDisableMessage: String? = null,
+    onCampingReEnableSession: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -596,6 +604,68 @@ fun PluginSettingsSection(
                 )
             }
         }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("Right-to-roam camping")
+            Switch(
+                checked = campingPluginEnabled,
+                onCheckedChange = onCampingPluginChange,
+                modifier = Modifier.testTag("toggle_camping_plugin"),
+            )
+        }
+        if (campingPluginEnabled) {
+            Text(
+                "Informational overnight camping guidance along the active route. Not legal advice.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedTextField(
+                value = campingResidencyCountry,
+                onValueChange = onCampingResidencyChange,
+                label = { Text("Residency country (ISO)") },
+                placeholder = { Text("unknown") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag("camping_residency"),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Professional driver")
+                    Text(
+                        "For drivers under driving/rest-time rules",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = campingProfessionalDriver,
+                    onCheckedChange = onCampingProfessionalDriverChange,
+                    modifier = Modifier.testTag("toggle_camping_professional_driver"),
+                )
+            }
+            if (!campingSessionDisableMessage.isNullOrBlank()) {
+                Text(
+                    campingSessionDisableMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("camping_session_disable_settings"),
+                )
+                TextButton(
+                    onClick = onCampingReEnableSession,
+                    modifier = Modifier.testTag("camping_reenable_settings"),
+                ) {
+                    Text("Re-enable camping for this session")
+                }
+            }
+            Text(
+                CAMPING_PLUGIN_DISCLAIMER,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("camping_settings_disclaimer"),
+            )
+        }
     }
 }
 
@@ -655,6 +725,14 @@ fun MapSettingsSheet(
     onPoiLookaheadChange: (Boolean) -> Unit = {},
     poiLookaheadStrictHoursUnknown: Boolean = false,
     onPoiLookaheadStrictHoursUnknownChange: (Boolean) -> Unit = {},
+    campingPluginEnabled: Boolean = false,
+    onCampingPluginChange: (Boolean) -> Unit = {},
+    campingResidencyCountry: String = MapHudPrefs.CAMPING_RESIDENCY_DEFAULT,
+    onCampingResidencyChange: (String) -> Unit = {},
+    campingProfessionalDriver: Boolean = false,
+    onCampingProfessionalDriverChange: (Boolean) -> Unit = {},
+    campingSessionDisableMessage: String? = null,
+    onCampingReEnableSession: () -> Unit = {},
     onSave: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -883,6 +961,14 @@ fun MapSettingsSheet(
                 onPoiLookaheadChange = onPoiLookaheadChange,
                 poiLookaheadStrictHoursUnknown = poiLookaheadStrictHoursUnknown,
                 onPoiLookaheadStrictHoursUnknownChange = onPoiLookaheadStrictHoursUnknownChange,
+                campingPluginEnabled = campingPluginEnabled,
+                onCampingPluginChange = onCampingPluginChange,
+                campingResidencyCountry = campingResidencyCountry,
+                onCampingResidencyChange = onCampingResidencyChange,
+                campingProfessionalDriver = campingProfessionalDriver,
+                onCampingProfessionalDriverChange = onCampingProfessionalDriverChange,
+                campingSessionDisableMessage = campingSessionDisableMessage,
+                onCampingReEnableSession = onCampingReEnableSession,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(

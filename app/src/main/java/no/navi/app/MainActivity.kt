@@ -195,6 +195,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         applyNaviLaunchExtras(intent)
         runCatching { uniffi.navi.initNativeLogging() }
+        CampingBootstrap.ensureInitialized(this)
         // Natural Earth country grid: never build on the main looper (ANR / seed stall).
         CountryPolysWarm.startBackground()
         setContent {
@@ -361,6 +362,8 @@ data class MapRouteState(
     /** Map bearing degrees clockwise from north; used with rotation modes. */
     val cameraBearing: Double = 0.0,
     val tracks: List<TrackMarker> = emptyList(),
+    /** Camping suggest pin positions (lat, lon) when the plugin is enabled. */
+    val campingPins: List<Pair<Double, Double>> = emptyList(),
     val layerEpoch: Int = 0,
 )
 
@@ -453,8 +456,6 @@ private fun waypointsToRteJson(
 }
 
 private enum class SearchTarget { From, To, Via }
-
-private enum class SearchMode { Place, Address }
 
 /** Matches FFI [`uniffi.navi`] motor via cap (`MAX_ROUTE_VIA_POINTS`). */
 private const val MAX_ROUTE_VIAS = 4
@@ -639,7 +640,6 @@ private fun NaviMapScreen() {
     var mapLayerCount by remember { mutableIntStateOf(0) }
     var profile by remember { mutableStateOf(TravelProfile.CAR) }
     var ecoEnabled by remember { mutableStateOf(ecoModeDefault(TravelProfile.CAR)) }
-    var searchMode by remember { mutableStateOf(SearchMode.Place) }
     var searchTarget by remember { mutableStateOf(SearchTarget.To) }
     var query by remember { mutableStateOf("") }
     var hits by remember { mutableStateOf<List<PlaceHit>>(emptyList()) }
@@ -792,7 +792,105 @@ private fun NaviMapScreen() {
         mutableStateOf(MapHudPrefs.loadPoiLookaheadDismissedIds(context))
     }
     var poiLookaheadHud by remember { mutableStateOf(PoiLookaheadHudState()) }
+    var campingPluginEnabled by remember {
+        mutableStateOf(MapHudPrefs.loadCampingPluginEnabled(context))
+    }
+    var campingResidencyCountry by remember {
+        mutableStateOf(MapHudPrefs.loadCampingResidencyCountry(context))
+    }
+    var campingProfessionalDriver by remember {
+        mutableStateOf(MapHudPrefs.loadCampingProfessionalDriver(context))
+    }
+    var campingSuggestResult by remember { mutableStateOf<CampingSuggestResult?>(null) }
+    var showCampingSheet by remember { mutableStateOf(false) }
+    var campingSessionDisableMessage by remember { mutableStateOf<String?>(null) }
     var hideChrome by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        CampingBootstrap.ensureInitialized(context)
+        val want = MapHudPrefs.loadCampingPluginEnabled(context)
+        uniffi.navi.campingPluginSetEnabled(want)
+        campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
+    }
+
+    val campingReEnableSession: () -> Unit = {
+        uniffi.navi.campingPluginSetEnabled(true)
+        campingPluginEnabled = true
+        MapHudPrefs.saveCampingPluginEnabled(context, true)
+        campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
+    }
+
+    fun longTripPackDirsJson(): String {
+        val dirs = ArrayList<String>(2)
+        if (longTripEnabled) {
+            runCatching {
+                dirs.add(LongTripPackStorage.packDownloadDir(context).absolutePath)
+            }
+        }
+        dirs.add(NaviAppData.resolve(context).absolutePath)
+        return org.json.JSONArray(dirs).toString()
+    }
+
+    LaunchedEffect(
+        campingPluginEnabled,
+        profile,
+        mapState.polyline,
+        mapState.endLat,
+        mapState.endLon,
+        campingProfessionalDriver,
+        campingResidencyCountry,
+        longTripEnabled,
+        longTripPackVolumeId,
+    ) {
+        campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
+        if (!campingPluginEnabled || mapState.polyline.isBlank()) {
+            campingSuggestResult = null
+            if (mapState.campingPins.isNotEmpty()) {
+                mapState =
+                    mapState.copy(
+                        campingPins = emptyList(),
+                        layerEpoch = mapState.layerEpoch + 1,
+                    )
+            }
+            return@LaunchedEffect
+        }
+        val sampled = sampleCampingCorridorWaypoints(mapState.polyline)
+        if (sampled.isEmpty()) return@LaunchedEffect
+        uniffi.navi.campingPluginSetPackDirs(longTripPackDirsJson())
+        val residency =
+            campingResidencyCountry.trim().lowercase().ifBlank { null }
+        uniffi.navi.campingPluginSetResidencyCountry(residency)
+        val hasDest = mapState.endLat != 0.0 || mapState.endLon != 0.0
+        val destLat = if (hasDest) mapState.endLat else null
+        val destLon = if (hasDest) mapState.endLon else null
+        uniffi.navi.campingPluginSetNavContext(
+            waypointsJson = campingWaypointsJson(sampled),
+            destLat = destLat,
+            destLon = destLon,
+            profile = profile,
+            professionalDriver = campingProfessionalDriver,
+        )
+        val call = CampingPluginApi.suggestAlongRoute(12u)
+        campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
+        val json = call.resultJson
+        if (json.isNullOrBlank()) {
+            campingSuggestResult = null
+            return@LaunchedEffect
+        }
+        val parsed = runCatching { parseCampingSuggestResultJson(json) }.getOrNull()
+        campingSuggestResult = parsed
+        if (parsed != null) {
+            showCampingSheet = true
+            val pins = allCampingPinLatLon(parsed)
+            if (pins != mapState.campingPins) {
+                mapState =
+                    mapState.copy(
+                        campingPins = pins,
+                        layerEpoch = mapState.layerEpoch + 1,
+                    )
+            }
+        }
+    }
 
     DisposableEffect(longTripEnabled) {
         if (longTripEnabled) {
@@ -1030,6 +1128,8 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastPlanDistanceKm = 0.0
         NaviMapTestHooks.lastRoutePolyline = ""
         NaviMapTestHooks.lastBreakPoiCount = 0
+        NaviMapTestHooks.lastBreakPoisJson = "[]"
+        NaviMapTestHooks.lastDaysJson = "[]"
         NaviMapTestHooks.lastArrivedAtEnd = false
         NaviMapTestHooks.lastCurrentStreet = null
         graphFerryEdges = null
@@ -1442,6 +1542,10 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastRoutePolyline = pending.routePolyline
         NaviMapTestHooks.lastAppliedRouteStartLabel = startLabel
         NaviMapTestHooks.lastBreakPoiCount = breaks.size
+        NaviMapTestHooks.lastBreakPoisJson =
+            runCatching { pending.breakPoisJson }.getOrDefault("[]")
+        NaviMapTestHooks.lastDaysJson =
+            runCatching { pending.daysJson }.getOrDefault("[]")
         NaviMapTestHooks.lastManeuversJson =
             runCatching { pending.maneuversJson }.getOrDefault("[]")
         NaviMapTestHooks.lastSimSamplesJson =
@@ -1692,6 +1796,11 @@ private fun NaviMapScreen() {
         poiLookaheadDismissedIds,
         weatherAppActive,
         dataDir,
+        longTripEnabled,
+        longTripPackVolumeId,
+        mapState.gpsLat,
+        mapState.gpsLon,
+        mapState.polyline,
     ) {
         if (!poiLookaheadEnabled) {
             poiLookaheadHud = PoiLookaheadHudState()
@@ -1700,22 +1809,40 @@ private fun NaviMapScreen() {
         while (true) {
             if (!poiLookaheadEnabled) break
             if (weatherAppActive) {
-                val lat = mapState.gpsLat.takeIf { it != 0.0 } ?: (mapState.cameraLat ?: 0.0)
-                val lon = mapState.gpsLon.takeIf { mapState.gpsLat != 0.0 } ?: (mapState.cameraLon ?: 0.0)
+                val lat =
+                    mapState.gpsLat.takeIf { it != 0.0 }
+                        ?: mapState.startLat.takeIf { it != 0.0 }
+                        ?: (mapState.cameraLat ?: 0.0)
+                val lon =
+                    mapState.gpsLon.takeIf { mapState.gpsLat != 0.0 }
+                        ?: mapState.startLon.takeIf { mapState.startLat != 0.0 }
+                        ?: (mapState.cameraLon ?: 0.0)
                 val heading =
                     NaviMapTestHooks.gpsBearingDeg
                         ?: mapState.cameraBearing.takeIf { it.isFinite() }
-                val pbf = RouteReplan.resolvePbf(dataDir)
+                val packDirs = longTripPackDirsJson()
                 val dismissed = poiLookaheadDismissedIds
                 val strict = poiLookaheadStrictHoursUnknown
                 val raw =
                     withContext(Dispatchers.IO) {
                         runCatching {
-                            if (pbf != null) {
-                                uniffi.navi.ensurePoiLookaheadLoaded(
+                            // Prefer covering Ready pack at GPS (long-trip SD roots).
+                            // Fallback to planning-stem PBF under files/ for local/tests.
+                            val cover =
+                                uniffi.navi.ensurePoiLookaheadCovering(
                                     dataDir.absolutePath,
-                                    pbf.absolutePath,
+                                    packDirs,
+                                    lat,
+                                    lon,
                                 )
+                            if (cover.records == 0u) {
+                                val pbf = RouteReplan.resolvePbf(dataDir)
+                                if (pbf != null) {
+                                    uniffi.navi.ensurePoiLookaheadLoaded(
+                                        dataDir.absolutePath,
+                                        pbf.absolutePath,
+                                    )
+                                }
                             }
                             uniffi.navi.poiLookaheadQueryJson(
                                 lat,
@@ -2418,20 +2545,26 @@ private fun NaviMapScreen() {
                 selectedGeofabrikPath = pending.geofabrikPath
             }
         }
-        val pbf = resolveRegionPbf()
         // ensureStartedFromPending claims [RegionDownloadBackground.isRunning]
         // synchronously before its IO coroutine, so this check cannot race a
         // just-started resume (PlaceIndexBackground + RegionDownload both
         // calling ensurePlaceIndex on the same DB).
-        if (pbf != null &&
-            pbf.isFile &&
+        // Never auto-index from fixtures / empty installs — see OfflineIndexGate.
+        if (OfflineIndexGate.hasMaterialToIndex(dataDir) &&
             !RegionDownloadBackground.isRunning()
         ) {
-            PlaceIndexBackground.ensureStarted(
-                pbf,
-                placeIndexDbForWrite(),
-                selectedGeofabrikPath.ifBlank { null },
-            )
+            val pbf =
+                OfflineIndexGate.resolveAutoIndexPbf(dataDir, selectedGeofabrikPath)
+            if (pbf != null && OfflineIndexGate.isIndexablePbf(pbf)) {
+                val rid = selectedGeofabrikPath.trim().trim('/')
+                if (rid.isEmpty() || !PlaceIndexReady.isReady(dataDir, rid)) {
+                    PlaceIndexBackground.ensureStarted(
+                        pbf,
+                        placeIndexDbForWrite(),
+                        rid.ifBlank { null },
+                    )
+                }
+            }
         }
     }
 
@@ -2453,15 +2586,10 @@ private fun NaviMapScreen() {
             )
             val tick =
                 withContext(Dispatchers.IO) {
-                    val pbf =
-                        if (regionPath.isNotEmpty()) {
-                            PackRegionAvailability.resolvePbfForRegion(dataDir, regionPath)
-                        } else {
-                            null
-                        } ?: RouteReplan.resolvePbf(dataDir)
-                            ?: dataDir.listFiles()?.firstOrNull {
-                                it.isFile && it.name.endsWith(".osm.pbf")
-                            }
+                    if (!OfflineIndexGate.hasMaterialToIndex(dataDir)) {
+                        return@withContext BgTick("", "", false, false, false)
+                    }
+                    val pbf = OfflineIndexGate.resolveAutoIndexPbf(dataDir, regionPath)
                     if (pbf == null) {
                         return@withContext BgTick("", "", false, false, false)
                     }
@@ -2501,6 +2629,7 @@ private fun NaviMapScreen() {
                     if (!regionDownloading && !PlaceIndexBackground.isRunning()) {
                         // Stamp-only heal — do not open place_index.db here (SQLite
                         // lock fights Use GPS / nearbyPlaces and ANRs the UI).
+                        // Only real local PBFs (not fixtures / stubs).
                         val missing =
                             RegionCoverage
                                 .downloadedGeofabrikPaths(dataDir)
@@ -2509,8 +2638,8 @@ private fun NaviMapScreen() {
                                 }
                         if (missing != null) {
                             val missingPbf =
-                                PackRegionAvailability.resolvePbfForRegion(dataDir, missing)
-                            if (missingPbf != null && missingPbf.isFile) {
+                                OfflineIndexGate.resolveAutoIndexPbf(dataDir, missing)
+                            if (missingPbf != null && OfflineIndexGate.isIndexablePbf(missingPbf)) {
                                 PlaceIndexBackground.ensureStarted(
                                     missingPbf,
                                     placeIndexDbForWrite(),
@@ -2657,13 +2786,20 @@ private fun NaviMapScreen() {
                     }
                 status = longTripStatusLine.ifBlank { status }
             }
-            // Wait until every corridor region is Installed (packs Ready) or
-            // Indexed — do not wait for place-index of non-start regions.
+            // Wait until every corridor region is Indexed (place-index ready).
+            // Starting plan while a region is still Installed/Indexing contends
+            // with place-index PBF scans and can deadlock or stall graph-build.
             while (isActive && !LongTripCoordinator.corridorReadyForPlanning()) {
                 val line =
                     LongTripCoordinator
                         .statusLine()
-                        .ifBlank { "Long trip: downloading required regions…" }
+                        .ifBlank {
+                            if (LongTripCoordinator.corridorPacksReady()) {
+                                "Long trip: waiting for region indexing…"
+                            } else {
+                                "Long trip: downloading required regions…"
+                            }
+                        }
                 longTripStatusLine = line
                 status = line
                 delay(1_500)
@@ -4644,7 +4780,6 @@ private fun NaviMapScreen() {
             searchIndexHint = ""
             return
         }
-        val mode = searchMode
         searchJob =
             scope.launch {
                 // Debounce before any SQLite / Nominatim work so rapid typing
@@ -4680,7 +4815,8 @@ private fun NaviMapScreen() {
                                         context = context,
                                         query = trimmed,
                                         limit = 20,
-                                        addressMode = mode == SearchMode.Address,
+                                        // Unified From/Via/To search (no Place/Address chips).
+                                        addressMode = false,
                                     )
                                 if (online.isNotEmpty()) {
                                     usedOnline = true
@@ -4694,31 +4830,24 @@ private fun NaviMapScreen() {
                             }
                             ensureActive()
                             list = filterHitsByCountryIso(list, countryIso)
+                            // Keep places, POIs, and address-like hits in one list.
                             val filtered =
                                 if (usedOnline) {
                                     list
                                 } else {
-                                    when (mode) {
-                                        SearchMode.Place ->
-                                            list
-                                                .filter {
-                                                    val k = it.kind.lowercase()
-                                                    k.contains("place") ||
-                                                        k.contains("amenity") ||
-                                                        k.contains("tourism") ||
-                                                        k.contains("peak") ||
-                                                        k.contains("hut") ||
-                                                        k.contains("natural")
-                                                }.ifEmpty { list }
-                                        SearchMode.Address ->
-                                            list
-                                                .filter {
-                                                    val k = it.kind.lowercase()
-                                                    k.contains("highway") ||
-                                                        k.contains("place") ||
-                                                        k.contains("addr")
-                                                }.ifEmpty { list }
-                                    }
+                                    list
+                                        .filter {
+                                            val k = it.kind.lowercase()
+                                            k.contains("place") ||
+                                                k.contains("amenity") ||
+                                                k.contains("tourism") ||
+                                                k.contains("peak") ||
+                                                k.contains("hut") ||
+                                                k.contains("natural") ||
+                                                k.contains("highway") ||
+                                                k.contains("addr") ||
+                                                k.contains("building")
+                                        }.ifEmpty { list }
                                 }
                             val onlineOk = BasemapStyleResolver.hasNetwork(context)
                             PlaceSearchOutcome(
@@ -4983,6 +5112,63 @@ private fun NaviMapScreen() {
                     .zIndex(7f)
                     .padding(top = if (simulating) 108.dp else 64.dp),
         )
+        if (
+            !hideChrome &&
+            campingPluginEnabled &&
+            !campingSessionDisableMessage.isNullOrBlank()
+        ) {
+            CampingSessionDisableBanner(
+                message = campingSessionDisableMessage.orEmpty(),
+                onReEnable = campingReEnableSession,
+                modifier =
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .zIndex(5f)
+                        .padding(top = 120.dp, start = 10.dp, end = 10.dp),
+            )
+        }
+        if (
+            !hideChrome &&
+            campingPluginEnabled &&
+            showCampingSheet &&
+            campingSuggestResult != null
+        ) {
+            CampingSuggestionSheet(
+                result = campingSuggestResult!!,
+                profile = profile,
+                listDisclaimer = campingSuggestResult!!.disclaimer,
+                sessionDisableMessage = campingSessionDisableMessage,
+                onReEnableSession = campingReEnableSession,
+                onClose = { showCampingSheet = false },
+                onCampHereTonight = { card ->
+                    val msg =
+                        uniffi.navi.campingPluginCampHereTonight(
+                            card.lat,
+                            card.lon,
+                            card.countryIso.ifBlank { null },
+                            card.subdivisionIso,
+                        )
+                    android.util.Log.i("NaviCamping", "camp_here_tonight: $msg")
+                    status = msg
+                },
+                onUndoCampHereTonight = { card ->
+                    val msg =
+                        uniffi.navi.campingPluginUndoCampHereTonight(
+                            card.lat,
+                            card.lon,
+                            card.countryIso.ifBlank { null },
+                            card.subdivisionIso,
+                        )
+                    android.util.Log.i("NaviCamping", "undo_camp_here: $msg")
+                    status = msg
+                },
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .zIndex(5f)
+                        .padding(start = 10.dp, end = 10.dp, bottom = 96.dp),
+            )
+        }
         if (showSpeedCameraPrompt) {
             AlertDialog(
                 onDismissRequest = {
@@ -5312,22 +5498,6 @@ private fun NaviMapScreen() {
                                         },
                                         modifier = Modifier.testTag("chip_via"),
                                     )
-                                    FilterChip(
-                                        selected = searchMode == SearchMode.Place,
-                                        onClick = {
-                                            searchMode = SearchMode.Place
-                                            runSearch(query)
-                                        },
-                                        label = { Text("Place") },
-                                    )
-                                    FilterChip(
-                                        selected = searchMode == SearchMode.Address,
-                                        onClick = {
-                                            searchMode = SearchMode.Address
-                                            runSearch(query)
-                                        },
-                                        label = { Text("Address") },
-                                    )
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     TextButton(
@@ -5427,21 +5597,11 @@ private fun NaviMapScreen() {
                                                     viaPoints.size >= MAX_ROUTE_VIAS ->
                                                         "Via full ($MAX_ROUTE_VIAS/$MAX_ROUTE_VIAS)"
                                                     viaPoints.isEmpty() ->
-                                                        when (searchMode) {
-                                                            SearchMode.Place ->
-                                                                "Add via: place, hut, or lat, lon"
-                                                            SearchMode.Address ->
-                                                                "Add via: road, settlement, or lat, lon"
-                                                        }
+                                                        "Add via: place, road, or lat, lon"
                                                     else ->
                                                         "Add via ${viaPoints.size + 1}/$MAX_ROUTE_VIAS"
                                                 }
-                                            else ->
-                                                when (searchMode) {
-                                                    SearchMode.Place -> "Place, hut, or lat, lon"
-                                                    SearchMode.Address ->
-                                                        "Road, settlement, or lat, lon"
-                                                }
+                                            else -> "Place, road, or lat, lon"
                                         },
                                     )
                                 },
@@ -5525,6 +5685,18 @@ private fun NaviMapScreen() {
                                                 .fillMaxWidth()
                                                 .height(6.dp)
                                                 .testTag("route_plan_bar"),
+                                    )
+                                }
+                                if (longTripEnabled) {
+                                    Text(
+                                        text =
+                                            "Long-distance planning takes time and may appear " +
+                                                "to hang. Patience is a virtue.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .testTag("route_plan_patience_hint"),
                                     )
                                 }
                                 if (planIndexingHintVisible) {
@@ -6946,6 +7118,40 @@ private fun NaviMapScreen() {
                                 MapHudPrefs.savePoiLookaheadStrictHoursUnknown(context, on)
                                 DiagnosticLog.logToggle("poi_lookahead_strict_hours", on)
                             },
+                            campingPluginEnabled = campingPluginEnabled,
+                            onCampingPluginChange = { on ->
+                                campingPluginEnabled = on
+                                MapHudPrefs.saveCampingPluginEnabled(context, on)
+                                DiagnosticLog.logToggle("camping_plugin", on)
+                                uniffi.navi.campingPluginSetEnabled(on)
+                                if (!on) {
+                                    showCampingSheet = false
+                                    campingSuggestResult = null
+                                    status = "Camping plugin off"
+                                } else {
+                                    status = "Camping plugin on — suggestions when a route is active"
+                                }
+                            },
+                            campingResidencyCountry = campingResidencyCountry,
+                            onCampingResidencyChange = { iso ->
+                                campingResidencyCountry = iso
+                                MapHudPrefs.saveCampingResidencyCountry(context, iso)
+                                val trimmed = iso.trim().lowercase().ifBlank { null }
+                                uniffi.navi.campingPluginSetResidencyCountry(trimmed)
+                            },
+                            campingProfessionalDriver = campingProfessionalDriver,
+                            onCampingProfessionalDriverChange = { on ->
+                                campingProfessionalDriver = on
+                                MapHudPrefs.saveCampingProfessionalDriver(context, on)
+                                DiagnosticLog.logToggle("camping_professional_driver", on)
+                            },
+                            campingSessionDisableMessage = campingSessionDisableMessage,
+                            onCampingReEnableSession = campingReEnableSession,
+                        )
+                        Text(
+                            CAMPING_PLUGIN_DISCLAIMER,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("tools_camping_legal_note"),
                         )
                         Text("Region", style = MaterialTheme.typography.titleSmall)
                         Text("Map layers: $mapLayerCount", style = MaterialTheme.typography.bodySmall)
@@ -7224,6 +7430,10 @@ private fun NaviMapScreen() {
                                 PackRegionAvailability.downloadRegionButtonLabel(selectedServerReady),
                             )
                         }
+                        val packDirForDelete =
+                            runCatching {
+                                LongTripPackStorage.packDownloadDir(context)
+                            }.getOrNull()
                         val selectedLocalReady =
                             PackRegionAvailability.localInstalledReady(
                                 dataDir,
@@ -7232,6 +7442,18 @@ private fun NaviMapScreen() {
                                 PackRegionAvailability.localBakeReady(
                                     dataDir,
                                     selectedGeofabrikPath,
+                                ) ||
+                                (
+                                    packDirForDelete != null &&
+                                        PackRegionAvailability.localBakeReady(
+                                            packDirForDelete,
+                                            selectedGeofabrikPath,
+                                        )
+                                ) ||
+                                DownloadedRegionDelete.hasAnyInstall(
+                                    dataDir,
+                                    selectedGeofabrikPath,
+                                    listOfNotNull(packDirForDelete),
                                 ) ||
                                 PlaceIndexReady.isReady(dataDir, selectedGeofabrikPath)
                         Button(
@@ -7242,7 +7464,11 @@ private fun NaviMapScreen() {
                                     return@Button
                                 }
                                 val block =
-                                    DownloadedRegionDelete.blockReason(path, dataDir)
+                                    DownloadedRegionDelete.blockReason(
+                                        path,
+                                        dataDir,
+                                        listOfNotNull(packDirForDelete),
+                                    )
                                 if (block != null) {
                                     status = block
                                     return@Button
@@ -8067,6 +8293,35 @@ private fun NaviMapScreen() {
                         MapHudPrefs.savePoiLookaheadStrictHoursUnknown(context, on)
                         DiagnosticLog.logToggle("poi_lookahead_strict_hours", on)
                     },
+                    campingPluginEnabled = campingPluginEnabled,
+                    onCampingPluginChange = { on ->
+                        campingPluginEnabled = on
+                        MapHudPrefs.saveCampingPluginEnabled(context, on)
+                        DiagnosticLog.logToggle("camping_plugin", on)
+                        uniffi.navi.campingPluginSetEnabled(on)
+                        if (!on) {
+                            showCampingSheet = false
+                            campingSuggestResult = null
+                            status = "Camping plugin off"
+                        } else {
+                            status = "Camping plugin on — suggestions when a route is active"
+                        }
+                    },
+                    campingResidencyCountry = campingResidencyCountry,
+                    onCampingResidencyChange = { iso ->
+                        campingResidencyCountry = iso
+                        MapHudPrefs.saveCampingResidencyCountry(context, iso)
+                        val trimmed = iso.trim().lowercase().ifBlank { null }
+                        uniffi.navi.campingPluginSetResidencyCountry(trimmed)
+                    },
+                    campingProfessionalDriver = campingProfessionalDriver,
+                    onCampingProfessionalDriverChange = { on ->
+                        campingProfessionalDriver = on
+                        MapHudPrefs.saveCampingProfessionalDriver(context, on)
+                        DiagnosticLog.logToggle("camping_professional_driver", on)
+                    },
+                    campingSessionDisableMessage = campingSessionDisableMessage,
+                    onCampingReEnableSession = campingReEnableSession,
                     onSave = {
                         MapHudPrefs.saveAutoZoom(
                             context,
@@ -8520,6 +8775,7 @@ private fun CorridorMapView(
         applyTracksToStyle(style, stateRef.get().tracks, mapView.context)
         BasemapLabelPolicy.apply(style)
         BasemapPathPaint.apply(style)
+        BasemapTunnelPaint.apply(style)
         BasemapProtectedAreaStyle.apply(style)
         BasemapHousenumberStyle.apply(style)
         BasemapGlacierOutlineStyle.apply(style)
@@ -9773,6 +10029,30 @@ private fun applyRouteToStyle(
         if (style.getLayer("gps-dot") != null) style.removeLayer("gps-dot")
         if (style.getLayer("gps-accuracy") != null) style.removeLayer("gps-accuracy")
         if (style.getSource("gps-src") != null) style.removeSource("gps-src")
+    }
+
+    val campingFeatures =
+        state.campingPins.map { (lat, lon) ->
+            Feature.fromGeometry(Point.fromLngLat(lon, lat))
+        }
+    val campingCollection = FeatureCollection.fromFeatures(campingFeatures)
+    if (state.campingPins.isEmpty()) {
+        if (style.getLayer("camping-suggest-layer") != null) style.removeLayer("camping-suggest-layer")
+        if (style.getSource("camping-suggest") != null) style.removeSource("camping-suggest")
+    } else {
+        if (style.getSource("camping-suggest") == null) {
+            style.addSource(GeoJsonSource("camping-suggest", campingCollection))
+            style.addLayer(
+                CircleLayer("camping-suggest-layer", "camping-suggest").withProperties(
+                    PropertyFactory.circleRadius(7f),
+                    PropertyFactory.circleColor("#6A1B9A"),
+                    PropertyFactory.circleStrokeWidth(2f),
+                    PropertyFactory.circleStrokeColor("#FFFFFF"),
+                ),
+            )
+        } else {
+            (style.getSource("camping-suggest") as? GeoJsonSource)?.setGeoJson(campingCollection)
+        }
     }
     ensureRouteAboveHillshade(style)
 }

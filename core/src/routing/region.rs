@@ -7,7 +7,8 @@ use anyhow::bail;
 use reqwest::header::HeaderMap;
 
 use crate::download::{
-    phase_timing, stream_get_to_file_blocking, DownloadControl, StreamDownloadOpts, DEFAULT_RETRIES,
+    phase_timing, stream_get_to_file_blocking, DownloadControl, StreamDownloadOpts,
+    DEFAULT_RETRIES, GEOFABRIK_EXTRACT_RETRIES,
 };
 use crate::routing::elevation::{bbox_to_tiles, ElevationCache, ElevationDownloader};
 use crate::storage::{ElevationJobStore, JobStatus, Storage};
@@ -59,13 +60,18 @@ pub fn download_file(url: &str, dest: &Path) -> anyhow::Result<u64> {
         }
     }
 
+    let retries = if url.contains("download.geofabrik.de/") && url.contains(".osm.pbf") {
+        GEOFABRIK_EXTRACT_RETRIES
+    } else {
+        DEFAULT_RETRIES
+    };
     let result = stream_get_to_file_blocking(StreamDownloadOpts {
         url,
         dest,
         headers: HeaderMap::new(),
         resume_from: 0,
         expected_bytes: None,
-        retries: DEFAULT_RETRIES,
+        retries,
         progress_label: "Downloading region…",
         allow_not_found: false,
     })?
@@ -160,12 +166,23 @@ pub fn provision_region_with_elev_tar(
                 );
             }
         }
-        osm_bytes = download_file(pbf_url, &pbf_path)?;
-        if osm_bytes < 1_000_000 {
-            bail!(
-                "downloaded PBF too small ({osm_bytes} bytes) from {pbf_url} — refuse stub/empty"
-            );
+        // Drop pack-server 16 KiB stubs so we never resume zeros as a partial.
+        if pbf_path.is_file() {
+            let existing = fs::metadata(&pbf_path)?.len();
+            if existing < 1_000_000 {
+                let _ = fs::remove_file(&pbf_path);
+            }
         }
+        // Real Geofabrik extract is required for place-index / ferry overlay.
+        // Soft-PASS on Ready packs left 16 KiB stubs on disk and violated the
+        // product rule against stub PBFs on the long-trip install path.
+        let n = download_file(pbf_url, &pbf_path)
+            .map_err(|e| anyhow::anyhow!("Geofabrik PBF download failed for {pbf_url}: {e:#}"))?;
+        if n < 1_000_000 {
+            let _ = fs::remove_file(&pbf_path);
+            bail!("downloaded PBF too small ({n} bytes) from {pbf_url} — refuse stub/empty");
+        }
+        osm_bytes = n;
         phase_timing::end_detail(
             "geofabrik_pbf.download",
             pbf_t0,

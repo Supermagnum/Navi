@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 
-use crate::{CallOutcome, Capability, HostApi, PluginHost, PluginLimits, PoiWrite, Position};
+use crate::{
+    CallOutcome, Capability, HostApi, PluginError, PluginHost, PluginLimits, PoiWrite, Position,
+};
 
 struct MockApi {
     logs: Arc<Mutex<Vec<String>>>,
@@ -40,15 +42,7 @@ impl HostApi for MockApi {
 }
 
 fn full_policy() -> HashSet<Capability> {
-    [
-        Capability::Log,
-        Capability::PositionRead,
-        Capability::PoiQuery,
-        Capability::PoiWrite,
-        Capability::WeatherRead,
-    ]
-    .into_iter()
-    .collect()
+    Capability::all().iter().copied().collect()
 }
 
 /// Run the three isolation checks against pre-staged plugin fixture dirs.
@@ -106,6 +100,7 @@ pub fn check_busy_loop(busy_loop_dir: &Path) -> Result<()> {
         PluginLimits {
             fuel: 50_000,
             timeout_ms: 60,
+            memory_bytes: crate::DEFAULT_MEMORY_BYTES,
         },
     )
     .context("load busy-loop")?;
@@ -145,6 +140,56 @@ pub fn check_busy_loop(busy_loop_dir: &Path) -> Result<()> {
         .map_err(|_| anyhow::anyhow!("host heartbeat thread panicked"))?;
     if !*host_thread_ok.lock().unwrap() {
         bail!("routing/UI stand-in thread must remain responsive during plugin kill");
+    }
+    Ok(())
+}
+
+/// Trap guest must surface as `PluginError::Trap` — never unwind/crash the host.
+pub fn check_trap_guest(trap_dir: &Path) -> Result<()> {
+    let host = PluginHost::load_dir(trap_dir, &full_policy(), PluginLimits::default())
+        .context("load trap-guest")?;
+    let logs = Arc::new(Mutex::new(Vec::new()));
+    let api = MockApi {
+        logs,
+        position: None,
+        pois: Vec::new(),
+    };
+    match host.call(Box::new(api)) {
+        Err(PluginError::Trap(_)) => Ok(()),
+        Ok(outcome) => bail!("trap-guest expected PluginError::Trap, got Ok({outcome:?})"),
+        Err(e) => bail!("trap-guest expected PluginError::Trap, got {e}"),
+    }
+}
+
+/// Memory bomb must hit the StoreLimits ceiling as `CallOutcome::MemoryExceeded`.
+pub fn check_memory_bomb(memory_dir: &Path) -> Result<()> {
+    let host = PluginHost::load_dir(
+        memory_dir,
+        &full_policy(),
+        PluginLimits {
+            fuel: 50_000_000,
+            timeout_ms: 2_000,
+            // Tight ceiling so the grow loop trips quickly.
+            memory_bytes: 1024 * 1024,
+        },
+    )
+    .context("load memory-bomb")?;
+
+    let logs = Arc::new(Mutex::new(Vec::new()));
+    let api = MockApi {
+        logs,
+        position: None,
+        pois: Vec::new(),
+    };
+    let started = Instant::now();
+    let outcome = host.call(Box::new(api)).context("call memory-bomb")?;
+    let elapsed = started.elapsed();
+
+    if outcome != CallOutcome::MemoryExceeded {
+        bail!("memory bomb must be MemoryExceeded, got {outcome:?}");
+    }
+    if elapsed >= Duration::from_secs(3) {
+        bail!("memory kill must be prompt, took {elapsed:?}");
     }
     Ok(())
 }

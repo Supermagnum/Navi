@@ -110,6 +110,8 @@ class RegionDownloadResumeTest {
     fun discoverIncompleteForPath_starts_basemap_when_packs_ready() {
         val dir = tmp.newFolder("data")
         File(dir, "ostlandet-latest.navi-manifest.json").writeText("{}")
+        // Manifest alone is not enough — need a real graph pack (or large PBF).
+        File(dir, "ostlandet-latest.navi-graph-car.t0_0.rkyv").writeBytes(ByteArray(64))
         val job =
             RegionDownloadBackground.discoverIncompleteForPath(
                 dir,
@@ -118,6 +120,18 @@ class RegionDownloadResumeTest {
         assertNotNull(job)
         assertEquals(RegionDownloadBackground.Phase.BASEMAP, job!!.phase)
         assertEquals("europe/norway/ostlandet", job.geofabrikPath)
+    }
+
+    @Test
+    fun discoverIncompleteForPath_null_when_manifest_only_no_packs() {
+        val dir = tmp.newFolder("data")
+        File(dir, "ostlandet-latest.navi-manifest.json").writeText("{}")
+        assertNull(
+            RegionDownloadBackground.discoverIncompleteForPath(
+                dir,
+                "europe/norway/ostlandet",
+            ),
+        )
     }
 
     @Test
@@ -217,7 +231,7 @@ class RegionDownloadResumeTest {
         RegionDownloadBackground.writeJob(
             dir,
             RegionDownloadBackground.Job(
-                url = "https://download.geofabrik.de/europe/germany/hamburg-latest.osm.pbf",
+                url = "https://download.geofabrik.de/europe/germany/hamburg-latest.osm.pbf/",
                 filename = "hamburg-latest.osm.pbf",
                 geofabrikPath = "europe/germany/hamburg",
                 phase = RegionDownloadBackground.Phase.PLACE_INDEX,
