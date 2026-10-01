@@ -226,8 +226,8 @@ follow.
 | 110.8 | 72.8 | LA5MR (node 5576503609) | 61.01846, 8.97393 | 145.625 |
 | 155.1 | 91.8 | LA5MR (node 12635462528) | 61.25322, 8.20304 | 145.625 |
 
-Incomplete member node 5576656337 (no frequency / modulation) is omitted.
-Linking ways in the relation are not tune targets.
+Incomplete member node 5576656337 (no frequency / modulation) was  omitted because it was missing from OSM.
+https://www.openstreetmap.org/node/5576656337
 
 ### Expected switch log (fixture-derived)
 
