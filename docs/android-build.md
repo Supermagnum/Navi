@@ -246,13 +246,24 @@ Corridor fixtures: see `scripts/prepare-android-fixtures.sh`,
 
 ## ABI cheat sheet
 
+Shipped ABIs come from **one** place: `naviAbis` in `gradle.properties`
+(default `arm64-v8a,x86_64`). Gradle packaging (`ndk.abiFilters`) and
+`scripts/build-android-native.sh all` both read that list so they cannot drift.
+Override packaging with `-PnaviAbis=arm64-v8a`, or native builds with
+`NAVI_ABIS=arm64-v8a ./scripts/build-android-native.sh all release`.
+
 | Device | Rust target | `jniLibs` folder |
 |---|---|---|
 | Emulator (x86_64) | `x86_64-linux-android` | `app/src/main/jniLibs/x86_64/` |
 | Most phones / AAOS arm64 | `aarch64-linux-android` | `app/src/main/jniLibs/arm64-v8a/` |
 
-Ship both ABIs in one APK by building each target and leaving both `.so` files
-under `jniLibs/` before `assemble*`.
+```bash
+# Build every ABI in naviAbis (recommended for release / F-Droid)
+./scripts/build-android-native.sh all release
+
+# Or one ABI / Rust triple
+./scripts/build-android-native.sh x86_64-linux-android release
+```
 
 ---
 

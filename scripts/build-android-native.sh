@@ -62,26 +62,87 @@ if [[ ! -d "$NDK_BIN" ]]; then
 fi
 export PATH="$NDK_BIN:$PATH"
 
-TARGET="${1:-x86_64-linux-android}"
+# ABIs shared with app/build.gradle.kts via gradle.properties `naviAbis`.
+# Precedence for "all": NAVI_ABIS env > gradle.properties > default both 64-bit ABIs.
+read_navi_abis() {
+  if [[ -n "${NAVI_ABIS:-}" ]]; then
+    echo "$NAVI_ABIS"
+    return
+  fi
+  local props="$ROOT/gradle.properties"
+  if [[ -f "$props" ]]; then
+    local line
+    line="$(grep -E '^[[:space:]]*naviAbis=' "$props" | tail -n 1 || true)"
+    if [[ -n "$line" ]]; then
+      echo "${line#*=}"
+      return
+    fi
+  fi
+  echo "arm64-v8a,x86_64"
+}
+
+normalize_to_abi() {
+  case "$1" in
+    arm64-v8a|aarch64-linux-android)
+      echo "arm64-v8a"
+      ;;
+    x86_64|x86_64-linux-android)
+      echo "x86_64"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+abi_to_triple() {
+  case "$1" in
+    arm64-v8a)
+      echo "aarch64-linux-android"
+      ;;
+    x86_64)
+      echo "x86_64-linux-android"
+      ;;
+    *)
+      echo "error: unsupported ABI $1 (allowed: arm64-v8a, x86_64)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+resolve_abi_list() {
+  local raw="$1"
+  local -a out=()
+  local part abi
+  IFS=',' read -ra parts <<< "$raw"
+  for part in "${parts[@]}"; do
+    part="$(echo "$part" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [[ -z "$part" ]] && continue
+    if ! abi="$(normalize_to_abi "$part")"; then
+      echo "error: unsupported ABI/target '$part'" >&2
+      echo "  Use: all | arm64-v8a | x86_64 | aarch64-linux-android | x86_64-linux-android" >&2
+      echo "  Or set naviAbis / NAVI_ABIS to a comma-separated subset of arm64-v8a,x86_64" >&2
+      exit 1
+    fi
+    out+=("$abi")
+  done
+  if [[ "${#out[@]}" -eq 0 ]]; then
+    echo "error: no ABIs resolved from '$raw'" >&2
+    exit 1
+  fi
+  printf '%s\n' "${out[@]}"
+}
+
+TARGET_ARG="${1:-all}"
 PROFILE="${2:-release}"
 
-case "$TARGET" in
-  x86_64-linux-android)
-    ABI_DIR="x86_64"
-    ;;
-  aarch64-linux-android)
-    ABI_DIR="arm64-v8a"
-    ;;
-  *)
-    echo "error: unsupported target $TARGET" >&2
-    echo "  Use: x86_64-linux-android (emulator) or aarch64-linux-android (most phones/tablets)" >&2
-    exit 1
-    ;;
-esac
+if [[ "$TARGET_ARG" == "all" ]]; then
+  mapfile -t ABI_LIST < <(resolve_abi_list "$(read_navi_abis)")
+else
+  mapfile -t ABI_LIST < <(resolve_abi_list "$TARGET_ARG")
+fi
 
-echo "Building navi-ffi for $TARGET ($PROFILE) with NDK $ANDROID_NDK_HOME ($NDK_HOST_TAG)..."
-
-# Stage wasm guests from source into assets/ (F-Droid / no committed binaries).
+# Stage wasm guests from source into assets/ once (F-Droid / no committed binaries).
 "$ROOT/scripts/build-plugin-wasm.sh"
 
 CARGO_PROFILE_ARGS=()
@@ -97,37 +158,51 @@ case "$PROFILE" in
     CARGO_PROFILE_ARGS=(--profile "$PROFILE")
     ;;
 esac
-cargo build -p navi-ffi --target "$TARGET" "${CARGO_PROFILE_ARGS[@]}" --lib
 
-LIB_SRC="$ROOT/target/$TARGET/$PROFILE/libnavi.so"
-LIB_DST_DIR="$ROOT/app/src/main/jniLibs/$ABI_DIR"
-mkdir -p "$LIB_DST_DIR"
+build_one_abi() {
+  local ABI_DIR="$1"
+  local TARGET
+  TARGET="$(abi_to_triple "$ABI_DIR")"
 
-KOTLIN_OUT="$ROOT/app/src/main/java"
-mkdir -p "$KOTLIN_OUT"
-echo "Generating UniFFI Kotlin bindings..."
-# Bindgen must run before strip — cargo strip="symbols" removes UniFFI metadata.
-cargo run -p navi-ffi --bin uniffi-bindgen -- generate \
-  --library "$LIB_SRC" \
-  --language kotlin \
-  --out-dir "$KOTLIN_OUT"
+  echo "Building navi-ffi for $TARGET ($PROFILE) with NDK $ANDROID_NDK_HOME ($NDK_HOST_TAG)..."
 
-# Strip after bindgen (workspace release leaves symbols so UniFFI metadata survives).
-if [[ "$PROFILE" == "release" ]]; then
-  STRIP_BIN=""
-  if [[ -x "$NDK_BIN/llvm-strip" ]]; then
-    STRIP_BIN="$NDK_BIN/llvm-strip"
-  elif command -v llvm-strip >/dev/null 2>&1; then
-    STRIP_BIN="$(command -v llvm-strip)"
+  cargo build -p navi-ffi --target "$TARGET" "${CARGO_PROFILE_ARGS[@]}" --lib
+
+  local LIB_SRC="$ROOT/target/$TARGET/$PROFILE/libnavi.so"
+  local LIB_DST_DIR="$ROOT/app/src/main/jniLibs/$ABI_DIR"
+  mkdir -p "$LIB_DST_DIR"
+
+  local KOTLIN_OUT="$ROOT/app/src/main/java"
+  mkdir -p "$KOTLIN_OUT"
+  echo "Generating UniFFI Kotlin bindings..."
+  # Bindgen must run before strip — cargo strip="symbols" removes UniFFI metadata.
+  cargo run -p navi-ffi --bin uniffi-bindgen -- generate \
+    --library "$LIB_SRC" \
+    --language kotlin \
+    --out-dir "$KOTLIN_OUT"
+
+  # Strip after bindgen (workspace release leaves symbols so UniFFI metadata survives).
+  if [[ "$PROFILE" == "release" ]]; then
+    local STRIP_BIN=""
+    if [[ -x "$NDK_BIN/llvm-strip" ]]; then
+      STRIP_BIN="$NDK_BIN/llvm-strip"
+    elif command -v llvm-strip >/dev/null 2>&1; then
+      STRIP_BIN="$(command -v llvm-strip)"
+    fi
+    if [[ -n "$STRIP_BIN" ]]; then
+      "$STRIP_BIN" --strip-unneeded "$LIB_SRC"
+    else
+      echo "warning: no llvm-strip found; shipping unstripped libnavi.so" >&2
+    fi
   fi
-  if [[ -n "$STRIP_BIN" ]]; then
-    "$STRIP_BIN" --strip-unneeded "$LIB_SRC"
-  else
-    echo "warning: no llvm-strip found; shipping unstripped libnavi.so" >&2
-  fi
-fi
 
-cp -f "$LIB_SRC" "$LIB_DST_DIR/libnavi.so"
-echo "Copied $LIB_SRC -> $LIB_DST_DIR/libnavi.so"
+  cp -f "$LIB_SRC" "$LIB_DST_DIR/libnavi.so"
+  echo "Copied $LIB_SRC -> $LIB_DST_DIR/libnavi.so"
+}
+
+echo "Native ABIs: ${ABI_LIST[*]} (from naviAbis / NAVI_ABIS / CLI)"
+for abi in "${ABI_LIST[@]}"; do
+  build_one_abi "$abi"
+done
 
 echo "Done. Native library and Kotlin bindings are ready under app/."
