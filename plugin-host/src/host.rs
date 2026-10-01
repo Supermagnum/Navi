@@ -671,7 +671,7 @@ fn install_imports(
              -> wasmtime::Result<i32> {
                 let lat = f64::from_bits(lat_bits);
                 let lon = f64::from_bits(lon_bits);
-                let radius_km = f64::from_bits(radius_km_bits).min(150.0).max(0.0);
+                let radius_km = f64::from_bits(radius_km_bits).clamp(0.0, 150.0);
                 let network_id = if net_len == 0 {
                     None
                 } else {
