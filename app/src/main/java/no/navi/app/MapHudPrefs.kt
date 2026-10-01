@@ -44,6 +44,7 @@ object MapHudPrefs {
     private const val KEY_CAMPING_PLUGIN_ENABLED = "camping_plugin_enabled"
     private const val KEY_CAMPING_RESIDENCY_COUNTRY = "camping_residency_country"
     private const val KEY_CAMPING_PROFESSIONAL_DRIVER = "camping_professional_driver"
+    private const val KEY_CAT_PLUGIN_ENABLED = "cat_plugin_enabled"
 
     /**
      * Product default for the weather plugin enable toggle.
@@ -74,6 +75,9 @@ object MapHudPrefs {
 
     /** Right-to-roam camping plugin — defaults OFF (opt-in). */
     const val CAMPING_PLUGIN_DEFAULT_ENABLED = false
+
+    /** CATS / CAT radio plugin — defaults OFF (opt-in). */
+    const val CAT_PLUGIN_DEFAULT_ENABLED = false
 
     /** Residency ISO 3166-1 alpha-2; empty = unknown. */
     const val CAMPING_RESIDENCY_DEFAULT = ""
@@ -765,6 +769,22 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_CAMPING_PROFESSIONAL_DRIVER, on)
+            .apply()
+    }
+
+    fun loadCatPluginEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CAT_PLUGIN_ENABLED, CAT_PLUGIN_DEFAULT_ENABLED)
+
+    fun saveCatPluginEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CAT_PLUGIN_ENABLED, enabled)
             .apply()
     }
 }

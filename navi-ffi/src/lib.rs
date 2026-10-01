@@ -55,6 +55,8 @@ uniffi::setup_scaffolding!();
 
 mod camping_plugin;
 pub use camping_plugin::*;
+mod cat_plugin;
+pub use cat_plugin::*;
 
 fn ensure_native_logging() {
     #[cfg(target_os = "android")]
@@ -2721,6 +2723,16 @@ fn finalize_chunked_motor_soft_breaks(
         pauses.len(),
         break_arr.len()
     ));
+    for (i, poi) in break_arr.iter().take(24).enumerate() {
+        report.push_str(&format!(
+            "chunked_break_poi: idx={i}; name={}; kind={}; lat={}; lon={}; along_km={}\n",
+            poi.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+            poi.get("kind").and_then(|v| v.as_str()).unwrap_or(""),
+            poi.get("lat").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            poi.get("lon").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            poi.get("along_km").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        ));
+    }
     let break_pois_json = serde_json::to_string(&break_arr).unwrap_or_else(|_| "[]".into());
     (break_pois_json, days_json, report)
 }

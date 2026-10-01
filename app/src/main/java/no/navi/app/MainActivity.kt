@@ -196,6 +196,7 @@ class MainActivity : ComponentActivity() {
         applyNaviLaunchExtras(intent)
         runCatching { uniffi.navi.initNativeLogging() }
         CampingBootstrap.ensureInitialized(this)
+        CatBootstrap.ensureInitialized(this)
         // Natural Earth country grid: never build on the main looper (ANR / seed stall).
         CountryPolysWarm.startBackground()
         setContent {
@@ -804,6 +805,11 @@ private fun NaviMapScreen() {
     var campingProfessionalDriver by remember {
         mutableStateOf(MapHudPrefs.loadCampingProfessionalDriver(context))
     }
+    var catPluginEnabled by remember {
+        mutableStateOf(MapHudPrefs.loadCatPluginEnabled(context))
+    }
+    var showCatSheet by remember { mutableStateOf(false) }
+    var catUi by remember { mutableStateOf(CatUiState()) }
     var campingSuggestResult by remember { mutableStateOf<CampingSuggestResult?>(null) }
     var showCampingSheet by remember { mutableStateOf(false) }
     var campingSessionDisableMessage by remember { mutableStateOf<String?>(null) }
@@ -811,9 +817,11 @@ private fun NaviMapScreen() {
 
     LaunchedEffect(Unit) {
         CampingBootstrap.ensureInitialized(context)
+        CatBootstrap.ensureInitialized(context)
         val want = MapHudPrefs.loadCampingPluginEnabled(context)
         uniffi.navi.campingPluginSetEnabled(want)
         campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
+        uniffi.navi.catPluginSetEnabled(MapHudPrefs.loadCatPluginEnabled(context))
     }
 
     val campingReEnableSession: () -> Unit = {
@@ -821,6 +829,23 @@ private fun NaviMapScreen() {
         campingPluginEnabled = true
         MapHudPrefs.saveCampingPluginEnabled(context, true)
         campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
+    }
+
+    fun refreshCatUi() {
+        val status = uniffi.navi.catPluginStatusJson()
+        val lat = mapState.gpsLat.takeIf { it.isFinite() && it != 0.0 } ?: mapState.startLat
+        val lon = mapState.gpsLon.takeIf { it.isFinite() && it != 0.0 } ?: mapState.startLon
+        if (lat.isFinite() && lon.isFinite()) {
+            uniffi.navi.catPluginSetPosition(lat, lon)
+        }
+        val nearby =
+            uniffi.navi.catPluginRepeaterQueryJson(
+                lat,
+                lon,
+                150.0,
+                null,
+            )
+        catUi = catUi.copy(statusJson = status, nearbyJson = nearby)
     }
 
     LaunchedEffect(
@@ -1117,6 +1142,8 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastPlanDistanceKm = 0.0
         NaviMapTestHooks.lastRoutePolyline = ""
         NaviMapTestHooks.lastBreakPoiCount = 0
+        NaviMapTestHooks.lastBreakPoisJson = "[]"
+        NaviMapTestHooks.lastDaysJson = "[]"
         NaviMapTestHooks.lastArrivedAtEnd = false
         NaviMapTestHooks.lastCurrentStreet = null
         graphFerryEdges = null
@@ -1529,6 +1556,10 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastRoutePolyline = pending.routePolyline
         NaviMapTestHooks.lastAppliedRouteStartLabel = startLabel
         NaviMapTestHooks.lastBreakPoiCount = breaks.size
+        NaviMapTestHooks.lastBreakPoisJson =
+            runCatching { pending.breakPoisJson }.getOrDefault("[]")
+        NaviMapTestHooks.lastDaysJson =
+            runCatching { pending.daysJson }.getOrDefault("[]")
         NaviMapTestHooks.lastManeuversJson =
             runCatching { pending.maneuversJson }.getOrDefault("[]")
         NaviMapTestHooks.lastSimSamplesJson =
@@ -5127,6 +5158,57 @@ private fun NaviMapScreen() {
                         .padding(start = 10.dp, end = 10.dp, bottom = 96.dp),
             )
         }
+        if (!hideChrome && catPluginEnabled && showCatSheet) {
+            CatStatusSheet(
+                state = catUi,
+                onHostChange = { catUi = catUi.copy(host = it) },
+                onPortChange = { catUi = catUi.copy(port = it) },
+                onFollowNetworkChange = { catUi = catUi.copy(followNetworkId = it) },
+                onConnect = {
+                    val port = (catUi.port.toIntOrNull() ?: 4532).coerceIn(1, 65535).toUShort()
+                    val msg =
+                        uniffi.navi.catPluginConnectTcp(catUi.host, port, false)
+                    catUi = catUi.copy(lastMessage = msg)
+                    refreshCatUi()
+                    status = msg
+                },
+                onDisconnect = {
+                    val msg = uniffi.navi.catPluginDisconnect()
+                    catUi = catUi.copy(lastMessage = msg)
+                    refreshCatUi()
+                    status = msg
+                },
+                onRefresh = {
+                    uniffi.navi.catPluginTickGuest()
+                    refreshCatUi()
+                },
+                onFollowEnable = {
+                    val req =
+                        org.json.JSONObject()
+                            .put("network_id", catUi.followNetworkId)
+                            .put("enabled", true)
+                            .toString()
+                    val msg = uniffi.navi.catPluginNetworkFollowJson(req)
+                    catUi = catUi.copy(lastMessage = msg)
+                    refreshCatUi()
+                },
+                onFollowDisable = {
+                    val req =
+                        org.json.JSONObject()
+                            .put("enabled", false)
+                            .toString()
+                    val msg = uniffi.navi.catPluginNetworkFollowJson(req)
+                    catUi = catUi.copy(lastMessage = msg)
+                    refreshCatUi()
+                },
+                onClose = { showCatSheet = false },
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .zIndex(5f)
+                        .padding(start = 10.dp, end = 10.dp, bottom = 96.dp),
+            )
+        }
         if (showSpeedCameraPrompt) {
             AlertDialog(
                 onDismissRequest = {
@@ -7119,6 +7201,21 @@ private fun NaviMapScreen() {
                             },
                             campingSessionDisableMessage = campingSessionDisableMessage,
                             onCampingReEnableSession = campingReEnableSession,
+                            catPluginEnabled = catPluginEnabled,
+                            onCatPluginChange = { on ->
+                                catPluginEnabled = on
+                                MapHudPrefs.saveCatPluginEnabled(context, on)
+                                DiagnosticLog.logToggle("cat_plugin", on)
+                                uniffi.navi.catPluginSetEnabled(on)
+                                if (on) {
+                                    showCatSheet = true
+                                    refreshCatUi()
+                                    status = "CAT plugin on"
+                                } else {
+                                    showCatSheet = false
+                                    status = "CAT plugin off"
+                                }
+                            },
                         )
                         Text(
                             CAMPING_PLUGIN_DISCLAIMER,
@@ -8274,6 +8371,22 @@ private fun NaviMapScreen() {
                     },
                     campingSessionDisableMessage = campingSessionDisableMessage,
                     onCampingReEnableSession = campingReEnableSession,
+                    catPluginEnabled = catPluginEnabled,
+                    onCatPluginChange = { on ->
+                        catPluginEnabled = on
+                        MapHudPrefs.saveCatPluginEnabled(context, on)
+                        DiagnosticLog.logToggle("cat_plugin", on)
+                        uniffi.navi.catPluginSetEnabled(on)
+                        if (on) {
+                            showCatSheet = true
+                            refreshCatUi()
+                            status = "CAT plugin on"
+                        } else {
+                            showCatSheet = false
+                            status = "CAT plugin off"
+                        }
+                    },
+
                     onSave = {
                         MapHudPrefs.saveAutoZoom(
                             context,

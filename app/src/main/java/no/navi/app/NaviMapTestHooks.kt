@@ -372,6 +372,14 @@ object NaviMapTestHooks {
     @Volatile
     var lastBreakPoiCount: Int = 0
 
+    /** Last planned soft-break / overnight POIs JSON (chunk finalize or in-leg). */
+    @Volatile
+    var lastBreakPoisJson: String = "[]"
+
+    /** Last planned multi-day cards JSON. */
+    @Volatile
+    var lastDaysJson: String = "[]"
+
     @Volatile
     var lastSearchHitCount: Int = 0
 

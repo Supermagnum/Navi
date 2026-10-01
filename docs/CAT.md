@@ -692,4 +692,5 @@ for this on the `CAT` branch.
 | Android USB/BT/remote transports | Loopback bridge + remote endpoint; JVM tests green |
 | Dummy-rig + scenario test suite | Scenarios 1–12 covered in `navi-cat` / plugin / JVM tests |
 | HostApi `cat_*` / `repeater_query` | Implemented (caps + host handlers; defaults fail closed) |
+| Product CAT UI | Tools/Map toggle + `CatStatusSheet` (connect / follow / nearby); UniFFI `cat_plugin_*` |
 | Future ham-shacks | Doc only; not implemented |

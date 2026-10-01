@@ -1083,6 +1083,30 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_undo_camp_here_tonight(
     ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_configure(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_connect_tcp(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_disconnect(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_install_guest(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_is_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_network_follow_json(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_repeater_query_json(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_set_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_set_position(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_status_json(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_tick_guest(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_vfo_set_json(
+    ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_all(
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_expire(
@@ -1546,6 +1570,30 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_camping_plugin_suggest_along_route(`maxSuggestions`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_undo_camp_here_tonight(`lat`: Double,`lon`: Double,`countryIso`: RustBuffer.ByValue,`subdivisionIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_configure(`filesDir`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_cat_plugin_connect_tcp(`host`: RustBuffer.ByValue,`port`: Short,`allowBeta`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_disconnect(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_install_guest(`name`: RustBuffer.ByValue,`manifestJson`: RustBuffer.ByValue,`wasmBytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_is_enabled(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_cat_plugin_network_follow_json(`requestJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_repeater_query_json(`lat`: Double,`lon`: Double,`radiusKm`: Double,`networkId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_set_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_set_position(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_cat_plugin_status_json(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_tick_guest(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_vfo_set_json(`requestJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -2281,6 +2329,42 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_camping_plugin_undo_camp_here_tonight() and 0xFFFF) != 24878) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_configure() and 0xFFFF) != 24407) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_connect_tcp() and 0xFFFF) != 56713) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_disconnect() and 0xFFFF) != 16475) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_install_guest() and 0xFFFF) != 63782) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_is_enabled() and 0xFFFF) != 24464) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_network_follow_json() and 0xFFFF) != 10673) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_repeater_query_json() and 0xFFFF) != 65110) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_set_enabled() and 0xFFFF) != 56854) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_set_position() and 0xFFFF) != 22746) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_status_json() and 0xFFFF) != 60742) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_tick_guest() and 0xFFFF) != 25119) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_vfo_set_json() and 0xFFFF) != 6218) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_all() and 0xFFFF) != 684) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2486,6 +2570,33 @@ public object FfiConverterUByte: FfiConverter<UByte, Byte> {
 
     override fun write(value: UByte, buf: ByteBuffer) {
         buf.put(value.toByte())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterUShort: FfiConverter<UShort, Short> {
+    override fun lift(value: Short): UShort {
+        return value.toUShort()
+    }
+
+    fun lift(value: Int): UShort {
+        return value.toUShort()
+    }
+
+    override fun read(buf: ByteBuffer): UShort {
+        return lift(buf.getShort())
+    }
+
+    override fun lower(value: UShort): Short {
+        return value.toShort()
+    }
+
+    override fun allocationSize(value: UShort) = 2UL
+
+    override fun write(value: UShort, buf: ByteBuffer) {
+        buf.putShort(value.toShort())
     }
 }
 
@@ -8495,6 +8606,145 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterDouble.lower(`lon`),
         FfiConverterOptionalString.lower(`countryIso`),
         FfiConverterOptionalString.lower(`subdivisionIso`),_status)
+}
+    )
+    }
+    
+ fun `catPluginConfigure`(`filesDir`: kotlin.String, `dataDir`: kotlin.String, `timezone`: kotlin.String)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_configure(
+    
+        
+        FfiConverterString.lower(`filesDir`),
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`timezone`),_status)
+}
+    
+    
+ fun `catPluginConnectTcp`(`host`: kotlin.String, `port`: kotlin.UShort, `allowBeta`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_connect_tcp(
+    
+        
+        FfiConverterString.lower(`host`),
+        FfiConverterUShort.lower(`port`),
+        FfiConverterBoolean.lower(`allowBeta`),_status)
+}
+    )
+    }
+    
+ fun `catPluginDisconnect`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_disconnect(
+    
+        _status)
+}
+    )
+    }
+    
+ fun `catPluginInstallGuest`(`name`: kotlin.String, `manifestJson`: kotlin.String, `wasmBytes`: kotlin.ByteArray): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_install_guest(
+    
+        
+        FfiConverterString.lower(`name`),
+        FfiConverterString.lower(`manifestJson`),
+        FfiConverterByteArray.lower(`wasmBytes`),_status)
+}
+    )
+    }
+    
+ fun `catPluginIsEnabled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_is_enabled(
+    
+        _status)
+}
+    )
+    }
+    
+ fun `catPluginNetworkFollowJson`(`requestJson`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_network_follow_json(
+    
+        
+        FfiConverterString.lower(`requestJson`),_status)
+}
+    )
+    }
+    
+ fun `catPluginRepeaterQueryJson`(`lat`: kotlin.Double, `lon`: kotlin.Double, `radiusKm`: kotlin.Double, `networkId`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_repeater_query_json(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),
+        FfiConverterDouble.lower(`radiusKm`),
+        FfiConverterOptionalString.lower(`networkId`),_status)
+}
+    )
+    }
+    
+ fun `catPluginSetEnabled`(`enabled`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_set_enabled(
+    
+        
+        FfiConverterBoolean.lower(`enabled`),_status)
+}
+    )
+    }
+    
+ fun `catPluginSetPosition`(`lat`: kotlin.Double, `lon`: kotlin.Double)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_set_position(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),_status)
+}
+    
+    
+ fun `catPluginStatusJson`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_status_json(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Load + run the CATS wasm guest once (selection / follow decision helpers).
+         */ fun `catPluginTickGuest`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_tick_guest(
+    
+        _status)
+}
+    )
+    }
+    
+ fun `catPluginVfoSetJson`(`requestJson`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_vfo_set_json(
+    
+        
+        FfiConverterString.lower(`requestJson`),_status)
 }
     )
     }

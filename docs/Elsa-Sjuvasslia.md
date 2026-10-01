@@ -92,20 +92,24 @@ report `graph_ferry_edges=2` present in the local graph but unused.
 
 ### Attractions
 
-Nearby-attractions is **on**, but chunked long-trip legs log
-`poi_skipped=chunk_leg` / `poi_pack_hit=false`. No attraction hits were recorded
-in the plan report for this run (lookahead skipped on densify chunks).
+Nearby-attractions is **on**. Per densify chunk leg still logs
+`poi_skipped=chunk_leg` (RAM: POI packs must not sit beside the route graph).
+Attractions are **not** plan-time — they come from the live POI look-ahead cone
+after the corridor exists. Campaign sampling uses `poiLookaheadQueryJson` along
+the stitched polyline (same pattern as Bevensen).
 
 ### Rest places
 
-Soft break POIs: **none listed** (`break_pois=[]` per leg; `rest_places` empty).
-Chunk legs skip POI finalize the same way as attractions.
+Soft break / overnight POIs are produced by **post-chunk**
+`finalize_chunked_motor_soft_breaks` into `breakPoisJson` / `daysJson` (and
+`chunked_break_poi:` report lines). Per-leg `break_pois=[]` is expected.
+UI and campaigns must read the stitched result hooks, not per-leg report text.
 
 ### Wild camping
 
-**0** wild-camping overnight sites recorded in the plan report for this run
-(camping guest was seeded; multi-day soft budget implies ~4 days, but overnight
-site names/coords were not emitted in chunk leg reports).
+Wild-camping overnight sites come from the right-to-roam camping guest
+(`campingPluginSuggestAlongRoute`) after the polyline is applied — not from densify
+leg POI finalize. Campaign reports `wild_camping.sites` from that suggest path.
 
 ### Kilometres per day and total length
 
@@ -118,7 +122,8 @@ site names/coords were not emitted in chunk leg reports).
 
 ### Navigation instructions
 
-**57** maneuvers after thinning. Kinds:
+**57** maneuvers after thinning — **accepted** (within the 55–100 band; not
+retuned toward 150–170). Kinds:
 
 | Kind | Count |
 |---|---|
@@ -209,9 +214,11 @@ plan → final **~703 MiB**.
 ## Known gaps (unchanged)
 
 - Fuel-stop planning unimplemented (`plugins/safety-resupply.md`).
-- Chunk legs skip POI / attraction / overnight finalize (`poi_skipped=chunk_leg`).
-- Maneuver count after `thin_route_maneuvers` lands in the 55–100 band, not
-  150–170; EXPECTED not retuned.
+- Per densify leg still skips in-leg POI packs (`poi_skipped=chunk_leg`) by design
+  (4 GB LMK). Soft rest / overnight finalize and camping/attraction post-plan
+  paths are the product surfaces.
+- Maneuver count after `thin_route_maneuvers` lands in the 55–100 band (57 on
+  this run) — accepted; EXPECTED stays 55–100.
 
 ---
 
