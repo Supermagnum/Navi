@@ -3,8 +3,7 @@
 use navi_right_to_roam_camping::{
     all_declared_packs, assert_tier_b_and_land_manager_flags_default_off, pack_for_location,
     pack_for_location_with_tenure, suggest_overnight_fixed_probes, territory_pack, CampingHost,
-    DesignatedLayer, LandTenureStatus, LocalDate, OvernightSafety, ProtectedAreaStatus, Tier,
-    TravelMode,
+    DesignatedLayer, LandTenureStatus, LocalDate, OvernightSafety, Tier, TravelMode,
 };
 use std::collections::HashMap;
 
@@ -59,7 +58,12 @@ impl CampingHost for H {
             .copied()
             .unwrap_or(false)
     }
-    fn tent_sites_near(&self, _: f64, _: f64, _: f64) -> Vec<navi_right_to_roam_camping::TentSiteHit> {
+    fn tent_sites_near(
+        &self,
+        _: f64,
+        _: f64,
+        _: f64,
+    ) -> Vec<navi_right_to_roam_camping::TentSiteHit> {
         self.tents
             .iter()
             .map(|(la, lo)| navi_right_to_roam_camping::TentSiteHit {
@@ -121,15 +125,18 @@ fn tier_b_flag_off_degrades_even_when_layers_unknown() {
         "Brandenburg flag OFF must degrade to C/D path; log={:?}",
         out.probe_log
     );
-    assert!(!out.list.cards.iter().any(|c| c.accepted && c.tier == Tier::B));
+    assert!(!out
+        .list
+        .cards
+        .iter()
+        .any(|c| c.accepted && c.tier == Tier::B));
 }
 
 #[test]
 fn tier_b_flag_on_but_layers_unknown_still_degrades() {
     let mut h = base("de");
     h.subdivision = Some("DE-BB".into());
-    h.flag_on
-        .insert("tier_b_de_brandenburg".into(), true);
+    h.flag_on.insert("tier_b_de_brandenburg".into(), true);
     // Flag ON but forest/protected/residential unknown → conditions unmet → C fallback.
     let out = suggest_overnight_fixed_probes(&mut h, &[(52.5, 13.4)], Some(1));
     assert!(
@@ -139,7 +146,11 @@ fn tier_b_flag_on_but_layers_unknown_still_degrades() {
         "flag ON with unknown layers must still degrade; log={:?}",
         out.probe_log
     );
-    assert!(!out.list.cards.iter().any(|c| c.accepted && c.tier == Tier::B));
+    assert!(!out
+        .list
+        .cards
+        .iter()
+        .any(|c| c.accepted && c.tier == Tier::B));
 }
 
 #[test]
@@ -166,7 +177,10 @@ fn usa_canada_russia_tenure_unknown_is_tier_d() {
         let mut h = base(iso);
         let out = suggest_overnight_fixed_probes(&mut h, &[(40.0, -105.0)], Some(1));
         assert!(
-            !out.list.cards.iter().any(|c| c.accepted && c.tier == Tier::B),
+            !out.list
+                .cards
+                .iter()
+                .any(|c| c.accepted && c.tier == Tier::B),
             "{iso} must not accept Tier B with unknown tenure/flag; log={:?}",
             out.probe_log
         );
@@ -190,5 +204,7 @@ fn declared_pack_inventory_is_non_empty() {
     let packs = all_declared_packs();
     assert!(packs.len() > 30, "expected Phase 3b/3c pack inventory");
     assert!(packs.iter().any(|p| p.tier == Tier::C));
-    assert!(packs.iter().any(|p| p.tier == Tier::B && p.maintainer_flag_default_off));
+    assert!(packs
+        .iter()
+        .any(|p| p.tier == Tier::B && p.maintainer_flag_default_off));
 }

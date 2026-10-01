@@ -54,9 +54,7 @@ hard-filter reject reasons."
     let storage = Storage::open_in_memory().unwrap();
     {
         let store = driver_break_core::storage::ConfigStore::new(&storage);
-        store
-            .save_safety_config(&SafetyConfig::default())
-            .unwrap();
+        store.save_safety_config(&SafetyConfig::default()).unwrap();
     }
     let mut emb =
         NativeCampingEmbedder::with_real_backends(&storage, prox.as_ref(), Profile::Hiking);

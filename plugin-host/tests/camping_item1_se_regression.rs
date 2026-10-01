@@ -111,7 +111,10 @@ fn cross_border_corridor_emits_se_tier_a() {
         );
         assert_eq!(ar.country_iso.as_deref(), Some("se"));
         assert_eq!(c.tier, Tier::A);
-        assert!(c.accepted, "Phase 3a: SE must accept under Swedish Tier A pack");
+        assert!(
+            c.accepted,
+            "Phase 3a: SE must accept under Swedish Tier A pack"
+        );
         assert!(c
             .notes
             .iter()

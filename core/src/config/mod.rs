@@ -35,9 +35,7 @@ pub use truck_history::{
     rolling_date_window, try_repay_weekly_rest_compensation, weekly_rest_compensation_deadline,
     TruckDrivingDay, TruckDrivingHistory, TruckRestKind, WeeklyRestCompensationDebt,
 };
-pub use vehicle_overnight::{
-    VehicleOvernightClass, VehicleOvernightConfig, VehicleProfileView,
-};
+pub use vehicle_overnight::{VehicleOvernightClass, VehicleOvernightConfig, VehicleProfileView};
 
 use serde::{Deserialize, Serialize};
 

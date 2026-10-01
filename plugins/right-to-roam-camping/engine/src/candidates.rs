@@ -64,7 +64,9 @@ fn near_corridor(lat: f64, lon: f64, waypoints: &[[f64; 2]], radius_m: f64) -> b
     if waypoints.is_empty() {
         return true;
     }
-    waypoints.iter().any(|w| dist_m((lat, lon), (w[0], w[1])) <= radius_m)
+    waypoints
+        .iter()
+        .any(|w| dist_m((lat, lon), (w[0], w[1])) <= radius_m)
 }
 
 fn corridor_bbox(waypoints: &[[f64; 2]], radius_m: f64) -> (f64, f64, f64, f64) {
@@ -101,8 +103,11 @@ fn empty_eis() -> &'static [usize] {
     &[]
 }
 
-fn incident_eis<'a>(index: &'a HashMap<NodeId, Vec<usize>>, node: NodeId) -> &'a [usize] {
-    index.get(&node).map(|v| v.as_slice()).unwrap_or(empty_eis())
+fn incident_eis(index: &HashMap<NodeId, Vec<usize>>, node: NodeId) -> &[usize] {
+    index
+        .get(&node)
+        .map(|v| v.as_slice())
+        .unwrap_or(empty_eis())
 }
 
 /// Enumerate road∩track junctions near the corridor. Service seeds are included
@@ -176,9 +181,11 @@ pub fn find_road_track_junctions(
     }
 
     out.sort_by(|a, b| {
-        a.rank
-            .cmp(&b.rank)
-            .then(b.track_continues_m.partial_cmp(&a.track_continues_m).unwrap())
+        a.rank.cmp(&b.rank).then(
+            b.track_continues_m
+                .partial_cmp(&a.track_continues_m)
+                .unwrap(),
+        )
     });
     out
 }
@@ -197,7 +204,11 @@ fn track_continue_length_m(
         let mut next_e: Option<usize> = None;
         for &ei in incident_eis(incident, cur) {
             let ed = &graph.edges[ei];
-            let other = if ed.source == cur { ed.target } else { ed.source };
+            let other = if ed.source == cur {
+                ed.target
+            } else {
+                ed.source
+            };
             if other == prev {
                 continue;
             }
@@ -209,7 +220,11 @@ fn track_continue_length_m(
         let Some(ei) = next_e else { break };
         let ed = &graph.edges[ei];
         total += ed.length_m;
-        let other = if ed.source == cur { ed.target } else { ed.source };
+        let other = if ed.source == cur {
+            ed.target
+        } else {
+            ed.source
+        };
         prev = cur;
         cur = other;
         if total >= SERVICE_TRACK_MIN_CONTINUE_M * 3.0 {
@@ -270,7 +285,11 @@ fn probe_along_track_indexed(
 
     loop {
         let ed = &graph.edges[edge_idx];
-        let next = if ed.source == cur { ed.target } else { ed.source };
+        let next = if ed.source == cur {
+            ed.target
+        } else {
+            ed.source
+        };
         let next_node = graph.nodes.get(&next)?;
         let seg = ed.length_m;
         if travelled + seg >= goal {
@@ -320,7 +339,9 @@ mod tests {
 
     #[test]
     fn service_stub_constant_documented() {
-        assert!(SERVICE_TRACK_MIN_CONTINUE_M > 0.0);
-        assert!(DEFAULT_TRACK_WALK_M > 0.0);
+        const {
+            assert!(SERVICE_TRACK_MIN_CONTINUE_M > 0.0);
+            assert!(DEFAULT_TRACK_WALK_M > 0.0);
+        }
     }
 }

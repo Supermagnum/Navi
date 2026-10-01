@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 
-use crate::{CallOutcome, Capability, HostApi, PluginError, PluginHost, PluginLimits, PoiWrite, Position};
+use crate::{
+    CallOutcome, Capability, HostApi, PluginError, PluginHost, PluginLimits, PoiWrite, Position,
+};
 
 struct MockApi {
     logs: Arc<Mutex<Vec<String>>>,
@@ -168,7 +170,7 @@ pub fn check_memory_bomb(memory_dir: &Path) -> Result<()> {
             fuel: 50_000_000,
             timeout_ms: 2_000,
             // Tight ceiling so the grow loop trips quickly.
-            memory_bytes: 1 * 1024 * 1024,
+            memory_bytes: 1024 * 1024,
         },
     )
     .context("load memory-bomb")?;

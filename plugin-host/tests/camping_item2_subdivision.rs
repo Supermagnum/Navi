@@ -5,18 +5,21 @@ mod common;
 use common::native_embedder::{
     data_dir, packs_present, plan_corridor, NativeCampingEmbedder, LILLEHAMMER, SJUSJOEN,
 };
+use driver_break_core::config::Profile;
+use driver_break_core::storage::Storage;
 use driver_break_core::{
     admin_region_at, subdivision_iso_at, subdivision_name_at, subdivision_ring_count,
 };
-use driver_break_core::config::Profile;
-use driver_break_core::storage::Storage;
 use navi_right_to_roam_camping::{
     cloudberry_decision, suggest_overnight, CloudberryDecision, SuggestInput,
 };
 
 #[test]
 fn current_iso_tromso_alta_bodo_and_trondelag_omits_cloudberry() {
-    assert!(subdivision_ring_count() > 0, "baked Norway fylke asset must load");
+    assert!(
+        subdivision_ring_count() > 0,
+        "baked Norway fylke asset must load"
+    );
 
     // Points beside the named cities (NE Admin-1 is coarse; see admin_subdivision).
     let cases = [
@@ -73,7 +76,13 @@ fn innlandet_spots_resolve_subdivision_and_omit_cloudberry() {
             },
         );
 
-        let accepted: Vec<_> = out.list.cards.iter().filter(|c| c.accepted).take(5).collect();
+        let accepted: Vec<_> = out
+            .list
+            .cards
+            .iter()
+            .filter(|c| c.accepted)
+            .take(5)
+            .collect();
         assert!(!accepted.is_empty());
         for (i, c) in accepted.iter().enumerate() {
             let ar = admin_region_at(c.lat, c.lon);
@@ -99,7 +108,10 @@ municipality=not_available (no kommune layer)",
                 decision,
                 CloudberryDecision::OmitOutsideNorthern { .. }
             ));
-            assert!(!c.notes.iter().any(|n| n.to_lowercase().contains("cloudberry")));
+            assert!(!c
+                .notes
+                .iter()
+                .any(|n| n.to_lowercase().contains("cloudberry")));
         }
     }
 }

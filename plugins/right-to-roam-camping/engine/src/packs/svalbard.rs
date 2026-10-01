@@ -1,5 +1,6 @@
 use super::{
-    CitedSource, DistanceRule, DurationRule, FireRule, PackId, RulePack, SuggestionMode, SourceQuality, Tier,
+    CitedSource, DistanceRule, DurationRule, FireRule, PackId, RulePack, SourceQuality,
+    SuggestionMode, Tier,
 };
 
 pub fn svalbard_decline_pack() -> RulePack {
@@ -7,7 +8,8 @@ pub fn svalbard_decline_pack() -> RulePack {
         id: PackId::SvalbardDecline,
         tier: Tier::D,
         country_iso: "sj".into(),
-        legal_basis: "Svalbard Environmental Protection Act (svalbardmiljøloven) — not friluftsloven",
+        legal_basis:
+            "Svalbard Environmental Protection Act (svalbardmiljøloven) — not friluftsloven",
         sources: SJ_SOURCES,
         distance: DistanceRule::NotApplicable,
         duration: DurationRule::NotVerified,

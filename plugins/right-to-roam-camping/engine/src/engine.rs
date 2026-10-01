@@ -5,8 +5,8 @@ use driver_break_core::routing::graph::RouteGraph;
 
 #[cfg(feature = "native")]
 use crate::candidates::{
-    find_road_track_junctions, probe_along_track, ProbePoint, RoadTrackSeed, CORRIDOR_SEED_RADIUS_M,
-    DEFAULT_TRACK_WALK_M,
+    find_road_track_junctions, probe_along_track, ProbePoint, RoadTrackSeed,
+    CORRIDOR_SEED_RADIUS_M, DEFAULT_TRACK_WALK_M,
 };
 use crate::card::{CampingCard, DeclineKind, SuggestionList};
 use crate::fire::{fire_guidance_norway, LEAVE_NO_TRACE_NOTE, PROTECTED_SPECIES_NOTE};
@@ -169,9 +169,11 @@ declining wild-camp suggestions (campsites only)."
                 if motorised {
                     let walk = card.walk_m.unwrap_or(0.0);
                     let country = card.country_iso.clone();
-                    on_foot.cards.push(crate::vehicle::annotate_on_foot_from_here(
-                        card, walk, &country,
-                    ));
+                    on_foot
+                        .cards
+                        .push(crate::vehicle::annotate_on_foot_from_here(
+                            card, walk, &country,
+                        ));
                     on_foot.probes_accepted += 1;
                 } else {
                     list.probes_accepted += 1;
@@ -224,10 +226,7 @@ fn pack_requires_non_motorised(host: &dyn CampingHost, lat: f64, lon: f64) -> bo
 
 /// Run the Phase 2 camping engine against a loaded graph + host backends.
 #[cfg(feature = "native")]
-pub fn suggest_overnight(
-    host: &mut dyn CampingHost,
-    input: &SuggestInput<'_>,
-) -> SuggestOutcome {
+pub fn suggest_overnight(host: &mut dyn CampingHost, input: &SuggestInput<'_>) -> SuggestOutcome {
     let walk = input.track_walk_m.unwrap_or(DEFAULT_TRACK_WALK_M);
     let radius = input.corridor_radius_m.unwrap_or(CORRIDOR_SEED_RADIUS_M);
     let seeds = find_road_track_junctions(input.graph, input.corridor_waypoints, radius);
@@ -241,11 +240,7 @@ pub fn suggest_overnight(
 
     if motorised {
         let probes: Vec<(f64, f64)> = seeds.iter().map(|s| (s.lat, s.lon)).collect();
-        let vout = crate::vehicle::suggest_vehicle_overnight(
-            host,
-            &probes,
-            input.max_suggestions,
-        );
+        let vout = crate::vehicle::suggest_vehicle_overnight(host, &probes, input.max_suggestions);
         vehicle = vout.vehicle;
         probe_log.extend(vout.probe_log);
     }
@@ -348,9 +343,11 @@ declining wild-camp suggestions (campsites only)."
                 if motorised {
                     let w = card.walk_m.unwrap_or(probe.walk_m);
                     let country = card.country_iso.clone();
-                    on_foot.cards.push(crate::vehicle::annotate_on_foot_from_here(
-                        card, w, &country,
-                    ));
+                    on_foot
+                        .cards
+                        .push(crate::vehicle::annotate_on_foot_from_here(
+                            card, w, &country,
+                        ));
                     on_foot.probes_accepted += 1;
                     if let Some(max) = input.max_suggestions {
                         if on_foot.probes_accepted >= max {
@@ -481,7 +478,11 @@ fn designated_tent_sites_only(
         };
     }
     let site = &sites[0];
-    let mut notes: Vec<String> = pack.guidance_notes.iter().map(|s| (*s).to_string()).collect();
+    let mut notes: Vec<String> = pack
+        .guidance_notes
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
     notes.extend(pack.secondary_card_notes.iter().map(|s| (*s).to_string()));
     notes.push("Designated TentSite from host POI data (not a wild-camp suggestion).".into());
     ProbeDecision::Accept(CampingCard {
@@ -521,7 +522,10 @@ fn degrade_to_fallback(
             c_pack.tier = Tier::C;
             c_pack.suggestion_mode = SuggestionMode::DesignatedTentSitesOnly;
             match designated_tent_sites_only(host, probe, &c_pack, not_checked, source_urls) {
-                ProbeDecision::Reject { reason: inner, card } => ProbeDecision::Reject {
+                ProbeDecision::Reject {
+                    reason: inner,
+                    card,
+                } => ProbeDecision::Reject {
                     reason: format!("{reason}_fallback_c_{inner}"),
                     card,
                 },
@@ -537,9 +541,7 @@ fn degrade_to_fallback(
                 pack.legal_basis,
                 source_urls,
                 not_checked,
-                &[
-                    "Pack degraded: maintainer flag OFF or host conditions not checkable.",
-                ],
+                &["Pack degraded: maintainer flag OFF or host conditions not checkable."],
             )),
         },
     }
@@ -554,14 +556,17 @@ fn evaluate_probe(
     let country = host.admin_country_iso(probe.lat, probe.lon);
     let subdivision = host.admin_subdivision_iso(probe.lat, probe.lon);
     let tenure = host.land_tenure_manager(probe.lat, probe.lon);
-    let mut pack =
-        pack_for_location_with_tenure(country.as_deref(), subdivision.as_deref(), tenure.as_deref());
+    let pack = pack_for_location_with_tenure(
+        country.as_deref(),
+        subdivision.as_deref(),
+        tenure.as_deref(),
+    );
     let not_checked = NotCheckedLayers::from_host_status(
         host.protected_area_layer_ready(),
         host.landcover_layer_ready(),
     );
     let loc_id = location_id_from_lat_lon(probe.lat, probe.lon);
-    let mut source_urls: Vec<&str> = pack.source_urls();
+    let source_urls: Vec<&str> = pack.source_urls();
 
     // Maintainer flag OFF → degrade to declared fallback (usually C or D).
     if let Some(flag) = pack.flag_id {
@@ -673,10 +678,7 @@ fn evaluate_probe(
         | PackId::Japan
         | PackId::WorldTierD => {
             return ProbeDecision::Reject {
-                reason: format!(
-                    "tier_d_country_{}",
-                    country.as_deref().unwrap_or("unknown")
-                ),
+                reason: format!("tier_d_country_{}", country.as_deref().unwrap_or("unknown")),
                 card: Some(CampingCard::decline_campsites_only(
                     probe.lat,
                     probe.lon,
@@ -836,8 +838,9 @@ declining (no silent rule bypass)."
             let fire = fire_guidance_norway(clock);
             (Some(fire.text), Some(fire.bare_rock_note.to_string()))
         }
-        FireRule::AlwaysNeedsLandownerPermission { text }
-        | FireRule::GuidanceNote { text } => (Some(text.to_string()), None),
+        FireRule::AlwaysNeedsLandownerPermission { text } | FireRule::GuidanceNote { text } => {
+            (Some(text.to_string()), None)
+        }
         FireRule::NoneInLaw | FireRule::NotVerified => (None, None),
     };
 
@@ -853,9 +856,7 @@ declining (no silent rule bypass)."
         if pack.id == PackId::Norway {
             notes.push("Building distance: 150 m (friluftsloven), from Navi SafetyConfig".into());
             if safety.min_building_distance_m < 150.0 {
-                notes.push(
-                    "configured distance is below the 150 m in friluftsloven § 9".into(),
-                );
+                notes.push("configured distance is below the 150 m in friluftsloven § 9".into());
             }
         } else {
             notes.push(format!(
@@ -869,7 +870,9 @@ declining (no silent rule bypass)."
             notes.push(note.into());
         }
         DurationRule::HardMaxConsecutiveNights { nights, .. } => {
-            notes.push(format!("Hard limit: max {nights} consecutive night(s) at the same spot."));
+            notes.push(format!(
+                "Hard limit: max {nights} consecutive night(s) at the same spot."
+            ));
         }
         DurationRule::NotVerified => {}
     }
@@ -1095,8 +1098,10 @@ mod tests {
 
     #[test]
     fn building_distance_follows_safety_config() {
-        let mut safety = OvernightSafety::default();
-        safety.min_building_distance_m = 150.0;
+        let mut safety = OvernightSafety {
+            min_building_distance_m: 150.0,
+            ..Default::default()
+        };
         // ~111 m north of building (0.001° lat).
         let buildings = vec![(61.1000, 10.5000)];
         let mut h = MemHost {
@@ -1169,17 +1174,15 @@ mod tests {
             walk_m: 120.0,
         };
         let date = h.date;
-        let d = evaluate_probe(
-            &mut h,
-            &OvernightSafety::default(),
-            &probe,
-            date,
-        );
+        let d = evaluate_probe(&mut h, &OvernightSafety::default(), &probe, date);
         match d {
             ProbeDecision::Accept(c) => {
                 assert_eq!(c.tier, Tier::A);
                 assert_eq!(c.country_iso, "se");
-                assert!(c.notes.iter().any(|n| n.contains("Navi safety default, not Swedish law")));
+                assert!(c
+                    .notes
+                    .iter()
+                    .any(|n| n.contains("Navi safety default, not Swedish law")));
             }
             _ => panic!("expected Sweden Tier A accept"),
         }
@@ -1187,14 +1190,8 @@ mod tests {
 
     #[test]
     fn cloudberry_omitted_when_subdivision_unknown() {
-        assert_eq!(
-            cloudberry_decision(None),
-            CloudberryDecision::OmitUnknown
-        );
-        assert_eq!(
-            cloudberry_decision(Some("NO-18")),
-            CloudberryDecision::Show
-        );
+        assert_eq!(cloudberry_decision(None), CloudberryDecision::OmitUnknown);
+        assert_eq!(cloudberry_decision(Some("NO-18")), CloudberryDecision::Show);
         assert!(matches!(
             cloudberry_decision(Some("NO-34")),
             CloudberryDecision::OmitOutsideNorthern { .. }

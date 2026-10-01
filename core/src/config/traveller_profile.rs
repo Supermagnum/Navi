@@ -50,7 +50,11 @@ mod tests {
     #[test]
     fn unknown_residency_is_stricter_ontario_path() {
         assert!(TravellerProfile::unknown().treat_as_non_resident_of_canada());
-        assert!(TravellerProfile::with_residency_country(Some("us")).treat_as_non_resident_of_canada());
-        assert!(!TravellerProfile::with_residency_country(Some("CA")).treat_as_non_resident_of_canada());
+        assert!(
+            TravellerProfile::with_residency_country(Some("us")).treat_as_non_resident_of_canada()
+        );
+        assert!(
+            !TravellerProfile::with_residency_country(Some("CA")).treat_as_non_resident_of_canada()
+        );
     }
 }

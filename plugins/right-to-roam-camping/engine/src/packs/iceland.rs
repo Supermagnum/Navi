@@ -1,6 +1,6 @@
 use super::{
-    CitedSource, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack, SuggestionMode,
-    SourceQuality, Tier,
+    CitedSource, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack,
+    SourceQuality, SuggestionMode, Tier,
 };
 
 /// Iceland Tier A with Phase 3a exception: while protected_area_query is unknown,

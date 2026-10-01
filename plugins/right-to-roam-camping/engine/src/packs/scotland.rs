@@ -1,6 +1,6 @@
 use super::{
-    CitedSource, CmzPolicy, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId,
-    RulePack, SourceQuality, SuggestionMode, Tier,
+    CitedSource, CmzPolicy, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack,
+    SourceQuality, SuggestionMode, Tier,
 };
 
 pub fn scotland_pack() -> RulePack {

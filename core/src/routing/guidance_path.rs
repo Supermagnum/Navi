@@ -1964,7 +1964,6 @@ pub fn samples_to_json(samples: &[SimSample]) -> String {
     serde_json::to_string(samples).unwrap_or_else(|_| "[]".into())
 }
 
-
 /// Concatenate per-chunk-leg maneuvers into one continuous list.
 ///
 /// Drops unmarked mid-leg `destination` markers (chunk joints are not via/dest
@@ -2806,7 +2805,11 @@ mod tests {
             },
         ];
         let stitched = stitch_chunk_leg_maneuvers(&[leg1, leg2]);
-        assert_eq!(stitched.len(), 3, "mid destination dropped; final kept; got {stitched:?}");
+        assert_eq!(
+            stitched.len(),
+            3,
+            "mid destination dropped; final kept; got {stitched:?}"
+        );
         assert_eq!(stitched[0].kind, "left");
         assert_eq!(stitched[1].kind, "right");
         assert!((stitched[1].cum_m - 1050.0).abs() < 1e-9);

@@ -1,6 +1,7 @@
 //! Native camping embedder used by Phase 2 behaviour / real-pack tests.
 //! Supplies real SafetyConfig (ConfigStore), OS local clock, in-memory KV,
 //! core `admin_region_at`, TravelProfile→mode, and OvernightProximityIndex.
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -18,7 +19,7 @@ use driver_break_core::storage::{ConfigStore, Storage};
 use driver_break_core::subdivision_ring_count;
 use navi_plugin_host::{
     AdminRegionView, ClockView, HostApi, LayerStatus, PluginKvStatus, PoiWrite, Position,
-    RouteDestinationView, RouteView, RoadTrackJunction, SafetyConfigView, TravelModeView,
+    RoadTrackJunction, RouteDestinationView, RouteView, SafetyConfigView, TravelModeView,
     TravellerProfileView, VehicleProfileView,
 };
 use navi_right_to_roam_camping::{
@@ -38,9 +39,7 @@ pub fn data_dir() -> PathBuf {
 
 pub fn packs_present(dir: &Path) -> bool {
     dir.join("ostlandet-latest.osm.pbf").is_file()
-        && dir
-            .join("ostlandet-latest.navi-poi-barrier.rkyv")
-            .is_file()
+        && dir.join("ostlandet-latest.navi-poi-barrier.rkyv").is_file()
 }
 
 /// Warm hook (baked fylke asset loads on first subdivision query).
@@ -130,12 +129,8 @@ impl NativeCampingEmbedder {
             kv_available: true,
             travel_profile,
             is_professional_driver_under_rest_rules: false,
-            buildings: prox
-                .map(|p| p.buildings.clone())
-                .unwrap_or_default(),
-            glacier_rings: prox
-                .map(|p| p.glacier_rings.clone())
-                .unwrap_or_default(),
+            buildings: prox.map(|p| p.buildings.clone()).unwrap_or_default(),
+            glacier_rings: prox.map(|p| p.glacier_rings.clone()).unwrap_or_default(),
             route_waypoints: Vec::new(),
             destination: None,
             protected_ready: false,
@@ -215,8 +210,7 @@ impl CampingHost for NativeCampingEmbedder {
         };
         VehicleProfile {
             class,
-            is_professional_driver_under_rest_rules: self
-                .is_professional_driver_under_rest_rules,
+            is_professional_driver_under_rest_rules: self.is_professional_driver_under_rest_rules,
         }
     }
 
@@ -404,14 +398,9 @@ pub fn load_proximity(data: &Path, bbox: [f64; 4]) -> Option<OvernightProximityI
         .overnight_buildings()
         .iter()
         .copied()
-        .filter(|&(lat, lon)| {
-            lat >= min_lat && lat <= max_lat && lon >= min_lon && lon <= max_lon
-        })
+        .filter(|&(lat, lon)| lat >= min_lat && lat <= max_lat && lon >= min_lon && lon <= max_lon)
         .collect();
-    let mut prox = OvernightProximityIndex::from_poi_buildings_and_barriers(
-        buildings,
-        &barriers,
-    );
+    let mut prox = OvernightProximityIndex::from_poi_buildings_and_barriers(buildings, &barriers);
     // Glacier rings also clipped roughly by centroid-in-bbox.
     prox.glacier_rings.retain(|ring| {
         ring.iter().any(|p| {
@@ -423,10 +412,7 @@ pub fn load_proximity(data: &Path, bbox: [f64; 4]) -> Option<OvernightProximityI
 }
 
 /// Build junction list the HostApi `route_read` may expose (runtime from graph).
-pub fn junctions_for_route(
-    graph: &RouteGraph,
-    waypoints: &[[f64; 2]],
-) -> Vec<RoadTrackJunction> {
+pub fn junctions_for_route(graph: &RouteGraph, waypoints: &[[f64; 2]]) -> Vec<RoadTrackJunction> {
     find_road_track_junctions(graph, waypoints, CORRIDOR_SEED_RADIUS_M)
         .into_iter()
         .map(|s| RoadTrackJunction {

@@ -44,10 +44,7 @@ fn native_embedder_supplies_real_not_default_unavailable() {
 
 #[test]
 fn fire_guidance_boundaries_and_unknown_date() {
-    assert_eq!(
-        fire_guidance_norway(None).text,
-        CAUTIOUS_FIRE_UNKNOWN_DATE
-    );
+    assert_eq!(fire_guidance_norway(None).text, CAUTIOUS_FIRE_UNKNOWN_DATE);
     let apr14 = LocalDate {
         year: 2026,
         month: 4,
@@ -78,10 +75,7 @@ fn fire_guidance_boundaries_and_unknown_date() {
 fn lillehammer_sjusjoen_real_pack_report() {
     let dir = data_dir();
     if !packs_present(&dir) {
-        eprintln!(
-            "SKIP real pack: missing ostlandet under {}",
-            dir.display()
-        );
+        eprintln!("SKIP real pack: missing ostlandet under {}", dir.display());
         return;
     }
     let _ = warm_ostlandet_subdivisions(&dir);
@@ -106,8 +100,10 @@ fn lillehammer_sjusjoen_real_pack_report() {
     let storage = Storage::open_in_memory().expect("mem db");
     {
         let store = driver_break_core::storage::ConfigStore::new(&storage);
-        let mut s = SafetyConfig::default();
-        s.min_building_distance_m = 150.0;
+        let s = SafetyConfig {
+            min_building_distance_m: 150.0,
+            ..Default::default()
+        };
         store.save_safety_config(&s).unwrap();
     }
 

@@ -9,11 +9,11 @@ use common::native_embedder::{
 };
 use driver_break_core::config::{Profile, SafetyConfig};
 use driver_break_core::storage::Storage;
-use navi_right_to_roam_camping::{
-    suggest_overnight, CampingCard, CampingHost, SuggestInput, VehicleClass,
-};
 use navi_plugin_host::{
     CallOutcome, Capability, HostApi, PluginHost, PluginKvStatus, PluginLimits, PoiWrite, Position,
+};
+use navi_right_to_roam_camping::{
+    suggest_overnight, CampingCard, CampingHost, SuggestInput, VehicleClass,
 };
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -130,7 +130,10 @@ fn run_guest_job(stage: &Path, job: &serde_json::Value) -> (usize, usize) {
 
 fn dump_card(label: &str, c: &CampingCard) {
     eprintln!("=== {label} ===");
-    eprintln!("accepted={} tier={:?} country={}", c.accepted, c.tier, c.country_iso);
+    eprintln!(
+        "accepted={} tier={:?} country={}",
+        c.accepted, c.tier, c.country_iso
+    );
     eprintln!("legal_basis={}", c.legal_basis);
     eprintln!("fire_text={:?}", c.fire_text);
     eprintln!("bare_rock_note={:?}", c.bare_rock_note);
@@ -166,16 +169,25 @@ fn phase4_norway_profiles_native_and_wasmtime() {
     }
 
     let profiles = [
-        ("T6_MobileHome_campervan", Profile::MobileHome, false, VehicleClass::CampervanMotorhome),
+        (
+            "T6_MobileHome_campervan",
+            Profile::MobileHome,
+            false,
+            VehicleClass::CampervanMotorhome,
+        ),
         ("HGV_professional", Profile::Truck, true, VehicleClass::Hgv),
-        ("HGV_non_professional", Profile::Truck, false, VehicleClass::Hgv),
+        (
+            "HGV_non_professional",
+            Profile::Truck,
+            false,
+            VehicleClass::Hgv,
+        ),
     ];
 
     let mut pasted_on_foot = false;
 
     for (label, profile, pro, expect_class) in profiles {
-        let mut emb =
-            NativeCampingEmbedder::with_real_backends(&storage, prox.as_ref(), profile);
+        let mut emb = NativeCampingEmbedder::with_real_backends(&storage, prox.as_ref(), profile);
         emb.is_professional_driver_under_rest_rules = pro;
         emb.set_route(waypoints.clone(), Some(SJUSJOEN));
         emb.buildings.retain(|&(blat, blon)| {
@@ -235,8 +247,14 @@ fn phase4_norway_profiles_native_and_wasmtime() {
             assert!(c.notes.iter().any(|n| n.contains("On foot from here")));
             assert!(c.notes.iter().any(|n| n.contains("motorferdselloven")));
             assert!(c.walk_m.is_some());
-            assert!(c.fire_text.is_some(), "on-foot NO card must carry date-gated fire text");
-            assert!(c.bare_rock_note.is_some(), "on-foot NO card must carry bare-rock note");
+            assert!(
+                c.fire_text.is_some(),
+                "on-foot NO card must carry date-gated fire text"
+            );
+            assert!(
+                c.bare_rock_note.is_some(),
+                "on-foot NO card must carry bare-rock note"
+            );
             if !pasted_on_foot {
                 dump_card("FULL Norwegian On foot from here card", c);
                 pasted_on_foot = true;
@@ -247,7 +265,10 @@ fn phase4_norway_profiles_native_and_wasmtime() {
         let tent_entries: Vec<_> = out
             .probe_log
             .iter()
-            .filter(|e| e.road_highway != "vehicle" && e.reason != "track_too_short_for_walk_or_pack_min_road")
+            .filter(|e| {
+                e.road_highway != "vehicle"
+                    && e.reason != "track_too_short_for_walk_or_pack_min_road"
+            })
             .cloned()
             .collect();
         let probes: Vec<(f64, f64)> = tent_entries.iter().map(|e| (e.lat, e.lon)).collect();
@@ -285,8 +306,14 @@ fn phase4_norway_profiles_native_and_wasmtime() {
         let (g_veh, g_foot) = run_guest_job(&stage, &job);
         let native_foot = tent_entries.iter().filter(|e| e.accepted).count();
         eprintln!("--- PROFILE {label} (wasmtime) vehicle={g_veh} on_foot={g_foot} native_foot={native_foot} ---");
-        assert_eq!(g_veh, 0, "{label}: wasm vehicle must stay empty without NVDB");
-        assert_eq!(g_foot, native_foot, "{label}: wasm on-foot accepts must match native");
+        assert_eq!(
+            g_veh, 0,
+            "{label}: wasm vehicle must stay empty without NVDB"
+        );
+        assert_eq!(
+            g_foot, native_foot,
+            "{label}: wasm on-foot accepts must match native"
+        );
     }
 
     assert!(pasted_on_foot, "must paste one full Norwegian on-foot card");

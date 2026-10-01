@@ -208,7 +208,8 @@ pub fn all_tier_c_packs() -> Vec<RulePack> {
 
 const DK: &[CitedSource] = &[
     CitedSource {
-        url: "https://naturstyrelsen.dk/aktiviteter-i-naturen/overnat-og-spis-i-naturen/fri-teltning",
+        url:
+            "https://naturstyrelsen.dk/aktiviteter-i-naturen/overnat-og-spis-i-naturen/fri-teltning",
         quality: SourceQuality::Official,
     },
     CitedSource {

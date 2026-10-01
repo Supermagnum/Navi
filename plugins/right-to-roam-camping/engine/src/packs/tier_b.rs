@@ -221,7 +221,9 @@ pub fn lv_state_forest_pack() -> RulePack {
             "State/municipal forest; without LVM layer → Tier C (LVM rest sites / TentSite).",
             "Flag default OFF.",
         ],
-        &[HostCondition::DesignatedLayerReady(DesignatedLayer::LvmStateForest)],
+        &[HostCondition::DesignatedLayerReady(
+            DesignatedLayer::LvmStateForest,
+        )],
         Tier::C,
         Some(DesignatedLayer::LvmStateForest),
         DistanceRule::NotApplicable,
@@ -250,7 +252,9 @@ pub fn dartmoor_commons_pack() -> RulePack {
             "National park byelaws apply.",
             "Flag default OFF.",
         ],
-        &[HostCondition::DesignatedLayerReady(DesignatedLayer::DartmoorCommons)],
+        &[HostCondition::DesignatedLayerReady(
+            DesignatedLayer::DartmoorCommons,
+        )],
         Tier::C,
         Some(DesignatedLayer::DartmoorCommons),
         DistanceRule::NotApplicable,

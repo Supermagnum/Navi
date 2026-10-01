@@ -30,7 +30,7 @@ impl FilePluginKv {
             fs::create_dir_all(parent)?;
         }
         let text = serde_json::to_string_pretty(&self.map)?;
-        fs::write(&path_atomic_tmp(&self.path), &text)?;
+        fs::write(path_atomic_tmp(&self.path), &text)?;
         fs::rename(path_atomic_tmp(&self.path), &self.path)?;
         Ok(())
     }

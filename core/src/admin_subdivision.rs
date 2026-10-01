@@ -172,11 +172,17 @@ mod tests {
         // NE Admin-1 is coarse: city centres on the coast often miss polygons.
         // Use the nearest inland hit beside each city (documented above).
         let (troms_iso, troms_name) = lookup(69.5992, 18.9953).expect("Tromsø hinterland");
-        assert_eq!(troms_iso, "no-55", "Troms must be current ISO, not no-19/no-54");
+        assert_eq!(
+            troms_iso, "no-55",
+            "Troms must be current ISO, not no-19/no-54"
+        );
         assert!(troms_name.to_lowercase().contains("troms"));
 
         let (finn_iso, finn_name) = lookup(69.9689, 23.2717).expect("Alta");
-        assert_eq!(finn_iso, "no-56", "Finnmark must be current ISO, not no-20/no-54");
+        assert_eq!(
+            finn_iso, "no-56",
+            "Finnmark must be current ISO, not no-20/no-54"
+        );
         assert!(finn_name.to_lowercase().contains("finnmark"));
 
         let (nord_iso, _) = lookup(67.2704, 14.4149).expect("Bodø hinterland");
@@ -184,7 +190,10 @@ mod tests {
 
         let (trond_iso, trond_name) = lookup(63.4305, 10.3951).expect("Trondheim");
         assert_eq!(trond_iso, "no-50");
-        assert!(trond_name.to_lowercase().contains("trøndelag") || trond_name.to_lowercase().contains("trondelag"));
+        assert!(
+            trond_name.to_lowercase().contains("trøndelag")
+                || trond_name.to_lowercase().contains("trondelag")
+        );
     }
 
     #[test]

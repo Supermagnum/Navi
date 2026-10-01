@@ -15,8 +15,7 @@ pub struct FireGuidance {
     pub in_ban_window: Option<bool>,
 }
 
-pub const BARE_ROCK_NOTE: &str =
-    "Do not light a fire on bare rock — rock can crack from heat.";
+pub const BARE_ROCK_NOTE: &str = "Do not light a fire on bare rock — rock can crack from heat.";
 
 pub const PROTECTED_SPECIES_NOTE: &str =
     "Some rare berry, mushroom, and flower species are protected from picking.";

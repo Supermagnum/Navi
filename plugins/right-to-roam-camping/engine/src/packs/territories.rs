@@ -1,8 +1,6 @@
 //! Territories with own ISO codes — Tier D, never the parent pack.
 
-use super::{
-    DistanceRule, DurationRule, FireRule, PackId, RulePack, SuggestionMode, Tier,
-};
+use super::{DistanceRule, DurationRule, FireRule, PackId, RulePack, SuggestionMode, Tier};
 
 fn territory(
     id: PackId,

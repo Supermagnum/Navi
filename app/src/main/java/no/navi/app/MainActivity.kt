@@ -8727,6 +8727,7 @@ private fun CorridorMapView(
         applyTracksToStyle(style, stateRef.get().tracks, mapView.context)
         BasemapLabelPolicy.apply(style)
         BasemapPathPaint.apply(style)
+        BasemapTunnelPaint.apply(style)
         BasemapProtectedAreaStyle.apply(style)
         BasemapHousenumberStyle.apply(style)
         BasemapGlacierOutlineStyle.apply(style)

@@ -229,7 +229,9 @@ mod tests {
             }
             let label = pack.distance_card_label().expect("label");
             assert!(
-                label.contains("Navi safety default") && label.contains("not ") && label.contains("law"),
+                label.contains("Navi safety default")
+                    && label.contains("not ")
+                    && label.contains("law"),
                 "{:?} card label must say Navi safety default, not <country> law; got {label}",
                 pack.id
             );
@@ -239,12 +241,12 @@ mod tests {
     #[test]
     fn estonia_secondary_150m_is_not_a_hard_filter() {
         let p = estonia_pack();
-        assert!(p.sources.iter().any(|s| s.quality == SourceQuality::Secondary));
+        assert!(p
+            .sources
+            .iter()
+            .any(|s| s.quality == SourceQuality::Secondary));
         for hf in p.hard_filters {
-            assert!(
-                !hf.id.contains("150"),
-                "150 m must not be a hard filter id"
-            );
+            assert!(!hf.id.contains("150"), "150 m must not be a hard filter id");
             for s in hf.sources {
                 assert_ne!(s.quality, SourceQuality::Secondary);
             }

@@ -1,6 +1,6 @@
 use super::{
-    CitedSource, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack, SuggestionMode,
-    SourceQuality, Tier,
+    CitedSource, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack,
+    SourceQuality, SuggestionMode, Tier,
 };
 
 pub fn sweden_pack() -> RulePack {
