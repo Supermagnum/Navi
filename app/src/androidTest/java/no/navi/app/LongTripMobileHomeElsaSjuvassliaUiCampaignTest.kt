@@ -36,8 +36,10 @@ import uniffi.navi.campingPluginConfigure
 import uniffi.navi.campingPluginInstallGuest
 import uniffi.navi.campingPluginSetEnabled
 import uniffi.navi.campingPluginSetNavContext
+import uniffi.navi.campingPluginSetPackDirs
 import uniffi.navi.campingPluginSetTimezone
 import uniffi.navi.campingPluginSuggestAlongRoute
+import uniffi.navi.ensurePoiLookaheadCovering
 import uniffi.navi.ensurePoiLookaheadLoaded
 import uniffi.navi.poiLookaheadQueryJson
 import uniffi.navi.saveCarRestSettings
@@ -506,30 +508,39 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         return out
     }
 
+    private fun packDirsJsonForCampaign(): String {
+        val packDir = LongTripPackStorage.packDownloadDir(composeRule.activity)
+        return JSONArray(
+            listOf(packDir.absolutePath, dataDir.absolutePath),
+        ).toString()
+    }
+
     private fun sampleAttractionsAlongPolyline(polyline: String): JSONObject {
         val o = JSONObject()
         return try {
-            val pbfCandidates =
-                listOf(
-                    File(dataDir, "region.osm.pbf"),
-                    File(dataDir, "ostlandet-latest.osm.pbf"),
-                    File(dataDir, "nord-norge-latest.osm.pbf"),
-                )
-            val pbf = pbfCandidates.firstOrNull { it.isFile }
-            if (pbf != null) {
-                val stats = ensurePoiLookaheadLoaded(dataDir.absolutePath, pbf.absolutePath)
-                o.put("load_ok", true)
-                o.put("records", stats.records.toLong())
-                o.put("pbf", pbf.name)
-            } else {
-                o.put("load_ok", false)
-                o.put("load_note", "no local PBF; using already-loaded look-ahead if any")
-            }
+            val packDirs = packDirsJsonForCampaign()
+            o.put("pack_dirs", packDirs)
             val samples = samplePolylinePoints(polyline, 8)
             var total = 0
+            var loadedRecords = 0L
             val hits = JSONArray()
             val byType = JSONObject()
             for ((lat, lon) in samples) {
+                val stats =
+                    ensurePoiLookaheadCovering(dataDir.absolutePath, packDirs, lat, lon)
+                loadedRecords = maxOf(loadedRecords, stats.records.toLong())
+                if (stats.records == 0u) {
+                    val pbfCandidates =
+                        listOf(
+                            File(dataDir, "region.osm.pbf"),
+                            File(dataDir, "ostlandet-latest.osm.pbf"),
+                            File(dataDir, "nord-norge-latest.osm.pbf"),
+                        )
+                    val pbf = pbfCandidates.firstOrNull { it.isFile }
+                    if (pbf != null) {
+                        ensurePoiLookaheadLoaded(dataDir.absolutePath, pbf.absolutePath)
+                    }
+                }
                 val raw = poiLookaheadQueryJson(lat, lon, 0.0, true, false)
                 val arr =
                     try {
@@ -555,6 +566,8 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
             }
             o.put("sample_points", samples.size)
             o.put("hit_count", total)
+            o.put("records", loadedRecords)
+            o.put("load_ok", loadedRecords > 0 || total > 0)
             o.put("by_type", byType)
             o.put("hits_snip", hits)
             o
@@ -572,6 +585,9 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
                 o.put("error", "polyline too short")
                 return o
             }
+            val packDirs = packDirsJsonForCampaign()
+            campingPluginSetPackDirs(packDirs)
+            o.put("pack_dirs", packDirs)
             val wpJson =
                 campingWaypointsJson(
                     samples.map { (lat, lon) -> doubleArrayOf(lat, lon) },

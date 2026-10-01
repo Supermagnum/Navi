@@ -231,6 +231,16 @@ Device evidence (2026-08-19): Check → *"New map data is available…"*; Apply 
 *"Download in progress…"*. No `method=`, `reason=`, `USER_VISIBLE=`, or
 `region_meta` strings in on-screen copy.
 
+### OSM update / apply-pending confirmation (2026-10-01, `right-to-roam`)
+
+| Check | Result | What was tested |
+|---|---|---|
+| Core planner + apply path unit tests (`cargo test -p driver-break-core --lib osm_update::`) | **PASS** — 19/19 | `check_for_updates` / `decide_update_plan` / apply edge cases (up-to-date, full redownload, unsupported, catalog generation, osmium skip) |
+| Kotlin user-copy mapping (`OsmUpdateUserCopyTest`) | **PASS** | Check/apply FFI dumps map to plain Tools strings; technical tokens stripped |
+| Empty-install index gate (`OfflineIndexGateTest` + resume tests) | **PASS** | No auto-index without PBF/packs/pending; manifest-only does not synthesize resume |
+| Instrumented UI follow-up (`OsmUpdateCatalogRoutingFollowupTest`) | Prior **PASS** on device (see table above); not re-run this session | Tools Check / Apply tags + plain-language status |
+| UI → UniFFI wiring | **Confirmed by code review** | Tools `btn_check_osm_updates` → `checkOsmUpdates` → `check_for_updates`; `btn_apply_osm_update` → `applyOsmUpdate` → `apply_pending_update`, then place-index + `IndexedMapsBackground` when a local PBF exists |
+
 ### Cross-region / cross-border routing (keyboard entry, car profile)
 
 Fixture: **Ostlandet-only** download (`ostlandet-latest.osm.pbf`). Routes entered

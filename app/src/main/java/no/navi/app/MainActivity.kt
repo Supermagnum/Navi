@@ -457,8 +457,6 @@ private fun waypointsToRteJson(
 
 private enum class SearchTarget { From, To, Via }
 
-private enum class SearchMode { Place, Address }
-
 /** Matches FFI [`uniffi.navi`] motor via cap (`MAX_ROUTE_VIA_POINTS`). */
 private const val MAX_ROUTE_VIAS = 4
 
@@ -642,7 +640,6 @@ private fun NaviMapScreen() {
     var mapLayerCount by remember { mutableIntStateOf(0) }
     var profile by remember { mutableStateOf(TravelProfile.CAR) }
     var ecoEnabled by remember { mutableStateOf(ecoModeDefault(TravelProfile.CAR)) }
-    var searchMode by remember { mutableStateOf(SearchMode.Place) }
     var searchTarget by remember { mutableStateOf(SearchTarget.To) }
     var query by remember { mutableStateOf("") }
     var hits by remember { mutableStateOf<List<PlaceHit>>(emptyList()) }
@@ -823,6 +820,17 @@ private fun NaviMapScreen() {
         campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
     }
 
+    fun longTripPackDirsJson(): String {
+        val dirs = ArrayList<String>(2)
+        if (longTripEnabled) {
+            runCatching {
+                dirs.add(LongTripPackStorage.packDownloadDir(context).absolutePath)
+            }
+        }
+        dirs.add(NaviAppData.resolve(context).absolutePath)
+        return org.json.JSONArray(dirs).toString()
+    }
+
     LaunchedEffect(
         campingPluginEnabled,
         profile,
@@ -831,6 +839,8 @@ private fun NaviMapScreen() {
         mapState.endLon,
         campingProfessionalDriver,
         campingResidencyCountry,
+        longTripEnabled,
+        longTripPackVolumeId,
     ) {
         campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
         if (!campingPluginEnabled || mapState.polyline.isBlank()) {
@@ -846,6 +856,7 @@ private fun NaviMapScreen() {
         }
         val sampled = sampleCampingCorridorWaypoints(mapState.polyline)
         if (sampled.isEmpty()) return@LaunchedEffect
+        uniffi.navi.campingPluginSetPackDirs(longTripPackDirsJson())
         val residency =
             campingResidencyCountry.trim().lowercase().ifBlank { null }
         uniffi.navi.campingPluginSetResidencyCountry(residency)
@@ -1785,6 +1796,11 @@ private fun NaviMapScreen() {
         poiLookaheadDismissedIds,
         weatherAppActive,
         dataDir,
+        longTripEnabled,
+        longTripPackVolumeId,
+        mapState.gpsLat,
+        mapState.gpsLon,
+        mapState.polyline,
     ) {
         if (!poiLookaheadEnabled) {
             poiLookaheadHud = PoiLookaheadHudState()
@@ -1793,22 +1809,40 @@ private fun NaviMapScreen() {
         while (true) {
             if (!poiLookaheadEnabled) break
             if (weatherAppActive) {
-                val lat = mapState.gpsLat.takeIf { it != 0.0 } ?: (mapState.cameraLat ?: 0.0)
-                val lon = mapState.gpsLon.takeIf { mapState.gpsLat != 0.0 } ?: (mapState.cameraLon ?: 0.0)
+                val lat =
+                    mapState.gpsLat.takeIf { it != 0.0 }
+                        ?: mapState.startLat.takeIf { it != 0.0 }
+                        ?: (mapState.cameraLat ?: 0.0)
+                val lon =
+                    mapState.gpsLon.takeIf { mapState.gpsLat != 0.0 }
+                        ?: mapState.startLon.takeIf { mapState.startLat != 0.0 }
+                        ?: (mapState.cameraLon ?: 0.0)
                 val heading =
                     NaviMapTestHooks.gpsBearingDeg
                         ?: mapState.cameraBearing.takeIf { it.isFinite() }
-                val pbf = RouteReplan.resolvePbf(dataDir)
+                val packDirs = longTripPackDirsJson()
                 val dismissed = poiLookaheadDismissedIds
                 val strict = poiLookaheadStrictHoursUnknown
                 val raw =
                     withContext(Dispatchers.IO) {
                         runCatching {
-                            if (pbf != null) {
-                                uniffi.navi.ensurePoiLookaheadLoaded(
+                            // Prefer covering Ready pack at GPS (long-trip SD roots).
+                            // Fallback to planning-stem PBF under files/ for local/tests.
+                            val cover =
+                                uniffi.navi.ensurePoiLookaheadCovering(
                                     dataDir.absolutePath,
-                                    pbf.absolutePath,
+                                    packDirs,
+                                    lat,
+                                    lon,
                                 )
+                            if (cover.records == 0u) {
+                                val pbf = RouteReplan.resolvePbf(dataDir)
+                                if (pbf != null) {
+                                    uniffi.navi.ensurePoiLookaheadLoaded(
+                                        dataDir.absolutePath,
+                                        pbf.absolutePath,
+                                    )
+                                }
                             }
                             uniffi.navi.poiLookaheadQueryJson(
                                 lat,
@@ -2511,20 +2545,26 @@ private fun NaviMapScreen() {
                 selectedGeofabrikPath = pending.geofabrikPath
             }
         }
-        val pbf = resolveRegionPbf()
         // ensureStartedFromPending claims [RegionDownloadBackground.isRunning]
         // synchronously before its IO coroutine, so this check cannot race a
         // just-started resume (PlaceIndexBackground + RegionDownload both
         // calling ensurePlaceIndex on the same DB).
-        if (pbf != null &&
-            pbf.isFile &&
+        // Never auto-index from fixtures / empty installs — see OfflineIndexGate.
+        if (OfflineIndexGate.hasMaterialToIndex(dataDir) &&
             !RegionDownloadBackground.isRunning()
         ) {
-            PlaceIndexBackground.ensureStarted(
-                pbf,
-                placeIndexDbForWrite(),
-                selectedGeofabrikPath.ifBlank { null },
-            )
+            val pbf =
+                OfflineIndexGate.resolveAutoIndexPbf(dataDir, selectedGeofabrikPath)
+            if (pbf != null && OfflineIndexGate.isIndexablePbf(pbf)) {
+                val rid = selectedGeofabrikPath.trim().trim('/')
+                if (rid.isEmpty() || !PlaceIndexReady.isReady(dataDir, rid)) {
+                    PlaceIndexBackground.ensureStarted(
+                        pbf,
+                        placeIndexDbForWrite(),
+                        rid.ifBlank { null },
+                    )
+                }
+            }
         }
     }
 
@@ -2546,15 +2586,10 @@ private fun NaviMapScreen() {
             )
             val tick =
                 withContext(Dispatchers.IO) {
-                    val pbf =
-                        if (regionPath.isNotEmpty()) {
-                            PackRegionAvailability.resolvePbfForRegion(dataDir, regionPath)
-                        } else {
-                            null
-                        } ?: RouteReplan.resolvePbf(dataDir)
-                            ?: dataDir.listFiles()?.firstOrNull {
-                                it.isFile && it.name.endsWith(".osm.pbf")
-                            }
+                    if (!OfflineIndexGate.hasMaterialToIndex(dataDir)) {
+                        return@withContext BgTick("", "", false, false, false)
+                    }
+                    val pbf = OfflineIndexGate.resolveAutoIndexPbf(dataDir, regionPath)
                     if (pbf == null) {
                         return@withContext BgTick("", "", false, false, false)
                     }
@@ -2594,6 +2629,7 @@ private fun NaviMapScreen() {
                     if (!regionDownloading && !PlaceIndexBackground.isRunning()) {
                         // Stamp-only heal — do not open place_index.db here (SQLite
                         // lock fights Use GPS / nearbyPlaces and ANRs the UI).
+                        // Only real local PBFs (not fixtures / stubs).
                         val missing =
                             RegionCoverage
                                 .downloadedGeofabrikPaths(dataDir)
@@ -2602,8 +2638,8 @@ private fun NaviMapScreen() {
                                 }
                         if (missing != null) {
                             val missingPbf =
-                                PackRegionAvailability.resolvePbfForRegion(dataDir, missing)
-                            if (missingPbf != null && missingPbf.isFile) {
+                                OfflineIndexGate.resolveAutoIndexPbf(dataDir, missing)
+                            if (missingPbf != null && OfflineIndexGate.isIndexablePbf(missingPbf)) {
                                 PlaceIndexBackground.ensureStarted(
                                     missingPbf,
                                     placeIndexDbForWrite(),
@@ -4737,7 +4773,6 @@ private fun NaviMapScreen() {
             searchIndexHint = ""
             return
         }
-        val mode = searchMode
         searchJob =
             scope.launch {
                 // Debounce before any SQLite / Nominatim work so rapid typing
@@ -4773,7 +4808,8 @@ private fun NaviMapScreen() {
                                         context = context,
                                         query = trimmed,
                                         limit = 20,
-                                        addressMode = mode == SearchMode.Address,
+                                        // Unified From/Via/To search (no Place/Address chips).
+                                        addressMode = false,
                                     )
                                 if (online.isNotEmpty()) {
                                     usedOnline = true
@@ -4787,31 +4823,24 @@ private fun NaviMapScreen() {
                             }
                             ensureActive()
                             list = filterHitsByCountryIso(list, countryIso)
+                            // Keep places, POIs, and address-like hits in one list.
                             val filtered =
                                 if (usedOnline) {
                                     list
                                 } else {
-                                    when (mode) {
-                                        SearchMode.Place ->
-                                            list
-                                                .filter {
-                                                    val k = it.kind.lowercase()
-                                                    k.contains("place") ||
-                                                        k.contains("amenity") ||
-                                                        k.contains("tourism") ||
-                                                        k.contains("peak") ||
-                                                        k.contains("hut") ||
-                                                        k.contains("natural")
-                                                }.ifEmpty { list }
-                                        SearchMode.Address ->
-                                            list
-                                                .filter {
-                                                    val k = it.kind.lowercase()
-                                                    k.contains("highway") ||
-                                                        k.contains("place") ||
-                                                        k.contains("addr")
-                                                }.ifEmpty { list }
-                                    }
+                                    list
+                                        .filter {
+                                            val k = it.kind.lowercase()
+                                            k.contains("place") ||
+                                                k.contains("amenity") ||
+                                                k.contains("tourism") ||
+                                                k.contains("peak") ||
+                                                k.contains("hut") ||
+                                                k.contains("natural") ||
+                                                k.contains("highway") ||
+                                                k.contains("addr") ||
+                                                k.contains("building")
+                                        }.ifEmpty { list }
                                 }
                             val onlineOk = BasemapStyleResolver.hasNetwork(context)
                             PlaceSearchOutcome(
@@ -5462,22 +5491,6 @@ private fun NaviMapScreen() {
                                         },
                                         modifier = Modifier.testTag("chip_via"),
                                     )
-                                    FilterChip(
-                                        selected = searchMode == SearchMode.Place,
-                                        onClick = {
-                                            searchMode = SearchMode.Place
-                                            runSearch(query)
-                                        },
-                                        label = { Text("Place") },
-                                    )
-                                    FilterChip(
-                                        selected = searchMode == SearchMode.Address,
-                                        onClick = {
-                                            searchMode = SearchMode.Address
-                                            runSearch(query)
-                                        },
-                                        label = { Text("Address") },
-                                    )
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     TextButton(
@@ -5577,21 +5590,11 @@ private fun NaviMapScreen() {
                                                     viaPoints.size >= MAX_ROUTE_VIAS ->
                                                         "Via full ($MAX_ROUTE_VIAS/$MAX_ROUTE_VIAS)"
                                                     viaPoints.isEmpty() ->
-                                                        when (searchMode) {
-                                                            SearchMode.Place ->
-                                                                "Add via: place, hut, or lat, lon"
-                                                            SearchMode.Address ->
-                                                                "Add via: road, settlement, or lat, lon"
-                                                        }
+                                                        "Add via: place, road, or lat, lon"
                                                     else ->
                                                         "Add via ${viaPoints.size + 1}/$MAX_ROUTE_VIAS"
                                                 }
-                                            else ->
-                                                when (searchMode) {
-                                                    SearchMode.Place -> "Place, hut, or lat, lon"
-                                                    SearchMode.Address ->
-                                                        "Road, settlement, or lat, lon"
-                                                }
+                                            else -> "Place, road, or lat, lon"
                                         },
                                     )
                                 },

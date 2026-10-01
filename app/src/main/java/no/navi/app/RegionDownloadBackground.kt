@@ -688,6 +688,19 @@ object RegionDownloadBackground {
         val path = preferredPath.trim().trim('/')
         if (path.isEmpty()) return null
         if (!PackRegionAvailability.localBakeReady(dataDir, path)) return null
+        // A lone manifest (no graph packs / real PBF) must not synthesize resume work —
+        // that looked like indexing on cold start with nothing downloaded.
+        val hasRealPbf = PackRegionAvailability.resolvePbfForRegion(dataDir, path) != null
+        val stem = PackRegionAvailability.localStem(path)
+        val hasGraph =
+            dataDir.listFiles()?.any { f ->
+                f.isFile &&
+                    f.length() > 0L &&
+                    f.name.startsWith(stem) &&
+                    f.name.contains(".navi-graph-") &&
+                    f.name.endsWith(".rkyv")
+            } == true
+        if (!hasRealPbf && !hasGraph) return null
         // Sweden län share the country extract filename (europe/sweden → sweden-latest).
         val extractPath = GeofabrikDownloadCatalog.extractPathForPbf(path)
         val leaf = extractPath.substringAfterLast('/')

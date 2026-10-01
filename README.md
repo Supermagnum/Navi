@@ -86,10 +86,10 @@ On-device and emulator results:
 **Install the signed release APK.** Testers should download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
-**v0.3.10-beta** (`versionName` 0.3.10-beta, `versionCode` 15). Download from the
+**v0.3.11-beta** (`versionName` 0.3.11-beta, `versionCode` 16). Download from the
 [`main` branch](https://github.com/Supermagnum/Navi/tree/main/compiled)
 (latest tester build) or the pinned
-[`v0.3.10-beta` tag](https://github.com/Supermagnum/Navi/tree/v0.3.10-beta). Android
+[`v0.3.11-beta` tag](https://github.com/Supermagnum/Navi/tree/v0.3.11-beta). Android
 validates the APK signature on install; the separate GPG files
 ([`compiled/SHA256SUMS`](compiled/SHA256SUMS),
 [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc)) are optional provenance
@@ -308,6 +308,13 @@ region download), Navi must build the **place index** (search names for From /
 Via / To) and, on the local-bake path, the **indexed routing packs**. Both scan
 the full region file and can run for many minutes on a large extract. That is
 expected; leave the app open or return to it later.
+
+**Nothing to index → no indexing UI.** Cold start and Tools do **not** start
+place-index / pack convert (and do not show an “In progress” indexing footer)
+when there is no real region PBF, no installed graph packs, and no pending
+extract/job. A selected Geofabrik path in the picker alone is not enough.
+(Previously, idle status lines and fixture/stub PBFs could look like indexing
+was running on an empty install.)
 
 ### Download and place-index timing (measured)
 
@@ -1035,7 +1042,7 @@ it as a normal install (not an unsigned or debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.3.10-beta / tag **v0.3.10-beta**) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.3.11-beta / tag **v0.3.11-beta**) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
@@ -1046,7 +1053,7 @@ You do not need a Rust/NDK toolchain to install it.
 2. Download
    [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/main/compiled/navi-release.apk)
    (latest on `main`) or the pinned
-   [`v0.3.10-beta` tag](https://github.com/Supermagnum/Navi/raw/v0.3.10-beta/compiled/navi-release.apk).
+   [`v0.3.11-beta` tag](https://github.com/Supermagnum/Navi/raw/v0.3.11-beta/compiled/navi-release.apk).
 3. Optional integrity check on a PC:
 
 ```bash
@@ -1149,7 +1156,7 @@ Debug installs use the Android **debug** keystore. A **release** package is what
 you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
 
 A prebuilt upload-key-signed release APK for testers is committed at
-[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.3.10-beta**;
+[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.3.11-beta**;
 see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
@@ -1200,7 +1207,7 @@ adb shell am start -n no.navi.app/.MainActivity
    [`docs/android-api36-plan.md`](docs/android-api36-plan.md#aab-smoke-host).
 
 Current `versionName` / `versionCode` live in `app/build.gradle.kts`
-(`0.3.10-beta` / `15` at time of writing). Bump those before a real store or tagged
+(`0.3.11-beta` / `16` at time of writing). Bump those before a real store or tagged
 release. F-Droid-style Podman reproducibility:
 [`tools/fdroid-check/README.md`](tools/fdroid-check/README.md). Full shared
 recipe: [`docs/android-build.md`](docs/android-build.md).

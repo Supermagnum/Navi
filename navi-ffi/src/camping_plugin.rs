@@ -14,8 +14,9 @@ use driver_break_core::admin_region_at;
 use driver_break_core::config::{SafetyConfig, TravellerProfile};
 use driver_break_core::routing::graph::RoutingProfile;
 use driver_break_core::routing::indexed::{
-    try_load_graph_for_plan_corridor, try_load_poi_barrier_for_plan_bbox,
+    try_load_graph_for_plan_corridor_with_pack_dirs, try_load_poi_pack_covering_point_with_pack_dirs,
 };
+use driver_break_core::routing::plan_bbox::PlanEdgeClipMode;
 use driver_break_core::routing::safety::OvernightProximityIndex;
 use driver_break_core::storage::{ConfigStore, Storage};
 use navi_plugin_host::{
@@ -37,6 +38,10 @@ const CAMPING_NAME: &str = "right_to_roam_camping";
 const ENABLE_FILE: &str = "plugin_enable.json";
 const KV_REL: &str = "plugin_kv/camping_night.json";
 const PLUGINS_REL: &str = "plugins";
+/// Waypoints per corridor graph segment so long-trip SD packs never inflate a
+/// multi-country graph co-resident with POI buildings (Automotive 4 GB).
+const CAMPING_SEGMENT_WAYPOINTS: usize = 6;
+const CAMPING_MAX_SEEDS: usize = 80;
 
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CampingCallKind {
@@ -65,6 +70,8 @@ pub struct CampingCallResult {
 struct Session {
     files_dir: PathBuf,
     data_dir: PathBuf,
+    /// Extra Ready-pack roots (e.g. Removable `long-trip-packs/`).
+    pack_dirs: Vec<PathBuf>,
     /// IANA timezone id from the Android device (e.g. `Europe/Oslo`).
     timezone: String,
     travel_profile: TravelProfile,
@@ -151,9 +158,20 @@ fn corridor_bbox_from_waypoints(waypoints: &[[f64; 2]]) -> Option<[f64; 4]> {
     Some([min_lat - pad, min_lon - pad, max_lat + pad, max_lon + pad])
 }
 
-fn find_planning_pbf(data_dir: &Path) -> Option<PathBuf> {
+fn iter_pack_search_dirs<'a>(
+    data_dir: &'a Path,
+    pack_dirs: &'a [PathBuf],
+) -> impl Iterator<Item = &'a Path> + 'a {
+    std::iter::once(data_dir).chain(pack_dirs.iter().map(|p| p.as_path()))
+}
+
+/// Prefer a `-latest.osm.pbf` under `data_dir` or any long-trip pack root.
+fn find_planning_pbf(data_dir: &Path, pack_dirs: &[PathBuf]) -> Option<PathBuf> {
     let mut fallback = None;
-    if let Ok(entries) = fs::read_dir(data_dir) {
+    for dir in iter_pack_search_dirs(data_dir, pack_dirs) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if !path.is_file() {
@@ -176,30 +194,60 @@ fn find_planning_pbf(data_dir: &Path) -> Option<PathBuf> {
     fallback
 }
 
-#[allow(clippy::type_complexity)]
-fn load_overnight_geometry(
-    data_dir: &Path,
-    pbf: &Path,
-    bbox: [f64; 4],
-) -> (Vec<(f64, f64)>, Vec<Vec<[f64; 2]>>) {
-    let Ok((poi, barriers)) = try_load_poi_barrier_for_plan_bbox(data_dir, pbf, Some(bbox)) else {
-        return (Vec::new(), Vec::new());
+fn parse_pack_dirs_json(raw: &str) -> Vec<PathBuf> {
+    let Ok(arr) = serde_json::from_str::<Vec<String>>(raw) else {
+        return Vec::new();
     };
-    let [min_lat, min_lon, max_lat, max_lon] = bbox;
-    let buildings: Vec<(f64, f64)> = poi
-        .overnight_buildings()
-        .iter()
-        .copied()
-        .filter(|&(lat, lon)| lat >= min_lat && lat <= max_lat && lon >= min_lon && lon <= max_lon)
-        .collect();
-    let mut prox = OvernightProximityIndex::from_poi_buildings_and_barriers(buildings, &barriers);
-    prox.glacier_rings.retain(|ring| {
-        ring.iter().any(|p| {
-            let (lon, lat) = (p[0], p[1]);
-            lat >= min_lat && lat <= max_lat && lon >= min_lon && lon <= max_lon
-        })
-    });
-    (prox.buildings, prox.glacier_rings)
+    let mut out = Vec::new();
+    for s in arr {
+        let p = PathBuf::from(s.trim());
+        if p.as_os_str().is_empty() {
+            continue;
+        }
+        if p.is_dir() && !out.iter().any(|x| x == &p) {
+            out.push(p);
+        }
+    }
+    out
+}
+
+/// Buildings / glaciers near probes: one covering Ready pack at a time (same
+/// spirit as chunked soft-break finalize — never merge region-wide POI packs).
+#[allow(clippy::type_complexity)]
+fn load_overnight_geometry_near_probes(
+    data_dir: &Path,
+    pack_dirs: &[PathBuf],
+    probes: &[(f64, f64)],
+) -> (Vec<(f64, f64)>, Vec<Vec<[f64; 2]>>) {
+    let mut buildings = Vec::new();
+    let mut glacier_rings = Vec::new();
+    let mut seen_cell = std::collections::HashSet::new();
+    for &(lat, lon) in probes {
+        let cell = ((lat * 2.0).round() as i32, (lon * 2.0).round() as i32);
+        if !seen_cell.insert(cell) {
+            continue;
+        }
+        let Ok((poi, barriers)) =
+            try_load_poi_pack_covering_point_with_pack_dirs(data_dir, pack_dirs, lat, lon)
+        else {
+            continue;
+        };
+        let mut prox = OvernightProximityIndex::from_poi_buildings_and_barriers(
+            poi.overnight_buildings().to_vec(),
+            &barriers,
+        );
+        // Keep rings that touch a ~0.5° cell around the probe.
+        prox.glacier_rings.retain(|ring| {
+            ring.iter().any(|p| {
+                let (rlon, rlat) = (p[0], p[1]);
+                (rlat - lat).abs() <= 0.5 && (rlon - lon).abs() <= 0.5
+            })
+        });
+        buildings.extend(prox.buildings);
+        glacier_rings.extend(prox.glacier_rings);
+        drop(poi);
+    }
+    (buildings, glacier_rings)
 }
 
 fn profile_to_vehicle(p: TravelProfile, professional: bool) -> VehicleProfileView {
@@ -468,6 +516,7 @@ pub fn camping_plugin_configure(files_dir: String, data_dir: String, timezone: S
     *guard = Some(Session {
         files_dir: PathBuf::from(files_dir),
         data_dir: PathBuf::from(data_dir),
+        pack_dirs: Vec::new(),
         timezone: if timezone.trim().is_empty() {
             "local".into()
         } else {
@@ -486,6 +535,23 @@ pub fn camping_plugin_configure(files_dir: String, data_dir: String, timezone: S
     // Natural Earth country polygons are first-use expensive; do not pay that
     // on the suggest path (was ~10s of admin_region_at on Lillehammer).
     let _ = admin_region_at(61.11515, 10.46628);
+}
+
+/// JSON array of absolute pack roots (e.g. Removable `…/long-trip-packs`).
+/// Cleared on [`camping_plugin_configure`]; host should set after long-trip
+/// volume selection so suggest can see SD-only Ready packs.
+#[uniffi::export]
+pub fn camping_plugin_set_pack_dirs(pack_dirs_json: String) -> String {
+    let dirs = parse_pack_dirs_json(&pack_dirs_json);
+    let mut guard = session_lock().lock().expect("camping session lock");
+    let Some(session) = guard.as_mut() else {
+        return "FAIL: not configured".into();
+    };
+    if session.pack_dirs != dirs {
+        session.pack_dirs = dirs;
+        session.suggest_job_cache = None;
+    }
+    "OK".into()
 }
 
 /// Install or replace a plugin directory under `filesDir/plugins/<name>/`.
@@ -763,13 +829,19 @@ fn geometry_cache_key(
     waypoints: &[[f64; 2]],
     pbf: &Path,
     data_dir: &Path,
+    pack_dirs: &[PathBuf],
     max_suggestions: u32,
 ) -> String {
+    let mut pack_fp = pack_geometry_fingerprint(data_dir, pbf);
+    for dir in pack_dirs {
+        pack_fp.push('|');
+        pack_fp.push_str(&pack_geometry_fingerprint(dir, pbf));
+    }
     format!(
         "{:?}|{}|{}|{}|{max_suggestions}",
         waypoints,
         pbf.display(),
-        pack_geometry_fingerprint(data_dir, pbf),
+        pack_fp,
         safety_geometry_fingerprint(data_dir),
     )
 }
@@ -895,12 +967,13 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
         };
     }
     let data_dir = session.data_dir.clone();
+    let pack_dirs = session.pack_dirs.clone();
     let waypoints = session.route_waypoints.clone();
     let travel_profile = session.travel_profile;
     let professional_driver = session.professional_driver;
     drop(guard);
 
-    let Some(bbox) = corridor_bbox_from_waypoints(&waypoints) else {
+    if corridor_bbox_from_waypoints(&waypoints).is_none() {
         return CampingCallResult {
             kind: CampingCallKind::Error,
             message: "could not derive corridor bbox".into(),
@@ -908,12 +981,12 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
             result_json: None,
             peak_guest_memory_bytes: 0,
         };
-    };
-    let Some(pbf) = find_planning_pbf(&data_dir) else {
+    }
+    let Some(pbf) = find_planning_pbf(&data_dir, &pack_dirs) else {
         return CampingCallResult {
             kind: CampingCallKind::Unavailable,
             message: format!(
-                "no .osm.pbf under {} for overnight corridor graph",
+                "no .osm.pbf under {} (or pack_dirs) for overnight corridor graph",
                 data_dir.display()
             ),
             elapsed_ms: started.elapsed().as_millis() as u64,
@@ -921,7 +994,7 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
             peak_guest_memory_bytes: 0,
         };
     };
-    let cache_key = geometry_cache_key(&waypoints, &pbf, &data_dir, max_suggestions);
+    let cache_key = geometry_cache_key(&waypoints, &pbf, &data_dir, &pack_dirs, max_suggestions);
     let cached_geometry = {
         let guard = session_lock().lock().expect("camping session lock");
         guard
@@ -957,43 +1030,84 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
     }
 
     let routing_profile = routing_profile_for_travel(travel_profile);
-    let route_points: Vec<(f64, f64)> = waypoints.iter().map(|w| (w[0], w[1])).collect();
+    // Segment the corridor so Removable multi-country packs never sit as one
+    // giant graph (same RAM constraint as densify `poi_skipped=chunk_leg`).
     let t_graph = Instant::now();
-    let graph = match try_load_graph_for_plan_corridor(
-        &data_dir,
-        &pbf,
-        routing_profile,
-        Some(bbox),
-        Some(&route_points),
-    ) {
-        Ok(g) => g,
-        Err(e) => {
-            return CampingCallResult {
-                kind: CampingCallKind::Unavailable,
-                message: format!("corridor graph load failed: {e:?}"),
-                elapsed_ms: started.elapsed().as_millis() as u64,
-                result_json: None,
-                peak_guest_memory_bytes: 0,
-            };
+    let mut seeds = Vec::new();
+    let mut probes: Vec<(f64, f64)> = Vec::new();
+    let mut segment_errors = 0u32;
+    let step = CAMPING_SEGMENT_WAYPOINTS.max(2);
+    let mut start = 0usize;
+    while start < waypoints.len() {
+        let end = (start + step).min(waypoints.len());
+        // Overlap one shared waypoint so segment joints are not skipped.
+        let seg_start = if start == 0 {
+            0
+        } else {
+            start.saturating_sub(1)
+        };
+        let chunk = &waypoints[seg_start..end];
+        if chunk.len() < 2 {
+            break;
         }
-    };
-    let graph_ms = t_graph.elapsed().as_millis() as u64;
-
-    let t_junc = Instant::now();
-    let mut seeds = find_road_track_junctions(&graph, &waypoints, CORRIDOR_SEED_RADIUS_M);
-    seeds.truncate(80);
-    let junction_ms = t_junc.elapsed().as_millis() as u64;
-
-    let t_walk = Instant::now();
-    let walked = probe_along_tracks(&graph, &seeds, DEFAULT_TRACK_WALK_M, None);
-    let mut probes: Vec<(f64, f64)> = walked.iter().map(|p| (p.lat, p.lon)).collect();
+        let Some(seg_bbox) = corridor_bbox_from_waypoints(chunk) else {
+            start = end;
+            continue;
+        };
+        let route_points: Vec<(f64, f64)> = chunk.iter().map(|w| (w[0], w[1])).collect();
+        match try_load_graph_for_plan_corridor_with_pack_dirs(
+            &data_dir,
+            &pack_dirs,
+            &pbf,
+            routing_profile,
+            Some(seg_bbox),
+            Some(&route_points),
+            PlanEdgeClipMode::CorridorBand,
+        ) {
+            Ok(graph) => {
+                let mut seg_seeds =
+                    find_road_track_junctions(&graph, chunk, CORRIDOR_SEED_RADIUS_M);
+                let walked = probe_along_tracks(&graph, &seg_seeds, DEFAULT_TRACK_WALK_M, None);
+                drop(graph);
+                for s in seg_seeds.drain(..) {
+                    seeds.push(s);
+                }
+                for p in walked {
+                    probes.push((p.lat, p.lon));
+                }
+            }
+            Err(_) => {
+                segment_errors += 1;
+            }
+        }
+        if seeds.len() >= CAMPING_MAX_SEEDS {
+            break;
+        }
+        start = end;
+    }
+    seeds.truncate(CAMPING_MAX_SEEDS);
     if probes.is_empty() {
         probes = seeds.iter().map(|s| (s.lat, s.lon)).collect();
     }
-    let probe_walk_ms = t_walk.elapsed().as_millis() as u64;
+    let graph_ms = t_graph.elapsed().as_millis() as u64;
+    let junction_ms = 0u64;
+    let probe_walk_ms = 0u64;
+    if seeds.is_empty() && probes.is_empty() {
+        return CampingCallResult {
+            kind: CampingCallKind::Unavailable,
+            message: format!(
+                "corridor graph segments produced no seeds (pack_dirs={}; segment_errors={segment_errors})",
+                pack_dirs.len()
+            ),
+            elapsed_ms: started.elapsed().as_millis() as u64,
+            result_json: None,
+            peak_guest_memory_bytes: 0,
+        };
+    }
 
     let t_bldg = Instant::now();
-    let (all_buildings, glacier_rings) = load_overnight_geometry(&data_dir, &pbf, bbox);
+    let (all_buildings, glacier_rings) =
+        load_overnight_geometry_near_probes(&data_dir, &pack_dirs, &probes);
     let buildings = buildings_near_probes(&all_buildings, &probes, 0.008);
     let buildings_ms = t_bldg.elapsed().as_millis() as u64;
 
@@ -1541,8 +1655,9 @@ mod geometry_cache_tests {
         );
         let wp1 = vec![[61.1, 10.5], [61.2, 10.6]];
         let wp2 = vec![[61.1, 10.5], [61.3, 10.7]];
-        let k1 = geometry_cache_key(&wp1, &pbf, &dir, 12);
-        let k2 = geometry_cache_key(&wp2, &pbf, &dir, 12);
+        let empty: Vec<PathBuf> = Vec::new();
+        let k1 = geometry_cache_key(&wp1, &pbf, &dir, &empty, 12);
+        let k2 = geometry_cache_key(&wp2, &pbf, &dir, &empty, 12);
         assert_ne!(k1, k2, "route change must invalidate geometry cache");
 
         // Pack rebake: manifest content/mtime fingerprint changes.
@@ -1552,7 +1667,7 @@ mod geometry_cache_tests {
             "ostlandet-latest.navi-manifest.json",
             br#"{"schema":1,"stem":"ostlandet-latest","rebake":2}"#,
         );
-        let k3 = geometry_cache_key(&wp1, &pbf, &dir, 12);
+        let k3 = geometry_cache_key(&wp1, &pbf, &dir, &empty, 12);
         assert_ne!(
             k1, k3,
             "pack version/hash change must invalidate geometry cache"
@@ -1592,7 +1707,8 @@ mod geometry_cache_tests {
         let dir = temp_dir();
         let pbf = dir.join("x.osm.pbf");
         fs::write(&pbf, b"x").unwrap();
-        let k = geometry_cache_key(&[[1.0, 2.0]], &pbf, &dir, 4);
+        let empty: Vec<PathBuf> = Vec::new();
+        let k = geometry_cache_key(&[[1.0, 2.0]], &pbf, &dir, &empty, 4);
         assert!(
             !k.contains("motorised")
                 && !k.contains("Hiking")
@@ -1601,6 +1717,23 @@ mod geometry_cache_tests {
             "geometry key must not include travel/clock/residency: {k}"
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn find_planning_pbf_sees_long_trip_pack_dirs() {
+        let root = temp_dir();
+        let data = root.join("files");
+        let ltp = data.join("long-trip-packs");
+        fs::create_dir_all(&data).unwrap();
+        fs::create_dir_all(&ltp).unwrap();
+        fs::write(ltp.join("nord-norge-latest.osm.pbf"), b"pbf").unwrap();
+        assert!(
+            find_planning_pbf(&data, &[]).is_none(),
+            "files/ alone must not see LTP-only PBF"
+        );
+        let found = find_planning_pbf(&data, &[ltp.clone()]).expect("pack_dirs must find PBF");
+        assert!(found.ends_with("nord-norge-latest.osm.pbf"));
+        let _ = fs::remove_dir_all(&root);
     }
 
     /// Regression: warm path must clone the cached job and drop the session lock

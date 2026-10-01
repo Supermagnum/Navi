@@ -151,10 +151,11 @@ Chunked soft breaks: interval ~116 km; `chunked_rest_pauses=11`;
 
 ### Attractions / wild camping
 
-Nearby attractions: **0** named attractions in the plan report (lookahead on;
-chunk legs skip path POI scoring with `poi_skipped=chunk_leg`).
-Wild camping: **on**; soft overnights resolved to **3 lodging** POIs (not wild
-sites). Hut/cabin strings appear in pack/POI plumbing only.
+Nearby attractions are post-plan (POI look-ahead covering load over
+`long-trip-packs/`), not densify-leg `poi_skipped=chunk_leg` scoring.
+Wild camping: **on**; soft overnights resolved to **3 lodging** POIs on this
+pass. Camping suggest uses Removable pack dirs after plan (segmented corridor
+loads) so SD-only Ready packs are visible.
 
 ### Fuel-stop estimate (unimplemented planner)
 
