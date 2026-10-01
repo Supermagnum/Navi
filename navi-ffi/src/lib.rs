@@ -8978,22 +8978,23 @@ pub fn ensure_poi_lookahead_covering(
         }
     }
     let data = PathBuf::from(&data_dir);
-    let index = match driver_break_core::routing::indexed::try_load_poi_pack_covering_point_with_pack_dirs(
-        &data, &pack_dirs, lat, lon,
-    ) {
-        Ok((poi, _)) => poi,
-        Err(e) => {
-            log::warn!(
-                target: "NaviNative",
-                "poi_lookahead covering load failed at {lat:.4},{lon:.4}: {e:?}"
-            );
-            return FfiPoiLookaheadLoadStats {
-                records: 0,
-                cone_m: POI_LOOKAHEAD_CONE_M,
-                half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
-            };
-        }
-    };
+    let index =
+        match driver_break_core::routing::indexed::try_load_poi_pack_covering_point_with_pack_dirs(
+            &data, &pack_dirs, lat, lon,
+        ) {
+            Ok((poi, _)) => poi,
+            Err(e) => {
+                log::warn!(
+                    target: "NaviNative",
+                    "poi_lookahead covering load failed at {lat:.4},{lon:.4}: {e:?}"
+                );
+                return FfiPoiLookaheadLoadStats {
+                    records: 0,
+                    cone_m: POI_LOOKAHEAD_CONE_M,
+                    half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+                };
+            }
+        };
     let out = FfiPoiLookaheadLoadStats {
         records: index.len() as u32,
         cone_m: POI_LOOKAHEAD_CONE_M,

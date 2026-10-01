@@ -20,7 +20,7 @@ class GeofabrikDownloadCatalogTest {
         assertFalse(
             GeofabrikDownloadCatalog.norwayRegions.any { it.first == "hedmark" },
         )
-        // Retired fylke paths remap to ostlandet, so the pack-id check succeeds.
+        // Retired path remaps to ostlandet, so indexing/download accepts it as known.
         assertTrue(
             GeofabrikDownloadCatalog.isKnownPackRegionId("europe/norway/hedmark"),
         )
