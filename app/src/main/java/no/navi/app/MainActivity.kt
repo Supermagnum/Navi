@@ -1117,6 +1117,8 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastPlanDistanceKm = 0.0
         NaviMapTestHooks.lastRoutePolyline = ""
         NaviMapTestHooks.lastBreakPoiCount = 0
+        NaviMapTestHooks.lastBreakPoisJson = "[]"
+        NaviMapTestHooks.lastDaysJson = "[]"
         NaviMapTestHooks.lastArrivedAtEnd = false
         NaviMapTestHooks.lastCurrentStreet = null
         graphFerryEdges = null
@@ -1529,6 +1531,10 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastRoutePolyline = pending.routePolyline
         NaviMapTestHooks.lastAppliedRouteStartLabel = startLabel
         NaviMapTestHooks.lastBreakPoiCount = breaks.size
+        NaviMapTestHooks.lastBreakPoisJson =
+            runCatching { pending.breakPoisJson }.getOrDefault("[]")
+        NaviMapTestHooks.lastDaysJson =
+            runCatching { pending.daysJson }.getOrDefault("[]")
         NaviMapTestHooks.lastManeuversJson =
             runCatching { pending.maneuversJson }.getOrDefault("[]")
         NaviMapTestHooks.lastSimSamplesJson =

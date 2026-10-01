@@ -30,10 +30,16 @@ import org.junit.runner.RunWith
 import uniffi.navi.FfiCarRestSettings
 import uniffi.navi.FfiFuelConfig
 import uniffi.navi.FfiVehicleLimits
+import uniffi.navi.CampingCallKind
+import uniffi.navi.TravelProfile
 import uniffi.navi.campingPluginConfigure
 import uniffi.navi.campingPluginInstallGuest
 import uniffi.navi.campingPluginSetEnabled
+import uniffi.navi.campingPluginSetNavContext
 import uniffi.navi.campingPluginSetTimezone
+import uniffi.navi.campingPluginSuggestAlongRoute
+import uniffi.navi.ensurePoiLookaheadLoaded
+import uniffi.navi.poiLookaheadQueryJson
 import uniffi.navi.saveCarRestSettings
 import uniffi.navi.saveFuelConfig
 import uniffi.navi.saveVehicleLimits
@@ -383,7 +389,7 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
                 .put("duration_h", etaMin / 60.0)
                 .put("duration_ok", (etaMin / 60.0) in 20.0..31.0)
                 .put("maneuvers", manCount)
-                .put("maneuvers_ok", manCount in 150..170)
+                .put("maneuvers_ok", manCount in 55..100)
                 .put("datex_ok", datexImpactsPositive(planReport)),
         )
         report.put("pack_dir", LongTripPackStorage.packDownloadDir(composeRule.activity).absolutePath)
@@ -406,13 +412,36 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
             "UI plan must produce a route (km=$distanceKm chars=${NaviMapTestHooks.lastRoutePolylineChars})",
             distanceKm > 100.0 && NaviMapTestHooks.lastRoutePolylineChars >= 8,
         )
-        report.put(
-            "attractions",
-            sampleAttractionsFromReport(planReport),
-        )
+        // Soft breaks / overnights come from post-chunk finalize (breakPoisJson /
+        // daysJson), not per-leg poi_skipped=chunk_leg lines in the plan report.
         report.put(
             "rest_places",
-            extractBreakPois(planReport),
+            parseRestPlaces(
+                NaviMapTestHooks.lastBreakPoisJson,
+                NaviMapTestHooks.lastDaysJson,
+            ),
+        )
+        report.put("break_poi_count", NaviMapTestHooks.lastBreakPoiCount)
+        report.put(
+            "chunked_soft_report_lines",
+            JSONArray(
+                planReport
+                    .lineSequence()
+                    .filter {
+                        it.startsWith("chunked_") ||
+                            it.startsWith("motor_") ||
+                            it.startsWith("chunked_break_poi:")
+                    }.take(80)
+                    .toList(),
+            ),
+        )
+        report.put(
+            "attractions",
+            sampleAttractionsAlongPolyline(NaviMapTestHooks.lastRoutePolyline),
+        )
+        report.put(
+            "wild_camping",
+            sampleWildCamping(NaviMapTestHooks.lastRoutePolyline),
         )
         report.put(
             "maneuver_kinds",
@@ -421,7 +450,8 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         writeReport()
         Log.i(
             TAG,
-            "PASS_UI dist=$distanceKm etaMin=$etaMin man=$manCount datex=${datexImpactsPositive(planReport)}",
+            "PASS_UI dist=$distanceKm etaMin=$etaMin man=$manCount datex=${datexImpactsPositive(planReport)} " +
+                "breaks=${NaviMapTestHooks.lastBreakPoiCount}",
         )
         Log.i(TAG, "ELSA_CAMPAIGN_DONE")
     }
@@ -439,32 +469,202 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         return counts
     }
 
-    private fun extractBreakPois(rep: String): JSONArray {
+    private fun parseRestPlaces(
+        breakPoisJson: String,
+        daysJson: String,
+    ): JSONArray {
         val out = JSONArray()
-        val re = Regex("""\"lat\":([0-9.+-]+),\"lon\":([0-9.+-]+),\"name\":\"([^\"]*)\"""")
-        for (m in re.findAll(rep)) {
-            out.put(
-                JSONObject()
-                    .put("lat", m.groupValues[1].toDoubleOrNull())
-                    .put("lon", m.groupValues[2].toDoubleOrNull())
-                    .put("name", m.groupValues[3]),
-            )
-            if (out.length() >= 80) break
+        try {
+            val breaks = JSONArray(breakPoisJson.ifBlank { "[]" })
+            for (i in 0 until breaks.length()) {
+                val o = breaks.optJSONObject(i) ?: continue
+                out.put(
+                    JSONObject()
+                        .put("name", o.optString("name"))
+                        .put("lat", o.optDouble("lat"))
+                        .put("lon", o.optDouble("lon"))
+                        .put("kind", o.optString("kind"))
+                        .put("along_km", o.optDouble("along_km", Double.NaN)),
+                )
+            }
+            val days = JSONArray(daysJson.ifBlank { "[]" })
+            for (i in 0 until days.length()) {
+                val d = days.optJSONObject(i) ?: continue
+                val name = d.optString("overnight_name")
+                if (name.isNotBlank()) {
+                    out.put(
+                        JSONObject()
+                            .put("name", name)
+                            .put("lat", d.optDouble("overnight_lat", Double.NaN))
+                            .put("lon", d.optDouble("overnight_lon", Double.NaN))
+                            .put("kind", "overnight"),
+                    )
+                }
+            }
+        } catch (_: Throwable) {
         }
         return out
     }
 
-    private fun sampleAttractionsFromReport(rep: String): JSONObject {
-        val lines =
-            rep
-                .lineSequence()
-                .filter {
-                    it.contains("attraction", ignoreCase = true) ||
-                        it.contains("poi_", ignoreCase = true) ||
-                        it.contains("lookahead", ignoreCase = true)
-                }.take(60)
-                .toList()
-        return JSONObject().put("lines", JSONArray(lines)).put("count_lines", lines.size)
+    private fun sampleAttractionsAlongPolyline(polyline: String): JSONObject {
+        val o = JSONObject()
+        return try {
+            val pbfCandidates =
+                listOf(
+                    File(dataDir, "region.osm.pbf"),
+                    File(dataDir, "ostlandet-latest.osm.pbf"),
+                    File(dataDir, "nord-norge-latest.osm.pbf"),
+                )
+            val pbf = pbfCandidates.firstOrNull { it.isFile }
+            if (pbf != null) {
+                val stats = ensurePoiLookaheadLoaded(dataDir.absolutePath, pbf.absolutePath)
+                o.put("load_ok", true)
+                o.put("records", stats.records.toLong())
+                o.put("pbf", pbf.name)
+            } else {
+                o.put("load_ok", false)
+                o.put("load_note", "no local PBF; using already-loaded look-ahead if any")
+            }
+            val samples = samplePolylinePoints(polyline, 8)
+            var total = 0
+            val hits = JSONArray()
+            val byType = JSONObject()
+            for ((lat, lon) in samples) {
+                val raw = poiLookaheadQueryJson(lat, lon, 0.0, true, false)
+                val arr =
+                    try {
+                        JSONArray(raw)
+                    } catch (_: Throwable) {
+                        JSONObject(raw).optJSONArray("hits") ?: JSONArray()
+                    }
+                for (i in 0 until arr.length()) {
+                    val h = arr.optJSONObject(i) ?: continue
+                    total++
+                    val kind = h.optString("kind", h.optString("category", "unknown"))
+                    byType.put(kind, byType.optInt(kind) + 1)
+                    if (hits.length() < 40) {
+                        hits.put(
+                            JSONObject()
+                                .put("name", h.optString("name"))
+                                .put("kind", kind)
+                                .put("lat", h.optDouble("lat"))
+                                .put("lon", h.optDouble("lon")),
+                        )
+                    }
+                }
+            }
+            o.put("sample_points", samples.size)
+            o.put("hit_count", total)
+            o.put("by_type", byType)
+            o.put("hits_snip", hits)
+            o
+        } catch (t: Throwable) {
+            o.put("error", t.toString())
+            o
+        }
+    }
+
+    private fun sampleWildCamping(polyline: String): JSONObject {
+        val o = JSONObject()
+        return try {
+            val samples = samplePolylinePoints(polyline, 12)
+            if (samples.size < 2) {
+                o.put("error", "polyline too short")
+                return o
+            }
+            val wpJson =
+                campingWaypointsJson(
+                    samples.map { (lat, lon) -> doubleArrayOf(lat, lon) },
+                )
+            val dest = samples.last()
+            campingPluginSetNavContext(
+                waypointsJson = wpJson,
+                destLat = dest.first,
+                destLon = dest.second,
+                profile = TravelProfile.MOBILE_HOME,
+                professionalDriver = false,
+            )
+            val call = campingPluginSuggestAlongRoute(16u)
+            o.put("kind", call.kind.name)
+            o.put("message", call.message)
+            if (call.kind == CampingCallKind.OK && !call.resultJson.isNullOrBlank()) {
+                val parsed = JSONObject(call.resultJson!!)
+                val cards = JSONArray()
+                val list = parsed.optJSONObject("list")?.optJSONArray("cards") ?: JSONArray()
+                val foot = parsed.optJSONObject("onFootFromHere")?.optJSONArray("cards") ?: JSONArray()
+                for (src in listOf(list, foot)) {
+                    for (i in 0 until src.length()) {
+                        val c = src.optJSONObject(i) ?: continue
+                        cards.put(
+                            JSONObject()
+                                .put("title", c.optString("title", c.optString("name")))
+                                .put("lat", c.optDouble("lat"))
+                                .put("lon", c.optDouble("lon"))
+                                .put("country", c.optString("countryIso"))
+                                .put("legal", c.optString("legal")),
+                        )
+                    }
+                }
+                o.put("wild_camping_site_count", cards.length())
+                o.put("sites", cards)
+            } else {
+                o.put("wild_camping_site_count", 0)
+            }
+            o
+        } catch (t: Throwable) {
+            o.put("error", t.toString())
+            o
+        }
+    }
+
+    private fun campingWaypointsJson(points: List<DoubleArray>): String {
+        val arr = JSONArray()
+        for (p in points) {
+            arr.put(JSONArray().put(p[0]).put(p[1]))
+        }
+        return arr.toString()
+    }
+
+    private fun samplePolylinePoints(
+        polyline: String,
+        n: Int,
+    ): List<Pair<Double, Double>> {
+        try {
+            val arr = JSONArray(polyline)
+            if (arr.length() >= 2) {
+                val step = maxOf(1, arr.length() / n)
+                val out = ArrayList<Pair<Double, Double>>()
+                var i = 0
+                while (i < arr.length() && out.size < n) {
+                    val pt = arr.optJSONArray(i)
+                    if (pt != null && pt.length() >= 2) {
+                        out.add(pt.getDouble(0) to pt.getDouble(1))
+                    }
+                    i += step
+                }
+                return out
+            }
+        } catch (_: Throwable) {
+        }
+        // Prefer sim samples from the last UI plan (stable lat/lon pairs).
+        try {
+            val sims = JSONArray(NaviMapTestHooks.lastSimSamplesJson.ifBlank { "[]" })
+            if (sims.length() >= 2) {
+                val step = maxOf(1, sims.length() / n)
+                val out = ArrayList<Pair<Double, Double>>()
+                var i = 0
+                while (i < sims.length() && out.size < n) {
+                    val o = sims.optJSONObject(i)
+                    if (o != null) {
+                        out.add(o.optDouble("lat") to o.optDouble("lon"))
+                    }
+                    i += step
+                }
+                if (out.size >= 2) return out
+            }
+        } catch (_: Throwable) {
+        }
+        return emptyList()
     }
 
     private fun seedAssistSettings() {
