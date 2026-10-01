@@ -108,7 +108,7 @@ Innlandet bbox extract: **not fetched**.
 
 | | |
 |---|---|
-| **Access** | Hand-built sample shaped like CPS `channel` / `zone` / `gps-roaming` / `offset` exports (`docs/CAT.md`) |
+| **Access** | Hand-built sample shaped like CPS `channel` / `zone` / `gps-roaming` / `offset` exports ([`docs/CAT.md`](../../docs/CAT.md), format + on-device path in [`docs/cat-test.md`](../../docs/cat-test.md)) |
 | **Licence** | Sample structure: project test data. **Frequencies/callsigns from OSM fixtures only** (ODbL). |
 | **May bundle** | Yes (as test fixtures) |
 | **App import** | Yes (represents user-owned CPS export) |

@@ -142,7 +142,7 @@ capability report. Auto-tune is enabled only if **all** of these hold:
 - Optional user override: allow **Beta** backends with an explicit warning.
   Alpha / Untested are never allowed.
 - Test builds may allow the dummy rig (model 1) regardless of its reported
-  status (see [Testing](#testing)).
+  status (CI only; see [`cat-test.md`](cat-test.md#out-of-scope)).
 
 Equivalent FFI check: `rig_caps.status == RIG_STATUS_STABLE` and non-null
 `set_rptr_shift`, `set_rptr_offs`, `set_ctcss_tone`.
@@ -410,17 +410,32 @@ CSV, OpenRepeater, RadioID, and the last successful local imports.
 
 ## Repeater data import and cross-referencing
 
-**Status:** specified here; **not implemented**. Doc-only planning for the
-future `cat` plugin / host importer.
+**Status:** host importers in `navi-cat` (OSM JSON, AnyTone channel CSV,
+OpenRepeater JSON, RadioID CSV scaffold; RepeaterBook always disabled).
+On-device CSV drop directory and full format notes:
+[`cat-test.md`](cat-test.md#csv-import-path) /
+[`cat-test.md`](cat-test.md#anytone-cps-csv-format). Fixture outcomes:
+[`testdata/cat/SOURCES.md`](../testdata/cat/SOURCES.md).
+
+### CSV import directory
+
+| Role | Path |
+|---|---|
+| Android app | `{Context.filesDir}/cat/import/` (created at CAT bootstrap) |
+| Repo fixtures | [`testdata/cat/anytone/`](../testdata/cat/anytone/) |
+| Onboard SQLite | `{Context.filesDir}/cat_repeaters.sqlite` |
+
+Put AnyTone CPS exports (`channel.csv`, optional `zone.csv`,
+`gps-roaming.csv`, `offset.csv`) in the app import directory. Encoding:
+**UTF-8** or **Windows-1252**; **CRLF** or **LF**.
 
 ### Sources the plugin must accept
 
 #### 1. AnyTone CPS CSV exports
 
 Accept sample-shaped exports such as `channel.csv`, `zone.csv`,
-`gps-roaming.csv`, and `offset.csv`.
-
-Encoding and newlines: accept **UTF-8** and **Windows-1252**, **CRLF** or **LF**.
+`gps-roaming.csv`, and `offset.csv`. Full column / filter rules:
+[`cat-test.md` — AnyTone CPS CSV format](cat-test.md#anytone-cps-csv-format).
 
 **`channel.csv`** — one row per channel. Observed key columns:
 
@@ -431,8 +446,7 @@ Encoding and newlines: accept **UTF-8** and **Windows-1252**, **CRLF** or **LF**
 | Channel Type | `A-Analog` or `D-Digital` (DMR) |
 | Band Width | `12.5K` / `25K` |
 | CTCSS/DCS Encode / Decode | Analog access tones |
-| RX Color Code, Slot | DMR |
-| Contact / Contact TG/DMR ID | DMR talkgroup / contact |
+| Color Code / Slot, Contact TG | DMR |
 | APRS RX and other APRS columns | Used to **exclude** APRS rows (see Filtering) |
 
 There are **no coordinates** in `channel.csv`.
@@ -593,17 +607,9 @@ Radio control lives in the host (`navi-cat`), not WASM. Guest code is only in
 
 ## Testing
 
-Use the Hamlib **dummy rig** (model 1) for development and CI:
-
-```text
-rigctld -m 1 -t 4532
-```
-
-The dummy stores frequency, mode, VFO, shift, offset, tone and PTT in memory.
-Every programming assertion uses (1) the app's read-back and (2) an
-**independent** second rigctld connection. A mismatch-injection proxy rewrites
-one reply to prove detection + single retry + safe stop. A recording proxy
-asserts that no `T` / set-PTT is ever sent.
+**Results, fixture-fetch checklist, Espa→Dombås switch logs (Run A / Run B),
+CSV path/format, and importer coverage** live in
+[`cat-test.md`](cat-test.md). Do not duplicate full tables here.
 
 ### Required scenarios (summary)
 
@@ -620,6 +626,9 @@ asserts that no `T` / set-PTT is ever sent.
 11. Sandbox boundary: guest cannot skip read-back / program while PTT / ungated backend.
 12. RepeaterBook stays off; no requests to repeaterbook.com.
 
+Scenario pass/fail detail, JVM bridge notes, and corridor expected-switch
+timelines: [`cat-test.md`](cat-test.md).
+
 ### Emulator vs real device
 
 | Layer | What it proves |
@@ -632,31 +641,11 @@ asserts that no `T` / set-PTT is ever sent.
 
 See [`testdata/cat/SOURCES.md`](../testdata/cat/SOURCES.md) and
 [`scripts/fetch-cat-fixtures.sh`](../scripts/fetch-cat-fixtures.sh).
+Server-file / pack checks and importer automation results:
+[`cat-test.md`](cat-test.md#fixture--database-fetch-checklist).
 
-### Server-file repeater check (Innlandet)
-
-Recorded under Testing / SOURCES after the read-only pack/pmtiles/POI search
-for `communication:amateur_radio:repeater=yes` and relation `18780801`. If
-server files lack complete repeater tags, the client extracts from local PBF /
-OSM fixtures; a future server-side bake is noted but **not** implemented on
-navi-server from this branch.
-
-### Test report (CAT branch)
-
-| Item | Result |
-|---|---|
-| Hamlib lock | tag **4.7.2**, NDK **30.0.14904198** (`scripts/hamlib-android.lock`) |
-| Geofabrik | Trailing-slash dated-URL retry; oppland/hedmark → ostlandet; Sweden PBF filename dedupe; soft-PASS logs `place_index_skipped=1` |
-| Elsa long-route | Prior campaign: 8 corridor regions auto-downloaded, Via `(none)`, no forced packs |
-| OSM changeset callsigns | See [`testdata/cat/SOURCES.md`](../testdata/cat/SOURCES.md) — LA2DRR, LA2HRR, LA2JRR, … LA5TRR, LA5MR, … |
-| Non-networked corridor | [`testdata/cat/non_networked.json`](../testdata/cat/non_networked.json) (OSM-only; APRS excluded) |
-| Server-file repeaters | **Partial** (21 hits in ostlandet fixture PBF incl. relation 18780801; incomplete vs current OSM) |
-| RepeaterBook / repeatermap.de | No data committed; cross-check / disabled only |
-| OpenRepeater Norway | Empty export (count=0) |
-| RadioID | Terms forbid bulk redistribute; no data |
-| Desktop unit tests | `navi-cat` gating/program/repeater + `--test scenarios` (1–12); `navi-plugin-cats` select/follow; dummy `rigctld -m 1` |
-| Emulator / hardware | Loopback bridge JVM tests; remote `10.0.2.2:4532`; real USB/BT/radio still required for field confirmation |
-| Still needs real hardware | USB OTG + Bluetooth SPP read-back on a physical transceiver after checking Hamlib backend status for that model |
+Hamlib dummy (`rigctld -m 1`) is CI gating only — not product route evidence
+(see cat-test.md [Out of scope](cat-test.md#out-of-scope)).
 
 Plugin logic lives only under `plugins/CATS-plugin/`. Host radio safety is in `navi-cat`.
 
@@ -690,7 +679,7 @@ for this on the `CAT` branch.
 | Auto-tune → VFO 1 / network follow | Implemented (guest + host) |
 | Hamlib Android build script + lock | Implemented (`scripts/build-hamlib-android.sh`, tag 4.7.2) |
 | Android USB/BT/remote transports | Loopback bridge + remote endpoint; JVM tests green |
-| Dummy-rig + scenario test suite | Scenarios 1–12 covered in `navi-cat` / plugin / JVM tests |
+| Scenario + importer fixture suite | Scenarios 1–12 + `import_fixtures`; results in [`cat-test.md`](cat-test.md) |
 | HostApi `cat_*` / `repeater_query` | Implemented (caps + host handlers; defaults fail closed) |
 | Product CAT UI | Tools/Map toggle + `CatStatusSheet` (connect / follow / nearby); UniFFI `cat_plugin_*` |
 | Future ham-shacks | Doc only; not implemented |

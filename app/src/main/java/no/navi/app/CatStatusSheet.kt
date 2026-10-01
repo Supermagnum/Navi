@@ -73,6 +73,11 @@ fun CatStatusSheet(
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
+                "AnyTone CPS CSV: put channel.csv (and zone / gps-roaming / offset) under filesDir/cat/import/. Format: docs/cat-test.md.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("cat_import_path_hint"),
+            )
+            Text(
                 if (connected) "Connected${if (model.isNotBlank()) " ($model)" else ""}"
                 else "Disconnected",
                 style = MaterialTheme.typography.bodyMedium,

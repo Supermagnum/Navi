@@ -15,6 +15,8 @@ object CatBootstrap {
     fun ensureInitialized(context: Context) {
         if (!configured.compareAndSet(false, true)) return
         val filesDir = context.filesDir
+        // Stable drop directory for AnyTone CPS CSV exports (see docs/cat-test.md).
+        File(filesDir, "cat/import").mkdirs()
         catPluginConfigure(
             filesDir.absolutePath,
             filesDir.absolutePath,

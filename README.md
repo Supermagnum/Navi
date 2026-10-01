@@ -82,6 +82,8 @@ differ for GPS, maps, GPU, and layout. Checklist:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 On-device and emulator results:
 [`docs/android-test-results.md`](docs/android-test-results.md).
+CAT radio corridor / importer evidence (branch `CAT`):
+[`docs/cat-test.md`](docs/cat-test.md).
 
 **Install the signed release APK.** Testers should download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
@@ -918,6 +920,8 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/debugging.md`](docs/debugging.md) | Debugging |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | Physical device checklist |
 | [`docs/android-test-results.md`](docs/android-test-results.md) | Chronological on-device / emulator instrumented evidence |
+| [`docs/CAT.md`](docs/CAT.md) | CAT / CATS radio control (Hamlib, auto-tune, network follow, safety) |
+| [`docs/cat-test.md`](docs/cat-test.md) | CAT test report: Espa→Dombås switch logs, fixture fetch, CSV import path/format |
 | [`docs/bevensen-mobilehome-campaign.md`](docs/bevensen-mobilehome-campaign.md) | Bad Bevensen → Norway MobileHome AVD campaign (setup, bug fixes, corrected retest) |
 | [`docs/status.md`](docs/status.md) | Which docs are live status vs historical evidence |
 | [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Tracked future-proofing / open risk items |

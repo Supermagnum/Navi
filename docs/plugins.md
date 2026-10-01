@@ -310,7 +310,7 @@ internet weather overlay.
 |---|---|
 | **Benefit** | Set VFO frequency / offset / CTCSS from nearby NFM repeaters while driving |
 | **Path** | [`plugins/CATS-plugin/`](../plugins/CATS-plugin/) — all guest logic here; wasmtime only |
-| **Docs** | [`CAT.md`](CAT.md) — `RigBackend` (TCP + FFI), latest-stable Hamlib lock, Android transports, read-back verification, auto-tune, network follow, onboard DB (OSM / AnyTone CSV / OpenRepeater / RadioID; RepeaterBook disabled) |
+| **Docs** | [`CAT.md`](CAT.md) — `RigBackend` (TCP + FFI), latest-stable Hamlib lock, Android transports, read-back verification, auto-tune, network follow, onboard DB (OSM / AnyTone CSV / OpenRepeater / RadioID; RepeaterBook disabled). Test report / CSV path: [`cat-test.md`](cat-test.md) |
 | **Host duties** | `navi-cat` + `navi-hamlib-sys` + USB/BT loopback / remote `rigctld`; never auto-TX (`rig_get_ptt` interlock; never `rig_set_ptt` / `T`); enforce gating + read-back even if the guest misbehaves; close sessions on plugin disable |
 | **Caps** | `position_read`, `log`, `cat_status`, `repeater_query`, `cat_vfo_set`, `cat_network_follow` |
 | **Safety** | Read/query free; **TX inhibited**; program only when PTT clear and read-back matches |

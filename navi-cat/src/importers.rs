@@ -1,7 +1,12 @@
 //! Repeater import scaffolds (OSM, AnyTone CSV, OpenRepeater, RadioID).
 //! RepeaterBook is always disabled.
 
+use std::path::Path;
+
 use crate::repeater::{dmr_dedupe_key, RepeaterDb, RepeaterSite, RepeaterSource};
+
+/// On-device / host relative directory for user AnyTone CPS CSV drops.
+pub const CAT_IMPORT_REL: &str = "cat/import";
 
 /// Normalize European comma decimals (`-0,6 Mhz` -> `-0.6`).
 pub fn normalize_mhz_str(s: &str) -> String {
@@ -15,12 +20,32 @@ pub fn parse_mhz(s: &str) -> Option<f64> {
     normalize_mhz_str(s).parse().ok()
 }
 
-/// Scaffold: JSON array of OSM-shaped sites.
+/// Decode CPS export bytes: UTF-8 if valid, else Windows-1252 (byte→U+00xx).
+pub fn decode_cps_bytes(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => s.to_string(),
+        Err(_) => bytes.iter().map(|&b| char::from(b)).collect(),
+    }
+}
+
+/// Ensure `{files_dir}/cat/import/` exists (Android filesDir or host path).
+pub fn ensure_cat_import_dir(files_dir: &Path) -> std::io::Result<std::path::PathBuf> {
+    let dir = files_dir.join(CAT_IMPORT_REL);
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+/// Scaffold: JSON array of OSM-shaped sites, or `{ "entries": [ ... ] }`
+/// (as in `testdata/cat/non_networked.json`).
 pub fn import_osm_json(db: &RepeaterDb, json: &str) -> anyhow::Result<usize> {
     let value: serde_json::Value = serde_json::from_str(json)?;
-    let arr = value
-        .as_array()
-        .ok_or_else(|| anyhow::anyhow!("expected JSON array"))?;
+    let arr = if let Some(a) = value.as_array() {
+        a.clone()
+    } else if let Some(a) = value.get("entries").and_then(|v| v.as_array()) {
+        a.clone()
+    } else {
+        anyhow::bail!("expected JSON array or object with entries[]");
+    };
     let mut n = 0;
     for (i, item) in arr.iter().enumerate() {
         let callsign = item
@@ -28,6 +53,10 @@ pub fn import_osm_json(db: &RepeaterDb, json: &str) -> anyhow::Result<usize> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+        let osm_id = item
+            .get("osm_id")
+            .and_then(|v| v.as_u64())
+            .or_else(|| item.get("osm_id").and_then(|v| v.as_i64()).map(|v| v as u64));
         let freq = item
             .get("freq_out_mhz")
             .and_then(|v| v.as_f64())
@@ -42,14 +71,26 @@ pub fn import_osm_json(db: &RepeaterDb, json: &str) -> anyhow::Result<usize> {
             .and_then(|v| v.as_f64())
             .or_else(|| item.get("shift").and_then(|v| v.as_str()).and_then(parse_mhz))
             .unwrap_or(0.0);
+        let ctcss_hz = item
+            .get("ctcss_hz")
+            .and_then(|v| v.as_f64())
+            .or_else(|| {
+                item.get("ctcss")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.replace(',', ".").parse().ok())
+            });
+        let id = match osm_id {
+            Some(id) => format!("osm-{id}-{callsign}"),
+            None => format!("osm-{i}-{callsign}"),
+        };
         db.upsert_site(&RepeaterSite {
-            id: format!("osm-{i}-{callsign}"),
+            id,
             callsign,
             lat: item.get("lat").and_then(|v| v.as_f64()),
             lon: item.get("lon").and_then(|v| v.as_f64()),
             freq_out_mhz: freq,
             shift_mhz: shift,
-            ctcss_hz: item.get("ctcss_hz").and_then(|v| v.as_f64()),
+            ctcss_hz,
             dcs_code: None,
             color_code: None,
             modulation: item
@@ -84,7 +125,7 @@ pub fn import_anytone_channel_csv(db: &RepeaterDb, csv: &str) -> anyhow::Result<
     let i_rx = idx("Receive Frequency");
     let i_tx = idx("Transmit Frequency");
     let i_type = idx("Channel Type");
-    let i_cc = idx("RX Color Code");
+    let i_cc = idx("RX Color Code").or_else(|| idx("Color Code"));
     let i_aprs = idx("APRS RX");
 
     let mut seen = std::collections::HashSet::new();
@@ -99,7 +140,12 @@ pub fn import_anytone_channel_csv(db: &RepeaterDb, csv: &str) -> anyhow::Result<
         if name.to_ascii_uppercase().contains("APRS") {
             continue;
         }
-        if !get(i_aprs).is_empty() && get(i_aprs) != "None" && get(i_aprs) != "0" {
+        let aprs = get(i_aprs);
+        if !aprs.is_empty()
+            && !aprs.eq_ignore_ascii_case("None")
+            && aprs != "0"
+            && !aprs.eq_ignore_ascii_case("Off")
+        {
             continue;
         }
         let rx: f64 = get(i_rx).parse().unwrap_or(0.0);
@@ -107,8 +153,16 @@ pub fn import_anytone_channel_csv(db: &RepeaterDb, csv: &str) -> anyhow::Result<
         if (rx - tx).abs() < 1e-9 {
             continue; // simplex
         }
+        let chan_type = get(i_type);
         let cc: u8 = get(i_cc).parse().unwrap_or(0);
-        let key = dmr_dedupe_key(rx, tx - rx, cc);
+        // DMR: many TG/slot rows share one physical repeater. Analog sites may
+        // share RX/TX (different networks) — do not collapse those.
+        let digital = chan_type.to_ascii_uppercase().contains("DIGITAL");
+        let key = if digital {
+            dmr_dedupe_key(rx, tx - rx, cc)
+        } else {
+            format!("analog|{name}|{rx:.5}|{tx:.5}")
+        };
         if !seen.insert(key) {
             continue;
         }
@@ -122,7 +176,7 @@ pub fn import_anytone_channel_csv(db: &RepeaterDb, csv: &str) -> anyhow::Result<
             ctcss_hz: None,
             dcs_code: None,
             color_code: Some(cc),
-            modulation: get(i_type),
+            modulation: chan_type,
             network_id: None,
             source: RepeaterSource::AnytoneCsv,
             conflict: false,
@@ -135,11 +189,34 @@ pub fn import_anytone_channel_csv(db: &RepeaterDb, csv: &str) -> anyhow::Result<
     Ok(n)
 }
 
+/// Accept AnyTone `offset.csv` even when the body is empty (header only).
+pub fn import_anytone_offset_csv(_db: &RepeaterDb, csv: &str) -> anyhow::Result<usize> {
+    let mut lines = csv.lines();
+    let header = lines
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("empty offset.csv"))?;
+    if !header.to_ascii_lowercase().contains("offset") {
+        anyhow::bail!("offset.csv missing Offset Frequency header");
+    }
+    let mut n = 0usize;
+    for line in lines {
+        if line.trim().is_empty() {
+            continue;
+        }
+        n += 1;
+    }
+    Ok(n)
+}
+
 pub fn import_openrepeater_json(db: &RepeaterDb, json: &str) -> anyhow::Result<usize> {
     let value: serde_json::Value = serde_json::from_str(json)?;
-    let arr = value
-        .as_array()
-        .ok_or_else(|| anyhow::anyhow!("expected JSON array"))?;
+    let arr = if let Some(a) = value.as_array() {
+        a.clone()
+    } else if let Some(a) = value.get("repeaters").and_then(|v| v.as_array()) {
+        a.clone()
+    } else {
+        anyhow::bail!("expected JSON array or object with repeaters[]");
+    };
     let mut n = 0;
     for (i, item) in arr.iter().enumerate() {
         let callsign = item
@@ -258,5 +335,13 @@ mod tests {
     fn repeaterbook_disabled() {
         let db = RepeaterDb::open_memory().unwrap();
         assert!(import_repeaterbook(&db, "x").is_err());
+    }
+
+    #[test]
+    fn ensure_import_dir_creates() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = ensure_cat_import_dir(tmp.path()).unwrap();
+        assert!(dir.is_dir());
+        assert!(dir.ends_with("cat/import"));
     }
 }

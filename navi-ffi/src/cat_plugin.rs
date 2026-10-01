@@ -175,6 +175,10 @@ fn open_db(files_dir: &Path) -> RepeaterDb {
     })
 }
 
+fn ensure_import_dir(files_dir: &Path) {
+    let _ = navi_cat::importers::ensure_cat_import_dir(files_dir);
+}
+
 /// Snapshot HostApi for a guest tick — VFO/follow from the guest are refused so
 /// a malicious guest cannot bypass UniFFI `CatService` read-back.
 struct CatTickApi {
@@ -231,6 +235,7 @@ pub fn cat_plugin_configure(files_dir: String, data_dir: String, timezone: Strin
     crate::init_native_logging();
     let files = PathBuf::from(files_dir);
     let data = PathBuf::from(data_dir);
+    ensure_import_dir(&files);
     let db = open_db(&files);
     let cat = CatService::new(LiveBackend::Offline(OfflineRig), db);
     let mut guard = session_lock().lock().expect("cat session");
