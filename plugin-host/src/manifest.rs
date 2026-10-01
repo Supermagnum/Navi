@@ -23,6 +23,8 @@ pub struct PluginManifest {
     pub fuel_limit: Option<u64>,
     /// Optional wall-clock timeout override in milliseconds.
     pub timeout_ms: Option<u64>,
+    /// Optional linear-memory ceiling in bytes (per guest call).
+    pub memory_limit_bytes: Option<usize>,
     /// Relative or absolute path to the `.wasm` module.
     #[serde(default = "default_wasm")]
     pub wasm: String,

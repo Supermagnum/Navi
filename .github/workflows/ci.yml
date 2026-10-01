@@ -31,6 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -67,6 +69,8 @@ jobs:
           cargo clippy --workspace --all-targets
           --exclude navi-plugin-log-hello
           --exclude navi-plugin-busy-loop
+          --exclude navi-plugin-trap-guest
+          --exclude navi-plugin-memory-bomb
           --exclude navi-plugin-weather
           --exclude navi-plugin-datex
           --exclude navi-plugin-poi-lookahead
@@ -99,6 +103,8 @@ jobs:
           --exclude navi-desktop
           --exclude navi-plugin-log-hello
           --exclude navi-plugin-busy-loop
+          --exclude navi-plugin-trap-guest
+          --exclude navi-plugin-memory-bomb
           --exclude navi-plugin-weather
           --exclude navi-plugin-datex
           --exclude navi-plugin-poi-lookahead
@@ -108,6 +114,12 @@ jobs:
 
       - name: Plugin-host gate guards (no premature link + wasmtime features)
         run: bash scripts/check-plugin-host-gate.sh
+
+      - name: Version bump gate (product code requires versionCode/versionName bump)
+        run: |
+          # Fetch base for merge-base comparison (shallow clones need depth).
+          git fetch --no-tags --depth=200 origin main || true
+          bash scripts/check-version-bump.sh origin/main
 
       - name: cargo deny check
         run: cargo deny check
@@ -219,6 +231,8 @@ jobs:
             --exclude navi-desktop \
             --exclude navi-plugin-log-hello \
             --exclude navi-plugin-busy-loop \
+            --exclude navi-plugin-trap-guest \
+            --exclude navi-plugin-memory-bomb \
             --exclude navi-plugin-weather \
             --exclude navi-plugin-datex \
             --exclude navi-plugin-poi-lookahead

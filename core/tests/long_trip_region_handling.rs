@@ -1250,6 +1250,8 @@ fn production_multi_stem_boundary_stem_maps() {
         ("hovedstaden-latest", "europe/denmark/hovedstaden"),
         ("skane-latest", "europe/sweden/skane"),
         ("vastra_gotaland-latest", "europe/sweden/vastra_gotaland"),
+        ("norrbotten-latest", "europe/sweden/norrbotten"),
+        ("vasterbotten-latest", "europe/sweden/vasterbotten"),
         ("denmark-latest", "europe/denmark"),
     ] {
         assert_eq!(
