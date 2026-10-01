@@ -27,10 +27,10 @@ import org.junit.Test
 import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 import org.junit.runner.RunWith
+import uniffi.navi.CampingCallKind
 import uniffi.navi.FfiCarRestSettings
 import uniffi.navi.FfiFuelConfig
 import uniffi.navi.FfiVehicleLimits
-import uniffi.navi.CampingCallKind
 import uniffi.navi.TravelProfile
 import uniffi.navi.campingPluginConfigure
 import uniffi.navi.campingPluginInstallGuest

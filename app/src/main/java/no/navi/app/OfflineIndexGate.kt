@@ -17,8 +17,7 @@ object OfflineIndexGate {
 
     private const val FIXTURE_PREFIX = "/data/local/tmp/navi_fixtures/"
 
-    fun isFixturePath(file: File): Boolean =
-        file.absolutePath.startsWith(FIXTURE_PREFIX)
+    fun isFixturePath(file: File): Boolean = file.absolutePath.startsWith(FIXTURE_PREFIX)
 
     fun isIndexablePbf(file: File): Boolean =
         file.isFile &&
