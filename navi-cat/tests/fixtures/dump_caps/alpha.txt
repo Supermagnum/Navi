@@ -1,5 +1,5 @@
-Rig model: 2
-Model name: Test
+Caps dump for model: 3301
+Model name: AlphaRig
 Backend status: Alpha
 Can set Repeater Shift: Y
 Can set Repeater Offset: Y

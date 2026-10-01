@@ -1,5 +1,5 @@
-Rig model: 2
-Model name: Test
+Caps dump for model: 2040
+Model name: ExampleStable
 Backend status: Stable
 Can set Repeater Shift: Y
 Can set Repeater Offset: Y

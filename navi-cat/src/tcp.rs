@@ -57,6 +57,11 @@ impl TcpRigBackend {
         &self.sent_log
     }
 
+    /// Send a raw rigctld command (extended `+` protocol). Still refuses `T` / set_ptt.
+    pub fn transact_raw(&mut self, cmd: &str) -> Result<String, RigError> {
+        self.cmd_raw(cmd)
+    }
+
     fn allow_dummy() -> bool {
         cfg!(test) || cfg!(feature = "allow-dummy-rig")
     }
