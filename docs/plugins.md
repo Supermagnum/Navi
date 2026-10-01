@@ -88,6 +88,7 @@ snapshots into the core; WASM guests must not get raw sockets.
 | `plugins/trap-guest` | Reference plugin: deliberate trap |
 | `plugins/memory-bomb` | Reference plugin: grow memory until limit |
 | `plugins/right-to-roam-camping` | Product camping guest (Phase 5a on Android); shared rule engine in `plugins/right-to-roam-camping/engine` (`navi-right-to-roam-camping`) |
+| `plugins/CATS-plugin/` | CAT / CATS WASM guest — repeater select / auto-tune / network follow ([`CAT.md`](CAT.md)); host is `navi-cat` + `navi-hamlib-sys` |
 | `plugins/weather/` | Weather plugin — Meteocons assets + guest scaffold; product HUD/map use host UniFFI ([`plugins/weather-plugin.md`](plugins/weather-plugin.md)) |
 | `plugins/datex/` | DATEX guest scaffold; host client in `driver-break-core::datex` ([`plugins/datex-plugin.md`](plugins/datex-plugin.md)) |
 

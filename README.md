@@ -166,6 +166,8 @@ checklist above and file an issue; you do not need to write code.
     - [Weather icons reference](docs/plugins/weather-icons-reference.md) — reference (assets shipped with weather)
     - [Instrument cluster (AGL)](docs/plugins/instrument-cluster-agl-spec.md) — not implemented
     - [Animated icons](docs/plugins/animated-icons-spec.md) — not implemented
+    - [CAT radio control](docs/CAT.md) — implemented (opt-in; Hamlib TCP/FFI, CatStatusSheet, radio/baud)
+    - [CATS WASM guest](plugins/CATS-plugin/) — implemented (opt-in; wasmtime auto-tune / network follow)
     - [Custom alert sounds](docs/plugins/custom-alert-sounds-spec.md) — not implemented
     - [Horse trekking](docs/plugins/horse-trekking-spec.md) — not implemented
     - [Adaptive speed warning](docs/plugins/adaptive-speed-warning-spec.md) — not implemented
@@ -946,11 +948,15 @@ A sandboxed plugin host exists so future add-ons can run safely. **Most product
 plugins do not ship in the app yet** — that is intentional. Weather conditions
 and **Nearby attractions** (850 m look-ahead discovery cone) are available today
 via a **host-owned** UniFFI path (Map/Tools → Plugins; default **OFF**), not via
-a linked WASM guest. **DATEX** road situations (Map/Tools → Plugins; default
+a linked WASM guest. **CAT / CATS** radio control is also opt-in (default
+**OFF**): host Hamlib (`navi-cat` TCP + FFI, staged `libhamlib.so`,
+`CatStatusSheet` model/baud) plus the **CATS** wasmtime guest for repeater
+select / network follow. **DATEX** road situations (Map/Tools → Plugins; default
 **OFF**) pull from navi-server; the live feed currently covers **Norway only**
-(NPRA). Overview: [`docs/plugins.md`](docs/plugins.md). The system requires a
-per-plugin **enable/disable** control, and host-mediated **USB** / **Bluetooth**
-I/O for hardware-facing plugins.
+(NPRA). Overview: [`docs/plugins.md`](docs/plugins.md). Spec:
+[`docs/CAT.md`](docs/CAT.md). The system requires a per-plugin **enable/disable**
+control, and host-mediated **USB** / **Bluetooth** I/O for hardware-facing
+plugins.
 
 | Spec | Topic | Status |
 |---|---|---|
@@ -964,6 +970,8 @@ I/O for hardware-facing plugins.
 | [`docs/plugins/weather-icons-reference.md`](docs/plugins/weather-icons-reference.md) | What each weather icon slug means (fill style) | **Reference** (assets shipped with weather) |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state + approach warnings to instrument clusters | **Not implemented** |
 | [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Animated icons | **Not implemented** |
+| [`docs/CAT.md`](docs/CAT.md) | CAT radio control — Hamlib `RigBackend` (TCP `rigctld` + FFI), Android USB/BT loopback, `CatStatusSheet` model/baud, never auto-TX; `libhamlib.so` staged into APK jniLibs when built | **Implemented** (opt-in) |
+| [`plugins/CATS-plugin/`](plugins/CATS-plugin/) | CATS WASM guest — repeater select / auto-tune / network follow under wasmtime (`plugin.json` name `cat`) | **Implemented** (opt-in) |
 | [`docs/plugins/custom-alert-sounds-spec.md`](docs/plugins/custom-alert-sounds-spec.md) | Short alert tones (road signs, cameras, overspeed earcon) | **Not implemented** |
 | [`docs/plugins/horse-trekking-spec.md`](docs/plugins/horse-trekking-spec.md) | Equestrian lookahead and access guidance (Hiking is the interim stopgap) | **Not implemented** |
 | [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md) | Spoken escalating overspeed (percentage tiers) | **Not implemented** |
