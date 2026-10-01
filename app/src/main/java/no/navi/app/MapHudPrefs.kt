@@ -41,6 +41,10 @@ object MapHudPrefs {
     private const val KEY_POI_LOOKAHEAD_ENABLED = "poi_lookahead_enabled"
     private const val KEY_POI_LOOKAHEAD_STRICT_HOURS = "poi_lookahead_strict_hours_unknown"
     private const val KEY_POI_LOOKAHEAD_DISMISSED = "poi_lookahead_dismissed_ids"
+    private const val KEY_CAMPING_PLUGIN_ENABLED = "camping_plugin_enabled"
+    private const val KEY_CAMPING_RESIDENCY_COUNTRY = "camping_residency_country"
+    private const val KEY_CAMPING_PROFESSIONAL_DRIVER = "camping_professional_driver"
+    private const val KEY_CAT_PLUGIN_ENABLED = "cat_plugin_enabled"
 
     /**
      * Product default for the weather plugin enable toggle.
@@ -68,6 +72,18 @@ object MapHudPrefs {
 
     /** Hide venues with unknown opening hours — default off (show with label). */
     const val POI_LOOKAHEAD_STRICT_HOURS_UNKNOWN_DEFAULT = false
+
+    /** Right-to-roam camping plugin — defaults OFF (opt-in). */
+    const val CAMPING_PLUGIN_DEFAULT_ENABLED = false
+
+    /** CATS / CAT radio plugin — defaults OFF (opt-in). */
+    const val CAT_PLUGIN_DEFAULT_ENABLED = false
+
+    /** Residency ISO 3166-1 alpha-2; empty = unknown. */
+    const val CAMPING_RESIDENCY_DEFAULT = ""
+
+    /** Professional driver under driving/rest-time rules — default off. */
+    const val CAMPING_PROFESSIONAL_DRIVER_DEFAULT = false
 
     /** Settings default host; discovery prefers LAN→duckdns unless overridden. */
     const val DATEX_SETTINGS_DEFAULT_HOST = "navigate-me.duckdns.org"
@@ -702,6 +718,73 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putStringSet(KEY_POI_LOOKAHEAD_DISMISSED, ids)
+            .apply()
+    }
+
+    fun loadCampingPluginEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CAMPING_PLUGIN_ENABLED, CAMPING_PLUGIN_DEFAULT_ENABLED)
+
+    fun saveCampingPluginEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CAMPING_PLUGIN_ENABLED, enabled)
+            .apply()
+    }
+
+    fun loadCampingResidencyCountry(context: Context): String =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_CAMPING_RESIDENCY_COUNTRY, CAMPING_RESIDENCY_DEFAULT)
+            ?.trim()
+            ?.lowercase()
+            ?: CAMPING_RESIDENCY_DEFAULT
+
+    fun saveCampingResidencyCountry(
+        context: Context,
+        iso: String,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_CAMPING_RESIDENCY_COUNTRY, iso.trim().lowercase())
+            .apply()
+    }
+
+    fun loadCampingProfessionalDriver(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CAMPING_PROFESSIONAL_DRIVER, CAMPING_PROFESSIONAL_DRIVER_DEFAULT)
+
+    fun saveCampingProfessionalDriver(
+        context: Context,
+        on: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CAMPING_PROFESSIONAL_DRIVER, on)
+            .apply()
+    }
+
+    fun loadCatPluginEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CAT_PLUGIN_ENABLED, CAT_PLUGIN_DEFAULT_ENABLED)
+
+    fun saveCatPluginEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CAT_PLUGIN_ENABLED, enabled)
             .apply()
     }
 }

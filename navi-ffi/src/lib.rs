@@ -35,7 +35,7 @@ use driver_break_core::routing::{
     build_maneuvers, build_maneuvers_from_edges_with_vias, build_sim_samples,
     build_sim_samples_from_edges, build_sim_samples_from_lat_lon, maneuvers_to_json,
     motor_path_minutes_from_edges, plan_hybrid_hiking_path_with_options, samples_to_json,
-    HikingWaypoint, WetlandIndex, OFF_TRAIL_ADVISORY,
+    stitch_chunk_leg_maneuvers, HikingWaypoint, RouteManeuver, WetlandIndex, OFF_TRAIL_ADVISORY,
 };
 use driver_break_core::routing::{
     commit_truck_multi_day_plan, evaluate_fmcsa_trip, evaluate_truck_trip,
@@ -52,6 +52,11 @@ use serde::Deserialize;
 use serde_json::json;
 
 uniffi::setup_scaffolding!();
+
+mod camping_plugin;
+pub use camping_plugin::*;
+mod cat_plugin;
+pub use cat_plugin::*;
 
 fn ensure_native_logging() {
     #[cfg(target_os = "android")]
@@ -2289,11 +2294,10 @@ fn plan_car_route_chunked_legs(
     let mut cache_hit = true;
     let mut polyline = String::new();
     let mut sim_samples = String::from("[");
-    let mut maneuvers = String::from("[");
     let mut break_pois = String::from("[");
     let mut sim_first = true;
-    let mut man_first = true;
     let mut break_first = true;
+    let mut leg_maneuvers: Vec<Vec<RouteManeuver>> = Vec::new();
     let mut expansions: u64 = 0;
     let mut toll_incomplete = false;
     let mut route_uses_tolls = false;
@@ -2408,7 +2412,9 @@ fn plan_car_route_chunked_legs(
             }
         }
         append_json_array_elems(&mut sim_samples, &mut sim_first, &leg.sim_samples_json);
-        append_json_array_elems(&mut maneuvers, &mut man_first, &leg.maneuvers_json);
+        let mans: Vec<RouteManeuver> =
+            serde_json::from_str(&leg.maneuvers_json).unwrap_or_default();
+        leg_maneuvers.push(mans);
         append_json_array_elems(&mut break_pois, &mut break_first, &leg.break_pois_json);
         // Clear large leftover strings so the next hop starts with less retained
         // RSS on 4 GB Automotive (LMK previously killed ~2.9 GB RSS).
@@ -2426,7 +2432,7 @@ fn plan_car_route_chunked_legs(
         drop((leftover_days, leftover_segs, leftover_adv));
     }
     sim_samples.push(']');
-    maneuvers.push(']');
+    let maneuvers = maneuvers_to_json(&stitch_chunk_leg_maneuvers(&leg_maneuvers));
     let priority_path_share_pct = if priority_share_w > 0.0 {
         priority_share_acc / priority_share_w
     } else {
@@ -2717,6 +2723,16 @@ fn finalize_chunked_motor_soft_breaks(
         pauses.len(),
         break_arr.len()
     ));
+    for (i, poi) in break_arr.iter().take(24).enumerate() {
+        report.push_str(&format!(
+            "chunked_break_poi: idx={i}; name={}; kind={}; lat={}; lon={}; along_km={}\n",
+            poi.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+            poi.get("kind").and_then(|v| v.as_str()).unwrap_or(""),
+            poi.get("lat").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            poi.get("lon").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            poi.get("along_km").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        ));
+    }
     let break_pois_json = serde_json::to_string(&break_arr).unwrap_or_else(|_| "[]".into());
     (break_pois_json, days_json, report)
 }

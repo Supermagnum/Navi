@@ -29,6 +29,31 @@ extern "C" {
         out_ptr: u32,
         out_cap: u32,
     ) -> i32;
+    fn route_read(out_ptr: u32, out_cap: u32) -> i32;
+    fn route_destination_read(out_ptr: u32, out_cap: u32) -> i32;
+    fn safety_config_read(out_ptr: u32, out_cap: u32) -> i32;
+    fn admin_region_read(lat_bits: u64, lon_bits: u64, out_ptr: u32, out_cap: u32) -> i32;
+    fn clock_read(out_ptr: u32, out_cap: u32) -> i32;
+    fn plugin_kv_get(key_ptr: u32, key_len: u32, out_ptr: u32, out_cap: u32) -> i32;
+    fn plugin_kv_set(key_ptr: u32, key_len: u32, val_ptr: u32, val_len: u32) -> i32;
+    fn protected_area_query(lat_bits: u64, lon_bits: u64, out_ptr: u32, out_cap: u32) -> i32;
+    fn land_tenure_query(lat_bits: u64, lon_bits: u64, out_ptr: u32, out_cap: u32) -> i32;
+    fn landcover_query(lat_bits: u64, lon_bits: u64, out_ptr: u32, out_cap: u32) -> i32;
+    fn travel_mode_read(out_ptr: u32, out_cap: u32) -> i32;
+    fn vehicle_profile_read(out_ptr: u32, out_cap: u32) -> i32;
+    fn traveller_profile_read(out_ptr: u32, out_cap: u32) -> i32;
+    fn cat_status(out_ptr: u32, out_cap: u32) -> i32;
+    fn repeater_query(
+        lat_bits: u64,
+        lon_bits: u64,
+        radius_km_bits: u64,
+        net_ptr: u32,
+        net_len: u32,
+        out_ptr: u32,
+        out_cap: u32,
+    ) -> i32;
+    fn cat_vfo_set(req_ptr: u32, req_len: u32, out_ptr: u32, out_cap: u32) -> i32;
+    fn cat_network_follow(req_ptr: u32, req_len: u32, out_ptr: u32, out_cap: u32) -> i32;
     fn host_nop();
 }
 
@@ -55,22 +80,29 @@ pub fn host_position() -> Option<Position> {
     Some(Position { lat, lon })
 }
 
+macro_rules! host_json_buf {
+    ($call:expr, $out:expr) => {{
+        let n = unsafe { $call };
+        if n < 0 {
+            0
+        } else {
+            n as usize
+        }
+    }};
+}
+
 /// Query host POIs; returns the raw JSON bytes written by the host (may be truncated).
 pub fn host_poi_query(lat: f64, lon: f64, radius_m: f64, out: &mut [u8]) -> usize {
-    let n = unsafe {
+    host_json_buf!(
         poi_query(
             lat.to_bits(),
             lon.to_bits(),
             radius_m.to_bits(),
             out.as_mut_ptr() as u32,
             out.len() as u32,
-        )
-    };
-    if n < 0 {
-        0
-    } else {
-        n as usize
-    }
+        ),
+        out
+    )
 }
 
 /// Upsert a POI on the host. `json` must be UTF-8 JSON with name/lat/lon/kind.
@@ -83,22 +115,193 @@ pub fn host_poi_write_json(json: &str) -> Result<(), i32> {
     }
 }
 
-/// Read cached weather samples near a point; returns raw JSON bytes (may truncate).
 pub fn host_weather_read(lat: f64, lon: f64, radius_m: f64, out: &mut [u8]) -> usize {
-    let n = unsafe {
+    host_json_buf!(
         weather_read(
             lat.to_bits(),
             lon.to_bits(),
             radius_m.to_bits(),
             out.as_mut_ptr() as u32,
             out.len() as u32,
+        ),
+        out
+    )
+}
+
+pub fn host_route_read(out: &mut [u8]) -> usize {
+    host_json_buf!(route_read(out.as_mut_ptr() as u32, out.len() as u32), out)
+}
+
+pub fn host_route_destination_read(out: &mut [u8]) -> usize {
+    host_json_buf!(
+        route_destination_read(out.as_mut_ptr() as u32, out.len() as u32),
+        out
+    )
+}
+
+pub fn host_safety_config_read(out: &mut [u8]) -> usize {
+    host_json_buf!(
+        safety_config_read(out.as_mut_ptr() as u32, out.len() as u32),
+        out
+    )
+}
+
+pub fn host_admin_region_read(lat: f64, lon: f64, out: &mut [u8]) -> usize {
+    host_json_buf!(
+        admin_region_read(
+            lat.to_bits(),
+            lon.to_bits(),
+            out.as_mut_ptr() as u32,
+            out.len() as u32,
+        ),
+        out
+    )
+}
+
+pub fn host_clock_read(out: &mut [u8]) -> usize {
+    host_json_buf!(clock_read(out.as_mut_ptr() as u32, out.len() as u32), out)
+}
+
+pub fn host_plugin_kv_get(key: &str, out: &mut [u8]) -> Option<usize> {
+    let n = unsafe {
+        plugin_kv_get(
+            key.as_ptr() as u32,
+            key.len() as u32,
+            out.as_mut_ptr() as u32,
+            out.len() as u32,
         )
     };
     if n < 0 {
-        0
+        None
     } else {
-        n as usize
+        Some(n as usize)
     }
+}
+
+pub fn host_plugin_kv_set(key: &str, value: &str) -> Result<(), i32> {
+    let rc = unsafe {
+        plugin_kv_set(
+            key.as_ptr() as u32,
+            key.len() as u32,
+            value.as_ptr() as u32,
+            value.len() as u32,
+        )
+    };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(rc)
+    }
+}
+
+pub fn host_protected_area_query(lat: f64, lon: f64, out: &mut [u8]) -> usize {
+    host_json_buf!(
+        protected_area_query(
+            lat.to_bits(),
+            lon.to_bits(),
+            out.as_mut_ptr() as u32,
+            out.len() as u32,
+        ),
+        out
+    )
+}
+
+pub fn host_land_tenure_query(lat: f64, lon: f64, out: &mut [u8]) -> usize {
+    host_json_buf!(
+        land_tenure_query(
+            lat.to_bits(),
+            lon.to_bits(),
+            out.as_mut_ptr() as u32,
+            out.len() as u32,
+        ),
+        out
+    )
+}
+
+pub fn host_landcover_query(lat: f64, lon: f64, out: &mut [u8]) -> usize {
+    host_json_buf!(
+        landcover_query(
+            lat.to_bits(),
+            lon.to_bits(),
+            out.as_mut_ptr() as u32,
+            out.len() as u32,
+        ),
+        out
+    )
+}
+
+pub fn host_travel_mode_read(out: &mut [u8]) -> usize {
+    host_json_buf!(
+        travel_mode_read(out.as_mut_ptr() as u32, out.len() as u32),
+        out
+    )
+}
+
+pub fn host_vehicle_profile_read(out: &mut [u8]) -> usize {
+    host_json_buf!(
+        vehicle_profile_read(out.as_mut_ptr() as u32, out.len() as u32),
+        out
+    )
+}
+
+pub fn host_traveller_profile_read(out: &mut [u8]) -> usize {
+    host_json_buf!(
+        traveller_profile_read(out.as_mut_ptr() as u32, out.len() as u32),
+        out
+    )
+}
+
+pub fn host_cat_status(out: &mut [u8]) -> usize {
+    host_json_buf!(cat_status(out.as_mut_ptr() as u32, out.len() as u32), out)
+}
+
+pub fn host_repeater_query(
+    lat: f64,
+    lon: f64,
+    radius_km: f64,
+    network_id: Option<&str>,
+    out: &mut [u8],
+) -> usize {
+    let (net_ptr, net_len) = match network_id {
+        Some(s) => (s.as_ptr() as u32, s.len() as u32),
+        None => (0u32, 0u32),
+    };
+    host_json_buf!(
+        repeater_query(
+            lat.to_bits(),
+            lon.to_bits(),
+            radius_km.to_bits(),
+            net_ptr,
+            net_len,
+            out.as_mut_ptr() as u32,
+            out.len() as u32,
+        ),
+        out
+    )
+}
+
+pub fn host_cat_vfo_set(request_json: &str, out: &mut [u8]) -> usize {
+    host_json_buf!(
+        cat_vfo_set(
+            request_json.as_ptr() as u32,
+            request_json.len() as u32,
+            out.as_mut_ptr() as u32,
+            out.len() as u32,
+        ),
+        out
+    )
+}
+
+pub fn host_cat_network_follow(request_json: &str, out: &mut [u8]) -> usize {
+    host_json_buf!(
+        cat_network_follow(
+            request_json.as_ptr() as u32,
+            request_json.len() as u32,
+            out.as_mut_ptr() as u32,
+            out.len() as u32,
+        ),
+        out
+    )
 }
 
 /// Touch the host (useful for proving the import table is wired).

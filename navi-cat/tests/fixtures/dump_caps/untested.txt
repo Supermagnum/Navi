@@ -1,0 +1,6 @@
+Caps dump for model: 3302
+Model name: UntestedRig
+Backend status: Untested
+Can set Repeater Shift: Y
+Can set Repeater Offset: Y
+Can set CTCSS Tone: Y

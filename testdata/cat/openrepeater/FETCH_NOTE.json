@@ -1,0 +1,7 @@
+{
+  "fetched": "2026-10-01",
+  "url": "https://www.openrepeater.org/api/downloads?country=Norway&format=json",
+  "license_claimed": "CC0",
+  "count": 0,
+  "note": "Public CC0 download endpoint returned zero Norway rows at fetch time. Innlandet-specific coverage unavailable via country=Norway export. Terms also restrict commercial redistribution without written permission despite CC0 labelling."
+}

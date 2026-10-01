@@ -195,6 +195,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         applyNaviLaunchExtras(intent)
         runCatching { uniffi.navi.initNativeLogging() }
+        CampingBootstrap.ensureInitialized(this)
+        CatBootstrap.ensureInitialized(this)
         // Natural Earth country grid: never build on the main looper (ANR / seed stall).
         CountryPolysWarm.startBackground()
         setContent {
@@ -361,6 +363,8 @@ data class MapRouteState(
     /** Map bearing degrees clockwise from north; used with rotation modes. */
     val cameraBearing: Double = 0.0,
     val tracks: List<TrackMarker> = emptyList(),
+    /** Camping suggest pin positions (lat, lon) when the plugin is enabled. */
+    val campingPins: List<Pair<Double, Double>> = emptyList(),
     val layerEpoch: Int = 0,
 )
 
@@ -792,7 +796,115 @@ private fun NaviMapScreen() {
         mutableStateOf(MapHudPrefs.loadPoiLookaheadDismissedIds(context))
     }
     var poiLookaheadHud by remember { mutableStateOf(PoiLookaheadHudState()) }
+    var campingPluginEnabled by remember {
+        mutableStateOf(MapHudPrefs.loadCampingPluginEnabled(context))
+    }
+    var campingResidencyCountry by remember {
+        mutableStateOf(MapHudPrefs.loadCampingResidencyCountry(context))
+    }
+    var campingProfessionalDriver by remember {
+        mutableStateOf(MapHudPrefs.loadCampingProfessionalDriver(context))
+    }
+    var catPluginEnabled by remember {
+        mutableStateOf(MapHudPrefs.loadCatPluginEnabled(context))
+    }
+    var showCatSheet by remember { mutableStateOf(false) }
+    var catUi by remember { mutableStateOf(CatUiState()) }
+    var campingSuggestResult by remember { mutableStateOf<CampingSuggestResult?>(null) }
+    var showCampingSheet by remember { mutableStateOf(false) }
+    var campingSessionDisableMessage by remember { mutableStateOf<String?>(null) }
     var hideChrome by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        CampingBootstrap.ensureInitialized(context)
+        CatBootstrap.ensureInitialized(context)
+        val want = MapHudPrefs.loadCampingPluginEnabled(context)
+        uniffi.navi.campingPluginSetEnabled(want)
+        campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
+        uniffi.navi.catPluginSetEnabled(MapHudPrefs.loadCatPluginEnabled(context))
+    }
+
+    val campingReEnableSession: () -> Unit = {
+        uniffi.navi.campingPluginSetEnabled(true)
+        campingPluginEnabled = true
+        MapHudPrefs.saveCampingPluginEnabled(context, true)
+        campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
+    }
+
+    fun refreshCatUi() {
+        val status = uniffi.navi.catPluginStatusJson()
+        val lat = mapState.gpsLat.takeIf { it.isFinite() && it != 0.0 } ?: mapState.startLat
+        val lon = mapState.gpsLon.takeIf { it.isFinite() && it != 0.0 } ?: mapState.startLon
+        if (lat.isFinite() && lon.isFinite()) {
+            uniffi.navi.catPluginSetPosition(lat, lon)
+        }
+        val nearby =
+            uniffi.navi.catPluginRepeaterQueryJson(
+                lat,
+                lon,
+                150.0,
+                null,
+            )
+        catUi = catUi.copy(statusJson = status, nearbyJson = nearby)
+    }
+
+    LaunchedEffect(
+        campingPluginEnabled,
+        profile,
+        mapState.polyline,
+        mapState.endLat,
+        mapState.endLon,
+        campingProfessionalDriver,
+        campingResidencyCountry,
+    ) {
+        campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
+        if (!campingPluginEnabled || mapState.polyline.isBlank()) {
+            campingSuggestResult = null
+            if (mapState.campingPins.isNotEmpty()) {
+                mapState =
+                    mapState.copy(
+                        campingPins = emptyList(),
+                        layerEpoch = mapState.layerEpoch + 1,
+                    )
+            }
+            return@LaunchedEffect
+        }
+        val sampled = sampleCampingCorridorWaypoints(mapState.polyline)
+        if (sampled.isEmpty()) return@LaunchedEffect
+        val residency =
+            campingResidencyCountry.trim().lowercase().ifBlank { null }
+        uniffi.navi.campingPluginSetResidencyCountry(residency)
+        val hasDest = mapState.endLat != 0.0 || mapState.endLon != 0.0
+        val destLat = if (hasDest) mapState.endLat else null
+        val destLon = if (hasDest) mapState.endLon else null
+        uniffi.navi.campingPluginSetNavContext(
+            waypointsJson = campingWaypointsJson(sampled),
+            destLat = destLat,
+            destLon = destLon,
+            profile = profile,
+            professionalDriver = campingProfessionalDriver,
+        )
+        val call = CampingPluginApi.suggestAlongRoute(12u)
+        campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
+        val json = call.resultJson
+        if (json.isNullOrBlank()) {
+            campingSuggestResult = null
+            return@LaunchedEffect
+        }
+        val parsed = runCatching { parseCampingSuggestResultJson(json) }.getOrNull()
+        campingSuggestResult = parsed
+        if (parsed != null) {
+            showCampingSheet = true
+            val pins = allCampingPinLatLon(parsed)
+            if (pins != mapState.campingPins) {
+                mapState =
+                    mapState.copy(
+                        campingPins = pins,
+                        layerEpoch = mapState.layerEpoch + 1,
+                    )
+            }
+        }
+    }
 
     DisposableEffect(longTripEnabled) {
         if (longTripEnabled) {
@@ -1030,6 +1142,8 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastPlanDistanceKm = 0.0
         NaviMapTestHooks.lastRoutePolyline = ""
         NaviMapTestHooks.lastBreakPoiCount = 0
+        NaviMapTestHooks.lastBreakPoisJson = "[]"
+        NaviMapTestHooks.lastDaysJson = "[]"
         NaviMapTestHooks.lastArrivedAtEnd = false
         NaviMapTestHooks.lastCurrentStreet = null
         graphFerryEdges = null
@@ -1442,6 +1556,10 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastRoutePolyline = pending.routePolyline
         NaviMapTestHooks.lastAppliedRouteStartLabel = startLabel
         NaviMapTestHooks.lastBreakPoiCount = breaks.size
+        NaviMapTestHooks.lastBreakPoisJson =
+            runCatching { pending.breakPoisJson }.getOrDefault("[]")
+        NaviMapTestHooks.lastDaysJson =
+            runCatching { pending.daysJson }.getOrDefault("[]")
         NaviMapTestHooks.lastManeuversJson =
             runCatching { pending.maneuversJson }.getOrDefault("[]")
         NaviMapTestHooks.lastSimSamplesJson =
@@ -4983,6 +5101,114 @@ private fun NaviMapScreen() {
                     .zIndex(7f)
                     .padding(top = if (simulating) 108.dp else 64.dp),
         )
+        if (
+            !hideChrome &&
+            campingPluginEnabled &&
+            !campingSessionDisableMessage.isNullOrBlank()
+        ) {
+            CampingSessionDisableBanner(
+                message = campingSessionDisableMessage.orEmpty(),
+                onReEnable = campingReEnableSession,
+                modifier =
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .zIndex(5f)
+                        .padding(top = 120.dp, start = 10.dp, end = 10.dp),
+            )
+        }
+        if (
+            !hideChrome &&
+            campingPluginEnabled &&
+            showCampingSheet &&
+            campingSuggestResult != null
+        ) {
+            CampingSuggestionSheet(
+                result = campingSuggestResult!!,
+                profile = profile,
+                listDisclaimer = campingSuggestResult!!.disclaimer,
+                sessionDisableMessage = campingSessionDisableMessage,
+                onReEnableSession = campingReEnableSession,
+                onClose = { showCampingSheet = false },
+                onCampHereTonight = { card ->
+                    val msg =
+                        uniffi.navi.campingPluginCampHereTonight(
+                            card.lat,
+                            card.lon,
+                            card.countryIso.ifBlank { null },
+                            card.subdivisionIso,
+                        )
+                    android.util.Log.i("NaviCamping", "camp_here_tonight: $msg")
+                    status = msg
+                },
+                onUndoCampHereTonight = { card ->
+                    val msg =
+                        uniffi.navi.campingPluginUndoCampHereTonight(
+                            card.lat,
+                            card.lon,
+                            card.countryIso.ifBlank { null },
+                            card.subdivisionIso,
+                        )
+                    android.util.Log.i("NaviCamping", "undo_camp_here: $msg")
+                    status = msg
+                },
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .zIndex(5f)
+                        .padding(start = 10.dp, end = 10.dp, bottom = 96.dp),
+            )
+        }
+        if (!hideChrome && catPluginEnabled && showCatSheet) {
+            CatStatusSheet(
+                state = catUi,
+                onHostChange = { catUi = catUi.copy(host = it) },
+                onPortChange = { catUi = catUi.copy(port = it) },
+                onFollowNetworkChange = { catUi = catUi.copy(followNetworkId = it) },
+                onConnect = {
+                    val port = (catUi.port.toIntOrNull() ?: 4532).coerceIn(1, 65535).toUShort()
+                    val msg =
+                        uniffi.navi.catPluginConnectTcp(catUi.host, port, false)
+                    catUi = catUi.copy(lastMessage = msg)
+                    refreshCatUi()
+                    status = msg
+                },
+                onDisconnect = {
+                    val msg = uniffi.navi.catPluginDisconnect()
+                    catUi = catUi.copy(lastMessage = msg)
+                    refreshCatUi()
+                    status = msg
+                },
+                onRefresh = {
+                    uniffi.navi.catPluginTickGuest()
+                    refreshCatUi()
+                },
+                onFollowEnable = {
+                    val req =
+                        org.json.JSONObject()
+                            .put("network_id", catUi.followNetworkId)
+                            .put("enabled", true)
+                            .toString()
+                    val msg = uniffi.navi.catPluginNetworkFollowJson(req)
+                    catUi = catUi.copy(lastMessage = msg)
+                    refreshCatUi()
+                },
+                onFollowDisable = {
+                    val req =
+                        org.json.JSONObject()
+                            .put("enabled", false)
+                            .toString()
+                    val msg = uniffi.navi.catPluginNetworkFollowJson(req)
+                    catUi = catUi.copy(lastMessage = msg)
+                    refreshCatUi()
+                },
+                onClose = { showCatSheet = false },
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .zIndex(5f)
+                        .padding(start = 10.dp, end = 10.dp, bottom = 96.dp),
+            )
+        }
         if (showSpeedCameraPrompt) {
             AlertDialog(
                 onDismissRequest = {
@@ -6946,6 +7172,55 @@ private fun NaviMapScreen() {
                                 MapHudPrefs.savePoiLookaheadStrictHoursUnknown(context, on)
                                 DiagnosticLog.logToggle("poi_lookahead_strict_hours", on)
                             },
+                            campingPluginEnabled = campingPluginEnabled,
+                            onCampingPluginChange = { on ->
+                                campingPluginEnabled = on
+                                MapHudPrefs.saveCampingPluginEnabled(context, on)
+                                DiagnosticLog.logToggle("camping_plugin", on)
+                                uniffi.navi.campingPluginSetEnabled(on)
+                                if (!on) {
+                                    showCampingSheet = false
+                                    campingSuggestResult = null
+                                    status = "Camping plugin off"
+                                } else {
+                                    status = "Camping plugin on — suggestions when a route is active"
+                                }
+                            },
+                            campingResidencyCountry = campingResidencyCountry,
+                            onCampingResidencyChange = { iso ->
+                                campingResidencyCountry = iso
+                                MapHudPrefs.saveCampingResidencyCountry(context, iso)
+                                val trimmed = iso.trim().lowercase().ifBlank { null }
+                                uniffi.navi.campingPluginSetResidencyCountry(trimmed)
+                            },
+                            campingProfessionalDriver = campingProfessionalDriver,
+                            onCampingProfessionalDriverChange = { on ->
+                                campingProfessionalDriver = on
+                                MapHudPrefs.saveCampingProfessionalDriver(context, on)
+                                DiagnosticLog.logToggle("camping_professional_driver", on)
+                            },
+                            campingSessionDisableMessage = campingSessionDisableMessage,
+                            onCampingReEnableSession = campingReEnableSession,
+                            catPluginEnabled = catPluginEnabled,
+                            onCatPluginChange = { on ->
+                                catPluginEnabled = on
+                                MapHudPrefs.saveCatPluginEnabled(context, on)
+                                DiagnosticLog.logToggle("cat_plugin", on)
+                                uniffi.navi.catPluginSetEnabled(on)
+                                if (on) {
+                                    showCatSheet = true
+                                    refreshCatUi()
+                                    status = "CAT plugin on"
+                                } else {
+                                    showCatSheet = false
+                                    status = "CAT plugin off"
+                                }
+                            },
+                        )
+                        Text(
+                            CAMPING_PLUGIN_DISCLAIMER,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("tools_camping_legal_note"),
                         )
                         Text("Region", style = MaterialTheme.typography.titleSmall)
                         Text("Map layers: $mapLayerCount", style = MaterialTheme.typography.bodySmall)
@@ -8067,6 +8342,51 @@ private fun NaviMapScreen() {
                         MapHudPrefs.savePoiLookaheadStrictHoursUnknown(context, on)
                         DiagnosticLog.logToggle("poi_lookahead_strict_hours", on)
                     },
+                    campingPluginEnabled = campingPluginEnabled,
+                    onCampingPluginChange = { on ->
+                        campingPluginEnabled = on
+                        MapHudPrefs.saveCampingPluginEnabled(context, on)
+                        DiagnosticLog.logToggle("camping_plugin", on)
+                        uniffi.navi.campingPluginSetEnabled(on)
+                        if (!on) {
+                            showCampingSheet = false
+                            campingSuggestResult = null
+                            status = "Camping plugin off"
+                        } else {
+                            status = "Camping plugin on — suggestions when a route is active"
+                        }
+                    },
+                    campingResidencyCountry = campingResidencyCountry,
+                    onCampingResidencyChange = { iso ->
+                        campingResidencyCountry = iso
+                        MapHudPrefs.saveCampingResidencyCountry(context, iso)
+                        val trimmed = iso.trim().lowercase().ifBlank { null }
+                        uniffi.navi.campingPluginSetResidencyCountry(trimmed)
+                    },
+                    campingProfessionalDriver = campingProfessionalDriver,
+                    onCampingProfessionalDriverChange = { on ->
+                        campingProfessionalDriver = on
+                        MapHudPrefs.saveCampingProfessionalDriver(context, on)
+                        DiagnosticLog.logToggle("camping_professional_driver", on)
+                    },
+                    campingSessionDisableMessage = campingSessionDisableMessage,
+                    onCampingReEnableSession = campingReEnableSession,
+                    catPluginEnabled = catPluginEnabled,
+                    onCatPluginChange = { on ->
+                        catPluginEnabled = on
+                        MapHudPrefs.saveCatPluginEnabled(context, on)
+                        DiagnosticLog.logToggle("cat_plugin", on)
+                        uniffi.navi.catPluginSetEnabled(on)
+                        if (on) {
+                            showCatSheet = true
+                            refreshCatUi()
+                            status = "CAT plugin on"
+                        } else {
+                            showCatSheet = false
+                            status = "CAT plugin off"
+                        }
+                    },
+
                     onSave = {
                         MapHudPrefs.saveAutoZoom(
                             context,
@@ -8520,6 +8840,7 @@ private fun CorridorMapView(
         applyTracksToStyle(style, stateRef.get().tracks, mapView.context)
         BasemapLabelPolicy.apply(style)
         BasemapPathPaint.apply(style)
+        BasemapTunnelPaint.apply(style)
         BasemapProtectedAreaStyle.apply(style)
         BasemapHousenumberStyle.apply(style)
         BasemapGlacierOutlineStyle.apply(style)
@@ -9773,6 +10094,30 @@ private fun applyRouteToStyle(
         if (style.getLayer("gps-dot") != null) style.removeLayer("gps-dot")
         if (style.getLayer("gps-accuracy") != null) style.removeLayer("gps-accuracy")
         if (style.getSource("gps-src") != null) style.removeSource("gps-src")
+    }
+
+    val campingFeatures =
+        state.campingPins.map { (lat, lon) ->
+            Feature.fromGeometry(Point.fromLngLat(lon, lat))
+        }
+    val campingCollection = FeatureCollection.fromFeatures(campingFeatures)
+    if (state.campingPins.isEmpty()) {
+        if (style.getLayer("camping-suggest-layer") != null) style.removeLayer("camping-suggest-layer")
+        if (style.getSource("camping-suggest") != null) style.removeSource("camping-suggest")
+    } else {
+        if (style.getSource("camping-suggest") == null) {
+            style.addSource(GeoJsonSource("camping-suggest", campingCollection))
+            style.addLayer(
+                CircleLayer("camping-suggest-layer", "camping-suggest").withProperties(
+                    PropertyFactory.circleRadius(7f),
+                    PropertyFactory.circleColor("#6A1B9A"),
+                    PropertyFactory.circleStrokeWidth(2f),
+                    PropertyFactory.circleStrokeColor("#FFFFFF"),
+                ),
+            )
+        } else {
+            (style.getSource("camping-suggest") as? GeoJsonSource)?.setGeoJson(campingCollection)
+        }
     }
     ensureRouteAboveHillshade(style)
 }

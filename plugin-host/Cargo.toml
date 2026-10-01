@@ -11,11 +11,14 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-wasmtime = { version = "48", default-features = false, features = ["cranelift", "runtime", "gc-drc"] }
+wasmtime = { version = "48", default-features = false, features = ["cranelift", "runtime"] }
 
 [[bin]]
 name = "android_isolation_smoke"
 path = "src/bin/android_isolation_smoke.rs"
 
 [dev-dependencies]
+chrono = { workspace = true }
+driver-break-core = { path = "../core" }
+navi-right-to-roam-camping = { path = "../plugins/right-to-roam-camping/engine" }
 tempfile = "3"

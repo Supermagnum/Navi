@@ -1,0 +1,6 @@
+Caps dump for model: 5501
+Model name:	DocWording
+Backend status:	Stable
+Can set Repeater Shift:	Y
+Can set Repeater Offset:	Y
+Can set CTCSS Tone:	Y

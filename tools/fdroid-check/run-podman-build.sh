@@ -170,8 +170,8 @@ fdroid readmeta
 fdroid rewritemeta no.navi.app || true
 fdroid lint -W ignore no.navi.app || true
 
-echo "=== fdroid build no.navi.app:1 ==="
-fdroid build -v -t --skip-scan --no-tarball -W ignore -s no.navi.app:1
+echo "=== fdroid build no.navi.app:11 ==="
+fdroid build -v -t --skip-scan --no-tarball -W ignore -s no.navi.app:11
 echo "=== fdroid build finished OK ==="
 ls -la unsigned/ tmp/ 2>/dev/null || true
 find tmp unsigned -name "*.apk" 2>/dev/null || true

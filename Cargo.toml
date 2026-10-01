@@ -5,13 +5,20 @@ members = [
     "navi-ffi",
     "navi-linux",
     "navi-desktop",
+    "navi-cat",
+    "navi-hamlib-sys",
     "plugin-host",
     "plugin-sdk",
     "plugins/log-hello",
     "plugins/busy-loop",
+    "plugins/trap-guest",
+    "plugins/memory-bomb",
     "plugins/weather",
     "plugins/datex",
     "plugins/poi-lookahead",
+    "plugins/right-to-roam-camping",
+    "plugins/right-to-roam-camping/engine",
+    "plugins/CATS-plugin",
 ]
 default-members = ["core", "plugin-host"]
 
@@ -57,8 +64,17 @@ png = "0.18"
 rkyv = { version = "0.8", features = ["alloc"] }
 memmap2 = "0.9"
 chrono = { version = "0.4", default-features = true, features = ["clock"] }
+chrono-tz = "0.10"
 # opening-hours 2.x is stable on our pinned toolchain (1.98).
 opening-hours = "=2.1.4"
 roxmltree = "0.21"
 sha2 = "0.11"
 hex = "0.4"
+
+# Android libnavi.so / release binaries: size-first (wasmtime Cranelift is large).
+# Do not set strip here — UniFFI bindgen needs metadata in the .so; scripts/
+# build-android-native.sh strips after generating Kotlin bindings.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

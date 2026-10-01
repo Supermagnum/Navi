@@ -22,8 +22,8 @@ android {
         applicationId = "no.navi.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "0.3.6-beta"
+        versionCode = 16
+        versionName = "0.4.1-beta"
         testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
         // Ship only 64-bit ABIs used by device (arm64) and emulator (x86_64).
         // Dropping armeabi-v7a / x86 / mips MapLibre+JNI copies keeps the
@@ -87,6 +87,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
@@ -173,4 +174,14 @@ tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
         sarif.required.set(false)
         md.required.set(false)
     }
+}
+
+// F-Droid / reproducible: stage wasm guests from source (no committed binaries).
+tasks.register<Exec>("buildPluginWasm") {
+    workingDir = rootProject.projectDir
+    commandLine("bash", "scripts/build-plugin-wasm.sh")
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("buildPluginWasm")
 }

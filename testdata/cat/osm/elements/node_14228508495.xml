@@ -1,0 +1,20 @@
+<?xml version='1.0' encoding='utf-8'?>
+<osm version="0.6" generator="fetch-cat-fixtures"><node id="14228508495" visible="true" version="1" changeset="189693189" timestamp="2026-09-28T18:42:26Z" user="Visaman" uid="237638" lat="59.9609050" lon="12.0953200">
+  <tag k="callsign" v="LA7XR" />
+  <tag k="communication:amateur_radio" v="yes" />
+  <tag k="communication:amateur_radio:callsign" v="LA7XR" />
+  <tag k="communication:amateur_radio:repeater" v="yes" />
+  <tag k="communication:amateur_radio:repeater:ctcss" v="77.0" />
+  <tag k="communication:amateur_radio:repeater:frequency_out" v="144.6625 MHz" />
+  <tag k="communication:amateur_radio:repeater:modulation" v="11K2F3E" />
+  <tag k="communication:amateur_radio:repeater:shift" v="-0.6 MHz" />
+  <tag k="frequency" v="144.6625" />
+  <tag k="group" v="Kongsvinger" />
+  <tag k="locator" v="JO69BX" />
+  <tag k="name" v="LA7XR" />
+  <tag k="note" v="Operator position.; operator override position" />
+  <tag k="nrrl:group_page" v="https://nrrl.no/grupper/innlandet/kongsvingergruppen/" />
+  <tag k="qth" v="Kroksjø" />
+  <tag k="website" v="https://www.la7v.org/" />
+ </node>
+ </osm>
