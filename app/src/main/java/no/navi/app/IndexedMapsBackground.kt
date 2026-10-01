@@ -58,53 +58,38 @@ object IndexedMapsBackground {
     }
 
     /**
-     * Tools status line. Empty when idle and packs are ready.
+     * Tools process-footer line. Empty when idle — idle "missing/ready" probes must
+     * not appear under "In progress" when nothing is converting.
      */
+    @Suppress("UNUSED_PARAMETER")
     fun uiLine(
         pbf: File?,
         dataDir: File,
     ): String {
         if (pbf == null || !pbf.isFile) return ""
-        if (running.get()) {
-            val snap =
-                runCatching { convertProgressSnapshot() }.getOrNull()?.takeIf {
-                    it.label.isNotBlank()
-                }
-            val prog =
-                if (snap != null && snap.label.isNotBlank()) {
-                    val label = annotate(snap.label)
-                    val pct =
-                        snap.unitsTotal?.let { tot ->
-                            if (tot > 0uL) {
-                                ((snap.unitsDone.toDouble() * 100.0) / tot.toDouble())
-                                    .toInt()
-                                    .coerceIn(0, 100)
-                            } else {
-                                null
-                            }
+        if (!running.get()) return ""
+        val snap =
+            runCatching { convertProgressSnapshot() }.getOrNull()?.takeIf {
+                it.label.isNotBlank()
+            }
+        val prog =
+            if (snap != null && snap.label.isNotBlank()) {
+                val label = annotate(snap.label)
+                val pct =
+                    snap.unitsTotal?.let { tot ->
+                        if (tot > 0uL) {
+                            ((snap.unitsDone.toDouble() * 100.0) / tot.toDouble())
+                                .toInt()
+                                .coerceIn(0, 100)
+                        } else {
+                            null
                         }
-                    if (pct != null) "$label $pct%" else label
-                } else {
-                    lastStatus.get()
-                }
-            return "Indexed maps (background): $prog"
-        }
-        val st =
-            runCatching { indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath).trim() }
-                .getOrDefault("error")
-        return when (st) {
-            "ready" -> annotate("Indexed maps: ready (pack-hit)")
-            "version_mismatch" ->
-                annotate(
-                    "Indexed maps: outdated format — will try pack server, then local rebuild",
-                )
-            "stale_pbf" ->
-                annotate(
-                    "Indexed maps: stale vs PBF — will try pack server, then local rebuild",
-                )
-            "missing" -> annotate("Indexed maps: not built yet (planning uses PBF fallback)")
-            else -> annotate("Indexed maps: $st")
-        }
+                    }
+                if (pct != null) "$label $pct%" else label
+            } else {
+                lastStatus.get()
+            }
+        return "Indexed maps (background): $prog"
     }
 
     /**
@@ -131,7 +116,16 @@ object IndexedMapsBackground {
         elevDir: File? = null,
         regionId: String? = null,
     ) {
-        if (!pbf.isFile) return
+        if (!OfflineIndexGate.isIndexablePbf(pbf) && !OfflineIndexGate.hasGraphPackMaterial(dataDir)) {
+            Log.i(TAG, "skip ensureIndexedMaps: no indexable PBF/packs under ${dataDir.name}")
+            return
+        }
+        if (!pbf.isFile || OfflineIndexGate.isFixturePath(pbf)) return
+        if (pbf.length() < OfflineIndexGate.MIN_INDEXABLE_PBF_BYTES &&
+            !OfflineIndexGate.hasGraphPackMaterial(dataDir)
+        ) {
+            return
+        }
         val rid = regionId?.trim()?.trim('/').orEmpty()
         val resolvedPbf =
             if (rid.isNotEmpty()) {

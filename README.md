@@ -309,6 +309,13 @@ Via / To) and, on the local-bake path, the **indexed routing packs**. Both scan
 the full region file and can run for many minutes on a large extract. That is
 expected; leave the app open or return to it later.
 
+**Nothing to index → no indexing UI.** Cold start and Tools do **not** start
+place-index / pack convert (and do not show an “In progress” indexing footer)
+when there is no real region PBF, no installed graph packs, and no pending
+extract/job. A selected Geofabrik path in the picker alone is not enough.
+(Previously, idle status lines and fixture/stub PBFs could look like indexing
+was running on an empty install.)
+
 ### Download and place-index timing (measured)
 
 **Baseline, not a guarantee.** Numbers below were measured on a Samsung Galaxy

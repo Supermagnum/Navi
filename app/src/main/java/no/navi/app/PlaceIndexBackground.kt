@@ -86,7 +86,10 @@ object PlaceIndexBackground {
         indexDb: File,
         regionId: String? = null,
     ) {
-        if (!pbf.isFile) return
+        if (!OfflineIndexGate.isIndexablePbf(pbf)) {
+            Log.i(TAG, "skip ensurePlaceIndex: no indexable PBF (${pbf.name})")
+            return
+        }
         if (RegionDownloadBackground.isRunning()) {
             Log.i(TAG, "region pipeline already running; skip standalone ensurePlaceIndex")
             return
@@ -95,6 +98,11 @@ object PlaceIndexBackground {
         if (rid != null && !GeofabrikDownloadCatalog.isKnownPackRegionId(rid)) {
             Log.e(TAG, "refusing ensurePlaceIndex under unknown region_id=$rid")
             lastStatus.set(annotate("failed (unknown region)", rid))
+            return
+        }
+        val dataDir = indexDb.parentFile
+        if (dataDir != null && !rid.isNullOrBlank() && PlaceIndexReady.isReady(dataDir, rid)) {
+            Log.i(TAG, "place index already ready for $rid; skip")
             return
         }
         if (!claimWorker()) {
