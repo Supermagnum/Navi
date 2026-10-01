@@ -2721,6 +2721,16 @@ fn finalize_chunked_motor_soft_breaks(
         pauses.len(),
         break_arr.len()
     ));
+    for (i, poi) in break_arr.iter().take(24).enumerate() {
+        report.push_str(&format!(
+            "chunked_break_poi: idx={i}; name={}; kind={}; lat={}; lon={}; along_km={}\n",
+            poi.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+            poi.get("kind").and_then(|v| v.as_str()).unwrap_or(""),
+            poi.get("lat").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            poi.get("lon").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            poi.get("along_km").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        ));
+    }
     let break_pois_json = serde_json::to_string(&break_arr).unwrap_or_else(|_| "[]".into());
     (break_pois_json, days_json, report)
 }
@@ -8865,6 +8875,23 @@ fn poi_lookahead_hits_json(hits: &[driver_break_core::poi::PoiLookaheadHit]) -> 
     .to_string()
 }
 
+fn parse_pack_dirs_json(raw: &str) -> Vec<PathBuf> {
+    let Ok(arr) = serde_json::from_str::<Vec<String>>(raw) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for s in arr {
+        let p = PathBuf::from(s.trim());
+        if p.as_os_str().is_empty() {
+            continue;
+        }
+        if p.is_dir() && !out.iter().any(|x| x == &p) {
+            out.push(p);
+        }
+    }
+    out
+}
+
 /// Load POI pack (preferred) or full PBF into the look-ahead store.
 #[uniffi::export]
 pub fn ensure_poi_lookahead_loaded(data_dir: String, pbf_path: String) -> FfiPoiLookaheadLoadStats {
@@ -8901,6 +8928,72 @@ pub fn ensure_poi_lookahead_loaded(data_dir: String, pbf_path: String) -> FfiPoi
                 }
             },
         };
+    let out = FfiPoiLookaheadLoadStats {
+        records: index.len() as u32,
+        cone_m: POI_LOOKAHEAD_CONE_M,
+        half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+    };
+    if let Ok(mut guard) = POI_LOOKAHEAD_STORE.lock() {
+        *guard = Some(PoiLookaheadStore { key, index });
+    }
+    out
+}
+
+/// Load the Ready POI pack that covers `lat,lon` (long-trip-packs / Removable
+/// roots via `pack_dirs_json`). One pack at a time — never co-resident with a
+/// route graph. Cell key (~0.5°) avoids thrashing when GPS jitters inside a region.
+#[uniffi::export]
+pub fn ensure_poi_lookahead_covering(
+    data_dir: String,
+    pack_dirs_json: String,
+    lat: f64,
+    lon: f64,
+) -> FfiPoiLookaheadLoadStats {
+    use driver_break_core::poi::{POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG, POI_LOOKAHEAD_CONE_M};
+    let cell_lat = (lat * 2.0).round() / 2.0;
+    let cell_lon = (lon * 2.0).round() / 2.0;
+    let pack_dirs = parse_pack_dirs_json(&pack_dirs_json);
+    let key = format!(
+        "cover|{data_dir}|{:.1}|{:.1}|{}",
+        cell_lat,
+        cell_lon,
+        pack_dirs
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(";")
+    );
+    {
+        let guard = POI_LOOKAHEAD_STORE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(store) = guard.as_ref() {
+            if store.key == key {
+                return FfiPoiLookaheadLoadStats {
+                    records: store.index.len() as u32,
+                    cone_m: POI_LOOKAHEAD_CONE_M,
+                    half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+                };
+            }
+        }
+    }
+    let data = PathBuf::from(&data_dir);
+    let index = match driver_break_core::routing::indexed::try_load_poi_pack_covering_point_with_pack_dirs(
+        &data, &pack_dirs, lat, lon,
+    ) {
+        Ok((poi, _)) => poi,
+        Err(e) => {
+            log::warn!(
+                target: "NaviNative",
+                "poi_lookahead covering load failed at {lat:.4},{lon:.4}: {e:?}"
+            );
+            return FfiPoiLookaheadLoadStats {
+                records: 0,
+                cone_m: POI_LOOKAHEAD_CONE_M,
+                half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+            };
+        }
+    };
     let out = FfiPoiLookaheadLoadStats {
         records: index.len() as u32,
         cone_m: POI_LOOKAHEAD_CONE_M,

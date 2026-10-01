@@ -749,6 +749,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_ensure_place_index(
     ): Int
+    external fun uniffi_navi_checksum_func_ensure_poi_lookahead_covering(
+    ): Int
     external fun uniffi_navi_checksum_func_ensure_poi_lookahead_loaded(
     ): Int
     external fun uniffi_navi_checksum_func_export_saved_route_gpx(
@@ -1075,6 +1077,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_set_nav_context(
     ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_set_pack_dirs(
+    ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_set_residency_country(
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_set_timezone(
@@ -1212,6 +1216,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_ensure_pack_region_place_index(`dataDir`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,`forceRebuild`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_ensure_poi_lookahead_covering(`dataDir`: RustBuffer.ByValue,`packDirsJson`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_poi_lookahead_loaded(`dataDir`: RustBuffer.ByValue,`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1539,6 +1545,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_set_nav_context(`waypointsJson`: RustBuffer.ByValue,`destLat`: RustBuffer.ByValue,`destLon`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`professionalDriver`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_camping_plugin_set_pack_dirs(`packDirsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_set_residency_country(`iso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_set_timezone(`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1778,6 +1786,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_ensure_place_index() and 0xFFFF) != 27043) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_ensure_poi_lookahead_covering() and 0xFFFF) != 9302) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_ensure_poi_lookahead_loaded() and 0xFFFF) != 16850) {
@@ -2267,6 +2278,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_camping_plugin_set_nav_context() and 0xFFFF) != 46018) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_set_pack_dirs() and 0xFFFF) != 40747) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_camping_plugin_set_residency_country() and 0xFFFF) != 64366) {
@@ -6009,6 +6023,25 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Load the Ready POI pack that covers `lat,lon` (long-trip-packs / Removable
+         * roots via `pack_dirs_json`). One pack at a time — never co-resident with a
+         * route graph. Cell key (~0.5°) avoids thrashing when GPS jitters inside a region.
+         */ fun `ensurePoiLookaheadCovering`(`dataDir`: kotlin.String, `packDirsJson`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double): FfiPoiLookaheadLoadStats {
+            return FfiConverterTypeFfiPoiLookaheadLoadStats.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_ensure_poi_lookahead_covering(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`packDirsJson`),
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Load POI pack (preferred) or full PBF into the look-ahead store.
          */ fun `ensurePoiLookaheadLoaded`(`dataDir`: kotlin.String, `pbfPath`: kotlin.String): FfiPoiLookaheadLoadStats {
             return FfiConverterTypeFfiPoiLookaheadLoadStats.lift(
@@ -8438,6 +8471,22 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterOptionalDouble.lower(`destLon`),
         FfiConverterTypeTravelProfile.lower(`profile`),
         FfiConverterBoolean.lower(`professionalDriver`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * JSON array of absolute pack roots (e.g. Removable `…/long-trip-packs`).
+         * Cleared on [`camping_plugin_configure`]; host should set after long-trip
+         * volume selection so suggest can see SD-only Ready packs.
+         */ fun `campingPluginSetPackDirs`(`packDirsJson`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_set_pack_dirs(
+    
+        
+        FfiConverterString.lower(`packDirsJson`),_status)
 }
     )
     }

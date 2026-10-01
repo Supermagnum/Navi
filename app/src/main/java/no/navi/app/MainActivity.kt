@@ -823,6 +823,17 @@ private fun NaviMapScreen() {
         campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
     }
 
+    fun longTripPackDirsJson(): String {
+        val dirs = ArrayList<String>(2)
+        if (longTripEnabled) {
+            runCatching {
+                dirs.add(LongTripPackStorage.packDownloadDir(context).absolutePath)
+            }
+        }
+        dirs.add(NaviAppData.resolve(context).absolutePath)
+        return org.json.JSONArray(dirs).toString()
+    }
+
     LaunchedEffect(
         campingPluginEnabled,
         profile,
@@ -831,6 +842,8 @@ private fun NaviMapScreen() {
         mapState.endLon,
         campingProfessionalDriver,
         campingResidencyCountry,
+        longTripEnabled,
+        longTripPackVolumeId,
     ) {
         campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
         if (!campingPluginEnabled || mapState.polyline.isBlank()) {
@@ -846,6 +859,7 @@ private fun NaviMapScreen() {
         }
         val sampled = sampleCampingCorridorWaypoints(mapState.polyline)
         if (sampled.isEmpty()) return@LaunchedEffect
+        uniffi.navi.campingPluginSetPackDirs(longTripPackDirsJson())
         val residency =
             campingResidencyCountry.trim().lowercase().ifBlank { null }
         uniffi.navi.campingPluginSetResidencyCountry(residency)
@@ -1785,6 +1799,11 @@ private fun NaviMapScreen() {
         poiLookaheadDismissedIds,
         weatherAppActive,
         dataDir,
+        longTripEnabled,
+        longTripPackVolumeId,
+        mapState.gpsLat,
+        mapState.gpsLon,
+        mapState.polyline,
     ) {
         if (!poiLookaheadEnabled) {
             poiLookaheadHud = PoiLookaheadHudState()
@@ -1793,22 +1812,40 @@ private fun NaviMapScreen() {
         while (true) {
             if (!poiLookaheadEnabled) break
             if (weatherAppActive) {
-                val lat = mapState.gpsLat.takeIf { it != 0.0 } ?: (mapState.cameraLat ?: 0.0)
-                val lon = mapState.gpsLon.takeIf { mapState.gpsLat != 0.0 } ?: (mapState.cameraLon ?: 0.0)
+                val lat =
+                    mapState.gpsLat.takeIf { it != 0.0 }
+                        ?: mapState.startLat.takeIf { it != 0.0 }
+                        ?: (mapState.cameraLat ?: 0.0)
+                val lon =
+                    mapState.gpsLon.takeIf { mapState.gpsLat != 0.0 }
+                        ?: mapState.startLon.takeIf { mapState.startLat != 0.0 }
+                        ?: (mapState.cameraLon ?: 0.0)
                 val heading =
                     NaviMapTestHooks.gpsBearingDeg
                         ?: mapState.cameraBearing.takeIf { it.isFinite() }
-                val pbf = RouteReplan.resolvePbf(dataDir)
+                val packDirs = longTripPackDirsJson()
                 val dismissed = poiLookaheadDismissedIds
                 val strict = poiLookaheadStrictHoursUnknown
                 val raw =
                     withContext(Dispatchers.IO) {
                         runCatching {
-                            if (pbf != null) {
-                                uniffi.navi.ensurePoiLookaheadLoaded(
+                            // Prefer covering Ready pack at GPS (long-trip SD roots).
+                            // Fallback to planning-stem PBF under files/ for local/tests.
+                            val cover =
+                                uniffi.navi.ensurePoiLookaheadCovering(
                                     dataDir.absolutePath,
-                                    pbf.absolutePath,
+                                    packDirs,
+                                    lat,
+                                    lon,
                                 )
+                            if (cover.records == 0u) {
+                                val pbf = RouteReplan.resolvePbf(dataDir)
+                                if (pbf != null) {
+                                    uniffi.navi.ensurePoiLookaheadLoaded(
+                                        dataDir.absolutePath,
+                                        pbf.absolutePath,
+                                    )
+                                }
                             }
                             uniffi.navi.poiLookaheadQueryJson(
                                 lat,

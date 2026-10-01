@@ -95,21 +95,28 @@ report `graph_ferry_edges=2` present in the local graph but unused.
 Nearby-attractions is **on**. Per densify chunk leg still logs
 `poi_skipped=chunk_leg` (RAM: POI packs must not sit beside the route graph).
 Attractions are **not** plan-time — they come from the live POI look-ahead cone
-after the corridor exists. Campaign sampling uses `poiLookaheadQueryJson` along
-the stitched polyline (same pattern as Bevensen).
+after the corridor exists via `ensurePoiLookaheadCovering` (Ready pack covering
+GPS / sample point, including Removable `long-trip-packs/`). Campaign sampling
+uses that covering load + `poiLookaheadQueryJson` along the stitched polyline.
 
 ### Rest places
 
 Soft break / overnight POIs are produced by **post-chunk**
 `finalize_chunked_motor_soft_breaks` into `breakPoisJson` / `daysJson` (and
-`chunked_break_poi:` report lines). Per-leg `break_pois=[]` is expected.
-UI and campaigns must read the stitched result hooks, not per-leg report text.
+`chunked_break_poi:` report lines). This Elsa plan recorded
+`chunked_poi_packs_loaded=15`, `chunked_rest_pauses=11`, `break_pois_total=13`,
+and multi-day lodging overnights (e.g. LappeanLohi, Best Western Hotel Bothnia).
+Per-leg `break_pois=[]` is expected. UI applies the stitched JSON; campaigns
+read `NaviMapTestHooks.lastBreakPoisJson` / `lastDaysJson`.
 
 ### Wild camping
 
 Wild-camping overnight sites come from the right-to-roam camping guest
 (`campingPluginSuggestAlongRoute`) after the polyline is applied — not from densify
-leg POI finalize. Campaign reports `wild_camping.sites` from that suggest path.
+leg POI finalize. Suggest loads corridor graph / building packs from
+`campingPluginSetPackDirs` (SD long-trip roots) in short segments so packs are
+never co-resident with a full multi-country graph. Campaign reports
+`wild_camping.sites` from that suggest path.
 
 ### Kilometres per day and total length
 
@@ -211,12 +218,14 @@ plan → final **~703 MiB**.
 
 ---
 
-## Known gaps (unchanged)
+## Known gaps
 
 - Fuel-stop planning unimplemented (`plugins/safety-resupply.md`).
 - Per densify leg still skips in-leg POI packs (`poi_skipped=chunk_leg`) by design
-  (4 GB LMK). Soft rest / overnight finalize and camping/attraction post-plan
-  paths are the product surfaces.
+  (4 GB LMK). **Product surfaces after chunked plan are wired:** soft rest /
+  overnight via post-chunk finalize (`breakPoisJson` / `daysJson`), nearby
+  attractions via covering POI look-ahead with long-trip pack dirs, wild camping
+  via segmented suggest with `campingPluginSetPackDirs`.
 - Maneuver count after `thin_route_maneuvers` lands in the 55–100 band (57 on
   this run) — accepted; EXPECTED stays 55–100.
 
