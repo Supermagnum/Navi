@@ -402,6 +402,17 @@ object LongTripCoordinator {
             plan.regionsInOrder.firstOrNull {
                 PackRegionAvailability.regionIdsMatchForCatalog(it, path)
             } ?: return
+        // Volume eject/scrub sticks until an explicit remount success (installed /
+        // indexed) or another unavailable signal — ignore stale queue phases that
+        // can race in from a prior download worker during host tests / eject.
+        val cur = plan.states[key]
+        if (cur == State.Unavailable &&
+            phase != "installed" &&
+            phase != "indexed" &&
+            !phase.startsWith("unavailable")
+        ) {
+            return
+        }
         when {
             phase == "queued" -> plan.states[key] = State.Queued
             phase == "downloading" -> plan.states[key] = State.Downloading
@@ -409,7 +420,6 @@ object LongTripCoordinator {
             phase == "indexing" -> {
                 // Packs Ready (Installed) must stay planning-ready while place
                 // index builds in the background — never downgrade to Indexing.
-                val cur = plan.states[key]
                 if (cur != State.Installed && cur != State.Indexed) {
                     plan.states[key] = State.Indexing
                 }
@@ -432,19 +442,31 @@ object LongTripCoordinator {
                 return
             }
         for ((id, st) in plan.states.entries.toList()) {
-            if (st == State.Downloading || st == State.Indexing) {
+            if (st == State.Queued ||
+                st == State.Downloading ||
+                st == State.Indexing ||
+                st == State.Paused
+            ) {
                 plan.states[id] = State.Unavailable
             }
         }
         for (stem in stems) {
-            val stemNorm = stem.lowercase().replace('_', '-')
+            val stemNorm =
+                stem
+                    .lowercase()
+                    .replace('_', '-')
+                    .removeSuffix(".osm.pbf")
+                    .removeSuffix(".pbf")
             for (id in plan.regionsInOrder) {
                 val leaf =
                     id
                         .substringAfterLast('/')
                         .lowercase()
                         .replace('_', '-')
-                if (leaf.isNotEmpty() && (stemNorm.contains(leaf) || leaf.contains(stemNorm))) {
+                val local = PackRegionAvailability.localStem(id).lowercase().replace('_', '-')
+                if (leaf.isNotEmpty() &&
+                    (stemNorm == leaf || stemNorm == local || stemNorm.startsWith("$local."))
+                ) {
                     plan.states[id] = State.Unavailable
                 }
             }
