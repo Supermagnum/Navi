@@ -6,11 +6,123 @@ Plugin overview: [`plugins.md`](plugins.md).
 
 This file holds **CAT branch test results**, fixture-check outcomes, importer
 coverage, CSV import path / format notes, and the Espa→Dombås repeater-switch
-expectations. It does **not** treat Hamlib dummy-rig (`rigctld -m 1`) runs as
-product route evidence (dummy is CI-only; see [Out of scope](#out-of-scope)).
+expectations.
+
+**Keep these separate:**
+
+| Section | What it is |
+|---|---|
+| [Corridor under test](#corridor-under-test) / Run A / Run B | Fixture-derived Espa→Dombås / LA5MR / non-networked switch expectations — **not** a live radio or dummy run |
+| [Dummy rigctld run](#dummy-rigctld-run-ci--hamlib-backend) | CI / protocol plumbing against Hamlib **dummy** (`rigctld -m 1`) — **not** a physical radio |
+| [Hamlib in CAT APKs](#hamlib-in-cat-apks) | Whether `libhamlib.so` is built and packaged for on-device FFI |
 
 Fetch date for committed fixtures: see
 [`testdata/cat/FETCH_DATE.txt`](../testdata/cat/FETCH_DATE.txt).
+
+---
+
+## Dummy rigctld run (CI / Hamlib backend)
+
+**Label: CI / dummy backend only — not a physical radio.**
+
+Hamlib dummy rig model **1** stores frequency, mode, VFO, shift, offset, tone,
+and PTT in memory. It is the supported way to exercise `navi-cat` program +
+read-back and never-transmit interlocks without hardware.
+
+```bash
+# Manual daemon (optional; the integration test starts its own on a free port)
+rigctld -m 1 -t 4532
+
+# Automated (preferred)
+cargo test -p navi-cat --test dummy_rigctld
+cargo test -p navi-cat --test never_transmit
+cargo test -p navi-cat --test gating_fixtures
+```
+
+### What `navi-cat/tests/dummy_rigctld.rs` covers
+
+| Check | Behaviour |
+|---|---|
+| Daemon | Spawns `rigctld -m 1` on a free localhost port when `rigctld` is on `PATH`; otherwise skips |
+| Gating | Connects with `allow_dummy=true` so model 1 passes Stable gating |
+| Program + read-back | `program_vfo1_verified`: 145.725 MHz, shift −0.6 MHz, CTCSS 88.5 Hz, FM / 12.5 kHz |
+| Independent second connection | Second `TcpRigBackend` reads the same VFO state (freq / shift / offset / CTCSS) |
+| Never transmit | Asserts no `T` / `set_ptt` in sent commands; raw `T 1` is refused as `Unsupported` |
+
+Related unit coverage (no daemon required):
+
+| Test | Asserts |
+|---|---|
+| `never_transmit` | Command filter refuses `T` / `+T` before I/O; get-PTT `t` stays allowed |
+| `gating_fixtures` | Stable allowed; Beta / Alpha / Untested / missing CTCSS or lines fail closed |
+
+### Live run recorded on CAT tip
+
+| | |
+|---|---|
+| Date | **2026-10-01** |
+| Host `rigctld` | Hamlib **4.7.0** (`/usr/local/bin/rigctld`) |
+| Commit under test | `6e68b6ad` (then docs-only follow-up on this branch) |
+| `cargo test -p navi-cat --test dummy_rigctld` | **PASS** (1 test) |
+| `cargo test -p navi-cat --test never_transmit` | **PASS** (1 test) |
+| `cargo test -p navi-cat --test gating_fixtures` | **PASS** (7 tests) |
+
+This is **not** Espa→Dombås corridor evidence and does **not** prove a physical
+transceiver. Corridor expectations stay under [Corridor under test](#corridor-under-test).
+
+---
+
+## Hamlib in CAT APKs
+
+Target packaging (from [`scripts/build-hamlib-android.sh`](../scripts/build-hamlib-android.sh)
+and [`scripts/hamlib-android.lock`](../scripts/hamlib-android.lock)):
+
+| Item | Value |
+|---|---|
+| Lock tag | **4.7.2** |
+| Lock NDK | **30.0.14904198** |
+| Claimed ABIs | `arm64-v8a`, `armeabi-v7a`, `x86_64` → `out/hamlib-android/jniLibs/<abi>/libhamlib.so` |
+| Gradle | Packages whatever is under `app/src/main/jniLibs/` (`useLegacyPackaging = true`); **no** dedicated Hamlib copy step |
+| Native script | [`scripts/build-android-native.sh`](../scripts/build-android-native.sh) copies only `libnavi.so` |
+
+### Inspection of committed CAT tip APKs (`compiled/`)
+
+Checked with `unzip -l` on `navi-debug.apk` and `navi-release.apk`, plus
+`readelf -d` on jniLibs `libnavi.so`:
+
+| ABI | `libnavi.so` in APK | `libhamlib.so` in APK |
+|---|---|---|
+| arm64-v8a | **present** | **absent** |
+| x86_64 | **present** | **absent** |
+| armeabi-v7a | **absent** (not a shipped Navi ABI today) | **absent** |
+
+`libnavi.so` `NEEDED` entries: `liblog.so`, `libdl.so`, `libm.so`, `libc.so` —
+**no** `libhamlib.so`. Workspace jniLibs likewise contain only `libnavi.so`
+(arm64-v8a / x86_64). `out/hamlib-android/` on this machine held Hamlib **source**
+under `src/` only; no prebuilt `jniLibs/*/libhamlib.so` artifacts were present.
+
+### Honest gap (TCP-only path today)
+
+On-device CAT on this branch talks to **`rigctld` over TCP** (USB/BT serial
+loopback bridge → localhost, or remote / emulator `10.0.2.2:4532`). That path
+does **not** load `libhamlib.so` inside the APK.
+
+Product intent in [`CAT.md`](CAT.md) also describes an **onboard FFI** backend
+(`navi-hamlib-sys` + `navi-cat` feature `ffi` → `link-hamlib`). That feature is
+**not** enabled in `navi-ffi` today (`navi-cat` is depended on without `ffi`),
+so shipping unused `libhamlib.so` alone would not activate FFI.
+
+**To close the FFI packaging gap later:**
+
+1. `ANDROID_NDK_HOME=…/ndk/30.0.14904198 ./scripts/build-hamlib-android.sh`
+2. Copy `out/hamlib-android/jniLibs/<abi>/libhamlib.so` into
+   `app/src/main/jniLibs/<abi>/`
+3. Enable `navi-cat/ffi` (and thus `navi-hamlib-sys/link-hamlib`) for the Android
+   `navi-ffi` build; ensure the linker can find the staged `libhamlib.so`
+4. Rebuild native + APKs; refresh `compiled/` + `SHA256SUMS`
+
+Until then, CAT tip APKs are **TCP-to-rigctld only** for radio I/O; dummy /
+desktop CI above remains the protocol proof without a physical radio.
 
 ---
 
@@ -263,6 +375,8 @@ Fixture samples: `channel.csv` (UTF-8), `channel_windows1252.csv` (CP1252),
 | Item | Result |
 |---|---|
 | Hamlib lock | tag **4.7.2**, NDK **30.0.14904198** |
+| `libhamlib.so` in CAT tip APKs | **Absent** (all ABIs) — TCP-only path; see [Hamlib in CAT APKs](#hamlib-in-cat-apks) |
+| Dummy `rigctld -m 1` live run | **PASS** 2026-10-01 — see [Dummy rigctld run](#dummy-rigctld-run-ci--hamlib-backend) |
 | OSM / LA5MR / non_networked fixtures | Bundled; see SOURCES |
 | Server-file repeaters | **Partial** (21 hits in ostlandet fixture PBF) |
 | OpenRepeater Norway | Empty export |
@@ -273,11 +387,3 @@ Fixture samples: `channel.csv` (UTF-8), `channel_windows1252.csv` (CP1252),
 | Corridor switch logs | Fixture-derived Run A / Run B above |
 
 Plugin guest logic: `plugins/CATS-plugin/`. Host radio safety: `navi-cat`.
-
----
-
-## Out of scope
-
-Hamlib **dummy** rig (`rigctld -m 1`) is used only for CI gating / protocol
-plumbing. Those runs are **not** product CAT route results and are not tabulated
-here.
