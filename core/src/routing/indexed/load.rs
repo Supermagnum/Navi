@@ -1286,28 +1286,26 @@ fn try_load_graph_for_plan_corridor_dirs(
     ))
 }
 
-/// When published packs were baked without `route=ferry` ways, merge a ferry-only
-/// overlay from on-disk Geofabrik `.osm.pbf` extracts so water hops (Fehmarn)
-/// stay connected until packs are rebaked.
-fn supplement_pack_ferries_from_pbf(
-    graph: RouteGraph,
-    dirs: &[&Path],
-    primary: &NaviManifest,
-    extras: &[NaviManifest],
-    profile: RoutingProfile,
-    clip_bbox: Option<[f64; 4]>,
-    edge_clips: Option<&[[f64; 4]]>,
-) -> RouteGraph {
-    // Short `ferry=yes` approach roads must not skip the overlay — only a
-    // real water-crossing length counts as coverage (Fehmarn ~19 km).
-    if graph
+/// Pack-server installs leave a 16 KiB zero stub beside graph packs. Real
+/// Geofabrik extracts (and place-index downloads) are >> 1 MiB.
+const MIN_FERRY_OVERLAY_PBF_BYTES: u64 = 1_000_000;
+
+/// Only a real water-crossing length counts as ferry coverage (Fehmarn ~19 km).
+/// Short `ferry=yes` approach roads must not skip the overlay.
+const MIN_LONG_FERRY_M: f64 = 2_000.0;
+
+fn graph_has_long_ferry(graph: &RouteGraph) -> bool {
+    graph
         .edges
         .iter()
-        .any(|e| e.is_ferry && e.length_m >= 2_000.0)
-    {
-        return graph;
-    }
-    let bbox = clip_bbox.or_else(|| {
+        .any(|e| e.is_ferry && e.length_m >= MIN_LONG_FERRY_M)
+}
+
+fn plan_clip_bbox(
+    clip_bbox: Option<[f64; 4]>,
+    edge_clips: Option<&[[f64; 4]]>,
+) -> Option<[f64; 4]> {
+    clip_bbox.or_else(|| {
         edge_clips.and_then(|clips| {
             let mut iter = clips.iter();
             let first = *iter.next()?;
@@ -1320,8 +1318,97 @@ fn supplement_pack_ferries_from_pbf(
             }
             Some(out)
         })
-    });
-    let Some(bbox) = bbox else {
+    })
+}
+
+fn pbf_is_real_extract(path: &Path) -> bool {
+    path.is_file()
+        && path
+            .metadata()
+            .map(|m| m.len() >= MIN_FERRY_OVERLAY_PBF_BYTES)
+            .unwrap_or(false)
+}
+
+/// Resolve an on-disk PBF usable for ferry overlay (real extract only).
+///
+/// Prefer `{stem}.ferry.osm.pbf` when present (compact ferry retain), else the
+/// region `{stem}.osm.pbf` when it is not a pack-server stub. When only a stub
+/// exists, download the Geofabrik extract via the same path place-index uses so
+/// OSM `route=ferry` ways can merge into the live graph — no hardcoded crossings.
+fn resolve_ferry_overlay_pbf(home: &Path, stem: &str, bbox: [f64; 4]) -> Option<PathBuf> {
+    let ferry_sidecar = home.join(format!("{stem}.ferry.osm.pbf"));
+    if pbf_is_real_extract(&ferry_sidecar)
+        || (ferry_sidecar.is_file()
+            && ferry_sidecar
+                .metadata()
+                .map(|m| m.len() > 64 * 1024)
+                .unwrap_or(false))
+    {
+        return Some(ferry_sidecar);
+    }
+    let region_pbf = home.join(format!("{stem}.osm.pbf"));
+    if pbf_is_real_extract(&region_pbf) {
+        return Some(region_pbf);
+    }
+    if region_pbf.is_file() {
+        log::info!(
+            target: "NaviPlan",
+            "ferry_overlay stub PBF stem={stem} — ensuring Geofabrik extract for OSM ferries"
+        );
+    }
+    let region_id = pbf_stem_to_geofabrik_path(stem)?;
+    // Skip download when this stem's catalog bbox cannot meet the hop clip
+    // (avoids pulling all corridor country extracts on one water pad).
+    if let Some(region) = region_bbox(&region_id) {
+        let overlaps = region[0] <= bbox[2]
+            && region[2] >= bbox[0]
+            && region[1] <= bbox[3]
+            && region[3] >= bbox[1];
+        if !overlaps {
+            return None;
+        }
+    }
+    match crate::pack_server::ensure_geofabrik_pbf_for_region(home, &region_id) {
+        Ok((path, bytes, downloaded, _)) => {
+            log::info!(
+                target: "NaviPlan",
+                "ferry_overlay geofabrik stem={stem} path={} bytes={bytes} downloaded={downloaded}",
+                path.display()
+            );
+            if pbf_is_real_extract(&path) {
+                Some(path)
+            } else {
+                None
+            }
+        }
+        Err(e) => {
+            log::warn!(
+                target: "NaviPlan",
+                "ferry_overlay geofabrik ensure failed stem={stem}: {e}"
+            );
+            None
+        }
+    }
+}
+
+/// When published packs were baked without `route=ferry` ways, merge OSM ferry
+/// (+ pier approach) edges from on-disk Geofabrik / ferry-sidecar extracts so
+/// water hops stay connected until packs are rebaked. Does not force any
+/// particular crossing — A* chooses ferries under the normal cost model when
+/// `avoid_ferries` is off.
+fn supplement_pack_ferries_from_pbf(
+    graph: RouteGraph,
+    dirs: &[&Path],
+    primary: &NaviManifest,
+    extras: &[NaviManifest],
+    profile: RoutingProfile,
+    clip_bbox: Option<[f64; 4]>,
+    edge_clips: Option<&[[f64; 4]]>,
+) -> RouteGraph {
+    if graph_has_long_ferry(&graph) {
+        return graph;
+    }
+    let Some(bbox) = plan_clip_bbox(clip_bbox, edge_clips) else {
         return graph;
     };
     // Modest pad so ferry terminals just outside the corridor band still load.
@@ -1338,17 +1425,17 @@ fn supplement_pack_ferries_from_pbf(
         let Some(home) = home_dir_for_stem(dirs, stem) else {
             continue;
         };
-        let pbf = home.join(format!("{stem}.osm.pbf"));
-        if !pbf.is_file() {
+        let Some(pbf) = resolve_ferry_overlay_pbf(home, stem, bbox) else {
             continue;
-        }
+        };
         match RouteGraph::build_ferry_overlay_from_pbf(&pbf, profile, bbox) {
             Ok(fg) if fg.edges.iter().any(|e| e.is_ferry) => {
                 log::info!(
                     target: "NaviPlan",
-                    "ferry_overlay stem={stem} ferry_edges={} nodes={}",
+                    "ferry_overlay stem={stem} ferry_edges={} nodes={} path={}",
                     fg.edges.iter().filter(|e| e.is_ferry).count(),
-                    fg.nodes.len()
+                    fg.nodes.len(),
+                    pbf.display()
                 );
                 overlays.push(fg);
             }
@@ -2206,5 +2293,174 @@ mod fingerprint_pbf_tests {
             man.graph_tiles_for(RoutingProfile::Foot).is_none(),
             "foot must not fall back to car"
         );
+    }
+}
+
+#[cfg(test)]
+mod ferry_overlay_tests {
+    use super::*;
+    use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile, SurfaceQuality};
+    use geo_types::Coord;
+    use osm4routing::{Node, NodeId};
+    use std::collections::BTreeMap;
+
+    fn land_only_graph() -> RouteGraph {
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [(1i64, 54.5, 11.2), (2, 54.5, 11.21)] {
+            nodes.insert(
+                NodeId(id),
+                Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 2,
+                },
+            );
+        }
+        let len = 700.0;
+        let edges = vec![
+            GraphEdge {
+                id: "a".into(),
+                source: NodeId(1),
+                target: NodeId(2),
+                length_m: len,
+                base_weight: len,
+                eco_weight: None,
+                start_lat: 54.5,
+                start_lon: 11.2,
+                end_lat: 54.5,
+                end_lon: 11.21,
+                shape: Vec::new(),
+                highway: Some("primary".into()),
+                maxspeed_kmh: None,
+                maxspeed_practical_kmh: None,
+                maxspeed_advisory_kmh: None,
+                maxspeed_type: None,
+                maxspeed_variable: false,
+                minspeed_kmh: None,
+                name: None,
+                road_ref: None,
+                is_motorroad: false,
+                is_expressway: false,
+                is_oneway: false,
+                lanes: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_tunnel: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+                surface_quality: SurfaceQuality::Good,
+            },
+            GraphEdge {
+                id: "b".into(),
+                source: NodeId(2),
+                target: NodeId(1),
+                length_m: len,
+                base_weight: len,
+                eco_weight: None,
+                start_lat: 54.5,
+                start_lon: 11.21,
+                end_lat: 54.5,
+                end_lon: 11.2,
+                shape: Vec::new(),
+                highway: Some("primary".into()),
+                maxspeed_kmh: None,
+                maxspeed_practical_kmh: None,
+                maxspeed_advisory_kmh: None,
+                maxspeed_type: None,
+                maxspeed_variable: false,
+                minspeed_kmh: None,
+                name: None,
+                road_ref: None,
+                is_motorroad: false,
+                is_expressway: false,
+                is_oneway: false,
+                lanes: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_tunnel: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+                surface_quality: SurfaceQuality::Good,
+            },
+        ];
+        RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
+    }
+
+    #[test]
+    fn stub_pbf_is_not_treated_as_real_extract() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let stub = dir.path().join("denmark-latest.osm.pbf");
+        std::fs::write(&stub, vec![0u8; 16 * 1024]).expect("stub");
+        assert!(!pbf_is_real_extract(&stub));
+    }
+
+    #[test]
+    fn supplement_without_real_pbf_does_not_invent_ferry_edges() {
+        // Offline unit test: stub only, no network Geofabrik. Must not inject
+        // hardcoded Fehmarn (or any) ferry — wait for real OSM overlay data.
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let stem = "denmark-latest";
+        std::fs::write(
+            dir.path().join(format!("{stem}.osm.pbf")),
+            vec![0u8; 16 * 1024],
+        )
+        .expect("stub pbf");
+        // Point stem at a non-Geofabrik name so ensure is skipped.
+        let stem = "not-a-geofabrik-stem";
+        let man = NaviManifest {
+            schema: NaviManifest::SCHEMA,
+            stem: stem.into(),
+            pbf_filename: format!("{stem}.osm.pbf"),
+            pbf_size_bytes: 16 * 1024,
+            pbf_modified_unix_secs: 1,
+            graph_files: BTreeMap::new(),
+            graph_tiles: BTreeMap::new(),
+            graph_format_version: GRAPH_FORMAT_VERSION,
+            poi_barrier_file: format!("{stem}.navi-poi-barrier.rkyv"),
+            poi_barrier_format_version: POI_BARRIER_FORMAT_VERSION,
+            wetland_file: None,
+            wetland_tiles: Vec::new(),
+            wetland_format_version: WETLAND_FORMAT_VERSION,
+            has_delta_h: false,
+            elev_dir: None,
+        };
+        std::fs::write(
+            dir.path().join(format!("{stem}.osm.pbf")),
+            vec![0u8; 16 * 1024],
+        )
+        .expect("stub");
+        let g = land_only_graph();
+        let before = g.edges.len();
+        let out = supplement_pack_ferries_from_pbf(
+            g,
+            &[dir.path()],
+            &man,
+            &[],
+            RoutingProfile::Car,
+            Some([54.15, 10.90, 55.25, 11.85]),
+            None,
+        );
+        assert_eq!(out.edges.len(), before);
+        assert!(!graph_has_long_ferry(&out));
     }
 }

@@ -568,10 +568,12 @@ impl RouteGraph {
         Ok(graph)
     }
 
-    /// Ferry-only overlay from a region `.osm.pbf` (typically `route=ferry` with
-    /// no `highway`). Used to patch pack graphs baked before ferry ways were
-    /// retained, so Fehmarn-style hops can connect without a full pack rebake
-    /// when the Geofabrik extract is still on disk.
+    /// Ferry overlay from a region `.osm.pbf`: OSM `route=ferry` ways plus
+    /// highway approaches that share terminal nodes with those ferries.
+    /// Approach stubs bridge pier tips that pack tiles may have clipped off
+    /// (e.g. Denmark south of ~54.677 vs Rødby ~54.655) so merge-by-OSM-id
+    /// connects into pack land. No preferential ferry bias — edges use normal
+    /// weights; A* chooses them when competitive and ferries are allowed.
     pub fn build_ferry_overlay_from_pbf(
         path: impl AsRef<Path>,
         profile: RoutingProfile,
@@ -595,6 +597,7 @@ impl RouteGraph {
 
         let mut ways: Vec<RawWay> = Vec::new();
         let mut needed: HashSet<i64> = HashSet::new();
+        let mut ferry_nodes: HashSet<i64> = HashSet::new();
         {
             crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
                 let Element::Way(way) = element else {
@@ -620,6 +623,7 @@ impl RouteGraph {
                 }
                 for id in &refs {
                     needed.insert(*id);
+                    ferry_nodes.insert(*id);
                 }
                 ways.push(RawWay {
                     id: way.id(),
@@ -632,6 +636,53 @@ impl RouteGraph {
 
         if ways.is_empty() {
             return Ok(Self::from_parts(HashMap::new(), Vec::new(), profile));
+        }
+
+        // Two hops of highway ways attached at ferry terminals (and then at
+        // those approach nodes). Connects pier tips into inland pack nodes
+        // when the published pack tile grid truncates the water fringe.
+        let mut attach = ferry_nodes;
+        for _hop in 0..2 {
+            let mut next_attach: HashSet<i64> = HashSet::new();
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+                let Element::Way(way) = element else {
+                    return;
+                };
+                if ways.iter().any(|w| w.id == way.id()) {
+                    return;
+                }
+                let tags = filter_way_tags(
+                    way.tags()
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect(),
+                );
+                if tags_indicate_ferry(&tags) {
+                    return;
+                }
+                if !way_ok_for_profile(&tags, profile) {
+                    return;
+                }
+                if !tags.contains_key("highway") {
+                    return;
+                }
+                let refs: Vec<i64> = way.refs().collect();
+                if refs.is_empty() || !refs.iter().any(|id| attach.contains(id)) {
+                    return;
+                }
+                for id in &refs {
+                    needed.insert(*id);
+                    next_attach.insert(*id);
+                }
+                ways.push(RawWay {
+                    id: way.id(),
+                    nodes: refs,
+                    tags,
+                });
+            })?;
+            attach = next_attach;
+            if attach.is_empty() {
+                break;
+            }
         }
 
         let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
