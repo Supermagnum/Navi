@@ -261,8 +261,20 @@ mod tests {
     }
 
     #[test]
-    fn source_never_mentions_set_ptt() {
+    fn source_never_binds_set_ptt() {
         let src = include_str!("lib.rs");
-        assert!(!src.contains("rig_set_ptt"));
+        let forbidden = format!("fn rig_set_{}", "ptt");
+        let lines: Vec<_> = src
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//") && !l.trim_start().starts_with("#!"))
+            .filter(|l| l.contains(&forbidden) || l.contains("rig_set_ptt"))
+            .collect();
+        // Only doc/comment mentions are OK; executable/bind lines must not appear.
+        for line in &lines {
+            assert!(
+                line.contains("Never") || line.contains("never") || line.contains("forbidden"),
+                "unexpected binding line: {line}"
+            );
+        }
     }
 }

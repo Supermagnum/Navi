@@ -1,6 +1,5 @@
 //! Network follow loop: hysteresis, dwell, pin, PTT/DCD left to host.
 
-use alloc::string::String;
 use serde::{Deserialize, Serialize};
 
 /// Hysteresis: switch when new site is ≥ 5 km closer OR ≥ 20 % closer.
@@ -50,10 +49,8 @@ pub fn should_switch(
     closer_km >= HYSTERESIS_KM || closer_km >= cur_d * HYSTERESIS_FRAC
 }
 
-#[cfg(target_arch = "wasm32")]
 pub fn tick_follow(lat: f64, lon: f64) -> FollowState {
     let _ = (lat, lon);
-    // Host owns interlocks; guest only decides candidate. Full loop uses KV.
     FollowState::default()
 }
 
@@ -72,9 +69,7 @@ mod tests {
             site_since_unix_s: 0,
             stopped_reason: None,
         };
-        // Only 2 km closer — below 5 km and below 20% of 20 (=4) — no switch.
         assert!(!should_switch(&state, "B", 18.0, 1000));
-        // 6 km closer — switch.
         assert!(should_switch(&state, "B", 14.0, 1000));
     }
 

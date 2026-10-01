@@ -9,7 +9,6 @@ publish = false
 navi-plugin-sdk = { path = "../../plugin-sdk" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-wee_alloc = "0.4.5"
 
 [lib]
 crate-type = ["cdylib"]

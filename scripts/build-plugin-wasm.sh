@@ -20,14 +20,20 @@ stage_one() {
   echo "==> build $crate_dir -> assets/plugins/$asset_name"
   cargo build --release --target wasm32-unknown-unknown \
     --manifest-path "$crate_dir/Cargo.toml"
-  local pkg
-  pkg="$(basename "$crate_dir" | tr '-' '_')"
+  local dir_pkg cargo_pkg
+  dir_pkg="$(basename "$crate_dir" | tr '-' '_')"
+  # Prefer [package].name from Cargo.toml (e.g. navi-plugin-cats under CATS-plugin/).
+  cargo_pkg="$(
+    sed -n 's/^name *= *"\(.*\)"/\1/p' "$crate_dir/Cargo.toml" | head -n1 | tr '-' '_'
+  )"
   local release="$ROOT/target/wasm32-unknown-unknown/release"
   local wasm=""
   for candidate in \
-    "$release/libnavi_plugin_${pkg}.wasm" \
-    "$release/navi_plugin_${pkg}.wasm" \
-    "$release/lib${pkg}.wasm"; do
+    "$release/lib${cargo_pkg}.wasm" \
+    "$release/${cargo_pkg}.wasm" \
+    "$release/libnavi_plugin_${dir_pkg}.wasm" \
+    "$release/navi_plugin_${dir_pkg}.wasm" \
+    "$release/lib${dir_pkg}.wasm"; do
     if [[ -f "$candidate" ]]; then
       wasm="$candidate"
       break

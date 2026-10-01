@@ -9,7 +9,9 @@ use crate::types::{RigBackend, RigError, ShiftDir, VfoState};
 
 pub struct TcpRigBackend {
     stream: Option<TcpStream>,
+    #[allow(dead_code)]
     host: String,
+    #[allow(dead_code)]
     port: u16,
     dump_caps: String,
     gate: GateDecision,

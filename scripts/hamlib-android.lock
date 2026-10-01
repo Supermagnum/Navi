@@ -1,3 +1,2 @@
-hamlib_tag=4.7.2
-ndk_version=30.0.14904198
-resolved_utc=2026-10-01T02:11:47Z
+HAMLIB_TAG=4.7.2
+NDK_VERSION=30.0.14904198

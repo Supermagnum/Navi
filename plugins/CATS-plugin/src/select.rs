@@ -1,6 +1,5 @@
 //! Repeater selection within 150 km (NFM preferred for auto-tune).
 
-use alloc::string::String;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -31,7 +30,7 @@ pub fn pick_best_nfm(json: &str, _lat: f64, _lon: f64) -> Option<Candidate> {
         .min_by(|a, b| {
             a.distance_km
                 .partial_cmp(&b.distance_km)
-                .unwrap_or(core::cmp::Ordering::Equal)
+                .unwrap_or(std::cmp::Ordering::Equal)
         })
 }
 

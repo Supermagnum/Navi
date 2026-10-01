@@ -3,8 +3,12 @@
 //! Built when feature `ffi` is enabled (links libhamlib). Without that feature
 //! [`FfiRigBackend::open`] returns an error.
 
-use crate::gating::{gate_from_dump_caps, GateDecision};
-use crate::types::{RigBackend, RigError, ShiftDir, VfoState};
+use crate::gating::GateDecision;
+#[cfg(feature = "ffi")]
+use crate::gating::gate_from_dump_caps;
+use crate::types::{RigBackend, RigError, VfoState};
+#[cfg(feature = "ffi")]
+use crate::types::ShiftDir;
 
 pub struct FfiRigBackend {
     #[cfg(feature = "ffi")]

@@ -654,8 +654,8 @@ navi-server from this branch.
 | RepeaterBook / repeatermap.de | No data committed; cross-check / disabled only |
 | OpenRepeater Norway | Empty export (count=0) |
 | RadioID | Terms forbid bulk redistribute; no data |
-| Desktop unit tests | `navi-cat` gating/program/repeater; `navi-plugin-cats` select/follow |
-| Emulator / hardware | Loopback bridge JVM tests; real USB/BT/radio still required for field confirmation |
+| Desktop unit tests | `navi-cat` gating/program/repeater + `--test scenarios` (1–12); `navi-plugin-cats` select/follow; dummy `rigctld -m 1` |
+| Emulator / hardware | Loopback bridge JVM tests; remote `10.0.2.2:4532`; real USB/BT/radio still required for field confirmation |
 | Still needs real hardware | USB OTG + Bluetooth SPP read-back on a physical transceiver after checking Hamlib backend status for that model |
 
 Plugin logic lives only under `plugins/CATS-plugin/`. Host radio safety is in `navi-cat`.
@@ -679,17 +679,17 @@ for this on the `CAT` branch.
 
 | Piece | Status |
 |---|---|
-| Architecture decisions (`RigBackend`, latest Hamlib, rejected crates) | Specified here |
-| Plugin path `plugins/CATS-plugin/` + wasmtime sandbox | Specified here |
-| Read-back verification (app-side) | Specified here |
-| `navi-cat` + TCP/FFI backends | Implementing on `CAT` |
-| Backend gating (`dump_caps`) | Implementing on `CAT` |
-| Onboard repeater DB / OSM / CSV / OpenRepeater / RadioID | Implementing on `CAT` |
-| Cross-source merge / conflict UI | Implementing on `CAT` |
+| Architecture decisions (`RigBackend`, latest Hamlib, rejected crates) | Locked in this doc |
+| Plugin path `plugins/CATS-plugin/` + wasmtime sandbox | Implemented on `CAT` |
+| Read-back verification (app-side) | Implemented in `navi-cat` |
+| `navi-cat` + TCP/FFI backends | Implemented on `CAT` |
+| Backend gating (`dump_caps`) | Implemented on `CAT` |
+| Onboard repeater DB / OSM / CSV / OpenRepeater / RadioID | Implemented on `CAT` (RadioID/repeatermap: policy only) |
+| Cross-source merge / conflict UI | Conflict flags in DB/query; UI polish deferred |
 | RepeaterBook sync | Disabled until written API permission |
-| Auto-tune → VFO 1 / network follow | Implementing on `CAT` |
-| Hamlib Android build script + lock | Implementing on `CAT` |
-| Android USB/BT/remote transports | Implementing on `CAT` |
-| Dummy-rig + scenario test suite | Implementing on `CAT` |
-| HostApi `cat_*` / `repeater_query` | Implementing on `CAT` |
+| Auto-tune → VFO 1 / network follow | Implemented (guest + host) |
+| Hamlib Android build script + lock | Implemented (`scripts/build-hamlib-android.sh`, tag 4.7.2) |
+| Android USB/BT/remote transports | Loopback bridge + remote endpoint; JVM tests green |
+| Dummy-rig + scenario test suite | Scenarios 1–12 covered in `navi-cat` / plugin / JVM tests |
+| HostApi `cat_*` / `repeater_query` | Implemented (caps + host handlers; defaults fail closed) |
 | Future ham-shacks | Doc only; not implemented |

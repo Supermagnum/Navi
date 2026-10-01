@@ -14,4 +14,3 @@ default = []
 link-hamlib = []
 
 [dependencies]
-libc.workspace = true
