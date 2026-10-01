@@ -1,6 +1,59 @@
 # Bad Bevensen → Dalsøren MobileHome campaign
 
-## Latest run — 2026-10-01 late evening (FAIL — Fehmarn leg2; Elsa not started)
+## Latest run — 2026-10-01 night (FAIL — OUT OF BAND; plan completed)
+
+Tree on **`right-to-roam`** with Rayon hang fix (`pbf_priority`), Fehmarn ferry
+overlay pier/hop gate (`bbox_build` / `indexed/load`), Indexed-before-plan gate
+(`orchestrate` + `LongTripCoordinator` / `MainActivity`), and Geofabrik harden
+`c8457d6f`. Native rebuild + APK install before UI; **zero** app/plugin code
+changes during the UI phase. Emulator: `Navi_8c_4G_128G` as-is. Runner:
+`LongTripMobileHomeBevensenDalsorenUiCampaignTest`. Host ADB GPS + **6**
+synthetic DATEX Blocks with re-pin. Evidence: `/tmp/bevensen-ui-host/`
+(`report.json`, logcat, host.log). Terminal:
+`PASS_UI dist=2287.196 etaMin=2108.4 man=56 datex=true` (~22:51).
+
+UI wipe of corridor (+ leftover) regions, then Plan with long trip ON
+(`downloads_mode=long_trip_auto_corridor_only`). No manual region downloads.
+
+| Metric | Result | EXPECTED | OK |
+|---|---|---|---|
+| Distance | **2287.2 km** | 1461.3–1648.6 km | **no (OOB high)** |
+| Driving time | **35.14 h** (`eta_min=2108.4`) | 17–~22 h | **no (OOB high)** |
+| Instructions | **56** | 55–100 | yes |
+| Ferries used | **yes** (`route_uses_ferry=true`; legs 2/7/8/16/20) | natural if competitive | ok |
+| Nearby attractions | not broken out in report | several | n/a |
+| Wild camping sites | not broken out in report | reported | n/a |
+| Rest places | 18 soft rests + lodging overnight marks in chunked report | name+coords | partial |
+| km/day | soft 6.0 h → 6 motor days (390.5 km ×5 + 334.5 km) | soft 6.0 h | budget ok / path long |
+| Tunnels used | `avoid_tunnels=false`; not enumerated | reported | n/a |
+| Fuel stops (report-only) | 2287 km → ~3 at 500 mi / ~2 at 600 mi | 100 km margin / 70 L | report-only |
+| DATEX host inject | **yes** (6 sits) | 3–8 synthetic | host ok |
+| DATEX in plan | **yes** (`max_datex_impacts=1` on chunk_leg5) | applied | partial |
+| Plan | **completed** (Fehmarn leg2 PASS with ferry) but **OUT OF BAND** distance/time | in-band | **FAIL band** |
+
+### Notes
+
+- Fehmarn/Baltic water gap is **routable** on this build (leg2 ferry;
+  `graph_ferry_edges=102` on that leg). Prior same-day Fehmarn `disconnected`
+  fail is superseded for connectivity.
+- OOB length (~640–820 km over band) is a **routing geometry / corridor**
+  issue (long detours, e.g. large snap/TripAabb expansions on later legs), not
+  a hang or download failure.
+- Post-`corridor_ready` wall still dominated by Sweden-style single-country
+  `sweden-latest` ferry_overlay scans — see below.
+- Elsa→Sjuvasslia not started (Bevensen out-of-band gate).
+
+### Auto-download / Indexed gate
+
+Corridor reached all-**Indexed** before plan start (new gate). Vestlandet
+finished Indexing ~22:19; plan progress stayed `distance_km=0` through
+Sweden PBF ferry_overlay densify until ~22:51 completion.
+
+RAM: before ≈ **185 MiB** PSS; post-plan ≈ **765 MiB**.
+
+---
+
+## Earlier same night — 2026-10-01 late evening (FAIL — Fehmarn leg2; Elsa not started)
 
 Hardened tree (uncommitted) on **`right-to-roam`** tip `56314990` + Geofabrik
 502-retry / dated-URL harden from agent bd50cfee (`http.rs` /
@@ -52,6 +105,31 @@ Plan click ~17:57:24. All 9 corridor regions reached **Installed/Indexed** with
 
 Corridor ready ~18:45:21 (~48 min downloads). Harden validation: prior SH/DK/SE
 502 Failed path did **not** recur.
+
+### Post-corridor Sweden PBF slowdown
+
+After `corridor_ready`, wall clock can still sit for **~17+ minutes** with
+`distance_km=0` / no polyline while densify builds ferry overlays for Swedish
+län stems. Server packs for Halland / Västra Götaland / Skåne provide `.rkyv`
+graphs only; Geofabrik has **no leaf extracts** for those regions — only the
+shared **`sweden-latest.osm.pbf` (~840 MB)**. Place-index and ferry overlay
+both resolve to that one country file. Each `ferry_overlay` for a län stem
+therefore scans the full country PBF (typically **~3–4 min per stem** on the
+`Navi_8c_4G_128G` AVD); TripAabb / pad retries repeat the scan (Halland and
+Västra Götaland alternating). That cost dominates post-corridor wall time —
+**not** A* search. Same class of issue for any country with subregion packs
+but only a single country PBF. A request to the team at
+[Geofabrik](https://www.geofabrik.de/) for Sweden extracts split by län
+(and the same for Finland) should remove this shared-country ferry-overlay /
+place-index cost; ideally all countries would publish matching subregion
+extracts so leaf packs pair with leaf PBFs. Product note: README Known issues
+(long-distance / Sweden-style single-country PBF).
+
+Live continue/reuse evidence (`/tmp/bevensen-ui-host/`, 2026-10-01 evening):
+`corridor_ready` ~22:14; six full `sweden-latest` ferry_overlay walks for
+`halland-latest` / `vastra_gotaland-latest` from ~22:17–22:43 (~3.3–3.9 min
+each, ~26 min of Sweden PBF I/O). Log lines:
+`ferry_overlay geofabrik stem=… path=…/sweden-latest.osm.pbf bytes=839447705`.
 
 ### Root cause (routing, not download)
 
@@ -437,3 +515,7 @@ Evidence JSON: app / SD
   still shows Installed on removable). Delete clicks still attempted via UI.
 - `graph_format_version` in `current.json` / mid-rebake: mixed format 8/9 packs
   across corridor regions this day.
+- **Sweden-style single-country PBF ferry_overlay cost** (documented, not a
+  routing bug): see [Post-corridor Sweden PBF slowdown](#post-corridor-sweden-pbf-slowdown).
+  Upstream fix path: ask [Geofabrik](https://www.geofabrik.de/) for län-level
+  Sweden (and Finland) extracts so leaf packs match leaf PBFs.

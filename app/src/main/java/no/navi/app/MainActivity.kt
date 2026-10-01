@@ -2786,13 +2786,20 @@ private fun NaviMapScreen() {
                     }
                 status = longTripStatusLine.ifBlank { status }
             }
-            // Wait until every corridor region is Installed (packs Ready) or
-            // Indexed — do not wait for place-index of non-start regions.
+            // Wait until every corridor region is Indexed (place-index ready).
+            // Starting plan while a region is still Installed/Indexing contends
+            // with place-index PBF scans and can deadlock or stall graph-build.
             while (isActive && !LongTripCoordinator.corridorReadyForPlanning()) {
                 val line =
                     LongTripCoordinator
                         .statusLine()
-                        .ifBlank { "Long trip: downloading required regions…" }
+                        .ifBlank {
+                            if (LongTripCoordinator.corridorPacksReady()) {
+                                "Long trip: waiting for region indexing…"
+                            } else {
+                                "Long trip: downloading required regions…"
+                            }
+                        }
                 longTripStatusLine = line
                 status = line
                 delay(1_500)
@@ -5678,6 +5685,18 @@ private fun NaviMapScreen() {
                                                 .fillMaxWidth()
                                                 .height(6.dp)
                                                 .testTag("route_plan_bar"),
+                                    )
+                                }
+                                if (longTripEnabled) {
+                                    Text(
+                                        text =
+                                            "Long-distance planning takes time and may appear " +
+                                                "to hang. Patience is a virtue.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .testTag("route_plan_patience_hint"),
                                     )
                                 }
                                 if (planIndexingHintVisible) {

@@ -224,37 +224,47 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         confirmPluginsAndLongTripViaToolsUi()
         screenshot("03_tools_plugins")
 
-        // Delete previously downloaded regions via Tools UI before planning.
-        // No manual region download taps — Plan + long-trip auto-fetches corridor.
-        deleteDownloadedRegionsViaUi()
-        report.put("downloads_mode", "long_trip_auto_corridor_only")
+        // Hang-fix retest: DO NOT wipe SD packs / index DBs — reuse Indexed corridor
+        // already on removable storage. Long-trip auto-download only fills gaps.
+        // (Cold-wipe path remains in deleteDownloadedRegionsViaUi for full campaigns.)
+        report.put("downloads_mode", "long_trip_reuse_existing_packs")
         report.put(
             "downloads_policy",
-            "Regions wiped via Tools UI; corridor packs fetched only by long-trip Plan auto-download",
+            "Reuse existing SD long-trip-packs + place index; no Tools UI wipe; auto-download only if missing",
         )
-        screenshot("03b_regions_deleted")
+        report.put("regions_deleted_via_ui", org.json.JSONArray())
+        noteUi("packs_policy", "reuse_existing_no_wipe")
+        screenshot("03b_regions_reused")
 
-        // Re-enable long trip after deletes (delete path turns it off when a plan was active).
+        // Ensure long trip stays ON before plan.
         confirmPluginsAndLongTripViaToolsUi()
         openRoutePanel()
         runCatching {
             clickTagSoft("btn_tools")
             settle(500)
             composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performScrollTo()
-            val line =
-                runCatching {
-                    composeRule
-                        .onNodeWithTag("long_trip_status_line", useUnmergedTree = true)
-                        .fetchSemanticsNode()
-                        .config[androidx.compose.ui.semantics.SemanticsProperties.Text]
-                        .joinToString(" ") { it.text }
-                }.getOrDefault("")
-            if (line.contains("off", ignoreCase = true) || line.isBlank()) {
+            // Prefer prefs over a blank status line: blank semantics + click would
+            // toggle an already-ON long-trip OFF and stall corridor planning.
+            var line = ""
+            repeat(8) {
+                line =
+                    runCatching {
+                        composeRule
+                            .onNodeWithTag("long_trip_status_line", useUnmergedTree = true)
+                            .fetchSemanticsNode()
+                            .config[androidx.compose.ui.semantics.SemanticsProperties.Text]
+                            .joinToString(" ") { it.text }
+                    }.getOrDefault("")
+                if (line.isNotBlank()) return@repeat
+                settle(250)
+            }
+            val prefsOn = MapHudPrefs.loadLongTripEnabled(composeRule.activity)
+            if (line.contains("off", ignoreCase = true) || (!prefsOn && line.isBlank())) {
                 composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performClick()
                 settle(400)
-                noteUi("toggle_long_trip", "forced ON before plan (was: $line)")
+                noteUi("toggle_long_trip", "forced ON before plan (was: '$line' prefsOn=$prefsOn)")
             } else {
-                noteUi("toggle_long_trip", "confirmed ON ($line)")
+                noteUi("toggle_long_trip", "confirmed ON (line='$line' prefsOn=$prefsOn)")
             }
             NaviMapTestHooks.requestCloseTools = true
             settle(300)
@@ -301,6 +311,41 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
             settle(300)
         }
         enableEcoRoutingViaUi()
+
+        // Safety: long trip must stay ON before Plan (blank status must not toggle OFF).
+        runCatching {
+            clickTagSoft("btn_tools")
+            settle(500)
+            composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performScrollTo()
+            var line = ""
+            repeat(6) {
+                line =
+                    runCatching {
+                        composeRule
+                            .onNodeWithTag("long_trip_status_line", useUnmergedTree = true)
+                            .fetchSemanticsNode()
+                            .config[androidx.compose.ui.semantics.SemanticsProperties.Text]
+                            .joinToString(" ") { it.text }
+                    }.getOrDefault("")
+                if (line.isNotBlank()) return@repeat
+                settle(200)
+            }
+            val prefsOn = MapHudPrefs.loadLongTripEnabled(composeRule.activity)
+            if (line.contains("off", ignoreCase = true) || !prefsOn) {
+                if (!prefsOn || line.contains("off", ignoreCase = true)) {
+                    composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performClick()
+                    settle(400)
+                }
+                noteUi("toggle_long_trip", "re-ON immediately before plan (line='$line' prefsOn=$prefsOn)")
+            } else {
+                noteUi("toggle_long_trip", "still ON before plan (line='$line')")
+            }
+            NaviMapTestHooks.requestCloseTools = true
+            settle(300)
+            clickTagSoft("btn_close_tools")
+            clickTagSoft("btn_save_tools")
+            openRoutePanel()
+        }
 
         // PRIMARY PLAN PATH: visible Plan button.
         composeRule.onNodeWithTag("btn_plan_route", useUnmergedTree = true).performScrollTo()

@@ -80,8 +80,9 @@ pub trait VolumeSource {
     fn volumes(&self) -> Vec<StorageVolume>;
 }
 
-/// Drive downloads (route order) then indexing (route order, after last download),
-/// without blocking the caller’s ability to plan on already-Installed regions.
+/// Drive downloads (route order) then indexing (route order, after last download).
+/// Callers must wait for [corridor_ready_for_planning] (all Indexed) before
+/// starting a multi-region route plan — Installed packs alone are not enough.
 pub struct TripOrchestrator<D, I, V> {
     pub downloader: D,
     pub indexer: I,
@@ -254,4 +255,33 @@ impl<D: RegionDownloader, I: RegionIndexer, V: VolumeSource> TripOrchestrator<D,
             }
         }
     }
+}
+
+/// True when every corridor region is Indexed (place-index ready).
+/// Planning must not start while any required region is only Installed —
+/// concurrent place-index + graph-build contends on shared PBF/Rayon work.
+pub fn corridor_ready_for_planning(plan: &LongTripPlan) -> bool {
+    if plan.regions_in_order.is_empty() {
+        return false;
+    }
+    plan.regions_in_order.iter().all(|id| {
+        matches!(plan.states.get(id), Some(RegionTripState::Indexed))
+    })
+}
+
+/// True when every corridor region has Ready packs (Installed, Indexing, or Indexed).
+pub fn corridor_packs_ready(plan: &LongTripPlan) -> bool {
+    if plan.regions_in_order.is_empty() {
+        return false;
+    }
+    plan.regions_in_order.iter().all(|id| {
+        matches!(
+            plan.states.get(id),
+            Some(
+                RegionTripState::Installed
+                    | RegionTripState::Indexing
+                    | RegionTripState::Indexed
+            )
+        )
+    })
 }
