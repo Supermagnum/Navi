@@ -14,7 +14,8 @@ use driver_break_core::admin_region_at;
 use driver_break_core::config::{SafetyConfig, TravellerProfile};
 use driver_break_core::routing::graph::RoutingProfile;
 use driver_break_core::routing::indexed::{
-    try_load_graph_for_plan_corridor_with_pack_dirs, try_load_poi_pack_covering_point_with_pack_dirs,
+    try_load_graph_for_plan_corridor_with_pack_dirs,
+    try_load_poi_pack_covering_point_with_pack_dirs,
 };
 use driver_break_core::routing::plan_bbox::PlanEdgeClipMode;
 use driver_break_core::routing::safety::OvernightProximityIndex;
@@ -1731,7 +1732,8 @@ mod geometry_cache_tests {
             find_planning_pbf(&data, &[]).is_none(),
             "files/ alone must not see LTP-only PBF"
         );
-        let found = find_planning_pbf(&data, &[ltp.clone()]).expect("pack_dirs must find PBF");
+        let found =
+            find_planning_pbf(&data, std::slice::from_ref(&ltp)).expect("pack_dirs must find PBF");
         assert!(found.ends_with("nord-norge-latest.osm.pbf"));
         let _ = fs::remove_dir_all(&root);
     }

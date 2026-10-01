@@ -20,7 +20,12 @@ class GeofabrikDownloadCatalogTest {
         assertFalse(
             GeofabrikDownloadCatalog.norwayRegions.any { it.first == "hedmark" },
         )
-        assertFalse(
+        // Retired path remaps to ostlandet, so indexing/download accepts it as known.
+        assertEquals(
+            "europe/norway/ostlandet",
+            GeofabrikDownloadCatalog.canonicalizePath("europe/norway/hedmark"),
+        )
+        assertTrue(
             GeofabrikDownloadCatalog.isKnownPackRegionId("europe/norway/hedmark"),
         )
 

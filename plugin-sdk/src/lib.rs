@@ -117,10 +117,7 @@ pub fn host_weather_read(lat: f64, lon: f64, radius_m: f64, out: &mut [u8]) -> u
 }
 
 pub fn host_route_read(out: &mut [u8]) -> usize {
-    host_json_buf!(
-        route_read(out.as_mut_ptr() as u32, out.len() as u32),
-        out
-    )
+    host_json_buf!(route_read(out.as_mut_ptr() as u32, out.len() as u32), out)
 }
 
 pub fn host_route_destination_read(out: &mut [u8]) -> usize {

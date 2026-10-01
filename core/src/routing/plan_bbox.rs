@@ -824,7 +824,7 @@ fn densify_leaf_grid_samples(
 /// land on mountain plateaus where chunk snap collapses (`zero_length_leg`) or
 /// exceeds [`CHUNK_INTERMEDIATE_SNAP_M`]. Pad / tile widening peaks at 2.3–3.3 GiB
 /// RSS and still fails — densify must prefer the E6 / coastal-highway spine.
-
+///
 /// Northern FI/SE transit packs that unlock the Bugøynes→Østlandet land bridge
 /// (Pajala / Umeå class). Southern leftovers like Västra Götaland must not
 /// match — those previously false-disabled the E6 spine.
@@ -1775,9 +1775,9 @@ mod tests {
             "E6 spine must be suppressed with northern SE Ready; hops={hops:?}"
         );
         // Expect densify to follow SE transit (Pajala / Umeå class).
-        let pajala = hops.iter().any(|(lat, lon)| {
-            *lat > 66.0 && *lat < 67.5 && *lon > 22.0 && *lon < 24.5
-        });
+        let pajala = hops
+            .iter()
+            .any(|(lat, lon)| *lat > 66.0 && *lat < 67.5 && *lon > 22.0 && *lon < 24.5);
         let umea = hops
             .iter()
             .any(|(lat, lon)| *lat > 63.4 && *lat < 64.3 && *lon > 19.5 && *lon < 21.5);

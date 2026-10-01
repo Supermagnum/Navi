@@ -19,8 +19,9 @@ fn trip_bugoynes_sjuvasslia_includes_northern_sweden() {
         "expected Østlandet end: {needed:?}"
     );
     assert!(
-        needed.iter().any(|r| r.contains("norrbotten")
-            || r.contains("vasterbotten")),
+        needed
+            .iter()
+            .any(|r| r.contains("norrbotten") || r.contains("vasterbotten")),
         "fair path must request northern SE transit, not Norway-only: {needed:?}"
     );
     assert!(
