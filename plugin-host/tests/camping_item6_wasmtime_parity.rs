@@ -185,7 +185,8 @@ fn build_job_from_native(
             (
                 lat,
                 lon,
-                emb.admin_country_iso(lat, lon).unwrap_or_else(|| "unknown".into()),
+                emb.admin_country_iso(lat, lon)
+                    .unwrap_or_else(|| "unknown".into()),
             )
         })
         .collect();
@@ -256,9 +257,7 @@ fn empty_host_fail_safes_through_guest() {
         }
     }
     let outcome = host
-        .call(Box::new(LogHost {
-            logs: logs.clone(),
-        }))
+        .call(Box::new(LogHost { logs: logs.clone() }))
         .expect("call");
     assert_eq!(outcome, CallOutcome::Ok);
     let joined = logs.lock().unwrap().join("\n");
@@ -278,8 +277,7 @@ fn wasmtime_lillehammer_parity_cap12_and_uncapped() {
     }
     let stage = build_camping_guest();
 
-    let (graph, waypoints) =
-        plan_corridor(&dir, LILLEHAMMER, SJUSJOEN).expect("plan");
+    let (graph, waypoints) = plan_corridor(&dir, LILLEHAMMER, SJUSJOEN).expect("plan");
     let bbox = [
         LILLEHAMMER.0.min(SJUSJOEN.0) - 0.2,
         LILLEHAMMER.1.min(SJUSJOEN.1) - 0.2,
@@ -299,9 +297,9 @@ fn wasmtime_lillehammer_parity_cap12_and_uncapped() {
         emb.set_route(waypoints.clone(), Some(SJUSJOEN));
         // Bound building set so the wasm job JSON fits the guest kv buffer.
         emb.buildings.retain(|&(blat, blon)| {
-            waypoints.iter().any(|w| {
-                (blat - w[0]).abs() < 0.008 && (blon - w[1]).abs() < 0.008
-            })
+            waypoints
+                .iter()
+                .any(|w| (blat - w[0]).abs() < 0.008 && (blon - w[1]).abs() < 0.008)
         });
         emb.glacier_rings.clear();
         let native = suggest_overnight(
@@ -349,12 +347,12 @@ fn wasmtime_lillehammer_parity_cap12_and_uncapped() {
         eprintln!("cap={cap:?} native_all={native_counts:?}");
         eprintln!("cap={cap:?} native_eval={native_eval_counts:?}");
         eprintln!("cap={cap:?} guest accepted={g_acc} rejected={g_rej} reasons={g_counts:?}");
-        assert_eq!(g_counts, native_eval_counts, "wasm guest reasons must match native evaluate_probe");
-        assert_eq!(g_acc, native.list.probes_accepted);
         assert_eq!(
-            g_rej,
-            eval_entries.iter().filter(|e| !e.accepted).count()
+            g_counts, native_eval_counts,
+            "wasm guest reasons must match native evaluate_probe"
         );
+        assert_eq!(g_acc, native.list.probes_accepted);
+        assert_eq!(g_rej, eval_entries.iter().filter(|e| !e.accepted).count());
     }
 }
 
@@ -402,7 +400,9 @@ fn wasmtime_lillehammer_motorised_on_foot_exact_parity() {
     let tent_entries: Vec<_> = native
         .probe_log
         .iter()
-        .filter(|e| e.road_highway != "vehicle" && e.reason != "track_too_short_for_walk_or_pack_min_road")
+        .filter(|e| {
+            e.road_highway != "vehicle" && e.reason != "track_too_short_for_walk_or_pack_min_road"
+        })
         .cloned()
         .collect();
     let probes: Vec<(f64, f64)> = tent_entries.iter().map(|e| (e.lat, e.lon)).collect();
@@ -441,9 +441,7 @@ fn wasmtime_lillehammer_motorised_on_foot_exact_parity() {
         "wasm tent rejects must match native"
     );
 
-    eprintln!(
-        "GATE STAYS CLOSED for Android: wasmtime parity verified on native host only"
-    );
+    eprintln!("GATE STAYS CLOSED for Android: wasmtime parity verified on native host only");
 }
 
 /// Phase 3a: Swedish Tier A at the captured Charlottenberg SE coordinate —
@@ -511,10 +509,9 @@ fn wasmtime_sweden_charlottenberg_tier_a() {
     };
     let out = suggest_overnight_fixed_probes(&mut native, &probes, Some(1));
     assert!(
-        out.list
-            .cards
-            .iter()
-            .any(|c| c.accepted && c.country_iso == "se" && c.tier == navi_right_to_roam_camping::Tier::A),
+        out.list.cards.iter().any(|c| c.accepted
+            && c.country_iso == "se"
+            && c.tier == navi_right_to_roam_camping::Tier::A),
         "native SE fixed probe must accept Tier A; log={:?}",
         out.probe_log
     );
@@ -532,7 +529,10 @@ fn wasmtime_sweden_charlottenberg_tier_a() {
         "subdivisions": [],
     });
     let (g_acc, _g_rej, g_counts) = run_guest_job(&stage, &job);
-    assert_eq!(g_counts, native_counts, "wasmtime SE reasons must match native");
+    assert_eq!(
+        g_counts, native_counts,
+        "wasmtime SE reasons must match native"
+    );
     assert!(g_acc >= 1, "wasmtime guest must accept Swedish Tier A");
 }
 
@@ -543,7 +543,10 @@ fn fail_safe_defaults_match_audit_table() {
     assert!(h.clock_read().is_none());
     assert_eq!(h.plugin_kv_status(), PluginKvStatus::Unavailable);
     assert!(h.admin_region_read(61.1, 10.5).country_iso.is_none());
-    assert_eq!(h.protected_area_query(61.1, 10.5).status, LayerStatus::Unknown);
+    assert_eq!(
+        h.protected_area_query(61.1, 10.5).status,
+        LayerStatus::Unknown
+    );
     assert_eq!(h.landcover_query(61.1, 10.5).status, LayerStatus::Unknown);
     assert_eq!(h.land_tenure_query(61.1, 10.5).manager_type, "unknown");
     assert_eq!(h.travel_mode_read(), TravelModeView::Unknown);

@@ -1,6 +1,6 @@
 use super::{
-    CitedSource, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack, SuggestionMode,
-    SourceQuality, Tier,
+    CitedSource, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack,
+    SourceQuality, SuggestionMode, Tier,
 };
 
 pub fn finland_pack() -> RulePack {
@@ -51,7 +51,8 @@ pub fn aland_tier_d_pack() -> RulePack {
         id: PackId::AlandTierD,
         tier: Tier::D,
         country_iso: "ax".into(),
-        legal_basis: "Åland (AX) — not mainland Finnish everyman's rights; no verified wild-camp pack",
+        legal_basis:
+            "Åland (AX) — not mainland Finnish everyman's rights; no verified wild-camp pack",
         sources: &[],
         distance: DistanceRule::NotApplicable,
         duration: DurationRule::NotVerified,

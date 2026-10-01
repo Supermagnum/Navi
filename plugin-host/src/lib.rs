@@ -23,6 +23,4 @@ pub use host::{
     DEFAULT_MEMORY_BYTES,
 };
 pub use manifest::PluginManifest;
-pub use plugin_enable::{
-    plugin_list, plugin_set_enabled, PluginEnableStore, PluginListEntry,
-};
+pub use plugin_enable::{plugin_list, plugin_set_enabled, PluginEnableStore, PluginListEntry};

@@ -138,7 +138,7 @@ impl NightStore {
             if let Ok(mut existing) = serde_json::from_str::<NightRecord>(&raw) {
                 if let Some(last) = parse_date(&existing.last_night) {
                     let gap = (today - last).num_days();
-                    if gap > 1 || gap < 0 {
+                    if !(0..=1).contains(&gap) {
                         NightRecord {
                             location_id: location_id.into(),
                             first_night: today_s.clone(),
@@ -225,12 +225,7 @@ impl NightStore {
             return Err("bad date".into());
         };
         let prev = today - chrono::Duration::days(1);
-        rec.last_night = format!(
-            "{:04}-{:02}-{:02}",
-            prev.year(),
-            prev.month(),
-            prev.day()
-        );
+        rec.last_night = format!("{:04}-{:02}-{:02}", prev.year(), prev.month(), prev.day());
         rec.nights_used -= 1;
         host.kv_set(&key, &serde_json::to_string(&rec).unwrap())?;
         Ok(true)
@@ -547,7 +542,10 @@ mod tests {
             default_night_store_retention_days(),
             &keys,
         );
-        assert_eq!(cleared, 0, "D+1 record must survive prune on D+2 with retention=2");
+        assert_eq!(
+            cleared, 0,
+            "D+1 record must survive prune on D+2 with retention=2"
+        );
         assert!(NightStore::would_exceed(
             &h,
             "no",
@@ -710,14 +708,10 @@ mod tests {
         let path = dir.path().join("camping_night.json");
         std::fs::write(&path, r#"{"rtr_night:no:cell:1:1":"{}"}"#).unwrap();
         assert!(path.is_file());
-        assert!(
-            on_camping_plugin_enable_changed("right_to_roam_camping", false, &path).unwrap()
-        );
+        assert!(on_camping_plugin_enable_changed("right_to_roam_camping", false, &path).unwrap());
         assert!(!path.exists());
         // Re-enable / unknown plugin must not require the file.
-        assert!(
-            !on_camping_plugin_enable_changed("right_to_roam_camping", true, &path).unwrap()
-        );
+        assert!(!on_camping_plugin_enable_changed("right_to_roam_camping", true, &path).unwrap());
         assert!(!on_camping_plugin_enable_changed("weather", false, &path).unwrap());
     }
 }

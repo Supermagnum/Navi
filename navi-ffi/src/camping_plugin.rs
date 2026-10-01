@@ -18,17 +18,18 @@ use driver_break_core::routing::indexed::{
 };
 use driver_break_core::routing::safety::OvernightProximityIndex;
 use driver_break_core::storage::{ConfigStore, Storage};
-use navi_right_to_roam_camping::{
-    find_road_track_junctions, probe_along_tracks, CORRIDOR_SEED_RADIUS_M, DEFAULT_TRACK_WALK_M,
-    OvernightSafety,
-};
 use navi_plugin_host::{
     cranelift_abi_supported, plugin_set_enabled, AdminRegionView, CallOutcome, Capability,
-    ClockView, FilePluginKv, HostApi, LayerStatus, PluginEnableStore, PluginError,
-    PluginHost, PluginKvStatus, PluginLimits, PoiWrite, Position, RouteDestinationView, RouteView,
-    SafetyConfigView, TravelModeView, TravellerProfileView, VehicleProfileView, DEFAULT_MEMORY_BYTES,
+    ClockView, FilePluginKv, HostApi, LayerStatus, PluginEnableStore, PluginError, PluginHost,
+    PluginKvStatus, PluginLimits, PoiWrite, Position, RouteDestinationView, RouteView,
+    SafetyConfigView, TravelModeView, TravellerProfileView, VehicleProfileView,
+    DEFAULT_MEMORY_BYTES,
 };
 use navi_right_to_roam_camping::on_camping_plugin_enable_changed;
+use navi_right_to_roam_camping::{
+    find_road_track_junctions, probe_along_tracks, OvernightSafety, CORRIDOR_SEED_RADIUS_M,
+    DEFAULT_TRACK_WALK_M,
+};
 
 use crate::TravelProfile;
 
@@ -147,12 +148,7 @@ fn corridor_bbox_from_waypoints(waypoints: &[[f64; 2]]) -> Option<[f64; 4]> {
     }
     let span = (max_lat - min_lat).max(max_lon - min_lon);
     let pad = (span * 0.25).clamp(0.15, 0.55);
-    Some([
-        min_lat - pad,
-        min_lon - pad,
-        max_lat + pad,
-        max_lon + pad,
-    ])
+    Some([min_lat - pad, min_lon - pad, max_lat + pad, max_lon + pad])
 }
 
 fn find_planning_pbf(data_dir: &Path) -> Option<PathBuf> {
@@ -180,6 +176,7 @@ fn find_planning_pbf(data_dir: &Path) -> Option<PathBuf> {
     fallback
 }
 
+#[allow(clippy::type_complexity)]
 fn load_overnight_geometry(
     data_dir: &Path,
     pbf: &Path,
@@ -356,7 +353,11 @@ impl HostApi for AndroidCampingApi {
         self.kv.set(key, value).map_err(|e| e.to_string())
     }
 
-    fn protected_area_query(&self, _lat: f64, _lon: f64) -> navi_plugin_host::ProtectedAreaQueryView {
+    fn protected_area_query(
+        &self,
+        _lat: f64,
+        _lon: f64,
+    ) -> navi_plugin_host::ProtectedAreaQueryView {
         navi_plugin_host::ProtectedAreaQueryView {
             status: LayerStatus::Unknown,
             areas: Vec::new(),
@@ -421,10 +422,9 @@ fn map_plugin_error(err: PluginError) -> (CampingCallKind, String) {
             CampingCallKind::Unavailable,
             format!("Camping plugin unavailable on this ABI: {msg}"),
         ),
-        PluginError::CapabilityDenied(c) => (
-            CampingCallKind::Error,
-            format!("capability denied: {c}"),
-        ),
+        PluginError::CapabilityDenied(c) => {
+            (CampingCallKind::Error, format!("capability denied: {c}"))
+        }
         PluginError::Other(e) => (CampingCallKind::Error, format!("{e:#}")),
     }
 }
@@ -586,8 +586,7 @@ pub fn camping_plugin_set_nav_context(
         (Some(lat), Some(lon)) => Some((lat, lon)),
         _ => None,
     };
-    let route_changed =
-        session.route_waypoints != waypoints || session.destination != destination;
+    let route_changed = session.route_waypoints != waypoints || session.destination != destination;
     session.route_waypoints = waypoints;
     session.destination = destination;
     session.travel_profile = profile;
@@ -727,8 +726,7 @@ fn pack_geometry_fingerprint(data_dir: &Path, pbf: &Path) -> String {
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_string();
-        if !(name.ends_with(".navi-manifest.json") || name.ends_with(".navi-server-install.json"))
-        {
+        if !(name.ends_with(".navi-manifest.json") || name.ends_with(".navi-server-install.json")) {
             continue;
         }
         if let Ok(meta) = fs::metadata(&path) {
@@ -777,7 +775,11 @@ fn geometry_cache_key(
 }
 
 /// Overlay live session fields onto a cached geometry job so travel/vehicle stay fresh.
-fn job_with_live_profile(geometry_job_json: &str, travel: TravelProfile, professional: bool) -> String {
+fn job_with_live_profile(
+    geometry_job_json: &str,
+    travel: TravelProfile,
+    professional: bool,
+) -> String {
     let mut v: serde_json::Value =
         serde_json::from_str(geometry_job_json).unwrap_or_else(|_| serde_json::json!({}));
     if let Some(obj) = v.as_object_mut() {
@@ -810,9 +812,9 @@ fn buildings_near_probes(
         .iter()
         .copied()
         .filter(|&(lat, lon)| {
-            probes.iter().any(|&(plat, plon)| {
-                (lat - plat).abs() <= pad_deg && (lon - plon).abs() <= pad_deg
-            })
+            probes
+                .iter()
+                .any(|&(plat, plon)| (lat - plat).abs() <= pad_deg && (lon - plon).abs() <= pad_deg)
         })
         .map(|(lat, lon)| [lat, lon])
         .collect()
@@ -949,11 +951,7 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
             target: "NaviCamping",
             "suggest_along_route via=wasmtime cache_hit job_bytes={job_bytes} timing={timing}"
         );
-        call.result_json = merge_guest_meta(
-            call.result_json,
-            timing,
-            call.peak_guest_memory_bytes,
-        );
+        call.result_json = merge_guest_meta(call.result_json, timing, call.peak_guest_memory_bytes);
         call.elapsed_ms = started.elapsed().as_millis() as u64;
         return call;
     }
@@ -1004,11 +1002,7 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
     let mut subdivisions: Vec<(f64, f64, String)> = Vec::new();
     for &(lat, lon) in &probes {
         let ar = admin_region_at(lat, lon);
-        countries.push((
-            lat,
-            lon,
-            ar.country_iso.unwrap_or_else(|| "unknown".into()),
-        ));
+        countries.push((lat, lon, ar.country_iso.unwrap_or_else(|| "unknown".into())));
         if let Some(iso) = ar.subdivision_iso {
             subdivisions.push((lat, lon, iso));
         }
@@ -1068,15 +1062,10 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
         probes.len(),
         buildings.len()
     );
-    call.result_json = merge_guest_meta(
-        call.result_json,
-        timing,
-        call.peak_guest_memory_bytes,
-    );
+    call.result_json = merge_guest_meta(call.result_json, timing, call.peak_guest_memory_bytes);
     call.elapsed_ms = started.elapsed().as_millis() as u64;
     call
 }
-
 
 fn run_camping_guest(job_json: Option<String>) -> CampingCallResult {
     let mut guard = session_lock().lock().expect("camping session lock");
@@ -1291,7 +1280,7 @@ pub fn camping_plugin_run_isolation_guest(name: String) -> CampingCallResult {
         "memory_bomb" => PluginLimits {
             fuel: 50_000_000,
             timeout_ms: 2_000,
-            memory_bytes: 1 * 1024 * 1024,
+            memory_bytes: 1024 * 1024,
         },
         _ => PluginLimits::default(),
     };
@@ -1417,18 +1406,9 @@ fn night_store_key_for_location(
     country_iso: Option<String>,
     subdivision_iso: Option<String>,
 ) -> Result<(String, String), String> {
-    let country = country_iso.or_else(|| {
-        admin_region_at(lat, lon)
-            .country_iso
-    });
-    let subdiv = subdivision_iso.or_else(|| {
-        admin_region_at(lat, lon)
-            .subdivision_iso
-    });
-    let pack = navi_right_to_roam_camping::pack_for_location(
-        country.as_deref(),
-        subdiv.as_deref(),
-    );
+    let country = country_iso.or_else(|| admin_region_at(lat, lon).country_iso);
+    let subdiv = subdivision_iso.or_else(|| admin_region_at(lat, lon).subdivision_iso);
+    let pack = navi_right_to_roam_camping::pack_for_location(country.as_deref(), subdiv.as_deref());
     let (max_n, store_key) = pack
         .hard_max_nights()
         .ok_or_else(|| "pack has no hard consecutive-night limit".to_string())?;
@@ -1461,19 +1441,18 @@ pub fn camping_plugin_camp_here_tonight(
     country_iso: Option<String>,
     subdivision_iso: Option<String>,
 ) -> String {
-    let (store_key, loc) = match night_store_key_for_location(lat, lon, country_iso, subdivision_iso)
-    {
-        Ok(v) => v,
-        Err(e) => return format!("FAIL: {e}"),
-    };
+    let (store_key, loc) =
+        match night_store_key_for_location(lat, lon, country_iso, subdivision_iso) {
+            Ok(v) => v,
+            Err(e) => return format!("FAIL: {e}"),
+        };
     let mut host = match open_night_kv_host() {
         Ok(h) => h,
         Err(e) => return format!("FAIL: {e}"),
     };
     let tonight = host.clock;
-    match navi_right_to_roam_camping::NightStore::record_night(
-        &mut host, &store_key, &loc, tonight,
-    ) {
+    match navi_right_to_roam_camping::NightStore::record_night(&mut host, &store_key, &loc, tonight)
+    {
         Ok(()) => {
             log::info!(
                 target: "NaviCamping",
@@ -1497,11 +1476,11 @@ pub fn camping_plugin_undo_camp_here_tonight(
     country_iso: Option<String>,
     subdivision_iso: Option<String>,
 ) -> String {
-    let (store_key, loc) = match night_store_key_for_location(lat, lon, country_iso, subdivision_iso)
-    {
-        Ok(v) => v,
-        Err(e) => return format!("FAIL: {e}"),
-    };
+    let (store_key, loc) =
+        match night_store_key_for_location(lat, lon, country_iso, subdivision_iso) {
+            Ok(v) => v,
+            Err(e) => return format!("FAIL: {e}"),
+        };
     let mut host = match open_night_kv_host() {
         Ok(h) => h,
         Err(e) => return format!("FAIL: {e}"),
@@ -1574,7 +1553,10 @@ mod geometry_cache_tests {
             br#"{"schema":1,"stem":"ostlandet-latest","rebake":2}"#,
         );
         let k3 = geometry_cache_key(&wp1, &pbf, &dir, 12);
-        assert_ne!(k1, k3, "pack version/hash change must invalidate geometry cache");
+        assert_ne!(
+            k1, k3,
+            "pack version/hash change must invalidate geometry cache"
+        );
 
         let s_fp = safety_geometry_fingerprint(&dir);
         assert!(
@@ -1583,7 +1565,10 @@ mod geometry_cache_tests {
         );
         let s_a = "bldg:150.000|glacier:1000.000|water:1.000|cabin:1.000|general:1.000";
         let s_b = "bldg:200.000|glacier:1000.000|water:1.000|cabin:1.000|general:1.000";
-        assert_ne!(s_a, s_b, "SafetyConfig change must invalidate geometry cache");
+        assert_ne!(
+            s_a, s_b,
+            "SafetyConfig change must invalidate geometry cache"
+        );
         let k_safety_a = format!("{:?}|{}|pack|{s_a}|12", wp1, pbf.display());
         let k_safety_b = format!("{:?}|{}|pack|{s_b}|12", wp1, pbf.display());
         assert_ne!(k_safety_a, k_safety_b);

@@ -253,7 +253,10 @@ pub fn suggest_vehicle_overnight(
                             VehicleSiteKind::CaravanSite,
                             &profile,
                             "Germany — Wohnmobilstellplatz / caravan site",
-                            &["Checked vehicle class: car/campervan.", "Preferred designated site."],
+                            &[
+                                "Checked vehicle class: car/campervan.",
+                                "Preferred designated site.",
+                            ],
                             &[],
                             max_suggestions,
                         );
@@ -440,7 +443,10 @@ fn handle_us_ca_vehicle(
                     VehicleSiteKind::CaravanSite,
                     profile,
                     "USA/Canada — designated campground only (vehicle path effective Tier D)",
-                    &["Checked vehicle class.", "Tenure unknown or land-manager flags OFF."],
+                    &[
+                        "Checked vehicle class.",
+                        "Tenure unknown or land-manager flags OFF.",
+                    ],
                     &[],
                     max_suggestions,
                 );
@@ -501,7 +507,10 @@ fn handle_us_ca_vehicle(
                         VehicleSiteKind::CaravanSite,
                         profile,
                         "USA USFS — designated campground only (MVUM unavailable)",
-                        &["Checked vehicle class.", "Without MVUM data, dispersed vehicle camping is not offered."],
+                        &[
+                            "Checked vehicle class.",
+                            "Without MVUM data, dispersed vehicle camping is not offered.",
+                        ],
                         &[],
                         max_suggestions,
                     );
@@ -638,7 +647,10 @@ pub fn annotate_on_foot_from_here(
 
 /// Whether German Tier B (and similar) packs that require non-motorised travel
 /// should exclude on-foot tent suggestions when travel mode is motorised.
-pub fn exclude_non_motorised_only_pack_in_motorised(pack_requires_non_motorised: bool, mode: TravelMode) -> bool {
+pub fn exclude_non_motorised_only_pack_in_motorised(
+    pack_requires_non_motorised: bool,
+    mode: TravelMode,
+) -> bool {
     pack_requires_non_motorised && matches!(mode, TravelMode::Motorised)
 }
 
@@ -753,7 +765,10 @@ mod tests {
             name: None,
         }];
         let out = suggest_vehicle_overnight(&mut h, &[(51.0, 9.0)], Some(5));
-        assert!(out.vehicle.cards.is_empty(), "campervan must not get truck bays");
+        assert!(
+            out.vehicle.cards.is_empty(),
+            "campervan must not get truck bays"
+        );
     }
 
     #[test]
@@ -895,12 +910,12 @@ mod tests {
         };
         let no = annotate_on_foot_from_here(base.clone(), 120.0, "no");
         assert!(no.notes.iter().any(|n| n.contains("motorferdselloven")));
-        assert!(no
-            .sources
-            .iter()
-            .any(|s| s.contains("1977-06-10-82")));
+        assert!(no.sources.iter().any(|s| s.contains("1977-06-10-82")));
         let se = annotate_on_foot_from_here(base, 80.0, "se");
-        assert!(se.notes.iter().any(|n| n.contains("general guidance, not law")));
+        assert!(se
+            .notes
+            .iter()
+            .any(|n| n.contains("general guidance, not law")));
         assert!(!se.notes.iter().any(|n| n.contains("motorferdselloven")));
     }
 
@@ -1009,9 +1024,10 @@ mod tests {
             kv: HashMap::new(),
         };
         let out = suggest_vehicle_overnight(&mut h, &[(40.0, -110.0)], Some(5));
-        assert!(out.probe_log.iter().any(|e| {
-            e.reason == "us_ca_vehicle_flag_off_or_tenure_unknown_effective_d"
-        }));
+        assert!(out
+            .probe_log
+            .iter()
+            .any(|e| { e.reason == "us_ca_vehicle_flag_off_or_tenure_unknown_effective_d" }));
         assert!(out.vehicle.cards.is_empty());
 
         // USFS without MVUM → designated only.

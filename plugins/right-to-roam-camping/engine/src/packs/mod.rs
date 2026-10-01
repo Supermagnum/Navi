@@ -7,8 +7,8 @@ mod land_manager;
 mod norway;
 mod scotland;
 mod stay;
-mod sweden;
 mod svalbard;
+mod sweden;
 mod territories;
 mod tier_b;
 mod tier_c;
@@ -26,11 +26,9 @@ pub use land_manager::{
 };
 pub use norway::norway_pack;
 pub use scotland::scotland_pack;
-pub use stay::{
-    stay_would_exceed, StayDecision, StayPolicy, BLM_RADIUS_MILES, STAY_POLICIES,
-};
-pub use sweden::sweden_pack;
+pub use stay::{stay_would_exceed, StayDecision, StayPolicy, BLM_RADIUS_MILES, STAY_POLICIES};
 pub use svalbard::svalbard_decline_pack;
+pub use sweden::sweden_pack;
 pub use territories::{all_territory_packs, territory_pack};
 pub use tier_b::{all_tier_b_packs, tier_b_pack_by_flag};
 pub use tier_c::{all_tier_c_packs, england_wales_pack};
@@ -149,8 +147,12 @@ pub enum DurationRule {
         store_key: &'static str,
         retention_days: u32,
     },
-    SoftGuidance { note: &'static str },
-    NoneInLaw { note: &'static str },
+    SoftGuidance {
+        note: &'static str,
+    },
+    NoneInLaw {
+        note: &'static str,
+    },
     NotVerified,
 }
 
@@ -291,7 +293,9 @@ fn sub_is(sub: Option<&str>, codes: &[&str]) -> bool {
         return false;
     };
     let u = s.to_ascii_uppercase();
-    codes.iter().any(|c| u == *c || u.ends_with(&format!("-{c}")) || u.contains(c))
+    codes
+        .iter()
+        .any(|c| u == *c || u.ends_with(&format!("-{c}")) || u.contains(c))
 }
 
 /// Resolve pack for a point. Subdivision / tenure refine Tier B/C/land-manager.
@@ -348,7 +352,9 @@ pub fn pack_for_location_with_tenure(
         Some("nl") => tier_c::netherlands_pack(),
         Some("be") => {
             if sub_is(sub.as_deref(), &["VLG", "VAN", "VWV", "VLI", "VOV", "VBR"])
-                || sub.as_deref().is_some_and(|s| s.contains("FLANDER") || s.contains("VLAANDER"))
+                || sub
+                    .as_deref()
+                    .is_some_and(|s| s.contains("FLANDER") || s.contains("VLAANDER"))
             {
                 tier_c::belgium_flanders_pack()
             } else {
@@ -376,12 +382,20 @@ pub fn pack_for_location_with_tenure(
             }
         }
         Some("at") => {
-            if sub_is(sub.as_deref(), &["K", "AT-K", "KARNTEN", "KÄRNTEN", "3", "AT-3", "NOE", "NÖ", "NIEDER", "7", "AT-7", "TIROL", "T", "AT-T"])
-            {
+            if sub_is(
+                sub.as_deref(),
+                &[
+                    "K", "AT-K", "KARNTEN", "KÄRNTEN", "3", "AT-3", "NOE", "NÖ", "NIEDER", "7",
+                    "AT-7", "TIROL", "T", "AT-T",
+                ],
+            ) {
                 tier_c::austria_karnten_noe_tirol_pack()
             } else if sub_is(
                 sub.as_deref(),
-                &["4", "AT-4", "OOE", "OBER", "5", "AT-5", "SALZBURG", "6", "AT-6", "STEIER", "8", "AT-8", "VORARL"],
+                &[
+                    "4", "AT-4", "OOE", "OBER", "5", "AT-5", "SALZBURG", "6", "AT-6", "STEIER",
+                    "8", "AT-8", "VORARL",
+                ],
             ) {
                 tier_b::at_above_treeline_pack()
             } else {
@@ -424,7 +438,7 @@ pub fn pack_for_location_with_tenure(
         Some("mx") => mexico_pack(),
         Some("jp") => japan_pack(),
         Some(other) => {
-            if world_tier_d_countries().iter().any(|c| *c == other) {
+            if world_tier_d_countries().contains(&other) {
                 let mut p = tier_d_pack(other);
                 p.id = PackId::WorldTierD;
                 p

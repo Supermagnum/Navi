@@ -2,7 +2,7 @@
 
 use navi_right_to_roam_camping::{
     builtin_enabled_packs, suggest_overnight_fixed_probes, CampingHost, LocalDate, OvernightSafety,
-    ProtectedAreaStatus, TravelMode, DISCLAIMER, Tier,
+    ProtectedAreaStatus, Tier, TravelMode, DISCLAIMER,
 };
 use std::collections::HashMap;
 
@@ -78,7 +78,11 @@ fn every_builtin_pack_declares_completeness_fields() {
             pack.tier
         );
         if pack.tier == Tier::A {
-            assert!(!pack.guidance_notes.is_empty(), "{:?} missing guidance", pack.id);
+            assert!(
+                !pack.guidance_notes.is_empty(),
+                "{:?} missing guidance",
+                pack.id
+            );
             assert!(!pack.sources.is_empty(), "{:?} missing sources", pack.id);
         }
         let _ = (
@@ -108,12 +112,15 @@ fn finland_mainland_accepts_aland_is_tier_d() {
         kv: HashMap::new(),
     };
     let out = suggest_overnight_fixed_probes(&mut fi, &[(62.0, 25.0)], Some(1));
-    assert!(out.list.cards.iter().any(|c| c.accepted && c.country_iso == "fi"));
     assert!(out
         .list
         .cards
         .iter()
-        .any(|c| c.fire_text.as_deref().is_some_and(|t| t.contains("landowner permission"))));
+        .any(|c| c.accepted && c.country_iso == "fi"));
+    assert!(out.list.cards.iter().any(|c| c
+        .fire_text
+        .as_deref()
+        .is_some_and(|t| t.contains("landowner permission"))));
 
     let mut ax = FixtureHost {
         country: "ax".into(),
@@ -131,7 +138,11 @@ fn finland_mainland_accepts_aland_is_tier_d() {
     };
     let out = suggest_overnight_fixed_probes(&mut ax, &[(60.1, 19.9)], Some(1));
     assert!(out.probe_log.iter().any(|e| e.reason.contains("tier_d")));
-    assert!(out.list.cards.iter().any(|c| c.tier == Tier::D && c.country_iso == "ax"));
+    assert!(out
+        .list
+        .cards
+        .iter()
+        .any(|c| c.tier == Tier::D && c.country_iso == "ax"));
 
     // FI country with Åland subdivision must also be Tier D (never mainland pack).
     let mut fi_ax = FixtureHost {
@@ -170,11 +181,19 @@ fn scotland_unknown_subdivision_is_tier_d_fixture_sct_is_tier_a() {
     };
     let out = suggest_overnight_fixed_probes(&mut gb, &[(56.8, -5.1)], Some(1));
     assert!(
-        out.list.cards.iter().any(|c| c.tier == Tier::D && !c.accepted),
+        out.list
+            .cards
+            .iter()
+            .any(|c| c.tier == Tier::D && !c.accepted),
         "unknown GB subdivision must be Tier D; log={:?}",
         out.probe_log
     );
-    let card = out.list.cards.iter().find(|c| c.tier == Tier::D).expect("D card");
+    let card = out
+        .list
+        .cards
+        .iter()
+        .find(|c| c.tier == Tier::D)
+        .expect("D card");
     assert!(
         !card.legal_basis.to_ascii_lowercase().contains("england")
             && !card.legal_basis.to_ascii_lowercase().contains("wales")
@@ -186,7 +205,10 @@ fn scotland_unknown_subdivision_is_tier_d_fixture_sct_is_tier_a() {
     gb.subdivision = Some("GB-SCT".into());
     let out = suggest_overnight_fixed_probes(&mut gb, &[(56.8, -5.1)], Some(1));
     assert!(
-        out.list.cards.iter().any(|c| c.accepted && c.tier == Tier::A),
+        out.list
+            .cards
+            .iter()
+            .any(|c| c.accepted && c.tier == Tier::A),
         "injected GB-SCT outside CMZ season should accept; log={:?}",
         out.probe_log
     );
@@ -215,12 +237,18 @@ fn belfast_and_scottish_point_unknown_subdivision_are_tier_d() {
     let blob = format!("{} {}", card.legal_basis, card.notes.join(" "));
     assert!(!blob.to_ascii_lowercase().contains("england/wales"));
     assert!(!blob.to_ascii_lowercase().contains("darwall"));
-    assert!(!blob.to_ascii_lowercase().contains("scottish outdoor access"));
+    assert!(!blob
+        .to_ascii_lowercase()
+        .contains("scottish outdoor access"));
 
     // Scottish Highlands point with unknown subdivision — still D, not SCT pack.
     let out = suggest_overnight_fixed_probes(&mut belfast, &[(56.8, -5.1)], Some(1));
     assert!(out.list.cards.iter().any(|c| c.tier == Tier::D));
-    assert!(!out.list.cards.iter().any(|c| c.accepted && c.tier == Tier::A));
+    assert!(!out
+        .list
+        .cards
+        .iter()
+        .any(|c| c.accepted && c.tier == Tier::A));
 }
 
 #[test]
@@ -271,7 +299,10 @@ fn iceland_declines_when_protected_unknown_accepts_when_clear() {
     is.protected = ProtectedAreaStatus::Clear;
     let out = suggest_overnight_fixed_probes(&mut is, &[(64.1, -21.9)], Some(1));
     assert!(
-        out.list.cards.iter().any(|c| c.accepted && c.country_iso == "is"),
+        out.list
+            .cards
+            .iter()
+            .any(|c| c.accepted && c.country_iso == "is"),
         "fixture Clear should allow Iceland Tier A; log={:?}",
         out.probe_log
     );
@@ -294,7 +325,12 @@ fn accepted_cards_carry_disclaimer_and_sources() {
         kv: HashMap::new(),
     };
     let out = suggest_overnight_fixed_probes(&mut se, &[(59.89, 12.19)], Some(1));
-    let card = out.list.cards.iter().find(|c| c.accepted).expect("SE accept");
+    let card = out
+        .list
+        .cards
+        .iter()
+        .find(|c| c.accepted)
+        .expect("SE accept");
     assert_eq!(card.disclaimer, DISCLAIMER);
     assert!(!card.sources.is_empty());
     assert!(!card.legal_basis.is_empty());
@@ -325,8 +361,14 @@ fn accepted_cards_carry_disclaimer_and_sources() {
         "expected single protected-area not-checked line; notes={:?}",
         card.notes
     );
-    assert!(card.fire_text.as_deref().is_some_and(|t| t.contains("Naturvårdsverket")));
-    assert!(card.fire_text.as_deref().is_some_and(|t| t.contains("eldningsförbud")));
+    assert!(card
+        .fire_text
+        .as_deref()
+        .is_some_and(|t| t.contains("Naturvårdsverket")));
+    assert!(card
+        .fire_text
+        .as_deref()
+        .is_some_and(|t| t.contains("eldningsförbud")));
 }
 
 #[test]

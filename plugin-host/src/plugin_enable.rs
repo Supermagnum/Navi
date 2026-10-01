@@ -107,11 +107,7 @@ pub fn plugin_list(plugins_root: &Path, store_path: &Path) -> Result<Vec<PluginL
     store.list_installed(plugins_root)
 }
 
-pub fn plugin_set_enabled(
-    store_path: &Path,
-    name: &str,
-    enabled: bool,
-) -> Result<()> {
+pub fn plugin_set_enabled(store_path: &Path, name: &str, enabled: bool) -> Result<()> {
     let mut store = PluginEnableStore::open(store_path)?;
     store.set_enabled(name, enabled)
 }

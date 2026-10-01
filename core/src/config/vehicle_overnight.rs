@@ -45,19 +45,11 @@ impl VehicleOvernightClass {
 }
 
 /// Persisted extras for vehicle overnight (not clearance dimensions).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct VehicleOvernightConfig {
     /// User-set. Default **false**. Never infer from weight or size.
     #[serde(default)]
     pub is_professional_driver_under_rest_rules: bool,
-}
-
-impl Default for VehicleOvernightConfig {
-    fn default() -> Self {
-        Self {
-            is_professional_driver_under_rest_rules: false,
-        }
-    }
 }
 
 /// Snapshot returned by HostApi `vehicle_profile_read`.

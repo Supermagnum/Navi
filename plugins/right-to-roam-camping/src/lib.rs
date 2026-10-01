@@ -274,7 +274,12 @@ pub extern "C" fn plugin_main() {
         }
     };
     let vehicle = match host_vehicle {
-        Some(v) if !matches!(v.class, VehicleClass::Unknown) || v.is_professional_driver_under_rest_rules => v,
+        Some(v)
+            if !matches!(v.class, VehicleClass::Unknown)
+                || v.is_professional_driver_under_rest_rules =>
+        {
+            v
+        }
         Some(v) => {
             // Host returned explicit unknown with default pro flag — still honour job overrides.
             if job.vehicle_class.is_some() {
@@ -342,7 +347,6 @@ pub extern "C" fn plugin_main() {
     let _ = navi_plugin_sdk::host_plugin_kv_set("rtr_suggest_result", &text);
     navi_plugin_sdk::host_log(&format!(
         "rtr_camping: done accepted={accepted} rejected={rejected} vehicle={} on_foot={}",
-        out.vehicle.probes_accepted,
-        out.on_foot_from_here.probes_accepted
+        out.vehicle.probes_accepted, out.on_foot_from_here.probes_accepted
     ));
 }

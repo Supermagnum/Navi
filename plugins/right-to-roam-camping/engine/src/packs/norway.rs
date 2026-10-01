@@ -1,6 +1,6 @@
 use super::{
-    CitedSource, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack, SuggestionMode,
-    SourceQuality, Tier,
+    CitedSource, DistanceRule, DurationRule, FireRule, HardFilterSpec, PackId, RulePack,
+    SourceQuality, SuggestionMode, Tier,
 };
 
 pub fn norway_pack() -> RulePack {
@@ -8,7 +8,8 @@ pub fn norway_pack() -> RulePack {
         id: PackId::Norway,
         tier: Tier::A,
         country_iso: "no".into(),
-        legal_basis: "Friluftsloven (allemannsretten); Motorferdselloven; forskrift om brannforebygging § 3",
+        legal_basis:
+            "Friluftsloven (allemannsretten); Motorferdselloven; forskrift om brannforebygging § 3",
         sources: NORWAY_SOURCES,
         distance: DistanceRule::SafetyConfigLabeled {
             label: "150 m (friluftsloven), from Navi SafetyConfig",

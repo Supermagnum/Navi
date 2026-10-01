@@ -13,18 +13,18 @@ pub mod vehicle;
 
 #[cfg(feature = "native")]
 pub use candidates::{
-    find_road_track_junctions, probe_along_track, probe_along_tracks, JunctionRank, RoadTrackSeed,
-    ProbePoint, CORRIDOR_SEED_RADIUS_M, DEFAULT_TRACK_WALK_M, SERVICE_TRACK_MIN_CONTINUE_M,
+    find_road_track_junctions, probe_along_track, probe_along_tracks, JunctionRank, ProbePoint,
+    RoadTrackSeed, CORRIDOR_SEED_RADIUS_M, DEFAULT_TRACK_WALK_M, SERVICE_TRACK_MIN_CONTINUE_M,
 };
 pub use card::{CampingCard, DeclineKind, SuggestionList};
+#[cfg(feature = "native")]
+pub use engine::suggest_overnight;
 #[cfg(feature = "native")]
 pub use engine::SuggestInput;
 pub use engine::{
     cloudberry_decision, suggest_overnight_fixed_probes, CloudberryDecision, ProbeLogEntry,
     SuggestOutcome,
 };
-#[cfg(feature = "native")]
-pub use engine::suggest_overnight;
 #[cfg(feature = "native")]
 pub use fire::local_date_europe_oslo_from_utc;
 pub use fire::{
@@ -115,7 +115,8 @@ impl NotCheckedLayers {
                 {
                     return false;
                 }
-                if self.landcover && farmland_filter_applies
+                if self.landcover
+                    && farmland_filter_applies
                     && (lower.contains("farmland")
                         || lower.contains("pasture")
                         || lower.contains("plantation")

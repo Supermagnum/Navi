@@ -17,9 +17,7 @@
 //! | `route_read` | empty waypoints | No seeds → no suggestions |
 //! | `route_destination_read` | None | No destination assumed |
 
-use navi_plugin_host::{
-    HostApi, LayerStatus, PluginKvStatus, PoiWrite, Position, TravelModeView,
-};
+use navi_plugin_host::{HostApi, LayerStatus, PluginKvStatus, PoiWrite, Position, TravelModeView};
 
 struct EmptyHost;
 

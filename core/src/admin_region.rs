@@ -135,8 +135,7 @@ fn override_hit(o: &TerritoryBox, lat: f64, lon: f64) -> OverrideHit {
     if o.inners.iter().any(|b| b.contains(lat, lon)) {
         return OverrideHit::Confident(o.iso);
     }
-    if o
-        .inners
+    if o.inners
         .iter()
         .any(|b| b.expand(o.margin_deg).contains(lat, lon))
     {

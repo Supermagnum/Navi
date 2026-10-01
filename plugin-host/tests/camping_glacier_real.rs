@@ -47,7 +47,10 @@ fn too_close_to_glacier_fires_on_real_gjende_rings() {
     let probe = (61.5149_f64, 8.4060_f64);
     let d = min_distance_to_glacier_rings_m(probe.0, probe.1, &rings).unwrap_or(f64::INFINITY);
     eprintln!("probe beside glacier: edge_dist_m={d:.1}");
-    assert!(d < 1_000.0, "probe must be inside SafetyConfig glacier buffer");
+    assert!(
+        d < 1_000.0,
+        "probe must be inside SafetyConfig glacier buffer"
+    );
 
     let storage = Storage::open_in_memory().unwrap();
     {
@@ -137,7 +140,7 @@ fn too_close_to_glacier_synthetic_fixture_labelled() {
             name: None,
         },
         &[],
-        &[ring.clone()],
+        std::slice::from_ref(&ring),
     );
     assert_eq!(inside, Some(OvernightRejectReason::TooCloseToGlacier));
 

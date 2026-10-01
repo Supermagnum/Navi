@@ -98,7 +98,11 @@ fn motorised_tent_spots_only_in_on_foot_section_with_notes() {
         .iter()
         .filter(|c| c.accepted)
         .collect::<Vec<_>>();
-    assert!(!foot.is_empty(), "expected on-foot tent cards; log={:?}", out.probe_log);
+    assert!(
+        !foot.is_empty(),
+        "expected on-foot tent cards; log={:?}",
+        out.probe_log
+    );
     for c in foot {
         assert!(c.notes.iter().any(|n| n.contains("On foot from here")));
         assert!(c.notes.iter().any(|n| n.contains("motorferdselloven")));
@@ -136,7 +140,10 @@ fn swedish_on_foot_says_general_guidance() {
         walk_m: Some(90.0),
     };
     let c = annotate_on_foot_from_here(card, 90.0, "se");
-    assert!(c.notes.iter().any(|n| n.contains("general guidance, not law")));
+    assert!(c
+        .notes
+        .iter()
+        .any(|n| n.contains("general guidance, not law")));
     assert!(!c.notes.iter().any(|n| n.contains("motorferdselloven")));
 }
 
@@ -171,7 +178,9 @@ fn german_tier_b_excluded_in_motorised_mode() {
     assert!(out
         .probe_log
         .iter()
-        .any(|e| e.reason.contains("non_motorised") || e.reason.contains("host_condition") || !e.accepted));
+        .any(|e| e.reason.contains("non_motorised")
+            || e.reason.contains("host_condition")
+            || !e.accepted));
 }
 
 #[test]
