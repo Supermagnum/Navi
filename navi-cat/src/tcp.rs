@@ -16,11 +16,23 @@ pub struct TcpRigBackend {
     model: i32,
     model_name: String,
     allow_beta: bool,
+    allow_dummy: bool,
     sent_log: Vec<String>,
 }
 
 impl TcpRigBackend {
     pub fn connect(host: &str, port: u16, allow_beta: bool) -> Result<Self, RigError> {
+        Self::connect_with_options(host, port, allow_beta, cfg!(test) || cfg!(feature = "allow-dummy-rig"))
+    }
+
+    /// Like [`connect`], but control whether Hamlib dummy (model 1) may pass gating.
+    /// Integration tests must pass `allow_dummy=true` (`cfg(test)` is false in the lib crate).
+    pub fn connect_with_options(
+        host: &str,
+        port: u16,
+        allow_beta: bool,
+        allow_dummy: bool,
+    ) -> Result<Self, RigError> {
         let addr = format!("{host}:{port}");
         let stream = TcpStream::connect(&addr).map_err(|e| RigError::Io(e.to_string()))?;
         stream
@@ -46,6 +58,7 @@ impl TcpRigBackend {
             model: 0,
             model_name: "unknown".into(),
             allow_beta,
+            allow_dummy,
             sent_log: Vec::new(),
         };
         s.refresh_gate()?;
@@ -60,10 +73,6 @@ impl TcpRigBackend {
     /// Send a raw rigctld command (extended `+` protocol). Still refuses `T` / set_ptt.
     pub fn transact_raw(&mut self, cmd: &str) -> Result<String, RigError> {
         self.cmd_raw(cmd)
-    }
-
-    fn allow_dummy() -> bool {
-        cfg!(test) || cfg!(feature = "allow-dummy-rig")
     }
 
     fn cmd_raw(&mut self, cmd: &str) -> Result<String, RigError> {
@@ -135,7 +144,7 @@ impl TcpRigBackend {
                 .trim()
                 .to_string();
         }
-        self.gate = gate_from_dump_caps(&caps, self.allow_beta, Self::allow_dummy());
+        self.gate = gate_from_dump_caps(&caps, self.allow_beta, self.allow_dummy);
         Ok(())
     }
 
