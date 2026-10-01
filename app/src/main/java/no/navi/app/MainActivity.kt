@@ -809,7 +809,14 @@ private fun NaviMapScreen() {
         mutableStateOf(MapHudPrefs.loadCatPluginEnabled(context))
     }
     var showCatSheet by remember { mutableStateOf(false) }
-    var catUi by remember { mutableStateOf(CatUiState()) }
+    var catUi by remember {
+        mutableStateOf(
+            CatUiState(
+                rigModel = MapHudPrefs.loadCatRigModel(context),
+                baudRate = MapHudPrefs.loadCatBaudRate(context),
+            ),
+        )
+    }
     var campingSuggestResult by remember { mutableStateOf<CampingSuggestResult?>(null) }
     var showCampingSheet by remember { mutableStateOf(false) }
     var campingSessionDisableMessage by remember { mutableStateOf<String?>(null) }
@@ -5163,11 +5170,32 @@ private fun NaviMapScreen() {
                 state = catUi,
                 onHostChange = { catUi = catUi.copy(host = it) },
                 onPortChange = { catUi = catUi.copy(port = it) },
+                onRigModelChange = {
+                    catUi = catUi.copy(rigModel = it)
+                    MapHudPrefs.saveCatRigModel(context, it)
+                },
+                onBaudRateChange = {
+                    val baud =
+                        no.navi.app.cat.CatSerialLoopbackBridge
+                            .normalizeBaud(it)
+                    catUi = catUi.copy(baudRate = baud)
+                    MapHudPrefs.saveCatBaudRate(context, baud)
+                },
                 onFollowNetworkChange = { catUi = catUi.copy(followNetworkId = it) },
                 onConnect = {
+                    MapHudPrefs.saveCatRigModel(context, catUi.rigModel)
+                    MapHudPrefs.saveCatBaudRate(context, catUi.baudRate)
+                    // Baud is applied when opening USB/BT serial via CatSerialOpenParams
+                    // before CatSerialLoopbackBridge.fromSerialStreams(...).
+                    val openParams =
+                        no.navi.app.cat.CatSerialOpenParams(
+                            baudRate = catUi.baudRate,
+                            rigModel = catUi.rigModel,
+                        )
                     val port = (catUi.port.toIntOrNull() ?: 4532).coerceIn(1, 65535).toUShort()
                     val msg =
-                        uniffi.navi.catPluginConnectTcp(catUi.host, port, false)
+                        uniffi.navi.catPluginConnectTcp(catUi.host, port, false) +
+                            " (model=${openParams.rigModel}, baud=${openParams.baudRate})"
                     catUi = catUi.copy(lastMessage = msg)
                     refreshCatUi()
                     status = msg
@@ -5184,7 +5212,8 @@ private fun NaviMapScreen() {
                 },
                 onFollowEnable = {
                     val req =
-                        org.json.JSONObject()
+                        org.json
+                            .JSONObject()
                             .put("network_id", catUi.followNetworkId)
                             .put("enabled", true)
                             .toString()
@@ -5194,7 +5223,8 @@ private fun NaviMapScreen() {
                 },
                 onFollowDisable = {
                     val req =
-                        org.json.JSONObject()
+                        org.json
+                            .JSONObject()
                             .put("enabled", false)
                             .toString()
                     val msg = uniffi.navi.catPluginNetworkFollowJson(req)
@@ -8386,7 +8416,6 @@ private fun NaviMapScreen() {
                             status = "CAT plugin off"
                         }
                     },
-
                     onSave = {
                         MapHudPrefs.saveAutoZoom(
                             context,

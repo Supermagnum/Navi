@@ -44,4 +44,21 @@ class CatSerialLoopbackBridgeTest {
         val r = CatRemoteRigctld("10.0.2.2")
         assertEquals("10.0.2.2:4532", r.endpoint())
     }
+
+    @Test
+    fun normalize_baud_snaps_to_supported() {
+        assertEquals(9600, CatSerialLoopbackBridge.normalizeBaud(9600))
+        assertEquals(115200, CatSerialLoopbackBridge.normalizeBaud(115200))
+        assertEquals(9600, CatSerialLoopbackBridge.normalizeBaud(10000))
+    }
+
+    @Test
+    fun bridge_stores_baud_from_open_params() {
+        val serialIn = ByteArrayInputStream(ByteArray(0))
+        val serialOut = ByteArrayOutputStream()
+        val params = CatSerialOpenParams(baudRate = 115200, rigModel = 1036)
+        CatSerialLoopbackBridge.fromSerialStreams(serialIn, serialOut, params).use { bridge ->
+            assertEquals(115200, bridge.baudRate)
+        }
+    }
 }

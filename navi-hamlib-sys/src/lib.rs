@@ -64,6 +64,15 @@ const FN_SET_RPTR_SHIFT: c_int = 13;
 const FN_SET_RPTR_OFFS: c_int = 15;
 const FN_SET_CTCSS_TONE: c_int = 34;
 
+/// Keep a live reference so Android `libnavi.so` emits `DT_NEEDED` for
+/// `libhamlib.so` even before the CAT UI opens an FFI session.
+#[cfg(feature = "link-hamlib")]
+pub fn retain_hamlib_link() {
+    unsafe {
+        let _ = rig_get_caps(RIG_MODEL_DUMMY as c_int);
+    }
+}
+
 #[cfg(feature = "link-hamlib")]
 #[link(name = "hamlib")]
 extern "C" {
@@ -127,7 +136,11 @@ mod stubs {
     ) -> c_int {
         -4
     }
-    pub unsafe fn rig_set_rptr_shift(_rig: *mut RIG, _vfo: vfo_t, _rptr_shift: rptr_shift_t) -> c_int {
+    pub unsafe fn rig_set_rptr_shift(
+        _rig: *mut RIG,
+        _vfo: vfo_t,
+        _rptr_shift: rptr_shift_t,
+    ) -> c_int {
         -4
     }
     pub unsafe fn rig_set_rptr_offs(_rig: *mut RIG, _vfo: vfo_t, _rptr_offs: c_int) -> c_int {
@@ -193,9 +206,7 @@ fn cstr_or_empty(p: *const c_char) -> String {
     if p.is_null() {
         return String::new();
     }
-    unsafe { CStr::from_ptr(p) }
-        .to_string_lossy()
-        .into_owned()
+    unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
 }
 
 fn status_name(status: c_int) -> &'static str {

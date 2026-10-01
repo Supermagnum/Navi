@@ -37,7 +37,7 @@ resolve_ndk() {
 }
 
 resolve_latest_tag() {
-  # Prefer GitHub API; fall back to git ls-remote; then lock / 4.6.5.
+  # Prefer GitHub API; fall back to git ls-remote; then 4.6.5.
   local tag=""
   if command -v curl >/dev/null 2>&1; then
     tag="$(curl -fsSL -H 'Accept: application/vnd.github+json' \
@@ -55,12 +55,33 @@ resolve_latest_tag() {
       | sort -V \
       | tail -n 1 || true)"
   fi
-  if [[ -z "$tag" && -f "$LOCK" ]]; then
-    # shellcheck disable=SC1090
-    tag="$(grep '^HAMLIB_TAG=' "$LOCK" | cut -d= -f2-)"
-  fi
   echo "${tag:-4.6.5}"
 }
+
+resolve_tag() {
+  # Prefer explicit HAMLIB_TAG, then lock file (reproducible), then latest.
+  if [[ -n "${HAMLIB_TAG:-}" ]]; then
+    echo "$HAMLIB_TAG"
+    return
+  fi
+  if [[ -f "$LOCK" ]]; then
+    local locked
+    locked="$(grep '^HAMLIB_TAG=' "$LOCK" | cut -d= -f2-)"
+    if [[ -n "$locked" ]]; then
+      echo "$locked"
+      return
+    fi
+  fi
+  resolve_latest_tag
+}
+
+# Prefer locked NDK when ANDROID_NDK_HOME is unset and ANDROID_HOME has that version.
+if [[ -z "${ANDROID_NDK_HOME:-}" && -f "$LOCK" && -n "${ANDROID_HOME:-}" ]]; then
+  LOCKED_NDK="$(grep '^NDK_VERSION=' "$LOCK" | cut -d= -f2- || true)"
+  if [[ -n "$LOCKED_NDK" && -d "${ANDROID_HOME}/ndk/${LOCKED_NDK}" ]]; then
+    export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${LOCKED_NDK}"
+  fi
+fi
 
 NDK="$(resolve_ndk)"
 if [[ -z "$NDK" || ! -d "$NDK" ]]; then
@@ -72,7 +93,7 @@ if [[ -z "$NDK" || ! -d "$NDK" ]]; then
 fi
 
 NDK_VER="$(basename "$NDK")"
-HAMLIB_TAG="${HAMLIB_TAG:-$(resolve_latest_tag)}"
+HAMLIB_TAG="$(resolve_tag)"
 
 mkdir -p "$OUT_ROOT"
 {
@@ -136,6 +157,26 @@ if [[ ! -f "$SRC/configure.ac" && ! -f "$SRC/configure" ]]; then
   echo "error: Hamlib source incomplete at $SRC" >&2
   exit 1
 fi
+
+# Android NDK lacks glob(3); stub for Hamlib microham.c device discovery.
+apply_android_glob_stub() {
+  local src="$1"
+  local stub_src="$ROOT/scripts/android-glob-stub.h"
+  local stub_dst="$src/src/navi_android_glob.h"
+  local mh="$src/src/microham.c"
+  if [[ ! -f "$stub_src" || ! -f "$mh" ]]; then
+    return
+  fi
+  cp -f "$stub_src" "$stub_dst"
+  if grep -q 'navi_android_glob.h' "$mh"; then
+    return
+  fi
+  if grep -q '#include <glob.h>' "$mh"; then
+    sed -i 's|#include <glob.h>|#include "navi_android_glob.h"|' "$mh"
+    echo "Patched $mh to use Android glob stub"
+  fi
+}
+apply_android_glob_stub "$SRC"
 
 if [[ ! -x "$SRC/configure" ]]; then
   echo "Bootstrapping autotools in $SRC"
@@ -211,5 +252,24 @@ for abi in "${ABIS[@]}"; do
   build_abi "$abi"
 done
 
+# Stage into the Gradle jniLibs tree used by assemble* (same layout as libnavi.so).
+# Only copy ABIs that Navi already ships under app/src/main/jniLibs/ so we do not
+# introduce a half-empty ABI folder (e.g. armeabi-v7a with Hamlib only).
+APP_JNILIBs="$ROOT/app/src/main/jniLibs"
+for abi in "${ABIS[@]}"; do
+  src="$OUT_ROOT/jniLibs/$abi/libhamlib.so"
+  dst_dir="$APP_JNILIBs/$abi"
+  if [[ ! -f "$src" ]]; then
+    continue
+  fi
+  if [[ ! -d "$dst_dir" ]]; then
+    echo "Skipping app jniLibs copy for $abi (no existing $dst_dir; Navi does not ship that ABI)"
+    continue
+  fi
+  cp -f "$src" "$dst_dir/libhamlib.so"
+  echo "Staged $dst_dir/libhamlib.so"
+done
+
 echo "Done. Artifacts under $OUT_ROOT/jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/libhamlib.so"
+echo "App packaging tree: $APP_JNILIBs/<abi>/libhamlib.so (for ABIs Navi ships)"
 echo "Lock file: $LOCK (tag=${HAMLIB_TAG}, ndk=${NDK_VER})"

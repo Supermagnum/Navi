@@ -84,6 +84,23 @@ echo "Building navi-ffi for $TARGET ($PROFILE) with NDK $ANDROID_NDK_HOME ($NDK_
 # Stage wasm guests from source into assets/ (F-Droid / no committed binaries).
 "$ROOT/scripts/build-plugin-wasm.sh"
 
+LIB_DST_DIR="$ROOT/app/src/main/jniLibs/$ABI_DIR"
+mkdir -p "$LIB_DST_DIR"
+
+# Stage libhamlib.so for packaging + linker search (hamlib-ffi feature).
+HAMLIB_OUT="$ROOT/out/hamlib-android/jniLibs/$ABI_DIR/libhamlib.so"
+HAMLIB_DST="$LIB_DST_DIR/libhamlib.so"
+if [[ -f "$HAMLIB_OUT" ]]; then
+  cp -f "$HAMLIB_OUT" "$HAMLIB_DST"
+  echo "Staged $HAMLIB_DST from out/hamlib-android"
+elif [[ -f "$HAMLIB_DST" ]]; then
+  echo "Using existing $HAMLIB_DST"
+else
+  echo "warning: libhamlib.so missing for $ABI_DIR." >&2
+  echo "  Run: ANDROID_NDK_HOME=\"\$ANDROID_NDK_HOME\" ./scripts/build-hamlib-android.sh" >&2
+  echo "  Continuing without hamlib-ffi (TCP-only CAT path)." >&2
+fi
+
 CARGO_PROFILE_ARGS=()
 case "$PROFILE" in
   release)
@@ -97,11 +114,18 @@ case "$PROFILE" in
     CARGO_PROFILE_ARGS=(--profile "$PROFILE")
     ;;
 esac
-cargo build -p navi-ffi --target "$TARGET" "${CARGO_PROFILE_ARGS[@]}" --lib
+
+CARGO_FEATURES=()
+if [[ -f "$HAMLIB_DST" ]]; then
+  CARGO_FEATURES=(--features hamlib-ffi)
+  # Search path for #[link(name = "hamlib")] from navi-hamlib-sys.
+  export RUSTFLAGS="${RUSTFLAGS:-} -L native=${LIB_DST_DIR}"
+  echo "Enabling navi-ffi feature hamlib-ffi (link libhamlib)"
+fi
+
+cargo build -p navi-ffi --target "$TARGET" "${CARGO_PROFILE_ARGS[@]}" "${CARGO_FEATURES[@]}" --lib
 
 LIB_SRC="$ROOT/target/$TARGET/$PROFILE/libnavi.so"
-LIB_DST_DIR="$ROOT/app/src/main/jniLibs/$ABI_DIR"
-mkdir -p "$LIB_DST_DIR"
 
 KOTLIN_OUT="$ROOT/app/src/main/java"
 mkdir -p "$KOTLIN_OUT"
@@ -129,5 +153,8 @@ fi
 
 cp -f "$LIB_SRC" "$LIB_DST_DIR/libnavi.so"
 echo "Copied $LIB_SRC -> $LIB_DST_DIR/libnavi.so"
+if [[ -f "$HAMLIB_DST" ]]; then
+  echo "Packaged alongside: $HAMLIB_DST"
+fi
 
 echo "Done. Native library and Kotlin bindings are ready under app/."

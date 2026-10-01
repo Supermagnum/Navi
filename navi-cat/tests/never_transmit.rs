@@ -10,9 +10,7 @@ fn refuses_set_ptt_command_without_sending() {
     fn refuse_tx(cmd: &str) -> Result<(), RigError> {
         let trimmed = cmd.trim();
         if trimmed == "T" || trimmed.starts_with("T ") || trimmed.starts_with("+T") {
-            return Err(RigError::Unsupported(
-                "refusing set-PTT / T command".into(),
-            ));
+            return Err(RigError::Unsupported("refusing set-PTT / T command".into()));
         }
         Ok(())
     }

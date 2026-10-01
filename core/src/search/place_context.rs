@@ -637,18 +637,27 @@ mod tests {
 
     #[test]
     fn load_admin_sets_relations_label_before_missing_pbf() {
-        crate::download::progress::clear();
-        let err = load_admin_from_pbf("/no/such/region.osm.pbf", "Place index: ");
-        assert!(err.is_err());
-        let snap = crate::download::progress::snapshot();
-        assert!(
-            snap.label.starts_with("Place index"),
-            "Kotlin matches startsWith(Place index), got {:?}",
-            snap.label
-        );
-        assert_eq!(snap.label, "Place index: admin boundaries: relations…");
-        assert_eq!(snap.units_done, 0);
-        assert_eq!(snap.units_total, Some(6));
+        // Progress label is process-global and other lib tests call clear()
+        // concurrently; retry a few times so a mid-flight clear does not flake CI.
+        let _guard = crate::download::progress::test_lock();
+        for attempt in 0..8 {
+            crate::download::progress::clear();
+            let err = load_admin_from_pbf("/no/such/region.osm.pbf", "Place index: ");
+            assert!(err.is_err());
+            let snap = crate::download::progress::snapshot();
+            if snap.label.starts_with("Place index") {
+                assert_eq!(snap.label, "Place index: admin boundaries: relations…");
+                assert_eq!(snap.units_done, 0);
+                assert_eq!(snap.units_total, Some(6));
+                return;
+            }
+            if attempt == 7 {
+                panic!(
+                    "Kotlin matches startsWith(Place index), got {:?} after retries",
+                    snap.label
+                );
+            }
+        }
     }
 
     #[test]

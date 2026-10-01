@@ -3,12 +3,12 @@
 //! Built when feature `ffi` is enabled (links libhamlib). Without that feature
 //! [`FfiRigBackend::open`] returns an error.
 
-use crate::gating::GateDecision;
 #[cfg(feature = "ffi")]
 use crate::gating::gate_from_dump_caps;
-use crate::types::{RigBackend, RigError, VfoState};
+use crate::gating::GateDecision;
 #[cfg(feature = "ffi")]
 use crate::types::ShiftDir;
+use crate::types::{RigBackend, RigError, VfoState};
 
 pub struct FfiRigBackend {
     #[cfg(feature = "ffi")]
@@ -38,7 +38,8 @@ impl FfiRigBackend {
                 let allow_dummy = cfg!(test) || cfg!(feature = "allow-dummy-rig");
                 let dump = navi_hamlib_sys::caps_dump_text(rig).unwrap_or_default();
                 let gate = gate_from_dump_caps(&dump, allow_beta, allow_dummy);
-                let model_name = navi_hamlib_sys::caps_model_name(rig).unwrap_or_else(|| "unknown".into());
+                let model_name =
+                    navi_hamlib_sys::caps_model_name(rig).unwrap_or_else(|| "unknown".into());
                 Ok(Self {
                     rig,
                     gate,
@@ -99,7 +100,8 @@ impl RigBackend for FfiRigBackend {
         {
             unsafe {
                 let mut ptt = navi_hamlib_sys::RIG_PTT_OFF;
-                let rc = navi_hamlib_sys::rig_get_ptt(self.rig, navi_hamlib_sys::RIG_VFO_A, &mut ptt);
+                let rc =
+                    navi_hamlib_sys::rig_get_ptt(self.rig, navi_hamlib_sys::RIG_VFO_A, &mut ptt);
                 if rc != navi_hamlib_sys::RIG_OK {
                     return Err(RigError::Protocol(format!("get_ptt {rc}")));
                 }
@@ -117,7 +119,8 @@ impl RigBackend for FfiRigBackend {
         {
             unsafe {
                 let mut dcd = navi_hamlib_sys::RIG_DCD_OFF;
-                let rc = navi_hamlib_sys::rig_get_dcd(self.rig, navi_hamlib_sys::RIG_VFO_A, &mut dcd);
+                let rc =
+                    navi_hamlib_sys::rig_get_dcd(self.rig, navi_hamlib_sys::RIG_VFO_A, &mut dcd);
                 if rc != navi_hamlib_sys::RIG_OK {
                     return Ok(false);
                 }
@@ -136,7 +139,11 @@ impl RigBackend for FfiRigBackend {
             unsafe {
                 let vfo = navi_hamlib_sys::RIG_VFO_A;
                 check(navi_hamlib_sys::rig_set_vfo(self.rig, vfo))?;
-                check(navi_hamlib_sys::rig_set_freq(self.rig, vfo, want.freq_hz as f64))?;
+                check(navi_hamlib_sys::rig_set_freq(
+                    self.rig,
+                    vfo,
+                    want.freq_hz as f64,
+                ))?;
                 check(navi_hamlib_sys::rig_set_mode(
                     self.rig,
                     vfo,
@@ -183,13 +190,19 @@ impl RigBackend for FfiRigBackend {
                 check(navi_hamlib_sys::rig_get_freq(self.rig, vfo, &mut freq))?;
                 let mut mode: navi_hamlib_sys::rmode_t = 0;
                 let mut width = 0i32;
-                check(navi_hamlib_sys::rig_get_mode(self.rig, vfo, &mut mode, &mut width))?;
+                check(navi_hamlib_sys::rig_get_mode(
+                    self.rig, vfo, &mut mode, &mut width,
+                ))?;
                 let mut shift = navi_hamlib_sys::RIG_RPT_SHIFT_NONE;
-                check(navi_hamlib_sys::rig_get_rptr_shift(self.rig, vfo, &mut shift))?;
+                check(navi_hamlib_sys::rig_get_rptr_shift(
+                    self.rig, vfo, &mut shift,
+                ))?;
                 let mut offs = 0i32;
                 check(navi_hamlib_sys::rig_get_rptr_offs(self.rig, vfo, &mut offs))?;
                 let mut ctcss = 0u32;
-                check(navi_hamlib_sys::rig_get_ctcss_tone(self.rig, vfo, &mut ctcss))?;
+                check(navi_hamlib_sys::rig_get_ctcss_tone(
+                    self.rig, vfo, &mut ctcss,
+                ))?;
                 let mut dcs = 0u32;
                 check(navi_hamlib_sys::rig_get_dcs_code(self.rig, vfo, &mut dcs))?;
                 Ok(VfoState {

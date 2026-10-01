@@ -97,8 +97,7 @@ impl<B: RigBackend> CatService<B> {
                     self.follow_stopped_reason = Some(e.to_string());
                     self.follow_network_id = None;
                 }
-                serde_json::json!({"ok":false,"error":e.to_string(),"field":e.field()})
-                    .to_string()
+                serde_json::json!({"ok":false,"error":e.to_string(),"field":e.field()}).to_string()
             }
         }
     }

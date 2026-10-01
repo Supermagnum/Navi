@@ -56,9 +56,7 @@ fn non_networked_osm_fixture_loads() {
     let near = db.query_near(60.563, 11.257, 150.0, None);
     assert!(near.iter().all(|s| !is_aprs(s)));
     assert!(near.iter().any(|s| s.callsign == "LA6GR"));
-    assert!(near
-        .iter()
-        .any(|s| matches!(s.source, RepeaterSource::Osm)));
+    assert!(near.iter().any(|s| matches!(s.source, RepeaterSource::Osm)));
 }
 
 #[test]

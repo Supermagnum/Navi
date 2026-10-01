@@ -53,10 +53,11 @@ pub fn import_osm_json(db: &RepeaterDb, json: &str) -> anyhow::Result<usize> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let osm_id = item
-            .get("osm_id")
-            .and_then(|v| v.as_u64())
-            .or_else(|| item.get("osm_id").and_then(|v| v.as_i64()).map(|v| v as u64));
+        let osm_id = item.get("osm_id").and_then(|v| v.as_u64()).or_else(|| {
+            item.get("osm_id")
+                .and_then(|v| v.as_i64())
+                .map(|v| v as u64)
+        });
         let freq = item
             .get("freq_out_mhz")
             .and_then(|v| v.as_f64())
@@ -69,16 +70,17 @@ pub fn import_osm_json(db: &RepeaterDb, json: &str) -> anyhow::Result<usize> {
         let shift = item
             .get("shift_mhz")
             .and_then(|v| v.as_f64())
-            .or_else(|| item.get("shift").and_then(|v| v.as_str()).and_then(parse_mhz))
-            .unwrap_or(0.0);
-        let ctcss_hz = item
-            .get("ctcss_hz")
-            .and_then(|v| v.as_f64())
             .or_else(|| {
-                item.get("ctcss")
+                item.get("shift")
                     .and_then(|v| v.as_str())
-                    .and_then(|s| s.replace(',', ".").parse().ok())
-            });
+                    .and_then(parse_mhz)
+            })
+            .unwrap_or(0.0);
+        let ctcss_hz = item.get("ctcss_hz").and_then(|v| v.as_f64()).or_else(|| {
+            item.get("ctcss")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.replace(',', ".").parse().ok())
+        });
         let id = match osm_id {
             Some(id) => format!("osm-{id}-{callsign}"),
             None => format!("osm-{i}-{callsign}"),
@@ -119,7 +121,10 @@ pub fn import_anytone_channel_csv(db: &RepeaterDb, csv: &str) -> anyhow::Result<
     let header = lines
         .next()
         .ok_or_else(|| anyhow::anyhow!("empty channel.csv"))?;
-    let cols: Vec<&str> = header.split(',').map(|s| s.trim().trim_matches('"')).collect();
+    let cols: Vec<&str> = header
+        .split(',')
+        .map(|s| s.trim().trim_matches('"'))
+        .collect();
     let idx = |name: &str| cols.iter().position(|c| c.eq_ignore_ascii_case(name));
     let i_name = idx("Channel Name");
     let i_rx = idx("Receive Frequency");
@@ -134,7 +139,10 @@ pub fn import_anytone_channel_csv(db: &RepeaterDb, csv: &str) -> anyhow::Result<
         if line.trim().is_empty() {
             continue;
         }
-        let fields: Vec<&str> = line.split(',').map(|s| s.trim().trim_matches('"')).collect();
+        let fields: Vec<&str> = line
+            .split(',')
+            .map(|s| s.trim().trim_matches('"'))
+            .collect();
         let get = |i: Option<usize>| i.and_then(|i| fields.get(i)).unwrap_or(&"").to_string();
         let name = get(i_name);
         if name.to_ascii_uppercase().contains("APRS") {

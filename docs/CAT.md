@@ -101,6 +101,10 @@ Benefits:
 Model number, serial port and baud rate are part of the radio profile in the
 host config. Verify baud rate against the radio manual.
 
+Product UI (`CatStatusSheet`) persists Hamlib **model** (`cat_rig_model`) and
+USB/BT **baud** (`cat_baud_rate`) in `MapHudPrefs`; baud is applied via
+`CatSerialOpenParams` when opening the serial side of `CatSerialLoopbackBridge`.
+
 ### Rust packages
 
 Existing crates (checked September 2026) — **evaluated and rejected**:

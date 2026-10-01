@@ -62,8 +62,8 @@ fn dummy_rigctld_program_readback_and_never_transmit() {
         return;
     };
 
-    let mut backend =
-        TcpRigBackend::connect_with_options("127.0.0.1", port, false, true).expect("connect primary");
+    let mut backend = TcpRigBackend::connect_with_options("127.0.0.1", port, false, true)
+        .expect("connect primary");
     assert!(
         backend.gate().allowed,
         "dummy should be allowed when allow_dummy=true: {}",
@@ -87,8 +87,8 @@ fn dummy_rigctld_program_readback_and_never_transmit() {
     assert_eq!(reported.ctcss_tenths_hz, Some(885));
 
     // Independent second connection asserts the same state.
-    let mut other =
-        TcpRigBackend::connect_with_options("127.0.0.1", port, false, true).expect("connect secondary");
+    let mut other = TcpRigBackend::connect_with_options("127.0.0.1", port, false, true)
+        .expect("connect secondary");
     let state = other.read_vfo_state().expect("read secondary");
     assert_eq!(state.freq_hz, 145_725_000);
     assert_eq!(state.shift, ShiftDir::Minus);

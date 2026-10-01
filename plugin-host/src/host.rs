@@ -677,12 +677,11 @@ fn install_imports(
                 } else {
                     Some(read_guest_string(&mut caller, net_ptr, net_len)?)
                 };
-                let json = caller.data().api.repeater_query(
-                    lat,
-                    lon,
-                    radius_km,
-                    network_id.as_deref(),
-                );
+                let json =
+                    caller
+                        .data()
+                        .api
+                        .repeater_query(lat, lon, radius_km, network_id.as_deref());
                 let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
                 Ok(written as i32)
             },

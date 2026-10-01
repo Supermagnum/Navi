@@ -234,19 +234,23 @@ impl Drop for RegionTagGuard {
     }
 }
 
+/// Process-global progress slots: serialize tests that assert labels.
+#[cfg(test)]
+pub fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
     use std::thread;
-
-    /// Slots are process-global. Serialize these tests against each other; do
-    /// not assert the Download slot (bbox/extract tests write it concurrently).
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn channels_do_not_clobber() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = test_lock();
         for ch in ProgressChannel::ALL {
             clear_on(ch);
         }
@@ -278,7 +282,7 @@ mod tests {
 
     #[test]
     fn thread_local_channel_selects_slot() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = test_lock();
         for ch in ProgressChannel::ALL {
             clear_on(ch);
         }
@@ -304,7 +308,7 @@ mod tests {
 
     #[test]
     fn region_tag_annotates_bare_labels() {
-        let _lock = TEST_LOCK.lock().unwrap();
+        let _lock = test_lock();
         clear_on(ProgressChannel::Convert);
         clear_region_tag();
         set_region_tag("europe/sweden/vastra_gotaland", Some(2), Some(4));

@@ -24,7 +24,12 @@ pub struct TcpRigBackend {
 
 impl TcpRigBackend {
     pub fn connect(host: &str, port: u16, allow_beta: bool) -> Result<Self, RigError> {
-        Self::connect_with_options(host, port, allow_beta, cfg!(test) || cfg!(feature = "allow-dummy-rig"))
+        Self::connect_with_options(
+            host,
+            port,
+            allow_beta,
+            cfg!(test) || cfg!(feature = "allow-dummy-rig"),
+        )
     }
 
     /// Like [`connect`], but control whether Hamlib dummy (model 1) may pass gating.
@@ -37,12 +42,8 @@ impl TcpRigBackend {
     ) -> Result<Self, RigError> {
         let addr = format!("{host}:{port}");
         let stream = TcpStream::connect(&addr).map_err(|e| RigError::Io(e.to_string()))?;
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .ok();
-        stream
-            .set_write_timeout(Some(Duration::from_secs(5)))
-            .ok();
+        stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+        stream.set_write_timeout(Some(Duration::from_secs(5))).ok();
         let mut s = Self {
             stream: Some(stream),
             host: host.into(),
@@ -81,9 +82,7 @@ impl TcpRigBackend {
         // Never transmit: refuse any set-PTT / T command.
         let trimmed = cmd.trim();
         if trimmed == "T" || trimmed.starts_with("T ") || trimmed.starts_with("+T") {
-            return Err(RigError::Unsupported(
-                "refusing set-PTT / T command".into(),
-            ));
+            return Err(RigError::Unsupported("refusing set-PTT / T command".into()));
         }
         self.sent_log.push(cmd.to_string());
         let stream = self.stream.as_mut().ok_or(RigError::NotConnected)?;
@@ -98,7 +97,11 @@ impl TcpRigBackend {
             .map_err(|e| RigError::Io(e.to_string()))?;
         stream.flush().map_err(|e| RigError::Io(e.to_string()))?;
 
-        let mut reader = BufReader::new(stream.try_clone().map_err(|e| RigError::Io(e.to_string()))?);
+        let mut reader = BufReader::new(
+            stream
+                .try_clone()
+                .map_err(|e| RigError::Io(e.to_string()))?,
+        );
         let mut body = String::new();
         let mut rprt = None;
         loop {

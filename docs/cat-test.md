@@ -81,47 +81,53 @@ and [`scripts/hamlib-android.lock`](../scripts/hamlib-android.lock)):
 |---|---|
 | Lock tag | **4.7.2** |
 | Lock NDK | **30.0.14904198** |
-| Claimed ABIs | `arm64-v8a`, `armeabi-v7a`, `x86_64` → `out/hamlib-android/jniLibs/<abi>/libhamlib.so` |
-| Gradle | Packages whatever is under `app/src/main/jniLibs/` (`useLegacyPackaging = true`); **no** dedicated Hamlib copy step |
-| Native script | [`scripts/build-android-native.sh`](../scripts/build-android-native.sh) copies only `libnavi.so` |
+| Built ABIs | `arm64-v8a`, `armeabi-v7a`, `x86_64` under `out/hamlib-android/jniLibs/` |
+| Staged for Gradle | Script copies into `app/src/main/jniLibs/<abi>/` for ABIs Navi already ships (`arm64-v8a`, `x86_64`) |
+| Native script | [`scripts/build-android-native.sh`](../scripts/build-android-native.sh) re-stages Hamlib and enables `navi-ffi` feature `hamlib-ffi` (`navi-cat/ffi` → `link-hamlib`) when `libhamlib.so` is present |
 
 ### Inspection of committed CAT tip APKs (`compiled/`)
 
-Checked with `unzip -l` on `navi-debug.apk` and `navi-release.apk`, plus
-`readelf -d` on jniLibs `libnavi.so`:
+Checked with `unzip -l` on `navi-debug.apk` and `navi-release.apk`:
 
 | ABI | `libnavi.so` in APK | `libhamlib.so` in APK |
 |---|---|---|
-| arm64-v8a | **present** | **absent** |
-| x86_64 | **present** | **absent** |
-| armeabi-v7a | **absent** (not a shipped Navi ABI today) | **absent** |
+| arm64-v8a | **present** | **present** |
+| x86_64 | **present** | **present** |
+| armeabi-v7a | **absent** (not a shipped Navi ABI) | built under `out/` only; not packaged |
 
-`libnavi.so` `NEEDED` entries: `liblog.so`, `libdl.so`, `libm.so`, `libc.so` —
-**no** `libhamlib.so`. Workspace jniLibs likewise contain only `libnavi.so`
-(arm64-v8a / x86_64). `out/hamlib-android/` on this machine held Hamlib **source**
-under `src/` only; no prebuilt `jniLibs/*/libhamlib.so` artifacts were present.
+Android native builds enable `navi-ffi` feature `hamlib-ffi` when `libhamlib.so`
+is staged; `cat_plugin_configure` calls `retain_hamlib_link()` so `libnavi.so`
+emits `DT_NEEDED` `libhamlib.so`. Verified 2026-10-01 with `readelf -d` on
+`app/src/main/jniLibs/{arm64-v8a,x86_64}/libnavi.so`:
 
-### Honest gap (TCP-only path today)
+`NEEDED`: `liblog.so`, `libhamlib.so`, `libdl.so`, `libm.so`, `libc.so`.
 
-On-device CAT on this branch talks to **`rigctld` over TCP** (USB/BT serial
-loopback bridge → localhost, or remote / emulator `10.0.2.2:4532`). That path
-does **not** load `libhamlib.so` inside the APK.
+`libhamlib.so` bytes in `compiled/navi-{debug,release}.apk` match staged
+`app/src/main/jniLibs/<abi>/libhamlib.so` (md5 identical for arm64-v8a).
 
-Product intent in [`CAT.md`](CAT.md) also describes an **onboard FFI** backend
-(`navi-hamlib-sys` + `navi-cat` feature `ffi` → `link-hamlib`). That feature is
-**not** enabled in `navi-ffi` today (`navi-cat` is depended on without `ffi`),
-so shipping unused `libhamlib.so` alone would not activate FFI.
+### Radio model + baud (product UI)
 
-**To close the FFI packaging gap later:**
+`CatStatusSheet` exposes:
+
+| Pref key | UI | Default |
+|---|---|---|
+| `cat_rig_model` | Hamlib model number + preset chips | **2** (NET rigctl) |
+| `cat_baud_rate` | Baud chips: 4800…115200 | **9600** |
+
+Persisted via `MapHudPrefs`. Baud is passed through `CatSerialOpenParams` /
+`CatSerialLoopbackBridge.fromSerialStreams` when opening USB/BT serial before
+the loopback bridge. TCP Connect still uses `cat_plugin_connect_tcp`; the chosen
+model is recorded for onboard FFI / documentation of the remote daemon model.
+
+### Notes
+
+Rebuild path:
 
 1. `ANDROID_NDK_HOME=…/ndk/30.0.14904198 ./scripts/build-hamlib-android.sh`
-2. Copy `out/hamlib-android/jniLibs/<abi>/libhamlib.so` into
-   `app/src/main/jniLibs/<abi>/`
-3. Enable `navi-cat/ffi` (and thus `navi-hamlib-sys/link-hamlib`) for the Android
-   `navi-ffi` build; ensure the linker can find the staged `libhamlib.so`
-4. Rebuild native + APKs; refresh `compiled/` + `SHA256SUMS`
+2. `./scripts/build-android-native.sh` for `aarch64-linux-android` and `x86_64-linux-android`
+3. `./gradlew :app:assembleRelease :app:assembleDebug`; refresh `compiled/` + `SHA256SUMS`
 
-Until then, CAT tip APKs are **TCP-to-rigctld only** for radio I/O; dummy /
+TCP-to-`rigctld` remains the primary field path for remote/emulator; dummy /
 desktop CI above remains the protocol proof without a physical radio.
 
 ---
@@ -375,7 +381,7 @@ Fixture samples: `channel.csv` (UTF-8), `channel_windows1252.csv` (CP1252),
 | Item | Result |
 |---|---|
 | Hamlib lock | tag **4.7.2**, NDK **30.0.14904198** |
-| `libhamlib.so` in CAT tip APKs | **Absent** (all ABIs) — TCP-only path; see [Hamlib in CAT APKs](#hamlib-in-cat-apks) |
+| `libhamlib.so` in CAT tip APKs | **Present** (`arm64-v8a`, `x86_64`); see [Hamlib in CAT APKs](#hamlib-in-cat-apks) |
 | Dummy `rigctld -m 1` live run | **PASS** 2026-10-01 — see [Dummy rigctld run](#dummy-rigctld-run-ci--hamlib-backend) |
 | OSM / LA5MR / non_networked fixtures | Bundled; see SOURCES |
 | Server-file repeaters | **Partial** (21 hits in ostlandet fixture PBF) |

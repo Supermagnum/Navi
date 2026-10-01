@@ -10,10 +10,16 @@ description = "UniFFI bindings for Navi / driver-break-core on Android and other
 crate-type = ["cdylib", "staticlib", "rlib"]
 name = "navi"
 
+[features]
+default = []
+## Link onboard Hamlib via navi-cat/ffi (Android native builds).
+hamlib-ffi = ["navi-cat/ffi", "dep:navi-hamlib-sys", "navi-hamlib-sys/link-hamlib"]
+
 [dependencies]
 driver-break-core = { path = "../core" }
 navi-plugin-host = { path = "../plugin-host" }
 navi-cat = { path = "../navi-cat" }
+navi-hamlib-sys = { path = "../navi-hamlib-sys", optional = true }
 navi-right-to-roam-camping = { path = "../plugins/right-to-roam-camping/engine", default-features = false, features = ["native"] }
 chrono = { workspace = true }
 uniffi = { workspace = true, features = ["cli"] }

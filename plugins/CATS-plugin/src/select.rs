@@ -2,7 +2,10 @@
 
 use serde::Deserialize;
 
+/// Deserialized repeater row from host `repeater_query` JSON.
+/// Fields beyond selection filters are kept for guest protocol compatibility.
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct Candidate {
     pub callsign: String,
     pub lat: Option<f64>,

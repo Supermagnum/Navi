@@ -1,4 +1,9 @@
 //! Network follow loop: hysteresis, dwell, pin, PTT/DCD left to host.
+//!
+//! `should_switch` is unit-tested and kept for guest/host follow JSON; the
+//! current `plugin_main` path only calls [`tick_follow`].
+
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 

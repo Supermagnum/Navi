@@ -45,6 +45,8 @@ object MapHudPrefs {
     private const val KEY_CAMPING_RESIDENCY_COUNTRY = "camping_residency_country"
     private const val KEY_CAMPING_PROFESSIONAL_DRIVER = "camping_professional_driver"
     private const val KEY_CAT_PLUGIN_ENABLED = "cat_plugin_enabled"
+    private const val KEY_CAT_RIG_MODEL = "cat_rig_model"
+    private const val KEY_CAT_BAUD_RATE = "cat_baud_rate"
 
     /**
      * Product default for the weather plugin enable toggle.
@@ -78,6 +80,15 @@ object MapHudPrefs {
 
     /** CATS / CAT radio plugin — defaults OFF (opt-in). */
     const val CAT_PLUGIN_DEFAULT_ENABLED = false
+
+    /**
+     * Default Hamlib model: NET rigctl (remote / emulator TCP path).
+     * Onboard FFI / USB-BT loopback should use the radio's real model id.
+     */
+    const val CAT_RIG_MODEL_DEFAULT = 2
+
+    /** Default USB/BT serial baud for CAT loopback bridges. */
+    const val CAT_BAUD_RATE_DEFAULT = 9600
 
     /** Residency ISO 3166-1 alpha-2; empty = unknown. */
     const val CAMPING_RESIDENCY_DEFAULT = ""
@@ -785,6 +796,46 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_CAT_PLUGIN_ENABLED, enabled)
+            .apply()
+    }
+
+    fun loadCatRigModel(context: Context): Int =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_CAT_RIG_MODEL, CAT_RIG_MODEL_DEFAULT)
+            .coerceAtLeast(1)
+
+    fun saveCatRigModel(
+        context: Context,
+        model: Int,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_CAT_RIG_MODEL, model.coerceAtLeast(1))
+            .apply()
+    }
+
+    fun loadCatBaudRate(context: Context): Int {
+        val v =
+            context
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getInt(KEY_CAT_BAUD_RATE, CAT_BAUD_RATE_DEFAULT)
+        return no.navi.app.cat.CatSerialLoopbackBridge
+            .normalizeBaud(v)
+    }
+
+    fun saveCatBaudRate(
+        context: Context,
+        baud: Int,
+    ) {
+        val v =
+            no.navi.app.cat.CatSerialLoopbackBridge
+                .normalizeBaud(baud)
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_CAT_BAUD_RATE, v)
             .apply()
     }
 }

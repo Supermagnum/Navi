@@ -81,9 +81,7 @@ impl RigBackend for MockRig {
 impl MockRig {
     fn try_set_ptt(&mut self) -> Result<(), RigError> {
         self.set_ptt_attempts += 1;
-        Err(RigError::Unsupported(
-            "refusing set-PTT / T command".into(),
-        ))
+        Err(RigError::Unsupported("refusing set-PTT / T command".into()))
     }
 }
 
@@ -182,15 +180,7 @@ fn s01_s02_la5mr_and_non_networked_query() {
     ))
     .unwrap();
     db.upsert_site(&site(
-        "aprs",
-        "LD2APR",
-        61.01,
-        10.51,
-        144.800,
-        0.0,
-        None,
-        "APRS",
-        None,
+        "aprs", "LD2APR", 61.01, 10.51, 144.800, 0.0, None, "APRS", None,
     ))
     .unwrap();
 
@@ -230,15 +220,7 @@ fn s04_dmr_dedupe_not_auto_fm() {
         dmr_dedupe_key(434.600, 7.6, 1)
     );
     let dmr = site(
-        "dmr1",
-        "LA9DMR",
-        61.1,
-        10.2,
-        434.600,
-        7.6,
-        None,
-        "DMR",
-        None,
+        "dmr1", "LA9DMR", 61.1, 10.2, 434.600, 7.6, None, "DMR", None,
     );
     assert!(dmr.modulation.to_ascii_uppercase().contains("DMR"));
 }
@@ -271,17 +253,7 @@ fn s05_conflict_flagged() {
 fn s06_filtering() {
     let aprs = site("a", "APRS", 61.0, 10.0, 144.800, 0.0, None, "APRS", None);
     assert!(is_aprs(&aprs));
-    let simplex = site(
-        "s",
-        "VFO-A",
-        61.0,
-        10.0,
-        145.500,
-        0.0,
-        None,
-        "NFM",
-        None,
-    );
+    let simplex = site("s", "VFO-A", 61.0, 10.0, 145.500, 0.0, None, "NFM", None);
     assert!(is_simplex(&simplex));
     let mut csv = site("c", "CSV1", 0.0, 0.0, 145.0, -0.6, None, "NFM", None);
     csv.lat = None;
@@ -299,8 +271,8 @@ fn s06_filtering() {
 /// Scenario 7: gating fixtures (Stable allowed; Alpha refused).
 #[test]
 fn s07_gating_parser() {
-    let fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/dump_caps");
+    let fixtures =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dump_caps");
     let stable = std::fs::read_to_string(fixtures.join("stable.txt")).unwrap();
     let d = gate_from_dump_caps(&stable, false, false);
     assert!(d.allowed);

@@ -2,11 +2,14 @@ package no.navi.app
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -18,6 +21,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import no.navi.app.cat.CatSerialLoopbackBridge
+import no.navi.app.cat.catRigModelLabel
+import no.navi.app.cat.catRigModelPresets
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -26,15 +32,20 @@ data class CatUiState(
     val nearbyJson: String = "[]",
     val host: String = "10.0.2.2",
     val port: String = "4532",
+    val rigModel: Int = MapHudPrefs.CAT_RIG_MODEL_DEFAULT,
+    val baudRate: Int = MapHudPrefs.CAT_BAUD_RATE_DEFAULT,
     val followNetworkId: String = "LA5MR",
     val lastMessage: String = "",
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CatStatusSheet(
     state: CatUiState,
     onHostChange: (String) -> Unit,
     onPortChange: (String) -> Unit,
+    onRigModelChange: (Int) -> Unit,
+    onBaudRateChange: (Int) -> Unit,
     onFollowNetworkChange: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
@@ -53,6 +64,7 @@ fun CatStatusSheet(
             JSONObject(state.statusJson).optString("follow_network_id")
         }.getOrDefault("")
     val nearby = parseNearby(state.nearbyJson)
+    val presets = catRigModelPresets()
 
     Surface(
         tonalElevation = 8.dp,
@@ -78,10 +90,18 @@ fun CatStatusSheet(
                 modifier = Modifier.testTag("cat_import_path_hint"),
             )
             Text(
-                if (connected) "Connected${if (model.isNotBlank()) " ($model)" else ""}"
-                else "Disconnected",
+                if (connected) {
+                    "Connected${if (model.isNotBlank()) " ($model)" else ""}"
+                } else {
+                    "Disconnected"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.testTag("cat_connection_label"),
+            )
+            Text(
+                "Radio: ${catRigModelLabel(state.rigModel)}  |  Baud: ${state.baudRate}",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("cat_radio_baud_summary"),
             )
             if (follow.isNotBlank()) {
                 Text("Network follow: $follow", style = MaterialTheme.typography.bodySmall)
@@ -100,6 +120,55 @@ fun CatStatusSheet(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("cat_port_field"),
             )
+            Text("Hamlib radio model", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "TCP path: remote daemon model (informational). Onboard FFI / USB-BT: model used when opening the rig.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.testTag("cat_rig_model_presets"),
+            ) {
+                for (preset in presets) {
+                    FilterChip(
+                        selected = state.rigModel == preset.model,
+                        onClick = { onRigModelChange(preset.model) },
+                        label = { Text("${preset.model}") },
+                        modifier = Modifier.testTag("cat_rig_model_${preset.model}"),
+                    )
+                }
+            }
+            OutlinedTextField(
+                value = state.rigModel.toString(),
+                onValueChange = { raw ->
+                    val digits = raw.filter { it.isDigit() }
+                    if (digits.isEmpty()) {
+                        onRigModelChange(MapHudPrefs.CAT_RIG_MODEL_DEFAULT)
+                    } else {
+                        onRigModelChange(digits.toIntOrNull()?.coerceAtLeast(1) ?: state.rigModel)
+                    }
+                },
+                label = { Text("Hamlib model number") },
+                singleLine = true,
+                supportingText = { Text(catRigModelLabel(state.rigModel)) },
+                modifier = Modifier.fillMaxWidth().testTag("cat_rig_model_field"),
+            )
+            Text("Serial baud (USB/BT loopback)", style = MaterialTheme.typography.titleSmall)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.testTag("cat_baud_presets"),
+            ) {
+                for (baud in CatSerialLoopbackBridge.BAUD_RATES) {
+                    FilterChip(
+                        selected = state.baudRate == baud,
+                        onClick = { onBaudRateChange(baud) },
+                        label = { Text("$baud") },
+                        modifier = Modifier.testTag("cat_baud_$baud"),
+                    )
+                }
+            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -159,8 +228,8 @@ fun CatStatusSheet(
     }
 }
 
-private fun parseNearby(json: String): List<String> {
-    return try {
+private fun parseNearby(json: String): List<String> =
+    try {
         val arr = JSONArray(json.ifBlank { "[]" })
         buildList {
             for (i in 0 until arr.length()) {
@@ -179,4 +248,3 @@ private fun parseNearby(json: String): List<String> {
     } catch (_: Throwable) {
         emptyList()
     }
-}

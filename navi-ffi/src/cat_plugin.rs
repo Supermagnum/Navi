@@ -170,9 +170,8 @@ fn cat_policy() -> HashSet<Capability> {
 
 fn open_db(files_dir: &Path) -> RepeaterDb {
     let path = files_dir.join("cat_repeaters.sqlite");
-    RepeaterDb::open_path(&path).unwrap_or_else(|_| {
-        RepeaterDb::open_memory().expect("in-memory repeater db")
-    })
+    RepeaterDb::open_path(&path)
+        .unwrap_or_else(|_| RepeaterDb::open_memory().expect("in-memory repeater db"))
 }
 
 fn ensure_import_dir(files_dir: &Path) {
@@ -233,6 +232,9 @@ impl HostApi for CatTickApi {
 #[uniffi::export]
 pub fn cat_plugin_configure(files_dir: String, data_dir: String, timezone: String) {
     crate::init_native_logging();
+    // Keep DT_NEEDED libhamlib.so on Android when built with hamlib-ffi.
+    #[cfg(feature = "hamlib-ffi")]
+    navi_hamlib_sys::retain_hamlib_link();
     let files = PathBuf::from(files_dir);
     let data = PathBuf::from(data_dir);
     ensure_import_dir(&files);
@@ -254,7 +256,11 @@ pub fn cat_plugin_configure(files_dir: String, data_dir: String, timezone: Strin
 }
 
 #[uniffi::export]
-pub fn cat_plugin_install_guest(name: String, manifest_json: String, wasm_bytes: Vec<u8>) -> String {
+pub fn cat_plugin_install_guest(
+    name: String,
+    manifest_json: String,
+    wasm_bytes: Vec<u8>,
+) -> String {
     let mut guard = session_lock().lock().expect("cat session");
     let Some(session) = guard.as_mut() else {
         return "FAIL: not configured".into();

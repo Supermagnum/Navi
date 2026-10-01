@@ -378,7 +378,13 @@ pub trait HostApi: Send + Sync {
     }
 
     /// JSON list of repeaters near lat/lon within radius_km (capped at 150).
-    fn repeater_query(&self, lat: f64, lon: f64, radius_km: f64, network_id: Option<&str>) -> String {
+    fn repeater_query(
+        &self,
+        lat: f64,
+        lon: f64,
+        radius_km: f64,
+        network_id: Option<&str>,
+    ) -> String {
         let _ = (lat, lon, radius_km, network_id);
         "[]".into()
     }
