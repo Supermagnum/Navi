@@ -6,8 +6,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context};
+use chrono::{Datelike, Duration as ChronoDuration, NaiveDate, Utc};
 use futures_util::StreamExt;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, RANGE};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, LOCATION, RANGE};
 use reqwest::{Client, Response, StatusCode};
 use tokio::io::AsyncWriteExt;
 
@@ -16,6 +17,15 @@ use crate::download::progress as download_progress;
 
 /// Default retry count for transient network failures.
 pub const DEFAULT_RETRIES: u32 = 3;
+
+/// Geofabrik extract GETs flap 502/503; give the dated-resolve path more attempts.
+pub const GEOFABRIK_EXTRACT_RETRIES: u32 = 6;
+
+/// How many calendar days to walk back when probing `{leaf}-YYMMDD.osm.pbf`.
+const GEOFABRIK_DATED_PROBE_DAYS: u32 = 10;
+
+/// HTML / redirect / dated-probe attempt budget inside one resolve call.
+const GEOFABRIK_RESOLVE_HTML_ATTEMPTS: u32 = 3;
 
 /// Stream a full (or ranged) GET to `dest`, never buffering the whole body in RAM.
 #[derive(Debug, Clone)]
@@ -107,6 +117,100 @@ pub fn is_geofabrik_latest_pbf_url(url: &str) -> bool {
     trimmed.contains("download.geofabrik.de/") && trimmed.ends_with("-latest.osm.pbf")
 }
 
+/// True for any Geofabrik OSM PBF URL (latest or dated).
+pub fn is_geofabrik_osm_pbf_url(url: &str) -> bool {
+    let trimmed = url.trim().trim_end_matches('/');
+    trimmed.contains("download.geofabrik.de/") && trimmed.ends_with(".osm.pbf")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GeofabrikLatestParts {
+    /// Path without `-latest.osm.pbf`, e.g. `europe/sweden`.
+    stem: String,
+    /// Leaf name, e.g. `sweden`.
+    leaf: String,
+    /// Parent dir with trailing slash, e.g. `europe/`, or empty.
+    dir: String,
+}
+
+fn parse_geofabrik_latest_parts(latest_url: &str) -> Option<GeofabrikLatestParts> {
+    let trimmed = latest_url.trim().trim_end_matches('/');
+    if !is_geofabrik_latest_pbf_url(trimmed) {
+        return None;
+    }
+    let path = trimmed
+        .strip_prefix("https://download.geofabrik.de/")
+        .or_else(|| trimmed.strip_prefix("http://download.geofabrik.de/"))?;
+    let stem = path.strip_suffix("-latest.osm.pbf")?;
+    let leaf = stem.rsplit('/').next().unwrap_or(stem);
+    if leaf.is_empty() {
+        return None;
+    }
+    let dir = match stem.rsplit_once('/') {
+        Some((parent, _)) => format!("{parent}/"),
+        None => String::new(),
+    };
+    Some(GeofabrikLatestParts {
+        stem: stem.to_string(),
+        leaf: leaf.to_string(),
+        dir,
+    })
+}
+
+/// Build `https://download.geofabrik.de/{dir}{leaf}-{yymmdd}.osm.pbf`.
+pub fn geofabrik_dated_pbf_url(dir: &str, leaf: &str, yymmdd: u32) -> String {
+    format!("https://download.geofabrik.de/{dir}{leaf}-{yymmdd:06}.osm.pbf")
+}
+
+/// YYMMDD values for [from] walking back [days_back] inclusive days.
+pub fn recent_geofabrik_yymmdd_candidates(from: NaiveDate, days_back: u32) -> Vec<u32> {
+    let mut out = Vec::with_capacity((days_back as usize).saturating_add(1));
+    for offset in 0..=days_back {
+        let Some(day) = from.checked_sub_signed(ChronoDuration::days(i64::from(offset))) else {
+            break;
+        };
+        let yymmdd = (day.year() % 100) as u32 * 10_000
+            + day.month() * 100
+            + day.day();
+        out.push(yymmdd);
+    }
+    out
+}
+
+/// Extract a dated PBF URL from a redirect `Location` for [leaf].
+///
+/// Accepts absolute or relative Locations such as
+/// `sweden-260930.osm.pbf` / `./sweden-260930.osm.pbf/` /
+/// `https://download.geofabrik.de/europe/sweden-260930.osm.pbf`.
+pub fn dated_pbf_url_from_redirect_location_with_dir(
+    location: &str,
+    leaf: &str,
+    dir: &str,
+) -> Option<String> {
+    let loc = location.trim().trim_end_matches('/');
+    if loc.is_empty() {
+        return None;
+    }
+    let file_name = loc.rsplit('/').next().unwrap_or(loc);
+    let needle_prefix = format!("{leaf}-");
+    let needle_suffix = ".osm.pbf";
+    let date_part = file_name
+        .strip_prefix(&needle_prefix)?
+        .strip_suffix(needle_suffix)?;
+    if date_part.len() != 6 || !date_part.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    if loc.starts_with("https://") || loc.starts_with("http://") {
+        return Some(loc.to_string());
+    }
+    let trimmed = loc.trim_start_matches("./");
+    if trimmed.contains('/') {
+        Some(format!("https://download.geofabrik.de/{trimmed}"))
+    } else {
+        Some(format!("https://download.geofabrik.de/{dir}{file_name}"))
+    }
+}
+
 /// Parse Geofabrik region HTML for the newest `leaf-YYMMDD.osm.pbf` href.
 ///
 /// Geofabrik's `-latest.osm.pbf` / `-latest.osm.pbf/` aliases have been observed
@@ -142,43 +246,239 @@ pub fn newest_dated_pbf_href_from_geofabrik_html(html: &str, leaf: &str) -> Opti
     best.map(|(_, name)| name)
 }
 
-/// Map a `-latest.osm.pbf` URL to a concrete dated extract URL via the region page.
+fn is_transient_http_status(status: StatusCode) -> bool {
+    status.is_server_error()
+        || status == StatusCode::TOO_MANY_REQUESTS
+        || status == StatusCode::REQUEST_TIMEOUT
+}
+
+fn geofabrik_retry_backoff_ms(attempt: u32) -> u64 {
+    // 2s, 4s, 8s, 16s, 32s, 60s — outages in the Bevensen run outlasted ~2s total.
+    (2_000u64.saturating_mul(2u64.saturating_pow(attempt.saturating_sub(1)))).min(60_000)
+}
+
+fn default_retry_backoff_ms(attempt: u32) -> u64 {
+    500u64.saturating_mul(3u64.saturating_pow(attempt.saturating_sub(1)))
+}
+
+async fn resolve_via_region_html(
+    client: &Client,
+    parts: &GeofabrikLatestParts,
+) -> Option<String> {
+    let html_url = format!("https://download.geofabrik.de/{}.html", parts.stem);
+    for attempt in 1..=GEOFABRIK_RESOLVE_HTML_ATTEMPTS {
+        let resp = match client
+            .get(&html_url)
+            .timeout(Duration::from_secs(30))
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!(
+                    target: "NaviDownload",
+                    "[NaviDownload] Geofabrik region HTML fetch failed attempt={attempt}/{} \
+                     url={} err={e}",
+                    GEOFABRIK_RESOLVE_HTML_ATTEMPTS,
+                    short_url(&html_url)
+                );
+                if attempt < GEOFABRIK_RESOLVE_HTML_ATTEMPTS {
+                    tokio::time::sleep(Duration::from_millis(geofabrik_retry_backoff_ms(attempt)))
+                        .await;
+                }
+                continue;
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            log::warn!(
+                target: "NaviDownload",
+                "[NaviDownload] Geofabrik region HTML status={status} attempt={attempt}/{} \
+                 url={}",
+                GEOFABRIK_RESOLVE_HTML_ATTEMPTS,
+                short_url(&html_url)
+            );
+            if is_transient_http_status(status) && attempt < GEOFABRIK_RESOLVE_HTML_ATTEMPTS {
+                tokio::time::sleep(Duration::from_millis(geofabrik_retry_backoff_ms(attempt))).await;
+                continue;
+            }
+            return None;
+        }
+        let html = match resp.text().await {
+            Ok(t) => t,
+            Err(e) => {
+                log::warn!(
+                    target: "NaviDownload",
+                    "[NaviDownload] Geofabrik region HTML body failed attempt={attempt}/{} err={e}",
+                    GEOFABRIK_RESOLVE_HTML_ATTEMPTS
+                );
+                if attempt < GEOFABRIK_RESOLVE_HTML_ATTEMPTS {
+                    tokio::time::sleep(Duration::from_millis(geofabrik_retry_backoff_ms(attempt)))
+                        .await;
+                }
+                continue;
+            }
+        };
+        if let Some(href) = newest_dated_pbf_href_from_geofabrik_html(&html, &parts.leaf) {
+            return Some(format!(
+                "https://download.geofabrik.de/{}{href}",
+                parts.dir
+            ));
+        }
+        log::warn!(
+            target: "NaviDownload",
+            "[NaviDownload] Geofabrik region HTML had no dated href for leaf={}",
+            parts.leaf
+        );
+        return None;
+    }
+    None
+}
+
+/// Follow-less probe of `-latest` for a 3xx `Location` pointing at a dated PBF.
+async fn resolve_via_latest_redirect(
+    parts: &GeofabrikLatestParts,
+) -> Option<String> {
+    let no_redirect = Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(20))
+        .connect_timeout(Duration::from_secs(10))
+        .build()
+        .ok()?;
+    let candidates = [
+        format!(
+            "https://download.geofabrik.de/{}{}-latest.osm.pbf/",
+            parts.dir, parts.leaf
+        ),
+        format!(
+            "https://download.geofabrik.de/{}{}-latest.osm.pbf",
+            parts.dir, parts.leaf
+        ),
+    ];
+    for url in candidates {
+        let resp = match no_redirect.get(&url).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!(
+                    target: "NaviDownload",
+                    "[NaviDownload] Geofabrik -latest redirect probe failed url={} err={e}",
+                    short_url(&url)
+                );
+                continue;
+            }
+        };
+        let status = resp.status();
+        if !status.is_redirection() {
+            log::info!(
+                target: "NaviDownload",
+                "[NaviDownload] Geofabrik -latest redirect probe status={status} url={}",
+                short_url(&url)
+            );
+            continue;
+        }
+        let Some(loc) = resp
+            .headers()
+            .get(LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        if let Some(dated) =
+            dated_pbf_url_from_redirect_location_with_dir(&loc, &parts.leaf, &parts.dir)
+        {
+            log::info!(
+                target: "NaviDownload",
+                "[NaviDownload] Geofabrik -latest Location → dated {}",
+                short_url(&dated)
+            );
+            return Some(dated);
+        }
+    }
+    None
+}
+
+/// Probe `{leaf}-YYMMDD.osm.pbf` for recent UTC days (HTML / -latest may 502 while dated 200).
+async fn resolve_via_dated_day_probe(
+    client: &Client,
+    parts: &GeofabrikLatestParts,
+) -> Option<String> {
+    let today = Utc::now().date_naive();
+    for yymmdd in recent_geofabrik_yymmdd_candidates(today, GEOFABRIK_DATED_PROBE_DAYS) {
+        let url = geofabrik_dated_pbf_url(&parts.dir, &parts.leaf, yymmdd);
+        let resp = match client
+            .get(&url)
+            .header(RANGE, "bytes=0-0")
+            .timeout(Duration::from_secs(15))
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!(
+                    target: "NaviDownload",
+                    "[NaviDownload] Geofabrik dated probe failed url={} err={e}",
+                    short_url(&url)
+                );
+                continue;
+            }
+        };
+        let status = resp.status();
+        // Drop body immediately; we only needed existence.
+        drop(resp);
+        if status.is_success() || status == StatusCode::PARTIAL_CONTENT {
+            log::info!(
+                target: "NaviDownload",
+                "[NaviDownload] Geofabrik dated day-probe hit {}",
+                short_url(&url)
+            );
+            return Some(url);
+        }
+        if status == StatusCode::NOT_FOUND {
+            continue;
+        }
+        if is_transient_http_status(status) {
+            log::warn!(
+                target: "NaviDownload",
+                "[NaviDownload] Geofabrik dated probe status={status} url={}",
+                short_url(&url)
+            );
+            continue;
+        }
+    }
+    None
+}
+
+/// Map a `-latest.osm.pbf` URL to a concrete dated extract URL.
+///
+/// Order: region HTML (with 5xx retries) → `-latest` redirect Location →
+/// recent `{leaf}-YYMMDD` day probe. Dated extracts have been observed to return
+/// 200 while `-latest` / region HTML flap 502.
 ///
 /// `https://download.geofabrik.de/europe/denmark-latest.osm.pbf/` →
-/// `https://download.geofabrik.de/europe/denmark-260930.osm.pbf` (newest on page).
+/// `https://download.geofabrik.de/europe/denmark-260930.osm.pbf`.
 pub async fn resolve_geofabrik_latest_to_dated_url(
     client: &Client,
     latest_url: &str,
 ) -> Option<String> {
-    let trimmed = latest_url.trim().trim_end_matches('/');
-    if !is_geofabrik_latest_pbf_url(trimmed) {
-        return None;
+    let parts = parse_geofabrik_latest_parts(latest_url)?;
+    if let Some(dated) = resolve_via_region_html(client, &parts).await {
+        return Some(dated);
     }
-    let path = trimmed
-        .strip_prefix("https://download.geofabrik.de/")
-        .or_else(|| trimmed.strip_prefix("http://download.geofabrik.de/"))?;
-    let stem = path.strip_suffix("-latest.osm.pbf")?;
-    let leaf = stem.rsplit('/').next().unwrap_or(stem);
-    if leaf.is_empty() {
-        return None;
+    log::warn!(
+        target: "NaviDownload",
+        "[NaviDownload] Geofabrik region HTML resolve failed for {}; trying -latest Location",
+        parts.leaf
+    );
+    if let Some(dated) = resolve_via_latest_redirect(&parts).await {
+        return Some(dated);
     }
-    let html_url = format!("https://download.geofabrik.de/{stem}.html");
-    let resp = client
-        .get(&html_url)
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await
-        .ok()?;
-    if !resp.status().is_success() {
-        return None;
-    }
-    let html = resp.text().await.ok()?;
-    let href = newest_dated_pbf_href_from_geofabrik_html(&html, leaf)?;
-    let dir = match stem.rsplit_once('/') {
-        Some((parent, _)) => format!("{parent}/"),
-        None => String::new(),
-    };
-    Some(format!("https://download.geofabrik.de/{dir}{href}"))
+    log::warn!(
+        target: "NaviDownload",
+        "[NaviDownload] Geofabrik -latest Location resolve failed for {}; probing recent dated",
+        parts.leaf
+    );
+    resolve_via_dated_day_probe(client, &parts).await
 }
 
 /// Sync wrapper for callers outside an async runtime.
@@ -221,7 +521,11 @@ pub async fn stream_get_to_file(
     }
 
     let mut last_err: Option<anyhow::Error> = None;
-    let retries = opts.retries.max(1);
+    let mut retries = opts.retries.max(1);
+    // Geofabrik extract flaps (502/503) outlasted DEFAULT_RETRIES (~2s backoff).
+    if is_geofabrik_osm_pbf_url(opts.url) {
+        retries = retries.max(GEOFABRIK_EXTRACT_RETRIES);
+    }
 
     for attempt in 1..=retries {
         match stream_get_to_file_once(client, &opts).await {
@@ -243,7 +547,11 @@ pub async fn stream_get_to_file(
                 );
                 last_err = Some(e);
                 if attempt < retries {
-                    let backoff_ms = 500u64 * 3u64.pow(attempt - 1);
+                    let backoff_ms = if is_geofabrik_osm_pbf_url(opts.url) {
+                        geofabrik_retry_backoff_ms(attempt)
+                    } else {
+                        default_retry_backoff_ms(attempt)
+                    };
                     tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                 }
             }
@@ -257,9 +565,10 @@ async fn stream_get_to_file_once(
     client: &Client,
     opts: &StreamDownloadOpts<'_>,
 ) -> anyhow::Result<Option<StreamDownloadResult>> {
-    // Geofabrik `-latest.osm.pbf[/]` has 301-looped / 404'd while dated extracts
-    // on the region HTML page still serve. Resolve before the GET so we never
-    // soft-PASS a pack-server stub as a successful place-index extract.
+    // Geofabrik `-latest.osm.pbf[/]` has 301-looped / 404'd / 502'd while dated
+    // extracts on the region HTML page (or direct YYMMDD URLs) still serve.
+    // Resolve before the GET so we never soft-PASS a pack-server stub as a
+    // successful place-index extract.
     let dated_owned = if is_geofabrik_latest_pbf_url(opts.url) {
         match resolve_geofabrik_latest_to_dated_url(client, opts.url).await {
             Some(dated) if dated != opts.url.trim().trim_end_matches('/') => {
@@ -273,7 +582,7 @@ async fn stream_get_to_file_once(
             _ => {
                 log::warn!(
                     target: "NaviDownload",
-                    "[NaviDownload] could not resolve Geofabrik -latest via region HTML; \
+                    "[NaviDownload] could not resolve Geofabrik -latest to dated; \
                      trying {}",
                     short_url(opts.url)
                 );
@@ -580,6 +889,7 @@ pub async fn read_body_text(response: Response, max_bytes: usize) -> anyhow::Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::NaiveDate;
 
     #[test]
     fn strip_trailing_slash_osm_pbf_only_dated_slash() {
@@ -629,6 +939,112 @@ mod tests {
         ));
         assert!(!is_geofabrik_latest_pbf_url(
             "https://download.geofabrik.de/europe/denmark-260930.osm.pbf"
+        ));
+        assert!(is_geofabrik_osm_pbf_url(
+            "https://download.geofabrik.de/europe/denmark-260930.osm.pbf"
+        ));
+    }
+
+    #[test]
+    fn parse_latest_parts_sweden_and_landsdel() {
+        let se = parse_geofabrik_latest_parts(
+            "https://download.geofabrik.de/europe/sweden-latest.osm.pbf/",
+        )
+        .expect("sweden");
+        assert_eq!(se.stem, "europe/sweden");
+        assert_eq!(se.leaf, "sweden");
+        assert_eq!(se.dir, "europe/");
+        let sh = parse_geofabrik_latest_parts(
+            "https://download.geofabrik.de/europe/germany/schleswig-holstein-latest.osm.pbf",
+        )
+        .expect("sh");
+        assert_eq!(sh.stem, "europe/germany/schleswig-holstein");
+        assert_eq!(sh.leaf, "schleswig-holstein");
+        assert_eq!(sh.dir, "europe/germany/");
+    }
+
+    #[test]
+    fn redirect_location_builds_dated_url() {
+        assert_eq!(
+            dated_pbf_url_from_redirect_location_with_dir(
+                "https://download.geofabrik.de/europe/sweden-260930.osm.pbf/",
+                "sweden",
+                "europe/",
+            )
+            .as_deref(),
+            Some("https://download.geofabrik.de/europe/sweden-260930.osm.pbf")
+        );
+        assert_eq!(
+            dated_pbf_url_from_redirect_location_with_dir(
+                "sweden-260930.osm.pbf",
+                "sweden",
+                "europe/",
+            )
+            .as_deref(),
+            Some("https://download.geofabrik.de/europe/sweden-260930.osm.pbf")
+        );
+        assert_eq!(
+            dated_pbf_url_from_redirect_location_with_dir(
+                "./sweden-260930.osm.pbf/",
+                "sweden",
+                "europe/",
+            )
+            .as_deref(),
+            Some("https://download.geofabrik.de/europe/sweden-260930.osm.pbf")
+        );
+        assert_eq!(
+            dated_pbf_url_from_redirect_location_with_dir(
+                "europe/sweden-260930.osm.pbf",
+                "sweden",
+                "europe/",
+            )
+            .as_deref(),
+            Some("https://download.geofabrik.de/europe/sweden-260930.osm.pbf")
+        );
+        assert!(dated_pbf_url_from_redirect_location_with_dir(
+            "sweden-latest.osm.pbf",
+            "sweden",
+            "europe/",
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn recent_yymmdd_candidates_walk_back() {
+        let from = NaiveDate::from_ymd_opt(2026, 10, 1).expect("date");
+        let got = recent_geofabrik_yymmdd_candidates(from, 3);
+        assert_eq!(got, vec![261001, 260930, 260929, 260928]);
+        assert_eq!(
+            geofabrik_dated_pbf_url("europe/", "sweden", 260930),
+            "https://download.geofabrik.de/europe/sweden-260930.osm.pbf"
+        );
+        assert_eq!(
+            geofabrik_dated_pbf_url("europe/germany/", "schleswig-holstein", 260930),
+            "https://download.geofabrik.de/europe/germany/schleswig-holstein-260930.osm.pbf"
+        );
+    }
+
+    #[test]
+    fn geofabrik_backoff_grows_and_caps() {
+        assert_eq!(geofabrik_retry_backoff_ms(1), 2_000);
+        assert_eq!(geofabrik_retry_backoff_ms(2), 4_000);
+        assert_eq!(geofabrik_retry_backoff_ms(3), 8_000);
+        assert_eq!(geofabrik_retry_backoff_ms(6), 60_000);
+        assert_eq!(geofabrik_retry_backoff_ms(10), 60_000);
+        assert!(GEOFABRIK_EXTRACT_RETRIES > DEFAULT_RETRIES);
+        assert!(GEOFABRIK_EXTRACT_RETRIES >= 6);
+    }
+
+    #[test]
+    fn is_geofabrik_osm_pbf_covers_dated_and_latest() {
+        assert!(is_geofabrik_osm_pbf_url(
+            "https://download.geofabrik.de/europe/sweden-latest.osm.pbf/"
+        ));
+        assert!(is_geofabrik_osm_pbf_url(
+            "https://download.geofabrik.de/europe/sweden-260930.osm.pbf"
+        ));
+        assert!(!is_geofabrik_osm_pbf_url(
+            "https://download.geofabrik.de/europe/sweden.html"
         ));
     }
 

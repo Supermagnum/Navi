@@ -7,7 +7,8 @@ use anyhow::bail;
 use reqwest::header::HeaderMap;
 
 use crate::download::{
-    phase_timing, stream_get_to_file_blocking, DownloadControl, StreamDownloadOpts, DEFAULT_RETRIES,
+    phase_timing, stream_get_to_file_blocking, DownloadControl, StreamDownloadOpts,
+    DEFAULT_RETRIES, GEOFABRIK_EXTRACT_RETRIES,
 };
 use crate::routing::elevation::{bbox_to_tiles, ElevationCache, ElevationDownloader};
 use crate::storage::{ElevationJobStore, JobStatus, Storage};
@@ -59,13 +60,18 @@ pub fn download_file(url: &str, dest: &Path) -> anyhow::Result<u64> {
         }
     }
 
+    let retries = if url.contains("download.geofabrik.de/") && url.contains(".osm.pbf") {
+        GEOFABRIK_EXTRACT_RETRIES
+    } else {
+        DEFAULT_RETRIES
+    };
     let result = stream_get_to_file_blocking(StreamDownloadOpts {
         url,
         dest,
         headers: HeaderMap::new(),
         resume_from: 0,
         expected_bytes: None,
-        retries: DEFAULT_RETRIES,
+        retries,
         progress_label: "Downloading region…",
         allow_not_found: false,
     })?
