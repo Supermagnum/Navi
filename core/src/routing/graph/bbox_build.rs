@@ -79,6 +79,7 @@ fn keep_way_tag(key: &str) -> bool {
             | "route"
             | "ferry"
             | "bridge"
+            | "tunnel"
             | "surface"
             | "tracktype"
             | "motor_vehicle"
@@ -1328,6 +1329,20 @@ fn bbox_edge(
 mod bbox_tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn keep_way_tag_retains_tunnel_for_avoid_tunnels() {
+        assert!(keep_way_tag("tunnel"));
+        assert!(keep_way_tag("ferry"));
+        assert!(!keep_way_tag("wikipedia"));
+        let filtered = filter_way_tags(HashMap::from([
+            ("highway".into(), "trunk".into()),
+            ("tunnel".into(), "yes".into()),
+            ("wikipedia".into(), "no".into()),
+        ]));
+        assert_eq!(filtered.get("tunnel").map(String::as_str), Some("yes"));
+        assert!(!filtered.contains_key("wikipedia"));
+    }
 
     #[test]
     fn bbox_build_gps_atnbrua_from_ostlandet() {

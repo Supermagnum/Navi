@@ -707,7 +707,10 @@ const PACK_LEAF_PATH_BBOX: &[(&str, [f64; 4])] = &[
     ),
     // Danish regions (published on some hosts; live host currently has country only).
     ("europe/denmark/syddanmark", [54.72, 8.07, 55.78, 10.95]),
-    ("europe/denmark/sjaelland", [54.85, 10.85, 55.80, 12.55]),
+    // South edge includes Lolland/Falster (Rødby ≈54.65) so Fehmarn ferry
+    // approaches have leaf cover for densify — Geofabrik's sjaelland extract
+    // covers the islands; the old 54.85 cut left them as country-only water.
+    ("europe/denmark/sjaelland", [54.55, 10.85, 55.80, 12.55]),
     ("europe/denmark/hovedstaden", [55.58, 12.00, 56.13, 12.70]),
     ("europe/denmark/midtjylland", [55.78, 8.10, 56.85, 11.20]),
     ("europe/denmark/nordjylland", [56.70, 8.15, 57.76, 10.95]),
