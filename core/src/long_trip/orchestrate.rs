@@ -264,9 +264,9 @@ pub fn corridor_ready_for_planning(plan: &LongTripPlan) -> bool {
     if plan.regions_in_order.is_empty() {
         return false;
     }
-    plan.regions_in_order.iter().all(|id| {
-        matches!(plan.states.get(id), Some(RegionTripState::Indexed))
-    })
+    plan.regions_in_order
+        .iter()
+        .all(|id| matches!(plan.states.get(id), Some(RegionTripState::Indexed)))
 }
 
 /// True when every corridor region has Ready packs (Installed, Indexing, or Indexed).
@@ -277,11 +277,7 @@ pub fn corridor_packs_ready(plan: &LongTripPlan) -> bool {
     plan.regions_in_order.iter().all(|id| {
         matches!(
             plan.states.get(id),
-            Some(
-                RegionTripState::Installed
-                    | RegionTripState::Indexing
-                    | RegionTripState::Indexed
-            )
+            Some(RegionTripState::Installed | RegionTripState::Indexing | RegionTripState::Indexed)
         )
     })
 }

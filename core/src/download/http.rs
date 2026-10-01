@@ -169,9 +169,7 @@ pub fn recent_geofabrik_yymmdd_candidates(from: NaiveDate, days_back: u32) -> Ve
         let Some(day) = from.checked_sub_signed(ChronoDuration::days(i64::from(offset))) else {
             break;
         };
-        let yymmdd = (day.year() % 100) as u32 * 10_000
-            + day.month() * 100
-            + day.day();
+        let yymmdd = (day.year() % 100) as u32 * 10_000 + day.month() * 100 + day.day();
         out.push(yymmdd);
     }
     out
@@ -261,10 +259,7 @@ fn default_retry_backoff_ms(attempt: u32) -> u64 {
     500u64.saturating_mul(3u64.saturating_pow(attempt.saturating_sub(1)))
 }
 
-async fn resolve_via_region_html(
-    client: &Client,
-    parts: &GeofabrikLatestParts,
-) -> Option<String> {
+async fn resolve_via_region_html(client: &Client, parts: &GeofabrikLatestParts) -> Option<String> {
     let html_url = format!("https://download.geofabrik.de/{}.html", parts.stem);
     for attempt in 1..=GEOFABRIK_RESOLVE_HTML_ATTEMPTS {
         let resp = match client
@@ -299,7 +294,8 @@ async fn resolve_via_region_html(
                 short_url(&html_url)
             );
             if is_transient_http_status(status) && attempt < GEOFABRIK_RESOLVE_HTML_ATTEMPTS {
-                tokio::time::sleep(Duration::from_millis(geofabrik_retry_backoff_ms(attempt))).await;
+                tokio::time::sleep(Duration::from_millis(geofabrik_retry_backoff_ms(attempt)))
+                    .await;
                 continue;
             }
             return None;
@@ -320,10 +316,7 @@ async fn resolve_via_region_html(
             }
         };
         if let Some(href) = newest_dated_pbf_href_from_geofabrik_html(&html, &parts.leaf) {
-            return Some(format!(
-                "https://download.geofabrik.de/{}{href}",
-                parts.dir
-            ));
+            return Some(format!("https://download.geofabrik.de/{}{href}", parts.dir));
         }
         log::warn!(
             target: "NaviDownload",
@@ -336,9 +329,7 @@ async fn resolve_via_region_html(
 }
 
 /// Follow-less probe of `-latest` for a 3xx `Location` pointing at a dated PBF.
-async fn resolve_via_latest_redirect(
-    parts: &GeofabrikLatestParts,
-) -> Option<String> {
+async fn resolve_via_latest_redirect(parts: &GeofabrikLatestParts) -> Option<String> {
     let no_redirect = Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(20))
@@ -1031,8 +1022,10 @@ mod tests {
         assert_eq!(geofabrik_retry_backoff_ms(3), 8_000);
         assert_eq!(geofabrik_retry_backoff_ms(6), 60_000);
         assert_eq!(geofabrik_retry_backoff_ms(10), 60_000);
-        assert!(GEOFABRIK_EXTRACT_RETRIES > DEFAULT_RETRIES);
-        assert!(GEOFABRIK_EXTRACT_RETRIES >= 6);
+        const {
+            assert!(GEOFABRIK_EXTRACT_RETRIES > DEFAULT_RETRIES);
+            assert!(GEOFABRIK_EXTRACT_RETRIES >= 6);
+        }
     }
 
     #[test]

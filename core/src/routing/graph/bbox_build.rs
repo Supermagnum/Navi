@@ -756,7 +756,8 @@ impl RouteGraph {
         const TERMINAL_VACUUM_DEG: f64 = 0.015; // ~1.7 km
         let near_terminal = |lat: f64, lon: f64| -> bool {
             terminal_coords.iter().any(|(tlat, tlon)| {
-                (lat - tlat).abs() <= TERMINAL_VACUUM_DEG && (lon - tlon).abs() <= TERMINAL_VACUUM_DEG
+                (lat - tlat).abs() <= TERMINAL_VACUUM_DEG
+                    && (lon - tlon).abs() <= TERMINAL_VACUUM_DEG
             })
         };
         let mut near_ids: HashSet<i64> = HashSet::new();

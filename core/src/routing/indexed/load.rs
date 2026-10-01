@@ -1315,6 +1315,7 @@ const MIN_FERRY_OVERLAY_PBF_BYTES: u64 = 1_000_000;
 /// Short `ferry=yes` approach roads must not skip the overlay.
 const MIN_LONG_FERRY_M: f64 = 2_000.0;
 
+#[cfg(test)]
 fn graph_has_long_ferry(graph: &RouteGraph) -> bool {
     graph
         .edges
@@ -1332,13 +1333,11 @@ fn point_in_bbox(lat: f64, lon: f64, bbox: [f64; 4]) -> bool {
 /// overlay.
 fn graph_hop_already_connected(graph: &RouteGraph, a: (f64, f64), b: (f64, f64)) -> bool {
     let opts = crate::routing::graph::RouteOptions::default();
-    let Ok((start, _)) =
-        graph.nearest_routable_with_options_max(a.0, a.1, &opts, false, 25_000.0)
+    let Ok((start, _)) = graph.nearest_routable_with_options_max(a.0, a.1, &opts, false, 25_000.0)
     else {
         return false;
     };
-    let Ok((goal, _)) =
-        graph.nearest_routable_with_options_max(b.0, b.1, &opts, false, 25_000.0)
+    let Ok((goal, _)) = graph.nearest_routable_with_options_max(b.0, b.1, &opts, false, 25_000.0)
     else {
         return false;
     };
@@ -2666,7 +2665,6 @@ mod ferry_overlay_tests {
         ));
     }
 
-
     /// Live pack probe: SH+DK tiles clip Puttgarden/Rødby; overlay must bridge.
     /// Run: `NAVI_FEHMARN_PROBE_DIR=/tmp/navi-fehmarn-probe/packs cargo test -p driver-break-core fehmarn_pack_ferry_overlay_bridges -- --ignored --nocapture`
     #[test]
@@ -2732,7 +2730,10 @@ mod ferry_overlay_tests {
             Some(&hop),
         );
         let ferry_after = out.edges.iter().filter(|e| e.is_ferry).count();
-        eprintln!("ferry_edges {ferry_before} -> {ferry_after}; nodes={}", out.nodes.len());
+        eprintln!(
+            "ferry_edges {ferry_before} -> {ferry_after}; nodes={}",
+            out.nodes.len()
+        );
         assert!(ferry_after > ferry_before, "overlay must add ferry edges");
         // Island-interior anchors avoid snapping onto orphan pier tips.
         let opts = crate::routing::graph::RouteOptions::default();
@@ -2743,7 +2744,10 @@ mod ferry_overlay_tests {
             .nearest_routable_with_options_max(hop[1].0, hop[1].1, &opts, false, 25_000.0)
             .expect("snap goal");
         let path = out.shortest_path(start, goal, false);
-        assert!(path.is_some(), "A* must connect Bevensen densify hop across Fehmarn");
+        assert!(
+            path.is_some(),
+            "A* must connect Bevensen densify hop across Fehmarn"
+        );
         let (_n, edges, _c) = path.unwrap();
         assert!(out.path_uses_ferries(&edges), "path should use a ferry");
     }
