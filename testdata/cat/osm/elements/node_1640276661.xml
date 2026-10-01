@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='utf-8'?>
+<osm version="0.6" generator="fetch-cat-fixtures"><node id="1640276661" visible="true" version="13" changeset="189693189" timestamp="2026-09-28T18:42:26Z" user="Visaman" uid="237638" lat="60.5695830" lon="10.9379810">
+  <tag k="callsign" v="LA6GR" />
+  <tag k="communication:amateur_radio" v="yes" />
+  <tag k="communication:amateur_radio:callsign" v="LA6GR" />
+  <tag k="communication:amateur_radio:repeater" v="yes" />
+  <tag k="communication:amateur_radio:repeater:ctcss" v="71.9" />
+  <tag k="communication:amateur_radio:repeater:frequency_out" v="434.75 MHz" />
+  <tag k="communication:amateur_radio:repeater:modulation" v="11K2F3E" />
+  <tag k="communication:amateur_radio:repeater:shift" v="-2 MHz" />
+  <tag k="communication:mobile_phone" v="yes" />
+  <tag k="description" v="Totenåsen" />
+  <tag k="ele" v="841" />
+  <tag k="group" v="Innlandsnettet" />
+  <tag k="height" v="33" />
+  <tag k="man_made" v="mast" />
+  <tag k="note" v="Torseterkampen" />
+  <tag k="nrrl:group_page" v="https://nrrl.no/grupper/innlandet/sambandstjenesten-innlandet/" />
+  <tag k="ref:hinder" v="69505" />
+  <tag k="source" v="Kartverket Luftfartshindre" />
+  <tag k="tower:type" v="communication" />
+ </node>
+ </osm>

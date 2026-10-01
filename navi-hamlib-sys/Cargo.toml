@@ -1,0 +1,17 @@
+[package]
+name = "navi-hamlib-sys"
+version.workspace = true
+edition.workspace = true
+license = "LGPL-2.1-or-later"
+repository.workspace = true
+description = "Minimal hand-written FFI bindings to Hamlib (RX/VFO program only; never binds rig_set_ptt)"
+rust-version.workspace = true
+
+[features]
+default = []
+## Link against system/shared libhamlib. Without this feature the crate still
+## builds: types and stub symbols are available for compile-only / CI hosts.
+link-hamlib = []
+
+[dependencies]
+libc.workspace = true

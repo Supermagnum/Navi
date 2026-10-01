@@ -2916,6 +2916,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "navi-cat"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "navi-hamlib-sys",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "navi-desktop"
 version = "0.1.0"
 dependencies = [
@@ -2959,6 +2974,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "navi-hamlib-sys"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "navi-linux"
 version = "0.1.0"
 dependencies = [
@@ -2971,6 +2993,16 @@ name = "navi-plugin-busy-loop"
 version = "0.1.0"
 dependencies = [
  "navi-plugin-sdk",
+ "wee_alloc",
+]
+
+[[package]]
+name = "navi-plugin-cats"
+version = "0.1.0"
+dependencies = [
+ "navi-plugin-sdk",
+ "serde",
+ "serde_json",
  "wee_alloc",
 ]
 

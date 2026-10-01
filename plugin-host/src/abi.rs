@@ -25,6 +25,10 @@ pub enum Capability {
     VehicleProfileRead,
     TravellerProfileRead,
     RouteDestinationRead,
+    CatStatus,
+    RepeaterQuery,
+    CatVfoSet,
+    CatNetworkFollow,
 }
 
 impl Capability {
@@ -47,6 +51,10 @@ impl Capability {
             Self::VehicleProfileRead => "vehicle_profile_read",
             Self::TravellerProfileRead => "traveller_profile_read",
             Self::RouteDestinationRead => "route_destination_read",
+            Self::CatStatus => "cat_status",
+            Self::RepeaterQuery => "repeater_query",
+            Self::CatVfoSet => "cat_vfo_set",
+            Self::CatNetworkFollow => "cat_network_follow",
         }
     }
 
@@ -69,6 +77,10 @@ impl Capability {
             "vehicle_profile_read" => Some(Self::VehicleProfileRead),
             "traveller_profile_read" => Some(Self::TravellerProfileRead),
             "route_destination_read" => Some(Self::RouteDestinationRead),
+            "cat_status" => Some(Self::CatStatus),
+            "repeater_query" => Some(Self::RepeaterQuery),
+            "cat_vfo_set" => Some(Self::CatVfoSet),
+            "cat_network_follow" => Some(Self::CatNetworkFollow),
             _ => None,
         }
     }
@@ -93,6 +105,10 @@ impl Capability {
             Self::VehicleProfileRead,
             Self::TravellerProfileRead,
             Self::RouteDestinationRead,
+            Self::CatStatus,
+            Self::RepeaterQuery,
+            Self::CatVfoSet,
+            Self::CatNetworkFollow,
         ]
     }
 }
@@ -354,6 +370,30 @@ pub trait HostApi: Send + Sync {
 
     fn traveller_profile_read(&self) -> TravellerProfileView {
         TravellerProfileView::default()
+    }
+
+    /// JSON status for CAT radio connection / gating / PTT. Default: disconnected.
+    fn cat_status(&self) -> String {
+        r#"{"connected":false,"reason":"cat host not wired"}"#.into()
+    }
+
+    /// JSON list of repeaters near lat/lon within radius_km (capped at 150).
+    fn repeater_query(&self, lat: f64, lon: f64, radius_km: f64, network_id: Option<&str>) -> String {
+        let _ = (lat, lon, radius_km, network_id);
+        "[]".into()
+    }
+
+    /// Program VFO 1; returns JSON **reported** state or error. Host must
+    /// enforce PTT/DCD, gating, and read-back.
+    fn cat_vfo_set(&mut self, request_json: &str) -> String {
+        let _ = request_json;
+        r#"{"ok":false,"error":"cat host not wired"}"#.into()
+    }
+
+    /// Enable/disable/pin network follow. Returns JSON status.
+    fn cat_network_follow(&mut self, request_json: &str) -> String {
+        let _ = request_json;
+        r#"{"ok":false,"error":"cat host not wired"}"#.into()
     }
 }
 

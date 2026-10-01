@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="OpenStreetMap server" copyright="OpenStreetMap and contributors" attribution="http://www.openstreetmap.org/copyright" license="http://opendatacommons.org/licenses/odbl/1-0/">
+<changeset id="189704408" created_at="2026-09-29T01:36:45Z" open="false" comments_count="0" changes_count="1" created_count="0" modified_count="1" deleted_count="0" closed_at="2026-09-29T01:36:45Z" min_lat="60.7288728" min_lon="10.7051873" max_lat="60.7288754" max_lon="10.7051927" uid="237638" user="Visaman">
+  <tag k="changesets_count" v="3384"/>
+  <tag k="comment" v="merged duplicates"/>
+  <tag k="created_by" v="iD 2.42.2"/>
+  <tag k="host" v="https://www.openstreetmap.org/edit"/>
+  <tag k="imagery_used" v="Norway Orthophoto"/>
+  <tag k="locale" v="nb"/>
+</changeset>
+</osm>

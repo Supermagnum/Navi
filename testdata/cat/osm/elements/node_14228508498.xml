@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='utf-8'?>
+<osm version="0.6" generator="fetch-cat-fixtures"><node id="14228508498" visible="true" version="1" changeset="189693189" timestamp="2026-09-28T18:42:26Z" user="Visaman" uid="237638" lat="62.0885293" lon="9.1125116">
+  <tag k="callsign" v="LD2GB" />
+  <tag k="communication:amateur_radio" v="yes" />
+  <tag k="communication:amateur_radio:callsign" v="LD2GB" />
+  <tag k="communication:amateur_radio:repeater" v="yes" />
+  <tag k="communication:amateur_radio:repeater:frequency_out" v="144.8 MHz" />
+  <tag k="communication:amateur_radio:repeater:modulation" v="20K0F2D" />
+  <tag k="frequency" v="144.8" />
+  <tag k="group" v="Gudbrandsdal" />
+  <tag k="locator" v="JP42NC" />
+  <tag k="name" v="LD2GB" />
+  <tag k="nrrl:group_page" v="https://nrrl.no/grupper/innlandet/gudbrandsdalsgruppen/" />
+  <tag k="qth" v="Dombås" />
+  <tag k="website" v="https://www.la7g.no/" />
+ </node>
+ </osm>

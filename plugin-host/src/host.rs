@@ -406,7 +406,10 @@ fn install_imports(
         linker.func_wrap(
             "navi",
             "route_read",
-            |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
+            |mut caller: Caller<'_, StoreData>,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
                 let view = caller.data().api.route_read();
                 write_json_view(&mut caller, out_ptr, out_cap, &view, "route_read")
             },
@@ -417,9 +420,18 @@ fn install_imports(
         linker.func_wrap(
             "navi",
             "route_destination_read",
-            |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
+            |mut caller: Caller<'_, StoreData>,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
                 let view = caller.data().api.route_destination_read();
-                write_json_view(&mut caller, out_ptr, out_cap, &view, "route_destination_read")
+                write_json_view(
+                    &mut caller,
+                    out_ptr,
+                    out_cap,
+                    &view,
+                    "route_destination_read",
+                )
             },
         )?;
     }
@@ -428,7 +440,10 @@ fn install_imports(
         linker.func_wrap(
             "navi",
             "safety_config_read",
-            |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
+            |mut caller: Caller<'_, StoreData>,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
                 let view = caller.data().api.safety_config_read();
                 // `null` JSON when unavailable — guests must not treat as 0 m.
                 write_json_view(&mut caller, out_ptr, out_cap, &view, "safety_config_read")
@@ -458,7 +473,10 @@ fn install_imports(
         linker.func_wrap(
             "navi",
             "clock_read",
-            |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
+            |mut caller: Caller<'_, StoreData>,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
                 let view = caller.data().api.clock_read();
                 write_json_view(&mut caller, out_ptr, out_cap, &view, "clock_read")
             },
@@ -470,12 +488,10 @@ fn install_imports(
             "navi",
             "plugin_kv_status",
             |caller: Caller<'_, StoreData>| -> wasmtime::Result<i32> {
-                Ok(
-                    match caller.data().api.plugin_kv_status() {
-                        crate::abi::PluginKvStatus::Available => 1,
-                        crate::abi::PluginKvStatus::Unavailable => 0,
-                    },
-                )
+                Ok(match caller.data().api.plugin_kv_status() {
+                    crate::abi::PluginKvStatus::Available => 1,
+                    crate::abi::PluginKvStatus::Unavailable => 0,
+                })
             },
         )?;
         linker.func_wrap(
@@ -581,7 +597,10 @@ fn install_imports(
         linker.func_wrap(
             "navi",
             "travel_mode_read",
-            |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
+            |mut caller: Caller<'_, StoreData>,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
                 let view = caller.data().api.travel_mode_read();
                 write_json_view(&mut caller, out_ptr, out_cap, &view, "travel_mode_read")
             },
@@ -592,7 +611,10 @@ fn install_imports(
         linker.func_wrap(
             "navi",
             "vehicle_profile_read",
-            |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
+            |mut caller: Caller<'_, StoreData>,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
                 let view = caller.data().api.vehicle_profile_read();
                 write_json_view(&mut caller, out_ptr, out_cap, &view, "vehicle_profile_read")
             },
@@ -603,7 +625,10 @@ fn install_imports(
         linker.func_wrap(
             "navi",
             "traveller_profile_read",
-            |mut caller: Caller<'_, StoreData>, out_ptr: u32, out_cap: u32| -> wasmtime::Result<i32> {
+            |mut caller: Caller<'_, StoreData>,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
                 let view = caller.data().api.traveller_profile_read();
                 write_json_view(
                     &mut caller,
@@ -612,6 +637,90 @@ fn install_imports(
                     &view,
                     "traveller_profile_read",
                 )
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::CatStatus) {
+        linker.func_wrap(
+            "navi",
+            "cat_status",
+            |mut caller: Caller<'_, StoreData>,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let json = caller.data().api.cat_status();
+                let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
+                Ok(written as i32)
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::RepeaterQuery) {
+        linker.func_wrap(
+            "navi",
+            "repeater_query",
+            |mut caller: Caller<'_, StoreData>,
+             lat_bits: u64,
+             lon_bits: u64,
+             radius_km_bits: u64,
+             net_ptr: u32,
+             net_len: u32,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let lat = f64::from_bits(lat_bits);
+                let lon = f64::from_bits(lon_bits);
+                let radius_km = f64::from_bits(radius_km_bits).min(150.0).max(0.0);
+                let network_id = if net_len == 0 {
+                    None
+                } else {
+                    Some(read_guest_string(&mut caller, net_ptr, net_len)?)
+                };
+                let json = caller.data().api.repeater_query(
+                    lat,
+                    lon,
+                    radius_km,
+                    network_id.as_deref(),
+                );
+                let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
+                Ok(written as i32)
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::CatVfoSet) {
+        linker.func_wrap(
+            "navi",
+            "cat_vfo_set",
+            |mut caller: Caller<'_, StoreData>,
+             req_ptr: u32,
+             req_len: u32,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let req = read_guest_string(&mut caller, req_ptr, req_len)?;
+                let json = caller.data_mut().api.cat_vfo_set(&req);
+                let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
+                Ok(written as i32)
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::CatNetworkFollow) {
+        linker.func_wrap(
+            "navi",
+            "cat_network_follow",
+            |mut caller: Caller<'_, StoreData>,
+             req_ptr: u32,
+             req_len: u32,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let req = read_guest_string(&mut caller, req_ptr, req_len)?;
+                let json = caller.data_mut().api.cat_network_follow(&req);
+                let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
+                Ok(written as i32)
             },
         )?;
     }

@@ -304,19 +304,20 @@ internet weather overlay.
 | **Proposed caps** | `position_read`, `incident_query` / `incident_write` (new), `log` |
 | **UI** | Map banners + route recalc prompt; never rewrite the `.pbf` silently |
 
-### 4. CAT radio control (`cat`)
+### 4. CAT radio control (`CATS-plugin` / `cat`)
 
 | | |
 |---|---|
 | **Benefit** | Set VFO frequency / offset / CTCSS from nearby NFM repeaters while driving |
-| **Docs** | [`CAT.md`](CAT.md) — Hamlib 4.6.5 (NDK + FFI), Android transport, auto-tune, RepeaterBook + OSM onboard DB, Innlandsnettet example |
-| **Host duties** | CAT through **Hamlib 4.6.5** (NDK-built `libhamlib.so` + Navi’s minimal FFI crate); host owns the transport (USB/BT serial → loopback TCP, or remote `rigctld`) — see [`CAT.md`](CAT.md). Never auto-TX (`rig_get_ptt` interlock; never `rig_set_ptt`). Honour plugin enable/disable (close sessions when off). |
-| **Proposed caps** | `position_read`, `repeater_query` (new), `cat_vfo_set` (new, host-gated), `accessory_*` (USB), `log` |
-| **Safety** | Read/query free; **TX inhibited** unless user explicitly arms PTT path |
+| **Path** | [`plugins/CATS-plugin/`](../plugins/CATS-plugin/) — all guest logic here; wasmtime only |
+| **Docs** | [`CAT.md`](CAT.md) — `RigBackend` (TCP + FFI), latest-stable Hamlib lock, Android transports, read-back verification, auto-tune, network follow, onboard DB (OSM / AnyTone CSV / OpenRepeater / RadioID; RepeaterBook disabled) |
+| **Host duties** | `navi-cat` + `navi-hamlib-sys` + USB/BT loopback / remote `rigctld`; never auto-TX (`rig_get_ptt` interlock; never `rig_set_ptt` / `T`); enforce gating + read-back even if the guest misbehaves; close sessions on plugin disable |
+| **Caps** | `position_read`, `log`, `cat_status`, `repeater_query`, `cat_vfo_set`, `cat_network_follow` |
+| **Safety** | Read/query free; **TX inhibited**; program only when PTT clear and read-back matches |
 
 Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 **150 km**, resolve output frequency, shift/offset, and CTCSS/DCS, then program
-**VFO 1** only.
+**VFO 1** only (reported state returned to UI).
 
 Same client/display split as the planned LoRa convoy plugin (Navi does not
 implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convoy-spec.md).
@@ -474,8 +475,6 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 | `track_upsert` | Push APRS / track stations into host `TrackStore` |
 | `weather_read` | Read cached weather samples near lat/lon |
 | `incident_query` / `incident_write` | Road closures / convoy / accident overlays |
-| `repeater_query` | Nearest NFM repeaters from onboard DB (+ optional RepeaterBook sync) |
-| `cat_vfo_set` | Ask host to program VFO 1 (frequency, offset, tone) |
 | `ecu_read` | Latest `LiveEnergySnapshot` |
 | `ebike_telemetry_read` | Latest DIY `$NAVIPWR` / wired e-bike snapshot (host owns serial) |
 | `voice_speak` / `voice_pack_query` | Queue guidance utterance or list installed voice packs |
@@ -500,6 +499,15 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 | `accessory_list` / `accessory_open` / `accessory_read` / `accessory_write` / `accessory_close` | Host-mediated **USB** and **Bluetooth** (SPP/BLE) I/O for hardware plugins |
 | `convoy_status_read` | Last-known convoy table (position, speed, fuel/battery, seq, stale) for LoRa convoy UI |
 | `plugin_list` / `plugin_set_enabled` | Host-owned inventory and per-plugin enable/disable (UI + persistence) |
+
+### CAT capabilities (in ABI on `CAT` branch)
+
+| Cap | Purpose |
+|---|---|
+| `cat_status` | Connected, model, gating result, PTT, last reported VFO |
+| `repeater_query` | Nearest NFM/DMR sites from onboard DB (≤ 150 km; RepeaterBook never required) |
+| `cat_vfo_set` | Host programs VFO 1 with read-back; returns **reported** state |
+| `cat_network_follow` | Enable/pin/disable network follow; host loop + interlocks |
 
 Add a capability to `plugin-host` `Capability` enum + HostApi **before** shipping
 any guest that needs it. Until then, host-native services may write into core

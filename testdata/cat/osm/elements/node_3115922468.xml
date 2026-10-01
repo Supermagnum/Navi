@@ -1,0 +1,20 @@
+<?xml version='1.0' encoding='utf-8'?>
+<osm version="0.6" generator="fetch-cat-fixtures"><node id="3115922468" visible="true" version="8" changeset="189693189" timestamp="2026-09-28T18:42:26Z" user="Visaman" uid="237638" lat="61.2803118" lon="10.3113599">
+  <tag k="addr:city" v="Tretten" />
+  <tag k="addr:housenumber" v="1101" />
+  <tag k="addr:postcode" v="2635" />
+  <tag k="addr:street" v="Kongsvegen" />
+  <tag k="callsign" v="LA5ARR" />
+  <tag k="communication:amateur_radio" v="yes" />
+  <tag k="communication:amateur_radio:callsign" v="LA5ARR" />
+  <tag k="communication:amateur_radio:repeater" v="yes" />
+  <tag k="communication:amateur_radio:repeater:ctcss" v="71.9" />
+  <tag k="communication:amateur_radio:repeater:frequency_out" v="434.775 MHz" />
+  <tag k="communication:amateur_radio:repeater:modulation" v="11K2F3E" />
+  <tag k="communication:amateur_radio:repeater:shift" v="-2 MHz" />
+  <tag k="group" v="Gjøvik og Toten" />
+  <tag k="note" v="Tverrberget. OSM node/3115922468 (LA5ARR, LD2GS)." />
+  <tag k="nrrl:group_page" v="https://nrrl.no/grupper/innlandet/gjovik-og-totengruppa/" />
+  <tag k="website" v="https://www.la5g.no/" />
+ </node>
+ </osm>
