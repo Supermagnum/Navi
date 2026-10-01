@@ -908,13 +908,63 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         Thread.sleep(ms)
     }
 
+    private fun dismissOverlaySheets() {
+        NaviMapTestHooks.requestCloseTools = true
+        settle(200)
+        clickTagSoft("btn_close_tools")
+        clickTagSoft("btn_save_tools")
+        clickTagSoft("btn_close_vehicle")
+        clickTagSoft("btn_close_drive_settings")
+        // Tools sheet Close / Hide tools only — do not tap bare "Close" (that also
+        // matches btn_close_search and collapses the route panel).
+        runCatching { device.findObject(By.text("Hide tools"))?.click() }
+        settle(300)
+    }
+
     private fun openRoutePanel() {
-        runCatching {
-            composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
-        }.onFailure {
-            clickTag("btn_open_search")
+        // Prefer existing search field; only dismiss Tools/vehicle sheets when needed.
+        val already =
+            runCatching {
+                composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
+                true
+            }.getOrDefault(false)
+        if (already) {
+            noteUi("open_route_panel", "field_search already visible")
+            return
+        }
+        dismissOverlaySheets()
+        val afterDismiss =
+            runCatching {
+                composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
+                true
+            }.getOrDefault(false)
+        if (afterDismiss) {
+            noteUi("open_route_panel", "field_search visible after dismissing sheets")
+            return
+        }
+        // Collapsed planning chrome exposes btn_open_search ("Route").
+        clickTagSoft("btn_open_search")
+        settle(400)
+        runCatching { device.findObject(By.text("Route"))?.click() }
+        settle(500)
+        val deadline = SystemClock.elapsedRealtime() + 8_000
+        while (SystemClock.elapsedRealtime() < deadline) {
+            val ok =
+                runCatching {
+                    composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
+                    true
+                }.getOrDefault(false)
+            if (ok) {
+                noteUi("open_route_panel", "field_search visible after reopen")
+                return
+            }
+            dismissOverlaySheets()
+            clickTagSoft("btn_open_search")
+            runCatching { device.findObject(By.text("Route"))?.click() }
+            settle(400)
         }
         composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
+        noteUi("open_route_panel", "field_search visible (final)")
     }
 
     private fun clickTag(tag: String) {

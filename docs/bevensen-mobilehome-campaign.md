@@ -1,5 +1,43 @@
 # Bad Bevensen → Dalsøren MobileHome campaign
 
+## Latest run — 2026-10-01 (FAIL — no ship)
+
+Branch: **`right-to-roam`** (Fehmarn densify bias + tunnel tag retain on branch).
+Emulator: `Navi_8c_4G_128G`. UI-only runner
+`LongTripMobileHomeBevensenDalsorenUiCampaignTest`. Host ADB GPS + 6 synthetic
+DATEX Blocks (re-pin). Two full UI attempts same day; both fail identically.
+No version bump / tag / push (plan not found).
+
+| Metric | Result | EXPECTED | OK |
+|---|---|---|---|
+| Distance | **0 km** (no stitched plan) | 1461.3–1648.6 km | no |
+| Driving time | **0** | 17–~22 h | no |
+| Instructions | **0** | 55–100 | no |
+| DATEX host inject | **yes** (6 sits; `xml_bytes=15501`) | must happen | host ok |
+| DATEX in plan | **no** (`max_datex_impacts=0`) | applied on legs | n/a (no plan) |
+| Plan | **FAIL** `chunk_leg2` `bbox_exhausted` / `disconnected` | found | no |
+
+Densify after Fehmarn fix (correct corridor intent):
+
+- `chunk_leg1` Bevensen → `(54.210, 11.025)` **PASS** ~167 km (`graph_ferry_edges=0`)
+- `chunk_leg2` `(54.210, 11.025)` → `(55.175, 11.700)` **FAIL** disconnected
+  across Fehmarn Belt water (pads 0.35→1.4; TripAabb fallback also disconnected)
+
+So densify now aims at Puttgarden/Rødby, but the live packs still expose
+**no ferry edges** on that hop (`graph_ferry_edges=0` on leg1; leg2 never
+snaps a cross-belt path). Ship gate not met.
+
+Corridor download order (SD `long-trip-packs`, local-first): Niedersachsen →
+Schleswig-Holstein → Denmark → Skåne → Halland → Västra Götaland → Ostlandet →
+Sorlandet → Vestlandet. Final status: all Indexed except Vestlandet Installed
+at plan end. `graph_format_version` mixed 8/9 from `current.json`. RAM PSS
+before / post-plan / final ≈ 165 / 810 / 515 MiB.
+
+Harness note (androidTest only): ported Elsa-style resilient `openRoutePanel`
+after vehicle-sheet left `btn_open_search` missing.
+
+---
+
 Date: **2026-09-30**. Branch: **`right-to-roam`**. UI campaign PASS with
 EXPECTED distance / duration / maneuvers and synthetic DATEX applied.
 
