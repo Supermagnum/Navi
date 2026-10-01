@@ -1775,9 +1775,9 @@ mod tests {
             "E6 spine must be suppressed with northern SE Ready; hops={hops:?}"
         );
         // Expect densify to follow SE transit (Pajala / Umeå class).
-        let pajala = hops.iter().any(|(lat, lon)| {
-            *lat > 66.0 && *lat < 67.5 && *lon > 22.0 && *lon < 24.5
-        });
+        let pajala = hops
+            .iter()
+            .any(|(lat, lon)| *lat > 66.0 && *lat < 67.5 && *lon > 22.0 && *lon < 24.5);
         let umea = hops
             .iter()
             .any(|(lat, lon)| *lat > 63.4 && *lat < 64.3 && *lon > 19.5 && *lon < 21.5);

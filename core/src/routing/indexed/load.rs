@@ -954,9 +954,7 @@ fn try_load_graph_for_plan_corridor_dirs(
                         let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
                             continue;
                         };
-                        if stem == man.stem.as_str()
-                            || extras.iter().any(|m| m.stem == stem)
-                        {
+                        if stem == man.stem.as_str() || extras.iter().any(|m| m.stem == stem) {
                             continue;
                         }
                         let Some(home) = home_dir_for_stem(dirs, stem) else {

@@ -153,6 +153,7 @@ class BasemapPoiStyleTest {
         }
         // Tunnel road layers must sit under their surface counterparts.
         val text = templateFile().readText()
+
         fun layerIndex(id: String): Int {
             val at = text.indexOf("\"id\": \"$id\"")
             assertTrue("missing layer $id", at >= 0)
