@@ -1229,13 +1229,18 @@ fn try_load_graph_for_plan_corridor_dirs(
             }
         }
         if graphs.len() == 1 {
-            return Ok(graphs.pop().unwrap());
+            let g = graphs.pop().unwrap();
+            return Ok(supplement_pack_ferries_from_pbf(
+                g, dirs, &man, &extras, profile, clip_bbox, edge_clips,
+            ));
         }
         let merged = merge_tile_graphs(graphs, profile);
         if merged.edges.is_empty() {
             return Err(PackLoadError::Missing);
         }
-        return Ok(merged);
+        return Ok(supplement_pack_ferries_from_pbf(
+            merged, dirs, &man, &extras, profile, clip_bbox, edge_clips,
+        ));
     }
 
     let mut graphs = Vec::new();
@@ -1276,7 +1281,93 @@ fn try_load_graph_for_plan_corridor_dirs(
     if merged.edges.is_empty() {
         return Err(PackLoadError::Missing);
     }
-    Ok(merged)
+    Ok(supplement_pack_ferries_from_pbf(
+        merged, dirs, &man, &extras, profile, clip_bbox, edge_clips,
+    ))
+}
+
+/// When published packs were baked without `route=ferry` ways, merge a ferry-only
+/// overlay from on-disk Geofabrik `.osm.pbf` extracts so water hops (Fehmarn)
+/// stay connected until packs are rebaked.
+fn supplement_pack_ferries_from_pbf(
+    graph: RouteGraph,
+    dirs: &[&Path],
+    primary: &NaviManifest,
+    extras: &[NaviManifest],
+    profile: RoutingProfile,
+    clip_bbox: Option<[f64; 4]>,
+    edge_clips: Option<&[[f64; 4]]>,
+) -> RouteGraph {
+    // Short `ferry=yes` approach roads must not skip the overlay — only a
+    // real water-crossing length counts as coverage (Fehmarn ~19 km).
+    if graph
+        .edges
+        .iter()
+        .any(|e| e.is_ferry && e.length_m >= 2_000.0)
+    {
+        return graph;
+    }
+    let bbox = clip_bbox.or_else(|| {
+        edge_clips.and_then(|clips| {
+            let mut iter = clips.iter();
+            let first = *iter.next()?;
+            let mut out = first;
+            for s in iter {
+                out[0] = out[0].min(s[0]);
+                out[1] = out[1].min(s[1]);
+                out[2] = out[2].max(s[2]);
+                out[3] = out[3].max(s[3]);
+            }
+            Some(out)
+        })
+    });
+    let Some(bbox) = bbox else {
+        return graph;
+    };
+    // Modest pad so ferry terminals just outside the corridor band still load.
+    let bbox = expand_bbox_deg(bbox, 0.05);
+    let mut stems = Vec::with_capacity(1 + extras.len());
+    stems.push(primary.stem.clone());
+    for e in extras {
+        if !stems.iter().any(|s| s == &e.stem) {
+            stems.push(e.stem.clone());
+        }
+    }
+    let mut overlays = Vec::new();
+    for stem in &stems {
+        let Some(home) = home_dir_for_stem(dirs, stem) else {
+            continue;
+        };
+        let pbf = home.join(format!("{stem}.osm.pbf"));
+        if !pbf.is_file() {
+            continue;
+        }
+        match RouteGraph::build_ferry_overlay_from_pbf(&pbf, profile, bbox) {
+            Ok(fg) if fg.edges.iter().any(|e| e.is_ferry) => {
+                log::info!(
+                    target: "NaviPlan",
+                    "ferry_overlay stem={stem} ferry_edges={} nodes={}",
+                    fg.edges.iter().filter(|e| e.is_ferry).count(),
+                    fg.nodes.len()
+                );
+                overlays.push(fg);
+            }
+            Ok(_) => {}
+            Err(e) => {
+                log::warn!(
+                    target: "NaviPlan",
+                    "ferry_overlay stem={stem} failed: {e:#}"
+                );
+            }
+        }
+    }
+    if overlays.is_empty() {
+        return graph;
+    }
+    let mut parts = Vec::with_capacity(1 + overlays.len());
+    parts.push(graph);
+    parts.extend(overlays);
+    merge_tile_graphs(parts, profile)
 }
 
 /// Choose the Ready manifest for planning: prefer a stem whose region covers

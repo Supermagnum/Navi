@@ -281,10 +281,7 @@ fn spill_tiled_highway_ways(
                             .map(|(k, v)| (k.to_string(), v.to_string()))
                             .collect(),
                     );
-                    let Some(highway) = tags.get("highway") else {
-                        return;
-                    };
-                    if !highway_ok_for_any(highway, profiles) {
+                    if !way_ok_for_any(&tags, profiles) {
                         return;
                     }
                     let refs: Vec<i64> = way.refs().collect();
@@ -350,7 +347,41 @@ fn car_highway_ok(highway: &str) -> bool {
             | "road"
             | "service"
             | "track"
+            // Rare OSM form; most ferries are `route=ferry` without highway (see
+            // [`tags_indicate_ferry`]).
+            | "ferry"
     )
+}
+
+/// OSM car/foot ferry ways: typically `route=ferry` with **no** `highway=*`.
+/// Pass 1 used to require a highway class and dropped these entirely, so pack
+/// graphs reported `graph_ferry_edges=0` and Fehmarn-style densify hops
+/// disconnected across water.
+fn tags_indicate_ferry(tags: &HashMap<String, String>) -> bool {
+    tags.get("route")
+        .is_some_and(|v| v.eq_ignore_ascii_case("ferry"))
+        || tags
+            .get("highway")
+            .is_some_and(|v| v.eq_ignore_ascii_case("ferry"))
+        || tags
+            .get("ferry")
+            .is_some_and(|v| super::builder::is_truthy_tag(v))
+}
+
+fn way_ok_for_profile(tags: &HashMap<String, String>, profile: RoutingProfile) -> bool {
+    if tags_indicate_ferry(tags) {
+        // Keep ferries for every profile; [`access::tags_forbid_mode`] drops
+        // vehicle-only / pedestrian-no cases when building edges.
+        return true;
+    }
+    let Some(highway) = tags.get("highway") else {
+        return false;
+    };
+    highway_ok_for_profile(highway, profile)
+}
+
+fn way_ok_for_any(tags: &HashMap<String, String>, profiles: &[RoutingProfile]) -> bool {
+    profiles.iter().any(|&p| way_ok_for_profile(tags, p))
 }
 
 fn non_motorway_car_highway_ok(highway: &str) -> bool {
@@ -385,10 +416,6 @@ fn highway_ok_for_profile(highway: &str, profile: RoutingProfile) -> bool {
                 || matches!(highway, "cycleway" | "path" | "footway")
         }
     }
-}
-
-fn highway_ok_for_any(highway: &str, profiles: &[RoutingProfile]) -> bool {
-    profiles.iter().any(|&p| highway_ok_for_profile(highway, p))
 }
 
 fn profile_label(profile: RoutingProfile) -> &'static str {
@@ -475,10 +502,7 @@ impl RouteGraph {
                         .map(|(k, v)| (k.to_string(), v.to_string()))
                         .collect(),
                 );
-                let Some(highway) = tags.get("highway") else {
-                    return;
-                };
-                if !highway_ok_for_profile(highway, profile) {
+                if !way_ok_for_profile(&tags, profile) {
                     return;
                 }
                 let refs: Vec<i64> = way.refs().collect();
@@ -542,6 +566,93 @@ impl RouteGraph {
             anyhow::bail!("bbox graph empty for {bbox:?} from {}", path.display());
         }
         Ok(graph)
+    }
+
+    /// Ferry-only overlay from a region `.osm.pbf` (typically `route=ferry` with
+    /// no `highway`). Used to patch pack graphs baked before ferry ways were
+    /// retained, so Fehmarn-style hops can connect without a full pack rebake
+    /// when the Geofabrik extract is still on disk.
+    pub fn build_ferry_overlay_from_pbf(
+        path: impl AsRef<Path>,
+        profile: RoutingProfile,
+        bbox: [f64; 4],
+    ) -> anyhow::Result<Self> {
+        let path = path.as_ref();
+        let mut in_bbox_ids: HashSet<i64> = HashSet::new();
+        {
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
+                Element::Node(n) => {
+                    if in_bbox(n.lat(), n.lon(), bbox) {
+                        in_bbox_ids.insert(n.id());
+                    }
+                }
+                Element::DenseNode(n) if in_bbox(n.lat(), n.lon(), bbox) => {
+                    in_bbox_ids.insert(n.id());
+                }
+                _ => {}
+            })?;
+        }
+
+        let mut ways: Vec<RawWay> = Vec::new();
+        let mut needed: HashSet<i64> = HashSet::new();
+        {
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+                let Element::Way(way) = element else {
+                    return;
+                };
+                let tags = filter_way_tags(
+                    way.tags()
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect(),
+                );
+                if !tags_indicate_ferry(&tags) {
+                    return;
+                }
+                if !way_ok_for_profile(&tags, profile) {
+                    return;
+                }
+                let refs: Vec<i64> = way.refs().collect();
+                if refs.is_empty() {
+                    return;
+                }
+                if !refs.iter().any(|id| in_bbox_ids.contains(id)) {
+                    return;
+                }
+                for id in &refs {
+                    needed.insert(*id);
+                }
+                ways.push(RawWay {
+                    id: way.id(),
+                    nodes: refs,
+                    tags,
+                });
+            })?;
+        }
+        drop(in_bbox_ids);
+
+        if ways.is_empty() {
+            return Ok(Self::from_parts(HashMap::new(), Vec::new(), profile));
+        }
+
+        let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
+        let barrier_tags: HashMap<i64, HashMap<String, String>> = HashMap::new();
+        {
+            crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
+                Element::Node(n) => {
+                    if needed.contains(&n.id()) {
+                        coords.insert(n.id(), (n.lat(), n.lon()));
+                    }
+                }
+                Element::DenseNode(n) if needed.contains(&n.id()) => {
+                    coords.insert(n.id(), (n.lat(), n.lon()));
+                }
+                _ => {}
+            })?;
+        }
+        drop(needed);
+
+        let arcs: Vec<Arc<RawWay>> = ways.into_iter().map(Arc::new).collect();
+        graph_from_raw_ways(&arcs, &coords, profile, &barrier_tags)
     }
 
     /// Build graphs for all spatial tiles with **two PBF passes total** (not
@@ -711,15 +822,8 @@ impl RouteGraph {
                 let file = std::fs::File::open(ways_spill.path())?;
                 let mut reader = BufReader::new(file);
                 while let Some(way) = read_spilled_way(&mut reader)? {
-                    let Some(highway) = way
-                        .tags
-                        .iter()
-                        .find(|(k, _)| k == "highway")
-                        .map(|(_, v)| v.as_str())
-                    else {
-                        continue;
-                    };
-                    if !highway_ok_for_profile(highway, profile) {
+                    let tags_map: HashMap<String, String> = way.tags.iter().cloned().collect();
+                    if !way_ok_for_profile(&tags_map, profile) {
                         continue;
                     }
                     let mut mask = 0u64;
@@ -1078,8 +1182,7 @@ fn graph_from_raw_ways(
         let is_toll = crate::routing::toll::toll_applies_for_profile(profile, |k| {
             way.tags.get(k).map(String::as_str)
         });
-        let is_ferry =
-            way.tags.get("route").is_some_and(|v| v == "ferry") || way.tags.contains_key("ferry");
+        let is_ferry = tags_indicate_ferry(&way.tags);
         let is_tunnel = way
             .tags
             .get("tunnel")
@@ -1328,6 +1431,62 @@ fn bbox_edge(
 mod bbox_tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::Arc;
+
+    #[test]
+    fn route_ferry_without_highway_is_kept_for_car() {
+        let ferry = HashMap::from([
+            ("route".into(), "ferry".into()),
+            ("motor_vehicle".into(), "yes".into()),
+            ("name".into(), "Puttgarden - Rodby".into()),
+        ]);
+        assert!(tags_indicate_ferry(&ferry));
+        assert!(way_ok_for_profile(&ferry, RoutingProfile::Car));
+        assert!(!way_ok_for_profile(
+            &HashMap::from([("route".into(), "bus".into())]),
+            RoutingProfile::Car
+        ));
+
+        // Land — ferry — land sharing terminal nodes (Fehmarn-shaped hop).
+        let coords = HashMap::from([
+            (1_i64, (54.50, 11.20)),
+            (2, (54.503, 11.226)),
+            (3, (54.655, 11.352)),
+            (4, (54.66, 11.36)),
+        ]);
+        let ways = vec![
+            Arc::new(RawWay {
+                id: 10,
+                nodes: vec![1, 2],
+                tags: HashMap::from([("highway".into(), "primary".into())]),
+            }),
+            Arc::new(RawWay {
+                id: 11,
+                nodes: vec![2, 3],
+                tags: ferry,
+            }),
+            Arc::new(RawWay {
+                id: 12,
+                nodes: vec![3, 4],
+                tags: HashMap::from([("highway".into(), "primary".into())]),
+            }),
+        ];
+        let g = graph_from_raw_ways(&ways, &coords, RoutingProfile::Car, &HashMap::new())
+            .expect("ferry corridor graph");
+        let ferry_n = g.edges.iter().filter(|e| e.is_ferry).count();
+        assert!(
+            ferry_n > 0,
+            "route=ferry without highway must yield ferry edges; edges={}",
+            g.edges.len()
+        );
+        assert!(
+            g.nodes.contains_key(&NodeId(2)) && g.nodes.contains_key(&NodeId(3)),
+            "ferry terminals must be graph nodes"
+        );
+        // Bidirectional ferry + two land edges => connectivity across the belt.
+        let has_land = g.edges.iter().any(|e| !e.is_ferry);
+        assert!(has_land, "land approaches must remain");
+    }
 
     #[test]
     fn bbox_build_gps_atnbrua_from_ostlandet() {
