@@ -345,16 +345,12 @@ fn tile_counts_as_endpoint_cover(
     if !crate::routing::basemap::bbox_covers_point(tile_bbox, lat, lon) {
         return false;
     }
-    let stem = tile_name
-        .split(".navi-graph-")
-        .next()
-        .unwrap_or(tile_name);
+    let stem = tile_name.split(".navi-graph-").next().unwrap_or(tile_name);
     let Some(path) = pbf_stem_to_geofabrik_path(stem) else {
         return true;
     };
     let leaf_ready_covers = ready_paths.iter().any(|(p, b)| {
-        p.matches('/').count() >= 2
-            && crate::routing::basemap::bbox_covers_point(*b, lat, lon)
+        p.matches('/').count() >= 2 && crate::routing::basemap::bbox_covers_point(*b, lat, lon)
     });
     if leaf_ready_covers
         && crate::routing::plan_bbox::densify_skip_country_when_leaves_ready(&path, ready_paths)
@@ -551,9 +547,9 @@ fn select_tiles_within_budget(
         // is lossy; prefer dropping largest extras while endpoints stay covered.
         // Country AABB spill must not count as covering a leaf endpoint.
         let covers = |files: &[(String, [f64; 4])], lat: f64, lon: f64| -> bool {
-            files.iter().any(|(n, b)| {
-                tile_counts_as_endpoint_cover(n, *b, lat, lon, &ready_paths)
-            })
+            files
+                .iter()
+                .any(|(n, b)| tile_counts_as_endpoint_cover(n, *b, lat, lon, &ready_paths))
         };
         while selected.len() > max_tiles {
             let mut dropped = false;
@@ -592,9 +588,9 @@ fn select_tiles_within_budget(
             .fold(0u64, u64::saturating_add)
     };
     let covers = |files: &[(String, [f64; 4])], lat: f64, lon: f64| -> bool {
-        files.iter().any(|(n, b)| {
-            tile_counts_as_endpoint_cover(n, *b, lat, lon, &ready_paths)
-        })
+        files
+            .iter()
+            .any(|(n, b)| tile_counts_as_endpoint_cover(n, *b, lat, lon, &ready_paths))
     };
     while total_bytes(&selected) > max_bytes && selected.len() > 2 {
         let mut dropped = false;
@@ -928,6 +924,67 @@ fn try_load_graph_for_plan_corridor_dirs(
                     || crate::routing::basemap::bbox_covers_point(region, pts[1].0, pts[1].1)
                     || segs_ref.is_some_and(|segs| segs.iter().any(|s| bbox_intersects(region, *s)))
             });
+            // Catalog country AABBs spill across borders (Finland over eastern
+            // Finnmark). When both hop ends PIP to the same leaf, foreign
+            // extras that only match via AABB steal the plan tile budget and
+            // disconnect the real leaf network (Bugøynes→first SE densify hop).
+            if let (Some(a), Some(b)) = (
+                crate::long_trip::region_containing(pts[0].0, pts[0].1, None),
+                crate::long_trip::region_containing(pts[1].0, pts[1].1, None),
+            ) {
+                if a == b {
+                    extras.clear();
+                }
+            }
+            // PIP holes (Finnish Lapland) still need the Ready country extract:
+            // Nord-Norge AABB covers the point but has no connecting roads.
+            // Force-retain covering Ready extras that were cleared or never
+            // matched the same-leaf rule.
+            for &(lat, lon) in pts {
+                if crate::long_trip::region_containing(lat, lon, None).is_some() {
+                    continue;
+                }
+                for data_dir in dirs {
+                    let Ok(entries) = fs::read_dir(data_dir) else {
+                        continue;
+                    };
+                    for ent in entries.flatten() {
+                        let name = ent.file_name();
+                        let name = name.to_string_lossy();
+                        let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+                            continue;
+                        };
+                        if stem == man.stem.as_str()
+                            || extras.iter().any(|m| m.stem == stem)
+                        {
+                            continue;
+                        }
+                        let Some(home) = home_dir_for_stem(dirs, stem) else {
+                            continue;
+                        };
+                        let Ok(extra_man) = load_ready_manifest(home, stem) else {
+                            continue;
+                        };
+                        if !stem_pack_ready(home, &extra_man) {
+                            continue;
+                        }
+                        let Some(path) = pbf_stem_to_geofabrik_path(&extra_man.stem) else {
+                            continue;
+                        };
+                        // Country extracts only (leaf count < 2) — hole fills
+                        // like europe/finland, not every spill leaf.
+                        if path.matches('/').count() != 1 {
+                            continue;
+                        }
+                        let Some(region) = region_bbox(&path) else {
+                            continue;
+                        };
+                        if crate::routing::basemap::bbox_covers_point(region, lat, lon) {
+                            extras.push(extra_man);
+                        }
+                    }
+                }
+            }
             // Cap extras hard for 4 GB: at most three neighbour stems. Prefer
             // endpoint-covering stems, then corridor-intersecting (bridges like
             // niedersachsen between SA and SH).
@@ -1240,6 +1297,21 @@ fn pick_primary_manifest<'a>(
         return Ok((pbf_stem.to_string(), default, primary_dir));
     }
     let (lat, lon) = pts[0];
+    // Prefer Admin/PIP leaf over catalog AABB. Country extracts (Finland) spill
+    // over eastern Finnmark and have a smaller AABB than Nord-Norge, so the
+    // old "smallest covering bbox" pick made Finland primary for Bugøynes hops
+    // and dropped the real Norwegian exit network after same-leaf extras.clear.
+    if let Some(pip_path) = crate::long_trip::region_containing(lat, lon, None) {
+        let leaf = pip_path.rsplit('/').next().unwrap_or(&pip_path);
+        let pip_stem = format!("{leaf}-latest");
+        if let Some(home) = home_dir_for_stem(dirs, &pip_stem) {
+            if let Ok(man) = load_ready_manifest(home, &pip_stem) {
+                if stem_pack_ready(home, &man) {
+                    return Ok((man.stem.clone(), man, home));
+                }
+            }
+        }
+    }
     if let Some(path) = pbf_stem_to_geofabrik_path(pbf_stem) {
         if let Some(region) = region_bbox(&path) {
             if crate::routing::basemap::bbox_covers_point(region, lat, lon) {
@@ -1910,7 +1982,9 @@ mod merge_tile_graphs_tests {
 
 #[cfg(test)]
 mod multi_stem_corridor_tests {
-    use super::{bbox_contained, corridor_needs_extra_for_endpoint_leaves, corridor_needs_extra_stems};
+    use super::{
+        bbox_contained, corridor_needs_extra_for_endpoint_leaves, corridor_needs_extra_stems,
+    };
     use std::fs;
 
     #[test]

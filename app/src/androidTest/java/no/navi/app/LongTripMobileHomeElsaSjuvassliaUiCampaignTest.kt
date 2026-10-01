@@ -78,16 +78,17 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         private val DOWNLOAD_DEADLINE_MS = TimeUnit.HOURS.toMillis(20)
         private val PLAN_DEADLINE_MS = TimeUnit.HOURS.toMillis(6)
 
-        // Synthetic DATEX Blocks along likely E6 / inland spine Bugøynes→Sjuvasslia.
-        // Host ADB injects these (not UniFFI). Coords are corridor candidates for timing.
+        // Synthetic DATEX Blocks on the Bugøynes→Sjuvasslia fair land corridor
+        // (Pajala / Umeå class; mid-segment, off hop joints). Host ADB injects
+        // these (not UniFFI). Coords are corridor candidates for timing.
         private val DATEX_SITS =
             listOf(
-                Sit("syn-no-alta", "NO", 69.96890, 23.27170, "Synthetic NO E6 Alta approach"),
-                Sit("syn-no-narvik", "NO", 68.43850, 17.42720, "Synthetic NO E6 Narvik"),
-                Sit("syn-no-mosjoen", "NO", 65.83610, 13.19060, "Synthetic NO E6 Mosjøen"),
-                Sit("syn-no-trondheim", "NO", 63.43050, 10.39510, "Synthetic NO E6 Trondheim"),
-                Sit("syn-no-lillehammer", "NO", 61.11530, 10.46620, "Synthetic NO E6 Lillehammer"),
-                Sit("syn-no-buskerud", "NO", 59.95500, 9.62000, "Synthetic NO approach Sjuvasslia"),
+                Sit("syn-se-inari", "FI", 69.44041, 28.41524, "Synthetic FI chord mid Inari–Kautokeino land"),
+                Sit("syn-se-pajala", "SE", 67.79923, 24.93191, "Synthetic SE/FI chord mid near Pajala"),
+                Sit("syn-se-skelleftea", "SE", 66.00533, 22.56261, "Synthetic SE chord mid Skellefteå class"),
+                Sit("syn-se-ornskoldsvik", "SE", 63.57672, 19.64146, "Synthetic SE chord mid Örnsköldsvik class"),
+                Sit("syn-se-sveg", "SE", 62.29125, 15.13323, "Synthetic SE chord mid Sveg/Jämtland class"),
+                Sit("syn-no-elverum", "NO", 60.62109, 11.26339, "Synthetic NO chord mid Elverum/Østlandet"),
             )
         private val REGIONS_TO_DELETE_CANDIDATES =
             listOf(
@@ -97,6 +98,12 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
                 "europe/sweden/halland",
                 "europe/sweden/skane",
                 "europe/sweden/vastra-gotaland",
+                "europe/sweden/norrbotten",
+                "europe/sweden/vasterbotten",
+                "europe/sweden/vasternorrland",
+                "europe/sweden/jamtland",
+                "europe/sweden/dalarna",
+                "europe/finland",
                 "europe/norway/vestlandet",
                 "europe/norway/ostlandet",
                 "europe/norway/nord-norge",
@@ -255,7 +262,7 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
 
         openRoutePanel()
         enableEcoRoutingViaUi()
-        enableAvoidTollsViaUi()
+        ensureAvoidTollsOffViaUi()
 
         // From / To — typed coordinates on visible search field (no forced vias).
         typeCoordAndPickHit("chip_from", ORIGIN_LAT, ORIGIN_LON, "from_elsa")
@@ -510,7 +517,7 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
             "settings",
             JSONObject()
                 .put("eco", true)
-                .put("avoid_toll_roads", true)
+                .put("avoid_toll_roads", false)
                 .put("ferries", "use")
                 .put("soft_daily_budget_h", MAX_DAILY_HOURS)
                 .put("soft_break_interval_h", 1.5)
@@ -747,13 +754,14 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         throw AssertionError("Host ADB DATEX injection timed out at ${cacheDir.absolutePath}")
     }
 
-    private fun enableAvoidTollsViaUi() {
+    private fun ensureAvoidTollsOffViaUi() {
+        // Campaign spec: Avoid toll roads = off.
         device.wait(Until.findObject(By.text("Avoid toll roads")), 3_000)
         val label =
             device.findObject(By.text("Avoid toll roads"))
                 ?: device.findObject(By.textContains("Avoid toll"))
         if (label == null) {
-            noteUi("avoid_tolls_switch", "label not found")
+            noteUi("avoid_tolls_switch", "label not found (default OFF)")
             return
         }
         val parent = label.parent
@@ -766,18 +774,18 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
                 }
         }
         if (sw == null) {
-            noteUi("avoid_tolls_switch", "switch not found")
+            noteUi("avoid_tolls_switch", "switch not found (assume OFF)")
             return
         }
-        if (!sw.isChecked) {
+        if (sw.isChecked) {
             sw.click()
             settle(300)
-            if (!sw.isChecked) {
+            if (sw.isChecked) {
                 sw.click()
                 settle(300)
             }
         }
-        noteUi("avoid_tolls_switch", if (sw.isChecked) "ON" else "still OFF")
+        noteUi("avoid_tolls_switch", if (!sw.isChecked) "OFF" else "still ON")
     }
 
     private fun deleteDownloadedRegionsViaUi() {
@@ -819,7 +827,9 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
                 clickTagSoft("btn_delete_downloaded_region")
                 settle(400)
                 clickTagSoft("btn_confirm_delete_region")
-                settle(800)
+                // Large packs (Østlandet / Sweden län) can stall the UI thread briefly.
+                settle(1_500)
+                Thread.sleep(2_000)
                 deleted.put(
                     JSONObject()
                         .put("path", path)
@@ -827,8 +837,10 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
                         .put("attempted", true),
                 )
                 noteUi("delete_region", path)
+                writeReport()
             }.onFailure { e ->
                 noteUi("delete_region_soft_fail", "$path ${e.message}")
+                writeReport()
             }
         }
         NaviMapTestHooks.requestCloseTools = true
@@ -969,13 +981,63 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         Thread.sleep(ms)
     }
 
+    private fun dismissOverlaySheets() {
+        NaviMapTestHooks.requestCloseTools = true
+        settle(200)
+        clickTagSoft("btn_close_tools")
+        clickTagSoft("btn_save_tools")
+        clickTagSoft("btn_close_vehicle")
+        clickTagSoft("btn_close_drive_settings")
+        // Tools sheet Close / Hide tools only — do not tap bare "Close" (that also
+        // matches btn_close_search and collapses the route panel).
+        runCatching { device.findObject(By.text("Hide tools"))?.click() }
+        settle(300)
+    }
+
     private fun openRoutePanel() {
-        runCatching {
-            composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
-        }.onFailure {
-            clickTag("btn_open_search")
+        // Prefer existing search field; only dismiss Tools/vehicle sheets when needed.
+        val already =
+            runCatching {
+                composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
+                true
+            }.getOrDefault(false)
+        if (already) {
+            noteUi("open_route_panel", "field_search already visible")
+            return
+        }
+        dismissOverlaySheets()
+        val afterDismiss =
+            runCatching {
+                composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
+                true
+            }.getOrDefault(false)
+        if (afterDismiss) {
+            noteUi("open_route_panel", "field_search visible after dismissing sheets")
+            return
+        }
+        // Collapsed planning chrome exposes btn_open_search ("Route").
+        clickTagSoft("btn_open_search")
+        settle(400)
+        runCatching { device.findObject(By.text("Route"))?.click() }
+        settle(500)
+        val deadline = SystemClock.elapsedRealtime() + 8_000
+        while (SystemClock.elapsedRealtime() < deadline) {
+            val ok =
+                runCatching {
+                    composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
+                    true
+                }.getOrDefault(false)
+            if (ok) {
+                noteUi("open_route_panel", "field_search visible after reopen")
+                return
+            }
+            dismissOverlaySheets()
+            clickTagSoft("btn_open_search")
+            runCatching { device.findObject(By.text("Route"))?.click() }
+            settle(400)
         }
         composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
+        noteUi("open_route_panel", "field_search visible (final)")
     }
 
     private fun clickTag(tag: String) {
