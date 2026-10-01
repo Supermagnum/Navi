@@ -150,6 +150,33 @@ class DownloadedRegionDeleteTest {
     }
 
     @Test
+    fun block_reason_sees_sd_pack_dir_and_delete_clears_it() {
+        val internal = tmp.newFolder("internal-empty")
+        val sd = tmp.newFolder("sd-long-trip-packs")
+        File(sd, "$stem.navi-manifest.json").writeText("{}")
+        File(sd, "$stem.navi-graph-car.rkyv").writeBytes(ByteArray(2048))
+        File(sd, ".pack-fetch-$stem.partial").mkdirs()
+
+        assertTrue(
+            "SD-only packs must be visible to Tools delete",
+            DownloadedRegionDelete.hasAnyInstall(internal, region, listOf(sd)),
+        )
+        assertEquals(null, DownloadedRegionDelete.blockReason(region, internal, listOf(sd)))
+
+        val result =
+            DownloadedRegionDelete.delete(
+                context = null,
+                dataDir = internal,
+                geofabrikPath = region,
+                extraPackDirs = listOf(sd),
+            )
+        assertTrue(result.message, result.ok)
+        assertFalse(File(sd, "$stem.navi-manifest.json").exists())
+        assertFalse(File(sd, "$stem.navi-graph-car.rkyv").exists())
+        assertFalse(File(sd, ".pack-fetch-$stem.partial").exists())
+    }
+
+    @Test
     fun leaf_stems_include_catalog_aliases() {
         val stems = DownloadedRegionDelete.leafStems("europe/sweden/vastra-gotaland")
         assertTrue(stems.any { it.contains("vastra") })

@@ -1,40 +1,90 @@
 # Bad Bevensen → Dalsøren MobileHome campaign
 
-## Latest run — 2026-10-01 (FAIL — no ship)
+## Latest run — 2026-10-01 afternoon (FAIL — no ship)
 
-Branch: **`right-to-roam`** (Fehmarn densify bias + tunnel tag retain on branch).
-Emulator: `Navi_8c_4G_128G`. UI-only runner
+Branch tip at start: **`right-to-roam`** `@eb3e6037` (ferry overlay stub-skip /
+pier approaches). Emulator: `Navi_8c_4G_128G` (8c / 4 GB / SD as-is). Runner:
 `LongTripMobileHomeBevensenDalsorenUiCampaignTest`. Host ADB GPS + 6 synthetic
-DATEX Blocks (re-pin). Two full UI attempts same day; both fail identically.
-No version bump / tag / push (plan not found).
+DATEX Blocks with re-pin. **No version bump / tag / APK refresh.**
+
+Corrective re-run after leftover SD packs looked like pre-fetched installs:
+Tools UI wipe of corridor (+ leftover) regions, then Plan with long trip ON so
+corridor packs auto-download only (`downloads_mode=long_trip_auto_corridor_only`).
+No manual Tools download taps.
 
 | Metric | Result | EXPECTED | OK |
 |---|---|---|---|
-| Distance | **0 km** (no stitched plan) | 1461.3–1648.6 km | no |
+| Distance | **0 km** (corridor never ready; no plan) | 1461.3–1648.6 km | no |
 | Driving time | **0** | 17–~22 h | no |
 | Instructions | **0** | 55–100 | no |
-| DATEX host inject | **yes** (6 sits; `xml_bytes=15501`) | must happen | host ok |
-| DATEX in plan | **no** (`max_datex_impacts=0`) | applied on legs | n/a (no plan) |
-| Plan | **FAIL** `chunk_leg2` `bbox_exhausted` / `disconnected` | found | no |
+| Ferries used | n/a | natural if competitive | n/a |
+| Nearby attractions | n/a | several | n/a |
+| Wild camping sites | n/a | reported | n/a |
+| Rest places | n/a | name+coords | n/a |
+| km/day | n/a | soft 6.0 h | n/a |
+| Fuel stops (report-only) | n/a | 100 km margin / 70 L | n/a |
+| DATEX host inject | **yes** (6 sits DE/DK/SE/NO; re-pin) | 3–8 synthetic | host ok |
+| DATEX in plan | **no** (no plan) | applied | n/a |
+| Plan | **HARD FAIL** — SE corridor stuck | found | no |
 
-Densify after Fehmarn fix (correct corridor intent):
+### Auto-download evidence
 
-- `chunk_leg1` Bevensen → `(54.210, 11.025)` **PASS** ~167 km (`graph_ferry_edges=0`)
-- `chunk_leg2` `(54.210, 11.025)` → `(55.175, 11.700)` **FAIL** disconnected
-  across Fehmarn Belt water (pads 0.35→1.4; TripAabb fallback also disconnected)
+After Plan click, all 9 regions started as Downloading/Queued (none Installed).
+Observed local-first order on SD `long-trip-packs`:
 
-So densify now aims at Puttgarden/Rødby, but the live packs still expose
-**no ferry edges** on that hop (`graph_ferry_edges=0` on leg1; leg2 never
-snaps a cross-belt path). Ship gate not met.
+1. Niedersachsen → Installed (~3.5 min)
+2. Schleswig-Holstein → Installed
+3. Denmark → Installed
+4–6. Skåne / Halland / Västra Götaland → **stuck Downloading**
+7–9. Ostlandet / Sorlandet / Vestlandet → Installed (while SE still Downloading)
 
-Corridor download order (SD `long-trip-packs`, local-first): Niedersachsen →
-Schleswig-Holstein → Denmark → Skåne → Halland → Västra Götaland → Ostlandet →
-Sorlandet → Vestlandet. Final status: all Indexed except Vestlandet Installed
-at plan end. `graph_format_version` mixed 8/9 from `current.json`. RAM PSS
-before / post-plan / final ≈ 165 / 810 / 515 MiB.
+Packs landed under `/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs`
+(removable). Every corridor `*-latest.osm.pbf` on disk is a **16 KiB pack-server
+stub** (graphs/manifests present). `place-index-ready.json` stayed `[]`.
 
-Harness note (androidTest only): ported Elsa-style resilient `openRoutePanel`
-after vehicle-sheet left `btn_open_search` missing.
+### Stall / hard-fail
+
+From ~14:18 through stop (~15:38, **>80 min**): Skåne + Halland + Västra Götaland
+remained `Downloading` while `no.navi.app` was **idle (0% CPU)**, no
+`region-download.json` job, negligible network. Instrumentation would wait up to
+20 h; run stopped as hard-fail after sustained idle stall. App left running;
+instrumentation/host stopped.
+
+RAM PSS: before ≈ **177 MiB**; during stall / final sample ≈ **420 MiB**.
+
+### `graph_format_version` (from `https://navigate-me.duckdns.org/current.json`)
+
+| Region | graph_format_version |
+|---|---|
+| europe/germany/niedersachsen | 8 |
+| europe/germany/schleswig-holstein | 8 |
+| europe/denmark | 9 |
+| europe/sweden/skane | 9 |
+| europe/sweden/halland | 9 |
+| europe/sweden/vastra_gotaland | 9 |
+| europe/norway/ostlandet | 9 |
+| europe/norway/sorlandet | 8 |
+| europe/norway/vestlandet | 8 |
+
+### Process notes
+
+- Ferry overlay fix already on tip (`eb3e6037`); cherry-picked to `dev` as
+  `2532b0fa` earlier the same day.
+- Mid-campaign **Tools SD-delete visibility** tweak landed in the working tree
+  (app + androidTest) so UI wipe could clear removable packs — that violates the
+  strict UI-phase “no app code” rule and must be reviewed/committed **separately**
+  (not part of a ship). No further app edits while waiting on the plan.
+
+Evidence: `/tmp/bevensen-ui-host/` (report.json, host.log, logcat, meminfo,
+screenshots including `11_hard_fail_stall.png`).
+
+---
+
+## Earlier same-day morning run — 2026-10-01 (FAIL — Fehmarn disconnected)
+
+Branch: **`right-to-roam`** (Fehmarn densify bias + tunnel tag retain). Emulator
+`Navi_8c_4G_128G`. UI runner with host DATEX. Plan found leg1 then failed leg2
+across Fehmarn (`bbox_exhausted` / `disconnected`; `graph_ferry_edges=0`). No ship.
 
 ---
 

@@ -28,14 +28,19 @@ object DownloadedRegionDelete {
     /**
      * Why delete must wait. Empty = safe to proceed.
      * Mid-download / mid-index / active long-trip corridor all block.
+     *
+     * [extraPackDirs] must include the active long-trip pack root (SD) when
+     * packs live only on removable storage — otherwise Tools delete reports
+     * "Nothing installed" and the button stays disabled.
      */
     fun blockReason(
         geofabrikPath: String,
         dataDir: File,
+        extraPackDirs: List<File> = emptyList(),
     ): String? {
         val path = PackRegionAvailability.normalize(geofabrikPath)
         if (path.isEmpty()) return "Select a Geofabrik path first."
-        if (!hasLocalInstall(dataDir, path) && !hasRedirectedPacks(dataDir, path)) {
+        if (!hasAnyInstall(dataDir, path, extraPackDirs)) {
             // Still allow delete when only bookkeeping/place-index remains.
             val stamp = PlaceIndexReady.isReady(dataDir, path)
             val jobMatches =
@@ -89,15 +94,45 @@ object DownloadedRegionDelete {
             PackRegionAvailability.localPmtilesReady(dataDir, geofabrikPath) ||
             PackRegionAvailability.resolvePbfForRegion(dataDir, geofabrikPath) != null
 
-    private fun hasRedirectedPacks(
+    /** True when packs or PMTiles exist under [dataDir], internal redirect, or [extraPackDirs]. */
+    fun hasAnyInstall(
         dataDir: File,
         geofabrikPath: String,
+        extraPackDirs: List<File> = emptyList(),
     ): Boolean {
-        // dataDir is internal; redirected packs live under sibling long-trip-packs
-        // or an absolute packDownloadDir when Context is available — callers pass
-        // extraDirs. Here we only probe the conventional internal redirect.
-        val redirect = File(dataDir, LongTripPackStorage.PACKS_SUBDIR)
-        return PackRegionAvailability.localBakeReady(redirect, geofabrikPath)
+        if (hasLocalInstall(dataDir, geofabrikPath)) return true
+        val dirs =
+            linkedSetOf(File(dataDir, LongTripPackStorage.PACKS_SUBDIR)).apply {
+                extraPackDirs.forEach { add(it) }
+            }
+        return dirs.any { dir ->
+            dir.isDirectory &&
+                (
+                    PackRegionAvailability.localBakeReady(dir, geofabrikPath) ||
+                        PackRegionAvailability.localPmtilesReady(dir, geofabrikPath) ||
+                        PackRegionAvailability.resolvePbfForRegion(dir, geofabrikPath) != null ||
+                        // Incomplete long-trip fetch dirs / partials still count so UI can scrub.
+                        hasPartialOrFetchArtifacts(dir, geofabrikPath)
+                )
+        }
+    }
+
+    private fun hasPartialOrFetchArtifacts(
+        packDir: File,
+        geofabrikPath: String,
+    ): Boolean {
+        val stems = leafStems(geofabrikPath)
+        val files = packDir.listFiles() ?: return false
+        return files.any { f ->
+            val name = f.name
+            stems.any { stem ->
+                name.startsWith(".pack-fetch-$stem.") ||
+                    (
+                        name.startsWith("$stem.") &&
+                            name.contains("partial")
+                    )
+            }
+        }
     }
 
     /**
@@ -112,10 +147,6 @@ object DownloadedRegionDelete {
         extraPackDirs: List<File> = emptyList(),
     ): Result {
         val path = PackRegionAvailability.normalize(geofabrikPath)
-        blockReason(path, dataDir)?.let { reason ->
-            return Result(ok = false, message = reason, bytesFreed = 0L, filesRemoved = 0)
-        }
-
         val packDirs =
             linkedSetOf(dataDir).apply {
                 add(File(dataDir, LongTripPackStorage.PACKS_SUBDIR))
@@ -126,6 +157,11 @@ object DownloadedRegionDelete {
                         ?.let { add(it) }
                 }
             }
+        blockReason(path, dataDir, packDirs.filter { it != dataDir }).let { reason ->
+            if (reason != null) {
+                return Result(ok = false, message = reason, bytesFreed = 0L, filesRemoved = 0)
+            }
+        }
 
         var bytes = 0L
         var count = 0
