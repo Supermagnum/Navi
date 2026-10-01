@@ -91,16 +91,6 @@ fn describe_status(status: StatusCode) -> String {
     format!("http_status status={status}")
 }
 
-/// Geofabrik dated extracts: `…-YYMMDD.osm.pbf/` often 404s; slashless works.
-fn strip_trailing_slash_osm_pbf(url: &str) -> Option<String> {
-    let trimmed = url.trim_end_matches('/');
-    if trimmed.len() != url.len() && trimmed.ends_with(".osm.pbf") {
-        Some(trimmed.to_string())
-    } else {
-        None
-    }
-}
-
 /// Build a default client with a high ceiling; per-request timeouts still apply.
 pub fn http_client() -> anyhow::Result<Client> {
     Ok(shared_http_client().clone())
@@ -212,33 +202,6 @@ async fn stream_get_to_file_once(
     let status = response.status();
     if status == StatusCode::NOT_FOUND && opts.allow_not_found {
         return Ok(None);
-    }
-    // Geofabrik often 302s `…-latest.osm.pbf/` to a dated `…-YYMMDD.osm.pbf/`
-    // that 404s with the trailing slash but succeeds without it (SE/DK/FI).
-    if status == StatusCode::NOT_FOUND {
-        let final_url = response.url().as_str().to_string();
-        if let Some(fixed) = strip_trailing_slash_osm_pbf(&final_url) {
-            if fixed != opts.url && fixed != final_url {
-                log::info!(
-                    target: "NaviDownload",
-                    "[NaviDownload] Geofabrik dated PBF 404 with trailing slash; retry {}",
-                    short_url(&fixed)
-                );
-                let fixed_opts = StreamDownloadOpts {
-                    url: &fixed,
-                    dest: opts.dest,
-                    headers: opts.headers.clone(),
-                    resume_from: opts.resume_from,
-                    expected_bytes: opts.expected_bytes,
-                    retries: 1,
-                    progress_label: opts.progress_label,
-                    allow_not_found: opts.allow_not_found,
-                };
-                // Drop the failed response before recursing.
-                drop(response);
-                return Box::pin(stream_get_to_file_once(client, &fixed_opts)).await;
-            }
-        }
     }
     if resume_from > 0 && status != StatusCode::PARTIAL_CONTENT && status != StatusCode::OK {
         // 5xx / 429: keep the .partial — a transient gateway error is not a
@@ -462,28 +425,6 @@ pub async fn read_body_text(response: Response, max_bytes: usize) -> anyhow::Res
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn strip_trailing_slash_osm_pbf_only_dated_slash() {
-        assert_eq!(
-            strip_trailing_slash_osm_pbf(
-                "https://download.geofabrik.de/europe/sweden-260930.osm.pbf/"
-            ),
-            Some("https://download.geofabrik.de/europe/sweden-260930.osm.pbf".into())
-        );
-        assert_eq!(
-            strip_trailing_slash_osm_pbf(
-                "https://download.geofabrik.de/europe/sweden-latest.osm.pbf/"
-            ),
-            Some("https://download.geofabrik.de/europe/sweden-latest.osm.pbf".into())
-        );
-        assert_eq!(
-            strip_trailing_slash_osm_pbf(
-                "https://download.geofabrik.de/europe/sweden-260930.osm.pbf"
-            ),
-            None
-        );
-    }
 
     #[test]
     fn timeout_scales() {

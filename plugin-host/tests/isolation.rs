@@ -1,9 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use navi_plugin_host::smoke::{
-    check_busy_loop, check_capability_deny, check_log_hello, check_memory_bomb, check_trap_guest,
-};
+use navi_plugin_host::smoke::{check_busy_loop, check_capability_deny, check_log_hello};
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -100,16 +98,4 @@ fn busy_loop_is_killed_by_fuel_or_timeout_without_blocking_host() {
 fn manifest_capability_checked_before_load() {
     let stage = stage_plugin("log-hello");
     check_capability_deny(&stage).expect("capability deny");
-}
-
-#[test]
-fn trap_guest_is_classified_without_host_crash() {
-    let stage = stage_plugin("trap-guest");
-    check_trap_guest(&stage).expect("trap-guest classification");
-}
-
-#[test]
-fn memory_bomb_hits_memory_limit() {
-    let stage = stage_plugin("memory-bomb");
-    check_memory_bomb(&stage).expect("memory-bomb MemoryExceeded");
 }

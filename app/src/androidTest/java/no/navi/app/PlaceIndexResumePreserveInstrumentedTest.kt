@@ -72,7 +72,7 @@ class PlaceIndexResumePreserveInstrumentedTest {
         RegionDownloadBackground.writeJob(
             dataDir,
             RegionDownloadBackground.Job(
-                url = "https://download.geofabrik.de/europe/germany/hamburg-latest.osm.pbf/",
+                url = "https://download.geofabrik.de/europe/germany/hamburg-latest.osm.pbf",
                 filename = FILENAME,
                 geofabrikPath = REGION,
                 phase = RegionDownloadBackground.Phase.PLACE_INDEX,

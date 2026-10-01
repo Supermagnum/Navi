@@ -125,54 +125,6 @@ class BasemapPoiStyleTest {
     }
 
     @Test
-    fun tunnelRoadPathRailLayersAreDashed() {
-        val tunnelIds =
-            listOf(
-                "roads_minor_tunnel",
-                "roads_major_tunnel",
-                "roads_other_tunnel",
-                "roads_rail_tunnel",
-                "roads_rail_hatch_tunnel",
-            )
-        for (id in tunnelIds) {
-            val layer = layerJson(id)
-            assertTrue("$id must be a line layer", layer.contains("\"type\": \"line\""))
-            assertTrue("$id must filter is_tunnel", layer.contains("\"is_tunnel\""))
-            assertTrue("$id must dash", layer.contains("\"line-dasharray\""))
-            assertTrue(
-                "$id must require tunnel=true",
-                layer.contains("\"==\"") && layer.contains("true"),
-            )
-        }
-        for (id in listOf("roads_minor", "roads_major", "roads_other", "roads_rail")) {
-            val layer = layerJson(id)
-            assertTrue(
-                "$id must exclude tunnels",
-                layer.contains("\"is_tunnel\"") && layer.contains("\"!=\""),
-            )
-        }
-        // Tunnel road layers must sit under their surface counterparts.
-        val text = templateFile().readText()
-        fun layerIndex(id: String): Int {
-            val at = text.indexOf("\"id\": \"$id\"")
-            assertTrue("missing layer $id", at >= 0)
-            return at
-        }
-        assertTrue(layerIndex("roads_major_tunnel") < layerIndex("roads_major"))
-        assertTrue(layerIndex("roads_rail_tunnel") < layerIndex("roads_rail"))
-    }
-
-    @Test
-    fun libertyTunnelPaintTargetsRoadPathRailLayers() {
-        val ids = BasemapTunnelPaint.layerIds()
-        assertTrue(ids.contains("tunnel_motorway"))
-        assertTrue(ids.contains("tunnel_path_pedestrian"))
-        assertTrue(ids.contains("tunnel_major_rail"))
-        assertTrue(ids.contains("tunnel_minor"))
-        assertFalse(ids.any { it.startsWith("bridge_") })
-    }
-
-    @Test
     fun glacierOutlinesStackAboveLandFills() {
         val text = templateFile().readText()
 

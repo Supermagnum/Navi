@@ -217,7 +217,7 @@ class RegionDownloadResumeTest {
         RegionDownloadBackground.writeJob(
             dir,
             RegionDownloadBackground.Job(
-                url = "https://download.geofabrik.de/europe/germany/hamburg-latest.osm.pbf/",
+                url = "https://download.geofabrik.de/europe/germany/hamburg-latest.osm.pbf",
                 filename = "hamburg-latest.osm.pbf",
                 geofabrikPath = "europe/germany/hamburg",
                 phase = RegionDownloadBackground.Phase.PLACE_INDEX,

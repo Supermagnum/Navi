@@ -80,10 +80,6 @@ case "$TARGET" in
 esac
 
 echo "Building navi-ffi for $TARGET ($PROFILE) with NDK $ANDROID_NDK_HOME ($NDK_HOST_TAG)..."
-
-# Stage wasm guests from source into assets/ (F-Droid / no committed binaries).
-"$ROOT/scripts/build-plugin-wasm.sh"
-
 CARGO_PROFILE_ARGS=()
 case "$PROFILE" in
   release)
@@ -102,32 +98,15 @@ cargo build -p navi-ffi --target "$TARGET" "${CARGO_PROFILE_ARGS[@]}" --lib
 LIB_SRC="$ROOT/target/$TARGET/$PROFILE/libnavi.so"
 LIB_DST_DIR="$ROOT/app/src/main/jniLibs/$ABI_DIR"
 mkdir -p "$LIB_DST_DIR"
+cp -f "$LIB_SRC" "$LIB_DST_DIR/libnavi.so"
+echo "Copied $LIB_SRC -> $LIB_DST_DIR/libnavi.so"
 
 KOTLIN_OUT="$ROOT/app/src/main/java"
 mkdir -p "$KOTLIN_OUT"
 echo "Generating UniFFI Kotlin bindings..."
-# Bindgen must run before strip — cargo strip="symbols" removes UniFFI metadata.
 cargo run -p navi-ffi --bin uniffi-bindgen -- generate \
   --library "$LIB_SRC" \
   --language kotlin \
   --out-dir "$KOTLIN_OUT"
-
-# Strip after bindgen (workspace release leaves symbols so UniFFI metadata survives).
-if [[ "$PROFILE" == "release" ]]; then
-  STRIP_BIN=""
-  if [[ -x "$NDK_BIN/llvm-strip" ]]; then
-    STRIP_BIN="$NDK_BIN/llvm-strip"
-  elif command -v llvm-strip >/dev/null 2>&1; then
-    STRIP_BIN="$(command -v llvm-strip)"
-  fi
-  if [[ -n "$STRIP_BIN" ]]; then
-    "$STRIP_BIN" --strip-unneeded "$LIB_SRC"
-  else
-    echo "warning: no llvm-strip found; shipping unstripped libnavi.so" >&2
-  fi
-fi
-
-cp -f "$LIB_SRC" "$LIB_DST_DIR/libnavi.so"
-echo "Copied $LIB_SRC -> $LIB_DST_DIR/libnavi.so"
 
 echo "Done. Native library and Kotlin bindings are ready under app/."

@@ -1,9 +1,8 @@
 # CAT (Computer Aided Transceiver)
 
-CAT control for amateur radio is implemented on the `CAT` branch. This document
-is the product and safety specification for the WASM guest in
-[`plugins/CATS-plugin/`](../plugins/CATS-plugin/) and the host services
-(`navi-cat`, Hamlib FFI, Android transports, repeater DB).
+CAT control for amateur radio gear is **not implemented** yet. This document
+defines the intended behaviour for a future `cat` plugin / host service so VFO
+programming stays safe and predictable while driving.
 
 Vehicle / energy telemetry is separate: see [`ECU.md`](ECU.md). Plugin overview:
 [`plugins.md`](plugins.md). LoRa convoy status uses the same client/display
@@ -12,62 +11,13 @@ split (Navi does not implement the RF layer) over Meshtastic BLE:
 
 ---
 
-## Architecture decisions (locked)
-
-### 1. Single `RigBackend` trait
-
-Gating, the VFO 1 command sequence, **app-side read-back verification**, and
-PTT/DCD interlocks live in one shared implementation behind `RigBackend`:
-
-| Backend | Where used |
-|---|---|
-| TCP `rigctld` (extended `+`, `RPRT n`) | Desktop, CI, remote NET rigctl |
-| Hamlib FFI (`navi-hamlib-sys`) | Android onboard; `rig_pathname = 127.0.0.1:<port>` for USB/BT loopback bridges; NET rigctl model for remote |
-
-The shared test suite runs against both backends. A faulty or malicious WASM
-guest cannot bypass host interlocks or skip read-back.
-
-### 2. Hamlib version: latest stable (not a fixed 4.6.5 pin)
-
-[`scripts/build-hamlib-android.sh`](../scripts/build-hamlib-android.sh) resolves
-the **latest stable** Hamlib release tag, records tag + NDK version in
-`scripts/hamlib-android.lock` for CI caching, and CI fails if the resolved tag
-changes without re-verifying `dump_caps` parser fixtures. Path/network docs
-below were originally verified against 4.6.5; re-verify on each lock bump.
-
-### 3. crates.io Hamlib crates stay rejected
-
-The evaluation table under [Rust packages](#rust-packages) is the permanent
-record of what was checked and why it was rejected. Navi uses **own**
-`navi-cat` (TCP) + **own** `navi-hamlib-sys` (FFI). Do not add crates.io
-Hamlib bindings as dependencies.
-
-### 4. Plugin location and sandbox
-
-**All plugin logic** (repeater selection, 150 km auto-tune decisions, network
-follow / hysteresis / pinning, UI state, logging) lives in
-`plugins/CATS-plugin/` and runs inside wasmtime. Radio I/O, transports, Hamlib,
-and the repeater DB live in the host and are exposed only via HostApi:
-`cat_status`, `repeater_query`, `cat_vfo_set`, `cat_network_follow`.
-
-### 5. Read-back verification (app feature)
-
-Every programming operation succeeds only when the radio (or dummy) reports
-values that match the request (tolerances below). APIs return the **reported**
-state. Unverified fields count as failure for auto-tune gating. On mismatch:
-retry once with the full sequence; then fail, name the field (requested vs
-reported), stop follow safely.
-
----
-
 ## Goals
 
-1. Talk to a mobile transceiver via **Hamlib** (`rigctld` or in-process FFI),
-   not hand-written vendor dialects.
+1. Talk to a mobile transceiver via **Hamlib** (`rigctld`), not hand-written
+   vendor dialects.
 2. Only drive radios whose Hamlib backend is **Stable** and supports the
    functions auto-tune needs.
-3. Look up nearby **NFM** (narrow FM or other modes that the radio can do)
-   amateur **repeaters**.
+3. Look up nearby **NFM** (narrow FM or other modes that the radio can do ) amateur **repeaters**.
 4. If one is within **150 km**, program **VFO 1** with output frequency, duplex
    offset/shift, and CTCSS/DCS (subtone).
 5. For repeaters in a **network** (e.g. LA5MR / Innlandsnettet), automatically
@@ -79,14 +29,11 @@ reported), stop follow safely.
 ## Radio control via Hamlib
 
 Navi does not implement Kenwood `FA`/`FB`, Yaesu, Icom CI-V or other dialects
-itself. The host uses a `RigBackend`:
+itself. The host runs `rigctld` for the configured radio and the `cat` host
+service talks to it over TCP (default port 4532) using the rigctld protocol.
 
 ```text
-# Desktop / CI / remote
-Navi cat service  ──TCP──▶  rigctld -m <model> …  ──CAT──▶  radio
-
-# Android onboard
-Navi cat service  ──FFI──▶  libhamlib.so  ──TCP loopback──▶  USB/BT bridge  ──▶  radio
+Navi cat service  ──TCP──▶  rigctld -m <model> -r <serial port> -s <baud>  ──CAT──▶  radio
 ```
 
 Benefits:
@@ -103,31 +50,51 @@ host config. Verify baud rate against the radio manual.
 
 ### Rust packages
 
-Existing crates (checked September 2026) — **evaluated and rejected**:
+Existing crates (checked September 2026):
 
 | Crate | What it is | Covers auto-tune needs? |
 |---|---|---|
 | [`hamlib-client`](https://crates.io/crates/hamlib-client) 1.1.0 | Async (tokio) rigctld client | **No.** Getters only (freq, mode, VFO, split, info); no set, shift, offset, CTCSS or `dump_caps`. Licence **GPL-3.0-only** |
 | [`rigctld`](https://crates.io/crates/rigctld) 0.1.0 | rigctld client (extended response protocol) + helper to start/stop the daemon | **No.** Only get/set frequency and mode. Tests already use the dummy rig. Last release 2023 |
-| [`hamlib-sys`](https://github.com/MatthewIsHere/hamlib-sys) | Unsafe FFI bindings to libhamlib 4.0 | Full C API incl. `rig_caps.status`, but raw `unsafe`, links old libhamlib; unmaintained |
+| [`hamlib-sys`](https://github.com/MatthewIsHere/hamlib-sys) | Unsafe FFI bindings to libhamlib 4.0 | Full C API incl. `rig_caps.status`, but raw `unsafe`, links libhamlib into Navi |
 
-**Decision:** Navi ships its own `navi-cat` crate (TCP `RigBackend` + shared
-program/verify) and `navi-hamlib-sys` (minimal FFI). Protocol commands:
+**Decision:** Navi ships its own small rigctld client in the `cat` host
+crate (e.g. `navi-cat`), speaking the rigctld TCP protocol directly with
+`tokio::net::TcpStream`. The protocol is line-based and only a handful of
+commands are needed:
 
-| Purpose | TCP | FFI |
-|---|---|---|
-| Gating | `\dump_caps` | `rig_caps.status` + setter ptrs |
-| Program VFO 1 | `V`, `F`, `M`, `R`, `O`, `C` (`D` for DCS) | matching `rig_set_*` |
-| Read-back | `v`, `f`, `m`, `r`, `o`, `c`, `d`, `t`, `\get_dcd` | see FFI list below |
-| Interlocks | `t` (get PTT), `\get_dcd` | `rig_get_ptt`, `rig_get_dcd` |
+| Purpose | Command(s) |
+|---|---|
+| Gating | `\dump_caps` |
+| Program VFO 1 | `V`, `F`, `M`, `R`, `O`, `C` (`D` for DCS) |
+| Read-back | `f`, `m`, `r`, `o`, `c` (`d`) |
+| Interlocks | `t` (PTT), `\get_dcd` (if supported) |
 
-Never bind or send `rig_set_ptt` / `T`. Use the extended response protocol
-(prefix `+`) so every TCP reply ends in an explicit `RPRT n` line.
+Use the extended response protocol (prefix `+`) so every reply ends in an
+explicit `RPRT n` line, which simplifies error handling.
+
+Rationale:
+
+- The existing clients lack the set/shift/tone/caps commands, so either one
+  would need forking anyway.
+- `hamlib-client` is GPL-3.0-only; depending on it would constrain Navi's
+  licence. Talking to rigctld over TCP keeps Hamlib (LGPL/GPL) in a separate
+  process with no linking.
+- `hamlib-sys` would give direct access to `rig_caps.status`, but brings
+  `unsafe` FFI, build-time dependency on libhamlib-dev, and loses process
+  isolation (a backend crash would take Navi down). Keep it as a fallback
+  option only.
+- `rigctld`'s daemon start/stop helper is a useful reference for launching
+  `rigctld` from the host; the same pattern can be reused in `navi-cat`.
+
+Re-check crates.io before implementation in case a more complete client has
+appeared; if one does, it must cover every command above and have a licence
+compatible with Navi.
 
 ### Backend gating (Stable only)
 
-At connect, the service sends `\dump_caps` (or reads FFI caps) and parses the
-capability report. Auto-tune is enabled only if **all** of these hold:
+At connect, the service sends `\dump_caps` and parses the capability report.
+Auto-tune is enabled only if **all** of these hold:
 
 | `dump_caps` line | Required value |
 |---|---|
@@ -137,15 +104,18 @@ capability report. Auto-tune is enabled only if **all** of these hold:
 | `Can set CTCSS Tone` | `Y` |
 
 - **Fail closed:** a missing or unparseable line counts as a failure.
-- Re-verify parser fixtures when `scripts/hamlib-android.lock` changes.
-- If gating fails, show the reason in the UI and keep auto-tune disabled.
+- The exact `dump_caps` wording has changed slightly between Hamlib versions;
+  pin and verify against the Hamlib version shipped with the host.
+- If gating fails, show the reason in the UI (e.g. "backend is Beta",
+  "radio cannot set CTCSS via CAT") and keep auto-tune disabled.
 - Optional user override: allow **Beta** backends with an explicit warning.
   Alpha / Untested are never allowed.
 - Test builds may allow the dummy rig (model 1) regardless of its reported
   status (see [Testing](#testing)).
 
-Equivalent FFI check: `rig_caps.status == RIG_STATUS_STABLE` and non-null
-`set_rptr_shift`, `set_rptr_offs`, `set_ctcss_tone`.
+Equivalent check if Hamlib is linked via FFI instead: `rig_caps.status ==
+RIG_STATUS_STABLE` and non-null `set_rptr_shift`, `set_rptr_offs`,
+`set_ctcss_tone`.
 
 ### Command sequence (VFO 1)
 
@@ -160,18 +130,9 @@ O 600000          # offset magnitude, Hz
 C 885             # CTCSS, tenths of Hz
 ```
 
-After the full set sequence (frequency first), read back **all** fields: VFO,
-frequency, mode + passband, shift direction, offset, CTCSS or DCS. Compare with:
-
-| Field | Tolerance |
-|---|---|
-| Frequency | Exact Hz, or within the backend-reported step if step-rounded |
-| CTCSS | Exact in tenths of Hz |
-| Mode, shift, DCS | Exact |
-
-A mismatch retries once with the full sequence; then fails with the field named
-(requested vs reported). Unreadable fields are unverified = failure for
-auto-tune.
+After programming, read back (`f`, `m`, `r`, `o`, `c`) and compare. Some
+radios reset offset or tone when frequency changes, so always send frequency
+first and verify the full state afterwards. A mismatch counts as a failure.
 
 ---
 
@@ -276,10 +237,10 @@ are unmaintained. Navi must not depend on them.
 
 ### Upstream Hamlib (C library)
 
-Use **upstream Hamlib** (current 4.x line). Track the **latest stable** release
-tag via [`scripts/build-hamlib-android.sh`](../scripts/build-hamlib-android.sh);
-the resolved tag and NDK version are recorded in `scripts/hamlib-android.lock`.
-Cross-compile for Android with the NDK and ship as a shared library:
+Use **upstream Hamlib** (current 4.x line), **pinned to release tag 4.6.5**.
+Path/unit docs and the network-path check below were verified against that tag;
+the future Android build script must fetch that same tag. Cross-compile for
+Android with the NDK and ship as a shared library:
 
 | ABI | Role |
 |---|---|
@@ -291,7 +252,8 @@ Install as `libhamlib.so` under `jniLibs` for each ABI.
 
 ### Navi-owned FFI crate
 
-Navi owns a minimal FFI crate (`navi-hamlib-sys`) covering only:
+Navi owns a minimal FFI crate (bindgen against the pinned headers, or
+hand-written `extern` blocks) covering only:
 
 ```text
 rig_init
@@ -305,35 +267,24 @@ rig_set_rptr_shift
 rig_set_rptr_offs
 rig_set_ctcss_tone
 rig_set_dcs_code
-rig_get_vfo
-rig_get_freq
-rig_get_mode
-rig_get_rptr_shift
-rig_get_rptr_offs
-rig_get_ctcss_tone
-rig_get_dcs_code
-rig_get_ptt          (TX interlock; never bind rig_set_ptt)
-rig_get_dcd
+rig_get_ptt          (TX interlock; never rig_set_ptt)
 rig_get_info         (or equivalent for model detection / logging)
-# caps: status + non-null set_rptr_shift / set_rptr_offs / set_ctcss_tone
 ```
 
 No broad wrap of the entire Hamlib API.
 
-### Build
+### Build (described; not checked in yet)
 
-[`scripts/build-hamlib-android.sh`](../scripts/build-hamlib-android.sh):
+A future `scripts/build-hamlib-android.sh` should:
 
-1. Resolve the latest stable Hamlib release tag; write
-   `scripts/hamlib-android.lock` (tag + NDK version).
+1. Fetch the pinned Hamlib release tag source (**4.6.5**).
 2. Cross-compile with autotools + the Android NDK toolchain for the three ABIs
    above.
 3. Disable Android-unneeded bits: C++ / Perl / Python / Tcl bindings, readline,
    and libusb-dependent backends (unless Navi later builds libusb for those
    backends).
 4. Produce `libhamlib.so` artifacts suitable for packaging under `jniLibs`.
-5. Be cacheable in CI (keyed on lock file + script hash). CI fails if the
-   resolved tag changes without re-verifying `dump_caps` fixtures.
+5. Be cacheable in CI (keyed on pinned tag + NDK version + script hash).
 
 Do not invent ad-hoc vendor CAT parsers in Rust or Kotlin when Hamlib already
 covers the radio.
@@ -341,7 +292,7 @@ covers the radio.
 ### Licensing
 
 Hamlib is **LGPL-2.1+**. Ship it **dynamically linked** (`libhamlib.so`). Keep
-the lock file, source tag and the build script public so users can rebuild or
+the pinned source/tag and the build script public so users can rebuild or
 replace the `.so` (LGPL replacement requirement).
 
 Navi itself is **GPL-3.0-or-later** (`LICENSE`, root `Cargo.toml`). Dynamically
@@ -366,8 +317,7 @@ expects a device path (`rig_pathname` / `-r`). Options:
 Rust / Hamlib usage is the same in all three cases; only the Kotlin bridge (or
 none, for remote `rigctld`) differs.
 
-**Hamlib 4 network-path verification:** Confirmed on the 4.x line (originally
-checked at tag 4.6.5; re-check when `hamlib-android.lock` bumps). The `rigctl`
+**Hamlib 4 network-path verification (tag 4.6.5):** Confirmed. The `rigctl`
 man page documents `-r` / `--rig-file` as accepting a network `address:port`
 (example `127.0.0.1:12345`). Hamlib detects such pathnames and opens
 `RIG_PORT_NETWORK` (TCP). That is the intended path for (a) and (b): a
@@ -577,17 +527,16 @@ many site rows, shared defaults overridden per site.
 
 ---
 
-## HostApi
+## HostApi sketch
 
 | Capability | Behaviour |
 |---|---|
-| `cat_status` | Output: connected, model, backend status, gating result + reason, PTT state, last reported VFO |
-| `repeater_query` | Input: lat, lon, radius_km (≤ 150), optional network_id. Output: JSON list of sites (with network_id, conflict flags) |
-| `cat_vfo_set` | Input: freq_out_mhz, shift_mhz, ctcss_hz, mode=`NFM`, vfo=`1`. Host executes via `RigBackend`, verifies read-back; returns **reported** state |
-| `cat_network_follow` | Input: network_id, enabled, optional pinned site. Host runs follow loop and emits switch events; each switch returns reported state |
+| `cat_status` | Output: connected, model, backend status, gating result + reason, PTT state |
+| `repeater_query` | Input: lat, lon, radius_km (≤ 150), optional network_id. Output: JSON list of NFM sites (with network_id) |
+| `cat_vfo_set` | Input: freq_out_mhz, shift_mhz, ctcss_hz, mode=`NFM`, vfo=`1`. Host executes via rigctld, verifies read-back |
+| `cat_network_follow` | Input: network_id, enabled, optional pinned site. Host runs follow loop and emits switch events |
 
-Radio control lives in the host (`navi-cat`), not WASM. Guest code is only in
-`plugins/CATS-plugin/`.
+Radio control lives in the host (rigctld client), not WASM.
 
 ---
 
@@ -599,79 +548,26 @@ Use the Hamlib **dummy rig** (model 1) for development and CI:
 rigctld -m 1 -t 4532
 ```
 
-The dummy stores frequency, mode, VFO, shift, offset, tone and PTT in memory.
-Every programming assertion uses (1) the app's read-back and (2) an
-**independent** second rigctld connection. A mismatch-injection proxy rewrites
-one reply to prove detection + single retry + safe stop. A recording proxy
-asserts that no `T` / set-PTT is ever sent.
+The dummy stores frequency, mode, VFO, shift, offset, tone and PTT in memory,
+so tests can program VFO 1 through the normal path and assert the result with
+read-back.
 
-### Required scenarios (summary)
+Test cases:
 
-1. LA5MR network follow Espa → Dombås (hysteresis, PTT/DCD, pinning, mismatch stop).
-2. Non-networked repeaters along the same route (query order, no APRS, auto-tune FM).
-3. Single non-networked FM site — full VFO 1 read-back.
-4. Non-networked DMR — import/dedupe; do not program unless profile+backend can read back.
-5. Cross-source conflicts flagged; preferred source programmed and verified.
-6. Filtering: APRS, simplex, CSV-only without position.
-7. Gating parser fixtures (Stable / Beta / missing / Alpha).
-8. Error paths: no daemon, kill mid-sequence, RPRT≠0, unverified field.
-9. Never transmit.
-10. Server-file repeaters (if present) match OSM fixtures.
-11. Sandbox boundary: guest cannot skip read-back / program while PTT / ungated backend.
-12. RepeaterBook stays off; no requests to repeaterbook.com.
+- Full auto-tune sequence for a known site (e.g. LA5TRR) → verify all values.
+- CTCSS inheritance from network default.
+- PTT interlock: set `T 1` on the dummy, confirm Navi refuses to program.
+- Network follow: simulated GPS track across several LA5MR sites; check that
+  switches happen at the right points and hysteresis prevents flapping.
+- Error paths: rigctld not running, rigctld killed mid-sequence, out-of-range
+  values. The dummy accepts almost everything, so rejection handling must be
+  tested this way.
+- Gating parser: feed saved `dump_caps` outputs (Stable, Beta, missing lines)
+  and check the result.
 
-### Emulator vs real device
-
-| Layer | What it proves |
-|---|---|
-| JVM/Robolectric bridge unit tests | Fake USB/BT sockets through loopback bridge (reconnect, partial writes, disconnect) |
-| Emulator instrumentation | Real `libhamlib.so` + CATS-plugin in wasmtime; remote `rigctld` via `10.0.2.2:4532`; USB/BT via injected boundaries (SPP data path to a real radio is **not** reproducible on emulator) |
-| Real device (manual) | USB OTG + Bluetooth SPP with a physical radio; confirm read-back for every field after checking Hamlib backend status for that model |
-
-### Fixture sources
-
-See [`testdata/cat/SOURCES.md`](../testdata/cat/SOURCES.md) and
-[`scripts/fetch-cat-fixtures.sh`](../scripts/fetch-cat-fixtures.sh).
-
-### Server-file repeater check (Innlandet)
-
-Recorded under Testing / SOURCES after the read-only pack/pmtiles/POI search
-for `communication:amateur_radio:repeater=yes` and relation `18780801`. If
-server files lack complete repeater tags, the client extracts from local PBF /
-OSM fixtures; a future server-side bake is noted but **not** implemented on
-navi-server from this branch.
-
-### Test report (CAT branch)
-
-| Item | Result |
-|---|---|
-| Hamlib lock | tag **4.7.2**, NDK **30.0.14904198** (`scripts/hamlib-android.lock`) |
-| Geofabrik | Trailing-slash dated-URL retry; oppland/hedmark → ostlandet; Sweden PBF filename dedupe; soft-PASS logs `place_index_skipped=1` |
-| Elsa long-route | Prior campaign: 8 corridor regions auto-downloaded, Via `(none)`, no forced packs |
-| OSM changeset callsigns | See [`testdata/cat/SOURCES.md`](../testdata/cat/SOURCES.md) — LA2DRR, LA2HRR, LA2JRR, … LA5TRR, LA5MR, … |
-| Non-networked corridor | [`testdata/cat/non_networked.json`](../testdata/cat/non_networked.json) (OSM-only; APRS excluded) |
-| Server-file repeaters | **Partial** (21 hits in ostlandet fixture PBF incl. relation 18780801; incomplete vs current OSM) |
-| RepeaterBook / repeatermap.de | No data committed; cross-check / disabled only |
-| OpenRepeater Norway | Empty export (count=0) |
-| RadioID | Terms forbid bulk redistribute; no data |
-| Desktop unit tests | `navi-cat` gating/program/repeater + `--test scenarios` (1–12); `navi-plugin-cats` select/follow; dummy `rigctld -m 1` |
-| Emulator / hardware | Loopback bridge JVM tests; remote `10.0.2.2:4532`; real USB/BT/radio still required for field confirmation |
-| Still needs real hardware | USB OTG + Bluetooth SPP read-back on a physical transceiver after checking Hamlib backend status for that model |
-
-Plugin logic lives only under `plugins/CATS-plugin/`. Host radio safety is in `navi-cat`.
-
----
-
-## Future: rentable ham radio shacks (not implemented)
-
-Reference OSM way: <https://www.openstreetmap.org/way/395284738>.
-
-Fetch current tags for that way when documenting; search taginfo for
-rentable/guest amateur radio station tag combinations and usage counts.
-Possible Navi surfaces (doc only): map layer/POI, search, “near route” on long
-trips; fields such as operator, website, booking, bands/equipment if tagged.
-Other data sources beyond OSM may exist — list when researching. **No code**
-for this on the `CAT` branch.
+The dummy does not reproduce radio-specific behaviour (timing, settings reset
+on frequency change, unsupported functions). Final verification on the real
+radio is still required.
 
 ---
 
@@ -679,18 +575,14 @@ for this on the `CAT` branch.
 
 | Piece | Status |
 |---|---|
-| Architecture decisions (`RigBackend`, latest Hamlib, rejected crates) | Locked in this doc |
-| Plugin path `plugins/CATS-plugin/` + wasmtime sandbox | Implemented on `CAT` |
-| Read-back verification (app-side) | Implemented in `navi-cat` |
-| `navi-cat` + TCP/FFI backends | Implemented on `CAT` |
-| Backend gating (`dump_caps`) | Implemented on `CAT` |
-| Onboard repeater DB / OSM / CSV / OpenRepeater / RadioID | Implemented on `CAT` (RadioID/repeatermap: policy only) |
-| Cross-source merge / conflict UI | Conflict flags in DB/query; UI polish deferred |
-| RepeaterBook sync | Disabled until written API permission |
-| Auto-tune → VFO 1 / network follow | Implemented (guest + host) |
-| Hamlib Android build script + lock | Implemented (`scripts/build-hamlib-android.sh`, tag 4.7.2) |
-| Android USB/BT/remote transports | Loopback bridge + remote endpoint; JVM tests green |
-| Dummy-rig + scenario test suite | Scenarios 1–12 covered in `navi-cat` / plugin / JVM tests |
-| HostApi `cat_*` / `repeater_query` | Implemented (caps + host handlers; defaults fail closed) |
-| Product CAT UI | Tools/Map toggle + `CatStatusSheet` (connect / follow / nearby); UniFFI `cat_plugin_*` |
-| Future ham-shacks | Doc only; not implemented |
+| `navi-cat` rigctld client (own crate) | Not implemented |
+| Backend gating (`dump_caps`) | Not implemented |
+| Onboard repeater DB / OSM import | Not implemented |
+| AnyTone CPS CSV import | Specified here; not implemented |
+| OpenRepeater / RadioID import | Specified here; not implemented |
+| Cross-source repeater merge / conflict UI | Specified here; not implemented |
+| RepeaterBook sync | Disabled until written API permission; not implemented |
+| Auto-tune → VFO 1 | Specified here; not implemented |
+| Network follow mode | Specified here; not implemented |
+| Dummy-rig test suite | Not implemented |
+| Plugin capability wiring | Proposed in [`plugins.md`](plugins.md) |

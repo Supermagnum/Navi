@@ -134,7 +134,7 @@ class PackServerRoutingInstrumentedTest {
 
         val url = geofabrikLatestPbfUrl(path)
         assertTrue(url.contains("download.geofabrik.de"))
-        assertTrue(url.endsWith("faroe-islands-latest.osm.pbf/"))
+        assertTrue(url.endsWith("faroe-islands-latest.osm.pbf"))
         Log.i(TAG, "geofabrik_url=$url")
 
         val context = InstrumentationRegistry.getInstrumentation().targetContext

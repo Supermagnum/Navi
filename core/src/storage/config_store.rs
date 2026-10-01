@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::{
     EbikeConfig, EcoConfig, EvCarConfig, FuelConfig, ProfilePoiRadiiTable, RestConfig,
-    SafetyConfig, TravellerProfile, TruckDrivingHistory, VehicleLimits, VehicleOvernightConfig,
+    SafetyConfig, TruckDrivingHistory, VehicleLimits,
 };
 use crate::storage::Storage;
 
@@ -12,8 +12,6 @@ const REST_CONFIG_KEY: &str = "rest_config";
 const SAFETY_CONFIG_KEY: &str = "safety_config";
 const ECO_CONFIG_KEY: &str = "eco_config";
 const VEHICLE_LIMITS_KEY: &str = "vehicle_limits";
-const VEHICLE_OVERNIGHT_KEY: &str = "vehicle_overnight_config";
-const TRAVELLER_PROFILE_KEY: &str = "traveller_profile";
 const FUEL_CONFIG_KEY: &str = "fuel_config";
 const EBIKE_CONFIG_KEY: &str = "ebike_config";
 const EV_CAR_CONFIG_KEY: &str = "ev_car_config";
@@ -69,22 +67,6 @@ impl<'a> ConfigStore<'a> {
 
     pub fn save_vehicle_limits(&self, limits: &VehicleLimits) -> SqlResult<()> {
         self.save_json(VEHICLE_LIMITS_KEY, limits)
-    }
-
-    pub fn load_vehicle_overnight_config(&self) -> SqlResult<VehicleOvernightConfig> {
-        self.load_json(VEHICLE_OVERNIGHT_KEY, VehicleOvernightConfig::default)
-    }
-
-    pub fn save_vehicle_overnight_config(&self, config: &VehicleOvernightConfig) -> SqlResult<()> {
-        self.save_json(VEHICLE_OVERNIGHT_KEY, config)
-    }
-
-    pub fn load_traveller_profile(&self) -> SqlResult<TravellerProfile> {
-        self.load_json(TRAVELLER_PROFILE_KEY, TravellerProfile::default)
-    }
-
-    pub fn save_traveller_profile(&self, profile: &TravellerProfile) -> SqlResult<()> {
-        self.save_json(TRAVELLER_PROFILE_KEY, profile)
     }
 
     pub fn load_fuel_config(&self) -> SqlResult<FuelConfig> {

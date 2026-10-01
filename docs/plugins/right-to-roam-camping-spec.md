@@ -1,12 +1,6 @@
 # Right-to-roam overnight camping plugin (specification)
 
-**Status:** Phase 5a implemented on Android (wasmtime gate lifted, HostApi wired,
-PluginEnableStore default OFF, sandbox fuel/epoch/memory). Phase 5b implemented:
-Compose suggestion list + settings (enable default OFF, residency unknown,
-professional driver), session-disable banner, host-side rendering only. Map pins
-via `camping-suggest` GeoJSON when results exist (list-first). Vehicle host data
-layers still not ingested (§6.1). Emulator captures:
-`docs/images/camping-5b/`.  
+**Status:** specification only — not implemented.  
 **Path:** `docs/plugins/right-to-roam-camping-spec.md`  
 **Architecture:** WASM guest via `plugin-host` / `plugin-sdk` and capability-gated
 `HostApi` ([`plugins.md`](../plugins.md)). No new core routing; the plugin
@@ -324,7 +318,7 @@ Detailed hard filters and guidance remain in §2. Applies to mainland Norway
 
 | Field | Value |
 |---|---|
-| Distance | 150 m via shared `SafetyConfig` (§2.1). Card text: "Building distance: 150 m (friluftsloven), from Navi SafetyConfig". If the configured value is below 150 m, add "configured distance is below the 150 m in friluftsloven § 9" and still apply `SafetyConfig`. |
+| Distance | 150 m via shared `SafetyConfig` (§2.1) |
 | Duration | Generally ≤ 2 consecutive nights same spot (§2.2) |
 | Fire | Date-gated 15 Apr–15 Sep (§2.3); forskrift om brannforebygging § 3 |
 | Sources | Friluftsloven https://lovdata.no/dokument/NL/lov/1957-06-28-16 ; Motorferdselloven https://lovdata.no/dokument/NL/lov/1977-06-10-82 ; Fire rules https://lovdata.no/dokument/SF/forskrift/2015-12-17-1710 |
@@ -335,9 +329,8 @@ Detailed hard filters and guidance remain in §2. Applies to mainland Norway
 |---|---|
 | Distance | No statutory distance and no statutory size of the home-privacy zone. Pitch well away from homes, out of sight of their windows. The plugin reuses the shared SafetyConfig distance, labelled **"Navi safety default, not Swedish law"**. |
 | Duration | No statutory limit; the official rule of thumb is "a single day or so". |
-| Fire | Official Naturvårdsverket *eldning* page: allemansrätten gives no automatic right to light a fire; follow local *eldningsförbud*; do not light a fire where it can spread; do not fire on bare rock (*berghällar*). |
 | Filters / notes | Not on farmland, pasture or plantations. National parks, nature reserves and municipal rules may ban tents. |
-| Sources | Hub https://www.naturvardsverket.se/amnesomraden/allemansratten/ ; tältning https://www.naturvardsverket.se/amnesomraden/allemansratten/sa-gor-vi-allemansratt/taltning/ ; eldning https://www.naturvardsverket.se/amnesomraden/allemansratten/sa-gor-vi-allemansratt/eldning/ ; handbook PDF https://www.naturvardsverket.se/497366/globalassets/vagledning/allemansratten/material/handbok-gora-allemansratt-a4.pdf |
+| Sources | https://www.naturvardsverket.se/allemansratten ; handbook PDF https://prod-egp.naturvardsverket.se/497366/globalassets/vagledning/allemansratten/material/handbok-gora-allemansratt-a4.pdf |
 
 #### Finland — Tier A
 
@@ -913,29 +906,6 @@ Last verified: 2026-09
 | Vehicle class and professional-driver flag | Host `vehicle_profile_read` (user-set; never inferred from size) |
 | Traveller residency | Host `traveller_profile_read` (user-set; never inferred) |
 | Designated-site polygons / NVDB rest areas / Alberta pass area / MVUM | Host POI/area data (never fetched from WASM) |
-
----
-
-## 6.1 Implementation status (vehicle overnight host data)
-
-Vehicle overnight (§3.5) is implemented as a **separate suggestion path**. It
-never derives sites from a right-to-roam pack. Missing host data fails safe
-(empty / decline). The following layers are **not** ingested yet; wiring them
-is **future work on `right-to-roam`** (not a separate branch):
-
-| Host data | Needed for | Status in this branch |
-|---|---|---|
-| NVDB object type 809 (døgnhvileplass) vs 39 (rasteplass) | Norway vehicle rest | Not classified; never invented |
-| OSM `hgv=designated` truck bays | Professional HGV parking | Not classified |
-| OSM `tourism=caravan_site` | Designated-only fallback | Unclassified → empty |
-| OSM `amenity=sanitary_dump_station` | Dump-station cards | Not encoded |
-| France seashore / listed sites / drinking-water catchments / *espaces boisés classés* | FR roadside hard excludes | Layers not available → no FR roadside |
-| USFS MVUM | USFS vehicle camping | Without MVUM → designated only |
-
-`vehicle_profile_read` and `route_destination_read` are HostApi-wired on Android
-(Phase 5a): travel profile + professional flag from the live nav session;
-destination from `camping_plugin_set_nav_context`. Layers in the table above
-remain not ingested.
 
 ---
 

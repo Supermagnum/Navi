@@ -97,7 +97,7 @@ class DownloadScopeCountryHierarchyInstrumentedTest {
             )
         for (path in samples) {
             val url = geofabrikLatestPbfUrl(path)
-            assertTrue(url, url.contains(path) && url.endsWith("-latest.osm.pbf/"))
+            assertTrue(url, url.contains(path) && url.endsWith("-latest.osm.pbf"))
             val conn = URL(url).openConnection() as HttpURLConnection
             conn.requestMethod = "HEAD"
             conn.instanceFollowRedirects = true

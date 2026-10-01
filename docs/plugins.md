@@ -29,65 +29,90 @@ capabilities declared in the plugin manifest are wired. Host-owned code (Android
 service, native accessory) may open USB/serial/network and feed sanitized
 snapshots into the core; WASM guests must not get raw sockets.
 
-## Gate: wasmtime Android product link (Phase 5a)
-
-<a id="gate-upgrade-wasmtime-before-shipping-any-product-plugin"></a>
+## Gate: upgrade wasmtime before shipping any product plugin
 
 **Source of truth for this gate.** `docs/status.md` only points here.
 
-### Current state (2026-09 Phase 5a)
+### Current state (2026-08)
 
 - `plugin-host` pins **wasmtime** major **`48`** (lockfile **`48.0.3`**), with
-  features `cranelift` + `runtime` only (`default-features = false`; no Winch,
-  WASI, component-model, wat, cache, profiling, coredump, addr2line/demangle,
-  parallel-compilation, or GC collectors — guests do not use Wasm GC).
-- **`navi-ffi` (Android `libnavi.so`) links `navi-plugin-host`.** The right-to-roam
-  camping guest runs under Cranelift JIT on shipped ABIs (`arm64-v8a`, `x86_64`).
-  `navi-desktop` / `navi-linux` still must **not** depend on `navi-plugin-host`
-  (guarded by `scripts/check-plugin-host-gate.sh`).
-- Per-call isolation: **fuel** + **epoch wall-clock** + **linear-memory ceiling**
-  (`StoreLimits`, default 16 MiB; camping guest 32 MiB). Trap / timeout / fuel /
-  memory → plugin disabled for the session with a visible message; app never crashes.
-- Enable/disable: host-owned [`PluginEnableStore`](../plugin-host/src/plugin_enable.rs)
-  (default **OFF**). Disabling camping deletes `filesDir/plugin_kv/camping_night.json`.
-  Weather / DATEX toggles remain on `MapHudPrefs` (untouched).
-- Guest `.wasm` is built from source via `scripts/build-plugin-wasm.sh` into
-  `app/src/main/assets/plugins/` (gitignored). No committed binaries; F-Droid recipe
-  adds `wasm32-unknown-unknown` and runs the same script before assemble.
-- Runtime choice: **Cranelift JIT** from `.wasm` at load (`Module::from_file`). No
-  AOT `.cwasm` in the APK (F-Droid simplicity; avoids ABI-specific precompile blobs).
-  Pulley is **not** required for shipped ABIs; any future unsupported ABI fails closed
-  (`PluginError::UnsupportedAbi` / plugin unavailable — never crash).
-- The wasmtime 29-era RustSec ignores remain **cleared from**
-  [`deny.toml`](../deny.toml). Example-guest `wee_alloc` ignore remains for fixtures.
-- **Feature / backend confirmation:** `cargo tree -p navi-plugin-host -e features -i
-  wasmtime` shows only `cranelift` and `runtime` (plus transitive `std` /
-  unwinder / icache-coherence those enable). Only `plugin-host`
-  declares `wasmtime` in the workspace.
-- **Android aarch64 verification (kept green):** CI
-  `plugin-host-android-aarch64` / `scripts/plugin-host-android-aarch64-smoke.sh`
-  (NDK link + QEMU aarch64 Cranelift). Bionic on-device smoke was verified 2026-08-29
-  on SM-P613; re-run `--adb` after fuel/epoch/memory embedder changes.
+  features `cranelift` + `runtime` + `gc-drc` only (not Winch).
+- **No shipped artifact links `plugin-host` today.** `navi-ffi` (Android
+  `libnavi.so`), `navi-desktop`, `navi-linux`, and `driver-break-core` do not
+  depend on `navi-plugin-host` / wasmtime. Example guests (`log-hello`,
+  `busy-loop`) run under host-triple CI isolation tests and the Android
+  **aarch64** smoke (`scripts/plugin-host-android-aarch64-smoke.sh`).
+- The wasmtime 29-era RustSec ignores have been **cleared from**
+  [`deny.toml`](../deny.toml) (and the matching `.cargo/audit.toml` list).
+  Remaining ignores are unrelated: `bincode` unmaintained (`RUSTSEC-2025-0141`)
+  and example-guest `wee_alloc` (`RUSTSEC-2022-0054` /
+  [GHSA-rc23-xxgq-x27g](https://github.com/advisories/GHSA-rc23-xxgq-x27g)).
+  Replace or drop that allocator before shipping production guests that need a
+  custom alloc.
+- **Feature / backend confirmation (2026-08-29):** `cargo tree -p
+  navi-plugin-host -e features -i wasmtime` shows only `cranelift`, `runtime`,
+  and `gc-drc` (plus transitive internals those enable). No `wasi`,
+  `component-model`, `winch`, or `pooling-allocator`. Only `plugin-host`
+  declares a `wasmtime` dependency in the workspace, so a future
+  `navi-ffi` → `navi-plugin-host` link will not pull alternate wasmtime
+  features via another crate (guarded by `scripts/check-plugin-host-gate.sh`).
+- **Android aarch64 verification (2026-08-29):**
+  - **Link:** `android_isolation_smoke` cross-compiles for
+    `aarch64-linux-android` (NDK) in CI job `plugin-host-android-aarch64`
+    and via `scripts/plugin-host-android-aarch64-smoke.sh`.
+  - **Execute (Cranelift aarch64 ISA):** the same isolation checks run as an
+    `aarch64-unknown-linux-gnu` binary under **QEMU user-mode** in CI
+    (`--qemu`) so Cranelift’s **aarch64** backend is exercised (the
+    `RUSTSEC-2026-0096` class). Host-triple `cargo test` alone is not this check.
+  - **Execute (Bionic / on-device):** verified **2026-08-29** on Samsung
+    **SM-P613** (Galaxy Tab A7 Lite Wi-Fi), `ro.product.cpu.abi=arm64-v8a`,
+    Android **14** (API **34**), serial `R52TB0JQEDE`, via
+    `scripts/plugin-host-android-aarch64-smoke.sh --adb`. Pushed the
+    NDK-linked `aarch64-linux-android` binary to `/data/local/tmp` and ran it
+    under real Bionic; output `android_isolation_smoke: all checks passed`
+    (capability deny, `log-hello` load/call, busy-loop fuel/timeout kill —
+    matched the GNU+QEMU result; no crash, hang, or trap misclassification).
+    Note: modern x86_64 Android emulators refuse arm64 system images, and the
+    NDK does not ship `/system/bin/linker64` for Bionic user-mode QEMU — hence
+    CI keeps `--qemu` (GNU aarch64 via apt `gcc-aarch64-linux-gnu`) while
+    on-device `--adb` covers Bionic.
+- **Advisory coverage:** `deny.toml` `[graph].targets` includes
+  `aarch64-linux-android` / `x86_64-linux-android`; CI also runs
+  `cargo deny check advisories --target aarch64-linux-android` and
+  `cargo audit --target-arch aarch64 --target-os android`.
 
-### Required before linking other product hosts
+### Required before linking into a shipped binary
 
-1. Keep the aarch64 smoke green on the wasmtime pin you ship.
-2. Re-run `scripts/check-plugin-host-gate.sh` after any wasmtime or workspace
-   dependency change.
-3. Before linking `navi-desktop` / `navi-linux`, wire the same HostApi + enable-store
-   path and remove those crates from the premature-link guard in the gate script.
+The version bump (wasmtime 29 → 48.0.3), deny/audit ignore cleanup, feature
+graph confirmation, and Android **aarch64** isolation smoke are **done**.
+**Before** depending on `navi-plugin-host` from `navi-ffi`, the Android native
+build / APK packaging path, or `navi-desktop` (or any other user-facing
+artifact) for a real product plugin (APRS, Wikipedia, camping aids, …):
+
+1. **Keep the aarch64 smoke green** on the wasmtime pin you intend to ship —
+   CI job `plugin-host-android-aarch64` /
+   `scripts/plugin-host-android-aarch64-smoke.sh` (Android NDK link + QEMU
+   aarch64 Cranelift exec). Bionic on-device execution was already verified
+   once (SM-P613 / Android 14 / arm64-v8a, 2026-08-29); re-run `--adb` after
+   wasmtime or host embedder changes that touch fuel/epoch/trap paths.
+2. **Re-run** `scripts/check-plugin-host-gate.sh` after any wasmtime or
+   workspace dependency change so WASI / Component Model / Winch features
+   cannot appear via feature unification.
+3. Then remove the premature-link guard in that script (and this gate section)
+   in the same change that adds the `navi-ffi` / desktop dependency.
+
+Until a product link lands, treat “product plugins not shipped” as intentional;
+the premature-link CI guard fails the build if `navi-ffi`, `navi-desktop`, or
+`navi-linux` grows a `navi-plugin-host` dependency early.
 
 ## Crates
 
 | Crate | Role |
 |---|---|
-| `plugin-host` | Load manifest + `.wasm`, capability gate, fuel + epoch + memory, HostApi |
+| `plugin-host` | Load manifest + `.wasm`, capability gate, fuel + epoch timeout, HostApi |
 | `plugin-sdk` | `no_std` guest helpers (`host_log`, `host_position`, …) |
 | `plugins/log-hello` | Reference plugin: one log line |
 | `plugins/busy-loop` | Reference plugin: infinite loop (isolation tests) |
-| `plugins/trap-guest` | Reference plugin: deliberate trap |
-| `plugins/memory-bomb` | Reference plugin: grow memory until limit |
-| `plugins/right-to-roam-camping` | Product camping guest (Phase 5a on Android); shared rule engine in `plugins/right-to-roam-camping/engine` (`navi-right-to-roam-camping`) |
 | `plugins/weather/` | Weather plugin — Meteocons assets + guest scaffold; product HUD/map use host UniFFI ([`plugins/weather-plugin.md`](plugins/weather-plugin.md)) |
 | `plugins/datex/` | DATEX guest scaffold; host client in `driver-break-core::datex` ([`plugins/datex-plugin.md`](plugins/datex-plugin.md)) |
 
@@ -304,20 +329,19 @@ internet weather overlay.
 | **Proposed caps** | `position_read`, `incident_query` / `incident_write` (new), `log` |
 | **UI** | Map banners + route recalc prompt; never rewrite the `.pbf` silently |
 
-### 4. CAT radio control (`CATS-plugin` / `cat`)
+### 4. CAT radio control (`cat`)
 
 | | |
 |---|---|
 | **Benefit** | Set VFO frequency / offset / CTCSS from nearby NFM repeaters while driving |
-| **Path** | [`plugins/CATS-plugin/`](../plugins/CATS-plugin/) — all guest logic here; wasmtime only |
-| **Docs** | [`CAT.md`](CAT.md) — `RigBackend` (TCP + FFI), latest-stable Hamlib lock, Android transports, read-back verification, auto-tune, network follow, onboard DB (OSM / AnyTone CSV / OpenRepeater / RadioID; RepeaterBook disabled) |
-| **Host duties** | `navi-cat` + `navi-hamlib-sys` + USB/BT loopback / remote `rigctld`; never auto-TX (`rig_get_ptt` interlock; never `rig_set_ptt` / `T`); enforce gating + read-back even if the guest misbehaves; close sessions on plugin disable |
-| **Caps** | `position_read`, `log`, `cat_status`, `repeater_query`, `cat_vfo_set`, `cat_network_follow` |
-| **Safety** | Read/query free; **TX inhibited**; program only when PTT clear and read-back matches |
+| **Docs** | [`CAT.md`](CAT.md) — Hamlib 4.6.5 (NDK + FFI), Android transport, auto-tune, RepeaterBook + OSM onboard DB, Innlandsnettet example |
+| **Host duties** | CAT through **Hamlib 4.6.5** (NDK-built `libhamlib.so` + Navi’s minimal FFI crate); host owns the transport (USB/BT serial → loopback TCP, or remote `rigctld`) — see [`CAT.md`](CAT.md). Never auto-TX (`rig_get_ptt` interlock; never `rig_set_ptt`). Honour plugin enable/disable (close sessions when off). |
+| **Proposed caps** | `position_read`, `repeater_query` (new), `cat_vfo_set` (new, host-gated), `accessory_*` (USB), `log` |
+| **Safety** | Read/query free; **TX inhibited** unless user explicitly arms PTT path |
 
 Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 **150 km**, resolve output frequency, shift/offset, and CTCSS/DCS, then program
-**VFO 1** only (reported state returned to UI).
+**VFO 1** only.
 
 Same client/display split as the planned LoRa convoy plugin (Navi does not
 implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convoy-spec.md).
@@ -475,6 +499,8 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 | `track_upsert` | Push APRS / track stations into host `TrackStore` |
 | `weather_read` | Read cached weather samples near lat/lon |
 | `incident_query` / `incident_write` | Road closures / convoy / accident overlays |
+| `repeater_query` | Nearest NFM repeaters from onboard DB (+ optional RepeaterBook sync) |
+| `cat_vfo_set` | Ask host to program VFO 1 (frequency, offset, tone) |
 | `ecu_read` | Latest `LiveEnergySnapshot` |
 | `ebike_telemetry_read` | Latest DIY `$NAVIPWR` / wired e-bike snapshot (host owns serial) |
 | `voice_speak` / `voice_pack_query` | Queue guidance utterance or list installed voice packs |
@@ -500,26 +526,16 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 | `convoy_status_read` | Last-known convoy table (position, speed, fuel/battery, seq, stale) for LoRa convoy UI |
 | `plugin_list` / `plugin_set_enabled` | Host-owned inventory and per-plugin enable/disable (UI + persistence) |
 
-### CAT capabilities (in ABI on `CAT` branch)
-
-| Cap | Purpose |
-|---|---|
-| `cat_status` | Connected, model, gating result, PTT, last reported VFO |
-| `repeater_query` | Nearest NFM/DMR sites from onboard DB (≤ 150 km; RepeaterBook never required) |
-| `cat_vfo_set` | Host programs VFO 1 with read-back; returns **reported** state |
-| `cat_network_follow` | Enable/pin/disable network follow; host loop + interlocks |
-
 Add a capability to `plugin-host` `Capability` enum + HostApi **before** shipping
 any guest that needs it. Until then, host-native services may write into core
 via UniFFI without WASM.
 
 ## Design rules for all plugins
 
-1. **Wasmtime ship gate:** `navi-ffi` (Android) links `plugin-host` as of Phase 5a
-   (Cranelift JIT, fuel+epoch+memory). Keep aarch64 smoke green and re-run
-   `scripts/check-plugin-host-gate.sh` after wasmtime changes. Do **not** link
-   `navi-desktop` / `navi-linux` until those hosts wire the same path
-   ([gate section](#gate-upgrade-wasmtime-before-shipping-any-product-plugin)).
+1. **Wasmtime ship gate:** do not link `plugin-host` into `navi-ffi`, the
+   Android APK, or `navi-desktop` until the remaining steps in the
+   [wasmtime upgrade gate](#gate-upgrade-wasmtime-before-shipping-any-product-plugin)
+   are done (aarch64 smoke kept green; gate script updated when linking).
    The crate pin is 48.0.3 with Cranelift-only features confirmed.
 2. **Offline-first:** network is opt-in; core routing must work with plugins
    disabled.

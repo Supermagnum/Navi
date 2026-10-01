@@ -433,13 +433,6 @@ top after basemap mutations (`ensureRouteAboveHillshade`).
 | 8 | **Symbol block** — contour index elevations (`navi-contours-label`, bottom of block), road names, shields, housenumbers, place/farm/peak/POI labels, icons | **topmost basemap** | **topmost basemap** | **topmost basemap** | **topmost basemap** |
 | 9 | Navi route / GPS / track overlays | above basemap | above basemap | above basemap | above basemap |
 
-**Tunnels:** Offline Protomaps road/path/rail layers filter on `is_tunnel`.
-Surface layers (`roads_minor` / `roads_major` / `roads_other` / `roads_rail`)
-exclude tunnels; parallel `*_tunnel` layers use `line-dasharray` `[2, 1.5]`
-(rail hatch keeps a tick pattern). Online Liberty tunnel fills are patched at
-style load by [BasemapTunnelPaint] so road, path, and railway tunnels render
-dashed (upstream often leaves fills solid).
-
 **Label guarantee:** In all four toggle combinations, housenumbers, house/place
 names, road names, and POI/peak labels remain **above** hillshade and contour
 line layers (rows 8–9). Hillshade sits under hydro (row 3) so water fill is not

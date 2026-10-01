@@ -471,37 +471,8 @@ fn is_installed(id: &str, installed: &[String]) -> bool {
         .any(|inst| region_ids_match_for_catalog(inst, id))
 }
 
-/// Sample spacing when densifying OD chords for PIP. Endpoint-only adjacency
-/// (nord-norge→trondelag→ostlandet) misses the fair Bugøynes→Sjuvasslia land
-/// path through Norrbotten / Västerbotten; ~50 km samples recover it.
-const TRIP_CORRIDOR_SAMPLE_KM: f64 = 50.0;
-
-fn densify_trip_waypoints(waypoints: &[(f64, f64)], step_km: f64) -> Vec<(f64, f64)> {
-    let mut out = Vec::new();
-    if waypoints.is_empty() {
-        return out;
-    }
-    out.push(waypoints[0]);
-    for w in waypoints.windows(2) {
-        let a = w[0];
-        let b = w[1];
-        let d = haversine_km(a.0, a.1, b.0, b.1);
-        let n = (d / step_km.max(1e-6)).ceil() as i32;
-        for i in 1..=n.max(1) {
-            let t = i as f64 / n.max(1) as f64;
-            out.push((a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t));
-        }
-    }
-    out
-}
-
-/// Default long-trip corridor: densify the waypoint chord, PIP each sample,
-/// then adjacency hop-path between consecutive distinct regions.
-///
-/// Densifying matters for long chords that leave the start country (e.g.
-/// Bugøynes→Sjuvasslia crosses Sweden) where endpoint-only adjacency would
-/// stay on Norway landsdel neighbours. Intermediate samples with no catalog
-/// cover are skipped; original endpoints must still resolve.
+/// Default long-trip corridor: PIP + adjacency hop path for each consecutive
+/// waypoint pair, concatenated and de-duplicated in first-crossing order.
 ///
 /// Installed regions are dropped from the result (same contract as densify).
 pub fn ordered_needed_regions_for_trip(
@@ -512,36 +483,13 @@ pub fn ordered_needed_regions_for_trip(
     if waypoints.is_empty() {
         return Ok(Vec::new());
     }
-    // User-supplied endpoints / vias must resolve (fail loud).
-    for &(lat, lon) in waypoints {
-        if region_containing(lat, lon, country_iso).is_none() {
-            return Err(MissingCorridor::UnknownRegion { lat, lon });
-        }
-    }
-
     let g = graph();
-    let samples = densify_trip_waypoints(waypoints, TRIP_CORRIDOR_SAMPLE_KM);
     let mut region_ids: Vec<String> = Vec::new();
-    for &(lat, lon) in &samples {
+    for &(lat, lon) in waypoints {
         let Some(id) = region_containing(lat, lon, country_iso) else {
-            // Ocean / catalog gaps along the chord — skip; adjacency bridges.
-            continue;
+            return Err(MissingCorridor::UnknownRegion { lat, lon });
         };
-        let id = normalize_region_id(id);
-        if region_ids.last().map(|l| l != &id).unwrap_or(true) {
-            region_ids.push(id);
-        }
-    }
-    if region_ids.is_empty() {
-        // Should not happen after endpoint checks; keep a safe fallback.
-        for &(lat, lon) in waypoints {
-            if let Some(id) = region_containing(lat, lon, country_iso) {
-                let id = normalize_region_id(id);
-                if region_ids.last().map(|l| l != &id).unwrap_or(true) {
-                    region_ids.push(id);
-                }
-            }
-        }
+        region_ids.push(normalize_region_id(id));
     }
 
     let mut out: Vec<String> = Vec::new();
@@ -581,55 +529,7 @@ pub fn ordered_needed_regions_for_trip(
             push(&g.regions[idx].id, &mut out, &mut seen);
         }
     }
-    // Adjacency PIP currently holes Finnish Lapland (no `europe/finland`
-    // rings in region_adjacency.bin), so OD-chord samples there are skipped
-    // and the fair Bugøynes→Sjuvasslia land path never requests Finland.
-    // Inject it when eastern Finnmark → Østlandet already selected northern
-    // Sweden — densify spine joints and DATEX sits need the FI pack Ready.
-    inject_finland_for_eastern_finnmark_se_bridge(waypoints, installed, &mut out, &mut seen);
     Ok(out)
-}
-
-/// When Bugøynes-class eastern Finnmark trips already need northern Sweden,
-/// also download Finland (fair ~1944 km path crosses Lapland).
-fn inject_finland_for_eastern_finnmark_se_bridge(
-    waypoints: &[(f64, f64)],
-    installed: &[String],
-    out: &mut Vec<String>,
-    seen: &mut BTreeSet<String>,
-) {
-    let Some(&start) = waypoints.first() else {
-        return;
-    };
-    let Some(&end) = waypoints.last() else {
-        return;
-    };
-    // Elsa / Bugøynes class: high-latitude east Finnmark → southern Østlandet.
-    if start.0 < 69.5 || start.1 < 28.0 {
-        return;
-    }
-    if end.0 > 61.0 || end.1 > 12.0 {
-        return;
-    }
-    let has_northern_se = out.iter().any(|r| {
-        r.contains("/norrbotten")
-            || r.contains("/vasterbotten")
-            || r.contains("/vasternorrland")
-            || r.contains("/jamtland")
-    });
-    if !has_northern_se {
-        return;
-    }
-    if out.iter().any(|r| r.contains("finland")) || is_installed("europe/finland", installed) {
-        return;
-    }
-    let fi = "europe/finland";
-    if let Some(i) = out.iter().position(|r| r.contains("nord-norge")) {
-        out.insert(i + 1, fi.to_string());
-        seen.insert(fi.to_string());
-    } else if seen.insert(fi.to_string()) {
-        out.insert(0, fi.to_string());
-    }
 }
 
 /// Warm the static graph (decode). Returns region count.

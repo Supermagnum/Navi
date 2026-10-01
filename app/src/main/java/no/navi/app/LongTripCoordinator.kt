@@ -324,7 +324,7 @@ object LongTripCoordinator {
                 val filename = "$leaf-latest.osm.pbf"
                 val url =
                     runCatching { geofabrikLatestPbfUrl(packPath) }
-                        .getOrElse { "https://download.geofabrik.de/$extractPath-latest.osm.pbf/" }
+                        .getOrElse { "https://download.geofabrik.de/$extractPath-latest.osm.pbf" }
                 states[regionId] = State.Downloading
                 downloadStarter.start(
                     context = context,
@@ -347,7 +347,7 @@ object LongTripCoordinator {
                 val filename = "$leaf-latest.osm.pbf"
                 val url =
                     runCatching { geofabrikLatestPbfUrl(packPath) }
-                        .getOrElse { "https://download.geofabrik.de/$extractPath-latest.osm.pbf/" }
+                        .getOrElse { "https://download.geofabrik.de/$extractPath-latest.osm.pbf" }
                 states[regionId] = State.Downloading
                 downloadStarter.start(
                     context = context,

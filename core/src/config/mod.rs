@@ -9,9 +9,7 @@ mod fmcsa_params;
 mod poi_radii;
 mod rest_params;
 mod safety;
-mod traveller_profile;
 mod truck_history;
-mod vehicle_overnight;
 
 pub use defaults::*;
 pub use driving_hours_pack::JurisdictionDrivingHoursPack;
@@ -28,14 +26,12 @@ pub use rest_params::{
     TruckRestParams,
 };
 pub use safety::SafetyConfig;
-pub use traveller_profile::TravellerProfile;
 pub use truck_history::{
     civil_date_add_days, iso_week_monday, outstanding_weekly_rest_compensations,
     prune_truck_driving_history, record_reduced_weekly_compensation, record_truck_driving_hours,
     rolling_date_window, try_repay_weekly_rest_compensation, weekly_rest_compensation_deadline,
     TruckDrivingDay, TruckDrivingHistory, TruckRestKind, WeeklyRestCompensationDebt,
 };
-pub use vehicle_overnight::{VehicleOvernightClass, VehicleOvernightConfig, VehicleProfileView};
 
 use serde::{Deserialize, Serialize};
 

@@ -160,57 +160,17 @@ pub fn provision_region_with_elev_tar(
                 );
             }
         }
-        // Geofabrik occasionally 404s / redirect-loops a country extract while
-        // pack-server graphs are already Ready (seen on europe/finland). Place
-        // index needs the PBF; multi-stem routing does not. Soft-PASS so the
-        // corridor can mark the region Installed for planning.
-        match download_file(pbf_url, &pbf_path) {
-            Ok(n) if n >= 1_000_000 => {
-                osm_bytes = n;
-                phase_timing::end_detail(
-                    "geofabrik_pbf.download",
-                    pbf_t0,
-                    &format!("bytes={osm_bytes}"),
-                );
-            }
-            Ok(n) => {
-                let _ = fs::remove_file(&pbf_path);
-                if graph_packs_ready_beside_pbf(data_dir, pbf_filename) {
-                    log::warn!(
-                        target: "NaviDownload",
-                        "[NaviDownload] PBF too small ({n} bytes) from {pbf_url}; \
-                         Ready packs present — soft-PASS for multi-stem routing only; \
-                         place-index extract incomplete (place_index_skipped=1)"
-                    );
-                    phase_timing::end_detail(
-                        "geofabrik_pbf.download",
-                        pbf_t0,
-                        "soft_skip=packs_ready_small_pbf place_index_skipped=1",
-                    );
-                } else {
-                    bail!(
-                        "downloaded PBF too small ({n} bytes) from {pbf_url} — refuse stub/empty"
-                    );
-                }
-            }
-            Err(e) => {
-                if graph_packs_ready_beside_pbf(data_dir, pbf_filename) {
-                    log::warn!(
-                        target: "NaviDownload",
-                        "[NaviDownload] Geofabrik PBF failed ({e:#}); Ready packs present — \
-                         soft-PASS for multi-stem routing only; \
-                         place-index extract incomplete (place_index_skipped=1)"
-                    );
-                    phase_timing::end_detail(
-                        "geofabrik_pbf.download",
-                        pbf_t0,
-                        "soft_skip=packs_ready_download_err place_index_skipped=1",
-                    );
-                } else {
-                    return Err(e);
-                }
-            }
+        osm_bytes = download_file(pbf_url, &pbf_path)?;
+        if osm_bytes < 1_000_000 {
+            bail!(
+                "downloaded PBF too small ({osm_bytes} bytes) from {pbf_url} — refuse stub/empty"
+            );
         }
+        phase_timing::end_detail(
+            "geofabrik_pbf.download",
+            pbf_t0,
+            &format!("bytes={osm_bytes}"),
+        );
     } else {
         log::info!(
             target: "PHASE_TIMING",
@@ -271,24 +231,4 @@ fn extract_tar_to(data_dir: &Path, tar_path: &Path) -> anyhow::Result<()> {
     let mut archive = tar::Archive::new(f);
     archive.unpack(data_dir)?;
     Ok(())
-}
-
-/// True when pack-server graphs for this extract stem are Ready beside `pbf_filename`.
-///
-/// `finland-latest.osm.pbf` → stem `finland-latest`. Used to soft-skip a broken
-/// Geofabrik place-index extract when routing packs are already installed.
-fn graph_packs_ready_beside_pbf(data_dir: &Path, pbf_filename: &str) -> bool {
-    use crate::routing::indexed::{manifest_path, NaviManifest, PackStatus};
-    let stem = pbf_filename
-        .trim()
-        .trim_end_matches(".osm.pbf")
-        .trim_end_matches(".pbf");
-    if stem.is_empty() {
-        return false;
-    }
-    let man_path = manifest_path(data_dir, stem);
-    let Ok(man) = NaviManifest::load(&man_path) else {
-        return false;
-    };
-    man.status_pack_files(data_dir) == PackStatus::Ready
 }

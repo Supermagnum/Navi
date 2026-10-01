@@ -1,4 +1,4 @@
-//! Wasmtime loader with fuel + epoch (wall-clock) + memory isolation.
+//! Wasmtime loader with fuel + epoch (wall-clock) isolation.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -9,9 +9,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use thiserror::Error;
-use wasmtime::{
-    Caller, Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, Trap,
-};
+use wasmtime::{Caller, Config, Engine, Linker, Module, Store, Trap};
 
 use crate::abi::{Capability, HostApi, PoiWrite};
 use crate::manifest::PluginManifest;
@@ -20,15 +18,11 @@ use crate::manifest::PluginManifest;
 pub const DEFAULT_FUEL: u64 = 5_000_000;
 /// Default wall-clock budget per `call` when the manifest omits `timeout_ms`.
 pub const DEFAULT_TIMEOUT_MS: u64 = 250;
-/// Default linear-memory ceiling per guest call (16 MiB).
-pub const DEFAULT_MEMORY_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct PluginLimits {
     pub fuel: u64,
     pub timeout_ms: u64,
-    /// Max bytes any single linear memory may grow to during a call.
-    pub memory_bytes: usize,
 }
 
 impl Default for PluginLimits {
@@ -36,7 +30,6 @@ impl Default for PluginLimits {
         Self {
             fuel: DEFAULT_FUEL,
             timeout_ms: DEFAULT_TIMEOUT_MS,
-            memory_bytes: DEFAULT_MEMORY_BYTES,
         }
     }
 }
@@ -49,12 +42,8 @@ pub enum PluginError {
     FuelExhausted,
     #[error("plugin exceeded wall-clock timeout")]
     Timeout,
-    #[error("plugin exceeded memory limit")]
-    MemoryExceeded,
     #[error("plugin trap: {0}")]
     Trap(String),
-    #[error("plugin unavailable on this ABI ({0})")]
-    UnsupportedAbi(String),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -70,13 +59,6 @@ pub enum CallOutcome {
     Ok,
     FuelExhausted,
     Timeout,
-    MemoryExceeded,
-}
-
-/// Guest linear-memory size after a call (bytes). Used as peak RSS proxy.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct GuestCallStats {
-    pub memory_bytes: u64,
 }
 
 struct StoreData {
@@ -84,13 +66,6 @@ struct StoreData {
     /// Capability set retained for future per-call enforcement audits.
     #[allow(dead_code)]
     allowed: HashSet<Capability>,
-    limits: StoreLimits,
-}
-
-/// Cranelift native compilation is supported for the ABIs Navi ships
-/// (`arm64-v8a` / `aarch64`, `x86_64`). Anything else fails closed.
-pub fn cranelift_abi_supported() -> bool {
-    matches!(std::env::consts::ARCH, "aarch64" | "x86_64")
 }
 
 /// Loaded, capability-checked plugin ready for sandboxed calls.
@@ -125,13 +100,6 @@ impl PluginHost {
         host_policy: &HashSet<Capability>,
         default_limits: PluginLimits,
     ) -> Result<Self, PluginError> {
-        if !cranelift_abi_supported() {
-            return Err(PluginError::UnsupportedAbi(format!(
-                "{} — Cranelift unavailable; plugin disabled (fail closed)",
-                std::env::consts::ARCH
-            )));
-        }
-
         let requested = manifest.capability_set();
         for cap in &requested {
             if !host_policy.contains(cap) {
@@ -158,9 +126,6 @@ impl PluginHost {
         let limits = PluginLimits {
             fuel: manifest.fuel_limit.unwrap_or(default_limits.fuel),
             timeout_ms: manifest.timeout_ms.unwrap_or(default_limits.timeout_ms),
-            memory_bytes: manifest
-                .memory_limit_bytes
-                .unwrap_or(default_limits.memory_bytes),
         };
 
         Ok(Self {
@@ -189,36 +154,18 @@ impl PluginHost {
         &self.wasm_path
     }
 
-    /// Invoke the exported entry function under fuel + wall-clock + memory limits.
+    /// Invoke the exported entry function under fuel + wall-clock limits.
     pub fn call(&self, api: Box<dyn HostApi>) -> Result<CallOutcome, PluginError> {
-        self.call_with_stats(api).map(|(outcome, _)| outcome)
-    }
-
-    /// Like [`call`], plus guest linear-memory size after the export returns.
-    pub fn call_with_stats(
-        &self,
-        api: Box<dyn HostApi>,
-    ) -> Result<(CallOutcome, GuestCallStats), PluginError> {
         let mut linker = Linker::new(&self.engine);
         install_imports(&mut linker, &self.allowed)?;
-
-        let store_limits = StoreLimitsBuilder::new()
-            .memory_size(self.limits.memory_bytes)
-            .instances(1)
-            .memories(1)
-            .tables(4)
-            .trap_on_grow_failure(true)
-            .build();
 
         let mut store = Store::new(
             &self.engine,
             StoreData {
                 api,
                 allowed: self.allowed.clone(),
-                limits: store_limits,
             },
         );
-        store.limiter(|data| &mut data.limits);
         store.set_fuel(self.limits.fuel)?;
         store.set_epoch_deadline(1);
 
@@ -249,15 +196,9 @@ impl PluginHost {
         stop.store(true, Ordering::SeqCst);
         let _ = ticker.join();
 
-        let memory_bytes = instance
-            .get_memory(&mut store, "memory")
-            .map(|m| m.data_size(&store) as u64)
-            .unwrap_or(0);
-        let stats = GuestCallStats { memory_bytes };
-
         match result {
-            Ok(()) => Ok((CallOutcome::Ok, stats)),
-            Err(err) => classify_trap(err).map(|o| (o, stats)),
+            Ok(()) => Ok(CallOutcome::Ok),
+            Err(err) => classify_trap(err),
         }
     }
 }
@@ -268,9 +209,6 @@ fn classify_trap(err: wasmtime::Error) -> Result<CallOutcome, PluginError> {
         match trap {
             Trap::OutOfFuel => return Ok(CallOutcome::FuelExhausted),
             Trap::Interrupt => return Ok(CallOutcome::Timeout),
-            Trap::AllocationTooLarge | Trap::MemoryOutOfBounds => {
-                return Ok(CallOutcome::MemoryExceeded);
-            }
             _ => {}
         }
     }
@@ -280,14 +218,6 @@ fn classify_trap(err: wasmtime::Error) -> Result<CallOutcome, PluginError> {
     }
     if lower.contains("epoch") || lower.contains("interrupt") || lower.contains("deadline") {
         return Ok(CallOutcome::Timeout);
-    }
-    if lower.contains("growing memory")
-        || lower.contains("memory growth")
-        || lower.contains("out of memory")
-        || lower.contains("allocation too large")
-        || lower.contains("exceeded memory")
-    {
-        return Ok(CallOutcome::MemoryExceeded);
     }
     Err(PluginError::Trap(msg))
 }
@@ -402,329 +332,6 @@ fn install_imports(
         )?;
     }
 
-    if allowed.contains(&Capability::RouteRead) {
-        linker.func_wrap(
-            "navi",
-            "route_read",
-            |mut caller: Caller<'_, StoreData>,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let view = caller.data().api.route_read();
-                write_json_view(&mut caller, out_ptr, out_cap, &view, "route_read")
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::RouteDestinationRead) {
-        linker.func_wrap(
-            "navi",
-            "route_destination_read",
-            |mut caller: Caller<'_, StoreData>,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let view = caller.data().api.route_destination_read();
-                write_json_view(
-                    &mut caller,
-                    out_ptr,
-                    out_cap,
-                    &view,
-                    "route_destination_read",
-                )
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::SafetyConfigRead) {
-        linker.func_wrap(
-            "navi",
-            "safety_config_read",
-            |mut caller: Caller<'_, StoreData>,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let view = caller.data().api.safety_config_read();
-                // `null` JSON when unavailable — guests must not treat as 0 m.
-                write_json_view(&mut caller, out_ptr, out_cap, &view, "safety_config_read")
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::AdminRegionRead) {
-        linker.func_wrap(
-            "navi",
-            "admin_region_read",
-            |mut caller: Caller<'_, StoreData>,
-             lat_bits: u64,
-             lon_bits: u64,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let lat = f64::from_bits(lat_bits);
-                let lon = f64::from_bits(lon_bits);
-                let view = caller.data().api.admin_region_read(lat, lon);
-                write_json_view(&mut caller, out_ptr, out_cap, &view, "admin_region_read")
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::ClockRead) {
-        linker.func_wrap(
-            "navi",
-            "clock_read",
-            |mut caller: Caller<'_, StoreData>,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let view = caller.data().api.clock_read();
-                write_json_view(&mut caller, out_ptr, out_cap, &view, "clock_read")
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::PluginKv) {
-        linker.func_wrap(
-            "navi",
-            "plugin_kv_status",
-            |caller: Caller<'_, StoreData>| -> wasmtime::Result<i32> {
-                Ok(match caller.data().api.plugin_kv_status() {
-                    crate::abi::PluginKvStatus::Available => 1,
-                    crate::abi::PluginKvStatus::Unavailable => 0,
-                })
-            },
-        )?;
-        linker.func_wrap(
-            "navi",
-            "plugin_kv_get",
-            |mut caller: Caller<'_, StoreData>,
-             key_ptr: u32,
-             key_len: u32,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                if caller.data().api.plugin_kv_status() == crate::abi::PluginKvStatus::Unavailable {
-                    return Ok(-2); // unavailable (distinct from missing key -1)
-                }
-                let key = read_guest_string(&mut caller, key_ptr, key_len)?;
-                match caller.data().api.plugin_kv_get(&key) {
-                    Some(v) => {
-                        let written =
-                            write_guest_bytes(&mut caller, out_ptr, out_cap, v.as_bytes())?;
-                        Ok(written as i32)
-                    }
-                    None => Ok(-1),
-                }
-            },
-        )?;
-        linker.func_wrap(
-            "navi",
-            "plugin_kv_set",
-            |mut caller: Caller<'_, StoreData>,
-             key_ptr: u32,
-             key_len: u32,
-             val_ptr: u32,
-             val_len: u32|
-             -> wasmtime::Result<i32> {
-                if caller.data().api.plugin_kv_status() == crate::abi::PluginKvStatus::Unavailable {
-                    return Ok(2); // unavailable
-                }
-                let key = read_guest_string(&mut caller, key_ptr, key_len)?;
-                let val = read_guest_string(&mut caller, val_ptr, val_len)?;
-                match caller.data_mut().api.plugin_kv_set(&key, &val) {
-                    Ok(()) => Ok(0),
-                    Err(_) => Ok(1),
-                }
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::ProtectedAreaQuery) {
-        linker.func_wrap(
-            "navi",
-            "protected_area_query",
-            |mut caller: Caller<'_, StoreData>,
-             lat_bits: u64,
-             lon_bits: u64,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let lat = f64::from_bits(lat_bits);
-                let lon = f64::from_bits(lon_bits);
-                let view = caller.data().api.protected_area_query(lat, lon);
-                write_json_view(&mut caller, out_ptr, out_cap, &view, "protected_area_query")
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::LandTenureQuery) {
-        linker.func_wrap(
-            "navi",
-            "land_tenure_query",
-            |mut caller: Caller<'_, StoreData>,
-             lat_bits: u64,
-             lon_bits: u64,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let lat = f64::from_bits(lat_bits);
-                let lon = f64::from_bits(lon_bits);
-                let view = caller.data().api.land_tenure_query(lat, lon);
-                write_json_view(&mut caller, out_ptr, out_cap, &view, "land_tenure_query")
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::LandcoverQuery) {
-        linker.func_wrap(
-            "navi",
-            "landcover_query",
-            |mut caller: Caller<'_, StoreData>,
-             lat_bits: u64,
-             lon_bits: u64,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let lat = f64::from_bits(lat_bits);
-                let lon = f64::from_bits(lon_bits);
-                let view = caller.data().api.landcover_query(lat, lon);
-                write_json_view(&mut caller, out_ptr, out_cap, &view, "landcover_query")
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::TravelModeRead) {
-        linker.func_wrap(
-            "navi",
-            "travel_mode_read",
-            |mut caller: Caller<'_, StoreData>,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let view = caller.data().api.travel_mode_read();
-                write_json_view(&mut caller, out_ptr, out_cap, &view, "travel_mode_read")
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::VehicleProfileRead) {
-        linker.func_wrap(
-            "navi",
-            "vehicle_profile_read",
-            |mut caller: Caller<'_, StoreData>,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let view = caller.data().api.vehicle_profile_read();
-                write_json_view(&mut caller, out_ptr, out_cap, &view, "vehicle_profile_read")
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::TravellerProfileRead) {
-        linker.func_wrap(
-            "navi",
-            "traveller_profile_read",
-            |mut caller: Caller<'_, StoreData>,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let view = caller.data().api.traveller_profile_read();
-                write_json_view(
-                    &mut caller,
-                    out_ptr,
-                    out_cap,
-                    &view,
-                    "traveller_profile_read",
-                )
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::CatStatus) {
-        linker.func_wrap(
-            "navi",
-            "cat_status",
-            |mut caller: Caller<'_, StoreData>,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let json = caller.data().api.cat_status();
-                let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
-                Ok(written as i32)
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::RepeaterQuery) {
-        linker.func_wrap(
-            "navi",
-            "repeater_query",
-            |mut caller: Caller<'_, StoreData>,
-             lat_bits: u64,
-             lon_bits: u64,
-             radius_km_bits: u64,
-             net_ptr: u32,
-             net_len: u32,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let lat = f64::from_bits(lat_bits);
-                let lon = f64::from_bits(lon_bits);
-                let radius_km = f64::from_bits(radius_km_bits).min(150.0).max(0.0);
-                let network_id = if net_len == 0 {
-                    None
-                } else {
-                    Some(read_guest_string(&mut caller, net_ptr, net_len)?)
-                };
-                let json = caller.data().api.repeater_query(
-                    lat,
-                    lon,
-                    radius_km,
-                    network_id.as_deref(),
-                );
-                let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
-                Ok(written as i32)
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::CatVfoSet) {
-        linker.func_wrap(
-            "navi",
-            "cat_vfo_set",
-            |mut caller: Caller<'_, StoreData>,
-             req_ptr: u32,
-             req_len: u32,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let req = read_guest_string(&mut caller, req_ptr, req_len)?;
-                let json = caller.data_mut().api.cat_vfo_set(&req);
-                let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
-                Ok(written as i32)
-            },
-        )?;
-    }
-
-    if allowed.contains(&Capability::CatNetworkFollow) {
-        linker.func_wrap(
-            "navi",
-            "cat_network_follow",
-            |mut caller: Caller<'_, StoreData>,
-             req_ptr: u32,
-             req_len: u32,
-             out_ptr: u32,
-             out_cap: u32|
-             -> wasmtime::Result<i32> {
-                let req = read_guest_string(&mut caller, req_ptr, req_len)?;
-                let json = caller.data_mut().api.cat_network_follow(&req);
-                let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
-                Ok(written as i32)
-            },
-        )?;
-    }
-
     // Always provide a no-op alloc helper so guests can request scratch space
     // without WASI. Guests that ship their own allocator ignore this.
     linker.func_wrap(
@@ -734,19 +341,6 @@ fn install_imports(
     )?;
 
     Ok(())
-}
-
-fn write_json_view<T: serde::Serialize>(
-    caller: &mut Caller<'_, StoreData>,
-    out_ptr: u32,
-    out_cap: u32,
-    value: &T,
-    label: &str,
-) -> wasmtime::Result<i32> {
-    let json = serde_json::to_string(value)
-        .map_err(|e| wasmtime::Error::msg(format!("serialize {label}: {e}")))?;
-    let written = write_guest_bytes(caller, out_ptr, out_cap, json.as_bytes())?;
-    Ok(written as i32)
 }
 
 fn hits_as_json(hits: &[PoiWrite]) -> Vec<serde_json::Value> {

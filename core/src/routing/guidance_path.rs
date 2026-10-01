@@ -1,7 +1,7 @@
 //! Build simulation samples and turn maneuvers along a planned graph path.
 
 use osm4routing::NodeId;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::nav::{maneuver_street_label, prefer_street_label, same_road_name_ref, ManeuverKind};
 use crate::routing::eta::{edge_speed_kmh, highway_fallback_kmh};
@@ -73,7 +73,7 @@ pub struct SimSample {
     pub street: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RouteManeuver {
     pub lat: f64,
     pub lon: f64,
@@ -1510,9 +1510,11 @@ fn collapse_maneuvers(steps: Vec<InternalStep>) -> Vec<InternalStep> {
                 i += 1;
                 continue;
             }
-            // Keep durable OSM name/ref changes silent. Promoting every continue
-            // onto a new name inflates long-route instruction lists far past
-            // continuous-guidance density (55–100 for a ~1600 km trip).
+            // Promote durable name/ref change to an announced continue (Straight).
+            let mut promoted = s.clone();
+            promoted.silent_name_change = false;
+            filtered.push(promoted);
+            prev_street = s.street.clone();
             i += 1;
             continue;
         }
@@ -1962,115 +1964,6 @@ fn count_roundabout_exit(
 
 pub fn samples_to_json(samples: &[SimSample]) -> String {
     serde_json::to_string(samples).unwrap_or_else(|_| "[]".into())
-}
-
-/// Concatenate per-chunk-leg maneuvers into one continuous list.
-///
-/// Drops unmarked mid-leg `destination` markers (chunk joints are not via/dest
-/// arrivals) and offsets `cum_m` by prior leg length — same rules as the Android
-/// `mergeManeuvers` helper. Raw JSON concat used to keep 1 destination per hop
-/// and reset cum_m each leg (~14× destination spam on Bevensen→Dalsøren).
-///
-/// Then [`thin_route_maneuvers`] so long-trip chunked guidance matches continuous
-/// instruction density (EXPECTED ~55–100 for Bevensen→Dalsøren scale).
-pub fn stitch_chunk_leg_maneuvers(legs: &[Vec<RouteManeuver>]) -> Vec<RouteManeuver> {
-    let mut out = Vec::new();
-    let mut offset = 0.0_f64;
-    for (idx, leg) in legs.iter().enumerate() {
-        if leg.is_empty() {
-            continue;
-        }
-        let last_cum = leg.last().map(|m| m.cum_m).unwrap_or(0.0);
-        for m in leg {
-            if m.kind == "destination" && idx + 1 < legs.len() && m.via_index.is_none() {
-                continue;
-            }
-            let mut m = m.clone();
-            m.cum_m += offset;
-            out.push(m);
-        }
-        offset += last_cum;
-    }
-    thin_route_maneuvers(&out)
-}
-
-/// Thin a stitched maneuver list toward continuous-route guidance density.
-///
-/// Chunked OSM guidance emits many `straight` / slight / keep / turn steps.
-/// Keep via / destination anchors always; drop continues; on long routes
-/// adaptively space everything else so a ~1600 km trip lands in 55–100
-/// instructions (Valhalla-class list density). Short stitched hops keep full
-/// non-straight detail (near-duplicate collapse only).
-pub fn thin_route_maneuvers(mans: &[RouteManeuver]) -> Vec<RouteManeuver> {
-    /// Adaptive spacing only for routes at/above this length.
-    const LONG_ROUTE_M: f64 = 500_000.0;
-    /// Floor gap on long routes.
-    const MIN_GAP_FLOOR_M: f64 = 8_000.0;
-    /// Initial soft target (mid of EXPECTED 55–100).
-    const TARGET_SLOTS: f64 = 75.0;
-    /// On short routes, only collapse near-duplicate non-anchors.
-    const SHORT_DEDUP_M: f64 = 750.0;
-    const EXPECTED_MIN: usize = 55;
-    const EXPECTED_MAX: usize = 100;
-
-    fn is_anchor(m: &RouteManeuver) -> bool {
-        m.via_index.is_some() || m.kind == "destination"
-    }
-
-    fn thin_with_gap(mans: &[RouteManeuver], min_gap: f64) -> Vec<RouteManeuver> {
-        let mut out: Vec<RouteManeuver> = Vec::with_capacity(mans.len().min(128));
-        let mut last_kept_cum = f64::NEG_INFINITY;
-        for m in mans {
-            if m.kind == "straight" {
-                continue;
-            }
-            if is_anchor(m) {
-                out.push(m.clone());
-                last_kept_cum = m.cum_m;
-                continue;
-            }
-            if m.cum_m - last_kept_cum < min_gap {
-                continue;
-            }
-            out.push(m.clone());
-            last_kept_cum = m.cum_m;
-        }
-        out
-    }
-
-    let total_m = mans.last().map(|m| m.cum_m).unwrap_or(0.0).max(1.0);
-    if total_m < LONG_ROUTE_M {
-        return thin_with_gap(mans, SHORT_DEDUP_M);
-    }
-
-    let mut gap = (total_m / TARGET_SLOTS).max(MIN_GAP_FLOOR_M);
-    let mut best = thin_with_gap(mans, gap);
-    // Adapt gap so long-trip lists land in EXPECTED 55–100 when the candidate
-    // pool allows it (distance unchanged; instruction density only).
-    for _ in 0..12 {
-        let n = best.len();
-        if (EXPECTED_MIN..=EXPECTED_MAX).contains(&n) {
-            return best;
-        }
-        if n > EXPECTED_MAX {
-            gap *= 1.2;
-        } else if n < EXPECTED_MIN {
-            let next = gap * 0.82;
-            if next < MIN_GAP_FLOOR_M * 0.5 {
-                break;
-            }
-            gap = next.max(MIN_GAP_FLOOR_M * 0.5);
-        }
-        best = thin_with_gap(mans, gap);
-    }
-    while best.len() > EXPECTED_MAX {
-        gap *= 1.25;
-        best = thin_with_gap(mans, gap);
-        if gap > total_m {
-            break;
-        }
-    }
-    best
 }
 
 pub fn maneuvers_to_json(maneuvers: &[RouteManeuver]) -> String {
@@ -2752,183 +2645,5 @@ mod tests {
         assert!(samples.last().unwrap().cum_m > 1_000.0);
         assert!((samples[0].speed_kmh - 3.75).abs() < 1e-9);
         assert_eq!(samples[0].highway.as_deref(), Some("path"));
-    }
-
-    #[test]
-    fn stitch_chunk_legs_drops_mid_destinations_and_offsets_cum() {
-        let leg1 = vec![
-            RouteManeuver {
-                lat: 1.0,
-                lon: 2.0,
-                cum_m: 100.0,
-                kind: "left".into(),
-                street: None,
-                roundabout_exit: None,
-                icon: None,
-                then: None,
-                via_index: None,
-            },
-            RouteManeuver {
-                lat: 1.1,
-                lon: 2.1,
-                cum_m: 1000.0,
-                kind: "destination".into(),
-                street: None,
-                roundabout_exit: None,
-                icon: None,
-                then: None,
-                via_index: None,
-            },
-        ];
-        let leg2 = vec![
-            RouteManeuver {
-                lat: 1.2,
-                lon: 2.2,
-                cum_m: 50.0,
-                kind: "right".into(),
-                street: None,
-                roundabout_exit: None,
-                icon: None,
-                then: None,
-                via_index: None,
-            },
-            RouteManeuver {
-                lat: 1.3,
-                lon: 2.3,
-                cum_m: 500.0,
-                kind: "destination".into(),
-                street: None,
-                roundabout_exit: None,
-                icon: None,
-                then: None,
-                via_index: None,
-            },
-        ];
-        let stitched = stitch_chunk_leg_maneuvers(&[leg1, leg2]);
-        assert_eq!(
-            stitched.len(),
-            3,
-            "mid destination dropped; final kept; got {stitched:?}"
-        );
-        assert_eq!(stitched[0].kind, "left");
-        assert_eq!(stitched[1].kind, "right");
-        assert!((stitched[1].cum_m - 1050.0).abs() < 1e-9);
-        assert_eq!(stitched[2].kind, "destination");
-        assert!((stitched[2].cum_m - 1500.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn thin_route_maneuvers_drops_straights_and_spaces_by_route_length() {
-        let mut mans = Vec::new();
-        // Dense continues every 2 km for 100 km — all dropped.
-        for i in 0..50 {
-            mans.push(RouteManeuver {
-                lat: 0.0,
-                lon: 0.0,
-                cum_m: (i as f64) * 2_000.0,
-                kind: "straight".into(),
-                street: None,
-                roundabout_exit: None,
-                icon: None,
-                then: None,
-                via_index: None,
-            });
-        }
-        // Turns every 5 km across ~1600 km — adaptive gap ≈ 20 km → ~80 kept.
-        for i in 0..320 {
-            mans.push(RouteManeuver {
-                lat: 0.0,
-                lon: 0.0,
-                cum_m: 100_000.0 + (i as f64) * 5_000.0,
-                kind: if i % 2 == 0 { "left" } else { "slight_right" }.into(),
-                street: None,
-                roundabout_exit: None,
-                icon: None,
-                then: None,
-                via_index: None,
-            });
-        }
-        mans.push(RouteManeuver {
-            lat: 0.0,
-            lon: 0.0,
-            cum_m: 1_700_000.0,
-            kind: "destination".into(),
-            street: None,
-            roundabout_exit: None,
-            icon: None,
-            then: None,
-            via_index: None,
-        });
-        let thinned = thin_route_maneuvers(&mans);
-        assert!(
-            thinned.iter().all(|m| m.kind != "straight"),
-            "straights must be dropped: {thinned:?}"
-        );
-        assert_eq!(thinned.last().map(|m| m.kind.as_str()), Some("destination"));
-        assert!(
-            (55..=100).contains(&thinned.len()),
-            "long-trip density target 55–100, got {}: kinds={:?}",
-            thinned.len(),
-            thinned.iter().map(|m| m.kind.as_str()).collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn thin_route_maneuvers_keeps_via_and_destination_anchors() {
-        let mans = vec![
-            RouteManeuver {
-                lat: 0.0,
-                lon: 0.0,
-                cum_m: 0.0,
-                kind: "exit_right".into(),
-                street: None,
-                roundabout_exit: None,
-                icon: None,
-                then: None,
-                via_index: None,
-            },
-            RouteManeuver {
-                lat: 0.0,
-                lon: 0.0,
-                cum_m: 400.0,
-                kind: "left".into(),
-                street: None,
-                roundabout_exit: None,
-                icon: None,
-                then: None,
-                via_index: None,
-            },
-            RouteManeuver {
-                lat: 0.0,
-                lon: 0.0,
-                cum_m: 800.0,
-                kind: "right".into(),
-                street: None,
-                roundabout_exit: None,
-                icon: None,
-                then: None,
-                via_index: Some(0),
-            },
-            RouteManeuver {
-                lat: 0.0,
-                lon: 0.0,
-                cum_m: 1_000.0,
-                kind: "destination".into(),
-                street: None,
-                roundabout_exit: None,
-                icon: None,
-                then: None,
-                via_index: None,
-            },
-        ];
-        let thinned = thin_route_maneuvers(&mans);
-        assert_eq!(
-            thinned.len(),
-            3,
-            "near non-anchors deduped; via+dest kept: {thinned:?}"
-        );
-        assert!(thinned.iter().any(|m| m.via_index.is_some()));
-        assert_eq!(thinned.last().map(|m| m.kind.as_str()), Some("destination"));
-        assert!(!thinned.iter().any(|m| m.kind == "left"));
     }
 }

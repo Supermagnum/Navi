@@ -937,11 +937,6 @@ object GeofabrikDownloadCatalog {
                 norm == "london" -> greaterLondon
             norm.startsWith("europe/great-britain/") ->
                 "europe/united-kingdom/" + norm.removePrefix("europe/great-britain/")
-            // Retired Norway fylke extracts (merged into Ostlandet).
-            norm == "europe/norway/oppland" ||
-                norm == "europe/norway/hedmark" ||
-                norm == "oppland" ||
-                norm == "hedmark" -> "europe/norway/ostlandet"
             else -> norm
         }
     }
