@@ -1300,7 +1300,7 @@ fn pick_primary_manifest<'a>(
     // old "smallest covering bbox" pick made Finland primary for Bugøynes hops
     // and dropped the real Norwegian exit network after same-leaf extras.clear.
     if let Some(pip_path) = crate::long_trip::region_containing(lat, lon, None) {
-        let leaf = pip_path.rsplit('/').next().unwrap_or(&pip_path);
+        let leaf = pip_path.rsplit('/').next().unwrap_or(pip_path);
         let pip_stem = format!("{leaf}-latest");
         if let Some(home) = home_dir_for_stem(dirs, &pip_stem) {
             if let Ok(man) = load_ready_manifest(home, &pip_stem) {

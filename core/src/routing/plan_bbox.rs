@@ -818,12 +818,11 @@ fn densify_leaf_grid_samples(
     out
 }
 
-/// Coastal densify helpers for large landsdel catalog boxes.
-///
-/// Catalog centroids for Nord-Norge / Trøndelag sit inland; straight chord mids
-/// land on mountain plateaus where chunk snap collapses (`zero_length_leg`) or
-/// exceeds [`CHUNK_INTERMEDIATE_SNAP_M`]. Pad / tile widening peaks at 2.3–3.3 GiB
-/// RSS and still fails — densify must prefer the E6 / coastal-highway spine.
+// Coastal densify helpers for large landsdel catalog boxes.
+// Catalog centroids for Nord-Norge / Trøndelag sit inland; straight chord mids
+// land on mountain plateaus where chunk snap collapses (`zero_length_leg`) or
+// exceeds CHUNK_INTERMEDIATE_SNAP_M. Pad / tile widening peaks at 2.3–3.3 GiB
+// RSS and still fails — densify must prefer the E6 / coastal-highway spine.
 
 /// Northern FI/SE transit packs that unlock the Bugøynes→Østlandet land bridge
 /// (Pajala / Umeå class). Southern leftovers like Västra Götaland must not
