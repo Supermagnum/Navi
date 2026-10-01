@@ -52,6 +52,22 @@ class GeofabrikDownloadCatalogTest {
     }
 
     @Test
+    fun retired_norway_fylke_paths_remap_to_ostlandet() {
+        assertEquals(
+            "europe/norway/ostlandet",
+            GeofabrikDownloadCatalog.canonicalizePath("europe/norway/oppland"),
+        )
+        assertEquals(
+            "europe/norway/ostlandet",
+            GeofabrikDownloadCatalog.canonicalizePath("europe/norway/hedmark"),
+        )
+        assertEquals(
+            "europe/norway/ostlandet",
+            GeofabrikDownloadCatalog.extractPathForPbf("europe/norway/oppland"),
+        )
+    }
+
+    @Test
     fun long_trip_picker_has_hamburg_and_vastra_gotaland_not_denmark_leaves() {
         assertTrue(GeofabrikDownloadCatalog.germanyRegions.any { it.first == "hamburg" })
         assertTrue(

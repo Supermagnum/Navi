@@ -185,6 +185,14 @@ pub fn canonicalize_geofabrik_region_path(region: &str) -> String {
     if let Some(rest) = path.strip_prefix("europe/great-britain/") {
         return format!("europe/united-kingdom/{rest}");
     }
+    // Retired Norway fylke extracts (merged into Ostlandet).
+    if path == "europe/norway/oppland"
+        || path == "europe/norway/hedmark"
+        || path == "oppland"
+        || path == "hedmark"
+    {
+        return "europe/norway/ostlandet".to_string();
+    }
     path
 }
 
@@ -1031,6 +1039,26 @@ timestamp=2024-01-15T01\\:02\\:03Z
         assert_eq!(
             canonicalize_geofabrik_region_path("europe/sweden/stockholm"),
             "europe/sweden/stockholm"
+        );
+    }
+
+    #[test]
+    fn retired_norway_fylke_paths_remap_to_ostlandet() {
+        assert_eq!(
+            canonicalize_geofabrik_region_path("europe/norway/oppland"),
+            "europe/norway/ostlandet"
+        );
+        assert_eq!(
+            canonicalize_geofabrik_region_path("europe/norway/hedmark"),
+            "europe/norway/ostlandet"
+        );
+        assert_eq!(
+            geofabrik_latest_pbf_url("europe/norway/oppland"),
+            "https://download.geofabrik.de/europe/norway/ostlandet-latest.osm.pbf/"
+        );
+        assert_eq!(
+            geofabrik_latest_pbf_url("hedmark"),
+            "https://download.geofabrik.de/europe/norway/ostlandet-latest.osm.pbf/"
         );
     }
 

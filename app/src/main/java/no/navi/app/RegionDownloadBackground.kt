@@ -688,7 +688,9 @@ object RegionDownloadBackground {
         val path = preferredPath.trim().trim('/')
         if (path.isEmpty()) return null
         if (!PackRegionAvailability.localBakeReady(dataDir, path)) return null
-        val leaf = path.substringAfterLast('/')
+        // Sweden län share the country extract filename (europe/sweden → sweden-latest).
+        val extractPath = GeofabrikDownloadCatalog.extractPathForPbf(path)
+        val leaf = extractPath.substringAfterLast('/')
         val filename = "$leaf-latest.osm.pbf"
         val phase =
             when {
