@@ -57,8 +57,9 @@ pub use neighbours::{
     ors_country_id, ORS_COUNTRY_LIST_DOC,
 };
 pub use orchestrate::{
-    LongTripError, LongTripPlan, RegionDownloader, RegionIndexer, RegionTripState,
-    TripOrchestrator, VolumeSource, LONG_TRIP_CORRIDOR_BUFFER_KM,
+    corridor_packs_ready, corridor_ready_for_planning, LongTripError, LongTripPlan,
+    RegionDownloader, RegionIndexer, RegionTripState, TripOrchestrator, VolumeSource,
+    LONG_TRIP_CORRIDOR_BUFFER_KM,
 };
 pub use ors::{
     build_directions_request_body, parse_directions_geojson, request_directions, OrsConfig,

@@ -241,17 +241,19 @@ object LongTripCoordinator {
         planRef.set(plan)
         refreshStatusLine()
 
-        // Enqueue regions that still need packs (Installed/Indexed are done).
+        // Enqueue regions that still need packs. Installed-but-not-Indexed must
+        // still kick place-index (planning gate requires Indexed for every region).
         for (regionId in corridor) {
             val st = states[regionId]
-            if (st == State.Indexed || st == State.Installed) continue
+            if (st == State.Indexed) continue
             enqueueRegion(context, dataDir, regionId, states)
         }
-        // Drop a persisted re-download job when every corridor region already has
-        // Ready packs (e.g. stub PBF left a JOB_FILE that would resume HTTP).
+        // Drop leftover job/queue only when every corridor region is Indexed.
+        // Cancelling earlier (packs Installed but place-index still pending) would
+        // wipe PLACE_INDEX resume sidecars while planning is still blocked.
         if (corridorReadyForPlanning()) {
             RegionDownloadBackground.cancelPending(dataDir)
-            Log.i(TAG, "corridor packs ready — cancelled leftover download job/queue")
+            Log.i(TAG, "corridor indexed — cancelled leftover download job/queue")
         }
         return statusLine.get()
     }
@@ -314,53 +316,113 @@ object LongTripCoordinator {
         when (target) {
             is LongTripPackStorage.PackTarget.ReuseInternal -> {
                 if (markReadyIfPacksPresent(states, regionId, target.dataDir, internal)) {
+                    if (states[regionId] == State.Installed) {
+                        enqueuePlaceIndexOnly(
+                            context,
+                            internal,
+                            target.dataDir,
+                            regionId,
+                            states,
+                        )
+                    }
                     return
                 }
                 // Manifest alone is not enough when the PBF is a stub/missing —
                 // re-download so place-index / local bake can finish.
-                val packPath = GeofabrikDownloadCatalog.canonicalizePath(regionId)
-                val extractPath = GeofabrikDownloadCatalog.extractPathForPbf(packPath)
-                val leaf = extractPath.substringAfterLast('/')
-                val filename = "$leaf-latest.osm.pbf"
-                val url =
-                    runCatching { geofabrikLatestPbfUrl(packPath) }
-                        .getOrElse { "https://download.geofabrik.de/$extractPath-latest.osm.pbf/" }
-                states[regionId] = State.Downloading
-                downloadStarter.start(
-                    context = context,
-                    dataDir = internal,
-                    url = url,
-                    filename = filename,
-                    geofabrikPath = packPath,
-                    packDir = target.dataDir,
-                    requireUnmetered = true,
-                )
-                refreshStatusLine()
+                startPackDownload(context, internal, regionId, target.dataDir, states)
             }
             is LongTripPackStorage.PackTarget.DownloadTo -> {
                 if (markReadyIfPacksPresent(states, regionId, target.packDir, internal)) {
+                    if (states[regionId] == State.Installed) {
+                        enqueuePlaceIndexOnly(
+                            context,
+                            internal,
+                            target.packDir,
+                            regionId,
+                            states,
+                        )
+                    }
                     return
                 }
-                val packPath = GeofabrikDownloadCatalog.canonicalizePath(regionId)
-                val extractPath = GeofabrikDownloadCatalog.extractPathForPbf(packPath)
-                val leaf = extractPath.substringAfterLast('/')
-                val filename = "$leaf-latest.osm.pbf"
-                val url =
-                    runCatching { geofabrikLatestPbfUrl(packPath) }
-                        .getOrElse { "https://download.geofabrik.de/$extractPath-latest.osm.pbf/" }
-                states[regionId] = State.Downloading
-                downloadStarter.start(
-                    context = context,
-                    dataDir = internal,
-                    url = url,
-                    filename = filename,
-                    geofabrikPath = packPath,
-                    packDir = target.packDir,
-                    requireUnmetered = true,
-                )
-                refreshStatusLine()
+                startPackDownload(context, internal, regionId, target.packDir, states)
             }
         }
+    }
+
+    private fun startPackDownload(
+        context: Context?,
+        internal: File,
+        regionId: String,
+        packDir: File,
+        states: MutableMap<String, State>,
+    ) {
+        val packPath = GeofabrikDownloadCatalog.canonicalizePath(regionId)
+        val extractPath = GeofabrikDownloadCatalog.extractPathForPbf(packPath)
+        val leaf = extractPath.substringAfterLast('/')
+        val filename = "$leaf-latest.osm.pbf"
+        val url =
+            runCatching { geofabrikLatestPbfUrl(packPath) }
+                .getOrElse { "https://download.geofabrik.de/$extractPath-latest.osm.pbf/" }
+        states[regionId] = State.Downloading
+        downloadStarter.start(
+            context = context,
+            dataDir = internal,
+            url = url,
+            filename = filename,
+            geofabrikPath = packPath,
+            packDir = packDir,
+            requireUnmetered = true,
+        )
+        refreshStatusLine()
+    }
+
+    /**
+     * Packs are Ready but place-index is not — start PLACE_INDEX without
+     * re-downloading packs. Host unit tests pass [context]=null and keep
+     * [State.Installed] (phases are emitted manually).
+     */
+    private fun enqueuePlaceIndexOnly(
+        context: Context?,
+        internal: File,
+        packDir: File,
+        regionId: String,
+        states: MutableMap<String, State>,
+    ) {
+        if (PlaceIndexReady.isReady(internal, regionId)) {
+            states[regionId] = State.Indexed
+            refreshStatusLine()
+            return
+        }
+        val packPath = GeofabrikDownloadCatalog.canonicalizePath(regionId)
+        val extractPath = GeofabrikDownloadCatalog.extractPathForPbf(packPath)
+        val leaf = extractPath.substringAfterLast('/')
+        val filename = "$leaf-latest.osm.pbf"
+        val pbf = File(packDir, filename)
+        if (!pbf.isFile || pbf.length() < RegionDownloadBackground.MIN_PBF_BYTES) {
+            Log.w(
+                TAG,
+                "Installed $regionId missing real PBF (${pbf.name}); cannot place-index yet",
+            )
+            return
+        }
+        // No Context in JVM unit tests — leave Installed; tests emit phases.
+        if (context == null) {
+            return
+        }
+        states[regionId] = State.Indexing
+        refreshStatusLine()
+        val url = runCatching { geofabrikLatestPbfUrl(packPath) }.getOrDefault("")
+        Log.i(TAG, "kick place-index for Installed region=$packPath pbf=${pbf.absolutePath}")
+        RegionDownloadBackground.ensureStarted(
+            context = context,
+            dataDir = internal,
+            url = url,
+            filename = filename,
+            geofabrikPath = packPath,
+            startPhase = RegionDownloadBackground.Phase.PLACE_INDEX,
+            packDir = packDir,
+            requireUnmetered = true,
+        )
     }
 
     /**
@@ -402,25 +464,15 @@ object LongTripCoordinator {
             plan.regionsInOrder.firstOrNull {
                 PackRegionAvailability.regionIdsMatchForCatalog(it, path)
             } ?: return
-        // Volume eject/scrub sticks until an explicit remount success (installed /
-        // indexed) or another unavailable signal — ignore stale queue phases that
-        // can race in from a prior download worker during host tests / eject.
-        val cur = plan.states[key]
-        if (cur == State.Unavailable &&
-            phase != "installed" &&
-            phase != "indexed" &&
-            !phase.startsWith("unavailable")
-        ) {
-            return
-        }
         when {
             phase == "queued" -> plan.states[key] = State.Queued
             phase == "downloading" -> plan.states[key] = State.Downloading
             phase == "installed" -> plan.states[key] = State.Installed
             phase == "indexing" -> {
-                // Packs Ready (Installed) must stay planning-ready while place
-                // index builds in the background — never downgrade to Indexing.
-                if (cur != State.Installed && cur != State.Indexed) {
+                // Show Indexing in the status line while place-index runs.
+                // Planning waits for Indexed, so Installed may move to Indexing.
+                val cur = plan.states[key]
+                if (cur != State.Indexed) {
                     plan.states[key] = State.Indexing
                 }
             }
@@ -442,31 +494,19 @@ object LongTripCoordinator {
                 return
             }
         for ((id, st) in plan.states.entries.toList()) {
-            if (st == State.Queued ||
-                st == State.Downloading ||
-                st == State.Indexing ||
-                st == State.Paused
-            ) {
+            if (st == State.Downloading || st == State.Indexing) {
                 plan.states[id] = State.Unavailable
             }
         }
         for (stem in stems) {
-            val stemNorm =
-                stem
-                    .lowercase()
-                    .replace('_', '-')
-                    .removeSuffix(".osm.pbf")
-                    .removeSuffix(".pbf")
+            val stemNorm = stem.lowercase().replace('_', '-')
             for (id in plan.regionsInOrder) {
                 val leaf =
                     id
                         .substringAfterLast('/')
                         .lowercase()
                         .replace('_', '-')
-                val local = PackRegionAvailability.localStem(id).lowercase().replace('_', '-')
-                if (leaf.isNotEmpty() &&
-                    (stemNorm == leaf || stemNorm == local || stemNorm.startsWith("$local."))
-                ) {
+                if (leaf.isNotEmpty() && (stemNorm.contains(leaf) || leaf.contains(stemNorm))) {
                     plan.states[id] = State.Unavailable
                 }
             }
@@ -496,12 +536,24 @@ object LongTripCoordinator {
     }
 
     /**
-     * True when [regionId] is Indexed/Installed so the planner may use it while
-     * other regions still download or index (non-blocking proof helper).
-     *
-     * Installed = routing graph packs Ready (and extract on disk). Indexed adds
-     * place-search readiness; corridor planning does not require Indexed for
-     * non-start regions.
+     * True when [regionId] has routing packs Ready (Installed, Indexing, or
+     * Indexed). Indexing means packs landed and place-index is in progress.
+     */
+    fun regionPacksReady(regionId: String): Boolean {
+        val st =
+            planRef
+                .get()
+                ?.states
+                ?.entries
+                ?.firstOrNull {
+                    PackRegionAvailability.regionIdsMatchForCatalog(it.key, regionId)
+                }?.value ?: return false
+        return st == State.Indexed || st == State.Installed || st == State.Indexing
+    }
+
+    /**
+     * True when [regionId] is Indexed (packs Ready + place-index ready) so the
+     * planner may use it without contending with that region's place-index scan.
      */
     fun regionReadyForPlanning(regionId: String): Boolean {
         val st =
@@ -512,13 +564,23 @@ object LongTripCoordinator {
                 ?.firstOrNull {
                     PackRegionAvailability.regionIdsMatchForCatalog(it.key, regionId)
                 }?.value ?: return false
-        return st == State.Indexed || st == State.Installed
+        return st == State.Indexed
     }
 
     /**
-     * True when every corridor region has reached Installed or Indexed so a
-     * multi-stem plan may load Ready packs along the whole trip. Place-index
-     * work may still be running for Installed regions.
+     * True when every corridor region has Ready packs (Installed or Indexed).
+     * Place-index may still be running for Installed regions.
+     */
+    fun corridorPacksReady(): Boolean {
+        val plan = planRef.get() ?: return false
+        if (plan.regionsInOrder.isEmpty()) return false
+        return plan.regionsInOrder.all { regionPacksReady(it) }
+    }
+
+    /**
+     * True when every corridor region is Indexed (place-index ready). Planning
+     * must not start while any required region is still Installed/Indexing —
+     * concurrent place-index + graph-build contends on Rayon/PBF IO.
      */
     fun corridorReadyForPlanning(): Boolean {
         val plan = planRef.get() ?: return false

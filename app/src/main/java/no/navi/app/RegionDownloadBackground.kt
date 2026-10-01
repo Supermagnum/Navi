@@ -1519,10 +1519,10 @@ object RegionDownloadBackground {
                     // Pack-server still wrote a 16 KiB leaf stub (skane-latest…);
                     // drop it so Tools / ferry overlay never treat stubs as data.
                     scrubPackServerLeafStub(packDir, pathForDecision, filename)
-                    // Packs + extract are enough for multi-stem routing and
-                    // rest/overnight POI packs. Do not block the corridor queue
-                    // on basemap or place-index (Phase 0: planning must not wait
-                    // on indexing of non-start regions).
+                    // Packs + extract are enough for the download queue to advance
+                    // and for rest/overnight POI packs. Basemap + place-index
+                    // continue in the background; long-trip planning waits for
+                    // Indexed via LongTripCoordinator.corridorReadyForPlanning.
                     emitInstalledForRouting(pathForDecision)
                     handOffBasemapAndPlaceIndex(
                         context = context,

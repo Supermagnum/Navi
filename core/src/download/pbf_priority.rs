@@ -1,7 +1,10 @@
-//! Cooperative PBF access: background convert / place-index yield while a
-//! foreground plan is on the pack-miss fallback path. Bbox graph builds
-//! (plan fallback, speed-limit cone, road-near) also serialize here so a new
-//! caller cannot scan the PBF in parallel with an active plan.
+//! Cooperative PBF access: background convert / place-index wait on the
+//! **caller thread** while a foreground plan is active, then share Rayon
+//! normally. Never sleep inside Rayon workers on `foreground_plan_active` —
+//! that parks the global pool and deadlocks plan ferry-overlay scans.
+//! Bbox graph builds (plan fallback, speed-limit cone, road-near) also
+//! serialize via [`lock_bbox_build`] so a new caller cannot scan the PBF in
+//! parallel with an active plan.
 
 use std::cell::Cell;
 use std::path::Path;
@@ -117,13 +120,16 @@ pub fn with_background_indexer<R>(f: impl FnOnce() -> R) -> R {
 }
 
 /// Sleep while a foreground plan owns the PBF. No-op on the plan thread.
+///
+/// **Must only run on an OS / JNI caller thread** — never inside a Rayon
+/// worker. Sleeping on a pool worker while a plan also needs `par_bridge`
+/// starves the global Rayon pool (Bevensen hang: ferry overlay + Vestlandet
+/// place-index both idle at 0% CPU).
 pub fn yield_if_foreground_plan() {
     if !BACKGROUND_INDEXER.with(|c| c.get()) {
         return;
     }
-    while foreground_plan_active() {
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_while_foreground_plan_on_caller();
 }
 
 /// Whether the calling thread is a background indexer (for capturing before Rayon work).
@@ -131,12 +137,28 @@ pub fn background_indexer_active() -> bool {
     BACKGROUND_INDEXER.with(|c| c.get())
 }
 
+/// Caller-thread wait used by background indexers between phases. Safe to call
+/// from Rayon only when `yield_to_plan` is false (no-op path).
 pub(crate) fn yield_if_background_indexer(yield_to_plan: bool) {
     if yield_to_plan {
-        while foreground_plan_active() {
-            thread::sleep(Duration::from_millis(20));
-        }
+        wait_while_foreground_plan_on_caller();
     }
+}
+
+fn wait_while_foreground_plan_on_caller() {
+    while foreground_plan_active() {
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Background indexers wait **on the caller thread** before occupying Rayon.
+/// Mid-scan workers must not sleep on `foreground_plan_active` — that parks
+/// pool threads and deadlocks any concurrent plan `par_bridge` (ferry overlay).
+fn wait_for_plan_before_parallel_scan() {
+    if !BACKGROUND_INDEXER.with(|c| c.get()) {
+        return;
+    }
+    wait_while_foreground_plan_on_caller();
 }
 
 /// Parallel blob decode with **per-blob** callbacks (no global element mutex).
@@ -150,17 +172,14 @@ where
     F: Fn(&PrimitiveBlock) -> anyhow::Result<()> + Send + Sync,
 {
     let plan_id = super::plan_cancel::current_plan_id();
-    let yield_to_plan = BACKGROUND_INDEXER.with(|c| c.get());
+    // Yield on the caller thread only — never park Rayon workers (see
+    // `wait_for_plan_before_parallel_scan`).
+    wait_for_plan_before_parallel_scan();
     let blobs = BlobReader::from_path(path)?;
     blobs
         .par_bridge()
         .try_for_each(|blob| -> anyhow::Result<()> {
             super::plan_cancel::abort_if_cancelled_id(plan_id)?;
-            if yield_to_plan {
-                while foreground_plan_active() {
-                    thread::sleep(Duration::from_millis(20));
-                }
-            }
             match blob?.decode() {
                 Ok(BlobDecode::OsmHeader(_)) | Ok(BlobDecode::Unknown(_)) => Ok(()),
                 Ok(BlobDecode::OsmData(block)) => {
@@ -255,14 +274,9 @@ fn percentile_sorted(v: &[f64], p: f64) -> f64 {
 fn scan_blob_latlon_samples(
     acc: &mut LatLonSamples,
     blob: Result<osmpbf::Blob, osmpbf::Error>,
-    yield_to_plan: bool,
 ) -> anyhow::Result<()> {
     super::plan_cancel::abort_if_cancelled()?;
-    if yield_to_plan {
-        while foreground_plan_active() {
-            thread::sleep(Duration::from_millis(20));
-        }
-    }
+    // No yield-sleep here: this runs on Rayon fold workers.
     match blob?.decode() {
         Ok(BlobDecode::OsmHeader(_)) | Ok(BlobDecode::Unknown(_)) => Ok(()),
         Ok(BlobDecode::OsmData(block)) => {
@@ -289,13 +303,13 @@ fn scan_blob_latlon_samples(
 /// floats. Membership does not depend on arrival order (unlike reservoir
 /// sampling). Cooperative yield matches [`for_each_pbf_elements`].
 pub fn pbf_latlon_percentile_bounds(path: &Path, low: f64, high: f64) -> anyhow::Result<[f64; 4]> {
-    let yield_to_plan = BACKGROUND_INDEXER.with(|c| c.get());
+    wait_for_plan_before_parallel_scan();
     let mut samples = BlobReader::from_path(path)?
         .par_bridge()
         .try_fold(
             LatLonSamples::empty,
             |mut acc, blob| -> anyhow::Result<LatLonSamples> {
-                scan_blob_latlon_samples(&mut acc, blob, yield_to_plan)?;
+                scan_blob_latlon_samples(&mut acc, blob)?;
                 Ok(acc)
             },
         )
@@ -315,26 +329,23 @@ pub fn pbf_latlon_percentile_bounds(path: &Path, low: f64, high: f64) -> anyhow:
 ///
 /// Blob zlib/protobuf decode runs on Rayon workers (`par_bridge`, same as
 /// `ElementReader::par_map_reduce`). The visitor is serialized through a mutex
-/// so callers can keep `FnMut` accumulators. Cooperative yield runs **once per
-/// blob** on the worker, using the caller's background-indexer flag (Rayon
-/// threads do not inherit the thread-local).
+/// so callers can keep `FnMut` accumulators.
+///
+/// Background indexers yield to an in-flight plan **on the caller thread**
+/// before entering the pool. Workers never sleep on `foreground_plan_active`
+/// (that deadlocks ferry-overlay / other plan PBF scans that share Rayon).
 pub fn for_each_pbf_elements<F>(path: &Path, f: F) -> anyhow::Result<()>
 where
     F: for<'a> FnMut(Element<'a>) + Send,
 {
     let plan_id = super::plan_cancel::current_plan_id();
-    let yield_to_plan = BACKGROUND_INDEXER.with(|c| c.get());
+    wait_for_plan_before_parallel_scan();
     let blobs = BlobReader::from_path(path)?;
     let f = Mutex::new(f);
     blobs
         .par_bridge()
         .try_for_each(|blob| -> anyhow::Result<()> {
             super::plan_cancel::abort_if_cancelled_id(plan_id)?;
-            if yield_to_plan {
-                while foreground_plan_active() {
-                    thread::sleep(Duration::from_millis(20));
-                }
-            }
             match blob?.decode() {
                 Ok(BlobDecode::OsmHeader(_)) | Ok(BlobDecode::Unknown(_)) => Ok(()),
                 Ok(BlobDecode::OsmData(block)) => {
@@ -375,6 +386,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     #[test]
@@ -400,6 +412,56 @@ mod tests {
         let t0 = Instant::now();
         yield_if_foreground_plan();
         assert!(t0.elapsed() < Duration::from_millis(30));
+    }
+
+    /// Regression: background indexer must not park Rayon workers on
+    /// `foreground_plan_active` while a plan also needs `par_bridge` (Bevensen
+    /// hang after SH ferry_overlay concurrent with Vestlandet place-index).
+    #[test]
+    fn background_pbf_scan_does_not_starve_plan_rayon() {
+        let _serial = lock_plan_flag_for_test();
+        let path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/motor-access-hamar-gjovik.osm.pbf"
+        ));
+        if !path.is_file() {
+            return;
+        }
+        let _fg = ForegroundPlanGuard::acquire();
+        let bg_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let bg_started2 = Arc::clone(&bg_started);
+        let path_bg = path.to_path_buf();
+        let bg = thread::spawn(move || {
+            with_background_indexer(|| {
+                bg_started2.store(true, Ordering::SeqCst);
+                // Would formerly sleep inside Rayon workers until plan leave —
+                // occupying the pool and deadlocking the plan scan below.
+                let _ = for_each_pbf_elements(&path_bg, |_| {});
+            });
+        });
+        // Wait until background has entered (and is blocked on caller-thread yield).
+        let wait_bg = Instant::now();
+        while !bg_started.load(Ordering::SeqCst) {
+            if wait_bg.elapsed() > Duration::from_secs(2) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        let t0 = Instant::now();
+        let plan_scan = thread::spawn({
+            let path = path.to_path_buf();
+            move || for_each_pbf_elements(&path, |_| {})
+        });
+        plan_scan
+            .join()
+            .expect("plan scan thread")
+            .expect("plan PBF scan");
+        assert!(
+            t0.elapsed() < Duration::from_secs(5),
+            "plan PBF scan must not deadlock behind background Rayon yield"
+        );
+        drop(_fg);
+        bg.join().expect("background indexer");
     }
 
     #[test]

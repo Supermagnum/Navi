@@ -211,8 +211,9 @@ pub fn geofabrik_extract_path(region: &str) -> String {
 /// Geofabrik base URLs for a region path like `europe/norway/ostlandet`.
 ///
 /// Returns the logical `-latest.osm.pbf/` catalog URL. Downloaders resolve this
-/// to the newest dated extract via the region HTML page when Geofabrik's
-/// `-latest` alias 301-loops or 404s (see `resolve_geofabrik_latest_to_dated_url`).
+/// to the newest dated extract via region HTML (with 5xx retries), `-latest`
+/// redirect `Location`, or recent `{leaf}-YYMMDD` probes when Geofabrik's
+/// `-latest` alias 301-loops / 404s / 502s (see `resolve_geofabrik_latest_to_dated_url`).
 pub fn geofabrik_latest_pbf_url(region: &str) -> String {
     let region = geofabrik_extract_path(region);
     format!("https://download.geofabrik.de/{region}-latest.osm.pbf/")

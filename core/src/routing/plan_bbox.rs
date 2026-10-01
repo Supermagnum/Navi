@@ -240,7 +240,7 @@ pub fn densify_route_points_via_regions_dirs(
                 continue;
             }
             let c = ((bbox[0] + bbox[2]) * 0.5, (bbox[1] + bbox[3]) * 0.5);
-            let c = prefer_coastal_centroid(c, *bbox, path);
+            let c = prefer_densify_leaf_centroid(c, *bbox, path, &ready);
             let t = progress_t(c);
             if t <= 0.02 || t >= 0.98 {
                 continue;
@@ -363,7 +363,7 @@ fn densify_gaps_with_region_centroids(
         .filter(|(path, _)| !densify_skip_country_when_leaves_ready(path, &ready))
         .map(|(path, b)| {
             let c = ((b[0] + b[2]) * 0.5, (b[1] + b[3]) * 0.5);
-            prefer_coastal_centroid(c, *b, path)
+            prefer_densify_leaf_centroid(c, *b, path, &ready)
         })
         .collect();
     let mut out = Vec::with_capacity(points.len() * 2);
@@ -1029,6 +1029,18 @@ fn landsdel_box_needs_coastal_bias(bbox: [f64; 4]) -> bool {
     lat_span >= 2.5 && lon_span >= 4.0
 }
 
+/// Leaf densify centroid after geography-specific soft biases (Norway E6 spine,
+/// Fehmarn entry on SH when Scandinavia packs are Ready).
+fn prefer_densify_leaf_centroid(
+    c: (f64, f64),
+    bbox: [f64; 4],
+    path: &str,
+    ready: &[(String, [f64; 4])],
+) -> (f64, f64) {
+    let c = prefer_coastal_centroid(c, bbox, path);
+    prefer_fehmarn_entry_centroid(c, bbox, path, ready)
+}
+
 /// Move a northern landsdel centroid onto the E6 / coastal-highway spine.
 ///
 /// Uses ~0.55 of a capped lon span from the west edge — not the far-west
@@ -1049,6 +1061,39 @@ fn prefer_coastal_centroid(c: (f64, f64), bbox: [f64; 4], path: &str) -> (f64, f
     let spine_target = bbox[1] + lon_span.min(5.0) * 0.55;
     let floor = c.1 - 6.0;
     (c.0, c.1.min(spine_target).max(floor).max(bbox[1] + 0.5))
+}
+
+/// Schleswig-Holstein AABB center (~9.85°E near Kiel) steers densify onto the
+/// Jutland/Funen Great Belt land bridge. When SE/NO packs are Ready (DE→
+/// Scandinavia densify), bias the SH leaf east toward Fehmarn (~11.2°E) so the
+/// corridor band can materialize the Puttgarden→Rødby ferry instead of a
+/// ~180 km land detour. Pure DK-Jutland corridors (no SE/NO Ready) keep Kiel.
+fn prefer_fehmarn_entry_centroid(
+    c: (f64, f64),
+    bbox: [f64; 4],
+    path: &str,
+    ready: &[(String, [f64; 4])],
+) -> (f64, f64) {
+    if !path.contains("schleswig-holstein") {
+        return c;
+    }
+    let scandinavia = ready.iter().any(|(p, _)| {
+        p.contains("/sweden/")
+            || p.contains("/norway/")
+            || p == "europe/sweden"
+            || p == "europe/norway"
+    });
+    if !scandinavia {
+        return c;
+    }
+    let lon_span = (bbox[3] - bbox[1]).abs();
+    if lon_span < 1.0 {
+        return c;
+    }
+    // ~0.90 of lon span ≈ 11.03°E — east of Kiel, approaching Fehmarn (11.23°E).
+    let east_target = bbox[1] + lon_span * 0.90;
+    let lon = c.1.max(east_target).min(bbox[3] - 0.05);
+    (c.0, lon)
 }
 
 /// For NE gap-fill inside a large landsdel box, climb north while drifting
@@ -1978,8 +2023,9 @@ mod tests {
             "must not insert SH→Halland Baltic water mid; hops={hops:?}"
         );
         // Must not park hops on the geometric SH→Halland sea chord (the former
-        // failing mid and its recursive halves).
-        let sh = (54.21_f64, 9.845_f64);
+        // failing mid and its recursive halves). Fehmarn entry bias moves the
+        // SH densify joint east (~11.03°E).
+        let sh = (54.21_f64, 11.025_f64);
         let halland = (56.935_f64, 12.7_f64);
         let baltic_chain = [
             (54.89125_f64, 10.55875_f64),
@@ -1997,7 +2043,7 @@ mod tests {
         }
         // Land-bridge must not step south of SH on a northbound corridor.
         let south_of_sh = hops.windows(2).any(|w| {
-            (w[0].0 - sh.0).abs() < 1e-3 && (w[0].1 - sh.1).abs() < 1e-3 && w[1].0 < sh.0 - 0.05
+            (w[0].0 - sh.0).abs() < 1e-3 && (w[0].1 - sh.1).abs() < 0.08 && w[1].0 < sh.0 - 0.05
         });
         assert!(
             !south_of_sh,
@@ -2011,6 +2057,24 @@ mod tests {
             "border-spill leaf proxies (Hovedstaden∩Skåne) must not be densify hops; hops={hops:?}"
         );
         let _ = (sh, halland);
+        // Fehmarn corridor: SH densify must sit east of Kiel (~10.1°E) so the
+        // 0.40° corridor band can reach Puttgarden (~11.23°E). Must not park a
+        // mid-Jutland/Funen Syddanmark hop (lon≲10.8 at 54.5–55.4) that steers
+        // A* onto the Great Belt land bridge (~180 km overshoot vs ferry).
+        let sh_fehmarn = hops
+            .iter()
+            .any(|(lat, lon)| *lat > 53.9 && *lat < 54.6 && *lon > 10.85 && *lon < 11.30);
+        assert!(
+            sh_fehmarn,
+            "SH densify must bias east toward Fehmarn entry; hops={hops:?}"
+        );
+        let jutland_funen_detour = hops
+            .iter()
+            .any(|(lat, lon)| *lat > 54.55 && *lat < 55.45 && *lon > 9.2 && *lon < 10.85);
+        assert!(
+            !jutland_funen_detour,
+            "must not densify through Jutland/Funen west of Fehmarn; hops={hops:?}"
+        );
         let has_skane = hops
             .iter()
             .any(|(lat, lon)| *lat > 55.32 && *lat < 56.50 && *lon > 12.45 && *lon < 14.60);

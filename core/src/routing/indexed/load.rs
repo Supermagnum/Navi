@@ -1231,7 +1231,14 @@ fn try_load_graph_for_plan_corridor_dirs(
         if graphs.len() == 1 {
             let g = graphs.pop().unwrap();
             return Ok(supplement_pack_ferries_from_pbf(
-                g, dirs, &man, &extras, profile, clip_bbox, edge_clips,
+                g,
+                dirs,
+                &man,
+                &extras,
+                profile,
+                clip_bbox,
+                edge_clips,
+                route_points,
             ));
         }
         let merged = merge_tile_graphs(graphs, profile);
@@ -1239,7 +1246,14 @@ fn try_load_graph_for_plan_corridor_dirs(
             return Err(PackLoadError::Missing);
         }
         return Ok(supplement_pack_ferries_from_pbf(
-            merged, dirs, &man, &extras, profile, clip_bbox, edge_clips,
+            merged,
+            dirs,
+            &man,
+            &extras,
+            profile,
+            clip_bbox,
+            edge_clips,
+            route_points,
         ));
     }
 
@@ -1282,7 +1296,14 @@ fn try_load_graph_for_plan_corridor_dirs(
         return Err(PackLoadError::Missing);
     }
     Ok(supplement_pack_ferries_from_pbf(
-        merged, dirs, &man, &extras, profile, clip_bbox, edge_clips,
+        merged,
+        dirs,
+        &man,
+        &extras,
+        profile,
+        clip_bbox,
+        edge_clips,
+        route_points,
     ))
 }
 
@@ -1294,11 +1315,47 @@ const MIN_FERRY_OVERLAY_PBF_BYTES: u64 = 1_000_000;
 /// Short `ferry=yes` approach roads must not skip the overlay.
 const MIN_LONG_FERRY_M: f64 = 2_000.0;
 
+#[cfg(test)]
 fn graph_has_long_ferry(graph: &RouteGraph) -> bool {
     graph
         .edges
         .iter()
         .any(|e| e.is_ferry && e.length_m >= MIN_LONG_FERRY_M)
+}
+
+fn point_in_bbox(lat: f64, lon: f64, bbox: [f64; 4]) -> bool {
+    lat >= bbox[0] && lat <= bbox[2] && lon >= bbox[1] && lon <= bbox[3]
+}
+
+/// True when hop ends `a`→`b` already have an A* path on the pack graph (ferries
+/// allowed). Used to skip Geofabrik pier overlay only when the water gap is
+/// already traversable — orphan or pier-stub-only ferry edges must not suppress
+/// overlay.
+fn graph_hop_already_connected(graph: &RouteGraph, a: (f64, f64), b: (f64, f64)) -> bool {
+    let opts = crate::routing::graph::RouteOptions::default();
+    let Ok((start, _)) = graph.nearest_routable_with_options_max(a.0, a.1, &opts, false, 25_000.0)
+    else {
+        return false;
+    };
+    let Ok((goal, _)) = graph.nearest_routable_with_options_max(b.0, b.1, &opts, false, 25_000.0)
+    else {
+        return false;
+    };
+    if start == goal {
+        return true;
+    }
+    graph.shortest_path(start, goal, false).is_some()
+}
+
+/// Fallback when hop geometry is unavailable: require a long ferry fully inside
+/// the plan clip (not merely somewhere in a multi-region merge).
+fn graph_has_long_ferry_in_bbox(graph: &RouteGraph, bbox: [f64; 4]) -> bool {
+    graph.edges.iter().any(|e| {
+        e.is_ferry
+            && e.length_m >= MIN_LONG_FERRY_M
+            && point_in_bbox(e.start_lat, e.start_lon, bbox)
+            && point_in_bbox(e.end_lat, e.end_lon, bbox)
+    })
 }
 
 fn plan_clip_bbox(
@@ -1396,6 +1453,11 @@ fn resolve_ferry_overlay_pbf(home: &Path, stem: &str, bbox: [f64; 4]) -> Option<
 /// water hops stay connected until packs are rebaked. Does not force any
 /// particular crossing — A* chooses ferries under the normal cost model when
 /// `avoid_ferries` is off.
+///
+/// Overlay is skipped only when hop ends are already A*-connected on the pack
+/// graph (`route_points`, ferries allowed), or — without hop geometry — when a
+/// long ferry lies fully inside the plan clip. Orphan / pier-stub ferry edges
+/// and unrelated long ferries elsewhere must not suppress pier-approach overlay.
 fn supplement_pack_ferries_from_pbf(
     graph: RouteGraph,
     dirs: &[&Path],
@@ -1404,15 +1466,21 @@ fn supplement_pack_ferries_from_pbf(
     profile: RoutingProfile,
     clip_bbox: Option<[f64; 4]>,
     edge_clips: Option<&[[f64; 4]]>,
+    route_points: Option<&[(f64, f64)]>,
 ) -> RouteGraph {
-    if graph_has_long_ferry(&graph) {
-        return graph;
-    }
     let Some(bbox) = plan_clip_bbox(clip_bbox, edge_clips) else {
         return graph;
     };
     // Modest pad so ferry terminals just outside the corridor band still load.
     let bbox = expand_bbox_deg(bbox, 0.05);
+    let skip_overlay = if let Some(pts) = route_points.filter(|p| p.len() >= 2) {
+        graph_hop_already_connected(&graph, pts[0], pts[pts.len() - 1])
+    } else {
+        graph_has_long_ferry_in_bbox(&graph, bbox)
+    };
+    if skip_overlay {
+        return graph;
+    }
     let mut stems = Vec::with_capacity(1 + extras.len());
     stems.push(primary.stem.clone());
     for e in extras {
@@ -2459,8 +2527,228 @@ mod ferry_overlay_tests {
             RoutingProfile::Car,
             Some([54.15, 10.90, 55.25, 11.85]),
             None,
+            Some(&[(54.21, 11.025), (55.175, 11.700)]),
         );
         assert_eq!(out.edges.len(), before);
         assert!(!graph_has_long_ferry(&out));
+    }
+
+    fn ferry_edge(
+        id: &str,
+        source: i64,
+        target: i64,
+        start: (f64, f64),
+        end: (f64, f64),
+        length_m: f64,
+    ) -> GraphEdge {
+        GraphEdge {
+            id: id.into(),
+            source: NodeId(source),
+            target: NodeId(target),
+            length_m,
+            base_weight: length_m,
+            eco_weight: None,
+            start_lat: start.0,
+            start_lon: start.1,
+            end_lat: end.0,
+            end_lon: end.1,
+            shape: Vec::new(),
+            highway: None,
+            maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
+            name: None,
+            road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: true,
+            is_tunnel: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
+        }
+    }
+
+    #[test]
+    fn disconnected_pack_with_orphan_ferry_does_not_skip_overlay() {
+        // Legacy whole-graph long-ferry check would skip overlay; hop A* must not.
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [
+            (1i64, 54.21, 11.025),
+            (2, 54.22, 11.03),
+            (3, 55.175, 11.70),
+            (4, 55.18, 11.71),
+            (5, 54.50, 11.23),
+            (6, 54.66, 11.35),
+        ] {
+            nodes.insert(
+                NodeId(id),
+                Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 2,
+                },
+            );
+        }
+        let mut edges = vec![
+            ferry_edge("belt", 5, 6, (54.50, 11.23), (54.66, 11.35), 19_000.0),
+            ferry_edge("belt_r", 6, 5, (54.66, 11.35), (54.50, 11.23), 19_000.0),
+        ];
+        // Land only at hop endpoints — not connected through the orphan ferry.
+        let mut la = ferry_edge("la", 1, 2, (54.21, 11.025), (54.22, 11.03), 800.0);
+        la.is_ferry = false;
+        la.highway = Some("primary".into());
+        let mut lb = ferry_edge("lb", 3, 4, (55.175, 11.70), (55.18, 11.71), 800.0);
+        lb.is_ferry = false;
+        lb.highway = Some("primary".into());
+        edges.push(la);
+        edges.push(lb);
+        let g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        assert!(graph_has_long_ferry(&g));
+        assert!(
+            !graph_hop_already_connected(&g, (54.21, 11.025), (55.175, 11.700)),
+            "orphan water ferry must leave densify hop disconnected"
+        );
+    }
+
+    #[test]
+    fn connected_hop_skips_overlay_gate() {
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [
+            (1i64, 54.21, 11.025),
+            (2, 54.50, 11.23),
+            (3, 54.66, 11.35),
+            (4, 55.175, 11.70),
+        ] {
+            nodes.insert(
+                NodeId(id),
+                Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 2,
+                },
+            );
+        }
+        let mut edges = vec![
+            ferry_edge("belt", 2, 3, (54.50, 11.23), (54.66, 11.35), 19_000.0),
+            ferry_edge("belt_r", 3, 2, (54.66, 11.35), (54.50, 11.23), 19_000.0),
+        ];
+        let mut a = ferry_edge("a", 1, 2, (54.21, 11.025), (54.50, 11.23), 40_000.0);
+        a.is_ferry = false;
+        a.highway = Some("primary".into());
+        let mut b = ferry_edge("b", 3, 4, (54.66, 11.35), (55.175, 11.70), 60_000.0);
+        b.is_ferry = false;
+        b.highway = Some("primary".into());
+        edges.push(a);
+        edges.push(b);
+        let g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        assert!(graph_hop_already_connected(
+            &g,
+            (54.21, 11.025),
+            (55.175, 11.700)
+        ));
+    }
+
+    /// Live pack probe: SH+DK tiles clip Puttgarden/Rødby; overlay must bridge.
+    /// Run: `NAVI_FEHMARN_PROBE_DIR=/tmp/navi-fehmarn-probe/packs cargo test -p driver-break-core fehmarn_pack_ferry_overlay_bridges -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn fehmarn_pack_ferry_overlay_bridges_clipped_terminals() {
+        let dir = match std::env::var("NAVI_FEHMARN_PROBE_DIR") {
+            Ok(d) => PathBuf::from(d),
+            Err(_) => {
+                eprintln!("skip: set NAVI_FEHMARN_PROBE_DIR");
+                return;
+            }
+        };
+        let sh_tile = dir.join("schleswig-holstein-latest.navi-graph-car.t1_2.rkyv");
+        let dk_tile = dir.join("denmark-latest.navi-graph-car.t0_3.rkyv");
+        let sh_pbf = dir.join("schleswig-holstein-latest.osm.pbf");
+        let dk_pbf = dir.join("denmark-latest.osm.pbf");
+        for p in [&sh_tile, &dk_tile, &sh_pbf, &dk_pbf] {
+            assert!(p.is_file(), "missing {}", p.display());
+        }
+        let profile = RoutingProfile::Car;
+        let hop = [(54.21_f64, 11.025), (55.175, 11.700)];
+        let clip = [53.86_f64, 10.675, 55.525, 12.050];
+        let sh = load_graph_pack_clips(&sh_tile, profile, Some(&[clip])).expect("sh");
+        let dk = load_graph_pack_clips(&dk_tile, profile, Some(&[clip])).expect("dk");
+        let merged = merge_tile_graphs(vec![sh, dk], profile);
+        assert!(
+            !graph_hop_already_connected(&merged, hop[0], hop[1]),
+            "pack-only hop must be disconnected"
+        );
+        let sh_man = NaviManifest {
+            schema: NaviManifest::SCHEMA,
+            stem: "schleswig-holstein-latest".into(),
+            pbf_filename: "schleswig-holstein-latest.osm.pbf".into(),
+            pbf_size_bytes: sh_pbf.metadata().unwrap().len(),
+            pbf_modified_unix_secs: 1,
+            graph_files: BTreeMap::new(),
+            graph_tiles: BTreeMap::new(),
+            graph_format_version: GRAPH_FORMAT_VERSION,
+            poi_barrier_file: "schleswig-holstein-latest.navi-poi-barrier.rkyv".into(),
+            poi_barrier_format_version: POI_BARRIER_FORMAT_VERSION,
+            wetland_file: None,
+            wetland_tiles: Vec::new(),
+            wetland_format_version: WETLAND_FORMAT_VERSION,
+            has_delta_h: false,
+            elev_dir: None,
+        };
+        let dk_man = NaviManifest {
+            stem: "denmark-latest".into(),
+            pbf_filename: "denmark-latest.osm.pbf".into(),
+            pbf_size_bytes: dk_pbf.metadata().unwrap().len(),
+            poi_barrier_file: "denmark-latest.navi-poi-barrier.rkyv".into(),
+            ..sh_man.clone()
+        };
+        let ferry_before = merged.edges.iter().filter(|e| e.is_ferry).count();
+        let out = supplement_pack_ferries_from_pbf(
+            merged,
+            &[&dir],
+            &sh_man,
+            &[dk_man],
+            profile,
+            Some(clip),
+            None,
+            Some(&hop),
+        );
+        let ferry_after = out.edges.iter().filter(|e| e.is_ferry).count();
+        eprintln!(
+            "ferry_edges {ferry_before} -> {ferry_after}; nodes={}",
+            out.nodes.len()
+        );
+        assert!(ferry_after > ferry_before, "overlay must add ferry edges");
+        // Island-interior anchors avoid snapping onto orphan pier tips.
+        let opts = crate::routing::graph::RouteOptions::default();
+        let (start, _) = out
+            .nearest_routable_with_options_max(hop[0].0, hop[0].1, &opts, false, 25_000.0)
+            .expect("snap start");
+        let (goal, _) = out
+            .nearest_routable_with_options_max(hop[1].0, hop[1].1, &opts, false, 25_000.0)
+            .expect("snap goal");
+        let path = out.shortest_path(start, goal, false);
+        assert!(
+            path.is_some(),
+            "A* must connect Bevensen densify hop across Fehmarn"
+        );
+        let (_n, edges, _c) = path.unwrap();
+        assert!(out.path_uses_ferries(&edges), "path should use a ferry");
     }
 }
