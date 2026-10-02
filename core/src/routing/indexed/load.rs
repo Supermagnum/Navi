@@ -1509,7 +1509,8 @@ fn try_load_graph_for_plan_corridor_dirs(
     );
 
     if !tile_files.is_empty() {
-        let (tiled, cache_hit) = load_tiled_graph_files(dirs, tile_files, profile, edge_clips)?;
+        let (tiled, cache_hit, pending_key) =
+            load_tiled_graph_files(dirs, tile_files, profile, edge_clips)?;
         // City-state packs (e.g. hamburg) are often a single untiled .rkyv.
         // Merge them whether they are the primary stem or an extra — otherwise
         // a hop that starts on a Hamburg densify anchor loads only neighbour
@@ -1534,7 +1535,8 @@ fn try_load_graph_for_plan_corridor_dirs(
         }
         let extras_empty = extras_mono.is_empty();
         let graph = if extras_empty {
-            // Keep the corridor Arc (shared with cache) — no clone.
+            // Keep the corridor Arc — no clone. Not yet in the LRU on miss so
+            // ferry supplement can try_unwrap without cloning the whole graph.
             tiled
         } else {
             let mut graphs = vec![arc_graph_owned(tiled)];
@@ -1545,14 +1547,13 @@ fn try_load_graph_for_plan_corridor_dirs(
             }
             std::sync::Arc::new(merged)
         };
-        // Corridor-cache hit: skip ferry overlay. The cached graph was already
-        // used successfully (or packs include ferries); re-running 35 km snaps
-        // + A* probes on a ~500k-edge corridor dominated warm pack_load (~1 s).
+        // Corridor-cache hit: skip ferry overlay. The cached graph already
+        // includes any ferry merge from the miss that populated the LRU.
         if cache_hit && extras_empty {
             crate::routing::plan_perf::note("ferry_overlay", "skip_corridor_cache_hit");
             return Ok(graph);
         }
-        return Ok(supplement_pack_ferries_from_pbf(
+        let final_graph = supplement_pack_ferries_from_pbf(
             graph,
             dirs,
             &man,
@@ -1561,7 +1562,13 @@ fn try_load_graph_for_plan_corridor_dirs(
             clip_bbox,
             edge_clips,
             route_points,
-        ));
+        );
+        // Insert *after* ferry supplement so the LRU holds the planning graph
+        // and ferry merge never clones a still-cached pre-ferry Arc (~2× RSS).
+        if let Some(key) = pending_key {
+            super::corridor_cache::corridor_cache_insert(key, std::sync::Arc::clone(&final_graph));
+        }
+        return Ok(final_graph);
     }
 
     let mut graphs = Vec::new();
@@ -2096,12 +2103,22 @@ fn tile_load_parallelism() -> usize {
     }
 }
 
+/// Load and merge tiled packs. On miss, returns `(graph, false, Some(key))` and
+/// does **not** insert into the corridor LRU — the caller must insert after ferry
+/// overlay so [`arc_graph_owned`] can unique-unwrap instead of cloning.
 fn load_tiled_graph_files(
     dirs: &[&Path],
     tile_files: Vec<String>,
     profile: RoutingProfile,
     clips: Option<&[[f64; 4]]>,
-) -> Result<(std::sync::Arc<RouteGraph>, bool), PackLoadError> {
+) -> Result<
+    (
+        std::sync::Arc<RouteGraph>,
+        bool,
+        Option<super::corridor_cache::CorridorCacheKey>,
+    ),
+    PackLoadError,
+> {
     use rayon::prelude::*;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
@@ -2123,11 +2140,10 @@ fn load_tiled_graph_files(
             hit.nodes.len(),
             hit.edges.len()
         );
-        return Ok((hit, true));
+        return Ok((hit, true, None));
     }
     crate::routing::plan_perf::note("corridor_cache", "miss");
-    // Free prior corridors when MemAvailable is tight so materializing this
-    // corridor cannot LMK a 3.5 GiB tablet (Dombås→Bergen RSS swing).
+    // Free prior corridors before materializing a new one (single-MRU policy).
     super::corridor_cache::corridor_cache_evict_before_load();
 
     // Full-tile LRU + in-memory clip, then **one** merge. Tromsø densify hops
@@ -2264,8 +2280,8 @@ fn load_tiled_graph_files(
         );
     }
     let arc = Arc::new(merged);
-    super::corridor_cache::corridor_cache_insert(cache_key, Arc::clone(&arc));
-    Ok((arc, false))
+    // Defer corridor LRU insert until after ferry overlay (caller).
+    Ok((arc, false, Some(cache_key)))
 }
 
 pub fn try_load_poi_barrier_for_plan(

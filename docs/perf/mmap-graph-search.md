@@ -332,9 +332,45 @@ Device: SM-P613 `R52TB0JQEDE`, tip with the defaults above (2026-10-02).
 | raufoss_tromso | false | **35220** | (per-hop) | **1766.89** | 1064.5 | match `e79679c2…` | 5 legs |
 
 Cold pack_load cut vs Step 1: Bergen eco **15.6 s → ~7.8 s** wall (pack_load
-~12.4 s → ~4.4 s); Tromsø **~50 s → ~35 s**. Peak RSS matrix max **1064.5** MiB
-(below 2b’s ~1155 with parallel=2). Stavanger ferry fingerprints match
-default/eco.
+~12.4 s → ~4.4 s); Tromsø **~50 s → ~35 s**. Peak RSS matrix max was **1064.5** MiB
+before the RSS clamp below (below 2b’s ~1155 with parallel=2). Stavanger ferry
+fingerprints match default/eco.
+
+#### Peak RSS clamp (vs #137 matrix max 954.4 MiB)
+
+Two retainers pushed matrix max ~110 MiB over post-#137 (`ba37869c`):
+
+1. **Corridor LRU held Bergen while Dombås materialized** — soft-cap byte
+   estimates under-count owned-graph RSS, so two corridors "fit". Peak jumped at
+   `raufoss_dombas` (869 → 1064). **Fix:** single-MRU insert + clear cache on
+   miss before load (eco→non-eco same key stays a hit and never hits evict).
+2. **Ferry overlay cloned the corridor** — `load_tiled_graph_files` inserted the
+   pre-ferry Arc into the LRU, then `arc_graph_owned` failed `try_unwrap` and
+   cloned (~2×) while merging the Vestlandet sidecar (~65 MB / 72k edges). Showed
+   up on `bergen_stavanger` eco after the single-MRU fix. **Fix:** defer LRU
+   insert until after ferry supplement so merge unique-owns the corridor.
+
+Tile cache disabled path was already zero-retention; not the regressor.
+
+##### Post-fix matrix (defaults: parallel=1, tile_cache off)
+
+Device: SM-P613 `R52TB0JQEDE` (2026-10-02). No LMK/ANR. Distances and geom hashes
+unchanged vs dig / prior tip.
+
+| case | eco | wall_ms | pack_load_ms | distance_km | peak_rss_mb | #137 rss | pre-fix tip |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| raufoss_bergen | true (cold) | **7142** | 4024 | **459.71** | 931.4 | 954.4 | 869.3 |
+| raufoss_bergen | false | 2208 | 6 | **485.45** | 931.4 | 954.4 | 869.3 |
+| raufoss_bergen_warm | true | 2466 | 6 | **459.71** | 931.4 | 954.4 | 869.3 |
+| raufoss_dombas | true | 4534 | 2459 | **206.81** | **933.2** | 954.4 | **1064.5** |
+| bergen_forde | true | 3703 | 2164 | **171.01** | 933.2 | 954.4 | 1064.5 |
+| bergen_stavanger | false | 9859 | 2426 | **228.21** | 933.2 | (n/a) | 1064.5 |
+| bergen_stavanger | true | 9074 | 2168 | **228.21** | 933.2 | (n/a) | 1064.5 |
+| raufoss_tromso | false | **34329** | (per-hop) | **1766.89** | 933.2 | 954.4 | 1064.5 |
+
+Matrix max peak RSS **933.2 MiB** (≤ #137’s **954.4**). Run-to-run Bergen cold
+alone varies ~870–980 MiB with identical node/edge counts; the important signal
+is that Dombås/Stavanger no longer raise the matrix ceiling above Bergen.
 
 ### Remaining
 
