@@ -130,6 +130,23 @@ class RegionToRegionPerfMatrixInstrumentedTest {
                     heapBefore.coerceAtLeast(heapAfter) / (1024.0 * 1024.0),
                 )
             val report = route.report
+            Log.i(
+                TAG,
+                "PACK_STAGE $name " +
+                    listOf(
+                        "tiles",
+                        "tile_bytes",
+                        "mmap_ms",
+                        "pagein_ms",
+                        "validate_ms",
+                        "copy_ms",
+                        "merge_hash_ms",
+                        "merge_adj_ms",
+                        "ferry_ms",
+                    ).joinToString(" ") { k ->
+                        "pack_stage_$k=${extract(report, "pack_stage_$k")}"
+                    },
+            )
             val ok =
                 route.distanceKm > 1.0 &&
                     route.routePolyline.isNotBlank() &&

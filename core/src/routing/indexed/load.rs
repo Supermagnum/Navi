@@ -794,12 +794,45 @@ pub fn load_graph_pack_bbox(
 /// Like [`load_graph_pack_bbox`], keeping edges that touch **any** clip box
 /// (corridor band). Prefer this for densify hops so diagonal AABBs do not
 /// materialize ~1M edges on 4 GB Automotive.
+/// Touch every page so later clip/copy timing excludes cold page-in I/O.
+/// Only used when plan-perf timing is enabled (Step 1 pack_load breakdown).
+fn touch_mmap_pages(mmap: &Mmap) {
+    let bytes = mmap.as_ref();
+    let mut i = 0usize;
+    let step = 4096usize;
+    let mut acc = 0u8;
+    while i < bytes.len() {
+        acc ^= bytes[i];
+        i = i.saturating_add(step);
+    }
+    if !bytes.is_empty() {
+        acc ^= bytes[bytes.len() - 1];
+    }
+    std::hint::black_box(acc);
+}
+
 pub fn load_graph_pack_clips(
     path: &Path,
     profile: RoutingProfile,
     clips: Option<&[[f64; 4]]>,
 ) -> Result<RouteGraph, PackLoadError> {
+    let timing = crate::routing::plan_perf::enabled();
+    let t_open = std::time::Instant::now();
     let mmap = map_file(path)?;
+    let mmap_ms = t_open.elapsed().as_millis() as u64;
+    let bytes = mmap.len() as u64;
+
+    // When profiling, force page-in before validate/copy so those stages are
+    // CPU-bound rather than mixed with first-touch I/O.
+    let pagein_ms = if timing {
+        let t = std::time::Instant::now();
+        touch_mmap_pages(&mmap);
+        t.elapsed().as_millis() as u64
+    } else {
+        0
+    };
+
+    let t_val = std::time::Instant::now();
     let format_version = check_graph_preamble(&mmap)?;
     let body = &mmap[archive_payload_offset()..];
     // Materialize from the mmap'd archive — do **not** `rkyv::deserialize` into an
@@ -811,25 +844,70 @@ pub fn load_graph_pack_clips(
     // archived type from the preamble. v8 materializes `is_tunnel = false`.
     let file = path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
     crate::download::progress::set(0, Some(1), &format!("Building graph {file}…"));
-    let t0 = std::time::Instant::now();
-    let bytes = mmap.len() as u64;
+
     let g = match format_version {
         super::graph_pack::GRAPH_FORMAT_VERSION_V8 => {
             let archived = rkyv::access::<ArchivedFlatGraphPackV8, RkyvError>(body)
                 .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
-            archived.to_route_graph_clips(profile, clips)
+            let validate_ms = t_val.elapsed().as_millis() as u64;
+            let t_copy = std::time::Instant::now();
+            let g = archived.to_route_graph_clips(profile, clips);
+            let copy_ms = t_copy.elapsed().as_millis() as u64;
+            if timing {
+                crate::routing::plan_perf::add_pack_stage_ms(
+                    mmap_ms,
+                    pagein_ms,
+                    validate_ms,
+                    copy_ms,
+                    bytes,
+                );
+                crate::routing::plan_perf::note(
+                    "tile_stage",
+                    format!(
+                        "{file};format={format_version};bytes={bytes};edges={};nodes={};\
+                         mmap_ms={mmap_ms};pagein_ms={pagein_ms};validate_ms={validate_ms};\
+                         copy_ms={copy_ms};threads=1",
+                        g.edges.len(),
+                        g.nodes.len()
+                    ),
+                );
+            }
+            g
         }
         GRAPH_FORMAT_VERSION => {
             let archived = rkyv::access::<ArchivedFlatGraphPack, RkyvError>(body)
                 .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
-            archived.to_route_graph_clips(profile, clips)
+            let validate_ms = t_val.elapsed().as_millis() as u64;
+            let t_copy = std::time::Instant::now();
+            let g = archived.to_route_graph_clips(profile, clips);
+            let copy_ms = t_copy.elapsed().as_millis() as u64;
+            if timing {
+                crate::routing::plan_perf::add_pack_stage_ms(
+                    mmap_ms,
+                    pagein_ms,
+                    validate_ms,
+                    copy_ms,
+                    bytes,
+                );
+                crate::routing::plan_perf::note(
+                    "tile_stage",
+                    format!(
+                        "{file};format={format_version};bytes={bytes};edges={};nodes={};\
+                         mmap_ms={mmap_ms};pagein_ms={pagein_ms};validate_ms={validate_ms};\
+                         copy_ms={copy_ms};threads=1",
+                        g.edges.len(),
+                        g.nodes.len()
+                    ),
+                );
+            }
+            g
         }
         _ => return Err(PackLoadError::VersionMismatch),
     };
-    let elapsed_ms = t0.elapsed().as_millis() as u64;
+    let elapsed_ms = t_open.elapsed().as_millis() as u64;
     log::info!(
         target: "NaviPlan",
-        "load_graph_pack_bbox file={file} format={format_version} edges={} nodes={} clips={} elapsed_ms={elapsed_ms}",
+        "load_graph_pack_bbox file={file} format={format_version} edges={} nodes={} clips={} elapsed_ms={elapsed_ms} mmap_ms={mmap_ms} pagein_ms={pagein_ms}",
         g.edges.len(),
         g.nodes.len(),
         clips.map(|c| c.len()).unwrap_or(0),
@@ -1675,6 +1753,31 @@ fn supplement_pack_ferries_from_pbf(
     edge_clips: Option<&[[f64; 4]]>,
     route_points: Option<&[(f64, f64)]>,
 ) -> std::sync::Arc<RouteGraph> {
+    let t0 = std::time::Instant::now();
+    let out = supplement_pack_ferries_from_pbf_inner(
+        graph,
+        dirs,
+        primary,
+        extras,
+        profile,
+        clip_bbox,
+        edge_clips,
+        route_points,
+    );
+    crate::routing::plan_perf::add_ferry_stage_ms(t0.elapsed().as_millis() as u64);
+    out
+}
+
+fn supplement_pack_ferries_from_pbf_inner(
+    graph: std::sync::Arc<RouteGraph>,
+    dirs: &[&Path],
+    primary: &NaviManifest,
+    extras: &[NaviManifest],
+    profile: RoutingProfile,
+    clip_bbox: Option<[f64; 4]>,
+    edge_clips: Option<&[[f64; 4]]>,
+    route_points: Option<&[(f64, f64)]>,
+) -> std::sync::Arc<RouteGraph> {
     let Some(bbox) = plan_clip_bbox(clip_bbox, edge_clips) else {
         return graph;
     };
@@ -1869,6 +1972,8 @@ fn graph_edge_tile_merge_key(edge: &GraphEdge) -> (i64, i64, u64, u64, u64, u64,
 /// edge capacity up front so HashMap growth does not temporarily double RSS
 /// during multi-tile corridor merges.
 pub fn merge_tile_graphs(graphs: Vec<RouteGraph>, profile: RoutingProfile) -> RouteGraph {
+    let timing = crate::routing::plan_perf::enabled();
+    let t_hash = std::time::Instant::now();
     let mut node_cap = 0usize;
     let mut edge_cap = 0usize;
     for g in &graphs {
@@ -1888,7 +1993,23 @@ pub fn merge_tile_graphs(graphs: Vec<RouteGraph>, profile: RoutingProfile) -> Ro
             }
         }
     }
-    RouteGraph::from_parts(nodes, edges, profile)
+    let hash_ms = t_hash.elapsed().as_millis() as u64;
+    let n_nodes = nodes.len();
+    let n_edges = edges.len();
+    let t_adj = std::time::Instant::now();
+    let out = RouteGraph::from_parts(nodes, edges, profile);
+    let adj_ms = t_adj.elapsed().as_millis() as u64;
+    if timing {
+        crate::routing::plan_perf::add_merge_stage_ms(hash_ms, adj_ms);
+        crate::routing::plan_perf::note(
+            "merge_stage",
+            format!(
+                "hash_ms={hash_ms};adj_ms={adj_ms};nodes={n_nodes};edges={n_edges};\
+                 border_stitch=hash_node_id_share;threads=1"
+            ),
+        );
+    }
+    out
 }
 
 fn union_bboxes(segs: &[[f64; 4]]) -> Option<[f64; 4]> {
@@ -1945,6 +2066,7 @@ fn load_tiled_graph_files(
     // the 11-tile Bergen corridor (~496k edges).
     let total = tile_files.len() as u64;
     let mut merged: Option<RouteGraph> = None;
+    let mut sum_merge_ms = 0u64;
     for (i, file) in tile_files.iter().enumerate() {
         crate::download::progress::set(
             i as u64,
@@ -1967,6 +2089,8 @@ fn load_tiled_graph_files(
             None => g,
             Some(acc) => merge_tile_graphs(vec![acc, g], profile),
         });
+        let merge_ms = t_merge.elapsed().as_millis() as u64;
+        sum_merge_ms = sum_merge_ms.saturating_add(merge_ms);
         if let Some(ref m) = merged {
             log::info!(
                 target: "NaviPlan",
@@ -1975,7 +2099,7 @@ fn load_tiled_graph_files(
                 total,
                 m.edges.len(),
                 m.nodes.len(),
-                t_merge.elapsed().as_millis()
+                merge_ms
             );
         }
     }
@@ -1985,11 +2109,15 @@ fn load_tiled_graph_files(
     }
     log::info!(
         target: "NaviPlan",
-        "load_tiled_graph done tiles={} edges={} nodes={}",
+        "load_tiled_graph done tiles={} edges={} nodes={} merge_wall_ms={}",
         total,
         merged.edges.len(),
-        merged.nodes.len()
+        merged.nodes.len(),
+        sum_merge_ms
     );
+    if crate::routing::plan_perf::enabled() {
+        crate::routing::plan_perf::note_u64("pack_merge_wall_ms", sum_merge_ms);
+    }
     let arc = Arc::new(merged);
     super::corridor_cache::corridor_cache_insert(cache_key, Arc::clone(&arc));
     Ok((arc, false))
