@@ -146,3 +146,122 @@ Profiled ~36 s overnight scrape was soft motor day-boundary POI search after A*.
 - `corridor_cache`: LRU of owned corridor graphs between plans.
 - `RouteGraph: Clone` for cache spare.
 - Host + Android instrumented matrix harnesses (debug timing flag).
+
+## Follow-up 2 (POI clip/cache, Arc share, snap, Tromso, tiles)
+
+Date: 2026-10-02. Same branch; client-only; FlatGraphPack / POI format **v9** (no bump).
+
+### 1. POI/barrier load (was 15–17 s on emulator)
+
+**Profile (Ostlandet car, before this follow-up):** full-region `*.navi-poi-barrier.rkyv` hydrate every plan, including ~2M overnight buildings. File ~66 MB Ostlandet / ~42 MB Vestlandet. Parsed on every plan (no cache). Whole-region, not corridor.
+
+**Fix:**
+
+- Clip POI/barrier load to a polyline corridor band (~15 km half-width) via `load_poi_barrier_pack_bbox` / `try_load_poi_barrier_for_plan_bbox_with_pack_dirs`.
+- Skip overnight buildings for motor plans (`INCLUDE_OVERNIGHT_BUILDINGS=false`).
+- Process-wide `poi_barrier_cache` keyed by pack paths + bbox fingerprint.
+
+**After (Raufoss→Bergen eco):**
+
+| Env | cold `poi_barrier_ms` | warm `poi_barrier_ms` | notes |
+| --- | --- | --- | --- |
+| Host | ~265 | ~73 | clip=1; buildings=0; ost+vest packs |
+| Emulator | ~656 | ~268 | SD; cache hit on warm |
+
+Cold wall is no longer POI-dominated; pack tile materialize is.
+
+### 2. Memory / Arc sharing
+
+**Before:** corridor LRU hit still cloned owned `RouteGraph` (~1.2 s host warm pack_load); peak RSS ~1000→1360 MiB with spare clone; cache hard cap 1536–2048 MiB.
+
+**After:**
+
+- `corridor_cache_get` returns `Arc<RouteGraph>` (no graph clone on hit).
+- Eco / motor soft / surface mode are per-plan `RouteOptions` overlays (`compute_eco_weights` → `eco_weights: Arc<…>`), never mutating the cached graph.
+- Ferry overlay skipped on corridor-cache hit (`ferry_overlay=skip_corridor_cache_hit`) — the 35 km snap+probe was the remaining warm pack_load cost.
+- Cache cap from `MemAvailable` (20%), clamped to **[256, 768] MiB**.
+
+| Metric | Follow-up 1 (host) | Follow-up 2 (host) |
+| --- | --- | --- |
+| Raufoss→Bergen peak RSS | ~1360 MiB | **994.5 MiB** |
+| Warm eco `pack_load_ms` | ~1246 | **2** |
+| Warm eco `wall_ms` | ~2542 | **734** |
+
+Emulator peak RSS ~907–1118 MiB; peak native heap ~290–447 MiB (`Debug.getNativeHeapAllocatedSize`).
+
+### 3. Snap gate 35 km
+
+| Snap site | Gate | Notes |
+| --- | --- | --- |
+| User origin / destination / via (non-chunk) | `CAR_MAX_WAYPOINT_SNAP_M` = **750 m** | Unchanged |
+| Densify chunk intermediate joints (`relax_start_snap` / `relax_end_snap`) | `CHUNK_INTERMEDIATE_SNAP_M` = **35 km** | Loose gate for geometric densify points only |
+| Ferry-overlay / `graph_hop_already_connected` probes | **35 km** | Same densify constant; connectivity uses weak-component (no A*) |
+
+Endpoints were **not** loosened: chunk leg 1 start and last-leg end keep 750 m. Only internal densify joints use 35 km. No revert needed for user O/D.
+
+### 4. Raufoss→Tromsø stage breakdown (host, 17 hops)
+
+Wall ≈ **16.6 s**; sum of per-hop `pack_load_ms` ≈ **9.5 s**. Chunk legs skip POI (`poi_barrier_ms=0`). Ferry/multiday on hops are negligible vs pack_load.
+
+| Leg | pack_load_ms | astar_ms | Dominant |
+| --- | --- | --- | --- |
+| 1–3 (Ostlandet) | 1325–1686 | 63–159 | pack miss (unique clips) |
+| 4–5 | 207–285 | 8–11 | small tiles |
+| 6–7 (Trøndelag) | 991–1189 | 41–136 | pack miss |
+| 8–17 | 103–397 | 8–65 | smaller northern tiles |
+
+**Largest stage:** per-hop pack_load on **cache-miss** corridors (clip sets differ every hop). Quantizing clips to share Arcs was tried earlier and **reverted** (route distance drifted 1906 vs 1766 km). Remaining cost is inherent to densify hop isolation without a format bump.
+
+Emulator Tromsø wall ≈ **29–33 s**, same **1766.89 km**, `route_ok=true`.
+
+### 5. Tile budget reconciliation
+
+| Claim | Meaning |
+| --- | --- |
+| First report “≥11 tiles for Bergen” | Multi-stem budget **14** selects **11** corridor tiles for Raufoss→Bergen (ost+vest). Measured `tiles=11` on cache hit. |
+| Follow-up “force 6 → widen to 10” | With `NAVI_MEASURE_MAX_PLAN_TILES=6`, first load disconnects; widen lands on **10**, then pack_hit route. |
+
+**Actual minimum for a successful Raufoss→Bergen pack-hit:** **10** tiles after widen (forced-6 path). Default multi-stem selection uses **11** under budget 14. Budget 6 alone is insufficient (Vestlandet bridge dropped).
+
+### 6. Full matrices after fixes (distances unchanged)
+
+**Host (release):**
+
+| Case | eco | wall_ms | pack_load_ms | distance_km | peak_rss_mb | route_ok |
+| --- | --- | --- | --- | --- | --- | --- |
+| raufoss_dombas | false | 2298 | 1600 | 206.81 | 513.5 | true |
+| raufoss_dombas_eco | true | 635 | 1 | 206.81 | 513.5 | true |
+| bergen_forde | false | 1983 | 1637 | 171.01 | 636.6 | true |
+| bergen_forde_eco | true | 351 | 1 | 171.01 | 636.6 | true |
+| raufoss_bergen | false | 4995 | 4166 | 485.45 | 994.5 | true |
+| raufoss_bergen_eco | true | 764 | 2 | 459.71 | 994.5 | true |
+| raufoss_bergen_eco_warm | true | 734 | 2 | 459.71 | 994.5 | true |
+| raufoss_tromso | false | 16568 | 1663 | 1766.89 | 994.5 | true |
+
+**Emulator (x86_64, connectedDebugAndroidTest):**
+
+| Case | eco | wall_ms | pack_load_ms | distance_km | peak_rss_mb | peak_native_heap_mb | route_ok |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| raufoss_bergen | true | 6517 | 4951 | 459.71 | 907.4 | 447.1 | true |
+| raufoss_bergen | false | 1215 | 182 | 485.45 | 907.4 | 447.3 | true |
+| raufoss_bergen_warm | true | 1232 | 204 | 459.71 | 907.4 | 447.4 | true |
+| raufoss_dombas | true | 3315 | 2201 | 206.81 | 1117.7 | 447.6 | true |
+| raufoss_dombas | false | 948 | 98 | 206.81 | 1117.7 | 294.2 | true |
+| bergen_forde | true | 2764 | 2145 | 171.01 | 1117.7 | 294.3 | true |
+| bergen_forde | false | 552 | 99 | 171.01 | 1117.7 | 289.4 | true |
+| raufoss_tromso | false | 29605 | 2121 | 1766.89 | 1117.7 | 289.5 | true |
+
+Distances match prior tables (459.71 / 485.45 / 206.81 / 171.01 / 1766.89).
+
+**Targets vs measured (emulator eco):**
+
+- Warm **under 2 s:** met (~1.2 s).
+- Cold **under 5 s:** not met on emulator SD; cold wall ≈ **6.5–7.7 s**, of which `pack_load_ms` ≈ **5–6 s** for 11-tile / ~496k-edge materialize. Host warm and eco-after-cache are well under 1 s. Instrumented assert: cold <9 s (SD variance), warm <2 s.
+
+### Code (follow-up 2)
+
+- `poi_barrier_cache.rs`, `load_poi_barrier_pack_bbox`, overnight-building skip, corridor POI clip.
+- `corridor_cache`: Arc get/insert; MemAvailable cap ≤768 MiB.
+- `load`: return `Arc` from tiled load; skip ferry overlay on cache hit; weak-component ferry probe.
+- `builder` / `reweight`: eco overlay weights; no cached-graph mutation.
+- Instrumented matrix asserts + host `region-to-region-perf-matrix` harness.

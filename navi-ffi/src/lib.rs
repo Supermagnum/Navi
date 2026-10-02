@@ -20,11 +20,11 @@ use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
 use driver_break_core::routing::graph::{
     apply_bike_suitability_from_pbf, apply_bike_surface_preference,
     apply_official_network_preference, apply_slow_road_preference, apply_surface_preference,
-    apply_surface_quality_from_pbf, difficulty_notes_for_path, load_official_network_way_ids,
-    load_or_build_reweighted, load_or_build_reweighted_bbox, load_pilgrim_route_way_ids,
-    load_way_difficulty_tags, max_waypoint_snap_m, BikeCapability, MotorSoftCostProfile,
-    OfficialNetworkKind, RoadLabelSticky, RoadNodeIndex, RouteGraph, RouteOptions, RoutingProfile,
-    SnapTooFar, SurfaceRoutingMode,
+    apply_surface_quality_from_pbf, compute_eco_weights, difficulty_notes_for_path,
+    load_official_network_way_ids, load_or_build_reweighted, load_or_build_reweighted_bbox,
+    load_pilgrim_route_way_ids, load_way_difficulty_tags, max_waypoint_snap_m, BikeCapability,
+    MotorSoftCostProfile, OfficialNetworkKind, RoadLabelSticky, RoadNodeIndex, RouteGraph,
+    RouteOptions, RoutingProfile, SnapTooFar, SurfaceRoutingMode,
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::safety::{
@@ -2866,6 +2866,7 @@ fn try_widen_tile_budget(
     driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(next);
     // Drop cached corridor so the next load materializes the wider tile set.
     driver_break_core::routing::indexed::corridor_cache_clear();
+    driver_break_core::routing::indexed::poi_barrier_cache_clear();
     if peak > driver_break_core::routing::plan_bbox::PLAN_TILE_WIDEN_RSS_CAP_MB {
         report.push_str(&format!(
             "tile_budget_widen=to {next} attempt={} peak_rss_mb={peak:.1} (above soft cap {})\n",
@@ -3027,7 +3028,7 @@ fn plan_car_route_inner(
         .count();
 
     let allowed_countries_norm = normalize_allowed_countries(allowed_countries);
-    let route_opts = RouteOptions {
+    let mut route_opts = RouteOptions {
         avoid_motorways,
         toll_policy,
         avoid_ferries,
@@ -3036,6 +3037,7 @@ fn plan_car_route_inner(
         departure_local,
         datex_impacts,
         allowed_countries: allowed_countries_norm.clone(),
+        ..RouteOptions::default()
     };
 
     let mut report = String::new();
@@ -3176,6 +3178,10 @@ fn plan_car_route_inner(
         // plus finite tile-budget widen retries (must never spin).
         loop {
             pad_attempts.push(pad);
+            // Fresh overlays each attempt (pad / tile widen must not reuse stale eco).
+            route_opts.eco_weights = None;
+            route_opts.motor_soft = None;
+            route_opts.surface_routing_mode = None;
             bbox = driver_break_core::routing::plan_bbox::trip_bbox_points(&route_points, pad);
             report.push_str(&format!(
                 "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}; edge_clip={edge_clip_mode:?}; \
@@ -3227,6 +3233,8 @@ fn plan_car_route_inner(
                 None
             };
             let build_data_dir = plan_pack_data_dir(pbf, &data_dir);
+            // Pack-hit: Arc shared with corridor LRU (read-only; eco/surface via
+            // RouteOptions overlays). PBF fallback: unique Arc so make_mut is free.
             let (mut built, hit, phit) = match pack_try {
                 Ok(g) => (g, false, true),
                 Err(e) => {
@@ -3243,7 +3251,7 @@ fn plan_car_route_inner(
                         &eco,
                         bbox,
                     ) {
-                        Ok((g, hit)) => (g, hit, false),
+                        Ok((g, hit)) => (std::sync::Arc::new(g), hit, false),
                         Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
                             return plan_cancelled_result(
                                 report,
@@ -3263,9 +3271,15 @@ fn plan_car_route_inner(
                 }
             };
             let mut eco_reweight_ms = 0u64;
-            if phit && use_eco {
+            if use_eco {
                 let t_eco = Instant::now();
-                built.apply_eco_reweighting(&elevation, &eco);
+                if phit {
+                    // Overlay — never write eco_weight into the cached Arc.
+                    let weights = compute_eco_weights(&built, &elevation, &eco);
+                    route_opts.eco_weights = Some(std::sync::Arc::new(weights));
+                } else {
+                    std::sync::Arc::make_mut(&mut built).apply_eco_reweighting(&elevation, &eco);
+                }
                 eco_reweight_ms = t_eco.elapsed().as_millis() as u64;
                 eco_reweight_ms_acc = eco_reweight_ms_acc.saturating_add(eco_reweight_ms);
             }
@@ -3294,7 +3308,7 @@ fn plan_car_route_inner(
                 && prefer_official_networks
             {
                 apply_network_pref_if_requested(
-                    &mut built,
+                    std::sync::Arc::make_mut(&mut built),
                     pbf,
                     OfficialNetworkKind::Cycling,
                     true,
@@ -3314,16 +3328,17 @@ fn plan_car_route_inner(
                     }
                     Err(_) => BikeCapability::Trekking,
                 };
+                let g = std::sync::Arc::make_mut(&mut built);
                 // Hard suitability needs OSM way ids (PBF / bbox cache). Pack edge
                 // ids are node-node-idx — skip on pack hits (same as motor surface refine).
                 if !phit {
-                    let _ = apply_bike_suitability_from_pbf(&mut built, pbf, bike_cap);
+                    let _ = apply_bike_suitability_from_pbf(g, pbf, bike_cap);
                 }
                 // Soft costs use packed highway + surface_quality (works for pack hits).
-                apply_bike_surface_preference(&mut built, bike_cap);
+                apply_bike_surface_preference(g, bike_cap);
                 // Slow-road preference fights Road mode (penalizes fast asphalt).
                 if !matches!(bike_cap, BikeCapability::Road) {
-                    apply_slow_road_preference(&mut built);
+                    apply_slow_road_preference(g);
                 }
             }
             if matches!(routing_profile, RoutingProfile::Car | RoutingProfile::Truck) {
@@ -3345,16 +3360,25 @@ fn plan_car_route_inner(
                         Err(_) => SurfaceRoutingMode::Car,
                     }
                 };
-                built.surface_routing_mode = surface_mode;
-                // Pack-hit graphs already carry classified `surface_quality` (format v8+).
-                // PBF refine is way-id based and must not run on pack edge ids (node-node-idx).
-                if !phit {
-                    let _ = apply_surface_quality_from_pbf(&mut built, pbf);
-                }
-                if let Some(cost_profile) =
-                    MotorSoftCostProfile::from_travel_profile(profile.to_core())
-                {
-                    apply_surface_preference(&mut built, surface_mode, cost_profile);
+                // Overlay surface mode + soft costs on pack-hit (keep Arc shared).
+                route_opts.surface_routing_mode = Some(surface_mode);
+                if phit {
+                    if let Some(cost_profile) =
+                        MotorSoftCostProfile::from_travel_profile(profile.to_core())
+                    {
+                        route_opts.motor_soft = Some((surface_mode, cost_profile));
+                    }
+                } else {
+                    let g = std::sync::Arc::make_mut(&mut built);
+                    g.surface_routing_mode = surface_mode;
+                    // Pack-hit graphs already carry classified `surface_quality` (format v8+).
+                    // PBF refine is way-id based and must not run on pack edge ids (node-node-idx).
+                    let _ = apply_surface_quality_from_pbf(g, pbf);
+                    if let Some(cost_profile) =
+                        MotorSoftCostProfile::from_travel_profile(profile.to_core())
+                    {
+                        apply_surface_preference(g, surface_mode, cost_profile);
+                    }
                 }
             }
 
@@ -3798,13 +3822,37 @@ fn plan_car_route_inner(
         report.push_str("poi_skipped=chunk_leg\n");
         (PoiIndex::new(), DangerBarrierIndex::default(), false)
     } else {
-        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan_bbox(
+        // Clip POI to a band around the planned polyline (not the fat trip AABB
+        // that still pulled ~2M Ostlandet overnight buildings).
+        let poi_clip = {
+            let samples = sample_polyline_km(&polyline);
+            let pts: Vec<(f64, f64)> = samples.iter().map(|s| (s.0, s.1)).collect();
+            if pts.len() >= 2 {
+                let segs = driver_break_core::routing::plan_bbox::corridor_segment_bboxes(
+                    &pts,
+                    0.15, // ~15 km half-width
+                );
+                segs.into_iter().reduce(|mut a, b| {
+                    a[0] = a[0].min(b[0]);
+                    a[1] = a[1].min(b[1]);
+                    a[2] = a[2].max(b[2]);
+                    a[3] = a[3].max(b[3]);
+                    a
+                })
+            } else {
+                Some(bbox)
+            }
+        };
+        let poi_pack_dirs =
+            plan_pack_dirs(pbf, data_dir.to_string_lossy().as_ref(), &pack_dir, long_trip_enabled);
+        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan_bbox_with_pack_dirs(
             &data_dir,
+            &poi_pack_dirs,
             pbf,
-            Some(bbox),
+            poi_clip,
         ) {
             Ok((poi, barriers)) => {
-                // Pack is region-wide; nearest queries already radius-limited.
+                // Corridor-clipped pack (cached); nearest queries radius-limited.
                 (poi, barriers, true)
             }
             Err(_) => {
@@ -6854,6 +6902,7 @@ pub fn format_route_avoidance_report(
         departure_local: None,
         datex_impacts: Vec::new(),
         allowed_countries: None,
+        ..Default::default()
     };
     driver_break_core::format_route_avoidance_report(&opts, 0, priority_path_share_pct)
 }

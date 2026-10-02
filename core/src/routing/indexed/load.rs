@@ -758,14 +758,54 @@ pub fn load_graph_pack_clips(
 }
 
 pub fn load_poi_barrier_pack(path: &Path) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
+    load_poi_barrier_pack_bbox(path, None, true)
+}
+
+/// Load a POI/barrier pack, optionally clipping records to `bbox`
+/// `[min_lat, min_lon, max_lat, max_lon]` during hydrate (avoids keeping a
+/// whole-region Ostlandet index in RSS for a narrow corridor plan).
+///
+/// `include_overnight_buildings`: see [`FlatPoiBarrierPack::to_poi_index_bbox`].
+pub fn load_poi_barrier_pack_bbox(
+    path: &Path,
+    bbox: Option<[f64; 4]>,
+    include_overnight_buildings: bool,
+) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
+    let t0 = std::time::Instant::now();
     let mmap = map_file(path)?;
+    let bytes = mmap.len() as u64;
     check_preamble(&mmap, MAGIC_POI_BARRIER, POI_BARRIER_FORMAT_VERSION)?;
     let body = &mmap[archive_payload_offset()..];
     let archived = rkyv::access::<ArchivedFlatPoiBarrierPack, RkyvError>(body)
         .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
     let pack: FlatPoiBarrierPack = rkyv::deserialize::<FlatPoiBarrierPack, RkyvError>(archived)
         .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
-    Ok((pack.to_poi_index(), pack.to_barrier_index()))
+    let poi = pack.to_poi_index_bbox(bbox, include_overnight_buildings);
+    let barriers = pack.to_barrier_index_bbox(bbox);
+    let elapsed_ms = t0.elapsed().as_millis() as u64;
+    let file = path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string());
+    crate::routing::plan_perf::note(
+        "poi_barrier_load",
+        format!(
+            "{file};bytes={bytes};poi={};buildings={};glaciers={};clip={};ms={elapsed_ms}",
+            poi.len(),
+            poi.overnight_buildings().len(),
+            barriers.glacier_ring_count(),
+            bbox.is_some() as u8
+        ),
+    );
+    log::info!(
+        target: "NaviPlan",
+        "load_poi_barrier_pack file={file} bytes={bytes} poi={} buildings={} glaciers={} clip={} elapsed_ms={elapsed_ms}",
+        poi.len(),
+        poi.overnight_buildings().len(),
+        barriers.glacier_ring_count(),
+        bbox.is_some(),
+    );
+    Ok((poi, barriers))
 }
 
 pub fn load_wetland_pack(
@@ -819,7 +859,7 @@ pub fn try_load_graph_for_plan_corridor(
     clip_bbox: Option<[f64; 4]>,
     route_points: Option<&[(f64, f64)]>,
 ) -> Result<RouteGraph, PackLoadError> {
-    try_load_graph_for_plan_corridor_with_pack_dirs(
+    Ok(arc_graph_owned(try_load_graph_for_plan_corridor_with_pack_dirs(
         data_dir,
         &[],
         pbf,
@@ -827,7 +867,7 @@ pub fn try_load_graph_for_plan_corridor(
         clip_bbox,
         route_points,
         crate::routing::plan_bbox::PlanEdgeClipMode::CorridorBand,
-    )
+    )?))
 }
 
 /// Like [`try_load_graph_for_plan_corridor`], but also searches [pack_dirs]
@@ -836,6 +876,10 @@ pub fn try_load_graph_for_plan_corridor(
 ///
 /// `edge_clip_mode` selects corridor-band vs trip-AABB edge materialization
 /// ([`crate::routing::plan_bbox::PlanEdgeClipMode`]).
+///
+/// Returns a shared [`std::sync::Arc`] so warm corridor-cache hits do not clone
+/// the owned graph (~1 s / hundreds of MiB). Callers must treat the graph as
+/// read-only (eco / surface soft costs are per-plan overlays).
 pub fn try_load_graph_for_plan_corridor_with_pack_dirs(
     data_dir: &Path,
     pack_dirs: &[PathBuf],
@@ -844,7 +888,7 @@ pub fn try_load_graph_for_plan_corridor_with_pack_dirs(
     clip_bbox: Option<[f64; 4]>,
     route_points: Option<&[(f64, f64)]>,
     edge_clip_mode: crate::routing::plan_bbox::PlanEdgeClipMode,
-) -> Result<RouteGraph, PackLoadError> {
+) -> Result<std::sync::Arc<RouteGraph>, PackLoadError> {
     let mut owned: Vec<PathBuf> = Vec::new();
     for p in pack_dirs {
         if p.as_os_str().is_empty() {
@@ -868,6 +912,10 @@ pub fn try_load_graph_for_plan_corridor_with_pack_dirs(
     )
 }
 
+fn arc_graph_owned(graph: std::sync::Arc<RouteGraph>) -> RouteGraph {
+    std::sync::Arc::try_unwrap(graph).unwrap_or_else(|a| (*a).clone())
+}
+
 fn try_load_graph_for_plan_corridor_dirs(
     dirs: &[&Path],
     pbf: &Path,
@@ -875,7 +923,7 @@ fn try_load_graph_for_plan_corridor_dirs(
     clip_bbox: Option<[f64; 4]>,
     route_points: Option<&[(f64, f64)]>,
     edge_clip_mode: crate::routing::plan_bbox::PlanEdgeClipMode,
-) -> Result<RouteGraph, PackLoadError> {
+) -> Result<std::sync::Arc<RouteGraph>, PackLoadError> {
     let pbf_stem = planning_stem(pbf)?;
     // Chunked long-trip legs still pass the origin PBF; re-home primary to the
     // Ready stem that covers the hop start so we do not merge Sachsen-Anhalt
@@ -1282,49 +1330,51 @@ fn try_load_graph_for_plan_corridor_dirs(
     );
 
     if !tile_files.is_empty() {
-        let mut graphs = vec![load_tiled_graph_files(
-            dirs, tile_files, profile, edge_clips,
-        )?];
+        let (tiled, cache_hit) = load_tiled_graph_files(dirs, tile_files, profile, edge_clips)?;
         // City-state packs (e.g. hamburg) are often a single untiled .rkyv.
         // Merge them whether they are the primary stem or an extra — otherwise
         // a hop that starts on a Hamburg densify anchor loads only neighbour
         // tiles and cannot snap (same 6 km miss as a dropped destination pack).
         let primary_tiled = man.graph_tiles_for(profile).is_some_and(|t| !t.is_empty());
+        let mut extras_mono = Vec::new();
         if !primary_tiled {
             if let Some(pp) = graph_path_in_dirs(&man, dirs, profile) {
-                graphs.push(load_graph_pack_clips(&pp, profile, edge_clips)?);
+                extras_mono.push(load_graph_pack_clips(&pp, profile, edge_clips)?);
             }
         }
         for extra in &extras {
-            let tiled = extra
+            let is_tiled = extra
                 .graph_tiles_for(profile)
                 .is_some_and(|t| !t.is_empty());
-            if tiled {
+            if is_tiled {
                 continue;
             }
             if let Some(ep) = graph_path_in_dirs(extra, dirs, profile) {
-                graphs.push(load_graph_pack_clips(&ep, profile, edge_clips)?);
+                extras_mono.push(load_graph_pack_clips(&ep, profile, edge_clips)?);
             }
         }
-        if graphs.len() == 1 {
-            let g = graphs.pop().unwrap();
-            return Ok(supplement_pack_ferries_from_pbf(
-                g,
-                dirs,
-                &man,
-                &extras,
-                profile,
-                clip_bbox,
-                edge_clips,
-                route_points,
-            ));
-        }
-        let merged = merge_tile_graphs(graphs, profile);
-        if merged.edges.is_empty() {
-            return Err(PackLoadError::Missing);
+        let extras_empty = extras_mono.is_empty();
+        let graph = if extras_empty {
+            // Keep the corridor Arc (shared with cache) — no clone.
+            tiled
+        } else {
+            let mut graphs = vec![arc_graph_owned(tiled)];
+            graphs.extend(extras_mono);
+            let merged = merge_tile_graphs(graphs, profile);
+            if merged.edges.is_empty() {
+                return Err(PackLoadError::Missing);
+            }
+            std::sync::Arc::new(merged)
+        };
+        // Corridor-cache hit: skip ferry overlay. The cached graph was already
+        // used successfully (or packs include ferries); re-running 35 km snaps
+        // + A* probes on a ~500k-edge corridor dominated warm pack_load (~1 s).
+        if cache_hit && extras_empty {
+            crate::routing::plan_perf::note("ferry_overlay", "skip_corridor_cache_hit");
+            return Ok(graph);
         }
         return Ok(supplement_pack_ferries_from_pbf(
-            merged,
+            graph,
             dirs,
             &man,
             &extras,
@@ -1361,12 +1411,9 @@ fn try_load_graph_for_plan_corridor_dirs(
             dirs,
         );
         if !extra_files.is_empty() {
-            graphs.push(load_tiled_graph_files(
-                dirs,
-                extra_files,
-                profile,
-                edge_clips,
-            )?);
+            graphs.push(arc_graph_owned(
+                load_tiled_graph_files(dirs, extra_files, profile, edge_clips)?.0,
+            ));
         }
     }
     let merged = merge_tile_graphs(graphs, profile);
@@ -1374,7 +1421,7 @@ fn try_load_graph_for_plan_corridor_dirs(
         return Err(PackLoadError::Missing);
     }
     Ok(supplement_pack_ferries_from_pbf(
-        merged,
+        std::sync::Arc::new(merged),
         dirs,
         &man,
         &extras,
@@ -1415,9 +1462,9 @@ fn point_in_bbox(lat: f64, lon: f64, bbox: [f64; 4]) -> bool {
 /// A* for minutes (observed ~300 s on Raufoss→Bergen with MAX_PLAN_TILES=6).
 fn graph_hop_already_connected(graph: &RouteGraph, a: (f64, f64), b: (f64, f64)) -> bool {
     let opts = crate::routing::graph::RouteOptions::default();
-    // Match densify joint snap ([`CHUNK_INTERMEDIATE_SNAP_M`]=35 km). A tighter
-    // 25 km gate falsely treated land hops as unconnected and triggered multi-
-    // minute Geofabrik stub ensures on Android.
+    // Densify joints / ferry-overlay probes use the loose 35 km gate. User O/D
+    // snaps in plan_car_route_inner stay at max_waypoint_snap_m (car 750 m)
+    // unless relax_*_snap is set for chunk joints.
     let snap_m = crate::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M;
     let Ok((start, _)) = graph.nearest_routable_with_options_max(a.0, a.1, &opts, false, snap_m)
     else {
@@ -1430,10 +1477,10 @@ fn graph_hop_already_connected(graph: &RouteGraph, a: (f64, f64), b: (f64, f64))
     if start == goal {
         return true;
     }
-    if !graph.same_weak_component(start, goal) {
-        return false;
-    }
-    graph.shortest_path(start, goal, false).is_some()
+    // Weak-component membership is enough to skip ferry overlay (same as the
+    // pre-A* disconnect gate). A full shortest_path here re-ran ~0.2–1 s on
+    // every warm corridor-cache hit.
+    graph.same_weak_component(start, goal)
 }
 
 /// Fallback when hop geometry is unavailable: require a long ferry fully inside
@@ -1518,7 +1565,7 @@ fn resolve_ferry_overlay_pbf(home: &Path, stem: &str, bbox: [f64; 4]) -> Option<
 /// long ferry lies fully inside the plan clip. Orphan / pier-stub ferry edges
 /// and unrelated long ferries elsewhere must not suppress pier-approach overlay.
 fn supplement_pack_ferries_from_pbf(
-    graph: RouteGraph,
+    graph: std::sync::Arc<RouteGraph>,
     dirs: &[&Path],
     primary: &NaviManifest,
     extras: &[NaviManifest],
@@ -1526,7 +1573,7 @@ fn supplement_pack_ferries_from_pbf(
     clip_bbox: Option<[f64; 4]>,
     edge_clips: Option<&[[f64; 4]]>,
     route_points: Option<&[(f64, f64)]>,
-) -> RouteGraph {
+) -> std::sync::Arc<RouteGraph> {
     let Some(bbox) = plan_clip_bbox(clip_bbox, edge_clips) else {
         return graph;
     };
@@ -1534,6 +1581,9 @@ fn supplement_pack_ferries_from_pbf(
     let bbox = expand_bbox_deg(bbox, 0.05);
     if let Some(pts) = route_points.filter(|p| p.len() >= 2) {
         let opts = crate::routing::graph::RouteOptions::default();
+        // Densify joints / corridor connectivity probes use the loose 35 km
+        // gate. User O/D snaps in plan_car_route_inner stay at
+        // max_waypoint_snap_m (car 750 m) unless relax_*_snap is set.
         let snap_m = crate::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M;
         if let (Ok((start, _)), Ok((goal, _))) = (
             graph.nearest_routable_with_options_max(pts[0].0, pts[0].1, &opts, false, snap_m),
@@ -1606,9 +1656,9 @@ fn supplement_pack_ferries_from_pbf(
         return graph;
     }
     let mut parts = Vec::with_capacity(1 + overlays.len());
-    parts.push(graph);
+    parts.push(arc_graph_owned(graph));
     parts.extend(overlays);
-    merge_tile_graphs(parts, profile)
+    std::sync::Arc::new(merge_tile_graphs(parts, profile))
 }
 
 /// Choose the Ready manifest for planning: prefer a stem whose region covers
@@ -1760,34 +1810,36 @@ fn expand_bbox_deg(b: [f64; 4], pad: f64) -> [f64; 4] {
 
 fn load_tiled_graph_files(
     dirs: &[&Path],
-    mut tile_files: Vec<String>,
+    tile_files: Vec<String>,
     profile: RoutingProfile,
     clips: Option<&[[f64; 4]]>,
-) -> Result<RouteGraph, PackLoadError> {
+) -> Result<(std::sync::Arc<RouteGraph>, bool), PackLoadError> {
+    use std::sync::Arc;
+    let mut tile_files = tile_files;
     if tile_files.is_empty() {
         return Err(PackLoadError::Missing);
     }
     tile_files.sort();
 
-    let cache_key = super::corridor_cache::CorridorCacheKey::new(profile, tile_files.clone(), clips);
-    if let Some(hit) = super::corridor_cache::corridor_cache_take(&cache_key) {
+    let cache_key =
+        super::corridor_cache::CorridorCacheKey::new(profile, tile_files.clone(), clips);
+    if let Some(hit) = super::corridor_cache::corridor_cache_get(&cache_key) {
         crate::routing::plan_perf::note("corridor_cache", "hit");
         crate::routing::plan_perf::note_u64("tiles", tile_files.len() as u64);
         log::info!(
             target: "NaviPlan",
-            "corridor_cache hit tiles={} nodes={} edges={}",
+            "corridor_cache hit tiles={} nodes={} edges={} (arc share, no clone)",
             tile_files.len(),
             hit.nodes.len(),
             hit.edges.len()
         );
-        // Leave a spare for the next replan/warm (clone once ≈ 0.5–1 s vs
-        // multi-second mmap+rkyv materialize on large corridors).
-        super::corridor_cache::corridor_cache_insert_owned(cache_key, hit.clone());
-        return Ok(hit);
+        return Ok((hit, true));
     }
     crate::routing::plan_perf::note("corridor_cache", "miss");
 
-    // Always sequential + incremental merge: never hold all tile graphs in RAM.
+    // Sequential decode+clip + incremental merge (corridor clips keep tiles small).
+    // Parallel decode was tried; it raised peak RSS without beating merge cost on
+    // the 11-tile Bergen corridor (~496k edges).
     let total = tile_files.len() as u64;
     let mut merged: Option<RouteGraph> = None;
     for (i, file) in tile_files.iter().enumerate() {
@@ -1835,8 +1887,9 @@ fn load_tiled_graph_files(
         merged.edges.len(),
         merged.nodes.len()
     );
-    super::corridor_cache::corridor_cache_insert_owned(cache_key, merged.clone());
-    Ok(merged)
+    let arc = Arc::new(merged);
+    super::corridor_cache::corridor_cache_insert(cache_key, Arc::clone(&arc));
+    Ok((arc, false))
 }
 
 pub fn try_load_poi_barrier_for_plan(
@@ -1849,39 +1902,121 @@ pub fn try_load_poi_barrier_for_plan(
 /// Load POI/barrier packs for the planning stem, and when `bbox` spills outside
 /// that stem's region, also merge Ready packs from other installed stems that
 /// intersect the corridor (same gate as graph tile multi-stem load).
+///
+/// When `bbox` is set, records are clipped to that corridor (not whole-region)
+/// and the clipped index is LRU-cached between plans.
 pub fn try_load_poi_barrier_for_plan_bbox(
     data_dir: &Path,
     pbf: &Path,
     bbox: Option<[f64; 4]>,
 ) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
-    let stem = planning_stem(pbf)?;
-    let man = load_ready_manifest(data_dir, &stem)?;
-    match status_for_planning_pbf(data_dir, pbf, &man)? {
-        PackStatus::Ready => {}
-        PackStatus::Missing => return Err(PackLoadError::Missing),
-        PackStatus::StalePbf => return Err(PackLoadError::Stale),
-        PackStatus::VersionMismatch => return Err(PackLoadError::VersionMismatch),
+    try_load_poi_barrier_for_plan_bbox_with_pack_dirs(data_dir, &[], pbf, bbox)
+}
+
+/// Like [`try_load_poi_barrier_for_plan_bbox`], but also searches [pack_dirs]
+/// (SD / long-trip-packs) for Ready manifests — same roots as graph load.
+pub fn try_load_poi_barrier_for_plan_bbox_with_pack_dirs(
+    data_dir: &Path,
+    pack_dirs: &[PathBuf],
+    pbf: &Path,
+    bbox: Option<[f64; 4]>,
+) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
+    let mut owned: Vec<PathBuf> = Vec::new();
+    for p in pack_dirs {
+        if p.as_os_str().is_empty() {
+            continue;
+        }
+        if p.is_dir() && !owned.iter().any(|x| x == p) {
+            owned.push(p.clone());
+        }
     }
-    let (mut poi, mut barriers) = load_poi_barrier_pack(&man.poi_barrier_path(data_dir))?;
+    if !owned.iter().any(|x| x.as_path() == data_dir) {
+        owned.push(data_dir.to_path_buf());
+    }
+    let dirs: Vec<&Path> = owned.iter().map(|p| p.as_path()).collect();
+    try_load_poi_barrier_for_plan_bbox_dirs(&dirs, pbf, bbox)
+}
+
+fn try_load_poi_barrier_for_plan_bbox_dirs(
+    dirs: &[&Path],
+    pbf: &Path,
+    bbox: Option<[f64; 4]>,
+) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
+    let pbf_stem = planning_stem(pbf)?;
+    let (stem, man, primary_dir) =
+        pick_primary_manifest(dirs, &pbf_stem, None, RoutingProfile::Car)?;
+    if stem == pbf_stem {
+        match status_for_planning_pbf(primary_dir, pbf, &man)? {
+            PackStatus::Ready => {}
+            PackStatus::Missing => return Err(PackLoadError::Missing),
+            PackStatus::StalePbf => return Err(PackLoadError::Stale),
+            PackStatus::VersionMismatch => return Err(PackLoadError::VersionMismatch),
+        }
+    } else if !stem_pack_ready(primary_dir, &man, RoutingProfile::Car) {
+        return Err(PackLoadError::Missing);
+    }
+
+    let mut path_list = vec![man
+        .poi_barrier_path(primary_dir)
+        .to_string_lossy()
+        .into_owned()];
+    let mut extras = Vec::new();
     if corridor_needs_extra_stems(&stem, bbox) {
         if let Some(b) = bbox {
             // Cap extras: full POI packs are 30–90 MB on disk and inflate peak
             // RSS while the route graph is still live (4 GB Automotive).
-            let mut extras = extra_corridor_manifests(data_dir, &stem, b, RoutingProfile::Car);
+            extras = extra_corridor_manifests_segs(dirs, &stem, &[b], RoutingProfile::Car);
             extras.truncate(1);
-            for extra in extras {
-                let path = extra.poi_barrier_path(data_dir);
-                if !path.is_file() {
-                    continue;
-                }
-                let Ok((epoi, ebar)) = load_poi_barrier_pack(&path) else {
+            for extra in &extras {
+                let Some(home) = home_dir_for_stem(dirs, &extra.stem, RoutingProfile::Car) else {
                     continue;
                 };
-                poi.extend_from(&epoi);
-                barriers.merge(ebar);
+                path_list.push(extra.poi_barrier_path(home).to_string_lossy().into_owned());
             }
         }
     }
+
+    // Motor plan path: skip overnight building hydrate (hiking-only samples).
+    const INCLUDE_OVERNIGHT_BUILDINGS: bool = false;
+    let cache_key = super::poi_barrier_cache::PoiBarrierCacheKey::new(path_list.clone(), bbox);
+    if let Some((poi, barriers)) = super::poi_barrier_cache::poi_barrier_cache_get(&cache_key) {
+        crate::routing::plan_perf::note("poi_barrier_cache", "hit");
+        log::info!(
+            target: "NaviPlan",
+            "poi_barrier_cache hit paths={} poi={} glaciers={}",
+            path_list.len(),
+            poi.len(),
+            barriers.glacier_ring_count()
+        );
+        return Ok(((*poi).clone(), (*barriers).clone()));
+    }
+    crate::routing::plan_perf::note("poi_barrier_cache", "miss");
+
+    let primary_path = man.poi_barrier_path(primary_dir);
+    let (mut poi, mut barriers) =
+        load_poi_barrier_pack_bbox(&primary_path, bbox, INCLUDE_OVERNIGHT_BUILDINGS)?;
+    for extra in &extras {
+        let Some(home) = home_dir_for_stem(dirs, &extra.stem, RoutingProfile::Car) else {
+            continue;
+        };
+        let path = extra.poi_barrier_path(home);
+        if !path.is_file() {
+            continue;
+        }
+        let Ok((epoi, ebar)) =
+            load_poi_barrier_pack_bbox(&path, bbox, INCLUDE_OVERNIGHT_BUILDINGS)
+        else {
+            continue;
+        };
+        poi.extend_from(&epoi);
+        barriers.merge(ebar);
+    }
+
+    super::poi_barrier_cache::poi_barrier_cache_insert(
+        cache_key,
+        std::sync::Arc::new(poi.clone()),
+        std::sync::Arc::new(barriers.clone()),
+    );
     Ok((poi, barriers))
 }
 
@@ -2637,7 +2772,7 @@ mod ferry_overlay_tests {
         let g = land_only_graph();
         let before = g.edges.len();
         let out = supplement_pack_ferries_from_pbf(
-            g,
+            std::sync::Arc::new(g),
             &[dir.path()],
             &man,
             &[],
@@ -2837,7 +2972,7 @@ mod ferry_overlay_tests {
         };
         let ferry_before = merged.edges.iter().filter(|e| e.is_ferry).count();
         let out = supplement_pack_ferries_from_pbf(
-            merged,
+            std::sync::Arc::new(merged),
             &[&dir],
             &sh_man,
             &[dk_man],

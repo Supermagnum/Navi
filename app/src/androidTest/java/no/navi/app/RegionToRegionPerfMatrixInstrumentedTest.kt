@@ -156,11 +156,21 @@ class RegionToRegionPerfMatrixInstrumentedTest {
         val out = rows.joinToString("\n")
         File(packDir, "region_to_region_perf_matrix.tsv").writeText(out)
         Log.i(TAG, "PROFILE_TABLE\n$out")
+        // Warm (<2 s): Arc corridor + ferry-overlay skip on cache hit.
+        // Cold eco on emulator SD is dominated by tile materialize (~5–6 s for
+        // 11 tiles / ~496k edges); allow SD variance up to 9 s.
         assertTrue(
-            "Raufoss→Bergen eco must pack-hit and finish under 120s:\n$out",
+            "Raufoss→Bergen eco cold must pack-hit and finish under 9s:\n$out",
             rows.any {
                 it.startsWith("raufoss_bergen\ttrue\ttrue\t") &&
-                    it.split('\t').getOrNull(3)?.toLongOrNull()?.let { ms -> ms < 120_000 } == true
+                    it.split('\t').getOrNull(3)?.toLongOrNull()?.let { ms -> ms < 9_000 } == true
+            },
+        )
+        assertTrue(
+            "Raufoss→Bergen eco warm must finish under 2s:\n$out",
+            rows.any {
+                it.startsWith("raufoss_bergen_warm\ttrue\ttrue\t") &&
+                    it.split('\t').getOrNull(3)?.toLongOrNull()?.let { ms -> ms < 2_000 } == true
             },
         )
     }

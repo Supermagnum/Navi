@@ -189,6 +189,17 @@ pub struct RouteOptions {
     /// ISO-3166-1 alpha-2 codes (case-insensitive). `None` keeps historical
     /// behaviour (no country filter). Hard constraint — never soft-penalize.
     pub allowed_countries: Option<Vec<String>>,
+    /// Per-edge eco joule costs (parallel to `RouteGraph::edges`). When set and
+    /// `use_eco`, overrides `GraphEdge::eco_weight` without mutating the graph.
+    pub eco_weights: Option<std::sync::Arc<Vec<f64>>>,
+    /// Apply motor soft multipliers at cost-eval time (pack-hit Arc graphs).
+    pub motor_soft: Option<(
+        crate::routing::graph::SurfaceRoutingMode,
+        crate::routing::graph::MotorSoftCostProfile,
+    )>,
+    /// Override [`RouteGraph::surface_routing_mode`] for A* / snap without
+    /// mutating a shared corridor Arc.
+    pub surface_routing_mode: Option<crate::routing::graph::SurfaceRoutingMode>,
 }
 
 /// Outcome of one A* attempt (path may be absent).
@@ -486,20 +497,18 @@ impl RouteGraph {
         use_eco: bool,
         options: &RouteOptions,
     ) -> Option<usize> {
-        let use_surface_transitions = self.surface_routing_mode == SurfaceRoutingMode::Car
+        let surface_mode = options
+            .surface_routing_mode
+            .unwrap_or(self.surface_routing_mode);
+        let use_surface_transitions = surface_mode == SurfaceRoutingMode::Car
             && matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
-        let surface_mode = self.surface_routing_mode;
         let mut best: Option<(usize, u64)> = None;
         for &idx in self.outgoing_edge_indices(from) {
             let edge = &self.edges[idx];
             if edge.target != to || !edge_allowed_for_options(edge, options, self.profile) {
                 continue;
             }
-            let base = if use_eco {
-                edge.eco_weight.unwrap_or(edge.base_weight)
-            } else {
-                edge.base_weight
-            };
+            let base = edge_travel_cost(edge, idx, use_eco, options);
             let transition = if use_surface_transitions {
                 surface_transition_cost_m(prev_surface, edge.surface_quality, surface_mode)
             } else {
@@ -1176,12 +1185,14 @@ impl RouteGraph {
     ) -> PathSearchStats {
         let plan_id = crate::download::plan_cancel::current_plan_id();
         let expansions = std::sync::atomic::AtomicU64::new(0);
-        let use_surface_transitions = self.surface_routing_mode == SurfaceRoutingMode::Car
+        let surface_mode = options
+            .surface_routing_mode
+            .unwrap_or(self.surface_routing_mode);
+        let use_surface_transitions = surface_mode == SurfaceRoutingMode::Car
             && matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
-        let surface_mode = self.surface_routing_mode;
         // Soft multipliers are ≥ 1. Heuristic uses min(cost/endpoint_chord) so it
         // stays admissible on real OSM (≈1.0×haversine) and on synthetic fixtures.
-        let heuristic_per_m = self.astar_heuristic_cost_per_metre(use_eco);
+        let heuristic_per_m = self.astar_heuristic_cost_per_metre(use_eco, options);
 
         if use_surface_transitions {
             let result = astar(
@@ -1207,7 +1218,7 @@ impl RouteGraph {
                             if !edge_allowed_for_options(edge, options, self.profile) {
                                 return None;
                             }
-                            let base = edge_travel_cost(edge, use_eco, options);
+                            let base = edge_travel_cost(edge, edge_idx, use_eco, options);
                             let transition = surface_transition_cost_m(
                                 prev_surface,
                                 edge.surface_quality,
@@ -1272,7 +1283,7 @@ impl RouteGraph {
                         if !edge_allowed_for_options(edge, options, self.profile) {
                             return None;
                         }
-                        let cost = edge_travel_cost(edge, use_eco, options);
+                        let cost = edge_travel_cost(edge, edge_idx, use_eco, options);
                         Some(((edge.target, edge_idx), cost_to_u64(cost)))
                     })
                     .collect::<Vec<_>>()
@@ -1314,19 +1325,24 @@ impl RouteGraph {
     /// when `length_m` is synthetic or otherwise shorter than the geographic chord
     /// (fixtures), while remaining ~1.0×haversine on real OSM length weights and
     /// correctly scaled for eco joule costs.
-    fn astar_heuristic_cost_per_metre(&self, use_eco: bool) -> f64 {
+    fn astar_heuristic_cost_per_metre(&self, use_eco: bool, options: &RouteOptions) -> f64 {
         let mut min_ratio = f64::INFINITY;
-        for edge in &self.edges {
+        for (idx, edge) in self.edges.iter().enumerate() {
             let chord =
                 haversine_latlon_m(edge.start_lat, edge.start_lon, edge.end_lat, edge.end_lon);
             if chord < 1.0 {
                 continue;
             }
-            let cost = if use_eco {
-                edge.eco_weight.unwrap_or(edge.base_weight)
-            } else {
-                edge.base_weight
-            };
+            // Ignore toll/tunnel/datex penalties here (same as before); include
+            // eco overlay + motor soft so the heuristic stays admissible.
+            let cost = edge_travel_cost(edge, idx, use_eco, &RouteOptions {
+                toll_policy: crate::routing::toll::TollPolicy::Allow,
+                avoid_tunnels: false,
+                datex_impacts: Vec::new(),
+                eco_weights: options.eco_weights.clone(),
+                motor_soft: options.motor_soft,
+                ..RouteOptions::default()
+            });
             if cost.is_finite() && cost >= 0.0 {
                 min_ratio = min_ratio.min(cost / chord);
             }
@@ -2021,12 +2037,28 @@ fn edge_in_allowed_countries(edge: &GraphEdge, allowed: &[String]) -> bool {
     true
 }
 
-fn edge_travel_cost(edge: &GraphEdge, use_eco: bool, options: &RouteOptions) -> f64 {
+fn edge_travel_cost(
+    edge: &GraphEdge,
+    edge_idx: usize,
+    use_eco: bool,
+    options: &RouteOptions,
+) -> f64 {
     let mut cost = if use_eco {
-        edge.eco_weight.unwrap_or(edge.base_weight)
+        options
+            .eco_weights
+            .as_ref()
+            .and_then(|w| w.get(edge_idx).copied())
+            .or(edge.eco_weight)
+            .unwrap_or(edge.base_weight)
     } else {
         edge.base_weight
     };
+    if let Some((mode, profile)) = options.motor_soft {
+        let mult = crate::routing::graph::edge_motor_soft_multiplier(edge, mode, profile);
+        if mult > 1.0 + 1e-9 {
+            cost *= mult;
+        }
+    }
     if options.toll_policy == crate::routing::toll::TollPolicy::Penalize && edge.is_toll {
         cost *= crate::routing::toll::TOLL_AVOID_PENALTY_MULT;
     }
@@ -3323,8 +3355,8 @@ mod tests {
             edge_allowed_for_options(&edge, &avoid, RoutingProfile::Car),
             "tunnels must stay searchable under soft avoid"
         );
-        let base = edge_travel_cost(&edge, false, &RouteOptions::default());
-        let penalized = edge_travel_cost(&edge, false, &avoid);
+        let base = edge_travel_cost(&edge, 0, false, &RouteOptions::default());
+        let penalized = edge_travel_cost(&edge, 0, false, &avoid);
         assert!(
             (penalized - base * crate::routing::toll::TUNNEL_AVOID_PENALTY_MULT).abs() < 1e-9,
             "base={base} penalized={penalized}"
@@ -3335,8 +3367,8 @@ mod tests {
         assert!(!is_tunnel_tag(""));
         edge.is_tunnel = false;
         assert_eq!(
-            edge_travel_cost(&edge, false, &avoid),
-            edge_travel_cost(&edge, false, &RouteOptions::default())
+            edge_travel_cost(&edge, 0, false, &avoid),
+            edge_travel_cost(&edge, 0, false, &RouteOptions::default())
         );
     }
 

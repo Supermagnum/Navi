@@ -3,6 +3,9 @@
 //! Tiles are mmapped only while materializing; the owned [`RouteGraph`] is what
 //! stays in RSS (~nodes+edges). Caching the **merged** corridor avoids repeating
 //! that materialize+merge (~4 s cold) on warm plans with the same tile set.
+//!
+//! Entries are shared read-only via [`Arc`] — callers must not mutate a cached
+//! graph (eco / surface soft costs are per-plan overlays).
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -10,10 +13,14 @@ use std::sync::{Arc, Mutex};
 
 use crate::routing::graph::{RouteGraph, RoutingProfile};
 
-/// Soft bound on cached corridor graph bytes (estimate). Evict LRU past this.
-/// Raufoss→Bergen merged car corridors estimate ~900–1100 MiB owned; keep headroom
-/// for one large corridor plus a smaller control route.
-pub const CORRIDOR_CACHE_MAX_BYTES: u64 = 1536 * 1024 * 1024;
+/// Fallback soft bound when `/proc/meminfo` is unavailable.
+pub const CORRIDOR_CACHE_MAX_BYTES: u64 = 768 * 1024 * 1024;
+
+/// Floor / ceiling for the memory-derived cache cap.
+/// Hard max stays near the pre-cache host peak (~1 GiB) so Arc sharing does not
+/// reintroduce a second full corridor on warm hits.
+const CORRIDOR_CACHE_MIN_BYTES: u64 = 256 * 1024 * 1024;
+const CORRIDOR_CACHE_HARD_MAX_BYTES: u64 = 768 * 1024 * 1024;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct CorridorCacheKey {
@@ -80,15 +87,15 @@ impl CorridorLru {
         }
     }
 
-    fn take(&mut self, key: &CorridorCacheKey) -> Option<Entry> {
+    fn get(&mut self, key: &CorridorCacheKey) -> Option<Arc<RouteGraph>> {
         if let Some(i) = self.order.iter().position(|k| k == key) {
-            self.order.remove(i);
+            let k = self.order.remove(i);
+            self.order.push(k);
         }
-        match self.map.remove(key) {
+        match self.map.get(key) {
             Some(entry) => {
-                self.bytes = self.bytes.saturating_sub(entry.bytes);
                 self.hits = self.hits.saturating_add(1);
-                Some(entry)
+                Some(Arc::clone(&entry.graph))
             }
             None => {
                 self.misses = self.misses.saturating_add(1);
@@ -102,8 +109,6 @@ impl CorridorLru {
             self.bytes = self.bytes.saturating_sub(old.bytes);
             self.order.retain(|k| k != &key);
         }
-        // Evict LRU until the new entry fits, but always keep capacity for one
-        // corridor (even if oversized) so Raufoss→Bergen can warm-cache.
         while !self.order.is_empty() && self.bytes.saturating_add(bytes) > self.max_bytes {
             let evict = self.order.remove(0);
             if let Some(old) = self.map.remove(&evict) {
@@ -118,10 +123,37 @@ impl CorridorLru {
 
 static CACHE: Mutex<Option<CorridorLru>> = Mutex::new(None);
 
+/// Derive cache cap from MemAvailable: leave headroom for the live plan / OS,
+/// clamp to [256 MiB, 768 MiB]. Falls back to [`CORRIDOR_CACHE_MAX_BYTES`].
+pub fn corridor_cache_max_bytes_from_mem() -> u64 {
+    let avail = read_mem_available_bytes().unwrap_or(CORRIDOR_CACHE_MAX_BYTES);
+    // Keep cache small relative to device RAM (3.5 GiB phones); live plan needs
+    // another ~same-sized corridor for A*.
+    let derived = avail.saturating_mul(20) / 100;
+    derived
+        .max(CORRIDOR_CACHE_MIN_BYTES)
+        .min(CORRIDOR_CACHE_HARD_MAX_BYTES)
+        .min(avail.saturating_sub(1024 * 1024 * 1024).max(CORRIDOR_CACHE_MIN_BYTES))
+}
+
+fn read_mem_available_bytes() -> Option<u64> {
+    let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+    for line in text.lines() {
+        let Some(rest) = line.strip_prefix("MemAvailable:") else {
+            continue;
+        };
+        let kib: u64 = rest.split_whitespace().next()?.parse().ok()?;
+        return Some(kib.saturating_mul(1024));
+    }
+    None
+}
+
 fn with_cache<R>(f: impl FnOnce(&mut CorridorLru) -> R) -> R {
     let mut guard = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if guard.is_none() {
-        *guard = Some(CorridorLru::new(CORRIDOR_CACHE_MAX_BYTES));
+        let max = corridor_cache_max_bytes_from_mem();
+        crate::routing::plan_perf::note_u64("corridor_cache_cap_mb", max / (1024 * 1024));
+        *guard = Some(CorridorLru::new(max));
     }
     f(guard.as_mut().expect("corridor cache initialized"))
 }
@@ -130,21 +162,21 @@ fn with_cache<R>(f: impl FnOnce(&mut CorridorLru) -> R) -> R {
 pub fn estimate_graph_bytes(g: &RouteGraph) -> u64 {
     let nodes = g.nodes.len() as u64;
     let edges = g.edges.len() as u64;
-    // Empirical ~1.6–2.0 KiB per edge on car packs once strings/shapes land;
-    // keep a conservative mid so the LRU stays under device RAM pressure.
     nodes
         .saturating_mul(96)
         .saturating_add(edges.saturating_mul(1800))
 }
 
+/// Shared read-only borrow of a cached corridor (Arc clone; no graph clone).
+pub fn corridor_cache_get(key: &CorridorCacheKey) -> Option<Arc<RouteGraph>> {
+    with_cache(|c| c.get(key))
+}
+
+/// Legacy take API: returns an owned graph (clones if another Arc remains).
+/// Prefer [`corridor_cache_get`] + overlays for planning.
 pub fn corridor_cache_take(key: &CorridorCacheKey) -> Option<RouteGraph> {
-    with_cache(|c| {
-        let entry = c.take(key)?;
-        match Arc::try_unwrap(entry.graph) {
-            Ok(g) => Some(g),
-            Err(arc) => Some((*arc).clone()),
-        }
-    })
+    let arc = corridor_cache_get(key)?;
+    Some(Arc::try_unwrap(arc).unwrap_or_else(|a| (*a).clone()))
 }
 
 pub fn corridor_cache_insert(key: CorridorCacheKey, graph: Arc<RouteGraph>) {
@@ -152,7 +184,7 @@ pub fn corridor_cache_insert(key: CorridorCacheKey, graph: Arc<RouteGraph>) {
     with_cache(|c| c.insert(key, graph, bytes));
 }
 
-/// Insert an owned merged corridor (warm put-back after a plan finishes).
+/// Insert an owned merged corridor.
 pub fn corridor_cache_insert_owned(key: CorridorCacheKey, graph: RouteGraph) {
     corridor_cache_insert(key, Arc::new(graph));
 }
@@ -181,21 +213,16 @@ mod tests {
     }
 
     #[test]
-    fn lru_hit_and_evict() {
+    fn lru_hit_shares_arc() {
         corridor_cache_clear();
         let key = CorridorCacheKey::new(RoutingProfile::Car, vec!["a.rkyv".into()], None);
-        assert!(corridor_cache_take(&key).is_none());
-        let g = tiny_graph();
-        corridor_cache_insert_owned(key.clone(), g);
-        assert!(corridor_cache_take(&key).is_some());
-        // Second take misses (moved out).
-        assert!(corridor_cache_take(&key).is_none());
-        let (hits, misses, _, _) = corridor_cache_stats();
-        assert!(hits >= 1);
-        assert!(misses >= 1);
-        with_cache(|c| c.max_bytes = 1);
-        let key2 = CorridorCacheKey::new(RoutingProfile::Car, vec!["b.rkyv".into()], None);
-        corridor_cache_insert_owned(key2, tiny_graph());
+        assert!(corridor_cache_get(&key).is_none());
+        corridor_cache_insert_owned(key.clone(), tiny_graph());
+        let a = corridor_cache_get(&key).expect("hit");
+        let b = corridor_cache_get(&key).expect("hit again");
+        assert!(Arc::ptr_eq(&a, &b));
+        let (hits, _, _, _) = corridor_cache_stats();
+        assert!(hits >= 2);
         let _ = NodeId(0);
         corridor_cache_clear();
     }

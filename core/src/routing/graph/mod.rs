@@ -43,7 +43,7 @@ pub use network_pref::{
     slow_road_edge_multiplier, NamedRouteEntry, OfficialNetworkKind, HIGH_SPEED_ROAD_KMH,
     HIGH_SPEED_ROAD_PENALTY, NON_NETWORK_PENALTY,
 };
-pub use reweight::reweight_graph_for_eco;
+pub use reweight::{compute_eco_weights, reweight_graph_for_eco};
 pub use road_near::{
     edge_distance_m, nearest_road_hit, nearest_road_label, NearestRoadHit, RoadLabelSticky,
     RoadNodeIndex,
