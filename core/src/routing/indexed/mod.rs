@@ -4,6 +4,7 @@
 //! [`docs/indexed-map-format-plan.md`](../../../../docs/indexed-map-format-plan.md).
 
 mod convert;
+mod corridor_cache;
 mod graph_pack;
 mod graph_pack_v8;
 mod header;
@@ -21,6 +22,10 @@ pub use crate::routing::region_lock::{
     REGION_CONVERT_IN_PROGRESS,
 };
 pub use convert::{convert_region_packs, ConvertOptions, ConvertReport};
+pub use corridor_cache::{
+    corridor_cache_clear, corridor_cache_insert_owned, corridor_cache_stats, corridor_cache_take,
+    CorridorCacheKey, CORRIDOR_CACHE_MAX_BYTES,
+};
 pub use graph_pack::{
     graph_format_version_accepted, preferred_graph_format_version, ArchivedFlatGraphPack,
     FlatGraphPack, GRAPH_FORMAT_VERSION, GRAPH_FORMAT_VERSION_V8, MAGIC_GRAPH,

@@ -64,3 +64,85 @@ Raufoss→Bergen loads 11 corridor tiles (`extra_stems=1`, all `format=9`). Domi
 
 - No `graph_format_version` bump; read path remains v8+v9 accept, write/preferred **v9**.
 - No navi-server changes; no merge to main/dev/right-to-roam.
+
+---
+
+## Follow-up results (device + corridor cache + disconnect)
+
+Date: 2026-10-02. Branch tip after this follow-up (see git log). Innlandet is **not** a separate Geofabrik leaf (covered by Ostlandet / hedmark+oppland). Installed stems on device SD `long-trip-packs`: ostlandet, vestlandet, trondelag, nord-norge, sorlandet (car+poi+wetland; foot tiles optional).
+
+### Root cause of original 10+ minutes (dev vs this branch)
+
+Confirmed combination:
+
+1. Empty / unused `packDir` → cold PBF / fixture path (minutes).
+2. Single-stem `MAX_PLAN_TILES=6` dropping Vestlandet bridge → disconnected corridor + ferry Geofabrik stub ensure spinning (~130–300 s).
+3. Soft motor overnight POI scrape on trips that still fit one driving day (`multiday_ms≈36 s`).
+
+After this branch: pack-hit, tile budget 14 (or widen from 6), overnight scrape skipped when under `MotorDailyBudget` (`multiday_ms≈30 ms`).
+
+### Raufoss→Bergen pack selection
+
+- `primary_stem=ostlandet-latest`, `extra_stem_list=vestlandet-latest`, `tile_budget=14`, `edge_clip=CorridorBand`.
+- Why: trip bbox spills west of Ostlandet into Vestlandet; corridor band keeps the mountain/coast bridge tiles that budget=6 dropped.
+
+### Host matrix (release, corridor LRU warm)
+
+| Case | eco | pack_hit | wall_ms | pack_load_ms | eco_reweight_ms | astar_ms | distance_km | peak_rss_mb | route_ok |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| raufoss_dombas | false | true | 2965 | 1981 | 0 | 157 | 206.81 | 802.3 | true |
+| raufoss_dombas_eco | true | true | 1562 | 654 | 52 | 140 | 206.81 | 802.3 | true |
+| bergen_forde | false | true | 2520 | 2003 | 0 | 191 | 171.01 | 898.3 | true |
+| bergen_forde_eco | true | true | 1497 | 964 | 58 | 171 | 171.01 | 898.3 | true |
+| raufoss_bergen | false | true | 5991 | 4739 | 0 | 245 | 485.45 | 1327.7 | true |
+| raufoss_bergen_eco | true | true | 2616 | 1268 | 95 | 245 | 459.71 | 1360.2 | true |
+| raufoss_bergen_eco_warm | true | true | 2542 | 1246 | 91 | 258 | 459.71 | 1360.2 | true |
+| raufoss_tromso | false | true | 17119 | 1650 | 0 | 55 | 1766.89 | 1360.2 | true |
+
+Tromsø: long-trip densify, **17 hops**, stems Ostlandet→Trøndelag→Nord-Norge, `chunked_distance_km=1766.892`, ferries used on coastal legs.
+
+Cold→warm: Raufoss→Bergen pack_load **4739 → 1268 ms** (corridor LRU hit). Remaining ~1.2 s on hit is mostly owned-`RouteGraph` clone from cache (mmap tiles are already materialized into heap).
+
+### Android emulator matrix (x86_64, real SD packs)
+
+Peak **native heap** from `Debug.getNativeHeapAllocatedSize` (MiB). Emulator: Navi_8c_4G_128G AVD API 15.
+
+| Case | eco | pack_hit | wall_ms | pack_load_ms | astar_ms | distance_km | peak_rss_mb | peak_native_heap_mb | route_ok |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| raufoss_bergen | true | true | 24820 | 6214 | 352 | 459.71 | 1268.3 | 406.3 | true |
+| raufoss_bergen | false | true | 20062 | 1683 | 317 | 485.45 | 1280.7 | 406.5 | true |
+| raufoss_bergen_warm | true | true | 19338 | 1646 | 312 | 459.71 | 1294.2 | 406.5 | true |
+| raufoss_dombas | true | true | 19184 | 2857 | 180 | 206.81 | 1302.8 | 636.8 | true |
+| raufoss_dombas | false | true | 17252 | 893 | 215 | 206.81 | 1302.8 | 636.9 | true |
+| bergen_forde | true | true | 3269 | 2775 | 212 | 171.01 | 1302.8 | 636.6 | true |
+| bergen_forde | false | true | 1753 | 1289 | 249 | 171.01 | 1302.8 | 452.7 | true |
+| raufoss_tromso | false | true | 32114 | 2156 | 67 | 1766.89 | 1302.8 | 537.0 | true |
+
+Device Tromsø: `extra=trondelag-latest` on the Ostlandet→Trøndelag hop; later hops re-home `primary_stem` to trondelag / nord-norge; **17 hops**, same 1766.89 km as host.
+
+Earlier device Tromsø failure (`snap_failed` on chunk_leg6, wall≈241 s): car-only installs missing **foot** tiles made `status_pack_files` report Not Ready, so Trøndelag never joined the corridor; stub Geofabrik ferry ensure then burned ~131 s on a land hop. Fixed by profile-scoped Ready + no blocking stub ensure.
+
+Device wall ≫ pack_load on several Ostlandet rows: `poi_barrier_ms≈15–17 s` on SD (separate from multiday; `multiday_ms≈28–32` after early-out). Bergen→Førde stays ~2–3 s (small Vestlandet POI).
+
+### Forced tile budget 6 (host, never spin)
+
+`NAVI_MEASURE_MAX_PLAN_TILES=6` Raufoss→Bergen:
+
+- First load: `tile_budget=6`, `corridor_components=disconnected`, `ferry_overlay=skip_disconnected_components`.
+- Widen: `tile_budget_widen_to=10` (attempt 1), then pack_hit route, wall≈**7894 ms**, no hang.
+
+### Pack LRU / RSS note
+
+Tiles are mmap’d (`mmap=1` in `PLAN_PERF`) then **materialized into an owned `RouteGraph`** for A* (merge copy). Peak RSS ~1000–1360 MiB is that owned graph + corridor LRU spare clone (cap ~1536 MiB), not raw mmap RSS alone. Warm hits skip tile mmap/decode but still clone the cached owned graph (~1.2 s host).
+
+### Multi-day POI scrape
+
+Profiled ~36 s overnight scrape was soft motor day-boundary POI search after A*. Client fix: skip when trip fits `MotorDailyBudget` → `multiday_ms≈30 ms` on Raufoss→Bergen. Multi-day trips (Tromsø) still run overnight logic on day marks; densify chunk legs skip POI (`poi_skipped=chunk_leg`). Further POI/barrier I/O on large Ostlandet packs (~15 s on emulator SD) is a separate client follow-up if needed.
+
+### Additional code (this follow-up)
+
+- `plan_bbox`: tile budget floor / widen / memory-aware cap (never spin).
+- `load`: disconnect detect + widen; profile-scoped `status_pack_files_for_profile`; stub ferry ensure skipped; snap gate aligned to 35 km densify snap.
+- `corridor_cache`: LRU of owned corridor graphs between plans.
+- `RouteGraph: Clone` for cache spare.
+- Host + Android instrumented matrix harnesses (debug timing flag).

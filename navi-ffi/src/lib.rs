@@ -2837,6 +2837,51 @@ pub fn country_polys_ready() -> bool {
     driver_break_core::routing::elevation::country_polys_ready()
 }
 
+/// Widen pack tile budget after a disconnected corridor. Returns true when the
+/// caller should reload packs with the raised floor. Caps attempts so the
+/// planner never spins on the same truncated graph.
+fn try_widen_tile_budget(
+    report: &mut String,
+    tile_budget_used: &mut usize,
+    tile_widen_attempts: &mut u32,
+    pack_hit: bool,
+) -> bool {
+    if !pack_hit {
+        return false;
+    }
+    if *tile_widen_attempts >= 4 {
+        report.push_str("tile_budget_widen=exhausted attempts\n");
+        return false;
+    }
+    let peak = driver_break_core::routing::plan_perf::peak_rss_mb();
+    let Some(next) = driver_break_core::routing::plan_bbox::next_plan_tile_budget(*tile_budget_used)
+    else {
+        report.push_str(&format!(
+            "tile_budget_widen=exhausted at {tile_budget_used} peak_rss_mb={peak:.1}\n"
+        ));
+        return false;
+    };
+    *tile_widen_attempts = tile_widen_attempts.saturating_add(1);
+    *tile_budget_used = next;
+    driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(next);
+    // Drop cached corridor so the next load materializes the wider tile set.
+    driver_break_core::routing::indexed::corridor_cache_clear();
+    if peak > driver_break_core::routing::plan_bbox::PLAN_TILE_WIDEN_RSS_CAP_MB {
+        report.push_str(&format!(
+            "tile_budget_widen=to {next} attempt={} peak_rss_mb={peak:.1} (above soft cap {})\n",
+            *tile_widen_attempts,
+            driver_break_core::routing::plan_bbox::PLAN_TILE_WIDEN_RSS_CAP_MB
+        ));
+    } else {
+        report.push_str(&format!(
+            "tile_budget_widen=to {next} attempt={} peak_rss_mb={peak:.1}\n",
+            *tile_widen_attempts
+        ));
+    }
+    driver_break_core::routing::plan_perf::note_u64("tile_budget_widen_to", next as u64);
+    true
+}
+
 #[allow(clippy::too_many_arguments)]
 fn plan_car_route_inner(
     pbf_path: String,
@@ -3110,22 +3155,37 @@ fn plan_car_route_inner(
     // Corridor-band edge clip ignores pad widen (band is OD-only). After a
     // disconnected A* on that stable materialization, retry with trip-AABB.
     let mut edge_clip_mode = driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
+    // Tile-budget widen across disconnect retries (forced 6 → 10 → 14 → …).
+    // Cleared on plan exit so later plans do not inherit a raised floor.
+    driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
+    // Prefer multi-stem default so widen steps start from the real corridor budget
+    // (14) unless NAVI_MEASURE_MAX_PLAN_TILES forces a lower base (e.g. 6).
+    let mut tile_budget_used =
+        driver_break_core::routing::plan_bbox::effective_max_plan_tiles_for_stems(1);
+    let mut tile_widen_attempts: u32 = 0;
 
     driver_break_core::routing::plan_perf::begin_plan();
     let profile_map_ms = timer.lap_ms();
     if driver_break_core::download::plan_cancel::is_cancelled() {
+        driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
         return plan_cancelled_result(report, &timer, &[("profile_map_ms", profile_map_ms)]);
     }
 
     'pads: for &pad in &pad_schedule {
-        // Inner loop: at most band then AABB on the same pad after disconnected.
+        // Inner loop: at most band then AABB on the same pad after disconnected,
+        // plus finite tile-budget widen retries (must never spin).
         loop {
             pad_attempts.push(pad);
             bbox = driver_break_core::routing::plan_bbox::trip_bbox_points(&route_points, pad);
             report.push_str(&format!(
-                "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}; edge_clip={edge_clip_mode:?}\n",
+                "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}; edge_clip={edge_clip_mode:?}; \
+                 tile_budget={tile_budget_used}\n",
                 bbox[0], bbox[1], bbox[2], bbox[3]
             ));
+            driver_break_core::routing::plan_perf::note_u64(
+                "tile_budget",
+                tile_budget_used as u64,
+            );
 
             driver_break_core::download::progress::set(
                 0,
@@ -3378,6 +3438,48 @@ fn plan_car_route_inner(
             if !snap_ok {
                 break; // next pad (edge_clip_mode unchanged)
             }
+            // Fast disconnect: O/D snapped but sit on different weak components
+            // (typical when tile budget dropped the bridge stem). Widen tiles
+            // instead of exploring the whole origin component with A*.
+            if snapped.len() >= 2 {
+                let (ss, _) = snapped[0];
+                let (gg, _) = snapped[snapped.len() - 1];
+                if !built.same_weak_component(ss, gg) {
+                    last_terminate = "disconnected";
+                    report.push_str(
+                        "corridor_components_disconnected before A* (origin/destination \
+                         not connected in loaded tiles)\n",
+                    );
+                    driver_break_core::routing::plan_perf::note(
+                        "corridor_components",
+                        "disconnected",
+                    );
+                    // Free the truncated corridor before reload (RSS / cache).
+                    drop(built);
+                    graph = None;
+                    if try_widen_tile_budget(
+                        &mut report,
+                        &mut tile_budget_used,
+                        &mut tile_widen_attempts,
+                        pack_hit,
+                    ) {
+                        edge_clip_mode = driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
+                        continue;
+                    }
+                    report.push_str(&format!(
+                        "pack_hit={pack_hit}; FAIL: corridor disconnected — origin and destination \
+                         are not connected in the loaded map tiles (tile budget exhausted). \
+                         Install the missing region packs or raise the plan tile budget.\n"
+                    ));
+                    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                    driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
+                    let mut r = empty(report);
+                    r.toll_policy = toll_policy.as_diag_str().into();
+                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                    r.search_terminate_reason = "corridor_disconnected".into();
+                    return r;
+                }
+            }
             snap_ms_acc = snap_ms_acc.saturating_add(t_snap.elapsed().as_millis() as u64);
             log::info!(
                 target: "NaviPlan",
@@ -3444,7 +3546,35 @@ fn plan_car_route_inner(
             report.push_str(&format!(
                 "no_route pad={pad:.2} expansions={leg_expansions} reason={last_terminate}\n"
             ));
-            graph = Some(built);
+            // Free truncated corridor before tile-budget widen / next attempt.
+            drop(built);
+            graph = None;
+            // Pack-hit disconnect: widen tile budget (must not pad-spin on the
+            // same truncated corridor — that re-runs multi-minute A*).
+            if last_terminate == "disconnected"
+                && try_widen_tile_budget(
+                    &mut report,
+                    &mut tile_budget_used,
+                    &mut tile_widen_attempts,
+                    pack_hit,
+                )
+            {
+                edge_clip_mode =
+                    driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
+                continue;
+            }
+            if last_terminate == "disconnected" && pack_hit {
+                report.push_str(
+                    "FAIL: corridor disconnected after tile-budget widen — origin and \
+                     destination remain unconnected in loaded packs.\n",
+                );
+                driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
+                let mut r = empty(report);
+                r.toll_policy = toll_policy.as_diag_str().into();
+                r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                r.search_terminate_reason = "corridor_disconnected".into();
+                return r;
+            }
             // Pad widen does not expand corridor-band materialization. On disconnected,
             // retry this pad with trip-AABB edge clip before advancing the pad schedule.
             if driver_break_core::routing::plan_bbox::should_fallback_to_trip_aabb(
@@ -3460,6 +3590,7 @@ fn plan_car_route_inner(
             break; // next pad
         } // band/AABB attempts for this pad
     }
+    driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
 
     // NeverUse last resort: allow tolls (Penalize) on the widest graph so UI can
     // show a route with toll_avoidance_incomplete rather than hard failure.
@@ -3992,52 +4123,103 @@ fn plan_car_route_inner(
             if !needs_overnight {
                 report.push_str("motor_multi_day: days=1; multi_day=false\n");
             } else {
+            // Profile (host Raufoss→Bergen before skip): ~36 s was spent here on a
+            // dense polyline×5-category nearest scrape — not in A*. For real
+            // multi-day trips, only query near expected overnight kilometre marks
+            // (± search radius along-route), not every Nth vertex of the full line.
             let samples = sample_polyline_km(&polyline);
             let overnight_link = RoadNodeIndex::from_path_nodes(&graph, &path);
+            let speed_kmh = if driving_h > 1e-6 {
+                (dist_km / driving_h).max(1.0)
+            } else {
+                70.0
+            };
+            let overnight_targets_km: Vec<f64> = match budget {
+                MotorDailyBudget::Hours(h) => {
+                    let day_km = (h * speed_kmh).max(1.0);
+                    let mut marks = Vec::new();
+                    let mut at = day_km;
+                    while at < dist_km - 1.0 && marks.len() < 40 {
+                        marks.push(at);
+                        at += day_km;
+                    }
+                    marks
+                }
+                MotorDailyBudget::DistanceKm(km) => {
+                    let day_km = km.max(1.0);
+                    let mut marks = Vec::new();
+                    let mut at = day_km;
+                    while at < dist_km - 1.0 && marks.len() < 40 {
+                        marks.push(at);
+                        at += day_km;
+                    }
+                    marks
+                }
+            };
+            report.push_str(&format!(
+                "motor_overnight_scrape: targets={} window_km={:.1} samples={}\n",
+                overnight_targets_km.len(),
+                (poi_radii.search_radius_m / 1000.0).max(5.0),
+                samples.len()
+            ));
+            let window_km = (poi_radii.search_radius_m / 1000.0).max(5.0);
             let mut candidates: Vec<MotorOvernightCandidate> = Vec::new();
             let mut seen_poi = std::collections::HashSet::new();
-            for (i, (lat, lon, km)) in samples.iter().enumerate() {
-                if i % 4 != 0 && i + 1 != samples.len() {
-                    continue;
+            for &target_km in &overnight_targets_km {
+                let (qlat, qlon) = interpolate_at_km(&samples, target_km);
+                // Also sample nearby polyline vertices within the window so a
+                // road-linked POI a few km off the exact day boundary still hits.
+                let mut query_pts: Vec<(f64, f64, f64)> = vec![(qlat, qlon, target_km)];
+                for (lat, lon, km) in &samples {
+                    if (*km - target_km).abs() <= window_km {
+                        query_pts.push((*lat, *lon, *km));
+                    }
                 }
-                for cat in [
-                    PoiCategory::Lodging,
-                    PoiCategory::OvernightFacility,
-                    PoiCategory::TentSite,
-                    PoiCategory::Cabin,
-                    PoiCategory::RestArea,
-                ] {
-                    for p in poi_index.nearest(cat, *lat, *lon, poi_radii.search_radius_m) {
-                        if poi_radii.require_road_link
-                            && !overnight_link.within_road_link(p.lat, p.lon)
-                        {
-                            continue;
+                // Cap per overnight mark — avoid reintroducing O(route) cost.
+                if query_pts.len() > 8 {
+                    let step = query_pts.len() / 8;
+                    query_pts = query_pts.into_iter().step_by(step.max(1)).collect();
+                }
+                for (lat, lon, km) in query_pts {
+                    for cat in [
+                        PoiCategory::Lodging,
+                        PoiCategory::OvernightFacility,
+                        PoiCategory::TentSite,
+                        PoiCategory::Cabin,
+                        PoiCategory::RestArea,
+                    ] {
+                        for p in poi_index.nearest(cat, lat, lon, poi_radii.search_radius_m) {
+                            if poi_radii.require_road_link
+                                && !overnight_link.within_road_link(p.lat, p.lon)
+                            {
+                                continue;
+                            }
+                            if !seen_poi.insert(p.osm_id) {
+                                continue;
+                            }
+                            let kind = if p.categories.contains(&PoiCategory::Lodging) {
+                                MotorOvernightKind::Lodging
+                            } else if p.categories.contains(&PoiCategory::TentSite)
+                                || p.categories.contains(&PoiCategory::OvernightFacility)
+                                || p.categories.contains(&PoiCategory::Cabin)
+                            {
+                                MotorOvernightKind::Camping
+                            } else if p.categories.contains(&PoiCategory::RestArea) {
+                                MotorOvernightKind::RestArea
+                            } else {
+                                continue;
+                            };
+                            candidates.push(MotorOvernightCandidate {
+                                along_km: km,
+                                lat: p.lat,
+                                lon: p.lon,
+                                name: p
+                                    .name
+                                    .clone()
+                                    .unwrap_or_else(|| format!("Overnight {}", p.osm_id)),
+                                kind,
+                            });
                         }
-                        if !seen_poi.insert(p.osm_id) {
-                            continue;
-                        }
-                        let kind = if p.categories.contains(&PoiCategory::Lodging) {
-                            MotorOvernightKind::Lodging
-                        } else if p.categories.contains(&PoiCategory::TentSite)
-                            || p.categories.contains(&PoiCategory::OvernightFacility)
-                            || p.categories.contains(&PoiCategory::Cabin)
-                        {
-                            MotorOvernightKind::Camping
-                        } else if p.categories.contains(&PoiCategory::RestArea) {
-                            MotorOvernightKind::RestArea
-                        } else {
-                            continue;
-                        };
-                        candidates.push(MotorOvernightCandidate {
-                            along_km: *km,
-                            lat: p.lat,
-                            lon: p.lon,
-                            name: p
-                                .name
-                                .clone()
-                                .unwrap_or_else(|| format!("Overnight {}", p.osm_id)),
-                            kind,
-                        });
                     }
                 }
             }

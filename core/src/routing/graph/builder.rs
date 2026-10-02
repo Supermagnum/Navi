@@ -232,6 +232,22 @@ pub struct RouteGraph {
     pub surface_routing_mode: SurfaceRoutingMode,
 }
 
+impl Clone for RouteGraph {
+    fn clone(&self) -> Self {
+        Self {
+            nodes: self.nodes.clone(),
+            edges: self.edges.clone(),
+            adjacency: self.adjacency.clone(),
+            profile: self.profile,
+            access_blocked_nodes: self.access_blocked_nodes.clone(),
+            incident: self.incident.clone(),
+            component_root: self.component_root.clone(),
+            giant_root: self.giant_root,
+            surface_routing_mode: self.surface_routing_mode,
+        }
+    }
+}
+
 /// Indices into `hard_candidates` that must be restored (as soft cost) so every
 /// boardwalk-touching component stays linked to the giant component of `kept`.
 fn wetland_boardwalk_bridges(
@@ -825,6 +841,18 @@ impl RouteGraph {
         match (self.giant_root, self.component_root.get(&id)) {
             (Some(giant), Some(root)) => *root == giant,
             _ => true,
+        }
+    }
+
+    /// True when `a` and `b` share a weakly-connected component (undirected edges).
+    ///
+    /// O(1) after [`Self::rebuild_adjacency`]. Used to detect a disconnected
+    /// corridor load (origin/destination on different stems) before A* explores
+    /// an entire component for minutes.
+    pub fn same_weak_component(&self, a: NodeId, b: NodeId) -> bool {
+        match (self.component_root.get(&a), self.component_root.get(&b)) {
+            (Some(ra), Some(rb)) => ra == rb,
+            _ => false,
         }
     }
 
