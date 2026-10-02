@@ -201,7 +201,105 @@ tiles miss_full + insert for cross-hop reuse.
 needs larger tile retention or **2c** (search without owned full-tile copy).
 Infrastructure + fit gate kept for small-tile hits.
 
+### Dig vs tip vs WIP (2b) — tablet SM-P613 (2026-10-02)
+
+Logcats: dig `/tmp/r2r_dev_matrix_logcat.txt`, tip `/tmp/r2r_tip_matrix_logcat.txt`
+(0b732602), WIP 2b `/tmp/r2r_2b_matrix_logcat.txt`
+(`perf/mmap-graph-search` WIP: parallel tile load + directed ferry-hop gate +
+`bergen_stavanger` longTrip densify). Device: **R52TB0JQEDE**.
+
+#### Bergen→Stavanger (ferry check)
+
+Dig/tip: corridor **disconnected** (no route; dig wall ~36 s / tip ~18 s).
+WIP 2b: `longTrip=true` (this case only), densify hops=2. Root cause of leg2
+fail was ferry overlay **skipped** via undirected UF (`skip_already_connected`)
+while directed A* could not cross Sandvikvåg→Stavanger water. Fix: gate uses
+directed reachability; disconnected → `disconnected_try_overlay` + ferry
+sidecar (`vestlandet-latest.navi-ferry-overlay-car.rkyv`). First cold build of
+that sidecar from the 245 MB region PBF once cost ~18 min (`pbf_build`); later
+plans hit sidecar (~3–4 s pack_load).
+
+| Build | eco | ok/uses | distance_km | ferry legs / fp | wall_ms |
+| --- | --- | --- | --- | --- | --- |
+| dig | default | false | 0 | 0 / - | 36218 |
+| dig | eco | false | 0 | 0 / - | 27615 |
+| tip | default | false | 0 | 0 / - | 18387 |
+| tip | eco | false | 0 | 0 / - | 15934 |
+| **2b + longTrip** | default | **true** | **228.21** | **2 / Halhjem–Sandvikvåg@21.32\|Arsvågen–Mortavika@9.15** | **9402** |
+| **2b + longTrip** | eco | **true** | **228.21** | **same fp** | **8900** |
+
+Default and eco share geom `1cf463d52af4c4ee…` and the same ferry fingerprint.
+
+#### Geometry
+
+Successful matrix routes share **identical** `PROFILE_GEOM` hashes across dig / tip / 2b
+(except Stavanger, which only succeeds on 2b):
+
+| Route | geom_sha256 (prefix) | notes |
+| --- | --- | --- |
+| raufoss_bergen eco | `8a8c6f7b…` | 459.71 km |
+| raufoss_bergen default | `540bb2ad…` | 485.45 km |
+| raufoss_dombas | `6a1360bc…` | 206.81 km |
+| bergen_forde | `0bff0c85…` | 171.01 km; ferry Lavik–Oppedal@5.72 |
+| raufoss_tromso | `e79679c2…` | 1766.89 km |
+| **bergen_stavanger** | **`1cf463d5…`** | **228.21 km; dig/tip empty `e3b0c442…` (failed)** |
+
+#### Tromsø hop breakdown (tip ~33.8 s / 2b ~32.6 s)
+
+17 densify hops; final `motor_multi_day: days=4` (Treetop Ekne, Korgenfjellet
+Fjellstue, Bardu Hotel) on dig/tip/2b.
+
+| | dig | tip (2a) | **2b (final)** |
+| --- | --- | --- | --- |
+| wall_ms | 51687 | **33818** | **32566** |
+| hop1 pack_load / astar | 6144 / 275 | 2456 / 293 | 1816 / 280 |
+| peak_rss_mb (tromso row) | 1091.7 | 1077.1 | **1154.9** |
+
+**Per-hop tile_cache (Tromsø plan only; tip / 2b):**
+
+| | tip | 2b |
+| --- | --- | --- |
+| tile_cache hits | 8 | 7 |
+| miss_clip_hydrate (fit-gate reject) | **33** | **33** |
+| miss_full | 22 | 23 |
+| hit share of tile loads | **12.7%** | **11.1%** |
+
+Fit gate rejects oversized tiles (`file*4 >= cap` or `file >= 12 MiB`) →
+clip-hydrate, never inserted into the full-tile LRU. Multiday overhead on hops
+is ~0 ms (final multi-day scrape is after hops). Ferry stage per hop is the
+connectivity/overlay gate (~50–370 ms), not route ferry count.
+
+2b hop pack_load (ms): 1816, 1710, 1618, 435, 511, 1355, 1310, 545, 544, 648,
+466, 326, 554, 375, 398, 392, 502. A*: 280, 229, 700, 35, 21, 138, 543, 258, 71,
+31, 82, 37, 27, 60, 29, 119, (leg17 in report body).
+
+#### 2b — Bergen eco cold stage + Tromsø wall
+
+`pack_stage_threads=tile_load_parallel=2` on 2b; tip was `single_threaded`.
+
+| Metric | tip (2a) | **2b (final)** |
+| --- | --- | --- |
+| wall_ms | 7448 | **6606** |
+| pack_load_ms | 3985 | **3383** |
+| pagein_ms | 768 | 1136 |
+| validate_ms | 47 | 41 |
+| copy_ms | 1594 | 1810 |
+| merge_hash_ms | 417 | 444 |
+| merge_adj_ms | 765 | 754 |
+| ferry_ms | 259 | 614 |
+| astar_ms | 1250 | 1211 |
+| distance_km | 459.71 | 459.71 |
+| Tromsø wall_ms | 33818 | **32566** |
+| Stavanger wall_ms (default / eco) | fail | **9402 / 8900** |
+| peak_rss_mb (Bergen eco cold) | 827.8 | **881.8** |
+| peak_rss_mb (matrix max) | 1077.1 | **1154.9** |
+
+2b cuts Bergen cold ~0.8 s and Tromsø ~1.3 s vs tip under the same fit-gated
+tile cache; RSS ceiling ~1.15 GB. Stavanger is a permanent matrix case with
+matching default/eco ferry fingerprints.
+
 ### Remaining
 
-- **2b** parallel tile load
+- Optional: ship prebuilt `{stem}.navi-ferry-overlay-*.rkyv` with packs so first
+  coastal overlay never pays full-PBF `pbf_build`
 - **2c** search on mapped tiles (main path to &lt;5 s Bergen cold)

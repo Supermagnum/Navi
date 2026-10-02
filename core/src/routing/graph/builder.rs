@@ -865,6 +865,41 @@ impl RouteGraph {
         }
     }
 
+    /// True when `goal` is reachable from `start` on directed edges allowed by
+    /// `options` (ferries/one-ways/access). Prefer this over
+    /// [`Self::same_weak_component`] when deciding whether a ferry overlay is
+    /// still needed — undirected UF can report connected while A* cannot travel.
+    pub fn directed_reachable_with_options(
+        &self,
+        start: NodeId,
+        goal: NodeId,
+        options: &RouteOptions,
+    ) -> bool {
+        if start == goal {
+            return true;
+        }
+        let mut seen = HashSet::new();
+        let mut q = std::collections::VecDeque::new();
+        q.push_back(start);
+        seen.insert(start);
+        while let Some(u) = q.pop_front() {
+            for &idx in self.outgoing_edge_indices(u) {
+                let e = &self.edges[idx];
+                if !edge_allowed_for_options(e, options, self.profile) {
+                    continue;
+                }
+                let v = e.target;
+                if v == goal {
+                    return true;
+                }
+                if seen.insert(v) {
+                    q.push_back(v);
+                }
+            }
+        }
+        false
+    }
+
     /// Nearest linked node with **no** snap-distance budget (trailhead for gap-fill).
     pub fn nearest_linked_unbounded(&self, lat: f64, lon: f64) -> Option<(NodeId, f64)> {
         let linked = self.nodes.values().filter(|n| self.is_linked(n.id));
@@ -1375,6 +1410,49 @@ impl RouteGraph {
     /// True when any edge on the path is a ferry.
     pub fn path_uses_ferries(&self, edge_indices: &[usize]) -> bool {
         edge_indices.iter().any(|&i| self.edges[i].is_ferry)
+    }
+
+    /// Contiguous ferry-edge runs on the path: `(label, length_m)`.
+    /// Label prefers OSM `name`, else `ref`, else `unnamed`.
+    pub fn path_ferry_legs(&self, edge_indices: &[usize]) -> Vec<(String, f64)> {
+        let mut legs: Vec<(String, f64)> = Vec::new();
+        let mut cur_label: Option<String> = None;
+        let mut cur_m = 0.0_f64;
+        let flush = |legs: &mut Vec<(String, f64)>, label: &mut Option<String>, m: &mut f64| {
+            if let Some(l) = label.take() {
+                if *m > 0.0 {
+                    legs.push((l, *m));
+                }
+            }
+            *m = 0.0;
+        };
+        for &i in edge_indices {
+            let e = &self.edges[i];
+            if !e.is_ferry {
+                flush(&mut legs, &mut cur_label, &mut cur_m);
+                continue;
+            }
+            let label = e
+                .name
+                .as_deref()
+                .or(e.road_ref.as_deref())
+                .unwrap_or("unnamed")
+                .to_string();
+            match cur_label.as_ref() {
+                Some(l) if l == &label => cur_m += e.length_m,
+                Some(_) => {
+                    flush(&mut legs, &mut cur_label, &mut cur_m);
+                    cur_label = Some(label);
+                    cur_m = e.length_m;
+                }
+                None => {
+                    cur_label = Some(label);
+                    cur_m = e.length_m;
+                }
+            }
+        }
+        flush(&mut legs, &mut cur_label, &mut cur_m);
+        legs
     }
 
     /// Count edges excluded specifically by seasonal access conditionals at departure.

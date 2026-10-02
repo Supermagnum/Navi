@@ -599,10 +599,52 @@ fn append_graph_ferry_edges(report: &mut String, graph: &RouteGraph) {
     report.push_str(&format!("graph_ferry_edges={n}\n"));
 }
 
+/// Path ferry fingerprint: leg count + `name@km` joined by `|` (stable for matrix compare).
+fn append_path_ferry_legs(report: &mut String, graph: &RouteGraph, path_edges: &[usize]) {
+    let legs = graph.path_ferry_legs(path_edges);
+    report.push_str(&format!("route_ferry_legs={}\n", legs.len()));
+    if legs.is_empty() {
+        report.push_str("route_ferry_fp=\n");
+        return;
+    }
+    let fp = legs
+        .iter()
+        .map(|(name, m)| {
+            let safe = name.replace('|', "/").replace(';', ",");
+            format!("{safe}@{:.2}", m / 1000.0)
+        })
+        .collect::<Vec<_>>()
+        .join("|");
+    report.push_str(&format!("route_ferry_fp={fp}\n"));
+}
+
 fn parse_graph_ferry_edges_token(report: &str) -> Option<u64> {
     for part in report.split(['\n', ';', ' ']) {
         if let Some(rest) = part.strip_prefix("graph_ferry_edges=") {
             return rest.parse().ok();
+        }
+    }
+    None
+}
+
+fn parse_u64_token(report: &str, key: &str) -> Option<u64> {
+    for part in report.split(['\n', ';', ' ', '|']) {
+        if let Some(rest) = part.strip_prefix(key) {
+            return rest.parse().ok();
+        }
+    }
+    None
+}
+
+fn parse_token_value(report: &str, key: &str) -> Option<String> {
+    for line in report.lines() {
+        if let Some(rest) = line.strip_prefix(key) {
+            return Some(rest.trim().to_string());
+        }
+        for part in line.split([';', ' ', '|']) {
+            if let Some(rest) = part.strip_prefix(key) {
+                return Some(rest.to_string());
+            }
         }
     }
     None
@@ -2304,6 +2346,8 @@ fn plan_car_route_chunked_legs(
     let mut route_uses_tolls = false;
     let mut route_uses_ferry = false;
     let mut graph_ferry_edges: u64 = 0;
+    let mut ferry_fp_parts: Vec<String> = Vec::new();
+    let mut ferry_leg_count: u64 = 0;
     let mut pad_attempts: Vec<f64> = Vec::new();
     let mut priority_share_acc = 0.0;
     let mut priority_share_w = 0.0;
@@ -2358,6 +2402,14 @@ fn plan_car_route_chunked_legs(
         route_uses_ferry = route_uses_ferry || leg.report.contains("route_uses_ferry=true");
         if let Some(n) = parse_graph_ferry_edges_token(&leg.report) {
             graph_ferry_edges = graph_ferry_edges.max(n);
+        }
+        if let Some(n) = parse_u64_token(&leg.report, "route_ferry_legs=") {
+            ferry_leg_count = ferry_leg_count.saturating_add(n);
+        }
+        if let Some(fp) = parse_token_value(&leg.report, "route_ferry_fp=") {
+            if !fp.is_empty() {
+                ferry_fp_parts.push(fp);
+            }
         }
         if leg.distance_km <= 0.0
             || leg.search_terminate_reason == "snap_failed"
@@ -2464,6 +2516,11 @@ fn plan_car_route_chunked_legs(
     report.push_str(&soft_report);
     let _ = break_pois; // per-leg breaks were empty (poi_skipped); replaced above
     report.push_str(&format!("graph_ferry_edges={graph_ferry_edges}\n"));
+    report.push_str(&format!("route_ferry_legs={ferry_leg_count}\n"));
+    report.push_str(&format!(
+        "route_ferry_fp={}\n",
+        ferry_fp_parts.join("|")
+    ));
     report.push_str(&format!(
         "chunked_distance_km={distance_km:.3}; chunked_eta_min={eta_minutes:.1}; hops={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         hops.len().saturating_sub(1)
@@ -3616,20 +3673,10 @@ fn plan_car_route_inner(
                     driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
                 continue;
             }
-            if last_terminate == "disconnected" && pack_hit {
-                report.push_str(
-                    "FAIL: corridor disconnected after tile-budget widen — origin and \
-                     destination remain unconnected in loaded packs.\n",
-                );
-                driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
-                let mut r = empty(report);
-                r.toll_policy = toll_policy.as_diag_str().into();
-                r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
-                r.search_terminate_reason = "corridor_disconnected".into();
-                return r;
-            }
             // Pad widen does not expand corridor-band materialization. On disconnected,
-            // retry this pad with trip-AABB edge clip before advancing the pad schedule.
+            // retry this pad with trip-AABB edge clip before hard-fail / next pad.
+            // Must run before the pack_hit FAIL return — coastal Vestlandet
+            // (Bergen→Stavanger) needs the trip bbox so ferry terminals stay in-clip.
             if driver_break_core::routing::plan_bbox::should_fallback_to_trip_aabb(
                 edge_clip_mode,
                 last_terminate,
@@ -3639,6 +3686,19 @@ fn plan_car_route_inner(
                     "edge_clip_fallback=trip_aabb after disconnected on stable corridor band\n",
                 );
                 continue;
+            }
+            if last_terminate == "disconnected" && pack_hit {
+                report.push_str(
+                    "FAIL: corridor disconnected after tile-budget widen — origin and \
+                     destination remain unconnected in loaded packs.\n",
+                );
+                let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
+                let mut r = empty(report);
+                r.toll_policy = toll_policy.as_diag_str().into();
+                r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                r.search_terminate_reason = "corridor_disconnected".into();
+                return r;
             }
             break; // next pad
         } // band/AABB attempts for this pad
@@ -3815,6 +3875,7 @@ fn plan_car_route_inner(
     }
     let route_uses_tolls = graph.path_uses_tolls(&path_edges);
     let route_uses_ferry = graph.path_uses_ferries(&path_edges);
+    append_path_ferry_legs(&mut report, &graph, &path_edges);
     // Keep stage key `astar_ms` for greppable compatibility (= search wall).
     let astar_ms = search_ms_acc;
 

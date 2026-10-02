@@ -1635,7 +1635,8 @@ fn point_in_bbox(lat: f64, lon: f64, bbox: [f64; 4]) -> bool {
 enum FerryHopGate {
     /// Same weak component — skip overlay.
     Connected { snap_m: f64 },
-    /// Different components (tile budget) — skip overlay; ferry cannot fix.
+    /// Different components after snap — try overlay (packs may omit ferry /
+    /// pier approaches; tile widen alone cannot bridge water gaps).
     Disconnected { snap_m: f64 },
     /// Could not snap even with 35 km — try overlay build.
     SnapFailed,
@@ -1669,7 +1670,14 @@ fn ferry_hop_connectivity_gate(
     let (Ok((start, _)), Ok((goal, _))) = (start, goal) else {
         return FerryHopGate::SnapFailed;
     };
-    if start == goal || graph.same_weak_component(start, goal) {
+    // Prefer O(1) undirected UF first; only then directed BFS. Coastal packs can
+    // be weakly linked via one-way/orphan edges while A* cannot travel O→D —
+    // those must try ferry overlay (`disconnected_try_overlay`).
+    if start == goal {
+        FerryHopGate::Connected { snap_m }
+    } else if !graph.same_weak_component(start, goal) {
+        FerryHopGate::Disconnected { snap_m }
+    } else if graph.directed_reachable_with_options(start, goal, &opts) {
         FerryHopGate::Connected { snap_m }
     } else {
         FerryHopGate::Disconnected { snap_m }
@@ -1765,8 +1773,10 @@ fn resolve_ferry_overlay_pbf(home: &Path, stem: &str, bbox: [f64; 4]) -> Option<
 ///
 /// Overlay is skipped only when hop ends are already A*-connected on the pack
 /// graph (`route_points`, ferries allowed), or — without hop geometry — when a
-/// long ferry lies fully inside the plan clip. Orphan / pier-stub ferry edges
-/// and unrelated long ferries elsewhere must not suppress pier-approach overlay.
+/// long ferry lies fully inside the plan clip. Disconnected hop ends still try
+/// overlay (coastal packs often omit ferry/pier ways). Orphan / pier-stub ferry
+/// edges and unrelated long ferries elsewhere must not suppress pier-approach
+/// overlay.
 fn supplement_pack_ferries_from_pbf(
     graph: std::sync::Arc<RouteGraph>,
     dirs: &[&Path],
@@ -1828,13 +1838,12 @@ fn supplement_pack_ferries_from_pbf_inner(
             FerryHopGate::Disconnected { snap_m } => {
                 crate::routing::plan_perf::note_f64("ferry_snap_m", snap_m);
                 crate::routing::plan_perf::note_u64("ferry_connect_check_ms", 0);
-                crate::routing::plan_perf::note("ferry_overlay", "skip_disconnected_components");
+                crate::routing::plan_perf::note("ferry_overlay", "disconnected_try_overlay");
                 log::info!(
                     target: "NaviPlan",
-                    "ferry_overlay skip: origin/destination on different components \
-                     (tile budget), not a water gap"
+                    "ferry_overlay try: origin/destination on different components \
+                     (possible missing ferry/pier in packs)"
                 );
-                return graph;
             }
             FerryHopGate::SnapFailed => {
                 crate::routing::plan_perf::note_f64(
@@ -2078,6 +2087,8 @@ fn load_tiled_graph_files(
     profile: RoutingProfile,
     clips: Option<&[[f64; 4]]>,
 ) -> Result<(std::sync::Arc<RouteGraph>, bool), PackLoadError> {
+    use rayon::prelude::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
     let mut tile_files = tile_files;
     if tile_files.is_empty() {
@@ -2107,45 +2118,79 @@ fn load_tiled_graph_files(
     // Full-tile LRU + in-memory clip, then **one** merge. Tromsø densify hops
     // change clips every leg but reuse tile files — cache skips mmap/copy on hits.
     // Single-pass adjacency (not per-tile rebuild) stays in merge_tile_graphs.
+    //
+    // 2b: bounded parallel tile hydrate. Peak RSS matches sequential because we
+    // already retain every clipped part until the single merge; concurrency only
+    // overlaps I/O/copy, not extra retained graphs.
+    const TILE_LOAD_PARALLEL: usize = 2;
     let total = tile_files.len() as u64;
-    let mut parts: Vec<RouteGraph> = Vec::with_capacity(tile_files.len());
-    let mut tile_hits = 0u64;
-    let mut tile_misses = 0u64;
+    crate::download::progress::set(0, Some(total), "Loading map tiles…");
     super::tile_cache::tile_cache_evict_before_load();
-    for (i, file) in tile_files.iter().enumerate() {
-        crate::download::progress::set(
-            i as u64,
-            Some(total),
-            &format!("Loading map tile {}/{}…", i + 1, total),
-        );
-        log::info!(
-            target: "NaviPlan",
-            "load_tiled_graph file={file} ({}/{})",
-            i + 1,
-            total
-        );
-        let path = resolve_pack_file(dirs, file).ok_or(PackLoadError::Missing)?;
-        let key = super::tile_cache::TileCacheKey::new(profile, &path);
-        let g = if let Some(hit) = super::tile_cache::tile_cache_get(&key) {
-            tile_hits = tile_hits.saturating_add(1);
-            crate::routing::plan_perf::note("tile_cache", format!("hit;{file}"));
-            super::tile_cache::clip_route_graph(&hit, clips)
-        } else if clips.is_some() && !super::tile_cache::tile_likely_fits_cache(&path) {
-            // Oversized tiles: clip during hydrate. Full materialize exceeds the
-            // tile LRU (~64–90 MiB) and was discarded after paying extra copy
-            // (Bergen eco cold regress when always loading full).
-            tile_misses = tile_misses.saturating_add(1);
-            crate::routing::plan_perf::note("tile_cache", format!("miss_clip_hydrate;{file}"));
-            load_graph_pack_clips(&path, profile, clips)?
-        } else {
-            // Small tiles (or unclipped): full materialize + LRU, then clip.
-            tile_misses = tile_misses.saturating_add(1);
-            crate::routing::plan_perf::note("tile_cache", format!("miss_full;{file}"));
-            let full = load_graph_pack_clips(&path, profile, None)?;
-            let arc = Arc::new(full);
-            super::tile_cache::tile_cache_insert(key, Arc::clone(&arc));
-            super::tile_cache::clip_route_graph(&arc, clips)
-        };
+
+    let resolved: Result<Vec<(String, PathBuf)>, PackLoadError> = tile_files
+        .iter()
+        .map(|file| {
+            let path = resolve_pack_file(dirs, file).ok_or(PackLoadError::Missing)?;
+            Ok((file.clone(), path))
+        })
+        .collect();
+    let resolved = resolved?;
+    let clips_owned: Option<Vec<[f64; 4]>> = clips.map(|c| c.to_vec());
+    let tile_hits = AtomicU64::new(0);
+    let tile_misses = AtomicU64::new(0);
+    let fit_rejects = AtomicU64::new(0);
+
+    let n_threads = TILE_LOAD_PARALLEL.min(resolved.len().max(1));
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(n_threads)
+        .build()
+        .map_err(|e| PackLoadError::Other(anyhow::anyhow!("tile load pool: {e}")))?;
+
+    let loaded: Result<Vec<(usize, RouteGraph)>, PackLoadError> = pool.install(|| {
+        resolved
+            .par_iter()
+            .enumerate()
+            .map(|(i, (file, path))| {
+                log::info!(
+                    target: "NaviPlan",
+                    "load_tiled_graph file={file} ({}/{})",
+                    i + 1,
+                    total
+                );
+                let key = super::tile_cache::TileCacheKey::new(profile, path);
+                let clips_ref = clips_owned.as_deref();
+                let g = if let Some(hit) = super::tile_cache::tile_cache_get(&key) {
+                    tile_hits.fetch_add(1, Ordering::Relaxed);
+                    crate::routing::plan_perf::note("tile_cache", format!("hit;{file}"));
+                    super::tile_cache::clip_route_graph(&hit, clips_ref)
+                } else if clips_ref.is_some() && !super::tile_cache::tile_likely_fits_cache(path) {
+                    // Oversized tiles: clip during hydrate. Full materialize exceeds the
+                    // tile LRU (~64–90 MiB) and was discarded after paying extra copy
+                    // (Bergen eco cold regress when always loading full).
+                    tile_misses.fetch_add(1, Ordering::Relaxed);
+                    fit_rejects.fetch_add(1, Ordering::Relaxed);
+                    crate::routing::plan_perf::note(
+                        "tile_cache",
+                        format!("miss_clip_hydrate;fit_reject;{file}"),
+                    );
+                    load_graph_pack_clips(path, profile, clips_ref)?
+                } else {
+                    // Small tiles (or unclipped): full materialize + LRU, then clip.
+                    tile_misses.fetch_add(1, Ordering::Relaxed);
+                    crate::routing::plan_perf::note("tile_cache", format!("miss_full;{file}"));
+                    let full = load_graph_pack_clips(path, profile, None)?;
+                    let arc = Arc::new(full);
+                    super::tile_cache::tile_cache_insert(key, Arc::clone(&arc));
+                    super::tile_cache::clip_route_graph(&arc, clips_ref)
+                };
+                Ok((i, g))
+            })
+            .collect()
+    });
+    let mut loaded = loaded?;
+    loaded.sort_by_key(|(i, _)| *i);
+    let mut parts: Vec<RouteGraph> = Vec::with_capacity(loaded.len());
+    for (_, g) in loaded {
         if g.edges.is_empty() && g.nodes.is_empty() {
             continue;
         }
@@ -2154,6 +2199,9 @@ fn load_tiled_graph_files(
     if parts.is_empty() {
         return Err(PackLoadError::Missing);
     }
+    let tile_hits = tile_hits.load(Ordering::Relaxed);
+    let tile_misses = tile_misses.load(Ordering::Relaxed);
+    let fit_rejects = fit_rejects.load(Ordering::Relaxed);
     let t_merge = std::time::Instant::now();
     let merged = merge_tile_graphs(parts, profile);
     let merge_ms = t_merge.elapsed().as_millis() as u64;
@@ -2163,19 +2211,23 @@ fn load_tiled_graph_files(
     log::info!(
         target: "NaviPlan",
         "load_tiled_graph done tiles={} edges={} nodes={} merge_wall_ms={} merge=single_pass \
-         tile_cache_hits={} misses={}",
+         tile_cache_hits={} misses={} fit_rejects={} parallel={}",
         total,
         merged.edges.len(),
         merged.nodes.len(),
         merge_ms,
         tile_hits,
-        tile_misses
+        tile_misses,
+        fit_rejects,
+        n_threads
     );
     if crate::routing::plan_perf::enabled() {
         crate::routing::plan_perf::note_u64("pack_merge_wall_ms", merge_ms);
         crate::routing::plan_perf::note("pack_merge_mode", "single_pass_one_adjacency");
         crate::routing::plan_perf::note_u64("tile_cache_hits", tile_hits);
         crate::routing::plan_perf::note_u64("tile_cache_misses", tile_misses);
+        crate::routing::plan_perf::note_u64("tile_cache_fit_rejects", fit_rejects);
+        crate::routing::plan_perf::note_u64("tile_load_parallel", n_threads as u64);
         let (cum_hits, cum_misses, bytes, n) = super::tile_cache::tile_cache_stats();
         crate::routing::plan_perf::note(
             "tile_cache_stats",
