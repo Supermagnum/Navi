@@ -307,26 +307,37 @@ object RegionCoverage {
      * (multi-stem tile load covers the rest). Country extracts are demoted so
      * landsdel packs are preferred when both exist.
      *
-     * [packDir] is optional (long-trip [LongTripPackStorage.packDownloadDir]).
-     * Candidates there are searched **in addition to** [dataDir] top-level —
-     * Tools / ReuseInternal extracts still live directly under [dataDir].
+     * [packDir] is optional ([LongTripPackStorage.packDownloadDir]). Candidates
+     * there are searched **in addition to** [dataDir] top-level — Tools /
+     * ReuseInternal extracts still live directly under [dataDir].
+     *
+     * Pack-server installs leave a 16 KiB stub `.osm.pbf` beside Ready graph
+     * packs. Those stubs are accepted when a matching `.navi-manifest.json` (or
+     * `.navi-server-install.json`) is present so planning does not fall through
+     * to `/data/local/tmp` fixtures and cold-build for minutes.
      */
     fun resolvePlanPbf(
         dataDir: File,
         waypoints: List<Waypoint>,
         packDir: File? = null,
     ): File? {
+        fun isCandidate(f: File): Boolean {
+            if (!f.isFile || !f.name.endsWith(".osm.pbf")) return false
+            if (f.length() > 1_000_000L) return true
+            // Pack-server stub: accept when Ready packs sit beside it.
+            val stem = f.name.removeSuffix(".osm.pbf")
+            val parent = f.parentFile ?: return false
+            return File(parent, "$stem.navi-manifest.json").isFile ||
+                File(parent, "$stem.navi-server-install.json").isFile
+        }
+
         val candidates =
             buildList {
                 dataDir.listFiles()?.forEach { f ->
-                    if (f.isFile && f.name.endsWith(".osm.pbf") && f.length() > 1_000_000L) {
-                        add(f)
-                    }
+                    if (isCandidate(f)) add(f)
                 }
                 packDir?.listFiles()?.forEach { f ->
-                    if (f.isFile && f.name.endsWith(".osm.pbf") && f.length() > 1_000_000L) {
-                        add(f)
-                    }
+                    if (isCandidate(f)) add(f)
                 }
                 add(File("/data/local/tmp/navi_fixtures/ostlandet-latest.osm.pbf"))
                 add(File("/data/local/tmp/navi_fixtures/oppland-latest.osm.pbf"))
@@ -345,11 +356,16 @@ object RegionCoverage {
         ): Double =
             when {
                 path == "europe/norway" -> 1_000_000.0
-                else -> f.length().toDouble()
+                else -> f.length().toDouble().coerceAtLeast(1.0)
             }
 
+        // Prefer non-fixture candidates so stub/SD packs beat /data/local/tmp fixtures.
+        fun isFixture(f: File): Boolean = f.absolutePath.contains("/navi_fixtures/")
+
+        val preferred = candidates.filterNot(::isFixture).ifEmpty { candidates }
+
         val fullCover =
-            candidates.mapNotNull { f ->
+            preferred.mapNotNull { f ->
                 val path = geofabrikPathForPbfName(f.name) ?: return@mapNotNull null
                 if (!coversAll(path)) return@mapNotNull null
                 f to areaRank(f, path)
@@ -357,7 +373,7 @@ object RegionCoverage {
         fullCover.minByOrNull { it.second }?.let { return it.first }
 
         val partialCover =
-            candidates.mapNotNull { f ->
+            preferred.mapNotNull { f ->
                 val path = geofabrikPathForPbfName(f.name) ?: return@mapNotNull null
                 if (!coversAny(path)) return@mapNotNull null
                 f to areaRank(f, path)
@@ -368,7 +384,8 @@ object RegionCoverage {
             "ostlandet-latest.osm.pbf",
             "oppland-latest.osm.pbf",
             "norway-latest.osm.pbf",
-        ).firstNotNullOfOrNull { name -> candidates.firstOrNull { it.name == name } }
+        ).firstNotNullOfOrNull { name -> preferred.firstOrNull { it.name == name } }
+            ?: preferred.firstOrNull()
             ?: candidates.firstOrNull()
     }
 }

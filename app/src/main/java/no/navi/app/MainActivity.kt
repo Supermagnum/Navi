@@ -2219,11 +2219,9 @@ private fun NaviMapScreen() {
                                 longTripEnabled = longTripEnabled,
                                 stayInCountry = stayInCountry,
                                 packDir =
-                                    if (longTripEnabled) {
+                                    runCatching {
                                         LongTripPackStorage.packDownloadDir(context).absolutePath
-                                    } else {
-                                        ""
-                                    },
+                                    }.getOrDefault(""),
                                 onProgress = { pct, detail ->
                                     routePlanPct = pct
                                     routePlanProgress = "Recalculating route… $detail"
@@ -2809,13 +2807,11 @@ private fun NaviMapScreen() {
                 status = longTripStatusLine
             }
         }
-        // Prefer a single downloaded extract that covers the trip.
+        // Prefer installed packs on the selected volume for *all* plans — not only
+        // long-trip. longTripEnabled still gates densify/chunk; pack visibility must
+        // not. Empty packDir with SD installs caused pack-miss → multi-minute PBF rebuild.
         val longTripPackDir =
-            if (longTripEnabled) {
-                LongTripPackStorage.packDownloadDir(context)
-            } else {
-                null
-            }
+            runCatching { LongTripPackStorage.packDownloadDir(context) }.getOrNull()
         val pbf =
             RegionCoverage.resolvePlanPbf(dataDir, coverageWaypoints, longTripPackDir)
         val planPackDirPath =
@@ -3117,10 +3113,15 @@ private fun NaviMapScreen() {
                                             routeUsesTolls = false,
                                         )
                                     }
+                                    val elevDir =
+                                        listOfNotNull(longTripPackDir, dataDir)
+                                            .map { File(it, "elevation") }
+                                            .firstOrNull { it.isDirectory }
+                                            ?: File(dataDir, "elevation")
                                     val planned =
                                         uniffi.navi.planCarRoute(
                                             pbf.absolutePath,
-                                            File(dataDir, "elevation").absolutePath,
+                                            elevDir.absolutePath,
                                             cacheDir.absolutePath,
                                             start.lat,
                                             start.lon,

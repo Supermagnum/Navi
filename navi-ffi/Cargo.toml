@@ -86,3 +86,7 @@ path = "src/bin/plan_drammen_berlevag_budget.rs"
 [[bin]]
 name = "plan-hop-budget"
 path = "src/bin/plan_hop_budget.rs"
+
+[[bin]]
+name = "region-to-region-perf-matrix"
+path = "src/bin/region_to_region_perf_matrix.rs"

@@ -86,9 +86,15 @@ pub const CORRIDOR_BAND_STEP_DEG: f64 = 0.20;
 /// Hard cap on graph tiles merged for one plan/leg on Automotive (4 GB).
 /// Large car tiles are 80–150 MB on disk; rkyv materialization peaks higher.
 /// Endpoint-covering tiles are always kept even if this is exceeded slightly.
-/// Six leaves room for a two-stem border hop once edge clipping is a corridor
-/// band (not a fat diagonal AABB) — count alone no longer dominates RSS.
+/// Six is enough for one-stem corridors once edge clipping is a corridor band.
 pub const MAX_PLAN_TILES: usize = 6;
+
+/// Cross-stem corridors (e.g. Ostlandet→Vestlandet / Raufoss→Bergen) need more
+/// than six tiles so midpoint samples keep a connected bridge; six dropped the
+/// Vestlandet half and left A* exploring a disconnected Ostlandet component
+/// for minutes. Fourteen stays under the ~550 MiB on-disk soft byte cap for
+/// typical car corridor tiles (measured ~900 MiB peak RSS on host).
+pub const MAX_PLAN_TILES_MULTI_STEM: usize = 14;
 
 /// How many entries of [`plan_bbox_pad_schedule`] chunked long-trip legs keep.
 /// Full schedule reaches [`PLAN_BBOX_PAD_CAP_DEG`] (5.0°); the default three
@@ -109,6 +115,19 @@ pub fn effective_max_plan_tiles() -> usize {
     measure_override_usize("NAVI_MEASURE_MAX_PLAN_TILES").unwrap_or(MAX_PLAN_TILES)
 }
 
+/// Tile budget when `extra_stem_count` neighbour stems join the primary.
+///
+/// Env `NAVI_MEASURE_MAX_PLAN_TILES` still wins for measure campaigns.
+pub fn effective_max_plan_tiles_for_stems(extra_stem_count: usize) -> usize {
+    measure_override_usize("NAVI_MEASURE_MAX_PLAN_TILES").unwrap_or_else(|| {
+        if extra_stem_count > 0 {
+            MAX_PLAN_TILES_MULTI_STEM
+        } else {
+            MAX_PLAN_TILES
+        }
+    })
+}
+
 /// Effective corridor-band half-width (see [`CORRIDOR_EDGE_HALF_WIDTH_DEG`]).
 pub fn effective_corridor_edge_half_width_deg() -> f64 {
     measure_override_f64("NAVI_MEASURE_CORRIDOR_HALF_WIDTH_DEG")
@@ -123,8 +142,6 @@ pub fn effective_chunk_pad_schedule_take() -> usize {
 /// Soft cap on on-disk tile bytes merged for one plan/leg. Prefer dropping the
 /// largest non-essential tiles before exceeding this; endpoints always stay.
 /// With corridor-band edge clip, ~280 MB disk stays well under 2.8 GiB RSS.
-/// Soft cap on on-disk tile bytes merged for one plan/leg. Prefer dropping the
-/// largest non-essential tiles before exceeding this; endpoints always stay.
 /// Ostlandet car tiles are ~100–150 MB; a same-stem short hop needs three of
 /// them so the mid bridge is not dropped under a tighter cap.
 pub const MAX_PLAN_TILE_BYTES: u64 = 550 * 1024 * 1024;

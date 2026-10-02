@@ -708,6 +708,7 @@ pub fn load_graph_pack_clips(
     let file = path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
     crate::download::progress::set(0, Some(1), &format!("Building graph {file}…"));
     let t0 = std::time::Instant::now();
+    let bytes = mmap.len() as u64;
     let g = match format_version {
         super::graph_pack::GRAPH_FORMAT_VERSION_V8 => {
             let archived = rkyv::access::<ArchivedFlatGraphPackV8, RkyvError>(body)
@@ -721,14 +722,23 @@ pub fn load_graph_pack_clips(
         }
         _ => return Err(PackLoadError::VersionMismatch),
     };
+    let elapsed_ms = t0.elapsed().as_millis() as u64;
     log::info!(
         target: "NaviPlan",
-        "load_graph_pack_bbox file={file} format={format_version} edges={} nodes={} clips={} elapsed_ms={}",
+        "load_graph_pack_bbox file={file} format={format_version} edges={} nodes={} clips={} elapsed_ms={elapsed_ms}",
         g.edges.len(),
         g.nodes.len(),
         clips.map(|c| c.len()).unwrap_or(0),
-        t0.elapsed().as_millis()
     );
+    crate::routing::plan_perf::note(
+        "tile_load",
+        format!(
+            "{file};format={format_version};bytes={bytes};edges={};nodes={};ms={elapsed_ms};mmap=1",
+            g.edges.len(),
+            g.nodes.len()
+        ),
+    );
+    crate::routing::plan_perf::sample_rss();
     Ok(g)
 }
 
@@ -1042,6 +1052,21 @@ fn try_load_graph_for_plan_corridor_dirs(
             .collect::<Vec<_>>()
             .join(";")
     );
+    crate::routing::plan_perf::note("primary_stem", &stem);
+    crate::routing::plan_perf::note("pbf_stem", &pbf_stem);
+    crate::routing::plan_perf::note_u64("extra_stems", extras.len() as u64);
+    if !extras.is_empty() {
+        let names: Vec<&str> = extras.iter().map(|m| m.stem.as_str()).collect();
+        crate::routing::plan_perf::note("extra_stem_list", names.join(","));
+    }
+    crate::routing::plan_perf::note(
+        "edge_clip_mode",
+        format!("{edge_clip_mode:?}"),
+    );
+    crate::routing::plan_perf::note_u64(
+        "edge_clips",
+        edge_clips.map(|c| c.len() as u64).unwrap_or(0),
+    );
     if !extras.is_empty() {
         crate::download::progress::set(0, Some(5), "Combining map data from multiple regions…");
     }
@@ -1076,7 +1101,7 @@ fn try_load_graph_for_plan_corridor_dirs(
     let mut tile_files = select_tiles_within_budget(
         tile_candidates.clone(),
         route_points,
-        crate::routing::plan_bbox::effective_max_plan_tiles(),
+        crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(extras.len()),
         dirs,
     );
     // Same-stem short hops (e.g. eastern→western Skåne) need every intersecting
@@ -1133,7 +1158,7 @@ fn try_load_graph_for_plan_corridor_dirs(
                                 tile_files = select_tiles_within_budget(
                                     merged_cands,
                                     route_points,
-                                    crate::routing::plan_bbox::effective_max_plan_tiles(),
+                                    crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(extras.len()),
                                     dirs,
                                 );
                                 seen = tile_files.iter().cloned().collect();
@@ -1187,7 +1212,7 @@ fn try_load_graph_for_plan_corridor_dirs(
                             tile_files = select_tiles_within_budget(
                                 near_cands,
                                 route_points,
-                                crate::routing::plan_bbox::effective_max_plan_tiles(),
+                                crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(extras.len()),
                                 dirs,
                             );
                         }
@@ -1200,7 +1225,7 @@ fn try_load_graph_for_plan_corridor_dirs(
         target: "NaviPlan",
         "try_load_graph tile_files={} after primary+extras (budget={})",
         tile_files.len(),
-        crate::routing::plan_bbox::effective_max_plan_tiles()
+        crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(extras.len())
     );
 
     if !tile_files.is_empty() {
@@ -1279,7 +1304,7 @@ fn try_load_graph_for_plan_corridor_dirs(
         let extra_files = select_tiles_within_budget(
             extra_candidates,
             route_points,
-            crate::routing::plan_bbox::effective_max_plan_tiles(),
+            crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(extras.len()),
             dirs,
         );
         if !extra_files.is_empty() {
@@ -2752,3 +2777,49 @@ mod ferry_overlay_tests {
         assert!(out.path_uses_ferries(&edges), "path should use a ferry");
     }
 }
+
+#[cfg(test)]
+mod raufoss_bergen_load_probe {
+    use super::*;
+    use crate::routing::graph::RoutingProfile;
+    use crate::routing::plan_bbox::PlanEdgeClipMode;
+    use std::path::Path;
+    use std::time::Instant;
+
+    #[test]
+    #[ignore = "needs /tmp/navi_pack_install with ostlandet+vestlandet v9 packs"]
+    fn probe_raufoss_bergen_pack_load() {
+        let pack = Path::new("/tmp/navi_pack_install");
+        assert!(pack.join("ostlandet-latest.navi-manifest.json").is_file());
+        assert!(pack.join("vestlandet-latest.navi-manifest.json").is_file());
+        let pbf = pack.join("ostlandet-latest.osm.pbf");
+        let pts = [(60.7277483_f64, 10.6109403_f64), (60.388144, 5.3347434)];
+        let bbox = crate::routing::plan_bbox::trip_bbox_points(&pts, 0.52);
+        eprintln!("bbox={bbox:?}");
+        let t0 = Instant::now();
+        let g = try_load_graph_for_plan_corridor_with_pack_dirs(
+            pack,
+            &[],
+            &pbf,
+            RoutingProfile::Car,
+            Some(bbox),
+            Some(&pts),
+            PlanEdgeClipMode::CorridorBand,
+        )
+        .expect("pack load");
+        eprintln!(
+            "nodes={} edges={} ms={}",
+            g.nodes.len(),
+            g.edges.len(),
+            t0.elapsed().as_millis()
+        );
+        // Destination must be snappable: a node within 2 km of Bergen.
+        let (ok, dist) = match g.nearest_routable(pts[1].0, pts[1].1) {
+            Ok((_, d)) => (true, d),
+            Err(e) => (false, e.nearest_m),
+        };
+        eprintln!("bergen_snap_ok={ok} nearest_m={dist:.0}");
+        assert!(ok && dist < 2000.0, "Bergen not in loaded graph; nearest_m={dist}");
+    }
+}
+

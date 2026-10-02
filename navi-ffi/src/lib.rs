@@ -42,7 +42,7 @@ use driver_break_core::routing::{
     hiking_samples_from_coords, max_daily_distance_km, motor_break_interval_km, motor_daily_budget,
     plan_fmcsa_multi_day, plan_hiking_multi_day, plan_motor_multi_day, plan_soft_rest_pauses,
     plan_truck_multi_day, resolve_driving_hours_pack_at, truck_effective_break_parts,
-    uses_motor_multi_day, uses_truck_rest, HikingMultiDayPlan, MotorMultiDayPlan,
+    uses_motor_multi_day, uses_truck_rest, HikingMultiDayPlan, MotorDailyBudget, MotorMultiDayPlan,
     MotorOvernightCandidate, MotorOvernightKind, SoftRestCandidate, TruckMultiDayPlan,
     TruckOvernightKind, TruckOvernightRest, TruckRestCandidate, TruckRestFacility,
 };
@@ -530,6 +530,7 @@ static ROUTE_PLAN_TIMING_ENABLED: AtomicBool = AtomicBool::new(false);
 #[uniffi::export]
 pub fn set_route_plan_timing_enabled(enabled: bool) {
     ROUTE_PLAN_TIMING_ENABLED.store(enabled, Ordering::Relaxed);
+    driver_break_core::routing::plan_perf::set_enabled(enabled);
 }
 
 #[uniffi::export]
@@ -2069,9 +2070,11 @@ fn plan_pack_data_dir(pbf: &Path, data_dir: &str) -> PathBuf {
 /// (internal `files/long-trip-packs` or a removable volume's pack root), then
 /// the app data / Tools root so ReuseInternal packs still resolve.
 ///
-/// When `long_trip_enabled` is false, skip the nested `long-trip-packs/` probe so
-/// ordinary single-shot plans only see Tools packs (avoids multi-country tiles
-/// competing for the `MAX_PLAN_TILES` budget and disconnecting mid-span ODs).
+/// When `long_trip_enabled` is false, still probe the nested `long-trip-packs/`
+/// directory when present so Tools downloads on a removable volume remain
+/// visible to ordinary single-shot plans (Raufoss→Bergen with long-trip OFF).
+/// Corridor tile selection already caps neighbour stems; skipping this root
+/// forced pack-miss → on-device PBF rebuild (minutes).
 fn plan_pack_dirs(
     pbf: &Path,
     data_dir: &str,
@@ -2095,13 +2098,13 @@ fn plan_pack_dirs(
         }
     }
     let primary = plan_pack_data_dir(pbf, data_dir);
-    // Long-trip corridor packs under `{dataDir}/long-trip-packs` (Phase B).
-    // Only when long-trip mode is on (or an explicit pack_dir was already added).
-    if long_trip_enabled {
-        let nested = primary.join("long-trip-packs");
-        if nested.is_dir() && !out.iter().any(|d| d == &nested) {
-            out.push(nested);
-        }
+    // Always probe `{dataDir}/long-trip-packs` when present. Long-trip mode used
+    // to be the only gate; that hid SD-card Tools installs from ordinary plans.
+    let nested = primary.join("long-trip-packs");
+    if nested.is_dir() && !out.iter().any(|d| d == &nested) {
+        // Prefer explicit pack_dir first; nested is a secondary root.
+        let _ = long_trip_enabled; // retained for ABI / call sites
+        out.push(nested);
     }
     if !out.iter().any(|d| d == &primary) {
         out.push(primary);
@@ -3090,6 +3093,10 @@ fn plan_car_route_inner(
     let mut cache_hit = false;
     let mut pack_hit = false;
     let mut build_s = 0.0;
+    let mut pack_load_ms_acc = 0u64;
+    let mut eco_reweight_ms_acc = 0u64;
+    let mut snap_ms_acc = 0u64;
+    let mut search_ms_acc = 0u64;
     let mut path = Vec::new();
     let mut path_edges = Vec::new();
     let mut cost = 0.0;
@@ -3104,6 +3111,7 @@ fn plan_car_route_inner(
     // disconnected A* on that stable materialization, retry with trip-AABB.
     let mut edge_clip_mode = driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
 
+    driver_break_core::routing::plan_perf::begin_plan();
     let profile_map_ms = timer.lap_ms();
     if driver_break_core::download::plan_cancel::is_cancelled() {
         return plan_cancelled_result(report, &timer, &[("profile_map_ms", profile_map_ms)]);
@@ -3126,6 +3134,14 @@ fn plan_car_route_inner(
             );
             let t_graph = Instant::now();
             let pack_dirs = plan_pack_dirs(pbf, &data_dir, &pack_dir, long_trip_enabled);
+            driver_break_core::routing::plan_perf::note(
+                "pack_dirs",
+                pack_dirs
+                    .iter()
+                    .map(|d| d.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(";"),
+            );
             // Empty when `pack_dir` is the debug `__navi_force_pbf__` sentinel
             // (or no pack roots exist): skip pack load and cold-build from PBF.
             let pack_try = match pack_dirs.split_last() {
@@ -3143,6 +3159,8 @@ fn plan_car_route_inner(
                 // Debug `__navi_force_pbf__` (or no pack roots): skip pack load.
                 None => Err(driver_break_core::routing::indexed::PackLoadError::Missing),
             };
+            let pack_load_ms = t_graph.elapsed().as_millis() as u64;
+            pack_load_ms_acc = pack_load_ms_acc.saturating_add(pack_load_ms);
             let _pause_bg = if pack_try.is_err() {
                 Some(driver_break_core::download::ForegroundPlanGuard::acquire())
             } else {
@@ -3151,42 +3169,63 @@ fn plan_car_route_inner(
             let build_data_dir = plan_pack_data_dir(pbf, &data_dir);
             let (mut built, hit, phit) = match pack_try {
                 Ok(g) => (g, false, true),
-                Err(_) => match load_or_build_reweighted_bbox(
-                    pbf,
-                    &build_data_dir,
-                    &cache,
-                    routing_profile,
-                    &elevation,
-                    &eco,
-                    bbox,
-                ) {
-                    Ok((g, hit)) => (g, hit, false),
-                    Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
-                        return plan_cancelled_result(
-                            report,
-                            &timer,
-                            &[("profile_map_ms", profile_map_ms)],
-                        );
+                Err(e) => {
+                    driver_break_core::routing::plan_perf::note(
+                        "pack_miss_reason",
+                        format!("{e:?}"),
+                    );
+                    match load_or_build_reweighted_bbox(
+                        pbf,
+                        &build_data_dir,
+                        &cache,
+                        routing_profile,
+                        &elevation,
+                        &eco,
+                        bbox,
+                    ) {
+                        Ok((g, hit)) => (g, hit, false),
+                        Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
+                            return plan_cancelled_result(
+                                report,
+                                &timer,
+                                &[("profile_map_ms", profile_map_ms)],
+                            );
+                        }
+                        Err(e) => {
+                            report.push_str(&format!("FAIL: graph build: {e:#}\n"));
+                            let mut r = empty(report);
+                            r.toll_policy = toll_policy.as_diag_str().into();
+                            r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                            r.search_terminate_reason = "graph_build".into();
+                            return r;
+                        }
                     }
-                    Err(e) => {
-                        report.push_str(&format!("FAIL: graph build: {e:#}\n"));
-                        let mut r = empty(report);
-                        r.toll_policy = toll_policy.as_diag_str().into();
-                        r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
-                        r.search_terminate_reason = "graph_build".into();
-                        return r;
-                    }
-                },
+                }
             };
+            let mut eco_reweight_ms = 0u64;
             if phit && use_eco {
+                let t_eco = Instant::now();
                 built.apply_eco_reweighting(&elevation, &eco);
+                eco_reweight_ms = t_eco.elapsed().as_millis() as u64;
+                eco_reweight_ms_acc = eco_reweight_ms_acc.saturating_add(eco_reweight_ms);
             }
             build_s = t_graph.elapsed().as_secs_f64();
             cache_hit = hit;
             pack_hit = phit;
+            driver_break_core::routing::plan_perf::note(
+                "graph_ready",
+                format!(
+                    "pack_hit={phit};cache_hit={hit};nodes={};edges={};pack_load_ms={pack_load_ms};\
+                     eco_reweight_ms={eco_reweight_ms};build_s={build_s:.2}",
+                    built.nodes.len(),
+                    built.edges.len()
+                ),
+            );
+            driver_break_core::routing::plan_perf::sample_rss();
             log::info!(
                 target: "NaviPlan",
-                "graph_ready pack_hit={phit} nodes={} edges={} build_s={build_s:.2}",
+                "graph_ready pack_hit={phit} nodes={} edges={} build_s={build_s:.2} \
+                 pack_load_ms={pack_load_ms} eco_reweight_ms={eco_reweight_ms}",
                 built.nodes.len(),
                 built.edges.len()
             );
@@ -3269,6 +3308,7 @@ fn plan_car_route_inner(
             }
 
             // Snap every stop (start → vias → end), then A* each consecutive leg.
+            let t_snap = Instant::now();
             let mut snapped: Vec<(osm4routing::NodeId, f64)> =
                 Vec::with_capacity(route_points.len());
             let mut snap_ok = true;
@@ -3338,6 +3378,7 @@ fn plan_car_route_inner(
             if !snap_ok {
                 break; // next pad (edge_clip_mode unchanged)
             }
+            snap_ms_acc = snap_ms_acc.saturating_add(t_snap.elapsed().as_millis() as u64);
             log::info!(
                 target: "NaviPlan",
                 "snap_ok stops={} — starting A*",
@@ -3345,6 +3386,7 @@ fn plan_car_route_inner(
             );
             driver_break_core::download::progress::set(2, Some(5), "Searching route…");
 
+            let t_search = Instant::now();
             let mut full_path: Vec<osm4routing::NodeId> = Vec::new();
             let mut full_edges: Vec<usize> = Vec::new();
             let mut full_cost = 0.0;
@@ -3380,7 +3422,13 @@ fn plan_car_route_inner(
                     full_edges.extend(e);
                 }
             }
+            search_ms_acc = search_ms_acc.saturating_add(t_search.elapsed().as_millis() as u64);
             last_expansions = leg_expansions;
+            driver_break_core::routing::plan_perf::note_u64("expansions", leg_expansions);
+            driver_break_core::routing::plan_perf::note_u64(
+                "search_ms",
+                t_search.elapsed().as_millis() as u64,
+            );
             if legs_ok && full_path.len() >= 2 {
                 path = full_path;
                 path_edges = full_edges;
@@ -3552,13 +3600,19 @@ fn plan_car_route_inner(
     }
 
     let data_dir = plan_pack_data_dir(pbf, &data_dir);
-    let graph_build_ms = timer.lap_ms();
+    // Historical stage name `graph_build_ms` = pack load + eco reweight (not A*).
+    let graph_build_ms = pack_load_ms_acc.saturating_add(eco_reweight_ms_acc);
     let network_pref_ms = 0u64;
+    let _ = timer.lap_ms(); // consume pad-loop wall so later laps stay relative
     report.push_str(&format!(
         "build_s={build_s:.2}; cache_hit={cache_hit}; pack_hit={pack_hit}; nodes={}; edges={}; pad_attempts={:?}\n",
         graph.nodes.len(),
         graph.edges.len(),
         pad_attempts
+    ));
+    report.push_str(&format!(
+        "pack_load_ms={pack_load_ms_acc}; eco_reweight_ms={eco_reweight_ms_acc}; \
+         snap_ms={snap_ms_acc}; search_ms={search_ms_acc}; expansions={last_expansions}\n"
     ));
     append_graph_ferry_edges(&mut report, &graph);
     let seasonal_n = graph.seasonal_closure_excluded_in_graph(&used_opts);
@@ -3577,7 +3631,8 @@ fn plan_car_route_inner(
     }
     let route_uses_tolls = graph.path_uses_tolls(&path_edges);
     let route_uses_ferry = graph.path_uses_ferries(&path_edges);
-    let astar_ms = timer.lap_ms();
+    // Keep stage key `astar_ms` for greppable compatibility (= search wall).
+    let astar_ms = search_ms_acc;
 
     let mut distance_m = 0.0;
     for &idx in &path_edges {
@@ -3928,6 +3983,15 @@ fn plan_car_route_inner(
     if uses_motor_multi_day(core_profile) {
         let driving_h = eta_minutes / 60.0;
         if let Some(budget) = motor_daily_budget(core_profile, &rest.car, &rest.cycling) {
+            // Single-day trips need no overnight POI scrape — the polyline×category
+            // nearest loop was ~36 s on Raufoss→Bergen (host) while A* was 0.2 s.
+            let needs_overnight = match budget {
+                MotorDailyBudget::Hours(h) => driving_h > h,
+                MotorDailyBudget::DistanceKm(km) => dist_km > km,
+            };
+            if !needs_overnight {
+                report.push_str("motor_multi_day: days=1; multi_day=false\n");
+            } else {
             let samples = sample_polyline_km(&polyline);
             let overnight_link = RoadNodeIndex::from_path_nodes(&graph, &path);
             let mut candidates: Vec<MotorOvernightCandidate> = Vec::new();
@@ -4034,6 +4098,7 @@ fn plan_car_route_inner(
             } else {
                 report.push_str("motor_multi_day: days=1; multi_day=false\n");
             }
+            } // driving_h > budget
         }
     }
     let multiday_ms = timer.lap_ms();
@@ -4119,12 +4184,16 @@ fn plan_car_route_inner(
     ));
     let report_addons_ms = timer.lap_ms();
     let plan_duration_ms = timer.total_ms();
+    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
     append_route_plan_timing(
         &mut report,
         plan_duration_ms,
         &[
             ("profile_map_ms", profile_map_ms),
             ("graph_build_ms", graph_build_ms),
+            ("pack_load_ms", pack_load_ms_acc),
+            ("eco_reweight_ms", eco_reweight_ms_acc),
+            ("snap_ms", snap_ms_acc),
             ("network_pref_ms", network_pref_ms),
             ("astar_ms", astar_ms),
             ("polyline_ms", polyline_ms),
