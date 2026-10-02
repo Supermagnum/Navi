@@ -5560,8 +5560,24 @@ pub fn ensure_ferry_sidecar(pack_dir: String, stem: String, profile: TravelProfi
             RoutingProfile::from(profile.to_core()),
             &ferry_pbf,
         ) {
-            Ok(true) => format!("PASS: ferry sidecar ready stem={stem}\n"),
-            Ok(false) => format!("PASS: no ferry edges stem={stem}\n"),
+            Ok(true) => {
+                let tile_idx = driver_break_core::routing::indexed::ensure_tile_indexes_for_stem(
+                    home,
+                    stem,
+                    RoutingProfile::from(profile.to_core()),
+                )
+                .unwrap_or_else(|e| format!("FAIL tile_index: {e:#}"));
+                format!("PASS: ferry sidecar ready stem={stem}\n{tile_idx}\n")
+            }
+            Ok(false) => {
+                let tile_idx = driver_break_core::routing::indexed::ensure_tile_indexes_for_stem(
+                    home,
+                    stem,
+                    RoutingProfile::from(profile.to_core()),
+                )
+                .unwrap_or_else(|e| format!("FAIL tile_index: {e:#}"));
+                format!("PASS: no ferry edges stem={stem}\n{tile_idx}\n")
+            }
             Err(e) => format!("FAIL: ferry sidecar: {e:#}\n"),
         };
     }
@@ -5571,8 +5587,24 @@ pub fn ensure_ferry_sidecar(pack_dir: String, stem: String, profile: TravelProfi
         RoutingProfile::from(profile.to_core()),
         &pbf,
     ) {
-        Ok(true) => format!("PASS: ferry sidecar ready stem={stem}\n"),
-        Ok(false) => format!("PASS: no ferry edges stem={stem}\n"),
+        Ok(true) => {
+            let tile_idx = driver_break_core::routing::indexed::ensure_tile_indexes_for_stem(
+                home,
+                stem,
+                RoutingProfile::from(profile.to_core()),
+            )
+            .unwrap_or_else(|e| format!("FAIL tile_index: {e:#}"));
+            format!("PASS: ferry sidecar ready stem={stem}\n{tile_idx}\n")
+        }
+        Ok(false) => {
+            let tile_idx = driver_break_core::routing::indexed::ensure_tile_indexes_for_stem(
+                home,
+                stem,
+                RoutingProfile::from(profile.to_core()),
+            )
+            .unwrap_or_else(|e| format!("FAIL tile_index: {e:#}"));
+            format!("PASS: no ferry edges stem={stem}\n{tile_idx}\n")
+        }
         Err(e) => format!("FAIL: ferry sidecar: {e:#}\n"),
     }
 }

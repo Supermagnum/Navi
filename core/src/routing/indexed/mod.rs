@@ -16,6 +16,7 @@ mod poi_barrier_cache;
 mod poi_barrier_extract;
 mod poi_barrier_pack;
 mod tile_cache;
+mod tile_index_sidecar;
 mod wetland_pack;
 
 pub use crate::routing::region_lock::{
@@ -59,4 +60,12 @@ pub use manifest::{
 };
 pub use poi_barrier_cache::{poi_barrier_cache_clear, poi_barrier_cache_stats, PoiBarrierCacheKey};
 pub use poi_barrier_pack::{FlatPoiBarrierPack, MAGIC_POI_BARRIER, POI_BARRIER_FORMAT_VERSION};
+pub use tile_cache::{
+    tile_cache_clear, tile_cache_enabled, tile_cache_evict_before_load, tile_cache_get,
+    tile_cache_insert, tile_cache_max_bytes, tile_cache_stats, TileCacheKey,
+};
+pub use tile_index_sidecar::{
+    ensure_tile_index, ensure_tile_indexes_for_stem, tile_index_fresh, tile_index_path,
+    FlatTileIndex, MappedTileIndex, MAGIC_TILE_INDEX, TILE_INDEX_FORMAT_VERSION,
+};
 pub use wetland_pack::{FlatWetlandPack, MAGIC_WETLAND, WETLAND_FORMAT_VERSION};
