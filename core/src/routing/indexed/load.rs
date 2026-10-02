@@ -1669,22 +1669,16 @@ fn ferry_hop_connectivity_gate(graph: &RouteGraph, a: (f64, f64), b: (f64, f64))
     dest_opts.snap_role = SnapRole::Destination;
     let tight = crate::routing::max_waypoint_snap_m(graph.profile());
     let loose = crate::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M;
-    let mut start =
-        graph.nearest_routable_with_options_max(a.0, a.1, &origin_opts, false, tight);
-    let mut goal =
-        graph.nearest_routable_with_options_max(b.0, b.1, &dest_opts, false, tight);
+    let mut start = graph.nearest_routable_with_options_max(a.0, a.1, &origin_opts, false, tight);
+    let mut goal = graph.nearest_routable_with_options_max(b.0, b.1, &dest_opts, false, tight);
     let mut snap_m = tight;
     if start.is_err() || goal.is_err() {
         snap_m = loose;
         if start.is_err() {
-            start = graph.nearest_routable_with_options_max(
-                a.0, a.1, &origin_opts, false, loose,
-            );
+            start = graph.nearest_routable_with_options_max(a.0, a.1, &origin_opts, false, loose);
         }
         if goal.is_err() {
-            goal = graph.nearest_routable_with_options_max(
-                b.0, b.1, &dest_opts, false, loose,
-            );
+            goal = graph.nearest_routable_with_options_max(b.0, b.1, &dest_opts, false, loose);
         }
     }
     let (Ok((start, _)), Ok((goal, _))) = (start, goal) else {

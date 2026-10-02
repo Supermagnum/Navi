@@ -1523,7 +1523,7 @@ object RegionDownloadBackground {
                     // and for rest/overnight POI packs. Basemap + place-index
                     // continue in the background; long-trip planning waits for
                     // Indexed via LongTripCoordinator.corridorReadyForPlanning.
-                    emitInstalledForRouting(pathForDecision, packDir)
+                    emitInstalledForRouting(pathForDecision)
                     handOffBasemapAndPlaceIndex(
                         context = context,
                         dataDir = dataDir,
@@ -1597,7 +1597,7 @@ object RegionDownloadBackground {
                     return
                 }
                 PlaceIndexReady.markReady(dataDir, pathForDecision)
-                markUsable(pathForDecision, packDir)
+                markUsable(pathForDecision)
                 // Local-bake resume: place index is done; convert is non-blocking.
                 val resumePbf = File(packDir, filename)
                 if (resumePbf.isFile &&
@@ -1669,7 +1669,7 @@ object RegionDownloadBackground {
                 }
                 if (basemapPath.isNotBlank()) {
                     PlaceIndexReady.markReady(dataDir, basemapPath)
-                    markUsable(basemapPath, packDir)
+                    markUsable(basemapPath)
                 }
                 // Hand convert to IndexedMapsBackground (Convert progress slot) so
                 // the region queue can proceed to the next download.
@@ -1712,10 +1712,7 @@ object RegionDownloadBackground {
         )
     }
 
-    private fun emitInstalledForRouting(
-        path: String,
-        _packDir: File,
-    ) {
+    private fun emitInstalledForRouting(path: String) {
         val trimmed = path.trim().trim('/')
         if (trimmed.isEmpty()) return
         emitPhase(trimmed, "installed")
@@ -1775,7 +1772,7 @@ object RegionDownloadBackground {
                 }.getOrDefault(false)
             if (placeOk) {
                 PlaceIndexReady.markReady(dataDir, rid)
-                markUsable(rid, packDir)
+                markUsable(rid)
                 Log.i(TAG, "background place index ready for $rid")
             } else {
                 Log.w(TAG, "background place index failed for $rid")
@@ -1783,10 +1780,7 @@ object RegionDownloadBackground {
         }
     }
 
-    private fun markUsable(
-        path: String,
-        _packDir: File? = packDirOverride.get(),
-    ) {
+    private fun markUsable(path: String) {
         val trimmed = path.trim().trim('/')
         if (trimmed.isEmpty()) return
         lastUsablePath.set(trimmed)

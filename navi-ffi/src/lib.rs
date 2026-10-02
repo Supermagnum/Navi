@@ -3534,9 +3534,12 @@ fn plan_car_route_inner(
                 driver_break_core::routing::plan_bbox::effective_chunk_intermediate_snap_m()
             };
             let snap_stops = |built: &driver_break_core::routing::graph::RouteGraph,
-                               route_opts: &driver_break_core::routing::graph::RouteOptions,
-                               use_roles: bool|
-             -> Result<Vec<(osm4routing::NodeId, f64)>, (String, driver_break_core::routing::graph::SnapTooFar)> {
+                              route_opts: &driver_break_core::routing::graph::RouteOptions,
+                              use_roles: bool|
+             -> Result<
+                Vec<(osm4routing::NodeId, f64)>,
+                (String, driver_break_core::routing::graph::SnapTooFar),
+            > {
                 let mut out = Vec::with_capacity(route_points.len());
                 for (i, &(lat, lon)) in route_points.iter().enumerate() {
                     let prefer_better_surface = i > 0 && i + 1 < route_points.len();
@@ -3721,7 +3724,10 @@ fn plan_car_route_inner(
                             let (ss, _) = snapped[leg];
                             let (gg, _) = snapped[leg + 1];
                             let stats = built.shortest_path_with_options_stats(
-                                ss, gg, use_eco, &route_opts,
+                                ss,
+                                gg,
+                                use_eco,
+                                &route_opts,
                             );
                             leg_expansions = leg_expansions.saturating_add(stats.expansions);
                             last_terminate = stats.terminate_reason;
@@ -3748,8 +3754,8 @@ fn plan_car_route_inner(
                                 full_edges.extend(e);
                             }
                         }
-                        search_ms_acc = search_ms_acc
-                            .saturating_add(t_search2.elapsed().as_millis() as u64);
+                        search_ms_acc =
+                            search_ms_acc.saturating_add(t_search2.elapsed().as_millis() as u64);
                     }
                     Err((label, e)) => {
                         report.push_str(&format!(

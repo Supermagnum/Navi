@@ -851,9 +851,7 @@ impl RouteGraph {
             // *nodes* within slack of that snap so a long Good connector edge
             // cannot leap to a paved end outside the slack budget.
             if let Some(&(idx, _)) = candidates.first() {
-                if let Some((_, nearest_giant_m)) =
-                    closer_endpoint(&self.edges[idx], true, true)
-                {
+                if let Some((_, nearest_giant_m)) = closer_endpoint(&self.edges[idx], true, true) {
                     let surface_limit_m = (nearest_giant_m + SURFACE_VIA_SNAP_SLACK_M).min(max_m);
                     let surface_pad = (surface_limit_m / 100_000.0).max(0.02);
                     let mut best_surface_giant: Option<(NodeId, f64)> = None;
@@ -902,10 +900,7 @@ impl RouteGraph {
             });
         };
         if nearest_m > max_m || !directed_ok(id) {
-            return Err(SnapTooFar {
-                nearest_m,
-                max_m,
-            });
+            return Err(SnapTooFar { nearest_m, max_m });
         }
         Ok((id, nearest_m))
     }
@@ -1257,7 +1252,11 @@ impl RouteGraph {
             visited[start as usize] = true;
             while let Some((u, ei)) = stack.pop() {
                 let uid = giant_nodes[u as usize];
-                let outs = self.adjacency.get(&uid).map(|v| v.as_slice()).unwrap_or(&[]);
+                let outs = self
+                    .adjacency
+                    .get(&uid)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[]);
                 if ei < outs.len() {
                     stack.push((u, ei + 1));
                     let v = self.edges[outs[ei]].target;
@@ -1366,10 +1365,7 @@ impl RouteGraph {
             "directed_origin_reject",
             self.origin_reject.len() as u64,
         );
-        crate::routing::plan_perf::note_u64(
-            "directed_dest_reject",
-            self.dest_reject.len() as u64,
-        );
+        crate::routing::plan_perf::note_u64("directed_dest_reject", self.dest_reject.len() as u64);
         // Compact stubs only (~8 B/NodeId); dig held none of this.
         let reject_bytes = (self.origin_reject.len() + self.dest_reject.len())
             .saturating_mul(std::mem::size_of::<NodeId>());
@@ -1383,12 +1379,8 @@ impl RouteGraph {
         }
         match role {
             SnapRole::Any => true,
-            SnapRole::Origin => {
-                self.in_giant_component(id) && !self.origin_reject.contains(&id)
-            }
-            SnapRole::Destination => {
-                self.in_giant_component(id) && !self.dest_reject.contains(&id)
-            }
+            SnapRole::Origin => self.in_giant_component(id) && !self.origin_reject.contains(&id),
+            SnapRole::Destination => self.in_giant_component(id) && !self.dest_reject.contains(&id),
             SnapRole::Via => {
                 self.in_giant_component(id)
                     && !self.origin_reject.contains(&id)
@@ -1407,10 +1399,12 @@ impl RouteGraph {
         }
         match role {
             SnapRole::Any => self.incident.len(),
-            SnapRole::Origin => self.directed_giant_nodes.saturating_sub(self.origin_reject.len()),
-            SnapRole::Destination => {
-                self.directed_giant_nodes.saturating_sub(self.dest_reject.len())
-            }
+            SnapRole::Origin => self
+                .directed_giant_nodes
+                .saturating_sub(self.origin_reject.len()),
+            SnapRole::Destination => self
+                .directed_giant_nodes
+                .saturating_sub(self.dest_reject.len()),
             SnapRole::Via => self
                 .directed_giant_nodes
                 .saturating_sub(self.origin_reject.len().max(self.dest_reject.len())),
@@ -2256,11 +2250,7 @@ fn push_directed_edge(
 ) {
     let idx = graph.edges.len();
     let base_weight = if meta.is_ferry {
-        ferry_base_weight_m(
-            length_m,
-            meta.ferry_duration.as_deref(),
-            graph.profile,
-        )
+        ferry_base_weight_m(length_m, meta.ferry_duration.as_deref(), graph.profile)
     } else {
         length_m
     };
@@ -4433,7 +4423,6 @@ mod tests {
         assert!(!edge_in_allowed_countries(&el_paso_juarez, &["us".into()]));
     }
 
-
     #[test]
     fn destination_skips_one_way_dead_end_stub() {
         // Main bidirectional corridor 1 <-> 2 <-> 3.
@@ -4456,50 +4445,48 @@ mod tests {
                 },
             );
         }
-        let mut edges = vec![
-            GraphEdge {
-                id: "12".into(),
-                source: NodeId(1),
-                target: NodeId(2),
-                length_m: 100.0,
-                base_weight: 100.0,
-                eco_weight: None,
-                start_lat: 60.0,
-                start_lon: 10.0,
-                end_lat: 60.0,
-                end_lon: 10.01,
-                shape: vec![],
-                highway: Some("residential".into()),
-                maxspeed_kmh: None,
-                maxspeed_practical_kmh: None,
-                maxspeed_advisory_kmh: None,
-                maxspeed_type: None,
-                maxspeed_variable: false,
-                minspeed_kmh: None,
-                name: None,
-                road_ref: None,
-                is_motorroad: false,
-                is_expressway: false,
-                is_oneway: false,
-                lanes: None,
-                maxweight_t: None,
-                maxaxleload_t: None,
-                maxbogieweight_t: None,
-                maxheight_m: None,
-                maxwidth_m: None,
-                maxlength_m: None,
-                is_toll: false,
-                is_ferry: false,
-                is_tunnel: false,
-                is_boardwalk_crossing: false,
-                is_roundabout: false,
-                motor_vehicle_conditional: None,
-                access_conditional: None,
-                maxspeed_conditional: None,
-                access_forbidden: false,
-                surface_quality: SurfaceQuality::Good,
-            },
-        ];
+        let mut edges = vec![GraphEdge {
+            id: "12".into(),
+            source: NodeId(1),
+            target: NodeId(2),
+            length_m: 100.0,
+            base_weight: 100.0,
+            eco_weight: None,
+            start_lat: 60.0,
+            start_lon: 10.0,
+            end_lat: 60.0,
+            end_lon: 10.01,
+            shape: vec![],
+            highway: Some("residential".into()),
+            maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
+            name: None,
+            road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            is_tunnel: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
+        }];
         // Clone helper for remaining edges
         fn e(
             id: &str,
@@ -4576,7 +4563,11 @@ mod tests {
         let (d, _) = g
             .nearest_routable_with_options_max(59.999, 10.01, &dest, false, 750.0)
             .expect("dest snap");
-        assert_ne!(d, NodeId(5), "must not snap destination to unreachable one-way source");
+        assert_ne!(
+            d,
+            NodeId(5),
+            "must not snap destination to unreachable one-way source"
+        );
         assert!(g.directed_snap_ok(d, SnapRole::Destination));
 
         // Sink 4 is reachable from main — valid destination (but bad origin).
@@ -4705,8 +4696,7 @@ mod tests {
     fn ferry_costing_rejects_long_unnamed_chain_vs_short_tagged() {
         let short_len = 20_000.0;
         let chain_len = 195_000.0;
-        let short_server =
-            ferry_base_weight_m(short_len, Some("0:40"), RoutingProfile::Car);
+        let short_server = ferry_base_weight_m(short_len, Some("0:40"), RoutingProfile::Car);
         let chain_server = ferry_base_weight_m(chain_len, None, RoutingProfile::Car);
         let short_length_only = short_len;
         let chain_length_only = chain_len;
@@ -4729,5 +4719,4 @@ mod tests {
         assert!(short_length_only < chain_length_only);
         assert!(short_server < chain_server);
     }
-
 }

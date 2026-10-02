@@ -6,7 +6,9 @@ use std::time::Instant;
 use driver_break_core::routing::graph::{RouteOptions, RoutingProfile, SnapRole};
 use driver_break_core::routing::indexed::try_load_graph_for_plan_corridor_with_pack_dirs;
 use driver_break_core::routing::plan_bbox::PlanEdgeClipMode;
-use navi::{plan_car_route, set_route_plan_timing_enabled, FfiTollPolicy, FfiVehicleLimits, TravelProfile};
+use navi::{
+    plan_car_route, set_route_plan_timing_enabled, FfiTollPolicy, FfiVehicleLimits, TravelProfile,
+};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -51,9 +53,24 @@ fn main() {
 
     for (name, lat, lon, role) in [
         ("bergen_origin", bergen.0, bergen.1, SnapRole::Origin),
-        ("stav_centre_any", stav_centre.0, stav_centre.1, SnapRole::Any),
-        ("stav_centre_dest", stav_centre.0, stav_centre.1, SnapRole::Destination),
-        ("stav_station_dest", stav_station.0, stav_station.1, SnapRole::Destination),
+        (
+            "stav_centre_any",
+            stav_centre.0,
+            stav_centre.1,
+            SnapRole::Any,
+        ),
+        (
+            "stav_centre_dest",
+            stav_centre.0,
+            stav_centre.1,
+            SnapRole::Destination,
+        ),
+        (
+            "stav_station_dest",
+            stav_station.0,
+            stav_station.1,
+            SnapRole::Destination,
+        ),
     ] {
         let mut opts = RouteOptions::default();
         opts.snap_role = role;
@@ -75,7 +92,7 @@ fn main() {
         }
     }
 
-    let mut oopts = RouteOptions {
+    let oopts = RouteOptions {
         snap_role: SnapRole::Origin,
         ..Default::default()
     };
@@ -84,10 +101,20 @@ fn main() {
         .unwrap();
     for (label, lat, lon, role) in [
         ("centre_any", stav_centre.0, stav_centre.1, SnapRole::Any),
-        ("centre_dest", stav_centre.0, stav_centre.1, SnapRole::Destination),
-        ("station_dest", stav_station.0, stav_station.1, SnapRole::Destination),
+        (
+            "centre_dest",
+            stav_centre.0,
+            stav_centre.1,
+            SnapRole::Destination,
+        ),
+        (
+            "station_dest",
+            stav_station.0,
+            stav_station.1,
+            SnapRole::Destination,
+        ),
     ] {
-        let mut opts = RouteOptions {
+        let opts = RouteOptions {
             snap_role: role,
             ..Default::default()
         };
@@ -104,14 +131,17 @@ fn main() {
         );
     }
 
-
     // Dead-end component size for city-centre Any snap (unreachable from main).
     {
         let mut opts = RouteOptions::default();
         opts.snap_role = SnapRole::Any;
-        if let Ok((dead, _)) =
-            graph.nearest_routable_with_options_max(stav_centre.0, stav_centre.1, &opts, false, 750.0)
-        {
+        if let Ok((dead, _)) = graph.nearest_routable_with_options_max(
+            stav_centre.0,
+            stav_centre.1,
+            &opts,
+            false,
+            750.0,
+        ) {
             let mut size = 0usize;
             for &id in graph.nodes.keys() {
                 if graph.same_weak_component(dead, id)
