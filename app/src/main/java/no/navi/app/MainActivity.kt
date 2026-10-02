@@ -3247,6 +3247,26 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.lastRoutePolylineChars = 0
             NaviMapTestHooks.lastRoutePolyline = ""
             // Native fail-fast: missing corridor region — same dialog as UI pre-flight.
+            // Ferry sidecar still building — show progress and auto-retry the plan.
+            if (result.searchTerminateReason == "ferry_preparing") {
+                val msg =
+                    result.offTrailAdvisory.ifBlank {
+                        result.report
+                            .lineSequence()
+                            .firstOrNull { it.startsWith("status=") }
+                            ?.removePrefix("status=")
+                            ?.trim()
+                            .orEmpty()
+                    }.ifBlank { "Preparing ferry data…" }
+                status = msg
+                RoutingPlanLog.failed(ecoForPlan, durationMs, msg, result)
+                // Auto-continue when the background sidecar finishes.
+                kotlinx.coroutines.delay(1_500)
+                if (isActive) {
+                    planKick += 1
+                }
+                return@LaunchedEffect
+            }
             val missingPath =
                 when {
                     result.searchTerminateReason == "missing_regions" -> {

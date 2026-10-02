@@ -734,6 +734,10 @@ pub enum PackLoadError {
     /// Geofabrik paths in first-crossing order (e.g. `europe/norway/vestlandet`).
     #[error("missing region packs: {}", .0.join(", "))]
     MissingRegions(Vec<String>),
+    /// Ferry overlay sidecar is building in the background; retry the plan.
+    /// `(region_label, progress_pct)`.
+    #[error("preparing ferry data for {0}")]
+    FerryPreparing(String, u8),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("rkyv access failed: {0}")]
@@ -1562,7 +1566,7 @@ fn try_load_graph_for_plan_corridor_dirs(
             clip_bbox,
             edge_clips,
             route_points,
-        );
+        )?;
         // Insert *after* ferry supplement so the LRU holds the planning graph
         // and ferry merge never clones a still-cached pre-ferry Arc (~2× RSS).
         if let Some(key) = pending_key {
@@ -1615,7 +1619,7 @@ fn try_load_graph_for_plan_corridor_dirs(
         clip_bbox,
         edge_clips,
         route_points,
-    ))
+    )?)
 }
 
 /// Pack-server installs leave a 16 KiB zero stub beside graph packs. Real
@@ -1789,7 +1793,7 @@ fn supplement_pack_ferries_from_pbf(
     clip_bbox: Option<[f64; 4]>,
     edge_clips: Option<&[[f64; 4]]>,
     route_points: Option<&[(f64, f64)]>,
-) -> std::sync::Arc<RouteGraph> {
+) -> Result<std::sync::Arc<RouteGraph>, PackLoadError> {
     let t0 = std::time::Instant::now();
     let out = supplement_pack_ferries_from_pbf_inner(
         graph,
@@ -1805,6 +1809,35 @@ fn supplement_pack_ferries_from_pbf(
     out
 }
 
+/// Clip boxes for ferry-sidecar materialization.
+///
+/// Always prefer the OD corridor band when hop geometry is available — even if
+/// the pack fell back to [`PlanEdgeClipMode::TripAabb`]. Trip-AABB overlay pulls
+/// a coast-length ferry mesh into one A* and admits water shortcuts
+/// (`unnamed@195` on Bergen→Stavanger with longTrip off).
+fn ferry_overlay_clips(
+    clip_bbox: Option<[f64; 4]>,
+    edge_clips: Option<&[[f64; 4]]>,
+    route_points: Option<&[(f64, f64)]>,
+) -> Option<Vec<[f64; 4]>> {
+    const PAD: f64 = 0.05;
+    if let Some(pts) = route_points.filter(|p| p.len() >= 2) {
+        let mut band = crate::routing::plan_bbox::corridor_band_bboxes(
+            pts,
+            crate::routing::plan_bbox::CORRIDOR_EDGE_HALF_WIDTH_DEG,
+            crate::routing::plan_bbox::CORRIDOR_BAND_STEP_DEG,
+        );
+        if !band.is_empty() {
+            for b in &mut band {
+                *b = expand_bbox_deg(*b, PAD);
+            }
+            return Some(band);
+        }
+    }
+    let bbox = plan_clip_bbox(clip_bbox, edge_clips)?;
+    Some(vec![expand_bbox_deg(bbox, PAD)])
+}
+
 fn supplement_pack_ferries_from_pbf_inner(
     graph: std::sync::Arc<RouteGraph>,
     dirs: &[&Path],
@@ -1814,12 +1847,11 @@ fn supplement_pack_ferries_from_pbf_inner(
     clip_bbox: Option<[f64; 4]>,
     edge_clips: Option<&[[f64; 4]]>,
     route_points: Option<&[(f64, f64)]>,
-) -> std::sync::Arc<RouteGraph> {
-    let Some(bbox) = plan_clip_bbox(clip_bbox, edge_clips) else {
-        return graph;
+) -> Result<std::sync::Arc<RouteGraph>, PackLoadError> {
+    let Some(clips) = ferry_overlay_clips(clip_bbox, edge_clips, route_points) else {
+        return Ok(graph);
     };
-    // Modest pad so ferry terminals just outside the corridor band still load.
-    let bbox = expand_bbox_deg(bbox, 0.05);
+    let bbox = plan_clip_bbox(None, Some(clips.as_slice())).unwrap_or(clips[0]);
     if let Some(pts) = route_points.filter(|p| p.len() >= 2) {
         let t_snap = std::time::Instant::now();
         let gate = ferry_hop_connectivity_gate(&graph, pts[0], pts[pts.len() - 1]);
@@ -1836,7 +1868,7 @@ fn supplement_pack_ferries_from_pbf_inner(
                     "ferry_per_plan",
                     "once_on_corridor_miss;warm_skipped=corridor_cache_hit",
                 );
-                return graph;
+                return Ok(graph);
             }
             FerryHopGate::Disconnected { snap_m } => {
                 crate::routing::plan_perf::note_f64("ferry_snap_m", snap_m);
@@ -1866,7 +1898,7 @@ fn supplement_pack_ferries_from_pbf_inner(
         );
         if skip_overlay {
             crate::routing::plan_perf::note("ferry_overlay", "skip_long_ferry_in_bbox");
-            return graph;
+            return Ok(graph);
         }
     }
     let mut stems = Vec::with_capacity(1 + extras.len());
@@ -1885,7 +1917,25 @@ fn supplement_pack_ferries_from_pbf_inner(
         let Some(pbf) = resolve_ferry_overlay_pbf(home, stem, bbox) else {
             continue;
         };
-        match super::ferry_overlay_cache::ferry_overlay_for_plan(home, stem, profile, &pbf, bbox) {
+        // Plan path: never parse PBF. If sidecar is not ready, surface typed
+        // preparing status and let the background ensure job finish.
+        if !super::ferry_overlay_cache::sidecar_fresh(home, stem, profile, &pbf) {
+            let (status, pct) = super::ferry_overlay_cache::ferry_preparing_status(stem);
+            crate::routing::plan_perf::note("ferry_overlay", "preparing_sidecar");
+            // Best-effort kick; install/refresh also starts this. Do not block.
+            let home_b = home.to_path_buf();
+            let stem_b = stem.clone();
+            let pbf_b = pbf.clone();
+            let _ = std::thread::Builder::new()
+                .name("ferry-sidecar".into())
+                .spawn(move || {
+                    let _ = super::ferry_overlay_cache::ensure_ferry_sidecar(
+                        &home_b, &stem_b, profile, &pbf_b,
+                    );
+                });
+            return Err(PackLoadError::FerryPreparing(status, pct));
+        }
+        match super::ferry_overlay_cache::ferry_overlay_for_plan(home, stem, profile, &pbf, &clips) {
             Some((fg, mode)) if fg.edges.iter().any(|e| e.is_ferry) => {
                 overlay_mode = mode;
                 log::info!(
@@ -1898,16 +1948,16 @@ fn supplement_pack_ferries_from_pbf_inner(
             }
             Some(_) => {}
             None => {
-                log::warn!(
+                log::info!(
                     target: "NaviPlan",
-                    "ferry_overlay stem={stem} sidecar/build returned empty"
+                    "ferry_overlay stem={stem} sidecar fresh but empty (no ferry edges)"
                 );
             }
         }
     }
     if overlays.is_empty() {
         crate::routing::plan_perf::note("ferry_overlay", "no_overlay_source");
-        return graph;
+        return Ok(graph);
     }
     crate::routing::plan_perf::note("ferry_overlay", overlay_mode);
     crate::routing::plan_perf::note(
@@ -1917,7 +1967,7 @@ fn supplement_pack_ferries_from_pbf_inner(
     let mut parts = Vec::with_capacity(1 + overlays.len());
     parts.push(arc_graph_owned(graph));
     parts.extend(overlays);
-    std::sync::Arc::new(merge_tile_graphs(parts, profile))
+    Ok(std::sync::Arc::new(merge_tile_graphs(parts, profile)))
 }
 
 /// Choose the Ready manifest for planning: prefer a stem whose region covers
@@ -3264,7 +3314,8 @@ mod ferry_overlay_tests {
             Some([54.15, 10.90, 55.25, 11.85]),
             None,
             Some(&[(54.21, 11.025), (55.175, 11.700)]),
-        );
+        )
+        .expect("stub pbf must not block");
         assert_eq!(out.edges.len(), before);
         assert!(!graph_has_long_ferry(&out));
     }
@@ -3455,6 +3506,18 @@ mod ferry_overlay_tests {
             ..sh_man.clone()
         };
         let ferry_before = merged.edges.iter().filter(|e| e.is_ferry).count();
+        for (stem, pbf) in [
+            ("schleswig-holstein-latest", &sh_pbf),
+            ("denmark-latest", &dk_pbf),
+        ] {
+            super::super::ferry_overlay_cache::ensure_ferry_sidecar(
+                &dir,
+                stem,
+                profile,
+                pbf,
+            )
+            .expect("ensure ferry sidecar");
+        }
         let out = supplement_pack_ferries_from_pbf(
             std::sync::Arc::new(merged),
             &[&dir],
@@ -3464,7 +3527,8 @@ mod ferry_overlay_tests {
             Some(clip),
             None,
             Some(&hop),
-        );
+        )
+        .expect("ferry overlay");
         let ferry_after = out.edges.iter().filter(|e| e.is_ferry).count();
         eprintln!(
             "ferry_edges {ferry_before} -> {ferry_after}; nodes={}",

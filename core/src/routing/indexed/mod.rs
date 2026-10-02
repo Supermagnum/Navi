@@ -30,6 +30,10 @@ pub use corridor_cache::{
     corridor_cache_insert_owned, corridor_cache_stats, corridor_cache_take, CorridorCacheKey,
     CORRIDOR_CACHE_MAX_BYTES,
 };
+pub use ferry_overlay_cache::{
+    ensure_ferry_sidecar, ferry_overlay_for_plan, ferry_preparing_status, ferry_sidecar_path,
+    ferry_sidecar_progress, ferry_sidecar_ready, sidecar_fresh, FerrySidecarProgress,
+};
 pub use graph_pack::{
     graph_format_version_accepted, preferred_graph_format_version, ArchivedFlatGraphPack,
     FlatGraphPack, GRAPH_FORMAT_VERSION, GRAPH_FORMAT_VERSION_V8, MAGIC_GRAPH,

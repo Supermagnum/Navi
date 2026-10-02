@@ -1523,7 +1523,7 @@ object RegionDownloadBackground {
                     // and for rest/overnight POI packs. Basemap + place-index
                     // continue in the background; long-trip planning waits for
                     // Indexed via LongTripCoordinator.corridorReadyForPlanning.
-                    emitInstalledForRouting(pathForDecision)
+                    emitInstalledForRouting(pathForDecision, packDir)
                     handOffBasemapAndPlaceIndex(
                         context = context,
                         dataDir = dataDir,
@@ -1597,7 +1597,7 @@ object RegionDownloadBackground {
                     return
                 }
                 PlaceIndexReady.markReady(dataDir, pathForDecision)
-                markUsable(pathForDecision)
+                markUsable(pathForDecision, packDir)
                 // Local-bake resume: place index is done; convert is non-blocking.
                 val resumePbf = File(packDir, filename)
                 if (resumePbf.isFile &&
@@ -1669,7 +1669,7 @@ object RegionDownloadBackground {
                 }
                 if (basemapPath.isNotBlank()) {
                     PlaceIndexReady.markReady(dataDir, basemapPath)
-                    markUsable(basemapPath)
+                    markUsable(basemapPath, packDir)
                 }
                 // Hand convert to IndexedMapsBackground (Convert progress slot) so
                 // the region queue can proceed to the next download.
@@ -1712,13 +1712,17 @@ object RegionDownloadBackground {
         )
     }
 
-    private fun emitInstalledForRouting(path: String) {
+    private fun emitInstalledForRouting(
+        path: String,
+        packDir: File,
+    ) {
         val trimmed = path.trim().trim('/')
         if (trimmed.isEmpty()) return
         emitPhase(trimmed, "installed")
         lastUsablePath.set(trimmed)
         setStatus("Packs installed — region ready for routing")
         Log.i(TAG, "region installed for routing path=$trimmed")
+        FerrySidecarBackground.ensureForRegionPath(packDir, trimmed)
     }
 
     /**
@@ -1769,7 +1773,7 @@ object RegionDownloadBackground {
                 }.getOrDefault(false)
             if (placeOk) {
                 PlaceIndexReady.markReady(dataDir, rid)
-                markUsable(rid)
+                markUsable(rid, packDir)
                 Log.i(TAG, "background place index ready for $rid")
             } else {
                 Log.w(TAG, "background place index failed for $rid")
@@ -1777,12 +1781,18 @@ object RegionDownloadBackground {
         }
     }
 
-    private fun markUsable(path: String) {
+    private fun markUsable(
+        path: String,
+        packDir: File? = packDirOverride.get(),
+    ) {
         val trimmed = path.trim().trim('/')
         if (trimmed.isEmpty()) return
         lastUsablePath.set(trimmed)
         setStatus("$USABLE_STATUS_PREFIX — region ready for routing and search")
         Log.i(TAG, "region usable for routing/search path=$trimmed")
+        if (packDir != null) {
+            FerrySidecarBackground.ensureForRegionPath(packDir, trimmed)
+        }
     }
 
     private fun runPlaceIndexLocal(

@@ -213,11 +213,12 @@ class RegionToRegionPerfMatrixInstrumentedTest {
         run("raufoss_dombas", ostPbf, DOMBAS_LAT, DOMBAS_LON, eco = false)
         run("bergen_forde", vestPbf, FORDE_LAT, FORDE_LON, eco = true, BERGEN_LAT, BERGEN_LON)
         run("bergen_forde", vestPbf, FORDE_LAT, FORDE_LON, eco = false, BERGEN_LAT, BERGEN_LON)
-        // Coastal ferry corridor (Vestlandet): permanent matrix case.
-        // longTrip densify keeps hops short enough for pack tile budgets; ferry
-        // overlay + trip-AABB fallback bridge water gaps dig/tip left disconnected.
-        run("bergen_stavanger", vestPbf, STAVANGER_LAT, STAVANGER_LON, eco = false, BERGEN_LAT, BERGEN_LON, longTrip = true)
-        run("bergen_stavanger", vestPbf, STAVANGER_LAT, STAVANGER_LON, eco = true, BERGEN_LAT, BERGEN_LON, longTrip = true)
+        // Coastal ferry corridor (Vestlandet): permanent matrix cases.
+        // longTrip on/off × default/eco — A.4 requires both densify and single-shot.
+        run("bergen_stavanger", vestPbf, STAVANGER_LAT, STAVANGER_LON, eco = false, BERGEN_LAT, BERGEN_LON, longTrip = false)
+        run("bergen_stavanger", vestPbf, STAVANGER_LAT, STAVANGER_LON, eco = true, BERGEN_LAT, BERGEN_LON, longTrip = false)
+        run("bergen_stavanger_lt", vestPbf, STAVANGER_LAT, STAVANGER_LON, eco = false, BERGEN_LAT, BERGEN_LON, longTrip = true)
+        run("bergen_stavanger_lt", vestPbf, STAVANGER_LAT, STAVANGER_LON, eco = true, BERGEN_LAT, BERGEN_LON, longTrip = true)
         // 3+ stem corridor (Ostlandet + Trøndelag + Nord-Norge) via densify/chunk.
         run("raufoss_tromso", ostPbf, TROMSO_LAT, TROMSO_LON, eco = false, longTrip = true)
 
@@ -263,8 +264,14 @@ class RegionToRegionPerfMatrixInstrumentedTest {
                 ecoMs != null && ecoMs > 0.0
             },
         )
-        val stavRows = rows.filter { it.startsWith("bergen_stavanger\t") }
-        assertTrue("expected bergen_stavanger default+eco rows:\n$out", stavRows.size >= 2)
+        val stavRows =
+            rows.filter {
+                it.startsWith("bergen_stavanger\t") || it.startsWith("bergen_stavanger_lt\t")
+            }
+        assertTrue(
+            "expected bergen_stavanger longTrip on+off × default+eco (4 rows):\n$out",
+            stavRows.size >= 4,
+        )
         assertTrue(
             "bergen_stavanger must succeed with ferries:\n$out",
             stavRows.all { row ->
@@ -277,7 +284,7 @@ class RegionToRegionPerfMatrixInstrumentedTest {
         )
         val fps = stavRows.map { it.split('\t').getOrNull(17) }.distinct()
         assertTrue(
-            "bergen_stavanger default and eco must use the same ferry fingerprint:\n$out",
+            "bergen_stavanger variants must share the same ferry fingerprint:\n$out",
             fps.size == 1,
         )
     }

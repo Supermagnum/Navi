@@ -470,3 +470,113 @@ Ship a format bump only if mapped expand cannot stay correct/fast:
 
 Until then: stay on owned merge for search; 2c remains the follow-up after this
 PR’s ferry fix + pack_load cuts.
+
+## Phase 1 PART A — ferry sidecar (gates merge of #138)
+
+### A.1 Fast ferry sidecar build
+
+**Prior cost:** `build_ferry_overlay_from_pbf` did ~10 full PBF scans (in-bbox
+node set, ferry ways, 4 approach hops, terminal coords, near-ids, vacuum ways,
+coord resolve) — first Vestlandet build ~18 min on SM-P613 from the 245 MB
+region PBF.
+
+**Rewrite:** ≤2 PBF reads — (1) collect `route=ferry` + pier/footway/platform
+promotions only, (2) resolve those node coords; BFS (≤4 hops) + terminal-radius
+vacuum run in memory. Pack car highways are not duplicated into the sidecar.
+
+**Tablet SM-P613 (delete + rebuild all stems, 2026-10-02):**
+
+| stem | build_ms | out_bytes |
+| --- | ---: | ---: |
+| ostlandet-latest | 89018 | 25741396 |
+| vestlandet-latest | 50340 | 21215172 |
+| trondelag-latest | 26528 | 3488160 |
+| nord-norge-latest | 67203 | 7647148 |
+| sorlandet-latest | 10958 | 3592872 |
+
+Vestlandet ~50 s / ~21 MB (was ~18 min / ~62 MB with full residential vacuum).
+Østlandet / Nord-Norge remain I/O-bound on two full region-PBF passes (~67–89 s);
+still ≫10× faster than the multi-pass builder. Target “well under a minute”
+holds for Vestlandet / Trøndelag / Sørlandet; largest stems need a compact
+`*.ferry.osm.pbf` extract for a further cut.
+
+### A.2 Build out of the plan path
+
+`ensure_ferry_sidecar` runs at pack install (`emitInstalledForRouting`) and
+pack refresh / usable (`markUsable`) via `FerrySidecarBackground`, with
+download-progress labels (`Preparing ferry data for {region}…`).
+
+Plan path loads the sidecar only (`ferry_overlay_for_plan`). Overlay clips use
+the OD **corridor band** (not trip-AABB) so pack AABB fallback cannot pull a
+coast-length ferry mesh. If the hop needs overlay and the sidecar is
+missing/stale: return `PackLoadError::FerryPreparing` →
+`search_terminate_reason=ferry_preparing` (no PBF parse). UI shows the status
+and auto-retries (`planKick`) every 1.5 s until the background job finishes.
+
+**First plan with no sidecar (Bergen→Stavanger):** polls saw
+`ferry_preparing` for ~35 s, then route at **~45.5 s** wall
+(`distance=228.21`, Halhjem+Arsvågen).
+
+### A.3 Why packs lack some ferry links (finding only — no navi-server change)
+
+**Observation:** Bergen→Førde uses **Lavik–Oppedal** from the published
+Vestlandet pack alone. Bergen→Stavanger needs **Halhjem–Sandvikvåg** and
+**Arsvågen–Mortavika** from the client PBF ferry overlay; without it, directed
+A* reports disconnected (undirected UF could falsely `skip_already_connected`).
+
+**Server bake (`navi-server-local` / `pack-convert-core`):** Pass 1 spill already
+keeps `route=ferry` via `tags_indicate_ferry` (see `ferry_tunnel_v9` regression).
+Car highways are ingested; **`man_made=pier` / footway boarding links are not**
+promoted into the car graph. Ferry ways whose landfall only connects through
+pier/footway stubs therefore sit as islands (or one-sided) in tiled packs —
+directed reachability fails even when a long ferry edge exists elsewhere in the
+stem. Tile clips can also drop pier tips a few hundred metres past the tile
+pad, breaking OSM-id join to inland highways.
+
+Lavik–Oppedal is highway-connected at both ends in OSM, so it survives pack
+bake. Halhjem / Arsvågen depend on pier-class approaches the bake drops.
+
+**Exact server-side fix (do not implement here):** In
+`pack-convert-core` tiled Pass 1 (same rules as client
+`ferry_approach_tags`), retain pier / footway / platform ways that share a
+node with a `route=ferry` way (or lie within ~1.5 km of a ferry endpoint),
+promote them to `highway=service` + motor access for topology, and keep them
+in the tile that owns the ferry terminal (extra pad around ferry endpoints if
+needed). Re-bake Vestlandet (and other coastal stems). After that, client
+ferry sidecars become unnecessary for Halhjem/Arsvågen-class crossings.
+
+### A.4 Long-trip off (Bergen→Stavanger)
+
+Span Bergen→Stavanger is ~1.42° Chebyshev > `LONG_TRIP_CHUNK_DEG` (1.15°).
+Single-shot + full ferry overlay admits a coast-chained water shortcut
+(`unnamed@195`, ~212 km). Densify (`longTrip=true`, or same-stem **coastal**
+ferry densify when a vestlandet/nord-norge/sørlandet sidecar is ready) splits
+into hops ≤1.15° so each A* cannot see the coast-long chain.
+
+Matrix permanently includes both: `bergen_stavanger` (longTrip off) and
+`bergen_stavanger_lt` (longTrip on), each × default and eco. Both variants
+ densify on this OD and return **228.21 km**, ferries
+Halhjem–Sandvikvåg@21.32 | Arsvågen–Mortavika@9.15, geom `1cf463d5…`.
+Cross-stem mid trips (Raufoss→Bergen) and inland same-stem (Raufoss→Dombås)
+do **not** take the ferry densify path.
+
+### A.5 Verify (tablet SM-P613 `R52TB0JQEDE`, 2026-10-02)
+
+- Sidecar rebuild timings/sizes: see A.1 table. No LMK / ANR for `no.navi.app`.
+- First plan before sidecar ready: `ferry_preparing` until ~45.5 s, then 228.21.
+- Cold/warm with sidecars present: Stavanger pack_load ~2.2–2.4 s; Bergen eco
+  cold **7611 ms**, warm **2447 ms**.
+- Full matrix (peak RSS max **932.5 MiB** ≤933):
+
+| case | eco | wall_ms | distance_km | geom | ferry |
+| --- | --- | ---: | ---: | --- | --- |
+| raufoss_bergen cold | true | 7611 | **459.71** | `8a8c6f7b…` | — |
+| raufoss_bergen | false | 2202 | **485.45** | `540bb2ad…` | — |
+| raufoss_bergen_warm | true | 2447 | **459.71** | same | — |
+| raufoss_dombas | true | 4835 | **206.81** | `6a1360bc…` | — |
+| bergen_forde | true | 3936 | **171.01** | `0bff0c85…` | Lavik–Oppedal@5.72 |
+| bergen_stavanger (lt off) | false/true | ~9.3/8.8 s | **228.21** | `1cf463d5…` | Halhjem\|Arsvågen |
+| bergen_stavanger_lt | false/true | ~8.8/8.8 s | **228.21** | same | same |
+| raufoss_tromso | false | 34020 | **1766.89** | `e79679c2…` | 5 legs; **4 days / 3 overnight** |
+
+**STOP — wait for merge of #138. Do not start Phase 2.**

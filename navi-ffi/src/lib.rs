@@ -2167,10 +2167,10 @@ fn plan_pack_dirs(
 /// Android). Empty: search `data_dir` and `data_dir/long-trip-packs` when present.
 /// Pass `""` only when the PBF already lives next to the packs.
 ///
-/// `long_trip_enabled` gates densify/chunk planning for spans above
-/// [`LONG_TRIP_CHUNK_DEG`]. Ordinary UI plans must pass `false` so mid-length
-/// single-region trips (e.g. Hamar→Dombås) stay on one A* graph; long-trip mode
-/// passes `true` so multi-country corridors still chunk.
+/// `long_trip_enabled` gates densify/chunk for spans above [`LONG_TRIP_CHUNK_DEG`].
+/// Ordinary UI plans pass `false` so cross-stem mid trips (Raufoss→Bergen) stay
+/// on one A*. Same-stem coastal ODs with a ready ferry sidecar still densify
+/// when span > CHUNK even if longTrip is off (Bergen→Stavanger A.4).
 ///
 /// `allowed_countries`: when `Some` (non-empty), hard-filters the graph to those
 /// ISO-3166-1 alpha-2 codes ([`RouteOptions::allowed_countries`]). Host "Stay in
@@ -3007,19 +3007,66 @@ fn plan_car_route_inner(
 
     // Long corridors (multi-landsdel) cannot merge every pack tile into one
     // graph on Automotive RAM. Densify hops and plan each leg separately.
-    // Only when the host long-trip toggle is on — ordinary mid-span trips must
-    // stay on a single bbox A* (nested chunk legs never re-enter; stack overflow).
+    // Host long-trip toggle densifies any span > CHUNK. Additionally, a
+    // same-stem coastal OD with a ready ferry sidecar densifies even when
+    // longTrip is off — otherwise single-shot + overlay admits coast-chained
+    // water shortcuts (Bergen→Stavanger `unnamed@195`). Cross-stem mid trips
+    // (Raufoss→Bergen) must NOT densify here: hop joints detour (~572 vs 460 km).
     let span = driver_break_core::routing::plan_bbox::trip_span_deg(&route_points);
-    if long_trip_enabled
+    let pack_dirs_for_densify = plan_pack_dirs(
+        std::path::Path::new(pbf_path.trim()),
+        &data_dir,
+        &pack_dir,
+        long_trip_enabled,
+    );
+    let ferry_same_stem_densify = !long_trip_enabled
+        && !is_chunk_leg
+        && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
+        && {
+            let (a_lat, a_lon) = route_points[0];
+            let (b_lat, b_lon) = *route_points.last().unwrap();
+            let leaf_a = driver_break_core::long_trip::region_containing(a_lat, a_lon, None);
+            let leaf_b = driver_break_core::long_trip::region_containing(b_lat, b_lon, None);
+            match (leaf_a, leaf_b) {
+                (Some(a), Some(b)) if a == b => {
+                    let leaf = a.rsplit('/').next().unwrap_or(a);
+                    // Inland stems (ostlandet) often have a ferry sidecar for
+                    // fjord stubs; densifying every same-stem OD over CHUNK
+                    // detours Raufoss→Dombås (~302 vs 206 km). Only coastal
+                    // stems where the overlay fixes directed pier gaps.
+                    let coastal = matches!(
+                        leaf,
+                        "vestlandet" | "nord-norge" | "sorlandet" | "troms" | "finnmark"
+                    );
+                    if !coastal {
+                        false
+                    } else {
+                        let stem = format!("{leaf}-latest");
+                        pack_dirs_for_densify.iter().any(|dir| {
+                            let pbf = dir.join(format!("{stem}.osm.pbf"));
+                            let pbf = if pbf.is_file() {
+                                pbf
+                            } else {
+                                dir.join(format!("{stem}.ferry.osm.pbf"))
+                            };
+                            pbf.is_file()
+                                && driver_break_core::routing::indexed::ferry_sidecar_ready(
+                                    dir,
+                                    &stem,
+                                    routing_profile,
+                                    &pbf,
+                                )
+                        })
+                    }
+                }
+                _ => false,
+            }
+        };
+    if (long_trip_enabled || ferry_same_stem_densify)
         && !is_chunk_leg
         && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
     {
-        let pack_dirs = plan_pack_dirs(
-            std::path::Path::new(pbf_path.trim()),
-            &data_dir,
-            &pack_dir,
-            long_trip_enabled,
-        );
+        let pack_dirs = pack_dirs_for_densify;
         let pack_dir_refs: Vec<&std::path::Path> = pack_dirs.iter().map(|p| p.as_path()).collect();
         let hops = driver_break_core::routing::plan_bbox::densify_route_points_via_regions_dirs(
             &route_points,
@@ -3028,7 +3075,8 @@ fn plan_car_route_inner(
         );
         log::info!(
             target: "NaviPlan",
-            "long_trip densify span={span:.3} hops={} dirs={}",
+            "long_trip densify span={span:.3} hops={} long_trip_enabled={long_trip_enabled} \
+             ferry_same_stem={ferry_same_stem_densify} dirs={}",
             hops.len(),
             pack_dirs
                 .iter()
@@ -3317,6 +3365,27 @@ fn plan_car_route_inner(
                     if let Some(first) = regions.first() {
                         r.off_trail_advisory = format!("missing_region:{first}");
                     }
+                    return r;
+                }
+                Err(driver_break_core::routing::indexed::PackLoadError::FerryPreparing(
+                    status,
+                    pct,
+                )) => {
+                    report.push_str(&format!(
+                        "ferry_preparing=true\nferry_preparing_pct={pct}\n\
+                         status={status}\nFAIL: {status}\n"
+                    ));
+                    driver_break_core::routing::plan_perf::note("ferry_preparing", &status);
+                    driver_break_core::routing::plan_perf::note_u64(
+                        "ferry_preparing_pct",
+                        pct as u64,
+                    );
+                    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                    let mut r = empty(report);
+                    r.toll_policy = toll_policy.as_diag_str().into();
+                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                    r.search_terminate_reason = "ferry_preparing".into();
+                    r.off_trail_advisory = status;
                     return r;
                 }
                 Err(e) => {
@@ -5393,6 +5462,89 @@ pub struct PlaceHit {
     pub municipality: String,
     /// Geofabrik path this row was indexed under (empty for legacy / synthetic hits).
     pub region_id: String,
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiFerrySidecarProgress {
+    pub stem: String,
+    pub region_label: String,
+    pub running: bool,
+    pub pct: u8,
+    pub message: String,
+}
+
+/// Build/refresh `{stem}.navi-ferry-overlay-{profile}.rkyv` from the region PBF.
+/// Call from pack install / refresh background work — not from the plan path.
+#[uniffi::export]
+pub fn ensure_ferry_sidecar(pack_dir: String, stem: String, profile: TravelProfile) -> String {
+    let home = Path::new(pack_dir.trim());
+    let stem = stem.trim();
+    if stem.is_empty() {
+        return "FAIL: empty stem\n".into();
+    }
+    let pbf = home.join(format!("{stem}.osm.pbf"));
+    if !pbf.is_file() {
+        // Also accept ferry-only extract.
+        let ferry_pbf = home.join(format!("{stem}.ferry.osm.pbf"));
+        if !ferry_pbf.is_file() {
+            return format!("FAIL: PBF missing for stem={stem}\n");
+        }
+        return match driver_break_core::routing::indexed::ensure_ferry_sidecar(
+            home,
+            stem,
+            RoutingProfile::from(profile.to_core()),
+            &ferry_pbf,
+        ) {
+            Ok(true) => format!("PASS: ferry sidecar ready stem={stem}\n"),
+            Ok(false) => format!("PASS: no ferry edges stem={stem}\n"),
+            Err(e) => format!("FAIL: ferry sidecar: {e:#}\n"),
+        };
+    }
+    match driver_break_core::routing::indexed::ensure_ferry_sidecar(
+        home,
+        stem,
+        RoutingProfile::from(profile.to_core()),
+        &pbf,
+    ) {
+        Ok(true) => format!("PASS: ferry sidecar ready stem={stem}\n"),
+        Ok(false) => format!("PASS: no ferry edges stem={stem}\n"),
+        Err(e) => format!("FAIL: ferry sidecar: {e:#}\n"),
+    }
+}
+
+/// Progress for an in-flight ferry sidecar build (empty stem when idle).
+#[uniffi::export]
+pub fn ferry_sidecar_progress_snapshot() -> FfiFerrySidecarProgress {
+    let p = driver_break_core::routing::indexed::ferry_sidecar_progress();
+    FfiFerrySidecarProgress {
+        stem: p.stem,
+        region_label: p.region_label,
+        running: p.running,
+        pct: p.pct,
+        message: p.message,
+    }
+}
+
+/// True when the stem ferry sidecar meta matches the on-disk PBF fingerprint.
+#[uniffi::export]
+pub fn ferry_sidecar_is_ready(pack_dir: String, stem: String, profile: TravelProfile) -> bool {
+    let home = Path::new(pack_dir.trim());
+    let stem = stem.trim();
+    let pbf = home.join(format!("{stem}.osm.pbf"));
+    let pbf = if pbf.is_file() {
+        pbf
+    } else {
+        home.join(format!("{stem}.ferry.osm.pbf"))
+    };
+    if !pbf.is_file() {
+        return false;
+    }
+    driver_break_core::routing::indexed::sidecar_fresh(
+        home,
+        stem,
+        RoutingProfile::from(profile.to_core()),
+        &pbf,
+    )
 }
 
 /// Build or open the offline FTS name index for a region PBF.
